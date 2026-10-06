@@ -1,7 +1,10 @@
 import { piecesDeviseNonConvertie, piecesTvaImpossible, LIBELLE_MOTIF_TVA } from './controles'
-import { ajouterJours, ajouterMois, dernierJourDuMois } from './format'
+import { ajouterJours, ajouterMois, dateLocaleDe, dernierJourDuMois } from './format'
+import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
-import { partsDesPaiements, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import {
+  centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces, type Rattachement,
+} from './rattachement'
 import { horsTaxeEtTva } from './tvaDuReleve'
 import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 
@@ -23,13 +26,22 @@ import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 //     (une déduction omise se rattrape jusqu'au 31 décembre de la deuxième année suivante). Elle
 //     n'arrive jamais trop tôt, sauf pour un bien payé avant d'être livré.
 //   - une NOTE DE FRAIS se paie hors du compte professionnel : elle compte à sa date, sauf si un
-//     mouvement la rattache au relevé.
-//   - une pièce payée en plusieurs fois compte pour la part de chaque paiement (`partsDesPaiements`,
-//     lib/rattachement.ts, la même règle que la 2035) : une pièce réglée à l'écart d'alignement près
-//     compte en entier, des frais bancaires ne la font pas compter plus d'une fois, et un paiement
-//     partiel ne rend exigible que ce qui a été payé.
+//     mouvement la rattache au relevé — et la part qu'un remboursement partiel laisse au dirigeant compte
+//     encore à sa date : c'est lui qui l'a payée.
+//   - une pièce payée en plusieurs fois compte pour la part de chaque paiement (`rattachementsTresorerie`,
+//     lib/rattachement.ts, la même règle que la 2035 et que les écritures) : une pièce réglée à l'écart
+//     d'alignement près compte en entier, des frais bancaires ne la font pas compter plus d'une fois, et
+//     un paiement partiel ne rend exigible que ce qui a été payé.
 // Une pièce qu'aucun paiement ne date ne compte dans AUCUNE déclaration, et elle est rendue à part
 // (`nonPlacees`) : se taire sur elle ferait passer une recette oubliée pour une recette inexistante.
+//
+// LES MONTANTS SONT CEUX DU BROUILLON, AU CENTIME (ligne 26.8) : la déclaration enregistrée se LIQUIDE —
+// une écriture retire des comptes 445710, 445660 et 445620 la TVA de la période (lib/liquidationTva.ts) —,
+// et ce qu'elle retire doit être ce que les écritures des pièces y ont porté, sans quoi un centime resterait
+// sur ces comptes à chaque période, que rien ne solderait. Chaque pièce y entre donc par la répartition de
+// son écriture (`centimesParDate`, lib/rattachement.ts : la charge et la TVA réparties ENSEMBLE, date par
+// date), et la CA3 tire ses lignes des mêmes centimes. Seul l'arrondi à l'euro de chaque ligne sépare ce
+// qui se déclare de ce que les comptes portent : la liquidation le passe au 658000 ou au 758000.
 //
 // LES RECETTES DU RELEVÉ — affectées ou ventilées sans facture (lib/tvaDuReleve.ts) — comptent à la date
 // de leur ENCAISSEMENT, la seule qu'elles ont, à leur taux : le hors taxe sur la ligne du taux, la TVA à
@@ -37,11 +49,15 @@ import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 // taux (affectée avant que le dossier devienne assujetti), et toute recette du relevé sur option pour les
 // débits — la TVA y est due à la date de la facture, que le relevé ne donne pas.
 //
+// LE REMBOURSEMENT D'UN CRÉDIT (ligne 26, formulaire 3519) se demande : c'est le cabinet qui le choisit, dans
+// la limite du crédit de la période (ligne 25), et le reste se reporte (ligne 27). Sa liquidation le porte au
+// 445830, que le virement du Trésor solde (lib/liquidationTva.ts).
+//
 // CE QUE CE CALCUL NE FAIT PAS, et l'écran le dit : l'autoliquidation (services achetés à un
 // fournisseur étranger, lignes A3 et B4), le coefficient de déduction d'une activité en partie
 // exonérée, les exclusions du droit à déduction (véhicule de tourisme, carburant en partie, cadeaux),
-// les taux particuliers (Corse, 2,1 %), le remboursement d'un crédit (ligne 26), les taxes
-// assimilées (ligne 29) et la régularisation d'une période déjà déposée (lignes 5B et 2C).
+// les taux particuliers (Corse, 2,1 %), les taxes assimilées (ligne 29) et la régularisation d'une
+// période déjà déposée (lignes 5B et 2C).
 
 export type LigneTaux = '08' | '09' | '9B' | '10'
 
@@ -126,22 +142,68 @@ export function dernierePeriodeClose(aujourdHui: string, periodicite: Periodicit
 
 export type MotifNonPlacee = 'non_rapprochee' | 'sans_date'
 
-interface Fraction {
-  date: string
-  part: number
+// Une part de la pièce que la CA3 compte : un PAIEMENT, ou la part d'une note de frais que le dirigeant a payée —
+// jamais le reste d'un paiement partiel (`sans_paiement`), que la 2035 suppose payé à la date de facture mais qui
+// n'est exigible nulle part : un acompte ne rend exigible que ce qu'il paie. Et jamais une part sans date.
+function compteeParLaCa3(r: Rattachement): boolean {
+  return r.date !== null && (r.source === 'paiement' || r.source === 'note_de_frais')
 }
 
-function fractionsDe(piece: Piece, mouvements: readonly PaiementDePiece[], surDebits: boolean): Fraction[] | MotifNonPlacee {
-  const recette = piece.type_piece === 'vente'
-  if (recette && surDebits) return piece.date_piece ? [{ date: piece.date_piece, part: 1 }] : 'sans_date'
-  // La part de chaque paiement vient de `partsDesPaiements` (lib/rattachement.ts), qui la rend aussi
-  // à la 2035 : c'est la même question, et une règle écrite deux fois n'attend que de diverger. Le
-  // reste d'un paiement partiel n'est exigible nulle part — un acompte ne rend exigible que ce qu'il
-  // paie —, donc seules les parts payées sont prises ici.
-  const { parts } = partsDesPaiements(piece, mouvements)
-  if (parts.length > 0) return parts
-  if (piece.type_piece === 'note_frais') return piece.date_piece ? [{ date: piece.date_piece, part: 1 }] : 'sans_date'
-  return 'non_rapprochee'
+// Les parts d'une pièce que la CA3 date, ou pourquoi aucune. Elles viennent de `rattachementsTresorerie`
+// (lib/rattachement.ts), qui les rend aussi à la 2035 et aux écritures : c'est la même question, et une règle
+// écrite deux fois n'attend que de diverger.
+function partsExigibles(piece: Piece, paiements: readonly PaiementDePiece[], surDebits: boolean): Rattachement[] | MotifNonPlacee {
+  if (piece.type_piece === 'vente' && surDebits) {
+    return piece.date_piece ? [{ date: piece.date_piece, part: 1, source: 'facture' }] : 'sans_date'
+  }
+  const rattachements = rattachementsTresorerie(piece, paiements)
+  if (!rattachements.some((r) => r.source === 'paiement' || r.source === 'note_de_frais')) return 'non_rapprochee'
+  const comptees = rattachements.filter(compteeParLaCa3)
+  return comptees.length > 0 ? comptees : 'sans_date'
+}
+
+interface CentimesDeLaPeriode {
+  // La base (la charge ou le produit) et la TVA que la période compte, en centimes, signées comme la pièce.
+  base: number
+  tva: number
+}
+
+// CE QU'UNE PIÈCE PORTE DANS LA PÉRIODE, AU CENTIME DE SON ÉCRITURE. L'écriture d'une pièce répartit sa charge et
+// sa TVA ENSEMBLE, date par date (`centimesParDate`, lib/ecritures.ts) : la TVA d'une date est ce qui complète la
+// charge de cette date. La période en prend les dates qu'elle couvre, pour la part que la CA3 compte — toute la
+// date d'un paiement ; d'une date que partagent un paiement et le reste d'un paiement partiel, la part payée
+// seulement, arrondie au centime. Sur option pour les débits, une recette compte en entier à la date de sa facture.
+function centimesDeLaPeriode(
+  piece: Piece, charge: number, tva: number, paiements: readonly PaiementDePiece[], surDebits: boolean,
+  periode: { debut: string; fin: string },
+): CentimesDeLaPeriode {
+  if (piece.type_piece === 'vente' && surDebits) {
+    if (!piece.date_piece || piece.date_piece < periode.debut || piece.date_piece > periode.fin) return { base: 0, tva: 0 }
+    const base = Math.round(charge * 100)
+    return { base, tva: Math.round((charge + tva) * 100) - base }
+  }
+  const rattachements = rattachementsTresorerie(piece, paiements)
+  const repli = dateLocaleDe(piece.created_at)
+  const charges = centimesParDate(piece, charge, paiements)
+  const toutCompris = centimesParDate(piece, charge + tva, paiements)
+  let base = 0
+  let taxe = 0
+  charges.forEach((m, i) => {
+    if (m.date < periode.debut || m.date > periode.fin) return
+    const aLaDate = rattachements.filter((r) => (r.date ?? repli) === m.date)
+    const tout = aLaDate.reduce((s, r) => s + r.part, 0)
+    const comptee = aLaDate.filter(compteeParLaCa3).reduce((s, r) => s + r.part, 0)
+    if (comptee === 0) return
+    const tvaDeLaDate = toutCompris[i].centimes - m.centimes
+    if (comptee >= tout - 1e-12) {
+      base += m.centimes
+      taxe += tvaDeLaDate
+    } else {
+      base += Math.round((m.centimes * comptee) / tout)
+      taxe += Math.round((tvaDeLaDate * comptee) / tout)
+    }
+  })
+  return { base, tva: taxe }
 }
 
 // ── La déclaration ──────────────────────────────────────────────────────────────────────────────
@@ -172,7 +234,8 @@ export interface CasesCa3 {
   l23: number // total TVA déductible
   l25: number // crédit de TVA (0705)
   lTD: number // TVA due (8900)
-  l27: number // crédit à reporter (8003)
+  l26: number // remboursement de crédit demandé, formulaire 3519 (8002)
+  l27: number // crédit à reporter, ligne 25 moins ligne 26 (8003)
   l28: number // TVA nette due (8901)
   l32: number // total à payer (9992)
 }
@@ -206,7 +269,8 @@ export const LIGNES_CA3: LigneAffichee[] = [
   { ligne: '23', libelle: 'Total TVA déductible', code: '', cadre: 'deductible', montant: 'l23' },
   { ligne: '25', libelle: 'Crédit de TVA (ligne 23 − ligne 16)', code: '0705', cadre: 'solde', montant: 'l25' },
   { ligne: 'TD', libelle: 'TVA due (ligne 16 − ligne 23)', code: '8900', cadre: 'solde', montant: 'lTD' },
-  { ligne: '27', libelle: 'Crédit de TVA à reporter sur la prochaine déclaration', code: '8003', cadre: 'solde', montant: 'l27' },
+  { ligne: '26', libelle: 'Remboursement de crédit demandé (formulaire 3519)', code: '8002', cadre: 'solde', montant: 'l26' },
+  { ligne: '27', libelle: 'Crédit de TVA à reporter (ligne 25 − ligne 26)', code: '8003', cadre: 'solde', montant: 'l27' },
   { ligne: '28', libelle: 'TVA nette due', code: '8901', cadre: 'solde', montant: 'l28' },
   { ligne: '32', libelle: 'Total à payer', code: '9992', cadre: 'solde', montant: 'l32' },
 ]
@@ -276,6 +340,17 @@ export interface DeclarationCa3 {
   // Les recettes du relevé encaissées dans la période : retenues à leur taux, ou écartées avec leur motif.
   releveRetenues: RecetteDuReleveRetenue[]
   releveEcartees: RecetteDuReleveEcartee[]
+  // CE QUE LA LIQUIDATION RETIRE DES COMPTES DE TVA, au centime, en euros (lib/liquidationTva.ts) : la TVA
+  // collectée nette (445710), déductible (445660) et déductible sur immobilisations (445620) que portent les
+  // écritures des pièces et des recettes du relevé retenues — signées comme ces écritures, un avoir en moins.
+  // Ce qui sépare ces montants des lignes de la CA3 est l'arrondi à l'euro de chaque ligne, et lui seul.
+  tvaDesComptes: TvaDesComptes
+}
+
+export interface TvaDesComptes {
+  collectee: number
+  deductible: number
+  immobilisations: number
 }
 
 export interface DonneesTva {
@@ -306,11 +381,16 @@ const LIBELLE_MOTIF_ECART: Record<Exclude<MotifEcart, 'tva_impossible'>, string>
   montants_incomplets: 'montants incomplets',
 }
 
+// `remboursement` : le remboursement de crédit que le cabinet demande (ligne 26), en euros. Sans valeur par défaut :
+// la déclaration enregistrée le porte, et une liquidation sans lui laisserait au 445670 un crédit que le Trésor a
+// remboursé. Ramené aux euros entiers de la déclaration et borné au crédit de la période (ligne 25) : au-delà, il
+// ne se demande pas, et l'écran le dit (`refusEnregistrement`, lib/liquidationTva.ts).
 export function calculerCa3(
   donnees: DonneesTva,
   periode: { debut: string; fin: string },
   surDebits: boolean,
   creditAnterieur: number,
+  remboursement: number,
 ): DeclarationCa3 {
   const impossibles = new Map(piecesTvaImpossible(donnees.pieces).map((a) => [a.piece.id, a.motif]))
   const nonConverties = new Set(piecesDeviseNonConvertie(donnees.pieces).map((p) => p.id))
@@ -327,18 +407,21 @@ export function calculerCa3(
   const achatsEnDeviseSansTva: Piece[] = []
   const releveRetenues: RecetteDuReleveRetenue[] = []
   const releveEcartees: RecetteDuReleveEcartee[] = []
+  // La TVA des comptes, en centimes signés comme les écritures (voir `tvaDesComptes`).
+  const comptes = { collectee: 0, deductible: 0, immobilisations: 0 }
 
   for (const piece of donnees.pieces) {
     const recette = piece.type_piece === 'vente'
-    const fractions = fractionsDe(piece, donnees.paiements.get(piece.id) ?? [], surDebits)
-    if (typeof fractions === 'string') {
+    const paiements = donnees.paiements.get(piece.id) ?? []
+    const parts = partsExigibles(piece, paiements, surDebits)
+    if (typeof parts === 'string') {
       const concernee = recette || (piece.montant_tva ?? 0) !== 0
       const dansLeTemps = piece.date_piece == null || piece.date_piece <= periode.fin
-      if (piece.statut === 'validee' && concernee && dansLeTemps) nonPlacees.push({ piece, motif: fractions })
+      if (piece.statut === 'validee' && concernee && dansLeTemps) nonPlacees.push({ piece, motif: parts })
       continue
     }
-    const part = fractions
-      .filter((f) => f.date >= periode.debut && f.date <= periode.fin)
+    const part = parts
+      .filter((f) => f.date! >= periode.debut && f.date! <= periode.fin)
       .reduce((s, f) => s + f.part, 0)
     if (part === 0) continue
     if (piece.statut !== 'validee') {
@@ -359,9 +442,11 @@ export function calculerCa3(
 
     const { montant_ht: htLu, montant_tva: tvaLue, montant_ttc: ttc } = piece
     const tva = tvaLue ?? 0
-    const ajouter = (cle: keyof typeof cumul, montant: number) => {
-      cumul[cle] += centimes(Math.abs(montant) * part)
-    }
+    // Les centimes de la période, ceux de l'écriture de la pièce (`centimesDeLaPeriode`). Une ligne de la CA3 ne
+    // porte jamais une somme négative : un avoir y entre pour sa valeur absolue, sur sa propre ligne — d'où le signe
+    // de la pièce, qui ramène ses centimes au sens de la ligne qui les reçoit.
+    const centimesDe = (charge: number, taxe: number) => centimesDeLaPeriode(piece, charge, taxe, paiements, surDebits, periode)
+    const signe = tva < 0 ? -1 : 1
 
     if (!recette) {
       if (tva === 0) {
@@ -372,16 +457,14 @@ export function calculerCa3(
         }
         continue
       }
-      if (tva < 0) {
-        ajouter('l15', tva)
-        retenues.push({ piece, part, ligne: '15' })
-      } else if (donnees.pieceIdsImmobilisees.has(piece.id)) {
-        ajouter('l19', tva)
-        retenues.push({ piece, part, ligne: '19' })
-      } else {
-        ajouter('l20', tva)
-        retenues.push({ piece, part, ligne: '20' })
-      }
+      // La charge de l'écriture, que la TVA complète date par date : le hors taxe lu, sinon le TTC moins la TVA.
+      const { tva: c } = centimesDe(montantRetenu(piece, true) ?? 0, tva)
+      const immobilisee = donnees.pieceIdsImmobilisees.has(piece.id)
+      if (immobilisee) comptes.immobilisations += c
+      else comptes.deductible += c
+      const ligne = tva < 0 ? '15' : immobilisee ? '19' : '20'
+      cumul[`l${ligne}`] += signe * c
+      retenues.push({ piece, part, ligne })
       continue
     }
 
@@ -394,11 +477,12 @@ export function calculerCa3(
         ecarter('tva_non_lue', LIBELLE_MOTIF_ECART.tva_non_lue)
         continue
       }
+      const { base: b } = centimesDe(base, 0)
       if (base < 0) {
-        ajouter('F8', base)
+        cumul.F8 -= b
         retenues.push({ piece, part, ligne: 'F8' })
       } else {
-        ajouter('E2', base)
+        cumul.E2 += b
         retenues.push({ piece, part, ligne: 'E2' })
       }
       continue
@@ -418,18 +502,20 @@ export function calculerCa3(
       ecarter('taux_a_placer', LIBELLE_MOTIF_ECART.taux_a_placer)
       continue
     }
+    const { base: b, tva: c } = centimesDe(montantRetenu(piece, true)!, tva)
+    comptes.collectee += c
     if (tva < 0) {
       // Un avoir consenti à un client : sa base est une régularisation du chiffre d'affaires (B5), sa
       // taxe se récupère ligne 21. Retrancher l'un ou l'autre d'une ligne de taux inscrirait une somme
       // négative, ce que la notice interdit.
-      ajouter('B5', ht)
-      ajouter('l21', tva)
+      cumul.B5 -= b
+      cumul.l21 -= c
       retenues.push({ piece, part, ligne: 'B5' })
       continue
     }
-    ajouter('A1', ht)
-    ajouter(`base${ligne}`, ht)
-    ajouter(`taxe${ligne}`, tva)
+    cumul.A1 += b
+    cumul[`base${ligne}`] += b
+    cumul[`taxe${ligne}`] += c
     retenues.push({ piece, part, ligne })
   }
 
@@ -455,6 +541,7 @@ export function calculerCa3(
       releveRetenues.push({ part, ligne: sortie ? 'F8' : 'E2' })
       continue
     }
+    comptes.collectee += sortie ? -centimes(tva) : centimes(tva)
     if (sortie) {
       cumul.B5 += centimes(ht)
       cumul.l21 += centimes(tva)
@@ -473,7 +560,8 @@ export function calculerCa3(
   const l23 = arrondis.l19 + arrondis.l20 + arrondis.l21 + l22
   const l25 = Math.max(0, l23 - l16)
   const lTD = Math.max(0, l16 - l23)
-  const cases: CasesCa3 = { ...arrondis, l16, l22, l23, l25, lTD, l27: l25, l28: lTD, l32: lTD }
+  const l26 = Math.min(l25, Math.max(0, Math.round(remboursement)))
+  const cases: CasesCa3 = { ...arrondis, l16, l22, l23, l25, lTD, l26, l27: l25 - l26, l28: lTD, l32: lTD }
 
   return {
     periode: { debut: periode.debut, fin: periode.fin },
@@ -487,16 +575,25 @@ export function calculerCa3(
     achatsEnDeviseSansTva,
     releveRetenues,
     releveEcartees,
+    tvaDesComptes: {
+      collectee: comptes.collectee / 100,
+      deductible: comptes.deductible / 100,
+      immobilisations: comptes.immobilisations / 100,
+    },
   }
 }
 
 // ── Les déclarations déposées ───────────────────────────────────────────────────────────────────
 
-// Le crédit qu'une déclaration déposée a reporté sur la suivante : sa ligne 27, qui vaut le total
-// déductible moins la TVA brute quand il est positif — autrement dit le crédit reçu moins la TVA
-// nette de la période. Aucun remboursement (ligne 26) n'est modélisé : tout le crédit est reporté.
-export function creditReporte(declaration: Pick<DeclarationTva, 'tva_declaree' | 'credit_anterieur'>): number {
-  return Math.max(0, declaration.credit_anterieur - declaration.tva_declaree)
+// Le crédit qu'une déclaration déposée a reporté sur la suivante : sa ligne 27, le crédit de la période
+// (ligne 25 : le crédit reçu moins la TVA nette de la période, quand il est positif) moins le remboursement
+// demandé (ligne 26), qui ne se reporte pas — le Trésor le rembourse. Le même calcul pour une déclaration
+// saisie à la main, qui n'a pas de cases : la base en vérifie l'égalité pour les autres
+// (`enregistrer_declaration_tva`).
+export function creditReporte(
+  declaration: Pick<DeclarationTva, 'tva_declaree' | 'credit_anterieur' | 'remboursement_demande'>,
+): number {
+  return Math.max(0, Math.max(0, declaration.credit_anterieur - declaration.tva_declaree) - declaration.remboursement_demande)
 }
 
 // La déclaration déposée pour la période qui précède immédiatement `debut`, la plus récente si la
@@ -528,6 +625,7 @@ export function comparerDeclarations(declarations: DeclarationTva[], donnees: Do
       { debut: declaration.periode_debut, fin: declaration.periode_fin },
       surDebits,
       declaration.credit_anterieur,
+      declaration.remboursement_demande,
     ).netPeriode
     const ecart = Math.round((declaration.tva_declaree - recalcul) * 100) / 100
     return { declaration, recalcul, ecart, enEcart: Math.abs(ecart) >= 1 }

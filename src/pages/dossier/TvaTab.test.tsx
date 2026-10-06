@@ -106,7 +106,7 @@ function paiement(pieceId: string, montant: number, date: string): LigneBancaire
   return {
     id: `m-${pieceId}`, dossier_id: 'd', date, libelle: 'VIREMENT', montant, statut: 'rapprochee',
     piece_id: pieceId, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   }
 }
@@ -127,7 +127,9 @@ function encaissementAffecte(o: Partial<LigneBancaire> = {}): LigneBancaire {
 function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
   return {
     id: 'decl', dossier_id: 'd', periode_debut: '2026-10-01', periode_fin: '2026-12-31', tva_declaree: 0,
-    credit_anterieur: 0, date_declaration: '2027-01-20', notes: null, created_at: '2027-01-20T10:00:00Z', ...o,
+    credit_anterieur: 0, remboursement_demande: 0, date_declaration: '2027-01-20', notes: null,
+    created_at: '2027-01-20T10:00:00Z', cases: null, tva_collectee: null, tva_deductible: null,
+    tva_deductible_immobilisations: null, ...o,
   }
 }
 

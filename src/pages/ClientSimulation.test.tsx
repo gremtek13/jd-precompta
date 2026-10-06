@@ -202,7 +202,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
     piece_id: 'r1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
 
@@ -250,7 +250,7 @@ describe('ClientSimulation — des recettes encaissées par un virement groupé'
   const virement = (date: string): LigneBancaire => ({
     id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null, declaration_tva_id: null,
     id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, pieceId: string, montant: number): ReglementGroupe => ({
@@ -366,7 +366,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
   const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
   })
 
@@ -424,7 +424,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
   const remise = (date: string): LigneBancaire => ({
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({
@@ -464,7 +464,7 @@ describe('ClientSimulation — les cotisations prélevées', () => {
   const prelevement = (o: Partial<LigneBancaire>): LigneBancaire => ({
     id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-03-06', libelle: 'PRLV URSSAF', montant: -130, statut: 'rapprochee',
     piece_id: null, cotisation_id: 'e2', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: '2026-03-07T09:00:00Z', ...o,
   })
 

@@ -6,6 +6,7 @@ import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { lignesPourPiece, type LigneAGenerer } from './ecritures'
 import { defautsDeNumerotation } from './validationExercice'
 import { lettrages, type LettrageDeLigne } from './lettrage'
+import { ecritureDeLaLiquidation, ecritureDuPaiementTva, type DeclarationLiquidable } from './liquidationTva'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -399,7 +400,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
       id: 'l-rb', dossier_id: 'd1', date: '2026-02-10', libelle: 'VIR REMBOURSEMENT PRET', montant: 500, statut: 'rapprochee',
       piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
-      reglement_groupe: false, compte_bilan: '274100', id_externe: null, source_fichier: null, libelle_brut: null,
+      reglement_groupe: false, compte_bilan: '274100', declaration_tva_id: null, id_externe: null, source_fichier: null, libelle_brut: null,
       created_at: '2026-02-11T00:00:00Z',
     }
     const ecritures = [
@@ -673,7 +674,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
   })
   const cpam = mouvement('l-cpam')
@@ -804,7 +805,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
-    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null }
+    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null }
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE)).slice(1)).toEqual([])
   })
 
@@ -831,7 +832,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ['BQ', 'BQ00002', '20260309', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '800,00'],
     ])
     // Le garde symétrique : remis à traiter, le même mouvement n'a plus de justificatif.
-    const remis = { ...depot, statut: 'non_rapprochee' as const, compte_bilan: null }
+    const remis = { ...depot, statut: 'non_rapprochee' as const, compte_bilan: null, declaration_tva_id: null }
     expect(colonnes(genererFec(ecritures.slice(0, 2), [], [], [], 'tresorerie', [remis], SANS_LETTRAGE)).slice(1)).toEqual([])
   })
 
@@ -904,8 +905,8 @@ describe('genererFec — les dotations aux amortissements', () => {
 // de la 2035 n'était nulle part dans le fichier.
 describe('genererFec — les forfaits kilométriques', () => {
   const forfait = (vehiculeId: string, montant: number, date = '2026-12-31', compte = '108000'): EcritureBrouillon[] => [
-    ligne('', { id: `${vehiculeId}-${date}-d`, piece_id: null, vehicule_id: vehiculeId, date, compte: '625110', sens: 'debit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
-    ligne('', { id: `${vehiculeId}-${date}-c`, piece_id: null, vehicule_id: vehiculeId, date, compte, sens: 'credit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
+    ligne('', { id: `${vehiculeId}-${date}-d`, piece_id: null, vehicule_id: vehiculeId, declaration_tva_id: null, date, compte: '625110', sens: 'debit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
+    ligne('', { id: `${vehiculeId}-${date}-c`, piece_id: null, vehicule_id: vehiculeId, declaration_tva_id: null, date, compte, sens: 'credit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
   ]
 
   it('portent une écriture par véhicule au journal OD, le barème pour pièce', () => {
@@ -939,6 +940,67 @@ describe('genererFec — les forfaits kilométriques', () => {
   it('n’ont pas de compte auxiliaire, même au compte courant du dirigeant en engagement', () => {
     const rows = colonnes(genererFec(forfait('v1', 23.81, '2026-12-31', '455000'), [], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
     expect(rows.map((r) => [r[4], r[6], r[7]])).toEqual([['625110', '', ''], ['455000', '', '']])
+  })
+})
+
+// LA LIQUIDATION D'UNE DÉCLARATION DE TVA (lib/liquidationTva.ts) : une écriture par déclaration au journal des
+// OPÉRATIONS DIVERSES, au dernier jour de la période, la CA3 pour pièce. Son paiement et le remboursement d'un crédit
+// sont des mouvements justifiés par le relevé, au journal de banque.
+describe('genererFec — la liquidation de la TVA, son paiement et son remboursement', () => {
+  const q1: DeclarationLiquidable = {
+    periode_debut: '2026-01-01', periode_fin: '2026-03-31', tva_collectee: 100.40, tva_deductible: 20.60,
+    tva_deductible_immobilisations: 0,
+    cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
+  }
+  const liquidation = ecritureDeLaLiquidation(q1).map((l, i) => ligne('', {
+    id: `q1-${i}`, piece_id: null, declaration_tva_id: 'q1', date: '2026-03-31', ...l,
+  }))
+  const prelevement: LigneBancaire = {
+    id: 'l-tva', dossier_id: 'd1', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,
+    source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z',
+  }
+  const paiement = ecritureDuPaiementTva(prelevement).map((l, i) => ligne('', {
+    id: `p-${i}`, piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', ...l,
+  }))
+
+  it('porte la liquidation au journal OD, la CA3 arrêtée au dernier jour de la période pour pièce', () => {
+    const rows = colonnes(genererFec(liquidation, [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
+      ['OD', 'OD00001', '20260331', '445710', 'TVA collectée', '', 'CA3 au 31/03/2026', '20260331', '100,40', '0,00'],
+      ['OD', 'OD00001', '20260331', '445510', 'TVA à décaisser', '', 'CA3 au 31/03/2026', '20260331', '0,00', '79,00'],
+      ['OD', 'OD00001', '20260331', '445660', 'TVA déductible', '', 'CA3 au 31/03/2026', '20260331', '0,00', '20,60'],
+      ['OD', 'OD00001', '20260331', '758000', 'Produits divers de gestion courante', '', 'CA3 au 31/03/2026', '20260331', '0,00', '0,80'],
+    ])
+  })
+
+  it('porte son paiement au journal de banque, le relevé pour pièce, et le fichier passe les contrôles de la DGFiP', () => {
+    const fec = genererFec([...liquidation, ...paiement], [], [], [], 'tresorerie', [prelevement], SANS_LETTRAGE)
+    const rows = colonnes(fec).slice(1)
+    expect(rows.filter((r) => r[0] === 'BQ').map((r) => [r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
+      ['BQ00001', '20260420', '445510', 'releve-avril-2026.pdf', '79,00', '0,00'],
+      ['BQ00001', '20260420', COMPTE_BANQUE, 'releve-avril-2026.pdf', '0,00', '79,00'],
+    ])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+  })
+
+  it('laisse dehors l’écriture d’un paiement que plus rien ne rapproche', () => {
+    const remis = { ...prelevement, statut: 'non_rapprochee' as const, declaration_tva_id: null }
+    const n = numeroterFec(paiement, [], [], [], 'tresorerie', [remis])
+    expect(n.lignes).toEqual([])
+    expect(n.horsFec.map((e) => e.id).sort()).toEqual(['p-0', 'p-1'])
+  })
+
+  it('numérote la liquidation avec les autres opérations diverses, dans l’ordre des dates', () => {
+    const dotation = [
+      ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
+      ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
+    ]
+    const rows = colonnes(genererFec([...dotation, ...liquidation], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    expect([...new Set(rows.map((r) => `${r[2]} ${r[8]}`))]).toEqual(['OD00001 CA3 au 31/03/2026', "OD00002 Tableau d'amortissement 2026"])
   })
 })
 

@@ -19,7 +19,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
     id: 'g', dossier_id: 'd1', date: '2026-03-10', libelle: 'VIR FOURNISSEUR', libelle_brut: null, montant: -900,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
-    ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null, created_at: '2026-03-11T09:00:00Z', ...o,
+    ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-11T09:00:00Z', ...o,
   }
 }
 
@@ -222,7 +222,7 @@ describe('les autres classements refusent un mouvement réglé en groupe', () =>
 
   it('ne le dit pas « rapproché sans justificatif » : ses pièces sont dans ses parts', () => {
     expect(mouvementRapprocheSansObjet(groupe)).toBe(false)
-    expect(mouvementRapprocheSansObjet({ ...groupe, reglement_groupe: false, compte_bilan: null })).toBe(true)
+    expect(mouvementRapprocheSansObjet({ ...groupe, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null })).toBe(true)
   })
 })
 

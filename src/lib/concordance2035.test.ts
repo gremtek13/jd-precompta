@@ -11,8 +11,10 @@ import { ecritureDuForfait } from './forfaitKilometrique'
 import { partsDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { ecritureDeLaVentilation } from './ventilationBanque'
+import { ecritureDeLaLiquidation } from './liquidationTva'
 import type {
-  Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire,
+  Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier,
+  VentilationBancaire,
 } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 
@@ -44,7 +46,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2025-03-15', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
   libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
-  ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null, created_at: '2025-03-16T09:00:00Z', ...o,
+  ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-03-16T09:00:00Z', ...o,
 })
 
 const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
@@ -71,7 +73,7 @@ const brouillon = (
 ): EcritureBrouillon[] => lignes.map((l) => ({
   id: `e${++numero}`, dossier_id: 'd1', piece_id: l.piece_id ?? null, ligne_bancaire_id: l.ligne_bancaire_id ?? null,
   date: l.date ?? '2025-03-15', compte: l.compte, libelle: l.libelle ?? 'écriture', montant: l.montant, sens: l.sens,
-  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...lien,
+  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, ...lien,
 }))
 
 // UN DOSSIER COMPLET, écrit par l'application : une facture payée, une recette sans paiement rapproché, des
@@ -106,19 +108,22 @@ function dossier(o: { assujetti?: boolean } = {}) {
     ...brouillon(ecritureDeLaVentilation(abonnement, ventilations, categories, TRESORERIE, assujetti)!, { ligne_bancaire_id: 'l-tel', date: abonnement.date }),
     ...brouillon(ecritureDeLaCotisation(prelevement, appel, 'tresorerie'), { ligne_bancaire_id: 'l-cotis', date: prelevement.date }),
     ...brouillon(ecritureDeLaDotation(bien, '218300', 2025, null), { immobilisation_id: 'i', date: '2025-12-31' }),
-    ...brouillon(ecritureDuForfait(vehicule, TRESORERIE, null)!, { vehicule_id: 'v', date: '2025-12-31' }),
+    ...brouillon(ecritureDuForfait(vehicule, TRESORERIE, null)!, { vehicule_id: 'v', declaration_tva_id: null, date: '2025-12-31' }),
   ]
   return { pieces: [facture, recette], lignes, ventilations, cotisations: [appel], ecritures, assujetti }
 }
 
 type Dossier = ReturnType<typeof dossier>
 
-function concordance(d: Dossier, o: { annee?: number; ouverture?: string | null; immobilisations?: Immobilisation[]; vehicules?: VehiculeDossier[] } = {}) {
+function concordance(d: Dossier, o: {
+  annee?: number; ouverture?: string | null; immobilisations?: Immobilisation[]; vehicules?: VehiculeDossier[]
+  declarationsTva?: DeclarationTva[]
+} = {}) {
   const immobilisations = o.immobilisations ?? [bien]
   const declaration = calculerDeclaration2035(
     o.annee ?? 2025, d.pieces, categories, immobilisations,
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
-    paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti),
+    paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [],
   )
   return concordance2035(
     declaration, d.ecritures,
@@ -179,6 +184,48 @@ describe('concordance2035 — une comptabilité écrite par l’application', ()
       ecritures: deux.flatMap((p) => brouillon(lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true, paiements.get(p.id) ?? [], TRESORERIE), {})) }
     expect(concordance(e, { annee: 2025, immobilisations: [], vehicules: [] }).ecarts).toEqual([])
     expect(concordance(e, { annee: 2026, immobilisations: [], vehicules: [] }).ecarts).toEqual([])
+  })
+})
+
+// L'ARRONDI D'UNE LIQUIDATION DE TVA (lib/liquidationTva.ts) : la 2035 le compte en gains divers ou en frais
+// divers, l'écriture de la liquidation le porte au 758000 ou au 658000 — à la fin de la période.
+describe('concordance2035 — l’arrondi d’une liquidation de TVA', () => {
+  const q1: DeclarationTva = {
+    id: 'q1', dossier_id: 'd1', periode_debut: '2025-01-01', periode_fin: '2025-03-31', tva_declaree: 79,
+    credit_anterieur: 0, remboursement_demande: 0, date_declaration: '2025-04-15', notes: null, created_at: '2025-04-15T09:00:00Z',
+    cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
+    tva_collectee: 100.40, tva_deductible: 20.60, tva_deductible_immobilisations: 0,
+  }
+  const liquidation = (d: DeclarationTva) => brouillon(ecritureDeLaLiquidation(d), { declaration_tva_id: d.id, date: d.periode_fin })
+
+  it('concorde quand la liquidation est écrite : un produit au 758000, compté en gains divers', () => {
+    const d = dossier({ assujetti: true })
+    d.ecritures.push(...liquidation(q1))
+    const c = concordance(d, { declarationsTva: [q1] })
+    expect(c.ecarts).toEqual([])
+    expect(c.declaration.recettes).toBe(500.80)
+  })
+
+  it('une charge au 658000, comptée en frais divers', () => {
+    const d = dossier({ assujetti: true })
+    const charge = { ...q1, tva_collectee: 99.20 }
+    d.ecritures.push(...liquidation(charge))
+    const c = concordance(d, { declarationsTva: [charge] })
+    expect(c.ecarts).toEqual([])
+    expect(c.ecritures.depenses).toBe(5959.93)
+  })
+
+  it('une liquidation sans écriture : la 2035 compte l’arrondi, rien ne le porte — à retrouver dans l’onglet TVA', () => {
+    const c = concordance(dossier({ assujetti: true }), { declarationsTva: [q1] })
+    expect(motifs(c.ecarts)).toEqual([['declaration:q1', 'sans_ecriture']])
+    expect(c.ecarts[0]).toMatchObject({ declaration: 0.80, libelle: 'Arrondi de la CA3 1er trimestre 2025', date: '2025-03-31', comptesDeclaration: ['758000'] })
+    expect(ouAgir(c.ecarts[0])).toBe('TVA')
+  })
+
+  it('l’arrondi d’une période d’un autre exercice ne compte pas dans celui-ci', () => {
+    const q4 = { ...q1, id: 'q4', periode_debut: '2024-10-01', periode_fin: '2024-12-31' }
+    const c = concordance(dossier({ assujetti: true }), { declarationsTva: [q4] })
+    expect(c.ecarts).toEqual([])
   })
 })
 
@@ -509,7 +556,7 @@ describe('ouAgir', () => {
 
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
-    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [],
+    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [],
   )
 
   it('dit un compte que deux postes de cases différentes partagent', () => {

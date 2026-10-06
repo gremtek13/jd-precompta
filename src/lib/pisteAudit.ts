@@ -2,6 +2,7 @@ import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
+import { referenceDeLaLiquidation } from './fec'
 import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
@@ -57,11 +58,14 @@ export interface RuptureAudit {
 // se supprime qu'avec ses dotations —, donc `immobilisation_id` ne tombe jamais à nul sous elle, et le lire
 // suffit, sans dépendre du registre chargé à côté. NI LE FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts),
 // pour la même raison : son justificatif est le BARÈME appliqué au kilométrage du cadre 7, et sa clé vers le
-// véhicule est sans action elle aussi — un véhicule ne se retire qu'avec son forfait (`retirer_vehicule`).
+// véhicule est sans action elle aussi — un véhicule ne se retire qu'avec son forfait (`retirer_vehicule`). NI LA
+// LIQUIDATION D'UNE DÉCLARATION DE TVA (lib/liquidationTva.ts) : son justificatif est la CA3, et sa clé est sans
+// action — une déclaration ne se retire qu'avec sa liquidation (`retirer_declaration_tva`).
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
-    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id) {
+    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
+      && !ecriture.declaration_tva_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
@@ -102,10 +106,12 @@ export interface AbsenceFec {
 // incomplet peut se déclarer est donc l'écran qui l'engendre.
 //
 // Les écritures des mouvements justifiés par le relevé, elles, y sont — au journal de banque, avec le
-// relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements et les forfaits
-// kilométriques, au journal des opérations diverses avec le tableau d'amortissement ou le barème pour pièce.
+// relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements, les forfaits kilométriques
+// et la liquidation de la TVA, au journal des opérations diverses avec le tableau d'amortissement, le barème ou la
+// CA3 pour pièce.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
-  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id)
+  const horsFec = ecritures.filter((e) =>
+    !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -205,6 +211,7 @@ export function pisteAudit(
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
     if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -366,6 +373,30 @@ function ligneDuForfait(e: EcritureBrouillon, vehiculeParId: ReadonlyMap<string,
     // Même distinction qu'ailleurs : la clé ne tombe jamais à nul sous un forfait, donc un véhicule absent ne
     // peut venir que d'un jeu de lignes restreint par l'appelant.
     manque: vehicule ? [] : ['véhicule hors du jeu chargé'],
+  }
+}
+
+// La ligne d'une liquidation de TVA : la CA3 arrêtée au dernier jour de sa période pour justificatif — la pièce que
+// le FEC lui donne (`referenceDeLaLiquidation`). Rien du relevé : la liquidation solde des comptes, son paiement est
+// un mouvement à part, justifié par le relevé. Sans empreinte : la déclaration n'est pas un fichier déposé.
+function ligneDeLiquidation(e: EcritureBrouillon): LignePisteAudit {
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: e.date,
+    pieceMontantTtc: null,
+    pieceFichier: `Déclaration de TVA : ${referenceDeLaLiquidation(e.date)}`,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
   }
 }
 

@@ -1,5 +1,5 @@
 import { libelleExploitable } from './appariementBanque'
-import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
+import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
@@ -42,7 +42,7 @@ export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'taux_tva' | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
-  | 'ventilee' | 'reglement_groupe' | 'compte_bilan'
+  | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id'
 >
 
 // Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, à ce taux, dit AVANT d'écrire. La
@@ -61,6 +61,8 @@ export function refusAffectation(
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
   if (surUnCompteDeBilan) return surUnCompteDeBilan
+  const paieUneDeclaration = refusPaieUneDeclarationTva(ligne)
+  if (paieUneDeclaration) return paieUneDeclaration
   if (ligne.piece_id || ligne.cotisation_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }
@@ -177,18 +179,19 @@ export function mouvementsAffectes(
 }
 
 // UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ : son écriture n'a pas de pièce, et c'est légitime — le relevé
-// qui le porte en est le justificatif. Six cas : affecté à une catégorie (rapproché, portant une
+// qui le porte en est le justificatif. Sept cas : affecté à une catégorie (rapproché, portant une
 // catégorie), rapproché d'un emprunt dont il est une échéance ou le déblocage (lib/echeanceEmprunt.ts),
 // rapproché d'une échéance de cotisation (lib/cotisationRapprochee.ts), ventilé sur plusieurs comptes
-// (lib/ventilationBanque.ts), écrit sur un compte de bilan (lib/compteDeBilan.ts), ou classé en virement
-// personnel (lib/virementPersonnel.ts), écrit sur le compte du dirigeant. Ce qui dit, pour une écriture
-// sans pièce, si elle est l'écriture d'un mouvement ou le reste d'une pièce supprimée (une rupture). Voir
+// (lib/ventilationBanque.ts), écrit sur un compte de bilan (lib/compteDeBilan.ts), rapproché de la
+// déclaration de TVA qu'il paie ou rembourse (lib/liquidationTva.ts), ou classé en virement personnel
+// (lib/virementPersonnel.ts), écrit sur le compte du dirigeant. Ce qui dit, pour une écriture sans pièce,
+// si elle est l'écriture d'un mouvement ou le reste d'une pièce supprimée (une rupture). Voir
 // lib/pisteAudit.ts et lib/fec.ts.
 //
 // UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : l'emprunt, la ventilation,
-// la cotisation puis le compte de bilan se sont ajoutés ICI et nulle part ailleurs — une copie oubliée
-// aurait fait sortir leurs écritures du FEC ou crier « sans justificatif » sur une écriture juste, sur l'un
-// des six seulement, donc sans que les autres le disent.
+// la cotisation, le compte de bilan puis la déclaration de TVA se sont ajoutés ICI et nulle part ailleurs
+// — une copie oubliée aurait fait sortir leurs écritures du FEC ou crier « sans justificatif » sur une
+// écriture juste, sur l'un des sept seulement, donc sans que les autres le disent.
 //
 // LU SUR LA LIGNE, SANS LA CATÉGORIE NI LES PARTS, et c'est voulu : la légitimité de l'écriture tient à
 // ce que son mouvement est affecté ou ventilé, pas à ce qu'on a pu lire de sa catégorie ou de ses parts.
@@ -196,15 +199,19 @@ export function mouvementsAffectes(
 // écriture juste — l'artefact de filtrage que `rupturesPisteAudit` refuse déjà de prendre pour une
 // rupture.
 export function mouvementJustifieParLeReleve(
-  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'prelevement_personnel'>,
+  ligne: Pick<LigneBancaire,
+    'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'>,
 ): boolean {
   return (ligne.statut === 'rapprochee'
-    && (!!ligne.categorie_id || !!ligne.emprunt_id || !!ligne.cotisation_id || ligne.ventilee || !!ligne.compte_bilan))
+    && (!!ligne.categorie_id || !!ligne.emprunt_id || !!ligne.cotisation_id || ligne.ventilee || !!ligne.compte_bilan
+      || !!ligne.declaration_tva_id))
     || ligne.prelevement_personnel
 }
 
 export function idsMouvementsJustifiesParLeReleve(
-  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'prelevement_personnel'>[],
+  lignes: readonly Pick<LigneBancaire,
+    'id' | 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'declaration_tva_id'
+    | 'prelevement_personnel'>[],
 ): ReadonlySet<string> {
   return new Set(lignes.filter(mouvementJustifieParLeReleve).map((l) => l.id))
 }

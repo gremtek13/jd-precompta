@@ -325,7 +325,7 @@ describe('StatistiquesTab — les à-nouveaux', () => {
 // Typées SANS `as` : le compilateur vérifie chaque colonne contre la table.
 const ligne = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id' | 'compte' | 'sens' | 'montant' | 'date'>): EcritureBrouillon => ({
   dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, libelle: 'Écriture de test',
-  statut: 'proposee', created_at: '2026-03-01T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...o,
+  statut: 'proposee', created_at: '2026-03-01T09:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, ...o,
 })
 const piece = (o: Partial<Piece> & Pick<Piece, 'id' | 'tiers'>): Piece => ({
   dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload', storage_path: `${o.id}.pdf`, nom_fichier: `${o.id}.pdf`,

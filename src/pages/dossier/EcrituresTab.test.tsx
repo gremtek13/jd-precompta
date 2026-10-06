@@ -937,7 +937,7 @@ describe('EcrituresTab — ce qu’un exercice validé a figé ne se compare plu
   const mouvement = (o: Record<string, unknown>) => ({
     id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve-2025.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, source_fichier: 'releve-2025.pdf', libelle_brut: null,
     created_at: '2025-03-13T09:00:00Z', ...o,
   })
   const validee = (o: Record<string, unknown>) => ecriture({ statut: 'validee', ...o })
@@ -997,7 +997,7 @@ describe('EcrituresTab — les gestes sur un exercice validé', () => {
   const mouvement = (o: Record<string, unknown>) => ({
     id: 'l-dec', dossier_id: 'dossier-de-test', date: '2025-12-10', libelle: 'PRLV FOURNISSEUR', montant: -400,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, source_fichier: 'releve.pdf', libelle_brut: null,
     created_at: '2025-12-11T09:00:00Z', ...o,
   })
   // Une facture de novembre 2025 payée 400 € en décembre — dans l'exercice validé — et 600 € en février.
@@ -1282,7 +1282,7 @@ describe('EcrituresTab — un virement qui règle plusieurs pièces', () => {
 
   it('une pièce payée en deux fois reçoit une contrepartie par paiement, et sa charge se répartit entre eux', async () => {
     // 48 € prélevés seuls le 6 janvier, puis les 72 € restants dans un virement qui règle aussi une autre pièce.
-    const ACOMPTE = { ...VIREMENT, id: 'l1', montant: -48, piece_id: 'p1', reglement_groupe: false, compte_bilan: null }
+    const ACOMPTE = { ...VIREMENT, id: 'l1', montant: -48, piece_id: 'p1', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null }
     const SOLDE = { ...VIREMENT, id: 'g2', date: '2025-02-10', montant: -152 }
     poser({
       pieces: [P1, P2], lignes_bancaires: [ACOMPTE, SOLDE],
@@ -2357,7 +2357,7 @@ describe('EcrituresTab — les mouvements écrits sur un compte de bilan', () =>
   it('le garde symétrique : remis à traiter, ses écritures sont une rupture et sortent du FEC', async () => {
     poser({
       categories: [CATEGORIE_ACHATS],
-      lignes_bancaires: [mouvement({ statut: 'non_rapprochee', compte_bilan: null })],
+      lignes_bancaires: [mouvement({ statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null })],
       ecritures_brouillon: ecrituresDu(),
     })
     monter()
@@ -2514,8 +2514,8 @@ describe('EcrituresTab — les forfaits kilométriques', () => {
   }
   // 12 000 km × 0,357 + 1 395 € : le barème 2025 d'une voiture de 5 CV.
   const FORFAIT_2025 = [
-    ecriture({ id: 'k1', piece_id: null, vehicule_id: 've1', date: '2025-12-31', compte: '625110', sens: 'debit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
-    ecriture({ id: 'k2', piece_id: null, vehicule_id: 've1', date: '2025-12-31', compte: '108000', sens: 'credit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
+    ecriture({ id: 'k1', piece_id: null, vehicule_id: 've1', declaration_tva_id: null, date: '2025-12-31', compte: '625110', sens: 'debit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
+    ecriture({ id: 'k2', piece_id: null, vehicule_id: 've1', declaration_tva_id: null, date: '2025-12-31', compte: '108000', sens: 'credit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
   ]
 
   it('ne crie pas à la rupture, et porte le forfait au FEC, au journal des opérations diverses', async () => {
@@ -2534,7 +2534,7 @@ describe('EcrituresTab — les forfaits kilométriques', () => {
   })
 
   it('le garde symétrique : la même écriture sans son véhicule est une rupture, et sort du FEC', async () => {
-    poser({ vehicules: [VEHICULE], ecritures_brouillon: FORFAIT_2025.map((e) => ({ ...e, vehicule_id: null })) })
+    poser({ vehicules: [VEHICULE], ecritures_brouillon: FORFAIT_2025.map((e) => ({ ...e, vehicule_id: null, declaration_tva_id: null })) })
     monter()
     expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
     expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()

@@ -60,6 +60,18 @@ export const COMPTE_INDEMNITES_KILOMETRIQUES = '625110'
 export const COMPTE_VIREMENTS_INTERNES = '580000'
 export const COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES = '275000'
 
+// Les comptes de la LIQUIDATION DE LA TVA (ligne 26.8, voir lib/liquidationTva.ts), décision du cabinet du
+// 06/10/2026 : à l'enregistrement d'une déclaration, une écriture solde la TVA de la période — collectée (445710),
+// déductible (445660, 445620) — sur la TVA à décaisser (445510) ou, pour un crédit, sur le crédit de TVA à reporter
+// (445670) ; le remboursement d'un crédit demandé au Trésor passe par le 445830, que son virement solde ; et l'arrondi
+// à l'euro de chaque ligne de la CA3 va au 658000 (une charge) ou au 758000 (un produit). La base vérifie ces numéros
+// exactement (`liquidation_attendue`, `rapprocher_declaration_tva`).
+export const COMPTE_TVA_A_DECAISSER = '445510'
+export const COMPTE_CREDIT_TVA_A_REPORTER = '445670'
+export const COMPTE_REMBOURSEMENT_TVA_DEMANDE = '445830'
+export const COMPTE_ARRONDIS_CHARGE = '658000'
+export const COMPTE_ARRONDIS_PRODUIT = '758000'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
@@ -83,6 +95,11 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_INDEMNITES_KILOMETRIQUES]: 'Indemnités kilométriques (barème)',
   [COMPTE_VIREMENTS_INTERNES]: 'Virements internes',
   [COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES]: 'Dépôts et cautionnements versés',
+  [COMPTE_TVA_A_DECAISSER]: 'TVA à décaisser',
+  [COMPTE_CREDIT_TVA_A_REPORTER]: 'Crédit de TVA à reporter',
+  [COMPTE_REMBOURSEMENT_TVA_DEMANDE]: "Remboursement de taxes sur le chiffre d'affaires demandé",
+  [COMPTE_ARRONDIS_CHARGE]: 'Charges diverses de gestion courante',
+  [COMPTE_ARRONDIS_PRODUIT]: 'Produits divers de gestion courante',
 }
 
 // LES COMPTES D'AMORTISSEMENT que les dotations créditent : 28 suivi du compte d'immobilisation du bien

@@ -65,12 +65,12 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2026-03-05', libelle: 'VIR VERS LIVRET A', montant: -1000, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
-  compte_bilan: COMPTE_VIREMENTS_INTERNES, id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2026-03-06T09:00:00Z', ...o,
+  compte_bilan: COMPTE_VIREMENTS_INTERNES, declaration_tva_id: null, id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2026-03-06T09:00:00Z', ...o,
 })
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2026-03-05', compte: COMPTE_BANQUE,
-  libelle: 'VIR VERS LIVRET A', sens: 'credit', montant: 1000, statut: 'proposee', immobilisation_id: null, vehicule_id: null,
+  libelle: 'VIR VERS LIVRET A', sens: 'credit', montant: 1000, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
   ...NON_VALIDEE, created_at: '2026-03-06T09:00:00Z', ...o,
 })
 
@@ -96,7 +96,7 @@ const LIGNES: LigneBancaire[] = [
   ligne({ id: 'autre-date' }),
   ligne({ id: 'ligne-de-trop' }),
   ligne({ id: 'apres', date: '2026-03-09', compte_bilan: '274100' }),
-  ligne({ id: 'sans-compte', compte_bilan: null, categorie_id: 'cat' }),
+  ligne({ id: 'sans-compte', compte_bilan: null, declaration_tva_id: null, categorie_id: 'cat' }),
   ligne({ id: 'non-rapproche', statut: 'non_rapprochee' }),
   ligne({ id: 'piece', compte_bilan: '274100' }),
 ]
@@ -118,14 +118,14 @@ const ECRITURES: EcritureBrouillon[] = [
 // Des mouvements ignorés — un encaissement et des paiements réels, un virement personnel (ignoré lui aussi, mais
 // écrit), un mouvement du jour même de l'ouverture et un d'avant — et ce qui ne l'est pas.
 const IGNORES: LigneBancaire[] = [
-  ligne({ id: 'encaissement', statut: 'ignoree', compte_bilan: null, montant: 300 }),
-  ligne({ id: 'paiement', statut: 'ignoree', compte_bilan: null, montant: -120 }),
-  ligne({ id: 'centimes', statut: 'ignoree', compte_bilan: null, montant: -0.07, date: '2026-04-01' }),
-  ligne({ id: 'centimes-bis', statut: 'ignoree', compte_bilan: null, montant: -0.14, date: '2026-04-01' }),
-  ligne({ id: 'personnel', statut: 'ignoree', compte_bilan: null, prelevement_personnel: true, montant: -500 }),
-  ligne({ id: 'jour-ouverture', statut: 'ignoree', compte_bilan: null, montant: -40, date: '2026-01-01' }),
-  ligne({ id: 'avant-ouverture', statut: 'ignoree', compte_bilan: null, montant: -60, date: '2025-12-31' }),
-  ligne({ id: 'a-traiter', statut: 'non_rapprochee', compte_bilan: null }),
+  ligne({ id: 'encaissement', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: 300 }),
+  ligne({ id: 'paiement', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: -120 }),
+  ligne({ id: 'centimes', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: -0.07, date: '2026-04-01' }),
+  ligne({ id: 'centimes-bis', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: -0.14, date: '2026-04-01' }),
+  ligne({ id: 'personnel', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, prelevement_personnel: true, montant: -500 }),
+  ligne({ id: 'jour-ouverture', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: -40, date: '2026-01-01' }),
+  ligne({ id: 'avant-ouverture', statut: 'ignoree', compte_bilan: null, declaration_tva_id: null, montant: -60, date: '2025-12-31' }),
+  ligne({ id: 'a-traiter', statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null }),
   ligne({ id: 'ecrit', statut: 'rapprochee' }),
 ]
 const OUVERTURES = [null, '2026-01-01', '2026-03-06'] as const

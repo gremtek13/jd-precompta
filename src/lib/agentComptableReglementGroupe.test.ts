@@ -56,7 +56,7 @@ const deployee = extraire(sourceDeployee())
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'g', dossier_id: 'd', date: '2025-04-01', libelle: 'VIR FOURNISSEUR', montant: -900, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null, declaration_tva_id: null,
   id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
 })
 const part = (ligneId: string, pieceId: string | null, montant: number): PartReglee => ({ ligne_bancaire_id: ligneId, piece_id: pieceId, montant })
@@ -75,7 +75,7 @@ const CAS_INCOHERENTS: [string, LigneBancaire[], PartReglee[]][] = [
   ['une part dont la pièce a été supprimée', [ligne({})], [part('g', null, -1000), part('g', 'av', 100)]],
   ['des parts qui ne font plus le mouvement', [ligne({})], [part('g', 'fa', -950), part('g', 'av', 100)]],
   ['un règlement groupé sans aucune part', [ligne({})], []],
-  ['des parts sur un mouvement qui ne règle plus en groupe', [ligne({ reglement_groupe: false, compte_bilan: null })], [part('g', 'fa', -900)]],
+  ['des parts sur un mouvement qui ne règle plus en groupe', [ligne({ reglement_groupe: false, compte_bilan: null, declaration_tva_id: null })], [part('g', 'fa', -900)]],
   ['des parts sur un mouvement remis à traiter', [ligne({ statut: 'non_rapprochee' })], [part('g', 'fa', -900)]],
   ['une part dont le mouvement n’a pas été lu', [], [part('g', 'fa', -900)]],
   // Des montants que les flottants représentent mal : la somme se juge en centimes.
@@ -88,15 +88,15 @@ const CAS_INCOHERENTS: [string, LigneBancaire[], PartReglee[]][] = [
 // Chaque cas : les pièces fournies, le relevé, les parts.
 const CAS_EN_TROP: [string, Pick<Piece, 'id' | 'montant_ttc'>[], LigneBancaire[], PartReglee[]][] = [
   ['une pièce payée par un rapprochement ET par la part d’un virement groupé', [piece('fa', 1000)],
-    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, montant: -1000 }), ligne({ montant: -1000 })], [part('g', 'fa', -1000)]],
-  ['un frais sous l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, montant: -1005 })], []],
-  ['un écart juste au-delà de l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, montant: -1005.01 })], []],
+    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 }), ligne({ montant: -1000 })], [part('g', 'fa', -1000)]],
+  ['un frais sous l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005 })], []],
+  ['un écart juste au-delà de l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005.01 })], []],
   ['un avoir remboursé deux fois', [piece('av', -100)],
-    [ligne({ id: 's', piece_id: 'av', reglement_groupe: false, compte_bilan: null, montant: 100 }), ligne({ id: 't', piece_id: 'av', reglement_groupe: false, compte_bilan: null, montant: 100 })], []],
-  ['une pièce sans montant lu', [piece('fa', null)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, montant: -1000 })], []],
+    [ligne({ id: 's', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 }), ligne({ id: 't', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 })], []],
+  ['une pièce sans montant lu', [piece('fa', null)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 })], []],
   ['une pièce que rien ne paie', [piece('fa', 1000)], [], []],
   ['une pièce payée en deux fois, exactement', [piece('fa', 1000)],
-    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, montant: -400 }), ligne({ montant: -600 })], [part('g', 'fa', -600)]],
+    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -400 }), ligne({ montant: -600 })], [part('g', 'fa', -600)]],
 ]
 
 describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {

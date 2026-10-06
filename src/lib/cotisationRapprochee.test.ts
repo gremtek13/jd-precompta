@@ -15,7 +15,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
     id: 'l1', date: '2026-01-06', libelle: 'PRLV URSSAF', libelle_brut: null, montant: -500,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: 'releve-janvier.csv', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
-    emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, ...o,
+    emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, ...o,
   }
 }
 
@@ -34,7 +34,7 @@ function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2026-01-06', compte: COMPTE_BANQUE,
-    libelle: 'PRLV URSSAF', montant: 500, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-01-07T10:00:00Z',
+    libelle: 'PRLV URSSAF', montant: 500, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-01-07T10:00:00Z',
     ...o,
   }
 }

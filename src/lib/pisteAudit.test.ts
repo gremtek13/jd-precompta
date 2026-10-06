@@ -146,7 +146,7 @@ describe('absenceFec', () => {
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-12T00:00:00Z', ...o,
 })
@@ -340,7 +340,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const [ligne] = pisteAudit(part, [], [telephone], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'PRLV OPERATEUR', []])
     // La ventilation annulée, elle n'a plus de justificatif.
-    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null }], [], SANS_REGISTRE)
+    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null }], [], SANS_REGISTRE)
     expect(annule.manque).toEqual(['justificatif'])
   })
 
@@ -354,7 +354,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const [ligne] = pisteAudit(virement, [], [epargne], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'VIR EPARGNE', []])
     // Remis à traiter, il n'a plus de justificatif.
-    const [remis] = pisteAudit(virement, [], [{ ...epargne, statut: 'non_rapprochee', compte_bilan: null }], [], SANS_REGISTRE)
+    const [remis] = pisteAudit(virement, [], [{ ...epargne, statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null }], [], SANS_REGISTRE)
     expect(remis.manque).toEqual(['justificatif'])
   })
 })
@@ -474,7 +474,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
 // justificatif est le BARÈME de l'exercice appliqué au véhicule et au kilométrage du cadre 7.
 describe('pisteAudit — les forfaits kilométriques', () => {
   const forfait = (o: Partial<EcritureBrouillon> = {}) => ecriture({
-    id: 'ik-d', piece_id: null, ligne_bancaire_id: null, vehicule_id: 'v1', date: '2026-12-31', compte: '625110',
+    id: 'ik-d', piece_id: null, ligne_bancaire_id: null, vehicule_id: 'v1', declaration_tva_id: null, date: '2026-12-31', compte: '625110',
     montant: 10_234, libelle: 'Indemnités kilométriques 2026 — Zoé', ...o,
   })
   const zoe: VehiculeDossier = {
@@ -488,8 +488,8 @@ describe('pisteAudit — les forfaits kilométriques', () => {
     expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // Le garde symétrique : la même écriture sans son véhicule est bien une rupture, et hors du FEC.
-    expect(rupturesPisteAudit([forfait({ vehicule_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
-    expect(absenceFec([forfait({ vehicule_id: null })], new Set()).nb).toBe(1)
+    expect(rupturesPisteAudit([forfait({ vehicule_id: null, declaration_tva_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(absenceFec([forfait({ vehicule_id: null, declaration_tva_id: null })], new Set()).nb).toBe(1)
   })
 
   it('donnent le barème, le véhicule et le kilométrage pour justificatif, sans empreinte', () => {
@@ -502,6 +502,43 @@ describe('pisteAudit — les forfaits kilométriques', () => {
   it('disent le véhicule absent du jeu chargé plutôt que de se taire', () => {
     const [ligne] = pisteAudit([forfait()], [], [], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.manque]).toEqual(['Barème kilométrique 2026', ['véhicule hors du jeu chargé']])
+  })
+})
+
+describe('pisteAudit — la liquidation de la TVA', () => {
+  const liquidation = (o: Partial<EcritureBrouillon> = {}) => ecriture({
+    id: 'tva-c', piece_id: null, ligne_bancaire_id: null, vehicule_id: null, immobilisation_id: null,
+    declaration_tva_id: 'q1', date: '2026-03-31', compte: '445710', montant: 100.40, libelle: 'CA3 1er trimestre 2026', ...o,
+  })
+
+  it('n’est pas une rupture, et est dans le FEC', () => {
+    const lignes = [liquidation(), liquidation({ id: 'tva-d', compte: '445510', sens: 'credit', montant: 100.40 })]
+    expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
+    expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
+    // Le garde symétrique : la même écriture sans sa déclaration est bien une rupture, et hors du FEC.
+    expect(rupturesPisteAudit([liquidation({ declaration_tva_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(absenceFec([liquidation({ declaration_tva_id: null })], new Set()).nb).toBe(1)
+  })
+
+  it('donne la CA3 arrêtée au dernier jour de la période pour justificatif, sans empreinte ni mouvement', () => {
+    const [ligne] = pisteAudit([liquidation()], [], [], [], SANS_REGISTRE)
+    expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceDate, ligne.pieceId, ligne.mouvementDate, ligne.manque]).toEqual([
+      'Déclaration de TVA : CA3 au 31/03/2026', null, '2026-03-31', null, null, [],
+    ])
+  })
+
+  it('son paiement est un mouvement justifié par le relevé', () => {
+    const prelevement = {
+      id: 'l-tva', dossier_id: 'd1', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
+      piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+      reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,
+      source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z',
+    } satisfies LigneBancaire
+    const paiement = ecriture({ id: 'p1', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', compte: '445510', montant: 79 })
+    expect(rupturesPisteAudit([paiement], new Set(['l-tva']))).toEqual([])
+    const [ligne] = pisteAudit([paiement], [], [prelevement], [], SANS_REGISTRE)
+    expect([ligne.pieceFichier, ligne.mouvementDate, ligne.manque]).toEqual(['Relevé bancaire : releve-avril-2026.pdf', '2026-04-20', []])
   })
 })
 

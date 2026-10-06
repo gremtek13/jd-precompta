@@ -11,8 +11,8 @@ import type { ModeleComptable } from './engagement'
 import { COMPTE_BANQUE } from './comptes'
 import type { Emprunt } from './emprunts'
 import type {
-  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire,
-  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
+  LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 
@@ -34,13 +34,13 @@ const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
 const ligne = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id, dossier_id: 'd1', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
   id_externe: null, source_fichier: 'releve-2025.pdf', libelle_brut: null, created_at: '2025-04-01T09:00:00Z', ...o,
 })
 
 const ecriture = (id: string, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id, dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-12', compte: '606100', libelle: 'Fournisseur',
-  montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE,
+  montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
   created_at: '2025-04-01T09:00:00Z', ...o,
 })
 
@@ -71,6 +71,12 @@ const bien = (id: string, o: Partial<Immobilisation> = {}): Immobilisation => ({
   id, dossier_id: 'd1', piece_id: 'p9', nature_id: 'n1', libelle: 'Fauteuil', valeur: 1200, date_acquisition: '2025-01-01',
   date_mise_en_service: null, duree_annees: 5, created_at: '2025-01-01T00:00:00Z', ...o,
 })
+// Une déclaration de TVA enregistrée par la CA3 de l'application, néant par défaut : sa liquidation ne porte rien.
+const declarationTva = (id: string, debut: string, fin: string, o: Partial<DeclarationTva> = {}): DeclarationTva => ({
+  id, dossier_id: 'd1', periode_debut: debut, periode_fin: fin, tva_declaree: 0, credit_anterieur: 0, remboursement_demande: 0,
+  date_declaration: null, notes: null, created_at: '2025-01-01T00:00:00Z', cases: {}, tva_collectee: 0, tva_deductible: 0,
+  tva_deductible_immobilisations: 0, ...o,
+})
 const vehicule = (id: string, annee: number, km: number): VehiculeDossier => ({
   id, dossier_id: 'd1', annee, modele: 'Clio', type: 'voiture', puissance_fiscale: 5, bareme: 'bnc', motorisation: 'thermique',
   carburant: 'diesel', km_professionnel: km, inscrit_immobilisations: false, amortissements_a_reintegrer: null,
@@ -90,13 +96,14 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000' }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
-    vehicules: [], emprunts: [], aNouveaux: [], relevesIncoherents: [], doublonsTexte: [], ...o,
+    vehicules: [], emprunts: [], aNouveaux: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
+    doublonsTexte: [], ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements)
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
-    base.assujettiTva, paiements, [],
+    base.assujettiTva, paiements, [], base.declarationsTva,
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -401,6 +408,72 @@ describe('prealablesDeValidation — les mouvements ignorés', () => {
   })
 })
 
+// LA TVA LIQUIDÉE (lib/liquidationTva.ts) : une écriture de liquidation ou de paiement qui suit sa déclaration se valide ;
+// une période de l'exercice qu'aucune déclaration ne couvre se dit, sans refuser — une CA12, ou une déclaration faite
+// ailleurs, ne passe pas par l'application.
+describe('prealablesDeValidation — la TVA liquidée', () => {
+  const Q = (n: number) => [`2025-${String(3 * n - 2).padStart(2, '0')}-01`, `2025-${String(3 * n).padStart(2, '0')}-${n === 1 || n === 4 ? 31 : 30}`] as const
+  const trimestres = [1, 2, 3, 4].map((n) => declarationTva(`q${n}`, ...Q(n)))
+
+  it('valide une liquidation et un paiement écrits comme la base les écrit', () => {
+    const q1 = declarationTva('q1', ...Q(1), { tva_declaree: 79, tva_collectee: 100.40, tva_deductible: 20.60, cases: {
+      l16: 100, l20: 21, l23: 21, l28: 79, l32: 79,
+    } })
+    const liquidation = [
+      ecriture('lq1', { piece_id: null, declaration_tva_id: 'q1', date: '2025-03-31', compte: '445710', montant: 100.40 }),
+      ecriture('lq2', { piece_id: null, declaration_tva_id: 'q1', date: '2025-03-31', compte: '445660', sens: 'credit', montant: 20.60 }),
+      ecriture('lq3', { piece_id: null, declaration_tva_id: 'q1', date: '2025-03-31', compte: '445510', sens: 'credit', montant: 79 }),
+      // L'arrondi à l'euro de la CA3 : un produit de l'exercice, que la 2035 compte en « Gains divers ».
+      ecriture('lq4', { piece_id: null, declaration_tva_id: 'q1', date: '2025-03-31', compte: '758000', sens: 'credit', montant: 0.80 }),
+    ]
+    const prelevement = ligne('lt', { date: '2025-04-20', montant: -79, declaration_tva_id: 'q1' })
+    const paiement = [
+      ecriture('pt1', { piece_id: null, ligne_bancaire_id: 'lt', date: '2025-04-20', compte: COMPTE_BANQUE, sens: 'credit', montant: 79 }),
+      ecriture('pt2', { piece_id: null, ligne_bancaire_id: 'lt', date: '2025-04-20', compte: '445510', montant: 79 }),
+    ]
+    const d = donnees({ declarationsTva: [q1], lignes: [L1, prelevement], ecritures: [E1, E2, ...liquidation, ...paiement] })
+    const etat = prealablesDeValidation(d)
+    expect(etat.prealables).toEqual([])
+    // La liquidation au journal des opérations diverses, le paiement à celui de banque : rien d'orphelin.
+    expect(etat.numerotation!.horsFec).toEqual([])
+    // Le garde symétrique : un montant qui ne suit plus se refuse, d'un côté comme de l'autre.
+    const faussee = (id: string, montant: number) => (e: EcritureBrouillon) => (e.id === id ? { ...e, montant } : e)
+    expect(ids({ ...d, ecritures: d.ecritures.map(faussee('lq3', 80)).map(faussee('lq1', 101.40)) })).toContain('liquidations-tva-perimees')
+    expect(ids({ ...d, ecritures: d.ecritures.map(faussee('pt1', 80)).map(faussee('pt2', 80)) })).toContain('paiements-tva-perimes')
+  })
+
+  it('ne juge plus une liquidation ni un paiement qu’un exercice validé a figés', () => {
+    const q4 = declarationTva('q4', ...Q(4), { tva_declaree: 200, tva_collectee: 200, cases: { l16: 200, l28: 200, l32: 200 } })
+    const janvier = ligne('lt', { date: '2026-01-20', montant: -200, declaration_tva_id: 'q4' })
+    // L'exercice 2025 validé : sa liquidation ne se réécrit plus ; le paiement de janvier, lui, se juge en 2026.
+    const d = donnees({ annee: 2026, anneeCourante: 2027, anneesValidees: [2025], declarationsTva: [q4], piecesValidees: [], lignes: [janvier], ecritures: [] })
+    expect(ids(d)).not.toContain('liquidations-tva-perimees')
+    expect(ids(d)).toContain('paiements-tva-perimes')
+  })
+
+  it('avertit, sans refuser, d’une période de l’exercice qu’aucune déclaration ne couvre', () => {
+    const etat = prealablesDeValidation(donnees({ assujettiTva: true, declarationsTva: trimestres.slice(0, 3) }))
+    const p = etat.prealables.find((x) => x.id === 'periodes-tva-non-declarees')
+    expect(p).toMatchObject({ nb: 1, bloquant: false, cible: 'tva', detail: '4e trimestre 2025' })
+    expect(etat.validable).toBe(true)
+    // Toutes les périodes déclarées : rien à dire.
+    expect(ids(donnees({ assujettiTva: true, declarationsTva: trimestres }))).not.toContain('periodes-tva-non-declarees')
+    // Les mois d'une autre périodicité couvrent aussi : trois mois déclarés font un trimestre.
+    const mois = ['10', '11', '12'].map((m) => declarationTva(`m${m}`, `2025-${m}-01`, `2025-${m}-${m === '11' ? 30 : 31}`))
+    expect(ids(donnees({ assujettiTva: true, declarationsTva: [...trimestres.slice(0, 3), ...mois] }))).not.toContain('periodes-tva-non-declarees')
+  })
+
+  it('nomme chaque mois sans déclaration, en mensuelle', () => {
+    const p = prealable(donnees({ assujettiTva: true, periodiciteTva: 'mensuelle', declarationsTva: trimestres.slice(0, 3) }), 'periodes-tva-non-declarees')
+    expect(p).toMatchObject({ nb: 3, detail: 'octobre 2025, novembre 2025, décembre 2025' })
+  })
+
+  it('se tait sur un dossier qui ne déclare pas de TVA, et sur un exercice en cours', () => {
+    expect(ids(donnees({ declarationsTva: [] }))).not.toContain('periodes-tva-non-declarees')
+    expect(ids(donnees({ assujettiTva: true, annee: 2026, anneeCourante: 2026 }))).not.toContain('periodes-tva-non-declarees')
+  })
+})
+
 // CHAQUE CONTRÔLE REPRIS DE LA CHECKLIST, sur un défaut construit pour lui : il se déclenche quand le défaut est
 // dans l'exercice, et se tait quand le même défaut est dans l'exercice suivant — que la validation ne fige pas.
 // Sans le premier cas, un contrôle débranché laisserait figer un défaut ; sans le second, un contrôle qui compte
@@ -480,6 +553,16 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     ['immos-sans-justificatif', (a) => ({ immobilisations: [bien('i1', { piece_id: null, date_acquisition: D(a, '01-01') })], natures: [MATERIEL] })],
     ['dotations-a-ecrire', (a) => ({ immobilisations: [bien('i1', { date_acquisition: D(a, '01-01') })], natures: [MATERIEL] })],
     ['forfaits-a-ecrire', (a) => ({ vehicules: [vehicule('v1', a, 1000)] })],
+    // Une déclaration sans son écriture de liquidation, un paiement de TVA sans la sienne : défensif, la base les écrit
+    // ensemble. La liquidation compte dans l'exercice où finit sa période, le paiement dans celui de son mouvement.
+    ['liquidations-tva-perimees', (a) => ({
+      declarationsTva: [declarationTva('dt1', D(a, '01-01'), D(a, '03-31'), {
+        tva_declaree: 200, tva_collectee: 200, cases: { l16: 200, l28: 200, l32: 200 },
+      })],
+    })],
+    ['paiements-tva-perimes', (a) => ({
+      lignes: [L1, ligne('l2', { date: D(a, '04-20'), montant: -200, declaration_tva_id: 'dt1' })],
+    })],
   ]
 
   // Sans exercice validé, le défaut porté par 2026 ferait aussi juger 2025 sur son activité : 2024 validé l'écarte.
@@ -535,6 +618,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'csg-non-saisie', 'vehicule-amorti-sous-bareme',
         // Un avertissement aussi : un doublon ignoré est le bon geste. Son cas est plus haut.
         'mouvements-ignores',
+        // Un avertissement encore : une CA12 ou une déclaration faite ailleurs. Son cas est plus bas.
+        'periodes-tva-non-declarees',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
