@@ -42,6 +42,11 @@
 -- étrangère que ces migrations ne touchent pas. La table des verdicts disparaît avec la transaction (`on
 -- commit drop`) au lieu d'être supprimée en tête : l'essai ne porte plus d'instruction de suppression
 -- hors de ses contrôles.
+-- REJOUÉ LE 06/10/2026 après `compte_de_bilan_du_releve`, qui réécrit la contrainte d'un seul rapprochement
+-- (un mouvement porte au plus un lien parmi six, le compte de bilan compris) : 34 contrôles sur 34 en
+-- production, le texte transmis identique au fichier, ses commentaires et le contrôle 24 retirés pour la
+-- même raison qu'au 04/10. Les contrôles 22 et 23, qui éprouvent les contraintes que cette migration
+-- touche, y sont.
 create temp table essai_affectation (controle text, observe text, ok boolean) on commit drop;
 
 do $$

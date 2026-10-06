@@ -151,11 +151,14 @@ create table public.tiers_categories (
 
 -- `lignes_bancaires_un_seul_rapprochement` porte une règle métier qu'aucun code ne peut remplacer :
 -- une ligne se rapproche d'UNE pièce, d'UNE cotisation, d'UNE catégorie ou d'UN emprunt, ou bien se
--- ventile, ou bien règle plusieurs pièces par ses parts — jamais deux de ces liens à la fois.
+-- ventile, ou bien règle plusieurs pièces par ses parts, ou bien s'écrit sur UN compte de bilan —
+-- jamais deux de ces liens à la fois.
 -- `lignes_bancaires_affectation_rapprochee`, `lignes_bancaires_emprunt_rapproche`,
--- `lignes_bancaires_ventilation_rapprochee` et `lignes_bancaires_reglement_groupe_rapproche` : un
--- mouvement affecté, rapproché d'un emprunt, ventilé ou qui règle plusieurs pièces est rapproché, et
--- n'est pas un virement personnel. `lignes_bancaires_decoupage_emprunt` : le découpage d'une échéance (intérêts, assurance,
+-- `lignes_bancaires_ventilation_rapprochee`, `lignes_bancaires_reglement_groupe_rapproche` et
+-- `lignes_bancaires_compte_bilan_rapproche` : un mouvement affecté, rapproché d'un emprunt, ventilé,
+-- qui règle plusieurs pièces ou écrit sur un compte de bilan est rapproché, et n'est pas un virement
+-- personnel. `lignes_bancaires_compte_bilan_format` : ce compte de bilan a six à dix chiffres, est de
+-- classe 1 à 5, et n'est jamais le 512 du relevé lui-même. `lignes_bancaires_decoupage_emprunt` : le découpage d'une échéance (intérêts, assurance,
 -- le reste en capital) tient dans le montant payé, et un déblocage n'en a pas.
 -- `lignes_bancaires_echeance_emprunt_unique` : une échéance ne se rapproche que d'un mouvement.
 -- `lignes_bancaires_id_externe_unique` : un mouvement récupéré par la connexion bancaire ne s'importe
@@ -170,7 +173,9 @@ create table public.tiers_categories (
 -- ses deux contraintes) ; et LE 30/09/2026 après `connexion_bancaire_enable_banking` (colonne
 -- `id_externe`, sa contrainte unique) — ligne 24 —, puis `reglement_groupe_des_pieces` (colonne
 -- `reglement_groupe`, sa contrainte, la contrainte d'un seul rapprochement élargie) — ligne 26 ; et LE
--- 01/10/2026 après `recettes_assujetties_du_releve` (colonne `taux_tva`, sa contrainte) — ligne 26.6.
+-- 01/10/2026 après `recettes_assujetties_du_releve` (colonne `taux_tva`, sa contrainte) — ligne 26.6 ; et
+-- LE 06/10/2026 après `compte_de_bilan_du_releve` (colonne `compte_bilan`, ses deux contraintes, la
+-- contrainte d'un seul rapprochement élargie) — ligne 26.7.
 -- Les onze autres tables sont celles du 22/09/2026, à trois près : `natures_immobilisation`,
 -- `immobilisations` et `ecritures_brouillon`, régénérées le 01/10/2026 — voir leur en-tête.
 create table public.lignes_bancaires (
@@ -195,6 +200,7 @@ create table public.lignes_bancaires (
   id_externe text,
   reglement_groupe boolean default false not null,
   taux_tva numeric(4,2),
+  compte_bilan text,
   constraint lignes_bancaires_cotisation_unique UNIQUE (cotisation_id),
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
   constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
@@ -205,13 +211,15 @@ create table public.lignes_bancaires (
   constraint lignes_bancaires_emprunt_id_fkey FOREIGN KEY (emprunt_id) REFERENCES emprunts(id),
   constraint lignes_bancaires_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
   constraint lignes_bancaires_affectation_rapprochee CHECK (((categorie_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
+  constraint lignes_bancaires_compte_bilan_format CHECK (((compte_bilan IS NULL) OR ((compte_bilan ~ '^[1-5][0-9]{5,9}$'::text) AND (compte_bilan !~ '^512'::text)))),
+  constraint lignes_bancaires_compte_bilan_rapproche CHECK (((compte_bilan IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_cotisation_rapprochee CHECK (((cotisation_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_decoupage_emprunt CHECK ((((emprunt_id IS NULL) AND (emprunt_echeance IS NULL) AND (emprunt_interets IS NULL) AND (emprunt_assurance IS NULL)) OR ((emprunt_id IS NOT NULL) AND (emprunt_interets IS NOT NULL) AND (emprunt_assurance IS NOT NULL) AND (emprunt_interets >= (0)::numeric) AND (emprunt_assurance >= (0)::numeric) AND (((montant < (0)::numeric) AND (emprunt_echeance IS NOT NULL) AND (emprunt_echeance >= 1) AND ((emprunt_interets + emprunt_assurance) <= (- montant))) OR ((montant > (0)::numeric) AND (emprunt_echeance IS NULL) AND (emprunt_interets = (0)::numeric) AND (emprunt_assurance = (0)::numeric)))))),
   constraint lignes_bancaires_emprunt_rapproche CHECK (((emprunt_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_reglement_groupe_rapproche CHECK (((NOT reglement_groupe) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_statut_check CHECK ((statut = ANY (ARRAY['non_rapprochee'::text, 'rapprochee'::text, 'ignoree'::text]))),
   constraint lignes_bancaires_taux_tva CHECK (((taux_tva IS NULL) OR ((categorie_id IS NOT NULL) AND (taux_tva = ANY (ARRAY[(0)::numeric, 5.5, 8.5, (10)::numeric, (20)::numeric]))))),
-  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
+  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
   constraint lignes_bancaires_ventilation_rapprochee CHECK (((NOT ventilee) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel))))
 );
 
