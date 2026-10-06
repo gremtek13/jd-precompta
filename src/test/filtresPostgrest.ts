@@ -11,9 +11,9 @@
 //
 // Une forme que ce module ne connaît pas LÈVE au lieu d'être ignorée : un filtre accepté sans être
 // appliqué est exactement la panne qu'il corrige. Il ne modélise que ce dont les écrans se servent —
-// `.eq`, `.is(colonne, null)`, `.not(colonne, 'is', null)` et les termes `eq` et `is.null` d'un `.or` —,
-// et un faux client l'emploie table par table, là où l'écart entre « filtré » et « pas filtré » décide
-// de ce que l'écran montre.
+// `.eq`, `.in`, `.is(colonne, null)`, `.not(colonne, 'is', null)` et les termes `eq` et `is.null` d'un
+// `.or` —, et un faux client l'emploie table par table, là où l'écart entre « filtré » et « pas filtré »
+// décide de ce que l'écran montre.
 
 export type Ligne = Record<string, unknown>
 export type Predicat = (ligne: Ligne) => boolean
@@ -21,6 +21,11 @@ export type Predicat = (ligne: Ligne) => boolean
 /** `.eq(colonne, valeur)`. */
 export function predicatEq(colonne: string, valeur: unknown): Predicat {
   return (ligne) => ligne[colonne] === valeur
+}
+
+/** `.in(colonne, valeurs)` — les lignes dont la colonne vaut l'une des valeurs, comparées à l'identique. */
+export function predicatIn(colonne: string, valeurs: readonly unknown[]): Predicat {
+  return (ligne) => valeurs.includes(ligne[colonne])
 }
 
 /** `.not(colonne, 'is', null)` — les lignes dont la colonne est renseignée. Rien d'autre n'est modélisé. */

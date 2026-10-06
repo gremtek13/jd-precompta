@@ -4,12 +4,13 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
-  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, ReglementGroupe,
-  VentilationBancaire,
+  Categorie, CotisationDeclaree, EcritureBrouillon, LettrageManuel, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree,
+  ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
+import { NON_VALIDEE } from '../../test/ecritures'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -88,6 +89,11 @@ const faux = vi.hoisted(() => ({
   // des écritures que la contrepartie banque relit, sur le filtre que la lecture pose (`statut=validee`).
   ecrituresValidees: [] as { id: string; statut: string; date: string; piece_id: string | null; immobilisation_id: string | null }[],
   immobilisations: [] as { id: string; piece_id: string | null }[],
+  // Les lettrages faits à la main (lib/lettragesLecture.ts), et le brouillon que leur lecture relit — servi FILTRÉ comme
+  // la requête le demande, comptes de tiers seulement : un faux qui rendrait tout ne verrait pas une liste de comptes
+  // amputée.
+  lettrages: [] as LettrageManuel[],
+  brouillon: [] as EcritureBrouillon[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -97,7 +103,7 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesPdf }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
     let idFiltre: unknown = null
@@ -108,6 +114,8 @@ vi.mock('../../lib/supabase', async () => {
     // dossier au lieu du dossier ET du cabinet, elles disparaissent toutes en production — aucune n'y
     // appartient à un dossier —, et un faux qui ignorait les deux filtres ne pouvait pas le voir.
     const predicats: Predicat[] = []
+    // Une lecture du brouillon restreinte à des COMPTES : celle des lettrages faits à la main, servie par `faux.brouillon`.
+    let surDesComptes = false
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
@@ -123,7 +131,11 @@ vi.mock('../../lib/supabase', async () => {
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       order: () => c,
-      in: () => c,
+      in: (colonne: string, valeurs: unknown[]) => {
+        if (colonne === 'compte') surDesComptes = true
+        predicats.push(predicatIn(colonne, valeurs))
+        return c
+      },
       delete: () => { operation = 'delete'; return c },
       update: (valeur: Record<string, unknown>) => {
         operation = 'update'
@@ -156,7 +168,9 @@ vi.mock('../../lib/supabase', async () => {
                     : table === 'ventilations_bancaires' ? faux.ventilations
                       : table === 'reglements_groupes' ? faux.reglements
                         : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees
-                          : table === 'immobilisations' ? faux.immobilisations : []
+                          : table === 'immobilisations' ? faux.immobilisations
+                            : table === 'lettrages_manuels' ? filtrer(faux.lettrages, predicats)
+                              : table === 'ecritures_brouillon' && surDesComptes ? filtrer(faux.brouillon, predicats) : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -213,6 +227,14 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'immobilisations') {
           return Promise.resolve({ data: faux.immobilisations, error: null, count: faux.immobilisations.length }).then(suite)
+        }
+        if (table === 'lettrages_manuels') {
+          const lus = filtrer(faux.lettrages, predicats)
+          return Promise.resolve({ data: lus, error: null, count: lus.length }).then(suite)
+        }
+        if (table === 'ecritures_brouillon' && operation === 'select' && surDesComptes) {
+          const lues = filtrer(faux.brouillon, predicats)
+          return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
         }
         if (table === 'ecritures_brouillon') {
           if (operation === 'delete') faux.suppressionsEcritures.push([...filtres])
@@ -431,6 +453,8 @@ function reinitialiser() {
   faux.reglesIgnorees = []
   faux.ecrituresValidees = []
   faux.immobilisations = []
+  faux.lettrages = []
+  faux.brouillon = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -4364,5 +4388,117 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     rendre(TRESORERIE, false, [2025])
     expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Affecter ce mouvement' })).toBeTruthy()
+  })
+})
+
+// UNE FACTURE QU'UN LETTRAGE FAIT À LA MAIN SOLDE AVEC SON AVOIR N'ATTEND AUCUN MOUVEMENT BANCAIRE (ligne 32, seconde
+// brique). Comptée parmi les montants introuvables dans le relevé, elle portait une alerte « à vérifier » — et un point
+// en erreur dans la Checklist, qui mène ici — qu'aucun paiement ne viendrait jamais éteindre. Seul un lettrage qui TIENT
+// l'écarte, revérifié sur les lignes des comptes de tiers que l'onglet relit (lib/lettragesLecture.ts).
+describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouvement bancaire', () => {
+  const FACTURE = pieceDeTest({ id: 'f-duval', tiers: 'Imprimerie Duval', nom_fichier: 'duval-facture.pdf', montant_ttc: 240 })
+  const AVOIR = pieceDeTest({ id: 'a-duval', tiers: 'Imprimerie Duval', nom_fichier: 'duval-avoir.pdf', montant_ttc: -240 })
+
+  function ligneDuBrouillon(id: string, pieceId: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon {
+    return {
+      id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null,
+      date: '2025-06-01', compte, libelle: 'Imprimerie Duval', sens, montant, statut: 'proposee', created_at: '2025-06-02T09:00:00Z',
+      ...NON_VALIDEE,
+    }
+  }
+
+  // Les écritures des deux factures en engagement : la charge et sa TVA, et le 401 qui porte le TTC.
+  function brouillonDuval(montantAvoir = 240): EcritureBrouillon[] {
+    return [
+      ligneDuBrouillon('e1', 'f-duval', '606400', 'debit', 200),
+      ligneDuBrouillon('e2', 'f-duval', '445660', 'debit', 40),
+      ligneDuBrouillon('e3', 'f-duval', '401000', 'credit', 240),
+      ligneDuBrouillon('e4', 'a-duval', '606400', 'credit', montantAvoir - 40),
+      ligneDuBrouillon('e5', 'a-duval', '445660', 'credit', 40),
+      ligneDuBrouillon('e6', 'a-duval', '401000', 'debit', montantAvoir),
+    ]
+  }
+
+  const LETTRAGE: LettrageManuel[] = [
+    { id: 'lm1', dossier_id: 'dossier-de-test', groupe: 'g1', piece_id: 'f-duval', compte: '401000', created_at: '2025-06-03T09:00:00Z' },
+    { id: 'lm2', dossier_id: 'dossier-de-test', groupe: 'g1', piece_id: 'a-duval', compte: '401000', created_at: '2025-06-03T09:00:00Z' },
+  ]
+
+  function preparer() {
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ id: 'l-autre', libelle: 'PRLV SEPA AUTRE CHOSE', montant: -999 })]
+    faux.pieces = [FACTURE, AVOIR]
+    faux.brouillon = brouillonDuval()
+    faux.lettrages = LETTRAGE
+  }
+
+  const ecarts = () => screen.getByText(/pièce\(s\) validée\(s\) sans mouvement bancaire correspondant/).textContent ?? ''
+
+  it('un lettrage qui tient retire la facture et son avoir des montants introuvables et des pièces sans mouvement', async () => {
+    preparer()
+    rendre(ENGAGEMENT)
+    await screen.findByText('Écarts à vérifier')
+    expect(screen.queryByText(/ne correspond(ent)? à aucun mouvement bancaire/)).toBeNull()
+    expect(ecarts()).toMatch(/· 0 pièce\(s\) validée\(s\) sans mouvement bancaire correspondant/)
+    expect(screen.queryByText(/Les lettrages faits à la main n.ont pas pu être lus/)).toBeNull()
+  })
+
+  // Le garde symétrique : sans lettrage, les deux montants sont introuvables, et l'écran le dit.
+  it('sans lettrage, la facture et son avoir restent des montants introuvables', async () => {
+    preparer()
+    faux.lettrages = []
+    rendre(ENGAGEMENT)
+    expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
+    expect(ecarts()).toMatch(/· 2 pièce\(s\) validée\(s\) sans mouvement bancaire correspondant/)
+  })
+
+  // Un lettrage qui ne se solde plus — l'avoir ne vaut plus que 200 € — laisse la facture attendre son paiement : c'est
+  // que le lettrage TIENNE qui compte, pas d'avoir été lettré.
+  it('un lettrage qui ne se solde plus laisse les deux pièces parmi les montants introuvables', async () => {
+    preparer()
+    faux.pieces = [FACTURE, { ...AVOIR, montant_ttc: -200 }]
+    faux.brouillon = brouillonDuval(200)
+    rendre(ENGAGEMENT)
+    expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
+    expect(ecarts()).toMatch(/· 2 pièce\(s\) validée\(s\) sans mouvement bancaire correspondant/)
+  })
+
+  // Le lettrage se revérifie sur les lignes des COMPTES DE TIERS : sans elles, il ne se vérifie pas, et ne retire rien.
+  it('le lettrage se revérifie sur les lignes du 401 : sans elles, il ne retire rien', async () => {
+    preparer()
+    faux.brouillon = brouillonDuval().filter((e) => e.compte !== '401000')
+    rendre(ENGAGEMENT)
+    expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
+  })
+
+  it('des lettrages lus en partie le disent, en engagement', async () => {
+    preparer()
+    faux.muet = { lettrages_manuels: 1 }
+    rendre(ENGAGEMENT)
+    expect(await screen.findByText(/Les lettrages faits à la main n.ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.getByText(/Une facture qu’un lettrage solde avec son avoir peut donc paraître sans mouvement bancaire/)).toBeTruthy()
+  })
+
+  it('les lignes des comptes de tiers lues en partie le disent aussi', async () => {
+    preparer()
+    faux.muet = { ecritures_brouillon: 0 }
+    rendre(ENGAGEMENT)
+    expect(await screen.findByText(/Les lettrages faits à la main n.ont pas pu être lus en entier/)).toBeTruthy()
+    expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
+  })
+
+  // En trésorerie, rien ne se lettre : un lettrage y est impossible (la base le refuse, et le modèle ne change plus une
+  // fois le brouillon écrit). CAS DÉFENSIF, annoncé comme tel : s'il s'en trouvait un, il ne retirerait rien, et une
+  // lecture partielle des lettrages ne s'y dirait pas.
+  it('en trésorerie, un lettrage ne retire rien et sa lecture partielle ne se dit pas — cas défensif', async () => {
+    preparer()
+    faux.muet = { lettrages_manuels: 1 }
+    rendre(TRESORERIE)
+    await screen.findByText('Écarts à vérifier')
+    expect(screen.queryByText(/Les lettrages faits à la main/)).toBeNull()
+    faux.muet = {}
+    cleanup()
+    rendre(TRESORERIE)
+    expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
   })
 })

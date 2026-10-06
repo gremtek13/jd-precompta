@@ -1235,6 +1235,36 @@ describe('ChecklistTab — en engagement', () => {
     const point = await screen.findByText(/facture\(s\) sans règlement rapproché/)
     expect(point.textContent).toMatch(/^2 /)
   })
+
+  // LE MONTANT INTROUVABLE EN BANQUE, point en ERREUR qui mène à l'onglet Banque : une facture qu'un lettrage qui tient
+  // solde avec son avoir n'attend aucun mouvement, et son montant ne sera jamais dans le relevé. La compter, c'était une
+  // alerte qu'aucun paiement ne viendrait éteindre — et l'onglet Banque, où mène le point, l'écarte de même.
+  const MONTANT_INTROUVABLE = /pièce\(s\) validée\(s\) dont le montant ne correspond à aucun mouvement bancaire/
+
+  it('ne compte pas parmi les montants introuvables les pièces d’un lettrage qui tient', async () => {
+    poser({ ...soldees, lettrages: lettrage })
+    monter(false, ENGAGEMENT)
+    await screen.findAllByText(/^Relevés bancaires \d{4}$/)
+    expect(screen.queryAllByText(MONTANT_INTROUVABLE)).toHaveLength(0)
+  })
+
+  // Le garde symétrique : sans lettrage, les deux montants sont introuvables — aucun relevé ne les porte.
+  it('compte les deux montants introuvables quand rien ne les lettre', async () => {
+    poser(soldees)
+    monter(false, ENGAGEMENT)
+    const point = await screen.findByText(MONTANT_INTROUVABLE)
+    expect(point.textContent).toMatch(/^2 /)
+  })
+
+  it('compte les montants introuvables des pièces d’un lettrage qui ne se solde plus', async () => {
+    poser({
+      validees: [{ ...facture, tiers: 'Garage Martin' }, avoir], categories: [categorie],
+      ecritures: [...ecrituresDeFacture, ...ecrituresAvoir], lettrages: lettrage,
+    })
+    monter(false, ENGAGEMENT)
+    const point = await screen.findByText(MONTANT_INTROUVABLE)
+    expect(point.textContent).toMatch(/^2 /)
+  })
 })
 
 // LIGNE 26.6 : un mouvement du relevé AFFECTÉ à une catégorie est rapproché sans pièce ni échéance,
