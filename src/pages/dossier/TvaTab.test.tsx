@@ -2,26 +2,33 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
-import type { Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
+import type {
+  ANouveau, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
+import { AvecExercicesValides } from '../../test/exercicesValides'
+import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 
-// LE CALCUL EST DANS lib/declarationTva.ts ET SE TESTE LÀ. Ce qui se joue ici est ce qu'aucun test du
-// module ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
-// déclaration précédente, enregistre ce qui a été déposé une seule fois, refuse de l'enregistrer sur
-// une lecture partielle, et écrit le régime du dossier en annulant ce qu'il a affiché si la base refuse.
+// LE CALCUL EST DANS lib/declarationTva.ts ET lib/liquidationTva.ts, ET SE TESTE LÀ. Ce qui se joue ici est ce
+// qu'aucun test des modules ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
+// déclaration précédente, enregistre par la base ce qui a été déposé — sa liquidation comprise — une seule fois,
+// refuse de l'enregistrer sur une lecture partielle ou quand la base le refuserait, saisit à la main une période
+// antérieure à l'ouverture, dit ce qui reste à payer, et écrit le régime du dossier en annulant ce qu'il a affiché
+// si la base refuse.
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   // Tables dont la lecture s'arrête avant le compte annoncé : `lireTout` la déclare incomplète.
   tronquees: new Set<string>(),
   lectures: 0,
-  insertions: [] as { table: string; valeurs: Record<string, unknown> }[],
+  rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
-  suppressions: [] as { table: string; id: unknown }[],
-  // Non nul : l'insertion attend qu'on la libère, pour éprouver le verrou.
+  // Non nul : l'appel à la base attend qu'on le libère, pour éprouver le verrou.
   suspendue: null as null | { liberer: () => void },
-  // Non nul : la relecture des déclarations qui SUIT une insertion attend qu'on la libère.
+  // Non nul : la relecture des déclarations qui SUIT un appel à la base attend qu'on la libère.
   relectureSuspendue: null as null | { liberer: () => void },
   miseAJourRefusee: false,
+  // Non nul : la base refuse l'appel avec ce message.
+  rpcRefuse: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -53,20 +60,9 @@ vi.mock('../../lib/supabase', async () => {
                 count: lignes.length + (faux.tronquees.has(table) ? 1 : 0),
               }
             }
-            const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.insertions.length > 0
+            const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.rpcs.length > 0
             if (!suspendre) return Promise.resolve(reponse()).then(suite)
             return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
-          },
-          insert: (valeurs: Record<string, unknown>) => {
-            faux.insertions.push({ table, valeurs })
-            return new Promise((resoudre) => {
-              const repondre = () => {
-                faux.tables[table] = [...(faux.tables[table] ?? []), { id: `nouvelle-${faux.insertions.length}`, created_at: '2027-04-15T10:00:00Z', notes: null, ...valeurs }]
-                resoudre({ error: null })
-              }
-              if (faux.suspendue) faux.suspendue.liberer = repondre
-              else repondre()
-            })
           },
           update: (valeurs: Record<string, unknown>) => ({
             eq: () => {
@@ -76,15 +72,33 @@ vi.mock('../../lib/supabase', async () => {
                 : { error: null })
             },
           }),
-          delete: () => ({
-            eq: (_colonne: string, id: unknown) => {
-              faux.suppressions.push({ table, id })
-              faux.tables[table] = (faux.tables[table] ?? []).filter((l) => (l as { id: unknown }).id !== id)
-              return Promise.resolve({ error: null })
-            },
-          }),
         })
         return lecture
+      },
+      // Les deux fonctions de la base que l'écran appelle : la déclaration s'enregistre (ou se retire) dans la table,
+      // pour que la relecture la montre.
+      rpc: (nom: string, args: Record<string, unknown>) => {
+        faux.rpcs.push({ nom, args })
+        return new Promise((resoudre) => {
+          const repondre = () => {
+            if (faux.rpcRefuse) return resoudre({ error: { message: faux.rpcRefuse } })
+            if (nom === 'enregistrer_declaration_tva') {
+              faux.tables.declarations_tva = [...(faux.tables.declarations_tva ?? []), {
+                id: `nouvelle-${faux.rpcs.length}`, dossier_id: args.p_dossier_id, periode_debut: args.p_periode_debut,
+                periode_fin: args.p_periode_fin, tva_declaree: args.p_tva_declaree, credit_anterieur: args.p_credit_anterieur,
+                remboursement_demande: args.p_remboursement_demande, date_declaration: args.p_date_declaration, notes: null,
+                created_at: '2027-04-15T10:00:00Z', cases: args.p_cases, tva_collectee: args.p_tva_collectee,
+                tva_deductible: args.p_tva_deductible, tva_deductible_immobilisations: args.p_tva_deductible_immobilisations,
+              }]
+            }
+            if (nom === 'retirer_declaration_tva') {
+              faux.tables.declarations_tva = (faux.tables.declarations_tva ?? []).filter((d) => (d as DeclarationTva).id !== args.p_declaration_id)
+            }
+            resoudre({ data: 0, error: null })
+          }
+          if (faux.suspendue) faux.suspendue.liberer = repondre
+          else repondre()
+        })
       },
     },
   }
@@ -147,27 +161,32 @@ function dossierCourant() {
     reglements_groupes: [],
     categories: [RECETTES, FRAIS],
     ventilations_bancaires: [],
+    a_nouveaux: [],
   }
 }
 
 const MONTANT = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}$`)
 const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as HTMLElement
 
-function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = true, espion }: {
+// Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
+function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = true, valides = [], espion }: {
   periodicite?: PeriodiciteTva
   surDebits?: boolean
   assujetti?: boolean
+  valides?: readonly number[]
   espion?: (m: unknown) => void
 }) {
   const [regime, setRegime] = useState({ tva_periodicite: periodicite, tva_sur_debits: surDebits })
   return (
-    <TvaTab
-      dossierId="d"
-      assujettiTva={assujetti}
-      periodicite={regime.tva_periodicite}
-      surDebits={regime.tva_sur_debits}
-      onRegimeUpdated={(m) => { espion?.(m); setRegime((r) => ({ ...r, ...m })) }}
-    />
+    <AvecExercicesValides annees={valides}>
+      <TvaTab
+        dossierId="d"
+        assujettiTva={assujetti}
+        periodicite={regime.tva_periodicite}
+        surDebits={regime.tva_sur_debits}
+        onRegimeUpdated={(m) => { espion?.(m); setRegime((r) => ({ ...r, ...m })) }}
+      />
+    </AvecExercicesValides>
   )
 }
 
@@ -184,12 +203,12 @@ beforeEach(() => {
   dossierCourant()
   faux.tronquees = new Set()
   faux.lectures = 0
-  faux.insertions = []
+  faux.rpcs = []
   faux.misesAJour = []
-  faux.suppressions = []
   faux.suspendue = null
   faux.relectureSuspendue = null
   faux.miseAJourRefusee = false
+  faux.rpcRefuse = null
 })
 
 afterEach(() => {
@@ -230,19 +249,146 @@ describe('l’onglet TVA', () => {
     expect(within(ligneDe('TVA nette due')).getByText(MONTANT('70,00 €'))).toBeTruthy()
   })
 
-  it('enregistre la TVA nette de la période et le crédit reçu, pas le montant payé', async () => {
+  // LA BASE ENREGISTRE LA DÉCLARATION ET SA LIQUIDATION ENSEMBLE (`enregistrer_declaration_tva`) : la TVA nette de la
+  // période et le crédit reçu, pas le montant payé, ses cases, la TVA exacte des comptes, et l'écriture qui la solde.
+  it('enregistre par la base la TVA nette de la période, le crédit reçu, et l’écriture qui la liquide', async () => {
     faux.tables.declarations_tva = [declaration({ tva_declaree: -80 })]
     await afficher()
     await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
-    expect(faux.insertions).toEqual([{
-      table: 'declarations_tva',
-      valeurs: {
-        dossier_id: 'd', periode_debut: '2027-01-01', periode_fin: '2027-03-31',
-        tva_declaree: 150, credit_anterieur: 80, date_declaration: '2027-04-15',
-      },
-    }])
+    expect(faux.rpcs).toHaveLength(1)
+    expect(faux.rpcs[0].nom).toBe('enregistrer_declaration_tva')
+    expect(faux.rpcs[0].args).toMatchObject({
+      p_dossier_id: 'd', p_periode_debut: '2027-01-01', p_periode_fin: '2027-03-31', p_tva_declaree: 150,
+      p_credit_anterieur: 80, p_remboursement_demande: 0, p_date_declaration: '2027-04-15', p_tva_collectee: 200,
+      p_tva_deductible: 50, p_tva_deductible_immobilisations: 0,
+    })
+    expect(faux.rpcs[0].args.p_cases).toMatchObject({ l16: 200, l20: 50, l22: 80, l28: 70, l32: 70 })
+    // Le crédit reçu sort du 445670 ; ce qui reste à payer va au 445510.
+    const libelle = 'CA3 1er trimestre 2027'
+    expect(faux.rpcs[0].args.p_ecriture).toEqual([
+      { compte: '445710', sens: 'debit', montant: 200, libelle },
+      { compte: '445660', sens: 'credit', montant: 50, libelle },
+      { compte: '445670', sens: 'credit', montant: 80, libelle },
+      { compte: '445510', sens: 'credit', montant: 70, libelle },
+    ])
     // Relue, elle apparaît comme déposée pour la période.
     expect(screen.getByText('déjà déposée')).toBeTruthy()
+  })
+
+  it('montre l’écriture de liquidation avant le clic, et l’arrondi à l’euro', async () => {
+    // 1 000,40 € de recette à 20 % : 200,08 € de TVA, déclarée 200 € — huit centimes de produit.
+    faux.tables.pieces = [piece({ montant_ht: 1000.40, montant_tva: 200.08, montant_ttc: 1200.48 }), ...faux.tables.pieces.slice(1)]
+    faux.tables.lignes_bancaires = [paiement('vente', 1200.48, '2027-02-20'), paiement('achat', -300, '2027-03-05')]
+    await afficher()
+    const ecriture = screen.getByText(/Écriture de liquidation, au 31\/03\/2027/).closest('table') as HTMLElement
+    expect(within(within(ecriture).getByText('445710').closest('tr') as HTMLElement).getByText(MONTANT('200,08 €'))).toBeTruthy()
+    expect(within(within(ecriture).getByText('445660').closest('tr') as HTMLElement).getByText(MONTANT('50,00 €'))).toBeTruthy()
+    expect(within(within(ecriture).getByText('445510').closest('tr') as HTMLElement).getByText(MONTANT('150,00 €'))).toBeTruthy()
+    expect(within(within(ecriture).getByText('758000').closest('tr') as HTMLElement).getByText(MONTANT('0,08 €'))).toBeTruthy()
+    expect(within(ecriture).getByText('TVA à décaisser')).toBeTruthy()
+    expect(screen.getByText(/L’arrondi à l’euro des lignes de la CA3 fait 0,08\s€ de produit \(758000\)/)).toBeTruthy()
+  })
+
+  it('dit qu’il n’y a rien à liquider sur une période néant', async () => {
+    await afficher()
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '1' } })
+    expect(screen.getByText('Rien à liquider : la période ne porte aucune TVA.')).toBeTruthy()
+  })
+
+  // UNE PÉRIODE EN CRÉDIT (ligne 25) : le remboursement demandé (ligne 26) ne se reporte pas, il va au 445830, que le
+  // virement du Trésor soldera. Le champ n'existe que sur une période en crédit.
+  it('demande le remboursement d’un crédit, et l’écrit au 445830', async () => {
+    faux.tables.pieces = [...faux.tables.pieces, piece({
+      id: 'gros-achat', type_piece: 'achat', tiers: 'Matériel', date_piece: '2027-03-02', montant_ht: 5000, montant_tva: 1000, montant_ttc: 6000,
+    })]
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, paiement('gros-achat', -6000, '2027-03-08')]
+    await afficher()
+    // 200 € de TVA brute, 1 050 € déductibles : 850 € de crédit.
+    expect(within(ligneDe('Crédit de TVA (ligne 23 − ligne 16)')).getByText(MONTANT('850,00 €'))).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Remboursement demandé (ligne 26)'), { target: { value: '800' } })
+    expect(within(ligneDe('Crédit de TVA à reporter (ligne 25 − ligne 26)')).getByText(MONTANT('50,00 €'))).toBeTruthy()
+    // Au-dessus du seuil de 760 € : rien à redire.
+    expect(screen.queryByText(/n’est accordé qu’à partir de/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    expect(faux.rpcs[0].args).toMatchObject({ p_remboursement_demande: 800, p_tva_declaree: -850 })
+    const comptes = (faux.rpcs[0].args.p_ecriture as { compte: string; sens: string; montant: number }[])
+      .map((l) => [l.compte, l.sens, l.montant])
+    expect(comptes).toEqual([
+      ['445710', 'debit', 200], ['445660', 'credit', 1050], ['445670', 'debit', 50], ['445830', 'debit', 800],
+    ])
+  })
+
+  it('signale un remboursement sous le seuil, et refuse avant le clic ce que la base refuserait', async () => {
+    faux.tables.pieces = [...faux.tables.pieces, piece({
+      id: 'gros-achat', type_piece: 'achat', tiers: 'Matériel', date_piece: '2027-03-02', montant_ht: 5000, montant_tva: 1000, montant_ttc: 6000,
+    })]
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, paiement('gros-achat', -6000, '2027-03-08')]
+    await afficher()
+    const champ = screen.getByLabelText('Remboursement demandé (ligne 26)')
+    const bouton = () => screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement
+    fireEvent.change(champ, { target: { value: '300' } })
+    expect(screen.getByText(/n’est accordé qu’à partir de 760,00\s€ en cours d’année/)).toBeTruthy()
+    expect(bouton().disabled).toBe(false)
+    fireEvent.change(champ, { target: { value: '900' } })
+    expect(screen.getByText('Le remboursement demandé (ligne 26) dépasse le crédit de TVA de la période (ligne 25).')).toBeTruthy()
+    expect(bouton().disabled).toBe(true)
+    fireEvent.change(champ, { target: { value: '300,50' } })
+    expect(screen.getByText('Le remboursement demandé (ligne 26) se demande en euros entiers.')).toBeTruthy()
+    expect(bouton().disabled).toBe(true)
+    await act(async () => { bouton().click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  // Le champ n'est proposé que sur une période en crédit : ce qu'il gardait d'une saisie ne compte plus ailleurs.
+  it('ne propose pas de remboursement sur une période qui n’est pas en crédit', async () => {
+    await afficher()
+    expect(screen.queryByLabelText('Remboursement demandé (ligne 26)')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('dit le refus de la base, sans rien croire enregistré', async () => {
+    faux.rpcRefuse = 'La déclaration proposée ne se tient pas : ses lignes ne se déduisent pas les unes des autres.'
+    await afficher()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    expect(screen.getByText('La déclaration proposée ne se tient pas : ses lignes ne se déduisent pas les unes des autres.')).toBeTruthy()
+    expect(screen.queryByText('déjà déposée')).toBeNull()
+  })
+
+  it('refuse avant le clic une période d’un exercice validé', async () => {
+    // Un mouvement de 2026 au relevé : l'année est proposée.
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, paiement('ancienne', -50, '2026-11-05')]
+    await afficher({ valides: [2026] })
+    fireEvent.change(screen.getByLabelText('Année'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '3' } })
+    expect(screen.getByText('CA3 — 4e trimestre 2026')).toBeTruthy()
+    expect(screen.getByText('L\'exercice 2026 est validé : une déclaration de TVA ne s’y enregistre plus.')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // UNE PÉRIODE ANTÉRIEURE À L'OUVERTURE D'UN DOSSIER REPRIS se saisit à la main : sa TVA est dans les à-nouveaux, elle
+  // n'écrit pas de liquidation, et sert à rapprocher son paiement et à reporter son crédit.
+  it('saisit à la main une période antérieure à l’ouverture, sans liquidation', async () => {
+    const ouverture: ANouveau = {
+      id: 'an', dossier_id: 'd', date: '2027-01-01', compte: '445510', compte_origine: '44551', libelle: 'TVA à décaisser',
+      sens: 'credit', montant: 120, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+      created_at: '2027-01-05T09:00:00Z',
+    }
+    faux.tables.a_nouveaux = [ouverture]
+    await afficher()
+    fireEvent.change(screen.getByLabelText('Année'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '3' } })
+    expect(screen.getByText('Déclaration du 4e trimestre 2026')).toBeTruthy()
+    expect(screen.queryByText('CA3 — 4e trimestre 2026')).toBeNull()
+    const bouton = screen.getByRole('button', { name: 'Enregistrer la déclaration' }) as HTMLButtonElement
+    // Sans TVA saisie, rien ne s'enregistre.
+    expect(bouton.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('TVA nette de la période (ligne 16 moins lignes 19 à 21)'), { target: { value: '120' } })
+    expect(bouton.disabled).toBe(false)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs[0].args).toMatchObject({
+      p_periode_debut: '2026-10-01', p_periode_fin: '2026-12-31', p_tva_declaree: 120, p_credit_anterieur: 0,
+      p_remboursement_demande: 0, p_cases: null, p_tva_collectee: null, p_ecriture: [],
+    })
   })
 
   it('n’enregistre qu’une fois sur trois clics rapprochés', async () => {
@@ -250,9 +396,9 @@ describe('l’onglet TVA', () => {
     await afficher()
     const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' })
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
-    expect(faux.insertions).toHaveLength(1)
+    expect(faux.rpcs).toHaveLength(1)
     await act(async () => { faux.suspendue!.liberer() })
-    expect(faux.insertions).toHaveLength(1)
+    expect(faux.rpcs).toHaveLength(1)
     expect(screen.getByText('déjà déposée')).toBeTruthy()
   })
 
@@ -263,9 +409,9 @@ describe('l’onglet TVA', () => {
     await afficher()
     const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' })
     await act(async () => { bouton.click() })
-    expect(faux.insertions).toHaveLength(1)
+    expect(faux.rpcs).toHaveLength(1)
     await act(async () => { bouton.click() })
-    expect(faux.insertions).toHaveLength(1)
+    expect(faux.rpcs).toHaveLength(1)
     await act(async () => { faux.relectureSuspendue!.liberer() })
     expect(screen.getByText('déjà déposée')).toBeTruthy()
   })
@@ -281,7 +427,14 @@ describe('l’onglet TVA', () => {
     const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement
     expect(bouton.disabled).toBe(true)
     await act(async () => { bouton.click() })
-    expect(faux.insertions).toEqual([])
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('suspend aussi sur l’ouverture lue à moitié : elle décide de ce qui se saisit à la main', async () => {
+    faux.tronquees = new Set(['a_nouveaux'])
+    await afficher()
+    expect(screen.getByText(/L’ouverture du dossier n'a pas pu être lue en entier/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('suspend aussi sur l’historique des déclarations lu à moitié : le crédit proposé en dépend', async () => {
@@ -290,19 +443,69 @@ describe('l’onglet TVA', () => {
     expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  // Une déclaration préparée par l'application porte ses cases ; celle saisie à la main avant l'ouverture, non.
+  const preparee = (o: Partial<DeclarationTva>) => declaration({
+    cases: {}, tva_collectee: 0, tva_deductible: 0, tva_deductible_immobilisations: 0, ...o,
+  })
+
   it('compare chaque déclaration déposée au calcul de sa période', async () => {
     // Déposée à 100 €, alors que le trimestre en porte 150 aujourd'hui : une pièce a changé depuis.
-    faux.tables.declarations_tva = [declaration({ id: 't1', periode_debut: '2027-01-01', periode_fin: '2027-03-31', tva_declaree: 100 })]
+    faux.tables.declarations_tva = [preparee({ id: 't1', periode_debut: '2027-01-01', periode_fin: '2027-03-31', tva_declaree: 100 })]
     await afficher()
     const ligne = screen.getAllByText('1er trimestre 2027').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
     expect(within(ligne).getByText(MONTANT('-50,00 €'))).toBeTruthy()
   })
 
   it('ne signale aucun écart quand le recalcul retombe sur le dépôt', async () => {
-    faux.tables.declarations_tva = [declaration({ id: 't1', periode_debut: '2027-01-01', periode_fin: '2027-03-31', tva_declaree: 150 })]
+    faux.tables.declarations_tva = [preparee({ id: 't1', periode_debut: '2027-01-01', periode_fin: '2027-03-31', tva_declaree: 150 })]
     await afficher()
     const ligne = screen.getAllByText('1er trimestre 2027').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
     expect(within(ligne).getByText('aucun')).toBeTruthy()
+  })
+
+  it('ne compare pas au calcul une déclaration saisie à la main', async () => {
+    faux.tables.declarations_tva = [declaration({ id: 't4' })]
+    await afficher()
+    const ligne = screen.getAllByText('4e trimestre 2026').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligne).getByText('saisie à la main, avant l’ouverture')).toBeTruthy()
+  })
+
+  // CE QUE CHAQUE DÉCLARATION FAIT PAYER, ET CE QUE LE RELEVÉ EN PORTE (`suiviDesDeclarations`).
+  it('dit ce qui reste à payer d’une déclaration, et ce qui est payé', async () => {
+    const q4 = (id: string, aPayer: number) => preparee({ id, tva_declaree: aPayer, cases: { l28: aPayer, l32: aPayer } })
+    const prelevement = (id: string, montant: number, decl: string): LigneBancaire => ({
+      ...paiement('x', montant, '2027-01-20'), id, piece_id: null, declaration_tva_id: decl,
+    })
+    faux.tables.declarations_tva = [
+      q4('d1', 150),
+      { ...q4('d2', 150), periode_debut: '2026-07-01', periode_fin: '2026-09-30' },
+      { ...q4('d3', 150), periode_debut: '2026-04-01', periode_fin: '2026-06-30' },
+    ]
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires, prelevement('p2', -150, 'd2'), prelevement('p3', -100, 'd3'),
+    ]
+    await afficher()
+    const ligneDeLaPeriode = (libelle: string) =>
+      screen.getAllByText(libelle).map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligneDeLaPeriode('4e trimestre 2026')).getByText(/^150,00\s€ à payer$/)).toBeTruthy()
+    expect(within(ligneDeLaPeriode('3e trimestre 2026')).getByText('payée')).toBeTruthy()
+    expect(within(ligneDeLaPeriode('2e trimestre 2026')).getByText(/payée 100,00\s€ sur 150,00\s€/)).toBeTruthy()
+  })
+
+  it('ne dit pas ce qui reste dû sur un relevé lu en partie', async () => {
+    faux.tables.declarations_tva = [preparee({ id: 'd1', tva_declaree: 150, cases: { l28: 150, l32: 150 } })]
+    faux.tronquees = new Set(['lignes_bancaires'])
+    await afficher()
+    const ligne = screen.getAllByText('4e trimestre 2026').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligne).queryByText(/à payer/)).toBeNull()
+  })
+
+  it('ne propose pas de retirer une déclaration figée par la validation', async () => {
+    faux.tables.declarations_tva = [declaration({ id: 't4' })]
+    await afficher({ valides: [2026] })
+    const ligne = screen.getAllByText('4e trimestre 2026').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligne).getByText('figée')).toBeTruthy()
+    expect(within(ligne).queryByRole('button', { name: 'Retirer' })).toBeNull()
   })
 
   it('écrit la périodicité sur le dossier et repart de la dernière période close', async () => {
@@ -423,13 +626,85 @@ describe('l’onglet TVA', () => {
     expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  // UN MOIS SE NOMME AVEC SA PRÉPOSITION (lib/declarationTva.ts, `dePeriode`) : « de novembre », « d’octobre » — et
+  // non « du octobre », que la phrase écrite pour un trimestre produisait.
+  it('nomme une période mensuelle avec sa préposition', async () => {
+    faux.tables.declarations_tva = [declaration({ id: 'oct', periode_debut: '2026-10-01', periode_fin: '2026-10-31', tva_declaree: -80 })]
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await afficher({ periodicite: 'mensuelle' })
+    fireEvent.change(screen.getByLabelText('Année'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '10' } })
+    expect(screen.getByText('CA3 — novembre 2026')).toBeTruthy()
+    expect(screen.getByText('Repris de la déclaration d’octobre 2026, sa ligne 27.')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Retirer' }).click() })
+    expect(confirmer.mock.calls[0][0]).toMatch(/^Retirer la déclaration d’octobre 2026 \? /)
+    confirmer.mockRestore()
+  })
+
+  it('nomme avec sa préposition le mois d’une déclaration saisie à la main', async () => {
+    faux.tables.a_nouveaux = [{
+      id: 'an', dossier_id: 'd', date: '2027-01-01', compte: '445670', compte_origine: '44567', libelle: 'Crédit de TVA',
+      sens: 'debit', montant: 80, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+      created_at: '2027-01-05T09:00:00Z',
+    }]
+    await afficher({ periodicite: 'mensuelle' })
+    fireEvent.change(screen.getByLabelText('Année'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '9' } })
+    expect(screen.getByText('Déclaration d’octobre 2026')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Période'), { target: { value: '10' } })
+    expect(screen.getByText('Déclaration de novembre 2026')).toBeTruthy()
+  })
+
   it('demande confirmation avant de retirer une déclaration, en nommant ce qui part', async () => {
     faux.tables.declarations_tva = [declaration({ id: 't4' })]
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await afficher()
     await act(async () => { screen.getByRole('button', { name: 'Retirer' }).click() })
-    expect(confirmer.mock.calls[0][0]).toMatch(/4e trimestre 2026.*crédit qu’elle reporte ne sera plus proposé/)
-    expect(faux.suppressions).toEqual([{ table: 'declarations_tva', id: 't4' }])
+    expect(confirmer.mock.calls[0][0]).toBe(
+      'Retirer la déclaration du 4e trimestre 2026 ? Le crédit qu’elle reporte ne sera plus proposé sur la déclaration suivante.',
+    )
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_declaration_tva', args: { p_declaration_id: 't4' } }])
+    expect(screen.getByText('Aucune déclaration enregistrée pour ce dossier.')).toBeTruthy()
+    confirmer.mockRestore()
+  })
+
+  it('nomme la liquidation et les paiements qui partent avec une déclaration préparée', async () => {
+    faux.tables.declarations_tva = [preparee({ id: 'd1', tva_declaree: 150, cases: { l28: 150, l32: 150 } })]
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires, { ...paiement('x', -150, '2027-01-20'), id: 'p1', piece_id: null, declaration_tva_id: 'd1' },
+    ]
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await afficher()
+    await act(async () => { screen.getByRole('button', { name: 'Retirer' }).click() })
+    expect(confirmer.mock.calls[0][0]).toBe(
+      'Retirer la déclaration du 4e trimestre 2026 ? Son écriture de liquidation part avec elle, 1 mouvement(s) qui la paient '
+      + 'retournent à traiter sans leur écriture et le crédit qu’elle reporte ne sera plus proposé sur la déclaration suivante.',
+    )
+    // Refusée, rien ne part.
+    expect(faux.rpcs).toEqual([])
+    confirmer.mockRestore()
+  })
+
+  it('ne retire qu’une fois sur trois clics rapprochés', async () => {
+    faux.tables.declarations_tva = [declaration({ id: 't4' })]
+    faux.suspendue = { liberer: () => {} }
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await afficher()
+    const bouton = screen.getByRole('button', { name: 'Retirer' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    await act(async () => { faux.suspendue!.liberer() })
+    confirmer.mockRestore()
+  })
+
+  it('dit le refus de la base quand le retrait échoue', async () => {
+    faux.tables.declarations_tva = [declaration({ id: 't4' })]
+    faux.rpcRefuse = 'Une écriture de cette déclaration — sa liquidation ou un paiement — est validée : elle ne se retire plus.'
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await afficher()
+    await act(async () => { screen.getByRole('button', { name: 'Retirer' }).click() })
+    expect(screen.getByText(faux.rpcRefuse)).toBeTruthy()
     confirmer.mockRestore()
   })
 })

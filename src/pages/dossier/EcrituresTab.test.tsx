@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
@@ -71,9 +71,27 @@ vi.mock('../../lib/supabase', async () => {
         if (faux.retenirApresRpc) {
           faux.retenue = new Promise<void>((r) => { faux.relacher = r })
         }
+        // La liquidation d'une déclaration de TVA (lib/liquidationTva.ts) : la vraie fonction remplace les écritures de la
+        // déclaration, au dernier jour de sa période ; le faux aussi, pour que la relecture les voie.
+        if (nom === 'ecrire_liquidation_tva') {
+          const declaration = (faux.parTable.declarations_tva ?? [])
+            .find((d) => (d as { id: string }).id === args.p_declaration_id) as { periode_fin: string } | undefined
+          const ecrites = (args.p_ecriture as Record<string, unknown>[]).map((e, i) => ({
+            id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
+            declaration_tva_id: args.p_declaration_id, date: declaration?.periode_fin, statut: 'proposee',
+            created_at: '2025-04-02T09:00:00Z', ...e,
+          }))
+          faux.parTable.ecritures_brouillon = [
+            ...(faux.parTable.ecritures_brouillon ?? [])
+              .filter((e) => (e as { declaration_tva_id?: string | null }).declaration_tva_id !== args.p_declaration_id),
+            ...ecrites,
+          ]
+          return Promise.resolve({ data: ecrites.length, error: null })
+        }
         const id = args.p_ligne_bancaire_id
         const ligne = (faux.parTable.lignes_bancaires ?? []).find((l) => (l as { id: string }).id === id) as { date: string } | undefined
-        const ecrites = (args.p_ecritures as Record<string, unknown>[]).map((e, i) => ({
+        // `p_ecritures` pour les classements, `p_ecriture` pour le paiement d'une déclaration de TVA.
+        const ecrites = ((args.p_ecritures ?? args.p_ecriture) as Record<string, unknown>[]).map((e, i) => ({
           id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
           date: ligne?.date, statut: 'proposee', created_at: '2025-04-02T09:00:00Z', ...e,
         }))
@@ -2447,6 +2465,222 @@ describe('EcrituresTab — les mouvements écrits sur un compte de bilan', () =>
     monter(false, TRESORERIE, 2025, [2025])
     await screen.findByText(/0 écriture proposée — 2 validées/)
     expect(screen.queryByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeNull()
+  })
+})
+
+// LIGNE 26.8 : LA TVA SE LIQUIDE, SON PAIEMENT S'ÉCRIT (lib/liquidationTva.ts). La base écrit une déclaration et sa
+// liquidation ensemble, un rapprochement et son écriture ensemble : un écart ne devrait pas exister. Ce que ce bloc garde
+// et qu'aucun test de `src/lib` ne voit : que l'onglet porte la liquidation au FEC sans crier à la rupture, qu'il dise un
+// écart s'il en paraît un, et qu'il le répare par la base — la liquidation depuis ce que la déclaration a ENREGISTRÉ, sans
+// la retirer, et le paiement par la fonction de son rapprochement.
+describe('EcrituresTab — la TVA liquidée et payée', () => {
+  function declarationTva(o: Record<string, unknown> = {}) {
+    return {
+      id: 'decl-t1', dossier_id: 'dossier-de-test', periode_debut: '2025-01-01', periode_fin: '2025-03-31',
+      tva_declaree: 79, credit_anterieur: 0, remboursement_demande: 0, date_declaration: '2025-04-15', notes: null,
+      created_at: '2025-04-15T10:00:00Z',
+      cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
+      tva_collectee: 100.40, tva_deductible: 20.60, tva_deductible_immobilisations: 0, ...o,
+    }
+  }
+  const LIQUIDATION = [
+    { compte: '445710', sens: 'debit', montant: 100.40 },
+    { compte: '445660', sens: 'credit', montant: 20.60 },
+    { compte: '445510', sens: 'credit', montant: 79 },
+    { compte: '758000', sens: 'credit', montant: 0.80 },
+  ]
+  function liquidation(montant445510 = 79) {
+    return LIQUIDATION.map((l, i) => ecriture({
+      id: `lq${i}`, piece_id: null, declaration_tva_id: 'decl-t1', date: '2025-03-31', libelle: 'CA3 1er trimestre 2025', ...l,
+      ...(l.compte === '445510' ? { montant: montant445510 } : {}),
+    }))
+  }
+  function prelevement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-tva', dossier_id: 'dossier-de-test', date: '2025-04-28', libelle: 'PRLV SEPA DGFIP TVA', montant: -79,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+      compte_bilan: null, declaration_tva_id: 'decl-t1', source_fichier: 'releve-avril-2025.pdf', libelle_brut: null,
+      created_at: '2025-05-02T09:00:00Z', ...o,
+    }
+  }
+  function paiement(montant = 79) {
+    return [
+      ecriture({ id: 'pt1', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2025-04-28', compte: '512000', sens: 'credit', montant, libelle: 'PRLV SEPA DGFIP TVA' }),
+      ecriture({ id: 'pt2', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2025-04-28', compte: '445510', sens: 'debit', montant, libelle: 'PRLV SEPA DGFIP TVA' }),
+    ]
+  }
+
+  it('une liquidation et un paiement conformes ne se signalent pas, et partent au FEC', async () => {
+    poser({ declarations_tva: [declarationTva()], lignes_bancaires: [prelevement()], ecritures_brouillon: [...liquidation(), ...paiement()] })
+    monter(true)
+    await screen.findByText(/6 écritures proposées/)
+    expect(screen.queryByText('Liquidations de TVA à réécrire')).toBeNull()
+    expect(screen.queryByText('Paiements de TVA à réécrire')).toBeNull()
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    // La liquidation au journal des opérations diverses, la déclaration pour pièce ; le prélèvement au journal de banque.
+    expect(lignes.filter((l) => l[0] === 'OD').map((l) => [l[4], l[8], l[9]])).toEqual(expect.arrayContaining([
+      ['445710', 'CA3 au 31/03/2025', '20250331'], ['445510', 'CA3 au 31/03/2025', '20250331'],
+    ]))
+    expect(lignes.filter((l) => l[0] === 'OD')).toHaveLength(4)
+    expect(lignes.filter((l) => l[0] === 'BQ').map((l) => l[4]).sort()).toEqual(['445510', '512000'])
+  })
+
+  it('propose de réécrire une liquidation qui ne suit plus sa déclaration, depuis ce qu’elle a enregistré', async () => {
+    poser({ declarations_tva: [declarationTva()], ecritures_brouillon: liquidation(80) })
+    monter(true)
+    expect(await screen.findByText('Liquidations de TVA à réécrire')).toBeTruthy()
+    expect(screen.getByText('1er trimestre 2025')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réécrire' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'ecrire_liquidation_tva',
+      args: {
+        p_declaration_id: 'decl-t1',
+        p_ecriture: LIQUIDATION.map((l) => ({ ...l, libelle: 'CA3 1er trimestre 2025' })),
+      },
+    }])
+    // Ni retirée, ni réenregistrée : la déclaration déposée reste celle qu'elle est.
+    expect(faux.suppressions).toEqual([])
+    await waitFor(() => expect(screen.queryByText('Liquidations de TVA à réécrire')).toBeNull())
+  })
+
+  it('une liquidation absente se propose aussi', async () => {
+    poser({ declarations_tva: [declarationTva()], ecritures_brouillon: [] })
+    monter(true)
+    expect(await screen.findByText('Liquidations de TVA à réécrire')).toBeTruthy()
+  })
+
+  // Une déclaration saisie à la main n'écrit pas de liquidation : une écriture qui la désigne ne se réécrit pas, elle se
+  // retire avec la déclaration.
+  it('une déclaration saisie à la main ne se réécrit pas, et le bouton dit où aller', async () => {
+    poser({
+      declarations_tva: [declarationTva({ cases: null, tva_collectee: null, tva_deductible: null, tva_deductible_immobilisations: null })],
+      ecritures_brouillon: liquidation(),
+    })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/saisie à la main.*dans l’onglet TVA/)
+  })
+
+  // Un écart de plus de dix euros entre la TVA des comptes et la TVA déclarée n'est pas un arrondi : la base refuserait la
+  // liquidation, et le bouton le dit au lieu de laisser cliquer pour un refus.
+  it('une liquidation dont l’arrondi n’en est pas un ne se réécrit pas, et le bouton le dit', async () => {
+    poser({ declarations_tva: [declarationTva({ tva_collectee: 120.40 })], ecritures_brouillon: liquidation(80) })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/n’est pas un arrondi : la base refuserait cette liquidation/)
+  })
+
+  // Sur des déclarations lues en partie, celles qui sont lues se jugent sur elles-mêmes ; les autres ne se jugent pas —
+  // sans écriture de liquidation, la seconde crierait sinon « absente » —, le paiement d'une déclaration non lue ne se
+  // réécrit pas, et l'écran le dit.
+  it('sur des déclarations lues en partie, seules les déclarations lues se jugent, et l’écran le dit', async () => {
+    poser({
+      declarations_tva: [
+        declarationTva(),
+        declarationTva({ id: 'decl-t2', periode_debut: '2025-04-01', periode_fin: '2025-06-30', date_declaration: '2025-07-15' }),
+      ],
+      lignes_bancaires: [prelevement({ id: 'l-t2', date: '2025-07-28', declaration_tva_id: 'decl-t2' })],
+      ecritures_brouillon: [
+        ...liquidation(80),
+        ecriture({ id: 'pt3', piece_id: null, ligne_bancaire_id: 'l-t2', date: '2025-07-28', compte: '512000', sens: 'credit', montant: 70, libelle: 'PRLV SEPA DGFIP TVA' }),
+        ecriture({ id: 'pt4', piece_id: null, ligne_bancaire_id: 'l-t2', date: '2025-07-28', compte: '445510', sens: 'debit', montant: 70, libelle: 'PRLV SEPA DGFIP TVA' }),
+      ],
+    })
+    faux.muetParTable = { declarations_tva: 1 }
+    monter(true)
+    expect(await screen.findByText(/Les déclarations de TVA n'ont pas pu être lues en entier/)).toBeTruthy()
+    const liquidations = screen.getByText('Liquidations de TVA à réécrire').closest('.card') as HTMLElement
+    expect(within(liquidations).getByText('1er trimestre 2025')).toBeTruthy()
+    expect(within(liquidations).queryByText('2e trimestre 2025')).toBeNull()
+    const paiements = screen.getByText('Paiements de TVA à réécrire').closest('.card') as HTMLElement
+    const bouton = within(paiements).getByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toBe('Les déclarations de TVA n’ont pas pu être lues en entier : recharge la page.')
+  })
+
+  it('propose de réécrire un paiement qui ne suit plus son mouvement, par la fonction de son rapprochement', async () => {
+    poser({ declarations_tva: [declarationTva()], lignes_bancaires: [prelevement()], ecritures_brouillon: [...liquidation(), ...paiement(70)] })
+    monter(true)
+    expect(await screen.findByText('Paiements de TVA à réécrire')).toBeTruthy()
+    // Trois clics rapprochés : un seul appel.
+    const bouton = screen.getByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'rapprocher_declaration_tva',
+      args: {
+        p_ligne_bancaire_id: 'l-tva',
+        p_declaration_id: 'decl-t1',
+        p_ecriture: [
+          { compte: '512000', sens: 'credit', montant: 79, libelle: 'PRLV SEPA DGFIP TVA' },
+          { compte: '445510', sens: 'debit', montant: 79, libelle: 'PRLV SEPA DGFIP TVA' },
+        ],
+      },
+    }])
+    await waitFor(() => expect(screen.queryByText('Paiements de TVA à réécrire')).toBeNull())
+  })
+
+  it('un paiement dont la déclaration n’a pas été lue ne se réécrit pas, et le bouton le dit', async () => {
+    poser({ declarations_tva: [], lignes_bancaires: [prelevement()], ecritures_brouillon: paiement(70) })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toBe('La déclaration que ce mouvement paie ne figure pas parmi les déclarations lues.')
+  })
+
+  it("trois clics rapprochés ne réécrivent qu'une fois", async () => {
+    poser({ declarations_tva: [declarationTva()], ecritures_brouillon: liquidation(80) })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  // Le verrou se relâche APRÈS la relecture : relâché avant, la liquidation qu'on vient de réécrire se proposerait encore
+  // le temps que la relecture revienne, et un second clic la réécrirait une seconde fois.
+  it('le verrou tient pendant la relecture qui suit une réécriture', async () => {
+    poser({ declarations_tva: [declarationTva()], lignes_bancaires: [prelevement()], ecritures_brouillon: [...liquidation(80), ...paiement(70)] })
+    monter(true)
+    const [liquider, payer] = await screen.findAllByRole('button', { name: 'Réécrire' })
+    faux.retenirApresRpc = true
+    await act(async () => { liquider.click() })
+    await act(async () => { payer.click() })
+    // Le second geste a pris l'état de l'écran : le premier bouton paraît de nouveau libre, son verrou ne l'est pas.
+    await waitFor(() => expect(liquider.hasAttribute('disabled')).toBe(false))
+    await act(async () => { liquider.click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['ecrire_liquidation_tva', 'rapprocher_declaration_tva'])
+
+    await act(async () => { faux.relacher?.() })
+    await waitFor(() => expect(screen.queryByText('Liquidations de TVA à réécrire')).toBeNull())
+    expect(screen.queryByText('Paiements de TVA à réécrire')).toBeNull()
+  })
+
+  it('dit une réécriture que la base refuse, et garde la liquidation à réécrire', async () => {
+    poser({ declarations_tva: [declarationTva()], ecritures_brouillon: liquidation(80) })
+    faux.erreurRpc = 'refus simulé'
+    monter(true)
+    // Cherché HORS de l'`act` : dedans, React retient les mises à jour jusqu'à la sortie, et la recherche expirerait.
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click() })
+    expect(await screen.findByText('refus simulé')).toBeTruthy()
+    expect(screen.getByText('Liquidations de TVA à réécrire')).toBeTruthy()
+  })
+
+  // La base refuse de réécrire une écriture validée : rien ne se propose d'un exercice validé.
+  it('ne propose rien d’un exercice validé', async () => {
+    poser({
+      declarations_tva: [declarationTva()], lignes_bancaires: [prelevement()],
+      ecritures_brouillon: [...liquidation(80), ...paiement(70)].map((e) => ({ ...e, statut: 'validee' })),
+    })
+    monter(true, TRESORERIE, 2025, [2025])
+    await screen.findByText(/0 écriture proposée — 6 validées/)
+    expect(screen.queryByText('Liquidations de TVA à réécrire')).toBeNull()
+    expect(screen.queryByText('Paiements de TVA à réécrire')).toBeNull()
   })
 })
 

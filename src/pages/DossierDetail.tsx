@@ -335,7 +335,7 @@ export default function DossierDetail() {
               }
             />
 
-            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
+            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} modele={modele} onNavigate={allerA} />}
             {tab === 'pieces' && <PiecesTab dossierId={id} />}
             {tab === 'factures' && (
               <FacturesTab

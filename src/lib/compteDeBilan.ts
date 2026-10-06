@@ -20,8 +20,8 @@ import { compteDuDirigeant } from './virementPersonnel'
 // au FEC, et le 512 du brouillon s'écartait du relevé.
 //
 // Décision du cabinet du 06/10/2026 : le virement entre comptes au 580000, le dépôt de garantie au 275000, et un
-// compte de bilan au choix, sous les contrôles de l'application. Le remboursement d'un crédit de TVA (44583) attend la
-// liquidation de la TVA (ligne 26.8), à laquelle il se rattache.
+// compte de bilan au choix, sous les contrôles de l'application. Le paiement de la TVA et le remboursement d'un crédit
+// (445510, 445830) se rapprochent de leur déclaration (ligne 26.8, lib/liquidationTva.ts), qui les écrit.
 //
 // CE QUI S'ÉCRIT : le compte choisi face à la banque, au montant, à la date et dans le sens du mouvement — la règle
 // d'une affectation (`ecritureDuMouvement`), sur un compte de bilan, sans TVA. Ni charge ni recette : la 2035, la
@@ -122,8 +122,8 @@ export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, d
   }
   if (/^4[01]/.test(compte)) return 'Un compte de fournisseur ou de client se solde en rapprochant la facture du mouvement.'
   if (/^445/.test(compte)) {
-    return 'Un compte de TVA ne se choisit pas ici : la TVA se solde par sa déclaration, à laquelle son paiement et le '
-      + 'remboursement d’un crédit se rattachent — ce chemin n’existe pas encore.'
+    return 'Un compte de TVA ne se choisit pas ici : la TVA se solde par sa déclaration, enregistrée dans l’onglet TVA, et '
+      + 'son paiement ou le remboursement d’un crédit se rapproche ensuite d’elle, depuis cette fiche.'
   }
   if (/^2[012]/.test(compte)) {
     return 'Un bien s’inscrit au registre des immobilisations depuis sa facture : son acquisition s’écrit sur le compte '

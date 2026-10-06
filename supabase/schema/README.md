@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 86 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 87 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,8 +84,8 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 06/10/2026** : 86 fichiers, 86 migrations, empreinte globale
-`8e03863c7058432ca5b8b3d4fc7ca431` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 06/10/2026** : 87 fichiers, 87 migrations, empreinte globale
+`54f60c533edbe31e7e10f0520d1f70a3` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -118,11 +118,11 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (77 instructions, empreinte `5114d8a30b093fe29bb20e075d6cb1dd` le
-  06/10/2026, rejoué après la migration de la liquidation de la TVA), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  06/10/2026, rejoué après `refus_tva_par_sa_declaration`, la dernière migration), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 003 objets, empreinte `3354d8a69f667ca4adcdf16c5e7e57c2` le 06/10/2026, rejoué après la migration de la liquidation de la TVA). C'est le seul qui voie un
+  (1 003 objets, empreinte `3354d8a69f667ca4adcdf16c5e7e57c2` le 06/10/2026, rejoué après `refus_tva_par_sa_declaration`, la dernière migration). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

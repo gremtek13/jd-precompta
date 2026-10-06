@@ -4,8 +4,8 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
-  Categorie, CotisationDeclaree, EcritureBrouillon, LettrageManuel, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree,
-  ReglementGroupe, VentilationBancaire,
+  Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, Piece, RegleAffectationBancaire,
+  RegleBancaireIgnoree, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
@@ -94,6 +94,9 @@ const faux = vi.hoisted(() => ({
   // amputée.
   lettrages: [] as LettrageManuel[],
   brouillon: [] as EcritureBrouillon[],
+  // Les déclarations de TVA du dossier (lib/liquidationTva.ts) : une lecture qui peut être partielle, et deux fonctions
+  // SQL que le faux serveur APPLIQUE au relevé — le lien et le statut, l'écriture n'étant pas relue ici.
+  declarations: [] as DeclarationTva[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -169,6 +172,7 @@ vi.mock('../../lib/supabase', async () => {
                       : table === 'reglements_groupes' ? faux.reglements
                         : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees
                           : table === 'immobilisations' ? faux.immobilisations
+                            : table === 'declarations_tva' ? faux.declarations
                             : table === 'lettrages_manuels' ? filtrer(faux.lettrages, predicats)
                               : table === 'ecritures_brouillon' && surDesComptes ? filtrer(faux.brouillon, predicats) : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
@@ -227,6 +231,10 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'immobilisations') {
           return Promise.resolve({ data: faux.immobilisations, error: null, count: faux.immobilisations.length }).then(suite)
+        }
+        if (table === 'declarations_tva') {
+          const lues = filtrer(faux.declarations, predicats)
+          return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
         }
         if (table === 'lettrages_manuels') {
           const lus = filtrer(faux.lettrages, predicats)
@@ -364,6 +372,9 @@ vi.mock('../../lib/supabase', async () => {
       // Le compte de bilan (lib/compteDeBilan.ts) : écrit avec son écriture, ou remis à traiter et retiré.
       if (nom === 'ecrire_mouvement_compte_bilan') return { ...l, statut: 'rapprochee', compte_bilan: String(args.p_compte) }
       if (nom === 'retirer_mouvement_compte_bilan') return { ...l, statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null }
+      // Le paiement d'une déclaration de TVA (lib/liquidationTva.ts) : rapproché avec son écriture, ou retiré.
+      if (nom === 'rapprocher_declaration_tva') return { ...l, statut: 'rapprochee', declaration_tva_id: String(args.p_declaration_id) }
+      if (nom === 'retirer_rapprochement_declaration_tva') return { ...l, statut: 'non_rapprochee', declaration_tva_id: null }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), taux_tva: (args.p_taux_tva as number | null | undefined) ?? null, statut: 'rapprochee' }
         : { ...l, categorie_id: null, taux_tva: null, statut: 'non_rapprochee' }
@@ -458,6 +469,7 @@ function reinitialiser() {
   faux.immobilisations = []
   faux.lettrages = []
   faux.brouillon = []
+  faux.declarations = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -4169,6 +4181,342 @@ describe('BanqueTab — un mouvement vers un compte de bilan s’écrit', () => 
     await ouvrir('VIR VERS LIVRET A')
     expect(within(volet()).getByRole('heading', { name: 'Virement personnel' })).toBeTruthy()
     expect(within(volet()).queryAllByText(/Ignoré : ce mouvement n’est écrit nulle part/)).toHaveLength(0)
+  })
+})
+
+// LIGNE 26.8 : LE PRÉLÈVEMENT DE LA TVA SE RAPPROCHE DE SA DÉCLARATION, le remboursement d'un crédit aussi
+// (lib/liquidationTva.ts). Ce qu'aucun test de `src/lib` ne peut voir : que la fiche PROPOSE la déclaration que le
+// mouvement règle exactement — et aucune quand plusieurs conviennent, ou quand le relevé est lu en partie —, qu'elle
+// écrive par la base et pas autrement, UNE fois sous trois clics, qu'elle annule par la base, et que le lot des règles
+// laisse de côté un prélèvement qui paie une déclaration.
+function declarationDeTest(o: Partial<DeclarationTva> = {}): DeclarationTva {
+  return {
+    id: 'decl-t1', dossier_id: 'dossier-de-test', periode_debut: '2025-01-01', periode_fin: '2025-03-31',
+    tva_declaree: 1200, credit_anterieur: 0, remboursement_demande: 0, date_declaration: '2025-04-15', notes: null,
+    created_at: '2025-04-15T10:00:00Z',
+    cases: { l16: 1500, l19: 0, l20: 300, l21: 0, l22: 0, l23: 300, l25: 0, l26: 0, l27: 0, l28: 1200, l32: 1200 },
+    tva_collectee: 1500.4, tva_deductible: 300.2, tva_deductible_immobilisations: 0, ...o,
+  }
+}
+
+describe('BanqueTab — le paiement et le remboursement de la TVA', () => {
+  const T2 = declarationDeTest({ id: 'decl-t2', periode_debut: '2025-04-01', periode_fin: '2025-06-30', date_declaration: '2025-07-15' })
+  const CREDIT = declarationDeTest({
+    id: 'decl-credit', periode_debut: '2025-04-01', periode_fin: '2025-06-30', tva_declaree: -900, remboursement_demande: 800,
+    cases: { l16: 100, l19: 0, l20: 1000, l21: 0, l22: 0, l23: 1000, l25: 900, l26: 800, l27: 100, l28: 0, l32: 0 },
+    tva_collectee: 100, tva_deductible: 1000, date_declaration: '2025-07-15',
+  })
+  function preparer(ligne: Partial<LigneBancaire> = {}, declarations: DeclarationTva[] = [declarationDeTest()]) {
+    reinitialiser()
+    faux.pieces = []
+    faux.declarations = declarations
+    faux.lignes = [ligneDeTest({ libelle: 'PRLV SEPA DGFIP TVA', montant: -1200, date: '2025-04-28', ...ligne })]
+  }
+  const PAYE = { statut: 'rapprochee' as const, declaration_tva_id: 'decl-t1' }
+  // Les options de la liste, espaces insécables du montant ramenées à des espaces ordinaires.
+  const options = (liste: HTMLSelectElement) => [...liste.options].map((o) => (o.textContent ?? '').replace(/\s/g, ' '))
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+
+  it('propose la déclaration dont le prélèvement règle exactement la TVA, et la rapproche par la base', async () => {
+    preparer()
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const panneau = within(volet())
+    expect(panneau.getByRole('heading', { name: 'Paiement de TVA proposé' })).toBeTruthy()
+    expect(panneau.getByText('Déclaration de TVA du 1er trimestre 2025')).toBeTruthy()
+    expect(panneau.getByText('Déposée le 15/04/2025 · 1 200,00 € à payer')).toBeTruthy()
+    expect(panneau.getByText('Même montant que la TVA qui reste à payer')).toBeTruthy()
+    expect(panneau.getByText('28 jours d’écart avec la fin de la période')).toBeTruthy()
+    // Une proposition remplace « Aucune pièce proposée » : ce mouvement a quelque chose en face.
+    expect(panneau.queryByText('Aucune pièce proposée pour ce mouvement.')).toBeNull()
+    // Sous « Sans justificatif », l'affectation est déconseillée, en disant pourquoi.
+    expect(panneau.getByText('Ce paiement ressemble au paiement d’une déclaration de TVA (ci-dessus) : affecté à une catégorie, la TVA compterait en charge.')).toBeTruthy()
+
+    await act(async () => { panneau.getByRole('button', { name: 'Rapprocher de cette déclaration' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Paiement de TVA' })).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'rapprocher_declaration_tva',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_declaration_id: 'decl-t1',
+        p_ecriture: [
+          { compte: '512000', sens: 'credit', montant: 1200, libelle: 'PRLV SEPA DGFIP TVA' },
+          { compte: '445510', sens: 'debit', montant: 1200, libelle: 'PRLV SEPA DGFIP TVA' },
+        ],
+      },
+    }])
+    // Plus de mise à jour directe du relevé : un lien sans son écriture manquerait au FEC.
+    expect(faux.updatesLignes).toEqual([])
+    const apres = within(volet())
+    expect(apres.getByText('Paiement de TVA — 1er trimestre 2025')).toBeTruthy()
+    expect(apres.getByText('Déposée le 15/04/2025 · payée')).toBeTruthy()
+    expect(apres.getByText(/le prélèvement solde la TVA à décaisser \(445510\), face à la banque\. « Annuler le rapprochement » retire aussi son écriture\./)).toBeTruthy()
+    // Pas de « Rapproché » nu, ni « Rapproché avec » : sa preuve est le relevé.
+    expect(apres.queryByText(/^Rapproché$/)).toBeNull()
+    expect(apres.queryByText('Rapproché avec')).toBeNull()
+    expect(apres.getByRole('button', { name: 'Annuler le rapprochement' })).toBeTruthy()
+  })
+
+  it('le remboursement d’un crédit reçu se rapproche de sa déclaration, au 445830', async () => {
+    preparer({ libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA', montant: 800, date: '2025-09-02' }, [CREDIT])
+    rendre(TRESORERIE, true)
+    await ouvrir('VIR DGFIP REMBOURSEMENT CREDIT TVA')
+    const panneau = within(volet())
+    expect(panneau.getByRole('heading', { name: 'Remboursement de TVA proposé' })).toBeTruthy()
+    expect(panneau.getByText('Déposée le 15/07/2025 · remboursement de 800,00 € attendu')).toBeTruthy()
+    expect(panneau.getByText('Même montant que le remboursement encore attendu')).toBeTruthy()
+    await act(async () => { panneau.getByRole('button', { name: 'Rapprocher de cette déclaration' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Remboursement de TVA — 2e trimestre 2025')).toBeTruthy())
+    expect(faux.rpcs[0].args.p_ecriture).toEqual([
+      { compte: '512000', sens: 'debit', montant: 800, libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA' },
+      { compte: '445830', sens: 'credit', montant: 800, libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA' },
+    ])
+    expect(within(volet()).getByText('Déposée le 15/07/2025 · remboursement reçu')).toBeTruthy()
+  })
+
+  // Deux trimestres qui attendent le même montant : mettre le premier en avant trancherait par l'ordre de tri.
+  it('deux déclarations qui conviennent aussi bien : aucune n’est mise en avant, chacune se choisit', async () => {
+    preparer({ date: '2025-07-28' }, [declarationDeTest(), T2])
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const panneau = within(volet())
+    expect(panneau.getByRole('heading', { name: '2 déclarations de TVA conviennent aussi bien' })).toBeTruthy()
+    expect(panneau.queryAllByRole('heading', { name: 'Paiement de TVA proposé' })).toHaveLength(0)
+    expect(panneau.queryAllByRole('button', { name: 'Rapprocher de cette déclaration' })).toHaveLength(0)
+    const boutons = panneau.getAllByRole('button', { name: 'Rapprocher de celle-ci' })
+    expect(boutons).toHaveLength(2)
+    // La plus récente d'abord : le 2e trimestre.
+    expect(panneau.getAllByText(/^Déclaration de TVA du/).map((e) => e.textContent)).toEqual([
+      'Déclaration de TVA du 2e trimestre 2025', 'Déclaration de TVA du 1er trimestre 2025',
+    ])
+    await act(async () => { boutons[1].click() })
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_declaration_id).toBe('decl-t1')
+  })
+
+  it('une déclaration qu’il ne règle pas exactement se choisit à la main', async () => {
+    preparer({ montant: -500 })
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const panneau = within(volet())
+    expect(panneau.queryAllByRole('heading', { name: 'Paiement de TVA proposé' })).toHaveLength(0)
+    expect(panneau.getByRole('heading', { name: 'Paiement de TVA' })).toBeTruthy()
+    const liste = panneau.getByLabelText('Déclaration de TVA') as HTMLSelectElement
+    expect(options(liste)).toEqual(['— Choisir —', '1er trimestre 2025 — TVA à payer 1 200,00 €'])
+    const rapprocher = panneau.getByRole('button', { name: 'Rapprocher' })
+    // Rien ne part au changement de la liste : sur une liste qui a le focus, les flèches changent la valeur.
+    expect(rapprocher.hasAttribute('disabled')).toBe(true)
+    fireEvent.change(liste, { target: { value: 'decl-t1' } })
+    expect(faux.rpcs).toEqual([])
+    await act(async () => { rapprocher.click() })
+    await waitFor(() => expect(faux.rpcs).toEqual([expect.objectContaining({
+      nom: 'rapprocher_declaration_tva', args: expect.objectContaining({ p_declaration_id: 'decl-t1' }),
+    })]))
+  })
+
+  it('le choix dit ce qu’une déclaration a déjà reçu, et rien avant la fin de sa période', async () => {
+    preparer({ montant: -500 })
+    faux.lignes.push(ligneDeTest({ id: 'acompte', libelle: 'PRLV DGFIP ACOMPTE', montant: -700, date: '2025-04-20', ...PAYE }))
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    // Le reste vaut 500 : le solde est proposé, et le choix dit ce qui a déjà été payé.
+    expect(within(volet()).getByText('Déposée le 15/04/2025 · payée 700,00 € sur 1 200,00 €')).toBeTruthy()
+    const liste = within(volet()).getByLabelText('Déclaration de TVA') as HTMLSelectElement
+    expect(options(liste)).toContain('1er trimestre 2025 — TVA à payer 1 200,00 €, payé 700,00 €')
+    cleanup()
+
+    preparer({ date: '2025-03-20' })
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).getByText('Aucune déclaration enregistrée avant ce mouvement n’a de TVA à payer.')).toBeTruthy()
+    expect(within(volet()).queryAllByLabelText('Déclaration de TVA')).toHaveLength(0)
+  })
+
+  // DÉFENSIF : un mouvement à traiter qui porte un autre classement — un drapeau resté d'avant — se refuse avant le clic.
+  it('un mouvement déjà classé se refuse avant le clic', async () => {
+    preparer({ prelevement_personnel: true })
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).getAllByText(/annule d’abord ce classement/).length).toBeGreaterThan(0)
+    expect(within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('n’écrit qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const bouton = within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  // Relâché avant la relecture, le verrou laisserait le bouton cliquable sur un mouvement déjà rapproché.
+  it('reste verrouillé tant que la relecture du relevé n’est pas revenue', async () => {
+    preparer()
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    faux.retenirLectureLignes = true
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' }).click() })
+    expect(within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { faux.resoudreLectureLignes?.() })
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Paiement de TVA' })).toBeTruthy())
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith("Le rapprochement n'a pas pu être enregistré : refus simulé"))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  it('la liste dit la période payée, jamais un « Rapproché » nu', async () => {
+    preparer(PAYE)
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    expect(await screen.findByText('Paiement de TVA — 1er trimestre 2025')).toBeTruthy()
+    expect(screen.queryByText(/^Rapproché$/)).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+  })
+
+  it('annuler le rapprochement passe par la base, qui retire l’écriture avec le lien', async () => {
+    preparer(PAYE)
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_rapprochement_declaration_tva', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('une annulation que la base refuse se dit, et le lien reste', async () => {
+    preparer(PAYE)
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith("Le rapprochement n'a pas pu être annulé : refus simulé"))
+    expect(within(volet()).getByText('Paiement de TVA — 1er trimestre 2025')).toBeTruthy()
+  })
+
+  it('changer de déclaration réécrit par la même fonction, qui remplace le lien et l’écriture', async () => {
+    preparer({ ...PAYE, date: '2025-07-28' }, [declarationDeTest(), T2])
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    // Replié tant qu'on ne le demande pas.
+    expect(within(volet()).queryAllByLabelText('Déclaration de TVA')).toHaveLength(0)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Changer de déclaration…' }).click() })
+    fireEvent.change(within(volet()).getByLabelText('Déclaration de TVA'), { target: { value: 'decl-t2' } })
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de celle-ci' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Paiement de TVA — 2e trimestre 2025')).toBeTruthy())
+    expect(faux.rpcs).toEqual([expect.objectContaining({
+      nom: 'rapprocher_declaration_tva', args: expect.objectContaining({ p_declaration_id: 'decl-t2' }),
+    })])
+  })
+
+  it('figé par un exercice validé, il se lit sans rien proposer', async () => {
+    preparer(PAYE)
+    rendre(TRESORERIE, true, [2025])
+    await voirLesRapproches()
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).getByRole('heading', { name: 'Paiement de TVA' })).toBeTruthy()
+    expect(within(volet()).queryAllByRole('button', { name: 'Changer de déclaration…' })).toHaveLength(0)
+    expect(within(volet()).queryAllByRole('button', { name: 'Annuler le rapprochement' })).toHaveLength(0)
+  })
+
+  it('une déclaration non lue se dit sur le mouvement qui la paie', async () => {
+    preparer(PAYE, [])
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    expect(await screen.findByText('Paiement de TVA')).toBeTruthy()
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).getByText('La déclaration rapprochée ne figure pas parmi les déclarations de TVA lues.')).toBeTruthy()
+  })
+
+  // Un paiement non lu ferait passer une déclaration payée pour une déclaration qui attend exactement ce montant.
+  it('sur un relevé lu en partie, aucune déclaration n’est proposée, et ce qu’elles ont reçu ne se dit pas', async () => {
+    preparer()
+    faux.lignes.push(ligneDeTest({ id: 'non-lu', libelle: 'PRLV DGFIP', montant: -1200, date: '2025-04-20', ...PAYE }))
+    faux.muet = { lignes_bancaires: 1 }
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const panneau = within(volet())
+    expect(panneau.queryAllByRole('heading', { name: 'Paiement de TVA proposé' })).toHaveLength(0)
+    expect(panneau.getByText(/Le relevé n’a pas pu être lu en entier : ce que chaque déclaration a déjà reçu n’est pas connu, et aucune n’est proposée\./)).toBeTruthy()
+    const liste = panneau.getByLabelText('Déclaration de TVA') as HTMLSelectElement
+    expect(options(liste)).toContain('1er trimestre 2025 — TVA à payer 1 200,00 €')
+    expect(screen.queryByText('Non rapproché · suggestion')).toBeNull()
+  })
+
+  it('la liste signale la suggestion — pas sur un relevé lu en partie', async () => {
+    preparer()
+    rendre(TRESORERIE, true)
+    expect(await screen.findByText('Non rapproché · suggestion')).toBeTruthy()
+  })
+
+  it('un prélèvement qui ressemble au précédent ignoré n’est pas proposé à l’ignorer : la TVA s’écrit', async () => {
+    preparer({ date: '2025-04-28' })
+    faux.lignes.push(
+      ligneDeTest({ id: 'avant-1', libelle: 'PRLV SEPA DGFIP TVA', montant: -1200, date: '2025-02-27', statut: 'ignoree' }),
+      ligneDeTest({ id: 'avant-2', libelle: 'PRLV SEPA DGFIP TVA', montant: -1200, date: '2025-03-28', statut: 'ignoree' }),
+    )
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).queryAllByRole('button', { name: /comme les 2 précédents/ })).toHaveLength(0)
+    expect(within(volet()).getByRole('button', { name: 'Rapprocher de cette déclaration' })).toBeTruthy()
+  })
+
+  it('un dossier sans déclaration ne parle pas de déclaration de TVA', async () => {
+    preparer({}, [])
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).queryAllByRole('heading', { name: /TVA/ })).toHaveLength(0)
+  })
+
+  const FRAIS = categorieDeTest()
+  function preparerLot() {
+    preparer()
+    faux.categories = [FRAIS]
+    faux.lignes.push(ligneDeTest({ id: 'l-frais', libelle: 'PRLV SEPA DGFIP FRAIS', montant: -8.5, date: '2025-05-10' }))
+    faux.reglesAffectation = [regleDeTest({ motif: 'dgfip', sens: 'decaissement', categorie_id: 'cat-frais' })]
+  }
+
+  // Une règle au nom du Trésor désigne la TVA comme ses frais : affectée en lot, la TVA compterait en charge.
+  it('le lot des règles écarte un prélèvement qui paie exactement une déclaration, et le dit', async () => {
+    preparerLot()
+    rendre(TRESORERIE, true)
+    expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+    expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
+    expect(screen.getByText(/: Il ressemble au paiement de la TVA du 1er trimestre 2025 : à rapprocher de sa déclaration, pas à affecter — la TVA compterait en charge\.$/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Affecter ce mouvement' }).click() })
+    const envoi = faux.rpcs.find((r) => r.nom === 'affecter_mouvements_bancaires')
+    expect((envoi!.args.p_affectations as { ligne_bancaire_id: string }[]).map((a) => a.ligne_bancaire_id)).toEqual(['l-frais'])
+  })
+
+  it('suspend le lot sur une lecture partielle des déclarations, et le dit — jusque dans la fiche', async () => {
+    preparerLot()
+    faux.muet = { declarations_tva: 0 }
+    rendre(TRESORERIE, true)
+    expect(await screen.findByText(/Les déclarations de TVA n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.getByText(/Affectation en lot suspendue/)).toBeTruthy()
+    // Sans les déclarations, le prélèvement n'est plus reconnu : le lot le proposerait avec les frais — c'est
+    // précisément ce que la suspension empêche d'écrire.
+    const bouton = screen.getByRole('button', { name: 'Affecter les 2' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs.filter((r) => r.nom === 'affecter_mouvements_bancaires')).toEqual([])
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(within(volet()).getByText('Les déclarations de TVA n’ont pas pu être lues en entier : une déclaration peut manquer à ce choix. Recharge la page.')).toBeTruthy()
   })
 })
 

@@ -4,6 +4,7 @@ import {
   comparerDeclarations,
   creditReporte,
   declarationPrecedente,
+  dePeriode,
   dernierePeriodeClose,
   libellePeriode,
   ligneDuTaux,
@@ -81,6 +82,26 @@ describe('libellePeriode', () => {
     expect(libellePeriode('2027-04-01', '2027-06-30')).toBe('2e trimestre 2027')
     expect(libellePeriode('2027-03-01', '2027-03-31')).toBe('mars 2027')
     expect(libellePeriode('2027-01-15', '2027-02-14')).toBe('du 15/01/2027 au 14/02/2027')
+  })
+})
+
+describe('dePeriode', () => {
+  it('« du » devant un trimestre, « de » ou « d’ » devant un mois, rien de plus devant des dates', () => {
+    expect(dePeriode('3e trimestre 2026')).toBe('du 3e trimestre 2026')
+    expect(dePeriode('1er trimestre 2027')).toBe('du 1er trimestre 2027')
+    expect(dePeriode('mars 2027')).toBe('de mars 2027')
+    expect(dePeriode('octobre 2025')).toBe('d’octobre 2025')
+    expect(dePeriode('août 2025')).toBe('d’août 2025')
+    expect(dePeriode('avril 2026')).toBe('d’avril 2026')
+    expect(dePeriode('du 15/01/2027 au 14/02/2027')).toBe('du 15/01/2027 au 14/02/2027')
+  })
+
+  it('convient à chaque période que l’application nomme', () => {
+    for (const periodicite of ['mensuelle', 'trimestrielle'] as const) {
+      for (const p of periodesDeLAnnee(2026, periodicite)) {
+        expect(dePeriode(p.libelle)).toMatch(/^(du \d|de [bcdfghjklmnpqrstvwxz]|d’[aeiouyàâéèêîïôû])/i)
+      }
+    }
   })
 })
 

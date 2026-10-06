@@ -6,7 +6,7 @@ import {
   COMPTE_REMBOURSEMENT_TVA_DEMANDE, COMPTE_TVA_A_DECAISSER, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
   COMPTE_TVA_IMMOBILISATIONS,
 } from './comptes'
-import { libellePeriode, periodesDeLAnnee, type DeclarationCa3, type PeriodeTva } from './declarationTva'
+import { dePeriode, libellePeriode, periodesDeLAnnee, type DeclarationCa3, type PeriodeTva } from './declarationTva'
 import { dernierJourDuMois, formatDate, formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
@@ -231,8 +231,9 @@ export function refusEnregistrement(demande: DemandeDeDeclaration, contexte: Con
   return null
 }
 
-// Ce que la déclaration enregistrera d'une CA3 préparée : ses cases, et la TVA exacte des comptes.
-function declarationDeLaCa3(ca3: DeclarationCa3, periode: { debut: string; fin: string }): DeclarationLiquidable {
+// Ce que la déclaration enregistrera d'une CA3 préparée : ses cases, et la TVA exacte des comptes. L'onglet TVA en
+// montre la liquidation avant le clic.
+export function declarationDeLaCa3(ca3: DeclarationCa3, periode: { debut: string; fin: string }): DeclarationLiquidable {
   return {
     periode_debut: periode.debut,
     periode_fin: periode.fin,
@@ -349,16 +350,52 @@ export function suiviDesDeclarations<
   })
 }
 
+// Ce que le relevé a payé d'une déclaration, et ce qu'il lui a remboursé, en mots : l'onglet TVA les met en pastilles dans
+// l'historique, la fiche d'un mouvement sous la déclaration qu'il paie. Écrits une fois, pour que les deux disent pareil.
+export function phraseDuPaiement(s: Pick<SuiviDeDeclaration<unknown, unknown>, 'etatPaiement' | 'aPayer' | 'paye'>): string {
+  switch (s.etatPaiement) {
+    case 'rien_a_payer': return 'rien à payer'
+    case 'a_payer': return `${formatMoney(s.aPayer)} à payer`
+    case 'payee': return 'payée'
+    case 'payee_en_partie': return `payée ${formatMoney(s.paye)} sur ${formatMoney(s.aPayer)}`
+    case 'payee_en_trop': return `payée ${formatMoney(centimes(s.paye - s.aPayer) / 100)} de trop`
+  }
+}
+
+export function phraseDuRemboursement(
+  s: Pick<SuiviDeDeclaration<unknown, unknown>, 'etatRemboursement' | 'remboursementDemande' | 'rembourse'>,
+): string | null {
+  switch (s.etatRemboursement) {
+    case 'sans_objet': return null
+    case 'attendu': return `remboursement de ${formatMoney(s.remboursementDemande)} attendu`
+    case 'recu': return 'remboursement reçu'
+    case 'recu_en_partie': return `remboursé ${formatMoney(s.rembourse)} sur ${formatMoney(s.remboursementDemande)}`
+    case 'recu_en_trop': return `remboursé ${formatMoney(centimes(s.rembourse - s.remboursementDemande) / 100)} de trop`
+  }
+}
+
+type DeclarationSuivie = Pick<DeclarationTva, 'id' | 'periode_fin' | 'cases' | 'tva_declaree' | 'credit_anterieur' | 'remboursement_demande'>
+type MouvementSuivi = Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'statut' | 'declaration_tva_id'>
+
+// Ce qu'il reste à recevoir de la déclaration DANS LE SENS DU MOUVEMENT, en centimes : la TVA qui reste à payer pour un
+// prélèvement, le remboursement qui reste attendu pour un encaissement. Un mouvement déjà rapproché d'elle ne compte
+// pas dans son propre reste : le rapprocher de nouveau le remplacerait.
+function resteDu<D extends DeclarationSuivie, L extends MouvementSuivi>(ligne: L, s: SuiviDeDeclaration<D, L>): number {
+  const dejaCompte = s.mouvements.some((m) => m.id === ligne.id) ? centimes(Math.abs(ligne.montant)) : 0
+  return ligne.montant > 0
+    ? centimes(s.remboursementDemande) - centimes(s.rembourse) + dejaCompte
+    : centimes(s.aPayer) - centimes(s.paye) + dejaCompte
+}
+
 // LES DÉCLARATIONS QU'UN MOUVEMENT PEUT PAYER — ou rembourser —, de la plus probable à la moins probable : celles
 // dont la période est finie avant lui, qui ont une TVA à payer (un prélèvement) ou un remboursement demandé (un
 // encaissement) ; d'abord celle dont le reste dû est exactement son montant, puis celles qui ont encore quelque chose
 // à recevoir, puis les autres — une majoration se paie sur une déclaration déjà payée —, chaque fois la période la plus
-// récente d'abord. Un mouvement déjà rapproché ne compte pas dans le reste de sa propre déclaration : le
-// rapprochement le remplacerait.
-export function declarationsPourLeMouvement<
-  D extends Pick<DeclarationTva, 'id' | 'periode_fin' | 'cases' | 'tva_declaree' | 'credit_anterieur' | 'remboursement_demande'>,
-  L extends Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'statut' | 'declaration_tva_id'>,
->(ligne: L, suivis: readonly SuiviDeDeclaration<D, L>[]): D[] {
+// récente d'abord.
+export function declarationsPourLeMouvement<D extends DeclarationSuivie, L extends MouvementSuivi>(
+  ligne: L,
+  suivis: readonly SuiviDeDeclaration<D, L>[],
+): D[] {
   if (ligne.montant === 0) return []
   const entree = ligne.montant > 0
   const montant = centimes(Math.abs(ligne.montant))
@@ -366,10 +403,7 @@ export function declarationsPourLeMouvement<
     .filter((s) => s.declaration.periode_fin < ligne.date)
     .filter((s) => (entree ? s.remboursementDemande > 0 : s.aPayer > 0))
     .map((s) => {
-      const dejaCompte = s.mouvements.some((m) => m.id === ligne.id) ? montant : 0
-      const reste = entree
-        ? centimes(s.remboursementDemande) - centimes(s.rembourse) + dejaCompte
-        : centimes(s.aPayer) - centimes(s.paye) + dejaCompte
+      const reste = resteDu(ligne, s)
       return { declaration: s.declaration, rang: reste === montant ? 0 : reste > 0 ? 1 : 2 }
     })
   return rangs
@@ -377,23 +411,44 @@ export function declarationsPourLeMouvement<
     .map((r) => r.declaration)
 }
 
+// LES DÉCLARATIONS DONT CE MOUVEMENT RÈGLE EXACTEMENT LE RESTE, et dont la période est finie avant lui — la plus récente
+// d'abord. Une seule : la fiche d'un mouvement la PROPOSE. Plusieurs : elles conviennent aussi bien, et la fiche les
+// montre toutes sans en mettre une en avant — l'ordre de tri trancherait à la place de l'opérateur.
+export function declarationsDuMontant<D extends DeclarationSuivie, L extends MouvementSuivi>(
+  ligne: L,
+  suivis: readonly SuiviDeDeclaration<D, L>[],
+): D[] {
+  if (ligne.montant === 0) return []
+  const montant = centimes(Math.abs(ligne.montant))
+  return suivis
+    .filter((s) => s.declaration.periode_fin < ligne.date && resteDu(ligne, s) === montant)
+    .map((s) => s.declaration)
+    .sort((a, b) => b.periode_fin.localeCompare(a.periode_fin))
+}
+
 // UN MOUVEMENT À TRAITER QUI RESSEMBLE AU PAIEMENT — OU AU REMBOURSEMENT — D'UNE DÉCLARATION ENREGISTRÉE : son montant
 // est exactement ce qui en reste dû, et il suit sa période. Les règles d'affectation ne le rangent pas dans une
 // catégorie en lot (lib/reglesAffectation.ts) : une règle au nom du Trésor le mettrait en charge, et la TVA
 // compterait dans la 2035.
-export function paiementTvaPlausible<
-  D extends Pick<DeclarationTva, 'id' | 'periode_fin' | 'cases' | 'tva_declaree' | 'credit_anterieur' | 'remboursement_demande'>,
-  L extends Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'statut' | 'declaration_tva_id'>,
->(ligne: L, suivis: readonly SuiviDeDeclaration<D, L>[]): boolean {
-  if (ligne.montant === 0) return false
-  const montant = centimes(Math.abs(ligne.montant))
-  return suivis.some((s) => {
-    if (s.declaration.periode_fin >= ligne.date) return false
-    const reste = ligne.montant > 0
-      ? centimes(s.remboursementDemande) - centimes(s.rembourse)
-      : centimes(s.aPayer) - centimes(s.paye)
-    return reste === montant
-  })
+export function paiementTvaPlausible<D extends DeclarationSuivie, L extends MouvementSuivi>(
+  ligne: L,
+  suivis: readonly SuiviDeDeclaration<D, L>[],
+): boolean {
+  return declarationsDuMontant(ligne, suivis).length > 0
+}
+
+// La phrase qui écarte un tel mouvement du lot des règles d'affectation, en nommant la déclaration à laquelle il
+// ressemble — la plus récente, quand plusieurs conviennent.
+export function raisonPaiementTvaPlausible<D extends DeclarationSuivie & Pick<DeclarationTva, 'periode_debut'>, L extends MouvementSuivi>(
+  ligne: L,
+  suivis: readonly SuiviDeDeclaration<D, L>[],
+): string | null {
+  const [d] = declarationsDuMontant(ligne, suivis)
+  if (!d) return null
+  const periode = dePeriode(libellePeriode(d.periode_debut, d.periode_fin))
+  return ligne.montant < 0
+    ? `Il ressemble au paiement de la TVA ${periode} : à rapprocher de sa déclaration, pas à affecter — la TVA compterait en charge.`
+    : `Il ressemble au remboursement du crédit de TVA ${periode} : à rapprocher de sa déclaration, pas à affecter — il compterait en recette.`
 }
 
 // LES REMBOURSEMENTS DE CRÉDIT DE TVA NE SONT PAS UN RYTHME D'ACTIVITÉ : écrits au 512, ils entreraient dans la
@@ -424,6 +479,26 @@ export function periodesNonDeclarees(
     p.fin < aujourdhui
     && (ouverture === null || p.debut >= ouverture)
     && moisDeLaPeriode(p).some((m) => !moisDeclares.has(m)))
+}
+
+// LES PÉRIODES EN RETARD DU DOSSIER ENTIER, pour la Checklist : celles des exercices où le dossier a une activité (un
+// mouvement du relevé, une pièce datée), dont la CA3 aurait dû être déposée — la période finie avant le premier jour du
+// mois précédent : une CA3 se dépose dans le mois qui suit sa période, au plus tard le 24, et réclamer celle du trimestre
+// qui vient de finir crierait avant l'échéance —, après l'ouverture d'un dossier repris, et hors des exercices validés :
+// une déclaration ne s'y enregistre plus, et leur validation l'a déjà dit (`periodes-tva-non-declarees`).
+export function periodesEnRetard(
+  declarations: readonly Pick<DeclarationTva, 'periode_debut' | 'periode_fin'>[],
+  periodicite: PeriodiciteTva,
+  anneesActives: readonly number[],
+  premierJourDuMois: string,
+  ouverture: string | null,
+  frontiere: string | null,
+): PeriodeTva[] {
+  const [annee, mois] = premierJourDuMois.split('-').map(Number)
+  const limite = mois === 1 ? `${annee - 1}-12-01` : `${annee}-${String(mois - 1).padStart(2, '0')}-01`
+  return [...new Set(anneesActives)].sort((a, b) => a - b)
+    .flatMap((a) => periodesNonDeclarees(declarations, a, periodicite, limite, ouverture))
+    .filter((p) => !estFigee(p.fin, frontiere))
 }
 
 function moisSuivant(mois: string): string {

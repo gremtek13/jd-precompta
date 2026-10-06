@@ -6,10 +6,10 @@ import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { calculerCa3, type DeclarationCa3, type DonneesTva } from './declarationTva'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import {
-  ARRONDI_MAXIMAL, REFUS_PAIEMENT_TVA_CLASSE, aPayerDe, arrondiDeLaLiquidation, declarationsPourLeMouvement,
+  ARRONDI_MAXIMAL, REFUS_PAIEMENT_TVA_CLASSE, aPayerDe, arrondiDeLaLiquidation, declarationsDuMontant, declarationsPourLeMouvement,
   ecritureDeLaLiquidation, ecritureDuPaiementTva, idsRemboursementsTva, liquidationsDesynchronisees,
-  paiementTvaPlausible, paiementsTvaDesynchronises, parametresEnregistrement, periodesNonDeclarees,
-  refusEnregistrement, refusPaiementTva, remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement,
+  paiementTvaPlausible, paiementsTvaDesynchronises, parametresEnregistrement, periodesEnRetard, periodesNonDeclarees,
+  raisonPaiementTvaPlausible, refusEnregistrement, refusPaiementTva, remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement,
   suiviDesDeclarations, type ContexteDeDeclaration, type DeclarationLiquidable, type DemandeDeDeclaration,
 } from './liquidationTva'
 import { paiementsDesPieces } from './rattachement'
@@ -642,6 +642,54 @@ describe('paiementTvaPlausible — ce que les règles d’affectation ne rangent
   })
 })
 
+describe('declarationsDuMontant — la déclaration que la fiche d’un mouvement propose', () => {
+  const q4 = declaration({ id: 'q4', periode_debut: '2025-10-01', periode_fin: '2025-12-31', tva_declaree: 79 })
+
+  it('celles dont le mouvement règle exactement le reste, la plus récente d’abord', () => {
+    const suivis = suiviDesDeclarations([q4, Q1_ENREGISTREE, Q2_ENREGISTREE], [])
+    expect(declarationsDuMontant(mouvement({ montant: -79 }), suivis).map((d) => d.id)).toEqual(['q1', 'q4'])
+    expect(declarationsDuMontant(mouvement({ montant: -79, date: '2026-02-10' }), suivis).map((d) => d.id)).toEqual(['q4'])
+    expect(declarationsDuMontant(mouvement({ montant: 300, date: '2026-08-10' }), suivis).map((d) => d.id)).toEqual(['q2'])
+    expect(declarationsDuMontant(mouvement({ montant: -78.99 }), suivis)).toEqual([])
+  })
+
+  it('le reste, pas le montant déclaré : un acompte en laisse un autre, et un mouvement déjà rapproché ne se compte pas', () => {
+    const acompte = mouvement({ id: 'a', statut: 'rapprochee', declaration_tva_id: 'q1', montant: -40 })
+    const suivis = suiviDesDeclarations([Q1_ENREGISTREE], [acompte])
+    expect(declarationsDuMontant(mouvement({ id: 'solde', montant: -39 }), suivis).map((d) => d.id)).toEqual(['q1'])
+    expect(declarationsDuMontant(mouvement({ id: 'solde', montant: -79 }), suivis)).toEqual([])
+    expect(declarationsDuMontant(acompte, suivis)).toEqual([])
+    const paye = mouvement({ id: 'p', statut: 'rapprochee', declaration_tva_id: 'q1', montant: -79 })
+    expect(declarationsDuMontant(paye, suiviDesDeclarations([Q1_ENREGISTREE], [paye])).map((d) => d.id)).toEqual(['q1'])
+  })
+
+  it('un remboursement ne règle pas une TVA à payer, ni un prélèvement un remboursement, ni zéro euro rien', () => {
+    const suivis = suiviDesDeclarations([Q1_ENREGISTREE, Q2_ENREGISTREE], [])
+    expect(declarationsDuMontant(mouvement({ montant: 79 }), suivis)).toEqual([])
+    expect(declarationsDuMontant(mouvement({ montant: -300, date: '2026-08-10' }), suivis)).toEqual([])
+    expect(declarationsDuMontant(mouvement({ montant: 0 }), suivis)).toEqual([])
+  })
+})
+
+describe('raisonPaiementTvaPlausible — ce que la carte des règles dit d’un mouvement écarté du lot', () => {
+  it('nomme la déclaration et dit pourquoi il ne s’affecte pas', () => {
+    const suivis = suiviDesDeclarations([Q1_ENREGISTREE, Q2_ENREGISTREE], [])
+    expect(raisonPaiementTvaPlausible(mouvement({ montant: -79 }), suivis)).toBe(
+      'Il ressemble au paiement de la TVA du 1er trimestre 2026 : à rapprocher de sa déclaration, pas à affecter — la TVA compterait en charge.',
+    )
+    expect(raisonPaiementTvaPlausible(mouvement({ montant: 300, date: '2026-08-10' }), suivis)).toBe(
+      'Il ressemble au remboursement du crédit de TVA du 2e trimestre 2026 : à rapprocher de sa déclaration, pas à affecter — il compterait en recette.',
+    )
+    expect(raisonPaiementTvaPlausible(mouvement({ montant: -80 }), suivis)).toBeNull()
+  })
+
+  it('un mois se dit avec sa préposition', () => {
+    const octobre = declaration({ id: 'oct', periode_debut: '2025-10-01', periode_fin: '2025-10-31', tva_declaree: 120 })
+    expect(raisonPaiementTvaPlausible(mouvement({ montant: -120, date: '2025-11-20' }), suiviDesDeclarations([octobre], [])))
+      .toBe('Il ressemble au paiement de la TVA d’octobre 2025 : à rapprocher de sa déclaration, pas à affecter — la TVA compterait en charge.')
+  })
+})
+
 describe('idsRemboursementsTva', () => {
   it('les remboursements reçus, pas les paiements', () => {
     expect([...idsRemboursementsTva([
@@ -673,6 +721,42 @@ describe('periodesNonDeclarees', () => {
 
   it('une année entièrement déclarée par une déclaration saisie à la main', () => {
     expect(periodesNonDeclarees([d('2025-01-01', '2025-12-31')], 2025, 'mensuelle', '2026-04-15', null)).toEqual([])
+  })
+})
+
+// La Checklist ne réclame une CA3 qu'une fois son échéance passée — le mois qui suit sa période —, sur les exercices
+// où le dossier a une activité, hors des exercices validés.
+describe('periodesEnRetard', () => {
+  const d = (debut: string, fin: string) => ({ periode_debut: debut, periode_fin: fin })
+  const libelles = (p: { libelle: string }[]) => p.map((x) => x.libelle)
+
+  it('pas la période qui vient de finir : sa CA3 se dépose dans le mois qui suit', () => {
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2026], '2026-10-01', null, null)))
+      .toEqual(['1er trimestre 2026', '2e trimestre 2026'])
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2026], '2026-11-01', null, null)))
+      .toEqual(['1er trimestre 2026', '2e trimestre 2026', '3e trimestre 2026'])
+  })
+
+  it('en janvier, la limite est le 1er décembre de l’année d’avant', () => {
+    expect(libelles(periodesEnRetard([], 'mensuelle', [2026], '2027-01-01', null, null)).slice(-2))
+      .toEqual(['octobre 2026', 'novembre 2026'])
+  })
+
+  it('les exercices où le dossier a une activité, dans l’ordre, chacun une fois', () => {
+    expect(libelles(periodesEnRetard([d('2025-01-01', '2025-12-31')], 'trimestrielle', [2026, 2025, 2026], '2026-08-01', null, null)))
+      .toEqual(['1er trimestre 2026', '2e trimestre 2026'])
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2024], '2026-08-01', null, null))).toHaveLength(4)
+    // Les années données dans le désordre se rendent dans l'ordre : la plus ancienne d'abord.
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2026, 2025], '2026-05-01', null, null))).toEqual([
+      '1er trimestre 2025', '2e trimestre 2025', '3e trimestre 2025', '4e trimestre 2025', '1er trimestre 2026',
+    ])
+  })
+
+  it('ni avant l’ouverture, ni dans un exercice validé', () => {
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2025, 2026], '2026-08-01', '2025-07-01', '2025-12-31')))
+      .toEqual(['1er trimestre 2026', '2e trimestre 2026'])
+    expect(libelles(periodesEnRetard([], 'trimestrielle', [2025], '2026-08-01', '2025-07-01', null)))
+      .toEqual(['3e trimestre 2025', '4e trimestre 2025'])
   })
 })
 

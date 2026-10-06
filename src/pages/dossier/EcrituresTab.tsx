@@ -20,12 +20,17 @@ import {
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
 import type {
-  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LettrageManuel, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
-  ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, CompteNotesDeFrais, DeclarationTva, EcritureBrouillon, Immobilisation, LettrageManuel, LigneBancaire, ModeComptable,
+  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
 import { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilanDuMouvement } from '../../lib/compteDeBilan'
+import {
+  ARRONDI_MAXIMAL, arrondiDeLaLiquidation, ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchronisees,
+  paiementsTvaDesynchronises, refusPaiementTva,
+} from '../../lib/liquidationTva'
+import { libellePeriode } from '../../lib/declarationTva'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import { compteDuDirigeant } from '../../lib/virementPersonnel'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -132,6 +137,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // dossier en engagement laisserait ouverte une facture que le cabinet a lettrée, sans pouvoir le dire.
   const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
   const [lettragesIncomplets, setLettragesIncomplets] = useState<string | null>(null)
+  // Les déclarations de TVA (ligne 26.8, lib/liquidationTva.ts) : de quoi dire une liquidation ou un paiement dont
+  // l'écriture ne suit plus sa déclaration, et la réécrire. À PART encore : le FEC et la piste d'audit n'en dépendent
+  // pas — la liquidation est au brouillon, et le paiement se lit sur la ligne du relevé.
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
+  const [declarationsIncompletes, setDeclarationsIncompletes] = useState<string | null>(null)
   // Verrou d'exécution de la génération : `generating` est un état React, qui ne prend effet qu'au
   // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
   // recevrait deux jeux d'écritures, c'est-à-dire sa charge en double dans le FEC et la balance.
@@ -153,7 +163,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements, lectureNatures, lectureLettrages,
+      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -214,10 +224,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('lettrages_manuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      lireTout<DeclarationTva>((debut, fin) =>
+        supabase.from('declarations_tva').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
     setLettragesIncomplets(lectureLettrages.motif)
+    setDeclarationsTva(lectureDeclarations.lignes)
+    setDeclarationsIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
     setReglements(lectureReglements.lignes)
     setVentilations(lectureVentilations.lignes)
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
@@ -414,6 +430,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // compte et l'écriture ensemble (voir lib/compteDeBilan.ts). Un contrôle qui parle trop se corrige ; celui qui se tait
   // ne se voit pas.
   const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere)
+  // Les déclarations de TVA dont la liquidation ne suit plus ce qu'elles ont enregistré, et les mouvements qui en paient
+  // une dont l'écriture ne suit plus leur montant — DÉFENSIF tous deux : la base les écrit ensemble (lib/liquidationTva.ts).
+  // Une déclaration lue se juge sur elle-même, quelles que soient les autres : sur une lecture partielle, celles qui
+  // manquent ne sont simplement pas jugées — le bandeau le dit —, et le paiement d'une déclaration non lue ne se réécrit
+  // pas, son écriture se composant avec elle.
+  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignesBancaires, frontiere)
+  const declarationById = (id: string | null) => (id ? declarationsTva.find((d) => d.id === id) ?? null : null)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
@@ -617,6 +641,56 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       await load()
     } catch (err) {
       setError(messageErreur(err, 'L’écriture de ce mouvement n’a pas pu être réécrite.'))
+    } finally {
+      reaffectationsEnCours.current.delete(ligne.id)
+      setReaffectation(null)
+    }
+  }
+
+  // Réécrit la liquidation d'une déclaration de TVA depuis ce qu'elle a enregistré, par `ecrire_liquidation_tva`, qui la
+  // compare à `liquidation_attendue` et remplace l'écriture dans la même transaction. La déclaration reste celle qui a
+  // été déposée : la retirer puis l'enregistrer de nouveau la recalculerait sur les pièces d'aujourd'hui. Sur ce clic
+  // seulement, comme « Réaffecter ».
+  async function reecrireLiquidation(declaration: DeclarationTva) {
+    if (reaffectationsEnCours.current.has(declaration.id)) return
+    reaffectationsEnCours.current.add(declaration.id)
+    setReaffectation(declaration.id)
+    setError(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('ecrire_liquidation_tva', {
+        p_declaration_id: declaration.id,
+        p_ecriture: ecritureDeLaLiquidation(declaration),
+      })
+      if (rpcError) throw rpcError
+      await load()
+    } catch (err) {
+      setError(messageErreur(err, 'La liquidation de cette déclaration n’a pas pu être réécrite.'))
+    } finally {
+      reaffectationsEnCours.current.delete(declaration.id)
+      setReaffectation(null)
+    }
+  }
+
+  // Réécrit l'écriture d'un mouvement qui paie une déclaration de TVA, par la même fonction que son rapprochement
+  // (`rapprocher_declaration_tva`), qui remplace le lien et l'écriture dans la même transaction.
+  async function reecrirePaiementTva(ligne: LigneBancaire) {
+    const declaration = declarationById(ligne.declaration_tva_id)
+    if (!declaration || reaffectationsEnCours.current.has(ligne.id)) return
+    const refus = refusPaiementTva(ligne, declaration)
+    if (refus) { setError(refus); return }
+    reaffectationsEnCours.current.add(ligne.id)
+    setReaffectation(ligne.id)
+    setError(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('rapprocher_declaration_tva', {
+        p_ligne_bancaire_id: ligne.id,
+        p_declaration_id: declaration.id,
+        p_ecriture: ecritureDuPaiementTva(ligne),
+      })
+      if (rpcError) throw rpcError
+      await load()
+    } catch (err) {
+      setError(messageErreur(err, 'L’écriture de ce paiement n’a pas pu être réécrite.'))
     } finally {
       reaffectationsEnCours.current.delete(ligne.id)
       setReaffectation(null)
@@ -1098,6 +1172,109 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                           disabled={reaffectation === l.id || refus !== null}
                           title={refus ? `${refus} Depuis la fiche du mouvement, dans Banque.` : undefined}
                           onClick={() => reecrireCompteDeBilan(l)}
+                        >
+                          {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <BandeauLecturePartielle
+        quoi="Les déclarations de TVA"
+        motif={declarationsIncompletes}
+        consequence={
+          'Une liquidation ou un paiement de TVA dont l’écriture ne suit plus sa déclaration peut donc ne pas être ' +
+          'signalé, et le paiement d’une déclaration non lue ne se réécrit pas. Le FEC et la piste d’audit n’en ' +
+          'dépendent pas. Recharge la page.'
+        }
+      />
+
+      {liquidationsPerimees.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Liquidations de TVA à réécrire <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            L’écriture de liquidation de ces déclarations n’est plus celle que leur déclaration commande : absente, sur un
+            autre compte, d’un autre montant ou à une autre date. La base écrit la déclaration et sa liquidation ensemble,
+            donc cet écart ne devrait pas exister — il se dit plutôt que de se cacher. « Réécrire » la reprend depuis ce que
+            la déclaration a enregistré, sans toucher à la déclaration.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Période</th><th>Déposée le</th><th>TVA nette</th><th></th></tr></thead>
+              <tbody>
+                {liquidationsPerimees.map((d) => {
+                  // Une déclaration saisie à la main n'écrit pas de liquidation : se retirer puis s'enregistrer de
+                  // nouveau dans l'onglet TVA est le seul geste. Un arrondi qui n'en est plus un, la base le refuserait.
+                  const raison = !d.cases
+                    ? 'Cette déclaration a été saisie à la main : sa TVA est dans les à-nouveaux, et elle n’écrit pas de liquidation. Retire-la puis enregistre-la de nouveau, dans l’onglet TVA.'
+                    : Math.abs(arrondiDeLaLiquidation(d)) > ARRONDI_MAXIMAL
+                      ? 'L’écart entre la TVA des comptes et la TVA déclarée n’est pas un arrondi : la base refuserait cette liquidation.'
+                      : null
+                  return (
+                    <tr key={d.id}>
+                      <td>{libellePeriode(d.periode_debut, d.periode_fin)}</td>
+                      <td>{d.date_declaration ? formatDate(d.date_declaration) : '—'}</td>
+                      <td>{formatMoney(d.tva_declaree)}</td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={reaffectation === d.id || raison !== null}
+                          title={raison ?? undefined}
+                          onClick={() => reecrireLiquidation(d)}
+                        >
+                          {reaffectation === d.id ? 'Réécriture…' : 'Réécrire'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {paiementsTvaPerimes.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Paiements de TVA à réécrire <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            L’écriture de ces mouvements n’est plus celle que leur montant commande : la TVA à décaisser (445510) face à la
+            banque pour un prélèvement, le remboursement demandé (445830) pour un encaissement. La base écrit le
+            rapprochement et l’écriture ensemble, donc cet écart ne devrait pas exister. « Réécrire » la reprend.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Déclaration</th><th></th></tr></thead>
+              <tbody>
+                {paiementsTvaPerimes.map((l) => {
+                  const declaration = declarationById(l.declaration_tva_id)
+                  const raison = !declaration
+                    ? declarationsIncompletes
+                      ? 'Les déclarations de TVA n’ont pas pu être lues en entier : recharge la page.'
+                      : 'La déclaration que ce mouvement paie ne figure pas parmi les déclarations lues.'
+                    : refusPaiementTva(l, declaration)
+                  return (
+                    <tr key={l.id}>
+                      <td>{formatDate(l.date)}</td>
+                      <td>{l.libelle}</td>
+                      <td>{formatMoney(l.montant)}</td>
+                      <td>{declaration ? libellePeriode(declaration.periode_debut, declaration.periode_fin) : '—'}</td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={reaffectation === l.id || raison !== null}
+                          title={raison ?? undefined}
+                          onClick={() => reecrirePaiementTva(l)}
                         >
                           {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}
                         </button>

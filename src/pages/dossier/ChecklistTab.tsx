@@ -13,15 +13,16 @@ import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees }
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from '../../lib/cotisationRapprochee'
 import { acquisitionsDesBiens, dotationsDuRegistre, dotationsEnDefaut } from '../../lib/amortissements'
 import { forfaitsDuCadre7, forfaitsEnDefaut } from '../../lib/forfaitKilometrique'
+import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnRetard } from '../../lib/liquidationTva'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
 import type {
-  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire,
-  LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
+  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
@@ -64,9 +65,11 @@ interface ItemChecklist {
 // simples cases à cocher manuellement, pas un faux positif automatique.
 // `modele` : le modèle comptable du dossier (lib/engagement.ts), qui décide de ce que ses écritures
 // doivent contenir — lues dans l'autre modèle, elles paraîtraient toutes « à régénérer ».
-export default function ChecklistTab({ dossierId, assujettiTva, modele, onNavigate }: {
+// `periodiciteTva` : le régime du dossier, qui dit quelles périodes de TVA attendent une déclaration.
+export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, modele, onNavigate }: {
   dossierId: string
   assujettiTva: boolean
+  periodiciteTva: PeriodiciteTva
   modele: ModeleComptable
   onNavigate: (tab: DossierTab) => void
 }) {
@@ -112,6 +115,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les lignes du cadre 7 (lib/forfaitKilometrique.ts) : le forfait de chacune doit être écrit au brouillon, et
   // ce point de la liste en dépend — donc le même drapeau que les autres collections.
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
+  // Les déclarations de TVA enregistrées (lib/liquidationTva.ts) : trois points de cette liste en dépendent — une
+  // liquidation qui ne suit plus sa déclaration, un paiement qui ne suit plus son mouvement, et les périodes dont la
+  // déclaration manque. Lues en partie, ce dernier se tait : une déclaration non lue ferait réclamer sa période.
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
+  const [declarationsPartielles, setDeclarationsPartielles] = useState(false)
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -152,6 +160,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       lectureReglements,
       lectureVehicules,
       lectureLettrages,
+      lectureDeclarations,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -220,6 +229,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('lettrages_manuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      lireTout<DeclarationTva>((debut, fin) =>
+        supabase.from('declarations_tva').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -245,9 +258,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
         lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
-        lectureVehicules, lectureLettrages,
+        lectureVehicules, lectureLettrages, lectureDeclarations,
       ].find((l) => !l.complete)?.motif ?? null,
     )
+    setDeclarationsTva(lectureDeclarations.lignes)
+    setDeclarationsPartielles(!lectureDeclarations.complete)
     setLettragesManuels(lectureLettrages.lignes)
     setVehicules(lectureVehicules.lignes)
     setReglements(lectureReglements.lignes)
@@ -477,6 +492,23 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     ? []
     : forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, modele, ouverture?.date ?? null, anneeCourante, frontiere), anneeCourante)
   const exercicesDesForfaits = [...new Set(forfaitsManquants.map((f) => f.vehicule.annee))].sort((a, b) => a - b)
+  // LA TVA LIQUIDÉE ET PAYÉE (lib/liquidationTva.ts) : une liquidation qui ne suit plus ce que sa déclaration a
+  // enregistré, un paiement dont l'écriture ne suit plus son mouvement — défensifs tous deux, la base les écrit
+  // ensemble —, et les périodes dont la déclaration manque, une fois son échéance passée. Celles-ci sur les exercices où
+  // le dossier a une activité, hors des exercices validés et des périodes reprises : elles se taisent sur une lecture
+  // partielle des déclarations ou de l'ouverture, qui ferait réclamer une période déclarée ou reprise.
+  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignes, frontiere)
+  const anneesActives = [
+    ...lignes.map((l) => anneeDe(l.date)),
+    ...piecesValidees.flatMap((p) => (p.date_piece ? [anneeDe(p.date_piece)] : [])),
+  ]
+  const periodesTvaEnRetard = !assujettiTva || declarationsPartielles || ouvertureIncomplete !== null
+    ? []
+    : periodesEnRetard(declarationsTva, periodiciteTva, anneesActives, premierJourDuMoisCourant(), ouverture?.date ?? null, frontiere)
+  const libellesEnRetard = periodesTvaEnRetard.length > 6
+    ? `${periodesTvaEnRetard.slice(0, 6).map((p) => p.libelle).join(', ')} et ${periodesTvaEnRetard.length - 6} autre(s)`
+    : periodesTvaEnRetard.map((p) => p.libelle).join(', ')
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
@@ -563,6 +595,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // Le pendant pour un mouvement écrit sur un compte de bilan : « Réécrire », dans Écritures. Défensif — la base écrit
     // le compte et l'écriture ensemble —, mais une écriture retirée par un autre chemin sortirait du FEC en silence.
     { id: 'comptes-de-bilan-perimes', label: 'mouvement(s) écrit(s) sur un compte de bilan dont l’écriture ne suit plus le compte', action: 'Réécrire ces mouvements', nb: bilanPerimes.length, cible: 'ecritures', severite: 'erreur' },
+    // Le pendant pour la TVA : une liquidation qui ne suit plus ce que sa déclaration a enregistré, un paiement dont
+    // l'écriture ne suit plus son mouvement. « Réécrire », dans Écritures, les reprend — la liquidation depuis la
+    // déclaration déposée, sans la retirer.
+    { id: 'liquidations-tva-perimees', label: 'déclaration(s) de TVA dont l’écriture de liquidation manque ou ne suit plus la déclaration', action: 'Réécrire ces liquidations', nb: liquidationsPerimees.length, cible: 'ecritures', severite: 'erreur' },
+    { id: 'paiements-tva-perimes', label: 'paiement(s) ou remboursement(s) de TVA dont l’écriture ne suit plus le mouvement', action: 'Réécrire ces paiements', nb: paiementsTvaPerimes.length, cible: 'ecritures', severite: 'erreur' },
     // « Erreur » : la 2035 compte ce que disent les parts, l'écriture autre chose. Défensif — la base
     // vérifie la somme —, mais une part écrite ou retirée par un autre chemin ne se verrait nulle part.
     { id: 'ventilations-incoherentes', label: 'mouvement(s) ventilé(s) dont les parts ne font plus le mouvement', action: 'Modifier ou annuler ces ventilations', nb: ventilationsFausses.length, cible: 'banque', severite: 'erreur' },
@@ -647,6 +684,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       id: 'lettrages-qui-ne-tiennent-plus', label: 'lettrage(s) fait(s) à la main qui ne se solde(nt) plus',
       action: 'Voir les comptes de tiers', nb: lettragesQuiNeTiennentPlus.length, cible: 'statistiques', severite: 'attention',
       detail: 'Ils ne sont pas portés au FEC : la liste « Lettrages faits à la main », sous les comptes de tiers, dit pourquoi et les défait.',
+    },
+    // « Attention » : une CA3 en retard, ou déposée sans être enregistrée ici. Sa TVA reste aux comptes 4457 et 4456,
+    // que rien ne solde, et son prélèvement ne trouve aucune déclaration à laquelle se rapprocher. Un dossier au régime
+    // simplifié dépose jusqu'aux exercices de 2026 une CA12 que l'application ne prépare pas : le détail le dit.
+    {
+      id: 'periodes-tva-non-declarees', label: 'période(s) de TVA dont la déclaration n’est pas enregistrée — leur TVA reste aux comptes 4457 et 4456',
+      action: 'Préparer ces déclarations', nb: periodesTvaEnRetard.length, cible: 'tva', severite: 'attention',
+      detail: `${libellesEnRetard}. Une CA3 déposée ailleurs s’enregistre dans l’onglet TVA ; jusqu’aux exercices de 2026, un dossier au régime simplifié dépose une CA12, que l’application ne prépare pas.`,
     },
     // « Attention » et non « erreur » : c'est un travail en retard — le prélèvement est dans le relevé, à
     // traiter —, pas une donnée démontrée fausse. Mais il dit ce que le retard coûte.

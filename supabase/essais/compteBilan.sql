@@ -41,9 +41,10 @@
 -- un autre message (ou, pour `refus_compte_de_bilan`, qui répond).
 -- REJOUÉ LE 06/10/2026 après `liquidation_de_la_tva`, qui élargit de nouveau cette contrainte (un huitième lien,
 -- la déclaration de TVA dont un mouvement est le paiement ou le remboursement) : 62 contrôles sur 62 en
--- production, le texte transmis identique au fichier sans ses commentaires. Le contrôle 23 attend encore le
--- refus d'un compte de TVA qui dit « ce chemin n'existe pas encore » : il change quand l'écran du paiement
--- d'une déclaration existe.
+-- production, le texte transmis identique au fichier sans ses commentaires.
+-- REJOUÉ LE 06/10/2026 après `refus_tva_par_sa_declaration` : le contrôle 23 attend désormais le refus d'un
+-- compte de TVA qui renvoie à sa déclaration — le paiement et le remboursement se rapprochent d'elle depuis la
+-- fiche du mouvement (ligne 26.8).
 create temp table essai_bilan (controle text, observe text, ok boolean) on commit drop;
 
 do $$
@@ -333,7 +334,7 @@ begin
       ('20. le compte de l''exploitant (108)', '108000', 'Les apports et les prélèvements du dirigeant passent par « Virement personnel », qui les écrit sur son compte (108000).'),
       ('21. l''emprunt (164)', '164000', 'Une échéance ou un déblocage d''emprunt se rapproche de son emprunt, qui sépare le capital, les intérêts et l''assurance : « Rapprocher d''un emprunt ».'),
       ('22. un fournisseur (401)', '401000', 'Un compte de fournisseur ou de client se solde en rapprochant la facture du mouvement.'),
-      ('23. la TVA à décaisser (445)', '445510', 'Un compte de TVA ne se choisit pas ici : la TVA se solde par sa déclaration, à laquelle son paiement et le remboursement d''un crédit se rattachent — ce chemin n''existe pas encore.'),
+      ('23. la TVA à décaisser (445)', '445510', 'Un compte de TVA ne se choisit pas ici : la TVA se solde par sa déclaration, enregistrée dans l''onglet TVA, et son paiement ou le remboursement d''un crédit se rapproche ensuite d''elle, depuis cette fiche.'),
       ('24. une immobilisation (218)', '218300', 'Un bien s''inscrit au registre des immobilisations depuis sa facture : son acquisition s''écrit sur le compte de sa nature, et il s''amortit.'),
       ('25. un amortissement (28)', '281830', 'Un compte d''amortissement ou de dépréciation ne reçoit pas un mouvement de banque.'),
       ('26. un stock (37)', '370000', 'Un compte de stock ne reçoit pas un mouvement de banque : le stock se constate à l''inventaire.'),

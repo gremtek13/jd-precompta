@@ -7,8 +7,8 @@ import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/form
 import { rendreAuxDatesDeFacture, retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
-  Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree,
-  ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
+  Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire,
+  RegleBancaireIgnoree, ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, type PartReglement } from '../../lib/reglementGroupe'
@@ -43,6 +43,10 @@ import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTau
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import { ecritureDeLaCotisation, rapprochementsCotisationRefuses, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import { lireTout } from '../../lib/lectureComplete'
+import { libellePeriode } from '../../lib/declarationTva'
+import {
+  ecritureDuPaiementTva, paiementTvaPlausible, raisonPaiementTvaPlausible, refusPaiementTva, suiviDesDeclarations,
+} from '../../lib/liquidationTva'
 import { statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
@@ -133,6 +137,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // engagement, une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de mouvement bancaire. Leur
   // drapeau est à part : lus en partie, ils laissent une pièce lettrée paraître sans mouvement.
   const [lettragesManuels, setLettragesManuels] = useState<LectureLettragesManuels>(AUCUN_LETTRAGE_MANUEL)
+  // LES DÉCLARATIONS DE TVA (lib/liquidationTva.ts, ligne 26.8) : de quoi rapprocher un prélèvement de la déclaration qu'il
+  // paie, ou le virement du Trésor du crédit qu'il rembourse. Leur drapeau est à part : lues en partie, elles ne changent
+  // aucun mouvement — une déclaration manque au choix de la fiche, et un prélèvement qui la paie exactement n'est plus
+  // reconnu comme tel, donc pourrait entrer dans le lot des règles d'affectation, qui est alors suspendu.
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
+  const [declarationsTvaIncompletes, setDeclarationsTvaIncompletes] = useState<string | null>(null)
   const [reglementsIncomplets, setReglementsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
@@ -251,6 +261,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setReglementsIncomplets(lectureReglements.complete ? null : lectureReglements.motif)
 
+    // Une déclaration par période déposée. Tri TOTAL : deux déclarations ne partagent pas une période, mais l'ordre de
+    // départage ne doit dépendre de rien.
+    const lectureDeclarations = await lireTout<DeclarationTva>((debut, fin) =>
+      supabase.from('declarations_tva').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
+    )
+    setDeclarationsTvaIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
+
     const lectureFigees = await lirePiecesFigees(dossierId)
     const lectureLettrages = await lireLettragesManuels(dossierId)
 
@@ -272,6 +290,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setReglements(lectureReglements.lignes)
     setPiecesFigees(lectureFigees)
     setLettragesManuels(lectureLettrages)
+    setDeclarationsTva(lectureDeclarations.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -328,6 +347,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     [lignes],
   )
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
+  // Ce que le relevé a payé de chaque déclaration de TVA, et ce qu'il lui a remboursé — calculé une fois, pour la liste,
+  // la fiche d'un mouvement et le lot des règles.
+  const suivisTva = useMemo(() => suiviDesDeclarations(declarationsTva, lignes), [declarationsTva, lignes])
+  // La période de la déclaration qu'un mouvement paie, pour sa pastille — rien quand elle n'a pas été lue.
+  const periodesDesDeclarations = useMemo(
+    () => new Map(declarationsTva.map((d) => [d.id, libellePeriode(d.periode_debut, d.periode_fin)])),
+    [declarationsTva],
+  )
+  const declarationPayee = (l: LigneBancaire) => (l.declaration_tva_id ? periodesDesDeclarations.get(l.declaration_tva_id) ?? null : null)
 
 
   // Mois proposés dans le filtre : seulement ceux qui existent réellement dans l'année déjà
@@ -514,6 +542,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     // Un mouvement écrit sur un compte de bilan part avec son écriture, par la base, pour la même raison
     // (`lignes_bancaires_compte_bilan_rapproche`).
     if (ligne?.compte_bilan) return retirerCompteBilan(ligneId)
+    // Le paiement d'une déclaration de TVA aussi (`lignes_bancaires_declaration_tva_rapprochee`).
+    if (ligne?.declaration_tva_id) return retirerDeclarationTva(ligneId)
     // Un virement personnel part avec son écriture, par la base (`retirer_virement_personnel`) : une
     // simple remise à « à traiter » la laisserait au brouillon sans plus rien qui la justifie — une
     // rupture de la piste d'audit, et un prélèvement compté dans la trésorerie d'un mouvement à traiter.
@@ -634,6 +664,32 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   async function retirerCompteBilan(ligneId: string): Promise<boolean> {
     const { error } = await supabase.rpc('retirer_mouvement_compte_bilan', { p_ligne_bancaire_id: ligneId })
     if (error) { window.alert(`Le mouvement n'a pas pu être remis à traiter : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // LIGNE 26.8 : le prélèvement de la TVA, ou le remboursement d'un crédit. L'écriture est composée ici
+  // (lib/liquidationTva.ts, testé) — la TVA à décaisser (445510) au débit pour un prélèvement, le remboursement demandé
+  // (445830) au crédit pour un encaissement, face à la banque — ; `rapprocher_declaration_tva` refait les refus dans le
+  // même ordre, la VÉRIFIE, puis l'écrit AVEC le lien, dans une seule transaction. Rejouée sur un mouvement déjà
+  // rapproché d'une déclaration, elle remplace le lien et l'écriture.
+  async function rapprocherDeclarationTva(ligne: LigneBancaire, declarationId: string): Promise<boolean> {
+    const declaration = declarationsTva.find((d) => d.id === declarationId)
+    if (!declaration) return false
+    const refus = refusPaiementTva(ligne, declaration)
+    if (refus) { window.alert(refus); return false }
+    const { error } = await supabase.rpc('rapprocher_declaration_tva', {
+      p_ligne_bancaire_id: ligne.id,
+      p_declaration_id: declaration.id,
+      p_ecriture: ecritureDuPaiementTva(ligne),
+    })
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // Le lien et son écriture partent ENSEMBLE, par la base.
+  async function retirerDeclarationTva(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.rpc('retirer_rapprochement_declaration_tva', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`Le rapprochement n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
   }
 
@@ -936,7 +992,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // son justificatif — une pièce ou une échéance du même montant, une pièce du même tiers — en est
   // écarté : affecté, il compterait dans la 2035 à côté de sa pièce. De même un mouvement qui ressemble
   // à une échéance d'emprunt (`empruntPlausible`) : affecté à une catégorie de charge, son CAPITAL
-  // compterait en charge — une règle au nom de la banque les désigne aussi bien que ses frais.
+  // compterait en charge — une règle au nom de la banque les désigne aussi bien que ses frais. Ni un
+  // prélèvement qui paie exactement une déclaration de TVA (`paiementTvaPlausible`) : la TVA compterait en
+  // charge, et la déclaration resterait impayée au 445510.
   //
   // Et en trésorerie, un paiement du même montant qu'une NOTE DE FRAIS figée : il en est peut-être le remboursement, un
   // virement personnel. Affecté à une charge, la dépense compterait deux fois — dans l'exercice validé et dans celui-ci.
@@ -951,19 +1009,30 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       if (justificatif) return justificatif
       if (candidatsPieces(l, notesFigees, piecesRapprochees).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
       const emprunt = empruntPlausible(l, emprunts, lignes)
-      return emprunt ? raisonEmpruntPlausible(emprunt) : null
+      if (emprunt) return raisonEmpruntPlausible(emprunt)
+      // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
+      return raisonPaiementTvaPlausible(l, suivisTva)
     })
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva])
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
     () => new Set(nonRapprochees.filter((l) => empruntPlausible(l, emprunts, lignes)).map((l) => l.id)),
     [nonRapprochees, emprunts, lignes],
   )
+  // Un mouvement qui règle exactement une déclaration de TVA : la fiche la propose — jamais sur un relevé lu en partie,
+  // où un paiement non lu ferait passer une déclaration payée pour une déclaration qui attend ce montant.
+  const idsPaiementTvaPlausible = useMemo(
+    () => (lignesIncompletes
+      ? new Set<string>()
+      : new Set(nonRapprochees.filter((l) => paiementTvaPlausible(l, suivisTva)).map((l) => l.id))),
+    [lignesIncompletes, nonRapprochees, suivisTva],
+  )
   // Toutes les lectures dont le plan dépend : un mouvement tronqué, une pièce ou une échéance non lue
   // (le mouvement paraîtrait sans justificatif), une catégorie ou une règle manquante (une règle plus
-  // précise aurait changé la catégorie). Une lecture partielle ne commande pas d'écriture.
+  // précise aurait changé la catégorie), un emprunt ou une déclaration de TVA non lus (un prélèvement qui
+  // les paie paraîtrait à affecter). Une lecture partielle ne commande pas d'écriture.
   const lotReglesSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
-    ?? categoriesIncompletes ?? reglesAffectationIncompletes ?? empruntsIncomplets
+    ?? categoriesIncompletes ?? reglesAffectationIncompletes ?? empruntsIncomplets ?? declarationsTvaIncompletes
   const [affectationLotEnCours, setAffectationLotEnCours] = useState(false)
   const [progressionLot, setProgressionLot] = useState<string | null>(null)
 
@@ -1221,6 +1290,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             'base refusera d’en changer le montant, et son règlement s’écrira au montant du mouvement. Recharge la page.'}
       />
 
+      <BandeauLecturePartielle
+        quoi="Les déclarations de TVA"
+        motif={declarationsTvaIncompletes}
+        consequence={
+          'Une déclaration peut donc manquer au choix de la fiche d’un mouvement, et un prélèvement qui la paie n’être pas ' +
+          'reconnu : l’affectation en lot est suspendue. Recharge la page.'
+        }
+      />
       <BandeauLecturePartielle
         quoi="Les lettrages faits à la main"
         accord="lus"
@@ -1684,7 +1761,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                   ? emprunts.find((e) => e.id === l.emprunt_id) ?? null
                   : null
                 const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
-                  || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id))
+                  || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id) || idsPaiementTvaPlausible.has(l.id))
                 return (
                   <tr
                     key={l.id}
@@ -1740,7 +1817,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           {libelleDuCompteDeBilan(l.compte_bilan) ? ` — ${libelleDuCompteDeBilan(l.compte_bilan)}` : ''}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !mouvementRapprocheSansObjet(l) && (
+                      {/* Le paiement d'une déclaration de TVA — ou le remboursement d'un crédit : sa période, pas un
+                          « Rapproché » nu. */}
+                      {l.statut === 'rapprochee' && l.declaration_tva_id && (
+                        <span className="badge badge-ok">
+                          {l.montant > 0 ? 'Remboursement de TVA' : 'Paiement de TVA'}
+                          {declarationPayee(l) ? ` — ${declarationPayee(l)}` : ''}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1820,6 +1905,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             restesARegler={restesARegler}
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
+            suivisTva={suivisTva}
+            declarationsTvaIncompletes={declarationsTvaIncompletes}
+            releveIncomplet={lignesIncompletes}
+            onRapprocherDeclarationTva={(declarationId) => agirSurMouvement(() => rapprocherDeclarationTva(ligneOuverte, declarationId))}
+            onRetirerDeclarationTva={() => agirSurMouvement(() => retirerDeclarationTva(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}
