@@ -19,23 +19,56 @@ const faux = vi.hoisted(() => ({
   plafond: null as number | null,
   // Les tables dont la lecture est refusée, avec le message rendu.
   erreurs: {} as Record<string, string>,
+  // Les appels de fonction reçus, et ce que la fonction répond : par défaut, `lettrer_pieces` écrit ses lignes comme
+  // la base, pour que la relecture qui suit voie le lettrage.
+  appels: [] as { nom: string; args: Record<string, unknown> }[],
+  rpc: null as null | ((nom: string, args: Record<string, unknown>) => { data: unknown; error: { message: string } | null }),
+  // Les suppressions reçues, avec leurs filtres ; `retraitRefuse` simule une suppression que la RLS ne laisse toucher à rien.
+  retraits: [] as { table: string; filtres: Record<string, unknown> }[],
+  retraitRefuse: false,
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    rpc: (nom: string, args: Record<string, unknown>) => {
+      faux.appels.push({ nom, args })
+      if (faux.rpc) return Promise.resolve(faux.rpc(nom, args))
+      if (nom === 'lettrer_pieces') {
+        const groupe = `g-${faux.appels.length}`
+        faux.parTable.lettrages_manuels = [
+          ...(faux.parTable.lettrages_manuels ?? []),
+          ...(args.p_pieces as string[]).map((id) => ({
+            id: `${groupe}-${id}`, dossier_id: args.p_dossier_id, groupe, piece_id: id, compte: args.p_compte,
+            created_at: '2026-04-15T10:00:00Z',
+          })),
+        ]
+        return Promise.resolve({ data: groupe, error: null })
+      }
+      return Promise.resolve({ data: null, error: { message: `fonction inconnue : ${nom}` } })
+    },
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       // Le faux client honore `range` et annonce un `count` : la lecture par tranches ne prouverait
       // rien contre un serveur qui rend tout d'un coup quoi qu'on lui demande.
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
+      let suppression = false
+      const filtres: Record<string, unknown> = {}
       Object.assign(chaine, {
         select: () => chaine,
-        eq: () => chaine,
+        delete: () => { suppression = true; return chaine },
+        eq: (colonne: string, valeur: unknown) => { filtres[colonne] = valeur; return chaine },
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
+          if (suppression) {
+            faux.retraits.push({ table, filtres })
+            const toutes = (faux.parTable[table] ?? []) as Record<string, unknown>[]
+            const visees = faux.retraitRefuse ? [] : toutes.filter((r) => Object.entries(filtres).every(([c, v]) => r[c] === v))
+            faux.parTable[table] = toutes.filter((r) => !visees.includes(r))
+            return Promise.resolve({ data: null, error: null, count: visees.length }).then(suite)
+          }
           if (faux.erreurs[table]) {
             return Promise.resolve({ data: null, error: { message: faux.erreurs[table] }, count: null }).then(suite)
           }
@@ -71,6 +104,11 @@ function piedDuTableau(): HTMLTableRowElement {
 beforeEach(() => {
   faux.erreurs = {}
   faux.parTable.a_nouveaux = []
+  faux.parTable.lettrages_manuels = []
+  faux.appels = []
+  faux.rpc = null
+  faux.retraits = []
+  faux.retraitRefuse = false
 })
 
 describe('StatistiquesTab — Balance des comptes', () => {
@@ -279,20 +317,20 @@ describe('StatistiquesTab — les à-nouveaux', () => {
 // LES COMPTES DE TIERS EN ENGAGEMENT (ligne 32, lib/lettrage.ts). Le calcul est testé dans `lettrage.test.ts` ; ce qui
 // se joue ici est ce que l'écran en fait — l'arrêté qu'il choisit, ce qu'il dit d'une liste vide, d'une lecture
 // partielle et d'une écriture antérieure à l'ouverture, et qu'il ne montre rien en trésorerie.
-describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
-  // Typées SANS `as` : le compilateur vérifie chaque colonne contre la table.
-  const ligne = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id' | 'compte' | 'sens' | 'montant' | 'date'>): EcritureBrouillon => ({
-    dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, libelle: 'Écriture de test',
-    statut: 'proposee', created_at: '2026-03-01T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...o,
-  })
-  const piece = (o: Partial<Piece> & Pick<Piece, 'id' | 'tiers'>): Piece => ({
-    dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload', storage_path: `${o.id}.pdf`, nom_fichier: `${o.id}.pdf`,
-    storage_hash: null, date_piece: '2026-02-01', montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR',
-    montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
-    type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
-    created_at: '2026-02-01T09:00:00Z', updated_at: '2026-02-01T09:00:00Z', ...o,
-  })
+// Typées SANS `as` : le compilateur vérifie chaque colonne contre la table.
+const ligne = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id' | 'compte' | 'sens' | 'montant' | 'date'>): EcritureBrouillon => ({
+  dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, libelle: 'Écriture de test',
+  statut: 'proposee', created_at: '2026-03-01T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...o,
+})
+const piece = (o: Partial<Piece> & Pick<Piece, 'id' | 'tiers'>): Piece => ({
+  dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload', storage_path: `${o.id}.pdf`, nom_fichier: `${o.id}.pdf`,
+  storage_hash: null, date_piece: '2026-02-01', montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR',
+  montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
+  type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+  created_at: '2026-02-01T09:00:00Z', updated_at: '2026-02-01T09:00:00Z', ...o,
+})
 
+describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
   const PIECES = [
     piece({ id: 'p-trans', tiers: 'Transmedical', date_piece: '2025-12-10', montant_ttc: 120 }),
     piece({ id: 'p-bureau', tiers: 'Bureau Vallée', date_piece: '2026-02-01', montant_ttc: 200 }),
@@ -405,7 +443,7 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
     faux.parTable.ecritures_brouillon = BROUILLON.filter((e) => e.piece_id === 'p-trans')
     monter('toutes')
 
-    expect(await screen.findByText('Tous les comptes de tiers sont soldés au 15/04/2026 : chaque facture écrite l’est par ses règlements.')).toBeTruthy()
+    expect(await screen.findByText('Tous les comptes de tiers sont soldés au 15/04/2026 : chaque facture écrite l’est par ses règlements ou par un lettrage.')).toBeTruthy()
     expect(screen.queryAllByText(/Aucune facture ni aucun règlement/)).toHaveLength(0)
   })
 
@@ -493,5 +531,204 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
     expect(await screen.findByText('Comptes de tiers au 31/12/2025')).toBeTruthy()
     expect(screen.queryAllByText(/précèden?t? l’ouverture du 01\/01\/2026/)).toHaveLength(0)
     expect(screen.queryAllByText('Repris à l’ouverture, sans détail par tiers')).toHaveLength(0)
+  })
+})
+
+// LE LETTRAGE FAIT À LA MAIN (ligne 32, seconde brique). Le calcul est testé dans `lettrage.test.ts` ; ici, ce que
+// l'écran en fait — proposer sans écrire, cocher, dire avant le clic ce que la base refuserait, lettrer sous un verrou,
+// défaire après une confirmation qui nomme ce qu'on perd, et ne rien offrir sur une vue qui n'est pas celle d'aujourd'hui.
+describe('StatistiquesTab — le lettrage fait à la main', () => {
+  const PIECES = [
+    piece({ id: 'p-fact', tiers: 'Garage Martin', date_piece: '2026-03-02', montant_ttc: 300 }),
+    piece({ id: 'p-avoir', tiers: 'Garage Martin', date_piece: '2026-03-09', montant_ttc: -300 }),
+    piece({ id: 'p-bureau', tiers: 'Bureau Vallée', date_piece: '2026-02-01', montant_ttc: 200 }),
+  ]
+  const BROUILLON = [
+    ligne({ id: 'f1', piece_id: 'p-fact', date: '2026-03-02', compte: '606100', sens: 'debit', montant: 300 }),
+    ligne({ id: 'f2', piece_id: 'p-fact', date: '2026-03-02', compte: '401000', sens: 'credit', montant: 300 }),
+    ligne({ id: 'a1', piece_id: 'p-avoir', date: '2026-03-09', compte: '606100', sens: 'credit', montant: 300 }),
+    ligne({ id: 'a2', piece_id: 'p-avoir', date: '2026-03-09', compte: '401000', sens: 'debit', montant: 300 }),
+    ligne({ id: 'b1', piece_id: 'p-bureau', date: '2026-02-01', compte: '606400', sens: 'debit', montant: 200 }),
+    ligne({ id: 'b2', piece_id: 'p-bureau', date: '2026-02-01', compte: '401000', sens: 'credit', montant: 200 }),
+  ]
+  const lettrees = (avoir = 'p-avoir') => [
+    { id: 'l1', dossier_id: 'dossier-de-test', groupe: 'g-ancien', piece_id: 'p-fact', compte: '401000', created_at: '2026-04-01T09:00:00Z' },
+    { id: 'l2', dossier_id: 'dossier-de-test', groupe: 'g-ancien', piece_id: avoir, compte: '401000', created_at: '2026-04-01T09:00:00Z' },
+  ]
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-04-15T10:00:00Z'))
+    faux.plafond = null
+    faux.parTable.categories = []
+    faux.parTable.pieces = PIECES
+    faux.parTable.ecritures_brouillon = BROUILLON
+  })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  function monter(annee: number | 'toutes' = 'toutes') {
+    render(
+      <AnneeProvider defaut={annee}>
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+      </AnneeProvider>,
+    )
+  }
+  const caseDe = (nom: string) => screen.getByRole('checkbox', { name: `Cocher ${nom}` }) as HTMLInputElement
+
+  it('propose la facture et l’avoir qui la solde, et ne lettre qu’au clic', async () => {
+    monter()
+
+    expect(await screen.findByText('Lettrages proposés')).toBeTruthy()
+    expect(screen.getByText(/Garage Martin \(401000\) : p-avoir\.pdf et p-fact\.pdf se soldent/)).toBeTruthy()
+    expect(faux.appels).toHaveLength(0)
+
+    await act(async () => { screen.getByRole('button', { name: 'Lettrer' }).click() })
+
+    expect(faux.appels).toEqual([{
+      nom: 'lettrer_pieces', args: { p_dossier_id: 'dossier-de-test', p_compte: '401000', p_pieces: ['p-avoir', 'p-fact'] },
+    }])
+    // Relue, la vue ne montre plus ni la facture ni l'avoir, et la liste des lettrages faits à la main les porte.
+    expect(await screen.findByText(/Lettrages faits à la main \(1\)/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox', { name: 'Cocher p-fact.pdf' })).toHaveLength(0)
+    expect(screen.getByText('se soldent')).toBeTruthy()
+    expect(screen.queryAllByText('Lettrages proposés')).toHaveLength(0)
+  })
+
+  it('dit, sur les pièces cochées, ce qui reste et ce que la base refuserait — sans crier sur la première', async () => {
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    await act(async () => { caseDe('p-fact.pdf').click() })
+    expect(screen.getByText(/1 pièce cochée — reste 300,00/)).toBeTruthy()
+    expect(screen.getByText('Coche au moins une autre pièce du même tiers.')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Lettrer ensemble' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await act(async () => { caseDe('p-bureau.pdf').click() })
+    expect(screen.getByText('Ces pièces ne sont pas du même tiers.')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Lettrer ensemble' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await act(async () => { caseDe('p-bureau.pdf').click() })
+    await act(async () => { caseDe('p-avoir.pdf').click() })
+    expect(screen.getByText(/2 pièces cochées — reste 0,00/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Lettrer ensemble' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // Trois clics du même rendu : sans verrou, deux lettrages partiraient, et le second reviendrait en erreur sur un
+  // lettrage bien enregistré. Posé dans le `try`, le verrou laisserait passer le troisième.
+  it('ne lettre qu’une fois sur trois clics rapprochés', async () => {
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    await act(async () => { caseDe('p-fact.pdf').click(); caseDe('p-avoir.pdf').click() })
+    const bouton = screen.getByRole('button', { name: 'Lettrer ensemble' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.appels.filter((a) => a.nom === 'lettrer_pieces')).toHaveLength(1)
+    expect(await screen.findByText(/Lettrages faits à la main \(1\)/)).toBeTruthy()
+  })
+
+  it('dit le refus de la base, et garde les pièces cochées', async () => {
+    faux.rpc = () => ({ data: null, error: { message: 'Ces pièces ne se soldent pas : il reste 1,00 € sur le compte.' } })
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    await act(async () => { caseDe('p-fact.pdf').click(); caseDe('p-avoir.pdf').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Lettrer ensemble' }).click() })
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toBe('Ces pièces ne se soldent pas : il reste 1,00 € sur le compte.')
+    expect(caseDe('p-fact.pdf').checked).toBe(true)
+    expect((screen.getByRole('button', { name: 'Lettrer ensemble' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('défait un lettrage après une confirmation qui nomme ce qu’on perd, et les pièces redeviennent ouvertes', async () => {
+    faux.parTable.lettrages_manuels = lettrees()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+
+    expect(await screen.findByText(/Lettrages faits à la main \(1\)/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox', { name: 'Cocher p-fact.pdf' })).toHaveLength(0)
+    await act(async () => { screen.getByRole('button', { name: 'Défaire' }).click() })
+
+    expect(confirmation).toHaveBeenCalledWith(
+      'Défaire ce lettrage fait à la main ? Les 2 pièces de Garage Martin redeviennent ouvertes dans les comptes de tiers, '
+        + 'et le FEC ne les lettrera plus. Aucune écriture n’est modifiée.',
+    )
+    expect(faux.retraits).toEqual([{ table: 'lettrages_manuels', filtres: { dossier_id: 'dossier-de-test', groupe: 'g-ancien' } }])
+    expect(await screen.findByRole('checkbox', { name: 'Cocher p-fact.pdf' })).toBeTruthy()
+    expect(screen.queryAllByText(/Lettrages faits à la main/)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la confirmation nomme ce qu'on perd » serait satisfait par un bouton qui ne demande rien.
+  it('ne défait rien quand la confirmation est refusée', async () => {
+    faux.parTable.lettrages_manuels = lettrees()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    monter()
+
+    await screen.findByText(/Lettrages faits à la main \(1\)/)
+    await act(async () => { screen.getByRole('button', { name: 'Défaire' }).click() })
+    expect(faux.retraits).toEqual([])
+  })
+
+  // Une suppression qui ne touche aucune ligne ne lève rien : sans le compte, un refus de la RLS passerait pour un succès.
+  it('dit qu’un retrait qui ne touche rien n’a rien défait', async () => {
+    faux.parTable.lettrages_manuels = lettrees()
+    faux.retraitRefuse = true
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+
+    await screen.findByText(/Lettrages faits à la main \(1\)/)
+    await act(async () => { screen.getByRole('button', { name: 'Défaire' }).click() })
+    expect(await screen.findByText(/Rien n’a été défait/)).toBeTruthy()
+  })
+
+  it('dit pourquoi un lettrage ne tient plus, et ne laisse pas cocher ses pièces', async () => {
+    faux.parTable.pieces = [...PIECES, piece({ id: 'p-avoir2', tiers: 'Garage Martin', date_piece: '2026-03-12', montant_ttc: -200 })]
+    faux.parTable.ecritures_brouillon = [
+      ...BROUILLON,
+      ligne({ id: 'c1', piece_id: 'p-avoir2', date: '2026-03-12', compte: '606100', sens: 'credit', montant: 200 }),
+      ligne({ id: 'c2', piece_id: 'p-avoir2', date: '2026-03-12', compte: '401000', sens: 'debit', montant: 200 }),
+    ]
+    faux.parTable.lettrages_manuels = lettrees('p-avoir2')
+    monter()
+
+    expect(await screen.findByText(/1 ne tient plus/)).toBeTruthy()
+    expect(screen.getByText(/Ses pièces ne se soldent plus\. Il reste 100,00\s€ sur le compte\./)).toBeTruthy()
+    expect(caseDe('p-fact.pdf').disabled).toBe(true)
+    expect(caseDe('p-avoir2.pdf').disabled).toBe(true)
+    expect(screen.getAllByText('dans un lettrage fait à la main')).toHaveLength(2)
+  })
+
+  it('n’offre ni case ni proposition sur un exercice fini, et dit pourquoi', async () => {
+    faux.parTable.pieces = [...PIECES, piece({ id: 'p-ancien', tiers: 'Imprimerie', date_piece: '2025-11-02', montant_ttc: 80 })]
+    faux.parTable.ecritures_brouillon = [
+      ...BROUILLON,
+      ligne({ id: 'i1', piece_id: 'p-ancien', date: '2025-11-02', compte: '606400', sens: 'debit', montant: 80 }),
+      ligne({ id: 'i2', piece_id: 'p-ancien', date: '2025-11-02', compte: '401000', sens: 'credit', montant: 80 }),
+    ]
+    monter(2025)
+
+    expect(await screen.findByText('Comptes de tiers au 31/12/2025')).toBeTruthy()
+    expect(screen.getByText(/Le lettrage à la main se fait sur la vue arrêtée à aujourd’hui/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(screen.queryAllByText('Lettrages proposés')).toHaveLength(0)
+  })
+
+  it('ne conclut pas quand les lettrages faits à la main sont lus en partie', async () => {
+    faux.erreurs = { lettrages_manuels: 'refus simulé' }
+    monter()
+
+    expect(await screen.findByText(/Les comptes de tiers ne peuvent pas être dits/)).toBeTruthy()
+    expect(screen.getByText(/les lettrages faits à la main n’ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('suspend le lettrage quand les pièces sont lues en partie : leur tiers n’est pas connu', async () => {
+    faux.erreurs = { pieces: 'refus simulé' }
+    monter()
+
+    expect(await screen.findByText(/le lettrage à la main attend une lecture complète/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(screen.queryAllByText('Lettrages proposés')).toHaveLength(0)
   })
 })

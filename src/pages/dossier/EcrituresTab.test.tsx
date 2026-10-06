@@ -1540,6 +1540,77 @@ describe('EcrituresTab — en engagement', () => {
     expect(tiers.map((r) => [r[2], r[13], r[14]])).toEqual([['AC00001', 'A', '20250107']])
   })
 
+  // LE LETTRAGE FAIT À LA MAIN (seconde brique) : une facture et l'avoir qui la solde, sans mouvement bancaire. Le FEC
+  // lettre leurs deux lignes de tiers sous le même code, au jour où le cabinet a lettré — c'est la table que l'onglet lit.
+  const FACTURE_ET_AVOIR = {
+    pieces: [
+      piece({ id: 'p1', date_piece: '2025-03-10', tiers: 'GARAGE MARTIN' }),
+      piece({ id: 'p2', date_piece: '2025-03-20', tiers: 'Garage Martin', montant_ttc: -120, nom_fichier: 'avoir.pdf' }),
+    ],
+    ecritures_brouillon: [
+      ecriture({ id: 'f1', piece_id: 'p1' }),
+      ecriture({ id: 'f2', piece_id: 'p1', compte: '401000', sens: 'credit' }),
+      ecriture({ id: 'a1', piece_id: 'p2', date: '2025-03-20', sens: 'credit' }),
+      ecriture({ id: 'a2', piece_id: 'p2', date: '2025-03-20', compte: '401000', sens: 'debit' }),
+    ],
+    lettrages_manuels: ['p1', 'p2'].map((id) => ({
+      id: `lm-${id}`, dossier_id: 'dossier-de-test', groupe: 'g1', piece_id: id, compte: '401000', created_at: '2025-04-01T09:00:00Z',
+    })),
+  }
+
+  it('porte dans le FEC le lettrage fait à la main d’une facture et de son avoir', async () => {
+    poser(FACTURE_ET_AVOIR)
+    monter(false, ENGAGEMENT)
+
+    await screen.findByText(/4 écritures proposées/)
+    expect(screen.getAllByText('lettrage A')).toHaveLength(2)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const fec = telecharge.fichiers.find((f) => f.nom.includes('FEC'))!.contenu
+    const tiers = fec.split('\r\n').map((l) => l.split('\t')).filter((r) => r[4] === '401000')
+    expect(tiers.map((r) => [r[2], r[13], r[14]])).toEqual([['AC00001', 'A', '20250401'], ['AC00002', 'A', '20250401']])
+  })
+
+  // Lettrées ensemble, la facture et l'avoir n'attendent aucun règlement : l'avoir solde la facture sans que l'argent
+  // circule. Les dire « sans règlement rapproché » enverrait chercher à la banque un paiement qui n'existe pas.
+  it('ne compte pas sans règlement les pièces d’un lettrage fait à la main qui se solde', async () => {
+    poser(FACTURE_ET_AVOIR)
+    monter(false, ENGAGEMENT)
+
+    await screen.findByText(/4 écritures proposées/)
+    expect(screen.queryAllByText(/sans règlement rapproché/)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans le lettrage, les deux mêmes pièces sont bien sans règlement — c'est lui qui les retire.
+  it('compte sans règlement la facture et l’avoir que rien ne lettre', async () => {
+    poser({ ...FACTURE_ET_AVOIR, lettrages_manuels: [] })
+    monter(false, ENGAGEMENT)
+
+    expect(await screen.findByText('2 factures sans règlement rapproché')).toBeTruthy()
+  })
+
+  // Lus en partie, ils manqueraient au FEC sans qu'il puisse le dire : une facture lettrée y paraîtrait ouverte.
+  it('refuse d’exporter le FEC d’un dossier en engagement sur des lettrages faits à la main lus en partie', async () => {
+    poser(FACTURE_ET_AVOIR)
+    faux.muetParTable = { lettrages_manuels: 0 }
+    monter(false, ENGAGEMENT)
+
+    expect(await screen.findByText(/Les lettrages faits à la main n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Exporter FEC/ }) as HTMLButtonElement).disabled).toBe(true)
+    // La piste d'audit ne porte pas de lettrage : elle reste ouverte.
+    expect((screen.getByRole('button', { name: /Exporter la piste d'audit/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // GARDE SYMÉTRIQUE : en trésorerie rien ne se lettre, et une lecture ratée de ces lignes ne doit rien bloquer.
+  it('ne bloque rien en trésorerie sur des lettrages faits à la main lus en partie', async () => {
+    poser(FACTURE_ET_AVOIR)
+    faux.muetParTable = { lettrages_manuels: 0 }
+    monter(false, TRESORERIE)
+
+    await screen.findByText(/4 écritures proposées/)
+    expect(screen.queryAllByText(/Les lettrages faits à la main n'ont pas pu être lus/)).toHaveLength(0)
+    expect((screen.getByRole('button', { name: /Exporter FEC/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   // Le journal montre le code que porte le FEC : sans lui, le lettrage ne se verrait que dans un fichier exporté.
   it('montre dans le journal le lettrage des lignes de tiers soldées, et d’elles seules', async () => {
     poser({
@@ -1557,7 +1628,7 @@ describe('EcrituresTab — en engagement', () => {
     await screen.findByText(/4 écritures proposées/)
     const badges = screen.getAllByText('lettrage A')
     expect(badges.map((b) => b.closest('tr')!.children[1].textContent)).toEqual(['401000 lettrage A', '401000 lettrage A'])
-    expect(badges[0].getAttribute('title')).toBe('Lettrée le 07/01/2025 : la facture et ses règlements se soldent sur ce compte.')
+    expect(badges[0].getAttribute('title')).toBe('Lettrée le 07/01/2025 : les lignes de ce code se soldent sur ce compte — une facture et ses règlements, ou les pièces lettrées à la main.')
   })
 
   it('nomme la dette et les règlements dans la confirmation de retrait d’une facture immobilisée', async () => {

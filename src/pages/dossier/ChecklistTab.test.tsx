@@ -142,6 +142,7 @@ function poser(pieces: {
   cotisations?: unknown[]
   natures?: unknown[]
   vehicules?: unknown[]
+  lettrages?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -152,7 +153,7 @@ function poser(pieces: {
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
     ventilations_bancaires: pieces.ventilations ?? [], reglements_groupes: pieces.reglements ?? [],
-    vehicules: pieces.vehicules ?? [],
+    vehicules: pieces.vehicules ?? [], lettrages_manuels: pieces.lettrages ?? [],
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
@@ -1168,6 +1169,71 @@ describe('ChecklistTab — en engagement', () => {
     poser({ validees: [facture], categories: [categorie], ecritures: ecrituresDeFacture })
     monter(false, TRESORERIE)
     await screen.findByText(/écriture\(s\) à régénérer/)
+  })
+
+  // LE LETTRAGE FAIT À LA MAIN (lib/lettrage.ts) : une facture de 120 € lettrée avec un avoir de 100 € ne se solde
+  // pas — un avoir corrigé depuis, par exemple. Le lettrage n'est pas porté au FEC, et la Vue d'ensemble le dit, en
+  // menant à la Balance des comptes, où la liste des lettrages faits à la main dit pourquoi et les défait.
+  const avoir = piece({
+    id: 'p2', statut: 'validee', date_piece: '2026-03-20', categorie_id: 'cat-achats', montant_ttc: -100, tiers: 'Garage Martin',
+  })
+  const ecrituresAvoir = [
+    { ...ligneEcriture('a1', '606100', 'credit'), piece_id: 'p2', montant: 100 },
+    { ...ligneEcriture('a2', '401000', 'debit'), piece_id: 'p2', montant: 100 },
+  ]
+  const lettrage = ['p1', 'p2'].map((id) => ({
+    id: `lm-${id}`, dossier_id: 'dossier-de-test', groupe: 'g1', piece_id: id, compte: '401000', created_at: '2026-04-01T09:00:00Z',
+  }))
+
+  it('compte un lettrage fait à la main qui ne se solde plus, et mène aux comptes de tiers', async () => {
+    const onNavigate = vi.fn()
+    poser({
+      validees: [{ ...facture, tiers: 'Garage Martin' }, avoir], categories: [categorie],
+      ecritures: [...ecrituresDeFacture, ...ecrituresAvoir], lettrages: lettrage,
+    })
+    render(<AvecExercicesValides><ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} onNavigate={onNavigate} /></AvecExercicesValides>)
+
+    const point = await screen.findByText(/lettrage\(s\) fait\(s\) à la main qui ne se solde\(nt\) plus/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Voir les comptes de tiers' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('statistiques')
+  })
+
+  // GARDE SYMÉTRIQUE : un lettrage qui tient n'est pas un point à traiter. Et ses deux pièces ne sont pas « sans
+  // règlement rapproché » : l'avoir solde la facture, aucun argent n'avait à circuler — les compter enverrait chercher
+  // à la banque un paiement qui n'existe pas.
+  const soldees = {
+    validees: [{ ...facture, tiers: 'Garage Martin' }, { ...avoir, montant_ttc: -120 }], categories: [categorie],
+    ecritures: [...ecrituresDeFacture, ...ecrituresAvoir.map((e) => ({ ...e, montant: 120 }))],
+  }
+
+  it('ne compte pas un lettrage fait à la main qui se solde, ni ses pièces parmi les factures sans règlement', async () => {
+    poser({ ...soldees, lettrages: lettrage })
+    monter(false, ENGAGEMENT)
+    // L'ancre : ce que l'écran affiche forcément une fois chargé — vérifier une absence avant serait vert pour rien.
+    await screen.findAllByText(/^Relevés bancaires \d{4}$/)
+    expect(screen.queryAllByText(/lettrage\(s\) fait\(s\) à la main/)).toHaveLength(0)
+    expect(screen.queryAllByText(/facture\(s\) sans règlement rapproché/)).toHaveLength(0)
+  })
+
+  // Le garde symétrique du précédent : sans le lettrage, les deux mêmes pièces sont bien sans règlement — c'est le
+  // lettrage qui les retire, pas un jeu qui ne les compterait de toute façon pas.
+  it('compte les deux pièces sans règlement quand rien ne les lettre', async () => {
+    poser(soldees)
+    monter(false, ENGAGEMENT)
+    const point = await screen.findByText(/facture\(s\) sans règlement rapproché/)
+    expect(point.textContent).toMatch(/^2 /)
+  })
+
+  // Un lettrage qui ne se solde plus ne retire rien : ses pièces restent ouvertes, donc sans règlement.
+  it('garde sans règlement les pièces d’un lettrage qui ne se solde plus', async () => {
+    poser({
+      validees: [{ ...facture, tiers: 'Garage Martin' }, avoir], categories: [categorie],
+      ecritures: [...ecrituresDeFacture, ...ecrituresAvoir], lettrages: lettrage,
+    })
+    monter(false, ENGAGEMENT)
+    const point = await screen.findByText(/facture\(s\) sans règlement rapproché/)
+    expect(point.textContent).toMatch(/^2 /)
   })
 })
 

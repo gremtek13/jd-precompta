@@ -20,8 +20,9 @@ import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire,
-  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
+import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from '../../lib/reglementGroupe'
@@ -100,6 +101,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // leurs pièces comme des rapprochements simples, et deux points de cette liste en dépendent. Lues en
   // partie, une part non lue ferait passer son règlement pour incohérent : ce point-là se tait alors.
   const [reglements, setReglements] = useState<ReglementGroupe[]>([])
+  // Les lettrages faits à la main (lib/lettrage.ts) : un lettrage qui ne tient plus n'est pas porté au FEC, et la
+  // facture qu'il soldait redevient ouverte sans que rien d'autre le dise.
+  const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
   const [reglementsPartiels, setReglementsPartiels] = useState(false)
   // Le relevé ou les parts des virements groupés lus en partie : un paiement non lu ferait passer une pièce
   // réglée pour payée en partie, donc ce point-là se tait.
@@ -146,6 +150,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       lectureVentilations,
       lectureReglements,
       lectureVehicules,
+      lectureLettrages,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -210,6 +215,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('vehicules').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
       ),
+      lireTout<LettrageManuel>((debut, fin) =>
+        supabase.from('lettrages_manuels').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -235,9 +244,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
         lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
-        lectureVehicules,
+        lectureVehicules, lectureLettrages,
       ].find((l) => !l.complete)?.motif ?? null,
     )
+    setLettragesManuels(lectureLettrages.lignes)
     setVehicules(lectureVehicules.lignes)
     setReglements(lectureReglements.lignes)
     setReglementsPartiels(!lectureReglements.complete)
@@ -335,7 +345,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
   // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
   const paiements = paiementsDesPieces(lignes, reglements)
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  // Les lettrages faits à la main (lib/lettrage.ts), revérifiés sur TOUTES les pièces lues, comme la carte des comptes
+  // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se
+  // lettre et la liste est vide. Une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement :
+  // la compter « sans règlement rapproché » enverrait chercher dans Banque un paiement qui n'existera jamais.
+  const etatsLettrages = etatsDesLettragesManuels(ecritures, toutesPieces, lettragesManuels, modele.mode)
+  const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
+  const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
@@ -464,6 +481,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // seul virement à reprendre.
   const reglementsFaux = reglementsPartiels ? [] : [...new Set(reglementsGroupesIncoherents(lignes, reglements).map((r) => r.ligne.id))]
   const payeesEnTrop = piecesPayeesEnTrop(piecesValidees, paiements)
+  const lettragesQuiNeTiennentPlus = etatsLettrages.filter((e) => e.motif !== null)
   // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
   // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les
   // validées — c'est exactement le nom trompeur que le renommage a supprimé.
@@ -597,6 +615,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
     },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    // « Attention » : un lettrage qui ne tient plus n'est pas porté au FEC, donc rien de faux n'en sort — la facture
+    // qu'il soldait reparaît simplement ouverte. La liste qui dit pourquoi, et d'où le défaire, est sous les comptes de
+    // tiers de la Balance des comptes.
+    {
+      id: 'lettrages-qui-ne-tiennent-plus', label: 'lettrage(s) fait(s) à la main qui ne se solde(nt) plus',
+      action: 'Voir les comptes de tiers', nb: lettragesQuiNeTiennentPlus.length, cible: 'statistiques', severite: 'attention',
+      detail: 'Ils ne sont pas portés au FEC : la liste « Lettrages faits à la main », sous les comptes de tiers, dit pourquoi et les défait.',
+    },
     // « Attention » et non « erreur » : c'est un travail en retard — le prélèvement est dans le relevé, à
     // traiter —, pas une donnée démontrée fausse. Mais il dit ce que le retard coûte.
     { id: 'echeances-emprunt-non-rapprochees', label: 'échéance(s) d’emprunt couverte(s) par le relevé sans mouvement rapproché — intérêts non comptés', action: 'Rapprocher ces prélèvements', nb: echeancesManquantes.length, cible: 'banque', severite: 'attention' },

@@ -113,6 +113,21 @@ export interface ReglementGroupe {
   created_at: string
 }
 
+// Une pièce d'un LETTRAGE FAIT À LA MAIN (ligne 32, seconde brique) — la table `lettrages_manuels`. Les pièces
+// qui se soldent ensemble sur un compte de tiers sans mouvement bancaire (une facture et son avoir) portent le
+// même `groupe`, écrit par `lettrer_pieces`. Rien n'y est stocké du lettrage lui-même : son code et sa date se
+// calculent comme ceux d'un lettrage déduit (lib/lettrage.ts), et seulement tant que le groupe se solde encore.
+// `piece_id` est nul quand la pièce a été supprimée depuis (`on delete set null`) : l'application le dit.
+export interface LettrageManuel {
+  id: string
+  dossier_id: string
+  groupe: string
+  piece_id: string | null
+  // 401000, 404000, 411000, 455000 ou 467000 (`lettrages_manuels_compte`).
+  compte: string
+  created_at: string
+}
+
 // Contrôle de cohérence d'un relevé bancaire importé : solde d'ouverture + somme des mouvements
 // doit donner le solde de clôture. Conservé en base (et non affiché une fois puis jeté) parce qu'un
 // relevé incomplet est une information qui doit survivre à la fermeture d'une alerte — voir

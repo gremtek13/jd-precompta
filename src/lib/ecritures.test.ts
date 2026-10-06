@@ -813,7 +813,7 @@ describe('ligneContrepartieBanque et la génération en trésorerie — une cont
     expect(lignes.filter((l) => l.compte === ACHATS).map((l) => [l.date, l.montant])).toEqual([['2026-01-20', 300], ['2026-02-12', 700]])
     expect(lignes.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0)).toBe(0)
     const analyse = analyserEcritures(enBase(lignes), [{ piece: p, compte: ACHATS, immobilisation: false }], false, paiements, TRESORERIE, null)
-    expect(analyse).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+    expect(analyse).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [] })
   })
 
   it('signale la pièce payée deux fois dont une seule contrepartie est au brouillon — le défaut d’avant', () => {
@@ -884,7 +884,7 @@ describe('analyserEcritures — en engagement', () => {
 
   it('se tait sur une facture et son règlement tels que la génération les écrit', () => {
     const analyse = analyserEcritures(genere(), aComptabiliser, true, paiementsDesPieces([paiement()], []), ENGAGEMENT, null)
-    expect(analyse).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+    expect(analyse).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [] })
   })
 
   it('compte une facture sans règlement comme en attente de rapprochement, sans la dire périmée', () => {
@@ -1445,7 +1445,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
         const mouvements = montant === null ? [] : [paiement({ piece_id: 'p-note', montant, date: '2026-04-02' })]
         const paiements = paiementsDesPieces(mouvements, [])
         const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, paiements.get('p-note') ?? [], TRESORERIE))
-        expect(analyse(ecritures, p, paiements), `remboursement ${montant}`).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+        expect(analyse(ecritures, p, paiements), `remboursement ${montant}`).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [] })
       }
     })
 
@@ -1453,7 +1453,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
     it('l’écriture d’avant, sans sa contrepartie, est à régénérer, pas « en attente de rapprochement »', () => {
       const p = note()
       const charge = enBase(lignesChargeProduitPourPiece('d1', p, cible(FRAIS), false, []))
-      expect(analyse(charge, p)).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [p] })
+      expect(analyse(charge, p)).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [p] })
     })
 
     it('une contrepartie d’un autre montant est à régénérer, et l’écriture est déséquilibrée', () => {
@@ -1495,7 +1495,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
       const p = note()
       const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], ENGAGEMENT))
       expect(analyserEcritures(ecritures, aComptabiliser(p), false, paiementsDesPieces([], []), ENGAGEMENT, null))
-        .toEqual({ nbSansContrepartie: 1, groupesDesequilibres: [], piecesDesynchronisees: [] })
+        .toEqual({ nbSansContrepartie: 1, piecesSansContrepartie: [p.id], groupesDesequilibres: [], piecesDesynchronisees: [] })
     })
 
     // Hors du jeu fourni, le type de la pièce n'est pas connu : une ligne au 108000 peut y être une CHARGE (un achat
@@ -1532,7 +1532,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
         for (const type_piece of ['note_frais', 'achat'] as const) {
           const p = note({ type_piece })
           expect(analyse108(enBase(lignesPourPiece('d1', p, cible(COMPTE_EXPLOITANT), false, [], TRESORERIE)), p), type_piece)
-            .toEqual({ nbSansContrepartie: 1, groupesDesequilibres: [], piecesDesynchronisees: [] })
+            .toEqual({ nbSansContrepartie: 1, piecesSansContrepartie: [p.id], groupesDesequilibres: [], piecesDesynchronisees: [] })
         }
       })
 
@@ -1541,7 +1541,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
         const paiements = paiementsDesPieces([paiement({ piece_id: 'p-note', montant: -40, date: '2026-04-02' })], [])
         const ecritures = enBase(lignesPourPiece('d1', p, cible(COMPTE_EXPLOITANT), false, paiements.get('p-note')!, TRESORERIE))
         expect(ecritures.map((e) => e.compte)).toEqual([COMPTE_EXPLOITANT, COMPTE_BANQUE])
-        expect(analyse108(ecritures, p, paiements)).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+        expect(analyse108(ecritures, p, paiements)).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [] })
       })
     })
   })
