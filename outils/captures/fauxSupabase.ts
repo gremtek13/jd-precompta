@@ -633,6 +633,11 @@ const TABLES: Record<string, Ligne[]> = {
     ecriturePiece('g4', 'p10', 'l20', '2026-09-23', '512000', 'credit', 132),
     ecriturePiece('g5', 'p11', null, '2026-09-23', '606300', 'credit', 24),
     ecriturePiece('g6', 'p11', 'l20', '2026-09-23', '512000', 'debit', 24),
+    // Les deux mouvements écrits sur un compte de bilan : le compte choisi face à la banque, dans le sens du mouvement.
+    ecritureReleve('r31', 'l24', '2026-09-12', '580000', 'VIR VERS LIVRET PRO', 'debit', 3000),
+    ecritureReleve('r32', 'l24', '2026-09-12', '512000', 'VIR VERS LIVRET PRO', 'credit', 3000),
+    ecritureReleve('r33', 'l25', '2026-07-03', '275000', 'DEPOT DE GARANTIE BAIL CABINET', 'debit', 1300),
+    ecritureReleve('r34', 'l25', '2026-07-03', '512000', 'DEPOT DE GARANTIE BAIL CABINET', 'credit', 1300),
   ],
   // Les parts du virement groupé l20, signées comme le relevé : les deux factures en sortie, l'avoir en
   // entrée, déduit du paiement.
@@ -764,6 +769,13 @@ const TABLES: Record<string, Ligne[]> = {
     // Un VIREMENT qui règle plusieurs pièces (lib/reglementGroupe.ts) : deux factures d'un fournisseur, moins
     // l'avoir qu'il a consenti. Ses parts sont dans `reglements_groupes`, ses écritures au brouillon.
     { ...ligne('l20', '2026-09-23', 'VIR SEPA MEDICAL EQUIPEMENT PRO FACTURES AOUT SEPT', -372, 'rapprochee', null), reglement_groupe: true },
+    // Deux mouvements ÉCRITS SUR UN COMPTE DE BILAN (lib/compteDeBilan.ts) : un virement vers le livret d'épargne du
+    // cabinet, au 580000, et le dépôt de garantie versé pour le bail du cabinet, au 275000 — ni charge ni recette.
+    { ...ligne('l24', '2026-09-12', 'VIR VERS LIVRET PRO', -3000, 'rapprochee', null), compte_bilan: '580000' },
+    { ...ligne('l25', '2026-07-03', 'DEPOT DE GARANTIE BAIL CABINET', -1300, 'rapprochee', null), compte_bilan: '275000' },
+    // Un mouvement IGNORÉ : le virement de la CPAM du 8 septembre, importé une seconde fois — un doublon, qui le reste. La
+    // Checklist le compte parmi les mouvements absents du FEC, avec son montant.
+    ligne('l26', '2026-09-08', 'VIR CPAM TIERS PAYANT', 2418.6, 'ignoree', null),
     ...COTISATIONS_D1.lignes,
     ...TVA_D7.lignes,
     ...RELEVE_D7.lignes,

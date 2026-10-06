@@ -35,7 +35,7 @@
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
-// src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/amortissements.ts,
+// src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/compteDeBilan.ts, src/lib/amortissements.ts,
 // src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/validationExercice.ts, src/lib/format.ts et src/lib/controles.ts
 // plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
@@ -48,7 +48,9 @@
 // src/lib/agentComptableVentilation.test.ts, le bloc RÈGLEMENT GROUPÉ (virements qui règlent plusieurs
 // pièces, copié de src/lib/reglementGroupe.ts) par src/lib/agentComptableReglementGroupe.test.ts, le bloc
 // COTISATION (échéances de cotisation rapprochées d'un mouvement, copié de src/lib/cotisationRapprochee.ts)
-// par src/lib/agentComptableCotisation.test.ts, le bloc AMORTISSEMENT (dotations aux amortissements,
+// par src/lib/agentComptableCotisation.test.ts, le bloc COMPTE DE BILAN (mouvements écrits sur un compte de bilan
+// et mouvements ignorés, copié de src/lib/compteDeBilan.ts et src/lib/controles.ts) par
+// src/lib/agentComptableCompteDeBilan.test.ts, le bloc AMORTISSEMENT (dotations aux amortissements,
 // copié de src/lib/amortissements.ts) par src/lib/agentComptableAmortissement.test.ts, et le bloc FORFAIT
 // (forfait kilométrique du cadre 7, copié de src/lib/baremeKilometrique.ts et src/lib/forfaitKilometrique.ts)
 // par src/lib/agentComptableForfait.test.ts. Le bloc VALIDATION (la frontière des exercices validés, copiée de
@@ -936,6 +938,7 @@ function mouvementsAffectesDesynchronises(
 interface VirementPersonnelRow {
   id: string; date: string; montant: number; prelevement_personnel: boolean
   piece_id: string | null; cotisation_id: string | null; categorie_id: string | null
+  emprunt_id: string | null; ventilee: boolean; reglement_groupe: boolean; compte_bilan: string | null
 }
 
 // Le compte du dirigeant, lu dans le modèle du dossier : celui de l'exploitant en trésorerie ; en
@@ -944,15 +947,20 @@ function compteDuDirigeant(modele: ModeleComptable): string {
   return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT
 }
 
-// Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire :
-// ni rapprochés ni affectés, pas de zéro euro, et pas d'un exercice validé, où la base n'écrit plus.
+// Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire, les refus de
+// `refusVirementPersonnel` (src/lib/virementPersonnel.ts) dans le même ordre : ni réglés en groupe, ni écrits sur un
+// compte de bilan, ni rapprochés, affectés ou ventilés, pas de zéro euro — et pas d'un exercice validé, où la base
+// n'écrit plus. Les contraintes de `lignes_bancaires` rendent ces mélanges impossibles avec un virement personnel ; la
+// copie les écarte quand même, pour dire de tout mouvement ce que src/lib en dit.
 function virementsPersonnelsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable, frontiere: string | null,
 ): VirementPersonnelRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     l.prelevement_personnel
-    && !l.piece_id && !l.cotisation_id && !l.categorie_id && l.montant !== 0
+    && !l.reglement_groupe && !l.compte_bilan
+    && !l.piece_id && !l.cotisation_id && !l.categorie_id && !l.emprunt_id && !l.ventilee
+    && l.montant !== 0
     && !estFigee(l.date, frontiere)
     && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null), l.date))
 }
@@ -988,6 +996,64 @@ function utilisee(
     || mouvements.some((m) => m.categorie_id === c.id)
 }
 // ── FIN AFFECTATION ──────────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT COMPTE DE BILAN ────────────────────────────────────────────────────────────────────────
+// LES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN, ET LES MOUVEMENTS IGNORÉS — copiés de src/lib/compteDeBilan.ts et
+// src/lib/controles.ts (ligne 26.7 de la feuille de route, 06/10/2026). Un virement vers le compte d'épargne du
+// professionnel s'écrit au 580000, un dépôt de garantie versé ou rendu au 275000, ou sur un compte de bilan que le
+// cabinet choisit : ce compte face à la banque, sans pièce, au journal de banque. La Checklist en tire deux points que
+// l'assistant doit dire comme elle : le mouvement dont l'écriture ne suit plus son compte (défensif : la base écrit le
+// compte et l'écriture ensemble), et les mouvements IGNORÉS, que rien n'écrit — absents du FEC, le 512 du brouillon
+// s'écarte du relevé de leur montant. Un doublon le reste ; un mouvement réel se remet à traiter et se classe.
+// Gardé par `agentComptableCompteDeBilan.test.ts`, qui extrait ce bloc et le compare à src/lib.
+interface MouvementCompteBilanRow {
+  id: string; date: string; montant: number; statut: string; compte_bilan: string | null; prelevement_personnel: boolean
+}
+
+// L'écriture d'un mouvement sur un compte de bilan, sans son libellé : ce compte face à la banque, dans le sens du
+// mouvement, sans TVA — la règle d'une affectation.
+function ecritureDuCompteDeBilan(ligne: Pick<MouvementCompteBilanRow, "montant">, compte: string) {
+  return ecritureDuMouvement(ligne, compte, null)
+}
+
+// Le mouvement écrit sur un compte de bilan dont l'écriture n'est plus celle que son compte produirait : absente, sur un
+// autre compte, d'un autre montant, dans un autre sens ou à une autre date. « Réécrire » (onglet Écritures) rejoue la
+// fonction avec le même compte. Pas un mouvement d'un exercice validé : la base refuse de réécrire son écriture.
+function mouvementsSurUnCompteDeBilanDesynchronises(
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementCompteBilanRow[], frontiere: string | null,
+): MouvementCompteBilanRow[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return lignes.filter((l) =>
+    !!l.compte_bilan
+    && l.statut === "rapprochee"
+    && !estFigee(l.date, frontiere)
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan), l.date))
+}
+
+// Les mouvements IGNORÉS, absents du FEC. Ni un virement personnel, classé « ignoré » lui aussi mais écrit sur le
+// compte du dirigeant ; ni un mouvement antérieur à l'ouverture d'un dossier repris, que les à-nouveaux portent ; ni un
+// mouvement d'un exercice validé, que plus rien ne reclasse.
+function mouvementsIgnoresHorsFec(
+  lignes: readonly MouvementCompteBilanRow[], ouverture: string | null, frontiere: string | null,
+): MouvementCompteBilanRow[] {
+  return lignes.filter((l) => l.statut === "ignoree" && !l.prelevement_personnel
+    && (ouverture == null || l.date >= ouverture) && !estFigee(l.date, frontiere))
+}
+
+// Ce qu'ils emportent hors du FEC, chaque sens à part — leur somme nette cacherait un encaissement derrière un paiement
+// du même montant —, en centimes entiers puis en euros : le détail du point de la Checklist (« 300,00 € encaissés et
+// 120,00 € payés »), en nombres.
+function montantsDesMouvementsIgnores(lignes: readonly Pick<MouvementCompteBilanRow, "montant">[]): { encaisse: number; paye: number } {
+  let entrees = 0
+  let sorties = 0
+  for (const l of lignes) {
+    const centimes = Math.round(l.montant * 100)
+    if (centimes > 0) entrees += centimes
+    else sorties -= centimes
+  }
+  return { encaisse: entrees / 100, paye: sorties / 100 }
+}
+// ── FIN COMPTE DE BILAN ──────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT EMPRUNT ────────────────────────────────────────────────────────────────────────────────
 // LES ÉCHÉANCES D'EMPRUNT — copiées de src/lib/emprunts.ts, src/lib/echeanceEmprunt.ts et
@@ -1284,7 +1350,7 @@ interface CotisationRow { id: string; echeance: string; montant_appele: number; 
 interface MouvementCotisationRow {
   id: string; date: string; montant: number; statut: string; cotisation_id: string | null
   piece_id: string | null; categorie_id: string | null; emprunt_id: string | null
-  ventilee: boolean; prelevement_personnel: boolean; reglement_groupe: boolean
+  ventilee: boolean; prelevement_personnel: boolean; reglement_groupe: boolean; compte_bilan: string | null
 }
 
 const COMPTE_COTISATIONS_EXPLOITANT = "646000"
@@ -1308,6 +1374,7 @@ function csgDeLEcriture(c: Pick<CotisationRow, "montant_csg_crds">, mode: ModeCo
 // un code et non la phrase de l'écran.
 function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation: CotisationRow, mode: ModeComptable): string | null {
   if (ligne.reglement_groupe) return "regle_en_groupe"
+  if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"
   if (ligne.piece_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) return "deja_classe"
   if (ligne.montant === 0) return "mouvement_a_zero"
   const montant = montantDeLEcheance(cotisation)
@@ -2160,7 +2227,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2353,9 +2420,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
         admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id, taux_tva", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
-      // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC.
+      // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC. Et tout autre
+      // classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
       lireTout<VirementPersonnelRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
+        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
       // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
       // rapprochés d'un emprunt, les échéances payées et leur découpage. Et lesquels sont VENTILÉS (bloc
       // VENTILATION) : le relevé entier, pour voir aussi des parts posées sur un mouvement qui ne l'est pas.
@@ -2363,11 +2431,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // un virement qui en règle plusieurs — le relevé entier encore, pour voir aussi les parts d'un virement
       // qui ne règle plus en groupe (bloc RÈGLEMENT GROUPÉ). Les paiements DATENT les écritures en
       // trésorerie et décident de leurs lignes de banque dans les deux modèles. Et ce qui paie une ÉCHÉANCE
-      // DE COTISATION (bloc COTISATION), avec ce qui empêcherait son écriture.
+      // DE COTISATION (bloc COTISATION), avec ce qui empêcherait son écriture. Et les mouvements écrits sur un
+      // COMPTE DE BILAN ou IGNORÉS (bloc COMPTE DE BILAN) : le compte, le statut, le virement personnel.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
-      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow & MouvementCompteBilanRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
@@ -2465,6 +2534,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     )
     // Et le forfait kilométrique d'un exercice fini : son kilométrage de l'exercice en cours n'est pas complet.
     const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture, frontiere), anneeCourante)
+    // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, et les mouvements ignorés,
+    // absents du FEC (bloc COMPTE DE BILAN) — sauf avant l'ouverture d'un dossier repris, comme dans la Checklist.
+    const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere)
+    const ignoresHorsFec = mouvementsIgnoresHorsFec(rReleve.lignes, ouverture, frontiere)
 
     return {
       // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
@@ -2525,6 +2598,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Le libellé de la Checklist : le forfait d'un exercice fini qui n'est pas écrit, ou un forfait écrit qui ne
       // suit plus le cadre 7 — absent du FEC, ou faux, pendant que la 2035 le compte en case BJ.
       forfaits_kilometriques_a_ecrire_ou_qui_ne_suivent_plus_le_cadre_7: forfaitsManquants.length,
+      // Le libellé de la Checklist : un mouvement écrit sur un compte de bilan dont l'écriture ne suit plus le compte —
+      // « Réécrire », dans l'onglet Écritures, la reprend.
+      mouvements_ecrits_sur_un_compte_de_bilan_dont_l_ecriture_ne_suit_plus_le_compte: bilanPerimes.length,
+      // Le libellé de la Checklist : les mouvements ignorés, absents du FEC — un doublon le reste, un mouvement réel se
+      // remet à traiter et se classe (Banque, filtre « Ignorés ») —, et ce qu'ils emportent dans chaque sens, en euros.
+      mouvements_ignores_absents_du_fec: { nombre: ignoresHorsFec.length, ...montantsDesMouvementsIgnores(ignoresHorsFec) },
     }
   }
 
@@ -2697,6 +2776,7 @@ Règles impératives :
 - Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le 445710 la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
+- Un mouvement du relevé peut être ÉCRIT SUR UN COMPTE DE BILAN : un virement vers un autre compte du professionnel (épargne, second compte bancaire) ou depuis lui au 580000 Virements internes, un dépôt de garantie versé ou rendu au 275000 Dépôts et cautionnements versés, ou un autre compte de bilan choisi par le cabinet. Son écriture, face au 512000, n'a pas de pièce — le relevé en est le justificatif — : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette. Un mouvement IGNORÉ, lui, n'est écrit nulle part : absent du FEC, il convient à un doublon ou à un mouvement antérieur à la reprise du dossier ; un mouvement réel ignoré est un point à traiter.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.

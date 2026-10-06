@@ -139,6 +139,17 @@ const VUES = [
   { nom: 'pc-groupe-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
   { nom: 'pc-groupe-modifier', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO', apres: 'Modifier le règlement' },
   { nom: 'mobile-groupe-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
+  // Un mouvement écrit sur un compte de bilan (lib/compteDeBilan.ts) : le choix sur un mouvement à traiter, « Autre
+  // compte de bilan… » déplié ; le virement vers le livret au 580000, ouvert sous « Tous » ; le doublon ignoré, sous
+  // « Ignorés » ; et la Checklist, qui compte ce doublon parmi les mouvements absents du FEC.
+  { nom: 'pc-bilan-choix', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Autre compte de bilan', vers: 'Sur un compte de bilan' },
+  { nom: 'pc-bilan-choix-1024', chemin: '#/dossiers/d1/banque', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Autre compte de bilan', vers: 'Sur un compte de bilan' },
+  { nom: 'mobile-bilan-choix', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Autre compte de bilan', vers: 'Sur un compte de bilan' },
+  { nom: 'pc-bilan-ecrit', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR VERS LIVRET PRO' },
+  { nom: 'pc-bilan-ecrit-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'DEPOT DE GARANTIE BAIL CABINET' },
+  { nom: 'mobile-bilan-ecrit', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR VERS LIVRET PRO' },
+  { nom: 'pc-bilan-ignore', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Ignorés', cellule: 'VIR CPAM TIERS PAYANT' },
+  { nom: 'pc-bilan-checklist', chemin: '#/dossiers/d1/checklist', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'absent(s) du FEC' },
   // Les recettes du relevé d'un dossier assujetti (lib/tvaDuReleve.ts) : un acompte affecté à 20 %, des
   // honoraires affectés avant l'assujettissement, sans taux — l'avertissement et le choix du taux —, une
   // remise ventilée dont la part de recette porte son taux ; puis la déclaration qui les compte ou les écarte,

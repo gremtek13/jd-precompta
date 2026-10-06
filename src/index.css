@@ -777,6 +777,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 }
 .fiche-mouvement-choix { display: flex; gap: 8px; align-items: center; }
 .fiche-mouvement-choix select { flex: 1; min-width: 0; }
+/* Le compte de bilan saisi à la main : un champ texte garde sa largeur propre (une vingtaine de caractères) et
+   poussait le bouton hors du volet. Il rétrécit comme une liste. */
+.fiche-mouvement-choix input { flex: 1; min-width: 0; }
 .fiche-mouvement-boutons { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Retenir une affectation en règle : sous la liste des catégories, jamais à côté — la fiche est étroite. */
 .fiche-mouvement-regle { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
