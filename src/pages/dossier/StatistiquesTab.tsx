@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
-import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
-import { comptesDeTiers, COMPTES_LETTRABLES } from '../../lib/lettrage'
+import { messageErreur } from '../../lib/messageErreur'
+import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from '../../lib/types'
+import {
+  comptesDeTiers, COMPTES_LETTRABLES, etatsDesLettragesManuels, lettragesProposes, refusLettrageManuel,
+  type EtatLettrageManuel,
+} from '../../lib/lettrage'
 import { useAnnee } from '../../context/AnneeContext'
 import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
@@ -51,14 +55,26 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   // À part encore : ce n'est pas le brouillon qui manque, c'est l'ouverture — le bandeau doit dire
   // laquelle des deux on n'a pas pu lire.
   const [lectureANouveauxIncomplete, setLectureANouveauxIncomplete] = useState<string | null>(null)
+  // Les lettrages faits à la main (ligne 32, seconde brique) : une facture et l'avoir qui la solde, sans mouvement
+  // bancaire. Lus en partie, la carte des comptes de tiers ne conclut pas — une facture lettrée y paraîtrait ouverte.
+  const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
+  const [lectureLettragesIncomplete, setLectureLettragesIncomplete] = useState<string | null>(null)
+  // Verrou d'exécution du lettrage à la main et de son retrait : un état React ne prend effet qu'au rendu suivant, et
+  // deux clics du même rendu enverraient deux fois le même lettrage — le second refusé par la base, avec un message
+  // d'erreur sur un lettrage bien enregistré. Relâché APRÈS la relecture : avant, les pièces qu'on vient de lettrer
+  // paraîtraient encore ouvertes, et un clic de plus les relettrerait.
+  const lettrageEnCours = useRef(false)
+  const [lettrageOccupe, setLettrageOccupe] = useState(false)
+  const [erreurLettrage, setErreurLettrage] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
   const [recherche, setRecherche] = useState('')
 
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([
+  // Le premier rendu porte déjà `loading` ; une relecture après un lettrage garde la vue affichée le temps qu'elle
+  // revienne, le verrou retenant tout geste jusque-là. L'onglet se remonte d'un dossier à l'autre (`key` du dossier).
+  const charger = useCallback(async () => {
+    const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureLettrages] = await Promise.all([
       // Lues par tranches, triées sur un ordre TOTAL : PostgREST plafonne le nombre de lignes
       // rendues sans le signaler, et cet écran affiche des TOTAUX (voir lib/lectureComplete.ts).
       // Une balance calculée sur une partie du brouillon serait déséquilibrée sans raison visible —
@@ -79,18 +95,25 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
       ),
-    ]).then(([brouillon, lectureCategories, lecturePieces, lectureANouveaux]) => {
-      setEcritures(brouillon.lignes)
-      setCategories(lectureCategories.lignes)
-      setPieces(lecturePieces.lignes)
-      setANouveaux(lectureANouveaux.lignes)
-      setLectureIncomplete(brouillon.motif)
-      setLecturePiecesIncomplete(lecturePieces.motif)
-      setLectureANouveauxIncomplete(lectureANouveaux.motif)
-      setLectureCategoriesIncomplete(lectureCategories.motif)
-      setLoading(false)
-    })
+      lireTout<LettrageManuel>((debut, fin) =>
+        supabase.from('lettrages_manuels').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+    ])
+    setEcritures(brouillon.lignes)
+    setCategories(lectureCategories.lignes)
+    setPieces(lecturePieces.lignes)
+    setANouveaux(lectureANouveaux.lignes)
+    setLettragesManuels(lectureLettrages.lignes)
+    setLectureIncomplete(brouillon.motif)
+    setLecturePiecesIncomplete(lecturePieces.motif)
+    setLectureANouveauxIncomplete(lectureANouveaux.motif)
+    setLectureCategoriesIncomplete(lectureCategories.motif)
+    setLectureLettragesIncomplete(lectureLettrages.motif)
+    setLoading(false)
   }, [dossierId])
+
+  useEffect(() => { charger() }, [charger])
 
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
   // Les à-nouveaux appartiennent à l'exercice qu'ils ouvrent, comme toute écriture à celui de sa date.
@@ -130,9 +153,77 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   const finExercice = typeof anneeFilter === 'number' ? `${anneeFilter}-12-31` : null
   const dateArrete = finExercice !== null && finExercice < aujourdHui ? finExercice : aujourdHui
   const soldesDeTiers = useMemo(
-    () => comptesDeTiers(ecritures, pieces, aNouveaux, modeComptable, dateArrete),
-    [ecritures, pieces, aNouveaux, modeComptable, dateArrete],
+    () => comptesDeTiers(ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete),
+    [ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete],
   )
+  // LE LETTRAGE FAIT À LA MAIN (lib/lettrage.ts) : sur l'état d'aujourd'hui, TOUT le brouillon — c'est ce que la base
+  // vérifie au clic. Il ne s'offre que sur la vue arrêtée à aujourd'hui, et seulement quand tout ce dont il dépend a été
+  // lu : une pièce non lue n'a pas de tiers connu, et le cabinet lettrerait sur une vue fausse.
+  const etatsLettrages = useMemo(
+    () => etatsDesLettragesManuels(ecritures, pieces, lettragesManuels, modeComptable),
+    [ecritures, pieces, lettragesManuels, modeComptable],
+  )
+  const propositions = useMemo(
+    () => lettragesProposes(ecritures, pieces, lettragesManuels, modeComptable),
+    [ecritures, pieces, lettragesManuels, modeComptable],
+  )
+  const nomDesPieces = useMemo(() => new Map(pieces.map((p) => [p.id, p.nom_fichier])), [pieces])
+  const lettrageSuspendu = dateArrete !== aujourdHui
+    ? 'Le lettrage à la main se fait sur la vue arrêtée à aujourd’hui : choisis l’exercice en cours, ou toutes les années, en tête du dossier.'
+    : lecturePiecesIncomplete
+      ? `Les pièces n’ont pas pu être lues en entier (${lecturePiecesIncomplete}) : le tiers d’une pièce non lue n’est pas connu, et le lettrage à la main attend une lecture complète. Recharge la page.`
+      : null
+
+  async function lettrer(compte: string, pieceIds: string[]): Promise<boolean> {
+    if (lettrageEnCours.current) return false
+    lettrageEnCours.current = true
+    setLettrageOccupe(true)
+    setErreurLettrage(null)
+    try {
+      // Refait au clic : la carte a pu changer depuis que le bouton s'est offert.
+      const refus = lettrageSuspendu ?? refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modeComptable)
+      if (refus) {
+        setErreurLettrage(refus)
+        return false
+      }
+      const { error } = await supabase.rpc('lettrer_pieces', { p_dossier_id: dossierId, p_compte: compte, p_pieces: pieceIds })
+      if (error) {
+        setErreurLettrage(messageErreur(error, 'Le lettrage n’a pas pu être enregistré.'))
+        return false
+      }
+      await charger()
+      return true
+    } finally {
+      lettrageEnCours.current = false
+      setLettrageOccupe(false)
+    }
+  }
+
+  // DÉFAIRE retire les lignes du lettrage, sous la policy de la table : aucune écriture n'en dépend, et rien du brouillon
+  // ne bouge. La confirmation nomme ce qu'on perd.
+  async function defaire(etat: EtatLettrageManuel) {
+    if (lettrageEnCours.current) return
+    const n = etat.pieceIds.length
+    if (!window.confirm(
+      `Défaire ce lettrage fait à la main ? ${n > 1 ? `Les ${n} pièces` : 'La pièce'} de ${etat.libelle} `
+        + `${n > 1 ? 'redeviennent ouvertes' : 'redevient ouverte'} dans les comptes de tiers, et le FEC ne `
+        + `${n > 1 ? 'les' : 'la'} lettrera plus. Aucune écriture n’est modifiée.`,
+    )) return
+    lettrageEnCours.current = true
+    setLettrageOccupe(true)
+    setErreurLettrage(null)
+    try {
+      const { error, count } = await supabase.from('lettrages_manuels').delete({ count: 'exact' })
+        .eq('dossier_id', dossierId).eq('groupe', etat.groupe)
+      if (error) setErreurLettrage(messageErreur(error, 'Le lettrage n’a pas pu être défait.'))
+      // Une suppression qui ne touche aucune ligne ne lève rien : sans ce compte, un refus passerait pour un succès.
+      else if (!count) setErreurLettrage('Rien n’a été défait : ce lettrage n’existe plus, ou la base l’a refusé. La vue est relue.')
+      await charger()
+    } finally {
+      lettrageEnCours.current = false
+      setLettrageOccupe(false)
+    }
+  }
   // Ce qu'il faut pour que la carte distingue « tout est soldé » de « rien n'est écrit », et dise les lignes d'un compte
   // de tiers antérieures à l'ouverture d'un dossier repris — que la vue compte une seconde fois quand l'arrêté la suit.
   const lignesDeTiers = ecritures.filter((e) => COMPTES_LETTRABLES.has(e.compte) && e.date <= dateArrete).length
@@ -320,11 +411,22 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
           soldes={soldesDeTiers}
           dateArrete={dateArrete}
           finExercice={dateArrete === finExercice}
-          lectureIncomplete={lectureIncomplete ?? lectureANouveauxIncomplete}
+          lectureIncomplete={lectureIncomplete ?? lectureANouveauxIncomplete ?? lectureLettragesIncomplete}
           lignesDeTiers={lignesDeTiers}
           anterieuresALOuverture={tiersAvantOuverture}
           ouverture={ouverture}
           loading={loading}
+          lettrage={{
+            suspendu: lettrageSuspendu,
+            etats: etatsLettrages,
+            propositions,
+            nomDesPieces,
+            refus: (compte, pieceIds) => refusLettrageManuel(compte, pieceIds, ecritures, pieces, lettragesManuels, modeComptable),
+            occupe: lettrageOccupe,
+            erreur: erreurLettrage,
+            onLettrer: lettrer,
+            onDefaire: defaire,
+          }}
         />
       )}
     </>

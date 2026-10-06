@@ -247,6 +247,9 @@ export interface AnalyseEcritures {
   // Écriture encore à moitié générée (charge/produit sans sa contrepartie banque) — pas forcément un
   // défaut, la pièce n'est peut-être pas encore rapprochée dans Banque.
   nbSansContrepartie: number
+  // Ces pièces-là, par identifiant : en engagement, une facture qu'un lettrage fait à la main solde avec son avoir
+  // n'attend plus de règlement, et l'écran qui les compte les retire (lib/lettrage.ts, `piecesLettreesALaMain`).
+  piecesSansContrepartie: string[]
   // Écriture complète (contrepartie présente) dont le total débit ne correspond pas au total crédit.
   groupesDesequilibres: GroupeDesequilibre[]
   // Pièce modifiée depuis que son écriture a été générée — montant TTC, VENTILATION DE LA TVA,
@@ -438,9 +441,10 @@ export function analyserEcritures(
     .map(({ piece }) => piece.id))
   const contrepartie = (pieceId: string, r: EcritureBrouillon) =>
     r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
-  const nbSansContrepartie = [...piecesParGroupe.entries()]
+  const piecesSansContrepartie = [...piecesParGroupe.entries()]
     .filter(([pieceId, rows]) => !notesDeFrais.has(pieceId) && !rows.some((r) => contrepartie(pieceId, r)) && !paiements.has(pieceId))
-    .length
+    .map(([pieceId]) => pieceId)
+  const nbSansContrepartie = piecesSansContrepartie.length
 
   // En trésorerie, l'équilibre se juge sur une écriture COMPLÈTE : une contrepartie banque, ou celle d'une note de
   // frais au compte de l'exploitant.
@@ -468,7 +472,7 @@ export function analyserEcritures(
       : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
-  return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
+  return { nbSansContrepartie, piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
 
 // UNE PIÈCE QUE LA FRONTIÈRE DE VALIDATION COUPE — une écriture validée, ou une écriture qu'elle devrait porter dans

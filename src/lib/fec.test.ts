@@ -527,7 +527,7 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
     ligne('partielle', { id: 'p3', compte: '401000', sens: 'debit', montant: 150, date: '2026-03-25', ligne_bancaire_id: 'l-partielle' }),
     ligne('partielle', { id: 'p4', compte: COMPTE_BANQUE, sens: 'credit', montant: 150, date: '2026-03-25', ligne_bancaire_id: 'l-partielle' }),
   ]
-  const fec = () => genererFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [], lettrages(brouillon, 'engagement'))
+  const fec = () => genererFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [], lettrages(brouillon, [], [], 'engagement'))
   const lettrees = () => colonnes(fec()).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[4], r[13], r[14]])
 
   it('porte le code et la date sur les lignes de tiers d’une facture soldée, et sur elles seules', () => {
@@ -559,7 +559,7 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
       ligne('dec', { id: 'd3', compte: '401000', sens: 'debit', montant: 80, date: '2027-01-08', ligne_bancaire_id: 'l-dec', created_at: '2027-01-09T08:00:00Z' }),
       ligne('dec', { id: 'd4', compte: COMPTE_BANQUE, sens: 'credit', montant: 80, date: '2027-01-08', ligne_bancaire_id: 'l-dec', created_at: '2027-01-09T08:00:00Z' }),
     ]
-    const lettrage = lettrages(tout, 'engagement')
+    const lettrage = lettrages(tout, [], [], 'engagement')
     const exercice = (annee: string) => genererFec(tout.filter((e) => e.date.startsWith(annee)), [decembre], [], [], 'engagement', [], lettrage)
     const tiers = (f: string) => colonnes(f).slice(1).filter((r) => r[4] === '401000').map((r) => [r[13], r[14]])
     expect(tiers(exercice('2026'))).toEqual([['A', '20270109']])
@@ -572,13 +572,35 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
       ...l.ecriture, statut: 'validee' as const, valide_le: '2027-01-14T23:30:00Z', journal_code: l.journal, numero_ecriture: l.numero,
       piece_ref: l.pieceRef, piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z'), lettrages(validees, 'engagement'))
+    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z'), lettrages(validees, [], [], 'engagement'))
     expect(colonnes(relu).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[13], r[14]])).toEqual(lettrees().map((r) => [r[0], r[2], r[3]]))
   })
 
   it('ne lettre rien en trésorerie', () => {
-    expect(colonnes(genererFec(brouillon, [achat, vente, partielle], [], [], 'tresorerie', [], lettrages(brouillon, 'tresorerie')))
+    expect(colonnes(genererFec(brouillon, [achat, vente, partielle], [], [], 'tresorerie', [], lettrages(brouillon, [], [], 'tresorerie')))
       .slice(1).every((r) => r[13] === '' && r[14] === '')).toBe(true)
+  })
+
+  // Le lettrage fait à la main : une facture et l'avoir qui la solde, sans mouvement bancaire. Chacune a son écriture
+  // au journal des achats, et les deux lignes de tiers portent le même code, au jour où le cabinet a lettré.
+  it('porte le lettrage fait à la main sur la facture et l’avoir qu’il apparie', () => {
+    const facture = piece('fm', { tiers: 'Garage', date_piece: '2026-05-02', montant_ttc: 300 })
+    const avoir = piece('am', { tiers: 'Garage', date_piece: '2026-05-09', montant_ttc: -300 })
+    const tout = [
+      ligne('fm', { id: 'fm1', compte: '606100', sens: 'debit', montant: 300, date: '2026-05-02' }),
+      ligne('fm', { id: 'fm2', compte: '401000', sens: 'credit', montant: 300, date: '2026-05-02' }),
+      ligne('am', { id: 'am1', compte: '606100', sens: 'credit', montant: 300, date: '2026-05-09' }),
+      ligne('am', { id: 'am2', compte: '401000', sens: 'debit', montant: 300, date: '2026-05-09' }),
+    ]
+    const manuels = ['fm', 'am'].map((p) => ({
+      id: `g-${p}`, dossier_id: 'd1', groupe: 'g', piece_id: p, compte: '401000', created_at: '2026-05-12T08:00:00Z',
+    }))
+    const f = genererFec(tout, [facture, avoir], [], [], 'engagement', [], lettrages(tout, [facture, avoir], manuels, 'engagement'))
+    expect(colonnes(f).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[4], r[13], r[14]])).toEqual([
+      ['AC00001', '401000', 'A', '20260512'],
+      ['AC00002', '401000', 'A', '20260512'],
+    ])
+    expect(anomaliesDgfip(f)).toEqual([])
   })
 })
 

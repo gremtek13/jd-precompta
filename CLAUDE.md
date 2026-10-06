@@ -315,6 +315,10 @@ supabase/
                   dossiers jetables, à rejouer après toute migration qui touche la validation, ses
                   déclencheurs, la table exercices_valides ou les contraintes d'ecritures_brouillon. Il
                   se joue en UNE transaction (`psql -1` hors de l'outil d'exécution).
+                  lettrageManuel.sql : le lettrage fait à la main (lettrages_manuels, lettrer_pieces) — qui
+                  lettre, ce qui se refuse et pourquoi, ce que la policy tient —, par impersonation des trois
+                  profils dans un dossier jetable, à rejouer après toute migration qui touche la table ou sa
+                  fonction.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.

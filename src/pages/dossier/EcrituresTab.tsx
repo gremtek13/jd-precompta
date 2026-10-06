@@ -10,7 +10,7 @@ import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } fro
 import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
-import { lettrages } from '../../lib/lettrage'
+import { etatsDesLettragesManuels, lettrages, piecesLettreesALaMain } from '../../lib/lettrage'
 import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -20,7 +20,7 @@ import {
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
 import type {
-  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
+  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LettrageManuel, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
   ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { acquisitionsDesBiens } from '../../lib/amortissements'
@@ -126,6 +126,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // c'est l'ouverture qui dit s'il est repris (voir `biensSansOuverture`). La suspendre pour toutes les
   // pièces bloquerait un geste que rien ne fausse.
   const [aNouveauxIncomplets, setANouveauxIncomplets] = useState<string | null>(null)
+  // Les lettrages faits à la main (ligne 32, seconde brique) : une facture et l'avoir qui la solde, que le FEC lettre
+  // ensemble. À PART encore : lus en partie, ils ne faussent ni la génération ni la piste d'audit, mais le FEC d'un
+  // dossier en engagement laisserait ouverte une facture que le cabinet a lettrée, sans pouvoir le dire.
+  const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
+  const [lettragesIncomplets, setLettragesIncomplets] = useState<string | null>(null)
   // Verrou d'exécution de la génération : `generating` est un état React, qui ne prend effet qu'au
   // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
   // recevrait deux jeux d'écritures, c'est-à-dire sa charge en double dans le FEC et la balance.
@@ -147,7 +152,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements, lectureNatures,
+      lectureReglements, lectureNatures, lectureLettrages,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -204,8 +209,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('natures_immobilisation').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
       ),
+      lireTout<LettrageManuel>((debut, fin) =>
+        supabase.from('lettrages_manuels').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
+    setLettragesManuels(lectureLettrages.lignes)
+    setLettragesIncomplets(lectureLettrages.motif)
     setReglements(lectureReglements.lignes)
     setVentilations(lectureVentilations.lignes)
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
@@ -350,7 +361,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  // En engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de règlement : la compter
+  // « sans règlement rapproché » enverrait chercher un paiement qui n'existera jamais (lib/lettrage.ts).
+  const lettreesALaMain = piecesLettreesALaMain(etatsDesLettragesManuels(ecritures, piecesValidees, lettragesManuels, modele.mode))
+  const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere)
@@ -371,8 +386,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le) : null
   // LE LETTRAGE des comptes de tiers (lib/lettrage.ts), calculé sur TOUT le brouillon et non sur l'exercice affiché :
   // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —
-  // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris.
-  const lettrage = lettrages(ecritures, modele.mode)
+  // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris. Les lettrages faits à la main y
+  // prennent leur place quand ils tiennent encore, revérifiés sur les pièces que le FEC lit : celles qui sont validées.
+  const lettrage = lettrages(ecritures, piecesValidees, lettragesManuels, modele.mode)
+  // En engagement seulement : en trésorerie, rien ne se lettre, et une lecture ratée de ces lignes ne change rien.
+  const lettragesManquants = modele.mode === 'engagement' ? lettragesIncomplets : null
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé. Pour un exercice
   // validé, ce que sa numérotation figée ne porte pas — qui ne peut pas exister, la base refusant la validation tant
   // qu'une écriture de l'exercice reste proposée, et qui se voit donc plutôt que de se cacher.
@@ -1236,6 +1254,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         }
       />
 
+      <BandeauLecturePartielle
+        quoi="Les lettrages faits à la main"
+        accord="lus"
+        motif={lettragesManquants}
+        consequence={
+          'L’export du FEC est bloqué : une facture et l’avoir que le cabinet a lettrés ensemble y paraîtraient ' +
+          'ouverts, et le fichier ne peut pas le dire. La génération des écritures et la piste d’audit n’en dépendent ' +
+          'pas. Recharge la page.'
+        }
+      />
+
       {/* Les à-nouveaux ne sont pas des écritures du brouillon : le journal ci-dessous ne les montre
           pas. Sans cette phrase, un FEC qui s'ouvre par un journal AN surprendrait celui qui vient de
           parcourir la liste. */}
@@ -1260,13 +1289,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           className="btn btn-outline btn-sm"
           disabled={
             typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
-            || brouillonIncomplet !== null || aNouveauxIncomplets !== null
+            || brouillonIncomplet !== null || aNouveauxIncomplets !== null || lettragesManquants !== null
           }
           title={
             brouillonIncomplet
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — un FEC amputé ne peut pas le dire, le format n'a pas de place pour ça.`
               : aNouveauxIncomplets
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
+              : lettragesManquants
+              ? `Lettrages faits à la main lus incomplètement (${lettragesManquants}) — une facture lettrée paraîtrait ouverte dans le FEC.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
               : fecValide ? 'Exercice validé : son FEC se relit tel que la validation l’a figé — journal, numéros et libellés ne changent plus.'
               : undefined
@@ -1341,7 +1372,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     {/* Le lettrage de la ligne (lib/lettrage.ts) : la facture et les règlements qui la soldent portent le
                         même code, celui du FEC (EcritureLet). */}
                     {lettrage.has(e.id) && (
-                      <>{' '}<span className="badge badge-neutral" title={`Lettrée le ${formatDate(lettrage.get(e.id)!.date)} : la facture et ses règlements se soldent sur ce compte.`}>
+                      <>{' '}<span className="badge badge-neutral" title={`Lettrée le ${formatDate(lettrage.get(e.id)!.date)} : les lignes de ce code se soldent sur ce compte — une facture et ses règlements, ou les pièces lettrées à la main.`}>
                         lettrage {lettrage.get(e.id)!.code}
                       </span></>
                     )}
