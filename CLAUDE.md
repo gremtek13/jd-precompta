@@ -1544,6 +1544,15 @@ fréquent est celui d'un défaut trouvé en travaillant sur autre chose — c'es
 ainsi que les 56 paiements par carte incapables de confirmer leur fournisseur
 ont été découverts, en cherchant à apparier une facture en dollars.
 
+**La barre d'avancement en tête de la page** (demandée par le cabinet le 06/10/2026, pour savoir d'un coup d'œil
+où en est le projet) se recompte dans la même édition que la ligne : la part des lignes à `État = Fait` parmi
+toutes celles qui ne sont pas en phase « 7 — Hors d'atteinte » — signer les comptes, en répondre, juger un cas
+ambigu, conseiller : ce que le métier réserve à l'expert-comptable n'est à la portée d'aucun logiciel. Le compte
+se fait par une requête sur la base (`GROUP BY "Phase", "État"`), jamais de tête ni en ajoutant un à la valeur
+d'avant, et la barre a dix cases, une 🟩 par dizaine faite, arrondie au plus proche. Une ligne vaut une ligne,
+qu'elle ait pris un jour ou un trimestre : la barre dit combien de chantiers sont livrés, pas combien de temps il
+reste, et la phrase sous elle le dit — ce qui reste est le plus lourd.
+
 **Installation sur site : évaluée, puis mise en attente par décision du cabinet (25/09/2026).**
 La page Notion « Rester migrable vers une installation sur site » porte l'évaluation : quatre
 règles, dont une enfreinte (Bedrock appelé dans trois fonctions, Textract dans une, sans module
