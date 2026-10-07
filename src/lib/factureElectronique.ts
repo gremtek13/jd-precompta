@@ -28,11 +28,12 @@ export const NS = {
   cbc: 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
 } as const
 
-// Les types de document (BT-3, liste UNTDID 1001 de la norme). Les avoirs : ceux de la norme et ceux que la règle
-// française BR-FR-04 ajoute (261 autofacture d'avoir, 262 avoir de remise globale, 396 avoir affacturé, 502 avoir
-// autofacturé affacturé, 503 avoir de facture d'acompte). Les factures : celles de la norme — sans la facture
-// proforma (325), qui n'est pas une pièce comptable — et celles de BR-FR-04 (384 rectificative, 386 d'acompte, 389
-// autofacture, 393 affacturée, 471 à 473 et 500, 501 leurs combinaisons).
+// Les types de document (BT-3) : ceux que la norme EN 16931 admet (règle BR-CL-01, liste UNTDID 1001), tels que les
+// publient les artefacts de validation de la Commission européenne — en UBL, la liste des avoirs (CreditNoteTypeCode)
+// et celle des factures (InvoiceTypeCode), où 81, un avoir, figure aussi : il compte en avoir. Sans la facture proforma
+// (325), qui n'est pas une pièce comptable. Les types que la DGFiP admet (règle G1.01 de ses spécifications externes :
+// 380 et 381, 384 rectificative, 386 d'acompte, 389 autofacture, 393 affacturée, 261 autofacture d'avoir, 396 avoir
+// affacturé, 471 à 473 et 500 à 503 leurs combinaisons) y figurent tous. factureElectronique.test.ts épingle les deux.
 export const TYPES_AVOIR = new Set(['81', '83', '261', '262', '296', '308', '381', '396', '420', '458', '502', '503', '532'])
 export const TYPES_FACTURE = new Set([
   '71', '80', '82', '84', '102', '130', '202', '203', '204', '211', '218', '219', '295', '326', '331', '380', '382',

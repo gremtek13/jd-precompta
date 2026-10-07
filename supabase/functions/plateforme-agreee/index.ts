@@ -3,8 +3,12 @@
 //
 // Depuis le 1er septembre 2026, toute entreprise reçoit ses factures par une plateforme agréée — la sienne, qu'elle
 // a choisie. Le cabinet a décidé (07/10/2026) de se brancher sur la plateforme de CHAQUE client plutôt que d'en
-// imposer une : toutes publient l'API que la norme AFNOR XP Z12-013 leur impose (le « Flow Service »), et
-// l'entreprise ouvre au cabinet une identité OAuth2 (« client credentials ») sur la sienne. Cette fonction est le
+// imposer une, par l'API de flux que publient les plateformes, dite « API AFNOR » — Super PDP, banqup et Generix la
+// documentent, et un logiciel qui s'y branche une fois doit pouvoir rejoindre toute plateforme qui la propose
+// (Super PDP, 12/03/2026) —, et l'entreprise ouvre au cabinet une identité OAuth2 (« client credentials ») sur la
+// sienne. Ce que la fonction attend d'une plateforme (routes, champs, pagination, erreurs) est tiré de ces
+// documentations PUBLIQUES et de leurs clients publiés, jamais de la norme AFNOR elle-même, dont l'éditeur interdit
+// l'exploitation par une IA (décision du cabinet du 07/10/2026). Cette fonction est le
 // SEUL point de contact avec ces plateformes, et la seule à lire ou écrire `connexions_plateformes` (RLS sans aucune
 // policy : refus total côté navigateur, voir supabase/essais/receptionPlateforme.sql). Le secret ne quitte jamais
 // le serveur : il ouvre toutes les factures de l'entreprise, reçues comme émises.
@@ -32,8 +36,7 @@
 // c'est son flux (`pieces_flux_unique` : le dossier, l'hôte de la plateforme et l'identifiant du flux). Une recherche
 // qui repart trop tôt relit des factures déjà importées, que l'écran écarte ; une recherche qui repartirait trop tard
 // en perdrait. D'où les règles du bloc CURSEUR : il n'avance que sur ce que l'écran a réellement traité, jamais à
-// moins de quinze minutes de maintenant (la marge que la norme donne en exemple pour qu'un flux en cours d'écriture
-// chez la plateforme devienne visible, §5.3.2), et ne recule jamais.
+// moins d'une heure de maintenant, et ne recule jamais.
 //
 // CE QUI SORT VERS LE NAVIGATEUR EST BORNÉ : ni le secret, ni le jeton, ni une réponse brute de la plateforme — des
 // champs lus et vérifiés, et pour un document, des octets dont la nature (PDF ou XML) est contrôlée. L'adresse est
@@ -48,7 +51,8 @@ const DELAI_APPEL_MS = 25_000
 // page s'arrête bien avant, et le DIT.
 const BUDGET_RECHERCHE_MS = 100_000
 const MAX_PAGES = 20
-// La norme impose aux plateformes d'accepter une page de 100 résultats au plus (§4.3).
+// Une page de 100 résultats au plus : le maximum que publie banqup (25 par défaut), et celui que le client pyfrctc
+// demande à Super PDP.
 const TAILLE_PAGE = 100
 // Ce que l'écran importe en une fois : chaque facture coûte deux téléchargements et un dépôt. Au-delà, la liste se dit
 // incomplète, l'écran importe ce lot, retient son point de reprise, et la récupération suivante continue.
@@ -63,8 +67,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, created_at, updated_at"
 // Les factures, dans les deux sens : celles que l'entreprise reçoit (SupplierInvoice, un achat) et celles qu'elle émet
-// (CustomerInvoice, une vente). Le TYPE dit qui est le fournisseur, quel que soit le sens du flux — une facture
-// d'autofacturation reçue est une vente (norme, §5.2.5). Les cycles de vie et l'e-reporting ne sont pas des pièces.
+// (CustomerInvoice, une vente). Le TYPE dit qui est le fournisseur, quel que soit le sens du flux — banqup les définit
+// ainsi : CustomerInvoice est une facture émise, ou une autofacture reçue ; SupplierInvoice une facture reçue, ou une
+// autofacture émise. Les cycles de vie et l'e-reporting ne sont pas des pièces.
 const TYPES_RECHERCHES = ["SupplierInvoice", "CustomerInvoice"]
 
 const corsHeaders = {
@@ -111,8 +116,9 @@ function hoteRefuse(hote: string): string | null {
 
 /**
  * Une adresse saisie, ramenée à la forme que la base garde — l'hôte en minuscules, sans barre finale — ou la raison
- * de son refus. Pour le service des flux, un « /v1 » final est retiré : la norme versionne ses routes sous l'adresse
- * de la plateforme, et une adresse collée avec lui ferait appeler « …/v1/v1/flows ».
+ * de son refus. Pour le service des flux, un « /v1 » final est retiré : les plateformes publient leurs routes sous leur
+ * adresse suivie de « /v1 » (banqup, Generix, Super PDP), et une adresse collée avec lui ferait appeler
+ * « …/v1/v1/flows ».
  */
 function adresseNettoyee(
   saisie: unknown, libelle: string, retirerVersion: boolean,
@@ -277,10 +283,11 @@ function vuePublique(c: ConnexionLue | null) {
 // ── FIN CONNEXION ───────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT JETON ─────────────────────────────────────────────────────────────────────────────────────
-// OAuth2, accès « client credentials » (RFC 6749, §4.4), comme la norme l'impose (§4.2). L'identité se présente d'abord
-// par l'en-tête Basic, la forme que la RFC recommande (§2.3.1 : chaque partie encodée comme un formulaire) ; une
-// plateforme qui ne l'accepte pas refuse en 400 ou 401, et la demande repart avec l'identité dans le corps, la forme
-// que la RFC admet aussi. Le jeton rendu doit être un jeton « Bearer » (RFC 6750) : c'est celui que la norme emploie.
+// OAuth2, accès « client credentials » (RFC 6749, §4.4), celui que publient les plateformes (banqup, Super PDP).
+// L'identité se présente d'abord par l'en-tête Basic, la forme que la RFC recommande (§2.3.1 : chaque partie encodée
+// comme un formulaire) ; une plateforme qui ne l'accepte pas refuse en 400 ou 401, et la demande repart avec l'identité
+// dans le corps, la forme que la RFC admet aussi. Le jeton rendu doit être un jeton « Bearer » (RFC 6750) : c'est celui
+// que les plateformes demandent sur chaque appel.
 interface IdentiteJeton {
   url_jeton: string
   client_id: string
@@ -333,7 +340,7 @@ function jetonDeLaReponse(statut: number, donnees: unknown): { jeton: string } |
     }
     if (d.token_type !== undefined && (typeof d.token_type !== "string" || d.token_type.toLowerCase() !== "bearer")) {
       return {
-        refus: "La plateforme a délivré un jeton d'un type que la norme n'emploie pas (attendu : Bearer).",
+        refus: "La plateforme a délivré un jeton d'un autre type que Bearer, le seul que la fonction sache présenter.",
         identifiants: false,
       }
     }
@@ -434,9 +441,10 @@ function fluxDeLaListe(brut: unknown): { flux: FluxVu } | { ecarte: Ecart; misAJ
 // ── FIN FLUX ────────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT RECHERCHE ─────────────────────────────────────────────────────────────────────────────────
-// La recherche page à page (`POST /v1/flows/search`). La norme de 2026 pagine par un curseur opaque (`cursor` dans la
-// demande, `nextCursor` dans la réponse, absent à la dernière page) ; ses versions précédentes paginaient par la date
-// (`updatedAfter` = la dernière date lue), et une plateforme peut en être restée là. Les deux sont suivies :
+// La recherche page à page (`POST /v1/flows/search`). Les plateformes publient deux façons de paginer, et les deux sont
+// suivies : banqup documente un curseur opaque (`cursor` dans la demande, `nextCursor` dans la réponse, absent à la
+// dernière page) ET la date (« Pagination works with the updatedAfter property », la comparaison étant stricte :
+// updatedAt > updatedAfter) ; le client pyfrctc, écrit pour Super PDP, pagine par la date. D'où :
 //   - un `nextCursor` mène à la page suivante — un curseur déjà servi rend la lecture INCOMPLÈTE au lieu de tourner ;
 //   - sans curseur, une page plus courte que demandée est la dernière ;
 //   - sans curseur, une page PLEINE repart de la date : la comparaison étant stricte (updatedAt > updatedAfter), elle
@@ -449,7 +457,9 @@ function fluxDeLaListe(brut: unknown): { flux: FluxVu } | { ecarte: Ecart; misAJ
 // `jusqua` est le point de reprise que la lecture rend POSSIBLE si l'écran traite toutes les factures listées : la plus
 // grande date lue quand la lecture est complète ; quand elle ne l'est pas, la plus grande date STRICTEMENT inférieure à
 // la dernière (des flux non lus peuvent la partager) — et rien du tout si la plateforme n'a pas rendu ses flux dans
-// l'ordre des dates que la norme impose (§5.3.2) : un flux non lu pourrait alors être plus ancien.
+// l'ordre croissant de leur date : un flux non lu pourrait alors être plus ancien. Cet ordre, la pagination par la date
+// le SUPPOSE sans qu'aucune documentation publique l'écrive en toutes lettres : le code le vérifie, et une page pleine
+// dans le désordre ne fait pas repartir de la date — elle arrête la lecture en le disant.
 interface PageFlux {
   results?: unknown
   nextCursor?: unknown
@@ -553,6 +563,12 @@ async function rechercherFlux(
     const reprise = Math.max(...avant)
     const actuelle = instantMs(demande.updatedAfter)
     if (actuelle !== null && reprise <= actuelle) return fin(n + 1, false, "la plateforme n'avance plus d'une page à l'autre")
+    // Repartir de la date sauterait, chez une plateforme qui rend ses flux dans le désordre, ceux qu'elle n'a pas encore
+    // rendus et qui sont plus anciens que la reprise — en silence, et pour toujours si elle rend toujours les mêmes.
+    if (!ordonne) {
+      return fin(n + 1, false, "la plateforme ne rend pas ses factures dans l'ordre de leur date : la recherche ne peut " +
+        "pas aller plus loin sans risquer d'en sauter")
+    }
     demande = { updatedAfter: isoMs(reprise), cursor: null }
   }
   return fin(bornes.maxPages, false, `plus de ${bornes.maxPages} pages : relancez la récupération pour la suite`)
@@ -561,16 +577,19 @@ async function rechercherFlux(
 
 // ── DÉBUT CURSEUR ───────────────────────────────────────────────────────────────────────────────────
 // Le point de reprise que l'écran demande à retenir après un import — celui que la liste rendait possible, ramené
-// avant la première facture qu'il n'a pas pu importer. La fonction le borne encore : jamais à moins de quinze minutes
-// de maintenant (un flux en cours d'écriture chez la plateforme peut apparaître avec une date déjà passée, §5.3.2), et
-// jamais en arrière — un autre onglet a pu aller plus loin, et reculer ferait seulement relire.
-const MARGE_EXHAUSTIVITE_MS = 15 * 60_000
+// avant la première facture qu'il n'a pas pu importer. La fonction le borne encore : jamais à moins d'une heure de
+// maintenant, et jamais en arrière — un autre onglet a pu aller plus loin, et reculer ferait seulement relire.
+// L'HEURE EST NOTRE CHOIX, aucune documentation publique ne donnant ce délai, et elle est large exprès : relire ne
+// coûte rien — chaque facture est reconnue à son flux et ne revient pas —, en perdre une coûte une facture. Elle couvre
+// l'écart entre l'horloge de la plateforme et celle de la fonction, et un flux qu'une plateforme daterait de son arrivée
+// mais ne rendrait visible qu'après l'avoir traité.
+const MARGE_DE_REPRISE_MS = 60 * 60_000
 
 function curseurRetenu(actuel: string | null, demande: unknown, maintenantMs: number): { curseur: string | null } | { refus: string } {
   if (demande === null) return { curseur: actuel }
   const ms = instantMs(demande)
   if (ms === null) return { refus: "Le point de reprise demandé n'est pas une date lisible." }
-  const retenu = Math.min(ms, maintenantMs - MARGE_EXHAUSTIVITE_MS)
+  const retenu = Math.min(ms, maintenantMs - MARGE_DE_REPRISE_MS)
   const avant = instantMs(actuel)
   if (avant !== null && avant >= retenu) return { curseur: actuel }
   return { curseur: isoMs(retenu) }
@@ -686,9 +705,10 @@ function clientPlateforme(
   options: { delaiMs: number; maxJson: number; maxFichier: number; maxRedirections: number },
 ) {
   let jetonObtenu: string | null = null
-  // La norme écrit « Organisation-Id » (§4.2) ; des plateformes publient « Organization-Id ». Les deux partent.
+  // L'organisation, quand une identité sert plusieurs entreprises : banqup publie l'en-tête « Organization-Id ». C'est
+  // le seul qu'une documentation publique nomme, et le seul qui part.
   const organisation: Record<string, string> = config.organisation_id
-    ? { "Organisation-Id": config.organisation_id, "Organization-Id": config.organisation_id }
+    ? { "Organization-Id": config.organisation_id }
     : {}
 
   async function envoyer(url: string, init: RequestInit): Promise<Response | null> {
@@ -797,16 +817,16 @@ function clientPlateforme(
 // ── FIN HTTP ────────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT ERREURS ───────────────────────────────────────────────────────────────────────────────────
-// Ce que dit une plateforme qui refuse, dit en français. Une erreur de la norme porte un `errorCode` (MISSING_TOKEN,
-// FORBIDDEN_ACCESS…) et un `errorMessage` libre : seul le CODE est repris, et seulement s'il a la forme d'un code —
-// un texte libre rendu tel quel serait l'écho d'une réponse que personne n'a vérifiée.
-function codeAfnor(donnees: unknown): string | null {
+// Ce que dit une plateforme qui refuse, dit en français. Une erreur porte un `errorCode` — banqup publie MISSING_TOKEN,
+// FORBIDDEN_ACCESS… — et un `errorMessage` libre (banqup, pyfrctc) : seul le CODE est repris, et seulement s'il a la
+// forme d'un code — un texte libre rendu tel quel serait l'écho d'une réponse que personne n'a vérifiée.
+function codeDErreur(donnees: unknown): string | null {
   const code = (donnees as { errorCode?: unknown } | null)?.errorCode
   return typeof code === "string" && /^[A-Z][A-Z0-9_]{1,59}$/.test(code) ? code : null
 }
 
 function erreurPlateforme(etape: string, reponse: ReponseJson): { message: string; statut: number; acces: boolean } {
-  const code = codeAfnor(reponse.donnees)
+  const code = codeDErreur(reponse.donnees)
   const suffixe = code ? ` (${code})` : ""
   if (reponse.statut === 0) {
     return { message: `La plateforme n'a pas répondu à temps (${etape}). Réessayez dans un instant.`, statut: 504, acces: false }
@@ -1025,7 +1045,7 @@ Deno.serve(async (req: Request) => {
     const resultats = (essai.donnees as { results?: unknown } | null)?.results
     if (essai.statut < 200 || essai.statut >= 300 || essai.redirection || !Array.isArray(resultats)) {
       const e = essai.statut >= 200 && essai.statut < 300 && !essai.redirection
-        ? { message: "La plateforme répond à la recherche des flux, mais pas sous la forme de la norme AFNOR XP Z12-013.", statut: 502, acces: false }
+        ? { message: "La plateforme répond à la recherche des flux, mais pas sous la forme attendue (une liste « results »).", statut: 502, acces: false }
         : erreurPlateforme("recherche des flux", essai)
       console.error(`[plateforme-agreee] tester : recherche ${essai.statut}`)
       return json({ error: e.message, acces_refuse: e.acces }, e.statut)
@@ -1035,7 +1055,8 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "lister") {
-    // Le point de reprise part sous la forme que la norme montre (« …Z », à la milliseconde) : il est enregistré
+    // Le point de reprise part sous la forme que montrent les plateformes — une date UTC en « …Z », à la milliseconde
+    // (pyfrctc l'exige de Super PDP ; le curseur d'exemple de banqup porte « …T03:37:35.687Z ») : il est enregistré
     // tronqué à la milliseconde, donc rien ne se perd.
     const depuis = instantMs(connexion.recherche_depuis)
     let recherche: Recherche

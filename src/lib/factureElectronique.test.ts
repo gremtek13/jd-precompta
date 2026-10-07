@@ -357,16 +357,30 @@ describe('lireFactureXml — CII (le XML de Factur-X)', () => {
 })
 
 describe('lireFactureXml — le type décide du sens', () => {
-  it('chaque avoir de la norme et de la règle française BR-FR-04 est un avoir', () => {
+  it('chaque avoir de la norme EN 16931 et de la règle G1.01 de la DGFiP est un avoir', () => {
     for (const code of ['381', '261', '262', '396', '502', '503', '81', '83']) {
       expect(lue(cii({ type: code })).nature, code).toBe('avoir')
     }
   })
 
-  it('chaque facture de la règle française est une facture', () => {
+  it('chaque facture de la règle G1.01 de la DGFiP est une facture', () => {
     for (const code of ['380', '384', '386', '389', '393', '471', '472', '473', '500', '501']) {
       expect(lue(cii({ type: code })).nature, code).toBe('facture')
     }
+  })
+
+  it('les listes sont celles que publie la Commission européenne (BR-CL-01), à deux choix près, et G1.01 y tient', () => {
+    // Relevées le 07/10/2026 sur les artefacts de validation EN 16931 (EN16931-UBL-validation, version 1.3.16) : la
+    // liste des CreditNoteTypeCode et celle des InvoiceTypeCode. Les deux choix : 81, un avoir présent dans la seconde,
+    // compte en avoir ; 325, la facture proforma, n'est pas une pièce.
+    const avoirsPublies = '81 83 261 262 296 308 381 396 420 458 502 503 532'.split(' ')
+    const facturesPubliees = ('71 80 81 82 84 102 130 202 203 204 211 218 219 295 325 326 331 380 382 383 384 385 386 ' +
+      '387 388 389 390 393 394 395 456 457 471 472 473 500 501 527 553 575 623 633 751 780 817 870 875 876 877 935').split(' ')
+    expect([...TYPES_AVOIR].sort()).toEqual([...avoirsPublies].sort())
+    expect([...TYPES_FACTURE].sort()).toEqual(facturesPubliees.filter((c) => c !== '81' && c !== '325').sort())
+    // La règle G1.01 des spécifications externes de la DGFiP (v3.2) : les seuls types qu'une facture française porte.
+    for (const code of ['380', '389', '393', '501', '386', '500', '384', '471', '472', '473']) expect(TYPES_FACTURE.has(code), code).toBe(true)
+    for (const code of ['261', '381', '396', '502', '503']) expect(TYPES_AVOIR.has(code), code).toBe(true)
   })
 
   it('aucun code n’est à la fois une facture et un avoir, et la facture proforma n’est ni l’un ni l’autre', () => {

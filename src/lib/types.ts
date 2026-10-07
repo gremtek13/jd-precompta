@@ -1,8 +1,8 @@
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
 // D'où vient une pièce : un dépôt (cabinet ou client), un e-mail reçu, l'ancienne synchronisation de Super PDP,
-// ou la plateforme agréée du client (API AFNOR XP Z12-013, ligne 28.5) — toujours avec son flux (flux_hote,
-// flux_id), une contrainte en base l'impose. Un client ne dépose que 'upload' : la policy le lui impose.
+// ou la plateforme agréée du client (son API de flux, dite « API AFNOR », ligne 28.5) — toujours avec son flux
+// (flux_hote, flux_id), une contrainte en base l'impose. Un client ne dépose que 'upload' : la policy le lui impose.
 export type Source = 'upload' | 'email' | 'superpdp' | 'plateforme'
 
 export interface Dossier {
