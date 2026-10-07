@@ -58,6 +58,20 @@ const VISITES = [
     dossier: 'd7', onglet: 'banque', nom: 'assujetti/banque',
     apres: (page) => page.getByRole('button', { name: 'Tous', exact: true }).click(),
   },
+  // Le STATUT DE TVA (ligne 28.5) : sa carte et celle de la facturation électronique, dans l'onglet TVA d'un dossier
+  // exonéré, d'un dossier en franchise et d'un dossier à préciser — ouverte en édition —, puis celle d'un redevable
+  // qu'on change ; le point « à préciser » du paramétrage de la Vue d'ensemble.
+  { dossier: 'd1', onglet: 'tva', nom: 'statut/exonéré' },
+  { dossier: 'd3', onglet: 'tva', nom: 'statut/franchise' },
+  { dossier: 'd2', onglet: 'tva', nom: 'statut/à-préciser' },
+  { dossier: 'd2', onglet: 'checklist', nom: 'statut/vue-d-ensemble' },
+  {
+    dossier: 'd7', onglet: 'tva', nom: 'statut/changer',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Changer le statut', exact: true }).click()
+      await page.getByRole('button', { name: 'Exonéré (art. 261 à 261 E du CGI)', exact: true }).click()
+    },
+  },
   { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
   { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
   // Sa TVA LIQUIDÉE (lib/liquidationTva.ts) : la fiche du prélèvement rapproché de la déclaration du deuxième trimestre,

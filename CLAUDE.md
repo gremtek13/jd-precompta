@@ -210,7 +210,9 @@ Conséquences pratiques :
   - `send-email` — envoi d'e-mails sortants (facture, relance de pièces),
     domaine `precompta.jdarnis.fr` via Resend.
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — facturation
-    électronique via Super PDP (voir section dédiée plus bas).
+    électronique via Super PDP (voir section dédiée plus bas). `superpdp-emit` lit le statut de TVA du
+    dossier et refuse, avant tout appel, ce qu'il ne peut pas transmettre (voir « le statut de TVA du
+    dossier » dans « Problèmes connus »).
   - `proposer-categorie` — propose la catégorie d'UNE pièce d'après son texte OCR, sur le clic d'un
     membre du cabinet dans la fiche de la pièce : liste fermée filtrée sur le sens, extrait vérifié
     dans le texte, RIEN d'écrit (voir « Décisions techniques »).
@@ -1502,6 +1504,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   précédent n'est pas validé, un exercice n'a pas d'ouverture, et Écritures comme la Balance des comptes le disent ; la
   carte « Valider l'exercice » montre l'ouverture qu'elle écrira. Voir « la validation d'un exercice écrit l'ouverture du
   suivant » dans « Problèmes connus » (`lib/reportDesSoldes.ts`).
+- **Le statut de TVA du dossier (07/10/2026)**, ligne 28.5, étape (a) : redevable, franchise en base (art. 293 B du
+  CGI) ou exonéré avec l'article qui l'exonère — ou à préciser, tant que personne ne l'a dit —, choisi dans l'onglet TVA
+  et rappelé par le badge de l'en-tête. Il décide de la mention de TVA des factures, de ce qu'une facture peut valider,
+  du motif d'une ligne à 0 % que `superpdp-emit` transmet, et de ce que le dossier doit à la facturation électronique,
+  que l'onglet TVA détaille. Voir « le statut de TVA du dossier » dans « Problèmes connus » (`lib/statutTva.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1563,6 +1570,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
 - Quitter les clés historiques de Supabase (ligne 25.5) : fait dans le code et en production le
   30/09/2026. Reste leur désactivation dans le tableau de bord de Supabase, un clic réversible du
   cabinet, une fois le nouveau site en ligne et les fenêtres ouvertes rechargées.
+- Facturation électronique (ligne 28.5) : décisions du cabinet du 07/10/2026 — la réception par la plateforme agréée
+  que chaque client a choisie (une configuration par dossier, par l'API de la norme AFNOR XP Z12-013) et, pour les
+  quelques clients qui en ont besoin, l'émission conforme, le statut « Encaissée » et l'e-reporting. L'étape (a), le
+  statut de TVA du dossier, est livrée (07/10/2026). Restent (b) la réception par la plateforme du client, (c)
+  l'émission conforme et ses nouvelles mentions, (d) le statut « Encaissée » et (e) l'e-reporting.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -1698,6 +1710,14 @@ d'environnement dans la même édition.
     — comportement normal de Super PDP, pas un bug applicatif : pour tester
     en bac à sable, le SIRET du dossier de test doit être aligné sur le
     SIREN de l'entreprise sandbox utilisée.
+  - Le motif d'exonération d'une ligne à 0 % (BT-120) suit le statut de TVA du dossier depuis le 07/10/2026 :
+    l'art. 293 B pour une franchise en base, l'article qui exonère pour un dossier exonéré — ou redevable d'une
+    activité en partie exonérée —, jamais l'un pour l'autre ; jusque-là toute ligne à 0 % partait avec le motif
+    de la franchise. Seul le TEXTE part (`vat_exemption_reason`) : BR-E-10 admet le code VATEX ou le texte, et
+    le champ qui porterait le code n'a pas été vu dans l'API. Et le n° de TVA du vendeur est omis quand toutes
+    les lignes sont à 0 %, alors que BR-E-02 demande un identifiant fiscal du vendeur dès qu'une ligne est
+    exonérée : rien dans ce dépôt ne dit qu'une telle facture a passé le validateur — à éprouver au premier
+    essai réel (étape c de la ligne 28.5).
 - **Un module de calcul n'importe jamais le client Supabase** : `supabase.ts` lève au
   chargement quand les variables d'environnement manquent, ce qui rend intestable tout
   module qui le tire, fût-ce pour une constante. Les opérations qui parlent à la base
@@ -7125,6 +7145,70 @@ d'environnement dans la même édition.
   report à nouveau ou les associés) ne s'écrit pas encore dans l'application ; les soldes reportés d'un compte de tiers n'ont
   pas d'auxiliaire — une ligne par compte, comme les à-nouveaux d'une reprise ; et un exercice dont le précédent n'est pas
   validé n'a pas d'ouverture — c'est la décision du cabinet, et les écrans le disent.
+- **LE STATUT DE TVA DU DOSSIER — LIGNE 28.5, ÉTAPE (A)** (07/10/2026, `lib/statutTva.ts`, migration
+  `statut_tva_du_dossier`). La facturation électronique est la ligne 28.5, et le cabinet a décidé le 07/10/2026 : la
+  réception par la plateforme agréée que chaque client a choisie et, pour quelques clients, l'émission conforme, le statut
+  « Encaissée » et l'e-reporting — les étapes (b) à (e). Tout partait d'une question que l'application ne savait pas
+  poser : `assujetti_tva` rangeait sous un même « non » la FRANCHISE EN BASE (CGI, art. 293 B), qui est dans le champ de
+  l'émission et de l'e-reporting, et l'EXONÉRATION (art. 261 à 261 E, les soins de l'art. 261, 4, 1° au premier rang), qui
+  en sort. Décision du cabinet : trois statuts, l'article d'une exonération, la bonne mention sur les factures comme à
+  la plateforme, et ce que chaque dossier doit à la facturation électronique.
+  **LE DÉFAUT QUE CELA CORRIGE** : l'application proposait « TVA non applicable, art. 293 B du CGI » sur la facture de
+  tout dossier non assujetti, donc d'un dossier de soins exonérés, et `superpdp-emit` transmettait ce motif pour toute
+  ligne à 0 %, quel que soit le dossier — un exonéré déclarait à une plateforme agréée une franchise qu'il n'a pas, et
+  une facture transmise ne se reprend que par un avoir. **Mesuré** (07/10/2026, des comptes seulement) : les six factures
+  de la base, toutes validées, toutes sur un bac à sable abandonné dont le statut est à préciser, citent la franchise en
+  portant une ligne taxée — « TVA non applicable » sur une facture qui facture de la TVA, que l'art. 283, 3 rend due.
+  Aucune n'a été transmise (aucun événement Super PDP en base).
+  **EN BASE** : `statut_tva` (redevable, franchise, exonere ; nul : à préciser) FAIT FOI, et `assujetti_tva` EN EST DÉDUIT
+  par le déclencheur `dossiers_deduire_assujetti_tva` — il reste lu partout où l'on demande si le dossier récupère la
+  TVA, et rien de ce qui le lit ne change. `article_exoneration`, une liste fermée (soins, enseignement et formation,
+  cours particuliers, assurance), n'est permis qu'à un exonéré ou à un redevable en partie exonéré. Quatre contraintes,
+  dont deux avec `coalesce` : sans lui, un statut nul rend la condition nulle, et une contrainte dont la condition est
+  nulle PASSE — l'essai l'a attrapé. Le déclencheur sert aussi les écrivains qui ne connaissent que le booléen (une
+  création sans statut, la restauration d'une sauvegarde d'avant, une fenêtre ouverte avant la mise en ligne) sans rien
+  deviner entre franchise et exonération : vrai, redevable ; faux, à préciser. La migration a rendu redevables les
+  dossiers assujettis et laissé les autres À PRÉCISER : on ne devine pas un statut. `supabase/essais/statutTva.sql` :
+  17 contrôles sur 17 en production, et les neuf mutations de la migration mordent sur une réplique locale. L'export
+  porte 89 migrations, le socle 77 instructions, l'inventaire 1 039 objets.
+  **LE MODULE** (`lib/statutTva.ts`, 32 tests, 24 mutations qui mordent) dit la mention d'une facture — l'art. 293 B pour
+  une franchise, la disposition qui exonère pour un exonéré (CGI, ann. II, art. 242 nonies A), aucune pour un
+  redevable ; le MOTIF d'une ligne à 0 % qu'on transmet (catégorie E, code VATEX, texte), ou le refus quand on ne le
+  connaît pas ; le refus d'une ligne taxée sur un dossier qui ne facture pas de TVA, puisque la TVA facturée est due du
+  seul fait de l'être (art. 283, 3) ; et ce que le dossier doit à la facturation électronique : la RÉCEPTION pour tout
+  assujetti depuis le 1er septembre 2026, même exonéré ou en franchise ; l'ÉMISSION, l'e-reporting des autres ventes et
+  celui des encaissements au 1er septembre 2027 pour une PME ou une micro-entreprise — pour ses seules opérations
+  taxables quand le redevable est en partie exonéré —, à la fréquence de son régime ; rien de cela pour un exonéré ; et
+  pas d'encaissements à transmettre sur option pour les débits. Ses listes fermées sont confrontées à la migration
+  exportée.
+  **LES ÉCRANS** : l'onglet TVA porte la carte « Statut de TVA » — trois boutons, l'article d'une exonération, puis
+  « Enregistrer » ; rien ne s'écrit avant le clic, la franchise part sans article, la page reçoit ce que la base a écrit
+  (le booléen qu'elle en déduit compris), sous un verrou `useRef` — et la carte « Facturation électronique » : les quatre
+  obligations, leur état et pourquoi. Le badge de l'en-tête dit le statut (« à préciser » en couleur d'alerte) et mène à
+  l'onglet ; il ne bascule plus le seul booléen. Une facture neuve suit le statut : la mention de son article pour un
+  exonéré, celle de l'art. 293 B pour une franchise, une ligne à 20 % chez un redevable (0 % ailleurs) ; une ligne taxée
+  sur un dossier en franchise ou exonéré REFUSE LA VALIDATION — le brouillon reste enregistrable, le temps de changer le
+  statut s'il est en retard ; une mention attendue et absente se propose (« Ajouter la mention ») ; la franchise citée
+  hors de son statut se signale, comme une ligne à 0 % d'un redevable sans article. Sur un statut à préciser, la facture
+  le dit sans rien refuser. La Vue d'ensemble range « Statut de TVA à préciser » dans le paramétrage, en attention, et
+  mène à l'onglet TVA. Cinquante mutations des écrans, quarante-neuf mordent ; la cinquantième est équivalente (le
+  dossier affiché et l'identifiant de l'URL coïncident).
+  **`superpdp-emit` JUGE LA FACTURE AVANT TOUT APPEL** : il lit le statut et l'article (une lecture refusée lève), puis
+  un statut à préciser ne transmet rien, une ligne taxée d'un dossier en franchise ou exonéré se refuse, et une ligne à
+  0 % porte le motif de son statut ou se refuse quand on ne le connaît pas — en 400, avec la raison, avant la
+  conversion, la validation et l'envoi. La copie de `lib/statutTva.ts` vit entre les bornes `── DÉBUT/FIN STATUT TVA` ;
+  `superpdpStatutTva.test.ts` l'extrait, la transpile, la compare à l'original sur chaque statut, chaque article et
+  chaque taux, plante six dérives dans la vraie source et garde le câblage — neuf mutations, toutes mordent.
+  **L'assistant** lit le statut et l'article, les rend dans `resume_dossier`, compte un statut à préciser dans
+  `points_a_traiter` comme la Vue d'ensemble, et sa consigne dit ce que chaque statut emporte.
+  **LES DEUX FONCTIONS SE DÉPLOIENT APRÈS LA FUSION** : leurs refus renvoient à l'onglet TVA, qui doit être en ligne
+  d'abord.
+  **Le banc** sert un dossier exonéré pour ses soins, un en franchise et un à préciser : 0 débordement aux quatre
+  largeurs de référence et aux combinaisons extrêmes des volets.
+  **CE QUI RESTE, dit plutôt que promis** : le statut de chaque dossier non assujetti est à préciser en production — le
+  dossier `test` compris —, et c'est au cabinet de le choisir, l'application ne le devinant pas ; une facture validée
+  avec la mauvaise mention se corrige par un avoir, jamais en place ; la liste des exonérations est fermée, et un autre
+  article se saisit à la main sur la facture ; et les étapes (b) à (e).
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8575,7 +8659,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4873 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4943 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8615,7 +8699,9 @@ base qu'un petit interprète exécute (`compteDeBilan.ts`), les refus qu'un clas
 (`classementsDuMouvement.ts`), la liquidation d'une déclaration de TVA, son paiement, son remboursement et ce
 qui en reste dû (`liquidationTva.ts`, la CA3 au centime des écritures dans `declarationTva.ts`), l'ouverture
 qu'une validation écrit pour l'exercice suivant, au centime de la fonction de la base, et ce qu'on sait de
-l'ouverture d'un exercice (`reportDesSoldes.ts`), et ce que
+l'ouverture d'un exercice (`reportDesSoldes.ts`), le statut de TVA d'un dossier — la mention de ses factures,
+le motif d'une ligne à 0 % qu'on transmet à une plateforme et ce qu'il doit à la facturation électronique
+(`statutTva.ts`) —, et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et

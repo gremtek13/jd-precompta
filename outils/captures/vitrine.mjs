@@ -290,6 +290,19 @@ const VUES = [
   { nom: 'mobile-report-balance', chemin: '#/dossiers/d9/statistiques', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2026', vers: 'soldes reportés de l’exercice 2025', enTete: true },
   { nom: 'pc-report-attente', chemin: '#/dossiers/d10/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'pas encore d’ouverture' },
   { nom: 'pc-report-attente-balance', chemin: '#/dossiers/d10/statistiques', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2026', vers: 'pas encore d’ouverture', enTete: true },
+  // LE STATUT DE TVA DU DOSSIER (ligne 28.5, étape a) : la carte de l'onglet TVA et ce que le dossier doit à la facturation
+  // électronique — le cabinet infirmier exonéré (art. 261, 4, 1°), Marc Petit en franchise en base, un dossier dont le
+  // statut est à préciser, la carte d'un redevable qu'on change —, et le badge de l'en-tête.
+  { nom: 'pc-statut-exonere', chemin: '#/dossiers/d1/tva', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-statut-exonere-sombre', chemin: '#/dossiers/d1/tva', l: 1440, h: 900, theme: 'dark', reduite: false },
+  { nom: 'pc-statut-franchise', chemin: '#/dossiers/d3/tva', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-statut-a-preciser', chemin: '#/dossiers/d2/tva', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-statut-assistant', chemin: '#/dossiers/d1/tva', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant' },
+  { nom: 'pc-statut-changer', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^Changer le statut$' },
+  { nom: 'pc-statut-checklist', chemin: '#/dossiers/d2/checklist', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Statut de TVA à préciser' },
+  { nom: 'mobile-statut-exonere', chemin: '#/dossiers/d1/tva', l: 390, h: 844, theme: 'light', reduite: false },
+  { nom: 'mobile-statut-obligations', chemin: '#/dossiers/d1/tva', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Facturation électronique', enTete: true },
+  { nom: 'mobile-statut-a-preciser', chemin: '#/dossiers/d2/tva', l: 390, h: 844, theme: 'light', reduite: false },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
