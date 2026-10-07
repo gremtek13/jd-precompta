@@ -224,8 +224,8 @@ Conséquences pratiques :
     de la connexion, la liste des banques, la demande d'accord et son retour, le choix du compte, la
     récupération des mouvements et le retrait. Elle REND les mouvements ; c'est l'écran qui les importe
     (voir « la connexion bancaire récupère, l'écran importe » dans « Problèmes connus »).
-  - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de la norme AFNOR XP Z12-013 : la
-    connexion du dossier (son secret ne revient jamais au navigateur), son test, la recherche des
+  - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de flux que publient les plateformes (dite
+    « API AFNOR ») : la connexion du dossier (son secret ne revient jamais au navigateur), son test, la recherche des
     factures reçues et émises, le téléchargement d'une facture et de sa version lisible, et le point de
     reprise. Elle REND les factures ; c'est l'écran qui les importe, chacune en pièce « à valider » (voir
     « la réception par la plateforme du client » dans « Problèmes connus »).
@@ -1038,7 +1038,7 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   fait avec la clé privée de l'application (secret `ENABLE_BANKING_CLE_PRIVEE`, jamais dans le dépôt ni
   dans la conversation) ; l'adresse de retour `https://compta.jdarnis.fr/retour-banque.html` est
   déclarée dans son panneau de contrôle. Le prestataire définitif est sur devis (ligne 24).
-- **La plateforme agréée de chaque client** (API de la norme AFNOR XP Z12-013, le « Flow Service ») —
+- **La plateforme agréée de chaque client** (l'API de flux que publient les plateformes, dite « API AFNOR ») —
   celle par laquelle le client reçoit et émet ses factures depuis le 1er septembre 2026, qu'il choisit et
   contracte lui-même : une connexion par dossier (`connexions_plateformes`), appelée par
   `plateforme-agreee` sur le clic d'un membre du cabinet, avec l'identité OAuth2 que le client lui ouvre
@@ -1595,7 +1595,7 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   30/09/2026. Reste leur désactivation dans le tableau de bord de Supabase, un clic réversible du
   cabinet, une fois le nouveau site en ligne et les fenêtres ouvertes rechargées.
 - Facturation électronique (ligne 28.5) : décisions du cabinet du 07/10/2026 — la réception par la plateforme agréée
-  que chaque client a choisie (une configuration par dossier, par l'API de la norme AFNOR XP Z12-013) et, pour les
+  que chaque client a choisie (une configuration par dossier, par l'API de flux des plateformes) et, pour les
   quelques clients qui en ont besoin, l'émission conforme, le statut « Encaissée » et l'e-reporting. L'étape (a), le
   statut de TVA du dossier, est livrée (07/10/2026), et l'étape (b), la réception par la plateforme du client, aussi
   (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. Restent (c) l'émission
@@ -7250,8 +7250,9 @@ d'environnement dans la même édition.
   `lib/receptionPlateforme.ts`, `lib/factureElectronique.ts`, `lib/factureX.ts`, `pages/dossier/PlateformeClientModal.tsx`,
   migrations `reception_par_plateforme_agreee` et `provenance_plateforme_des_pieces`). Depuis le 1er septembre 2026, toute
   entreprise reçoit ses factures par la plateforme agréée qu'elle a choisie. Décision du cabinet le 07/10/2026 : les y
-  lire, dossier par dossier, plutôt que d'en imposer une — toutes publient l'API que la norme AFNOR XP Z12-013 leur
-  impose (le « Flow Service »), et le client ouvre au cabinet une identité OAuth2 (« client credentials ») sur la sienne.
+  lire, dossier par dossier, plutôt que d'en imposer une — par l'API de flux que publient les plateformes, dite « API
+  AFNOR » (Super PDP, banqup et Generix la documentent) —, et le client ouvre au cabinet une identité OAuth2 (« client
+  credentials ») sur la sienne.
   Chaque facture entre en pièce « à valider », comme un dépôt : rien n'est validé ni catégorisé sans le cabinet.
   **EN BASE** : `connexions_plateformes`, une par dossier (sa clé primaire), RLS SANS AUCUNE POLICY — le secret ouvre
   toutes les factures de l'entreprise, reçues comme émises, et ne revient jamais au navigateur, pas même masqué ; seule
@@ -7267,11 +7268,11 @@ d'environnement dans la même édition.
   **LA FONCTION** (`plateforme-agreee`, huit actions : `statut`, `enregistrer`, `retirer`, `tester`, `lister`,
   `telecharger`, `retenir`, `repartir`) vérifie `admin_du_dossier` AVANT toute lecture de la connexion et tout appel à la
   plateforme, et `statut` ne sort pas de la base : c'est le seul appel que la fenêtre fait en s'ouvrant. Elle demande
-  le jeton OAuth2 en Basic, puis dans le corps ; liste les factures par pages, au curseur de la norme ou à la date pour
-  ses versions antérieures, en s'arrêtant à 20 pages, 100 factures et 100 secondes — sous le mur de 150 s de la
-  plateforme — et le DIT ; télécharge l'original et la version lisible d'une facture prête, après avoir vérifié la
+  le jeton OAuth2 en Basic, puis dans le corps ; liste les factures par pages, au curseur (`cursor`, `nextCursor`) ou
+  à la date (`updatedAfter`), les deux formes que publient les plateformes, en s'arrêtant à 20 pages, 100 factures et
+  100 secondes — sous le mur de 150 s de la plateforme — et le DIT ; télécharge l'original et la version lisible d'une facture prête, après avoir vérifié la
   nature de leurs octets (PDF ou XML) ; et retient un point de reprise qui ne recule jamais et ne s'approche jamais à
-  moins de quinze minutes de maintenant (la marge que la norme donne en exemple, §5.3.2). L'adresse étant saisie par le
+  moins d'une heure de maintenant (voir la revue ci-dessous). L'adresse étant saisie par le
   cabinet, elle n'envoie le secret qu'en https, vers un nom de domaine public — pas d'adresse IP, pas de réseau interne
   (`.local`, `.internal`, `.example`…) —, ne suit aucune redirection sauf pour un fichier, et ne porte jamais le jeton
   chez un autre hôte. Ses journaux ne portent que des nombres et des codes. 76 tests sur la vraie source (blocs
@@ -7318,11 +7319,32 @@ d'environnement dans la même édition.
   0 débordement aux quatre largeurs de référence et aux combinaisons extrêmes des volets.
   **LATENT, et mesuré** (07/10/2026, des comptes seulement) : aucune connexion à une plateforme, aucune pièce reçue d'une
   plateforme ; deux dossiers ont la synchronisation Super PDP configurée.
-  **CE QUI RESTE, dit plutôt que promis** : l'essai sur la plateforme réelle d'un client — la norme laisse aux plateformes
-  des choix (versions de l'API, curseur ou date, portée de l'identité) que seul un appel réel tranchera ; la région
+  **CE QUI RESTE, dit plutôt que promis** : l'essai sur la plateforme réelle d'un client — chaque plateforme fait ses
+  choix (versions de l'API, curseur ou date, portée de l'identité), que seul un appel réel tranchera ; la région
   d'hébergement de chaque plateforme ; aucune recherche automatique, la règle du projet (un clic, toujours) ; le double
   import que l'application dit sans l'empêcher — garder la plateforme OU la synchronisation Super PDP est au cabinet ;
   et les étapes (c) l'émission conforme, (d) le statut « Encaissée » et (e) l'e-reporting.
+  **REVUE SUR SOURCES PUBLIQUES (07/10/2026), décision du cabinet** : les normes AFNOR XP Z12-012 (les formats) et XP
+  Z12-013 (l'API) interdisent, en page de garde, leur exploitation par une IA, et l'étape (b) s'était appuyée en partie
+  sur la seconde. Chaque élément de ce que la fonction attend d'une plateforme a été relevé et confronté aux sources
+  publiques : la documentation de banqup (son OpenAPI publique), celle de Generix, les annonces de Super PDP, le client
+  pyfrctc (des noms de champs seulement) et les RFC 6749 et 6750. Dix-huit éléments sur vingt y sont ; les commentaires
+  les citent désormais, et plus aucun renvoi à la norme ne reste dans le code de la réception ni en base (le commentaire
+  de la table, migration `commentaire_connexions_plateformes_sources_publiques`) — sauf l'historique des migrations, qui
+  ne se réécrit pas, et un commentaire de `superpdp-emit` que l'étape (c), qui redéploie cette fonction, reprendra. Les
+  deux autres : l'en-tête `Organisation-Id`, que rien de public ne nomme, ne part plus (seul `Organization-Id`, que
+  publie banqup) ; et la marge du point de reprise, quinze minutes tirées de la norme, devient une heure — notre choix,
+  large exprès : relire ne coûte rien, chaque facture étant reconnue à son flux, en perdre une coûte une facture. **ET LA REVUE A TROUVÉ UN DÉFAUT** : la pagination par la
+  date suppose que la plateforme rend ses factures dans l'ordre de leur date, ce qu'aucune documentation publique n'écrit
+  en toutes lettres. Une plateforme qui paginait par la date dans le désordre faisait repartir la lecture d'une date
+  au-delà de factures qu'elle n'avait pas encore rendues — sautées en silence, puis pour toujours une fois le point de
+  reprise retenu. Une page pleine dans le désordre arrête désormais la lecture en le disant. Le lecteur CII n'avait rien
+  pris à la norme — ses chemins sont ceux de l'annexe 1 publique des spécifications externes de la DGFiP — mais ses
+  listes de types (BT-3) citaient une règle « BR-FR-04 » d'origine incertaine : elles sont épinglées par un test aux
+  listes BR-CL-01 que publient les artefacts de validation EN 16931 de la Commission européenne (deux choix près : 325,
+  la facture proforma, n'est pas une pièce ; 81 compte en avoir) et à la règle G1.01 de la DGFiP. Sept mutations de la
+  fonction, toutes mordent. **`plateforme-agreee` version 2**, redéployée avec `verify_jwt` à `true` passé
+  explicitement.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8777,7 +8799,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 5179 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 5181 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8943,6 +8965,12 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   Voir « Problèmes connus ».
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.
+- **Les normes AFNOR XP Z12-012 et XP Z12-013 ne s'utilisent pas** : leur éditeur interdit, en page de garde, leur
+  exploitation par une IA (décision du cabinet du 07/10/2026). Ce qu'on attend d'une plateforme agréée ou d'une facture
+  électronique se tire des sources publiques — Légifrance, les spécifications externes de la DGFiP et leurs annexes,
+  les artefacts de validation EN 16931 de la Commission européenne, les documentations publiques des plateformes, les
+  RFC — et le code cite la sienne. Une bibliothèque tierce se lit pour des noms de champs, jamais pour en copier le
+  code.
 - **Ce que le cabinet doit coller ou recopier se donne DANS la conversation**, en bloc de code prêt à
   coller : il suit la session sur iPhone, qui n'ouvre pas les fichiers qu'elle lui envoie (04/10/2026,
   demandé trois fois avant d'être entendu). Un fichier peut accompagner le texte, jamais le remplacer.

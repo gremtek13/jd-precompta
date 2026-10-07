@@ -36,8 +36,8 @@ import {
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
 // cabinet relie ici le dossier à la plateforme que son client a choisie — l'accès « client credentials » que le client
-// lui ouvre, sur l'API que la norme AFNOR XP Z12-013 impose à toutes —, cherche les factures arrivées depuis la
-// dernière fois, et les importe : chacune entre en pièce « à valider », comme un dépôt, et rien n'est validé ni
+// lui ouvre, sur l'API de flux que publient les plateformes, dite « API AFNOR » —, cherche les factures arrivées depuis
+// la dernière fois, et les importe : chacune entre en pièce « à valider », comme un dépôt, et rien n'est validé ni
 // catégorisé sans lui.
 //
 // RIEN NE PART CHEZ LA PLATEFORME SANS UN CLIC : ouvrir cette fenêtre ne lit que ce que la base garde de la connexion

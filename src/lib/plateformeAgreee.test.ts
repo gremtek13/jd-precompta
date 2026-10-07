@@ -361,7 +361,7 @@ describe('plateforme-agreee — ce qu’un flux devient', () => {
         recu_le: '2026-10-01T08:00:00.000Z', mis_a_jour: '2026-10-01T08:05:00.000Z', etat: 'pret',
       },
     })
-    // Une facture d'autofacturation reçue (le client l'a émise pour l'entreprise) est une vente (§5.2.5).
+    // Une autofacture reçue (le client l'a émise pour l'entreprise) est une vente : banqup définit ainsi CustomerInvoice.
     expect(F.fluxDeLaListe(flux({ flowType: 'CustomerInvoice', flowDirection: 'In' }))).toMatchObject({ flux: { sens: 'vente', direction: 'In' } })
     expect(F.fluxDeLaListe(flux({ flowType: 'SupplierInvoice', flowDirection: 'Out' }))).toMatchObject({ flux: { sens: 'achat', direction: 'Out' } })
   })
@@ -454,7 +454,7 @@ describe('plateforme-agreee — la recherche page à page', () => {
     expect(p.demandes).toEqual([{ updatedAfter: '2026-10-01T07:00:00.000Z', cursor: null }])
   })
 
-  it('suit le curseur de la norme, avec la même date de départ, jusqu’à ce qu’il disparaisse', async () => {
+  it('suit le curseur publié (cursor, nextCursor), avec la même date de départ, jusqu’à ce qu’il disparaisse', async () => {
     const p = plateforme([
       { results: [facture('a', 1), facture('b', 2), facture('c', 3)], nextCursor: 'k1' },
       { results: [facture('d', 4)], nextCursor: '' },
@@ -532,6 +532,20 @@ describe('plateforme-agreee — la recherche page à page', () => {
     const p = plateforme([{ results: [facture('a', 1), facture('b', 2)] }])
     const r = await rechercherFlux(p.page, null, { ...BORNES, maxFlux: 1 })
     expect(r).toMatchObject({ complete: true, jusqua: T(2) })
+  })
+
+  it('une plateforme qui pagine par la date sans rendre ses flux dans l’ordre s’arrête au lieu d’en sauter', async () => {
+    // Repartir du 08:05 sauterait une facture du 08:04 que la plateforme n'a pas encore rendue : on s'arrête, en le
+    // disant, sans retenir de point de reprise — la prochaine recherche repartira d'où partait celle-ci.
+    const p = plateforme([
+      { results: [facture('a', 5), facture('b', 2), facture('c', 9)] },
+      { results: [facture('d', 4)] },
+    ])
+    const r = await rechercherFlux(p.page, null, BORNES)
+    expect(r).toMatchObject({ complete: false, pages: 1, jusqua: null })
+    expect(r.motif).toMatch(/dans l'ordre de leur date/)
+    expect(ids(r)).toEqual(['a', 'b', 'c'])
+    expect(p.demandes).toHaveLength(1)
   })
 
   it('une plateforme qui ne rend pas ses flux dans l’ordre des dates ne laisse pas avancer une lecture incomplète', async () => {
@@ -617,10 +631,10 @@ describe('plateforme-agreee — le point de reprise retenu', () => {
     expect(curseurRetenu('2026-10-01T08:00:00+00:00', '2026-10-07T10:00:00Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T10:00:00.000Z' })
   })
 
-  it('jamais à moins de quinze minutes de maintenant : un flux en cours d’écriture peut apparaître avec une date passée', () => {
-    expect(curseurRetenu(null, '2026-10-07T11:59:00Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T11:45:00.000Z' })
-    expect(curseurRetenu(null, '2026-10-07T11:45:00Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T11:45:00.000Z' })
-    expect(curseurRetenu(null, '2026-10-07T11:44:59.999Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T11:44:59.999Z' })
+  it('jamais à moins d’une heure de maintenant : relire ne coûte rien, en perdre une coûte une facture', () => {
+    expect(curseurRetenu(null, '2026-10-07T11:59:00Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T11:00:00.000Z' })
+    expect(curseurRetenu(null, '2026-10-07T11:00:00Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T11:00:00.000Z' })
+    expect(curseurRetenu(null, '2026-10-07T10:59:59.999Z', MAINTENANT)).toEqual({ curseur: '2026-10-07T10:59:59.999Z' })
   })
 
   it('jamais en arrière : un autre onglet a pu aller plus loin', () => {
@@ -799,13 +813,14 @@ describe('plateforme-agreee — le client d’une plateforme', () => {
     expect(f.appels[0].init.signal).toBeInstanceOf(AbortSignal)
   })
 
-  it('l’organisation part sous les deux graphies quand elle est configurée, et pas autrement', async () => {
+  it('l’organisation part sous l’en-tête que publie banqup quand elle est configurée, et pas autrement', async () => {
     const avec = fauxFetch([reponseJson(200, { access_token: 'j' }), reponseJson(200, {})])
     const c = clientPlateforme({ ...CONFIG_PA, organisation_id: 'ORG-42' }, avec.recuperer, OPTIONS)
     await c.jeton()
     await c.appelJson('GET', '/v1/healthcheck')
-    expect(enTete(avec.appels[1], 'Organisation-Id')).toBe('ORG-42')
     expect(enTete(avec.appels[1], 'Organization-Id')).toBe('ORG-42')
+    // Aucune documentation publique ne nomme une autre graphie : elle ne part pas.
+    expect(enTete(avec.appels[1], 'Organisation-Id')).toBeUndefined()
     expect(enTete(avec.appels[1], 'Request-Id')).toMatch(/^[0-9a-f-]{36}$/)
     const sans = fauxFetch([reponseJson(200, { access_token: 'j' }), reponseJson(200, {})])
     const d = clientPlateforme(CONFIG_PA, sans.recuperer, OPTIONS)
@@ -900,17 +915,17 @@ describe('plateforme-agreee — le client d’une plateforme', () => {
 // ── ERREURS ──────────────────────────────────────────────────────────────────────────────────────────
 
 const E = executer<{
-  codeAfnor: (donnees: unknown) => string | null
+  codeDErreur: (donnees: unknown) => string | null
   erreurPlateforme: (etape: string, reponse: { statut: number; donnees: unknown; redirection: boolean }) => { message: string; statut: number; acces: boolean }
-}>(bloc('ERREURS'), ['codeAfnor', 'erreurPlateforme'])
+}>(bloc('ERREURS'), ['codeDErreur', 'erreurPlateforme'])
 
 const R = (statut: number, donnees: unknown = null, redirection = false) => ({ statut, donnees, redirection })
 
 describe('plateforme-agreee — ce que dit une plateforme qui refuse', () => {
-  it('seul un code de la norme est repris, jamais son message libre', () => {
-    expect(E.codeAfnor({ errorCode: 'FORBIDDEN_ACCESS', errorMessage: 'détail interne' })).toBe('FORBIDDEN_ACCESS')
+  it('seul un code est repris, jamais le message libre', () => {
+    expect(E.codeDErreur({ errorCode: 'FORBIDDEN_ACCESS', errorMessage: 'détail interne' })).toBe('FORBIDDEN_ACCESS')
     for (const faux of [{ errorCode: 'forbidden' }, { errorCode: 'A' }, { errorCode: 'CODE AVEC ESPACE' }, { errorCode: 42 }, null, 'FORBIDDEN']) {
-      expect(E.codeAfnor(faux), JSON.stringify(faux)).toBeNull()
+      expect(E.codeDErreur(faux), JSON.stringify(faux)).toBeNull()
     }
     const e = E.erreurPlateforme('recherche des flux', R(403, { errorCode: 'FORBIDDEN_ACCESS', errorMessage: 'détail interne' }))
     expect(e.message).toContain('(FORBIDDEN_ACCESS)')

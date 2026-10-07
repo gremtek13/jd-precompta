@@ -1,8 +1,8 @@
 // LE XML D'UNE FACTURE FACTUR-X (ligne 28.5 de la feuille de route, étape b). Une facture Factur-X est un PDF lisible
-// qui porte, en pièce jointe, sa facture structurée — le XML CII que lit lib/factureElectronique.ts. La norme Factur-X
-// nomme cette pièce jointe « factur-x.xml » ; ZUGFeRD, son aînée allemande, l'a appelée « zugferd-invoice.xml », et
-// XRechnung « xrechnung.xml ». Aucun autre fichier joint n'est lu : un PDF peut en porter d'autres, et seule la facture
-// structurée fait foi.
+// qui porte, en pièce jointe, sa facture structurée — le XML CII que lit lib/factureElectronique.ts. La spécification
+// Factur-X (FNFE-MPE et FeRD, publique) nomme cette pièce jointe « factur-x.xml » ; ZUGFeRD, son aînée allemande, l'a
+// appelée « zugferd-invoice.xml », et XRechnung « xrechnung.xml ». Aucun autre fichier joint n'est lu : un PDF peut en
+// porter d'autres, et seule la facture structurée fait foi.
 //
 // pdf.js est chargé À LA DEMANDE : il touche au navigateur dès l'import (voir pdfText.ts), et seul l'import d'une
 // facture Factur-X en a besoin. L'ouverture du PDF est un paramètre pour la même raison — les tests passent celle de
