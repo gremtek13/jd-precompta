@@ -62,7 +62,10 @@ const dossiers: Ligne[] = [
 ].map(([id, nom, siret, code_naf, libelle_naf]) => ({
   id, nom, siret, code_naf, libelle_naf, cabinet_id: 'cab1', contact_nom: null, contact_email: null,
   notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id,
-  assujetti_tva: id === 'd7' || id === 'd8', adresse: null,
+  // Le statut de TVA fait foi et le booléen en est déduit (ligne 28.5) : la migration a rendu redevable
+  // tout dossier assujetti, et laissé les autres à préciser.
+  assujetti_tva: id === 'd7' || id === 'd8', statut_tva: id === 'd7' || id === 'd8' ? 'redevable' : null,
+  article_exoneration: null, adresse: null,
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))

@@ -336,6 +336,11 @@ supabase/
                   pourquoi, l'intangibilité, la restauration, qui lit —, par impersonation des trois profils dans des
                   dossiers jetables, à rejouer après toute migration qui touche la table, ses fonctions, la validation
                   ou l'empreinte d'un exercice.
+                  statutTva.sql : le statut de TVA d'un dossier (statut_tva, article_exoneration, et assujetti_tva
+                  qu'en déduit le déclencheur dossiers_deduire_assujetti_tva) — qui le change, ce que le déclencheur
+                  déduit pour les écrivains qui ne connaissent que le booléen, ce que les contraintes refusent seules —,
+                  par impersonation des trois profils dans un dossier jetable, à rejouer après toute migration qui
+                  touche ces trois colonnes ou le déclencheur.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.

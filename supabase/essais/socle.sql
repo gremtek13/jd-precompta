@@ -11,6 +11,10 @@
 -- donc des `\n`. Toute autre différence est une dérive — une comparaison indulgente finit par tout
 -- accepter.
 --
+-- Une contrainte ou un index qu'une MIGRATION pose sur une colonne du complément n'est pas du socle :
+-- la génération l'écarte en cherchant son nom dans l'historique (voir la règle dans la requête, née
+-- avec `dossiers_statut_tva_coherent` le 07/10/2026).
+--
 -- À rejouer après TOUTE migration touchant l'une de ces douze tables ou l'un de ces onze objets —
 -- c'est le seul moment où le socle peut dériver, et sa dérive ne se voit nulle part ailleurs. Et
 -- `inventaire.sql` / `inventaire.py` disent si un objet NOUVEAU a été créé hors migration.
@@ -90,11 +94,22 @@ instructions as (
          || pg_get_constraintdef(con.oid) || ';'
   from pg_constraint con
   where exists (select 1 from cibles x where x.relid = con.conrelid and x.attnum = any (con.conkey))
+    -- … et qu'AUCUNE MIGRATION ne crée : le socle porte ce qui a été créé hors migration, par définition. Une
+    -- contrainte qu'une migration pose sur une colonne du socle est dans l'export, au fichier de sa migration,
+    -- et la compter ici la compterait deux fois — `dossiers_statut_tva_coherent` (07/10/2026) lie le statut de
+    -- TVA à `assujetti_tva`, et ce contrôle la prenait pour un objet du socle. La règle est éprouvée sur les
+    -- trois contraintes qui touchent une colonne du socle : elle garde les deux du complément, écarte l'autre.
+    and not exists (select 1 from supabase_migrations.schema_migrations m
+                    where array_to_string(m.statements, E'\n') ~* ('\mconstraint\s+"?' || con.conname || '"?\M'))
   union all
   select pg_get_indexdef(i.indexrelid) || ';'
   from pg_index i
   where exists (select 1 from cibles x where x.relid = i.indrelid and x.attnum = any (i.indkey::int2[]))
     and not exists (select 1 from pg_constraint k where k.conindid = i.indexrelid)
+    -- La même règle pour un index : aucune migration ne le crée.
+    and not exists (select 1 from supabase_migrations.schema_migrations m
+                    where array_to_string(m.statements, E'\n')
+                          ~* ('\mindex\s+(if\s+not\s+exists\s+)?"?' || (select c.relname from pg_class c where c.oid = i.indexrelid) || '"?\M'))
 )
 select count(*) as instructions,
        md5(string_agg(s, E'\n' order by s)) as empreinte
