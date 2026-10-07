@@ -331,6 +331,11 @@ supabase/
                   contraintes tiennent seules —, par impersonation des trois profils, à rejouer après toute
                   migration qui touche ses trois fonctions, le modèle comptable d'un dossier ou les contraintes
                   de lignes_bancaires.
+                  reportDesSoldes.sql : le report des soldes d'un exercice validé sur le suivant (soldes_reportes,
+                  soldes_a_reporter, valider_exercice) — ce qui se reporte et sous quel libellé, ce qui se refuse et
+                  pourquoi, l'intangibilité, la restauration, qui lit —, par impersonation des trois profils dans des
+                  dossiers jetables, à rejouer après toute migration qui touche la table, ses fonctions, la validation
+                  ou l'empreinte d'un exercice.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -439,7 +444,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   les mots en leur milieu). Un tableau de colonnes courtes garde `table-layout: fixed`, qui lui suffit — tant
   que ses montants y tiennent : les totaux de la même carte, trois colonnes de montants et leur libellé dans
   330 pixels, renvoyaient le signe € à la ligne sous chaque montant (vu sur capture, 05/10/2026), et se
-  replient désormais aussi.
+  replient désormais aussi. La Balance des comptes, elle, ne se replie que sous 520 pixels de carte
+  (`table-empilable-etroite`, 07/10/2026) : ses colonnes se lisent encore à 560 pixels, volet ouvert, où une fiche par
+  compte allongerait une balance de plusieurs écrans, et c'est sur téléphone qu'elles coupaient les mots en leur milieu.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -1483,6 +1490,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   445510 face à la banque, le remboursement reçu solde le 445830, et l'onglet TVA dit chaque déclaration payée, payée
   en partie ou en trop, remboursement attendu ou reçu. Voir « la TVA se liquide » dans « Problèmes connus »
   (`lib/liquidationTva.ts`).
+- **Le report des soldes (07/10/2026)**, ligne 34 : valider un exercice écrit, dans le même clic, l'ouverture de
+  l'exercice suivant — ses soldes de bilan, datés du 1er janvier, que le FEC de cet exercice porte au journal AN, avec sa
+  balance et sa piste d'audit. Pour une entreprise individuelle, le compte de l'exploitant et le résultat passent au
+  capital individuel (101000) ; une société garde son résultat en 120 ou 129, en attente d'affectation. Tant que le
+  précédent n'est pas validé, un exercice n'a pas d'ouverture, et Écritures comme la Balance des comptes le disent ; la
+  carte « Valider l'exercice » montre l'ouverture qu'elle écrira. Voir « la validation d'un exercice écrit l'ouverture du
+  suivant » dans « Problèmes connus » (`lib/reportDesSoldes.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1505,8 +1519,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   aussi (ligne 32) : déduit du rapprochement (05/10/2026), ou fait à la main pour une compensation sans mouvement
   bancaire (06/10/2026). Restent, et CLAUDE.md les nomme : les écarts de change et les frais bancaires (le rapprochement règle encore
   la pièce sur la banque, donc réécrit la facture — à trancher avec le cabinet), les auxiliaires des
-  à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
-  2050) et les exercices qui ne suivent pas l'année civile. L'écriture d'acquisition d'une immobilisation
+  à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
+  (2033 ou 2050) et les exercices qui ne suivent pas l'année civile. Le report des soldes d'un exercice validé sur le
+  suivant est fait (07/10/2026, ligne 34). L'écriture d'acquisition d'une immobilisation
   est faite (01/10/2026, sa dette au 404000).
 - FEC conforme à l'article A47 A-1 du LPF, la norme de sortie des écritures : la virgule décimale est
   corrigée, et le compte d'une catégorie doit commencer par trois chiffres (28/09/2026) ; une écriture ne porte
@@ -1530,7 +1545,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   se figent en base, et chaque écran le sait (voir « un exercice validé se fige en base » et « un exercice se
   valide depuis Clôture »). Aucun exercice n'est encore validé en base. Reste (e), les vingt-deux champs et
   Test Compta Demat. Depuis le 06/10/2026, un mouvement vers un compte de bilan s'écrit (ligne 26.7), et la TVA se
-  liquide, se paie et se rembourse (ligne 26.8) ; reste le report des soldes d'un exercice sur l'autre (ligne 34).
+  liquide, se paie et se rembourse (ligne 26.8) ; depuis le 07/10/2026, la validation d'un exercice écrit l'ouverture du
+  suivant (ligne 34).
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -4664,8 +4680,9 @@ d'environnement dans la même édition.
     au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
     virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements,
     l'acquisition des biens et le forfait kilométrique ; depuis le 06/10/2026, les mouvements écrits sur un
-    compte de bilan (ligne 26.7), et la liquidation de la TVA, son paiement et son remboursement (ligne 26.8).
-    Il n'a toujours pas les mouvements que personne n'a encore traités, ni
+    compte de bilan (ligne 26.7), et la liquidation de la TVA, son paiement et son remboursement (ligne 26.8) ;
+    depuis le 07/10/2026, l'ouverture d'un exercice dont le précédent est validé, ses soldes reportés au journal AN
+    (ligne 34). Il n'a toujours pas les mouvements que personne n'a encore traités, ni
     ceux qu'on a ignorés — la Checklist les compte. Ses écritures restent des brouillons tant que leur
     exercice n'est pas validé : ValidDate y vaut alors la date d'écriture, ce que la notice n'admet que d'un
     logiciel sans mode brouillard ; validé, il porte le jour de la validation. C'est un fichier
@@ -5316,8 +5333,9 @@ d'environnement dans la même édition.
     une devise, sous le seuil d'écart pour l'euro). En engagement il réécrit donc le montant de la
     FACTURE : une perte ou un gain de change (666, 766) et un frais bancaire (627) y sont absorbés au
     lieu d'être passés à part. À trancher avec le cabinet avant l'étape 2 ;
-  - les à-nouveaux d'un 401 ou d'un 411 gardent leur numéro d'origine et n'ont pas d'auxiliaire, et
-    aucun solde n'est reporté d'un exercice sur l'autre ;
+  - les à-nouveaux d'un 401 ou d'un 411 gardent leur numéro d'origine et n'ont pas d'auxiliaire, pas plus
+    que les soldes reportés d'un exercice validé sur le suivant (07/10/2026) ; et l'affectation du résultat
+    d'une société (le 120 ou le 129) ne s'écrit pas ;
   - la CA3 traite toute vente comme une prestation de services : la TVA d'une livraison de biens,
     exigible à la livraison, n'est pas modélisée ;
   - la liasse (2033 ou 2050) n'est pas préparée ; l'acquisition d'une immobilisation, elle, s'écrit
@@ -6535,7 +6553,8 @@ d'environnement dans la même édition.
   **ÉPROUVÉ EN PRODUCTION** (`supabase/essais/validationExercice.sql`) : 145 contrôles sur 145, joués dans des
   dossiers jetables d'un bloc qui s'annule entièrement — les comptes de douze tables identiques avant et après —,
   et le texte transmis comparé au fichier (identique sur 418 lignes) ; rejoué le 05/10/2026 après
-  `une_ecriture_une_date`, 146 sur 146, identique sur 419 lignes. Il ne porte aucune instruction de
+  `une_ecriture_une_date`, 146 sur 146, identique sur 419 lignes, puis le 07/10/2026 après `report_des_soldes`,
+  151 sur 151. Il ne porte aucune instruction de
   suppression, que l'outil d'exécution soumet à une confirmation qui n'arrive pas ici : ce que fait une
   suppression (refusée sur ce qui est figé, permise par la cascade d'un dossier) est éprouvé sur une réplique
   locale du schéma et seulement LU au catalogue en production — plus faible, et dit comme tel. Trente-quatre
@@ -6732,11 +6751,12 @@ d'environnement dans la même édition.
   toute l'ouverture : une facture d'un exercice précédent encore ouverte reste due. LE TOTAL D'UN COMPTE EST SON SOLDE
   DANS LA BALANCE GÉNÉRALE à la même date — les lignes sans pièce et les à-nouveaux y figurent chacun sur une ligne à
   part, sans ancienneté —, et un test le recoupe compte par compte. La balance d'un exercice, au-dessus, ne compte que
-  ses propres écritures, faute de report d'un exercice sur l'autre : un compte de tiers peut y porter un autre solde, et
-  la carte le dit. Elle ne conclut pas sur un brouillon ou des à-nouveaux lus en partie, distingue « tout est soldé »
-  de « rien n'est écrit », et prévient d'une écriture de tiers antérieure à l'ouverture d'un dossier repris, qu'elle
-  compte une seconde fois. Des pièces lues en partie n'ôtent que des noms (« Fournisseurs divers ») : leur bandeau est
-  désormais à part de celui du brouillon, qui disait jusque-là que les ÉCRITURES n'avaient pas pu être lues.
+  ses propres écritures et son ouverture : tant que l'exercice précédent n'est pas validé, ses soldes ne sont pas
+  reportés (ligne 34, 07/10/2026), un compte de tiers peut y porter un autre solde, et la carte le dit. Elle ne conclut
+  pas sur un brouillon ou des à-nouveaux lus en partie, distingue « tout est soldé » de « rien n'est écrit », et prévient
+  d'une écriture de tiers antérieure à l'ouverture d'un dossier repris, qu'elle compte une seconde fois. Des pièces lues
+  en partie n'ôtent que des noms (« Fournisseurs divers ») : leur bandeau est désormais à part de celui du brouillon, qui
+  disait jusque-là que les ÉCRITURES n'avaient pas pu être lues.
   **LATENT, et mesuré** (05/10/2026, des comptes seulement) : aucun dossier en engagement en base, aucune ligne ni aucun
   à-nouveau sur un compte de tiers. Le banc sert la société en engagement (d8) — un achat sans règlement, une vente
   encaissée en partie, l'écran de studio dû au fournisseur d'immobilisations — : 0 débordement aux quatre largeurs et
@@ -7028,6 +7048,78 @@ d'environnement dans la même édition.
   445510, que l'historique dit « payée en trop » — leur écriture en charge n'est pas modélisée ; la régularisation
   d'une période déposée (lignes 5B et 2C), la CA12, les taxes assimilées et l'autoliquidation ne sont pas préparées ;
   et la transmission de la déclaration (ligne 28, étape 2) n'est pas écrite.
+- **LA VALIDATION D'UN EXERCICE ÉCRIT L'OUVERTURE DU SUIVANT — LIGNE 34, LE REPORT DES SOLDES** (07/10/2026,
+  `lib/reportDesSoldes.ts`, migration `report_des_soldes`). Jusqu'ici un exercice ne s'ouvrait que par la reprise d'une
+  balance, une fois par dossier : l'exercice d'après partait de ZÉRO, son FEC sans à-nouveaux, sa balance et ses comptes de
+  bilan sur les seuls mouvements de l'année — la banque de 2026 ne portait que les mouvements de 2026. Décisions du cabinet
+  (06/10/2026) : les à-nouveaux de l'exercice suivant s'écrivent à la validation d'un exercice, dans le même clic, et
+  reprennent exactement ses soldes figés ; tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture, et l'écran
+  le dit ; pour une entreprise individuelle, le compte de l'exploitant (108) et le résultat passent au capital individuel
+  (101000), comme le prévoit le plan comptable (art. 941-10) — le nouvel exercice repart d'un 108 vide ; une société garde
+  son résultat en 120 (bénéfice) ou 129 (perte), en attente d'affectation.
+  **EN BASE** : `soldes_reportes`, une table À PART d'`a_nouveaux`, qui reste l'ouverture d'un dossier repris et dont le
+  déclencheur « une seule ouverture par dossier » n'a donc pas eu à être rouvert. Une ligne par compte de bilan qui porte un
+  solde, datée du 1er janvier suivant, avec pour source « Exercice AAAA validé » et l'empreinte de l'exercice validé ; ses
+  libellés FEC (`compte_lib`, `ecriture_lib`) sont posés une fois, par la validation de l'exercice qu'elle ouvre. Figée dès
+  son écriture (`garder_soldes_reportes`), lue par le cabinet, insérée par le seul super-administrateur — la restauration
+  d'une sauvegarde —, partie avec son dossier. `soldes_a_reporter` calcule l'ouverture depuis les écritures validées de
+  l'exercice et son ouverture à lui : une entreprise individuelle — tout dossier en trésorerie, et en engagement celui dont
+  le compte du dirigeant est le 108 — y verse le 101, le 108, les comptes 12 et le résultat au 101000 ; un résultat nul
+  n'ouvre rien. `valider_exercice` l'écrit dans la même transaction, et refuse un exercice qui se clôt sur le solde d'un
+  compte hors des classes 1 à 7, ou dont les soldes ne s'équilibrent pas ; `empreinte_exercice` couvre l'ouverture
+  reportée comme la reprise. `supabase/essais/reportDesSoldes.sql` : 52 contrôles sur 52 en production, et
+  `validationExercice.sql` 151 sur 151 ; trente-cinq mutations de la migration mordent sur la réplique locale. L'export porte
+  88 migrations, le socle 77 instructions, l'inventaire 1 031 objets ; la sauvegarde emporte la table.
+  **LE MODULE EST LE JUMEAU DE LA FONCTION** (`soldesAReporter`), en centimes entiers, calculé sur la NUMÉROTATION que la
+  validation recevra — ses lignes et son ouverture, avec le libellé que la validation figera. Il est confronté à une table de
+  vingt cas relevés sur la fonction de la base (entreprise individuelle en trésorerie et en engagement, société en bénéfice et
+  en perte, résultats antérieurs en attente, compte hors classes, ouverture déséquilibrée, centimes) et aux littéraux de la
+  migration. Ce que la base refuserait se dit avant le clic, dans les préalables de la validation : un compte qui ne se
+  reporterait pas (`report-hors-classes`) et une ouverture déséquilibrée (`report-desequilibre`, tu à côté d'une écriture
+  déjà déséquilibrée, qui le dit mieux).
+  **L'OUVERTURE D'UN EXERCICE** (`ouvertureDeLExercice`) réunit la reprise de l'année et les soldes reportés datés de son 1er
+  janvier, sous la forme d'un à-nouveau : le FEC de l'exercice (journal AN, pièce « Exercice AAAA validé »), la numérotation
+  de sa validation, sa balance et sa piste d'audit (justifiée par l'exercice validé et son empreinte) la reçoivent.
+  `etatDeLOuverture` dit ce qu'on en sait : reprise, report (zéro ligne quand tous les comptes étaient soldés), en attente de
+  la validation de l'exercice précédent, ou rien à dire (le premier exercice d'une activité, un exercice antérieur à la
+  reprise).
+  **CE QUI NE LES LIT PAS, PAR CONSTRUCTION** : tout ce qui cumule le brouillon entier — la trésorerie (tuile, plan,
+  situation intermédiaire), les comptes de tiers, la balance toutes années confondues, l'assistant toutes années confondues.
+  Les écritures de l'exercice validé y sont déjà : ses soldes reportés les compteraient une seconde fois. Et tout ce qui lit
+  la date de REPRISE (bien repris, dotations et forfaits d'avant l'ouverture, ordre de validation) garde la seule reprise.
+  **LES ÉCRANS** : Écritures et la Balance des comptes ouvrent l'exercice choisi par ses soldes reportés et le disent
+  (« Exercice ouvert par N soldes reportés de l'exercice 2025 validé »), disent l'exercice qui attend la validation du
+  précédent (« … n'a pas encore d'ouverture : elle s'écrira à la validation de l'exercice 2025 (Clôture). Jusque-là, … ses
+  comptes de bilan y partent de zéro ») et celui qui n'a rien reporté ; leur lecture partielle a son propre bandeau, bloque les
+  deux exports d'Écritures, et fait taire la phrase plutôt que de dire un compte faux. Clôture : la carte « Valider
+  l'exercice » montre l'ouverture que la validation écrira (soldes, total, et ce que deviennent le compte de l'exploitant et
+  le résultat), la confirmation la nomme, et un exercice validé dit l'ouverture qu'il a écrite, lue en base. Les comptes de
+  tiers, eux, n'en lisent rien, et leur note le dit : la balance d'un exercice suit leurs soldes une fois le précédent validé.
+  **Les captures ont trouvé le tableau de la Balance des comptes coupé au milieu des mots sur téléphone** (« 10100 / 0 »,
+  « Amortisse / ments ») : il se replie en fiches sous 520 pixels de carte (`table-empilable-etroite`, dans son enveloppe
+  `.tableau-adaptable`), et pas avant — à 560 pixels, volet de droite ouvert, une balance se lit encore en colonnes, et une
+  fiche par compte l'allongerait de plusieurs écrans. Replié, son pied garde ses totaux, « (tous les comptes) » sous une
+  recherche.
+  **L'ASSISTANT, version 45** : `lister_comptes` lit les soldes reportés et les exercices validés, compte l'ouverture reportée
+  dans l'exercice qu'elle ouvre (et dans `dont_a_nouveaux`), rend `ouverture_de_l_exercice`, et AVERTIT quand l'exercice
+  demandé attend la validation du précédent — sans quoi il annoncerait pour la banque le seul solde des mouvements de l'année.
+  Le prompt dit ce qu'est une ouverture reportée, et ce que deviennent le compte de l'exploitant et le résultat selon le
+  dossier. `agentComptableBalance.test.ts` compare la copie à src/lib sur cinq situations et cinq périodes, et y plante douze
+  dérives. Déployée avec `verify_jwt` relu et repassé à `false`, la v44 comparée au dépôt avant écrasement (identique),
+  aller-retour après : zéro différence sur 3 191 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
+  **Le banc** sert un exercice ouvert par ses soldes reportés, un exercice en attente de la validation du précédent, et la
+  carte de validation qui montre l'ouverture qu'elle écrira : 0 débordement aux quatre largeurs de référence et aux
+  combinaisons extrêmes des volets.
+  **Quatre-vingt-onze mutations sur l'application, toutes mordent — la première passe en laissait deux en vie** : vingt-quatre
+  sur les modules, trente-trois sur les écrans, vingt-six sur l'assistant, huit sur le repli de la balance. Les deux
+  accusaient des tests absents, écrits depuis : la phrase sur la reprise d'un autre exercice, dans la vue toutes années de la
+  Balance des comptes, qu'aucun test ne lisait ; et des lignes qui ne s'empilaient plus sous 520 pixels, que le test de la
+  feuille de style ne vérifiait pas.
+  **LATENT, et mesuré** : aucun exercice validé en base, donc aucun solde reporté (07/10/2026).
+  **CE QUI RESTE, dit plutôt que promis** : l'affectation du résultat d'une société (le 120 ou le 129 vers les réserves, le
+  report à nouveau ou les associés) ne s'écrit pas encore dans l'application ; les soldes reportés d'un compte de tiers n'ont
+  pas d'auxiliaire — une ligne par compte, comme les à-nouveaux d'une reprise ; et un exercice dont le précédent n'est pas
+  validé n'a pas d'ouverture — c'est la décision du cabinet, et les écrans le disent.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7729,10 +7821,10 @@ d'environnement dans la même édition.
   désormais l'ouverture en paramètre OBLIGATOIRE.
   **CE QUI NE LES LIT PAS, dit plutôt que promis** :
   - **La 2035**, qui n'est pas concernée : recettes et dépenses, jamais un compte de bilan.
-  - **Le report d'un exercice sur l'autre** (ligne 34) reste entier : l'ouverture ne vient aujourd'hui
-    QUE d'une balance reprise, et il n'y en a qu'UNE par dossier. Des exercices ouverts successivement
-    par l'application demanderont une ouverture par exercice — c'est le déclencheur qu'il faudra
-    rouvrir, pas contourner.
+  - **Le report d'un exercice sur l'autre** (ligne 34) est fait depuis le 07/10/2026, et le déclencheur
+    n'a PAS été rouvert : l'ouverture d'un exercice dont le précédent est validé vit dans une autre table,
+    `soldes_reportes`, écrite par la validation. `a_nouveaux` reste l'ouverture d'un dossier repris, une
+    seule par dossier — voir « la validation d'un exercice écrit l'ouverture du suivant ».
   **L'ASSISTANT COMPTABLE LES LIT DEPUIS LE 28/09/2026** (décision du cabinet ; il figurait dans la
   liste ci-dessus). `lister_comptes` ne totalisait que le brouillon : sur un dossier repris, il aurait
   annoncé pour la banque le seul solde de ses mouvements, un autre chiffre que la Balance des comptes,
@@ -7741,11 +7833,13 @@ d'environnement dans la même édition.
   ouvrent et toutes années confondues, `dont_a_nouveaux` pour leur part — aucune écriture du
   brouillon ne la montre, donc `lister_ecritures` non plus —, `a_nouveaux.compris_dans_les_totaux` à
   faux sur un autre exercice, sans quoi le modèle prendrait la banque de l'exercice suivant pour son
-  solde alors qu'aucun report n'existe, et l'avertissement de l'écran quand une écriture précède
-  l'ouverture. Les à-nouveaux y arrivent SANS filtre de période, pour que l'ouverture d'un autre
-  exercice se DISE au lieu de disparaître ; `resume_dossier` donne la date d'ouverture. Une lecture
-  incomplète fait refuser, comme celle du brouillon. Les contrôles de TVA de `points_a_traiter`
-  restent sur le brouillon seul, comme ceux d'Écritures : une ouverture n'est pas un flux de période.
+  solde alors qu'aucun report n'existait, et l'avertissement de l'écran quand une écriture précède
+  l'ouverture. Depuis le 07/10/2026 (version 45), l'ouverture REPORTÉE d'un exercice dont le précédent
+  est validé y entre aussi, et l'exercice qui attend la validation du précédent est dit — voir « la
+  validation d'un exercice écrit l'ouverture du suivant ». Les à-nouveaux y arrivent SANS filtre de
+  période, pour que l'ouverture d'un autre exercice se DISE au lieu de disparaître ; `resume_dossier`
+  donne la date d'ouverture. Une lecture incomplète fait refuser, comme celle du brouillon. Les contrôles
+  de TVA de `points_a_traiter` restent sur le brouillon seul, comme ceux d'Écritures : une ouverture n'est pas un flux de période.
   `agentComptableBalance.test.ts` extrait le bloc et le compare à `calculerBalance` de src/lib sur
   quatre périodes ; seize mutations mordent, dont une qui a d'abord survécu en accusant le jeu
   d'essai : 0,1 + 0,2 ne distingue pas des centimes arrondis de centimes non arrondis, 0,07 + 0,14 si
@@ -8476,7 +8570,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4747 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4873 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8514,7 +8608,9 @@ tiers, déduit ou fait à la main et revérifié à chaque lecture, et ce qui re
 `lettragesLecture.ts`), l'écriture d'un mouvement sur un compte de bilan et ses refus, confrontés à la fonction de la
 base qu'un petit interprète exécute (`compteDeBilan.ts`), les refus qu'un classement oppose aux autres
 (`classementsDuMouvement.ts`), la liquidation d'une déclaration de TVA, son paiement, son remboursement et ce
-qui en reste dû (`liquidationTva.ts`, la CA3 au centime des écritures dans `declarationTva.ts`), et ce que
+qui en reste dû (`liquidationTva.ts`, la CA3 au centime des écritures dans `declarationTva.ts`), l'ouverture
+qu'une validation écrit pour l'exercice suivant, au centime de la fonction de la base, et ce qu'on sait de
+l'ouverture d'un exercice (`reportDesSoldes.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
