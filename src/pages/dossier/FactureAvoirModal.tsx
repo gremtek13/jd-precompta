@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
-import { attribuerNumeroFacture, calculerLigne, calculerTotaux } from '../../lib/factures'
+import { calculerLigne, calculerTotaux, creerAvoir, lignesSaisies, refusAvoir } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
@@ -8,7 +8,7 @@ import { messageErreur } from '../../lib/messageErreur'
 interface LigneAvoirEdit {
   designation: string
   // Toujours saisie positive à l'écran ("je crédite 2 unités") — négatée seulement à l'enregistrement
-  // (voir creerAvoir), plus intuitif que de demander de taper un signe négatif à la main.
+  // (lib/factures.ts:creerAvoir), plus intuitif que de demander de taper un signe négatif à la main.
   quantite: string
   prix_unitaire_ht: string
   taux_tva: string
@@ -17,14 +17,18 @@ interface LigneAvoirEdit {
 interface Props {
   dossierId: string
   factureOrigine: FactureEmise
+  // Ce que les autres avoirs de cette facture ont déjà crédité (lib/factures.ts:dejaCredite) ; null quand la liste
+  // des factures n'a pas été lue en entier — on ne sait pas, et c'est alors la base qui juge du plafond.
+  credite: number | null
   onClose: () => void
   onCreated: () => void
 }
 
 // Facture d'avoir — corrige une facture déjà validée (immuable, voir FacturesTab) sans jamais la
 // rouvrir, comme l'exige la loi française : un document distinct, avec son propre numéro séquentiel
-// dans une série "A" indépendante de celle des factures (voir lib/factures.ts,
-// prochain_numero_facture), qui référence la facture d'origine.
+// dans une série "A" indépendante de celle des factures, qui référence la facture d'origine. Il
+// s'enregistre d'un seul tenant par la base (lib/factures.ts:creerAvoir), qui reprend de la facture
+// ses parties et ce qu'elle dit de l'opération.
 //
 // Toujours créé directement validé, jamais en brouillon — contrairement à une facture normale
 // (voir FactureFormModal) : un avoir en attente indéfiniment n'a pas de sens (la correction est
@@ -37,7 +41,7 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, onCreated }: Props) {
+export default function FactureAvoirModal({ dossierId, factureOrigine, credite, onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
@@ -92,21 +96,28 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
     prix_unitaire_ht: parseFloat(l.prix_unitaire_ht) || 0,
     taux_tva: parseFloat(l.taux_tva) || 0,
   }))
-  const totaux = calculerTotaux(lignesNumeriques)
-  const lignesValides = lignesNumeriques.filter((l) => l.designation.trim() && l.quantite > 0)
+  // Une ligne sans désignation ou sans quantité ne part pas — mettre sa quantité à zéro est la façon d'écarter une
+  // ligne d'un avoir partiel. Les TOTAUX sont donc ceux des lignes qui partent, et d'aucun autre jeu : la base stocke
+  // l'en-tête tel qu'il est envoyé, et un total qui compterait une ligne écartée contredirait les lignes de l'avoir.
+  const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
+  const totaux = calculerTotaux(lignesValides)
+  // Ce que la base refuserait, dit avant le clic (lib/factures.ts:refusAvoir).
+  const refus = refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : dans le `try`, le `return` du deuxième clic
   // sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours — il faut
   // trois clics pour le voir, et deux suffisent à croire la version fautive correcte (CLAUDE.md).
   //
-  // Le doublon ne coûte pas une ligne de trop : `attribuerNumeroFacture` CONSOMME un numéro de la
-  // suite annuelle (upsert +1), qui n'admet ni trou ni doublon. Deux clics, c'est soit deux avoirs
-  // sur la même facture, soit un numéro consommé pour rien.
+  // Le doublon ne coûte pas une ligne de trop : la base CONSOMME un numéro de la suite annuelle à
+  // chaque avoir qu'elle crée, et cette suite n'admet ni trou ni doublon. Deux clics, ce seraient
+  // deux avoirs sur la même facture — la base refuse le second s'il dépasse ce qui reste à créditer,
+  // pas s'il en crédite une partie.
   const creationEnCours = useRef(false)
 
-  async function creerAvoir() {
-    if (lignesValides.length === 0) {
-      setError('Au moins une ligne avec une quantité doit rester à créditer.')
+  async function valider() {
+    // Seconde ceinture : le bouton est déjà grisé sur un refus.
+    if (refus) {
+      setError(refus)
       return
     }
     if (creationEnCours.current) return
@@ -114,41 +125,7 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
     setSaving(true)
     setError(null)
     try {
-      const numero = await attribuerNumeroFacture(dossierId, dateEmission, 'avoir')
-      const { data: userData } = await supabase.auth.getUser()
-      const { data: inserted, error: insertError } = await supabase.from('factures_emises').insert({
-        dossier_id: dossierId,
-        type: 'avoir',
-        facture_origine_id: factureOrigine.id,
-        numero,
-        statut: 'validee',
-        validated_at: new Date().toISOString(),
-        tiers_nom: factureOrigine.tiers_nom,
-        tiers_adresse: factureOrigine.tiers_adresse,
-        tiers_siret: factureOrigine.tiers_siret,
-        date_emission: dateEmission,
-        notes: motif.trim() || null,
-        mentions_legales: mentionsLegales.trim() || null,
-        emetteur_nom: factureOrigine.emetteur_nom,
-        emetteur_siret: factureOrigine.emetteur_siret,
-        emetteur_adresse: factureOrigine.emetteur_adresse,
-        // Négatifs : voir l'en-tête de ce fichier.
-        montant_ht: -totaux.montant_ht,
-        montant_tva: -totaux.montant_tva,
-        montant_ttc: -totaux.montant_ttc,
-        created_by: userData.user?.id ?? null,
-      }).select().single()
-      if (insertError) throw insertError
-
-      const { error: lignesError } = await supabase.from('facture_lignes').insert(
-        lignesValides.map((l, i) => ({
-          facture_id: inserted.id, ordre: i,
-          designation: l.designation, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva,
-          quantite: -l.quantite,
-        })),
-      )
-      if (lignesError) throw lignesError
-
+      await creerAvoir(dossierId, factureOrigine.id, { dateEmission, motif, mentionsLegales, lignes: lignesValides })
       onCreated()
       onClose()
     } catch (err) {
@@ -169,6 +146,18 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
           (série "A", indépendante des factures) est attribué dès la création : il n'y a pas de
           brouillon d'avoir.
         </p>
+        {credite != null && credite > 0 && (
+          <p className="muted">
+            D'autres avoirs ont déjà crédité {formatMoney(credite)} de cette facture : il en reste{' '}
+            {formatMoney(Math.max(factureOrigine.montant_ttc - credite, 0))} à créditer.
+          </p>
+        )}
+        {credite == null && (
+          <p className="muted">
+            La liste des factures n'a pas été lue en entier : ce que d'autres avoirs ont déjà crédité de
+            cette facture n'est pas connu ici. La base refusera un avoir qui créditerait plus que ce qui reste.
+          </p>
+        )}
         {chargement ? (
           <p className="muted">Chargement…</p>
         ) : lignesIllisibles ? (
@@ -214,6 +203,15 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
               </div>
             </div>
 
+            {lignesEcartees > 0 && (
+              <p className="muted" style={{ marginTop: 0 }}>
+                {lignesEcartees === 1
+                  ? 'Une ligne n’est pas créditée'
+                  : `${lignesEcartees} lignes ne sont pas créditées`} : une ligne créditée porte une désignation et
+                une quantité positive.
+              </p>
+            )}
+
             <div style={{ display: 'flex', gap: 24, marginTop: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <div><span className="muted" style={{ display: 'block' }}>Total HT crédité</span><strong>{formatMoney(totaux.montant_ht)}</strong></div>
               <div><span className="muted" style={{ display: 'block' }}>Total TVA créditée</span><strong>{formatMoney(totaux.montant_tva)}</strong></div>
@@ -230,12 +228,12 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
               <textarea id="avoir-mentions" rows={2} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
             </div>
 
-            {error && <p className="error-text">{error}</p>}
+            {(error ?? refus) && <p className="error-text">{error ?? refus}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={saving}>Annuler</button>
               <button
-                type="button" className="btn btn-primary" disabled={saving} onClick={creerAvoir}
+                type="button" className="btn btn-primary" disabled={saving || refus != null} onClick={valider}
                 title="Attribue un numéro définitif — l'avoir ne sera plus modifiable ensuite"
               >
                 {saving ? 'Création…' : "Valider l'avoir"}

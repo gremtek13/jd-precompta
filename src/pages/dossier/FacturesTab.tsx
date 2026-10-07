@@ -14,6 +14,7 @@ import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
+import { dejaCredite } from '../../lib/factures'
 
 interface Props {
   dossierId: string
@@ -217,6 +218,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         <FactureAvoirModal
           dossierId={dossierId}
           factureOrigine={avoirDe}
+          // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
+          // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
+          credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
           onClose={() => setAvoirDe(null)}
           onCreated={load}
         />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { calculerLigne, calculerTotaux, enregistrerFacture, mentionsLegalesParDefaut } from '../../lib/factures'
+import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
@@ -99,8 +99,12 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     prix_unitaire_ht: parseFloat(l.prix_unitaire_ht) || 0,
     taux_tva: parseFloat(l.taux_tva) || 0,
   }))
-  const totaux = calculerTotaux(lignesNumeriques)
-  const lignesValides = lignesNumeriques.filter((l) => l.designation.trim() && l.quantite > 0)
+  // Une ligne sans désignation ou sans quantité positive ne part pas (lib/factures.ts:lignesSaisies). Les TOTAUX sont
+  // donc ceux des lignes qui partent, et d'aucun autre jeu : la base stocke l'en-tête tel qu'il est envoyé, et un total
+  // qui comptait une ligne écartée — une remise saisie en quantité négative, une ligne dont on a oublié la désignation —
+  // faisait une facture dont l'en-tête contredit les lignes, à l'aperçu comme à la plateforme qui la reçoit.
+  const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
+  const totaux = calculerTotaux(lignesValides)
 
   // CE QUE LE STATUT DE TVA DU DOSSIER DIT DE CETTE FACTURE, avant le clic (lib/statutTva.ts).
   // Une ligne taxée sur un dossier qui ne facture pas de TVA la rend due du seul fait de l'avoir facturée (CGI,
@@ -288,6 +292,14 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
                 </table>
               </div>
               <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={ajouterLigne}>+ Ligne</button>
+              {lignesEcartees > 0 && (
+                <p className="muted" style={{ marginTop: 8 }}>
+                  {lignesEcartees === 1
+                    ? 'Une ligne ne partira pas avec la facture, et n’entre pas dans ses totaux'
+                    : `${lignesEcartees} lignes ne partiront pas avec la facture, et n’entrent pas dans ses totaux`} :
+                  une ligne porte une désignation et une quantité positive.
+                </p>
+              )}
               {refusTaxe && <p className="error-text">{refusTaxe}</p>}
               {zeroSansArticle && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>

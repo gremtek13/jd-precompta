@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Le client Supabase est simulé (voir contrepartieBanque.test.ts pour le même motif) : les deux
-// dernières fonctions de ce module ne sont que des appels RPC, il n'y a pas de calcul pur à extraire.
+// Le client Supabase est simulé (voir contrepartieBanque.test.ts pour le même motif) : `enregistrerFacture` et
+// `creerAvoir` ne sont que des appels RPC, il n'y a pas de calcul pur à extraire d'eux.
 const rpc = { data: null as unknown, error: null as { message: string } | null }
 const appels: { nom: string; params: Record<string, unknown> }[] = []
 
@@ -15,8 +15,8 @@ vi.mock('./supabase', () => ({
 }))
 
 const {
-  calculerLigne, calculerTotaux, mentionsLegalesParDefaut, trierLignes,
-  attribuerNumeroFacture, enregistrerFacture,
+  calculerLigne, calculerTotaux, mentionsLegalesParDefaut, trierLignes, lignesSaisies,
+  enregistrerFacture, dejaCredite, refusAvoir, creerAvoir,
 } = await import('./factures')
 
 beforeEach(() => {
@@ -101,31 +101,6 @@ describe('trierLignes', () => {
   })
 })
 
-describe('attribuerNumeroFacture', () => {
-  it('prend l’année sur la date d’émission, jamais sur la date du jour', async () => {
-    // Un document antidaté en janvier pour décembre dernier reste dans la suite de l'année passée.
-    rpc.data = 'F2025-0012'
-    await attribuerNumeroFacture('d1', '2025-12-28')
-    expect(appels[0]).toEqual({ nom: 'attribuer_numero_facture', params: { p_dossier_id: 'd1', p_annee: 2025, p_type: 'facture' } })
-  })
-
-  it('rend le numéro tel que la base le formate, sans le reconstruire', async () => {
-    // Le format vit dans `numero_facture_formate` côté base : le refaire ici rouvrirait la
-    // divergence que cette délégation ferme.
-    rpc.data = 'A2026-0003'
-    expect(await attribuerNumeroFacture('d1', '2026-03-10', 'avoir')).toBe('A2026-0003')
-    expect(appels[0].params).toMatchObject({ p_type: 'avoir' })
-  })
-
-  it('lève si la base refuse, ou ne rend rien', async () => {
-    rpc.error = { message: 'Accès refusé à ce dossier.' }
-    await expect(attribuerNumeroFacture('d1', '2026-03-10')).rejects.toThrow('Accès refusé')
-    rpc.error = null
-    rpc.data = null
-    await expect(attribuerNumeroFacture('d1', '2026-03-10')).rejects.toThrow("Échec de l'attribution")
-  })
-})
-
 describe('enregistrerFacture', () => {
   const lignes = [{ designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
 
@@ -153,5 +128,149 @@ describe('enregistrerFacture', () => {
   it('lève si la fonction ne renvoie aucune ligne', async () => {
     rpc.data = []
     await expect(enregistrerFacture('d1', null, {}, lignes, false)).rejects.toThrow("n'a rien renvoyé")
+  })
+})
+
+describe('lignesSaisies', () => {
+  const ligne = (designation: string, quantite: number, prix_unitaire_ht = 10) => ({ designation, quantite, prix_unitaire_ht, taux_tva: 20 })
+
+  it('ne retient que les lignes qui portent une désignation et une quantité positive', () => {
+    const { valides } = lignesSaisies([ligne('A', 1), ligne('  ', 2), ligne('B', 0), ligne('C', -1), ligne('D', 0.5)])
+    expect(valides.map((l) => l.designation)).toEqual(['A', 'D'])
+  })
+
+  // Une remise saisie en quantité négative, ou un montant sans désignation, disparaîtraient sans un mot.
+  it('compte les lignes écartées qui portent quelque chose, pas une ligne neuve laissée vide', () => {
+    expect(lignesSaisies([ligne('A', 1), ligne('Remise', -1)]).ecartees).toBe(1)
+    expect(lignesSaisies([ligne('A', 1), ligne('', 1, 25)]).ecartees).toBe(1)
+    expect(lignesSaisies([ligne('A', 1), ligne('', 1, 0)]).ecartees).toBe(0)
+    expect(lignesSaisies([ligne('A', 1), ligne('B', 0, 0)]).ecartees).toBe(1)
+  })
+})
+
+describe('dejaCredite', () => {
+  const avoir = (origine: string | null, ttc: number) =>
+    ({ type: 'avoir' as const, facture_origine_id: origine, montant_ttc: ttc })
+
+  it('somme les avoirs de CETTE facture, en euros positifs', () => {
+    expect(dejaCredite('f1', [
+      avoir('f1', -40), avoir('f2', -500), avoir('f1', -20.5),
+      { type: 'facture', facture_origine_id: null, montant_ttc: 120 },
+    ])).toBe(60.5)
+  })
+
+  // 0,07 + 0,14 vaut 0,21000000000000002 en flottants, et 0,07 × 100 vaut 7,000000000000001 : seul un compte en
+  // centimes ARRONDIS rend 0,21. Des montants plus ronds (0,10) ne distinguent pas les deux calculs.
+  it('compte en centimes entiers : 0,07 € et 0,14 € font 0,21 €, pas 0,21000000000000002', () => {
+    expect(dejaCredite('f1', [avoir('f1', -0.07), avoir('f1', -0.14)])).toBe(0.21)
+  })
+
+  it('rend zéro sur une facture qu’aucun avoir n’a créditée', () => {
+    expect(dejaCredite('f1', [avoir('f2', -10)])).toBe(0)
+  })
+})
+
+describe('refusAvoir', () => {
+  const origine = { type: 'facture' as const, statut: 'validee' as const, numero: 'F2026-0001', date_emission: '2026-03-10', montant_ttc: 120 }
+  const total = [{ designation: 'Consultation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
+
+  it('accepte un avoir total sur une facture que rien n’a créditée', () => {
+    expect(refusAvoir(origine, '2026-03-10', total, 0)).toBeNull()
+  })
+
+  it('refuse sans ligne, avant tout le reste', () => {
+    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '', [], 0)).toBe('Au moins une ligne avec une quantité doit rester à créditer.')
+  })
+
+  it('refuse un brouillon et un autre avoir comme origine', () => {
+    const message = 'Un avoir corrige une facture validée, jamais un brouillon ni un autre avoir.'
+    expect(refusAvoir({ ...origine, statut: 'brouillon' }, '2026-03-10', total, 0)).toBe(message)
+    expect(refusAvoir({ ...origine, type: 'avoir' }, '2026-03-10', total, 0)).toBe(message)
+  })
+
+  it('refuse un avoir sans date, et un avoir daté avant sa facture — pas le même jour', () => {
+    expect(refusAvoir(origine, '', total, 0)).toBe("Indique la date d'émission de l'avoir.")
+    expect(refusAvoir(origine, '2026-03-09', total, 0))
+      .toBe("Un avoir ne précède pas la facture qu'il corrige (émise le 10/03/2026).")
+    expect(refusAvoir(origine, '2026-03-10', total, 0)).toBeNull()
+  })
+
+  it('refuse une ligne créditée à quantité nulle ou négative', () => {
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 0 }], 0))
+      .toBe('Chaque ligne créditée porte une quantité positive.')
+  })
+
+  it('refuse un avoir dont le total ne crédite rien', () => {
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: -100 }], 0))
+      .toBe('Un avoir crédite un montant : son total TTC doit être positif.')
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 0.004 }], 0))
+      .toBe('Un avoir crédite un montant : son total TTC doit être positif.')
+  })
+
+  it('refuse de créditer plus que ce qui reste, au centime', () => {
+    expect(refusAvoir(origine, '2026-03-10', total, 0.01))
+      .toMatch(/^Cet avoir créditerait 120,00\s€ : la facture F2026-0001 n'a plus que 119,99\s€ à créditer\.$/)
+    // 66,67 € HT à 20 % font 80,00 € TTC : exactement ce qui reste après 40 €.
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.67 }], 40)).toBeNull()
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], prix_unitaire_ht: 66.68 }], 40)).toMatch(/plus que 80,00/)
+  })
+
+  it('dit « 0,00 € » plutôt qu’un reste négatif quand la facture a déjà été trop créditée', () => {
+    expect(refusAvoir(origine, '2026-03-10', total, 130)).toMatch(/n'a plus que 0,00\s€/)
+  })
+
+  // Liste lue en partie : on ne sait pas, la base juge.
+  it('ne juge pas le plafond quand ce qui a été crédité n’est pas connu', () => {
+    expect(refusAvoir(origine, '2026-03-10', total, null)).toBeNull()
+    // Même au-delà du montant de la facture : sans savoir, ce n'est pas l'écran qui tranche — la base le refusera.
+    expect(refusAvoir(origine, '2026-03-10', [{ ...total[0], quantite: 2 }], null)).toBeNull()
+  })
+})
+
+describe('creerAvoir', () => {
+  it('enregistre l’avoir validé par la fonction de la base, montants et quantités négatifs', async () => {
+    rpc.data = [{ facture_id: 'a1', numero: 'A2026-0001' }]
+    const resultat = await creerAvoir('d1', 'f1', {
+      dateEmission: '2026-03-12', motif: '  Remise  ', mentionsLegales: '',
+      lignes: [
+        { designation: 'Consultation', quantite: 2, prix_unitaire_ht: 50, taux_tva: 20 },
+        { designation: 'Déplacement', quantite: 1, prix_unitaire_ht: 10, taux_tva: 0 },
+      ],
+    })
+    expect(resultat).toEqual({ id: 'a1', numero: 'A2026-0001' })
+    expect(appels).toEqual([{
+      nom: 'enregistrer_facture',
+      params: {
+        p_dossier_id: 'd1', p_facture_id: null, p_valider: true,
+        p_facture: {
+          type: 'avoir', facture_origine_id: 'f1', date_emission: '2026-03-12',
+          notes: 'Remise', mentions_legales: null,
+          montant_ht: -110, montant_tva: -20, montant_ttc: -130,
+        },
+        p_lignes: [
+          { designation: 'Consultation', quantite: -2, prix_unitaire_ht: 50, taux_tva: 20 },
+          { designation: 'Déplacement', quantite: -1, prix_unitaire_ht: 10, taux_tva: 0 },
+        ],
+      },
+    }])
+  })
+
+  // Un « −0 » s'enregistre comme un zéro, mais se compare mal et s'affiche « -0,00 € » ici ou là.
+  it('n’écrit pas de « −0 » quand l’avoir n’a pas de TVA', async () => {
+    rpc.data = [{ facture_id: 'a1', numero: 'A2026-0001' }]
+    await creerAvoir('d1', 'f1', {
+      dateEmission: '2026-03-12', motif: '', mentionsLegales: '',
+      lignes: [{ designation: 'Soin', quantite: 1, prix_unitaire_ht: 10, taux_tva: 0 }],
+    })
+    const facture = appels[0].params.p_facture as { montant_tva: number }
+    expect(Object.is(facture.montant_tva, 0)).toBe(true)
+  })
+
+  it('remonte le refus de la base tel quel', async () => {
+    rpc.error = { message: "Cet avoir créditerait 130,00 € : la facture F2026-0001 n'a plus que 10,00 € à créditer." }
+    await expect(creerAvoir('d1', 'f1', {
+      dateEmission: '2026-03-12', motif: '', mentionsLegales: '',
+      lignes: [{ designation: 'Soin', quantite: 1, prix_unitaire_ht: 10, taux_tva: 0 }],
+    })).rejects.toThrow("n'a plus que 10,00")
   })
 })

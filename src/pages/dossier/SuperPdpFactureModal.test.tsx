@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import SuperPdpFactureModal from './SuperPdpFactureModal'
+import { MENTIONS_VIDES } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
 
 // Le dernier des quatre verrous corrigés le 20/09/2026 à n'avoir aucun test d'écran, et celui dont
@@ -81,6 +82,7 @@ const facture: FactureEmise = {
   created_by: null,
   created_at: '2026-09-01T00:00:00Z',
   validated_at: '2026-09-01T00:00:00Z',
+  ...MENTIONS_VIDES,
 }
 
 async function monter() {
