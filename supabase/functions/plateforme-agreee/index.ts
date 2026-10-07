@@ -9,7 +9,7 @@
 // policy : refus total côté navigateur, voir supabase/essais/receptionPlateforme.sql). Le secret ne quitte jamais
 // le serveur : il ouvre toutes les factures de l'entreprise, reçues comme émises.
 //
-// Sept actions, toutes demandées par un membre du cabinet qui a accès au dossier — `admin_du_dossier`, vérifié
+// Huit actions, toutes demandées par un membre du cabinet qui a accès au dossier — `admin_du_dossier`, vérifié
 // AVANT toute lecture de la connexion et tout appel à la plateforme :
 //   - statut       la connexion du dossier, SANS appel extérieur : c'est le seul appel que l'écran fait en s'ouvrant ;
 //   - enregistrer  les adresses, l'identifiant, le secret, l'organisation et la portée — vérifiés ici, pas seulement
@@ -20,7 +20,10 @@
 //   - lister       les factures mises à jour depuis le point de reprise, RENDUES au navigateur : rien n'est écrit
 //                  ici — c'est l'écran qui importe, sur le clic, par le chemin d'un dépôt ;
 //   - telecharger  un document d'UNE facture : l'original, ou la version lisible d'un original XML ;
-//   - retenir      avance le point de reprise une fois l'import fait, jamais au-delà de ce qui est sûr.
+//   - retenir      avance le point de reprise une fois l'import fait, jamais au-delà de ce qui est sûr ;
+//   - repartir     remet le point de reprise au début, sur le clic du cabinet : après un SIRET du dossier corrigé,
+//                  une facture écartée comme destinée à une autre entreprise, ou une pièce supprimée par erreur. Les
+//                  factures déjà importées sont reconnues à leur flux et ne reviennent pas en double.
 //
 // UNE connexion par dossier (la clé primaire de la table est le dossier) : un dossier est UNE entreprise, qui a UNE
 // plateforme de réception.
@@ -55,7 +58,7 @@ const MAX_JSON_OCTETS = 2 * 1024 * 1024
 const MAX_FICHIER_OCTETS = 10 * 1024 * 1024
 const MAX_REDIRECTIONS = 3
 
-const ACTIONS = ["statut", "enregistrer", "retirer", "tester", "lister", "telecharger", "retenir"]
+const ACTIONS = ["statut", "enregistrer", "retirer", "tester", "lister", "telecharger", "retenir", "repartir"]
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, created_at, updated_at"
@@ -963,15 +966,27 @@ Deno.serve(async (req: Request) => {
     return json({ connexion: vuePublique((data ?? null) as ConnexionLue | null) })
   }
 
-  // Les quatre dernières actions supposent une connexion.
+  // Les cinq dernières actions supposent une connexion.
   if (!connexion) return json({ error: "Aucune plateforme n'est configurée pour ce dossier." }, 409)
   const hote = new URL(connexion.url_flux).hostname
   // Une configuration modifiée entre la liste et l'import désigne peut-être une autre plateforme ou une autre
   // entreprise : un flux listé chez l'une ne se télécharge pas chez l'autre, et son point de reprise ne vaut pas pour
   // elle.
-  const versionPerimee = (action === "telecharger" || action === "retenir") && payload.version !== connexion.updated_at
+  const versionPerimee = (action === "telecharger" || action === "retenir" || action === "repartir") &&
+    payload.version !== connexion.updated_at
   if (versionPerimee) {
     return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)
+  }
+
+  if (action === "repartir") {
+    // Le seul chemin qui RECULE le point de reprise, et il ne touche que lui : la date de la dernière récupération reste
+    // ce qu'elle est, et la connexion garde sa version — ce n'est pas une autre configuration.
+    const { data, error } = await admin.from("connexions_plateformes")
+      .update({ recherche_depuis: null })
+      .eq("dossier_id", dossierId).eq("updated_at", connexion.updated_at).select("dossier_id").maybeSingle()
+    if (error) return json({ error: `Le point de reprise n'a pas pu être remis au début (${error.message}).` }, 500)
+    if (!data) return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)
+    return json({ recherche_depuis: null })
   }
 
   if (action === "retenir") {

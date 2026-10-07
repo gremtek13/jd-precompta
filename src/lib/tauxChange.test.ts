@@ -120,6 +120,16 @@ describe('montantsPourPiece', () => {
     })
   })
 
+  it('une devise ÉCRITE par une facture électronique l’emporte sur le texte', async () => {
+    // Une facture structurée nomme sa devise (BT-5) : le texte n'est alors qu'un indice, et il peut mentir — le résumé
+    // d'une facture en dollars peut citer des euros, et l'inverse.
+    expect(await montantsPourPiece({ montant_ht: 20, montant_tva: 4, montant_ttc: 24, devise: 'USD', texte_ocr: 'Total 24,00 €' }, '2025-07-09'))
+      .toMatchObject({ devise: 'USD', montant_devise: 24, taux_change: 1.1698, conversion_source: 'bce' })
+    expect(await montantsPourPiece({ montant_ttc: 24, devise: 'EUR', texte_ocr: TEXTE_USD }, '2025-07-09'))
+      .toEqual({ montant_ht: null, montant_tva: null, montant_ttc: 24, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null })
+    expect(appels.fonction).toBe(1)
+  })
+
   it('traite un texte absent comme une pièce en euros', async () => {
     // Une extraction ratée, ou une pièce saisie à la main : l'euro est le cas de l'écrasante
     // majorité, et supposer autre chose convertirait des montants déjà bons.
