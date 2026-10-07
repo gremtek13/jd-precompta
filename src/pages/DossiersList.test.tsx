@@ -59,7 +59,7 @@ function dossier(id: string, nom: string) {
   return {
     id, nom, cabinet_id: 'cabinet-de-test', siret: null, contact_nom: null, contact_email: null,
     notes: null, archive: false, created_at: `${ANNEE}-01-02T00:00:00Z`, code_email: id,
-    assujetti_tva: false, code_naf: null, libelle_naf: null, adresse: null,
+    assujetti_tva: false, statut_tva: null, article_exoneration: null, code_naf: null, libelle_naf: null, adresse: null,
   }
 }
 

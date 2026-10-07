@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 88 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 89 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,8 +84,8 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 07/10/2026** : 88 fichiers, 88 migrations, empreinte globale
-`29dccb54fd73b6ac4db1421a466cded6` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 07/10/2026** : 89 fichiers, 89 migrations, empreinte globale
+`9c4403ed48d6fd30c18e6e8bb7534a04` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -118,11 +118,15 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (77 instructions, empreinte `5114d8a30b093fe29bb20e075d6cb1dd` le
-  07/10/2026, rejoué après `report_des_soldes`, la dernière migration), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  07/10/2026, rejoué après `statut_tva_du_dossier`, la dernière migration), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
+  Une contrainte ou un index qu'une MIGRATION crée sur une colonne du complément n'en fait pas partie :
+  il est dans l'export, au fichier de sa migration, et la génération l'écarte en cherchant son nom dans
+  l'historique. Sans cette règle, `dossiers_statut_tva_coherent` (07/10/2026), qui lie le statut de TVA
+  à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 031 objets, empreinte `9aa8f439404dc4d5032b539be59a05df` le 07/10/2026, rejoué après `report_des_soldes`, la dernière migration). C'est le seul qui voie un
+  (1 039 objets, empreinte `4e0985853ec78795b568e046806fa3c7` le 07/10/2026, rejoué après `statut_tva_du_dossier`, la dernière migration). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

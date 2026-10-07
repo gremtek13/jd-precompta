@@ -20,7 +20,18 @@ export interface Dossier {
   archive: boolean
   created_at: string
   code_email: string
+  // DÉDUIT de `statut_tva` par un déclencheur en base (`dossiers_deduire_assujetti_tva`) : vrai si et
+  // seulement si le dossier est redevable. Il reste lu partout où l'on demande si le dossier récupère la
+  // TVA — le montant retenu d'une pièce, la CA3, l'affectation d'une recette du relevé.
   assujetti_tva: boolean
+  // Le statut de TVA du dossier (ligne 28.5), qui FAIT FOI : redevable, franchise en base (art. 293 B du
+  // CGI) ou exonéré (art. 261 à 261 E). Nul : à préciser — personne n'a encore dit si un dossier non
+  // assujetti est en franchise ou exonéré, et on ne le devine pas. La franchise n'est pas une
+  // exonération : un franchisé est dans le champ de la facturation électronique, un exonéré non.
+  statut_tva: StatutTva | null
+  // L'exonération du dossier, dans une liste fermée. Permise à un dossier exonéré, et à un dossier
+  // redevable dont une partie de l'activité est exonérée ; nulle ailleurs — la base le refuse.
+  article_exoneration: ArticleExoneration | null
   // Le régime de TVA d'un dossier assujetti, que l'onglet TVA lit pour préparer la CA3 (voir
   // lib/declarationTva.ts). Trimestrielle par défaut : à partir de 2027 le régime simplifié disparaît
   // et c'est la périodicité de droit sous 1 000 000 € de chiffre d'affaires. `tva_sur_debits` est
@@ -574,6 +585,13 @@ export interface ReferenceAnnuelle {
 
 // La périodicité de la CA3 d'un dossier assujetti (voir lib/declarationTva.ts).
 export type PeriodiciteTva = 'mensuelle' | 'trimestrielle'
+
+// Le statut de TVA d'un dossier (`dossiers.statut_tva`, contrainte `dossiers_statut_tva_check`).
+export type StatutTva = 'redevable' | 'franchise' | 'exonere'
+// Les exonérations reconnues (`dossiers_article_exoneration_check`) : les soins (CGI, art. 261, 4, 1°),
+// l'enseignement et la formation professionnelle (261, 4, 4° a), les cours particuliers (261, 4, 4° b),
+// l'assurance et la réassurance (261 C, 2°).
+export type ArticleExoneration = 'cgi_261_4_1' | 'cgi_261_4_4_a' | 'cgi_261_4_4_b' | 'cgi_261_c_2'
 
 export type ModeComptable = 'tresorerie' | 'engagement'
 // 455 : compte courant d'un dirigeant associé d'une société ; 108 : compte de l'exploitant d'une
