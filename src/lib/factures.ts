@@ -1,16 +1,19 @@
 import { supabase } from './supabase'
 import { anneeDe } from './format'
-import type { FactureLigne, TypeFacture } from './types'
+import { mentionTva } from './statutTva'
+import type { ArticleExoneration, FactureLigne, StatutTva, TypeFacture } from './types'
 
 // Mentions légales par défaut, proposées à la création d'une facture puis librement modifiables avant
 // validation — un point de départ raisonnable, pas une garantie de conformité exhaustive : la
 // réglementation dépend du statut exact du client (professionnel/particulier, régime de TVA...), à
 // ajuster au cas par cas par le cabinet, comme le reste de ce que l'appli propose sans jamais figer.
-export function mentionsLegalesParDefaut(assujettiTva: boolean): string {
+// La mention de TVA suit le STATUT du dossier (lib/statutTva.ts) : la franchise cite l'art. 293 B, une
+// exonération l'article qui exonère. Elle proposait la franchise à tout dossier non assujetti, donc à un
+// dossier de soins exonérés — c'était faux, et c'est le défaut qui a fait naître ce statut (ligne 28.5).
+export function mentionsLegalesParDefaut(statut: StatutTva | null, article: ArticleExoneration | null): string {
   const lignes: string[] = []
-  if (!assujettiTva) {
-    lignes.push('TVA non applicable, art. 293 B du CGI.')
-  }
+  const mention = mentionTva(statut, article)
+  if (mention) lignes.push(mention)
   lignes.push(
     "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
     'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.',

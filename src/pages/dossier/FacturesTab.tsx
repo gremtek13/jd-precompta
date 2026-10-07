@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
-import type { FactureEmise } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -20,7 +20,9 @@ interface Props {
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
-  assujettiTva: boolean
+  // Le statut de TVA du dossier (lib/statutTva.ts) : la mention proposée sur une facture et les taux admis.
+  statutTva: StatutTva | null
+  articleExoneration: ArticleExoneration | null
   onAdresseUpdated: (adresse: string) => void
 }
 
@@ -29,7 +31,7 @@ interface Props {
 // Super PDP (voir SuperPdpFactureModal, supabase/functions/superpdp-emit) ou, comme avant, simplement
 // imprimée/exportée en PDF pour être envoyée manuellement — les deux restent possibles, la
 // transmission électronique n'est jamais obligatoire (ex. client sans SIRET, ou pas encore configuré).
-export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, assujettiTva, onAdresseUpdated }: Props) {
+export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -200,7 +202,8 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           dossierNom={dossierNom}
           dossierSiret={dossierSiret}
           dossierAdresse={dossierAdresse}
-          assujettiTva={assujettiTva}
+          statutTva={statutTva}
+          articleExoneration={articleExoneration}
           facture={editing === 'new' ? null : editing}
           onAdresseUpdated={onAdresseUpdated}
           onClose={() => setEditing(null)}

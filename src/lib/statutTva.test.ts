@@ -191,6 +191,7 @@ describe('obligationsFacturationElectronique', () => {
     for (const statut of ['redevable', 'franchise', 'exonere', null] as (StatutTva | null)[]) {
       const [reception] = obligationsFacturationElectronique(statut, null, 'trimestrielle', false)
       expect(reception).toMatchObject({ cle: 'reception', etat: 'due', depuis: DEBUT_RECEPTION })
+      expect(reception.detail).toMatch(/^Depuis le 1er septembre 2026, /)
     }
     expect(DEBUT_RECEPTION).toBe('2026-09-01')
   })

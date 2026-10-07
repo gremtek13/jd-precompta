@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import { EXPLICATIONS_MODE, modeleDuDossier } from '../lib/engagement'
+import { STATUTS_TVA, libelleCourtStatutTva, resumeObligations } from '../lib/statutTva'
 import type { Dossier, ExerciceValide } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
 import FacturesTab from './dossier/FacturesTab'
@@ -194,17 +195,6 @@ export default function DossierDetail() {
 
   if (!id) return null
 
-  async function toggleAssujettiTva() {
-    if (!dossier) return
-    const nouvelleValeur = !dossier.assujetti_tva
-    modifierDossier(dossier.id, { assujetti_tva: nouvelleValeur }) // optimiste, un dossier à la fois
-    const { error } = await supabase.from('dossiers').update({ assujetti_tva: nouvelleValeur }).eq('id', dossier.id)
-    if (error) {
-      modifierDossier(dossier.id, { assujetti_tva: !nouvelleValeur }) // annule si l'enregistrement échoue
-      window.alert(error.message)
-    }
-  }
-
   // Backfill pour les dossiers créés avant l'ajout du code NAF (voir lib/sirene.ts, appelé
   // automatiquement à la création d'un nouveau dossier) — un clic explicite, pas automatique au
   // chargement, pour ne jamais appeler une API externe sans que le cabinet l'ait demandé.
@@ -238,18 +228,19 @@ export default function DossierDetail() {
           <div className="cockpit-meta">
             {dossier?.siret && <span className="cockpit-siret">SIRET {dossier.siret}</span>}
             {dossier && (
+              // Le statut de TVA (lib/statutTva.ts) : redevable, franchise en base, exonéré — ou à préciser, en
+              // couleur d'alerte. Il se lit ici et se règle dans l'onglet TVA, où le badge mène, comme celui du
+              // modèle comptable mène à Écritures. Il basculait ici le seul booléen « assujetti », qui rangeait la
+              // franchise et l'exonération sous un même « exonéré » — c'est ce qui proposait la mention de la
+              // franchise sur la facture d'un dossier de soins.
               <button
                 type="button"
-                className={`badge badge-bouton ${dossier.assujetti_tva ? 'badge-ok' : 'badge-neutral'}`}
-                // Ce statut décide désormais du montant de chaque pièce (voir lib/montantRetenu.ts) : un
-                // dossier en franchise en base est techniquement assujetti, mais ne récupère rien — il
-                // se classe « exonéré », et c'est ce que l'infobulle doit dire à qui hésite.
-                title={'Clique pour changer. « Assujetti » : le dossier collecte et récupère la TVA, ses montants '
-                  + 'sont retenus hors taxes. « Exonéré » (actes de soins, franchise en base) : la TVA payée fait '
-                  + 'partie des dépenses, retenues TVA comprise.'}
-                onClick={toggleAssujettiTva}
+                className={`badge badge-bouton ${dossier.statut_tva === 'redevable' ? 'badge-ok' : dossier.statut_tva == null ? 'badge-warning' : 'badge-neutral'}`}
+                title={`${dossier.statut_tva ? STATUTS_TVA.find((s) => s.statut === dossier.statut_tva)?.explication ?? '' : 'Statut de TVA à préciser.'} `
+                  + `${resumeObligations(dossier.statut_tva, dossier.article_exoneration)} Il se règle dans l’onglet TVA.`}
+                onClick={() => allerA('tva')}
               >
-                TVA : {dossier.assujetti_tva ? 'assujetti' : 'exonéré'}
+                TVA : {libelleCourtStatutTva(dossier.statut_tva)}
               </button>
             )}
             {dossier && (
@@ -335,7 +326,7 @@ export default function DossierDetail() {
               }
             />
 
-            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} modele={modele} onNavigate={allerA} />}
+            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} onNavigate={allerA} />}
             {tab === 'pieces' && <PiecesTab dossierId={id} />}
             {tab === 'factures' && (
               <FacturesTab
@@ -343,7 +334,8 @@ export default function DossierDetail() {
                 dossierNom={dossier?.nom ?? ''}
                 dossierSiret={dossier?.siret ?? null}
                 dossierAdresse={dossier?.adresse ?? null}
-                assujettiTva={dossier?.assujetti_tva ?? false}
+                statutTva={dossier?.statut_tva ?? null}
+                articleExoneration={dossier?.article_exoneration ?? null}
                 onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
               />
             )}
@@ -365,6 +357,9 @@ export default function DossierDetail() {
               <TvaTab
                 dossierId={id}
                 assujettiTva={dossier.assujetti_tva}
+                statutTva={dossier.statut_tva}
+                articleExoneration={dossier.article_exoneration}
+                onStatutUpdated={(modification) => modifierDossier(id, modification)}
                 periodicite={dossier.tva_periodicite}
                 surDebits={dossier.tva_sur_debits}
                 onRegimeUpdated={(modification) => modifierDossier(id, modification)}

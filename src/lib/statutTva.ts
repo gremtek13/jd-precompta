@@ -127,10 +127,10 @@ export function mentionTva(statut: StatutTva | null, article: ArticleExoneration
 // Ce qui empêche de proposer la bonne mention, dit à qui rédige la facture.
 export function manqueMentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
   if (statut == null) {
-    return 'Le statut de TVA du dossier est à préciser (en-tête du dossier) : la mention de TVA de la facture en dépend.'
+    return 'Le statut de TVA du dossier est à préciser (onglet TVA du dossier) : la mention de TVA de la facture en dépend.'
   }
   if (statut === 'exonere' && exonerationDe(article) == null) {
-    return 'Le dossier est exonéré sans article d’exonération : saisis la mention de la facture, ou choisis l’article dans l’en-tête du dossier.'
+    return 'Le dossier est exonéré sans article d’exonération : saisis la mention de la facture, ou choisis l’article dans l’onglet TVA du dossier.'
   }
   return null
 }
@@ -148,7 +148,7 @@ export function motifExoneration(
   statut: StatutTva | null, article: ArticleExoneration | null,
 ): { motif: MotifExoneration; refus: null } | { motif: null; refus: string } {
   if (statut == null) {
-    return { motif: null, refus: 'Le statut de TVA du dossier est à préciser : choisis-le dans l’en-tête du dossier avant de transmettre une facture.' }
+    return { motif: null, refus: 'Le statut de TVA du dossier est à préciser : choisis-le dans l’onglet TVA du dossier avant de transmettre une facture.' }
   }
   if (statut === 'franchise') {
     return { motif: { categorie: 'E', code: VATEX_FRANCHISE, texte: MENTION_FRANCHISE }, refus: null }
@@ -160,8 +160,8 @@ export function motifExoneration(
   return {
     motif: null,
     refus: statut === 'exonere'
-      ? 'Le dossier est exonéré sans article d’exonération : choisis-le dans l’en-tête du dossier avant de transmettre une facture à 0 %.'
-      : 'Une ligne à 0 % d’un dossier redevable demande l’article de son exonération : choisis-le dans l’en-tête du dossier, ou corrige le taux.',
+      ? 'Le dossier est exonéré sans article d’exonération : choisis-le dans l’onglet TVA du dossier avant de transmettre une facture à 0 %.'
+      : 'Une ligne à 0 % d’un dossier redevable demande l’article de son exonération : choisis-le dans l’onglet TVA du dossier, ou corrige le taux.',
   }
 }
 
@@ -209,7 +209,7 @@ export interface ObligationFacturationElectronique {
   detail: string
 }
 
-const A_PRECISER = 'Dépend du statut de TVA du dossier, à préciser dans l’en-tête.'
+const A_PRECISER = 'Dépend du statut de TVA du dossier, à préciser dans l’onglet TVA.'
 
 export function obligationsFacturationElectronique(
   statut: StatutTva | null, article: ArticleExoneration | null, periodicite: PeriodiciteTva, surDebits: boolean,
@@ -228,7 +228,7 @@ export function obligationsFacturationElectronique(
     libelle: 'Recevoir ses factures d’achat électroniques',
     etat: 'due',
     depuis: DEBUT_RECEPTION,
-    detail: 'Par la plateforme agréée qu’il a choisie. Tout assujetti y est tenu, même exonéré ou en franchise.',
+    detail: 'Depuis le 1er septembre 2026, par la plateforme agréée qu’il a choisie. Tout assujetti y est tenu, même exonéré ou en franchise.',
   }
 
   if (statut == null) {

@@ -70,14 +70,26 @@ describe('calculerTotaux', () => {
 })
 
 describe('mentionsLegalesParDefaut', () => {
-  it('ajoute l’article 293 B seulement si le dossier n’est pas assujetti', () => {
-    expect(mentionsLegalesParDefaut(false)).toContain('293 B')
-    expect(mentionsLegalesParDefaut(true)).not.toContain('293 B')
+  it('cite l’article 293 B pour un dossier en franchise, et seulement pour lui', () => {
+    expect(mentionsLegalesParDefaut('franchise', null)).toContain('TVA non applicable, art. 293 B du CGI.')
+    expect(mentionsLegalesParDefaut('redevable', null)).not.toContain('293 B')
+    expect(mentionsLegalesParDefaut(null, null)).not.toContain('293 B')
+  })
+
+  it('un dossier de soins exonérés cite l’art. 261, 4, 1°, jamais la franchise — le défaut d’origine', () => {
+    const mentions = mentionsLegalesParDefaut('exonere', 'cgi_261_4_1')
+    expect(mentions).toContain('Exonération de TVA, art. 261, 4, 1° du CGI.')
+    expect(mentions).not.toContain('293 B')
+  })
+
+  it('n’invente aucune mention de TVA quand l’article d’un dossier exonéré manque', () => {
+    expect(mentionsLegalesParDefaut('exonere', null)).not.toMatch(/TVA/)
   })
 
   it('rappelle toujours les pénalités de retard', () => {
-    expect(mentionsLegalesParDefaut(true)).toContain('40 €')
-    expect(mentionsLegalesParDefaut(false)).toContain('40 €')
+    for (const [statut, article] of [['redevable', null], ['franchise', null], ['exonere', 'cgi_261_4_1'], [null, null]] as const) {
+      expect(mentionsLegalesParDefaut(statut, article)).toContain('40 €')
+    }
   })
 })
 

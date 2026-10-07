@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
-import type { FactureEmise, FactureLigne } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
 
 interface LigneEdit {
   id?: string // absent = ligne pas encore enregistrée
@@ -13,8 +14,10 @@ interface LigneEdit {
   taux_tva: string
 }
 
-function ligneVide(): LigneEdit {
-  return { designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: '0' }
+// Le taux d'une ligne neuve suit le statut de TVA du dossier : 20 % pour un redevable, qui facture la TVA, 0 % pour
+// les autres. Une ligne d'un redevable à 0 % par défaut partait chez la plateforme avec le motif de la franchise.
+function ligneVide(statut: StatutTva | null): LigneEdit {
+  return { designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0' }
 }
 
 interface Props {
@@ -22,7 +25,9 @@ interface Props {
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
-  assujettiTva: boolean
+  // Le statut de TVA du dossier (lib/statutTva.ts), qui décide de la mention proposée et des taux admis.
+  statutTva: StatutTva | null
+  articleExoneration: ArticleExoneration | null
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   onAdresseUpdated: (adresse: string) => void
   onClose: () => void
@@ -33,17 +38,17 @@ interface Props {
 // qui ouvre FactureApercu à la place dans ce cas) : toute la logique ici suppose qu'on peut encore
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
-export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, assujettiTva, facture, onAdresseUpdated, onClose, onSaved }: Props) {
+export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, facture, onAdresseUpdated, onClose, onSaved }: Props) {
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
   const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? aujourdHuiSql())
   const [dateEcheance, setDateEcheance] = useState(facture?.date_echeance ?? '')
   const [notes, setNotes] = useState(facture?.notes ?? '')
-  const [mentionsLegales, setMentionsLegales] = useState(facture?.mentions_legales ?? mentionsLegalesParDefaut(assujettiTva))
+  const [mentionsLegales, setMentionsLegales] = useState(facture?.mentions_legales ?? mentionsLegalesParDefaut(statutTva, articleExoneration))
   const [emetteurAdresse, setEmetteurAdresse] = useState(facture?.emetteur_adresse ?? dossierAdresse ?? '')
   const [enregistrerAdresseDossier, setEnregistrerAdresseDossier] = useState(false)
-  const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide()])
+  const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide(statutTva)])
   const [chargementLignes, setChargementLignes] = useState(!!facture)
   // Non nul = on ne SAIT PAS ce que cette facture porte comme lignes. Voir l'effet ci-dessous :
   // ce n'est pas la même chose que « elle n'en a aucune », et le formulaire ne doit pas le confondre.
@@ -73,16 +78,16 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
       const l = (data ?? []) as FactureLigne[]
       setLignes(l.length > 0
         ? l.map((x) => ({ id: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht), taux_tva: String(x.taux_tva) }))
-        : [ligneVide()])
+        : [ligneVide(statutTva)])
       setChargementLignes(false)
     })
-  }, [facture])
+  }, [facture, statutTva])
 
   function majLigne(index: number, patch: Partial<LigneEdit>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
   }
   function ajouterLigne() {
-    setLignes((prev) => [...prev, ligneVide()])
+    setLignes((prev) => [...prev, ligneVide(statutTva)])
   }
   function retirerLigne(index: number) {
     setLignes((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
@@ -96,6 +101,29 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
   }))
   const totaux = calculerTotaux(lignesNumeriques)
   const lignesValides = lignesNumeriques.filter((l) => l.designation.trim() && l.quantite > 0)
+
+  // CE QUE LE STATUT DE TVA DU DOSSIER DIT DE CETTE FACTURE, avant le clic (lib/statutTva.ts).
+  // Une ligne taxée sur un dossier qui ne facture pas de TVA la rend due du seul fait de l'avoir facturée (CGI,
+  // art. 283, 3) : la validation se refuse — une facture validée ne se corrige que par un avoir. Le brouillon reste
+  // enregistrable, pour le temps de changer le statut si c'est lui qui est en retard.
+  const refusTaxe = lignesValides.map((l) => refusTauxPositif(statutTva, l.taux_tva)).find((r) => r != null) ?? null
+  // La mention de TVA que la facture doit porter : celle du statut, ou — pour un redevable — celle de l'article de
+  // son exonération dès qu'une ligne est à 0 %. Absente du texte (effacée, ou un brouillon d'avant), elle se propose.
+  const ligneAZero = lignesValides.some((l) => l.taux_tva === 0)
+  const mentionAttendue = statutTva === 'redevable'
+    ? (ligneAZero ? exonerationDe(articleExoneration)?.mention ?? null : null)
+    : mentionTva(statutTva, articleExoneration)
+  const mentionAbsente = mentionAttendue != null && !mentionsLegales.includes(mentionAttendue) ? mentionAttendue : null
+  // Un redevable sans article dont une ligne est à 0 % : on ne sait pas quelle exonération la justifie.
+  const zeroSansArticle = statutTva === 'redevable' && ligneAZero && exonerationDe(articleExoneration) == null
+  // La mention de la franchise sur un dossier qui n'y est pas : celle que l'application proposait à tout dossier non
+  // assujetti, donc à un dossier de soins exonérés.
+  const franchiseHorsStatut = statutTva !== 'franchise' && mentionsLegales.includes('293 B')
+  const manqueMention = manqueMentionTva(statutTva, articleExoneration)
+
+  function ajouterMention(mention: string) {
+    setMentionsLegales((m) => (m.trim() ? `${mention}\n${m}` : mention))
+  }
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : `saving` est un état React, donc `disabled={!!saving}`
   // ne prend effet qu'au rendu SUIVANT et laisse passer deux envois rapprochés (CLAUDE.md). Dans le
@@ -121,6 +149,11 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     }
     if (lignesValides.length === 0) {
       setError('Ajoute au moins une ligne avec une désignation et une quantité.')
+      return
+    }
+    // Seconde ceinture : le bouton de validation est déjà grisé sur ce refus.
+    if (statutCible === 'validee' && refusTaxe) {
+      setError(refusTaxe)
       return
     }
     if (enregistrementEnCours.current) return
@@ -255,6 +288,14 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
                 </table>
               </div>
               <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={ajouterLigne}>+ Ligne</button>
+              {refusTaxe && <p className="error-text">{refusTaxe}</p>}
+              {zeroSansArticle && (
+                <p className="alerte-tva" style={{ marginTop: 8 }}>
+                  Une ligne à 0 % : sur un dossier redevable, l’exonération se justifie par son article. Choisis-le dans
+                  l’onglet TVA du dossier, ou corrige le taux — sans lui, la facture ne peut pas être transmise à une
+                  plateforme.
+                </p>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 24, marginTop: 12, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -267,8 +308,23 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               <label htmlFor="mentions">Mentions légales</label>
               <textarea id="mentions" rows={3} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
               <span className="muted" style={{ fontSize: '0.78rem' }}>
-                Proposées par défaut selon le régime de TVA du dossier — à vérifier et ajuster, ce n'est pas une garantie de conformité complète.
+                Proposées par défaut selon le statut de TVA du dossier — à vérifier et ajuster, ce n'est pas une garantie de conformité complète.
               </span>
+              {manqueMention && <p className="alerte-tva" style={{ marginTop: 8 }}>{manqueMention}</p>}
+              {mentionAbsente && (
+                <p className="alerte-tva" style={{ marginTop: 8 }}>
+                  La mention « {mentionAbsente} » manque aux mentions légales.{' '}
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => ajouterMention(mentionAbsente)}>
+                    Ajouter la mention
+                  </button>
+                </p>
+              )}
+              {franchiseHorsStatut && (
+                <p className="alerte-tva" style={{ marginTop: 8 }}>
+                  Les mentions citent la franchise en base (« {MENTION_FRANCHISE} »), qui n’est pas le statut de TVA du
+                  dossier : retire-la.
+                </p>
+              )}
             </div>
 
             <div className="field">
@@ -283,7 +339,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               <button type="submit" className="btn btn-outline" disabled={!!saving}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || refusTaxe != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

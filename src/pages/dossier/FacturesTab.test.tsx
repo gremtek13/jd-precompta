@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
-import type { FactureEmise } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
 // légal que le cabinet émet lui-même. Ce que ce test garde et qu'aucun test de `src/lib` ne peut voir,
@@ -75,11 +75,11 @@ function poser(factures: FactureEmise[]) {
   faux.suppressions = []
 }
 
-function monter() {
+function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null) {
   return render(
     <FacturesTab
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
-      dossierAdresse={null} assujettiTva onAdresseUpdated={() => {}}
+      dossierAdresse={null} statutTva={statutTva} articleExoneration={articleExoneration} onAdresseUpdated={() => {}}
     />,
   )
 }
@@ -214,5 +214,24 @@ describe('FacturesTab — la recherche', () => {
     expect(screen.getByText('CENTRE DE SANTÉ')).toBeTruthy()
     expect(screen.queryByText('CLINIQUE DU PARC')).toBeNull()
     screen.getByText('1 sur 2')
+  })
+})
+
+// LA FACTURE NEUVE SUIT LE STATUT DE TVA DU DOSSIER (lib/statutTva.ts, ligne 28.5) : l'onglet le passe au formulaire,
+// qui en tire la mention proposée et le taux d'une ligne neuve. Un statut qui ne lui parviendrait pas ferait proposer
+// à un dossier de soins exonérés une facture sans sa mention d'exonération.
+describe('FacturesTab — la facture neuve reçoit le statut de TVA du dossier', () => {
+  it('un dossier de soins exonérés propose sa mention ; un redevable une ligne à 20 %', async () => {
+    poser([])
+    const { unmount } = monter('exonere', 'cgi_261_4_1')
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle facture' }))
+    expect((document.querySelector('#mentions') as HTMLTextAreaElement).value).toContain('Exonération de TVA, art. 261, 4, 1° du CGI.')
+    unmount()
+
+    poser([])
+    monter('redevable')
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle facture' }))
+    const taux = document.querySelectorAll('tbody tr')[0].querySelectorAll('input')[3] as HTMLInputElement
+    expect(taux.value).toBe('20')
   })
 })
