@@ -7201,8 +7201,12 @@ d'environnement dans la même édition.
   chaque taux, plante six dérives dans la vraie source et garde le câblage — neuf mutations, toutes mordent.
   **L'assistant** lit le statut et l'article, les rend dans `resume_dossier`, compte un statut à préciser dans
   `points_a_traiter` comme la Vue d'ensemble, et sa consigne dit ce que chaque statut emporte.
-  **LES DEUX FONCTIONS SE DÉPLOIENT APRÈS LA FUSION** : leurs refus renvoient à l'onglet TVA, qui doit être en ligne
-  d'abord.
+  **LES DEUX FONCTIONS SONT EN PRODUCTION**, déployées après la fusion — leurs refus renvoient à l'onglet TVA, qui
+  devait être en ligne d'abord : `superpdp-emit` v12 (`verify_jwt` à `true`) et `agent-comptable` v46 (`false`), chacune
+  avec le `verify_jwt` de `config.toml` passé explicitement, la version en place (v11, v45) comparée au dépôt avant
+  écrasement (identique, 443 et 3 191 lignes), et un aller-retour sans différence résiduelle sur 541 et 3 203 lignes.
+  Sans jeton, la passerelle refuse `superpdp-emit` (401) ; sans session, `agent-comptable` rend son propre 401. Aucun
+  appel au modèle ni à Super PDP.
   **Le banc** sert un dossier exonéré pour ses soins, un en franchise et un à préciser : 0 débordement aux quatre
   largeurs de référence et aux combinaisons extrêmes des volets.
   **CE QUI RESTE, dit plutôt que promis** : le statut de chaque dossier non assujetti est à préciser en production — le
