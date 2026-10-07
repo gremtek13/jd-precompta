@@ -115,13 +115,93 @@ function adresseUneLigne(adresse: string | null): string {
   return (adresse ?? "").replace(/\r?\n/g, ", ").trim() || "Adresse non renseignée"
 }
 
+// ── DÉBUT STATUT TVA ────────────────────────────────────────────────────────────────────────────
+// Le statut de TVA du dossier (ligne 28.5, étape a) : la copie de src/lib/statutTva.ts — les exonérations,
+// `motifExoneration` et `refusTauxPositif` —, que superpdpStatutTva.test.ts extrait, transpile et compare à
+// l'original sur chaque statut, chaque article et chaque taux. Une ligne à 0 % partait jusqu'ici avec le
+// motif de la franchise en base quel que soit le dossier, donc un dossier de soins exonérés transmettait à
+// une plateforme agréée une franchise qu'il n'a pas. Un motif faux ne se reprend que par un avoir.
+type StatutTva = "redevable" | "franchise" | "exonere"
+type ArticleExoneration = "cgi_261_4_1" | "cgi_261_4_4_a" | "cgi_261_4_4_b" | "cgi_261_c_2"
+
+// La mention de la facture et le code VATEX de chaque article (BT-120, BT-121). La règle BR-E-10 admet le
+// code OU le texte : seul le TEXTE est transmis, dont le champ est connu.
+const EXONERATIONS: readonly { code: ArticleExoneration; mention: string; vatex: string }[] = [
+  { code: "cgi_261_4_1", mention: "Exonération de TVA, art. 261, 4, 1° du CGI.", vatex: "VATEX-FR-CGI261-4" },
+  { code: "cgi_261_4_4_a", mention: "Exonération de TVA, art. 261, 4, 4° a du CGI.", vatex: "VATEX-FR-CGI261-4" },
+  { code: "cgi_261_4_4_b", mention: "Exonération de TVA, art. 261, 4, 4° b du CGI.", vatex: "VATEX-FR-CGI261-4" },
+  { code: "cgi_261_c_2", mention: "Exonération de TVA, art. 261 C, 2° du CGI.", vatex: "VATEX-FR-CGI261C-2" },
+]
+
+const MENTION_FRANCHISE = "TVA non applicable, art. 293 B du CGI."
+const VATEX_FRANCHISE = "VATEX-FR-FRANCHISE"
+
+function exonerationDe(article: ArticleExoneration | null) {
+  return article == null ? null : EXONERATIONS.find((e) => e.code === article) ?? null
+}
+
+interface MotifExoneration {
+  categorie: "E"
+  code: string
+  texte: string
+}
+
+function motifExoneration(
+  statut: StatutTva | null, article: ArticleExoneration | null,
+): { motif: MotifExoneration; refus: null } | { motif: null; refus: string } {
+  if (statut == null) {
+    return { motif: null, refus: "Le statut de TVA du dossier est à préciser : choisis-le dans l’onglet TVA du dossier avant de transmettre une facture." }
+  }
+  if (statut === "franchise") {
+    return { motif: { categorie: "E", code: VATEX_FRANCHISE, texte: MENTION_FRANCHISE }, refus: null }
+  }
+  const exoneration = exonerationDe(article)
+  if (exoneration) {
+    return { motif: { categorie: "E", code: exoneration.vatex, texte: exoneration.mention }, refus: null }
+  }
+  return {
+    motif: null,
+    refus: statut === "exonere"
+      ? "Le dossier est exonéré sans article d’exonération : choisis-le dans l’onglet TVA du dossier avant de transmettre une facture à 0 %."
+      : "Une ligne à 0 % d’un dossier redevable demande l’article de son exonération : choisis-le dans l’onglet TVA du dossier, ou corrige le taux.",
+  }
+}
+
+function refusTauxPositif(statut: StatutTva | null, taux: number): string | null {
+  if (taux <= 0) return null
+  const tauxLu = `${String(taux).replace(".", ",")}\u00a0%`
+  if (statut === "franchise") {
+    return `Un dossier en franchise en base ne facture pas de TVA : une ligne à ${tauxLu} la rendrait due (art. 283, 3 du CGI). `
+      + "S’il a dépassé les seuils de la franchise, il est redevable : change son statut de TVA."
+  }
+  if (statut === "exonere") {
+    return `Un dossier exonéré ne facture pas de TVA : une ligne à ${tauxLu} la rendrait due (art. 283, 3 du CGI). `
+      + "Si une partie de son activité est taxable, il est redevable, avec l’article de son exonération."
+  }
+  return null
+}
+
+// Ce que le statut permet de transmettre, ligne par ligne, AVANT tout appel à la plateforme : un statut à
+// préciser ne transmet rien ; une ligne taxée d'un dossier qui ne facture pas de TVA se corrige par un avoir ;
+// une ligne à 0 % porte le motif de son statut, ou se refuse quand on ne le connaît pas.
+function motifDeLaFacture(
+  statut: StatutTva | null, article: ArticleExoneration | null, taux: readonly number[],
+): { motif: MotifExoneration | null; refus: null } | { motif: null; refus: string } {
+  if (statut == null) return motifExoneration(null, article)
+  const taxe = taux.map((t) => refusTauxPositif(statut, t)).find((r) => r != null)
+  if (taxe) return { motif: null, refus: taxe }
+  if (!taux.some((t) => t === 0)) return { motif: null, refus: null }
+  return motifExoneration(statut, article)
+}
+// ── FIN STATUT TVA ──────────────────────────────────────────────────────────────────────────────
+
 // Construit la structure EN16931 (voir doc Super PDP "Formats de facture" et les schémas OpenAPI
 // seller/buyer/totals/invoice_line/vat_break_down) à partir d'une facture déjà validée dans l'app.
 // Un avoir (type_code 381) est envoyé en montants positifs, comme la pratique EN16931/XP Z12-012
 // habituelle — c'est le type_code qui porte le sens "note de crédit", pas le signe des montants —
 // alors qu'en base ce dossier stocke ses avoirs en négatif (voir FactureAvoirModal) : on inverse donc
 // le signe ici, uniquement pour cette structure d'échange, jamais en base.
-function construireEnInvoice(facture: FactureRow, lignes: LigneRow[]) {
+function construireEnInvoice(facture: FactureRow, lignes: LigneRow[], motif: MotifExoneration | null) {
   const signe = facture.type === "avoir" ? -1 : 1
   const emetteurSiret = (facture.emetteur_siret ?? "").replace(/\s/g, "")
   const tiersSiret = (facture.tiers_siret ?? "").replace(/\s/g, "")
@@ -161,7 +241,9 @@ function construireEnInvoice(facture: FactureRow, lignes: LigneRow[]) {
     vat_category_rate: taux.toFixed(2),
     vat_category_taxable_amount: base.toFixed(2),
     vat_category_tax_amount: tva.toFixed(2),
-    ...(taux === 0 ? { vat_exemption_reason: "Franchise en base de TVA, art. 293 B du CGI." } : {}),
+    // Le motif de la ligne à 0 % (BT-120) est celui du statut de TVA du dossier : `motifDeLaFacture` refuse la
+    // facture avant d'arriver ici quand on ne le connaît pas, donc une ligne à 0 % a toujours le sien.
+    ...(taux === 0 && motif ? { vat_exemption_reason: motif.texte } : {}),
   }))
 
   return {
@@ -367,7 +449,23 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Cette facture n'a aucune ligne." }, 400)
     }
 
-    const enInvoice = construireEnInvoice(facture, lignes)
+    // Le statut de TVA du dossier décide du motif d'une ligne à 0 % et refuse ce qui ne se transmet pas — un statut à
+    // préciser, une ligne taxée d'un dossier qui ne facture pas de TVA, une ligne à 0 % sans son article —, AVANT la
+    // conversion, la validation et l'envoi. Illisible, il ne se devine pas : la facture ne part pas.
+    const { data: tva, error: tvaError } = await admin
+      .from("dossiers")
+      .select("statut_tva, article_exoneration")
+      .eq("id", dossierId)
+      .single()
+    if (tvaError || !tva) throw new Error(`Statut de TVA du dossier illisible : ${tvaError?.message ?? "dossier introuvable"}.`)
+    const verdict = motifDeLaFacture(
+      tva.statut_tva as StatutTva | null, tva.article_exoneration as ArticleExoneration | null, lignes.map((l) => l.taux_tva))
+    if (verdict.refus) {
+      console.log(`[superpdp-emit] refusée avant envoi : statut de TVA ${tva.statut_tva ?? "à préciser"}`)
+      return json({ error: verdict.refus }, 400)
+    }
+
+    const enInvoice = construireEnInvoice(facture, lignes, verdict.motif)
     console.log(`[superpdp-emit] en_invoice construit : ${JSON.stringify(enInvoice)}`)
 
     // 1. Conversion JSON EN16931 → XML CII (endpoint public, sans authentification).

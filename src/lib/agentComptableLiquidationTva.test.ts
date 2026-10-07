@@ -326,7 +326,7 @@ describe('agent-comptable / points_a_traiter lit les déclarations de TVA', () =
   })
 
   it('lit la périodicité de la TVA du dossier et la passe aux outils', () => {
-    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("[^"]*\btva_periodicite"\)/)
+    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("[^"]*\btva_periodicite\b[^"]*"\)/)
     expect(source).toContain('      tva_periodicite: dossierRow.tva_periodicite,\n')
   })
 
