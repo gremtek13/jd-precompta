@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 91 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 93 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,9 +84,9 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 07/10/2026** : 92 fichiers, 92 migrations, empreinte globale
-`e2ad11b2a6649e2b2839441343ca3457` des deux côtés, aucune divergence — rejoué après
-`commentaire_connexions_plateformes_sources_publiques`, la dernière migration.
+**Vérifié par empreinte le 07/10/2026** : 93 fichiers, 93 migrations, empreinte globale
+`d7cb96347945f493dbcaf0de14f4934b` des deux côtés, aucune divergence — rejoué après
+`mentions_de_la_facture`, la dernière migration.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -119,7 +119,7 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (77 instructions, empreinte `5114d8a30b093fe29bb20e075d6cb1dd` le
-  07/10/2026, rejoué après `commentaire_connexions_plateformes_sources_publiques`, la dernière migration), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  07/10/2026, rejoué après `mentions_de_la_facture`, la dernière migration), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
   Une contrainte ou un index qu'une MIGRATION crée sur une colonne du complément n'en fait pas partie :
   il est dans l'export, au fichier de sa migration, et la génération l'écarte en cherchant son nom dans
@@ -127,7 +127,7 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 071 objets, empreinte `79549b0e8a8947ba9a36f77fb9beaa3f` le 07/10/2026, rejoué après `commentaire_connexions_plateformes_sources_publiques`, la dernière migration). C'est le seul qui voie un
+  (1 102 objets, empreinte `3123cd97891d2281767fcff975ac392a` le 07/10/2026, rejoué après `mentions_de_la_facture`, la dernière migration). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.
