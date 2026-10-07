@@ -90,6 +90,7 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'regles_affectation_bancaire', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'regles_affectation_bancaire', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'regles_bancaires_ignorees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'soldes_reportes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'sous_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'superpdp_credentials', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'supplements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -116,8 +117,9 @@ export const RELATIONS: readonly Relation[] = [
 // `exercices_valides` ferme la marche, et ce n'est pas le tri qui l'y met : son seul parent est le dossier.
 // Réinsérée, une validation fige son exercice — la base refuse alors d'y poser un mouvement, une part, un
 // bien, une ligne du cadre 7, une échéance, un à-nouveau ou une écriture, et ne laisse le super-administrateur
-// réinsérer une écriture DÉJÀ validée que dans un dossier qui n'a encore aucun exercice validé. Posée avant,
-// elle ferait échouer la restauration de tout ce qui la suit. `sauvegarde.test.ts` la garde en dernier.
+// réinsérer une écriture DÉJÀ validée, ou un solde reporté sur l'exercice suivant (ligne 34), que dans un dossier
+// qui n'a encore aucun exercice validé. Posée avant, elle ferait échouer la restauration de tout ce qui la suit.
+// `sauvegarde.test.ts` la garde en dernier.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -145,6 +147,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'references_annuelles',
   'references_postes_annuels',
   'regles_bancaires_ignorees',
+  'soldes_reportes',
   'sous_dossiers',
   'superpdp_credentials',
   'vehicules',
@@ -457,6 +460,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   reglements_groupes: { acces: 'direct' },
   regles_affectation_bancaire: { acces: 'direct' },
   regles_bancaires_ignorees: { acces: 'direct' },
+  soldes_reportes: { acces: 'direct' },
   sous_dossiers: { acces: 'direct' },
   superpdp_credentials: { acces: 'direct' },
   supplements: { acces: 'direct' },
