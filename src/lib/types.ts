@@ -1,6 +1,9 @@
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
-export type Source = 'upload' | 'email' | 'superpdp'
+// D'où vient une pièce : un dépôt (cabinet ou client), un e-mail reçu, l'ancienne synchronisation de Super PDP,
+// ou la plateforme agréée du client (API AFNOR XP Z12-013, ligne 28.5) — toujours avec son flux (flux_hote,
+// flux_id), une contrainte en base l'impose. Un client ne dépose que 'upload' : la policy le lui impose.
+export type Source = 'upload' | 'email' | 'superpdp' | 'plateforme'
 
 export interface Dossier {
   id: string
@@ -333,6 +336,14 @@ export interface Piece {
   // sert à la déduplication (voir la migration) et à savoir qu'une pièce vient de la facturation
   // électronique plutôt que d'un dépôt (voir source).
   superpdp_invoice_id: number | null
+  // Le flux d'une facture reçue de la plateforme agréée du client : l'hôte de la plateforme et l'identifiant
+  // qu'elle donne au flux (flowId). Tous deux non nuls si et seulement si la source est 'plateforme' ; ensemble
+  // dans un dossier, ils dédoublonnent une facture reçue deux fois (contrainte unique en base).
+  flux_hote: string | null
+  flux_id: string | null
+  // La version lisible (PDF) d'une facture reçue en XML, telle que la plateforme la rend. L'original reste dans
+  // storage_path : c'est lui que l'empreinte prouve. Nulle quand l'original se lit déjà.
+  lisible_path: string | null
   created_at: string
   updated_at: string
 }

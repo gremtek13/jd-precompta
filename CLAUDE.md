@@ -343,6 +343,10 @@ supabase/
                   déduit pour les écrivains qui ne connaissent que le booléen, ce que les contraintes refusent seules —,
                   par impersonation des trois profils dans un dossier jetable, à rejouer après toute migration qui
                   touche ces trois colonnes ou le déclencheur.
+                  receptionPlateforme.sql : la connexion d'un dossier à la plateforme agréée de son client
+                  (connexions_plateformes, fermée au navigateur), le flux d'une pièce reçue (flux_hote, flux_id),
+                  sa version lisible et ce qu'un client peut encore déposer (la policy d'insertion des pièces), par
+                  impersonation des trois profils, à rejouer après toute migration qui touche l'un d'eux.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -8008,8 +8012,12 @@ d'environnement dans la même édition.
   et rien ne le rejouait. Les **onze upserts** de `src/` et des Edge Functions ont été croisés avec
   les index uniques RÉELS de `pg_index` : tous désignent un index qui existe — et les deux qui
   n'écrivent aucun `onConflict` (`superpdp_credentials`, et `previsionnels_bancaires` avant qu'il ne
-  le porte) retombent sur une clé primaire que leur payload renseigne. **Aucun index unique du
-  schéma n'est partiel**, donc le piège de cette entrée n'a aujourd'hui aucune instance vivante. Et
+  le porte) retombent sur une clé primaire que leur payload renseigne. Il était écrit ici qu'**aucun
+  index unique du schéma n'est partiel** : c'était faux, relu dans `pg_index` le 07/10/2026 — trois le
+  sont (`factures_emises_numero_dossier_idx`, `immobilisations_piece_unique`,
+  `pieces_superpdp_invoice_id_dossier_idx`), et AUCUN upsert ne les vise, ce qui suffit : le piège de
+  cette entrée n'a aujourd'hui aucune instance vivante. Une contrainte unique nouvelle reste TOTALE
+  (`pieces_flux_unique`, 07/10/2026), pour qu'un import puisse la viser. Et
   le cas historique est refermé des DEUX côtés : `cabinet_id` figure bien dans le payload de
   `PieceFormModal` comme de `CategoriserTiersModal`.
   **CE MOTIF NE DEVIENT PAS UN SCANNER, et c'est dit plutôt que laissé deviner** : ce qui l'avait

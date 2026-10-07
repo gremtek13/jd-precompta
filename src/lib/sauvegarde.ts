@@ -31,6 +31,7 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'comptes_courants_associes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'connexions_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'connexions_plateformes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'controles_releves_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cotisations_declarees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'declarations_tva', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -131,6 +132,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'categories',
   'comptes_courants_associes',
   'connexions_bancaires',
+  'connexions_plateformes',
   'controles_releves_bancaires',
   'cotisations_declarees',
   'declarations_tva',
@@ -276,27 +278,28 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
   return perdus
 }
 
-// Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026 — et celle d'`exercices_valides`
-// (le dossier et l'année) à sa création, le 04/10/2026.
+// Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026 — et celles d'`exercices_valides`
+// (le dossier et l'année) à sa création, le 04/10/2026, et de `connexions_plateformes` (le dossier) le 07/10/2026.
 //
 // Pourquoi les inscrire : deux mécanismes en dépendent, et tous deux échouaient dessus.
 //
 // La pagination d'abord. Lire une table par tranches sans ORDER BY laisse Postgres rendre les lignes
 // dans l'ordre qui l'arrange, et il peut changer d'une tranche à l'autre : on récupère alors des
 // doublons et des trous, sans la moindre erreur. Il faut donc trier sur un ordre TOTAL, c'est-à-dire
-// sur la clé primaire — et trier sur `id` casserait franchement ici, ces sept tables n'ayant pas même
+// sur la clé primaire — et trier sur `id` casserait franchement ici, ces huit tables n'ayant pas même
 // de colonne `id`.
 //
 // L'identité d'une ligne ensuite : savoir si une ligne existe déjà dans la base d'arrivée, ce dont
 // dépend la réinsertion des lignes partagées, ne peut se lire que sur sa vraie clé.
 //
-// Quatre de ces sept sont dans le plan d'export d'un dossier : `exercices_valides`, `facture_numerotation`,
-// `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites par nature — une ligne par
+// Cinq de ces huit sont dans le plan d'export d'un dossier : `connexions_plateformes`, `exercices_valides`,
+// `facture_numerotation`, `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites par nature — une ligne par
 // dossier, ou par exercice — donc la pagination ne s'y déclenchera jamais en pratique. Ce n'est pas
 // une raison de les traiter à part : un mécanisme dont la justesse dépend de la petitesse des données
 // est un mécanisme qui tombera le jour où elles grandissent.
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
+  connexions_plateformes: ['dossier_id'],
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   previsionnels_bancaires: ['dossier_id'],
@@ -432,6 +435,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   agent_conversations: { acces: 'direct' },
   comptes_courants_associes: { acces: 'direct' },
   connexions_bancaires: { acces: 'direct' },
+  connexions_plateformes: { acces: 'direct' },
   controles_releves_bancaires: { acces: 'direct' },
   cotisations_declarees: { acces: 'direct' },
   declarations_tva: { acces: 'direct' },
