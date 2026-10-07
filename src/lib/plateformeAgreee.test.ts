@@ -1010,9 +1010,9 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     expect(GESTIONNAIRE).toMatch(/if \(!aAcces\) return json\(\{ error: "Dossier introuvable\." \}, 404\)/)
   })
 
-  it('« statut », « retirer » et « enregistrer » ne parlent pas à la plateforme ; « statut » ne rend que la vue publique', () => {
+  it('« statut », « retirer », « enregistrer », « retenir » et « repartir » ne parlent pas à la plateforme ; « statut » ne rend que la vue publique', () => {
     const premierAppel = GESTIONNAIRE.indexOf('clientPlateforme(')
-    for (const action of ['statut', 'retirer', 'enregistrer', 'retenir']) {
+    for (const action of ['statut', 'retirer', 'enregistrer', 'retenir', 'repartir']) {
       const branche = brancheDe(action)
       expect(branche, action).not.toMatch(/plateforme\.|clientPlateforme\(|fetch\(/)
       expect(GESTIONNAIRE.indexOf(branche), action).toBeLessThan(premierAppel)
@@ -1027,12 +1027,26 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
   })
 
   it('une configuration modifiée entre la liste et l’import refuse le téléchargement et le point de reprise', () => {
-    const controle = GESTIONNAIRE.indexOf('const versionPerimee = (action === "telecharger" || action === "retenir") && payload.version !== connexion.updated_at')
+    const controle = GESTIONNAIRE.indexOf(
+      'const versionPerimee = (action === "telecharger" || action === "retenir" || action === "repartir") &&\n' +
+      '    payload.version !== connexion.updated_at')
     expect(controle).toBeGreaterThan(-1)
     expect(GESTIONNAIRE.indexOf('if (action === "retenir") {')).toBeGreaterThan(controle)
+    expect(GESTIONNAIRE.indexOf('if (action === "repartir") {')).toBeGreaterThan(controle)
     expect(GESTIONNAIRE.indexOf('plateforme.fichier(')).toBeGreaterThan(controle)
     // Et le point de reprise ne s'écrit que sur la configuration lue.
     expect(brancheDe('retenir')).toContain('.eq("dossier_id", dossierId).eq("updated_at", connexion.updated_at)')
+    expect(brancheDe('repartir')).toContain('.eq("dossier_id", dossierId).eq("updated_at", connexion.updated_at)')
+  })
+
+  it('« repartir » ne remet au début que le point de reprise, et le dit quand la connexion a changé', () => {
+    const branche = brancheDe('repartir')
+    // Seul ce champ change : ni la date de la dernière récupération, ni la version de la connexion — repartir n'est pas
+    // une autre configuration, et une liste en cours resterait valable pour l'import.
+    expect(branche).toContain('.update({ recherche_depuis: null })')
+    expect(branche).not.toMatch(/updated_at:|derniere_recuperation/)
+    expect(branche).toContain('if (!data) return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)')
+    expect(branche).toMatch(/if \(error\) return json\(/)
   })
 
   it('une autre plateforme, une autre identité ou une autre entreprise remet la recherche au début', () => {

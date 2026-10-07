@@ -83,6 +83,9 @@ interface MontantsLus {
   // l'aiguillage des pièces. Le texte OCR arrive déjà jusqu'ici ; la règle reste donc à un seul
   // endroit, testé (voir lib/devises.ts).
   texte_ocr?: string | null
+  // La devise qu'une facture électronique ÉCRIT (BT-5, un code ISO 4217 : voir lib/factureElectronique.ts). Elle
+  // l'emporte sur celle qu'on reconnaît dans un texte, qui n'est qu'un indice.
+  devise?: string | null
 }
 
 // Prépare les champs monétaires d'une pièce à partir de ce que l'extraction a lu : convertit en euros
@@ -99,7 +102,7 @@ interface MontantsLus {
 // nuls rend la pièce visiblement incomplète, impossible à valider (le TTC est obligatoire) et
 // signalée par le contrôle dédié (voir lib/controles.ts).
 export async function montantsPourPiece(lus: MontantsLus, datePiece: string | null): Promise<MontantsPourPiece> {
-  const devise = (deviseDuTexte(lus.texte_ocr) ?? DEVISE_PIVOT).toUpperCase()
+  const devise = (lus.devise ?? deviseDuTexte(lus.texte_ocr) ?? DEVISE_PIVOT).toUpperCase()
   const montants = {
     montant_ht: lus.montant_ht ?? null,
     montant_tva: lus.montant_tva ?? null,
