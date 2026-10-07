@@ -213,7 +213,7 @@ describe('ImmobilisationsTab — la valeur d’un bien qui ne suit plus sa factu
     date_piece: '2025-07-01', tiers: 'MATÉRIEL INFORMATIQUE', montant_ht: 10000, montant_tva: 2000,
     montant_ttc: 12000, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     created_at: '2025-07-01T09:00:00Z', updated_at: '2025-07-01T09:00:00Z',
   }
 
@@ -730,7 +730,7 @@ describe('ImmobilisationsTab — enregistrer une candidate', () => {
     date_piece: '2025-04-02', tiers: 'MATÉRIEL MÉDICAL', montant_ht: 1500, montant_tva: 300,
     montant_ttc: 1800, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z',
   }
 
@@ -830,7 +830,7 @@ describe('ImmobilisationsTab — ce qu’un exercice validé a figé', () => {
     date_piece: '2025-04-02', tiers: 'MATÉRIEL MÉDICAL', montant_ht: 1500, montant_tva: 300,
     montant_ttc: 1800, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z', ...o,
   })
 

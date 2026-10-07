@@ -99,7 +99,7 @@ function piece(id: string, date: string, tiers: string, ttc: number, tva: number
     storage_hash: null, date_piece: date, tiers, montant_ht: Math.round((ttc - tva) * 100) / 100, montant_tva: tva,
     montant_ttc: ttc, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
     categorie_id: categorie, sous_dossier_id: null, type_piece: 'achat', statut, notes: null, confiance: 'haute',
-    superpdp_invoice_id: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
+    superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
   }
 }
 
@@ -198,7 +198,7 @@ function pieceTva(id: string, date: string, tiers: string, ht: number, tva: numb
     storage_hash: null, date_piece: date, tiers, montant_ht: ht, montant_tva: tva, montant_ttc: Math.round((ht + tva) * 100) / 100,
     devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null,
     sous_dossier_id: null, type_piece: type, statut: 'validee', notes: null, confiance: 'haute',
-    superpdp_invoice_id: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
+    superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
   }
 }
 

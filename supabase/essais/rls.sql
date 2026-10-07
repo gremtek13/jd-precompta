@@ -65,6 +65,14 @@
 -- Les sections 4 à 6 et les mutations n'ont pas été relancées : ces migrations n'ajoutent que des
 -- policies de LECTURE et de restauration sur une table nouvelle, et la table des verdicts a été créée
 -- `on commit drop`, sans le `drop table` qui suit.
+--
+-- 07/10/2026 — après `reception_par_plateforme_agreee`, qui crée `connexions_plateformes` (RLS sans
+-- aucune policy) et RESTREINT la policy d'insertion des pièces pour un client : les invariants 1 à 3
+-- seuls, rejoués de la même façon sur les 51 tables du schéma (43 portant un `dossier_id`), nouvelle
+-- table comprise — 0 en faute ; sans le changement de rôle, 29, 26 et 13 tables virent au rouge. Ce que
+-- la migration change à l'écriture — un client ne dépose plus qu'une pièce « à valider », sans catégorie,
+-- à son nom, sans provenance de plateforme — est éprouvé par `receptionPlateforme.sql` (40 contrôles), et
+-- non par les sections 4 à 6, qui ne testent aucune insertion de pièce.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

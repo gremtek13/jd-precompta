@@ -48,10 +48,11 @@ même jour.
 Il contient, en clair, le texte OCR intégral des pièces (`piece_textes_ocr`), qui sur les dossiers de
 santé porte des noms de patients, des dates de naissance et des numéros de sécurité sociale.
 
-Il ne contient PAS le `client_secret` OAuth Super PDP (`superpdp_credentials`) ni la connexion
-bancaire (`connexions_bancaires`), contrairement à ce que ce paragraphe affirmait jusqu'au 30/09/2026 :
-la sauvegarde se lit avec la session du navigateur, et ces deux tables n'ont AUCUNE policy — seules
-leurs Edge Functions les atteignent. Elles en sortent donc vides, et c'est voulu (voir le §3).
+Il ne contient PAS le `client_secret` OAuth Super PDP (`superpdp_credentials`), la connexion
+bancaire (`connexions_bancaires`) ni la connexion à la plateforme agréée du client
+(`connexions_plateformes`, depuis le 07/10/2026), contrairement à ce que ce paragraphe affirmait jusqu'au
+30/09/2026 : la sauvegarde se lit avec la session du navigateur, et ces trois tables n'ont AUCUNE policy —
+seules leurs Edge Functions les atteignent. Elles en sortent donc vides, et c'est voulu (voir le §3).
 
 Il se range comme on rangerait un dossier papier de ces mêmes clients. Jamais dans un dépôt Git,
 jamais en pièce jointe d'un courriel ordinaire, jamais sur un service de partage grand public.
@@ -120,15 +121,19 @@ découvre avant.
    `extract-piece` exige elle aussi un compte rattaché ; mais c'est une porte que rien d'autre ne
    ferme. **Sur le projet actuel, elle était encore ouverte le 26/09/2026** (lu sur
    `/auth/v1/settings`, `disable_signup: false`) : ce point vaut aussi hors reprise.
-7. **Les identifiants Super PDP et les connexions bancaires des dossiers.** Leurs tables
-   (`superpdp_credentials`, `connexions_bancaires`) n'ont aucune policy : la sauvegarde, lue avec la
-   session du navigateur, en rend zéro ligne — 2 identifiants Super PDP en base au 30/09/2026, et aucune
-   policy qui laisse le navigateur les lire. Un dossier restauré a donc perdu les deux : le
-   `client_secret` Super PDP se ressaisit (« Facturation électronique — Super PDP », onglet
-   Justificatifs), et la banque se reconnecte (onglet Banque) — ce
+7. **Les identifiants Super PDP, les connexions bancaires et les connexions aux plateformes agréées des
+   dossiers.** Leurs tables (`superpdp_credentials`, `connexions_bancaires`, `connexions_plateformes`)
+   n'ont aucune policy : la sauvegarde, lue avec la session du navigateur, en rend zéro ligne — 2
+   identifiants Super PDP en base au 30/09/2026, et aucune policy qui laisse le navigateur les lire. Un
+   dossier restauré a donc perdu les trois : le `client_secret` Super PDP se ressaisit (« Facturation
+   électronique — Super PDP », onglet Justificatifs), la banque se reconnecte (onglet Banque) — ce
    que seul le titulaire du compte peut faire, son consentement étant de toute façon lié à la session
-   perdue. Les mouvements déjà importés, eux, sont dans la sauvegarde : leur identifiant externe
-   dédoublonne ce que la nouvelle connexion récupère une seconde fois.
+   perdue —, et l'identifiant et le secret que l'entreprise a ouverts au cabinet sur sa plateforme agréée
+   se ressaisissent (onglet Justificatifs), ou se redemandent à l'entreprise. Les mouvements et les
+   factures déjà importés, eux, sont dans la sauvegarde : l'identifiant externe d'un mouvement et le flux
+   d'une facture (`flux_hote`, `flux_id`) dédoublonnent ce que la nouvelle connexion récupère une seconde
+   fois. Seul le point d'où repart la recherche des factures est perdu : la première recherche repart du
+   début, et ne réimporte rien de ce qui est déjà là.
 8. **L'application enregistrée chez Enable Banking** (connexion bancaire, bac à sable au 30/09/2026) :
    sa clé publique et son adresse de retour, `https://compta.jdarnis.fr/retour-banque.html`, vivent dans
    le panneau de contrôle d'Enable Banking, pas dans ce dépôt. Un projet Supabase recréé ne change rien

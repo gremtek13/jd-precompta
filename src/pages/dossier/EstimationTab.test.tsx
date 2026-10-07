@@ -97,7 +97,7 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
     date_piece: '2025-03-01', tiers: 'Bailleur', montant_ht: 1000, montant_tva: null,
     montant_ttc: 1200, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: 'cat-loyer', sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
     created_at: '2025-03-01T09:00:00Z', updated_at: '2025-03-01T09:00:00Z', ...o,
   }
 }
