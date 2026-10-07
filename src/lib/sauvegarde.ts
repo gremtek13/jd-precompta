@@ -182,6 +182,14 @@ export const ORDRE_RESTAURATION: readonly string[] = [
 // La restauration doit donc se faire en deux temps sur ces tables : insérer toutes les lignes avec la
 // colonne auto-référencée à NULL, puis la renseigner par une seconde passe. Aucun ordre de tables,
 // aussi juste soit-il, ne peut éviter ça.
+//
+// Et la base ne laisse faire ces deux temps que par UNE porte (migration factures_validees_figees,
+// 07/10/2026) : une facture validée ne s'insère, avec ses lignes, que par le super-administrateur dans
+// un dossier qui n'a jamais validé de facture — donc sans compteur de numérotation, que la sauvegarde
+// n'emporte pas (`facture_numerotation` n'a aucune policy : sa lecture rend zéro ligne). Le second
+// passage ne peut que poser ce lien, sur un avoir qui n'en a pas encore. La première facture validée
+// ensuite pose le compteur, reprend la suite du plus haut numéro restauré et referme la porte.
+// facturesFigees.test.ts garde que ce lien est le seul de cette table.
 export const TABLES_AUTO_REFERENCEES: readonly { table: string; colonne: string }[] = [
   { table: 'factures_emises', colonne: 'facture_origine_id' },
 ]

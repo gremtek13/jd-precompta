@@ -142,6 +142,15 @@ découvre avant.
    (`banque-connexion`) et dans `public/` — trois endroits qu'un test confronte entre eux
    (`banqueConnexion.test.ts`), sauf le premier. Oubliée, la fonction refuse la connexion en le disant
    (« L'adresse de retour … n'est pas déclarée ») plutôt que de renvoyer le titulaire sur une page 404.
+9. **Le compteur de numérotation des factures** (`facture_numerotation`). Sa table n'a aucune policy :
+   la sauvegarde en rend zéro ligne, et un dossier restauré n'a plus de compteur. **Il n'est pas à
+   recréer** : depuis le 07/10/2026 (migration `factures_validees_figees`), la numérotation reprend du
+   plus haut numéro déjà émis de chaque série et de chaque année, donc la première facture validée dans
+   le dossier restauré prend le numéro qui suit les factures restaurées. Avant, elle prenait le numéro 1
+   de l'année, déjà émis, et chaque validation était refusée jusqu'à ce qu'on répare le compteur à la
+   main. Les factures validées, elles, se restaurent par une porte et une seule : le super-administrateur,
+   dans un dossier qui n'a jamais validé de facture — la première validation la referme. Restaurer se
+   fait donc dans un dossier recréé, jamais par-dessus un dossier qui facture encore.
 
 ### Les variables d'environnement, une par une
 

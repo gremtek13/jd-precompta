@@ -355,9 +355,12 @@ supabase/
                   factures.sql : l'enregistrement d'une facture et d'un avoir (enregistrer_facture) — qui enregistre,
                   les mentions de la facture électronique et ce que leurs contraintes refusent, une clé absente qui
                   garde la valeur en place, l'option pour les débits figée à la validation, l'avoir d'un seul tenant
-                  et ses refus —, par impersonation des trois profils dans des dossiers jetables, à rejouer après
-                  toute migration qui touche factures_emises, facture_lignes ou la fonction. Il se joue en UNE
-                  transaction (`psql -1` hors de l'outil d'exécution).
+                  et ses refus, la facture validée figée par ses déclencheurs, la numérotation fermée aux appels
+                  directs et sa reprise après une restauration —, par impersonation des trois profils dans des
+                  dossiers jetables, à rejouer après toute migration qui touche factures_emises, facture_lignes, leurs
+                  déclencheurs, la numérotation ou la fonction. Il se joue en UNE transaction (`psql -1` hors de
+                  l'outil d'exécution). Il ne porte aucune suppression : ce qu'une suppression rencontre se joue sur
+                  une réplique locale du schéma.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -521,7 +524,11 @@ outils/facturation/  valider.mjs : fait passer les factures électroniques d'exe
   (SIRET, adresse) sont un instantané au moment de la validation et ne sont
   jamais recalculés rétroactivement si le dossier change ensuite. Pour
   corriger une facture déjà validée, on émet un avoir puis une nouvelle
-  facture — jamais une modification en place.
+  facture — jamais une modification en place. Depuis le 07/10/2026 c'est la
+  BASE qui le garantit, et non plus le seul écran : une facture validée et ses
+  lignes ne se modifient ni ne se suppriment par aucun appel, et seuls
+  l'adresse d'envoi et le suivi de Super PDP s'écrivent après coup (voir « une
+  facture validée se fige en base » dans « Problèmes connus »).
 - **Détection de doublons par hash de contenu** (SHA-256 du fichier, pas du
   nom) avant tout dépôt de pièce/document, pour repérer un même fichier
   déposé deux fois. **Elle a un angle mort, par construction** : deux EXPORTS
@@ -1612,9 +1619,9 @@ outils/facturation/  valider.mjs : fait passer les factures électroniques d'exe
   statut de TVA du dossier, est livrée (07/10/2026), et l'étape (b), la réception par la plateforme du client, aussi
   (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. L'étape (c), l'émission
   conforme et ses nouvelles mentions, avance : les mentions de la facture en base et l'avoir d'un seul tenant sont en
-  ligne (07/10/2026), et le générateur de la facture électronique est écrit, jugé par le validateur officiel de la norme
-  (07/10/2026) ; restent son dépôt, l'écran qui saisit les mentions et figer en base une facture validée. Restent
-  ensuite (d) le statut « Encaissée » et (e) l'e-reporting.
+  ligne (07/10/2026), le générateur de la facture électronique est écrit, jugé par le validateur officiel de la norme
+  (07/10/2026), et une facture validée se fige en base, sa numérotation fermée aux appels directs (07/10/2026) ; restent
+  son dépôt et l'écran qui saisit les mentions. Restent ensuite (d) le statut « Encaissée » et (e) l'e-reporting.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -1691,22 +1698,25 @@ d'environnement dans la même édition.
     Authentication → Providers → Email (8 caractères minimum, chiffres +
     minuscules + majuscules + symboles).
   - `anon_security_definer_function_executable` et
-    `authenticated_security_definer_function_executable` (WARN, 6 et 8 fonctions) — **vérifiés
-    bénins, par impersonation réelle et non par relecture.** Toutes les fonctions `SECURITY DEFINER`
-    du schéma sont exposées en RPC, ce que l'advisor signale à juste titre ; encore faut-il savoir ce
-    qu'elles font sans session. Deux seulement ÉCRIVENT (`enregistrer_facture`,
-    `prochain_numero_facture`) et toutes deux portent leur propre contrôle d'accès — c'est la
-    convention du projet sur les fonctions `SECURITY DEFINER`, et elle tient. Les autres sont des
-    lectures qui dépendent de `auth.uid()` : sans session elles rendent `false` ou `null`.
-    `set_cabinet_id_dossier` n'est pas exposée du tout (fonction de trigger, `EXECUTE` refusé à
-    `anon` comme à `authenticated`).
-    Le cas qui méritait la vérification est `prochain_numero_facture` : malgré son nom elle
-    **consomme** un numéro (upsert +1), et un appel anonyme réussi aurait creusé un trou dans une
-    suite annuelle qui n'en admet pas. Éprouvé sur le dossier réel — `anon` et un client authentifié
-    non-admin se font tous deux refuser, et `facture_numerotation` reste à 6. Ne pas repartir en
-    chasse à chaque audit : ce qui rendrait ces avertissements dangereux, c'est qu'une NOUVELLE
-    fonction `SECURITY DEFINER` écrive sans contrôle d'accès interne. C'est cela qu'il faut
-    revérifier, pas l'advisor lui-même.
+    `authenticated_security_definer_function_executable` (WARN, 5 et 7 fonctions au 07/10/2026) —
+    **vérifiés bénins, par impersonation réelle et non par relecture.** Les fonctions `SECURITY DEFINER`
+    du schéma qu'un rôle peut exécuter sont exposées en RPC, ce que l'advisor signale à juste titre ;
+    encore faut-il savoir ce qu'elles font. Deux seulement ÉCRIVENT, toutes deux réservées aux comptes
+    connectés et portant leur propre contrôle d'accès : `enregistrer_facture` (`admin_du_dossier`) et
+    `valider_exercice` (le chef du cabinet) — c'est la convention du projet sur les fonctions
+    `SECURITY DEFINER`, et elle tient. Les cinq autres sont des lectures qui dépendent de `auth.uid()` :
+    sans session elles rendent `false` ou `null`. `set_cabinet_id_dossier` n'est pas exposée du tout
+    (fonction de trigger, `EXECUTE` refusé à `anon` comme à `authenticated`).
+    Le cas qui méritait la vérification était `prochain_numero_facture` : malgré son nom elle
+    **consomme** un numéro (upsert +1), et un appel réussi creuse un trou dans une suite annuelle qui
+    n'en admet pas. Éprouvée d'abord pour l'anonyme et le client, elle laissait pourtant le CHEF
+    consommer un numéro sans la facture qu'il désigne. **Depuis le 07/10/2026 (migration
+    `factures_validees_figees`), plus aucun rôle ne l'exécute, ni `attribuer_numero_facture`** : seule
+    `enregistrer_facture`, qui appartient au propriétaire de la base, prend un numéro, dans la
+    transaction qui valide — rejoué par `rls.sql` (contrôles 5 et 5bis, mutations M5 à M5quater) et
+    `factures.sql`. Les deux ont donc quitté ces listes. Ne pas repartir en chasse à chaque audit : ce
+    qui rendrait ces avertissements dangereux, c'est qu'une NOUVELLE fonction `SECURITY DEFINER` écrive
+    sans contrôle d'accès interne. C'est cela qu'il faut revérifier, pas l'advisor lui-même.
   - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`,
     `facture_numerotation`, `connexions_bancaires` et `connexions_plateformes` — **volontaire.** RLS
     activée sans aucune policy vaut refus total côté client : ces tables ne sont atteintes que par les
@@ -7414,11 +7424,11 @@ d'environnement dans la même édition.
   identifiant de routage, deux bornes qui se doublent pour un identifiant trop long — chacune retirée seule laisse
   l'autre refuser. Trente-neuf mutations de l'application, trente-huit mordent ; la survivante est le refus répété dans
   le gestionnaire de l'avoir, derrière un bouton déjà grisé.
-  **CE QUI RESTE, dit plutôt que promis** : figer en base une facture validée (étape c, premier temps bis — aujourd'hui
-  seul l'écran refuse de la modifier), son dépôt par la plateforme du client et les nouvelles mentions de `superpdp-emit`
-  (troisième temps), et l'écran qui saisit les mentions (quatrième) ; le générateur de la facture électronique (deuxième)
-  est fait, voir l'entrée suivante. Une facture validée avant cette migration garde ses mentions nulles : elle se
-  corrige par un avoir, jamais en place.
+  **CE QUI RESTE, dit plutôt que promis** : son dépôt par la plateforme du client et les nouvelles mentions de
+  `superpdp-emit` (troisième temps), et l'écran qui saisit les mentions (quatrième) ; le générateur de la facture
+  électronique (deuxième) est fait, et la facture validée se fige en base depuis le même jour — voir les deux entrées
+  suivantes. Une facture validée avant cette migration garde ses mentions nulles : elle se corrige par un avoir, jamais
+  en place.
 - **LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII, ET LE VALIDATEUR OFFICIEL DE LA NORME LA JUGE — LIGNE 28.5, ÉTAPE (C), DEUXIÈME
   TEMPS** (07/10/2026, `lib/factureCii.ts`, `lib/montantsFacture.ts`, `outils/facturation/valider.mjs`). Un module PUR
   écrit une facture validée de l'application dans la syntaxe CII de la norme EN 16931 (profil `urn:cen.eu:en16931:2017`),
@@ -7493,10 +7503,82 @@ d'environnement dans la même édition.
   bornées.
   **CE QUI RESTE, dit plutôt que promis** : le dépôt par la plateforme du client et les nouvelles mentions de
   `superpdp-emit`, dont le numéro de TVA du vendeur sur une facture sans TVA (G1.47) et l'arrondi symétrique d'une ligne
-  négative (étape c, troisième temps) ; l'écran qui saisit les mentions et l'aperçu qui les imprime (quatrième) ; figer en
-  base une facture validée. Et une question au cabinet : un dossier en franchise ou exonéré a-t-il un numéro de TVA ? La
+  négative (étape c, troisième temps) ; l'écran qui saisit les mentions et l'aperçu qui les imprime (quatrième). Figer en
+  base une facture validée est fait, voir l'entrée suivante. Et une question au cabinet : un dossier en franchise ou
+  exonéré a-t-il un numéro de TVA ? La
   règle G1.47 l'exige sur une facture exonérée, et la DGFiP admet pour la franchise un code « Z » que le module n'emploie
   pas encore ; sans numéro, la facture d'un tel dossier est refusée, et l'écran le dit.
+- **UNE FACTURE VALIDÉE SE FIGE EN BASE, ET SA NUMÉROTATION NE S'APPELLE PLUS — LIGNE 28.5, ÉTAPE (C), PREMIER TEMPS,
+  SECONDE MIGRATION** (07/10/2026, migration `factures_validees_figees`). Une facture émise ne se modifie ni ne se
+  supprime : une erreur se corrige par un avoir qui la cite, et sa numérotation est une séquence chronologique et
+  continue, sans trou ni doublon (CGI, ann. II, art. 242 nonies A). L'application le respectait, la BASE non : les
+  policies `factures_emises_all` et `facture_lignes_all` ouvrent les deux tables entières à qui administre le dossier.
+  Un appel direct à l'API pouvait donc changer le montant d'une facture validée, la supprimer, réécrire ses lignes, en
+  poser une « validée » au numéro de son choix, ou glisser un avoir en brouillon qu'`enregistrer_facture` aurait validé
+  ensuite par son chemin ordinaire, sans aucune des règles de l'avoir. Et les deux fonctions de numérotation, que
+  `rls.sql` éprouvait pour l'anonyme et le client, laissaient le CHEF consommer un numéro sans la facture qu'il désigne,
+  donc creuser un trou dans la suite.
+  **CE QUE LA BASE TIENT DÉSORMAIS** :
+  - deux déclencheurs, sur l'insertion, la modification et la suppression : `factures_emises_figees` — une facture
+    validée ne se modifie plus, sauf l'adresse à laquelle `send-email` l'a envoyée et ce que Super PDP en dit
+    (`v_modifiables`), ne se supprime plus sauf avec son dossier entier, ne devient « validée » que par
+    `enregistrer_facture` sous le réglage `jd.validation_facture` qui annonce CETTE facture, ne naît pas validée, ne
+    change pas de dossier, et un brouillon ne devient pas un avoir — et `facture_lignes_figees`, ses lignes avec elle ;
+  - une contrainte DIFFÉRÉE, `factures_emises_avoir_sans_brouillon` : un avoir n'a pas de brouillon, vérifié à la fin
+    de la transaction, où l'avoir de la fonction est déjà validé et celui d'un appel direct ne l'est pas — le premier
+    déclencheur de contrainte du schéma, qui se compte aussi parmi les contraintes (`pg_constraint`, type `t`) :
+    `inventaire.py` le sait depuis ;
+  - six contraintes de ligne, chacune refusant par son NOM : un numéro et une date de validation si et seulement si la
+    facture est validée, le numéro de sa série (F ou A) et de l'année de son émission, des montants au centime, le TTC
+    qui fait la somme du HT et de la TVA (BR-CO-15), pas de facture d'origine sur une facture ;
+  - la numérotation fermée : `prochain_numero_facture` et `attribuer_numero_facture` ne s'exécutent plus par aucun rôle,
+    le chef compris. Seule `enregistrer_facture`, qui appartient au propriétaire de la base, prend un numéro, dans la
+    transaction qui valide — l'avoir passe par elle depuis l'étape (c), premier temps.
+  **ET DEUX DÉFAUTS DE LA NUMÉROTATION, TROUVÉS EN L'ÉCRIVANT** : le dix-millième numéro d'une année s'écrivait
+  « F2026-1000 », celui d'une facture déjà émise — `lpad(…, 4, '0')` TRONQUE une chaîne plus longue —, et l'index unique
+  refusait alors chaque validation de l'année ; il garde désormais ses cinq chiffres. Et le compteur
+  (`facture_numerotation`) n'a aucune policy, donc une sauvegarde, lue avec la session du navigateur, en rend zéro
+  ligne : un dossier restauré repartait du numéro 1 de l'année, déjà émis, et chaque validation était refusée jusqu'à ce
+  que quelqu'un répare le compteur à la main. La numérotation REPREND désormais du plus haut numéro émis de la série
+  quand le compteur manque ou retarde, sans jamais reculer — un numéro consommé sans facture reste un trou, il n'est
+  pas réattribué. La ligne de la série est verrouillée avant d'être lue : deux validations concurrentes se suivent, et
+  la seconde voit le numéro de la première. **Le verrou est porteur, et c'est mesuré** : deux sessions sur la réplique,
+  un délai injecté entre la lecture et l'écriture — sans le verrou, la seconde validation échoue sur l'index unique
+  (23505) ; avec lui, elle prend le numéro suivant.
+  **LA PORTE DE LA RESTAURATION** (`restauration_des_factures`) : la restauration d'une sauvegarde réinsère des factures
+  validées et leurs lignes, puis repose en second passage le lien d'un avoir vers sa facture. Elle passe par une porte,
+  et une seule — le super-administrateur, dans un dossier qui n'a jamais validé de facture, donc sans compteur ; sa
+  première validation pose le compteur et la referme. Le second passage ne repose que ce lien, sur un avoir qui n'en a
+  pas encore. **CE QU'ELLE NE COUVRE PAS, dit plutôt que promis** : sur ce projet le super-administrateur est aussi le
+  chef du cabinet, et un appel direct de sa part peut encore poser une facture validée dans un dossier qui n'en a jamais
+  validé — la limite qu'a déjà la restauration des écritures validées.
+  **CE QUE LE CODE ÉCRIT, CONFRONTÉ À CE QUE LA BASE ADMET** (`facturesFigees.test.ts`) : la liste `v_modifiables`, lue
+  dans la DERNIÈRE définition du déclencheur exportée, doit être exactement l'ensemble des colonnes que l'application et
+  les Edge Functions écrivent sur une facture — dans les deux sens : une colonne qu'une étape suivante écrirait sur une
+  facture validée sans l'y inscrire serait refusée par la base en production seulement, APRÈS l'envoi ; une colonne
+  restée dans la liste sans écrivain est une porte que personne ne surveille. Il refuse toute insertion directe d'une
+  facture et toute écriture directe des lignes, lit les chaînes coupées sur plusieurs lignes, exige un objet littéral
+  (un objet qu'il ne lit pas est une faute) et porte un plancher — la suppression d'un brouillon et les trois écritures
+  connues. Quinze mutations mordent ; trois survivent, équivalentes : la liste lue dans la première définition (le
+  déclencheur n'en a qu'une), et deux `\s*` entre le point et `from`, que le formatage du dépôt n'exerce pas.
+  **ÉPROUVÉ** : `supabase/essais/factures.sql`, 118 contrôles sur 118 en production (65 à l'étape précédente), le texte
+  transmis identique au fichier sur 323 lignes et les comptes de six tables inchangés ; sur une réplique sans la
+  migration, 40 virent au rouge. Ce que la production ne peut que lire (les suppressions) se joue sur la réplique : une
+  facture validée, un avoir et leurs lignes refusés, au chef comme au propriétaire de la base ; un brouillon parti avec
+  ses lignes ; un dossier emporté avec ses factures validées, ses lignes et son compteur — 9 contrôles sur 9. `rls.sql`,
+  contrôles 5 et 5bis réécrits — le chef y entre, et le refus attendu est celui du droit d'exécution — : 8 sur 8 en
+  production, compteur inchangé, et ses quatre mutations mordent, dont M5ter, le chef qui numérote par
+  `enregistrer_facture`. Quarante-quatre mutations de la migration sur la réplique : quarante-trois mordent, la
+  quarante-quatrième — le second passage accepté sur une FACTURE — est équivalente, la contrainte
+  `factures_emises_origine_d_un_avoir` le refusant de toute façon.
+  **EN BASE** : migration passée par `apply_migration`, empreinte de l'historique égale au fichier exporté ; l'export
+  porte 94 migrations (`16642a71…`), le socle 77 instructions (inchangé), l'inventaire 1 116 objets (`e0b3d228…`). Les
+  advisors de sécurité ne listent plus aucune des deux fonctions de numérotation (5 et 7 fonctions exposées, voir plus
+  haut). **LATENT, et mesuré** : six factures en base, toutes validées dans un bac à sable abandonné, toutes conformes
+  aux contraintes — posées sans `not valid`, elles ont été vérifiées sur ces lignes —, aucun avoir, aucun brouillon, un
+  seul compteur, égal au plus haut numéro émis.
+  **CE QUI RESTE** : le dépôt par la plateforme du client (étape c, troisième temps) inscrira dans `v_modifiables` ce
+  qu'il écrit sur une facture validée — le test l'exigera.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8951,7 +9033,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 5323 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 5339 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
