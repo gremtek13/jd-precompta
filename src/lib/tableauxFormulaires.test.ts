@@ -90,6 +90,9 @@ describe('les tableaux qui se replient en fiches', () => {
     const bloc = /@container tableau \(max-width: (\d+)px\) \{\n {2}\.table-empilable-etroite thead \{ display: none; \}([\s\S]*?)\n\}/.exec(css)
     expect(bloc, 'requête du repli étroit introuvable').not.toBeNull()
     expect(Number(bloc![1])).toBeLessThan(560)
+    // La ligne et ses cellules s'y EMPILENT : sans `display: block`, la ligne garde ses colonnes, et le libellé de chaque
+    // cellule s'ajoute devant un mot déjà coupé.
+    expect(bloc![2]).toMatch(/\.table-empilable-etroite tr,\s*\.table-empilable-etroite td \{ display: block; width: 100%; \}/)
     expect(bloc![2]).toMatch(/\.table-empilable-etroite td::before \{\s*content: attr\(data-libelle\);/)
     expect(bloc![2]).toContain('.table-empilable-etroite tfoot td[colspan] { display: none; }')
     // Et la balance s'en sert : le plancher, sans lequel cette règle pourrait garder une classe que plus rien ne porte.
