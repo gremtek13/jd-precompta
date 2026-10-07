@@ -11,6 +11,7 @@ import {
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesPar } from '../../lib/controles'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_EXPLOITANT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
+import { fichierAMontrer } from '../../lib/fichiersPiece'
 import {
   capitalDeLEcheance, decoupageDuMouvement, decoupagePourEcheance, echeanceProposee, echeancesOccupees, empruntPlausible,
   estDeblocage, MARGE_PRELEVEMENT_JOURS, montantAttendu, refusDecoupage, refusEcheanceEmprunt,
@@ -309,7 +310,7 @@ function CartePiece({ piece, signaux, action }: { piece: Piece; signaux?: Signal
       <div className="carte-rapprochement-actions">
         {/* Le justificatif s'ouvre à côté, sans quitter le mouvement : c'est ce qu'on regarde avant de
             confirmer (voir audit ergonomie comparatif). */}
-        <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(piece.storage_path)}>
+        <button type="button" className="carte-rapprochement-lien" onClick={() => ouvrirJustificatif(fichierAMontrer(piece).chemin)}>
           Voir le justificatif
         </button>
         {action}

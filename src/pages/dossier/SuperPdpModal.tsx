@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
+import { lireConnexionPlateforme } from '../../lib/receptionPlateforme'
 
 interface Statut {
   configured: boolean
@@ -27,6 +28,12 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resultat, setResultat] = useState<ResultatSync | null>(null)
+  // LA PLATEFORME DU CLIENT (fenêtre « Plateforme du client », ligne 28.5) reçoit elle aussi les factures du dossier,
+  // par l'API AFNOR. Une facture reçue par les deux chemins entrerait deux fois, et rien ne les rapprocherait : cette
+  // synchronisation enregistre un résumé texte de la facture, la plateforme son original, donc l'empreinte d'un fichier
+  // diffère. Lue à l'ouverture comme le statut, et comme lui sans appel extérieur : l'action « statut » de
+  // `plateforme-agreee` ne lit que la base.
+  const [plateforme, setPlateforme] = useState<{ nom: string | null; erreur: string | null } | null>(null)
 
   async function chargerStatut() {
     const { data, error: invokeError } = await supabase.functions.invoke<Statut>('superpdp-credentials', {
@@ -45,6 +52,15 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
   }
 
   useEffect(() => { chargerStatut() }, [dossierId])
+
+  useEffect(() => {
+    let annule = false
+    void lireConnexionPlateforme(dossierId).then((r) => {
+      if (annule) return
+      setPlateforme(r.erreur !== null ? { nom: null, erreur: r.erreur } : { nom: r.donnees.connexion?.nom ?? null, erreur: null })
+    })
+    return () => { annule = true }
+  }, [dossierId])
 
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
@@ -113,6 +129,19 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
           avec le statut « à valider », comme un import classique — rien n'est jamais validé
           automatiquement.
         </p>
+
+        {plateforme?.nom != null && (
+          <p className="alerte-tva" style={{ margin: '0 0 12px' }}>
+            La plateforme du client ({plateforme.nom}) est aussi reliée à ce dossier (« Plateforme du client ») : une facture
+            reçue par les deux chemins entrerait deux fois. N’en gardez qu’un.
+          </p>
+        )}
+        {plateforme?.erreur && (
+          <p className="muted">
+            La connexion à la plateforme du client n’a pas pu être lue ({plateforme.erreur}) : si elle est reliée à ce
+            dossier, une facture reçue par les deux chemins entrerait deux fois.
+          </p>
+        )}
 
         {statut === null && !error && <p className="muted">Vérification…</p>}
 

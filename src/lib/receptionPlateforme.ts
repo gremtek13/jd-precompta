@@ -174,6 +174,24 @@ export const repartirDuDebut = (dossierId: string, version: string) =>
   appelerPlateforme<{ recherche_depuis: null }>(
     { action: 'repartir', dossierId, version }, 'La recherche n’a pas pu être remise au début.')
 
+/**
+ * La synchronisation Super PDP du même dossier (`superpdp-sync`, onglet Pièces) : configurée, une facture que la
+ * plateforme du client rend aussi entrerait DEUX fois — les deux chemins ne se reconnaissent pas, l'un dédoublonne par
+ * l'identifiant Super PDP, l'autre par le flux. Ne lit que la base (`superpdp-credentials`, action « status »). Illisible,
+ * on ne sait pas : l'écran le dit au lieu de taire le risque.
+ */
+export async function lireSynchronisationSuperPdp(
+  dossierId: string,
+): Promise<{ configuree: boolean; erreur: null } | { configuree: null; erreur: string }> {
+  const { data, error } = await supabase.functions.invoke<{ configured?: unknown }>('superpdp-credentials', {
+    body: { dossierId, action: 'status' },
+  })
+  if (error || !data) {
+    return { configuree: null, erreur: await extraireErreurFonction(error, 'La synchronisation Super PDP du dossier n’a pas pu être lue.') }
+  }
+  return { configuree: data.configured === true, erreur: null }
+}
+
 export const retenirPointDeReprise = (dossierId: string, version: string, jusqua: string | null) =>
   appelerPlateforme<{ recherche_depuis: string | null; derniere_recuperation: string }>(
     { action: 'retenir', dossierId, version, jusqua }, 'Le point de reprise n’a pas pu être enregistré.')
@@ -319,6 +337,15 @@ function texteUtf8(octets: Uint8Array): { xml: string } | { refus: string } {
   }
 }
 
+/**
+ * Ce que l'import a remarqué sur une facture, laissé dans les notes internes de sa pièce : c'est dans sa fiche qu'on la
+ * valide, bien après que la fenêtre de l'import s'est refermée — une remarque dite une fois puis jetée ne contrôle rien.
+ */
+export function notesDImport(avertissements: string[]): string | null {
+  if (avertissements.length === 0) return null
+  return `Reçue de la plateforme du client — à vérifier :\n${avertissements.map((a) => `- ${a}`).join('\n')}`
+}
+
 const SANS_MONTANTS = (devise: string | null): MontantsPourPiece => ({
   montant_ht: null, montant_tva: null, montant_ttc: null,
   devise: devise ?? 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
@@ -431,6 +458,7 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
     tiers: facture ? tiersDeLaFacture(facture, confirme.sens) : null,
     ...montants,
     confiance: facture === null ? 'basse' : douteuse ? 'moyenne' : confianceDeLaFacture(facture),
+    notes: notesDImport(avertissements),
   }).select('id').single()
   if (error || !data) {
     // Rien ne pointe sur les fichiers déposés : ils repartent, sinon ils resteraient orphelins jusqu'à la suppression du

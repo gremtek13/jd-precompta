@@ -37,6 +37,8 @@ const etat = {
   uploadRefuse: new Set<string>(),
   insertErreur: null as { code: string; message: string } | null,
   tauxBce: { taux: 1.1698, date_du_taux: '2026-09-15' } as Record<string, unknown> | null,
+  /** Ce que rend `superpdp-credentials` : la configuration, ou un refus. */
+  superPdp: { data: { configured: false }, error: null } as { data: unknown; error: unknown },
 }
 const journal = {
   appels: [] as Record<string, unknown>[],
@@ -99,7 +101,9 @@ vi.mock('./supabase', async () => {
         invoke: async (nom: string, options: { body: Record<string, unknown> }) =>
           nom === 'taux-change-bce'
             ? (journal.bce.push(options.body), { data: etat.tauxBce, error: etat.tauxBce ? null : { message: 'BCE injoignable' } })
-            : plateforme(options.body),
+            : nom === 'superpdp-credentials'
+              ? (journal.appels.push({ fonction: nom, ...options.body }), etat.superPdp)
+              : plateforme(options.body),
       },
       from: (table: string) => ({
         select: (colonnes: string) => {
@@ -146,8 +150,8 @@ vi.mock('./factureX', () => ({
 }))
 
 const {
-  appelerPlateforme, cleFlux, estTermine, importerFlux, lireFluxImportes, nomDuFichier, planReception, pointDeReprise,
-  preparerReception, recevoirFactures,
+  appelerPlateforme, cleFlux, estTermine, importerFlux, lireFluxImportes, lireSynchronisationSuperPdp, nomDuFichier,
+  notesDImport, planReception, pointDeReprise, preparerReception, recevoirFactures,
 } = await import('./receptionPlateforme')
 
 // ── Les factures fictives ────────────────────────────────────────────────────────────────────────────────────────
@@ -235,6 +239,7 @@ beforeEach(() => {
   journal.inserts = []
   journal.textes = []
   journal.bce = []
+  etat.superPdp = { data: { configured: false }, error: null }
 })
 
 // ── Le plan et le point de reprise ───────────────────────────────────────────────────────────────────────────────
@@ -314,6 +319,34 @@ describe('appelerPlateforme', () => {
   })
 })
 
+describe('lireSynchronisationSuperPdp', () => {
+  it('dit si la synchronisation Super PDP du dossier est configurée, sans rien demander d’autre que son statut', async () => {
+    expect(await lireSynchronisationSuperPdp('d1')).toEqual({ configuree: false, erreur: null })
+    etat.superPdp = { data: { configured: true }, error: null }
+    expect(await lireSynchronisationSuperPdp('d1')).toEqual({ configuree: true, erreur: null })
+    expect(journal.appels).toEqual([
+      { fonction: 'superpdp-credentials', dossierId: 'd1', action: 'status' },
+      { fonction: 'superpdp-credentials', dossierId: 'd1', action: 'status' },
+    ])
+  })
+
+  it('une réponse qui ne dit pas « configurée » n’est pas prise pour oui', async () => {
+    etat.superPdp = { data: { configured: 'true' }, error: null }
+    expect(await lireSynchronisationSuperPdp('d1')).toEqual({ configuree: false, erreur: null })
+  })
+
+  it('illisible, on ne sait pas — et la raison de la fonction est rendue', async () => {
+    etat.superPdp = refus(403, { error: 'Accès refusé à ce dossier.' })
+    expect(await lireSynchronisationSuperPdp('d1')).toEqual({ configuree: null, erreur: 'Accès refusé à ce dossier.' })
+  })
+})
+
+describe('notesDImport', () => {
+  it('rien à dire : pas de note', () => {
+    expect(notesDImport([])).toBeNull()
+  })
+})
+
 describe('lireFluxImportes et preparerReception', () => {
   it('lit les flux déjà importés, et prépare le plan', async () => {
     const a = deposer(flux()), b = deposer(flux())
@@ -366,7 +399,7 @@ describe('importerFlux', () => {
       storage_path: journal.uploads[0].chemin, storage_hash: hash, nom_fichier: 'FA-42.xml', lisible_path: journal.uploads[1].chemin,
       flux_hote: HOTE, flux_id: f.id, type_piece: 'achat', statut: 'a_valider', date_piece: '2026-09-15', tiers: 'Fournitures Martin',
       montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
-      confiance: 'haute',
+      confiance: 'haute', notes: null,
     }])
     expect(contexte.hashsConnus.has(hash)).toBe(true)
     expect(journal.textes).toHaveLength(1)
@@ -409,7 +442,12 @@ describe('importerFlux', () => {
       statut: 'importee',
       avertissements: ['La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.'],
     })
-    expect(journal.inserts[0]).toMatchObject({ confiance: 'moyenne' })
+    expect(journal.inserts[0]).toMatchObject({
+      confiance: 'moyenne',
+      // Dit aussi là où on valide la pièce : la fenêtre de l'import se referme, la fiche reste.
+      notes: 'Reçue de la plateforme du client — à vérifier :\n'
+        + '- La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.',
+    })
   })
 
   it('un fichier déjà au dossier est un doublon : rien n’est déposé', async () => {
@@ -445,6 +483,13 @@ describe('importerFlux', () => {
     })
     expect(journal.uploads).toHaveLength(1)
     expect(journal.inserts[0]).toMatchObject({ lisible_path: null, confiance: 'haute' })
+  })
+
+  it('les remarques de l’import se rangent une par ligne dans les notes de la pièce, dans l’ordre où elles sont dites', async () => {
+    await importerFlux(ctx(), deposer(flux(), xml(cii({ acheteur: '' })), null))
+    expect(journal.inserts[0].notes).toBe('Reçue de la plateforme du client — à vérifier :\n'
+      + '- La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.\n'
+      + '- Sans version lisible : La plateforme ne rend pas de version lisible de cette facture.')
   })
 
   it('une version lisible indisponible pour l’instant fait attendre la facture, et rien n’est déposé', async () => {
@@ -500,7 +545,10 @@ describe('importerFlux', () => {
     })
     expect(journal.inserts[0]).toMatchObject({
       montant_ht: null, montant_tva: null, montant_ttc: null, devise: 'EUR', date_piece: null, tiers: null, confiance: 'basse',
+      notes: 'Reçue de la plateforme du client — à vérifier :\n- Facture illisible : Ce PDF ne porte pas de facture structurée '
+        + '(aucune pièce jointe « factur-x.xml »). Ses montants sont à saisir.',
     })
+    // Aucun texte lu : la pièce n'en a pas, et « Proposer une catégorie » n'a rien à citer.
     expect(journal.textes).toEqual([])
 
     await importerFlux(ctx(), deposer(flux(), xml('<facture>pas une norme</facture>')))
