@@ -112,7 +112,7 @@ const VISITES = [
       await page.getByRole('button', { name: 'Vérifier l’empreinte', exact: true }).click()
     },
   },
-  { dossier: 'd10', onglet: 'cloture', nom: 'validation/validable' },
+  { dossier: 'd10', onglet: 'cloture', nom: 'validation/validable', apres: exercice('2025') },
   { dossier: 'd8', onglet: 'cloture', nom: 'validation/bloquée', apres: exercice('2025') },
   { dossier: 'd9', onglet: 'ecritures', nom: 'figé/ecritures', apres: exercice('2025') },
   {
@@ -144,6 +144,20 @@ const VISITES = [
   },
   { dossier: 'd9', onglet: 'cotisations', nom: 'figé/cotisations' },
   { dossier: 'd9', onglet: 'virements', nom: 'figé/virements' },
+  // Le REPORT DES SOLDES (ligne 34) : l'ouverture que la validation de l'ostéopathe écrira, ses soldes dépliés dans la
+  // carte ; puis l'exercice 2026 de la kinésithérapeute, ouvert par ses soldes reportés, et celui de l'ostéopathe, qui
+  // attend la validation de 2025.
+  {
+    dossier: 'd10', onglet: 'cloture', nom: 'report/aperçu',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByText('Voir les soldes reportés').first().click()
+    },
+  },
+  { dossier: 'd9', onglet: 'ecritures', nom: 'report/écritures', apres: exercice('2026') },
+  { dossier: 'd9', onglet: 'statistiques', nom: 'report/balance', apres: exercice('2026') },
+  { dossier: 'd10', onglet: 'ecritures', nom: 'report/en-attente', apres: exercice('2026') },
+  { dossier: 'd10', onglet: 'statistiques', nom: 'report/en-attente-balance', apres: exercice('2026') },
   // Le LETTRAGE FAIT À LA MAIN dans les comptes de tiers de la société en engagement : la barre qui lettre ensemble
   // n'apparaît qu'une pièce cochée — seule, elle demande la suivante ; à deux, elle dit le reste et offre le bouton.
   // L'exercice en cours se rechoisit : les visites de la validation ont laissé 2025 dans l'en-tête.

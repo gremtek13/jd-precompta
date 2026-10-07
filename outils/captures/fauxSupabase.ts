@@ -23,6 +23,7 @@ import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
+import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
@@ -536,8 +537,11 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
 // VALIDE un exercice comme `valider_exercice` le laisse : chaque écriture de l'exercice porte son journal, son
 // numéro et les champs du FEC que la numérotation lui donne, et l'exercice validé garde ses totaux et sa 2035
 // — calculée exactement comme la Clôture la calcule. L'empreinte est fictive : le banc répond « intacte » à
-// `verifier_exercice_valide`.
-function valider(s: SourcesDeValidation, ecritures: Ligne[], annee: number, valideLe: string, empreinte: string): Ligne {
+// `verifier_exercice_valide`. Et la validation écrit l'ouverture de l'exercice suivant (ligne 34) : ses soldes
+// reportés, que le report de l'application tire de la même numérotation, comme la base les tire des écritures figées.
+function valider(
+  s: SourcesDeValidation, ecritures: Ligne[], annee: number, valideLe: string, empreinte: string,
+): { valide: Ligne; reportes: Ligne[] } {
   const dansLExercice = ecritures.filter((e) => String(e.date) <= `${annee}-12-31` && String(e.date) >= `${annee}-01-01`)
   const numerotation = numeroterFec(
     dansLExercice as unknown as EcritureBrouillon[], s.pieces as unknown as Piece[], categories as unknown as Categorie[], [],
@@ -564,13 +568,23 @@ function valider(s: SourcesDeValidation, ecritures: Ligne[], annee: number, vali
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!
   const entete = { nom: dossier.nom as string | null, activite: dossier.libelle_naf as string | null, siret: dossier.siret as string | null }
+  const report = soldesAReporter(mouvementsDeCloture(numerotation), TRESORERIE, annee)
+  if (report.horsClasses.length > 0 || report.ecartCentimes !== 0) console.error('[banc] la base refuserait ce report', report)
   return {
-    dossier_id: s.dossier, annee, valide_le: valideLe, valide_par: 'u1', mode_comptable: TRESORERIE.mode,
-    nb_lignes: dansLExercice.length,
-    nb_ecritures: new Set(numerotation.lignes.map((l) => `${l.journal}|${l.numero}`)).size,
-    total_debit: centimes('debit'), total_credit: centimes('credit'),
-    empreinte_precedente: null, empreinte,
-    declaration: instantane2035(declaration, valeurs, arrondirPourFormulaire(valeurs, annee), entete),
+    valide: {
+      dossier_id: s.dossier, annee, valide_le: valideLe, valide_par: 'u1', mode_comptable: TRESORERIE.mode,
+      nb_lignes: dansLExercice.length,
+      nb_ecritures: new Set(numerotation.lignes.map((l) => `${l.journal}|${l.numero}`)).size,
+      total_debit: centimes('debit'), total_credit: centimes('credit'),
+      empreinte_precedente: null, empreinte,
+      declaration: instantane2035(declaration, valeurs, arrondirPourFormulaire(valeurs, annee), entete),
+    },
+    // Leurs libellés du FEC restent nuls tant que l'exercice qu'ils ouvrent n'est pas validé.
+    reportes: report.soldes.map((solde, i) => ({
+      id: `${s.prefixe}-sr${i + 1}`, dossier_id: s.dossier, date: report.date, compte: solde.compte, libelle: solde.libelle,
+      sens: solde.sens, montant: solde.montant, source_nom: report.source, source_empreinte: empreinte, created_at: valideLe,
+      compte_lib: null, ecriture_lib: null,
+    })),
   }
 }
 
@@ -607,10 +621,11 @@ const SOURCES_D9: SourcesDeValidation = {
   dotations: [2025],
 }
 const ECRITURES_D9 = ecrituresDe(SOURCES_D9)
-const VALIDE_D9 = valider(SOURCES_D9, ECRITURES_D9, 2025, '2026-03-02T09:30:00Z', '9f2c4e81b07d36a5c8e1f4290b6d73e5a1c9f08b2e4d6a7c3b5f1e9d0a2c4b68')
+const VALIDATION_D9 = valider(SOURCES_D9, ECRITURES_D9, 2025, '2026-03-02T09:30:00Z', '9f2c4e81b07d36a5c8e1f4290b6d73e5a1c9f08b2e4d6a7c3b5f1e9d0a2c4b68')
 
 // Paul Bertin, ostéopathe : 2025 est complet — sa pièce est payée, son encaissement affecté, ses écritures
-// écrites et concordantes — et attend sa validation.
+// écrites et concordantes — et attend sa validation. Sa carte montre l'ouverture que la validation écrira, et son
+// exercice 2026 dit l'attendre.
 const SOURCES_D10: SourcesDeValidation = {
   dossier: 'd10',
   prefixe: 'q-e',
@@ -618,6 +633,8 @@ const SOURCES_D10: SourcesDeValidation = {
   lignes: [
     mouvementDe('d10', 'q1', '2025-03-03', 'PRLV CABINET PARTAGE SAINT ROCH', -450, 'rapprochee', { piece_id: 'o1' }),
     mouvementDe('d10', 'q2', '2025-05-15', 'VIR PATIENTS MAI', 2300, 'rapprochee', { categorie_id: 'c9' }),
+    // 2026 a commencé : ses comptes de bilan partent de zéro tant que 2025 n'est pas validé, et ses écrans le disent.
+    mouvementDe('d10', 'q3', '2026-01-20', 'VIR PATIENTS JANVIER', 1800, 'rapprochee', { categorie_id: 'c9' }),
   ],
   cotisations: [],
   immobilisations: [],
@@ -847,7 +864,9 @@ const TABLES: Record<string, Ligne[]> = {
   ],
   cotisations_declarees: [...COTISATIONS_D1.echeances, ...SOURCES_D9.cotisations],
   // L'exercice 2025 de la kinésithérapeute, validé : ce qu'il garde, et sa 2035 telle qu'elle a été validée.
-  exercices_valides: [VALIDE_D9],
+  exercices_valides: [VALIDATION_D9.valide],
+  // Et l'ouverture de son exercice 2026, que cette validation a écrite.
+  soldes_reportes: VALIDATION_D9.reportes,
   lettrages_manuels: ENGAGEMENT_D8.lettrages,
 }
 

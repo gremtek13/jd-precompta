@@ -422,7 +422,10 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
               : "Aucun compte pour l'instant — génère des écritures depuis l'onglet Écritures."}
           </div>
         ) : (
-          <table>
+          // Replié en fiches sur téléphone seulement (`table-empilable-etroite`, voir index.css) : six colonnes dans
+          // une carte de 360 pixels coupaient les mots en leur milieu.
+          <div className="tableau-adaptable">
+          <table className="table-empilable-etroite">
             <thead>
               <tr>
                 <th>Compte</th>
@@ -436,12 +439,12 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
             <tbody>
               {lignesAffichees.map((l) => (
                 <tr key={l.compte}>
-                  <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{l.compte}</td>
-                  <td>{l.libelle}</td>
-                  <td>{l.nbEcritures}</td>
-                  <td>{formatMoney(l.totalDebit)}</td>
-                  <td>{formatMoney(l.totalCredit)}</td>
-                  <td>
+                  <td data-libelle="Compte" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{l.compte}</td>
+                  <td data-libelle="Libellé">{l.libelle}</td>
+                  <td data-libelle="Écritures">{l.nbEcritures}</td>
+                  <td data-libelle="Débit">{formatMoney(l.totalDebit)}</td>
+                  <td data-libelle="Crédit">{formatMoney(l.totalCredit)}</td>
+                  <td data-libelle="Solde">
                     {l.solde >= 0
                       ? <span>{formatMoney(l.solde)} <span className="muted">débiteur</span></span>
                       : <span>{formatMoney(-l.solde)} <span className="muted">créditeur</span></span>}
@@ -452,9 +455,9 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
                 <td colSpan={3}>{recherche.trim() ? 'Total (tous les comptes)' : 'Total'}</td>
-                <td>{formatMoney(totalDebit)}</td>
-                <td>{formatMoney(totalCredit)}</td>
-                <td>
+                <td data-libelle={recherche.trim() ? 'Total débit (tous les comptes)' : 'Total débit'}>{formatMoney(totalDebit)}</td>
+                <td data-libelle={recherche.trim() ? 'Total crédit (tous les comptes)' : 'Total crédit'}>{formatMoney(totalCredit)}</td>
+                <td data-libelle="Équilibre">
                   {desequilibre
                     ? <span className="badge badge-danger">écart {formatMoney(totalDebit - totalCredit)}</span>
                     : <span className="badge badge-ok">équilibré</span>}
@@ -462,6 +465,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
               </tr>
             </tfoot>
           </table>
+          </div>
         )}
       </div>
 
