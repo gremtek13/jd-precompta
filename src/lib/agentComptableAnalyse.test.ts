@@ -994,6 +994,19 @@ describe('agent-comptable / analyserEcritures sous une frontière de validation 
   })
 })
 
+// LE STATUT DE TVA DU DOSSIER (ligne 28.5, étape a) : redevable, franchise, exonéré — ou à préciser. L'assistant le lit,
+// le rend dans resume_dossier, le réclame dans points_a_traiter comme la Checklist, et la consigne lui dit ce qu'il
+// emporte. Sans lui, il prendrait une franchise pour une exonération, ou devinerait un statut que personne n'a choisi.
+describe('agent-comptable / le statut de TVA du dossier', () => {
+  it('le lit, le rend dans resume_dossier, le réclame à préciser, et la consigne dit ce qu’il emporte', () => {
+    const source = sourceDeployee()
+    expect(source).toMatch(/statut_tva: dossierRow\.statut_tva,\s*article_exoneration: dossierRow\.article_exoneration,/)
+    expect(source).toMatch(/nom: dossier\.nom,\s*statut_tva: dossier\.statut_tva,\s*article_exoneration: dossier\.article_exoneration,/)
+    expect(source).toContain('statut_de_tva_a_preciser: dossier.statut_tva == null,')
+    expect(source).toContain("Un statut null est À PRÉCISER : ne le devine pas, il se règle dans l'onglet TVA.")
+  })
+})
+
 describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
   it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces, le modèle du dossier et la frontière de validation', () => {
     expect(sourceDeployee()).toMatch(
@@ -1003,7 +1016,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
 
   it('lit le modèle comptable du dossier, le passe aux outils et le dit au modèle', () => {
     const source = sourceDeployee()
-    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite"\)/)
+    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration"\)/)
     expect(source).toMatch(/mode_comptable: dossierRow\.mode_comptable,\s*compte_notes_de_frais: dossierRow\.compte_notes_de_frais,/)
     expect(source).toMatch(/const repereModele = dossierRow\.mode_comptable === "engagement"/)
     expect(source).toContain('- Modèle comptable du dossier : ${repereModele}')

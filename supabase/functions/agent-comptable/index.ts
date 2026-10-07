@@ -2414,13 +2414,17 @@ interface OutilContexte {
     nom: string; assujetti_tva: boolean; mode_comptable: ModeComptable; compte_notes_de_frais: string
     // La périodicité des déclarations de TVA (bloc LIQUIDATION TVA) : elle découpe l'année en périodes à déclarer.
     tva_periodicite: PeriodiciteTva
+    // Le statut de TVA du dossier (src/lib/statutTva.ts, ligne 28.5) — assujetti_tva en est déduit — et l'article de
+    // son exonération. Nul, le statut est à préciser.
+    statut_tva: "redevable" | "franchise" | "exonere" | null
+    article_exoneration: string | null
   }
 }
 
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
-    description: "Vue d'ensemble du dossier : nom, régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes), a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon — et exercices_valides, les exercices dont la comptabilité est validée, donc figée. À appeler en premier si le contexte n'est pas clair.",
+    description: "Vue d'ensemble du dossier : nom, statut de TVA (statut_tva : redevable, franchise ou exonere — null : à préciser — et article_exoneration, l'article d'une exonération), régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes), a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon — et exercices_valides, les exercices dont la comptabilité est validée, donc figée. À appeler en premier si le contexte n'est pas clair.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -2461,7 +2465,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2554,6 +2558,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const annees = [...new Set(r4.lignes.map((r) => r.date.slice(0, 4)))].sort()
     return {
       nom: dossier.nom,
+      statut_tva: dossier.statut_tva,
+      article_exoneration: dossier.article_exoneration,
       assujetti_tva: dossier.assujetti_tva,
       modele_comptable: dossier.mode_comptable,
       pieces_a_valider: r1.count ?? 0,
@@ -2803,6 +2809,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
       // n'y écrit plus, et une erreur trouvée après la validation se corrige sur l'exercice suivant.
       exercices_valides: rValides.lignes.map((v) => v.annee),
+      // Le paramétrage de la Checklist : un statut de TVA à préciser, dont dépendent la mention des factures et ce que
+      // le dossier doit à la facturation électronique. Il se règle dans l'onglet TVA.
+      statut_de_tva_a_preciser: dossier.statut_tva == null,
       ecritures_desequilibrees: groupesDesequilibres.length,
       ecritures_a_regenerer_pieces_modifiees: piecesDesynchronisees.length,
       // Le libellé de la Checklist : l'écriture d'un mouvement affecté ne suit plus sa catégorie.
@@ -2999,7 +3008,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: dossierRow, error: dossierError } = await admin
     .from("dossiers")
-    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite")
+    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration")
     .eq("id", dossierId)
     .single()
   if (dossierError || !dossierRow) {
@@ -3041,6 +3050,7 @@ Règles impératives :
 - Si les données sont insuffisantes pour répondre avec certitude, dis-le plutôt que de deviner.
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
+- Le STATUT DE TVA du dossier (resume_dossier : statut_tva) : « redevable » facture la TVA et la récupère — ses pièces sont retenues hors taxes ; « franchise » (art. 293 B du CGI) et « exonere » (art. 261 à 261 E du CGI, les soins au premier rang ; article_exoneration dit lequel) ne la facturent ni ne la récupèrent — leurs pièces sont retenues TVA comprise. Une franchise reste dans le champ de la facturation électronique (émission et e-reporting au 1er septembre 2027 pour une PME) ; une exonération en sort pour ses opérations exonérées ; et tout dossier reçoit ses factures sous forme électronique depuis le 1er septembre 2026. Un statut null est À PRÉCISER : ne le devine pas, il se règle dans l'onglet TVA.
 - Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le 445710 la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
@@ -3072,6 +3082,8 @@ Règles impératives :
       mode_comptable: dossierRow.mode_comptable,
       compte_notes_de_frais: dossierRow.compte_notes_de_frais,
       tva_periodicite: dossierRow.tva_periodicite,
+      statut_tva: dossierRow.statut_tva,
+      article_exoneration: dossierRow.article_exoneration,
     },
   }
   const outilsUtilises: string[] = []
