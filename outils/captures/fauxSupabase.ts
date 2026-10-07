@@ -126,6 +126,14 @@ const pieces: Ligne[] = [
   // Le scooter de tournée, immobilisé (`i-d1c`) ET déclaré au cadre 7 sous le barème (`ve3`) : la Clôture dit que
   // le barème couvre déjà son amortissement, que la case CH déduit une seconde fois.
   piece('p14', '2026-03-10', 'Moto Services', 4200, 0, 'c5', 'validee'),
+  // Une facture reçue de la PLATEFORME DU CLIENT (ligne 28.5, voir CONNEXION_PLATEFORME_D1) : son original est un XML,
+  // la plateforme en a rendu une version lisible, et l'import a gardé sa remarque dans les notes.
+  {
+    ...piece('p15', '2026-09-29', 'Laboratoire Biosanté Provence', 96, 16, null, 'a_valider'),
+    source: 'plateforme', storage_path: 'd1/plateforme/fx-15.xml', nom_fichier: 'FA-2026-0930-BIOSANTE.xml',
+    flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-15', lisible_path: 'd1/plateforme/fx-15.pdf',
+    notes: 'Reçue de la plateforme du client — à vérifier :\n- Le SIREN du destinataire n’est pas écrit sur la facture.',
+  },
 ]
 
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
@@ -890,6 +898,51 @@ const CONNEXION_D1 = {
   ],
 }
 
+// LA PLATEFORME DU CLIENT (ligne 28.5, fenêtre « Plateforme du client » de l'onglet Pièces). Le cabinet infirmier a
+// relié celle de sa cliente, qui a déjà livré une facture (p15). Une recherche rend quatre factures — une neuve au nom
+// de fichier long, celle déjà importée, une que la plateforme traite encore et une qu'elle a rejetée — et écarte deux
+// messages qui n'en sont pas. Le même dossier a aussi la synchronisation Super PDP configurée : les deux fenêtres
+// disent le double import. Les autres dossiers n'ont ni l'une ni l'autre.
+const CONNEXION_PLATEFORME_D1 = {
+  nom: 'Plateforme Alpha', url_flux: 'https://flux.plateforme-alpha.example/afnor',
+  url_jeton: 'https://flux.plateforme-alpha.example/oauth2/token', hote: 'flux.plateforme-alpha.example',
+  client_id: 'cabinet-jd-consult', organisation_id: 'org-cabinet-infirmier-moreau', portee: null,
+  recherche_depuis: '2026-09-30T08:00:00.000Z', derniere_recuperation: '2026-09-30T08:05:00.000Z',
+  created_at: '2026-09-15T09:00:00.000Z', version: 'v-banc-1',
+}
+
+function fluxDuBanc(id: string, sens: 'achat' | 'vente', syntaxe: string, nom: string | null, etat: string) {
+  return { id, sens, syntaxe, direction: sens === 'achat' ? 'In' : 'Out', nom, recu_le: '2026-10-06T07:30:00.000Z', mis_a_jour: '2026-10-06T07:31:00.000Z', etat }
+}
+
+function plateformeAgreee(corps: Ligne): { data: unknown; error: unknown } {
+  const d1 = corps.dossierId === 'd1'
+  switch (corps.action) {
+    case 'statut':
+      return { data: { connexion: d1 ? CONNEXION_PLATEFORME_D1 : null }, error: null }
+    case 'tester':
+      return { data: { ok: true }, error: null }
+    case 'lister':
+      return {
+        data: {
+          hote: CONNEXION_PLATEFORME_D1.hote, version: CONNEXION_PLATEFORME_D1.version,
+          depuis: CONNEXION_PLATEFORME_D1.recherche_depuis,
+          flux: [
+            fluxDuBanc('fx-neuve', 'achat', 'Factur-X', 'FA-2026-1004-PHARMA-DISTRIBUTION-SUD-RECAPITULATIF-MENSUEL-OCTOBRE.pdf', 'pret'),
+            fluxDuBanc('fx-15', 'achat', 'CII', 'FA-2026-0930-BIOSANTE.xml', 'pret'),
+            fluxDuBanc('fx-attente', 'vente', 'UBL', null, 'en_attente'),
+            fluxDuBanc('fx-rejet', 'achat', 'CII', 'FA-2026-0927.xml', 'en_erreur'),
+          ],
+          ecartes: { autre_flux: 2, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 },
+          complete: true, motif: null, jusqua: '2026-10-06T07:31:00.000Z',
+        },
+        error: null,
+      }
+    default:
+      return { data: null, error: { message: 'maquette' } }
+  }
+}
+
 function connexionBancaire(corps: Ligne): { data: unknown; error: unknown } {
   const d1 = corps.dossierId === 'd1'
   switch (corps.action) {
@@ -990,13 +1043,19 @@ export const supabase = {
   },
   // « Proposer une catégorie » répond une proposition retenue, avec un extrait LONG : c'est lui qui
   // éprouve le passage à la ligne dans le volet. La connexion bancaire répond pour le cabinet infirmier
-  // (voir CONNEXION_D1). Tout le reste reste une maquette.
+  // (voir CONNEXION_D1), et sa plateforme du client et sa synchronisation Super PDP aussi (voir
+  // CONNEXION_PLATEFORME_D1). Tout le reste reste une maquette.
   functions: {
     invoke: (nom: string, options?: { body?: Ligne }) => {
       if (nom === 'proposer-categorie') {
         return Promise.resolve({ data: { issue: 'retenue', categorieId: 'c8', indice: 'Abonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission' }, error: null })
       }
       if (nom === 'banque-connexion') return Promise.resolve(connexionBancaire(options?.body ?? {}))
+      if (nom === 'plateforme-agreee') return Promise.resolve(plateformeAgreee(options?.body ?? {}))
+      if (nom === 'superpdp-credentials') {
+        const configured = options?.body?.dossierId === 'd1'
+        return Promise.resolve({ data: { configured, client_id: configured ? 'app-superpdp-moreau' : null }, error: null })
+      }
       return Promise.resolve({ data: null, error: { message: 'maquette' } })
     },
   },

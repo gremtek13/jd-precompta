@@ -303,6 +303,16 @@ const VUES = [
   { nom: 'mobile-statut-exonere', chemin: '#/dossiers/d1/tva', l: 390, h: 844, theme: 'light', reduite: false },
   { nom: 'mobile-statut-obligations', chemin: '#/dossiers/d1/tva', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Facturation électronique', enTete: true },
   { nom: 'mobile-statut-a-preciser', chemin: '#/dossiers/d2/tva', l: 390, h: 844, theme: 'light', reduite: false },
+  // La plateforme du client (ligne 28.5, étape b) : la fenêtre après une recherche — le plan d'import, un nom de
+  // fichier long, l'avertissement de double import —, le formulaire qui relie celle d'un dossier, et la fiche d'une
+  // facture reçue, qui montre sa version lisible et garde l'original à portée d'un lien.
+  { nom: 'pc-plateforme-recherche', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Chercher les nouvelles factures$' },
+  { nom: 'pc-plateforme-recherche-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Plateforme du client', apres: '^Chercher les nouvelles factures$' },
+  { nom: 'pc-plateforme-relier', chemin: '#/dossiers/d2/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relier la plateforme du client$' },
+  { nom: 'pc-plateforme-fiche', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Laboratoire Biosanté Provence' },
+  { nom: 'mobile-plateforme-recherche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Chercher les nouvelles factures$' },
+  { nom: 'mobile-plateforme-relier', chemin: '#/dossiers/d2/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relier la plateforme du client$' },
+  { nom: 'mobile-plateforme-fiche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Laboratoire Biosanté Provence' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

@@ -1,4 +1,4 @@
-import type { FluxEcartes, IssueImport, SaisieConnexion } from './receptionPlateforme'
+import type { FluxEcartes, IssueImport, PlanReception, SaisieConnexion } from './receptionPlateforme'
 
 // CE QUE LA FENÊTRE « PLATEFORME DU CLIENT » DIT (pages/dossier/PlateformeClientModal.tsx), à part de l'écran pour se
 // tester sans lui : ce qu'une saisie a de faux avant le clic, les écarts d'une recherche et le bilan d'un import, en
@@ -39,12 +39,22 @@ export function saisieComplete(saisie: SaisieConnexion, creation: boolean): bool
     saisie.client_id.trim() !== '' && (!creation || saisie.client_secret.trim() !== '')
 }
 
+// La phrase accordée à son nombre : en français le pluriel commence à deux (« 1 facture », « 2 factures »), et une
+// phrase au singulier change aussi son pronom (« elle ne revient pas »). « Importer les 1 facture(s) » ne se lit pas.
+function accord(n: number, singulier: string, pluriel: string): string {
+  return n >= 2 ? pluriel : singulier
+}
+
+// `doublons` compte les RÉPÉTITIONS d'une même facture dans la liste (la deuxième et les suivantes), pas les factures.
 const LIBELLES_ECARTS: Record<keyof FluxEcartes, (n: number) => string> = {
-  autre_flux: (n) => `${n} message(s) qui ne sont pas des factures (statuts de cycle de vie, e-reporting)`,
-  illisible: (n) => `${n} facture(s) sans identifiant ou sans date de mise à jour lisible`,
-  format: (n) => `${n} facture(s) dans un format que l’application ne lit pas`,
-  statut_inconnu: (n) => `${n} facture(s) dont la plateforme ne dit pas si elle est prête`,
-  doublons: (n) => `${n} facture(s) listée(s) deux fois par la plateforme`,
+  autre_flux: (n) => accord(n, `${n} message écarté : ce n’est pas une facture (statut de cycle de vie, e-reporting)`,
+    `${n} messages écartés : ce ne sont pas des factures (statuts de cycle de vie, e-reporting)`),
+  illisible: (n) => `${n} ${accord(n, 'facture écartée', 'factures écartées')} : sans identifiant ou sans date de mise à jour lisible`,
+  format: (n) => `${n} ${accord(n, 'facture écartée', 'factures écartées')} : dans un format que l’application ne lit pas`,
+  statut_inconnu: (n) => accord(n, `${n} facture écartée : la plateforme ne dit pas si elle est prête`,
+    `${n} factures écartées : la plateforme ne dit pas si elles sont prêtes`),
+  doublons: (n) => accord(n, `${n} doublon écarté : une facture que la plateforme a listée deux fois`,
+    `${n} doublons écartés : des factures que la plateforme a listées plus d’une fois`),
 }
 
 /** Les écarts de la liste, en phrases — vide quand rien n'a été écarté. */
@@ -52,6 +62,51 @@ export function ecartsEnPhrases(ecartes: FluxEcartes): string[] {
   return (Object.keys(LIBELLES_ECARTS) as (keyof FluxEcartes)[])
     .filter((cle) => ecartes[cle] > 0)
     .map((cle) => LIBELLES_ECARTS[cle](ecartes[cle]))
+}
+
+/** Le titre du plan d'import. */
+export function titreDuPlan(aImporter: number): string {
+  return aImporter === 0 ? 'Aucune nouvelle facture à importer' : `${aImporter} ${accord(aImporter, 'facture', 'factures')} à importer`
+}
+
+/** Le bouton qui lance l'import (il n'existe que s'il y a au moins une facture à importer). */
+export function libelleImporter(aImporter: number): string {
+  return accord(aImporter, 'Importer la facture', `Importer les ${aImporter} factures`)
+}
+
+/** Ce que la recherche a vu sans le proposer à l'import, une phrase par cas — vide quand rien n'est à dire. */
+export function phrasesDuPlan(plan: PlanReception): string[] {
+  const d = plan.dejaImportes.length, a = plan.enAttente.length, r = plan.rejetes.length
+  const phrases: string[] = []
+  if (d > 0) phrases.push(accord(d, `${d} déjà importée : elle ne revient pas.`, `${d} déjà importées : elles ne reviennent pas.`))
+  if (a > 0) {
+    phrases.push(accord(a, `${a} encore en traitement chez la plateforme : elle reviendra à une prochaine recherche.`,
+      `${a} encore en traitement chez la plateforme : elles reviendront à une prochaine recherche.`))
+  }
+  if (r > 0) phrases.push(accord(r, `${r} rejetée par la plateforme : elle ne s’importe pas.`, `${r} rejetées par la plateforme : elles ne s’importent pas.`))
+  return phrases
+}
+
+/**
+ * Le bilan d'un import en phrases, une par issue comptée. L'interruption n'y est pas : l'écran la dit à part, avec
+ * sa raison.
+ */
+export function phrasesDuBilan(compte: Record<IssueImport['statut'], number>): string[] {
+  const phrases = [compte.importee === 0
+    ? 'Aucune facture importée.'
+    : accord(compte.importee, `${compte.importee} facture importée, « à valider » dans Justificatifs.`,
+      `${compte.importee} factures importées, « à valider » dans Justificatifs.`)]
+  if (compte.deja_importee > 0) phrases.push(`${compte.deja_importee} déjà dans le dossier.`)
+  if (compte.doublon > 0) {
+    phrases.push(accord(compte.doublon, `${compte.doublon} dont le fichier est déjà au dossier (déposé autrement) : non importée.`,
+      `${compte.doublon} dont le fichier est déjà au dossier (déposé autrement) : non importées.`))
+  }
+  if (compte.autre_entreprise > 0) {
+    phrases.push(accord(compte.autre_entreprise, `${compte.autre_entreprise} adressée à une autre entreprise : non importée.`,
+      `${compte.autre_entreprise} adressées à une autre entreprise : non importées.`))
+  }
+  if (compte.echec > 0) phrases.push(`${compte.echec} en échec.`)
+  return phrases
 }
 
 /** Le bilan d'un import, compté par issue. */

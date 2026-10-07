@@ -190,6 +190,30 @@ const VISITES = [
       await page.getByRole('checkbox', { name: /Cocher corsaire-avoir-0920/ }).first().check()
     },
   },
+  // La PLATEFORME DU CLIENT (ligne 28.5) : sa fenêtre après une recherche — le plan d'import, un nom de fichier long,
+  // l'avertissement de double import —, puis le formulaire qui relie celle d'un dossier sans SIRET, prérempli pour
+  // Super PDP, et la fiche d'une facture reçue. La fenêtre est SUPERPOSÉE à l'écran : elle se mesure contre sa propre
+  // carte (`fenetre`), pas contre le panneau central, qu'elle n'a pas à tenir. Les deux visites changent de dossier
+  // entre elles, ce qui referme la fenêtre.
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'plateforme/recherche', fenetre: '.plateforme-client',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Plateforme du client', exact: true }).click()
+      await page.getByRole('button', { name: 'Chercher les nouvelles factures', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd2', onglet: 'pieces', nom: 'plateforme/relier', fenetre: '.plateforme-client',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Plateforme du client', exact: true }).click()
+      await page.getByRole('button', { name: 'Relier la plateforme du client', exact: true }).click()
+      await page.getByRole('button', { name: 'Préremplir pour Super PDP', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'plateforme/fiche',
+    apres: (page) => page.getByRole('cell', { name: 'Laboratoire Biosanté Provence' }).first().click(),
+  },
 ]
 
 // Choisit un exercice dans le sélecteur de l'en-tête du dossier, dont les boutons sont des onglets.
@@ -220,7 +244,7 @@ await contexte.addInitScript(({ barre, panneau }) => {
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
-for (const { dossier, onglet, nom, apres } of VISITES) {
+for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
   await page.goto(`${BASE}#/dossiers/${dossier}/${onglet}`)
   await page.waitForTimeout(900)
   const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
@@ -230,17 +254,24 @@ for (const { dossier, onglet, nom, apres } of VISITES) {
     await apres(page)
     await page.waitForTimeout(300)
   }
-  const fautes = await page.evaluate(() => {
-    const main = document.querySelector('.main').getBoundingClientRect()
+  const fautes = await page.evaluate((fenetre) => {
+    // Une fenêtre SUPERPOSÉE se mesure contre sa propre carte : centrée sur l'écran, elle n'a pas à tenir dans le
+    // panneau central, mais rien ne doit en sortir. Sa carte défile (overflow-y), donc le défilement ne se cherche
+    // qu'à l'intérieur : sinon tout son contenu passerait pour « dans un conteneur qui défile », et rien n'y serait vu.
+    // Et une fenêtre qui ne s'est pas ouverte est une faute : mesurer un écran sans elle ne prouverait rien.
+    const cadre = document.querySelector(fenetre ?? '.main')
+    if (!cadre) return [`la fenêtre ${fenetre} ne s’est pas ouverte`]
+    const main = cadre.getBoundingClientRect()
+    const contenu = fenetre ? `${fenetre} *` : '.main-contenu *'
     const defile = (e) => {
-      for (let p = e.parentElement; p && !p.classList.contains('main'); p = p.parentElement) {
+      for (let p = e.parentElement; p && p !== cadre && !p.classList.contains('main'); p = p.parentElement) {
         if (['auto', 'scroll', 'hidden'].includes(getComputedStyle(p).overflowX)) return true
       }
       return false
     }
     const extrait = (e) => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60)
     const trouvees = []
-    for (const e of document.querySelectorAll('.main-contenu *')) {
+    for (const e of document.querySelectorAll(contenu)) {
       const r = e.getBoundingClientRect()
       if (r.width === 0 || r.height === 0 || defile(e)) continue
       // La carte ou la case de grille qui le porte : le premier ancêtre qui en est une.
@@ -256,7 +287,7 @@ for (const { dossier, onglet, nom, apres } of VISITES) {
     // Un texte plus large que sa boîte : la boîte tient dans sa carte, le mot trop long en sort. Seul l'élément qui
     // porte le texte compte — ses ancêtres débordent avec lui.
     const textes = []
-    for (const e of document.querySelectorAll('.main-contenu *')) {
+    for (const e of document.querySelectorAll(contenu)) {
       if (e.clientWidth === 0 || defile(e)) continue
       const style = getComputedStyle(e)
       if (style.overflowX !== 'visible' || style.display === 'inline' || e.scrollWidth <= e.clientWidth + 1) continue
@@ -265,7 +296,7 @@ for (const { dossier, onglet, nom, apres } of VISITES) {
       textes.push(`${e.scrollWidth - e.clientWidth} px de texte hors de sa boîte — <${e.tagName.toLowerCase()}> ${extrait(e)}`)
     }
     return [...trouvees.map((t) => t.texte), ...textes]
-  })
+  }, fenetre ?? null)
   total += fautes.length
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
 }
