@@ -153,6 +153,9 @@ def inconnue(fichier: Path, forme: str, texte: str) -> SystemExit:
 def inventaire(fichiers: list[Path]) -> set[str]:
     inv: set[str] = set()
     colonnes: dict[str, list[str]] = {}
+    # Les déclencheurs de contrainte, par « table.nom » : seuls ceux-là emportent leur contrainte à leur retrait — un
+    # déclencheur ordinaire peut porter le nom d'une contrainte de sa table, les deux noms ne se partageant rien.
+    de_contrainte: set[str] = set()
     rls: set[str] = set()
 
     def contraintes_de_colonne(t: str, col: str, definition: str) -> None:
@@ -242,13 +245,23 @@ def inventaire(fichiers: list[Path]) -> set[str]:
                 inv.difference_update({x for x in inv if x.startswith('index|') and x.endswith('.' + m.group(1))})
                 continue
 
-            m = re.match(r'create (?:or replace )?(?:constraint )?trigger "?(\w+)"? .*? on (?:public\.)?"?(\w+)"?', low)
+            # Un déclencheur de CONTRAINTE (`create constraint trigger`, une vérification différable) est aussi une
+            # contrainte du catalogue, du même nom : `pg_constraint` le porte (contype « t »), donc la moitié « base »
+            # le compte deux fois. Le premier est arrivé le 07/10/2026 (factures_emises_avoir_sans_brouillon), et
+            # l'inventaire a dit 1 116 contre 1 115 — c'est ainsi qu'on l'a vu. `drop trigger` retire les deux.
+            m = re.match(r'create (?:or replace )?(constraint )?trigger "?(\w+)"? .*? on (?:public\.)?"?(\w+)"?', low)
             if m:
-                inv.add(f'declencheur|{m.group(2)}.{m.group(1)}')
+                inv.add(f'declencheur|{m.group(3)}.{m.group(2)}')
+                if m.group(1):
+                    inv.add(f'contrainte|{m.group(3)}.{m.group(2)}')
+                    de_contrainte.add(f'{m.group(3)}.{m.group(2)}')
                 continue
             m = re.match(r'drop trigger (?:if exists )?"?(\w+)"? on (?:public\.)?"?(\w+)"?', low)
             if m:
                 inv.discard(f'declencheur|{m.group(2)}.{m.group(1)}')
+                if f'{m.group(2)}.{m.group(1)}' in de_contrainte:
+                    inv.discard(f'contrainte|{m.group(2)}.{m.group(1)}')
+                    de_contrainte.discard(f'{m.group(2)}.{m.group(1)}')
                 continue
 
             # Les policies gardent leur casse et leurs espaces : « membres peuvent lire leurs
