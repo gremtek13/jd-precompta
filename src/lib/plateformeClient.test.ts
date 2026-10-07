@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { compteDesIssues, ecartsEnPhrases, phraseDeLIssue, refusSaisie, SAISIE_VIDE, saisieComplete } from './plateformeClient'
-import type { FluxVu, IssueImport } from './receptionPlateforme'
+import {
+  compteDesIssues, ecartsEnPhrases, libelleImporter, phraseDeLIssue, phrasesDuBilan, phrasesDuPlan, refusSaisie, SAISIE_VIDE,
+  saisieComplete, titreDuPlan,
+} from './plateformeClient'
+import type { FluxVu, IssueImport, PlanReception } from './receptionPlateforme'
 
 const flux: FluxVu = {
   id: 'f1', sens: 'achat', syntaxe: 'CII', direction: 'In', nom: 'FA-1.xml', recu_le: null,
@@ -56,15 +59,25 @@ describe('ecartsEnPhrases', () => {
     expect(ecartsEnPhrases({ autre_flux: 0, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 })).toEqual([])
   })
 
-  it('chaque écart se dit avec son nombre, dans un ordre fixe', () => {
+  it('chaque écart se dit avec son nombre, accordé, dans un ordre fixe', () => {
     expect(ecartsEnPhrases({ autre_flux: 3, illisible: 0, format: 1, statut_inconnu: 0, doublons: 2 })).toEqual([
-      '3 message(s) qui ne sont pas des factures (statuts de cycle de vie, e-reporting)',
-      '1 facture(s) dans un format que l’application ne lit pas',
-      '2 facture(s) listée(s) deux fois par la plateforme',
+      '3 messages écartés : ce ne sont pas des factures (statuts de cycle de vie, e-reporting)',
+      '1 facture écartée : dans un format que l’application ne lit pas',
+      '2 doublons écartés : des factures que la plateforme a listées plus d’une fois',
     ])
     expect(ecartsEnPhrases({ autre_flux: 0, illisible: 1, format: 0, statut_inconnu: 4, doublons: 0 })).toEqual([
-      '1 facture(s) sans identifiant ou sans date de mise à jour lisible',
-      '4 facture(s) dont la plateforme ne dit pas si elle est prête',
+      '1 facture écartée : sans identifiant ou sans date de mise à jour lisible',
+      '4 factures écartées : la plateforme ne dit pas si elles sont prêtes',
+    ])
+  })
+
+  it('au singulier, la phrase change aussi son pronom ; le pluriel commence à deux', () => {
+    expect(ecartsEnPhrases({ autre_flux: 1, illisible: 2, format: 2, statut_inconnu: 1, doublons: 1 })).toEqual([
+      '1 message écarté : ce n’est pas une facture (statut de cycle de vie, e-reporting)',
+      '2 factures écartées : sans identifiant ou sans date de mise à jour lisible',
+      '2 factures écartées : dans un format que l’application ne lit pas',
+      '1 facture écartée : la plateforme ne dit pas si elle est prête',
+      '1 doublon écarté : une facture que la plateforme a listée deux fois',
     ])
   })
 })
@@ -97,6 +110,53 @@ describe('compteDesIssues et phraseDeLIssue', () => {
       'Cette facture n’existe plus chez la plateforme. Elle ne s’importera pas telle quelle.',
       'Indisponible. Elle reviendra à la prochaine recherche.',
       'La plateforme refuse l’accès.',
+    ])
+  })
+})
+
+describe('le plan et le bilan en phrases accordées', () => {
+  const plan = (o: Partial<PlanReception> = {}): PlanReception => ({ aImporter: [], dejaImportes: [], enAttente: [], rejetes: [], ...o })
+  const compte = (o: Partial<Record<IssueImport['statut'], number>> = {}) => (
+    { importee: 0, deja_importee: 0, doublon: 0, autre_entreprise: 0, echec: 0, interrompu: 0, ...o })
+
+  it('le titre et le bouton : « Importer les 1 facture(s) » ne se lit pas', () => {
+    expect(titreDuPlan(0)).toBe('Aucune nouvelle facture à importer')
+    expect(titreDuPlan(1)).toBe('1 facture à importer')
+    expect(titreDuPlan(2)).toBe('2 factures à importer')
+    expect(libelleImporter(1)).toBe('Importer la facture')
+    expect(libelleImporter(2)).toBe('Importer les 2 factures')
+  })
+
+  it('ce que la recherche a vu sans le proposer : une phrase par cas, au singulier comme au pluriel', () => {
+    expect(phrasesDuPlan(plan())).toEqual([])
+    expect(phrasesDuPlan(plan({ aImporter: [flux, flux] }))).toEqual([])
+    expect(phrasesDuPlan(plan({ dejaImportes: [flux], enAttente: [flux], rejetes: [flux] }))).toEqual([
+      '1 déjà importée : elle ne revient pas.',
+      '1 encore en traitement chez la plateforme : elle reviendra à une prochaine recherche.',
+      '1 rejetée par la plateforme : elle ne s’importe pas.',
+    ])
+    expect(phrasesDuPlan(plan({ dejaImportes: [flux, flux], enAttente: [flux, flux, flux], rejetes: [flux, flux] }))).toEqual([
+      '2 déjà importées : elles ne reviennent pas.',
+      '3 encore en traitement chez la plateforme : elles reviendront à une prochaine recherche.',
+      '2 rejetées par la plateforme : elles ne s’importent pas.',
+    ])
+  })
+
+  it('le bilan : rien d’importé se dit sans renvoyer vers Justificatifs, et l’interruption n’y est pas', () => {
+    expect(phrasesDuBilan(compte())).toEqual(['Aucune facture importée.'])
+    expect(phrasesDuBilan(compte({ importee: 1, deja_importee: 1, doublon: 1, autre_entreprise: 1, echec: 1, interrompu: 1 }))).toEqual([
+      '1 facture importée, « à valider » dans Justificatifs.',
+      '1 déjà dans le dossier.',
+      '1 dont le fichier est déjà au dossier (déposé autrement) : non importée.',
+      '1 adressée à une autre entreprise : non importée.',
+      '1 en échec.',
+    ])
+    expect(phrasesDuBilan(compte({ importee: 3, deja_importee: 2, doublon: 2, autre_entreprise: 2, echec: 2 }))).toEqual([
+      '3 factures importées, « à valider » dans Justificatifs.',
+      '2 déjà dans le dossier.',
+      '2 dont le fichier est déjà au dossier (déposé autrement) : non importées.',
+      '2 adressées à une autre entreprise : non importées.',
+      '2 en échec.',
     ])
   })
 })

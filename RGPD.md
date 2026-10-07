@@ -45,6 +45,7 @@ ses données sont là. Voir §6 et §8.7.
 | **Proposition de catégorie** | Proposer la catégorie d'une pièce d'après son texte, sur le clic d'un membre du cabinet ; rien n'est écrit sans lui | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte OCR de la pièce, liste des catégories ; journal : tokens et issue, jamais l'extrait |
 | **Facturation et relances** | Émettre et transmettre les factures d'honoraires | Exécution du contrat + obligation légale (facturation) | Client | Identité, adresse, e-mail, montants |
 | **Facturation électronique** | Émettre et recevoir des factures au format réglementaire | Obligation légale (réforme de la facturation électronique) | Client et ses tiers | Facture complète, identité émetteur/destinataire |
+| **Réception par la plateforme du client** *(depuis le 07/10/2026)* | Faire entrer dans le dossier, sur le clic d'un membre du cabinet, les factures que le client reçoit et émet par SA plateforme agréée — chacune en pièce « à valider » | Exécution du contrat de mission ; l'accès repose sur l'identité que le client ouvre lui-même au cabinet sur sa plateforme | Client, ses fournisseurs et ses clients | `connexions_plateformes` : nom donné à la plateforme, adresses de son service, identifiant et secret OAuth2, organisation, point de reprise de la recherche ; pour chaque facture importée, l'original transmis (XML ou PDF) et la version lisible que la plateforme en rend, l'hôte et l'identifiant du flux (`pieces.flux_hote`, `flux_id`, `lisible_path`), et les remarques de l'import dans les notes de la pièce |
 | **Gestion des accès** | Ouvrir et fermer les comptes cabinet et client | Exécution du contrat | Membres du cabinet, clients | E-mail, identifiant, rôle |
 | **Journalisation** | Savoir qui a reçu quoi et quand (envois d'e-mails, événements Super PDP) | Intérêt légitime (preuve et diagnostic) | Client | Destinataire, objet, horodatage, statut |
 
@@ -62,6 +63,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 | **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test**, secret **mesuré** le 21/09/2026 (§8.1) | Non |
 | **AWS Bedrock** | Assistant comptable (Claude), citation des champs d'une pièce lue, et proposition de sa catégorie (`proposer-categorie`, sur clic, depuis le 26/09/2026) | `eu-west-1` (Irlande) pour l'assistant, écrit dans son code ; `eu-central-1` (Francfort) pour la citation et la catégorie, même secret que Textract — **gardés par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
+| **La plateforme agréée du client** *(choisie par le client, depuis le 07/10/2026)* | Celle par laquelle le client reçoit et émet ses factures ; le cabinet y lit ses factures par l'API de la norme AFNOR XP Z12-013 | Celle de la plateforme : immatriculée par l'administration fiscale, elle n'est **ni choisie ni mesurée** par le cabinet | À vérifier plateforme par plateforme |
 | **Enable Banking** *(bac à sable seulement, depuis le 30/09/2026)* | Connexion bancaire (DSP2) : l'accord du titulaire, la lecture de ses comptes et de leurs mouvements | EEE — Google Cloud EMEA (Irlande) et AWS EMEA (Luxembourg), **déclarés** par sa notice aux utilisateurs de l'API, lue le 30/09/2026, pas mesurés | Non, selon cette notice |
 | **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
 | **GitHub Pages** | Hébergement du front (fichiers statiques) | — | Aucune donnée de dossier n'y transite |
@@ -83,6 +85,19 @@ Deux précisions qui comptent :
   lit dans la base, sans appel au prestataire ; tout le reste — la liste des banques, la demande
   d'accord, la récupération, le retrait — part d'un clic. Voir §8.8 pour ce qui reste avant la
   production.
+- **La plateforme agréée du client n'est pas un sous-traitant du cabinet.** C'est le client qui la
+  choisit et la contracte — depuis le 1er septembre 2026, toute entreprise reçoit ses factures par la
+  sienne —, et le cabinet n'y entre que par l'identité que le client lui ouvre. Son secret vit dans
+  `connexions_plateformes`, une table sans aucune policy que seule l'Edge Function `plateforme-agreee`
+  atteint, à la clé de service : il ne revient jamais au navigateur, pas même masqué. La fonction ne
+  l'envoie qu'en https, et ses journaux ne portent que des statuts et des comptes — jamais le secret ni
+  le contenu d'une facture.
+  La règle du projet tient ici aussi : ouvrir la fenêtre « Plateforme du client » ne lit que la base ;
+  tester la connexion, chercher les factures et les importer partent chacun d'un clic. Ce qui arrive
+  se conserve comme toute pièce (§5), et retirer la connexion ne retire rien de ce qui a été importé.
+  **Ce qui reste à vérifier, plateforme par plateforme** : la région où elle héberge les factures. Une
+  plateforme est immatriculée par l'administration fiscale française, ce qui n'est pas une garantie
+  d'hébergement dans l'UE.
 - **L'API SIRENE ne reçoit qu'un SIRET**, et seulement sur clic explicite. Aucun appel réseau
   externe n'est silencieux dans cette application — c'est une règle du projet, pas une constatation.
 - **Les polices ne partent plus chez Google** (25/09/2026). Jusque-là, `index.html` et la charte

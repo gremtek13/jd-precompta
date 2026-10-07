@@ -23,11 +23,15 @@ import {
 import {
   compteDesIssues,
   ecartsEnPhrases,
+  libelleImporter,
   phraseDeLIssue,
+  phrasesDuBilan,
+  phrasesDuPlan,
   PRESET_SUPER_PDP,
   refusSaisie,
   SAISIE_VIDE,
   saisieComplete,
+  titreDuPlan,
 } from '../../lib/plateformeClient'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
@@ -391,7 +395,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
 
         {liste && plan && (
           <div className="plateforme-plan">
-            <h3>{plan.aImporter.length === 0 ? 'Aucune nouvelle facture à importer' : `${plan.aImporter.length} facture(s) à importer`}</h3>
+            <h3>{titreDuPlan(plan.aImporter.length)}</h3>
             {!liste.complete && (
               <p className="alerte-tva">
                 Liste incomplète : {liste.motif}. Importez celles-ci, puis relancez la recherche pour la suite.
@@ -408,12 +412,8 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
               </ul>
             )}
             <ul className="plateforme-liste muted">
-              {plan.dejaImportes.length > 0 && <li>{plan.dejaImportes.length} déjà importée(s) : elles ne reviennent pas.</li>}
-              {plan.enAttente.length > 0 && (
-                <li>{plan.enAttente.length} encore en traitement chez la plateforme : elles reviendront à une prochaine recherche.</li>
-              )}
-              {plan.rejetes.length > 0 && <li>{plan.rejetes.length} rejetée(s) par la plateforme : elles ne s’importent pas.</li>}
-              {ecartsEnPhrases(liste.ecartes).map((p) => <li key={p}>Écartés : {p}.</li>)}
+              {phrasesDuPlan(plan).map((p) => <li key={p}>{p}</li>)}
+              {ecartsEnPhrases(liste.ecartes).map((p) => <li key={p}>{p}.</li>)}
             </ul>
             {plan.aImporter.length > 0 && !sirenDossier && (
               <p className="error-text">
@@ -429,7 +429,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
                   disabled={occupe || !sirenDossier || !userId}
                   onClick={importer}
                 >
-                  {progression ? `Import… ${progression[0]} sur ${progression[1]}` : `Importer les ${plan.aImporter.length} facture(s)`}
+                  {progression ? `Import… ${progression[0]} sur ${progression[1]}` : libelleImporter(plan.aImporter.length)}
                 </button>
               </div>
             )}
@@ -440,11 +440,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           <div className="plateforme-bilan">
             <h3>Import terminé</h3>
             <ul className="plateforme-liste">
-              <li>{compte.importee} facture(s) importée(s), « à valider » dans Justificatifs.</li>
-              {compte.deja_importee > 0 && <li>{compte.deja_importee} déjà dans le dossier.</li>}
-              {compte.doublon > 0 && <li>{compte.doublon} dont le fichier est déjà au dossier (déposé autrement) : non importée(s).</li>}
-              {compte.autre_entreprise > 0 && <li>{compte.autre_entreprise} adressée(s) à une autre entreprise : non importée(s).</li>}
-              {compte.echec > 0 && <li>{compte.echec} en échec.</li>}
+              {phrasesDuBilan(compte).map((p) => <li key={p}>{p}</li>)}
             </ul>
             {aSignaler.length > 0 && (
               <ul className="plateforme-liste plateforme-a-signaler">

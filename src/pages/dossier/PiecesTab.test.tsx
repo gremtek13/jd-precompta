@@ -117,9 +117,14 @@ vi.mock('../../lib/supabase', async () => {
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: 'cabinet-de-test' }) }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 // La fenêtre de la plateforme du client a ses propres tests : ici, seulement ce que l'onglet lui passe.
+// Le double de la fenêtre montre ce qu'elle REÇOIT et rend la main comme elle : « Importer » signale à l'onglet qu'une
+// pièce est entrée (`onImported`), qui doit alors relire sa liste.
 vi.mock('./PlateformeClientModal', () => ({
-  default: (p: { dossierId: string; dossierSiret: string | null }) => (
-    <div>Fenêtre de la plateforme — dossier {p.dossierId}, SIRET {p.dossierSiret ?? 'aucun'}</div>
+  default: (p: { dossierId: string; dossierSiret: string | null; onImported: () => void }) => (
+    <div>
+      <p>Fenêtre de la plateforme — dossier {p.dossierId}, SIRET {p.dossierSiret ?? 'aucun'}</p>
+      <button type="button" onClick={p.onImported}>Importer (double)</button>
+    </div>
   ),
 }))
 // La forme exacte de `PresenceTexteOcr` compte — `{ avecTexte: Set, erreur: string | null }` : le
@@ -337,6 +342,17 @@ describe('PiecesTab — les factures reçues de la plateforme du client', () => 
     expect(screen.queryByText(/Fenêtre de la plateforme/)).toBeNull()
     await act(async () => { screen.getByRole('button', { name: 'Plateforme du client' }).click() })
     expect(screen.getByText('Fenêtre de la plateforme — dossier dossier-de-test, SIRET 12345678200010')).toBeTruthy()
+  })
+
+  it('une facture importée par la fenêtre paraît dans la liste : l’onglet la relit', async () => {
+    poser([piece()])
+    monter('toutes')
+    await screen.findByText('FOURNISSEUR')
+    await act(async () => { screen.getByRole('button', { name: 'Plateforme du client' }).click() })
+    // L'import vient d'écrire la pièce en base ; la fenêtre le signale.
+    faux.parTable.pieces = [...faux.parTable.pieces, recue()]
+    await act(async () => { screen.getByRole('button', { name: 'Importer (double)' }).click() })
+    expect(await screen.findByText('FOURNISSEUR RECU')).toBeTruthy()
   })
 
   it('une facture reçue le dit sur sa ligne ; une pièce déposée, non', async () => {

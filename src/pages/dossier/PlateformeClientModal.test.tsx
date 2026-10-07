@@ -228,14 +228,14 @@ describe('chercher puis importer', () => {
       plan({ aImporter: [a, b], dejaImportes: [flux()], enAttente: [flux(), flux()], rejetes: [flux()] }),
     )
     expect(m.preparerReception).toHaveBeenCalledWith('d1', expect.objectContaining({ hote: 'pa.exemple.fr' }))
-    expect(screen.getByText('2 facture(s) à importer')).toBeTruthy()
+    expect(screen.getByText('2 factures à importer')).toBeTruthy()
     expect(screen.getByText('FA-1.xml', { exact: false })).toBeTruthy()
     expect(screen.getByText(`Facture ${b.id}`, { exact: false })).toBeTruthy()
-    expect(screen.getByText('1 déjà importée(s) : elles ne reviennent pas.')).toBeTruthy()
+    expect(screen.getByText('1 déjà importée : elle ne revient pas.')).toBeTruthy()
     expect(screen.getByText('2 encore en traitement chez la plateforme : elles reviendront à une prochaine recherche.')).toBeTruthy()
-    expect(screen.getByText('1 rejetée(s) par la plateforme : elles ne s’importent pas.')).toBeTruthy()
-    expect(screen.getByText('Écartés : 2 message(s) qui ne sont pas des factures (statuts de cycle de vie, e-reporting).')).toBeTruthy()
-    expect(screen.getByText('Écartés : 1 facture(s) dans un format que l’application ne lit pas.')).toBeTruthy()
+    expect(screen.getByText('1 rejetée par la plateforme : elle ne s’importe pas.')).toBeTruthy()
+    expect(screen.getByText('2 messages écartés : ce ne sont pas des factures (statuts de cycle de vie, e-reporting).')).toBeTruthy()
+    expect(screen.getByText('1 facture écartée : dans un format que l’application ne lit pas.')).toBeTruthy()
     expect(m.recevoirFactures).not.toHaveBeenCalled()
   })
 
@@ -248,7 +248,7 @@ describe('chercher puis importer', () => {
   it('rien de neuf : rien à importer, et aucun bouton pour le faire', async () => {
     await chercher(liste(), plan({ dejaImportes: [flux()] }))
     expect(screen.getByText('Aucune nouvelle facture à importer')).toBeTruthy()
-    expect(screen.queryByText(/Importer les/)).toBeNull()
+    expect(screen.queryByText(/^Importer /)).toBeNull()
   })
 
   it('une préparation refusée (lecture partielle) se dit, et rien n’est proposé à l’import', async () => {
@@ -257,7 +257,7 @@ describe('chercher puis importer', () => {
     ouvrir()
     await cliquer('Chercher les nouvelles factures')
     expect(screen.getByText('Les factures déjà importées n’ont pas pu être lues en entier (coupure).')).toBeTruthy()
-    expect(screen.queryByText(/Importer les/)).toBeNull()
+    expect(screen.queryByText(/^Importer /)).toBeNull()
   })
 
   it('une connexion changée depuis : la liste se relit, et on le dit', async () => {
@@ -274,7 +274,7 @@ describe('chercher puis importer', () => {
     const a = flux()
     await chercher(liste({ flux: [a] }), plan({ aImporter: [a] }), null)
     expect(screen.getByText(/Renseignez le SIRET du dossier \(onglet Informations\) avant d’importer/)).toBeTruthy()
-    expect((screen.getByText('Importer les 1 facture(s)') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByText('Importer la facture') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('trois clics n’importent qu’une fois ; le bilan dit ce qu’il faut vérifier', async () => {
@@ -283,7 +283,7 @@ describe('chercher puis importer', () => {
     await chercher(l, plan({ aImporter: [a, b, c, d, e] }))
     let terminer!: (b: BilanReception) => void
     m.recevoirFactures.mockImplementation(() => new Promise((r) => { terminer = r }))
-    const bouton = screen.getByText('Importer les 5 facture(s)') as HTMLButtonElement
+    const bouton = screen.getByText('Importer les 5 factures') as HTMLButtonElement
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
     expect(m.recevoirFactures).toHaveBeenCalledTimes(1)
     expect(m.recevoirFactures).toHaveBeenCalledWith(
@@ -305,7 +305,7 @@ describe('chercher puis importer', () => {
         interruption: { statut: 'interrompu', flux: e, raison: 'acces', message: 'La plateforme refuse l’accès.' },
       }))
     })
-    expect(screen.getByText('2 facture(s) importée(s), « à valider » dans Justificatifs.')).toBeTruthy()
+    expect(screen.getByText('2 factures importées, « à valider » dans Justificatifs.')).toBeTruthy()
     expect(screen.getByText('1 déjà dans le dossier.')).toBeTruthy()
     expect(screen.getByText(`${b.nom} : importée — à vérifier : Total de la TVA absent.`)).toBeTruthy()
     expect(screen.getByText(new RegExp(`^${c.nom} : adressée à l’entreprise de SIREN 987654321, pas à ce dossier`))).toBeTruthy()
@@ -324,7 +324,7 @@ describe('chercher puis importer', () => {
     const a = flux()
     await chercher(liste({ flux: [a] }), plan({ aImporter: [a] }))
     m.recevoirFactures.mockResolvedValue(bilan({ issues: [{ statut: 'doublon', flux: a }] }))
-    await act(async () => { screen.getByText('Importer les 1 facture(s)').click() })
+    await act(async () => { screen.getByText('Importer la facture').click() })
     expect(screen.getByText(/son fichier est déjà au dossier/)).toBeTruthy()
     expect(onImported).not.toHaveBeenCalled()
   })
@@ -335,7 +335,7 @@ describe('chercher puis importer', () => {
     m.recevoirFactures.mockResolvedValue(bilan({
       issues: [{ statut: 'importee', flux: a, pieceId: 'p1', avertissements: [] }], erreurReprise: 'Indisponible.',
     }))
-    await act(async () => { screen.getByText('Importer les 1 facture(s)').click() })
+    await act(async () => { screen.getByText('Importer la facture').click() })
     expect(screen.getByText(/Le point de reprise n’a pas pu être enregistré \(Indisponible\.\)/)).toBeTruthy()
   })
 
@@ -345,7 +345,7 @@ describe('chercher puis importer', () => {
     m.recevoirFactures.mockResolvedValue(bilan({ issues: [{ statut: 'importee', flux: a, pieceId: 'p1', avertissements: [] }] }))
     let relue!: () => void
     m.lireConnexionPlateforme.mockImplementationOnce(() => new Promise((r) => { relue = () => r(ok({ connexion: connexion({ recherche_depuis: '2026-10-01T10:00:00.000Z' }) })) }))
-    await act(async () => { screen.getByText('Importer les 1 facture(s)').click() })
+    await act(async () => { screen.getByText('Importer la facture').click() })
     expect((screen.getByText('Chercher les nouvelles factures') as HTMLButtonElement).disabled).toBe(true)
     await act(async () => { relue() })
     expect((screen.getByText('Chercher les nouvelles factures') as HTMLButtonElement).disabled).toBe(false)

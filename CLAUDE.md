@@ -224,6 +224,11 @@ Conséquences pratiques :
     de la connexion, la liste des banques, la demande d'accord et son retour, le choix du compte, la
     récupération des mouvements et le retrait. Elle REND les mouvements ; c'est l'écran qui les importe
     (voir « la connexion bancaire récupère, l'écran importe » dans « Problèmes connus »).
+  - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de la norme AFNOR XP Z12-013 : la
+    connexion du dossier (son secret ne revient jamais au navigateur), son test, la recherche des
+    factures reçues et émises, le téléchargement d'une facture et de sa version lisible, et le point de
+    reprise. Elle REND les factures ; c'est l'écran qui les importe, chacune en pièce « à valider » (voir
+    « la réception par la plateforme du client » dans « Problèmes connus »).
 
 ## Stack technique
 
@@ -366,7 +371,9 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
                   debordements.mjs y liste, onglet par onglet, ce qui déborde du panneau
                   central (panneau de droite ouvert ou fermé) et rend un code d'erreur — plus deux
                   visites qui CLIQUENT d'abord, ce qui ne paraît qu'après un clic échappant aux
-                  autres (la récupération d'une connexion bancaire, la liste des banques).
+                  autres (la récupération d'une connexion bancaire, la liste des banques). Une fenêtre
+                  SUPERPOSÉE se mesure contre sa propre carte (`fenetre` d'une visite), pas contre le
+                  panneau central qu'elle n'a pas à tenir — celle de la plateforme du client.
                   installable.mjs demande à Chromium si l'application est installable, avec
                   et sans logo de cabinet, et rend un code d'erreur.
 outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de l'Urssaf
@@ -1031,6 +1038,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   fait avec la clé privée de l'application (secret `ENABLE_BANKING_CLE_PRIVEE`, jamais dans le dépôt ni
   dans la conversation) ; l'adresse de retour `https://compta.jdarnis.fr/retour-banque.html` est
   déclarée dans son panneau de contrôle. Le prestataire définitif est sur devis (ligne 24).
+- **La plateforme agréée de chaque client** (API de la norme AFNOR XP Z12-013, le « Flow Service ») —
+  celle par laquelle le client reçoit et émet ses factures depuis le 1er septembre 2026, qu'il choisit et
+  contracte lui-même : une connexion par dossier (`connexions_plateformes`), appelée par
+  `plateforme-agreee` sur le clic d'un membre du cabinet, avec l'identité OAuth2 que le client lui ouvre
+  sur sa plateforme. Super PDP en est une, et la fenêtre la préremplit. **Aucune plateforme réelle n'a
+  été appelée pour vérifier la fonction** : le premier essai sera celui du cabinet, sur celle d'un client,
+  et le diagnostic passera par les journaux de la fonction, qui ne portent que des nombres et des codes.
 - **Bedrock (Claude)** — moteur de l'assistant comptable (`agent-comptable`),
   avec suivi de coût par tokens et plafond configurable par cabinet.
 - **GitHub Actions** — CI/CD de déploiement (voir `.github/workflows/deploy.yml`).
@@ -1513,6 +1527,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   et rappelé par le badge de l'en-tête. Il décide de la mention de TVA des factures, de ce qu'une facture peut valider,
   du motif d'une ligne à 0 % que `superpdp-emit` transmet, et de ce que le dossier doit à la facturation électronique,
   que l'onglet TVA détaille. Voir « le statut de TVA du dossier » dans « Problèmes connus » (`lib/statutTva.ts`).
+- **La réception par la plateforme du client (07/10/2026)**, ligne 28.5, étape (b) : dans l'onglet Justificatifs,
+  « Plateforme du client » relie le dossier à la plateforme agréée de son client (préréglage Super PDP), teste la
+  connexion, cherche les nouvelles factures et montre ce qui entrerait avant tout import. « Importer » fait de chaque
+  facture une pièce « à valider », lue champ par champ dans son XML (CII, UBL, ou celui d'un PDF Factur-X), son original
+  gardé et sa version lisible montrée. Voir « la réception par la plateforme du client » dans « Problèmes connus »
+  (`plateforme-agreee`, `lib/receptionPlateforme.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1577,8 +1597,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
 - Facturation électronique (ligne 28.5) : décisions du cabinet du 07/10/2026 — la réception par la plateforme agréée
   que chaque client a choisie (une configuration par dossier, par l'API de la norme AFNOR XP Z12-013) et, pour les
   quelques clients qui en ont besoin, l'émission conforme, le statut « Encaissée » et l'e-reporting. L'étape (a), le
-  statut de TVA du dossier, est livrée (07/10/2026). Restent (b) la réception par la plateforme du client, (c)
-  l'émission conforme et ses nouvelles mentions, (d) le statut « Encaissée » et (e) l'e-reporting.
+  statut de TVA du dossier, est livrée (07/10/2026), et l'étape (b), la réception par la plateforme du client, aussi
+  (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. Restent (c) l'émission
+  conforme et ses nouvelles mentions, (d) le statut « Encaissée » et (e) l'e-reporting.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -1672,11 +1693,19 @@ d'environnement dans la même édition.
     fonction `SECURITY DEFINER` écrive sans contrôle d'accès interne. C'est cela qu'il faut
     revérifier, pas l'advisor lui-même.
   - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`,
-    `facture_numerotation` et `connexions_bancaires` — **volontaire.** RLS activée sans aucune policy
-    vaut refus total côté client : ces tables ne sont atteintes que par les
+    `facture_numerotation`, `connexions_bancaires` et `connexions_plateformes` — **volontaire.** RLS
+    activée sans aucune policy vaut refus total côté client : ces tables ne sont atteintes que par les
     fonctions `SECURITY DEFINER` et le service role. Y ajouter une policy pour
-    faire taire l'advisor ouvrirait précisément ce que ce réglage ferme — pour la dernière,
-    l'identifiant de session qui ouvre les mouvements d'un compte.
+    faire taire l'advisor ouvrirait précisément ce que ce réglage ferme — pour les deux dernières,
+    l'identifiant de session qui ouvre les mouvements d'un compte et le secret qui ouvre toutes les
+    factures d'un client.
+  - `function_search_path_mutable` (WARN) sur `retour_declencheur` (migration
+    `sources_figees_par_la_validation`, 04/10/2026) — **bénin**, relevé le 07/10/2026 : c'est une fonction SQL
+    `immutable` qui ne nomme aucun objet de la base, seulement ses trois paramètres (`case when p_op =
+    'DELETE' then p_ancien else p_nouveau end`), donc aucun `search_path` ne peut lui faire lire autre chose. Ni
+    `anon` ni `authenticated` ne peuvent l'appeler, et ses huit appelants — des déclencheurs — la nomment
+    `public.retour_declencheur` et portent, eux, leur `search_path` (mesuré en base). Lui en poser un demanderait
+    une migration qui ne fermerait rien.
 - **`pack_pieces` a été supprimée** (migration `drop_table_morte_pack_pieces`).
   Elle devait tracer la composition de chaque pack livré au comptable ; le
   générateur ne l'a jamais écrite. La preuve n'était pas qu'elle soit vide mais
@@ -2671,8 +2700,8 @@ d'environnement dans la même édition.
   **Le décompte du 21/09/2026 ci-dessus a changé le 30/09/2026** : `extract-piece` et
   `evaluer-extraction` sont passées à `false` avec les nouvelles clés de Supabase, que `verify_jwt` ne
   sait pas lire (voir « les clés historiques de Supabase sont quittées »). Le fichier porte désormais
-  onze `false` et quatre `true` (`banque-connexion`, `proposer-categorie`, `superpdp-emit`,
-  `taux-change-bce`) — c'est lui qui fait foi, pas ce décompte.
+  onze `false` et cinq `true` (`banque-connexion`, `plateforme-agreee` depuis le 07/10/2026,
+  `proposer-categorie`, `superpdp-emit`, `taux-change-bce`) — c'est lui qui fait foi, pas ce décompte.
 - **LE HARNAIS DE MESURE ÉTAIT UNE PORTE PUBLIQUE QUI FACTURE — REFERMÉE LE 25/09/2026.**
   `evaluer-extraction` est en `verify_jwt: true`, et ça ne la protégeait de rien : la clé publique du
   projet, servie avec l'application, EST un jeton valide. Le dépôt étant public, le nom de la fonction
@@ -7216,7 +7245,84 @@ d'environnement dans la même édition.
   **CE QUI RESTE, dit plutôt que promis** : le statut de chaque dossier non assujetti est à préciser en production — le
   dossier `test` compris —, et c'est au cabinet de le choisir, l'application ne le devinant pas ; une facture validée
   avec la mauvaise mention se corrige par un avoir, jamais en place ; la liste des exonérations est fermée, et un autre
-  article se saisit à la main sur la facture ; et les étapes (b) à (e).
+  article se saisit à la main sur la facture ; et les étapes (c) à (e) — la (b), la réception, est l'entrée suivante.
+- **LA RÉCEPTION PAR LA PLATEFORME DU CLIENT — LIGNE 28.5, ÉTAPE (B)** (07/10/2026, `supabase/functions/plateforme-agreee`,
+  `lib/receptionPlateforme.ts`, `lib/factureElectronique.ts`, `lib/factureX.ts`, `pages/dossier/PlateformeClientModal.tsx`,
+  migrations `reception_par_plateforme_agreee` et `provenance_plateforme_des_pieces`). Depuis le 1er septembre 2026, toute
+  entreprise reçoit ses factures par la plateforme agréée qu'elle a choisie. Décision du cabinet le 07/10/2026 : les y
+  lire, dossier par dossier, plutôt que d'en imposer une — toutes publient l'API que la norme AFNOR XP Z12-013 leur
+  impose (le « Flow Service »), et le client ouvre au cabinet une identité OAuth2 (« client credentials ») sur la sienne.
+  Chaque facture entre en pièce « à valider », comme un dépôt : rien n'est validé ni catégorisé sans le cabinet.
+  **EN BASE** : `connexions_plateformes`, une par dossier (sa clé primaire), RLS SANS AUCUNE POLICY — le secret ouvre
+  toutes les factures de l'entreprise, reçues comme émises, et ne revient jamais au navigateur, pas même masqué ; seule
+  `plateforme-agreee` l'atteint, à la clé de service. Une pièce reçue porte son FLUX (`flux_hote`, `flux_id`), unique par
+  dossier par une contrainte TOTALE (`pieces_flux_unique`) — c'est lui, jamais le point de reprise de la recherche, qui
+  empêche une facture d'entrer deux fois —, la version lisible d'un original XML (`lisible_path`) et la source
+  « plateforme ». **Et la policy d'insertion des pièces restreint désormais le CLIENT à ce que son dépôt écrit** : une
+  pièce « à valider », sans catégorie, venue de son dépôt ; il pouvait jusqu'ici insérer une pièce validée et rangée, ou
+  se dire reçue de la plateforme. `supabase/essais/receptionPlateforme.sql` : 40 contrôles sur 40 par impersonation des
+  trois profils, et les invariants 1 à 3 de `rls.sql` sur les 51 tables, 0 en faute. L'export porte 91 migrations,
+  l'inventaire 1 071 objets ; une sauvegarde n'emporte pas la connexion (sa table n'a aucune policy), et le plan de
+  reprise dit que l'identifiant et le secret se ressaisissent.
+  **LA FONCTION** (`plateforme-agreee`, huit actions : `statut`, `enregistrer`, `retirer`, `tester`, `lister`,
+  `telecharger`, `retenir`, `repartir`) vérifie `admin_du_dossier` AVANT toute lecture de la connexion et tout appel à la
+  plateforme, et `statut` ne sort pas de la base : c'est le seul appel que la fenêtre fait en s'ouvrant. Elle demande
+  le jeton OAuth2 en Basic, puis dans le corps ; liste les factures par pages, au curseur de la norme ou à la date pour
+  ses versions antérieures, en s'arrêtant à 20 pages, 100 factures et 100 secondes — sous le mur de 150 s de la
+  plateforme — et le DIT ; télécharge l'original et la version lisible d'une facture prête, après avoir vérifié la
+  nature de leurs octets (PDF ou XML) ; et retient un point de reprise qui ne recule jamais et ne s'approche jamais à
+  moins de quinze minutes de maintenant (la marge que la norme donne en exemple, §5.3.2). L'adresse étant saisie par le
+  cabinet, elle n'envoie le secret qu'en https, vers un nom de domaine public — pas d'adresse IP, pas de réseau interne
+  (`.local`, `.internal`, `.example`…) —, ne suit aucune redirection sauf pour un fichier, et ne porte jamais le jeton
+  chez un autre hôte. Ses journaux ne portent que des nombres et des codes. 76 tests sur la vraie source (blocs
+  extraits, transpilés, exécutés), 51 mutations, toutes attrapées. **Déployée en version 1 le 07/10/2026** :
+  `verify_jwt` à `true`, inscrit dans `config.toml` avant le premier déploiement et passé explicitement ; aller-retour
+  sans différence résiduelle sur 1 160 lignes ; sans jeton, la passerelle refuse (401). Aucune plateforme appelée.
+  **LA LECTURE D'UNE FACTURE** (`lib/factureElectronique.ts`) : une facture CII ou UBL champ par champ, chaque « BT » de la
+  norme EN 16931 à SA place, les montants en centimes entiers. Une DTD ou des entités sont refusées AVANT l'analyse, que
+  l'analyseur développerait. Le type (BT-3) décide du sens — un avoir entre en négatif, un type inconnu laisse la pièce
+  sans montants — ; ce qui manque ou se contredit est dit, jamais comblé, sauf la TVA que la norme définit elle-même
+  (BR-CO-14, puis BR-CO-15). Le XML d'un PDF Factur-X s'en extrait à part (`lib/factureX.ts` : `factur-x.xml`, puis les
+  noms ZUGFeRD et XRechnung ; pdf.js n'y est importé qu'à l'ouverture d'un PDF, ce qui laisse le module se tester
+  hors navigateur — le paquet le porte de toute façon, Banque et Clôture l'important). **ET LA FACTURE DOIT DÉSIGNER
+  LE DOSSIER** : une identité ouverte au cabinet peut servir plusieurs entreprises, et une organisation mal configurée
+  ferait entrer les factures d'un client dans le dossier d'un autre. Un achat qui nomme un autre acheteur, une vente qui nomme un autre vendeur, ne
+  s'importent pas — d'où le SIRET du dossier, sans lequel rien ne s'importe, et « Reprendre du début » une fois le SIRET
+  ou la configuration corrigés : ce qui est déjà entré est reconnu à son flux et ne revient pas.
+  **L'IMPORT** (`lib/receptionPlateforme.ts`) : le plan sépare ce qui est à importer, déjà importé, en attente chez la
+  plateforme et rejeté par elle ; une lecture partielle des factures déjà importées ou des empreintes du dossier
+  SUSPEND l'import. Rien n'est déposé avant que la facture soit lue et reconnue pour celle du dossier ; un échec après le
+  dépôt retire ce qui a été déposé. Ce que l'import a remarqué (SIREN absent, syntaxe différente de l'annonce, version
+  lisible manquante) est gardé dans les notes de la pièce (`notesDImport`) : c'est dans sa fiche qu'on la valide, bien
+  après la fenêtre. Le point de reprise n'avance que sur ce qui est réellement traité, et une connexion changée pendant
+  l'import l'interrompt sans rien retenir. 97 mutations, 95 mordent ; les deux survivantes sont équivalentes et écrites
+  comme telles.
+  **L'ÉCRAN** (`PlateformeClientModal`, onglet Justificatifs) : relier la plateforme — préréglage Super PDP, adresses en
+  https seulement, secret jamais réaffiché et gardé quand on le laisse vide, refus dits seulement pour ce qui est FAUX,
+  jamais pour ce qui manque (`lib/plateformeClient.ts`) —, tester, chercher, puis le plan avant tout import, et un bilan
+  facture par facture. Le verrou tient jusqu'à la relecture de la connexion ; « Reprendre du début » et « Retirer »
+  demandent confirmation, et le retrait dit que l'accès ouvert par le client sur sa plateforme reste ouvert. **Une
+  facture reçue a deux fichiers** (`lib/fichiersPiece.ts`) : la fiche d'une pièce et le rapprochement d'un mouvement
+  montrent la version lisible, l'original reste à portée d'un lien, une suppression retire les deux, et un pack joint
+  la version lisible. **LE DOUBLE IMPORT SE DIT DES DEUX CÔTÉS** : `superpdp-sync` enregistre un résumé texte d'une
+  facture, la plateforme son original, donc l'empreinte d'un fichier ne les rapproche pas ; la fenêtre prévient quand la
+  synchronisation Super PDP du dossier est configurée, et celle de Super PDP quand la plateforme est reliée. Les deux ne
+  lisent qu'un statut en base. **Ses phrases s'accordent à leur nombre** (« Importer la facture », « 1 déjà importée :
+  elle ne revient pas ») : la première version écrivait « Importer les 1 facture(s) », et son test le figeait — vu sur
+  une capture, pas en relisant. Soixante-huit mutations sur les écrans et leurs modules, toutes mordent — dont le SIRET
+  que la page passe aux Justificatifs, la liste relue après un import, et ce titre sans accord replanté.
+  **RGPD.md** l'inscrit (§2 et §3) : la plateforme du client n'est pas un sous-traitant du cabinet — c'est le client qui
+  la choisit et la contracte —, et la région où elle héberge les factures est à vérifier plateforme par plateforme.
+  **Le banc** sert, au cabinet infirmier, une plateforme reliée, une facture déjà reçue et une recherche qui rend une
+  facture neuve au nom de fichier long, une en attente et une rejetée, avec la synchronisation Super PDP configurée :
+  0 débordement aux quatre largeurs de référence et aux combinaisons extrêmes des volets.
+  **LATENT, et mesuré** (07/10/2026, des comptes seulement) : aucune connexion à une plateforme, aucune pièce reçue d'une
+  plateforme ; deux dossiers ont la synchronisation Super PDP configurée.
+  **CE QUI RESTE, dit plutôt que promis** : l'essai sur la plateforme réelle d'un client — la norme laisse aux plateformes
+  des choix (versions de l'API, curseur ou date, portée de l'identité) que seul un appel réel tranchera ; la région
+  d'hébergement de chaque plateforme ; aucune recherche automatique, la règle du projet (un clic, toujours) ; le double
+  import que l'application dit sans l'empêcher — garder la plateforme OU la synchronisation Super PDP est au cabinet ;
+  et les étapes (c) l'émission conforme, (d) le statut « Encaissée » et (e) l'e-reporting.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8671,7 +8777,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4943 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 5179 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8713,7 +8819,10 @@ qui en reste dû (`liquidationTva.ts`, la CA3 au centime des écritures dans `de
 qu'une validation écrit pour l'exercice suivant, au centime de la fonction de la base, et ce qu'on sait de
 l'ouverture d'un exercice (`reportDesSoldes.ts`), le statut de TVA d'un dossier — la mention de ses factures,
 le motif d'une ligne à 0 % qu'on transmet à une plateforme et ce qu'il doit à la facturation électronique
-(`statutTva.ts`) —, et ce que
+(`statutTva.ts`) —, la lecture d'une facture électronique CII ou UBL champ par champ (`factureElectronique.ts`)
+et du XML d'un PDF Factur-X (`factureX.ts`), le plan et l'import des factures reçues de la plateforme du client
+(`receptionPlateforme.ts`), ce que sa fenêtre dit (`plateformeClient.ts`) et les deux fichiers d'une facture
+reçue (`fichiersPiece.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
