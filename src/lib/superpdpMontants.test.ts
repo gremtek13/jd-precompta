@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
 // `calculerLigne` est PURE, mais elle vit dans `factures.ts`, qui importe `supabase.ts` pour
-// `attribuerNumeroFacture` — et `supabase.ts` LÈVE au chargement quand les variables
+// `enregistrerFacture` — et `supabase.ts` LÈVE au chargement quand les variables
 // d'environnement manquent. L'import suffit donc à faire échouer le fichier entier, avant qu'une
 // seule assertion ne tourne (voir CLAUDE.md, « le faux client est requis même pour une fonction
 // pure »). Le piège est qu'un `.env` peut exister en local et pas en CI : sans ce faux client, le

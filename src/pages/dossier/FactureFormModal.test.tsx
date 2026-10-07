@@ -130,6 +130,37 @@ describe('FactureFormModal — le verrou d’enregistrement d’une facture', ()
   })
 })
 
+// L'EN-TÊTE EST LE TOTAL DES LIGNES QUI PARTENT (07/10/2026). Les totaux étaient calculés sur TOUTES les lignes affichées,
+// et seules celles qui portent une désignation et une quantité positive partaient : une remise saisie en quantité
+// négative diminuait le total de la facture sans figurer parmi ses lignes. La base stocke l'en-tête tel qu'il est
+// envoyé, donc la facture validée se contredisait — à l'aperçu imprimé comme à la plateforme qui la reçoit, dont le
+// validateur refuse un total qui n'est pas la somme des lignes. Latent : les six factures en base sont cohérentes.
+describe('FactureFormModal — l’en-tête est le total des lignes qui partent', () => {
+  const champs = (i: number) => document.querySelectorAll('tbody tr')[i].querySelectorAll('input')
+
+  it('une ligne écartée n’entre pas dans les montants envoyés, et l’écran le dit', async () => {
+    monter('redevable')
+    fireEvent.change(champs(0)[2], { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: '+ Ligne' }))
+    fireEvent.change(champs(1)[0], { target: { value: 'Remise' } })
+    fireEvent.change(champs(1)[1], { target: { value: '-1' } })
+    fireEvent.change(champs(1)[2], { target: { value: '30' } })
+    expect(screen.getByText(/Une ligne ne partira pas avec la facture/)).toBeTruthy()
+
+    await act(async () => { valider().click() })
+    const args = faux.appels[0].args as { p_facture: Record<string, unknown>; p_lignes: unknown[] }
+    expect(args.p_lignes).toEqual([{ designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }])
+    expect(args.p_facture).toMatchObject({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+  })
+
+  // LE GARDE SYMÉTRIQUE : une ligne neuve laissée vide n'est pas une ligne écartée qu'il faudrait signaler.
+  it('ne dit rien d’une ligne neuve laissée vide', () => {
+    monter('redevable')
+    fireEvent.click(screen.getByRole('button', { name: '+ Ligne' }))
+    expect(screen.queryByText(/ne partir(a|ont) pas/)).toBeNull()
+  })
+})
+
 // LA FACTURE SUIT LE STATUT DE TVA DU DOSSIER (lib/statutTva.ts, ligne 28.5). La mention proposée était celle de la
 // franchise pour tout dossier non assujetti, donc pour un dossier de soins exonérés ; et une ligne neuve partait à
 // 0 % sur un redevable, que la plateforme recevait avec le motif de la franchise.

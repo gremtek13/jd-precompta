@@ -352,6 +352,12 @@ supabase/
                   (connexions_plateformes, fermée au navigateur), le flux d'une pièce reçue (flux_hote, flux_id),
                   sa version lisible et ce qu'un client peut encore déposer (la policy d'insertion des pièces), par
                   impersonation des trois profils, à rejouer après toute migration qui touche l'un d'eux.
+                  factures.sql : l'enregistrement d'une facture et d'un avoir (enregistrer_facture) — qui enregistre,
+                  les mentions de la facture électronique et ce que leurs contraintes refusent, une clé absente qui
+                  garde la valeur en place, l'option pour les débits figée à la validation, l'avoir d'un seul tenant
+                  et ses refus —, par impersonation des trois profils dans des dossiers jetables, à rejouer après
+                  toute migration qui touche factures_emises, facture_lignes ou la fonction. Il se joue en UNE
+                  transaction (`psql -1` hors de l'outil d'exécution).
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -7344,7 +7350,8 @@ d'environnement dans la même édition.
   listes BR-CL-01 que publient les artefacts de validation EN 16931 de la Commission européenne (deux choix près : 325,
   la facture proforma, n'est pas une pièce ; 81 compte en avoir) et à la règle G1.01 de la DGFiP. Sept mutations de la
   fonction, toutes mordent. **`plateforme-agreee` version 2**, redéployée avec `verify_jwt` à `true` passé
-  explicitement.
+  explicitement, la version 1 comparée au dépôt avant écrasement, aller-retour sans différence résiduelle sur
+  1 181 lignes, et sans jeton la passerelle refuse (401). Aucune plateforme appelée.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8844,7 +8851,8 @@ le motif d'une ligne à 0 % qu'on transmet à une plateforme et ce qu'il doit à
 (`statutTva.ts`) —, la lecture d'une facture électronique CII ou UBL champ par champ (`factureElectronique.ts`)
 et du XML d'un PDF Factur-X (`factureX.ts`), le plan et l'import des factures reçues de la plateforme du client
 (`receptionPlateforme.ts`), ce que sa fenêtre dit (`plateformeClient.ts`) et les deux fichiers d'une facture
-reçue (`fichiersPiece.ts`), et ce que
+reçue (`fichiersPiece.ts`), ce qu'un avoir refuse avant le clic, ce qui a déjà été crédité d'une facture et
+les lignes qui partent d'une saisie (`factures.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et

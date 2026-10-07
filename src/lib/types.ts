@@ -818,14 +818,20 @@ export interface DossierAssignation {
 
 export type StatutFacture = 'brouillon' | 'validee'
 export type TypeFacture = 'facture' | 'avoir'
+// Le client d'une facture (ligne 28.5, étape c) : il décide du chemin qu'elle prend avec la facturation
+// électronique — un assujetti établi en France la reçoit par sa plateforme, un organisme public par Chorus Pro,
+// et ce que l'on vend à un particulier ou à un client établi à l'étranger se déclare par l'e-reporting.
+export type TypeClient = 'assujetti' | 'organisme_public' | 'non_assujetti' | 'etranger'
+// La catégorie de l'opération (CGI, ann. II, art. 242 nonies A, I, 8° bis).
+export type NatureOperation = 'biens' | 'services' | 'mixte'
 
 // Facture émise par le dossier à un tiers (voir FacturesTab) — première brique pour émettre
 // soi-même des factures conformes, pas seulement en recevoir (voir Piece.source === 'superpdp'). Tant
 // que statut === 'brouillon', numero reste nul et tout le reste est librement modifiable ; à la
-// validation, un numéro séquentiel sans trou est attribué une fois pour toutes (voir
-// lib/factures.ts:attribuerNumeroFacture) et la facture n'est plus éditable — corriger une facture
-// déjà numérotée se fait par une facture d'avoir (voir type/facture_origine_id, FactureAvoirModal),
-// jamais en la rouvrant.
+// validation, `enregistrer_facture` attribue un numéro séquentiel sans trou une fois pour toutes, dans
+// la transaction qui valide, et la facture n'est plus éditable — corriger une facture déjà numérotée se
+// fait par une facture d'avoir (voir type/facture_origine_id, lib/factures.ts:creerAvoir), jamais en la
+// rouvrant.
 export interface FactureEmise {
   id: string
   dossier_id: string
@@ -867,7 +873,44 @@ export interface FactureEmise {
   created_by: string | null
   created_at: string
   validated_at: string | null
+  // LES MENTIONS DE LA FACTURE ÉLECTRONIQUE (ligne 28.5, étape c ; migration mentions_de_la_facture). Nulles sur
+  // une facture d'avant : on ne devine pas ce qui n'a pas été saisi. Un avoir les reprend de sa facture
+  // d'origine, dans la base.
+  type_client: TypeClient | null
+  // Le SIREN du client (art. 242 nonies A, I, 1°), neuf chiffres ; le SIRET, quand il est donné, commence par lui.
+  tiers_siren: string | null
+  // L'adresse de facturation électronique du client, telle que l'annuaire la publie : SIREN, SIREN_SIRET,
+  // SIREN_SIRET_identifiant de routage ou SIREN_suffixe. Seul un client assujetti ou un organisme public en a une.
+  tiers_adresse_electronique: string | null
+  // Organisme public : le code du service destinataire et le numéro d'engagement que Chorus Pro demande à
+  // certains destinataires.
+  code_service: string | null
+  numero_engagement: string | null
+  nature_operation: NatureOperation | null
+  // La date de la livraison ou de la fin de la prestation, OU la période couverte (art. 242 nonies A, I, 10°),
+  // quand elle diffère de la date d'émission — jamais les deux.
+  date_prestation: string | null
+  periode_debut: string | null
+  periode_fin: string | null
+  // L'adresse de livraison des biens quand elle diffère de celle du client (7° bis) : tous quatre ou aucun ;
+  // le pays en code ISO à deux lettres.
+  livraison_adresse: string | null
+  livraison_code_postal: string | null
+  livraison_ville: string | null
+  livraison_pays: string | null
+  // L'option pour le paiement de la TVA d'après les débits (11° bis), FIGÉE par la base à la validation, telle
+  // que le dossier la portait ce jour-là. Nulle sur un brouillon et sur une facture validée avant elle.
+  option_debits: boolean | null
 }
+
+// Les mentions de la facture électronique, à part du reste : le module qui les juge et l'écran qui les saisit
+// (ligne 28.5, étape c) en parlent comme d'un tout.
+export type MentionsFacture = Pick<
+  FactureEmise,
+  | 'type_client' | 'tiers_siren' | 'tiers_adresse_electronique' | 'code_service' | 'numero_engagement'
+  | 'nature_operation' | 'date_prestation' | 'periode_debut' | 'periode_fin'
+  | 'livraison_adresse' | 'livraison_code_postal' | 'livraison_ville' | 'livraison_pays' | 'option_debits'
+>
 
 // Un événement du cycle de vie d'une facture transmise via Super PDP (voir migration
 // superpdp_emission_factures) — l'envoi est asynchrone, un statut à l'instant T ne dit rien du
