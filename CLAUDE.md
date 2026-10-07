@@ -1604,8 +1604,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   que chaque client a choisie (une configuration par dossier, par l'API de flux des plateformes) et, pour les
   quelques clients qui en ont besoin, l'émission conforme, le statut « Encaissée » et l'e-reporting. L'étape (a), le
   statut de TVA du dossier, est livrée (07/10/2026), et l'étape (b), la réception par la plateforme du client, aussi
-  (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. Restent (c) l'émission
-  conforme et ses nouvelles mentions, (d) le statut « Encaissée » et (e) l'e-reporting.
+  (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. L'étape (c), l'émission
+  conforme et ses nouvelles mentions, avance : les mentions de la facture en base et l'avoir d'un seul tenant sont en
+  ligne (07/10/2026) ; restent le générateur de la facture électronique, son dépôt et l'écran qui saisit les mentions.
+  Restent ensuite (d) le statut « Encaissée » et (e) l'e-reporting.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -7352,6 +7354,64 @@ d'environnement dans la même édition.
   fonction, toutes mordent. **`plateforme-agreee` version 2**, redéployée avec `verify_jwt` à `true` passé
   explicitement, la version 1 comparée au dépôt avant écrasement, aller-retour sans différence résiduelle sur
   1 181 lignes, et sans jeton la passerelle refuse (401). Aucune plateforme appelée.
+- **L'AVOIR S'ENREGISTRE D'UN SEUL TENANT, ET LA FACTURE PORTE SES MENTIONS EN BASE — LIGNE 28.5, ÉTAPE (C), PREMIER
+  TEMPS** (07/10/2026, migration `mentions_de_la_facture`, `lib/factures.ts`, `FactureAvoirModal`, `FacturesTab`,
+  `FactureFormModal`). L'émission conforme commence par ce que la facture doit DIRE. Le décret n° 2022-1299 a ajouté au
+  I de l'art. 242 nonies A de l'annexe II du CGI le SIREN du client (1°), l'adresse de livraison des biens quand elle
+  diffère (7° bis), la catégorie de l'opération — biens, services ou les deux (8° bis) — et l'option pour les débits
+  (11° bis) ; et une mention due depuis toujours manquait à l'application : la date de la livraison ou de la prestation,
+  ou sa période, quand elle diffère de la date d'émission (10°).
+  **EN BASE** : quatorze colonnes sur `factures_emises` — le type de client (assujetti, particulier, client établi hors de
+  France, organisme public), son SIREN, son adresse de facturation électronique (le SIREN, puis au besoin un SIRET, un
+  identifiant de routage ou un suffixe, joints par « _ », 125 caractères au plus — annexe 3 des spécifications externes
+  de la DGFiP), le code service et le numéro d'engagement d'un organisme public (annexe EDI de Chorus Pro), la catégorie
+  de l'opération, la date ou la période de la prestation, l'adresse de livraison et l'option pour les débits — et
+  dix-sept contraintes qui les tiennent sans le code, NULLES sur les factures d'avant : on ne devine pas ce qui n'a pas
+  été saisi. Ce qu'une facture doit porter pour être validée selon son client se dira avant le clic avec l'écran qui
+  les saisit (étape c, quatrième temps) : refuser ici une validation que l'écran en ligne ne sait pas encore compléter
+  bloquerait la facturation.
+  **`enregistrer_facture` garde sa signature et gagne trois choses** : elle enregistre les mentions, et une clé ABSENTE
+  du document reçu GARDE la valeur en place — une fenêtre ouverte avant la mise en ligne, qui ne connaît pas ces champs,
+  ne les efface pas en enregistrant un brouillon (la famille « lecture → formulaire → écriture de tous les champs ») ;
+  elle FIGE à la validation l'option pour les débits que le dossier porte ce jour-là, et seulement pour un dossier
+  redevable (un réglage de session l'annonce au contrôle, retiré aussitôt) ; et elle enregistre un AVOIR d'un seul
+  tenant.
+  **LE DÉFAUT QUE CORRIGE LE TROISIÈME POINT** : l'écran créait un avoir en trois allers-retours — un numéro de la série
+  « A » consommé, l'avoir inséré validé, puis ses lignes —, et un échec au milieu laissait un numéro perdu dans une suite
+  légale qui n'en admet pas, ou un avoir sans lignes : le défaut que cette fonction avait corrigé pour les factures le
+  16/09/2026, resté entier sur l'avoir. L'avoir reprend désormais de sa facture d'origine les parties et ce qu'elle dit
+  de l'opération — il corrige CETTE facture, entre les mêmes parties —, et ne reçoit de l'appelant que sa date, son
+  motif, ses mentions et ses lignes, qui créditent. La base refuse un avoir en brouillon, l'avoir d'un brouillon ou d'un
+  avoir, celui d'une facture d'un autre dossier, des quantités positives, un total positif, un avoir daté avant sa
+  facture, et un avoir qui créditerait plus que ce que la facture porte encore — le reste dit en euros.
+  **L'APPLICATION LE DIT AVANT LE CLIC** (`refusAvoir`, dans l'ordre de la base), et le plafond suit ce que les avoirs ont
+  DÉJÀ crédité (`dejaCredite`, sur la liste entière du dossier, toutes années confondues : un avoir de l'an prochain
+  crédite la facture de cette année) ; lue en partie, la liste ne fait rien conclure, et c'est la base qui juge.
+  **ET LE FORMULAIRE D'UNE FACTURE TOTALISAIT DES LIGNES QU'IL N'ENVOYAIT PAS** : une ligne sans désignation ou à
+  quantité négative ne part pas, mais entrait dans les totaux de l'en-tête — or la base stocke l'en-tête tel qu'il est
+  envoyé. Les totaux sont désormais ceux des lignes qui partent (`lignesSaisies`), et l'écran compte les lignes écartées
+  qui portaient quelque chose.
+  **ET LES TOTAUX SE FONT EN CENTIMES ENTIERS** (`calculerTotaux`) — trouvé en écrivant le générateur de l'étape (c),
+  deuxième temps : en flottants, 0,07 + 0,14 font 0,21000000000000002, que la base stocke tel quel (colonnes numeric
+  sans échelle), et le plafond d'un avoir comparé au centime près aurait refusé un avoir juste. LATENT : aucune facture
+  en base n'en porte (les six sont des montants ronds). Quatre mutations, toutes mordent.
+  **LA MIGRATION A ÉTÉ COLLÉE PAR LE CABINET** dans l'éditeur SQL, `apply_migration` attendant une confirmation qui ne
+  lui parvenait pas (le corps de la fonction contient une suppression des lignes remplacées) : l'historique porte le
+  texte exact, empreinte `23488a2e…` des deux côtés, sans fins de ligne `\r\n` cette fois ; corps de la fonction
+  identique au caractère près (`59f41bd3…`), quatorze colonnes, dix-sept contraintes. L'export porte 93 migrations
+  (`d7cb9634…`), le socle 77 instructions (inchangé), l'inventaire 1 102 objets (`3123cd97…`).
+  **ÉPROUVÉ EN PRODUCTION** (`supabase/essais/factures.sql`) : 65 contrôles sur 65, dans des dossiers jetables d'un bloc
+  qui s'annule entièrement — les comptes de six tables identiques avant et après —, le texte transmis comparé au fichier
+  sans ses commentaires (identique). Vingt-neuf mutations de la migration et du harnais sur une réplique locale,
+  vingt-sept mordent ; les deux survivantes sont la longueur totale de l'adresse électronique et la longueur de son
+  identifiant de routage, deux bornes qui se doublent pour un identifiant trop long — chacune retirée seule laisse
+  l'autre refuser. Trente-neuf mutations de l'application, trente-huit mordent ; la survivante est le refus répété dans
+  le gestionnaire de l'avoir, derrière un bouton déjà grisé.
+  **CE QUI RESTE, dit plutôt que promis** : figer en base une facture validée (étape c, premier temps bis — aujourd'hui
+  seul l'écran refuse de la modifier), le générateur de la facture électronique (deuxième temps), son dépôt par la
+  plateforme du client et les nouvelles mentions de `superpdp-emit` (troisième), et l'écran qui saisit les mentions
+  (quatrième). Une facture validée avant cette migration garde ses mentions nulles : elle se corrige par un avoir,
+  jamais en place.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8806,7 +8866,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 5181 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 5208 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

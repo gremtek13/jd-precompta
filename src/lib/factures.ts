@@ -36,14 +36,20 @@ export function calculerLigne(quantite: number, prixUnitaireHt: number, tauxTva:
   return { montant_ht: ht, montant_tva: tva, montant_ttc: Math.round((ht + tva) * 100) / 100 }
 }
 
+// La somme se fait en CENTIMES ENTIERS. En flottants, 0,07 + 0,14 vaut 0,21000000000000002 : la base stocke les
+// montants tels qu'on les envoie (colonnes numeric sans échelle), et un plafond comparé au centime près — ce qu'un
+// avoir peut encore créditer — refuserait un montant juste pour une décimale que personne n'a saisie.
 export function calculerTotaux(lignes: { quantite: number; prix_unitaire_ht: number; taux_tva: number }[]): LigneCalculee {
-  return lignes.reduce(
-    (acc, l) => {
-      const c = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva)
-      return { montant_ht: acc.montant_ht + c.montant_ht, montant_tva: acc.montant_tva + c.montant_tva, montant_ttc: acc.montant_ttc + c.montant_ttc }
-    },
-    { montant_ht: 0, montant_tva: 0, montant_ttc: 0 },
-  )
+  let ht = 0
+  let tva = 0
+  let ttc = 0
+  for (const l of lignes) {
+    const c = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva)
+    ht += Math.round(c.montant_ht * 100)
+    tva += Math.round(c.montant_tva * 100)
+    ttc += Math.round(c.montant_ttc * 100)
+  }
+  return { montant_ht: ht / 100, montant_tva: tva / 100, montant_ttc: ttc / 100 }
 }
 
 export interface LigneAEnregistrer {

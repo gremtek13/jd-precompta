@@ -67,6 +67,23 @@ describe('calculerTotaux', () => {
     ])
     expect(totaux).toEqual({ montant_ht: 200, montant_tva: 25.5, montant_ttc: 225.5 })
   })
+
+  it('somme en centimes : 0,07 + 0,14 font 0,21, sans la décimale fantôme des flottants', () => {
+    // En flottants, 0.07 + 0.14 === 0.21000000000000002 — envoyé tel quel, la base le stockerait (numeric sans
+    // échelle), et le plafond d'un avoir comparé à 0,21 le refuserait.
+    const totaux = calculerTotaux([
+      { quantite: 1, prix_unitaire_ht: 0.07, taux_tva: 0 },
+      { quantite: 1, prix_unitaire_ht: 0.14, taux_tva: 0 },
+    ])
+    expect(totaux).toEqual({ montant_ht: 0.21, montant_tva: 0, montant_ttc: 0.21 })
+    expect(String(totaux.montant_ttc)).toBe('0.21')
+    // Et la TVA de même : 0,07 + 0,14 de TVA, sur 0,35 + 0,70 de HT (qui font 1.0499999999999998 en flottants).
+    const taxes = calculerTotaux([
+      { quantite: 1, prix_unitaire_ht: 0.35, taux_tva: 20 },
+      { quantite: 1, prix_unitaire_ht: 0.7, taux_tva: 20 },
+    ])
+    expect(taxes).toEqual({ montant_ht: 1.05, montant_tva: 0.21, montant_ttc: 1.26 })
+  })
 })
 
 describe('mentionsLegalesParDefaut', () => {
