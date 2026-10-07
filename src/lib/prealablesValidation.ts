@@ -25,9 +25,10 @@ import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from '
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
+import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
-  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
 
 // CE QUI EMPÊCHE DE VALIDER UN EXERCICE, DIT AVANT LE CLIC (ligne 26.6, étape d). Une validation ne se défait
@@ -100,7 +101,13 @@ export interface DonneesDeValidation {
   cotisations: readonly CotisationDeclaree[]
   vehicules: readonly VehiculeDossier[]
   emprunts: readonly Emprunt[]
+  // L'ouverture REPRISE d'un autre logiciel (`a_nouveaux`) : sa date décide de l'ordre des exercices et de ce que la
+  // balance reprise porte déjà.
   aNouveaux: readonly ANouveau[]
+  // Les soldes REPORTÉS par la validation de chaque exercice (ligne 34, lib/reportDesSoldes.ts) : ceux du 1er janvier
+  // ouvrent l'exercice à valider, et sa numérotation les reçoit avec la reprise — la base exige qu'elle couvre exactement
+  // l'une et les autres.
+  soldesReportes: readonly SoldeReporte[]
   // Les déclarations de TVA enregistrées, et la périodicité du dossier : une liquidation ou un paiement qui ne suit plus
   // sa déclaration se refuse, une période sans déclaration se dit (ligne 26.8).
   declarationsTva: readonly DeclarationTva[]
@@ -118,6 +125,9 @@ export interface EtatDeValidation {
   prealables: PrealableDeValidation[]
   // La numérotation de l'exercice, celle que la validation enverra — nulle quand une lecture est partielle.
   numerotation: NumerotationFec | null
+  // L'ouverture de l'exercice suivant, telle que la validation l'écrira dans le même clic (ligne 34) — nulle quand une
+  // lecture est partielle.
+  report: ReportDesSoldes | null
   // Vrai quand aucun préalable bloquant ne reste.
   validable: boolean
 }
@@ -192,7 +202,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${d.lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
     })
-    return { prealables, numerotation: null, validable: false }
+    return { prealables, numerotation: null, report: null, validable: false }
   }
 
   // ── Ce que la base refusera, avec ses mots. ─────────────────────────────────────────────────────────────
@@ -277,7 +287,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // ── La numérotation de l'exercice : celle que la validation enverra. ────────────────────────────────────
   const ecrituresDeLExercice = d.ecritures.filter((e) => dansLExercice(e.date))
   const numerotation = numeroterFec(
-    ecrituresDeLExercice, d.piecesValidees, [...d.categories], d.aNouveaux.filter((a) => dansLExercice(a.date)), d.modele.mode, d.lignes,
+    ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
+    d.modele.mode, d.lignes,
   )
   bloque({
     id: 'ecritures-orphelines', nb: numerotation.horsFec.length, cible: 'ecritures',
@@ -297,6 +308,26 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     id: 'numerotation', nb: defauts.length - desequilibres.length, cible: 'ecritures',
     message: "défaut(s) de numérotation que la base refuserait : un compte qui porte deux libellés, des numéros qui ne se suivent pas, ou une écriture à deux pièces ou à deux dates. Signaler ce cas : il ne devrait pas se produire.",
   })
+
+  // ── L'ouverture de l'exercice suivant, que la validation écrit dans le même clic (ligne 34). ────────────────────
+  // La base la calcule sur l'exercice validé (`soldes_a_reporter`) et refuse deux choses, dites ici avec ses mots : un
+  // compte qui n'est ni de bilan ni de résultat et porte un solde — il ne se reporterait pas —, et une ouverture qui ne
+  // s'équilibre pas. Celle-ci ne se dit pas à côté d'une écriture déséquilibrée, qui en est la cause et se dit déjà ;
+  // seule, elle ne peut venir que d'une ouverture de l'exercice elle-même déséquilibrée (défensif : la reprise et le
+  // report de l'exercice précédent sont refusés déséquilibrés).
+  const report = soldesAReporter(mouvementsDeCloture(numerotation), d.modele, d.annee)
+  bloque({
+    id: 'report-hors-classes', nb: report.horsClasses.length, cible: 'ecritures',
+    message: `compte(s) qui ne sont ni de bilan ni de résultat portent un solde à la fin de l'exercice ${d.annee} : il ne se reporterait pas sur l'exercice suivant. Corriger leurs écritures — le compte de leur catégorie — avant la validation.`,
+    detail: report.horsClasses.length > 0 ? `Comptes : ${report.horsClasses.join(', ')}.` : undefined,
+  })
+  if (report.ecartCentimes !== 0 && desequilibres.length === 0) {
+    bloque({
+      id: 'report-desequilibre', nb: null, cible: 'ecritures',
+      message: `Les soldes de l'exercice ${d.annee} ne s'équilibrent pas, à-nouveaux compris : l'ouverture de l'exercice suivant ne peut pas s'écrire.`,
+      detail: `Écart de ${(Math.abs(report.ecartCentimes) / 100).toFixed(2).replace('.', ',')} € entre les débits et les crédits.`,
+    })
+  }
 
   // ── La 2035 et les écritures (trésorerie). ──────────────────────────────────────────────────────────────
   // UNE 2035 VALIDÉE EST CELLE QUE LA BASE GARDE (lib/validationExercice.ts), et les cartes de Clôture qui disent ce
@@ -580,7 +611,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     }
   }
 
-  return { prealables, numerotation, validable: !prealables.some((p) => p.bloquant) }
+  return { prealables, numerotation, report, validable: !prealables.some((p) => p.bloquant) }
 }
 
 // LES POINTS EN ERREUR DE LA CHECKLIST, et ce que la validation en fait. Chacun est repris ici (son

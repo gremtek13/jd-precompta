@@ -419,6 +419,35 @@ export interface ANouveau {
   ecriture_lib: string | null
 }
 
+// Solde d'ouverture d'un exercice qui suit un exercice VALIDÉ dans l'application (ligne 34, voir
+// lib/reportDesSoldes.ts) : un solde de fin de l'exercice validé, écrit par `valider_exercice` dans le même clic,
+// daté du 1er janvier suivant. À part de `ANouveau`, qui reste l'ouverture d'un dossier REPRIS — une seule date, que
+// beaucoup de règles lisent comme celle de la reprise. Les deux ne couvrent jamais le même exercice, et le FEC, la
+// balance et la piste d'audit d'un exercice les lisent sous la même forme (`ouvertureDeLExercice`). Figé dès son
+// écriture (déclencheur `soldes_reportes_ecrits_par_la_validation`).
+export interface SoldeReporte {
+  id: string
+  dossier_id: string
+  // Le 1er janvier de l'exercice qu'il ouvre.
+  date: string
+  // Classes 1 à 5 seulement : les comptes de résultat sont devenus le résultat (101000, 120000 ou 129000).
+  compte: string
+  // Le libellé que l'exercice validé a figé pour ce compte, ou celui que le report lui donne (« Capital
+  // individuel », le résultat avec son exercice).
+  libelle: string
+  sens: SensEcriture
+  montant: number
+  // « Exercice AAAA validé » : sa pièce dans le FEC.
+  source_nom: string
+  // L'empreinte de l'exercice validé dont il vient (`exercices_valides.empreinte`) : le maillon entre la fin d'un
+  // exercice et le début du suivant.
+  source_empreinte: string
+  created_at: string
+  // Ce que le FEC lit de lui, posé quand l'exercice qu'il ouvre est validé, comme pour un à-nouveau.
+  compte_lib: string | null
+  ecriture_lib: string | null
+}
+
 // La profession, au sens des règles de l'Urssaf pour les praticiens et auxiliaires médicaux
 // conventionnés : c'est elle qui décide de la prise en charge par l'Assurance maladie et du taux de
 // la CURPS. Infirmiers, masseurs-kinésithérapeutes, orthophonistes, orthoptistes et

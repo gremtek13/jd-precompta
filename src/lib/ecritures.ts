@@ -791,9 +791,12 @@ export interface LigneBalance {
 // (compte entré à la main sur une catégorie propre à un dossier, jamais recroisé ici avec son libellé).
 //
 // Les À-NOUVEAUX y entrent comme les écritures de l'exercice qu'ils ouvrent — l'appelant les filtre
-// sur l'exercice affiché, comme il filtre le brouillon (voir lib/aNouveaux.ts). Une balance de
-// l'exercice repris qui les omettrait donnerait à la banque le solde de ses seuls mouvements, et aux
-// comptes que l'application ne mouvemente jamais (une immobilisation, un emprunt) aucune ligne du tout.
+// sur l'exercice affiché, comme il filtre le brouillon (voir lib/aNouveaux.ts) : la balance reprise de
+// l'exercice repris, ou les soldes reportés d'un exercice qui suit un exercice validé
+// (`ouvertureDeLExercice`, lib/reportDesSoldes.ts). Une balance de l'exercice qui les omettrait donnerait à
+// la banque le solde de ses seuls mouvements, et aux comptes que l'application ne mouvemente jamais (une
+// immobilisation, un emprunt) aucune ligne du tout. Toutes années confondues, seule la reprise y entre : les
+// soldes reportés sont la somme de ce que la vue parcourt déjà, et les y ajouter compterait tout deux fois.
 export function calculerBalance(
   ecritures: EcritureBrouillon[], categories: Categorie[], aNouveaux: readonly ANouveau[],
 ): LigneBalance[] {
@@ -801,8 +804,9 @@ export function calculerBalance(
   for (const c of categories) {
     if (c.compte_comptable) libelleParCompte.set(c.compte_comptable, c.libelle)
   }
-  // Le nom qu'une balance reprise donne à un compte que l'application ne nomme pas : sans lui, un
-  // emprunt ou une immobilisation s'afficheraient « — ».
+  // Le nom qu'une balance reprise — ou le report d'un exercice validé (lib/reportDesSoldes.ts) — donne à un
+  // compte que l'application ne nomme pas : sans lui, un emprunt, une immobilisation ou le capital individuel
+  // s'afficheraient « — ».
   for (const a of aNouveaux) {
     if (a.libelle && !libelleParCompte.has(a.compte)) libelleParCompte.set(a.compte, a.libelle)
   }
