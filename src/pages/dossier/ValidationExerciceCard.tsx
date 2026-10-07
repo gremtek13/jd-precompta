@@ -6,6 +6,7 @@ import { libelleDeLOnglet, type DossierTab } from '../../lib/ongletsDossier'
 import { LIBELLES_JOURNAUX } from '../../lib/fec'
 import type { EtatDeValidation } from '../../lib/prealablesValidation'
 import type { DemandeDeValidation } from '../../lib/validationExercice'
+import type { ReportDesSoldes } from '../../lib/reportDesSoldes'
 import type { ExerciceValide, JournalCode } from '../../lib/types'
 
 // VALIDER UN EXERCICE (ligne 26.6 de la feuille de route, étape d). La base porte la procédure — refus,
@@ -18,9 +19,13 @@ import type { ExerciceValide, JournalCode } from '../../lib/types'
 // `try` et relâché dans le `finally`, APRÈS la relecture de l'écran — relâché avant, la carte proposerait
 // encore de valider un exercice qui vient de l'être. Une validation acceptée se dit par l'exercice relu validé :
 // la relecture de Clôture remplace la carte le temps de relire, un message posé avant ne s'afficherait jamais.
+//
+// LA VALIDATION ÉCRIT AUSSI L'OUVERTURE DE L'EXERCICE SUIVANT (ligne 34, décision du cabinet du 06/10/2026) : ses soldes
+// reportés, dans le même clic (lib/reportDesSoldes.ts). La carte les montre avant — c'est ce qui se figera —, la
+// confirmation les nomme, et un exercice validé dit l'ouverture qu'il a écrite.
 
 export default function ValidationExerciceCard({
-  dossierId, annee, valide, etat, demande, estChef, onValide, onNavigate, onChoisirExercice,
+  dossierId, annee, valide, etat, demande, reportesEcrits, estChef, onValide, onNavigate, onChoisirExercice,
 }: {
   dossierId: string
   annee: number
@@ -30,6 +35,9 @@ export default function ValidationExerciceCard({
   etat: EtatDeValidation | null
   // Ce que `valider_exercice` recevra : nul tant qu'un préalable bloque.
   demande: DemandeDeValidation | null
+  // Quand l'exercice est validé : le nombre de soldes reportés que sa validation a écrits au 1er janvier suivant, lus en
+  // base — nul quand on n'a pas pu les lire en entier, et la carte se tait plutôt que de dire un compte faux.
+  reportesEcrits: number | null
   estChef: boolean
   // Relit l'écran après la validation.
   onValide: () => Promise<void>
@@ -48,7 +56,7 @@ export default function ValidationExerciceCard({
     validationEnCours.current = true
     setErreur(null)
     try {
-      if (!window.confirm(confirmation(annee, demande))) return
+      if (!window.confirm(confirmation(annee, demande, etat.report))) return
       setEnCours(true)
       const { error } = await supabase.rpc('valider_exercice', {
         p_dossier_id: dossierId,
@@ -101,6 +109,15 @@ export default function ValidationExerciceCard({
           corrige sur l'exercice suivant. Le FEC de l'exercice se relit depuis ses écritures validées, dans
           l'onglet Écritures.
         </p>
+        {reportesEcrits !== null && (
+          <p className="muted">
+            {reportesEcrits === 0
+              ? `Tous ses comptes de bilan étaient soldés au 31/12/${annee} : l’exercice ${annee + 1} s’ouvre sans soldes reportés.`
+              : `Sa validation a écrit l’ouverture de l’exercice ${annee + 1} : ${reportesEcrits} solde${reportesEcrits > 1 ? 's' : ''} `
+                + `reporté${reportesEcrits > 1 ? 's' : ''} au 01/01/${annee + 1}, qui ${reportesEcrits > 1 ? 'ouvrent' : 'ouvre'} son FEC `
+                + '(journal AN) et sa balance.'}
+          </p>
+        )}
         <p className="muted" style={{ marginBottom: 8 }}>
           Empreinte <span style={{ fontFamily: 'monospace' }}>{valide.empreinte.slice(0, 16)}…</span>
           {valide.empreinte_precedente ? ` — chaînée à celle de l'exercice ${annee - 1}.` : ' — premier exercice validé du dossier.'}
@@ -153,6 +170,7 @@ export default function ValidationExerciceCard({
       {etat.validable && demande && (
         <p className="muted">{resume(demande)}</p>
       )}
+      {etat.validable && demande && etat.report && <ApercuDuReport annee={annee} report={etat.report} />}
       {estChef ? (
         <button
           className="btn btn-primary"
@@ -168,6 +186,69 @@ export default function ValidationExerciceCard({
       {erreur && <p className="error-text">{erreur}</p>}
     </div>
   )
+}
+
+// CE QUE LA VALIDATION ÉCRIRA AUSSI : l'ouverture de l'exercice suivant, telle que la base la calculera — le module en est
+// le jumeau, confronté à la fonction de la base (lib/reportDesSoldes.ts). Le détail se déplie : une ligne par compte de
+// bilan qui porte un solde.
+function ApercuDuReport({ annee, report }: { annee: number; report: ReportDesSoldes }) {
+  const n = report.soldes.length
+  return (
+    <div className="apercu-report" style={{ marginBottom: 12 }}>
+      <p style={{ marginBottom: 4 }}><strong>L’ouverture de l’exercice {annee + 1}</strong></p>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {n === 0
+          ? `Tous les comptes de bilan sont soldés au 31/12/${annee} : l’exercice ${annee + 1} s’ouvrira sans soldes reportés.`
+          : `La validation l’écrit dans le même geste : ${n} solde${n > 1 ? 's' : ''} reporté${n > 1 ? 's' : ''} au 01/01/${annee + 1}, `
+            + `${formatMoney(report.totalDebit)} au débit comme au crédit. ${phraseDuResultat(annee, report)}`}
+      </p>
+      {n > 0 && (
+        <details>
+          <summary>Voir les soldes reportés</summary>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable">
+              <thead>
+                <tr>
+                  <th>Compte</th>
+                  <th>Libellé</th>
+                  <th style={{ textAlign: 'right' }}>Débit</th>
+                  <th style={{ textAlign: 'right' }}>Crédit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.soldes.map((s) => (
+                  <tr key={s.compte}>
+                    <td data-libelle="Compte" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{s.compte}</td>
+                    <td data-libelle="Libellé">{s.libelle}</td>
+                    <td data-libelle="Débit" style={nombre}>{s.sens === 'debit' ? formatMoney(s.montant) : '—'}</td>
+                    <td data-libelle="Crédit" style={nombre}>{s.sens === 'credit' ? formatMoney(s.montant) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+const nombre = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
+
+// Où va le résultat, et ce que devient le compte de l'exploitant — décision du cabinet : une entreprise individuelle
+// verse son compte de l'exploitant et son résultat au capital individuel (PCG, art. 941-10), une société garde son
+// résultat en attente d'affectation, que le cabinet décide.
+function phraseDuResultat(annee: number, report: ReportDesSoldes): string {
+  const r = report.resultat
+  const leResultat = r > 0 ? `le bénéfice de l’exercice (${formatMoney(r)})` : `la perte de l’exercice (${formatMoney(-r)})`
+  if (report.individuel) {
+    return `Entreprise individuelle : le compte de l’exploitant (108)${r !== 0 ? ` et ${leResultat} passent` : ' passe'} au capital `
+      + `individuel (101000), comme le prévoit le plan comptable (art. 941-10) : l’exercice ${annee + 1} repart d’un compte de `
+      + 'l’exploitant vide.'
+  }
+  if (r === 0) return ''
+  return `${r > 0 ? 'Le bénéfice' : 'La perte'} de l’exercice (${formatMoney(Math.abs(r))}) est ${r > 0 ? 'reporté en 120000' : 'reportée en 129000'}, `
+    + 'en attente d’affectation : l’affecter reste un geste du cabinet.'
 }
 
 function ListePrealables({ prealables, onNavigate, onChoisirExercice }: {
@@ -219,17 +300,26 @@ function resume(demande: DemandeDeValidation): string {
 
 // LA CONFIRMATION NOMME CE QU'ON PERD, comme toutes celles du projet — « Êtes-vous sûr ? » se ferme d'un clic
 // aussi distrait que le premier, et celle-ci précède le geste le plus définitif de l'application.
-function confirmation(annee: number, demande: DemandeDeValidation): string {
+function confirmation(annee: number, demande: DemandeDeValidation, report: ReportDesSoldes | null): string {
   const ecritures = nombreDEcritures(demande)
+  const points = [
+    `Ses ${ecritures} écriture(s) (${demande.p_lignes.length} ligne(s)) deviennent intangibles : elles ne se modifient ni ne se suppriment plus, et aucune écriture ne pourra plus être passée jusqu'au 31/12/${annee}.`,
+    "Ce qui les a produites est figé avec elles : les pièces qu'elles comptabilisent, les mouvements bancaires, les parts ventilées ou réglées en groupe, les biens, les lignes du cadre 7 et les échéances de cotisation de l'exercice, et les à-nouveaux.",
+    ...(demande.p_declaration
+      ? [`La 2035 de ${annee} est gardée telle qu'elle est aujourd'hui (résultat de ${formatMoney(demande.p_declaration.resultat)}) : elle ne se recalculera plus.`]
+      : []),
+    ...(report
+      ? [report.soldes.length === 0
+        ? `Tous les comptes de bilan étant soldés, l'exercice ${annee + 1} s'ouvrira sans soldes reportés.`
+        : `L'ouverture de l'exercice ${annee + 1} s'écrit dans le même geste, et ne se modifiera pas : ${report.soldes.length} solde(s) reporté(s) au 01/01/${annee + 1}`
+          + (report.individuel
+            ? ', le compte de l\'exploitant et le résultat passant au capital individuel (101000).'
+            : report.resultat !== 0 ? `, le résultat en attente d'affectation en ${report.resultat > 0 ? '120000' : '129000'}.` : '.')]
+      : []),
+  ]
   return [
     `Valider l'exercice ${annee} ? La validation est DÉFINITIVE : elle ne se défait pas.`,
-    '',
-    `1. Ses ${ecritures} écriture(s) (${demande.p_lignes.length} ligne(s)) deviennent intangibles : elles ne se modifient ni ne se suppriment plus, et aucune écriture ne pourra plus être passée jusqu'au 31/12/${annee}.`,
-    '',
-    "2. Ce qui les a produites est figé avec elles : les pièces qu'elles comptabilisent, les mouvements bancaires, les parts ventilées ou réglées en groupe, les biens, les lignes du cadre 7 et les échéances de cotisation de l'exercice, et les à-nouveaux.",
-    ...(demande.p_declaration
-      ? ['', `3. La 2035 de ${annee} est gardée telle qu'elle est aujourd'hui (résultat de ${formatMoney(demande.p_declaration.resultat)}) : elle ne se recalculera plus.`]
-      : []),
+    ...points.flatMap((p, i) => ['', `${i + 1}. ${p}`]),
     '',
     "Une erreur découverte ensuite se corrigera sur l'exercice suivant, jamais dans celui-ci.",
   ].join('\n')

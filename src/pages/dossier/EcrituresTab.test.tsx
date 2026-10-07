@@ -250,6 +250,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], natures_immobilisation: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [], reglements_groupes: [],
+    soldes_reportes: [],
     ...tables,
   } as Record<string, unknown[]>
 }
@@ -894,6 +895,110 @@ describe('EcrituresTab — les à-nouveaux ouvrent les exports de leur exercice'
 
     await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)
     expect(screen.queryAllByText(/Le brouillon n'a pas pu être lu en entier/)).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Générer les écritures manquantes/ }).hasAttribute('disabled')).toBe(false)
+  })
+})
+
+// LE REPORT DES SOLDES (ligne 34, décision du cabinet du 06/10/2026). La validation d'un exercice écrit l'ouverture du
+// suivant — les soldes reportés, à part des à-nouveaux de la reprise —, et tant qu'un exercice n'est pas validé, le suivant
+// n'a pas d'ouverture : l'écran le dit. Le calcul est testé dans lib/reportDesSoldes.ts ; ce qui se joue ici est le CÂBLAGE :
+// la lecture, l'exercice qu'ils ouvrent, la phrase de chaque état, et les refus sur une lecture partielle.
+describe('EcrituresTab — les soldes reportés ouvrent l’exercice qui suit un exercice validé', () => {
+  function reporte(o: Record<string, unknown> = {}) {
+    return {
+      id: 'sr-1', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '512000', libelle: 'Banque', sens: 'debit',
+      montant: 2800, source_nom: 'Exercice 2025 validé', source_empreinte: 'c'.repeat(64), created_at: '2026-03-01T10:00:00Z',
+      compte_lib: null, ecriture_lib: null, ...o,
+    }
+  }
+  const REPORT = [
+    reporte(),
+    reporte({ id: 'sr-2', compte: '101000', libelle: 'Capital individuel', sens: 'credit' }),
+  ]
+  // Une écriture de 2025, validée : ce que la validation a figé, pour que l'exercice 2025 s'exporte tel qu'elle l'a fait.
+  const FIGE_2025 = {
+    statut: 'validee', valide_le: '2026-03-01T10:00:00Z', journal_code: 'AC', numero_ecriture: 1, piece_ref: 'facture.pdf',
+    piece_date: '2025-03-10', compte_lib: 'Achats', comp_aux_num: null, comp_aux_lib: null,
+  }
+
+  it('ouvre le FEC de l’exercice suivant par le journal AN, et le dit à l’écran', async () => {
+    poser({ pieces: [piece({ id: 'p2', date_piece: '2026-02-10' })], ecritures_brouillon: [ecriture({ piece_id: 'p2', date: '2026-02-10' })], soldes_reportes: REPORT })
+    monter(false, TRESORERIE, 2026, [2025])
+
+    await screen.findByText(/Exercice ouvert par 2 soldes reportés de l’exercice 2025 validé, au 01\/01\/2026 : ils ouvrent le FEC et la piste d’audit de 2026 \(journal AN\)/)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2026' }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t'))
+    expect(lignes.slice(1).map((l) => [l[0], l[3], l[4], l[8], l[10]])).toEqual([
+      ['AN', '20260101', '101000', 'Exercice 2025 validé', 'À-nouveau Capital individuel'],
+      ['AN', '20260101', '512000', 'Exercice 2025 validé', 'À-nouveau Banque'],
+      ['AC', '20260210', '606100', 'facture.pdf', 'FOURNISSEUR MARSEILLE'],
+    ])
+    expect(lignes[1][12]).toBe('2800,00')
+  })
+
+  it('les porte dans la piste d’audit, justifiés par l’exercice validé et son empreinte', async () => {
+    poser({ soldes_reportes: REPORT })
+    monter(false, TRESORERIE, 2026, [2025])
+
+    await screen.findByText(/Exercice ouvert par 2 soldes reportés/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).toContain(`2026-01-01;512000;À-nouveau Banque;2800,00;0,00;;;;Exercice 2025 validé;${'c'.repeat(64)}`)
+    expect(csv).toContain(`2026-01-01;101000;À-nouveau Capital individuel;0,00;2800,00;;;;Exercice 2025 validé;${'c'.repeat(64)}`)
+  })
+
+  // GARDE SYMÉTRIQUE : les soldes reportés n'ouvrent que l'exercice de leur date. Ré-exporté, le FEC de l'exercice validé
+  // ne les porte pas — ils sont sa clôture, pas son ouverture.
+  it('ne les met pas dans le FEC de l’exercice validé qui les a écrits', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture({ id: 'f1', ...FIGE_2025 }), ecriture({ id: 'f2', compte: '512000', sens: 'credit', ...FIGE_2025, compte_lib: 'Banque' })], soldes_reportes: REPORT })
+    monter(false, TRESORERIE, 2025, [2025])
+
+    await screen.findByText(/2 validées/)
+    expect(screen.queryAllByText(/soldes reportés|n’a pas encore d’ouverture/)).toHaveLength(0)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2025 (validé)' }).click() })
+    expect(telecharge.fichiers[0].contenu).not.toContain('\nAN\t')
+  })
+
+  it('dit qu’un exercice n’a pas encore d’ouverture tant que le précédent n’est pas validé', async () => {
+    poser({
+      pieces: [piece(), piece({ id: 'p2', date_piece: '2026-02-10' })],
+      ecritures_brouillon: [ecriture(), ecriture({ id: 'e2', piece_id: 'p2', date: '2026-02-10' })],
+    })
+    monter(false, TRESORERIE, 2026)
+
+    await screen.findByText(/L’exercice 2026 n’a pas encore d’ouverture : elle s’écrira à la validation de l’exercice 2025 \(Clôture\)\. Jusque-là, son FEC et sa piste d’audit s’ouvrent sans à-nouveaux, et ses comptes de bilan y partent de zéro\./)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2026' }).click() })
+    expect(telecharge.fichiers[0].contenu).not.toContain('\nAN\t')
+  })
+
+  it('dit qu’un exercice validé dont tous les comptes étaient soldés n’a rien reporté', async () => {
+    poser({ pieces: [piece({ id: 'p2', date_piece: '2026-02-10' })], ecritures_brouillon: [ecriture({ piece_id: 'p2', date: '2026-02-10' })] })
+    monter(false, TRESORERIE, 2026, [2025])
+
+    await screen.findByText(/L’exercice 2025 validé n’a rien reporté : tous ses comptes de bilan étaient soldés, et le FEC de 2026 s’ouvre sans à-nouveaux\./)
+  })
+
+  // GARDE SYMÉTRIQUE : le premier exercice d'une activité n'attend aucune ouverture — le dire en attente crierait au loup
+  // sur chaque dossier neuf.
+  it('ne dit rien du premier exercice d’une activité', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()] })
+    monter(false, TRESORERIE, 2025)
+
+    await screen.findByText('606100')
+    expect(screen.queryAllByText(/ouverture|ouvert par|n’a rien reporté/)).toHaveLength(0)
+  })
+
+  it('refuse les deux exports quand les soldes reportés n’ont été lus qu’à moitié, sans suspendre la génération', async () => {
+    poser({ pieces: [piece({ id: 'p2', date_piece: '2026-02-10' })], soldes_reportes: REPORT })
+    faux.muetParTable = { soldes_reportes: 1 }
+    monter(false, TRESORERIE, 2026, [2025])
+
+    await screen.findByText(/Les soldes reportés des exercices validés n'ont pas pu être lus en entier/)
+    expect(screen.queryAllByText(/Le brouillon n'a pas pu être lu en entier/)).toHaveLength(0)
+    // Un compte fait sur une lecture partielle serait faux : la phrase se tait, le bandeau parle.
+    expect(screen.queryAllByText(/soldes? reportés? de l’exercice|n’a rien reporté/)).toHaveLength(0)
     expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: /Générer les écritures manquantes/ }).hasAttribute('disabled')).toBe(false)

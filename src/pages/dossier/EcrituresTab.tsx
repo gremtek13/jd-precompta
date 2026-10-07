@@ -21,8 +21,9 @@ import {
 } from '../../lib/affectationBanque'
 import type {
   ANouveau, Categorie, CompteNotesDeFrais, DeclarationTva, EcritureBrouillon, Immobilisation, LettrageManuel, LigneBancaire, ModeComptable,
-  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  NatureImmobilisation, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
+import { etatDeLOuverture, ouvertureDeLExercice, type EtatDeLOuverture } from '../../lib/reportDesSoldes'
 import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
 import { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilanDuMouvement } from '../../lib/compteDeBilan'
@@ -80,6 +81,30 @@ const CE_QUI_S_ECRIT: Record<SuiteDansUnExerciceValide, (frontiere: string) => s
   facture: () => 'Rien : sa facture tombe dans un exercice validé.',
 }
 
+// Ce que l'écran dit de l'ouverture de l'exercice affiché (lib/reportDesSoldes.ts, `etatDeLOuverture`) : d'où elle vient,
+// ou pourquoi il n'en a pas encore — décision du cabinet (ligne 34) : tant que l'exercice précédent n'est pas validé, le
+// suivant n'a pas d'ouverture, et l'écran le dit. Rien quand il n'y a rien à dire (le premier exercice d'une activité,
+// un exercice antérieur à la reprise).
+function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number, ouverture: readonly ANouveau[]): string | null {
+  const journal = `le FEC et la piste d’audit de ${annee} (journal AN), sans figurer dans le journal ci-dessous`
+  switch (etat.type) {
+    case 'reprise':
+      return `Exercice ouvert par ${ouverture.length} à-nouveau${ouverture.length > 1 ? 'x' : ''} au ${formatDate(etat.date)}, `
+        + `repris de ${etat.source} : ils ouvrent ${journal}.`
+    case 'report':
+      return etat.lignes === 0
+        ? `L’exercice ${etat.depuis} validé n’a rien reporté : tous ses comptes de bilan étaient soldés, et le FEC de ${annee} `
+          + 's’ouvre sans à-nouveaux.'
+        : `Exercice ouvert par ${etat.lignes} solde${etat.lignes > 1 ? 's' : ''} reporté${etat.lignes > 1 ? 's' : ''} de l’exercice `
+          + `${etat.depuis} validé, au ${formatDate(`${annee}-01-01`)} : ${etat.lignes > 1 ? 'ils ouvrent' : 'il ouvre'} ${journal}.`
+    case 'en-attente':
+      return `L’exercice ${annee} n’a pas encore d’ouverture : elle s’écrira à la validation de l’exercice ${etat.exercice} `
+        + '(Clôture). Jusque-là, son FEC et sa piste d’audit s’ouvrent sans à-nouveaux, et ses comptes de bilan y partent de zéro.'
+    case 'sans-objet':
+      return null
+  }
+}
+
 export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, onModeleUpdated }: {
   dossierId: string
   dossierNom: string
@@ -94,6 +119,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts) : elle ouvre le FEC et
   // la piste d'audit de l'exercice qu'elle ouvre.
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
+  // Les soldes REPORTÉS d'un exercice validé (ligne 34, lib/reportDesSoldes.ts) : ils ouvrent l'exercice suivant, son FEC
+  // et sa piste d'audit, comme la reprise ouvre le sien. À part des à-nouveaux de la reprise, qui seuls disent ce que
+  // l'ancien logiciel portait — c'est leur date qui décide qu'un bien est repris ou qu'un exercice est dans les comptes
+  // repris.
+  const [soldesReportes, setSoldesReportes] = useState<SoldeReporte[]>([])
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
   // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune est un
   // paiement de sa pièce, qui date sa charge et porte sa contrepartie banque comme un rapprochement simple.
@@ -132,6 +162,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // c'est l'ouverture qui dit s'il est repris (voir `biensSansOuverture`). La suspendre pour toutes les
   // pièces bloquerait un geste que rien ne fausse.
   const [aNouveauxIncomplets, setANouveauxIncomplets] = useState<string | null>(null)
+  // À PART encore : lus en partie, les soldes reportés ouvriraient amputés le FEC et la piste d'audit d'un exercice qui
+  // suit un exercice validé — les deux exports se refusent. Rien d'autre n'en dépend : ni la génération, ni le bien
+  // repris, que la seule reprise décide.
+  const [reportesIncomplets, setReportesIncomplets] = useState<string | null>(null)
   // Les lettrages faits à la main (ligne 32, seconde brique) : une facture et l'avoir qui la solde, que le FEC lettre
   // ensemble. À PART encore : lus en partie, ils ne faussent ni la génération ni la piste d'audit, mais le FEC d'un
   // dossier en engagement laisserait ouverte une facture que le cabinet a lettrée, sans pouvoir le dire.
@@ -163,7 +197,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations,
+      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -228,6 +262,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
       ),
+      lireTout<SoldeReporte>((debut, fin) =>
+        supabase.from('soldes_reportes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
@@ -251,6 +289,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         .find((l) => !l.complete)?.motif ?? null,
     )
     setANouveauxIncomplets(lectureANouveaux.motif)
+    setSoldesReportes(lectureReportes.lignes)
+    setReportesIncomplets(lectureReportes.motif)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
     setLoading(false)
@@ -357,8 +397,21 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Le filtre par année ne porte que sur l'affichage des écritures déjà générées — la génération
   // (bouton ci-dessous) reste globale, sur toutes les pièces en attente quelle que soit leur année.
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
-  // Les à-nouveaux de l'exercice exporté : ils ouvrent son FEC et sa piste d'audit, et aucun autre.
-  const aNouveauxExercice = anneeFilter === 'toutes' ? aNouveaux : aNouveaux.filter((a) => anneeDe(a.date) === anneeFilter)
+  // L'ouverture de l'exercice exporté — la reprise d'une balance, ou les soldes reportés de l'exercice validé qui le
+  // précède (lib/reportDesSoldes.ts) : elle ouvre son FEC et sa piste d'audit, et aucun autre. Toutes années confondues,
+  // la seule reprise : les soldes reportés reprennent ceux du brouillon, qui y sont déjà.
+  const aNouveauxExercice = anneeFilter === 'toutes' ? aNouveaux
+    : typeof anneeFilter === 'number' ? ouvertureDeLExercice(aNouveaux, soldesReportes, anneeFilter) : []
+  // Ce que l'écran dit de cette ouverture : reprise, reportée, ou en attente de la validation de l'exercice précédent.
+  // Sur une lecture partielle de l'une ou l'autre, rien : un compte faux serait pire que le bandeau, qui le dit.
+  const phraseOuverture = typeof anneeFilter === 'number' && aNouveauxIncomplets === null && reportesIncomplets === null
+    ? phraseDeLOuverture(
+      etatDeLOuverture(anneeFilter, {
+        reprise: aNouveaux, reportes: soldesReportes, anneesValidees: exercicesValides.map((e) => e.annee), ecritures,
+      }),
+      anneeFilter, aNouveauxExercice,
+    )
+    : null
 
   // La recherche ne filtre QUE les lignes affichées, jamais les données de calcul ni l'export : les
   // totaux de TVA ci-dessous et le FEC exporté plus bas portent sur `ecrituresFiltrees`. Les brancher
@@ -1505,6 +1558,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       />
 
       <BandeauLecturePartielle
+        quoi="Les soldes reportés des exercices validés"
+        accord="lus"
+        motif={reportesIncomplets}
+        consequence={
+          'Les exports FEC et piste d’audit sont bloqués : l’exercice qui suit un exercice validé s’ouvre par eux, et un ' +
+          'fichier fiscal dont l’ouverture est amputée ne peut pas le dire. La génération des écritures n’en dépend pas. ' +
+          'Recharge la page.'
+        }
+      />
+
+      <BandeauLecturePartielle
         quoi="Les lettrages faits à la main"
         accord="lus"
         motif={lettragesManquants}
@@ -1517,13 +1581,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
       {/* Les à-nouveaux ne sont pas des écritures du brouillon : le journal ci-dessous ne les montre
           pas. Sans cette phrase, un FEC qui s'ouvre par un journal AN surprendrait celui qui vient de
-          parcourir la liste. */}
-      {typeof anneeFilter === 'number' && aNouveauxExercice.length > 0 && (
-        <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'right', margin: '0 0 8px' }}>
-          {`Exercice ouvert par ${aNouveauxExercice.length} à-nouveau${aNouveauxExercice.length > 1 ? 'x' : ''} `
-            + `au ${formatDate(aNouveauxExercice[0].date)}, repris de ${aNouveauxExercice[0].source_nom} : `
-            + `ils ouvrent le FEC et la piste d’audit de ${anneeFilter} (journal AN), sans figurer dans le journal ci-dessous.`}
-        </p>
+          parcourir la liste. Et l'exercice qui attend la validation du précédent n'a PAS d'ouverture
+          (ligne 34) : sans le dire, ses comptes de bilan partiraient de zéro dans le FEC sans que rien
+          n'explique pourquoi. */}
+      {phraseOuverture && (
+        <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'right', margin: '0 0 8px' }}>{phraseOuverture}</p>
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -1539,13 +1601,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           className="btn btn-outline btn-sm"
           disabled={
             typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
-            || brouillonIncomplet !== null || aNouveauxIncomplets !== null || lettragesManquants !== null
+            || brouillonIncomplet !== null || aNouveauxIncomplets !== null || reportesIncomplets !== null
+            || lettragesManquants !== null
           }
           title={
             brouillonIncomplet
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — un FEC amputé ne peut pas le dire, le format n'a pas de place pour ça.`
               : aNouveauxIncomplets
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
+              : reportesIncomplets
+              ? `Soldes reportés lus incomplètement (${reportesIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
               : lettragesManquants
               ? `Lettrages faits à la main lus incomplètement (${lettragesManquants}) — une facture lettrée paraîtrait ouverte dans le FEC.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
@@ -1564,12 +1629,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </button>
         <button
           className="btn btn-outline btn-sm"
-          disabled={typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null}
+          disabled={
+            typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null
+            || reportesIncomplets !== null
+          }
           title={
             brouillonIncomplet
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — une piste d'audit partielle est pire qu'absente.`
               : aNouveauxIncomplets
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — une piste d'audit partielle est pire qu'absente.`
+              : reportesIncomplets
+              ? `Soldes reportés lus incomplètement (${reportesIncomplets}) — une piste d'audit partielle est pire qu'absente.`
               : typeof anneeFilter !== 'number'
               ? "Sélectionne une année ci-dessus — une piste d'audit se produit par exercice."
               : "Chaque écriture avec son justificatif (tiers, date, montant, fichier, empreinte SHA-256) et l'opération bancaire réelle, plus les justificatifs validés que rien ne comptabilise."

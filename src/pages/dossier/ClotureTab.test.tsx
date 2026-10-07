@@ -24,6 +24,8 @@ const faux = vi.hoisted(() => ({
   reponses: {} as Record<string, { data: unknown; error: { message: string } | null }>,
   // Ce que la base garde d'une validation acceptée : la ligne de l'exercice, avec la 2035 qu'elle a reçue.
   apresValidation: null as Record<string, unknown> | null,
+  // Et l'ouverture de l'exercice suivant qu'elle écrit dans le même geste (ligne 34) : les soldes reportés.
+  apresValidationReportes: [] as Record<string, unknown>[],
   // Le serveur cesse de rendre cette table au-delà de la position donnée, tout en continuant
   // d'annoncer le vrai total. C'est ce qui produit une lecture incomplète (voir lectureComplete.ts).
   muetApresParTable: {} as Record<string, number>,
@@ -43,6 +45,7 @@ vi.mock('../../lib/supabase', async () => {
         const reponse = faux.reponses[nom] ?? { data: null, error: { message: `fonction ${nom} non programmée` } }
         if (nom === 'valider_exercice' && reponse.error === null && faux.apresValidation) {
           faux.parTable.exercices_valides = [...(faux.parTable.exercices_valides ?? []), { ...faux.apresValidation, declaration: params.p_declaration }]
+          faux.parTable.soldes_reportes = [...(faux.parTable.soldes_reportes ?? []), ...faux.apresValidationReportes]
         }
         return Promise.resolve(reponse)
       },
@@ -1511,8 +1514,15 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.remplies = []
     faux.entetes = []
     faux.apresValidation = null
+    faux.apresValidationReportes = []
     relirePage.mockClear()
   }
+  // Un solde reporté au 1er janvier suivant, tel que la base l'écrit.
+  const reporte = (compte: string, libelle: string, sens: 'debit' | 'credit', montant: number, date = '2026-01-01') => ({
+    id: `sr-${compte}-${date}`, dossier_id: 'dossier-de-test', date, compte, libelle, sens, montant,
+    source_nom: `Exercice ${Number(date.slice(0, 4)) - 1} validé`, source_empreinte: 'a'.repeat(64), created_at: '2026-01-15T10:00:00Z',
+    compte_lib: null, ecriture_lib: null,
+  })
   // Ce que la page du dossier relit après une validation : les exercices validés, que chaque onglet consulte pour
   // savoir ce qui est figé (ExercicesValidesContext).
   const relirePage = vi.fn(async () => {})
@@ -1558,6 +1568,10 @@ describe('ClotureTab — valider l’exercice', () => {
     const c = await carte()
     c.getByText(/Rien n.empêche de valider cet exercice/)
     c.getByText(/1 écriture\(s\) et 2 ligne\(s\) seront validées \(achats : 1\)/)
+    // L'ouverture de 2026 qu'elle écrira : la perte et le compte de l'exploitant au capital individuel, la banque.
+    c.getByText('L’ouverture de l’exercice 2026')
+    c.getByText(/La validation l’écrit dans le même geste : 2 soldes reportés au 01\/01\/2026, 120,00\s€ au débit comme au crédit\. Entreprise individuelle : le compte de l’exploitant \(108\) et la perte de l’exercice \(120,00\s€\) passent au capital individuel \(101000\)/)
+    faux.apresValidationReportes = [reporte('101000', 'Capital individuel', 'debit', 120), reporte('512000', 'Banque', 'credit', 120)]
     await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
 
     expect(faux.appels.map((a) => a.nom)).toEqual(['valider_exercice'])
@@ -1577,6 +1591,8 @@ describe('ClotureTab — valider l’exercice', () => {
     screen.getByText(/2035 validée le 15\/01\/2026 : elle est relue telle qu'elle a été validée/)
     expect(screen.queryAllByText(/Recalculée aujourd'hui, elle diffère/)).toHaveLength(0)
     expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+    // Relue elle aussi, l'ouverture que la validation a écrite.
+    screen.getByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 2 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')
     // La page relit les exercices validés : la frontière a bougé pour tous les onglets du dossier.
     expect(relirePage).toHaveBeenCalledTimes(1)
   })
@@ -1594,6 +1610,7 @@ describe('ClotureTab — valider l’exercice', () => {
     expect(messages[0]).toMatch(/Ses 1 écriture\(s\) \(2 ligne\(s\)\) deviennent intangibles/)
     expect(messages[0]).toMatch(/figé avec elles : les pièces/)
     expect(messages[0]).toMatch(/La 2035 de 2025 est gardée telle qu'elle est aujourd'hui \(résultat de -120,00\s€\)/)
+    expect(messages[0]).toContain("4. L'ouverture de l'exercice 2026 s'écrit dans le même geste, et ne se modifiera pas : 2 solde(s) reporté(s) au 01/01/2026, le compte de l'exploitant et le résultat passant au capital individuel (101000).")
     expect(messages[0]).toMatch(/se corrigera sur l'exercice suivant/)
   })
 
@@ -1637,6 +1654,39 @@ describe('ClotureTab — valider l’exercice', () => {
     const c = await carte()
     c.getByText(/La lecture du dossier est restée partielle/)
     expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('suspend la validation quand les soldes reportés n’ont été lus qu’en partie', async () => {
+    poserTenu()
+    faux.parTable.soldes_reportes = [reporte('512000', 'Banque', 'debit', 500, '2027-01-01')]
+    faux.muetApresParTable = { soldes_reportes: 0 }
+    monterAvec()
+    const c = await carte()
+    c.getByText(/La lecture du dossier est restée partielle/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // Un exercice validé dit l'ouverture qu'il a écrite, lue en base — et se tait sur une lecture partielle, où il
+  // compterait faux.
+  it('dit l’ouverture qu’a écrite un exercice validé, et se tait quand elle est lue en partie', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE, declaration: INSTANTANE }]
+    // Un solde reporté d'un AUTRE exercice ne compte pas dans l'ouverture que celui-ci a écrite.
+    faux.parTable.soldes_reportes = [
+      reporte('101000', 'Capital individuel', 'debit', 120), reporte('512000', 'Banque', 'credit', 120),
+      reporte('512000', 'Banque', 'debit', 500, '2027-01-01'),
+    ]
+    const { unmount } = render(
+      <ContexteDossier annee={2025} relire={relirePage}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    await screen.findByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 2 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')
+    unmount()
+    faux.muetApresParTable = { soldes_reportes: 1 }
+    monterAvec()
+    await screen.findByText(/Validé le 15\/01\/2026/)
+    expect(screen.queryAllByText(/Sa validation a écrit l’ouverture|s’ouvre sans soldes reportés/)).toHaveLength(0)
   })
 
   it('montre la 2035 validée, pas un calcul d’aujourd’hui, et la remplit telle quelle', async () => {

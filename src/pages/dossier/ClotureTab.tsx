@@ -119,6 +119,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Les soldes reportés par la validation de chaque exercice (ligne 34, lib/reportDesSoldes.ts) : ceux du 1er janvier
   // ouvrent l'exercice suivant, et sa validation les numérote comme une reprise.
   const [soldesReportes, setSoldesReportes] = useState<SoldeReporte[]>([])
+  // À part du drapeau de la validation qui le comprend : un exercice validé dit l'ouverture qu'il a écrite, et se tait
+  // seulement quand ce sont les soldes reportés qu'on n'a pas pu lire.
+  const [reportesIncomplets, setReportesIncomplets] = useState<string | null>(null)
   const [ouverture, setOuverture] = useState<string | null>(null)
   // CE QUE LA VALIDATION LIT EN PLUS DE LA DÉCLARATION : les pièces à valider (un exercice ne se fige pas avec
   // une pièce en suspens), les exercices déjà validés, et deux contrôles de la Checklist. Ces deux-là sont nuls
@@ -281,6 +284,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setValidationIncomplete([lectureAValider, lectureValides, lectureReportes].find((l) => !l.complete)?.motif ?? null)
     setANouveaux(lectureOuverture.lignes)
     setSoldesReportes(lectureReportes.lignes)
+    setReportesIncomplets(lectureReportes.motif)
     setEcritures(lectureEcritures.lignes)
     setOuverture(lectureOuverture.lignes[0]?.date ?? null)
     setEcrituresIncompletes([lectureEcritures, lectureOuverture].find((l) => !l.complete)?.motif ?? null)
@@ -532,7 +536,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
   const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
-    if (valide) return { valide, etat: null, demande: null }
+    // L'ouverture qu'a écrite la validation : les soldes reportés au 1er janvier suivant.
+    if (valide) {
+      const reportesEcrits = reportesIncomplets !== null ? null
+        : soldesReportes.filter((s) => s.date === `${annee + 1}-01-01`).length
+      return { valide, etat: null, demande: null, reportesEcrits }
+    }
     const etat = prealablesDeValidation({
       annee, anneeCourante, modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
@@ -546,7 +555,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         ? instantane2035(formulaire.declaration, formulaire.valeurs, arrondirPourFormulaire(formulaire.valeurs, annee), entete)
         : null)
       : null
-    return { valide: null, etat, demande }
+    return { valide: null, etat, demande, reportesEcrits: null }
   }
 
   // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
