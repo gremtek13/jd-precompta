@@ -53,6 +53,12 @@ verify_jwt = false
 [functions.extract-piece]
 verify_jwt = false
 
+# Appelée par l'onglet Justificatifs, avec la session de l'opérateur ; la fonction vérifie ensuite qu'il
+# administre le dossier, avant de lire la connexion et d'appeler la plateforme agréée du client. Aucun
+# appelant sans jeton : `true` ne coupe rien.
+[functions.plateforme-agreee]
+verify_jwt = true
+
 # Appelée par la fiche d'une pièce, avec la session de l'opérateur ; la fonction vérifie ensuite
 # qu'il administre le dossier de la pièce. Aucun appelant sans jeton : `true` ne coupe rien.
 [functions.proposer-categorie]
