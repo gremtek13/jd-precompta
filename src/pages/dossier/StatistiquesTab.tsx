@@ -5,12 +5,14 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
 import { messageErreur } from '../../lib/messageErreur'
-import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, LettrageManuel, ModeComptable, Piece, SoldeReporte } from '../../lib/types'
+import { etatDeLOuverture, ouvertureDeLExercice, type EtatDeLOuverture } from '../../lib/reportDesSoldes'
 import {
   comptesDeTiers, COMPTES_LETTRABLES, etatsDesLettragesManuels, lettragesProposes, refusLettrageManuel,
   type EtatLettrageManuel,
 } from '../../lib/lettrage'
 import { useAnnee } from '../../context/AnneeContext'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
 import ProgressRing from '../../components/widgets/ProgressRing'
@@ -20,6 +22,28 @@ import { lireTout } from '../../lib/lectureComplete'
 import ComptesDeTiersCard from './ComptesDeTiersCard'
 
 const NB_MOIS_EVOLUTION = 6
+
+// Ce que l'écran dit de l'ouverture de l'exercice choisi (lib/reportDesSoldes.ts) : d'où viennent les soldes d'ouverture
+// compris dans ses totaux, ou pourquoi il n'en a pas encore — décision du cabinet (ligne 34) : tant que l'exercice
+// précédent n'est pas validé, le suivant n'a pas d'ouverture, et l'écran le dit, sans quoi ses comptes de bilan
+// paraîtraient partir de zéro sans raison.
+function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number): string | null {
+  switch (etat.type) {
+    case 'reprise':
+      return `Les à-nouveaux du ${formatDate(etat.date)}, repris de ${etat.source}, `
+        + 'sont compris dans les totaux : ils ouvrent l’exercice comme les soldes de la balance reprise.'
+    case 'report':
+      return etat.lignes === 0
+        ? `L’exercice ${etat.depuis} validé n’a rien reporté : tous ses comptes de bilan étaient soldés.`
+        : `Les soldes reportés de l’exercice ${etat.depuis} validé sont compris dans les totaux : `
+          + `ils ouvrent l’exercice ${annee} au ${formatDate(`${annee}-01-01`)}.`
+    case 'en-attente':
+      return `L’exercice ${annee} n’a pas encore d’ouverture : elle s’écrira à la validation de l’exercice ${etat.exercice} `
+        + '(Clôture). Jusque-là, ses comptes de bilan partent de zéro dans cette balance.'
+    case 'sans-objet':
+      return null
+  }
+}
 
 // Balance des comptes (anciennement "Statistiques", renommé pour dire ce que l'écran affiche
 // réellement — voir audit ergonomie comparatif) — vue transversale sur tout le brouillon (voir
@@ -41,6 +65,10 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   const [pieces, setPieces] = useState<Piece[]>([])
   // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts).
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
+  // Les soldes REPORTÉS d'un exercice validé (ligne 34) : ils ouvrent l'exercice suivant, et sa balance les compte comme
+  // la balance de l'exercice repris compte la reprise. Jamais toutes années confondues : ils reprennent les soldes des
+  // écritures de l'exercice validé, que cette vue compte déjà.
+  const [soldesReportes, setSoldesReportes] = useState<SoldeReporte[]>([])
   const [loading, setLoading] = useState(true)
   // Non nul quand le brouillon n'a pas pu être lu en entier — les totaux affichés portent alors sur une partie du
   // dossier (voir lib/lectureComplete.ts).
@@ -55,6 +83,9 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   // À part encore : ce n'est pas le brouillon qui manque, c'est l'ouverture — le bandeau doit dire
   // laquelle des deux on n'a pas pu lire.
   const [lectureANouveauxIncomplete, setLectureANouveauxIncomplete] = useState<string | null>(null)
+  // À part encore : ce sont les soldes reportés qui manquent, et ils ne touchent que la balance d'un exercice qui suit
+  // un exercice validé — pas les comptes de tiers, qui lisent tout le brouillon et la seule reprise.
+  const [lectureReportesIncomplete, setLectureReportesIncomplete] = useState<string | null>(null)
   // Les lettrages faits à la main (ligne 32, seconde brique) : une facture et l'avoir qui la solde, sans mouvement
   // bancaire. Lus en partie, la carte des comptes de tiers ne conclut pas — une facture lettrée y paraîtrait ouverte.
   const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
@@ -69,12 +100,13 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
+  const { anneesValidees } = useExercicesValides()
   const [recherche, setRecherche] = useState('')
 
   // Le premier rendu porte déjà `loading` ; une relecture après un lettrage garde la vue affichée le temps qu'elle
   // revienne, le verrou retenant tout geste jusque-là. L'onglet se remonte d'un dossier à l'autre (`key` du dossier).
   const charger = useCallback(async () => {
-    const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureLettrages] = await Promise.all([
+    const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureLettrages, lectureReportes] = await Promise.all([
       // Lues par tranches, triées sur un ordre TOTAL : PostgREST plafonne le nombre de lignes
       // rendues sans le signaler, et cet écran affiche des TOTAUX (voir lib/lectureComplete.ts).
       // Une balance calculée sur une partie du brouillon serait déséquilibrée sans raison visible —
@@ -99,15 +131,21 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
         supabase.from('lettrages_manuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      lireTout<SoldeReporte>((debut, fin) =>
+        supabase.from('soldes_reportes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
+      ),
     ])
     setEcritures(brouillon.lignes)
     setCategories(lectureCategories.lignes)
     setPieces(lecturePieces.lignes)
     setANouveaux(lectureANouveaux.lignes)
+    setSoldesReportes(lectureReportes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
     setLectureIncomplete(brouillon.motif)
     setLecturePiecesIncomplete(lecturePieces.motif)
     setLectureANouveauxIncomplete(lectureANouveaux.motif)
+    setLectureReportesIncomplete(lectureReportes.motif)
     setLectureCategoriesIncomplete(lectureCategories.motif)
     setLectureLettragesIncomplete(lectureLettrages.motif)
     setLoading(false)
@@ -116,11 +154,26 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   useEffect(() => { charger() }, [charger])
 
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
-  // Les à-nouveaux appartiennent à l'exercice qu'ils ouvrent, comme toute écriture à celui de sa date.
+  // L'ouverture appartient à l'exercice qu'elle ouvre, comme toute écriture à celui de sa date : la reprise, ou les
+  // soldes reportés de l'exercice validé qui le précède (lib/reportDesSoldes.ts). Toutes années confondues, la seule
+  // reprise : les soldes reportés reprennent ceux des écritures de l'exercice validé, que cette vue compte déjà.
   const aNouveauxFiltres = useMemo(
-    () => (anneeFilter === 'toutes' ? aNouveaux : aNouveaux.filter((a) => anneeDe(a.date) === anneeFilter)),
-    [aNouveaux, anneeFilter],
+    () => (anneeFilter === 'toutes' ? aNouveaux
+      : typeof anneeFilter === 'number' ? ouvertureDeLExercice(aNouveaux, soldesReportes, anneeFilter) : []),
+    [aNouveaux, soldesReportes, anneeFilter],
   )
+  // Ce que l'écran dit de cette ouverture. Sur une lecture partielle de l'une ou l'autre, rien : un état tiré d'une
+  // lecture amputée pourrait être faux, et le bandeau le dit.
+  const phraseOuverture = lectureANouveauxIncomplete !== null || lectureReportesIncomplete !== null ? null
+    : typeof anneeFilter === 'number'
+      ? phraseDeLOuverture(
+        etatDeLOuverture(anneeFilter, { reprise: aNouveaux, reportes: soldesReportes, anneesValidees, ecritures }),
+        anneeFilter,
+      )
+      : aNouveaux.length > 0
+        ? `Les à-nouveaux du ${formatDate(aNouveaux[0].date)}, repris de ${aNouveaux[0].source_nom}, `
+          + 'sont compris dans les totaux : ils ouvrent l’exercice comme les soldes de la balance reprise.'
+        : null
   const ouverture = aNouveaux[0]?.date ?? null
   // Toutes années confondues, une écriture ANTÉRIEURE à l'ouverture est déjà dans les soldes repris :
   // la vue la compterait deux fois sur les comptes de bilan. Dit seulement quand c'est le cas — une
@@ -276,6 +329,15 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
         }
       />
       <BandeauLecturePartielle
+        quoi="Les soldes reportés des exercices validés"
+        accord="lus"
+        motif={lectureReportesIncomplete}
+        consequence={
+          'La balance d’un exercice qui suit un exercice validé porte donc sur une ouverture incomplète : un écart ' +
+          'affiché ici ne prouverait rien, et le solde de ses comptes de bilan est faux.'
+        }
+      />
+      <BandeauLecturePartielle
         quoi="Les catégories du cabinet"
         motif={lectureCategoriesIncomplete}
         consequence={
@@ -328,11 +390,8 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
         )}
       </div>
 
-      {aNouveauxFiltres.length > 0 && (
-        <p className="muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>
-          {`Les à-nouveaux du ${formatDate(aNouveauxFiltres[0].date)}, repris de ${aNouveauxFiltres[0].source_nom}, `
-            + 'sont compris dans les totaux : ils ouvrent l’exercice comme les soldes de la balance reprise.'}
-        </p>
+      {phraseOuverture && (
+        <p className="muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>{phraseOuverture}</p>
       )}
       {anterieuresALOuverture > 0 && (
         <p className="error-text" style={{ fontSize: '0.85rem', marginTop: 0, marginBottom: 10 }}>

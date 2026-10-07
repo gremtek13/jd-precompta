@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AnneeProvider } from '../../context/AnneeContext'
+import { ContexteDossier } from '../../test/exercicesValides'
 import StatistiquesTab from './StatistiquesTab'
 import type { ANouveau, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
@@ -30,6 +30,8 @@ const faux = vi.hoisted(() => ({
   // qu'elles sont parties — c'est ce qui laisse voir l'écran PENDANT la relecture qui suit un lettrage.
   attente: null as Promise<void> | null,
   lecturesRetenues: 0,
+  // Les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
+  valides: [] as number[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -114,6 +116,8 @@ beforeEach(() => {
   faux.retraitRefuse = false
   faux.attente = null
   faux.lecturesRetenues = 0
+  faux.valides = []
+  faux.parTable.soldes_reportes = []
 })
 
 describe('StatistiquesTab — Balance des comptes', () => {
@@ -130,9 +134,9 @@ describe('StatistiquesTab — Balance des comptes', () => {
     faux.parTable.pieces = []
 
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier valides={faux.valides} annee="toutes">
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
 
     await screen.findByText('606100')
@@ -151,9 +155,9 @@ describe('StatistiquesTab — Balance des comptes', () => {
     faux.parTable.pieces = []
 
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier valides={faux.valides} annee="toutes">
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
 
     await screen.findByText('606100')
@@ -192,9 +196,9 @@ describe('StatistiquesTab — les catégories du cabinet', () => {
     faux.parTable.pieces = []
 
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier valides={faux.valides} annee="toutes">
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
 
     await screen.findByText('606100')
@@ -229,9 +233,9 @@ describe('StatistiquesTab — les à-nouveaux', () => {
     faux.parTable.pieces = []
     faux.parTable.a_nouveaux = OUVERTURE
     render(
-      <AnneeProvider defaut={annee}>
+      <ContexteDossier valides={faux.valides} annee={annee}>
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
   }
 
@@ -283,6 +287,15 @@ describe('StatistiquesTab — les à-nouveaux', () => {
     expect(screen.getByText(/2 écritures du brouillon précèdent l’ouverture du 01\/01\/2026/)).toBeTruthy()
   })
 
+  // Toutes années confondues, la reprise est comprise aussi — et le dire ne dépend d'aucun exercice choisi.
+  it('dit, toutes années confondues, que la reprise est comprise dans les totaux', async () => {
+    faux.parTable.ecritures_brouillon = [ecriture('606100', 'debit', 120, '2026-03-10'), ecriture('512000', 'credit', 120, '2026-03-10')]
+    monter('toutes')
+
+    await screen.findByText('164')
+    expect(screen.getByText(/Les à-nouveaux du 01\/01\/2026, repris de balance-2025\.csv, sont compris dans les totaux/)).toBeTruthy()
+  })
+
   it('se tait, toutes années confondues, quand rien ne précède l’ouverture', async () => {
     faux.parTable.ecritures_brouillon = [
       ecriture('606100', 'debit', 120, '2026-03-10'),
@@ -318,6 +331,99 @@ describe('StatistiquesTab — les à-nouveaux', () => {
   })
 })
 
+
+// LE REPORT DES SOLDES (ligne 34, décision du cabinet du 06/10/2026). La validation d'un exercice écrit l'ouverture du
+// suivant : sa balance compte ces soldes reportés comme celle de l'exercice repris compte la reprise. Tant qu'un exercice
+// n'est pas validé, le suivant n'a pas d'ouverture, et l'écran le dit. Le calcul est dans lib/reportDesSoldes.ts ; ce qui
+// se joue ici est le CÂBLAGE — la lecture, l'exercice qu'ils ouvrent, ce que l'écran en dit.
+describe('StatistiquesTab — les soldes reportés', () => {
+  function reporte(compte: string, libelle: string, sens: 'debit' | 'credit', montant: number) {
+    return {
+      id: `sr-${compte}`, dossier_id: 'dossier-de-test', date: '2026-01-01', compte, libelle, sens, montant,
+      source_nom: 'Exercice 2025 validé', source_empreinte: 'c'.repeat(64), created_at: '2026-03-01T10:00:00Z',
+      compte_lib: null, ecriture_lib: null,
+    }
+  }
+  const REPORT = [reporte('512000', 'Banque', 'debit', 2800), reporte('101000', 'Capital individuel', 'credit', 2800)]
+  const ECRITURES_2025 = [ecriture('706000', 'credit', 3000, '2025-05-10'), ecriture('512000', 'debit', 3000, '2025-05-10')]
+  const ECRITURES_2026 = [ecriture('606100', 'debit', 120, '2026-03-10'), ecriture('512000', 'credit', 120, '2026-03-10')]
+
+  function monter(annee: number | 'toutes', valides: number[] = [2025], reportes: unknown[] = REPORT) {
+    faux.plafond = null
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    faux.parTable.soldes_reportes = reportes
+    faux.valides = valides
+    render(
+      <ContexteDossier valides={faux.valides} annee={annee}>
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+      </ContexteDossier>,
+    )
+  }
+
+  function ligneDuCompte(compte: string): string[] {
+    const cellule = screen.getByText(compte)
+    return [...cellule.closest('tr')!.children].map((c) => c.textContent ?? '')
+  }
+
+  it('les compte dans la balance de l’exercice qu’ils ouvrent, et le dit', async () => {
+    faux.parTable.ecritures_brouillon = [...ECRITURES_2025, ...ECRITURES_2026]
+    monter(2026)
+
+    await screen.findByText('101000')
+    expect(ligneDuCompte('101000').slice(1, 3)).toEqual(['Capital individuel', '1'])
+    // La banque additionne l'ouverture reportée et le mouvement de mars.
+    expect(ligneDuCompte('512000')[5]).toMatch(/^2\s?680,00\s€ débiteur$/)
+    expect(screen.getByText('Les soldes reportés de l’exercice 2025 validé sont compris dans les totaux : ils ouvrent l’exercice 2026 au 01/01/2026.')).toBeTruthy()
+    expect(piedDuTableau().children[3].textContent).toContain('équilibré')
+  })
+
+  // GARDE SYMÉTRIQUE : toutes années confondues, les écritures de l'exercice validé sont déjà dans les totaux ; ses soldes
+  // reportés les compteraient une seconde fois.
+  it('ne les compte pas toutes années confondues', async () => {
+    faux.parTable.ecritures_brouillon = [...ECRITURES_2025, ...ECRITURES_2026]
+    monter('toutes')
+
+    await screen.findByText('706000')
+    expect(screen.queryAllByText('101000')).toHaveLength(0)
+    expect(ligneDuCompte('512000')[5]).toMatch(/^2\s?880,00\s€ débiteur$/)
+    expect(screen.queryAllByText(/soldes reportés/)).toHaveLength(0)
+  })
+
+  it('ne les compte pas dans la balance de l’exercice validé qui les a écrits', async () => {
+    faux.parTable.ecritures_brouillon = [...ECRITURES_2025, ...ECRITURES_2026]
+    monter(2025)
+
+    await screen.findByText('706000')
+    expect(screen.queryAllByText('101000')).toHaveLength(0)
+    expect(screen.queryAllByText(/soldes reportés|n’a pas encore d’ouverture/)).toHaveLength(0)
+  })
+
+  it('dit qu’un exercice n’a pas encore d’ouverture tant que le précédent n’est pas validé', async () => {
+    faux.parTable.ecritures_brouillon = [...ECRITURES_2025, ...ECRITURES_2026]
+    monter(2026, [], [])
+
+    expect(await screen.findByText('L’exercice 2026 n’a pas encore d’ouverture : elle s’écrira à la validation de l’exercice 2025 (Clôture). Jusque-là, ses comptes de bilan partent de zéro dans cette balance.')).toBeTruthy()
+  })
+
+  it('dit qu’un exercice validé dont tous les comptes étaient soldés n’a rien reporté', async () => {
+    faux.parTable.ecritures_brouillon = ECRITURES_2026
+    monter(2026, [2025], [])
+
+    expect(await screen.findByText('L’exercice 2025 validé n’a rien reporté : tous ses comptes de bilan étaient soldés.')).toBeTruthy()
+  })
+
+  it('dit, à part de l’ouverture reprise, que des soldes reportés lus en partie faussent la balance', async () => {
+    faux.parTable.ecritures_brouillon = [...ECRITURES_2025, ...ECRITURES_2026]
+    faux.erreurs = { soldes_reportes: 'refus simulé' }
+    monter(2026)
+
+    expect(await screen.findByText(/Les soldes reportés des exercices validés n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.queryAllByText(/Les à-nouveaux du dossier n'ont pas pu être lus/)).toHaveLength(0)
+    // Un état tiré d'une lecture partielle pourrait être faux : la phrase se tait, le bandeau parle.
+    expect(screen.queryAllByText(/sont compris dans les totaux|n’a rien reporté|n’a pas encore d’ouverture/)).toHaveLength(0)
+  })
+})
 
 // LES COMPTES DE TIERS EN ENGAGEMENT (ligne 32, lib/lettrage.ts). Le calcul est testé dans `lettrage.test.ts` ; ce qui
 // se joue ici est ce que l'écran en fait — l'arrêté qu'il choisit, ce qu'il dit d'une liste vide, d'une lecture
@@ -382,9 +488,9 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
 
   function monter(annee: number | 'toutes', mode: ModeComptable = 'engagement') {
     render(
-      <AnneeProvider defaut={annee}>
+      <ContexteDossier valides={faux.valides} annee={annee}>
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable={mode} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
   }
 
@@ -527,6 +633,29 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
     expect(screen.getByText('Repris à l’ouverture, sans détail par tiers')).toBeTruthy()
   })
 
+  // LES SOLDES REPORTÉS N'Y ENTRENT PAS (ligne 34) : la vue lit tout le brouillon, et les écritures de l'exercice validé
+  // y sont déjà — les compter avec ses soldes reportés doublerait chaque dette qui court. La balance de l'exercice, elle,
+  // les compte : c'est ce qui les met d'accord.
+  it('ne compte pas les soldes reportés d’un exercice validé, que le brouillon porte déjà', async () => {
+    faux.valides = [2025]
+    faux.parTable.soldes_reportes = [
+      {
+        id: 'sr-401', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '401000', libelle: 'Fournisseurs', sens: 'credit',
+        montant: 120, source_nom: 'Exercice 2025 validé', source_empreinte: 'c'.repeat(64), created_at: '2026-03-01T10:00:00Z',
+        compte_lib: null, ecriture_lib: null,
+      },
+    ]
+    monter(2026)
+
+    expect(await screen.findByText('Comptes de tiers au 15/04/2026')).toBeTruthy()
+    expect(screen.queryAllByText('Repris à l’ouverture, sans détail par tiers')).toHaveLength(0)
+    const section = screen.getByText((_, n) => n?.tagName === 'H4' && (n.textContent ?? '').startsWith('401000'))
+    expect(section.textContent!.replace(/\s/g, ' ')).toBe('401000 — Fournisseurs · reste à payer 50,00 €')
+    // Et la balance de l'exercice, au-dessus, dit la même dette : 120 reportés, réglés en janvier, plus 50 de février.
+    const balance = screen.getAllByText('401000').find((n) => n.tagName === 'TD')!
+    expect([...balance.closest('tr')!.children].map((c) => (c.textContent ?? '').replace(/\s/g, ' '))[5]).toBe('50,00 € créditeur')
+  })
+
   // Un arrêté AVANT l'ouverture ne compte pas les à-nouveaux : il n'y a rien à compter deux fois, et le dire crierait au
   // loup.
   it('ne prévient de rien quand l’arrêté précède l’ouverture', async () => {
@@ -573,9 +702,9 @@ describe('StatistiquesTab — le lettrage fait à la main', () => {
 
   function monter(annee: number | 'toutes' = 'toutes') {
     render(
-      <AnneeProvider defaut={annee}>
+      <ContexteDossier valides={faux.valides} annee={annee}>
         <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
   }
   const caseDe = (nom: string) => screen.getByRole('checkbox', { name: `Cocher ${nom}` }) as HTMLInputElement

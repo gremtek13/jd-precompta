@@ -126,8 +126,9 @@ export default function ComptesDeTiersCard({
           main : coche les pièces d’un même tiers qui se soldent ensemble, puis « Lettrer ensemble ». Aucune écriture
           n’est modifiée, et un lettrage fait à la main se défait. La vue lit tout le brouillon d’écritures, exercices précédents et
           à-nouveaux compris : une pièce dont l’écriture n’est pas encore générée n’y est pas. La balance d’un
-          exercice, au-dessus, ne compte que ses propres écritures — aucun solde n’est encore reporté d’un exercice
-          sur l’autre —, si bien qu’un compte de tiers peut y porter un autre solde. Un montant se lit du côté du
+          exercice, au-dessus, compte ses propres écritures et son ouverture — la balance reprise, ou les soldes
+          reportés de l’exercice précédent, écrits à sa validation — : tant que l’exercice précédent n’est pas validé,
+          un compte de tiers peut donc y porter un autre solde. Un montant se lit du côté du
           compte : ce qui reste à payer à un fournisseur, à encaisser d’un client, ce qui est dû au dirigeant ; un
           montant négatif dit l’inverse, un avoir à recevoir ou un trop-payé à rendre.
         </p>
