@@ -139,7 +139,9 @@ function ordonnerLignes(lignes: LigneFec[]): LigneFec[] {
 // premier solde de chaque compte de bilan y paraît sortir de nulle part, et un contrôleur qui
 // recalcule la banque depuis le fichier ne retrouve pas le relevé. `aNouveaux` porte ceux de
 // l'exercice exporté — l'appelant filtre, comme pour les écritures. Une seule écriture, journal AN,
-// numérotée à part des autres journaux ; sa pièce est la balance reprise.
+// numérotée à part des autres journaux ; sa pièce est la balance reprise — ou, pour un exercice qui suit
+// un exercice validé, l'exercice validé dont viennent ses soldes reportés (« Exercice AAAA validé »,
+// lib/reportDesSoldes.ts) : `ouvertureDeLExercice` rend l'une ou les autres sous la même forme.
 //
 // CompteLib reste celui de l'application pour un compte qu'elle tient (la banque, la TVA) : UN MÊME
 // CompteNum NE PORTE QU'UN LIBELLÉ DANS TOUT LE FICHIER — à-nouveaux et écritures compris, et la validation

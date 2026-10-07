@@ -18,7 +18,7 @@ import type { EcritureBrouillon, ModeComptable } from './types'
 import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
-import { fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
@@ -42,21 +42,7 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   }
 }
 
-// La dernière définition d'une fonction dans le schéma exporté, de `create function` à la fin de son corps.
-// La DERNIÈRE définition de la fonction, celle que la base exécute : une migration qui la redéfinit l'écrit
-// `create or replace` — chercher `create function` seul relirait la première, et l'application serait comparée à un
-// texte que la base n'a plus.
-function definitionSql(nom: string): string {
-  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
-  const definitions = fichiersDuSchema().filter((f) => new RegExp(motif.source).test(f.texte))
-  expect(definitions.length, nom).toBeGreaterThan(0)
-  const texte = definitions[definitions.length - 1].texte
-  const positions = [...texte.matchAll(motif)].map((m) => m.index)
-  const debut = positions[positions.length - 1]
-  const fin = texte.indexOf('$$;', debut)
-  expect(fin, nom).toBeGreaterThan(debut)
-  return texte.slice(debut, fin)
-}
+const definitionSql = derniereDefinitionSql
 
 // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")

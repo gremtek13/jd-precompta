@@ -240,3 +240,19 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
   return [...parNom.values()].sort((a, b) =>
     a.enfant.localeCompare(b.enfant) || a.colonne.localeCompare(b.colonne) || a.parent.localeCompare(b.parent))
 }
+
+// LA DERNIÈRE DÉFINITION D'UNE FONCTION SQL dans le schéma exporté, de `create function` à la fin de son corps (`$$;`) :
+// celle que la base exécute. Une migration qui la redéfinit l'écrit `create or replace` — chercher `create function`
+// seul relirait la première, et l'application serait comparée à un texte que la base n'a plus. Lève quand la fonction
+// est introuvable : un test qui la compare ne doit jamais passer sur un texte vide.
+export function derniereDefinitionSql(nom: string): string {
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
+  const definitions = fichiersDuSchema().filter((f) => new RegExp(motif.source).test(f.texte))
+  if (definitions.length === 0) throw new Error(`Fonction ${nom} introuvable dans le schéma exporté.`)
+  const texte = definitions[definitions.length - 1].texte
+  const positions = [...texte.matchAll(motif)].map((m) => m.index)
+  const debut = positions[positions.length - 1]
+  const fin = texte.indexOf('$$;', debut)
+  if (fin < 0) throw new Error(`Corps de ${nom} introuvable dans le schéma exporté.`)
+  return texte.slice(debut, fin)
+}

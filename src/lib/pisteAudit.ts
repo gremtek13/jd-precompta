@@ -164,11 +164,13 @@ export interface LignePisteAudit {
 // d'écriture est une information (une pièce « à valider » est la corbeille d'arrivée, la signaler
 // noierait le signal — même raison que `piecesValideesSansCategorie` dans controles.ts).
 //
-// `aNouveaux` porte l'ouverture de l'exercice exporté, s'il est celui de la reprise (voir
-// lib/aNouveaux.ts). Leur justificatif est la balance reprise, et son EMPREINTE est la preuve de ce
-// qui a été repris — exactement comme celle d'une pièce. Rien ne leur manque : un à-nouveau n'a ni
-// pièce ni mouvement bancaire, par nature, et les en déclarer privés ferait lire une rupture là où
-// la chaîne est complète.
+// `aNouveaux` porte l'ouverture de l'exercice exporté (`ouvertureDeLExercice`, lib/reportDesSoldes.ts) : la
+// balance reprise s'il est celui de la reprise (voir lib/aNouveaux.ts), les soldes reportés s'il suit un
+// exercice validé. Leur justificatif est la balance reprise, et son EMPREINTE est la preuve de ce qui a été
+// repris — exactement comme celle d'une pièce ; ou l'exercice validé dont viennent les soldes, et son empreinte
+// chaînée (`exercices_valides.empreinte`) le maillon entre la fin d'un exercice et le début du suivant. Rien ne
+// leur manque : un à-nouveau n'a ni pièce ni mouvement bancaire, par nature, et les en déclarer privés ferait lire
+// une rupture là où la chaîne est complète.
 //
 // Le justificatif d'un mouvement JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve` :
 // affecté, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé, écrit sur un compte de bilan ou

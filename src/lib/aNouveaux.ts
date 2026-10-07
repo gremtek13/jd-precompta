@@ -1,5 +1,7 @@
 import { classeDuCompte, type LigneBalance } from './balanceImport'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import {
+  COMPTE_BANQUE, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
+} from './comptes'
 import { formatMoney } from './format'
 import type { OuvertureBanque } from './planTresorerie'
 import type { ANouveau } from './types'
@@ -79,6 +81,15 @@ export function compteDeLApplication(numero: string): string {
 
 const enCentimes = (montant: number) => Math.round(montant * 100)
 
+/**
+ * Le libellé du résultat d'un exercice EN ATTENTE D'AFFECTATION, en 120 (bénéfice) ou 129 (perte). Le même pour la
+ * reprise d'une balance et pour le report des soldes d'un exercice validé (lib/reportDesSoldes.ts), que la base écrit
+ * mot pour mot (`soldes_a_reporter`).
+ */
+export function libelleDuResultat(exercice: number, benefice: boolean): string {
+  return `Résultat de l’exercice ${exercice} (${benefice ? 'bénéfice' : 'perte'}), en attente d’affectation`
+}
+
 /** La date des à-nouveaux qui ouvrent un exercice : son 1er janvier, les exercices étant civils. */
 export function dateOuverture(exercice: number): string {
   return `${exercice}-01-01`
@@ -125,9 +136,9 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
   }
 
   const ligneResultat: LigneANouveau | null = resultat === 0 ? null : {
-    compte: resultat < 0 ? '120000' : '129000',
+    compte: resultat < 0 ? COMPTE_RESULTAT_BENEFICE : COMPTE_RESULTAT_PERTE,
     compteOrigine: null,
-    libelle: `Résultat de l’exercice ${exerciceOuvert - 1} (${resultat < 0 ? 'bénéfice' : 'perte'}), en attente d’affectation`,
+    libelle: libelleDuResultat(exerciceOuvert - 1, resultat < 0),
     sens: resultat < 0 ? 'credit' : 'debit',
     montant: Math.abs(resultat) / 100,
   }

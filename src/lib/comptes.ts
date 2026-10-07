@@ -72,6 +72,19 @@ export const COMPTE_REMBOURSEMENT_TVA_DEMANDE = '445830'
 export const COMPTE_ARRONDIS_CHARGE = '658000'
 export const COMPTE_ARRONDIS_PRODUIT = '758000'
 
+// Les comptes du RÉSULTAT REPORTÉ (ligne 34, voir lib/reportDesSoldes.ts), décision du cabinet du 06/10/2026. Pour une
+// entreprise individuelle, le compte de l'exploitant et le résultat passent en fin d'exercice au capital individuel
+// (PCG, art. 941-10) ; une société garde son résultat en 120 (bénéfice) ou 129 (perte), EN ATTENTE D'AFFECTATION —
+// comme la reprise d'une balance le fait déjà (lib/aNouveaux.ts). La base écrit exactement ces numéros
+// (`soldes_a_reporter`).
+//
+// ILS N'ENTRENT PAS DANS `LIBELLES_COMPTES`, et c'est voulu : leur libellé est celui que le report leur donne
+// (« Capital individuel », le résultat avec son exercice), et un libellé fixe le remplacerait, dans le FEC de
+// l'exercice qu'ils ouvrent, par un autre que celui qu'ils portent.
+export const COMPTE_CAPITAL_INDIVIDUEL = '101000'
+export const COMPTE_RESULTAT_BENEFICE = '120000'
+export const COMPTE_RESULTAT_PERTE = '129000'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement

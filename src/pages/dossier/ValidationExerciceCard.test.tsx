@@ -26,7 +26,7 @@ const DEMANDE: DemandeDeValidation = {
   p_a_nouveaux: [],
   p_declaration: null,
 }
-const VALIDABLE: EtatDeValidation = { prealables: [], numerotation: null, validable: true }
+const VALIDABLE: EtatDeValidation = { prealables: [], numerotation: null, report: null, validable: true }
 
 describe('ValidationExerciceCard', () => {
   // Relâché avant la relecture, le verrou rendrait le bouton pendant que l'écran relit encore l'exercice : la carte
@@ -57,7 +57,7 @@ describe('ValidationExerciceCard', () => {
     const onChoisirExercice = vi.fn()
     const onNavigate = vi.fn()
     const etat: EtatDeValidation = {
-      validable: false, numerotation: null,
+      validable: false, numerotation: null, report: null,
       prealables: [
         { id: 'ordre', nb: null, cible: 'cloture', bloquant: true, exercice: 2024, message: "L'exercice 2024 n'est pas validé." },
         { id: 'mouvements-a-traiter', nb: null, cible: 'banque', bloquant: true, message: 'Des mouvements restent à traiter.' },

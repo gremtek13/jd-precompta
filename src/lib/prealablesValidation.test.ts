@@ -12,8 +12,9 @@ import { COMPTE_BANQUE } from './comptes'
 import type { Emprunt } from './emprunts'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
-  LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
+import { demandeDeValidation } from './validationExercice'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
@@ -47,6 +48,16 @@ const ecriture = (id: string, o: Partial<EcritureBrouillon> = {}): EcritureBroui
 const aNouveau = (date: string): ANouveau => ({
   id: 'an1', dossier_id: 'd1', date, compte: COMPTE_BANQUE, compte_origine: '512', libelle: 'Banque', sens: 'debit', montant: 1000,
   source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2025-02-01T00:00:00Z',
+})
+// Une ouverture reprise ÉQUILIBRÉE, comme la base l'exige (`enregistrer_a_nouveaux`) : la banque face au capital.
+const ouvertureReprise = (date: string): ANouveau[] => [
+  aNouveau(date),
+  { ...aNouveau(date), id: 'an2', compte: '101000', compte_origine: '101', libelle: 'Capital individuel', sens: 'credit' },
+]
+// Un solde reporté par la validation de l'exercice précédent (ligne 34).
+const reporte = (id: string, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number): SoldeReporte => ({
+  id, dossier_id: 'd1', date, compte, libelle, sens, montant, source_nom: `Exercice ${Number(date.slice(0, 4)) - 1} validé`,
+  source_empreinte: 'b'.repeat(64), created_at: `${date}T00:00:00Z`, ...A_NOUVEAU_NON_VALIDE,
 })
 
 const RECETTES: Categorie = {
@@ -96,7 +107,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000' }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
-    vehicules: [], emprunts: [], aNouveaux: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
+    vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
     doublonsTexte: [], ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
@@ -130,6 +141,58 @@ describe('prealablesDeValidation — un exercice tenu', () => {
     expect(etat.prealables[0].message).toContain('1 000 lues sur 1 200')
     expect(etat.numerotation).toBeNull()
     expect(etat.validable).toBe(false)
+  })
+})
+
+// L'OUVERTURE DE L'EXERCICE SUIVANT (ligne 34) : la validation l'écrit dans le même clic, et la numérotation de
+// l'exercice reçoit les soldes que la validation précédente a reportés — la base exige qu'elle couvre exactement la
+// reprise de l'exercice et ses soldes reportés.
+describe('prealablesDeValidation — le report des soldes', () => {
+  const REPORTES = [
+    reporte('s1', '2025-01-01', COMPTE_BANQUE, 'Banque', 'debit', 1000),
+    reporte('s2', '2025-01-01', '101000', 'Capital individuel', 'credit', 1000),
+    // Ceux qui ouvrent un autre exercice n'y entrent pas.
+    reporte('s3', '2026-01-01', COMPTE_BANQUE, 'Banque', 'debit', 880),
+  ]
+
+  it('numérote les soldes reportés qui ouvrent l’exercice, et eux seuls, et les envoie à la base', () => {
+    const etat = prealablesDeValidation(donnees({ anneesValidees: [2024], soldesReportes: REPORTES }))
+    expect(etat.prealables).toEqual([])
+    expect(etat.numerotation!.aNouveaux.map((a) => a.aNouveau.id)).toEqual(['s2', 's1'])
+    expect(etat.numerotation!.aNouveaux.every((a) => a.aNouveau.compte_origine === null)).toBe(true)
+    expect(demandeDeValidation(etat.numerotation!, null).p_a_nouveaux).toEqual([
+      { id: 's2', compte_lib: 'Capital individuel', ecriture_lib: 'À-nouveau Capital individuel' },
+      { id: 's1', compte_lib: 'Banque', ecriture_lib: 'À-nouveau Banque' },
+    ])
+  })
+
+  it('montre l’ouverture de l’exercice suivant : le résultat d’une entreprise individuelle au capital individuel', () => {
+    const etat = prealablesDeValidation(donnees({ anneesValidees: [2024], soldesReportes: REPORTES }))
+    expect(etat.report).toMatchObject({ exercice: 2025, date: '2026-01-01', source: 'Exercice 2025 validé', resultat: -120 })
+    expect(etat.report!.soldes).toEqual([
+      { compte: '101000', libelle: 'Capital individuel', sens: 'credit', montant: 880 },
+      { compte: COMPTE_BANQUE, libelle: 'Banque', sens: 'debit', montant: 880 },
+    ])
+    // Sur une lecture partielle, rien n'est calculé.
+    expect(prealablesDeValidation(donnees({ lectureIncomplete: 'x' })).report).toBeNull()
+  })
+
+  it('refuse un compte qui ne se reporterait pas, avec ses numéros', () => {
+    const d = donnees({ categories: [{ ...ACHATS, compte_comptable: '801000' }], ecritures: [ecriture('e1', { compte: '801000' }), E2] })
+    expect(prealable(d, 'report-hors-classes')).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: 'Comptes : 801000.' })
+    expect(prealable(d, 'report-hors-classes')!.message).toContain("à la fin de l'exercice 2025 : il ne se reporterait pas")
+    expect(ids(donnees())).not.toContain('report-hors-classes')
+  })
+
+  it('refuse une ouverture qui ne s’équilibre pas — sauf à côté d’une écriture déséquilibrée, qui en est la cause', () => {
+    const seule = donnees({ anneesValidees: [2024], soldesReportes: [REPORTES[0]] })
+    expect(prealable(seule, 'report-desequilibre')).toMatchObject({
+      nb: null, bloquant: true, cible: 'ecritures', detail: 'Écart de 1000,00 € entre les débits et les crédits.',
+      message: "Les soldes de l'exercice 2025 ne s'équilibrent pas, à-nouveaux compris : l'ouverture de l'exercice suivant ne peut pas s'écrire.",
+    })
+    const desequilibree = donnees({ ecritures: [E1, ecriture('e2', { compte: COMPTE_BANQUE, sens: 'credit', ligne_bancaire_id: 'l1', montant: 100 })] })
+    expect(ids(desequilibree)).toContain('ecritures-desequilibrees')
+    expect(ids(desequilibree)).not.toContain('report-desequilibre')
   })
 })
 
@@ -184,9 +247,9 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
   // Le garde symétrique de « avant l'ouverture » et « l'ouverture d'abord » : l'exercice qui porte les à-nouveaux
   // se valide, et sa numérotation les porte — eux seuls.
   it('valide l’exercice qui porte l’ouverture, à-nouveaux compris dans sa numérotation', () => {
-    const etat = prealablesDeValidation(donnees({ aNouveaux: [aNouveau('2025-01-01')] }))
+    const etat = prealablesDeValidation(donnees({ aNouveaux: ouvertureReprise('2025-01-01') }))
     expect(etat.prealables).toEqual([])
-    expect(etat.numerotation!.aNouveaux.map((a) => a.aNouveau.id)).toEqual(['an1'])
+    expect(etat.numerotation!.aNouveaux.map((a) => a.aNouveau.id)).toEqual(['an2', 'an1'])
     expect(prealablesDeValidation(donnees({ aNouveaux: [aNouveau('2024-01-01')], anneesValidees: [2024] })).numerotation!.aNouveaux).toEqual([])
   })
 

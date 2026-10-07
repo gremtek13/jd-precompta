@@ -33,7 +33,7 @@ import {
 } from '../../lib/validationExercice'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, ExerciceValide, Immobilisation,
-  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -116,6 +116,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   // Les à-nouveaux entiers : la validation numérote ceux de l'exercice qu'ils ouvrent, et fige leurs libellés.
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
+  // Les soldes reportés par la validation de chaque exercice (ligne 34, lib/reportDesSoldes.ts) : ceux du 1er janvier
+  // ouvrent l'exercice suivant, et sa validation les numérote comme une reprise.
+  const [soldesReportes, setSoldesReportes] = useState<SoldeReporte[]>([])
   const [ouverture, setOuverture] = useState<string | null>(null)
   // CE QUE LA VALIDATION LIT EN PLUS DE LA DÉCLARATION : les pièces à valider (un exercice ne se fige pas avec
   // une pièce en suspens), les exercices déjà validés, et deux contrôles de la Checklist. Ces deux-là sont nuls
@@ -168,7 +171,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     const [
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
-      lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva,
+      lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -257,6 +260,13 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
       ),
+      // Les soldes reportés : la validation numérote ceux de l'exercice qu'ils ouvrent. Tronquée, cette lecture ferait
+      // refuser la validation par la base (« Les libellés proposés ne couvrent pas exactement… ») — le drapeau de la
+      // validation, pas celui de la déclaration, qui ne les lit pas.
+      lireTout<SoldeReporte>((debut, fin) =>
+        supabase.from('soldes_reportes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
+      ),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -268,8 +278,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
     setExercicesValides(lectureValides.lignes)
-    setValidationIncomplete([lectureAValider, lectureValides].find((l) => !l.complete)?.motif ?? null)
+    setValidationIncomplete([lectureAValider, lectureValides, lectureReportes].find((l) => !l.complete)?.motif ?? null)
     setANouveaux(lectureOuverture.lignes)
+    setSoldesReportes(lectureReportes.lignes)
     setEcritures(lectureEcritures.lignes)
     setOuverture(lectureOuverture.lignes[0]?.date ?? null)
     setEcrituresIncompletes([lectureEcritures, lectureOuverture].find((l) => !l.complete)?.motif ?? null)
@@ -525,7 +536,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     const etat = prealablesDeValidation({
       annee, anneeCourante, modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
-      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, declarationsTva,
+      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
       periodiciteTva, relevesIncoherents, doublonsTexte,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
