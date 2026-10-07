@@ -35,11 +35,20 @@ function pieceFileName(p: Piece): { racine: string; extension: string } {
 //
 // L'unicité est établie sur le pack entier, pas seulement sur le sous-dossier de type : c'est la
 // colonne « Fichier » du récapitulatif qui doit rester sans ambiguïté, et elle ne dit pas le type.
-function nommerPieces(pieces: Piece[]): Map<string, string> {
+//
+// Une facture reçue en XML de la plateforme du client (voir lib/fichiersPiece.ts) part avec sa VERSION
+// LISIBLE, que le comptable ouvre là où il ne lirait pas le XML : sous le nom de l'original suivi de
+// « _lisible », décidé dans la même passe et sur le même ensemble, pour qu'elle n'écrase rien et que rien
+// ne l'écrase.
+function nommerPieces(pieces: Piece[]): Map<string, { original: string; lisible: string | null }> {
   const utilises = new Set<string>()
   return new Map(pieces.map((p) => {
     const { racine, extension } = pieceFileName(p)
-    return [p.id, nomUnique(racine, extension, utilises)]
+    const original = nomUnique(racine, extension, utilises)
+    const lisible = p.lisible_path
+      ? nomUnique(`${original.slice(0, original.length - extension.length)}_lisible`, '.pdf', utilises)
+      : null
+    return [p.id, { original, lisible }]
   }))
 }
 
@@ -137,19 +146,27 @@ async function remplirZipDossier(
   const nomDeLaPiece = nommerPieces(included)
   const manquantes: string[] = []
   for (const p of included) {
-    const { data: blob, error } = await supabase.storage.from('pieces').download(p.storage_path)
-    // Une pièce introuvable ne fait pas échouer tout le pack — mais elle n'est plus passée sous
-    // silence : elle est recensée, écrite dans l'Excel et remontée à l'appelant.
-    if (error || !blob) {
-      manquantes.push(nomDeLaPiece.get(p.id)!)
-      continue
-    }
+    const noms = nomDeLaPiece.get(p.id)!
     const folder = piecesFolder.folder(FOLDER_BY_TYPE[p.type_piece] ?? '04_Autres')!
-    folder.file(nomDeLaPiece.get(p.id)!, blob)
+    const fichiers: [string | null, string | null][] = [[p.storage_path, noms.original], [p.lisible_path, noms.lisible]]
+    for (const [chemin, nom] of fichiers) {
+      if (!chemin || !nom) continue
+      const { data: blob, error } = await supabase.storage.from('pieces').download(chemin)
+      // Une pièce introuvable ne fait pas échouer tout le pack — mais elle n'est plus passée sous
+      // silence : elle est recensée, écrite dans l'Excel et remontée à l'appelant.
+      if (error || !blob) {
+        manquantes.push(nom)
+        continue
+      }
+      folder.file(nom, blob)
+    }
   }
 
   // --- Excel récapitulatif ---
-  const recapRows: { Date: string; Tiers: string; Type: string; Catégorie: string; 'Montant HT': number | string; TVA: number | string; 'Montant TTC': number | string; Fichier: string }[] = included.map((p) => ({
+  // La colonne des versions lisibles n'apparaît que si le pack en porte une : un récapitulatif ordinaire
+  // garde la forme que le comptable connaît.
+  const avecLisible = included.some((p) => nomDeLaPiece.get(p.id)!.lisible !== null)
+  const recapRows: { Date: string; Tiers: string; Type: string; Catégorie: string; 'Montant HT': number | string; TVA: number | string; 'Montant TTC': number | string; Fichier: string; 'Version lisible'?: string }[] = included.map((p) => ({
     Date: p.date_piece ?? '',
     Tiers: p.tiers ?? '',
     Type: p.type_piece,
@@ -157,7 +174,8 @@ async function remplirZipDossier(
     'Montant HT': p.montant_ht ?? '',
     TVA: p.montant_tva ?? '',
     'Montant TTC': p.montant_ttc ?? '',
-    Fichier: nomDeLaPiece.get(p.id)!,
+    Fichier: nomDeLaPiece.get(p.id)!.original,
+    ...(avecLisible ? { 'Version lisible': nomDeLaPiece.get(p.id)!.lisible ?? '' } : {}),
   }))
   const totalTtc = included.reduce((sum, p) => sum + (p.montant_ttc ?? 0), 0)
   recapRows.push({

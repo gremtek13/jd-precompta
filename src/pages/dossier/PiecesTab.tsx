@@ -22,13 +22,17 @@ import { useGardePanneau, usePanneauDroit } from '../../lib/panneauDroit'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
+import PlateformeClientModal from './PlateformeClientModal'
 import CategoriserTiersModal from './CategoriserTiersModal'
 import { useAnnee } from '../../context/AnneeContext'
 import { useAuth } from '../../context/AuthContext'
 import { retirerFichiers } from '../../lib/stockage'
+import { fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 
-export default function PiecesTab({ dossierId }: { dossierId: string }) {
+// `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
+// vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
+export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierId: string; dossierSiret?: string | null }) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
@@ -69,6 +73,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
   const [importDossierOuvert, setImportDossierOuvert] = useState(false)
   const [superPdpOpen, setSuperPdpOpen] = useState(false)
+  const [plateformeOuverte, setPlateformeOuverte] = useState(false)
   // Pièces déjà rapprochées d'un mouvement bancaire (voir BanqueTab) — pour ne plus laisser
   // "Validée" seule donner l'impression que le traitement d'une pièce est terminé (voir audit
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
@@ -446,8 +451,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         echecs.push(messageErreur(error))
         continue
       }
-      if (piece?.storage_path) {
-        await retirerFichiers('pieces', [piece.storage_path], 'PiecesTab')
+      // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
+      // XML, laissée seule, ne serait plus désignée par rien.
+      const fichiers = piece ? fichiersDeLaPiece(piece) : []
+      if (fichiers.length > 0) {
+        await retirerFichiers('pieces', fichiers, 'PiecesTab')
       }
       supprimees++
     }
@@ -652,6 +660,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             </>
           )}
           <button className="btn btn-outline btn-sm" onClick={() => setSuperPdpOpen(true)}>🔌 Facture électronique</button>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setPlateformeOuverte(true)}
+            title="Recevoir les factures par la plateforme agréée du client (API AFNOR), chacune en pièce « à valider »"
+          >
+            Plateforme du client
+          </button>
           <button className="btn btn-outline btn-sm" onClick={() => setImportDossierOuvert(true)} title="Pour importer une arborescence de dossiers depuis ton ordinateur, avec sous-dossiers automatiques">
             📁 Importer un dossier complet
           </button>
@@ -812,6 +827,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
                     {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}
                     {!p.confiance && <span className="muted">—</span>}
+                    {/* Une facture électronique, pas une lecture de document : sa confiance dit ce que l'import a
+                        vérifié (le destinataire, la cohérence des montants), et ses remarques sont dans ses notes. */}
+                    {p.source === 'plateforme' && (
+                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 2 }}>facture électronique</div>
+                    )}
                   </td>
                   <td onClick={() => ouvrirPiece(p)}>
                     {p.statut === 'validee'
@@ -902,6 +922,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
       {superPdpOpen && (
         <SuperPdpModal dossierId={dossierId} onClose={() => setSuperPdpOpen(false)} onImported={load} />
+      )}
+
+      {plateformeOuverte && (
+        <PlateformeClientModal
+          dossierId={dossierId}
+          dossierSiret={dossierSiret}
+          onClose={() => setPlateformeOuverte(false)}
+          onImported={load}
+        />
       )}
 
       {categoriserTiers && (

@@ -134,7 +134,16 @@ vi.mock('./dossier/ChecklistTab', async () => {
     },
   }
 })
-vi.mock('./dossier/PiecesTab', () => ({ default: () => <p>Liste des justificatifs</p> }))
+// Les justificatifs reçoivent le SIRET du dossier : la fenêtre « Plateforme du client » en tire le SIREN sans lequel
+// elle ne sait pas à quel dossier une facture reçue est adressée (lib/receptionPlateforme.ts). Le double le montre.
+vi.mock('./dossier/PiecesTab', () => ({
+  default: ({ dossierSiret }: { dossierSiret?: string | null }) => (
+    <>
+      <p>Liste des justificatifs</p>
+      <p>Justificatifs — SIRET {dossierSiret ?? '(aucun)'}</p>
+    </>
+  ),
+}))
 // Factures propose la mention de TVA d'une facture et refuse une ligne taxée selon le statut du dossier
 // (lib/statutTva.ts) : doublé pour montrer le statut et l'article qu'il REÇOIT.
 vi.mock('./dossier/FacturesTab', () => ({
@@ -403,6 +412,17 @@ describe('Page d’un dossier — l’identité est toujours celle du dossier de
 
     await act(async () => { identite.relacher() })
     expect(screen.getByText('Formulaire d’identité — SIRET 11111111111111')).toBeTruthy()
+  })
+
+  // Sans SIRET, la fenêtre « Plateforme du client » refuse d'importer, et sous un autre elle prendrait pour adressées
+  // à ce dossier les factures d'une autre entreprise.
+  it('l’onglet Justificatifs reçoit le SIRET du dossier affiché', async () => {
+    await afficher('/dossiers/d1/pieces')
+    expect(screen.getByText('Justificatifs — SIRET 11111111111111')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/pieces')
+    expect(screen.getByText('Justificatifs — SIRET 22222222222222')).toBeTruthy()
   })
 
   it('sur un onglet à exercice, l’identité qui tarde ne fait pas tomber la page', async () => {

@@ -32,6 +32,8 @@ const faux = vi.hoisted(() => ({
   // Les pièces dont le texte OCR est en base, et l'échec éventuel de cette lecture.
   avecTexte: new Set<string>(),
   erreurPresence: null as string | null,
+  // Les fichiers retirés du stockage, appel par appel.
+  retraits: [] as string[][],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -97,7 +99,13 @@ vi.mock('../../lib/supabase', async () => {
     // signée : les deux répondent sans rien faire ici.
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
     storage: {
-      from: () => ({ createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'non utilisé' } }) }),
+      from: () => ({
+        createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'non utilisé' } }),
+        remove: (chemins: string[]) => {
+          faux.retraits.push(chemins)
+          return Promise.resolve({ error: null })
+        },
+      }),
     },
   },
   }
@@ -108,6 +116,12 @@ vi.mock('../../lib/supabase', async () => {
 // Supabase ; la doublure dit exactement ce dont l'écran a besoin, et rien de plus.
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: 'cabinet-de-test' }) }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
+// La fenêtre de la plateforme du client a ses propres tests : ici, seulement ce que l'onglet lui passe.
+vi.mock('./PlateformeClientModal', () => ({
+  default: (p: { dossierId: string; dossierSiret: string | null }) => (
+    <div>Fenêtre de la plateforme — dossier {p.dossierId}, SIRET {p.dossierSiret ?? 'aucun'}</div>
+  ),
+}))
 // La forme exacte de `PresenceTexteOcr` compte — `{ avecTexte: Set, erreur: string | null }` : le
 // premier est lu en `.has()` à chaque ligne, le second décide de l'affichage du bouton de
 // relecture (une lecture refusée retire le bouton, parce que sa présence coûte des appels Textract
@@ -146,6 +160,7 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.retenueMaj = null
   faux.avecTexte = new Set()
   faux.erreurPresence = null
+  faux.retraits = []
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -300,6 +315,57 @@ describe('PiecesTab — supprimer une sélection dit ce que ça défait', () => 
 // qui la ferait mentir : une fiche qui n'est pas celle de la ligne cliquée, un parcours qui sort de la
 // liste affichée, une saisie qui part sans un mot, une validation qui n'enchaîne pas — ou qui
 // enchaîne depuis une pièce que l'opérateur a déjà quittée.
+// UNE FACTURE REÇUE DE LA PLATEFORME DU CLIENT (ligne 28.5) : la fenêtre qui les reçoit, ce que la ligne en dit, et ce
+// qu'une suppression emporte — l'original ET sa version lisible.
+describe('PiecesTab — les factures reçues de la plateforme du client', () => {
+  const recue = (o: Partial<Piece> = {}) => piece({
+    id: 'p-recue', source: 'plateforme', storage_path: 'dossier-de-test/fa.xml', nom_fichier: 'fa.xml',
+    lisible_path: 'dossier-de-test/fa-lisible.pdf', flux_hote: 'pa.exemple.fr', flux_id: 'flux-1', tiers: 'FOURNISSEUR RECU', ...o,
+  })
+
+  it('« Plateforme du client » ouvre la fenêtre, avec le SIRET du dossier', async () => {
+    poser([piece()])
+    render(
+      <FournisseurPanneauDroit>
+        <AnneeProvider defaut="toutes">
+          <PiecesTab dossierId="dossier-de-test" dossierSiret="12345678200010" />
+        </AnneeProvider>
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+    await screen.findByText('FOURNISSEUR')
+    expect(screen.queryByText(/Fenêtre de la plateforme/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Plateforme du client' }).click() })
+    expect(screen.getByText('Fenêtre de la plateforme — dossier dossier-de-test, SIRET 12345678200010')).toBeTruthy()
+  })
+
+  it('une facture reçue le dit sur sa ligne ; une pièce déposée, non', async () => {
+    poser([recue(), piece({ id: 'p-deposee', tiers: 'FOURNISSEUR DEPOSE' })])
+    monter('toutes')
+    await screen.findByText('FOURNISSEUR DEPOSE')
+    expect(screen.getAllByText('facture électronique')).toHaveLength(1)
+    const ligne = screen.getByText('FOURNISSEUR RECU').closest('tr')!
+    expect(within(ligne).getByText('facture électronique')).toBeTruthy()
+  })
+
+  it('supprimée en lot, elle emporte ses deux fichiers ; une pièce déposée, son seul fichier', async () => {
+    poser([recue(), piece({ id: 'p-deposee', tiers: 'FOURNISSEUR DEPOSE' })])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter('toutes')
+    await screen.findByText('FOURNISSEUR DEPOSE')
+    const cases = screen.getAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+    expect([...faux.suppressions].sort()).toEqual(['p-deposee', 'p-recue'])
+    expect(faux.retraits).toEqual(expect.arrayContaining([
+      ['dossier-de-test/fa.xml', 'dossier-de-test/fa-lisible.pdf'],
+      ['dossier-de-test/justificatif.pdf'],
+    ]))
+    expect(faux.retraits).toHaveLength(2)
+  })
+})
+
 describe('PiecesTab — la fiche d’une pièce dans le panneau de droite', () => {
   const trois = () => [
     piece({ id: 'p1', tiers: 'ALPHA', date_piece: '2026-03-01' }),

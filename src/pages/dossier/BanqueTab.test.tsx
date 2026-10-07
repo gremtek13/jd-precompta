@@ -105,6 +105,11 @@ const faux = vi.hoisted(() => ({
 // jsdom faute de `DOMMatrix`. Aucune fonctionnalité PDF n'est exercée par ce test : le module est
 // donc remplacé, exactement comme `lib/supabase` l'est ci-dessous pour ce qui parle à la base.
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesPdf }))
+// Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
+const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
+vi.mock('../../lib/depot', () => ({
+  ouvrirJustificatif: async (chemin: string) => { justificatifs.ouverts.push(chemin) },
+}))
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
@@ -894,6 +899,31 @@ async function ouvrir(libelle = 'PRLV SEPA FOURNISSEUR') {
   if (!cellule) throw new Error(`Aucune ligne du relevé ne porte « ${libelle} »`)
   await act(async () => { cellule.click() })
 }
+
+describe('BanqueTab — le justificatif qu’on ouvre depuis un mouvement', () => {
+  it('une facture reçue en XML de la plateforme du client s’ouvre par sa version lisible', async () => {
+    reinitialiser()
+    justificatifs.ouverts = []
+    faux.pieces = [pieceDeTest({
+      source: 'plateforme', storage_path: 'dossier/fa.xml', nom_fichier: 'fa.xml', lisible_path: 'dossier/fa-lisible.pdf',
+      flux_hote: 'pa.exemple.fr', flux_id: 'flux-1',
+    })]
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Voir le justificatif' }).click() })
+    expect(justificatifs.ouverts).toEqual(['dossier/fa-lisible.pdf'])
+  })
+
+  // GARDE SYMÉTRIQUE : une pièce déposée s'ouvre par son seul fichier.
+  it('une pièce déposée s’ouvre par son fichier', async () => {
+    reinitialiser()
+    justificatifs.ouverts = []
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Voir le justificatif' }).click() })
+    expect(justificatifs.ouverts).toEqual(['dossier/facture.pdf'])
+  })
+})
 
 describe('BanqueTab — le mouvement dans le panneau de droite', () => {
   it('associe la pièce proposée et RESTE sur le mouvement, dans son nouvel état', async () => {

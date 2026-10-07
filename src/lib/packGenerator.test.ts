@@ -233,6 +233,48 @@ describe('remplirZipDossier', () => {
     expect(nommes.slice().sort()).toEqual(dansLeZip.slice().sort())
   })
 
+  it('joint la version lisible d’une facture reçue en XML, sous le nom de son original, et la récapitule', async () => {
+    etat.pieces.data = [
+      piece({ id: 'x', storage_path: 'd1/x.xml', nom_fichier: 'F-1.xml', lisible_path: 'd1/x-lisible.pdf', tiers: 'Martin', montant_ttc: 120 }),
+      piece({ id: 'p', storage_path: 'd1/p.pdf', tiers: 'EDF', montant_ttc: 60 }),
+    ]
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+
+    const fichiers = cheminsDuZip(zip).filter((c) => c.includes('Pieces/')).map((c) => c.split('/').pop()).sort()
+    expect(fichiers).toEqual(['2026-03-10_EDF_60.00€.pdf', '2026-03-10_Martin_120.00€.xml', '2026-03-10_Martin_120.00€_lisible.pdf'])
+    expect(await zip.file('Pieces/01_Achats/2026-03-10_Martin_120.00€_lisible.pdf')!.async('string')).toBe('contenu de d1/x-lisible.pdf')
+    // Une pièce, pas deux : le total et le compte ne bougent pas.
+    expect(resultat.nbPieces).toBe(2)
+    expect(resultat.totalTtc).toBe(180)
+
+    const recap = (await feuilles(resultat.excelBlob))['Récap']
+    const colonne = recap[0].indexOf('Version lisible')
+    expect(colonne).toBeGreaterThan(-1)
+    expect(recap.slice(1, -1).map((l) => [l[recap[0].indexOf('Fichier')], l[colonne] ?? ''])).toEqual(
+      expect.arrayContaining([
+        ['2026-03-10_Martin_120.00€.xml', '2026-03-10_Martin_120.00€_lisible.pdf'],
+        ['2026-03-10_EDF_60.00€.pdf', ''],
+      ]),
+    )
+  })
+
+  it('une version lisible introuvable se recense comme toute pièce manquante', async () => {
+    etat.pieces.data = [piece({ id: 'x', storage_path: 'd1/x.xml', nom_fichier: 'F-1.xml', lisible_path: 'd1/x-lisible.pdf', tiers: 'Martin' })]
+    etat.telechargementsEnEchec = new Set(['d1/x-lisible.pdf'])
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+    expect(resultat.manquantes).toEqual(['2026-03-10_Martin_120.00€_lisible.pdf'])
+    // L'original, lui, est bien là.
+    expect(cheminsDuZip(zip).filter((c) => c.includes('Pieces/')).map((c) => c.split('/').pop())).toEqual(['2026-03-10_Martin_120.00€.xml'])
+  })
+
+  it('un pack sans version lisible garde le récapitulatif que le comptable connaît', async () => {
+    etat.pieces.data = [piece({ id: 'p', storage_path: 'd1/p.pdf' })]
+    const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
+    expect((await feuilles(resultat.excelBlob))['Récap'][0]).not.toContain('Version lisible')
+  })
+
   it('totalise par catégorie dans le résumé', async () => {
     etat.pieces.data = [
       piece({ id: 'a', storage_path: 'd1/a.pdf', montant_ttc: 120 }),

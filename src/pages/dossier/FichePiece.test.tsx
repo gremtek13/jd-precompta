@@ -30,6 +30,10 @@ const faux = vi.hoisted(() => ({
   invocations: [] as { nom: string; corps: unknown }[],
   reponseFonction: null as null | { data: unknown; error: unknown },
   resoudreFonction: null as null | ((v: { data: unknown; error: unknown }) => void),
+  // Le stockage : les chemins dont une adresse signée est demandée (ce qui est MONTRÉ), et ceux qu'on retire.
+  cheminsSignes: [] as string[],
+  urlSignee: false,
+  retraits: [] as string[][],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -63,7 +67,16 @@ vi.mock('../../lib/supabase', () => ({
           faux.uploads.push(chemin)
           return Promise.resolve({ error: null })
         },
-        createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'non utilisé' } }),
+        createSignedUrl: (chemin: string) => {
+          faux.cheminsSignes.push(chemin)
+          return Promise.resolve(faux.urlSignee
+            ? { data: { signedUrl: `https://stockage.exemple/${chemin}` }, error: null }
+            : { data: null, error: { message: 'non utilisé' } })
+        },
+        remove: (chemins: string[]) => {
+          faux.retraits.push(chemins)
+          return Promise.resolve({ error: null })
+        },
       }),
     },
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
@@ -242,6 +255,85 @@ describe('FichePiece — supprimer une pièce dit ce que ça défait', () => {
     await act(async () => { bouton.click() })
 
     expect(faux.suppressions).toEqual(['piece-1'])
+  })
+})
+
+// UNE FACTURE REÇUE DE LA PLATEFORME DU CLIENT (ligne 28.5) : son original XML ne se lit pas, sa version lisible si ;
+// son fichier est l'original transmis, et ses champs viennent de la facture électronique elle-même. Ce que la fiche
+// en montre, ce qu'elle n'offre pas, et ce qu'une suppression emporte.
+function factureRecue(o: Partial<Piece> = {}): Piece {
+  return pieceDeTest({
+    source: 'plateforme', storage_path: 'd1/1-fa-42.xml', nom_fichier: 'FA-42.xml', lisible_path: 'd1/1-fa-42-lisible.pdf',
+    flux_hote: 'pa.exemple.fr', flux_id: 'flux-1', statut: 'a_valider', ...o,
+  })
+}
+
+function monterAvec(piece: Piece) {
+  faux.cheminsSignes = []
+  faux.retraits = []
+  faux.suppressions = []
+  render(
+    <FichePiece
+      dossierId="d1"
+      categories={[]}
+      sousDossiers={[]}
+      tiersCategories={[]}
+      tiersCategoriesCabinet={[]}
+      tiersConnus={[]}
+      piece={piece}
+      commentaires={[]}
+      onClose={() => {}}
+      onSaved={() => {}}
+      onCommentaireAjoute={() => {}}
+      onCommentaireSupprime={() => {}}
+    />,
+  )
+}
+
+describe('FichePiece — une facture reçue de la plateforme du client', () => {
+  beforeEach(() => { faux.urlSignee = false })
+
+  it('se montre par sa version lisible, et l’original transmis reste à portée d’un lien', async () => {
+    faux.urlSignee = true
+    monterAvec(factureRecue())
+    expect(await screen.findByTitle('Aperçu de la pièce')).toBeTruthy()
+    expect(faux.cheminsSignes).toEqual(['d1/1-fa-42-lisible.pdf'])
+    expect(document.querySelector('iframe')?.getAttribute('src')).toBe('https://stockage.exemple/d1/1-fa-42-lisible.pdf')
+
+    const ouvrir = vi.spyOn(window, 'open').mockReturnValue({ opener: null } as unknown as Window)
+    await act(async () => { screen.getByText('Voir l’original transmis (XML) ↗').click() })
+    expect(faux.cheminsSignes).toEqual(['d1/1-fa-42-lisible.pdf', 'd1/1-fa-42.xml'])
+    expect(ouvrir).toHaveBeenCalledWith('https://stockage.exemple/d1/1-fa-42.xml', '_blank')
+  })
+
+  it('n’offre ni fichier à remplacer ni lecture automatique, et dit pourquoi', async () => {
+    monterAvec(factureRecue())
+    expect(screen.getByText(/Facture reçue de la plateforme du client \(pa\.exemple\.fr\) : FA-42\.xml\./)).toBeTruthy()
+    expect(screen.getByText(/il ne se remplace pas ; et ses champs viennent de la facture électronique elle-même/)).toBeTruthy()
+    expect(document.querySelector('#file')).toBeNull()
+    expect(screen.queryByText('✨ Extraire automatiquement')).toBeNull()
+  })
+
+  it('supprimée, elle emporte ses deux fichiers', async () => {
+    monterAvec(factureRecue())
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { screen.getByRole('button', { name: /Supprimer/ }).click() })
+    expect(faux.suppressions).toEqual(['piece-1'])
+    expect(faux.retraits).toEqual([['d1/1-fa-42.xml', 'd1/1-fa-42-lisible.pdf']])
+  })
+
+  // GARDE SYMÉTRIQUE : une pièce déposée garde son fichier à remplacer, sa lecture automatique et son aperçu.
+  it('une pièce déposée garde son fichier, sa lecture automatique et son seul fichier', async () => {
+    faux.urlSignee = true
+    monterAvec(pieceDeTest())
+    expect(await screen.findByTitle('Aperçu de la pièce')).toBeTruthy()
+    expect(faux.cheminsSignes).toEqual(['d1/facture.pdf'])
+    expect(document.querySelector('#file')).not.toBeNull()
+    expect(screen.getByText('✨ Extraire automatiquement')).toBeTruthy()
+    expect(screen.queryByText(/Voir l’original transmis/)).toBeNull()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { screen.getByRole('button', { name: /Supprimer/ }).click() })
+    expect(faux.retraits).toEqual([['d1/facture.pdf']])
   })
 })
 

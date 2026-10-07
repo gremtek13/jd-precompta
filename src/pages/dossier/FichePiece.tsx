@@ -13,6 +13,8 @@ import { EntetePanneau } from '../../components/PanneauDroit'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
+import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
+import { ouvrirJustificatif } from '../../lib/depot'
 import { libelleIssue, type PropositionCategorie } from '../../lib/categorisationIa'
 import { proposerCategorie } from '../../lib/propositionCategorie'
 
@@ -147,6 +149,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // Aperçu : le fichier fraîchement choisi se prévisualise localement (pas besoin de l'uploader
   // d'abord) ; le fichier déjà en storage passe par une URL signée temporaire, le bucket n'étant pas
   // public. On révoque l'URL locale à chaque changement pour ne pas fuiter de mémoire.
+  //
+  // Une facture reçue de la plateforme du client en XML se MONTRE par sa version lisible (voir lib/fichiersPiece.ts) :
+  // un XML ne se lit pas, et c'est le PDF qu'on regarde avant de valider. L'original reste à portée d'un lien.
+  const fichierMontre = piece ? fichierAMontrer(piece) : null
+  const cheminApercu = fichierMontre?.chemin ?? null
   useEffect(() => {
     if (file) {
       const url = URL.createObjectURL(file)
@@ -154,9 +161,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       setPreviewError(null)
       return () => URL.revokeObjectURL(url)
     }
-    if (piece?.storage_path) {
+    if (cheminApercu) {
       let annule = false
-      supabase.storage.from('pieces').createSignedUrl(piece.storage_path, 300).then(({ data, error }) => {
+      supabase.storage.from('pieces').createSignedUrl(cheminApercu, 300).then(({ data, error }) => {
         if (annule) return
         if (error || !data) {
           setPreviewError("Aperçu indisponible.")
@@ -169,7 +176,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       return () => { annule = true }
     }
     setPreviewUrl(null)
-  }, [file, piece?.storage_path])
+  }, [file, cheminApercu])
 
   // Si ce tiers a déjà été catégorisé sur une pièce précédente — de ce dossier en priorité, sinon
   // partagée entre tous les dossiers (voir lib/tiersCategories.ts) — on reprend la même catégorie
@@ -517,9 +524,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       }
 
       // Best-effort : le fichier au storage n'a pas besoin de bloquer la suppression de la pièce s'il
-      // a déjà disparu ou si la suppression échoue pour une autre raison.
-      if (piece.storage_path) {
-        await retirerFichiers('pieces', [piece.storage_path], 'FichePiece')
+      // a déjà disparu ou si la suppression échoue pour une autre raison. Ses DEUX fichiers quand elle en a
+      // deux : la version lisible laissée seule ne serait plus désignée par rien.
+      const fichiers = fichiersDeLaPiece(piece)
+      if (fichiers.length > 0) {
+        await retirerFichiers('pieces', fichiers, 'FichePiece')
       }
 
       onModifiee?.(false)
@@ -532,7 +541,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
-  const genreApercu = typeApercu(file?.name ?? piece?.nom_fichier ?? '')
+  const genreApercu = file ? typeApercu(file.name) : fichierMontre?.lisible ? 'pdf' : typeApercu(piece?.nom_fichier ?? '')
+  // Une facture reçue de la plateforme du client : son fichier est l'original transmis — le remplacer romprait le lien
+  // entre la pièce et ce que la plateforme a remis —, et ses champs viennent de la facture électronique elle-même, qu'une
+  // lecture du document ne ferait que deviner moins bien, et payer.
+  const recuePlateforme = piece?.source === 'plateforme'
   const occupee = saving || deleting
 
   // Une pièce sans catégorie : d'abord ce que les règles apprises savent de son fournisseur, et le
@@ -610,30 +623,48 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
                   </a>
                 </>
               )}
+              {!file && fichierMontre?.lisible && piece && (
+                <p className="muted" style={{ margin: 0 }}>
+                  Version lisible rendue par la plateforme.{' '}
+                  <button type="button" className="lien-texte-lu" onClick={() => ouvrirJustificatif(piece.storage_path)}>
+                    Voir l’original transmis (XML) ↗
+                  </button>
+                </p>
+              )}
             </div>
           )}
 
-          <div className="field">
-            <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
-            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
-            {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
-          </div>
+          {recuePlateforme ? (
+            <p className="muted fiche-piece-plateforme">
+              Facture reçue de la plateforme du client{piece?.flux_hote ? ` (${piece.flux_hote})` : ''} : {piece?.nom_fichier}.
+              Son fichier est l’original transmis, il ne se remplace pas ; et ses champs viennent de la facture
+              électronique elle-même : rien n’est à extraire.
+            </p>
+          ) : (
+            <>
+              <div className="field">
+                <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
+                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
+                {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
+              </div>
 
-          <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              disabled={fige || extracting || (!file && !piece?.storage_path)}
-              onClick={handleExtract}
-            >
-              {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
-            </button>
-            {confiance && (
-              <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
-                Confiance {confiance} — vérifie les champs
-              </span>
-            )}
-          </div>
+              <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={fige || extracting || (!file && !piece?.storage_path)}
+                  onClick={handleExtract}
+                >
+                  {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
+                </button>
+                {confiance && (
+                  <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
+                    Confiance {confiance} — vérifie les champs
+                  </span>
+                )}
+              </div>
+            </>
+          )}
           {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
           {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
 

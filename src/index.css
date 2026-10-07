@@ -738,6 +738,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   margin: 0 0 12px; padding: 8px 12px; font-size: 0.85rem; line-height: 1.45; color: var(--color-text-light);
   border-left: 3px solid var(--color-border); background: var(--color-bg); border-radius: var(--radius-xs);
 }
+/* Une facture reçue de la plateforme du client : à la place du fichier à remplacer et de la lecture automatique, qui
+   n'ont pas lieu d'être sur l'original transmis. */
+.fiche-piece-plateforme { margin: 0 0 12px; font-size: 0.85rem; line-height: 1.45; overflow-wrap: anywhere; }
 /* Les trois montants côte à côte, dans l'ordre du document (HT, TVA, TTC) : empilés, ils prenaient
    trois lignes du volet pour trois nombres. `min-width: 0`, sinon la largeur propre d'un champ
    numérique les renvoie chacun à la ligne. */
@@ -1784,6 +1787,23 @@ a.nav-menu-item { text-decoration: none; }
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* La fenêtre « Plateforme du client » (onglet Pièces, voir PlateformeClientModal) : ses rangées de boutons passent à la
+   ligne plutôt que de déborder, et les noms de factures rendus par la plateforme se coupent où il faut. */
+.plateforme-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.plateforme-resume {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px;
+  margin: 0 0 12px; font-size: 0.9rem;
+}
+.plateforme-resume dt { color: var(--color-text-light); }
+.plateforme-resume dd { margin: 0; overflow-wrap: anywhere; }
+.plateforme-plan, .plateforme-bilan { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.plateforme-plan h3, .plateforme-bilan h3 { margin: 0 0 8px; font-size: 1rem; }
+.plateforme-liste { margin: 0 0 10px; padding-left: 18px; font-size: 0.88rem; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .plateforme-resume { grid-template-columns: minmax(0, 1fr); }
+  .plateforme-resume dd { margin-bottom: 6px; }
 }
 
 /* Alerte de saisie, sous les trois champs de montant de la fiche pièce. Un fond teinté plutôt qu'un
