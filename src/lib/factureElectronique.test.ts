@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// L'analyseur XML est celui du navigateur (`DOMParser`) : ces tests tournent donc dans jsdom, le seul fichier de la
-// suite « logique » qui en ait besoin. Les factures sont FICTIVES, écrites ici pour la forme de la norme.
+// L'analyseur XML est celui du navigateur (`DOMParser`) : ces tests tournent donc dans jsdom, comme les autres fichiers
+// de la suite « logique » qui lisent une facture. Les factures sont FICTIVES, écrites ici pour la forme de la norme.
 import { describe, expect, it } from 'vitest'
 import {
   concordanceAvecLeDossier,

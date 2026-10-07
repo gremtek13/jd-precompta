@@ -1,15 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { calculerLigne } from './montantsFacture'
 
-// `calculerLigne` est PURE, mais elle vit dans `factures.ts`, qui importe `supabase.ts` pour
-// `enregistrerFacture` — et `supabase.ts` LÈVE au chargement quand les variables
-// d'environnement manquent. L'import suffit donc à faire échouer le fichier entier, avant qu'une
-// seule assertion ne tourne (voir CLAUDE.md, « le faux client est requis même pour une fonction
-// pure »). Le piège est qu'un `.env` peut exister en local et pas en CI : sans ce faux client, le
-// test passerait ici et casserait là-bas.
-vi.mock('./supabase', () => ({ supabase: {} }))
-
-const { calculerLigne } = await import('./factures')
+// `calculerLigne` vit dans `montantsFacture.ts`, un module de calcul qui n'importe pas le client Supabase : ce fichier
+// l'atteint sans faux client. Elle vivait dans `factures.ts`, qui importe `supabase.ts` — lequel LÈVE au chargement
+// quand les variables d'environnement manquent —, et il fallait alors doubler le client pour l'importer.
 
 // `superpdp-emit` est auto-portée (déployée à part, elle ne peut rien importer de `src/lib`) et
 // redéclare donc le calcul des montants d'une ligne de facture. CLAUDE.md nomme cette duplication

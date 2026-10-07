@@ -1,0 +1,44 @@
+{
+  "artefacts": {
+    "etiquette": "validation-1.3.16",
+    "commit": "b6c9e06a59812fb1a83585da40923b3678a649ad"
+  },
+  "saxon": {
+    "version": "9.9.1-8",
+    "sha1": "4010d851340a3b79e004a6055ffec2efe2d75413"
+  },
+  "fichiers": {
+    "avoir.xml": {
+      "sha256": "137bb892357eb3e37a39dd9ddbc8759deba8f1909e3d0e4b75fa48ea9cacfb8f",
+      "avertissements": []
+    },
+    "biens-livraison.xml": {
+      "sha256": "bb89408edad27961e03df80028d7f53165ca37c62f4330d3387f1395a608cddf",
+      "avertissements": []
+    },
+    "caracteres-speciaux.xml": {
+      "sha256": "01edbbbcfc571ab389c4b247403d5882f0bfde144a63bff2c8ea555f414b51d1",
+      "avertissements": []
+    },
+    "exonere-organisme-public.xml": {
+      "sha256": "ed8da20b1e09caaba99853f5e6bc090e1ce47f591bd7722ce849d317ad5ab9a3",
+      "avertissements": []
+    },
+    "franchise.xml": {
+      "sha256": "ae8f2a6f2ebdf7bc8d779ab41a13410638a7d0ea4799ff9d9bf7d37d6bf784b2",
+      "avertissements": []
+    },
+    "mixte-organisme-public.xml": {
+      "sha256": "f6b0a8ebb2ec479aa230394c9b4996137a48105f567ef47782afdc2a0144bb1f",
+      "avertissements": []
+    },
+    "redevable-partiellement-exonere.xml": {
+      "sha256": "beffea8736d19106ab4d720538d1314da8dcbd81386e5e477bcef5dff3de57a8",
+      "avertissements": []
+    },
+    "services-debits.xml": {
+      "sha256": "0d9c7e7986f26e37a8d434094930509db3bc860f89daa87f6541ae82dda293ef",
+      "avertissements": []
+    }
+  }
+}

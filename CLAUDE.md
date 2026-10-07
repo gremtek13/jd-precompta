@@ -386,6 +386,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
                   (modele-ti, installé à la demande, hors package.json) les cas de référence
                   de src/lib/voletSocialPamcReference.ts — mode d'emploi en tête du fichier.
                   Le fichier généré se commite ; le moteur, jamais.
+outils/facturation/  valider.mjs : fait passer les factures électroniques d'exemple (exemples/*.xml,
+                  fictives, produites par src/lib/factureCii.ts) au schéma CII D16B et aux règles de
+                  la norme EN 16931, par les artefacts de validation du CEN/TC 434 et Saxon —
+                  instruments hors du dépôt, dont il vérifie la version —, mode d'emploi en tête du
+                  fichier. Il écrit exemples/valides.json, que factureCii.test.ts confronte aux
+                  exemples figés : un exemple qui change repasse au validateur.
 ```
 
 ## Conventions de développement
@@ -1606,8 +1612,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   statut de TVA du dossier, est livrée (07/10/2026), et l'étape (b), la réception par la plateforme du client, aussi
   (07/10/2026) — à éprouver sur la plateforme réelle d'un client, aucune n'ayant été appelée. L'étape (c), l'émission
   conforme et ses nouvelles mentions, avance : les mentions de la facture en base et l'avoir d'un seul tenant sont en
-  ligne (07/10/2026) ; restent le générateur de la facture électronique, son dépôt et l'écran qui saisit les mentions.
-  Restent ensuite (d) le statut « Encaissée » et (e) l'e-reporting.
+  ligne (07/10/2026), et le générateur de la facture électronique est écrit, jugé par le validateur officiel de la norme
+  (07/10/2026) ; restent son dépôt, l'écran qui saisit les mentions et figer en base une facture validée. Restent
+  ensuite (d) le statut « Encaissée » et (e) l'e-reporting.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -7408,10 +7415,88 @@ d'environnement dans la même édition.
   l'autre refuser. Trente-neuf mutations de l'application, trente-huit mordent ; la survivante est le refus répété dans
   le gestionnaire de l'avoir, derrière un bouton déjà grisé.
   **CE QUI RESTE, dit plutôt que promis** : figer en base une facture validée (étape c, premier temps bis — aujourd'hui
-  seul l'écran refuse de la modifier), le générateur de la facture électronique (deuxième temps), son dépôt par la
-  plateforme du client et les nouvelles mentions de `superpdp-emit` (troisième), et l'écran qui saisit les mentions
-  (quatrième). Une facture validée avant cette migration garde ses mentions nulles : elle se corrige par un avoir,
-  jamais en place.
+  seul l'écran refuse de la modifier), son dépôt par la plateforme du client et les nouvelles mentions de `superpdp-emit`
+  (troisième temps), et l'écran qui saisit les mentions (quatrième) ; le générateur de la facture électronique (deuxième)
+  est fait, voir l'entrée suivante. Une facture validée avant cette migration garde ses mentions nulles : elle se
+  corrige par un avoir, jamais en place.
+- **LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII, ET LE VALIDATEUR OFFICIEL DE LA NORME LA JUGE — LIGNE 28.5, ÉTAPE (C), DEUXIÈME
+  TEMPS** (07/10/2026, `lib/factureCii.ts`, `lib/montantsFacture.ts`, `outils/facturation/valider.mjs`). Un module PUR
+  écrit une facture validée de l'application dans la syntaxe CII de la norme EN 16931 (profil `urn:cen.eu:en16931:2017`),
+  pour qu'une plateforme agréée la transmette — à une entreprise, ou à un organisme public par Chorus Pro. Il ne lit rien
+  en base et n'appelle personne, et rien ne l'appelle encore : le dépôt (étape c, troisième temps) et l'écran (quatrième)
+  lui donneront la facture, ses lignes et l'identité du dossier figée à la validation.
+  **SES SOURCES SONT PUBLIQUES, ET C'EST UNE RÈGLE DU PROJET** : la norme AFNOR XP Z12-012 interdit qu'on l'exploite par
+  une IA, donc rien n'en vient. L'ordre des éléments est celui du schéma CII D16B que publient les artefacts de validation
+  de la norme EN 16931 (CEN/TC 434, version 1.3.16) ; les règles BR- sont celles de leur Schematron ; les règles G1. et
+  G2. celles des spécifications externes de la DGFiP (annexe 7, v1.9) ; le code service et le numéro d'engagement d'un
+  organisme public suivent l'annexe EDI de Chorus Pro (AIFE).
+  **CE QUI EMPÊCHE DE TRANSMETTRE SE DIT AVANT LE CLIC, TOUT ENSEMBLE ET DANS L'ORDRE DE L'ÉCRAN** (`refusEmission`), et
+  rien n'est comblé — ni un SIREN absent, ni une catégorie de TVA, ni une adresse : une facture validée seulement ; son
+  numéro (G1.05 : 35 caractères, sans espace en tête, en fin ni doublé) et celui de la facture qu'un avoir corrige ; TOUTE
+  date entre 2000 et 2099 (G1.36 — l'émission, l'échéance, la prestation, la période, la facture corrigée), et la facture
+  jamais datée de l'avenir (G1.07) ; un particulier ou un client établi hors de France ne reçoivent pas de facture
+  électronique, l'opération relevant de l'e-reporting ; la catégorie de l'opération, qui donne le cadre de facturation
+  (B1, S1, M1 — G1.02) ; le nom, le SIREN et l'adresse du dossier et du client, et le SIRET d'un organisme public ; les
+  clés de contrôle d'un SIREN et d'un SIRET (Luhn, et pour les établissements de La Poste la somme des chiffres multiple
+  de 5, son siège gardant la clé de Luhn) ; un SIRET ou une adresse de facturation électronique qui ne commencent pas par
+  le SIREN du client, une adresse qui n'a pas la forme de l'annuaire (SIREN, SIREN_SIRET, SIREN_suffixe — G1.93, G1.95,
+  G1.115) ; les quinze taux de la règle G1.24 ; une ligne taxée d'un dossier en franchise ou exonéré, une ligne à 0 % dont
+  on ne connaît pas le motif ; une quantité à plus de quatre décimales, un prix à plus de six (G1.15, G1.16) ; un total
+  qui n'est pas positif, des montants enregistrés qui ne se retrouvent pas dans les lignes ; une facture entre entreprises
+  dont toutes les opérations sont exonérées par les articles 261 à 261 E, qui sort de la facturation électronique (G2.32,
+  sauf vers un organisme public — ses dix-neuf codes sont exactement ceux de la liste VATEX qui commencent par
+  `VATEX-FR-CGI261`) ; le numéro de TVA du dossier, qu'une ligne taxée ou exonérée exige (BR-S-02, BR-E-02, G1.47), et son
+  accord avec le SIREN ; l'échéance d'une facture (art. L441-9 du code de commerce) ; la facture qu'un avoir corrige
+  (G1.31) ; une période à l'envers. **Une faute, un refus** : ce qui découle d'un SIREN ne se juge que sur un SIREN
+  valide, une date hors des bornes n'est pas dite aussi dans l'avenir, un motif manquant ne se répète pas ligne par ligne,
+  et une facture hors du champ ne réclame pas en plus son numéro de TVA — un test par faute exige son refus, et lui seul.
+  **UN AVOIR DE LA NORME PORTE DES MONTANTS POSITIFS** : son type, 381, dit que c'est un avoir. L'application le stocke
+  négatif, quantités comprises : chaque ligne se recalcule dans le sens du document, comme `creerAvoir` a totalisé les
+  lignes créditées, et le module VÉRIFIE que les montants transmis sont ceux qu'on a validés, au centime, au lieu de le
+  supposer. Une remise saisie avec un prix négatif part avec un prix positif et une quantité négative (BR-27, G1.16), au
+  même montant. Le texte est échappé, ce que XML 1.0 n'admet pas est retiré, un nom ou un libellé part sur une ligne ; une
+  adresse saisie en texte libre se range dans ses champs (la ligne au code postal donne la ville, au-delà de trois lignes
+  la troisième réunit le reste), sans rien interpréter d'autre. L'option pour les débits (BT-8 = 5) se dit dans CHAQUE
+  ventilation dès que le prestataire a opté, sur une facture de services ou mixte (G1.43, et S1.13 des spécifications :
+  la même valeur partout) — comme la mention imprimée, qui ne regarde pas les lignes. Un organisme public reçoit son code
+  service (BT-10), son numéro d'engagement (BT-13) et le SIRET du service (schéma 0009) ; l'adresse électronique de
+  chaque partie est au schéma 0225 de l'annuaire ; un avoir ne transmet pas d'échéance, sa condition de paiement disant
+  la facture qu'il corrige (BR-CO-25). `mentionsImprimees` rend ce que la facture imprimée doit porter depuis le décret
+  du 7 octobre 2022 — le SIREN du client, la catégorie, la date ou la période, l'adresse de livraison, l'option pour les
+  débits —, pour l'aperçu de l'étape (c), quatrième temps.
+  **LE DERNIER MOT EST AU VALIDATEUR OFFICIEL, PAS AUX TESTS** : huit factures FICTIVES (services sur les débits, biens
+  livrés avec une remise, une facture mixte et une facture exonérée à un organisme public, une franchise, un redevable en
+  partie exonéré, un avoir, des caractères spéciaux) sont figées dans `outils/facturation/exemples/`, et
+  `outils/facturation/valider.mjs` les fait passer au schéma CII D16B (xmllint) puis aux règles de la norme (le
+  Schematron des artefacts, compilé en XSLT, exécuté par Saxon-HE 9.9.1-8) : **0 erreur, 0 avertissement** sur les huit,
+  et le schéma couplé, plus strict, les accepte aussi. Il vérifie la version de ses instruments (le commit des artefacts,
+  l'empreinte SHA-1 de Saxon) et s'éprouve avant de juger — un total faux doit lever BR-CO-15, un élément inconnu doit
+  sortir du schéma — : un validateur qui ne voit rien répondrait « valide » à tout. Il écrit `exemples/valides.json`,
+  les empreintes des fichiers validés, et `factureCii.test.ts` refuse un exemple dont l'empreinte n'y figure pas : un
+  exemple qui change repasse au validateur avant de partir. Éprouvé en le trompant sur une copie : un total à payer faux
+  est refusé (BR-CO-16), un élément inconnu aussi, un autre Saxon aussi — code 1 à chaque fois, et la liste des fichiers
+  validés n'est pas réécrite. **Rien des artefacts n'entre dans le dépôt** (licence EUPL) : ils s'exécutent comme un
+  instrument, et les exemples sont des factures fictives que le module produit. Chaque exemple se relit aussi par le
+  lecteur de l'étape (b) (`lireFactureXml`), sans anomalie, aux montants et à la ventilation calculés à la main.
+  **LE CALCUL DES MONTANTS SORT DE `factures.ts`** (`montantsFacture.ts`) : le générateur en a besoin, et `factures.ts`
+  importe le client Supabase — or un module de calcul ne l'importe jamais. `factures.ts` le réexporte, et
+  `superpdpMontants.test.ts` confronte désormais la copie de `superpdp-emit` à ce module directement, sans faux client.
+  **MESURES** : 115 tests. Cent cinquante-sept mutations du générateur : cent cinquante-trois mordent sur les tests, une
+  sur le compilateur (la livraison sans son pays : `tsc -b` refuse un pays nul), deux visaient des gardes redondantes,
+  retirées du code (un nombre infini, que `Number.isSafeInteger` écarte déjà ; une livraison sur des services, que la base
+  interdit), et une a fait changer une règle : l'option pour les débits ne se disait que sur une facture portant une ligne
+  taxée, ce que ni la règle G1.43 ni la mention imprimée ne demandent. La première passe en laissait onze en vie sur cent
+  cinquante-deux — un SIRET de quinze chiffres choisi à la clé fausse, donc refusé par la clé et non par la longueur, et
+  sept écritures du XML qu'aucun test n'exerçait (un nom ou un libellé sur plusieurs lignes, un SIRET écrit avec ses
+  espaces, une livraison hors de France, l'échéance d'un avoir, une facture hors du champ sans numéro de TVA). La règle
+  G1.36 a été trouvée en relisant les règles pour écrire les mutations : seules l'émission et la prestation étaient
+  bornées.
+  **CE QUI RESTE, dit plutôt que promis** : le dépôt par la plateforme du client et les nouvelles mentions de
+  `superpdp-emit`, dont le numéro de TVA du vendeur sur une facture sans TVA (G1.47) et l'arrondi symétrique d'une ligne
+  négative (étape c, troisième temps) ; l'écran qui saisit les mentions et l'aperçu qui les imprime (quatrième) ; figer en
+  base une facture validée. Et une question au cabinet : un dossier en franchise ou exonéré a-t-il un numéro de TVA ? La
+  règle G1.47 l'exige sur une facture exonérée, et la DGFiP admet pour la franchise un code « Z » que le module n'emploie
+  pas encore ; sans numéro, la facture d'un tel dossier est refusée, et l'écran le dit.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8866,7 +8951,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 5208 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 5323 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8912,7 +8997,9 @@ le motif d'une ligne à 0 % qu'on transmet à une plateforme et ce qu'il doit à
 et du XML d'un PDF Factur-X (`factureX.ts`), le plan et l'import des factures reçues de la plateforme du client
 (`receptionPlateforme.ts`), ce que sa fenêtre dit (`plateformeClient.ts`) et les deux fichiers d'une facture
 reçue (`fichiersPiece.ts`), ce qu'un avoir refuse avant le clic, ce qui a déjà été crédité d'une facture et
-les lignes qui partent d'une saisie (`factures.ts`), et ce que
+les lignes qui partent d'une saisie (`factures.ts`), les montants d'une ligne et d'un en-tête de facture
+(`montantsFacture.ts`), la facture électronique émise — ce qui en refuse la transmission, le XML CII que le validateur
+officiel de la norme a jugé, les mentions imprimées (`factureCii.ts`) —, et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
