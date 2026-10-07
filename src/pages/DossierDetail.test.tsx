@@ -16,6 +16,7 @@ import DossierDetail from './DossierDetail'
 
 interface LigneDossier {
   id: string; nom: string; siret: string | null; assujetti_tva: boolean
+  statut_tva: 'redevable' | 'franchise' | 'exonere' | null; article_exoneration: string | null
   tva_periodicite: 'mensuelle' | 'trimestrielle'; tva_sur_debits: boolean
   mode_comptable: 'tresorerie' | 'engagement'; compte_notes_de_frais: '455000' | '108000' | '467000'
 }
@@ -31,9 +32,13 @@ const faux = vi.hoisted(() => ({
   datesPieces: {} as Record<string, string[]>,
   retenuesAnnees: {} as Record<string, Promise<void>>,
   erreurAnnees: null as string | null,
-  // La mise à jour d'un dossier (la bascule TVA de l'en-tête), retenue puis refusée à la demande.
+  // La mise à jour d'un dossier (le code NAF détecté), retenue puis refusée à la demande.
   retenueMaj: null as Promise<void> | null,
   erreurMaj: null as { message: string } | null,
+  // La réponse de l'onglet TVA (doublé) à un changement de statut, retenue à la demande, et le nombre de celles
+  // qui sont arrivées : c'est ce qui prouve qu'une réponse tardive est bien parvenue à la page.
+  retenueStatut: null as Promise<void> | null,
+  statutsRendus: 0,
   // Les exercices validés de chaque dossier (ExercicesValidesContext), leur lecture retenue ou refusée à la demande,
   // et le nombre de fois qu'elle a eu lieu.
   valides: {} as Record<string, number[]>,
@@ -116,12 +121,13 @@ vi.mock('../lib/supabase', () => ({
 vi.mock('./dossier/ChecklistTab', async () => {
   const { useExercicesValides } = await import('../context/ExercicesValidesContext')
   return {
-    default: function DoubleVueDEnsemble({ assujettiTva }: { assujettiTva: boolean }) {
+    default: function DoubleVueDEnsemble({ assujettiTva, statutTva }: { assujettiTva: boolean; statutTva: string | null }) {
       const { frontiere } = useExercicesValides()
       return (
         <>
           <p>Vue d’ensemble du dossier</p>
           <p>Vue d’ensemble — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+          <p>Vue d’ensemble — statut {statutTva ?? 'à préciser'}</p>
           <p>Vue d’ensemble — frontière {frontiere ?? 'aucune'}</p>
         </>
       )
@@ -129,6 +135,13 @@ vi.mock('./dossier/ChecklistTab', async () => {
   }
 })
 vi.mock('./dossier/PiecesTab', () => ({ default: () => <p>Liste des justificatifs</p> }))
+// Factures propose la mention de TVA d'une facture et refuse une ligne taxée selon le statut du dossier
+// (lib/statutTva.ts) : doublé pour montrer le statut et l'article qu'il REÇOIT.
+vi.mock('./dossier/FacturesTab', () => ({
+  default: ({ statutTva, articleExoneration }: { statutTva: string | null; articleExoneration: string | null }) => (
+    <p>Factures — statut {statutTva ?? 'à préciser'} — {articleExoneration ?? 'sans article'}</p>
+  ),
+}))
 vi.mock('./dossier/InformationsTab', async () => {
   const { useState } = await import('react')
   return {
@@ -218,16 +231,37 @@ vi.mock('./dossier/StatistiquesTab', () => doubleTva('Balance des comptes'))
 vi.mock('./dossier/BanqueTab', () => doubleTva('Banque'))
 // L'onglet TVA lit le régime du dossier (périodicité, option pour les débits) et peut le changer :
 // doublé pour montrer ce qu'il REÇOIT et rendre un changement à la page, qui doit le faire voir.
+// Le STATUT de TVA s'y règle aussi (StatutTvaCard) : le double rend à la page ce que la base aurait écrit, le
+// booléen déduit compris, et peut retenir sa réponse.
 vi.mock('./dossier/TvaTab', () => ({
-  default: ({ assujettiTva, periodicite, surDebits, onRegimeUpdated }: {
+  default: ({ assujettiTva, statutTva, articleExoneration, onStatutUpdated, periodicite, surDebits, onRegimeUpdated }: {
     assujettiTva: boolean
+    statutTva: string | null
+    articleExoneration: string | null
+    onStatutUpdated: (m: { statut_tva: 'redevable' | 'franchise' | 'exonere'; article_exoneration: null; assujetti_tva: boolean }) => void
     periodicite: string
     surDebits: boolean
     onRegimeUpdated: (m: { tva_periodicite?: 'mensuelle' | 'trimestrielle' }) => void
   }) => (
     <>
-      <p>TVA — {assujettiTva ? 'assujetti' : 'exonéré'} — {periodicite} — {surDebits ? 'débits' : 'encaissements'}</p>
+      <p>
+        TVA — {assujettiTva ? 'assujetti' : 'exonéré'} — {statutTva ?? 'à préciser'}{articleExoneration ? ` (${articleExoneration})` : ''}
+        {' '}— {periodicite} — {surDebits ? 'débits' : 'encaissements'}
+      </p>
       <button onClick={() => onRegimeUpdated({ tva_periodicite: 'trimestrielle' })}>Passer au trimestre</button>
+      <button
+        onClick={() => {
+          void (faux.retenueStatut ?? Promise.resolve()).then(() => {
+            faux.statutsRendus++
+            onStatutUpdated({ statut_tva: 'franchise', article_exoneration: null, assujetti_tva: false })
+          })
+        }}
+      >
+        Passer en franchise
+      </button>
+      <button onClick={() => onStatutUpdated({ statut_tva: 'redevable', article_exoneration: null, assujetti_tva: true })}>
+        Devenir redevable
+      </button>
     </>
   ),
 }))
@@ -292,11 +326,13 @@ beforeEach(() => {
   localStorage.clear()
   faux.dossiers = {
     d1: {
-      id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, tva_periodicite: 'trimestrielle',
+      id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, statut_tva: 'exonere',
+      article_exoneration: 'cgi_261_4_1', tva_periodicite: 'trimestrielle',
       tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '455000',
     },
     d2: {
-      id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, tva_periodicite: 'mensuelle',
+      id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, statut_tva: 'redevable',
+      article_exoneration: null, tva_periodicite: 'mensuelle',
       tva_sur_debits: true, mode_comptable: 'engagement', compte_notes_de_frais: '108000',
     },
   }
@@ -308,6 +344,8 @@ beforeEach(() => {
   faux.retenuesAnnees = {}
   faux.erreurAnnees = null
   faux.retenueMaj = null
+  faux.retenueStatut = null
+  faux.statutsRendus = 0
   faux.erreurMaj = null
   faux.valides = {}
   faux.retenuesValides = {}
@@ -425,26 +463,19 @@ describe('Page d’un dossier — l’identité est toujours celle du dossier de
     expect(screen.queryByText('Liste des justificatifs')).toBeNull()
   })
 
-  it('la bascule TVA d’un dossier, refusée APRÈS qu’on l’a quitté, ne s’annule pas sur le suivant', async () => {
-    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
-    try {
-      await afficher('/dossiers/d1/checklist')
-      const maj = retenue()
-      faux.retenueMaj = maj.promesse
-      faux.erreurMaj = { message: 'refus simulé' }
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'TVA : exonéré' })) })
-      expect(screen.getByRole('button', { name: 'TVA : assujetti' })).toBeTruthy()
+  it('un statut de TVA rendu APRÈS qu’on a quitté son dossier ne s’écrit pas sur le suivant', async () => {
+    await afficher('/dossiers/d1/tva')
+    const reponse = retenue()
+    faux.retenueStatut = reponse.promesse
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer en franchise' })) })
 
-      await allerAuDossier('Bravo Santé')
-      expect(await screen.findByRole('heading', { level: 1, name: 'Bravo Santé' })).toBeTruthy()
-      await act(async () => { maj.relacher() })
-      // Le refus est bien arrivé : sans lui, le test ne prouverait rien.
-      expect(alerte).toHaveBeenCalledWith('refus simulé')
-      // Bravo Santé est assujetti : l'annulation visait Cabinet Hélène, pas lui.
-      expect(screen.getByRole('button', { name: 'TVA : assujetti' })).toBeTruthy()
-    } finally {
-      alerte.mockRestore()
-    }
+    await allerAuDossier('Bravo Santé')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Bravo Santé' })).toBeTruthy()
+    await act(async () => { reponse.relacher() })
+    // La réponse est bien arrivée : sans elle, le test ne prouverait rien.
+    expect(faux.statutsRendus).toBe(1)
+    // Bravo Santé est redevable : la réponse visait Cabinet Hélène, pas lui.
+    expect(screen.getByRole('button', { name: 'TVA : redevable' })).toBeTruthy()
   })
 
   it('un dossier illisible le dit et n’affiche pas ses écrans ; « Réessayer » relit', async () => {
@@ -496,11 +527,49 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
     expect(screen.getByText(`${libelle} — TVA assujetti`)).toBeTruthy()
   })
 
-  it('la bascule du badge se voit aussitôt dans l’onglet ouvert', async () => {
+  it('le badge mène à l’onglet TVA, où le statut se règle ; un statut changé se voit aussitôt, badge compris', async () => {
     await afficher('/dossiers/d1/cloture')
     expect(screen.getByText('Clôture — TVA exonéré')).toBeTruthy()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'TVA : exonéré' })) })
-    expect(screen.getByText('Clôture — TVA assujetti')).toBeTruthy()
+    expect(screen.getByText('TVA — exonéré — exonere (cgi_261_4_1) — trimestrielle — encaissements')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Devenir redevable' })) })
+    expect(screen.getByText('TVA — assujetti — redevable — trimestrielle — encaissements')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'TVA : redevable' })).toBeTruthy()
+  })
+
+  // Le STATUT, et pas seulement le booléen qu'on en déduit : la Vue d'ensemble réclame un statut à préciser, Factures
+  // en tire la mention d'une facture et son refus d'une ligne taxée.
+  it('la Vue d’ensemble et Factures reçoivent le statut et l’article du dossier affiché', async () => {
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText('Vue d’ensemble — statut exonere')).toBeTruthy()
+    cleanup()
+    await afficher('/dossiers/d1/factures')
+    expect(screen.getByText('Factures — statut exonere — cgi_261_4_1')).toBeTruthy()
+    cleanup()
+
+    faux.dossiers.d2 = { ...faux.dossiers.d2, statut_tva: null, assujetti_tva: false }
+    await afficher('/dossiers/d2/checklist')
+    expect(screen.getByText('Vue d’ensemble — statut à préciser')).toBeTruthy()
+    cleanup()
+    await afficher('/dossiers/d2/factures')
+    expect(screen.getByText('Factures — statut à préciser — sans article')).toBeTruthy()
+  })
+
+  it('le badge nomme les trois statuts, et un statut à préciser se signale', async () => {
+    faux.dossiers.d1 = { ...faux.dossiers.d1, statut_tva: 'franchise', article_exoneration: null }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByRole('button', { name: 'TVA : franchise en base' }).className).toContain('badge-neutral')
+    cleanup()
+
+    faux.dossiers.d1 = { ...faux.dossiers.d1, statut_tva: null }
+    await afficher('/dossiers/d1/checklist')
+    const badge = screen.getByRole('button', { name: 'TVA : à préciser' })
+    expect(badge.className).toContain('badge-warning')
+    expect(badge.getAttribute('title')).toMatch(/^Statut de TVA à préciser\. Réception des factures électroniques/)
+    cleanup()
+
+    await afficher('/dossiers/d2/checklist')
+    expect(screen.getByRole('button', { name: 'TVA : redevable' }).className).toContain('badge-ok')
   })
 })
 
@@ -510,17 +579,17 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
 describe('Page d’un dossier — l’onglet TVA reçoit le régime du dossier affiché', () => {
   it('passe le statut, la périodicité et l’option de CE dossier', async () => {
     await afficher('/dossiers/d1/tva')
-    expect(screen.getByText('TVA — exonéré — trimestrielle — encaissements')).toBeTruthy()
+    expect(screen.getByText('TVA — exonéré — exonere (cgi_261_4_1) — trimestrielle — encaissements')).toBeTruthy()
     cleanup()
 
     await afficher('/dossiers/d2/tva')
-    expect(screen.getByText('TVA — assujetti — mensuelle — débits')).toBeTruthy()
+    expect(screen.getByText('TVA — assujetti — redevable — mensuelle — débits')).toBeTruthy()
   })
 
   it('un régime changé dans l’onglet se voit aussitôt', async () => {
     await afficher('/dossiers/d2/tva')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer au trimestre' })) })
-    expect(screen.getByText('TVA — assujetti — trimestrielle — débits')).toBeTruthy()
+    expect(screen.getByText('TVA — assujetti — redevable — trimestrielle — débits')).toBeTruthy()
   })
 })
 

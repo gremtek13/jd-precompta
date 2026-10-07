@@ -1821,3 +1821,15 @@ a.nav-menu-item { text-decoration: none; }
 }
 .proposition-categorie > p { flex: 1 1 240px; margin: 0; overflow-wrap: anywhere; }
 .proposition-categorie-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Ce que le statut de TVA d'un dossier lui fait devoir à la facturation électronique (onglet TVA, StatutTvaCard) :
+   une pastille d'état, puis le libellé et son détail. La pastille garde sa largeur, le texte passe à la ligne sous
+   le libellé plutôt que de la pousser hors de la carte — le volet de droite rétrécit le panneau central. Sur
+   téléphone, la pastille passe au-dessus du texte. */
+.obligations-fe { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 12px; }
+.obligations-fe li { display: flex; gap: 10px; align-items: baseline; }
+.obligations-fe li > .badge { flex: none; min-width: 8.5em; justify-content: center; }
+.obligations-fe li > div { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .obligations-fe li { flex-direction: column; gap: 4px; }
+}

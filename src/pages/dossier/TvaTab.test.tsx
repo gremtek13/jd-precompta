@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
 import type {
-  ANouveau, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
+  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
+  VentilationBancaire,
 } from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { AvecExercicesValides } from '../../test/exercicesValides'
@@ -67,9 +68,16 @@ vi.mock('../../lib/supabase', async () => {
           update: (valeurs: Record<string, unknown>) => ({
             eq: () => {
               faux.misesAJour.push({ table, valeurs })
-              return Promise.resolve(faux.miseAJourRefusee
-                ? { error: { message: 'new row violates row-level security policy' } }
-                : { error: null })
+              const refus = { message: 'new row violates row-level security policy' }
+              const resultat = Promise.resolve(faux.miseAJourRefusee ? { error: refus } : { error: null })
+              // Le statut de TVA relit ce que la base a écrit : `assujetti_tva`, son déclencheur le déduit du statut.
+              return Object.assign(resultat, {
+                select: () => ({
+                  single: () => Promise.resolve(faux.miseAJourRefusee
+                    ? { data: null, error: refus }
+                    : { data: { ...valeurs, assujetti_tva: valeurs.statut_tva === 'redevable' }, error: null }),
+                }),
+              })
             },
           }),
         })
@@ -169,19 +177,31 @@ const MONTANT = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}$`)
 const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as HTMLElement
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
-function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = true, valides = [], espion }: {
+function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, valides = [], espion }: {
   periodicite?: PeriodiciteTva
   surDebits?: boolean
   assujetti?: boolean
+  // Le statut de TVA du dossier : redevable quand il est assujetti, à préciser sinon — sauf mention contraire.
+  statut?: StatutTva | null
+  article?: ArticleExoneration | null
   valides?: readonly number[]
   espion?: (m: unknown) => void
 }) {
   const [regime, setRegime] = useState({ tva_periodicite: periodicite, tva_sur_debits: surDebits })
+  // Comme la page du dossier : ce que la base a écrit remplace le statut ET le booléen qu'elle en déduit.
+  const [tva, setTva] = useState({
+    statut_tva: statut === undefined ? (assujetti ? 'redevable' as const : null) : statut,
+    article_exoneration: article,
+    assujetti_tva: assujetti,
+  })
   return (
     <AvecExercicesValides annees={valides}>
       <TvaTab
         dossierId="d"
-        assujettiTva={assujetti}
+        assujettiTva={tva.assujetti_tva}
+        statutTva={tva.statut_tva}
+        articleExoneration={tva.article_exoneration}
+        onStatutUpdated={(m) => { espion?.(m); setTva(m) }}
         periodicite={regime.tva_periodicite}
         surDebits={regime.tva_sur_debits}
         onRegimeUpdated={(m) => { espion?.(m); setRegime((r) => ({ ...r, ...m })) }}
@@ -220,6 +240,37 @@ describe('l’onglet TVA', () => {
     await afficher({ assujetti: false })
     expect(screen.getByText('Pas de déclaration de TVA')).toBeTruthy()
     expect(faux.lectures).toBe(0)
+  })
+
+  // LE STATUT DE TVA SE RÈGLE ICI (ligne 28.5) — le badge « TVA » de l'en-tête y mène. Changé, il change l'onglet
+  // lui-même : un dossier qui cesse d'être redevable ne prépare plus de déclaration.
+  it('le statut se règle dans l’onglet : passé de redevable à la franchise, il ne prépare plus de déclaration', async () => {
+    await afficher()
+    expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Changer le statut' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Franchise en base (art. 293 B du CGI)' }))
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { statut_tva: 'franchise', article_exoneration: null } }])
+    expect(screen.getByText('Pas de déclaration de TVA')).toBeTruthy()
+    expect(screen.getByText(/En franchise en base, le dossier ne facture ni ne déclare de TVA/)).toBeTruthy()
+    expect(screen.queryAllByText('CA3 — 1er trimestre 2027')).toHaveLength(0)
+  })
+
+  it('un statut à préciser le dit, et l’onglet ne prépare rien', async () => {
+    await afficher({ assujetti: false })
+    expect(screen.getByText(/Le statut de TVA de ce dossier est à préciser/)).toBeTruthy()
+    expect(screen.getByText(/Tant que son statut de TVA est à préciser/)).toBeTruthy()
+  })
+
+  it('la facturation électronique suit le statut ENREGISTRÉ, sur un redevable comme sur un exonéré', async () => {
+    await afficher({ periodicite: 'mensuelle' })
+    expect(screen.getByText('Facturation électronique')).toBeTruthy()
+    expect(screen.getByText(/ses opérations avec l’étranger, par décade/)).toBeTruthy()
+    cleanup()
+
+    await afficher({ assujetti: false, statut: 'exonere', article: 'cgi_261_4_1' })
+    expect(screen.getByText(/Exonéré, le dossier ne facture ni ne déclare de TVA/)).toBeTruthy()
+    expect(screen.getByText(/^Réception des factures électroniques seulement/)).toBeTruthy()
   })
 
   it('montre la CA3 de la dernière période close, case par case', async () => {

@@ -39,10 +39,12 @@ import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
 import type {
-  ANouveau, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
+  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
+  VentilationBancaire,
 } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import StatutTvaCard, { FacturationElectroniqueCard, type ModificationStatutTva } from './StatutTvaCard'
 
 // LA DÉCLARATION DE TVA (CA3), PRÉPARÉE CASE PAR CASE — ligne 28 de la feuille de route, étape 1.
 //
@@ -63,6 +65,10 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 interface Props {
   dossierId: string
   assujettiTva: boolean
+  // Le statut de TVA du dossier, qui fait foi — `assujettiTva` en est déduit (lib/statutTva.ts). Il se règle ici.
+  statutTva: StatutTva | null
+  articleExoneration: ArticleExoneration | null
+  onStatutUpdated: (modification: ModificationStatutTva) => void
   periodicite: PeriodiciteTva
   surDebits: boolean
   onRegimeUpdated: (modification: { tva_periodicite?: PeriodiciteTva; tva_sur_debits?: boolean }) => void
@@ -199,7 +205,9 @@ function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire
   return { texte, classe }
 }
 
-export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits, onRegimeUpdated }: Props) {
+export default function TvaTab({
+  dossierId, assujettiTva, statutTva, articleExoneration, onStatutUpdated, periodicite, surDebits, onRegimeUpdated,
+}: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
   const { anneesValidees, frontiere } = useExercicesValides()
   // Nul tant que la première lecture n'est pas revenue : l'écran montre alors ses squelettes.
@@ -245,15 +253,30 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
     }
   }
 
+  const statut = (
+    <StatutTvaCard dossierId={dossierId} statut={statutTva} article={articleExoneration} onStatutUpdated={onStatutUpdated} />
+  )
+  const facturationElectronique = (
+    <FacturationElectroniqueCard statut={statutTva} article={articleExoneration} periodicite={periodicite} surDebits={surDebits} />
+  )
+
   if (!assujettiTva) {
     return (
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Pas de déclaration de TVA</h3>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          Ce dossier n'est pas assujetti à la TVA (badge « TVA » de l'en-tête) : il n'a pas de déclaration
-          à déposer. Un dossier en franchise en base se classe lui aussi « exonéré ».
-        </p>
-      </div>
+      <>
+        {statut}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Pas de déclaration de TVA</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {statutTva === 'franchise'
+              ? 'En franchise en base, le dossier ne facture ni ne déclare de TVA : il n’a pas de déclaration à déposer.'
+              : statutTva === 'exonere'
+                ? 'Exonéré, le dossier ne facture ni ne déclare de TVA : il n’a pas de déclaration à déposer.'
+                : 'Tant que son statut de TVA est à préciser, le dossier est traité comme ne récupérant pas la TVA : '
+                  + 'redevable, il préparerait ici ses déclarations.'}
+          </p>
+        </div>
+        {facturationElectronique}
+      </>
     )
   }
 
@@ -504,6 +527,8 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         motif={lectures.ouverture}
         consequence="Une période antérieure à la reprise du dossier se saisit à la main : sans l’ouverture, l’écran ne sait pas lesquelles."
       />
+
+      {statut}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Régime de TVA</h3>
@@ -952,6 +977,8 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
           </table>
         )}
       </div>
+
+      {facturationElectronique}
     </>
   )
 }

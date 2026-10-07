@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import FactureFormModal from './FactureFormModal'
+import type { ArticleExoneration, StatutTva } from '../../lib/types'
 
 // DIXIÈME PORTEUR DU MOTIF « un verrou d'exécution est un `useRef`, jamais un état React »
 // (CLAUDE.md) — et le plus cher des dix.
@@ -43,7 +44,7 @@ vi.mock('../../lib/supabase', () => ({
 
 // `enregistrerFacture` (lib/factures.ts) n'est PAS doublée : c'est elle qui appelle le RPC, donc la
 // doubler compterait des appels à un faux au lieu des écritures réelles.
-function monter() {
+function monter(statutTva: StatutTva | null = 'franchise', articleExoneration: ArticleExoneration | null = null) {
   faux.appels = []
   faux.resoudre = null
   render(
@@ -52,7 +53,8 @@ function monter() {
       dossierNom="Cabinet de test"
       dossierSiret={null}
       dossierAdresse={null}
-      assujettiTva={false}
+      statutTva={statutTva}
+      articleExoneration={articleExoneration}
       facture={null}
       onAdresseUpdated={() => {}}
       onClose={() => {}}
@@ -125,5 +127,89 @@ describe('FactureFormModal — le verrou d’enregistrement d’une facture', ()
     await act(async () => { valider().click() })
     expect(faux.appels).toHaveLength(1)
     expect(faux.appels[0].nom).toBe('enregistrer_facture')
+  })
+})
+
+// LA FACTURE SUIT LE STATUT DE TVA DU DOSSIER (lib/statutTva.ts, ligne 28.5). La mention proposée était celle de la
+// franchise pour tout dossier non assujetti, donc pour un dossier de soins exonérés ; et une ligne neuve partait à
+// 0 % sur un redevable, que la plateforme recevait avec le motif de la franchise.
+describe('FactureFormModal — la facture suit le statut de TVA du dossier', () => {
+  const mentions = () => (document.querySelector('#mentions') as HTMLTextAreaElement).value
+  const tauxDeLaLigne = (i = 0) => (document.querySelectorAll('tbody tr')[i].querySelectorAll('input')[3] as HTMLInputElement)
+
+  it('un dossier de soins exonérés propose la mention de son article, jamais la franchise', () => {
+    monter('exonere', 'cgi_261_4_1')
+    expect(mentions()).toContain('Exonération de TVA, art. 261, 4, 1° du CGI.')
+    expect(mentions()).not.toContain('293 B')
+  })
+
+  it('un dossier en franchise propose la mention de l’art. 293 B', () => {
+    monter('franchise')
+    expect(mentions()).toContain('TVA non applicable, art. 293 B du CGI.')
+  })
+
+  it('une ligne neuve part à 20 % sur un redevable, à 0 % ailleurs', () => {
+    monter('redevable')
+    expect(tauxDeLaLigne().value).toBe('20')
+    fireEvent.click(screen.getByRole('button', { name: '+ Ligne' }))
+    expect(tauxDeLaLigne(1).value).toBe('20')
+    cleanup()
+    monter('exonere', 'cgi_261_4_1')
+    expect(tauxDeLaLigne().value).toBe('0')
+  })
+
+  it('une ligne taxée sur un dossier en franchise refuse la validation, et le dit', async () => {
+    monter('franchise')
+    fireEvent.change(tauxDeLaLigne(), { target: { value: '20' } })
+    expect(screen.getByText(/Un dossier en franchise en base ne facture pas de TVA : une ligne à 20/)).toBeTruthy()
+    expect(valider()).toHaveProperty('disabled', true)
+    // Le brouillon reste enregistrable : le statut peut être en retard sur la réalité.
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer le brouillon' }).click() })
+    expect(faux.appels).toHaveLength(1)
+    expect(faux.appels[0].args.p_valider).toBe(false)
+  })
+
+  // GARDE SYMÉTRIQUE : une ligne à 0 % ne refuse rien, et un redevable facture la TVA.
+  it('une ligne à 0 % d’un franchisé et une ligne taxée d’un redevable se valident', async () => {
+    monter('franchise')
+    expect(valider()).toHaveProperty('disabled', false)
+    expect(screen.queryAllByText(/ne facture pas de TVA/)).toHaveLength(0)
+    cleanup()
+    monter('redevable')
+    expect(valider()).toHaveProperty('disabled', false)
+    await act(async () => { valider().click() })
+    expect(faux.appels).toHaveLength(1)
+  })
+
+  it('une ligne à 0 % d’un redevable sans article le signale ; avec son article, propose sa mention', () => {
+    monter('redevable')
+    fireEvent.change(tauxDeLaLigne(), { target: { value: '0' } })
+    expect(screen.getByText(/Une ligne à 0 % : sur un dossier redevable, l’exonération se justifie par son article/)).toBeTruthy()
+    cleanup()
+
+    monter('redevable', 'cgi_261_4_1')
+    expect(screen.queryAllByText(/manque aux mentions légales/)).toHaveLength(0)
+    fireEvent.change(tauxDeLaLigne(), { target: { value: '0' } })
+    expect(screen.queryAllByText(/l’exonération se justifie par son article/)).toHaveLength(0)
+    expect(screen.getByText(/La mention « Exonération de TVA, art. 261, 4, 1° du CGI\. » manque aux mentions légales/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter la mention' }))
+    expect(mentions()).toMatch(/^Exonération de TVA, art. 261, 4, 1° du CGI\.\n/)
+    expect(screen.queryAllByText(/manque aux mentions légales/)).toHaveLength(0)
+  })
+
+  it('une mention effacée se propose de nouveau, et la franchise citée hors de son statut se signale', () => {
+    monter('exonere', 'cgi_261_4_1')
+    fireEvent.change(document.querySelector('#mentions')!, { target: { value: 'TVA non applicable, art. 293 B du CGI.' } })
+    expect(screen.getByText(/La mention « Exonération de TVA, art. 261, 4, 1° du CGI\. » manque aux mentions légales/)).toBeTruthy()
+    expect(screen.getByText(/Les mentions citent la franchise en base/)).toBeTruthy()
+  })
+
+  it('un statut à préciser, ou un exonéré sans article, le dit sous les mentions', () => {
+    monter(null)
+    expect(screen.getByText(/Le statut de TVA du dossier est à préciser/)).toBeTruthy()
+    cleanup()
+    monter('exonere', null)
+    expect(screen.getByText(/Le dossier est exonéré sans article d’exonération/)).toBeTruthy()
+    expect(screen.queryAllByText(/Les mentions citent la franchise en base/)).toHaveLength(0)
   })
 })

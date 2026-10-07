@@ -22,7 +22,7 @@ import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
-  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, StatutTva, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
@@ -66,10 +66,12 @@ interface ItemChecklist {
 // `modele` : le modèle comptable du dossier (lib/engagement.ts), qui décide de ce que ses écritures
 // doivent contenir — lues dans l'autre modèle, elles paraîtraient toutes « à régénérer ».
 // `periodiciteTva` : le régime du dossier, qui dit quelles périodes de TVA attendent une déclaration.
-export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, modele, onNavigate }: {
+// `statutTva` : son statut de TVA (lib/statutTva.ts) — nul, il est à préciser, et c'est un paramétrage à finir.
+export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, onNavigate }: {
   dossierId: string
   assujettiTva: boolean
   periodiciteTva: PeriodiciteTva
+  statutTva: StatutTva | null
   modele: ModeleComptable
   onNavigate: (tab: DossierTab) => void
 }) {
@@ -539,7 +541,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // `detail` : une ligne d'instruction sous le libellé, pour les points dont le bouton ne suffit pas
   // à trouver ce qu'ils annoncent. Le cas qui l'a rendu nécessaire est `date-impossible` — voir
   // plus bas. La liste voisine (Paramétrage du dossier) portait déjà ce champ et son style.
-  interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention'; detail?: string }
+  // `sansNombre` : un point qui ne compte rien — le dossier entier est concerné ou ne l'est pas —, dont le libellé
+  // se lit donc sans le « 1 » qui le précéderait.
+  interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention'; detail?: string; sansNombre?: boolean }
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -659,6 +663,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     // d'une période déjà déposée (lignes 5B et 2C) n'est pas modélisée : l'écart y resterait
     // signalé en erreur même une fois régularisé.
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },
+    // Un statut à préciser n'est pas une erreur : le dossier retient ses pièces TVA comprise, comme avant que le
+    // statut existe. Mais la mention de ses factures et ce qu'il doit à la facturation électronique en dépendent
+    // (lib/statutTva.ts), et c'est un réglage à faire une fois — d'où le bloc « Paramétrage ».
+    {
+      id: 'statut-tva', label: 'Statut de TVA à préciser — la mention de ses factures et ce qu’il doit à la facturation électronique en dépendent',
+      action: 'Préciser le statut', nb: statutTva == null ? 1 : 0, cible: 'tva', severite: 'attention', sansNombre: true,
+    },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
     { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', action: 'Compléter la TVA', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
@@ -704,7 +715,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // courant du cabinet (à traiter au fil de l'eau), documents attendus (dépend du client, voir `items`
   // plus bas). Un déséquilibre ou une désynchronisation reste plus urgent qu'une case de paramétrage,
   // d'où la sévérité conservée à l'intérieur du groupe "Travail à effectuer".
-  const IDS_PARAMETRAGE = new Set(['comptes-manquants', 'postes-manquants'])
+  const IDS_PARAMETRAGE = new Set(['statut-tva', 'comptes-manquants', 'postes-manquants'])
   const pointsParametrage = pointsATraiter.filter((p) => IDS_PARAMETRAGE.has(p.id))
   const pointsTravail = pointsATraiter.filter((p) => !IDS_PARAMETRAGE.has(p.id))
 
@@ -838,7 +849,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
           <div key={p.id} className="check-ligne">
             <span className={`check-dot ${p.severite === 'erreur' ? 'check-manque' : 'check-attention'}`} />
             <div className="check-ligne-corps">
-              <div className="check-ligne-libelle">{p.nb} {p.label}</div>
+              <div className="check-ligne-libelle">{p.sansNombre ? p.label : `${p.nb} ${p.label}`}</div>
               {p.detail && <div className="check-ligne-detail">{p.detail}</div>}
             </div>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
@@ -981,7 +992,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
         </Widget>
 
         <Widget className="span-5" titre="Paramétrage à compléter" sousTitre="Configuration à finir une fois, indépendante du client">
-          {listePoints(pointsParametrage, 'Rien à compléter — comptes et postes 2035 sont renseignés.')}
+          {listePoints(pointsParametrage, 'Rien à compléter — statut de TVA, comptes et postes 2035 sont renseignés.')}
         </Widget>
       </div>
     </>

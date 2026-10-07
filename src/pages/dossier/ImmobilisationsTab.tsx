@@ -178,8 +178,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   // qui portent elles-mêmes une écriture validée — la base refuse d'en faire une immobilisation.
   const figes = biensFiges(ecrituresValidees, immobilisations)
   const piecesAvecEcritureValidee = new Set(ecrituresValidees.flatMap((e) => (e.piece_id ? [e.piece_id] : [])))
-  // La valeur d'un bien est celle qui s'amortit : hors taxes pour un dossier assujetti, qui récupère la
-  // TVA, TVA comprise pour un dossier exonéré, pour qui elle fait partie du prix de revient (voir
+  // La valeur d'un bien est celle qui s'amortit : hors taxes pour un dossier redevable, qui récupère la
+  // TVA, TVA comprise pour un dossier exonéré ou en franchise, pour qui elle fait partie du prix de revient (voir
   // lib/montantRetenu.ts). Le seuil se juge sur la même valeur que celle qu'on affiche et qu'on
   // enregistre : l'enregistrer au TTC faisait amortir chez un assujetti une TVA qu'il récupère déjà.
   //
@@ -564,8 +564,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
             Pièces validées de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — à toi de décider si c'est un
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
             durée usuelle, toujours modifiable, et donne le compte du bien. {assujettiTva
-              ? 'Montants hors taxes : le dossier est assujetti et récupère la TVA.'
-              : 'Montants TVA comprise : le dossier est exonéré, la TVA fait partie du prix.'}
+              ? 'Montants hors taxes : le dossier est redevable et récupère la TVA.'
+              : 'Montants TVA comprise : le dossier ne récupère pas la TVA, elle fait partie du prix.'}
           </p>
           {/* Dans un conteneur qui défile, comme les autres tableaux : avec le panneau de droite ouvert,
               la colonne du bouton débordait du panneau central et passait sous le volet. Et
