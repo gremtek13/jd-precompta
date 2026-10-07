@@ -1,7 +1,8 @@
 -- LA VALIDATION D'UN EXERCICE, ÉPROUVÉE EN BASE — à rejouer par `execute_sql` après toute migration qui
 -- touche `valider_exercice`, `verifier_exercice_valide`, `empreinte_exercice`, `exercice_fige`, l'un des
 -- déclencheurs qui figent un exercice validé (`garder_*`), la table `exercices_valides` ou les contraintes
--- d'`ecritures_brouillon` (ligne 26.6 de la feuille de route, étape d).
+-- d'`ecritures_brouillon` (ligne 26.6 de la feuille de route, étape d). Le détail du report des soldes sur
+-- l'exercice suivant (ligne 34) vit dans `reportDesSoldes.sql` ; celui-ci en vérifie le montant sur ses dossiers.
 --
 -- Valider un exercice fige ses écritures — numérotées dans leur journal, avec ce que le FEC lit —, enregistre
 -- son empreinte chaînée à celle de l'exercice validé précédent et, en trésorerie, la 2035 telle qu'elle a été
@@ -18,8 +19,9 @@
 --     2035 absente en trésorerie, présente en engagement ; et chaque défaut d'une numérotation proposée — une
 --     écriture à deux pièces ou à deux DATES comprise (24b, depuis le 05/10/2026) ;
 --   - CE QUE LA VALIDATION ÉCRIT : les écritures validées, numérotées, avec leur pièce et le libellé de leur
---     compte ; l'exercice, ses totaux, sa 2035 et son auteur ; les libellés des à-nouveaux ; et rien de
---     l'exercice suivant ;
+--     compte ; l'exercice, ses totaux, sa 2035 et son auteur ; les libellés des à-nouveaux ; et, de
+--     l'exercice suivant, son ouverture seule — les soldes de fin, reportés au centime (36b, 118b, 132b, 139b),
+--     dont la validation suivante pose les libellés, faute de quoi elle se refuse ;
 --   - L'INTANGIBILITÉ : une écriture validée ne change plus, même pour le propriétaire de la base ; aucune
 --     écriture ne se passe avant la frontière, ni ne s'y valide à la main ; et le super-administrateur ne
 --     réinsère une écriture validée que dans un dossier qui n'a encore aucun exercice validé — la restauration ;
@@ -63,6 +65,16 @@
 -- identique au fichier sur 419 lignes. Sur la réplique, la fonction d'AVANT ne fait tomber que le 24b (accepté), et
 -- quatre mutations de la règle — le compte des jours pris sur la date de pièce, la pièce nommée à la place de la
 -- date, deux jours admis, la règle retirée — ne font tomber que lui ; rétablie, la fonction repasse les 146.
+--
+-- REJOUÉ EN PRODUCTION LE 07/10/2026, juste après la migration `report_des_soldes` (ligne 34) : 151 contrôles sur
+-- 151 — les cinq nouveaux compris (36b, 117a, 118b, 132b, 139b : l'ouverture de l'exercice suivant, et la validation
+-- suivante qui pose ses libellés ou se refuse sans eux) —, et 4/1/1/77/998/3/2/1/43/0/0/0/0 lignes avant comme après,
+-- les soldes reportés comptés en dernier. Le texte transmis, sans ses lignes de commentaire, est identique au fichier
+-- sur 452 lignes. Sur la réplique, les trente-cinq mutations de la migration, jouées avec `reportDesSoldes.sql`,
+-- mordent toutes. Et le harnais a été corrigé au passage : un contrôle qui attend un succès, accepté sans être
+-- annulé, rendait un verdict NUL — ni vert ni rouge, qu'un décompte des contrôles faux ne voit pas. Il rend désormais
+-- faux (`coalesce`) : sans l'annulation de chaque contrôle, vingt-sept contrôles tombent, dont les vingt-deux qui
+-- attendent un succès.
 --
 -- MIS AU POINT SUR UNE RÉPLIQUE LOCALE, ET MUTÉ AVANT D'ÊTRE CRU. Trente-quatre mutations, chacune jouée dans
 -- la transaction de l'essai puis annulée, toutes mordent :
@@ -158,7 +170,8 @@ begin
     ((select count(*) from dossiers)), ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)),
     ((select count(*) from pieces)), ((select count(*) from lignes_bancaires)), ((select count(*) from ecritures_brouillon)),
     ((select count(*) from immobilisations)), ((select count(*) from vehicules)), ((select count(*) from cotisations_declarees)),
-    ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations))
+    ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations)),
+    ((select count(*) from soldes_reportes))
   ) as t(n);
 
   -- Une étape : {genre, contrôle, qui, requête, code attendu, message attendu (motif LIKE) ou valeur attendue}.
@@ -298,6 +311,11 @@ begin
     array['valeur', '34. une écriture validée porte sa pièce', 'postgres', $q$select piece_ref || ' ' || piece_date || ' ' || (comp_aux_num is null) from ecritures_brouillon where id = '{E13}'$q$, '', 'Tableau d''amortissement 2024 2024-12-31 true'],
     array['valeur', '35. l''exercice est enregistré : lignes, écritures, totaux, 2035, premier maillon, auteur, date', 'postgres', $q$select nb_lignes || '/' || nb_ecritures || '/' || total_debit || '/' || total_credit || '/' || mode_comptable || '/' || (declaration->>'essai') || '/' || (empreinte_precedente is null) || '/' || (valide_par = '{CHEF}') || '/' || (valide_le = (select max(valide_le) from ecritures_brouillon where dossier_id = '{A}')) from exercices_valides where dossier_id = '{A}'$q$, '', '15/7/1259.00/1259.00/tresorerie/oui/true/true/true'],
     array['valeur', '36. rien de 2025 n''est validé', 'postgres', $q$select count(*) filter (where statut = 'proposee') || '/' || count(*) from ecritures_brouillon where dossier_id = '{A}' and date >= '2025-01-01'$q$, '', '2/2'],
+    -- Les soldes de fin de 2024 : la banque et l'amortissement sous leur numéro et leur libellé figé ; le 108 (18 − 529)
+    -- et le résultat (une perte de 1 141) au capital individuel, A étant tenu en trésorerie. Sans libellé de compte tant
+    -- que 2025 n'est pas validé, et chacun porte l'empreinte de 2024.
+    array['valeur', '36b. la validation écrit l''ouverture de 2025 : les soldes de fin de 2024', 'postgres', $q$select string_agg(compte || ':' || sens || ':' || montant || ':' || libelle, ',' order by compte collate "C") || '/' || min(source_nom) || '/' || bool_and(source_empreinte = (select empreinte from exercices_valides where dossier_id = '{A}' and annee = 2024)) || '/' || min(date) || '/' || count(compte_lib) from soldes_reportes where dossier_id = '{A}'$q$, '',
+      '101000:debit:630.00:Capital individuel,281830:credit:400.00:Amortissements,512000:credit:230.00:Banque/Exercice 2024 validé/true/2025-01-01/0'],
     array['controle', '37. le chef vérifie l''empreinte', 'chef', $q$do $x$ begin if not verifier_exercice_valide('{A}', 2024) then raise exception 'EMPREINTE FAUSSE'; end if; end $x$$q$, 'OK', ''],
     array['controle', '38. le client ne lit ni la validation ni les écritures d''un autre', 'client', $q$do $x$ begin if verifier_exercice_valide('{A}', 2024) is not null or exists (select 1 from exercices_valides where dossier_id = '{A}') or exists (select 1 from ecritures_brouillon where dossier_id = '{A}') then raise exception 'VU'; end if; end $x$$q$, 'OK', ''],
     array['controle', '39. l''anonyme ne vérifie rien', 'anon', $q$select verifier_exercice_valide('{A}', 2024)$q$, '42501', 'permission denied%'],
@@ -416,8 +434,15 @@ begin
 
     -- ══ Le maillon de l'exercice suivant ═══════════════════════════════════════════════════════════════════════════
     array['jeu', 'le mouvement de 2025 à traiter est ignoré', 'postgres', $q$update lignes_bancaires set statut = 'ignoree' where id = '{M7}'$q$, '', ''],
-    array['fait', '117. le chef valide 2025', 'chef', $q$select valider_exercice('{A}', 2025, '[{"id":"{E16}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Achats"},{"id":"{E17}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Banque"}]'::jsonb, '[]'::jsonb, '{}'::jsonb)$q$, 'OK', ''],
+    -- 2025 s'ouvre sur les soldes reportés de 2024 : ses libellés partent avec sa numérotation, comme ceux d'à-nouveaux
+    -- repris — l'application les compose (`numeroterFec`) ; l'essai reprend le libellé de chaque solde.
+    array['controle', '117a. 2025 ne se valide pas sans les libellés de son ouverture', 'chef', $q$select valider_exercice('{A}', 2025, '[{"id":"{E16}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Achats"},{"id":"{E17}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Banque"}]'::jsonb, '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Les libellés proposés ne couvrent pas exactement les 3 à-nouveaux de l''exercice 2025.'],
+    array['fait', '117. le chef valide 2025', 'chef', $q$select valider_exercice('{A}', 2025, '[{"id":"{E16}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Achats"},{"id":"{E17}","journal":"AC","numero":1,"piece_ref":"essai-p2.pdf","piece_date":"2025-02-01","compte_lib":"Banque"}]'::jsonb, (select jsonb_agg(jsonb_build_object('id', id, 'compte_lib', libelle, 'ecriture_lib', 'À-nouveau ' || libelle)) from soldes_reportes where dossier_id = '{A}' and date = '2025-01-01'), '{}'::jsonb)$q$, 'OK', ''],
     array['valeur', '118. 2025 porte l''empreinte de 2024, et se vérifie', 'postgres', $q$select (b.empreinte_precedente = a.empreinte)::text || '/' || verifier_exercice_valide('{A}', 2025)::text from exercices_valides a, exercices_valides b where a.dossier_id = '{A}' and a.annee = 2024 and b.dossier_id = '{A}' and b.annee = 2025$q$, '', 'true/true'],
+    -- Les libellés de l'ouverture de 2025 sont posés, et 2026 s'ouvre sur 2025 : la perte de 30 au capital individuel,
+    -- la banque à 230 + 30, l'amortissement inchangé.
+    array['valeur', '118b. l''ouverture de 2025 porte ses libellés, et 2026 s''ouvre sur les soldes de fin de 2025', 'postgres', $q$select (select string_agg(compte || ':' || compte_lib || ':' || ecriture_lib, ',' order by compte collate "C") from soldes_reportes where dossier_id = '{A}' and date = '2025-01-01') || '/' || string_agg(compte || ':' || sens || ':' || montant || ':' || libelle, ',' order by compte collate "C") || '/' || min(source_nom) || '/' || bool_and(source_empreinte = (select empreinte from exercices_valides where dossier_id = '{A}' and annee = 2025)) from soldes_reportes where dossier_id = '{A}' and date = '2026-01-01'$q$, '',
+      '101000:Capital individuel:À-nouveau Capital individuel,281830:Amortissements:À-nouveau Amortissements,512000:Banque:À-nouveau Banque/101000:debit:660.00:Capital individuel,281830:credit:400.00:Amortissements,512000:credit:260.00:Banque/Exercice 2025 validé/true'],
     array['jeu', 'casser le maillon de 2024', 'postgres', $q$update exercices_valides set empreinte = repeat('0', 64) where dossier_id = '{A}' and annee = 2024$q$, '', ''],
     array['valeur', '119. un maillon cassé se voit sur l''exercice suivant', 'postgres', $q$select verifier_exercice_valide('{A}', 2024)::text || '/' || verifier_exercice_valide('{A}', 2025)::text$q$, '', 'false/false'],
 
@@ -454,6 +479,10 @@ begin
     array['controle', '130. la banque nommée autrement dans les à-nouveaux', 'chef', $q$select valider_exercice('{G}', 2025, current_setting('essai.g')::jsonb, '[{"id":"{GAN1}","compte_lib":"Banque Populaire","ecriture_lib":"À-nouveau Banque Populaire"},{"id":"{GAN2}","compte_lib":"Capital","ecriture_lib":"À-nouveau Capital"}]'::jsonb, '{}'::jsonb)$q$, '22023', 'Un même compte porte deux libellés.'],
     array['fait', '131. le chef valide 2025 avec ses à-nouveaux', 'chef', $q$select valider_exercice('{G}', 2025, current_setting('essai.g')::jsonb, '[{"id":"{GAN1}","compte_lib":"Banque","ecriture_lib":"À-nouveau Banque Populaire"},{"id":"{GAN2}","compte_lib":"Capital","ecriture_lib":"À-nouveau Capital"}]'::jsonb, '{}'::jsonb)$q$, 'OK', ''],
     array['valeur', '132. les à-nouveaux portent leurs libellés, l''exercice ses quatre lignes', 'postgres', $q$select string_agg(compte || ':' || compte_lib || ':' || ecriture_lib, ',' order by compte collate "C") || '/' || (select nb_lignes || '-' || nb_ecritures from exercices_valides where dossier_id = '{G}') from a_nouveaux where dossier_id = '{G}'$q$, '', '101000:Capital:À-nouveau Capital,512000:Banque:À-nouveau Banque Populaire/4-2'],
+    -- Une ouverture reprise se reporte comme une autre : le capital repris (10) reçoit la perte de 2025 (13), sous le
+    -- libellé que 2025 lui a figé ; la banque garde le sien, pas celui de la balance reprise.
+    array['valeur', '132b. 2026 s''ouvre sur les soldes de fin de 2025, ouverture reprise comprise', 'postgres', $q$select string_agg(compte || ':' || sens || ':' || montant || ':' || libelle, ',' order by compte collate "C") || '/' || min(date) from soldes_reportes where dossier_id = '{G}'$q$, '',
+      '101000:debit:3.00:Capital,512000:credit:3.00:Banque/2026-01-01'],
     array['controle', '133. l''ouverture validée ne change plus', 'chef', $q$update a_nouveaux set libelle = 'x' where id = '{GAN1}'$q$, '23514', 'Un exercice de ce dossier est validé : son ouverture ne change plus.'],
     array['controle', '134. ni ne quitte son dossier', 'chef', $q$update a_nouveaux set dossier_id = '{X}' where id = '{GAN2}'$q$, '23514', 'Un exercice de ce dossier est validé : son ouverture ne change plus.'],
     array['jeu', 'falsifier un libellé d''à-nouveau hors déclencheur', 'postgres', $q$set local session_replication_role = replica$q$, '', ''],
@@ -465,19 +494,23 @@ begin
       ('{HAN2}', '{H}', '2024-01-01', '101000', 'Capital', 'credit', 5, 'balance-essai-h.csv', repeat('b', 64))$q$, '', ''],
     array['controle', '136. l''exercice des à-nouveaux se valide d''abord', 'chef', $q$select valider_exercice('{H}', 2025, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb)$q$, '23514', 'L''exercice 2024 porte les à-nouveaux du dossier : il se valide d''abord.'],
     array['fait', '137. 2024, sans écriture, se valide avec ses à-nouveaux', 'chef', $q$select valider_exercice('{H}', 2024, '[]'::jsonb, '[{"id":"{HAN1}","compte_lib":"Banque","ecriture_lib":"À-nouveau Banque"},{"id":"{HAN2}","compte_lib":"Capital","ecriture_lib":"À-nouveau Capital"}]'::jsonb, '{}'::jsonb)$q$, 'OK', ''],
-    array['fait', '138. puis 2025', 'chef', $q$select valider_exercice('{H}', 2025, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb)$q$, 'OK', ''],
+    array['fait', '138. puis 2025', 'chef', $q$select valider_exercice('{H}', 2025, '[]'::jsonb, (select jsonb_agg(jsonb_build_object('id', id, 'compte_lib', libelle, 'ecriture_lib', 'À-nouveau ' || libelle)) from soldes_reportes where dossier_id = '{H}' and date = '2025-01-01'), '{}'::jsonb)$q$, 'OK', ''],
     array['valeur', '139. la chaîne de H tient', 'postgres', $q$select (b.empreinte_precedente = a.empreinte)::text || '/' || verifier_exercice_valide('{H}', 2024)::text || '/' || verifier_exercice_valide('{H}', 2025)::text from exercices_valides a, exercices_valides b where a.dossier_id = '{H}' and a.annee = 2024 and b.dossier_id = '{H}' and b.annee = 2025$q$, '', 'true/true/true'],
+    -- Sans écriture, l'ouverture se reporte telle quelle d'un exercice sur l'autre.
+    array['valeur', '139b. H s''ouvre en 2025 puis en 2026 sur les soldes de sa reprise', 'postgres', $q$select string_agg(to_char(date, 'YYYY') || ':' || compte || ':' || sens || ':' || montant || ':' || libelle, ',' order by date, compte collate "C") from soldes_reportes where dossier_id = '{H}'$q$, '',
+      '2025:101000:credit:5.00:Capital,2025:512000:debit:5.00:Banque,2026:101000:credit:5.00:Capital,2026:512000:debit:5.00:Banque'],
 
     -- ══ Ce que le catalogue dit, faute de pouvoir le jouer ═════════════════════════════════════════════════════════
-    array['valeur', '140. chaque déclencheur figeant refuse aussi la suppression, et il est actif', 'postgres', $q$select string_agg(c.relname || ':' || ((t.tgtype & 8) <> 0)::text || ':' || t.tgenabled::text, ',' order by c.relname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname in ('ecritures_brouillon_intangibles', 'pieces_figees_par_la_validation', 'lignes_bancaires_figees_par_la_validation', 'ventilations_bancaires_figees_par_la_validation', 'reglements_groupes_figes_par_la_validation', 'immobilisations_figees_par_la_validation', 'vehicules_figes_par_la_validation', 'cotisations_declarees_figees_par_la_validation', 'a_nouveaux_figes_par_la_validation')$q$, '',
-      'a_nouveaux:true:O,cotisations_declarees:true:O,ecritures_brouillon:true:O,immobilisations:true:O,lignes_bancaires:true:O,pieces:true:O,reglements_groupes:true:O,vehicules:true:O,ventilations_bancaires:true:O'],
+    array['valeur', '140. chaque déclencheur figeant refuse aussi la suppression, et il est actif', 'postgres', $q$select string_agg(c.relname || ':' || ((t.tgtype & 8) <> 0)::text || ':' || t.tgenabled::text, ',' order by c.relname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname in ('ecritures_brouillon_intangibles', 'pieces_figees_par_la_validation', 'lignes_bancaires_figees_par_la_validation', 'ventilations_bancaires_figees_par_la_validation', 'reglements_groupes_figes_par_la_validation', 'immobilisations_figees_par_la_validation', 'vehicules_figes_par_la_validation', 'cotisations_declarees_figees_par_la_validation', 'a_nouveaux_figes_par_la_validation', 'declarations_tva_figees_par_la_validation', 'soldes_reportes_ecrits_par_la_validation')$q$, '',
+      'a_nouveaux:true:O,cotisations_declarees:true:O,declarations_tva:true:O,ecritures_brouillon:true:O,immobilisations:true:O,lignes_bancaires:true:O,pieces:true:O,reglements_groupes:true:O,soldes_reportes:true:O,vehicules:true:O,ventilations_bancaires:true:O'],
     array['valeur', '141. chacun laisse passer la cascade d''un dossier qu''on supprime', 'postgres', $q$select string_agg(p.proname, ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'garder%' and p.prosrc like '%not exists (select 1 from public.dossiers where id = old.dossier_id)%'$q$, '',
-      'garder_a_nouveaux_valides,garder_bien_valide,garder_cotisation_valide,garder_ecritures_validees,garder_mouvement_valide,garder_parts_mouvement_valide,garder_piece_validee,garder_vehicule_valide'],
+      'garder_a_nouveaux_valides,garder_bien_valide,garder_cotisation_valide,garder_declaration_valide,garder_ecritures_validees,garder_mouvement_valide,garder_parts_mouvement_valide,garder_piece_validee,garder_soldes_reportes,garder_vehicule_valide'],
     array['valeur', '142. un exercice validé part avec son dossier', 'postgres', $q$select string_agg(confdeltype::text, ',') from pg_constraint where conrelid = 'public.exercices_valides'::regclass and contype = 'f'$q$, '', 'c'],
     array['valeur', '143. les droits d''exécution (anonyme, connecté)', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || a, 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || a, 'execute'), ',' order by f collate "C") from (values
       ('valider_exercice', '(uuid, integer, jsonb, jsonb, jsonb)'), ('verifier_exercice_valide', '(uuid, integer)'), ('empreinte_exercice', '(uuid, integer, text)'),
-      ('cle_validation', '(uuid)'), ('frontiere_validation', '(uuid)'), ('exercice_fige', '(uuid, integer)'), ('garder_ecritures_validees', '()')) as t(f, a)$q$, '',
-      'cle_validation:false:false,empreinte_exercice:false:true,exercice_fige:false:false,frontiere_validation:false:false,garder_ecritures_validees:false:false,valider_exercice:false:true,verifier_exercice_valide:false:true'],
+      ('cle_validation', '(uuid)'), ('frontiere_validation', '(uuid)'), ('exercice_fige', '(uuid, integer)'), ('garder_ecritures_validees', '()'),
+      ('garder_soldes_reportes', '()'), ('soldes_a_reporter', '(uuid, integer)')) as t(f, a)$q$, '',
+      'cle_validation:false:false,empreinte_exercice:false:true,exercice_fige:false:false,frontiere_validation:false:false,garder_ecritures_validees:false:false,garder_soldes_reportes:false:false,soldes_a_reporter:false:false,valider_exercice:false:true,verifier_exercice_valide:false:true'],
     array['valeur', '144. un exercice validé est lu par le cabinet, réinséré par le super-administrateur, jamais modifié', 'postgres', $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from pg_policies where schemaname = 'public' and tablename = 'exercices_valides'$q$, '',
       'exercices_valides_lecture:SELECT:authenticated,exercices_valides_restauration:INSERT:authenticated']
   ];
@@ -520,8 +553,8 @@ begin
         perform set_config('request.jwt.claims', '', true);
         verdicts := verdicts || jsonb_build_object('controle', etape[2],
           'observe', case when accepte then 'accepté' else coalesce(code_recu, '?') || ' ' || coalesce(message, '') end,
-          'ok', case when etape[5] = 'OK' then accepte and (etape[1] = 'fait' or code_recu = 'P0001')
-                     else not accepte and code_recu = etape[5] and message like etape[6] end);
+          'ok', case when etape[5] = 'OK' then accepte and (etape[1] = 'fait' or coalesce(code_recu = 'P0001', false))
+                     else not accepte and coalesce(code_recu = etape[5] and message like etape[6], false) end);
       end if;
     end loop;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
@@ -538,7 +571,8 @@ begin
     ((select count(*) from dossiers)), ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)),
     ((select count(*) from pieces)), ((select count(*) from lignes_bancaires)), ((select count(*) from ecritures_brouillon)),
     ((select count(*) from immobilisations)), ((select count(*) from vehicules)), ((select count(*) from cotisations_declarees)),
-    ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations))
+    ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations)),
+    ((select count(*) from soldes_reportes))
   ) as t(n);
   verdicts := verdicts || jsonb_build_object('controle', '145. rien n''est resté en base',
     'observe', avant || ' -> ' || apres,
