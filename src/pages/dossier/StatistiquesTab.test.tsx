@@ -145,6 +145,29 @@ describe('StatistiquesTab — Balance des comptes', () => {
     expect(screen.queryByText(/lecture partielle|n'ont pas pu être lues/)).toBeNull()
   })
 
+  // SUR TÉLÉPHONE, LE TABLEAU SE REPLIE EN FICHES (07/10/2026) : six colonnes dans une carte de 360 pixels coupaient les
+  // mots en leur milieu (« 10100 / 0 », « Amortisse / ments », vu sur capture). Replié, chaque valeur garde le libellé
+  // de sa colonne — c'est `data-libelle` qui le porte, et l'enveloppe qui décide du repli.
+  it('se replie en fiches sur téléphone, chaque valeur portant le libellé de sa colonne', async () => {
+    faux.plafond = null
+    faux.parTable.ecritures_brouillon = [ecriture('606100', 'debit', 120), ecriture('512000', 'credit', 120)]
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    render(
+      <ContexteDossier valides={faux.valides} annee="toutes">
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
+      </ContexteDossier>,
+    )
+    const tableau = (await screen.findByText('606100')).closest('table')!
+    expect(tableau.className).toBe('table-empilable-etroite')
+    expect(tableau.parentElement!.className.split(/\s+/)).toContain('tableau-adaptable')
+    expect([...tableau.querySelector('tbody tr')!.querySelectorAll('td')].map((td) => td.getAttribute('data-libelle')))
+      .toEqual(['Compte', 'Libellé', 'Écritures', 'Débit', 'Crédit', 'Solde'])
+    // Le pied : l'intitulé fusionné disparaît une fois empilé, chaque total dit le sien.
+    expect([...piedDuTableau().children].map((td) => td.getAttribute('data-libelle')))
+      .toEqual([null, 'Total débit', 'Total crédit', 'Équilibre'])
+  })
+
   it('réduit les lignes affichées sans toucher aux totaux ni fabriquer un écart', async () => {
     faux.plafond = null
     faux.parTable.ecritures_brouillon = [
@@ -177,6 +200,9 @@ describe('StatistiquesTab — Balance des comptes', () => {
     // …et le pied ne bouge pas d'un centime, badge compris.
     const pied = piedDuTableau()
     expect(pied.children[0].textContent).toBe('Total (tous les comptes)')
+    // Sur téléphone l'intitulé fusionné disparaît : chaque total dit alors lui-même qu'il porte sur tous les comptes.
+    expect([pied.children[1].getAttribute('data-libelle'), pied.children[2].getAttribute('data-libelle')])
+      .toEqual(['Total débit (tous les comptes)', 'Total crédit (tous les comptes)'])
     expect([pied.children[1].textContent, pied.children[2].textContent]).toEqual(totauxAvant)
     expect(pied.children[3].textContent).toContain('équilibré')
     expect(pied.children[3].textContent).not.toContain('écart')

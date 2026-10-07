@@ -931,6 +931,47 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   .table-formulaire td.td-action .btn { width: 100%; }
 }
 
+/* LA BALANCE DES COMPTES NE SE REPLIE QUE SUR TÉLÉPHONE (07/10/2026). Ses colonnes courtes et son libellé se lisent
+   dès 560 pixels — à 1 024 pixels, et volet de droite ouvert à 1 280 —, où une fiche par compte allongerait de
+   plusieurs écrans une balance de quarante comptes. Sous 520 pixels de carte, ses six colonnes coupaient les mots en
+   leur milieu (« 10100 / 0 », « Amortisse / ments », vu sur capture) : la ligne s'y replie en fiche, avec les mêmes
+   règles que le bloc précédent — une requête de conteneur ne prend pas son seuil dans une variable, d'où ce second
+   bloc. Le tableau a du jeu autour de ses fiches : la carte qui le porte n'a pas de marge intérieure. */
+@container tableau (max-width: 520px) {
+  .table-empilable-etroite thead { display: none; }
+  .table-empilable-etroite,
+  .table-empilable-etroite tbody,
+  .table-empilable-etroite tfoot,
+  .table-empilable-etroite tr,
+  .table-empilable-etroite td { display: block; width: 100%; }
+  .table-empilable-etroite { padding: 12px; }
+
+  .table-empilable-etroite tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 4px 12px;
+    margin-bottom: 12px;
+    background: var(--color-surface);
+  }
+  .table-empilable-etroite tfoot tr { background: var(--color-surface-2); margin-bottom: 0; }
+
+  .table-empilable-etroite td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    text-align: left !important;
+  }
+  .table-empilable-etroite tr td:last-child { border-bottom: none; }
+
+  .table-empilable-etroite td::before {
+    content: attr(data-libelle);
+    flex: 0 0 auto;
+    font-size: 0.78rem; font-weight: 600; color: var(--color-text-light);
+  }
+  .table-empilable-etroite td:not([data-libelle])::before { content: none; }
+  .table-empilable-etroite tfoot td[colspan] { display: none; }
+}
+
 /* Le bouton « Assistant » de l'en-tête du dossier (voir AssistantDossier) — enfoncé tant que
    l'assistant occupe le panneau. Sur mobile c'est la bulle qui l'ouvre (voir la media query). */
 .bouton-assistant {

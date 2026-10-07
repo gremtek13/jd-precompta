@@ -81,6 +81,22 @@ describe('les tableaux qui se replient en fiches', () => {
     expect(bloc![1]).toMatch(/\.table-empilable td::before \{\s*content: attr\(data-libelle\);/)
   })
 
+  // LA BALANCE DES COMPTES NE SE REPLIE QUE SUR TÉLÉPHONE (07/10/2026) : ses colonnes se lisent dès 560 pixels, où une
+  // fiche par compte allongerait de plusieurs écrans une balance de quarante comptes. Son tableau porte donc
+  // `table-empilable-etroite`, qui a SON bloc, plus bas que l'autre. Sans ce bloc, la classe ne replierait rien, et le
+  // tableau coupait ses mots en leur milieu sur téléphone — sans que rien le dise.
+  it('le tableau qui ne se replie que sur téléphone a sa requête, plus basse que la largeur où il se lit', () => {
+    const css = readFileSync(join(RACINE, 'index.css'), 'utf8')
+    const bloc = /@container tableau \(max-width: (\d+)px\) \{\n {2}\.table-empilable-etroite thead \{ display: none; \}([\s\S]*?)\n\}/.exec(css)
+    expect(bloc, 'requête du repli étroit introuvable').not.toBeNull()
+    expect(Number(bloc![1])).toBeLessThan(560)
+    expect(bloc![2]).toMatch(/\.table-empilable-etroite td::before \{\s*content: attr\(data-libelle\);/)
+    expect(bloc![2]).toContain('.table-empilable-etroite tfoot td[colspan] { display: none; }')
+    // Et la balance s'en sert : le plancher, sans lequel cette règle pourrait garder une classe que plus rien ne porte.
+    const balance = tous.find(({ chemin }) => chemin.endsWith('StatistiquesTab.tsx'))
+    expect(balance?.texte).toContain('<table className="table-empilable-etroite">')
+  })
+
   it('attrapent un tableau posé hors de l’enveloppe, et pas celui qui y est', () => {
     const fautif = '<div className="card">\n  <div className="table-scroll">\n    <table className="table-empilable">'
     const juste = '<div className="card">\n  <div className="table-scroll tableau-adaptable">\n    {/* un commentaire */}\n    <table className="table-formulaire table-empilable">'

@@ -224,9 +224,9 @@ const VUES = [
   { nom: 'pc-valide-1024', chemin: '#/dossiers/d9/cloture', l: 1024, h: 768, theme: 'light', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
   { nom: 'mobile-valide-clair', chemin: '#/dossiers/d9/cloture', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
   { nom: 'pc-valide-en-cours', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2026' },
-  { nom: 'pc-validable-clair', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2025' },
-  { nom: 'pc-validable-sombre', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Valider l’exercice 2025' },
-  { nom: 'mobile-validable-clair', chemin: '#/dossiers/d10/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Valider l’exercice 2025' },
+  { nom: 'pc-validable-clair', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Valider l’exercice 2025' },
+  { nom: 'pc-validable-sombre', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, exercice: '2025', vers: 'Valider l’exercice 2025' },
+  { nom: 'mobile-validable-clair', chemin: '#/dossiers/d10/cloture', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', vers: 'Valider l’exercice 2025' },
   { nom: 'pc-validation-bloquee', chemin: '#/dossiers/d8/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Valider l’exercice 2025' },
   { nom: 'pc-validation-checklist', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2026' },
   { nom: 'pc-fige-ecritures', chemin: '#/dossiers/d9/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
@@ -276,6 +276,20 @@ const VUES = [
   },
   { nom: 'mobile-lettrage-clair', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Lettrages proposés', enTete: true },
   { nom: 'mobile-lettrages-faits', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Lettrages faits à la main', enTete: true },
+  // Le REPORT DES SOLDES (ligne 34) : l'ouverture que la validation de l'ostéopathe écrira sur 2026, montrée avant le
+  // clic — ses soldes dépliés —, celle que la validation de la kinésithérapeute a écrite, et ce que 2026 en dit : ouvert
+  // par ses soldes reportés chez l'une, en attente de la validation de 2025 chez l'autre.
+  { nom: 'pc-report-apercu', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'L’ouverture de l’exercice 2026' },
+  { nom: 'pc-report-apercu-sombre', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, exercice: '2025', vers: 'L’ouverture de l’exercice 2026' },
+  { nom: 'pc-report-soldes', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', deplier: 'Voir les soldes reportés', vers: 'L’ouverture de l’exercice 2026', enTete: true },
+  { nom: 'pc-report-soldes-assistant', chemin: '#/dossiers/d10/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2025', deplier: 'Voir les soldes reportés', vers: 'L’ouverture de l’exercice 2026', enTete: true },
+  { nom: 'mobile-report-soldes', chemin: '#/dossiers/d10/cloture', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', deplier: 'Voir les soldes reportés', vers: 'L’ouverture de l’exercice 2026', enTete: true },
+  { nom: 'pc-report-ecrit', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Sa validation a écrit l’ouverture' },
+  { nom: 'pc-report-ecritures', chemin: '#/dossiers/d9/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'Exercice ouvert par' },
+  { nom: 'pc-report-balance', chemin: '#/dossiers/d9/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'soldes reportés de l’exercice 2025', enTete: true },
+  { nom: 'mobile-report-balance', chemin: '#/dossiers/d9/statistiques', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2026', vers: 'soldes reportés de l’exercice 2025', enTete: true },
+  { nom: 'pc-report-attente', chemin: '#/dossiers/d10/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'pas encore d’ouverture' },
+  { nom: 'pc-report-attente-balance', chemin: '#/dossiers/d10/statistiques', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2026', vers: 'pas encore d’ouverture', enTete: true },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

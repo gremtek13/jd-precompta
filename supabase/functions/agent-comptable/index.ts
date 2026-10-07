@@ -2133,11 +2133,56 @@ function bornesAnnee(annee?: number): { date_debut?: string; date_fin?: string }
 // SANS filtre de période : il faut leur date pour dire qu'ils existent même quand ils ouvrent un autre
 // exercice que celui demandé. Gardé par src/lib/agentComptableBalance.test.ts, qui extrait ce bloc et
 // le compare à `calculerBalance` de src/lib.
+//
+// ET LES SOLDES REPORTÉS (ligne 34) : la validation d'un exercice écrit l'ouverture du suivant (table
+// `soldes_reportes`, src/lib/reportDesSoldes.ts). Un exercice demandé s'ouvre donc par la reprise OU par les
+// soldes reportés de l'exercice validé qui le précède, comme à l'écran — jamais toutes années confondues : ils
+// reprennent les soldes des écritures de l'exercice validé, que ces totaux comptent déjà. Tant que l'exercice
+// précédent n'est pas validé, l'exercice demandé n'a pas d'ouverture (décision du cabinet) : `etatDeLOuverture`,
+// copiée de src/lib, le dit, et le résultat l'AVERTIT — sans quoi le modèle annoncerait pour la banque le seul
+// solde des mouvements de l'année. Le brouillon arrive donc ici en ENTIER : une écriture d'un exercice antérieur dit
+// qu'une activité précède l'exercice demandé.
 interface MouvementDate {
   date: string
   compte: string
   sens: "debit" | "credit"
   montant: number
+}
+
+// Un à-nouveau de la reprise, avec le fichier de balance dont il vient.
+interface ANouveauLu extends MouvementDate {
+  source_nom: string
+}
+
+// Ce qu'on dit de l'ouverture d'un exercice — copie de `etatDeLOuverture` (src/lib/reportDesSoldes.ts) : la reprise,
+// les soldes reportés de l'exercice validé qui le précède (`lignes` peut valoir zéro : tous ses comptes étaient
+// soldés), l'exercice dont la validation l'écrira, ou rien à dire — le premier exercice d'une activité, un exercice
+// antérieur à la reprise.
+type EtatDeLOuverture =
+  | { type: "reprise"; date: string; source: string }
+  | { type: "report"; depuis: number; lignes: number }
+  | { type: "en-attente"; exercice: number }
+  | { type: "sans-objet" }
+
+function etatDeLOuverture(
+  exercice: number,
+  d: {
+    reprise: readonly ANouveauLu[]
+    reportes: readonly { date: string }[]
+    anneesValidees: readonly number[]
+    ecritures: readonly { date: string }[]
+  },
+): EtatDeLOuverture {
+  const debut = `${exercice}-01-01`
+  const reprise = d.reprise.filter((a) => Number(a.date.slice(0, 4)) === exercice)
+  if (reprise.length > 0) return { type: "reprise", date: reprise[0].date, source: reprise[0].source_nom }
+  const dateReprise = d.reprise.length > 0 ? d.reprise.map((a) => a.date).sort()[0] : null
+  if (dateReprise !== null && debut < dateReprise) return { type: "sans-objet" }
+  if (d.anneesValidees.includes(exercice - 1)) {
+    return { type: "report", depuis: exercice - 1, lignes: d.reportes.filter((s) => s.date === debut).length }
+  }
+  const precede = dateReprise !== null || d.anneesValidees.some((a) => a < exercice) || d.ecritures.some((e) => e.date < debut)
+  return precede ? { type: "en-attente", exercice: exercice - 1 } : { type: "sans-objet" }
 }
 
 interface PeriodeDemandee {
@@ -2151,9 +2196,13 @@ function dansLaPeriode(date: string, periode: PeriodeDemandee): boolean {
 
 function balanceDesComptes(
   ecritures: readonly MouvementDate[],
-  aNouveaux: readonly MouvementDate[],
+  aNouveaux: readonly ANouveauLu[],
+  reportes: readonly MouvementDate[],
+  anneesValidees: readonly number[],
   periode: PeriodeDemandee,
 ) {
+  // L'exercice demandé : les périodes sont des années civiles entières (`bornesAnnee`).
+  const exercice = periode.date_debut ? Number(periode.date_debut.slice(0, 4)) : null
   // En centimes : une somme de flottants dérive sur une longue série, et ce total part tel quel.
   const parCompte = new Map<string, { debit: number; credit: number; ouverture: { debit: number; credit: number } | null }>()
   const cumuler = (l: MouvementDate, estANouveau: boolean) => {
@@ -2169,14 +2218,17 @@ function balanceDesComptes(
   for (const e of ecritures) if (dansLaPeriode(e.date, periode)) cumuler(e, false)
   const aNouveauxRetenus = aNouveaux.filter((a) => dansLaPeriode(a.date, periode))
   for (const a of aNouveauxRetenus) cumuler(a, true)
+  // Les soldes reportés n'ouvrent que l'exercice de leur date, et rien toutes années confondues.
+  const reportesRetenus = exercice === null ? [] : reportes.filter((r) => r.date === `${exercice}-01-01`)
+  for (const r of reportesRetenus) cumuler(r, true)
 
   const comptes = [...parCompte.entries()]
     .map(([compte, c]) => ({
       compte,
       total_debit: c.debit / 100,
       total_credit: c.credit / 100,
-      // Leur part, que `lister_ecritures` ne peut pas montrer : un à-nouveau n'est pas une écriture
-      // du brouillon. Sans elle, le modèle chercherait dans le journal un solde qui n'y est pas.
+      // Leur part, que `lister_ecritures` ne peut pas montrer : un à-nouveau — repris ou reporté — n'est pas une
+      // écriture du brouillon. Sans elle, le modèle chercherait dans le journal un solde qui n'y est pas.
       ...(c.ouverture ? { dont_a_nouveaux: { debit: c.ouverture.debit / 100, credit: c.ouverture.credit / 100 } } : {}),
     }))
     .sort((a, b) => a.compte.localeCompare(b.compte))
@@ -2185,14 +2237,21 @@ function balanceDesComptes(
   // la première ligne porte la date de toutes.
   const ouverture = aNouveaux[0]?.date ?? null
   const anterieures = !periode.date_debut && ouverture ? ecritures.filter((e) => e.date < ouverture).length : 0
+  // L'ouverture de l'exercice demandé ; rien toutes années confondues.
+  const etat = exercice === null ? null : etatDeLOuverture(exercice, { reprise: aNouveaux, reportes, anneesValidees, ecritures })
   return {
     comptes,
     a_nouveaux: ouverture ? { date: ouverture, compris_dans_les_totaux: aNouveauxRetenus.length > 0 } : null,
+    ouverture_de_l_exercice: etat,
     ...(anterieures > 0
       ? {
         avertissement: `${anterieures} écriture(s) du brouillon précèdent l'ouverture du ${ouverture} : leur effet est déjà dans les à-nouveaux, et ces totaux toutes années confondues le comptent une seconde fois sur les comptes de bilan. N'en tire aucun solde de bilan — redemande la balance d'un exercice (paramètre annee).`,
       }
-      : {}),
+      : etat?.type === "en-attente"
+        ? {
+          avertissement: `L'exercice ${exercice} n'a pas encore d'ouverture : elle s'écrira à la validation de l'exercice ${etat.exercice}. Ses comptes de bilan partent donc de zéro dans ces totaux — la banque n'y porte que les mouvements de ${exercice}. N'en tire aucun solde de bilan : redemande la balance toutes années confondues (sans annee), qui cumule les exercices.`,
+        }
+        : {}),
   }
 }
 // ── FIN BALANCE ──────────────────────────────────────────────────────────────────────────────────
@@ -2366,7 +2425,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lister_comptes",
-    description: "Balance des comptes, la même que l'onglet du même nom : chaque compte avec ses totaux débit et crédit, sans plafond. Pour un dossier repris d'un autre logiciel, les À-NOUVEAUX (soldes d'ouverture, qui ne sont pas des écritures du brouillon : lister_ecritures ne les montre pas) sont compris dans l'exercice qu'ils ouvrent et toutes années confondues ; dont_a_nouveaux donne leur part sur un compte. Les soldes ne sont pas encore reportés d'un exercice sur l'autre : un exercice postérieur à l'ouverture ne porte que ses propres mouvements. Renvoie { comptes, a_nouveaux (null sans reprise), avertissement? } : s'il y a un avertissement, lis-le avant de citer un solde.",
+    description: "Balance des comptes, la même que l'onglet du même nom : chaque compte avec ses totaux débit et crédit, sans plafond. Pour un dossier repris d'un autre logiciel, les À-NOUVEAUX (soldes d'ouverture, qui ne sont pas des écritures du brouillon : lister_ecritures ne les montre pas) sont compris dans l'exercice qu'ils ouvrent et toutes années confondues ; dont_a_nouveaux donne leur part sur un compte. La VALIDATION d'un exercice écrit l'ouverture du suivant (ses SOLDES REPORTÉS, journal AN) : un exercice demandé s'ouvre par la reprise ou par les soldes reportés de l'exercice validé qui le précède, compris dans ses totaux et dans dont_a_nouveaux — jamais toutes années confondues, où les écritures de l'exercice validé sont déjà. Tant que l'exercice précédent n'est pas validé, l'exercice demandé n'a pas d'ouverture et ses comptes de bilan partent de zéro. Renvoie { comptes, a_nouveaux (null sans reprise), ouverture_de_l_exercice (pour un exercice demandé : { type: reprise | report (depuis : l'exercice validé, lignes : leur nombre, zéro quand tous ses comptes étaient soldés) | en-attente (exercice : celui dont la validation l'écrira) | sans-objet }, null toutes années confondues), avertissement? } : s'il y a un avertissement, lis-le avant de citer un solde.",
     input_schema: {
       type: "object",
       properties: { annee: { type: "integer", description: "Filtre sur une année (ex: 2025) ; toutes les années si omis." } },
@@ -2514,19 +2573,25 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // n'est pas une liste plus courte, c'est un CHIFFRE FAUX, annoncé en français à un comptable qui
     // n'ira pas vérifier. La requête se CONSTRUIT dans la fermeture, sinon la tranche s'appliquerait
     // à un constructeur déjà consommé.
-    const lu = await lireTout<MouvementDate>((debut, fin) => {
-      let q = admin.from("ecritures_brouillon").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId)
-      if (periode.date_debut) q = q.gte("date", periode.date_debut).lte("date", periode.date_fin!)
-      return q.order("id").range(debut, fin)
-    })
+    // Tout le brouillon, SANS filtre de période : c'est `balanceDesComptes` qui retient l'exercice demandé, et une
+    // écriture d'un exercice antérieur lui dit qu'une activité le précède — donc qu'il attend son ouverture.
+    const lu = await lireTout<MouvementDate>((debut, fin) =>
+      admin.from("ecritures_brouillon").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(debut, fin))
     if (!lu.complete) return { erreur: `Comptes illisibles (${lu.motif}) — ne conclus rien sur les totaux de ce dossier.` }
-    // Lus SANS filtre de période, volontairement : c'est `balanceDesComptes` qui les rattache à
-    // l'exercice qu'ils ouvrent (voir le bloc BALANCE). Une ouverture incomplète fausse les soldes de
-    // bilan, la banque la première : même refus que pour le brouillon.
-    const luANouveaux = await lireTout<MouvementDate>((debut, fin) =>
-      admin.from("a_nouveaux").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId).order("compte").order("id").range(debut, fin))
+    // Lus SANS filtre de période, volontairement : c'est `balanceDesComptes` qui les rattache à l'exercice qu'ils
+    // ouvrent (voir le bloc BALANCE). Une ouverture incomplète — reprise ou soldes reportés — fausse les soldes de
+    // bilan, la banque la première, et des exercices validés lus en partie diraient en attente une ouverture écrite :
+    // même refus que pour le brouillon.
+    const luANouveaux = await lireTout<ANouveauLu>((debut, fin) =>
+      admin.from("a_nouveaux").select("date, compte, sens, montant, source_nom", { count: "exact" }).eq("dossier_id", dossierId).order("compte").order("id").range(debut, fin))
     if (!luANouveaux.complete) return { erreur: `À-nouveaux illisibles (${luANouveaux.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
-    return balanceDesComptes(lu.lignes, luANouveaux.lignes, periode)
+    const luReportes = await lireTout<MouvementDate>((debut, fin) =>
+      admin.from("soldes_reportes").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId).order("date").order("compte").order("id").range(debut, fin))
+    if (!luReportes.complete) return { erreur: `Soldes reportés illisibles (${luReportes.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
+    const luValides = await lireTout<{ annee: number }>((debut, fin) =>
+      admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(debut, fin))
+    if (!luValides.complete) return { erreur: `Exercices validés illisibles (${luValides.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
+    return balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode)
   }
 
   if (nom === "lister_ecritures") {
@@ -2987,6 +3052,7 @@ Règles impératives :
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (445710) et déductible (445660, 445620) de la période, porte la TVA à payer au 445510 TVA à décaisser — un crédit reporté au 445670, un remboursement demandé au 445830 — et l'arrondi à l'euro de la CA3 au 658000 ou au 758000. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le 445510 face au 512000 ; le REMBOURSEMENT d'un crédit par le Trésor crédite le 445830 : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
+- La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== "108000" ? "le résultat y attend son affectation, au 120000 pour un bénéfice et au 129000 pour une perte" : "le compte de l'exploitant et le résultat passent au 101000 Capital individuel, et l'exercice repart d'un compte de l'exploitant vide"}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
