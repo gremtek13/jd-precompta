@@ -216,6 +216,15 @@ h3 { font-size: 1.02rem; }
 .badge-ok { background: var(--color-primary-light); color: var(--color-primary); }
 .badge-neutral { background: var(--color-neutral-bg); color: var(--color-neutral-text); }
 .badge-danger { background: var(--color-danger-light); color: var(--color-danger); }
+/* Une pastille d'état tient sur UNE ligne dans la colonne d'un tableau (08/10/2026). La mise en page automatique d'une
+   table réduit d'abord ce qui peut se couper, et « Super PDP · Issue inconnue » en devenait un disque de quatre lignes
+   (vu sur capture, 1 280 px, volet ouvert) : sa largeur propre est désormais la largeur minimale de sa colonne, et ce sont
+   les noms de clients, qui passent à la ligne entre deux mots, qui s'écrasent. Repliée en fiche, la ligne reprend la
+   règle des pastilles de téléphone (voir `td .badge`) — un téléphone n'a pas toujours la place du plus long libellé. */
+.badge-une-ligne { white-space: nowrap; }
+/* Plusieurs pastilles dans une même cellule (« Validée », puis l'état de la transmission) : l'une sous l'autre, alignées comme
+   le reste de la colonne — à gauche dans un tableau, à droite une fois repliée en fiche, où toutes les valeurs le sont. */
+.pastilles-empilees { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 
 /* ---------- Tableaux ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -919,6 +928,22 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   /* La cellule fusionnée qui ne porte que l'intitulé du total fait doublon une fois empilée : le
      montant, juste en dessous, annonce déjà le sien. */
   .table-empilable tfoot td[colspan] { display: none; }
+
+  /* La cellule des BOUTONS d'une ligne (`.td-actions`, qui les fait déjà passer à la ligne) : ils se suivent à gauche, sans
+     libellé. `space-between`, fait pour une valeur en face de son libellé, les écarterait au bout de chaque ligne. Sans
+     bouton — une transmission dont rien n'est plus à faire —, la cellule ne montre rien : ni ses marges, ni la ligne de
+     séparation de la cellule d'avant, qui doublerait alors le bord de la fiche. */
+  .table-empilable td.td-actions { justify-content: flex-start; gap: 6px; }
+  .table-empilable td.td-actions:empty { display: none; }
+  .table-empilable td:has(+ td.td-actions:empty) { border-bottom: none; }
+
+  /* Une pastille d'état tient à la place qu'a la ligne : elle ne force plus sa largeur (voir `.badge-une-ligne`). */
+  .table-empilable .badge-une-ligne { white-space: normal; }
+  .table-empilable .pastilles-empilees { align-items: flex-end; }
+
+  /* Une carte SANS marge intérieure (la liste des factures : `.card` à `padding: 0`, pour que l'en-tête du tableau aille
+     jusqu'à son bord) : repliées, les fiches y toucheraient la bordure. Le jeu est celui du repli étroit plus bas. */
+  .table-empilable-en-carte { padding: 12px 12px 0; }
 
   /* Un tableau qu'on REMPLIT : le champ occupe ce qui reste, à droite du libellé. `min-width: 0` sans quoi
      un `input` refuse de descendre sous sa largeur intrinsèque et repousse le libellé hors de l'écran. */
