@@ -713,6 +713,12 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 
 ## Règles importantes pour les futures modifications
 
+- **Délégation aux sous-agents** (`.claude/agents/`, demande du cabinet du 08/10/2026) : pour chaque demande, la session
+  choisit d'elle-même le sous-agent adapté — `architecte` (Opus 5.5, effort maximal) pour tout ce qui touche la
+  structure, la base, la sécurité ou la logique métier ; `dev` (Opus 5.5, effort élevé) pour les fonctionnalités ;
+  `retouches` (Sonnet 5.5) pour le cosmétique. En cas de doute, l'`architecte`. Elle dit au cabinet, en une ligne,
+  quel agent elle utilise, et garde l'orchestration : commits, demandes de fusion, fusion, déploiements, Notion. Les
+  exécutions mécaniques (barrière, essais, banc) peuvent aller à un agent économe, qui ne rend que les chiffres.
 - Avant toute modification de schéma ou de policy RLS, inspecter l'état réel en base (`list_tables`, `execute_sql`) —
   jamais se fier à ce document ou à une session précédente.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
