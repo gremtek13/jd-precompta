@@ -126,6 +126,34 @@ function issueDeLEnvoi(statut: number, corps: unknown):
 }
 // ── FIN ENVOI ───────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT SUIVI ─────────────────────────────────────────────────────────────────────────────────
+// Ce que l'historique d'une facture chez Super PDP dit de sa transmission. Les codes « fr: » sont ceux que publient les
+// spécifications externes de la DGFiP : le statut d'une facture (§ 3.6.4, tableau 8) — 213 « Rejetée », un contrôle de
+// la plateforme d'émission ou de réception a trouvé une anomalie ; 202 « Reçue par la plateforme » du destinataire, et
+// tout ce qui la suit — et celui d'un flux (§ 3.4.4, tableau 2) : 501 « Irrecevable ». Un rejet rend la transmission
+// REJETÉE ; une réception la rend ACCEPTÉE, et ce qu'en fait l'acheteur (approuvée, refusée, encaissée) se lit dans
+// l'historique, pas sur elle. Un code propre à Super PDP ne décide que s'il est sans ambiguïté : « api:invalid », la
+// facture rejetée avant l'envoi. Tout le reste — déposée, émise, un code inconnu — la laisse déposée.
+const REJETS_SUPERPDP = new Set(["fr:213", "fr:501", "api:invalid"])
+const RECEPTIONS_SUPERPDP = new Set([
+  "fr:202", "fr:203", "fr:204", "fr:205", "fr:206", "fr:207", "fr:208", "fr:209", "fr:210", "fr:211", "fr:212",
+])
+
+function suiteDeLHistorique(evenements: { id: number; status_code: string; status_text: string }[]):
+  { etat: "accepte" | "rejete"; detail: string | null } | null {
+  const tries = [...evenements].sort((a, b) => a.id - b.id)
+  // Un rejet l'emporte sur une réception, quel que soit leur ordre : une facture rejetée s'annule par un avoir interne.
+  const rejet = tries.find((e) => REJETS_SUPERPDP.has(e.status_code))
+  if (rejet) {
+    const texte = typeof rejet.status_text === "string"
+      ? rejet.status_text.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, 300)
+      : ""
+    return { etat: "rejete", detail: `Super PDP : ${rejet.status_code}${texte ? ` — ${texte}` : ""}.` }
+  }
+  return tries.some((e) => RECEPTIONS_SUPERPDP.has(e.status_code)) ? { etat: "accepte", detail: null } : null
+}
+// ── FIN SUIVI ───────────────────────────────────────────────────────────────────────────────────
+
 // Les trois types que les blocs du générateur nomment, déclarés comme src/lib/types.ts les déclare
 // (copiesFacturation.test.ts le vérifie).
 type StatutTva = 'redevable' | 'franchise' | 'exonere'
@@ -971,11 +999,28 @@ async function actualiserStatut(
     }
   }
   const dernier = [...evenements].sort((a, b) => a.id - b.id).at(-1) ?? null
-  const { error: erreurStatut } = await admin.from("factures_emises").update({ superpdp_dernier_statut: dernier?.status_code ?? null }).eq("id", factureId)
+  // Le numéro se repose avec le statut : un envoi réussi dont l'écriture du numéro a échoué le retrouve ici.
+  const { error: erreurStatut } = await admin.from("factures_emises")
+    .update({ superpdp_dernier_statut: dernier?.status_code ?? null, superpdp_invoice_id: superpdpInvoiceId }).eq("id", factureId)
   if (erreurStatut) {
     console.error(`[superpdp-emit] statut « ${dernier?.status_code ?? "aucun"} » non écrit sur la facture ${factureId} : ${erreurStatut.message}`)
   }
   return { dernierStatut: dernier?.status_code ?? null, evenements }
+}
+
+// Ce que l'historique dit se reporte sur la transmission DÉPOSÉE de ce numéro (`suiteDeLHistorique`). Rejetée ou
+// acceptée, elle ne change plus — le déclencheur le garantit —, et le report ne vaut que tant qu'elle est déposée :
+// deux actualisations concurrentes ne s'écrasent pas. Non bloquant, comme l'historique : la facture est partie, et une
+// prochaine actualisation le refera ; journalisé, sans rien de la facture.
+async function reporterSurLaTransmission(
+  admin: ReturnType<typeof createClient>, factureId: string, superpdpInvoiceId: number, evenements: InvoiceEvent[],
+): Promise<void> {
+  const suite = suiteDeLHistorique(evenements)
+  if (!suite) return
+  const { error } = await admin.from("transmissions_factures")
+    .update({ etat: suite.etat, detail: suite.detail })
+    .eq("facture_id", factureId).eq("canal", "superpdp").eq("flux_id", String(superpdpInvoiceId)).eq("etat", "depose")
+  if (error) console.error(`[superpdp-emit] statut « ${suite.etat} » non reporté sur la transmission : ${error.message}`)
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -1118,15 +1163,32 @@ Deno.serve(async (req: Request) => {
     fichier = { xml: cii.xml, sha256: await empreinteSha256(new TextEncoder().encode(cii.xml)) }
   }
 
+  // Le numéro de la facture chez Super PDP : celui qu'elle porte ou, si son écriture a échoué après un envoi réussi,
+  // celui que sa transmission a gardé — sans quoi elle ne se suivrait plus.
+  let numeroSuperPdp = facture.superpdp_invoice_id
+  if (action === "actualiser" && !numeroSuperPdp) {
+    const { data: transmise, error: erreurTransmise } = await admin
+      .from("transmissions_factures")
+      .select("flux_id")
+      .eq("facture_id", factureId).eq("canal", "superpdp").not("flux_id", "is", null)
+      .order("cree_le", { ascending: false }).limit(1).maybeSingle()
+    if (erreurTransmise) {
+      return json({ error: `La transmission de la facture n'a pas pu être lue (${erreurTransmise.message}).` }, 503)
+    }
+    const lu = Number(transmise?.flux_id)
+    if (Number.isSafeInteger(lu) && lu > 0) numeroSuperPdp = lu
+  }
+
   try {
     const token = await obtenirToken(creds.client_id, creds.client_secret)
     const headers = { Authorization: `Bearer ${token}` }
 
     if (action === "actualiser") {
-      if (!facture.superpdp_invoice_id) {
+      if (!numeroSuperPdp) {
         return json({ error: "Cette facture n'a jamais été transmise via Super PDP." }, 400)
       }
-      const { dernierStatut, evenements } = await actualiserStatut(admin, headers, dossierId, factureId, facture.superpdp_invoice_id)
+      const { dernierStatut, evenements } = await actualiserStatut(admin, headers, dossierId, factureId, numeroSuperPdp)
+      await reporterSurLaTransmission(admin, factureId, numeroSuperPdp, evenements)
       return json({ ok: true, dernier_statut: dernierStatut, evenements })
     }
 
@@ -1221,6 +1283,7 @@ Deno.serve(async (req: Request) => {
     // Relit immédiatement l'état (plutôt que de se fier au seul champ `events`, optionnel, de la
     // réponse de création) pour afficher un premier statut sans attendre un clic sur "Actualiser".
     const { dernierStatut, evenements } = await actualiserStatut(admin, headers, dossierId, factureId, issue.id)
+    await reporterSurLaTransmission(admin, factureId, issue.id, evenements)
 
     return json({ ok: true, superpdp_invoice_id: issue.id, dernier_statut: dernierStatut, evenements })
   } catch (err) {

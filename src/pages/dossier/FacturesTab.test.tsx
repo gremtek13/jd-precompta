@@ -320,6 +320,13 @@ describe('FacturesTab — la transmission de chaque facture', () => {
     expect(within(await ligne('JAMAIS PARTIE')).queryByText(/·/)).toBeNull()
   })
 
+  it('partie par Super PDP : le cycle de vie qu’il rend en dit plus que la transmission', async () => {
+    poser([facture({ superpdp_invoice_id: 42, superpdp_dernier_statut: 'fr:210' })])
+    faux.transmissions = [envoi({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'accepte', flux_id: '42' })]
+    monter()
+    within(await ligne('CLINIQUE DU PARC')).getByText('Super PDP · Refusée')
+  })
+
   it('une lecture refusée des transmissions se dit à part, et la liste des factures reste', async () => {
     poser([facture()])
     faux.refusTransmissions = 'JWT expired'

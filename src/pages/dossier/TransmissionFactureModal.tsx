@@ -103,7 +103,9 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
     }
     lireTransmissions()
     lireCanaux()
-    if (facture.superpdp_invoice_id != null) lireEvenements()
+    // L'historique de Super PDP se lit toujours : la facture peut y être partie sans en porter le numéro, que sa
+    // transmission a gardé si son écriture a échoué après l'envoi. Il ne s'affiche que pour une facture partie par lui.
+    lireEvenements()
   }, [facture.id])
 
   // UN SEUL VERROU pour toutes les actions de la fenêtre, posé avant le `try` et relâché dans le `finally`, APRÈS la
@@ -216,6 +218,9 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   const active = siennes?.find(estActive) ?? null
   // Partie par Super PDP avant que chaque envoi laisse sa transmission : elle ne repart pas (les fonctions le refusent).
   const avantLesTransmissions = facture.superpdp_invoice_id != null && siennes != null && !siennes.some((t) => t.canal === 'superpdp')
+  // Partie par Super PDP : par le numéro qu'elle porte, ou par celui que sa transmission a gardé si son écriture a
+  // échoué après l'envoi — superpdp-emit le retrouve, et la suit de même.
+  const chezSuperPdp = facture.superpdp_invoice_id != null || (siennes?.some((t) => t.canal === 'superpdp' && t.flux_id != null) ?? false)
   const refus = lignes != null && origine !== undefined
     ? refusEmission(donneesDeLaFacture(facture, lignes, { statut_tva: statutTva, article_exoneration: articleExoneration }, origine, aujourdHuiSql()))
     : null
@@ -287,7 +292,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               </div>
             )}
 
-            {facture.superpdp_invoice_id != null && (
+            {chezSuperPdp && (
               <div className="field">
                 <label>Historique chez Super PDP</label>
                 {evenementsErreur ? (
@@ -350,7 +355,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={enCours != null}>Fermer</button>
-          {facture.superpdp_invoice_id != null && (
+          {chezSuperPdp && (
             <button type="button" className="btn btn-outline" disabled={enCours != null} onClick={actualiserSuperPdp}>
               {enCours === 'actualiser' ? 'Actualisation…' : 'Actualiser le statut Super PDP'}
             </button>

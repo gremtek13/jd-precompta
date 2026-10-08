@@ -240,6 +240,25 @@ describe('TransmissionFactureModal — une facture déjà partie', () => {
   })
 })
 
+// UNE FACTURE PARTIE PAR SUPER PDP SANS EN PORTER LE NUMÉRO : l'envoi a réussi, l'écriture du numéro a échoué, et sa
+// transmission l'a gardé. Elle se suit quand même — superpdp-emit retrouve le numéro par la transmission.
+describe('TransmissionFactureModal — partie par Super PDP sans en porter le numéro', () => {
+  it('son historique et « Actualiser » restent offerts', async () => {
+    monter({ transmissions: [transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'depose', flux_id: '42' })], superpdp: true })
+    const bouton = await screen.findByRole('button', { name: 'Actualiser le statut Super PDP' })
+    expect(screen.getByText('Historique chez Super PDP')).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.appels).toEqual([{ nom: 'superpdp-emit', body: { dossierId: 'd1', factureId: 'f1', action: 'actualiser' } }])
+  })
+
+  it('une facture jamais partie par Super PDP n’en montre rien', async () => {
+    monter({ transmissions: [transmission({ etat: 'depose' })], superpdp: true })
+    await screen.findByText(/La plateforme l’a reçue/)
+    expect(screen.queryByText('Historique chez Super PDP')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Actualiser le statut Super PDP' })).toBeNull()
+  })
+})
+
 describe('TransmissionFactureModal — un avoir', () => {
   // Deux jours crédités : la base garde l'avoir et ses lignes négatifs.
   const credit = [ligne({ designation: 'Mission de conseil — septembre 2026', quantite: -2, prix_unitaire_ht: 85.5 })]

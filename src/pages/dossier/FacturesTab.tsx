@@ -193,6 +193,17 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                         : <span className="badge badge-warning">Brouillon</span>}
                       {f.statut === 'validee' && (() => {
                         const courante = transmissionCourante(transmissions, f.id)
+                        // Partie par Super PDP, la facture a un cycle de vie que Super PDP rend (reçue, refusée par
+                        // l'acheteur, encaissée…) : il en dit plus que l'état de sa transmission.
+                        if (courante?.canal === 'superpdp' && f.superpdp_dernier_statut) {
+                          return (
+                            <div style={{ marginTop: 4 }}>
+                              <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
+                                Super PDP · {libelleStatutSuperpdp(f.superpdp_dernier_statut)}
+                              </span>
+                            </div>
+                          )
+                        }
                         if (courante) {
                           return (
                             <div style={{ marginTop: 4 }}>
