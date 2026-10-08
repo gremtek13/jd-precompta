@@ -3,7 +3,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { CAS_DE_REFUS, donnees, EXEMPLES } from '../test/facturesCii'
 import * as cii from './factureCii'
-import type { FactureCii, LigneCii } from './factureCii'
+import type { FactureCii, FactureEnBase, LigneCii } from './factureCii'
 import * as montants from './montantsFacture'
 import * as statut from './statutTva'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from './types'
@@ -201,7 +201,38 @@ function cablage(source: string, blocs: string[], ou: string) {
   expect(code, `${ou} : le gestionnaire n'appelle pas factureCii`).toMatch(/\bfactureCii\(/)
 }
 
+// Les colonnes d'une facture en base que le générateur lit, et elles seules : le compilateur refuse ici une clé de trop
+// ou de moins. Une colonne que la fonction ne lit pas arriverait `undefined` au générateur, qui la tiendrait pour vide
+// sans rien dire — une option pour les débits, une adresse de livraison perdues en route.
+const LUES_PAR_LE_GENERATEUR: Record<keyof FactureEnBase, true> = {
+  numero: true, statut: true, type: true, date_emission: true, date_echeance: true, tiers_nom: true, tiers_adresse: true,
+  tiers_siret: true, montant_ht: true, montant_tva: true, montant_ttc: true, mentions_legales: true, type_client: true,
+  tiers_siren: true, tiers_adresse_electronique: true, code_service: true, numero_engagement: true, nature_operation: true,
+  date_prestation: true, periode_debut: true, periode_fin: true, livraison_adresse: true, livraison_code_postal: true,
+  livraison_ville: true, livraison_pays: true, option_debits: true, emetteur_nom: true, emetteur_siret: true,
+  emetteur_adresse: true,
+}
+
+/** Les colonnes d'un `const NOM = "…" + "…"`, telles que la fonction les passe à `.select(`. */
+function colonnesDe(source: string, nom: string, ou: string): string[] {
+  const m = new RegExp(`^const ${nom} = ((?:"[^"]*"\\s*\\+\\s*)*"[^"]*")`, 'm').exec(source)
+  expect(m, `${ou} : la liste ${nom} introuvable`).not.toBeNull()
+  return [...(m as RegExpExecArray)[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]).join('').split(',').map((c) => c.trim())
+}
+
 describe('les blocs de facturation recopiés dans les Edge Functions', () => {
+  it.each(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)))(
+    '%s : lit en base chaque colonne que le générateur lit, et pas les notes internes',
+    (fonction) => {
+      const source = sourceDe(fonction)
+      expect(source, fonction).toContain('.select(COLONNES_FACTURE)')
+      const lues = colonnesDe(source, 'COLONNES_FACTURE', fonction)
+      for (const c of Object.keys(LUES_PAR_LE_GENERATEUR)) expect(lues, `${fonction} : ${c}`).toContain(c)
+      // Une note interne n'a rien à faire dans ce que la fonction transmet : elle ne la lit même pas.
+      expect(lues).not.toContain('notes')
+    },
+  )
+
   it('plancher : les deux fonctions qui transmettent une facture portent le générateur', () => {
     expect(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR))).toEqual(expect.arrayContaining(['plateforme-agreee', 'superpdp-emit']))
   })

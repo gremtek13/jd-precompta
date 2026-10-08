@@ -74,7 +74,7 @@ const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret
 // Une facture à transmettre, telle que le générateur la lit, avec l'émetteur qu'elle a figé et la facture qu'un avoir
 // corrige.
 const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emission, date_echeance, tiers_nom, tiers_adresse, " +
-  "tiers_siret, montant_ht, montant_tva, montant_ttc, mentions_legales, notes, type_client, tiers_siren, " +
+  "tiers_siret, montant_ht, montant_tva, montant_ttc, mentions_legales, type_client, tiers_siren, " +
   "tiers_adresse_electronique, code_service, numero_engagement, nature_operation, date_prestation, periode_debut, " +
   "periode_fin, livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays, option_debits, emetteur_nom, " +
   "emetteur_siret, emetteur_adresse, superpdp_invoice_id"
@@ -1303,7 +1303,6 @@ export interface FactureCii {
   montant_tva: number
   montant_ttc: number
   mentions_legales: string | null
-  notes: string | null
   type_client: 'assujetti' | 'organisme_public' | 'non_assujetti' | 'etranger' | null
   tiers_siren: string | null
   tiers_adresse_electronique: string | null
@@ -1765,8 +1764,6 @@ export function factureCii(d: DonneesCii): ResultatCii {
     ? { lignes: [uneLigne(f.livraison_adresse)], codePostal: f.livraison_code_postal, ville: f.livraison_ville, pays: f.livraison_pays }
     : null
 
-  const notes = [f.notes, f.mentions_legales].filter((t): t is string => !!t && t.trim() !== '')
-
   const lignes = m.lignes.map((l) => el('ram:IncludedSupplyChainTradeLineItem', [
     el('ram:AssociatedDocumentLineDocument', [el('ram:LineID', String(l.numero))]),
     el('ram:SpecifiedTradeProduct', [el('ram:Name', uneLigne(l.libelle))]),
@@ -1793,7 +1790,10 @@ export function factureCii(d: DonneesCii): ResultatCii {
       el('ram:ID', f.numero as string),
       el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
       dateCii('ram:IssueDateTime', f.date_emission),
-      ...notes.map((t) => el('ram:IncludedNote', [el('ram:Content', t.trim())])),
+      // Seules les mentions légales partent avec la facture (BT-22). Les notes sont INTERNES : l'écran le dit en les
+      // saisissant — « n'apparaissent pas sur la facture », et le motif d'un avoir, « note interne » —, l'aperçu ne les
+      // imprime pas, et ce que le cabinet y écrit pour lui-même n'a rien à faire chez le client.
+      f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [
       ...lignes,
