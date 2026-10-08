@@ -973,6 +973,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   .table-empilable-etroite tr,
   .table-empilable-etroite td { display: block; width: 100%; }
   .table-empilable-etroite { padding: 12px; }
+  /* L'aperçu d'une facture (voir FactureApercu) a déjà sa marge intérieure : le jeu que la balance réclame, faute de
+     marge, y ferait rentrer les fiches de 12 pixels de plus que le reste du document. */
+  .facture-imprimable .table-empilable-etroite { padding: 0; }
 
   .table-empilable-etroite tr {
     border: 1px solid var(--color-border);
@@ -1709,17 +1712,53 @@ a.nav-menu-item { text-decoration: none; }
   .colonnes-legende { gap: 12px; }
 }
 
-/* Impression d'une facture (voir FactureApercu) — ne garder que le contenu de la facture, en pleine
-   page. Technique standard "n'imprimer qu'un seul élément". */
+/* LA MISE EN PAGE D'ÉCRAN DE L'APERÇU D'UNE FACTURE VIT ICI, AVANT LE BLOC D'IMPRESSION (08/10/2026). Un style en ligne
+   l'emporte sur toute règle de feuille, `@media print` comprise : le `display: flex` posé en ligne sur la rangée des boutons
+   les faisait imprimer sur chaque facture (depuis le 08/09/2026), et le voile `fixed`, la hauteur maximale et le défilement
+   de la carte, en ligne eux aussi, la faisaient imprimer tronquée — sans ses totaux ni ses mentions — et recopiée sur chaque
+   page. Ces règles ont le même poids que celles du bloc d'impression, qui les suit : l'impression gagne sans `!important`.
+   Une mise en page de l'aperçu ne repasse pas en ligne (FactureApercu.test.tsx le garde, ordre des règles compris). */
+.facture-apercu-voile {
+  position: fixed; inset: 0; z-index: 50; padding: 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.facture-imprimable { width: min(720px, 95vw); max-height: 92vh; overflow-y: auto; }
+.facture-imprimable-actions { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 16px; }
+
+/* Le tableau des lignes a sa propre disposition. Le bloc téléphone (`@media (max-width: 720px)`) n'est pas réservé à l'écran :
+   la zone imprimable d'une page A4 mesure environ 718 pixels dans Chromium, donc ses règles s'appliquent aussi à la facture
+   IMPRIMÉE — dont `table-layout: fixed`, qui donne six colonnes égales : la désignation tenait dans un sixième de la page
+   (onze lignes pour une phrase) pendant que les colonnes de chiffres gaspillaient leur place. À l'écran, entre 580 et 720
+   pixels, la même règle coupait « DÉSIGNATIO / N ». La disposition automatique laisse à la désignation ce que les chiffres
+   ne prennent pas ; sous 520 pixels, la ligne est une fiche (`table-empilable-etroite`) et la disposition n'y change rien. */
+.facture-imprimable table { table-layout: auto; }
+/* Seule la désignation passe à la ligne. Le même bloc téléphone laisse casser n'importe où (`word-break: break-word`), et la
+   disposition automatique retire d'abord la place à ce qui peut se couper : sans ceci, elle réduisait les colonnes de chiffres
+   à leur lettre — « 46,0 / 0 € », « TV / A », « 1 840, / 00 € », mesuré sur le PDF A4 — pour donner toute la page à la
+   désignation. Un chiffre garde sa largeur, et ses colonnes celle de leur plus long montant. */
+.facture-imprimable th:not(:first-child), .facture-imprimable td:not(:first-child) { white-space: nowrap; }
+
+/* Impression d'une facture (voir FactureApercu) — ne garder que le contenu de la facture, UNE fois et en entier. La technique
+   « n'imprimer qu'un seul élément » cachait le reste par `visibility`, qui lui laisse sa place : il fabriquait des pages
+   blanches, et le voile `position: fixed` qui porte la facture se répète sur chaque page en coupant ce qui dépasse la
+   première — mesuré en PDF A4, une facture de 91 lignes sortait en deux pages identiques, tronquée après ses quatre
+   premières lignes, sans total ni mentions légales. Ici, ce qui ne contient pas la facture et n'en fait pas partie
+   disparaît (`display: none`), la chaîne qui la porte redevient un simple flux, et la carte s'y pose : elle se pagine comme
+   un texte, l'en-tête de son tableau se répétant en haut de chaque page. */
 @media print {
   body { background: #fff; }
   body * { visibility: hidden; }
   .facture-imprimable, .facture-imprimable * { visibility: visible; }
-  .facture-imprimable {
-    position: absolute; top: 0; left: 0; width: 100%;
-    box-shadow: none; border: none; max-height: none; overflow: visible;
+  body *:not(:has(.facture-imprimable)):not(.facture-imprimable):not(.facture-imprimable *) { display: none; }
+  body *:has(.facture-imprimable) {
+    display: block; position: static; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: none; box-shadow: none; overflow: visible;
   }
+  .facture-imprimable { position: static; width: auto; max-height: none; overflow: visible; box-shadow: none; border: none; }
   .facture-imprimable-actions { display: none; }
+  /* Une ligne ne se coupe pas entre deux pages. */
+  .facture-imprimable tr { break-inside: avoid; }
 }
 
 /* ── Fil de précisions sur une pièce (voir components/FilCommentaires) ────────────────────────── */

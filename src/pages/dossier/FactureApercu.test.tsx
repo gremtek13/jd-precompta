@@ -1,4 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureApercu from './FactureApercu'
 import { MENTIONS_VIDES } from '../../test/factures'
@@ -10,18 +13,21 @@ import type { FactureEmise, StatutTva } from '../../lib/types'
 // porte — le SIREN du client, la catégorie de l'opération, sa date ou sa période, l'adresse de livraison, l'option pour
 // les débits, ce qu'un organisme public demande —, et seulement elles. Ses notes, internes, n'y paraissent jamais.
 
-vi.mock('../../lib/supabase', () => {
-  const lignes = [{ id: 'l1', facture_id: 'f1', ordre: 0, designation: 'Mission de conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
-  return {
-    supabase: {
-      from: (table: string) => {
-        if (table !== 'facture_lignes') throw new Error(`Table non attendue dans ce test : ${table}`)
-        const requete = { select: () => requete, eq: () => requete, order: () => Promise.resolve({ data: lignes, error: null }) }
-        return requete
-      },
-    },
-  }
+// Les lignes que la lecture rend : une seule par défaut, qu'un cas remplace avant de monter l'aperçu.
+const faux = vi.hoisted(() => {
+  const uneLigne = { id: 'l1', facture_id: 'f1', ordre: 0, designation: 'Mission de conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }
+  return { uneLigne, lignes: [uneLigne] as unknown[] }
 })
+
+vi.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: (table: string) => {
+      if (table !== 'facture_lignes') throw new Error(`Table non attendue dans ce test : ${table}`)
+      const requete = { select: () => requete, eq: () => requete, order: () => Promise.resolve({ data: faux.lignes, error: null }) }
+      return requete
+    },
+  },
+}))
 
 function validee(o: Partial<FactureEmise> = {}): FactureEmise {
   return {
@@ -34,7 +40,7 @@ function validee(o: Partial<FactureEmise> = {}): FactureEmise {
   }
 }
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); faux.lignes = [faux.uneLigne] })
 
 const REDEVABLE: DossierCii = { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }
 
@@ -78,5 +84,58 @@ describe('FactureApercu — les mentions imprimées', () => {
       expect(imprime, `${statut_tva} ${numero_tva_attribue}`).toBe(attendu && `N° TVA intracommunautaire ${attendu}`)
       cleanup()
     }
+  })
+})
+
+// L'IMPRESSION NE DÉFAIT PAS UN STYLE EN LIGNE (08/10/2026). Un attribut `style` l'emporte sur toute règle de feuille, `@media
+// print` comprise : le `display: flex` posé en ligne sur la rangée des boutons faisait imprimer « Fermer » et « Imprimer /
+// Enregistrer en PDF » sur chaque facture, depuis le premier commit (08/09/2026) ; le voile `fixed`, la hauteur maximale et le
+// défilement de la carte, en ligne eux aussi, la faisaient imprimer tronquée et recopiée sur chaque page. jsdom ne rend pas
+// l'impression, mais il voit CE défaut-là — un attribut `style` — et, dans la feuille, l'ORDRE des règles : celles de l'écran,
+// du même poids que le bloc d'impression, doivent le précéder pour que celui-ci gagne sans `!important`.
+describe('FactureApercu — la mise en page de l’écran ne s’impose pas à l’impression', () => {
+  it('la rangée des boutons, la carte et le voile ne portent aucun style en ligne', async () => {
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
+    await screen.findByText('Mission de conseil')
+    const carte = document.querySelector<HTMLElement>('.facture-imprimable')!
+    const actions = carte.querySelector<HTMLElement>('.facture-imprimable-actions')!
+    // Le défaut d'origine : un `display` en ligne sur la rangée des boutons.
+    expect(actions.style.display, 'rangée des boutons').toBe('')
+    expect(actions.getAttribute('style'), 'rangée des boutons').toBeNull()
+    expect(carte.getAttribute('style'), 'carte').toBeNull()
+    expect(carte.parentElement!.getAttribute('style'), 'voile').toBeNull()
+    expect(carte.parentElement!.className).toBe('facture-apercu-voile')
+  })
+
+  it('index.css pose la mise en page de l’écran avant le bloc d’impression, qui cache la rangée des boutons', () => {
+    // Pas de `new URL('../../index.css', import.meta.url)` : Vite l'écrit en URL d'asset (« /src/index.css »), qui n'existe pas
+    // sur le disque, et dans jsdom `URL` n'est de toute façon pas celui de Node.
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../index.css'), 'utf8')
+    // Le bloc lui-même (« @media print { »), non les commentaires qui en parlent.
+    const impression = css.indexOf('@media print {')
+    expect(impression, 'bloc d’impression introuvable').toBeGreaterThan(-1)
+    for (const regle of ['.facture-apercu-voile {', '.facture-imprimable {', '.facture-imprimable-actions {']) {
+      const ecran = css.indexOf(regle)
+      expect(ecran, `${regle} (écran) introuvable`).toBeGreaterThan(-1)
+      expect(ecran, `${regle} doit précéder le bloc d’impression`).toBeLessThan(impression)
+    }
+    expect(css.slice(impression)).toMatch(/\.facture-imprimable-actions \{ display: none; \}/)
+  })
+})
+
+// UN TAUX SE LIT À LA FRANÇAISE (08/10/2026) : « 5,5 % » — virgule décimale, et non « 5.5 % » — avec une espace INSÉCABLE, sans
+// quoi « 0 % » passait sur deux lignes (« 0 » puis « % ») dans une colonne étroite, à l'écran comme à l'impression. Le texte
+// se lit sur `textContent`, non sur `getByText` : son normaliseur remplace l'espace insécable par une espace ordinaire.
+describe('FactureApercu — le taux de TVA imprimé', () => {
+  it('s’écrit avec une virgule décimale et une espace insécable', async () => {
+    faux.lignes = [
+      { ...faux.uneLigne, id: 'l1', designation: 'Mission de conseil', taux_tva: 20 },
+      { ...faux.uneLigne, id: 'l2', ordre: 1, designation: 'Livret imprimé', taux_tva: 5.5 },
+      { ...faux.uneLigne, id: 'l3', ordre: 2, designation: 'Débours', taux_tva: 0 },
+    ]
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
+    await screen.findByText('Livret imprimé')
+    const taux = [...document.querySelectorAll('td[data-libelle="TVA"]')].map((c) => c.textContent)
+    expect(taux).toEqual(['20\u00a0%', '5,5\u00a0%', '0\u00a0%'])
   })
 })

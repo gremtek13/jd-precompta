@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import { calculerLigne } from '../../lib/factures'
@@ -6,11 +6,20 @@ import { mentionsImprimees, numeroTvaImprime, type DossierCii } from '../../lib/
 import { formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
+// Un taux se lit « 5,5 % » sur une facture française — virgule décimale — et ne se coupe pas de son « % » : l'espace est
+// insécable, sans quoi « 0 % » passait sur deux lignes dans une colonne étroite. Même écriture que `refusTauxPositif`.
+const tauxLisible = (taux: number) => `${String(taux).replace('.', ',')}\u00a0%`
+
 // Aperçu imprimable d'une facture validée — pas de génération PDF côté serveur pour l'instant (voir
 // discussion sur la transmission via une plateforme agréée, pas encore branchée) : la boîte de
 // dialogue d'impression du navigateur ("Enregistrer en PDF") suffit à obtenir un fichier envoyable en
-// attendant. Seul .facture-imprimable reste visible en impression (voir index.css), tout le reste de
-// l'appli (menu, boutons, autres onglets) est masqué.
+// attendant. Seul .facture-imprimable reste à l'impression (voir index.css) : tout le reste de l'appli
+// (menu, boutons, autres onglets) en est retiré, et la facture se pagine comme un document.
+//
+// SA MISE EN PAGE N'EST JAMAIS EN LIGNE (voile, carte, rangée de boutons : index.css, avant le bloc d'impression). Un style en
+// ligne l'emporte sur toute règle de feuille, `@media print` comprise : le `display: flex` de la rangée des boutons les
+// faisait imprimer sur chaque facture, et ceux du voile et de la carte la faisaient imprimer tronquée (FactureApercu.test.tsx).
+//
 // Le dossier tel que la page l'a lu : son statut de TVA décide du numéro imprimé sous l'émetteur — la facture ne le fige
 // pas, et la facture électronique le prend de même.
 export default function FactureApercu({ facture, dossier, onClose }: { facture: FactureEmise; dossier: DossierCii; onClose: () => void }) {
@@ -50,9 +59,9 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   }, [facture.facture_origine_id])
 
   return (
-    <div style={overlayStyle}>
-      <div className="card facture-imprimable" style={{ width: 'min(720px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}>
-        <div className="facture-imprimable-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }}>
+    <div className="facture-apercu-voile">
+      <div className="card facture-imprimable">
+        <div className="facture-imprimable-actions">
           <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
         </div>
@@ -87,8 +96,14 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
           </div>
         )}
 
-        <div className="table-scroll">
-          <table>
+        {/* Sur téléphone, six colonnes dans 316 pixels coupaient les mots en leur milieu (« DÉSIG / NATIO / N », une désignation à
+            une syllabe par ligne) : sous 520 pixels d'enveloppe, chaque ligne devient une fiche, la désignation en tête, sans
+            libellé. Pas `table-empilable`, dont le seuil de 860 pixels replierait aussi la facture IMPRIMÉE : l'enveloppe d'une
+            page A4 mesure de 650 à 680 pixels, et le document qu'on envoie aurait perdu ses colonnes. Au-dessus de 520 pixels —
+            l'impression comprise — le tableau garde ses colonnes, dont la désignation prend la place que les chiffres laissent
+            (`table-layout: auto`, voir index.css). */}
+        <div className="table-scroll tableau-adaptable">
+          <table className="table-empilable-etroite">
             <thead>
               <tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA</th><th>Total HT</th><th>Total TTC</th></tr>
             </thead>
@@ -103,11 +118,11 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
                   return (
                     <tr key={l.id}>
                       <td>{l.designation}</td>
-                      <td>{l.quantite}</td>
-                      <td>{formatMoney(l.prix_unitaire_ht)}</td>
-                      <td>{l.taux_tva} %</td>
-                      <td>{formatMoney(c.montant_ht)}</td>
-                      <td>{formatMoney(c.montant_ttc)}</td>
+                      <td data-libelle="Qté">{l.quantite}</td>
+                      <td data-libelle="PU HT">{formatMoney(l.prix_unitaire_ht)}</td>
+                      <td data-libelle="TVA">{tauxLisible(l.taux_tva)}</td>
+                      <td data-libelle="Total HT">{formatMoney(c.montant_ht)}</td>
+                      <td data-libelle="Total TTC">{formatMoney(c.montant_ttc)}</td>
                     </tr>
                   )
                 })
@@ -130,9 +145,4 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
       </div>
     </div>
   )
-}
-
-const overlayStyle: CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
 }
