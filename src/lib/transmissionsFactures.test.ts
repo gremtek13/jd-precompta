@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ETATS_ACTIFS, ETATS_TRANSMISSION, estActive, libelleCanal, libelleCourtCanal, transmissionCourante, transmissionsDe,
+  DELAI_AVANT_ABANDON_MS, ETATS_ACTIFS, ETATS_TRANSMISSION, abandonnable, estActive, libelleCanal, libelleCourtCanal,
+  transmissionCourante, transmissionsDe,
 } from './transmissionsFactures'
 import type { EtatTransmission, TransmissionFacture } from './types'
 
@@ -59,5 +60,24 @@ describe('la transmission qui dit où en est une facture', () => {
     const b = transmission({ id: 'b', etat: 'echec' })
     expect(transmissionsDe([b, a], 'f1').map((t) => t.id)).toEqual(['a', 'b'])
     expect(transmissionsDe([a, b], 'f1').map((t) => t.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('l’abandon d’une transmission sans issue connue', () => {
+  const MIGRATION_ABANDON = readFileSync(new URL('../../supabase/schema/20261008064026_abandon_d_une_transmission.sql', import.meta.url), 'utf8')
+  const depart = Date.parse('2026-10-08T08:00:00+00:00')
+
+  it('le délai est celui que la base exige', () => {
+    expect(MIGRATION_ABANDON).toContain(`cree_le > now() - interval '${DELAI_AVANT_ABANDON_MS / 60_000} minutes'`)
+  })
+
+  it('un envoi s’abandonne passé le délai, pas avant ; rien d’autre ne s’abandonne', () => {
+    const envoi = transmission({ etat: 'envoi', cree_le: '2026-10-08T08:00:00+00:00' })
+    expect(abandonnable(envoi, depart + DELAI_AVANT_ABANDON_MS)).toBe(false)
+    expect(abandonnable(envoi, depart + DELAI_AVANT_ABANDON_MS + 1)).toBe(true)
+    for (const etat of ['depose', 'accepte', 'rejete', 'echec'] as const) {
+      expect(abandonnable(transmission({ etat }), depart + 3_600_000), etat).toBe(false)
+    }
+    expect(abandonnable(transmission({ etat: 'envoi', cree_le: 'illisible' }), depart + 3_600_000)).toBe(false)
   })
 })

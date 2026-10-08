@@ -60,6 +60,18 @@ export function libelleCourtCanal(t: Pick<TransmissionFacture, 'canal'>): string
 
 const instant = (t: Pick<TransmissionFacture, 'cree_le'>) => Date.parse(t.cree_le)
 
+// Le délai avant qu'une transmission sans issue connue s'abandonne : celui que la base exige (`abandonner_transmission`)
+// et que le suivi de plateforme-agreee observe — le dépôt part sous vingt-cinq secondes, et une facture transmise deux
+// fois coûte plus qu'une attente.
+export const DELAI_AVANT_ABANDON_MS = 15 * 60 * 1000
+
+// Une transmission partie sans issue connue, depuis plus que ce délai : le cabinet peut l'abandonner, vérification faite
+// sur la plateforme. Un instant illisible ne s'abandonne pas — la base, elle, en juge sur le sien.
+export function abandonnable(t: Pick<TransmissionFacture, 'etat' | 'cree_le'>, maintenantMs: number): boolean {
+  const depart = instant(t)
+  return t.etat === 'envoi' && Number.isFinite(depart) && maintenantMs - depart > DELAI_AVANT_ABANDON_MS
+}
+
 // Les transmissions d'une facture, de la plus récente à la plus ancienne ; à instant égal, dans l'ordre de leurs
 // identifiants, pour qu'un même jeu se lise toujours dans le même ordre.
 export function transmissionsDe(toutes: TransmissionFacture[], factureId: string): TransmissionFacture[] {
