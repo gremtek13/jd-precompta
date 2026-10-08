@@ -1,0 +1,259 @@
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import TransmissionFactureModal from './TransmissionFactureModal'
+import { facture as factureCii, ligne } from '../../test/facturesCii'
+import type { FactureEmise, TransmissionFacture } from '../../lib/types'
+
+// LA FENÊTRE QUI TRANSMET UNE FACTURE VALIDÉE (ligne 28.5, étape c4), par la plateforme du client ou par Super PDP.
+// Le doublon, ici, sort de l'application : une facture transmise deux fois à une plateforme agréée ne se reprend pas.
+// Ce que ces cas gardent : un seul envoi pour plusieurs clics, et le verrou tenu jusqu'après la relecture ; la
+// confirmation qui nomme ce qui part ; rien de proposé tant qu'on ne sait pas si la facture est déjà partie, ni quand
+// le jugement des fonctions la refuse ; le suivi d'une transmission active. Les factures sont FICTIVES
+// (src/test/facturesCii.ts).
+const faux = vi.hoisted(() => ({
+  lignes: [] as unknown[],
+  origine: null as unknown,
+  transmissions: [] as unknown[],
+  refusTransmissions: null as string | null,
+  lecturesTransmissions: 0,
+  // La relecture des transmissions qui suit une action peut rester EN ATTENTE : la fenêtre que le verrou doit couvrir.
+  suspendreRelecture: false,
+  libererRelecture: null as null | (() => void),
+  evenements: [] as unknown[],
+  connexion: null as unknown,
+  lecturesConnexion: 0,
+  superpdp: false,
+  appels: [] as { nom: string; body: Record<string, unknown> }[],
+  // La promesse d'une action reste en attente jusqu'à ce que le cas la résolve.
+  resoudre: null as null | ((v: unknown) => void),
+}))
+
+vi.mock('../../lib/supabase', () => {
+  const requete = (reponse: () => unknown, fin: string) => {
+    const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => q }
+    q[fin] = () => Promise.resolve(reponse())
+    return q
+  }
+  return {
+    supabase: {
+      from: (table: string) => {
+        if (table === 'facture_lignes') {
+          const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => Promise.resolve({ data: faux.lignes, error: null }) }
+          return q
+        }
+        if (table === 'factures_emises') return requete(() => ({ data: faux.origine, error: null }), 'maybeSingle')
+        if (table === 'facture_superpdp_events') {
+          const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => Promise.resolve({ data: faux.evenements, error: null }) }
+          return q
+        }
+        if (table === 'transmissions_factures') {
+          const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => q }
+          q.range = () => {
+            faux.lecturesTransmissions += 1
+            const reponse = faux.refusTransmissions
+              ? { data: null, error: { message: faux.refusTransmissions }, count: null }
+              : { data: faux.transmissions, error: null, count: faux.transmissions.length }
+            if (faux.lecturesTransmissions > 1 && faux.suspendreRelecture) {
+              return new Promise((resolve) => { faux.libererRelecture = () => resolve(reponse) })
+            }
+            return Promise.resolve(reponse)
+          }
+          return q
+        }
+        throw new Error(`Table non attendue dans ce test : ${table}`)
+      },
+      functions: {
+        invoke: (nom: string, options: { body: Record<string, unknown> }) => {
+          if (nom === 'plateforme-agreee' && options.body.action === 'statut') {
+            faux.lecturesConnexion += 1
+            return Promise.resolve({ data: { connexion: faux.connexion }, error: null })
+          }
+          if (nom === 'superpdp-credentials') return Promise.resolve({ data: { configured: faux.superpdp }, error: null })
+          faux.appels.push({ nom, body: options.body })
+          return new Promise((resolve) => { faux.resoudre = resolve })
+        },
+      },
+    },
+  }
+})
+
+const CONNEXION = {
+  nom: 'Plateforme Démo', url_flux: 'https://flux.plateforme-demo.fr', url_jeton: 'https://flux.plateforme-demo.fr/jeton',
+  hote: 'flux.plateforme-demo.fr', client_id: 'cabinet', organisation_id: null, portee: null, recherche_depuis: null,
+  derniere_recuperation: null, created_at: '2026-10-01T08:00:00+00:00', version: 'v1',
+}
+
+function transmission(o: Partial<TransmissionFacture> = {}): TransmissionFacture {
+  return {
+    id: 't1', dossier_id: 'd1', facture_id: 'f1', canal: 'plateforme', hote: 'flux.plateforme-demo.fr', flux_id: 'FLUX-1',
+    sha256: 'a'.repeat(64), etat: 'depose', detail: null, cree_le: '2026-10-08T08:00:00+00:00', maj_le: '2026-10-08T08:00:00+00:00',
+    ...o,
+  }
+}
+
+// Une facture validée que rien n'empêche de partir : celle des exemples jugés par le validateur officiel.
+const FACTURE: FactureEmise = factureCii([ligne()])
+
+function monter(o: {
+  facture?: FactureEmise; lignes?: unknown[]; origine?: unknown; connexion?: unknown; superpdp?: boolean
+  transmissions?: TransmissionFacture[]; refusTransmissions?: string
+} = {}) {
+  faux.lignes = o.lignes ?? [ligne()]
+  faux.origine = o.origine ?? null
+  faux.transmissions = o.transmissions ?? []
+  faux.refusTransmissions = o.refusTransmissions ?? null
+  faux.lecturesTransmissions = 0
+  faux.suspendreRelecture = false
+  faux.libererRelecture = null
+  faux.evenements = []
+  faux.connexion = o.connexion === undefined ? CONNEXION : o.connexion
+  faux.lecturesConnexion = 0
+  faux.superpdp = o.superpdp ?? false
+  faux.appels = []
+  faux.resoudre = null
+  render(
+    <TransmissionFactureModal
+      dossierId="d1" facture={o.facture ?? FACTURE} statutTva="redevable" articleExoneration={null}
+      onClose={() => {}} onUpdated={() => {}}
+    />,
+  )
+}
+
+const deposer = () => screen.findByRole('button', { name: 'Déposer sur Plateforme Démo' })
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  cleanup()
+})
+
+describe('TransmissionFactureModal — un seul envoi', () => {
+  // LES TROIS CLICS DANS LE MÊME `act` : deux suffisent à voir un verrou absent, il en faut trois pour voir un verrou
+  // posé dans le `try`, que le `finally` du deuxième relâcherait pendant que le premier court (CLAUDE.md).
+  it('dépose une seule fois quand on clique trois fois, et la confirmation nomme ce qui part', async () => {
+    monter()
+    const bouton = await deposer()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.appels).toEqual([{ nom: 'plateforme-agreee', body: { action: 'deposer', dossierId: 'd1', factureId: 'f1', version: 'v1' } }])
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    expect(confirmation.mock.calls[0][0]).toMatch(/^Transmettre la facture F2026-0001 à Client Fictif SAS par Plateforme Démo \?/)
+    expect(confirmation.mock.calls[0][0]).toContain('seul un avoir la corrige')
+  })
+
+  it('une confirmation refusée n’envoie rien', async () => {
+    monter()
+    const bouton = await deposer()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { bouton.click() })
+    expect(faux.appels).toEqual([])
+  })
+
+  it('le verrou tient jusqu’après la relecture qui suit un dépôt', async () => {
+    monter()
+    const bouton = await deposer()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.suspendreRelecture = true
+    await act(async () => { bouton.click() })
+    faux.transmissions = [transmission()]
+    await act(async () => { faux.resoudre?.({ data: { transmission: transmission() }, error: null }) })
+    expect(faux.lecturesTransmissions).toBe(2)
+    // La relecture court : le bouton dit qu'un dépôt est en cours, et rien ne repart.
+    const enCours = screen.getByRole('button', { name: 'Dépôt…' })
+    expect(enCours).toHaveProperty('disabled', true)
+    await act(async () => { enCours.click() })
+    expect(faux.appels).toHaveLength(1)
+    await act(async () => { faux.libererRelecture?.() })
+    expect(screen.getByRole('status').textContent).toBe('Déposée sur Plateforme Démo.')
+    expect(screen.queryByRole('button', { name: /Déposer sur/ })).toBeNull()
+  })
+
+  it('Super PDP seul : « Envoyer par Super PDP », une seule fois', async () => {
+    monter({ connexion: null, superpdp: true })
+    const bouton = await screen.findByRole('button', { name: 'Envoyer par Super PDP' })
+    expect(screen.queryByRole('button', { name: /Déposer sur/ })).toBeNull()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.appels).toEqual([{ nom: 'superpdp-emit', body: { dossierId: 'd1', factureId: 'f1', action: 'envoyer' } }])
+  })
+})
+
+describe('TransmissionFactureModal — rien n’est proposé sans savoir', () => {
+  it('ce qui empêche la facture de partir se dit, et aucun envoi n’est proposé', async () => {
+    monter({ facture: factureCii([ligne()], { tiers_siren: null }) })
+    expect(await screen.findByText(/Le SIREN du client manque/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('des transmissions illisibles : on ne sait pas si elle est partie, rien n’est proposé', async () => {
+    monter({ refusTransmissions: 'JWT expired', superpdp: true })
+    expect(await screen.findByText(/On ne sait donc pas si elle est déjà partie/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('aucune plateforme reliée au dossier : le dire', async () => {
+    monter({ connexion: null, superpdp: false })
+    expect(await screen.findByText(/Aucune plateforme n’est reliée à ce dossier/)).toBeTruthy()
+  })
+
+  it('un dépôt refusé parce que la connexion a changé relit la connexion, et rien ne repart seul', async () => {
+    monter()
+    const bouton = await deposer()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { bouton.click() })
+    const corps = JSON.stringify({ error: 'La connexion à la plateforme a changé entre-temps : relancez la récupération.', perimee: true })
+    await act(async () => { faux.resoudre?.({ data: null, error: { context: new Response(corps, { status: 409 }) } }) })
+    expect(screen.getByText(/La connexion à la plateforme a changé entre-temps/)).toBeTruthy()
+    expect(faux.lecturesConnexion).toBe(2)
+    expect(faux.appels).toHaveLength(1)
+  })
+})
+
+describe('TransmissionFactureModal — une facture déjà partie', () => {
+  it('une transmission active : son état, « Suivre », et pas de nouvel envoi', async () => {
+    monter({ transmissions: [transmission()] })
+    expect(await screen.findByText(/La plateforme l’a reçue ; son accusé dira si elle l’accepte/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Suivre' }).click() })
+    expect(faux.appels).toEqual([{ nom: 'plateforme-agreee', body: { action: 'suivre', dossierId: 'd1', transmissionId: 't1' } }])
+    faux.transmissions = [transmission({ etat: 'accepte' })]
+    await act(async () => { faux.resoudre?.({ data: { transmission: transmission({ etat: 'accepte' }), message: null }, error: null }) })
+    expect(screen.getByRole('status').textContent).toBe('Acceptée.')
+    expect(screen.queryByRole('button', { name: 'Suivre' })).toBeNull()
+  })
+
+  it('un échec ne bloque pas : la facture peut repartir', async () => {
+    monter({ transmissions: [transmission({ etat: 'echec', flux_id: null, detail: 'Refusée : format.' })] })
+    expect(await deposer()).toBeTruthy()
+    expect(screen.getByText('Refusée : format.')).toBeTruthy()
+  })
+
+  it('partie par Super PDP avant les transmissions : pas de nouvel envoi, et son statut s’actualise', async () => {
+    monter({ facture: { ...FACTURE, superpdp_invoice_id: 42 }, superpdp: true })
+    expect(await screen.findByText(/avant que l’application garde chaque transmission/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Actualiser le statut Super PDP' }).click() })
+    expect(faux.appels).toEqual([{ nom: 'superpdp-emit', body: { dossierId: 'd1', factureId: 'f1', action: 'actualiser' } }])
+  })
+})
+
+describe('TransmissionFactureModal — un avoir', () => {
+  // Deux jours crédités : la base garde l'avoir et ses lignes négatifs.
+  const credit = [ligne({ designation: 'Mission de conseil — septembre 2026', quantite: -2, prix_unitaire_ht: 85.5 })]
+  const avoir = {
+    facture: factureCii(credit, { type: 'avoir', numero: 'A2026-0003', facture_origine_id: 'f-origine', date_emission: '2026-10-02', date_echeance: null }),
+    lignes: credit,
+  }
+
+  it('lit la facture qu’il corrige, et se dépose', async () => {
+    monter({ facture: avoir.facture, lignes: avoir.lignes, origine: { numero: 'F2026-0012', date_emission: '2026-09-15' } })
+    expect(screen.getByRole('heading', { name: 'Transmettre l’avoir A2026-0003' })).toBeTruthy()
+    expect(await deposer()).toBeTruthy()
+  })
+
+  // Le garde symétrique : sans la facture qu'il corrige, l'avoir ne part pas — et c'est la lecture qui le dit.
+  it('sans la facture qu’il corrige, il ne part pas', async () => {
+    monter({ facture: avoir.facture, lignes: avoir.lignes, origine: null })
+    expect(await screen.findByText(/L’avoir doit citer la facture qu’il corrige/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur/ })).toBeNull()
+  })
+})

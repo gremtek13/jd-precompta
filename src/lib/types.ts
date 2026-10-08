@@ -912,6 +912,29 @@ export type MentionsFacture = Pick<
   | 'livraison_adresse' | 'livraison_code_postal' | 'livraison_ville' | 'livraison_pays' | 'option_debits'
 >
 
+// Une transmission d'une facture validée (`transmissions_factures`, ligne 28.5, étape c) : par la plateforme agréée du
+// client (plateforme-agreee, « déposer ») ou par Super PDP (superpdp-emit). Une seule ACTIVE par facture, tous canaux
+// confondus (envoi, depose, accepte) ; les échecs et les rejets s'accumulent. Le cabinet la lit, seules les fonctions
+// l'écrivent. `envoi` : partie sans issue connue — elle ne repart pas tant que rien ne l'a tranchée.
+export type CanalTransmission = 'plateforme' | 'superpdp'
+export type EtatTransmission = 'envoi' | 'echec' | 'depose' | 'accepte' | 'rejete'
+export interface TransmissionFacture {
+  id: string
+  dossier_id: string
+  facture_id: string
+  canal: CanalTransmission
+  // L'hôte qui l'a reçue : celui de la plateforme du client, ou api.superpdp.tech.
+  hote: string
+  // L'identifiant que la plateforme a rendu au dépôt ; nul tant qu'elle n'en a rendu aucun.
+  flux_id: string | null
+  sha256: string
+  etat: EtatTransmission
+  // Ce que la plateforme a dit, nettoyé par la fonction (300 caractères, cinq détails au plus).
+  detail: string | null
+  cree_le: string
+  maj_le: string
+}
+
 // Un événement du cycle de vie d'une facture transmise via Super PDP (voir migration
 // superpdp_emission_factures) — l'envoi est asynchrone, un statut à l'instant T ne dit rien du
 // suivant : accumulés dans l'ordre, jamais remplacés.
