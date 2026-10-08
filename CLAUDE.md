@@ -191,8 +191,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   l'enveloppe seule (`tableauxFormulaires.test.ts`) ; `table-empilable-etroite` ne se replie que sous 520 px.
 - **Vérification visuelle** : `outils/captures/` après toute modification de `index.css` ou de la coque.
   `debordements.mjs` compte ce qui sort du panneau, d'une carte, d'une case de grille, et le texte plus large que sa
-  boîte : 0 aux quatre largeurs de référence et aux combinaisons extrêmes des volets. Ne JAMAIS donner au navigateur le
-  mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
+  boîte : 0 aux quatre largeurs de référence et aux combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
+  1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Ne
+  JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
+- **Ce qui s'imprime n'a aucune mise en page en ligne** (l'aperçu d'une facture) : un style en ligne l'emporte sur
+  `@media print`, et la facture sortait avec ses boutons, en double, tronquée. Le bloc du téléphone (`max-width: 720px`)
+  vaut aussi à l'impression (A4 ≈ 718 px) ; une impression se mesure sur un vrai PDF → « ET LA FACTURE IMPRIMÉE PORTAIT
+  SES BOUTONS ».
 - **Exercice partagé entre onglets** (`AnneeContext`, `useAnnee()`, choisi dans l'en-tête du dossier) : toute vue dont
   un total dépend de l'exercice le rejoint, au lieu d'un `useState` local. Le filtre « sans date » reste local à
   `PiecesTab`. Les onglets à `AnneeTabs` propre et l'année civile de `ChecklistTab` sont légitimes →
