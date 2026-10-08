@@ -15,9 +15,6 @@
       <udt:DateTimeString format="102">20260915</udt:DateTimeString>
     </ram:IssueDateTime>
     <ram:IncludedNote>
-      <ram:Content>Merci de votre confiance.</ram:Content>
-    </ram:IncludedNote>
-    <ram:IncludedNote>
       <ram:Content>En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, ainsi qu'une indemnité forfaitaire pour frais de recouvrement de 40 €.</ram:Content>
     </ram:IncludedNote>
   </rsm:ExchangedDocument>

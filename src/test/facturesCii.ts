@@ -282,7 +282,7 @@ export const EXEMPLES: Exemple[] = [
         numero: 'F2026/0018',
         tiers_nom: "L'Équipe d'Essai & Cie",
         tiers_adresse: 'Résidence Les Pins\nBâtiment C\nEscalier 2\nAppartement 14\n13008 Marseille',
-        notes: 'Première ligne\nSeconde ligne, avec <balise> & esperluette\uD800',
+        mentions_legales: 'Première ligne\nSeconde ligne, avec <balise> & esperluette\uD800',
       },
     }),
     numero: 'F2026/0018',

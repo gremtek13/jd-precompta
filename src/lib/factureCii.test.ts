@@ -150,10 +150,24 @@ describe('ce que le XML porte', () => {
     expect(xml('franchise')).toContain('<ram:ExemptionReason>TVA non applicable, art. 293 B du CGI.</ram:ExemptionReason>')
   })
 
+  it('les mentions légales partent avec la facture, ses notes internes jamais', () => {
+    // Les notes d'une facture et le motif d'un avoir sont INTERNES : l'écran le dit en les saisissant.
+    const services = xml('services-debits')
+    expect(services).toContain('<ram:Content>En cas de retard de paiement, une pénalité égale à trois fois')
+    expect(services.match(/<ram:IncludedNote>/g)).toHaveLength(1)
+    expect(services).not.toContain('Merci de votre confiance')
+    expect(xml('avoir')).not.toContain('Deux jours non réalisés')
+    expect(xml('avoir')).not.toContain('IncludedNote')
+    const notee = xmlDe(donnees({ facture: { notes: 'Client lent à payer : relancer le 10.', mentions_legales: null } }))
+    expect(notee).not.toContain('relancer')
+    expect(notee).not.toContain('IncludedNote')
+  })
+
   it('le texte est échappé, et ce que XML 1.0 n’admet pas est retiré', () => {
     const special = xml('caracteres-speciaux')
     expect(special).toContain('<ram:Name>Atelier « Démo » &amp; Fils &lt;SARL&gt;</ram:Name>')
     expect(special).toContain('Conseil &quot;stratégique&quot; &amp; suivi — étape &lt;1&gt; ✓')
+    expect(special).toContain('<ram:Content>Première ligne\nSeconde ligne, avec &lt;balise&gt; &amp; esperluette</ram:Content>')
     expect([special.includes('\u0007'), special.includes('\uD800')]).toEqual([false, false])
     expect(special).toContain('<ram:LineThree>Escalier 2, Appartement 14</ram:LineThree>')
     expect(special).toContain('<ram:LineOne>Bâtiment B, 3e étage, 12 rue des Exemples</ram:LineOne>')

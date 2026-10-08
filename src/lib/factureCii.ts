@@ -98,7 +98,6 @@ export interface FactureCii {
   montant_tva: number
   montant_ttc: number
   mentions_legales: string | null
-  notes: string | null
   type_client: 'assujetti' | 'organisme_public' | 'non_assujetti' | 'etranger' | null
   tiers_siren: string | null
   tiers_adresse_electronique: string | null
@@ -560,8 +559,6 @@ export function factureCii(d: DonneesCii): ResultatCii {
     ? { lignes: [uneLigne(f.livraison_adresse)], codePostal: f.livraison_code_postal, ville: f.livraison_ville, pays: f.livraison_pays }
     : null
 
-  const notes = [f.notes, f.mentions_legales].filter((t): t is string => !!t && t.trim() !== '')
-
   const lignes = m.lignes.map((l) => el('ram:IncludedSupplyChainTradeLineItem', [
     el('ram:AssociatedDocumentLineDocument', [el('ram:LineID', String(l.numero))]),
     el('ram:SpecifiedTradeProduct', [el('ram:Name', uneLigne(l.libelle))]),
@@ -588,7 +585,10 @@ export function factureCii(d: DonneesCii): ResultatCii {
       el('ram:ID', f.numero as string),
       el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
       dateCii('ram:IssueDateTime', f.date_emission),
-      ...notes.map((t) => el('ram:IncludedNote', [el('ram:Content', t.trim())])),
+      // Seules les mentions légales partent avec la facture (BT-22). Les notes sont INTERNES : l'écran le dit en les
+      // saisissant — « n'apparaissent pas sur la facture », et le motif d'un avoir, « note interne » —, l'aperçu ne les
+      // imprime pas, et ce que le cabinet y écrit pour lui-même n'a rien à faire chez le client.
+      f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [
       ...lignes,

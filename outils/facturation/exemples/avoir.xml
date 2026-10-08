@@ -14,9 +14,6 @@
     <ram:IssueDateTime>
       <udt:DateTimeString format="102">20261002</udt:DateTimeString>
     </ram:IssueDateTime>
-    <ram:IncludedNote>
-      <ram:Content>Deux jours non réalisés.</ram:Content>
-    </ram:IncludedNote>
   </rsm:ExchangedDocument>
   <rsm:SupplyChainTradeTransaction>
     <ram:IncludedSupplyChainTradeLineItem>

@@ -4,14 +4,17 @@
 // empreinte (exemples/valides.json). factureCii.test.ts refuse un exemple dont l'empreinte n'y figure pas : un exemple
 // qui change repasse ici avant de partir.
 //
-//   git clone --depth 1 --branch validation-1.3.16 https://github.com/ConnectingEurope/eInvoicing-EN16931 <artefacts>
+//   git init <artefacts>
+//   git -C <artefacts> fetch --depth 1 https://github.com/ConnectingEurope/eInvoicing-EN16931 refs/tags/validation-1.3.16
+//   git -C <artefacts> checkout FETCH_HEAD
 //   curl -sSLo <cache>/Saxon-HE-9.9.1-8.jar \
 //     https://repo1.maven.org/maven2/net/sf/saxon/Saxon-HE/9.9.1-8/Saxon-HE-9.9.1-8.jar
 //   node outils/facturation/valider.mjs <artefacts> <cache>/Saxon-HE-9.9.1-8.jar
 //
 // Il faut Java et xmllint. Les artefacts et Saxon ne vivent pas dans le dépôt : ce sont des instruments de mesure, et
 // leur version est vérifiée ici (le commit des artefacts, l'empreinte SHA-1 de Saxon) plutôt que supposée — une autre
-// version des règles validerait d'autres choses, en silence.
+// version des règles validerait d'autres choses, en silence. C'est l'ÉTIQUETTE qu'on va chercher : `git clone --branch
+// validation-1.3.16` prend la branche du même nom, qui a avancé depuis, et ce contrôle la refuse.
 //
 // RIEN N'EN EST COPIÉ DANS LE DÉPÔT : les artefacts (licence EUPL) se lisent comme une documentation et s'exécutent
 // comme un instrument ; les exemples sont des factures fictives que factureCii.ts produit.
