@@ -10412,3 +10412,117 @@ porte de restauration du super-administrateur — le chef du cabinet en producti
 de la fonction (le déclencheur garde la facture, le mouvement, l'annulation et la répartition par taux) : c'est la
 même que pour les transmissions et les factures validées, et un scanner de d3 devra refuser tout `.insert` sur ces
 tables hors de la restauration. LATENT, et mesuré : aucun encaissement en base.
+
+### 08/10/2026 — LE MODULE DES ENCAISSEMENTS — LIGNE 28.5, ÉTAPE (D), DEUXIÈME TEMPS (D2)
+
+(`src/lib/encaissementsFactures.ts`, `encaissementsFactures.test.ts`, `encaissementsBatterie.test.ts`,
+`src/test/encaissementsBatterie.ts`.) Le module PUR que l'écran des encaissements (d3) lira : il ne lit rien en base,
+n'appelle personne, ne lit pas l'horloge — l'écran lui donne ce qu'il a lu, en entier, et le jour à Paris
+(`aujourdHuiAParis`). Il dit avant le clic l'obligation de déclarer le statut « Encaissée » d'une facture, ce que la base
+refuserait, le reste à encaisser par taux, la répartition proposée, l'échéance de la déclaration et les encaissements
+que la pièce jumelle et le relevé permettent de proposer. Sources relues le 08/10/2026 : BOI-TVA-DECLA-20-30-60 (§1,
+§20, §30, §60, §120, §170 à §210), BOI-TVA-BASE-20-20 (§30 à §70), CGI, ann. II, art. 242 nonies P (I, III et sa note :
+les factures émises à partir du 01/09/2027 pour une PME ou une micro-entreprise). Aucun article n'est cité à l'écran :
+les messages disent la règle, ils ne vieillissent pas au 01/01/2027.
+
+**L'OBLIGATION** (`obligationEncaissee`) : due, facultative, sans objet, à préciser ou refusée, chacune avec sa raison.
+L'ordre dit le PLUS SÛR D'ABORD : une raison certaine de ne rien déclarer l'emporte sur une donnée inconnue — une
+livraison de biens est sans objet quel que soit le statut de TVA du dossier. Sans objet : un brouillon, un avoir, un
+dossier exonéré, un particulier ou un client établi hors de France (leurs paiements relèvent de l'e-reporting, étape e),
+une livraison de biens, l'option pour les débits et — écart avec la note — la facture d'un redevable dont AUCUNE ligne
+ne porte de TVA (des opérations exonérées, ou dont la TVA est due par le client : rien n'est exigible à l'encaissement ;
+une seule ligne taxée rend la facture due, sa part à 0 % comprise — point 7 de la note, NON VÉRIFIÉ). À préciser : le
+statut de TVA du dossier, puis ce que la facture ne dit pas — à qui elle est adressée, la nature de ses opérations,
+l'option —, qu'une facture validée avant le 07/10/2026 n'a jamais dit et ne dira plus, figée : la raison le dit.
+Refusée : la facture mixte (Q4). Puis la date : facultative avant le 01/09/2027 (`DEBUT_EMISSION_PME`), due ensuite. Le
+statut de TVA est celui du dossier aujourd'hui, comme pour la transmission ; l'option, celle que la facture a figée.
+
+**LES REFUS, DANS L'ORDRE ET SOUS LES MOTS DE LA BASE** (`refusEnregistrement`, `refusRetrait`, `refusDeLaFacture`) : le
+premier refus, sa clé, et le message EXACT que la fonction lèverait, apostrophes droites comprises — un refus arrivé
+après le clic (une écriture concurrente) dit la même chose que l'écran avant. Les modèles sont le texte de la fonction,
+remplis comme RAISE les remplit (`remplirModele`), et les valeurs écrites comme la base les écrit : un montant par
+`to_char(x, 'FM999999999990.00')` et la virgule (au-delà de douze chiffres avant la virgule, des dièses — relevé sur
+PostgreSQL 16), un taux par `trim_scale` du nombre reçu en JSON (1e-7 s'y lit 0.0000001), le jour par `DD/MM/YYYY`.
+Les montants se comparent en centimes ENTIERS, lus sur l'écriture du nombre (`centimesExacts` : 1,005 × 100 vaut
+100,49999999999999 en virgule flottante) ; le seuil des frais reprend les constantes d'`alignementBanque.ts` en entiers,
+comme la base (écart × 100 ≤ min(50 000, 2 × total)), et rend la même réponse que `seuilAlignement` sur près de
+180 000 cas à sa frontière. Ce que le module ne juge pas : l'accès (refus 1 — l'écran n'existe que pour qui lit le
+dossier) ; une date qui n'en est pas une, qu'il dit « à renseigner » là où PostgREST refuserait de la lire.
+**Confrontés de trois façons.** Au TEXTE de la fonction exportée (`derniereDefinitionSql`) : les 24 messages
+d'`enregistrer_encaissement` et les 5 de `retirer_encaissement`, dans l'ordre ; les valeurs de chaque « % » ; les
+bornes, le seuil, les statuts de Super PDP, le jour à Paris — une dérive plantée (un mot changé, deux refus permutés, un
+refus ajouté) fait virer la confrontation au rouge. Aux messages que la base a RENDUS en production : ceux de l'essai de
+d1 (contrôles 6 à 41, 43, 44, 46, 47), lus dans le fichier de l'essai. Et à une BATTERIE jouée par la fonction
+elle-même, sur une réplique locale (PostgreSQL 16, construite par le procédé de d1 ; ses neuf familles d'objets à
+l'empreinte de la production, relevée le jour même) : 4 000 saisies tirées au hasard sur un monde fictif — treize
+factures, dix mouvements, des encaissements vivants, retirés, annulés et en excès —, dont trois cents visent la
+frontière du seuil des frais, chacune jugée en chef du cabinet puis annulée, tout annulé ensuite : AUCUN ÉCART entre la
+base et le module, sur les 23 refus que le module juge et les acceptations ; l'empreinte des réponses
+(`e061f97c…`) est gardée par `encaissementsBatterie.test.ts`, qui rejoue la même batterie. Les scripts qui l'ont jouée
+restent hors du dépôt (dossier de travail de la session) : rejouer demande une réplique.
+**Le premier tirage bouclait** : le générateur congruentiel écrit `(x × 1103515245 + 12345) % 2³¹` en virgule flottante
+dépasse 2⁵³ à la multiplication et retombe, quelle que soit la graine, dans un même cycle de 10 466 valeurs après quelques
+milliers de tirages — la première batterie ne comptait que 1 210 saisies distinctes sur 4 000. Le module en emploie un
+exact sur 32 bits (`tirage`, « mulberry32 »). Le même générateur flottant vit dans trois tests du dépôt
+(`reportDesSoldes.test.ts`, `liquidationTva.test.ts`, `tvaDuReleve.test.ts`) : leurs tirages « au hasard » partagent ce
+cycle — signalé, pas corrigé ici.
+
+**LE TTC PAR TAUX ET LE RESTE** : `ttcParTaux` prend les groupes de `montantsDuDocument`, jamais réécrit ;
+`resteAEncaisser` les diminue des encaissements NETS, la règle de la base — les retirés ne comptent pas, les annulations
+comptent en négatif, avec leurs parts. **LA RÉPARTITION** (`repartitionProposee`, Q3) : au prorata des RESTES de chaque
+taux, les centimes aux plus forts restes de la division, à égalité au taux le plus haut, en entiers longs (BigInt) ; la
+somme vaut toujours le montant, et un encaissement qui solde la facture prend exactement le reste de chaque taux — la
+division tombe juste, sans cas à part. C'est la répartition que l'essai de d1 avait enregistrée pour 500 € sur la
+facture à trois taux (442,64 €, 38,92 €, 18,44 €), puis le solde exact.
+
+**L'ÉCHÉANCE** (`echeanceDeDeclaration`) : au réel, le 10 du mois suivant (« dans un délai de dix jours suivant la fin du
+mois », §190) ; en franchise, le bimestre civil et le 25 du mois qui le suit — la borne prudente d'une fenêtre « entre le
+25 et la fin du mois » dont le jour exact dépend de l'entreprise (§210) ; rien pour un dossier exonéré ou au statut à
+préciser. Sur le calendrier civil, éprouvée sous les quatre fuseaux de `test:fuseaux`, que le test pose lui-même.
+
+**LES PROPOSITIONS** (`propositionsEncaissement`, note § 3.5) — rien ne s'écrit seul. La PIÈCE JUMELLE se reconnaît par
+le flux qui a transmis la facture ou par `superpdp_invoice_id`, jamais par un nom ni un montant (`piecesJumelles`) ; ses
+paiements viennent de `paiementsDesPieces` (rapprochements et parts de règlements groupés) : le reste entier quand la
+banque a crédité un peu moins, sous le seuil des frais, ou plus ; un paiement partiel au-delà. Le RELEVÉ propose les
+crédits que rien ne rattache à un encaissement vivant, datés du jour de la facture ou après, qui font le reste à l'écart
+des frais près, dans les deux sens. Écarts avec la note : un mouvement que le cabinet a classé comme autre chose qu'un
+paiement de client (apport, compte de bilan, emprunt, remboursement de TVA ou de cotisations) ne se propose pas — c'est
+lire ce qu'il a dit, pas deviner ; un mouvement de la jumelle reste à elle, même quand son paiement ne se propose pas ;
+chaque proposition dit les pièces que son mouvement paie déjà (`piecesPayees`) — une facture mensuelle du même montant
+rend le relevé ambigu. CHAQUE PROPOSITION EST UN ENCAISSEMENT QUE LA BASE ACCEPTERAIT : elle passe par
+`refusEnregistrement` sur sa répartition proposée — un paiement déjà enregistré, un mouvement daté de demain, une facture
+qui ne reçoit rien ne se proposent pas. L'écart se dit en français (« La banque a crédité 1 350,50 € pour 1 355,50 €
+restant à encaisser : 5,00 € d'écart, sous le seuil des frais bancaires (2 % du montant, 5 € au plus). La facture
+s'encaisse en entier, comme la déclaration de TVA de l'application la compte. »). Le moyen ne se propose pas.
+
+**LES MOYENS DE PAIEMENT** (`MOYENS_ENCAISSEMENT`) : les huit de la contrainte, dans son ordre (confronté à la contrainte
+et à la fonction), avec leur libellé et la date que l'encaissement porte quand la doctrine la dit (BOI-TVA-BASE-20-20 :
+§30 les espèces, §40 le chèque — sa remise, ou sa réception s'il est posté, pas son crédit —, §50 le virement, §60
+l'effet) ; rien pour la carte, le prélèvement, la compensation : on ne devine pas une règle.
+
+**ÉPROUVÉ.** 85 tests (82 dans `encaissementsFactures.test.ts`, 3 dans `encaissementsBatterie.test.ts`) ; la suite passe
+de 5 512 à 5 597 tests, verte sous les quatre fuseaux ; `tsc -b`, `npm run lint` (63 avertissements, aucun dans les
+fichiers nouveaux), `npm run build`. **Deux cent douze mutations du module** : 205 mordaient au premier passage ; deux
+survivantes accusaient le jeu d'essai — un montant de la base lu par troncature (aucun essai ne portait un montant que la
+virgule flottante écrit juste en dessous : 4,35 × 100 vaut 434,99999999999994), et le filtre des mouvements déjà pris,
+que le jugement final masquait (l'encaissement d'essai de l'autre facture dépassait lui-même le seuil) — et mordent
+depuis leurs essais ; cinq sont équivalentes : deux ordres entre conditions disjointes (le statut à préciser et la facture
+sans TVA, qui exige un redevable ; une date avant 2000 et une date à venir), le cas d'une virgule à zéro qu'aucun nombre
+écrit par String n'atteint, le retour anticipé d'une facture soldée (sans lui, aucune répartition n'existe), et le zéro
+d'une explication déjà traité avant. La batterie SEULE mord sur 14 des 16 mutations qu'on lui a soumises, toutes les
+frontières du seuil comprises ; les deux autres lui sont invisibles par nature (le départage des centimes est une règle
+du module, la base accepte toute répartition juste ; deux taux égaux s'écrivent pareil).
+
+**CE QUE L'ÉCRAN (D3) DOIT SAVOIR** : lire en entier (`lireTout`) la facture, ses lignes, ses transmissions, ses
+événements de Super PDP, les encaissements et les parts du DOSSIER (le module filtre lui-même), ses mouvements, ses
+règlements groupés et ses pièces ; une lecture partielle n'offre aucun formulaire ; passer `aujourdHuiAParis()` et, tant
+que d4 n'existe pas, un ensemble vide de déclarés à `refusRetrait` ; envoyer la répartition dans l'ordre de la saisie (la
+base dit la première part en excès) ; recalculer les propositions après chaque enregistrement ; ne dire aucun retard pour
+une obligation facultative ; un avoir ne réduit pas le reste en base (le plafond reste le TTC de la facture) — son effet
+ne se montre qu'à l'écran, s'il se montre ; un scanner devra refuser tout `.insert` sur les deux tables hors de la
+restauration (entrée d1).
+
+**CE QUI RESTE** : d3 (l'écran), d4 (les déclarations, `annuler_encaissement`, le corps d'`encaissement_declare`) ; la
+part à 0 % d'une facture taxée (point 7, NON VÉRIFIÉ) ; le jour exact de l'échéance en franchise (arrêté non lu) ; la fin
+du régime simplifié au 01/01/2027, reprise de l'entrée de la CA3 et non revérifiée ; le générateur flottant des trois
+tests cités.

@@ -131,7 +131,10 @@ src/
   pages/          un composant par écran de premier niveau.
   pages/dossier/  les onglets d'un dossier et leurs modales. Liste et ordre : lib/ongletsDossier.ts
                   (GROUPES_PARCOURS, DossierTab), source UNIQUE de la barre latérale et de la barre d'onglets.
-  test/           fabriques des tests (faux clients, filtres PostgREST, factures fictives).
+  test/           fabriques des tests (faux clients, filtres PostgREST, factures fictives, la batterie des
+                  encaissements jouée sur une réplique). Un tirage « au hasard » se fait par `tirage`
+                  (src/test/encaissementsBatterie.ts), exact sur 32 bits : le congruentiel écrit en virgule
+                  flottante boucle sur 10 466 valeurs.
 supabase/
   functions/      une Edge Function par sous-dossier, auto-portée.
   essais/         essais à REJOUER, jamais seulement relire, par impersonation (anonyme, compte rattaché à
@@ -361,7 +364,7 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
-  registre des encaissements, en base le 08/10/2026 ; d2 le module, d3 l'écran, d4 la déclaration hors application
+  registre des encaissements, en base, et d2, son module, le 08/10/2026 ; d3 l'écran, d4 la déclaration hors application
   (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
@@ -678,8 +681,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   pas : jamais déclaré, il se retire (`retirer_encaissement`) ; déclaré, il se contre-passe (d4, qui donne son corps à
   `encaissement_declare`). Le TTC par taux est REFAIT en base comme `montantsDuDocument`, en double précision
   (`centimes_ligne_facture`), confronté à une table relevée en base (`encaissementsBase.test.ts`). La restauration
-  écrit une annulation APRÈS sa cible, par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), jamais en deux passes →
-  « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE ».
+  écrit une annulation APRÈS sa cible, par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), jamais en deux passes. Le module
+  `lib/encaissementsFactures.ts` (d2) le dit avant le clic : l'obligation, le plus sûr d'abord ; les refus de la base,
+  dans son ordre et sous ses mots — confrontés au texte de la fonction, aux messages de l'essai et à une batterie de
+  4 000 saisies jouée sur une réplique (`encaissementsBatterie.test.ts`, aucun écart) — ; le reste NET par taux de
+  `montantsDuDocument` ; la répartition au prorata des restes (Q3) ; l'échéance ; des propositions dont chacune est un
+  encaissement que la base accepterait → « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE », « LE MODULE DES ENCAISSEMENTS ».
 - **Le numéro de TVA d'un dossier en franchise ou exonéré** : une case par dossier (`numero_tva_attribue`, décision du
   cabinet du 08/10/2026), refusée par la base hors de ces statuts ; le numéro se calcule du SIREN ; sans elle, ses
   factures sans TVA ne partent pas (G1.47). La facture imprimée porte le numéro de l'émetteur (`numeroTvaImprime`),
@@ -692,7 +699,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5512 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5597 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
