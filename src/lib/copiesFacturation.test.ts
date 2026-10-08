@@ -169,6 +169,9 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
   numeroAdmis: (m) => ['F2026-0001', ' F1', 'F1 ', 'F 1', 'F  1', 'x'.repeat(35), 'x'.repeat(36), 'A2026-0001', ''].map((n) => m.numeroAdmis(n)),
   refusEmission: (m) => [...EXEMPLES.map((e) => m.refusEmission(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.refusEmission(donnees(c)))],
   cadreDeFacturation: (m) => (['biens', 'services', 'mixte'] as const).map((n) => m.cadreDeFacturation(n)),
+  donneesDeLaFacture: (m) => EXEMPLES.slice(0, 2).flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.map((siret) =>
+    m.donneesDeLaFacture({ ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null },
+      e.donnees.lignes, { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null }, e.donnees.origine, '2026-10-08')))),
   factureCii: (m) => [...EXEMPLES.map((e) => m.factureCii(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.factureCii(donnees(c)))],
 }
 
@@ -190,9 +193,10 @@ const FONCTIONS = readdirSync(DOSSIER, { withFileTypes: true })
 const PORTEUSES = FONCTIONS.filter((f) => BLOCS.some((b) => porte(sourceDe(f), b)))
 const GENERATEUR = BLOCS.find((b) => b.nom === 'factureCii') as Bloc
 
-/** Ce que chaque fonction qui porte le générateur fait d'abord : juger la facture, puis la produire. */
+/** Ce que chaque fonction qui porte le générateur fait : assembler la facture comme l'écran, la juger, puis la produire. */
 function cablage(source: string, blocs: string[], ou: string) {
   const code = horsDesBlocs(source, blocs)
+  expect(code, `${ou} : le gestionnaire n'assemble pas la facture par donneesDeLaFacture`).toMatch(/\bdonneesDeLaFacture\(/)
   expect(code, `${ou} : le gestionnaire n'appelle pas refusEmission`).toMatch(/\brefusEmission\(/)
   expect(code, `${ou} : le gestionnaire n'appelle pas factureCii`).toMatch(/\bfactureCii\(/)
 }
@@ -242,7 +246,8 @@ describe('les blocs de src/lib', () => {
 })
 
 // ── Le garde mord : des défauts plantés dans une source qui, sans eux, passe ────────────────────────────────────
-const GESTIONNAIRE = 'Deno.serve(() => { const refus = refusEmission(d); const r = factureCii(d); return refus ?? r })'
+const GESTIONNAIRE = 'Deno.serve(() => { const d = donneesDeLaFacture(f, l, s, o, j); const refus = refusEmission(d); '
+  + 'const r = factureCii(d); return refus ?? r })'
 const SYNTHETIQUE = [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii, GESTIONNAIRE].join('\n')
 
 function tout(source: string) {
@@ -292,6 +297,7 @@ describe('le garde mord sur un défaut planté', () => {
   it('un gestionnaire qui n’appelle plus le générateur', () => {
     expect(echoue(() => tout(SYNTHETIQUE.replace('const r = factureCii(d); ', '')))).toBe(true)
     expect(echoue(() => tout(SYNTHETIQUE.replace('const refus = refusEmission(d); ', '')))).toBe(true)
+    expect(echoue(() => tout(SYNTHETIQUE.replace('const d = donneesDeLaFacture(f, l, s, o, j); ', '')))).toBe(true)
   })
 
   it('un bloc qui emprunte un nom hors de lui', () => {

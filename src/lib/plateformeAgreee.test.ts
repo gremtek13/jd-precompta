@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -16,7 +17,9 @@ import { describe, expect, it } from 'vitest'
 //   - CURSEUR     le point de reprise retenu : borné, jamais en arrière ;
 //   - FICHIER     un document lu sous son plafond et reconnu à ses premiers octets ;
 //   - HTTP        le client d'une plateforme, joué ici contre un faux `fetch` : jeton, redirections, en-têtes ;
-//   - ERREURS     ce que dit une plateforme qui refuse, sans écho de sa réponse.
+//   - ERREURS     ce que dit une plateforme qui refuse, sans écho de sa réponse ;
+//   - DEPOT       le dépôt d'une facture émise — son corps multipart, son empreinte — et ce que disent la réponse et
+//                 l'accusé de la plateforme, jusqu'à la transmission qu'on en tient.
 // Puis le CÂBLAGE du gestionnaire, qui ne s'exécute pas ici : l'ordre des contrôles se lit sur la source.
 
 const SOURCE = readFileSync(new URL('../../supabase/functions/plateforme-agreee/index.ts', import.meta.url), 'utf8')
@@ -734,6 +737,7 @@ interface Appel { url: string; init: RequestInit }
 type ClientPlateforme = {
   jeton: () => Promise<{ jeton: string } | { refus: string; identifiants: boolean; statut: number }>
   appelJson: (methode: 'GET' | 'POST', chemin: string, corps?: unknown) => Promise<{ statut: number; donnees: unknown; redirection: boolean }>
+  deposer: (chemin: string, corps: Uint8Array, typeContenu: string) => Promise<{ statut: number; donnees: unknown; redirection: boolean }>
   fichier: (chemin: string) => Promise<{ statut: number; octets: Uint8Array | null; tropLourd: boolean; redirectionRefusee: boolean }>
 }
 const { clientPlateforme } = executer<{
@@ -912,6 +916,33 @@ describe('plateforme-agreee — le client d’une plateforme', () => {
   })
 })
 
+describe('plateforme-agreee — le dépôt d’un corps composé', () => {
+  it('part en POST avec ses octets et son type, sous le jeton, sans suivre de redirection, et sa réponse se lit', async () => {
+    const f = fauxFetch([
+      reponseJson(200, { access_token: 'jeton-1', token_type: 'Bearer' }),
+      reponseJson(202, { flowId: 'flux-1' }),
+      new Response(null, { status: 307, headers: { location: 'https://ailleurs.fr/v1/flows' } }),
+      new Error('coupé'),
+    ])
+    const c = clientPlateforme({ ...CONFIG_PA, organisation_id: 'org-1' }, f.recuperer, OPTIONS)
+    await c.jeton()
+    const corps = new TextEncoder().encode('--x\r\nContenu\r\n--x--\r\n')
+    expect(await c.deposer('/v1/flows', corps, 'multipart/form-data; boundary=x')).toEqual({ statut: 202, donnees: { flowId: 'flux-1' }, redirection: false })
+    const depot = f.appels[1]
+    expect(depot.url).toBe('https://pa.fr/afnor/v1/flows')
+    expect(depot.init.method).toBe('POST')
+    expect(depot.init.body).toBe(corps)
+    expect(depot.init.redirect).toBe('manual')
+    expect(enTete(depot, 'Content-Type')).toBe('multipart/form-data; boundary=x')
+    expect(enTete(depot, 'Authorization')).toBe('Bearer jeton-1')
+    expect(enTete(depot, 'Accept')).toBe('application/json')
+    expect(enTete(depot, 'Organization-Id')).toBe('org-1')
+    expect(await c.deposer('/v1/flows', corps, 'x')).toEqual({ statut: 307, donnees: null, redirection: true })
+    expect(f.appels).toHaveLength(3)
+    expect(await c.deposer('/v1/flows', corps, 'x')).toEqual({ statut: 0, donnees: null, redirection: false })
+  })
+})
+
 // ── ERREURS ──────────────────────────────────────────────────────────────────────────────────────────
 
 const E = executer<{
@@ -942,6 +973,183 @@ describe('plateforme-agreee — ce que dit une plateforme qui refuse', () => {
     expect(E.erreurPlateforme('x', R(500, { errorCode: 'INTERNAL_ERROR' }))).toEqual({
       statut: 502, acces: false, message: 'La plateforme a répondu 500 (x) (INTERNAL_ERROR).',
     })
+  })
+})
+
+// ── DEPOT ────────────────────────────────────────────────────────────────────────────────────────────
+
+type Reponse = { statut: number; donnees: unknown; redirection: boolean }
+type Accuse = { fluxId: string; etat: 'depose' | 'accepte' | 'rejete'; detail: string | null }
+type Constat = { accuse: Accuse } | { absent: true } | { indecis: string }
+type Transmission = { etat: string; flux_id: string | null; detail: string | null; cree_le: string }
+const D = executer<{
+  dateDeParis: (ms: number) => string
+  nomDuFichier: (numero: string) => string
+  empreinteSha256: (octets: Uint8Array) => Promise<string>
+  corpsDuDepot: (info: Record<string, string>, fichier: Uint8Array, frontiere: string) => { typeContenu: string; corps: Uint8Array }
+  issueDuDepot: (reponse: Reponse) => { etat: string; fluxId?: string; detail: string | null }
+  detailDeLAccuse: (details: unknown) => string | null
+  accuseDuFlux: (brut: unknown) => Accuse | null
+  constatDeRecherche: (donnees: unknown, suivi: string) => Constat
+  suiteDuSuivi: (t: Transmission, constat: Constat, maintenantMs: number) => {
+    maj: { etat: string; flux_id: string | null; detail: string | null } | null
+    message: string | null
+  }
+  DELAI_AVANT_ABANDON_MS: number
+  SYNTAXE_DEPOSEE: string
+}>(bloc('FLUX') + bloc('ERREURS') + bloc('DEPOT'), [
+  'dateDeParis', 'nomDuFichier', 'empreinteSha256', 'corpsDuDepot', 'issueDuDepot', 'detailDeLAccuse', 'accuseDuFlux',
+  'constatDeRecherche', 'suiteDuSuivi', 'DELAI_AVANT_ABANDON_MS', 'SYNTAXE_DEPOSEE',
+])
+
+describe('plateforme-agreee — le dépôt d’une facture émise', () => {
+  it('le jour est celui de Paris, quel que soit le fuseau de la fonction — une facture ne se date pas dans l’avenir', () => {
+    expect(D.dateDeParis(Date.parse('2026-10-07T21:59:59Z'))).toBe('2026-10-07')
+    expect(D.dateDeParis(Date.parse('2026-10-07T22:00:00Z'))).toBe('2026-10-08')
+    expect(D.dateDeParis(Date.parse('2026-12-31T23:30:00Z'))).toBe('2027-01-01')
+    expect(D.dateDeParis(Date.parse('2026-01-15T23:30:00Z'))).toBe('2026-01-16')
+    expect(D.dateDeParis(Date.parse('2026-01-15T22:59:59Z'))).toBe('2026-01-15')
+  })
+
+  it('le nom du fichier est le numéro de la facture, réduit aux caractères qu’un en-tête porte sans guillemets', () => {
+    expect(D.nomDuFichier('F2026-0001')).toBe('F2026-0001.xml')
+    expect(D.nomDuFichier('A 2026/1+x_y')).toBe('A_2026_1_x_y.xml')
+  })
+
+  it('l’empreinte est le SHA-256 du fichier, en hexadécimal minuscule — la forme que la plateforme vérifie', async () => {
+    const octets = new TextEncoder().encode('<facture>éè</facture>')
+    expect(await D.empreinteSha256(octets)).toBe(createHash('sha256').update(octets).digest('hex'))
+    expect(await D.empreinteSha256(octets)).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('le corps multipart : `flowInfo` est un CHAMP JSON, `file` un fichier XML, lus tels quels par un vrai analyseur', async () => {
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<rsm:CrossIndustryInvoice>Société « Démo » &amp; fils\r\n</rsm:CrossIndustryInvoice>'
+    const fichier = new TextEncoder().encode(xml)
+    const info = { flowSyntax: 'CII', name: 'F2026-0001.xml', sha256: 'a'.repeat(64), trackingId: '11111111-1111-1111-1111-111111111111' }
+    const { typeContenu, corps } = D.corpsDuDepot(info, fichier, 'jd-precompta-frontiere')
+    expect(typeContenu).toBe('multipart/form-data; boundary=jd-precompta-frontiere')
+    const formulaire = await new Response(corps, { headers: { 'content-type': typeContenu } }).formData()
+    expect([...formulaire.keys()]).toEqual(['flowInfo', 'file'])
+    const flowInfo = formulaire.get('flowInfo')
+    expect(typeof flowInfo).toBe('string')
+    expect(JSON.parse(flowInfo as string)).toEqual(info)
+    const file = formulaire.get('file') as File
+    expect(file.name).toBe('F2026-0001.xml')
+    expect(file.type).toBe('application/xml')
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(fichier)
+    // Le type de la partie JSON est déclaré, comme banqup le demande.
+    expect(new TextDecoder().decode(corps)).toContain('Content-Disposition: form-data; name="flowInfo"\r\nContent-Type: application/json\r\n\r\n')
+    expect(() => D.corpsDuDepot(info, new TextEncoder().encode('x jd-precompta-frontiere x'), 'jd-precompta-frontiere')).toThrow()
+  })
+
+  it('ne déclare que la syntaxe CII', () => {
+    expect(D.SYNTAXE_DEPOSEE).toBe('CII')
+  })
+
+  it('un 2xx qui rend un identifiant lisible est un dépôt', () => {
+    for (const statut of [200, 201, 202]) {
+      expect(D.issueDuDepot(R(statut, { flowId: 'flux-42', name: 'x' }))).toEqual({ etat: 'depose', fluxId: 'flux-42', detail: null })
+    }
+  })
+
+  it('un 2xx sans identifiant lisible laisse l’issue inconnue : la transmission reste « envoi »', () => {
+    for (const donnees of [null, {}, { flowId: '' }, { flowId: 'a b' }, { flowId: 'x'.repeat(201) }, { flowId: 42 }]) {
+      expect(D.issueDuDepot(R(202, donnees)), JSON.stringify(donnees)).toMatchObject({ etat: 'envoi', detail: expect.stringMatching(/suivi dira/) })
+    }
+  })
+
+  it('un refus 4xx ou une redirection n’a rien créé : échec, avec le code et jamais le message libre', () => {
+    for (const statut of [400, 401, 403, 404, 413, 422, 429]) {
+      const issue = D.issueDuDepot(R(statut, { errorCode: 'UNPROCESSABLE_ENTITY', errorMessage: 'détail interne' }))
+      expect(issue.etat, String(statut)).toBe('echec')
+      expect(issue.detail).toContain(`(${statut}, UNPROCESSABLE_ENTITY)`)
+      expect(issue.detail).not.toContain('détail interne')
+    }
+    expect(D.issueDuDepot(R(302, null, true))).toMatchObject({ etat: 'echec' })
+  })
+
+  it('pas de réponse, une réponse coupée ou un 5xx : l’issue est inconnue, et la facture ne repart pas', () => {
+    expect(D.issueDuDepot(R(0))).toMatchObject({ etat: 'envoi', detail: expect.stringMatching(/pas répondu/) })
+    for (const statut of [500, 502, 503, 504]) {
+      expect(D.issueDuDepot(R(statut, { errorCode: 'INTERNAL_ERROR' })), String(statut)).toMatchObject({
+        etat: 'envoi', detail: expect.stringContaining(`${statut}, INTERNAL_ERROR`),
+      })
+    }
+  })
+
+  it('l’accusé : Ok accepte, Error rejette, tout le reste ne tranche rien', () => {
+    const flux = (acknowledgement: unknown) => ({ flowId: 'flux-1', acknowledgement })
+    expect(D.accuseDuFlux(flux({ status: 'Ok' }))).toEqual({ fluxId: 'flux-1', etat: 'accepte', detail: null })
+    expect(D.accuseDuFlux(flux({ status: 'Error', details: [{ item: 'x', level: 'Error', reasonCode: 'InvalidSchema', reasonMessage: 'BR-CO-15' }] })))
+      .toEqual({ fluxId: 'flux-1', etat: 'rejete', detail: 'InvalidSchema : BR-CO-15' })
+    for (const ack of [{ status: 'Pending' }, { status: 'Inconnu' }, {}, null, undefined, 'Ok']) {
+      expect(D.accuseDuFlux(flux(ack))?.etat, JSON.stringify(ack)).toBe('depose')
+    }
+    for (const faux of [{ acknowledgement: { status: 'Ok' } }, { flowId: '', acknowledgement: { status: 'Ok' } }, null, 'flux']) {
+      expect(D.accuseDuFlux(faux), JSON.stringify(faux)).toBeNull()
+    }
+  })
+
+  it('les raisons d’un accusé : le code et le message de la plateforme, nettoyés, bornés, cinq au plus', () => {
+    expect(D.detailDeLAccuse([
+      { level: 'Error', reasonCode: 'FileSizeExceeded', reasonMessage: 'Trop\u0007 lourd\n  vraiment' },
+      { level: 'Warning', reasonCode: 'code avec espace', reasonMessage: 'Avertissement' },
+      { level: 'Error', reasonCode: 'OtherTechnicalError' },
+    ])).toBe('FileSizeExceeded : Trop lourd vraiment ; Avertissement (avertissement) ; OtherTechnicalError')
+    expect(D.detailDeLAccuse([{ reasonMessage: 'x'.repeat(400) }])).toHaveLength(300)
+    expect(D.detailDeLAccuse(Array.from({ length: 8 }, (_, i) => ({ reasonCode: `Code${i}` })))).toBe('Code0 ; Code1 ; Code2 ; Code3 ; Code4')
+    for (const vide of [[], [{}], [{ reasonCode: 42 }], null, 'InvalidSchema', { reasonCode: 'X' }]) {
+      expect(D.detailDeLAccuse(vide), JSON.stringify(vide)).toBeNull()
+    }
+  })
+
+  it('retrouvé par son identifiant de suivi — et rien conclu d’une plateforme qui ignore ce critère', () => {
+    const suivi = 'suivi-1'
+    const flux = { flowId: 'flux-1', trackingId: suivi, acknowledgement: { status: 'Pending' } }
+    expect(D.constatDeRecherche({ results: [flux] }, suivi)).toEqual({ accuse: { fluxId: 'flux-1', etat: 'depose', detail: null } })
+    expect(D.constatDeRecherche({ results: [] }, suivi)).toEqual({ absent: true })
+    // D'autres flux rendus : le critère n'a pas été appliqué, l'absence ne se conclut pas.
+    expect(D.constatDeRecherche({ results: [{ ...flux, trackingId: 'autre' }] }, suivi)).toMatchObject({ indecis: expect.stringMatching(/identifiant de suivi/) })
+    expect(D.constatDeRecherche({ results: [flux, { flowId: 'x' }] }, suivi)).toMatchObject({ indecis: expect.any(String) })
+    expect(D.constatDeRecherche({ results: [flux, { ...flux, flowId: 'flux-2' }] }, suivi)).toMatchObject({ indecis: expect.stringMatching(/plusieurs/) })
+    expect(D.constatDeRecherche({ results: [{ trackingId: suivi }] }, suivi)).toMatchObject({ indecis: expect.stringMatching(/sans identifiant/) })
+    for (const illisible of [null, {}, { results: 'x' }]) {
+      expect(D.constatDeRecherche(illisible, suivi)).toMatchObject({ indecis: expect.stringMatching(/illisible/) })
+    }
+  })
+
+  const MAINTENANT = Date.parse('2026-10-08T10:00:00Z')
+  const envoi = (cree_le = '2026-10-08T09:59:00.123456+00:00'): Transmission => ({ etat: 'envoi', flux_id: null, detail: null, cree_le })
+  const depose = (detail: string | null = null): Transmission => ({ etat: 'depose', flux_id: 'flux-1', detail, cree_le: '2026-10-08T09:00:00+00:00' })
+  const accuse = (etat: Accuse['etat'], fluxId = 'flux-1', detail: string | null = null): Constat => ({ accuse: { fluxId, etat, detail } })
+
+  it('le suivi enregistre ce que l’accusé dit, avec le flux', () => {
+    expect(D.suiteDuSuivi(envoi(), accuse('depose'), MAINTENANT)).toEqual({ maj: { etat: 'depose', flux_id: 'flux-1', detail: null }, message: null })
+    expect(D.suiteDuSuivi(envoi(), accuse('rejete', 'flux-1', 'InvalidSchema'), MAINTENANT).maj).toEqual({ etat: 'rejete', flux_id: 'flux-1', detail: 'InvalidSchema' })
+    expect(D.suiteDuSuivi(depose(), accuse('accepte'), MAINTENANT).maj).toEqual({ etat: 'accepte', flux_id: 'flux-1', detail: null })
+    expect(D.suiteDuSuivi(depose(), accuse('depose', 'flux-1', 'Un avertissement'), MAINTENANT).maj).toEqual({ etat: 'depose', flux_id: 'flux-1', detail: 'Un avertissement' })
+  })
+
+  it('rien de nouveau ne change rien ; un autre flux que celui du dépôt non plus', () => {
+    expect(D.suiteDuSuivi(depose('x'), accuse('depose', 'flux-1', 'x'), MAINTENANT)).toEqual({ maj: null, message: null })
+    expect(D.suiteDuSuivi(depose(), accuse('accepte', 'flux-2'), MAINTENANT)).toEqual({ maj: null, message: expect.stringMatching(/autre flux/) })
+  })
+
+  it('un dépôt inconnu de la plateforme n’est tenu pour perdu qu’au-delà du délai — jamais sur un âge illisible', () => {
+    expect(D.DELAI_AVANT_ABANDON_MS).toBe(15 * 60_000)
+    expect(D.suiteDuSuivi(envoi(), { absent: true }, MAINTENANT)).toEqual({ maj: null, message: expect.stringMatching(/pas encore/) })
+    const limite = new Date(MAINTENANT - D.DELAI_AVANT_ABANDON_MS).toISOString()
+    expect(D.suiteDuSuivi(envoi(limite), { absent: true }, MAINTENANT).maj).toBeNull()
+    const passe = new Date(MAINTENANT - D.DELAI_AVANT_ABANDON_MS - 1).toISOString()
+    expect(D.suiteDuSuivi(envoi(passe), { absent: true }, MAINTENANT)).toEqual({
+      maj: { etat: 'echec', flux_id: null, detail: expect.stringMatching(/peut repartir/) }, message: null,
+    })
+    expect(D.suiteDuSuivi(envoi('hier'), { absent: true }, MAINTENANT).maj).toBeNull()
+  })
+
+  it('un flux déposé que la plateforme ne retrouve plus, ou un constat indécis : rien ne change, et c’est dit', () => {
+    expect(D.suiteDuSuivi(depose(), { absent: true }, MAINTENANT)).toEqual({ maj: null, message: expect.stringMatching(/ne retrouve plus/) })
+    expect(D.suiteDuSuivi(envoi('2020-01-01T00:00:00Z'), { indecis: 'raison' }, MAINTENANT)).toEqual({ maj: null, message: 'Le suivi ne peut pas conclure : raison.' })
   })
 })
 
@@ -1043,7 +1251,7 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
 
   it('une configuration modifiée entre la liste et l’import refuse le téléchargement et le point de reprise', () => {
     const controle = GESTIONNAIRE.indexOf(
-      'const versionPerimee = (action === "telecharger" || action === "retenir" || action === "repartir") &&\n' +
+      'const versionPerimee = (action === "telecharger" || action === "retenir" || action === "repartir" || action === "deposer") &&\n' +
       '    payload.version !== connexion.updated_at')
     expect(controle).toBeGreaterThan(-1)
     expect(GESTIONNAIRE.indexOf('if (action === "retenir") {')).toBeGreaterThan(controle)
@@ -1062,6 +1270,61 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     expect(branche).not.toMatch(/updated_at:|derniere_recuperation/)
     expect(branche).toContain('if (!data) return json({ error: "La connexion à la plateforme a changé entre-temps : relancez la récupération.", perimee: true }, 409)')
     expect(branche).toMatch(/if \(error\) return json\(/)
+  })
+
+  it('« deposer » juge la facture AVANT tout appel, réserve sa transmission avant de la déposer, et n’enregistre l’issue que sur la réservation', () => {
+    const branche = brancheDe('deposer')
+    const position = (texte: string) => {
+      const i = branche.indexOf(texte)
+      expect(i, `${texte} introuvable dans « deposer »`).toBeGreaterThan(-1)
+      return i
+    }
+    // La facture se relit en base, dans le dossier vérifié — jamais ce que le navigateur annonce.
+    expect(branche).toContain('.select(COLONNES_FACTURE).eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()')
+    const etapes = [
+      'const donnees = donneesDeLaFacture(facture,',
+      'const refus = refusEmission(donnees)',
+      'const cii = factureCii(donnees)',
+      'const plateforme = ouvrirPlateforme()',
+      '.from("transmissions_factures")\n      .insert(',
+      'plateforme.deposer("/v1/flows", depot.corps, depot.typeContenu)',
+      '.update(suivi).eq("id", transmission.id).eq("etat", "envoi")',
+    ].map(position)
+    expect(etapes).toEqual([...etapes].sort((a, b) => a - b))
+    expect(branche).toContain('if (refus.length > 0) return json(')
+    expect(branche).toContain('if (erreurReservation?.code === "23505") {')
+    // L'identifiant de suivi est celui de la transmission, et l'empreinte réservée celle du fichier qui part.
+    expect(branche).toContain('{ flowSyntax: SYNTAXE_DEPOSEE, name: nomDuFichier(facture.numero as string), sha256, trackingId: transmission.id }')
+    expect(branche).toContain('.insert({ dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256 })')
+    expect(branche).toContain('const sha256 = await empreinteSha256(fichier)')
+  })
+
+  it('la fonction n’écrit que sa connexion et des transmissions : jamais une facture', () => {
+    let n = 0
+    for (const ecriture of ['.update(', '.insert(', '.upsert(', '.delete(']) {
+      for (let i = GESTIONNAIRE.indexOf(ecriture); i > -1; i = GESTIONNAIRE.indexOf(ecriture, i + 1)) {
+        const avant = GESTIONNAIRE.slice(0, i)
+        const table = /\.from\("(\w+)"\)/.exec(avant.slice(avant.lastIndexOf('.from("')))?.[1]
+        expect(['connexions_plateformes', 'transmissions_factures'], `${ecriture} sur ${table}`).toContain(table)
+        n++
+      }
+    }
+    expect(n).toBeGreaterThanOrEqual(7)
+  })
+
+  it('« suivre » relit la transmission dans le dossier vérifié, refuse un autre canal ou une autre plateforme, et ne réécrit que l’état lu', () => {
+    const branche = brancheDe('suivre')
+    expect(branche).toContain('.select(COLONNES_TRANSMISSION).eq("id", transmissionId).eq("dossier_id", dossierId).maybeSingle()')
+    const ouverture = branche.indexOf('const plateforme = ouvrirPlateforme()')
+    expect(ouverture).toBeGreaterThan(-1)
+    for (const controle of ['if (transmission.canal !== "plateforme") {', 'if (transmission.hote !== hote) {',
+      'if (transmission.etat !== "envoi" && transmission.etat !== "depose") return json({ transmission })']) {
+      const i = branche.indexOf(controle)
+      expect(i, controle).toBeGreaterThan(-1)
+      expect(i, controle).toBeLessThan(ouverture)
+    }
+    expect(branche).toContain('{ where: { trackingId: transmission.id }, limit: 10 }')
+    expect(branche).toContain('.update(suite.maj).eq("id", transmission.id).eq("etat", transmission.etat)')
   })
 
   it('une autre plateforme, une autre identité ou une autre entreprise remet la recherche au début', () => {
@@ -1132,7 +1395,7 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     for (const j of journaux) {
       const inserees = expressionsInserees(j).map((e) => e.replace(/\b\w+(\.\w+)*\.length\b/g, ''))
       for (const expression of inserees) {
-        expect(expression, j).toMatch(/^\s*(action|[\w.]*statut|document|recherche\.pages|\(e as \{ name\?: unknown \}\)\?\.name \?\? "\?"|Object\.values\(recherche\.ecartes\)\.reduce\(\(a, b\) => a \+ b, 0\)|recherche\.complete \? "complet" : "incomplet")?\s*$/)
+        expect(expression, j).toMatch(/^\s*(action|[\w.]*statut|[\w.]*etat|document|recherche\.pages|\(e as \{ name\?: unknown \}\)\?\.name \?\? "\?"|Object\.values\(recherche\.ecartes\)\.reduce\(\(a, b\) => a \+ b, 0\)|recherche\.complete \? "complet" : "incomplet")?\s*$/)
       }
       const horsTexte = j.slice(j.indexOf('(') + 1, -1).replace(/`(?:\\.|\$\{[^}]*(?:\{[^}]*\}[^}]*)*\}|[^`\\])*`|"(?:\\.|[^"\\])*"/g, '')
       expect(horsTexte.replace(/[\s+]/g, ''), j).toBe('')

@@ -22,11 +22,13 @@ import {
   SIREN_PUBLIC,
   SIRET_VENDEUR,
   TVA_VENDEUR,
+  vendeur,
 } from '../test/facturesCii'
 import {
   adresseStructuree,
   cadreDeFacturation,
   decimal,
+  donneesDeLaFacture,
   factureCii,
   mentionsImprimees,
   montantsDuDocument,
@@ -253,6 +255,62 @@ describe('refusEmission : chaque faute, seule, rend son refus et lui seul', () =
       expect.stringContaining('L’adresse du dossier'),
       expect.stringContaining('date d’échéance'),
     ])
+  })
+})
+
+describe('donneesDeLaFacture : la facture de la base, assemblée pour le générateur', () => {
+  const lignes = [ligne()]
+  const zero = [ligne({ taux_tva: 0 })]
+  const redevable = { statut_tva: 'redevable', article_exoneration: null } as const
+
+  it('le vendeur est l’émetteur figé par la facture, son numéro de TVA tiré du SIREN figé', () => {
+    const d = donneesDeLaFacture(facture(lignes), lignes, redevable, null, AUJOURD_HUI)
+    expect(d).toEqual(donnees({ lignes }))
+    expect(refusEmission(d)).toEqual([])
+  })
+
+  it('l’émetteur de la facture, jamais un autre : un SIRET figé différent donne son propre numéro', () => {
+    const d = donneesDeLaFacture(facture(lignes, { emetteur_siret: '98765432400019', emetteur_nom: 'Autre nom' }), lignes, redevable, null, AUJOURD_HUI)
+    expect(d.vendeur).toMatchObject({ nom: 'Autre nom', siret: '98765432400019', numeroTva: numeroTvaFrancais(SIREN_CLIENT) })
+  })
+
+  it('un dossier en franchise ou exonéré n’a pas de numéro inventé, et le refus le dit (règle G1.47)', () => {
+    for (const dossier of [{ statut_tva: 'franchise', article_exoneration: null }, { statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1' }] as const) {
+      const d = donneesDeLaFacture(facture(zero, { type_client: 'organisme_public', tiers_siren: SIREN_PUBLIC, tiers_siret: '10000020700017' }), zero, dossier, null, AUJOURD_HUI)
+      expect(d.vendeur).toMatchObject({ numeroTva: null, statutTva: dossier.statut_tva, articleExoneration: dossier.article_exoneration })
+      expect(refusEmission(d)).toEqual([expect.stringContaining('règle G1.47')])
+    }
+  })
+
+  it('un statut à préciser : le numéro se calcule, et seul le statut se réclame', () => {
+    const d = donneesDeLaFacture(facture(zero), zero, { statut_tva: null, article_exoneration: null }, null, AUJOURD_HUI)
+    expect(d.vendeur.numeroTva).toBe(TVA_VENDEUR)
+    expect(refusEmission(d)).toEqual([expect.stringContaining('Le statut de TVA du dossier est à préciser')])
+  })
+
+  it('un SIREN figé faux ou absent : une faute, un refus — le numéro de TVA qui en découle ne se réclame pas', () => {
+    for (const emetteur_siret of ['12345678900010', null]) {
+      for (const statut_tva of ['redevable', null] as const) {
+        const d = donneesDeLaFacture(facture(lignes, { emetteur_siret }), lignes, { statut_tva, article_exoneration: null }, null, AUJOURD_HUI)
+        expect(d.vendeur.numeroTva).toBeNull()
+        const attendus = [expect.stringContaining('ne donne pas un SIREN valide')]
+        if (statut_tva === null) attendus.push(expect.stringContaining('Le statut de TVA du dossier est à préciser'))
+        expect(refusEmission(d), `${emetteur_siret} ${statut_tva}`).toEqual(attendus)
+      }
+    }
+  })
+
+  it('un redevable dont le numéro manque encore malgré un SIREN valide le voit réclamé', () => {
+    expect(refusEmission(donnees({ vendeur: { numeroTva: null } }))).toEqual(['Le numéro de TVA intracommunautaire du dossier manque.'])
+    expect(vendeur().siret).toBe(SIRET_VENDEUR)
+  })
+
+  it('un avoir reçoit sa facture d’origine, et la date du jour passe telle quelle', () => {
+    const credit = [ligne({ quantite: -1 })]
+    const d = donneesDeLaFacture(facture(credit, { type: 'avoir', numero: 'A2026-0001', date_echeance: null }), credit, redevable, ORIGINE, '2026-10-08')
+    expect(d.origine).toEqual(ORIGINE)
+    expect(d.aujourdHui).toBe('2026-10-08')
+    expect(refusEmission(d)).toEqual([])
   })
 })
 

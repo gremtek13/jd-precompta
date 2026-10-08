@@ -430,13 +430,17 @@ export function refusEmission(d: DonneesCii): string[] {
     refus.push('Une facture dont toutes les opérations sont exonérées par les articles 261 à 261 E du CGI n’entre pas dans la facturation électronique entre entreprises.')
   }
 
-  // Une ligne à 0 % ou au taux normal demande le numéro de TVA du vendeur (règles BR-S-02, BR-E-02, G1.47).
+  // Une ligne à 0 % ou au taux normal demande le numéro de TVA du vendeur (règles BR-S-02, BR-E-02, G1.47). Celui d'un
+  // dossier redevable découle de son SIREN, et un statut à préciser se dit déjà : un numéro absent ne se réclame que
+  // s'il ne découle pas d'une faute déjà dite.
   if (triees.length > 0 && !horsChamp) {
     if (!v.numeroTva) {
-      refus.push(v.statutTva === 'redevable'
-        ? 'Le numéro de TVA intracommunautaire du dossier manque.'
-        : 'Le numéro de TVA intracommunautaire du dossier est nécessaire à une facture sans TVA (règle G1.47 de la DGFiP) : '
+      if (v.statutTva === 'franchise' || v.statutTva === 'exonere') {
+        refus.push('Le numéro de TVA intracommunautaire du dossier est nécessaire à une facture sans TVA (règle G1.47 de la DGFiP) : '
           + 'l’application ne le connaît pas pour un dossier en franchise ou exonéré.')
+      } else if (v.statutTva === 'redevable' && sirenValide(sirenVendeur)) {
+        refus.push('Le numéro de TVA intracommunautaire du dossier manque.')
+      }
     } else if (sirenValide(sirenVendeur) && v.numeroTva !== numeroTvaFrancais(sirenVendeur)) {
       refus.push('Le numéro de TVA intracommunautaire du dossier ne correspond pas à son SIREN.')
     }
@@ -657,6 +661,41 @@ export function factureCii(d: DonneesCii): ResultatCii {
   ], { 'xmlns:rsm': NS.rsm, 'xmlns:qdt': NS.qdt, 'xmlns:ram': NS.ram, 'xmlns:udt': NS.udt })
 
   return { xml: `<?xml version="1.0" encoding="UTF-8"?>\n${serialiser(document, 0)}\n`, refus: [] }
+}
+// La facture telle que la base la garde, avec l'émetteur qu'elle a figé à sa validation.
+export interface FactureEnBase extends FactureCii {
+  emetteur_nom: string | null
+  emetteur_siret: string | null
+  emetteur_adresse: string | null
+}
+
+// Ce que le générateur reçoit, assemblé depuis la base — le même assemblage pour l'écran qui dit les refus avant le clic
+// et pour les fonctions qui transmettent. Le vendeur est l'émetteur que la facture a figé ; le statut de TVA est celui du
+// dossier aujourd'hui, que la facture ne fige pas ; le numéro de TVA se calcule sur le SIREN figé. Celui d'un dossier en
+// franchise ou exonéré n'est pas inventé : l'application ne le connaît pas, et `refusEmission` le réclame.
+export function donneesDeLaFacture(
+  facture: FactureEnBase,
+  lignes: LigneCii[],
+  dossier: { statut_tva: StatutTva | null; article_exoneration: ArticleExoneration | null },
+  origine: OrigineCii | null,
+  aujourdHui: string,
+): DonneesCii {
+  const siren = sirenDe(facture.emetteur_siret)
+  const sansNumero = dossier.statut_tva === 'franchise' || dossier.statut_tva === 'exonere'
+  return {
+    facture,
+    lignes,
+    vendeur: {
+      nom: facture.emetteur_nom,
+      siret: facture.emetteur_siret,
+      adresse: facture.emetteur_adresse,
+      numeroTva: !sansNumero && sirenValide(siren) ? numeroTvaFrancais(siren) : null,
+      statutTva: dossier.statut_tva,
+      articleExoneration: dossier.article_exoneration,
+    },
+    origine,
+    aujourdHui,
+  }
 }
 // ── FIN COPIE factureCii ─────────────────────────────────────────────────────────────────────────────────────────────
 
