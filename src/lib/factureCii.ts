@@ -1,7 +1,7 @@
 import { calculerLigne } from './montantsFacture'
 import { formatDate } from './format'
 import { motifExoneration, refusTauxPositif } from './statutTva'
-import type { ArticleExoneration, FactureEmise, FactureLigne, NatureOperation, StatutTva } from './types'
+import type { ArticleExoneration, FactureEmise, NatureOperation, StatutTva } from './types'
 
 // LA FACTURE ÉLECTRONIQUE ÉMISE (ligne 28.5 de la feuille de route, étape c) : une facture validée de l'application,
 // écrite dans la syntaxe CII de la norme EN 16931, pour qu'une plateforme agréée la transmette à son destinataire — une
@@ -24,6 +24,13 @@ import type { ArticleExoneration, FactureEmise, FactureLigne, NatureOperation, S
 //
 // RIEN N'EST DEVINÉ. Ce qui manque à la facture pour être transmise est dit, tout ensemble et avant le clic
 // (`refusEmission`) ; le module ne comble rien — ni un SIREN absent, ni une catégorie de TVA, ni une adresse.
+
+// ── DÉBUT COPIE factureCii ───────────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui transmettent une facture (superpdp-emit,
+// plateforme-agreee), après ceux de montantsFacture.ts et de statutTva.ts : elles sont auto-portées, et ce qu'elles
+// transmettent doit être le fichier que les tests de ce module ont passé au validateur officiel. Il ne nomme rien
+// d'autre hors de lui que trois types, que chaque fonction déclare comme types.ts les déclare (StatutTva,
+// ArticleExoneration, NatureOperation). `copiesFacturation.test.ts` compare chaque copie à celui-ci et l'exécute.
 
 export const PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'
 
@@ -66,10 +73,50 @@ export interface OrigineCii {
   date_emission: string
 }
 
-export type LigneCii = Pick<FactureLigne, 'ordre' | 'designation' | 'quantite' | 'prix_unitaire_ht' | 'taux_tva'>
+// Une ligne de la facture (`facture_lignes`), telle que le générateur la lit.
+export interface LigneCii {
+  ordre: number
+  designation: string
+  quantite: number
+  prix_unitaire_ht: number
+  taux_tva: number
+}
+
+// La facture (`factures_emises`), telle que le générateur la lit : les colonnes dont il se sert, sous leurs types en
+// base. FactureEmise (types.ts) en porte d'autres, et le compilateur vérifie qu'elle se lit comme celle-ci
+// (copiesFacturation.test.ts) : une valeur ajoutée à l'une de ses listes fermées ne passerait pas ici en silence.
+export interface FactureCii {
+  numero: string | null
+  statut: 'brouillon' | 'validee'
+  type: 'facture' | 'avoir'
+  date_emission: string
+  date_echeance: string | null
+  tiers_nom: string
+  tiers_adresse: string | null
+  tiers_siret: string | null
+  montant_ht: number
+  montant_tva: number
+  montant_ttc: number
+  mentions_legales: string | null
+  notes: string | null
+  type_client: 'assujetti' | 'organisme_public' | 'non_assujetti' | 'etranger' | null
+  tiers_siren: string | null
+  tiers_adresse_electronique: string | null
+  code_service: string | null
+  numero_engagement: string | null
+  nature_operation: NatureOperation | null
+  date_prestation: string | null
+  periode_debut: string | null
+  periode_fin: string | null
+  livraison_adresse: string | null
+  livraison_code_postal: string | null
+  livraison_ville: string | null
+  livraison_pays: string | null
+  option_debits: boolean | null
+}
 
 export interface DonneesCii {
-  facture: FactureEmise
+  facture: FactureCii
   lignes: LigneCii[]
   vendeur: VendeurCii
   // La facture qu'un avoir corrige (règles BR-55 et G1.31 : son numéro, et sa date).
@@ -186,7 +233,7 @@ const centimes = (euros: number) => Math.round(euros * 100)
 // La ligne dans le sens du document. Le prix d'une ligne de la norme n'est jamais négatif (règle BR-27, G1.16) : une
 // remise saisie avec un prix négatif se transmet avec une quantité négative, au même produit — donc au même montant,
 // au bit près, puisque le produit de deux flottants ne dépend pas de leurs signes.
-export function montantsDuDocument(facture: Pick<FactureEmise, 'type'>, lignes: LigneCii[], motif: { code: string; texte: string } | null): MontantsDocument {
+export function montantsDuDocument(facture: Pick<FactureCii, 'type'>, lignes: LigneCii[], motif: { code: string; texte: string } | null): MontantsDocument {
   const sens = facture.type === 'avoir' ? -1 : 1
   const triees = [...lignes].sort((a, b) => a.ordre - b.ordre)
   const doc: LigneDocument[] = triees.map((l, i) => {
@@ -247,6 +294,12 @@ export function decimal(x: number, decimales: number): string | null {
   return `${entier < 0 ? '-' : ''}${Math.floor(a / f)}${fraction ? `.${fraction}` : ''}`
 }
 
+// Une date AAAA-MM-JJ écrite JJ/MM/AAAA, comme l'écrit formatDate (format.ts), que le bloc ne peut pas nommer ;
+// une valeur d'une autre forme est rendue telle quelle.
+function dateLisible(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso
+}
+
 const NUMERO_ADMIS = /^[A-Za-z0-9 +_/-]{1,35}$/
 const BORNES = '(années 2000 à 2099)'
 
@@ -281,8 +334,8 @@ export function refusEmission(d: DonneesCii): string[] {
   if (!numeroAdmis(f.numero)) {
     refus.push(`Le numéro ${f.numero} ne peut pas être transmis : 35 caractères au plus — chiffres, lettres, espace, « - », « + », « _ » et « / ».`)
   }
-  if (!anneeAdmise(f.date_emission)) refus.push(`La date d’émission (${formatDate(f.date_emission)}) n’est pas une date admise ${BORNES}.`)
-  else if (f.date_emission > d.aujourdHui) refus.push(`La facture est datée du ${formatDate(f.date_emission)}, qui n’est pas encore arrivé.`)
+  if (!anneeAdmise(f.date_emission)) refus.push(`La date d’émission (${dateLisible(f.date_emission)}) n’est pas une date admise ${BORNES}.`)
+  else if (f.date_emission > d.aujourdHui) refus.push(`La facture est datée du ${dateLisible(f.date_emission)}, qui n’est pas encore arrivé.`)
 
   // Le destinataire. Un particulier et un client établi hors de France ne reçoivent pas de facture électronique :
   // l'opération se déclare par l'e-reporting.
@@ -478,7 +531,7 @@ export function cadreDeFacturation(nature: NatureOperation): string {
 
 // L'option pour la TVA sur les débits ne vise que les prestations de services : sur une facture de biens seuls, elle
 // ne dit rien (règle G1.43).
-function optionDebitsApplicable(f: Pick<FactureEmise, 'option_debits' | 'nature_operation'>): boolean {
+function optionDebitsApplicable(f: Pick<FactureCii, 'option_debits' | 'nature_operation'>): boolean {
   return f.option_debits === true && (f.nature_operation === 'services' || f.nature_operation === 'mixte')
 }
 
@@ -582,7 +635,7 @@ export function factureCii(d: DonneesCii): ResultatCii {
           : null,
         el('ram:SpecifiedTradePaymentTerms', [
           f.type === 'avoir' && d.origine?.numero
-            ? el('ram:Description', `Avoir sur la facture ${d.origine.numero} du ${formatDate(d.origine.date_emission)}.`)
+            ? el('ram:Description', `Avoir sur la facture ${d.origine.numero} du ${dateLisible(d.origine.date_emission)}.`)
             : null,
           f.type === 'facture' && f.date_echeance ? dateCii('ram:DueDateDateTime', f.date_echeance) : null,
         ]),
@@ -605,6 +658,7 @@ export function factureCii(d: DonneesCii): ResultatCii {
 
   return { xml: `<?xml version="1.0" encoding="UTF-8"?>\n${serialiser(document, 0)}\n`, refus: [] }
 }
+// ── FIN COPIE factureCii ─────────────────────────────────────────────────────────────────────────────────────────────
 
 // ── Mentions imprimées ─────────────────────────────────────────────────────────────────────────────────────────────
 

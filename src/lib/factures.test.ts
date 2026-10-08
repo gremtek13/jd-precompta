@@ -44,6 +44,24 @@ describe('calculerLigne', () => {
   it('gère une quantité décimale', () => {
     expect(calculerLigne(1.5, 10, 20)).toEqual({ montant_ht: 15, montant_tva: 3, montant_ttc: 18 })
   })
+
+  it('arrondit une ligne négative comme la ligne positive, au signe près (une ligne d’avoir)', () => {
+    // Math.round arrondit le demi-centime vers +∞ : -0,125 rendait -0,12 là où 0,125 rend 0,13, et l'avoir
+    // d'une facture ne la créditait pas au centime. Le module arrondit la valeur absolue.
+    expect(calculerLigne(-1, 0.125, 0)).toEqual({ montant_ht: -0.13, montant_tva: 0, montant_ttc: -0.13 })
+    const oppose = (x: number) => (x === 0 ? 0 : -x)
+    for (const [q, p, t] of [[1, 0.125, 20], [3, 33.335, 5.5], [1, 0.175, 20], [7, 14.285, 10], [2, 0.005, 20]]) {
+      const ligne = calculerLigne(q, p, t)
+      expect(calculerLigne(-q, p, t)).toEqual({
+        montant_ht: oppose(ligne.montant_ht), montant_tva: oppose(ligne.montant_tva), montant_ttc: oppose(ligne.montant_ttc),
+      })
+    }
+  })
+
+  it('ne rend jamais -0 : un montant nul est nul', () => {
+    const r = calculerLigne(-1, 0.004, 20)
+    expect([r.montant_ht, r.montant_tva, r.montant_ttc].every((x) => Object.is(x, 0))).toBe(true)
+  })
 })
 
 describe('calculerTotaux', () => {
