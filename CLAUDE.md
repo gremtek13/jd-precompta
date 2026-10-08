@@ -145,8 +145,8 @@ supabase/
                     ou les contraintes de lignes_bancaires et ecritures_brouillon : affectation,
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
-                    compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures ;
-                    validationExercice,
+                    compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
+                    abandonTransmission ; validationExercice,
                     liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -320,8 +320,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Facturation** : factures à numérotation légale, avoirs, envoi par e-mail ; Super PDP (réception, émission) ; statut de
   TVA du dossier (28.5 a), réception par la plateforme du client (28.5 b), mentions de la facture et avoir d'un seul
   tenant, générateur CII jugé par le validateur officiel, facture validée figée en base et numérotation fermée (28.5 c,
-  07/10/2026) ; dépôt de la facture électronique par la plateforme du client et par Super PDP, sous une transmission
-  réservée (28.5 c3, 08/10/2026 — pas encore déployé : il le sera avec les écrans du c4).
+  07/10/2026) ; transmission de la facture électronique par la plateforme du client et par Super PDP, sous une
+  transmission réservée, depuis l'onglet Factures — mentions saisies avant la validation et imprimées, suivi, abandon
+  d'une issue inconnue, statut de Super PDP reporté, avoir interne d'une facture rejetée, numéro de TVA d'un dossier en
+  franchise ou exonéré (28.5 c3 à c5, 08/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -349,12 +351,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT (seul le titulaire
   du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
-- **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a) et (b) en ligne — (b) à éprouver
-  sur la plateforme réelle d'un client ; (c) en cours : c1a, c2 et c1b en ligne ; c3, le dépôt par la plateforme du
-  client et par Super PDP, écrit (08/10/2026) et non déployé ; c4, l'écran qui saisit les mentions, l'aperçu qui les
-  imprime, la transmission et son suivi, l'abandon d'une transmission dont l'issue reste inconnue, et la question au
-  cabinet du numéro de TVA d'un dossier en franchise ou exonéré (règle G1.47) ; c5, banc, mutations, déploiement. Puis
-  (d) le statut « Encaissée » et (e) l'e-reporting.
+- **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
+  réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » et (e)
+  l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -647,11 +646,22 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `enregistrer_facture` seule (reprise depuis le plus haut numéro émis, verrou de la série) → « UNE FACTURE VALIDÉE SE
   FIGE EN BASE ».
 - **Le dépôt d'une facture émise** (plateforme du client et Super PDP) : la facture se relit en base et se juge avant
-  tout appel ; les deux fonctions l'assemblent par `donneesDeLaFacture` (l'écran du c4 le fera aussi), et les trois
+  tout appel ; les deux fonctions l'assemblent par `donneesDeLaFacture` (les écrans aussi, avant la validation et avant
+  le clic), et les trois
   blocs du générateur sont recopiés au caractère près dans les deux fonctions (`copiesFacturation.test.ts`) ; une seule
   transmission ACTIVE par facture, tous canaux confondus, RÉSERVÉE avant l'envoi (`transmissions_factures`) ; une issue
   inconnue laisse « envoi », jamais un nouvel essai, et `suivre` retrouve le dépôt par son identifiant de suivi → « LA
   FACTURE ÉLECTRONIQUE SE DÉPOSE ».
+- **Une transmission restée « envoi »** bloque tout nouvel envoi : elle s'abandonne un quart d'heure après son départ,
+  par le cabinet, vérification faite sur la plateforme (`abandonner_transmission`) ; un seul délai,
+  `DELAI_AVANT_ABANDON_MS`, confronté à la migration et au suivi → « LES ÉCRANS DE LA FACTURE ÉLECTRONIQUE ».
+- **Une facture rejetée ou refusée ne repart pas** : elle s'annule par un avoir interne, qui ne se transmet pas (DGFiP,
+  § 3.6.4), et la base refuse l'une et l'autre ; le statut de Super PDP se reporte sur la transmission (213 et 501
+  rejettent, 202 et la suite acceptent, un rejet l'emporte).
+- **Le numéro de TVA d'un dossier en franchise ou exonéré** : une case par dossier (`numero_tva_attribue`, décision du
+  cabinet du 08/10/2026), refusée par la base hors de ces statuts ; le numéro se calcule du SIREN ; sans elle, ses
+  factures sans TVA ne partent pas (G1.47). La facture imprimée porte le numéro de l'émetteur (`numeroTvaImprime`),
+  jamais pour un statut à préciser.
 - **Réception par la plateforme du client** : la facture doit désigner le dossier (SIREN) ; un flux n'entre qu'une fois
   par dossier ; le point de reprise ne recule jamais et garde une heure de marge ; une page pleine dans le désordre
   arrête la lecture → « LA RÉCEPTION PAR LA PLATEFORME DU CLIENT ».
