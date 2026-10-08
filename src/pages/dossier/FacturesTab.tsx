@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
-import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
-import SuperPdpFactureModal from './SuperPdpFactureModal'
+import TransmissionFactureModal from './TransmissionFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
+import { ETATS_TRANSMISSION, libelleCourtCanal, transmissionCourante } from '../../lib/transmissionsFactures'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -30,10 +31,10 @@ interface Props {
 }
 
 // Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
-// en place (Super PDP, voir SuperPdpModal). Une facture validée peut être transmise au client via
-// Super PDP (voir SuperPdpFactureModal, supabase/functions/superpdp-emit) ou, comme avant, simplement
-// imprimée/exportée en PDF pour être envoyée manuellement — les deux restent possibles, la
-// transmission électronique n'est jamais obligatoire (ex. client sans SIRET, ou pas encore configuré).
+// en place (Super PDP, voir SuperPdpModal). Une facture validée peut être transmise par une plateforme
+// agréée — celle du client ou Super PDP (voir TransmissionFactureModal) — ou, comme avant, simplement
+// imprimée/exportée en PDF pour être envoyée manuellement : la transmission électronique n'est jamais
+// obligatoire ici (un client particulier, une plateforme pas encore reliée).
 export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, tvaSurDebits, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
@@ -43,7 +44,12 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [editing, setEditing] = useState<FactureEmise | 'new' | null>(null)
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
-  const [superpdpDe, setSuperpdpDe] = useState<FactureEmise | null>(null)
+  // L'IDENTIFIANT de la facture qu'on transmet, et non la facture : la fenêtre doit voir la ligne relue après un envoi
+  // (le numéro qu'a rendu Super PDP), pas celle du clic.
+  const [transmissionDe, setTransmissionDe] = useState<string | null>(null)
+  // Les transmissions du dossier, pour dire où en est chaque facture ; la fenêtre relit celles de la sienne.
+  const [transmissions, setTransmissions] = useState<TransmissionFacture[]>([])
+  const [transmissionsIncompletes, setTransmissionsIncompletes] = useState<string | null>(null)
   const [emailDe, setEmailDe] = useState<FactureEmise | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
 
@@ -56,8 +62,16 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       supabase.from('factures_emises').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
     )
+    // Tri TOTAL, la clé primaire en dernier : deux envois d'une même seconde se lisent toujours dans le même ordre.
+    const envois = await lireTout<TransmissionFacture>((debut, fin) =>
+      supabase.from('transmissions_factures')
+        .select('id, dossier_id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
+    )
     setFactures(lecture.lignes)
     setLectureIncomplete(lecture.complete ? null : lecture.motif)
+    setTransmissions(envois.lignes)
+    setTransmissionsIncompletes(envois.complete ? null : envois.motif)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -80,6 +94,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     load()
   }
 
+  // La facture qu'on transmet, telle que la liste l'a relue en dernier.
+  const transmise = transmissionDe ? factures.find((f) => f.id === transmissionDe) ?? null : null
+
   function ouvrir(f: FactureEmise) {
     if (f.statut === 'validee') setApercu(f)
     else setEditing(f)
@@ -95,6 +112,14 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           'a pas. Recharge la page avant d’en conclure quoi que ce soit.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les transmissions des factures"
+        motif={transmissionsIncompletes}
+        consequence={
+          'Une facture peut paraître jamais transmise alors qu’elle l’a été. La fenêtre « Transmettre » relit celles de sa '
+          + 'facture avant de proposer un envoi.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
         par une facture d'avoir plutôt qu'en la rouvrant.
@@ -104,9 +129,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         <p style={{ marginTop: 6, marginBottom: 0 }}>
           Le bouton "Avoir" sur une ligne crée un avoir avec sa propre numérotation (série "A",
           indépendante des factures), qui référence toujours la facture corrigée. Une fois validée,
-          une facture peut être transmise directement au client via Super PDP (facturation
-          électronique, plateforme agréée) ou envoyée par e-mail — imprimer/enregistrer en PDF reste
-          possible si tu préfères l'envoyer toi-même.
+          une facture peut être transmise par une plateforme agréée — celle du client, reliée dans
+          l'onglet Justificatifs, ou Super PDP — ou envoyée par e-mail ; imprimer/enregistrer en PDF
+          reste possible si tu préfères l'envoyer toi-même.
         </p>
       </details>
 
@@ -166,13 +191,26 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                       {f.statut === 'validee'
                         ? <span className="badge badge-ok">Validée</span>
                         : <span className="badge badge-warning">Brouillon</span>}
-                      {f.statut === 'validee' && f.superpdp_invoice_id && (
-                        <div style={{ marginTop: 4 }}>
-                          <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
-                            Super PDP · {f.superpdp_dernier_statut ? libelleStatutSuperpdp(f.superpdp_dernier_statut) : '…'}
-                          </span>
-                        </div>
-                      )}
+                      {f.statut === 'validee' && (() => {
+                        const courante = transmissionCourante(transmissions, f.id)
+                        if (courante) {
+                          return (
+                            <div style={{ marginTop: 4 }}>
+                              <span className={`badge ${ETATS_TRANSMISSION[courante.etat].badge}`}>
+                                {libelleCourtCanal(courante)} · {ETATS_TRANSMISSION[courante.etat].libelle}
+                              </span>
+                            </div>
+                          )
+                        }
+                        // Partie par Super PDP avant que chaque envoi laisse sa transmission.
+                        return f.superpdp_invoice_id ? (
+                          <div style={{ marginTop: 4 }}>
+                            <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
+                              Super PDP · {f.superpdp_dernier_statut ? libelleStatutSuperpdp(f.superpdp_dernier_statut) : '…'}
+                            </span>
+                          </div>
+                        ) : null
+                      })()}
                     </td>
                     <td className="td-actions" onClick={(e) => e.stopPropagation()}>
                       {f.statut === 'brouillon' && (
@@ -185,7 +223,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                         <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
                       )}
                       {f.statut === 'validee' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setSuperpdpDe(f)}>Super PDP</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>
                       )}
                       {f.statut === 'validee' && (
                         <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
@@ -229,11 +267,14 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         />
       )}
 
-      {superpdpDe && (
-        <SuperPdpFactureModal
+      {transmise && (
+        <TransmissionFactureModal
+          key={transmise.id}
           dossierId={dossierId}
-          facture={superpdpDe}
-          onClose={() => setSuperpdpDe(null)}
+          facture={transmise}
+          statutTva={statutTva}
+          articleExoneration={articleExoneration}
+          onClose={() => setTransmissionDe(null)}
           onUpdated={load}
         />
       )}

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES } from '../../test/factures'
-import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
 // légal que le cabinet émet lui-même. Ce que ce test garde et qu'aucun test de `src/lib` ne peut voir,
@@ -26,6 +26,9 @@ const faux = vi.hoisted(() => ({
   compteAnnonce: null as number | null,
   // Les lignes que la fenêtre de l'avoir lit sur la facture d'origine.
   lignes: [{ designation: 'Séance', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }],
+  // Les transmissions du dossier (ligne 28.5, étape c4), et le refus de leur lecture, à part de celui des factures.
+  transmissions: [] as TransmissionFacture[],
+  refusTransmissions: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -52,6 +55,14 @@ vi.mock('../../lib/supabase', () => ({
             return Promise.resolve({ data: null, error: null, count: null }).then(suite)
           }
           if (table === 'facture_lignes') return Promise.resolve({ data: faux.lignes, error: null, count: null }).then(suite)
+          if (table === 'transmissions_factures') {
+            if (faux.refusTransmissions) {
+              return Promise.resolve({ data: null, error: { message: faux.refusTransmissions }, count: null }).then(suite)
+            }
+            const lot = plage ? faux.transmissions.slice(plage[0], plage[1] + 1) : faux.transmissions
+            return Promise.resolve({ data: lot, error: null, count: faux.transmissions.length }).then(suite)
+          }
+          if (table !== 'factures_emises') throw new Error(`Table non attendue dans ce test : ${table}`)
           if (faux.refusLecture) {
             return Promise.resolve({ data: null, error: { message: faux.refusLecture }, count: null }).then(suite)
           }
@@ -83,6 +94,8 @@ function poser(factures: FactureEmise[]) {
   faux.refusLecture = null
   faux.refusSuppression = null
   faux.suppressions = []
+  faux.transmissions = []
+  faux.refusTransmissions = null
 }
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null) {
@@ -110,7 +123,7 @@ describe('FacturesTab — ce que chaque ligne permet', () => {
     const l = within(await ligne('CLINIQUE DU PARC'))
     l.getByText('Validée')
     expect(l.queryByRole('button', { name: 'Supprimer' })).toBeNull()
-    for (const action of ['Aperçu', 'Avoir', 'Super PDP', 'Envoyer par e-mail']) l.getByRole('button', { name: action })
+    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Envoyer par e-mail']) l.getByRole('button', { name: action })
   })
 
   it('un brouillon se supprime, mais ne se transmet ni ne se corrige par un avoir', async () => {
@@ -122,7 +135,7 @@ describe('FacturesTab — ce que chaque ligne permet', () => {
     const l = within(await ligne('CABINET VOISIN'))
     l.getByText('Brouillon')
     l.getByRole('button', { name: 'Supprimer' })
-    for (const action of ['Aperçu', 'Avoir', 'Super PDP', 'Envoyer par e-mail']) {
+    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Envoyer par e-mail']) {
       expect(l.queryByRole('button', { name: action })).toBeNull()
     }
   })
@@ -274,5 +287,45 @@ describe('FacturesTab — la facture neuve reçoit le statut de TVA du dossier',
     fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle facture' }))
     const taux = document.querySelectorAll('tbody tr')[0].querySelectorAll('input')[3] as HTMLInputElement
     expect(taux.value).toBe('20')
+  })
+})
+
+// OÙ EN EST CHAQUE FACTURE (ligne 28.5, étape c4) : la transmission active, sinon la plus récente, dit son canal et son
+// état ; une facture partie par Super PDP avant que chaque envoi laisse sa transmission garde son badge d'avant.
+describe('FacturesTab — la transmission de chaque facture', () => {
+  function envoi(o: Partial<TransmissionFacture> = {}): TransmissionFacture {
+    return {
+      id: 't1', dossier_id: 'dossier-de-test', facture_id: 'f1', canal: 'plateforme', hote: 'flux.plateforme-demo.fr',
+      flux_id: 'FLUX-1', sha256: 'a'.repeat(64), etat: 'depose', detail: null,
+      cree_le: '2026-10-08T08:00:00+00:00', maj_le: '2026-10-08T08:00:00+00:00', ...o,
+    }
+  }
+
+  it('l’active d’abord, sinon la plus récente ; une facture d’avant garde son badge Super PDP', async () => {
+    poser([
+      facture(),
+      facture({ id: 'f2', numero: 'F2026-0002', tiers_nom: 'MAIRIE FICTIVE' }),
+      facture({ id: 'f3', numero: 'F2026-0003', tiers_nom: 'ANCIEN CLIENT', superpdp_invoice_id: 42, superpdp_dernier_statut: 'fr:205' }),
+      facture({ id: 'f4', numero: 'F2026-0004', tiers_nom: 'JAMAIS PARTIE' }),
+    ])
+    faux.transmissions = [
+      envoi({ id: 't1', etat: 'echec', flux_id: null, cree_le: '2026-10-07T08:00:00+00:00' }),
+      envoi({ id: 't2', etat: 'depose', cree_le: '2026-10-06T08:00:00+00:00' }),
+      envoi({ id: 't3', facture_id: 'f2', canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'echec', flux_id: null }),
+    ]
+    monter()
+    within(await ligne('CLINIQUE DU PARC')).getByText('Plateforme du client · Déposée')
+    within(await ligne('MAIRIE FICTIVE')).getByText('Super PDP · Refusée au dépôt')
+    within(await ligne('ANCIEN CLIENT')).getByText('Super PDP · Acceptée')
+    expect(within(await ligne('JAMAIS PARTIE')).queryByText(/·/)).toBeNull()
+  })
+
+  it('une lecture refusée des transmissions se dit à part, et la liste des factures reste', async () => {
+    poser([facture()])
+    faux.refusTransmissions = 'JWT expired'
+    monter()
+    await ligne('CLINIQUE DU PARC')
+    expect(screen.getByText(/Les transmissions des factures/)).toBeTruthy()
+    expect(screen.getByText(/Une facture peut paraître jamais transmise/)).toBeTruthy()
   })
 })

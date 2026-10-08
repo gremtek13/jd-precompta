@@ -64,10 +64,15 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
     raison:
       "les lignes d'UNE facture en cours de modification, même borne",
   },
-  "src/pages/dossier/SuperPdpFactureModal.tsx [facture_superpdp_events]": {
+  "src/pages/dossier/TransmissionFactureModal.tsx [facture_superpdp_events]": {
     nombre: 1,
     raison:
-      "les événements de transmission d'UNE facture — soumission, validation, accusé",
+      "les événements de transmission d'UNE facture chez Super PDP — soumission, validation, accusé",
+  },
+  "src/pages/dossier/TransmissionFactureModal.tsx [facture_lignes]": {
+    nombre: 1,
+    raison:
+      "les lignes d'UNE facture validée, que la transmission juge avant le clic — même borne",
   },
   "src/lib/tauxChange.ts [taux_change_bce]": {
     nombre: 1,
