@@ -15,6 +15,8 @@ import {
   PREREQUIS_AUTH,
   RELATIONS,
   TABLES_AUTO_REFERENCEES,
+  TABLES_AUTO_REFERENCEES_PAR_VAGUES,
+  vaguesParLien,
   type Relation,
 } from './sauvegarde'
 
@@ -88,6 +90,26 @@ describe('ordre de restauration', () => {
     for (const { table, colonne } of TABLES_AUTO_REFERENCEES) {
       expect(RELATIONS).toContainEqual(expect.objectContaining({ enfant: table, parent: table, colonne }))
     }
+  })
+
+  it('restaure chaque auto-référence du graphe d’une façon déclarée, et d’une seule', () => {
+    // `violationsOrdre` ignore les auto-références : aucun ordre de tables ne les satisfait. Celle qu'aucune des deux
+    // listes ne déclarerait partirait comme une table ordinaire — et un encaissement qui en annule un autre
+    // échouerait au hasard de l'ordre des lignes dans un lot, la nuit où l'on restaure.
+    const auto = RELATIONS.filter((r) => r.enfant === r.parent).map((r) => `${r.enfant}.${r.colonne}`).sort()
+    const enDeuxPasses = TABLES_AUTO_REFERENCEES.map((a) => `${a.table}.${a.colonne}`)
+    const parVagues = TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => `${a.table}.${a.colonne}`)
+    expect([...enDeuxPasses, ...parVagues].sort()).toEqual(auto)
+    expect(parVagues).toEqual(['encaissements_factures.annule_id'])
+  })
+
+  it('écrit la répartition d’un encaissement après les lignes de facture dont son déclencheur lit les taux', () => {
+    // Une dépendance qu'aucune clé étrangère ne porte, donc que `violationsOrdre` ne voit pas : le déclencheur de
+    // `encaissements_factures_taux` refuse une part dont le taux n'est sur aucune ligne de la facture.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('facture_lignes')).toBeGreaterThanOrEqual(0)
+    expect(rang('facture_lignes')).toBeLessThan(rang('encaissements_factures_taux'))
+    expect(rang('encaissements_factures')).toBeLessThan(rang('encaissements_factures_taux'))
   })
 
   it('rend l’ordre de suppression exactement inverse', () => {
@@ -429,6 +451,51 @@ describe('plan de réinsertion', () => {
     // Rien à écrire, donc rien à perdre : la signaler ferait un avertissement sans conséquence, et
     // c'est ainsi qu'on apprend à les ignorer.
     expect(planReinsertion({ table_inconnue: [] }).tablesIgnorees).toEqual([])
+  })
+
+  it('écrit un encaissement avant son annulation, en deux écritures, lien compris', () => {
+    // Pas de seconde passe ici : la base refuse une annulation sans sa cible (la règle du signe) et toute
+    // modification d'un encaissement inséré. L'annulation part donc dans une écriture APRÈS celle de sa cible, et
+    // l'ordre des lignes dans la sauvegarde n'y change rien.
+    const annulation = { id: 'e2', dossier_id: 'd1', montant: -50, annule_id: 'e1' }
+    const encaissement = { id: 'e1', dossier_id: 'd1', montant: 50, annule_id: null }
+    const autre = { id: 'e3', dossier_id: 'd1', montant: 20, annule_id: null }
+    const plan = planReinsertion({ encaissements_factures: [annulation, encaissement, autre] })
+    expect(plan.etapes.filter((e) => e.table === 'encaissements_factures').map((e) => e.lignes.map((l) => l.id)))
+      .toEqual([['e1', 'e3'], ['e2']])
+    expect(plan.etapes[1].lignes[0].annule_id).toBe('e1')
+    expect(plan.secondePasse).toEqual([])
+  })
+
+  it('n’écrit qu’une vague quand aucun encaissement n’en annule un autre', () => {
+    const plan = planReinsertion({ encaissements_factures: [{ id: 'e1', annule_id: null }, { id: 'e2' }] })
+    expect(plan.etapes.map((e) => e.table)).toEqual(['encaissements_factures'])
+  })
+
+  it('met en première vague une annulation dont la cible manque — et `liensPerdus` refuse avant d’écrire', () => {
+    const orpheline = { id: 'e2', dossier_id: 'd1', montant: -50, annule_id: 'absent' }
+    const encaissement = { id: 'e1', dossier_id: 'd1', montant: 50, annule_id: null }
+    const annulation = { id: 'e3', dossier_id: 'd1', montant: -50, annule_id: 'e1' }
+    expect(vaguesParLien([orpheline, encaissement, annulation], 'annule_id')).toEqual([[orpheline, encaissement], [annulation]])
+    expect(liensPerdus({ encaissements_factures: [orpheline] })).toContainEqual(
+      expect.objectContaining({ table: 'encaissements_factures', colonne: 'annule_id', valeur: 'absent', effacable: false }),
+    )
+  })
+
+  it('ne boucle pas sur un cycle, que la base refusera', () => {
+    // Une annulation ne s'annule pas : la base l'interdit, et une sauvegarde n'en porte donc pas. Le plan ne doit
+    // pas pour autant tourner sans fin sur un fichier altéré : ce qui ne peut plus avancer part en dernier.
+    const a = { id: 'a', annule_id: 'b' }
+    const b = { id: 'b', annule_id: 'a' }
+    const c = { id: 'c', annule_id: null }
+    expect(vaguesParLien([a, b, c], 'annule_id')).toEqual([[c], [a, b]])
+  })
+
+  it('ne touche pas la sauvegarde qu’on lui donne, vagues comprises', () => {
+    const sauvegarde = { encaissements_factures: [{ id: 'e2', annule_id: 'e1' }, { id: 'e1', annule_id: null }] }
+    planReinsertion(sauvegarde)
+    expect(sauvegarde.encaissements_factures.map((l) => l.id)).toEqual(['e2', 'e1'])
+    expect(sauvegarde.encaissements_factures[0].annule_id).toBe('e1')
   })
 
   it('couvre chaque table auto-référencée déclarée', () => {

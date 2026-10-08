@@ -49,6 +49,12 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'emails_envoyes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'emails_envoyes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'met_a_null' },
   { enfant: 'emprunts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'encaissements_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'encaissements_factures', parent: 'encaissements_factures', colonne: 'annule_id', aLaSuppression: 'bloque' },
+  { enfant: 'encaissements_factures', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  { enfant: 'encaissements_factures', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'bloque' },
+  { enfant: 'encaissements_factures_taux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'encaissements_factures_taux', parent: 'encaissements_factures', colonne: 'encaissement_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices_clotures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices_valides', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_lignes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
@@ -123,6 +129,10 @@ export const RELATIONS: readonly Relation[] = [
 // réinsérer une écriture DÉJÀ validée, ou un solde reporté sur l'exercice suivant (ligne 34), que dans un dossier
 // qui n'a encore aucun exercice validé. Posée avant, elle ferait échouer la restauration de tout ce qui la suit.
 // `sauvegarde.test.ts` la garde en dernier.
+//
+// `encaissements_factures_taux` suit `facture_lignes` pour une raison que le graphe ne dit pas : son déclencheur
+// refuse une part dont le taux n'est pas celui d'une ligne de la facture, et il le lit dans `facture_lignes`, sans
+// clé étrangère. `sauvegarde.test.ts` garde aussi cet ordre-là.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -171,6 +181,8 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'lignes_bancaires',
   'ventilations_bancaires',
   'reglements_groupes',
+  'encaissements_factures',
+  'encaissements_factures_taux',
   'lettrages_manuels',
   'piece_commentaires',
   'piece_textes_ocr',
@@ -196,6 +208,40 @@ export const ORDRE_RESTAURATION: readonly string[] = [
 export const TABLES_AUTO_REFERENCEES: readonly { table: string; colonne: string }[] = [
   { table: 'factures_emises', colonne: 'facture_origine_id' },
 ]
+
+// Une table qui se référence elle-même et que la seconde passe ne PEUT PAS restaurer : `encaissements_factures`, dont
+// une annulation porte l'encaissement qu'elle contre-passe (`annule_id`, migration encaissements_des_factures,
+// 08/10/2026). La colonne ne part pas à NULL — la base veut qu'un montant négatif soit une annulation et qu'une
+// annulation soit négative (`encaissements_factures_signe`) — et ne se repose pas ensuite : un encaissement ne se
+// modifie plus après son insertion, sauf son retrait. Ses lignes partent donc par VAGUES : celles qui ne pointent
+// rien, puis celles dont la cible est déjà écrite. Une vague par écriture distincte, et non l'ordre des lignes dans
+// un même lot : le déclencheur lit la cible, et Postgres ne promet pas l'ordre dans lequel une commande traite ses
+// lignes. Une annulation ne s'annule pas (le même déclencheur) : deux vagues suffisent, et le plan en ferait plus.
+export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] = [
+  { table: 'encaissements_factures', colonne: 'annule_id' },
+]
+
+// Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
+// pointe que des lignes des précédentes. Une ligne qui pointe une ligne ABSENTE de la sauvegarde part dans la première
+// vague : `liensPerdus` l'a déjà signalée, et la restauration refuse avant d'écrire. Un cycle, que la base refuse, ne
+// fait pas boucler le plan : ce qui ne peut plus avancer part en dernier, et c'est la base qui dira non.
+export function vaguesParLien(lignes: Record<string, unknown>[], colonne: string): Record<string, unknown>[][] {
+  const presents = new Set(lignes.map((l) => String(l.id)))
+  const ecrits = new Set<string>()
+  const vagues: Record<string, unknown>[][] = []
+  let reste = lignes
+  while (reste.length > 0) {
+    const vague = reste.filter((l) => l[colonne] == null || !presents.has(String(l[colonne])) || ecrits.has(String(l[colonne])))
+    if (vague.length === 0) {
+      vagues.push(reste)
+      break
+    }
+    for (const l of vague) ecrits.add(String(l.id))
+    vagues.push(vague)
+    reste = reste.filter((l) => !ecrits.has(String(l.id)))
+  }
+  return vagues
+}
 
 /** Un lien qui pointe une ligne absente de la sauvegarde. */
 export interface LienPerdu {
@@ -247,7 +293,7 @@ type Contenu = Record<string, Record<string, unknown>[]>
 // `contenu` est la sauvegarde entière : un tableau de lignes par table.
 //
 // La comparaison se fait sur `id`, et c'est justifié mais pas évident : `id` n'est PAS la clé primaire
-// partout — sept tables ont une autre clé, et aucune des sept n'a même de colonne `id` (voir
+// partout — neuf tables ont une autre clé, et aucune des neuf n'a même de colonne `id` (voir
 // CLES_PRIMAIRES). Ce qui rend la lecture correcte ici, c'est qu'une clé étrangère d'une seule colonne
 // ne peut viser qu'une clé primaire d'une seule colonne : toutes les tables PARENTES du graphe ont
 // donc `id`. `sauvegardeClesPrimaires.test.ts` le vérifie — en DÉRIVANT les clés primaires du
@@ -290,27 +336,29 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 }
 
 // Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026 — et celles d'`exercices_valides`
-// (le dossier et l'année) à sa création, le 04/10/2026, et de `connexions_plateformes` (le dossier) le 07/10/2026.
+// (le dossier et l'année) à sa création, le 04/10/2026, de `connexions_plateformes` (le dossier) le 07/10/2026, et
+// d'`encaissements_factures_taux` (l'encaissement et le taux) le 08/10/2026.
 //
 // Pourquoi les inscrire : deux mécanismes en dépendent, et tous deux échouaient dessus.
 //
 // La pagination d'abord. Lire une table par tranches sans ORDER BY laisse Postgres rendre les lignes
 // dans l'ordre qui l'arrange, et il peut changer d'une tranche à l'autre : on récupère alors des
 // doublons et des trous, sans la moindre erreur. Il faut donc trier sur un ordre TOTAL, c'est-à-dire
-// sur la clé primaire — et trier sur `id` casserait franchement ici, ces huit tables n'ayant pas même
+// sur la clé primaire — et trier sur `id` casserait franchement ici, ces neuf tables n'ayant pas même
 // de colonne `id`.
 //
 // L'identité d'une ligne ensuite : savoir si une ligne existe déjà dans la base d'arrivée, ce dont
 // dépend la réinsertion des lignes partagées, ne peut se lire que sur sa vraie clé.
 //
-// Cinq de ces huit sont dans le plan d'export d'un dossier : `connexions_plateformes`, `exercices_valides`,
-// `facture_numerotation`, `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites par nature — une ligne par
-// dossier, ou par exercice — donc la pagination ne s'y déclenchera jamais en pratique. Ce n'est pas
-// une raison de les traiter à part : un mécanisme dont la justesse dépend de la petitesse des données
-// est un mécanisme qui tombera le jour où elles grandissent.
+// Six de ces neuf sont dans le plan d'export d'un dossier : `connexions_plateformes`, `encaissements_factures_taux`,
+// `exercices_valides`, `facture_numerotation`, `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites
+// par nature — une ligne par dossier, par exercice ou par taux d'un encaissement — donc la pagination ne s'y
+// déclenchera jamais en pratique. Ce n'est pas une raison de les traiter à part : un mécanisme dont la justesse
+// dépend de la petitesse des données est un mécanisme qui tombera le jour où elles grandissent.
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
+  encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   previsionnels_bancaires: ['dossier_id'],
@@ -344,8 +392,9 @@ export interface ViolationOrdre {
 // d'un calcul. Le jour où une relation est ajoutée au schéma sans reclasser la liste, ce contrôle le
 // dit — au lieu de laisser la découverte pour la nuit où on restaure vraiment.
 //
-// Les auto-références sont ignorées : elles ne peuvent être satisfaites par aucun ordre (voir
-// TABLES_AUTO_REFERENCEES), et les compter comme violations rendrait le contrôle toujours rouge.
+// Les auto-références sont ignorées : elles ne peuvent être satisfaites par aucun ordre de TABLES (voir
+// TABLES_AUTO_REFERENCEES et TABLES_AUTO_REFERENCEES_PAR_VAGUES), et les compter comme violations rendrait le
+// contrôle toujours rouge.
 export function violationsOrdre(
   ordre: readonly string[],
   relations: readonly Relation[] = RELATIONS,
@@ -455,6 +504,8 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   ecritures_brouillon: { acces: 'direct' },
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },
+  encaissements_factures: { acces: 'direct' },
+  encaissements_factures_taux: { acces: 'direct' },
   exercices_clotures: { acces: 'direct' },
   exercices_valides: { acces: 'direct' },
   facture_numerotation: { acces: 'direct' },
@@ -794,6 +845,13 @@ export function planReinsertion(
   for (const table of ordre) {
     const lignes = contenu[table]
     if (!lignes || lignes.length === 0) continue
+
+    const parVagues = TABLES_AUTO_REFERENCEES_PAR_VAGUES.find((a) => a.table === table)
+    if (parVagues) {
+      // Les lignes partent telles quelles, lien compris : aucune seconde passe ne le reposerait.
+      for (const vague of vaguesParLien(lignes, parVagues.colonne)) etapes.push({ table, lignes: vague })
+      continue
+    }
 
     const auto = TABLES_AUTO_REFERENCEES.filter((a) => a.table === table)
     if (auto.length === 0) {

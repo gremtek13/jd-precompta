@@ -147,7 +147,7 @@ supabase/
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
-                    abandonTransmission ; validationExercice,
+                    abandonTransmission, encaissementsFactures ; validationExercice,
                     liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -222,8 +222,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   `anon` (`dossier_id is null or …` fuyait). Les policies anciennes portent `{public}` sans faille, le prédicat fermant ;
   toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
 - **Les policies se REJOUENT** (`supabase/essais/rls.sql`) : trois profils, boucle sur `pg_class` (une table ajoutée sans
-  policy est attrapée), écritures d'essai annulées par sous-transaction, refus exigé en 42501 nommément, sept mutations
-  qui doivent virer au rouge. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
+  policy est attrapée), écritures d'essai annulées par sous-transaction, refus exigé en 42501 nommément, quatorze
+  mutations qui doivent virer au rouge. Le fichier se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
+  19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
+  l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
   P0001, donc on exige la RAISON → « CE QUI CONTOURNE LA RLS ».
 - **Stockage** : le premier segment du chemin EST le dossier (`(storage.foldername(name))[1]::uuid`) — un chemin non-UUID
   fait lever le cast pour tout le monde. Une suppression de fichier ne se teste pas en SQL (`protect_objects_delete`
@@ -358,8 +360,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
-  réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » et (e)
-  l'e-reporting.
+  réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
+  registre des encaissements, en base le 08/10/2026 ; d2 le module, d3 l'écran, d4 la déclaration hors application
+  (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -389,8 +392,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 7 fonctions au 07/10/2026) : vérifiés bénins par
-  impersonation. Seules `enregistrer_facture` et `valider_exercice` écrivent, avec leur propre contrôle d'accès ; plus
+- `anon_/authenticated_security_definer_function_executable` (5 et 10 fonctions au 08/10/2026) : vérifiés bénins par
+  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`
+  et `retirer_encaissement` écrivent, chacune avec son propre contrôle d'accès ; plus
   aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une
   NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -667,6 +671,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une facture rejetée ou refusée ne repart pas** : elle s'annule par un avoir interne, qui ne se transmet pas (DGFiP,
   § 3.6.4), et la base refuse l'une et l'autre ; le statut de Super PDP se reporte sur la transmission (213 et 501
   rejettent, 202 et la suite acceptent, un rejet l'emporte).
+- **Les encaissements d'une facture émise** (statut « Encaissée », 212 ; `encaissements_factures`,
+  `encaissements_factures_taux`, ligne 28.5 d1) : un REGISTRE, jamais déduit d'un rapprochement, que seule
+  `enregistrer_encaissement` écrit — douze refus dans un ordre que d2 et d3 reprennent, plafonds de la facture, de chaque
+  taux et du mouvement (seuil min(2 %, 5 €)) sous verrou, montants NETS des retirés et des annulations. Il ne se modifie
+  pas : jamais déclaré, il se retire (`retirer_encaissement`) ; déclaré, il se contre-passe (d4, qui donne son corps à
+  `encaissement_declare`). Le TTC par taux est REFAIT en base comme `montantsDuDocument`, en double précision
+  (`centimes_ligne_facture`), confronté à une table relevée en base (`encaissementsBase.test.ts`). La restauration
+  écrit une annulation APRÈS sa cible, par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), jamais en deux passes →
+  « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE ».
 - **Le numéro de TVA d'un dossier en franchise ou exonéré** : une case par dossier (`numero_tva_attribue`, décision du
   cabinet du 08/10/2026), refusée par la base hors de ces statuts ; le numéro se calcule du SIREN ; sans elle, ses
   factures sans TVA ne partent pas (G1.47). La facture imprimée porte le numéro de l'émetteur (`numeroTvaImprime`),
@@ -679,7 +692,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5498 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5512 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
@@ -732,8 +745,8 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
   jamais se fier à ce document ou à une session précédente.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
-- Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** sept
-  mutations qui mordent) ; la CI n'a pas accès à la base.
+- Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et**
+  quatorze mutations qui mordent) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.
