@@ -24,6 +24,8 @@ interface Props {
   // Le statut de TVA du dossier (lib/statutTva.ts) : la mention proposée sur une facture et les taux admis.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // L'option du dossier pour le paiement de la TVA d'après les débits, que la validation fige sur la facture.
+  tvaSurDebits: boolean
   onAdresseUpdated: (adresse: string) => void
 }
 
@@ -32,7 +34,7 @@ interface Props {
 // Super PDP (voir SuperPdpFactureModal, supabase/functions/superpdp-emit) ou, comme avant, simplement
 // imprimée/exportée en PDF pour être envoyée manuellement — les deux restent possibles, la
 // transmission électronique n'est jamais obligatoire (ex. client sans SIRET, ou pas encore configuré).
-export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, onAdresseUpdated }: Props) {
+export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, tvaSurDebits, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -205,6 +207,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           dossierAdresse={dossierAdresse}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
+          tvaSurDebits={tvaSurDebits}
           facture={editing === 'new' ? null : editing}
           onAdresseUpdated={onAdresseUpdated}
           onClose={() => setEditing(null)}

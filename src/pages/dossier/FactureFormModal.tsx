@@ -5,6 +5,10 @@ import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
+import {
+  apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
+  siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
+} from '../../lib/mentionsFacture'
 
 interface LigneEdit {
   id?: string // absent = ligne pas encore enregistrée
@@ -28,6 +32,8 @@ interface Props {
   // Le statut de TVA du dossier (lib/statutTva.ts), qui décide de la mention proposée et des taux admis.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // L'option du dossier pour le paiement de la TVA d'après les débits : la validation la fige sur la facture.
+  tvaSurDebits: boolean
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   onAdresseUpdated: (adresse: string) => void
   onClose: () => void
@@ -38,7 +44,7 @@ interface Props {
 // qui ouvre FactureApercu à la place dans ce cas) : toute la logique ici suppose qu'on peut encore
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
-export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, facture, onAdresseUpdated, onClose, onSaved }: Props) {
+export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, tvaSurDebits, facture, onAdresseUpdated, onClose, onSaved }: Props) {
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
@@ -48,6 +54,8 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
   const [mentionsLegales, setMentionsLegales] = useState(facture?.mentions_legales ?? mentionsLegalesParDefaut(statutTva, articleExoneration))
   const [emetteurAdresse, setEmetteurAdresse] = useState(facture?.emetteur_adresse ?? dossierAdresse ?? '')
   const [enregistrerAdresseDossier, setEnregistrerAdresseDossier] = useState(false)
+  // Les mentions de la facture électronique (lib/mentionsFacture.ts), reprises du brouillon.
+  const [mentions, setMentions] = useState<SaisieMentions>(() => saisieDesMentions(facture))
   const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide(statutTva)])
   const [chargementLignes, setChargementLignes] = useState(!!facture)
   // Non nul = on ne SAIT PAS ce que cette facture porte comme lignes. Voir l'effet ci-dessous :
@@ -129,6 +137,52 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     setMentionsLegales((m) => (m.trim() ? `${mention}\n${m}` : mention))
   }
 
+  // LES MENTIONS DE LA FACTURE ÉLECTRONIQUE (ligne 28.5, étape c4 ; lib/mentionsFacture.ts).
+  function majMentions(patch: Partial<SaisieMentions>) {
+    setMentions((m) => ({ ...m, ...patch }))
+  }
+  // Le SIREN qu'un SIRET porte s'applique sans attendre un clic, tant qu'on n'en a pas saisi un autre.
+  function changerSiret(valeur: string) {
+    const siren = sirenDuSiret(valeur)
+    if (siren && (mentions.siren.trim() === '' || mentions.siren === sirenDuSiret(tiersSiret))) majMentions({ siren })
+    setTiersSiret(valeur)
+  }
+
+  // L'en-tête tel qu'il s'enregistre, et tel que l'aperçu de la transmission le juge : un seul assemblage pour les deux.
+  const entete = {
+    tiers_nom: tiersNom.trim(),
+    tiers_adresse: tiersAdresse.trim() || null,
+    tiers_siret: siretAEnregistrer(tiersSiret),
+    date_emission: dateEmission,
+    date_echeance: dateEcheance || null,
+    notes: notes.trim() || null,
+    mentions_legales: mentionsLegales.trim() || null,
+    emetteur_nom: dossierNom || null,
+    emetteur_siret: dossierSiret || null,
+    emetteur_adresse: emetteurAdresse.trim() || null,
+    montant_ht: totaux.montant_ht,
+    montant_tva: totaux.montant_tva,
+    montant_ttc: totaux.montant_ttc,
+    ...mentionsAEnregistrer(mentions),
+  }
+  // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
+  const refusMentions = refusDesMentions(mentions, tiersSiret)
+  // L'option pour les débits ne vise que des prestations de services (CGI, ann. II, art. 242 nonies A, I, 11° bis).
+  const optionDebits = statutTva === 'redevable' && tvaSurDebits
+  const debitsImprimes = optionDebits && (mentions.nature === 'services' || mentions.nature === 'mixte')
+  // UNE FACTURE VALIDÉE NE SE CORRIGE PLUS QUE PAR UN AVOIR : ce qui l'empêcherait de partir par une plateforme agréée se
+  // dit AVANT la validation, avec le jugement même des fonctions qui la transmettent. Pas tant que la base refuserait la
+  // saisie : il y a d'abord cela à corriger, et le redire ici le dirait deux fois.
+  const apercu: ApercuTransmission | null = refusMentions.length > 0 ? null : apercuDeTransmission({
+    facture: { type: 'facture', ...entete },
+    lignes: lignesValides,
+    statutTva,
+    articleExoneration,
+    optionDebits,
+    aujourdHui: aujourdHuiSql(),
+  })
+  const nonTransmissible = apercu?.cas === 'a_completer' && versEntreprise(mentions.typeClient) ? apercu : null
+
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : `saving` est un état React, donc `disabled={!!saving}`
   // ne prend effet qu'au rendu SUIVANT et laisse passer deux envois rapprochés (CLAUDE.md). Dans le
   // `try`, le `return` du deuxième sortirait par le `finally`, qui relâcherait le verrou du PREMIER,
@@ -160,27 +214,25 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
       setError(refusTaxe)
       return
     }
+    // Les boutons sont déjà grisés : la base refuserait la saisie, et son message ne dirait pas quel champ corriger.
+    if (refusMentions.length > 0) {
+      setError(refusMentions[0])
+      return
+    }
     if (enregistrementEnCours.current) return
+    // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
+    // validée : la validation se confirme, et la confirmation dit ce qu'on perd.
+    if (statutCible === 'validee' && nonTransmissible) {
+      const premier = nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.'
+      const n = nonTransmissible.refus.length + nonTransmissible.ailleurs
+      const points = n === 1 ? 'un point à compléter :' : `${n} points à compléter, dont :`
+      if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n`
+        + 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?')) return
+    }
     enregistrementEnCours.current = true
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
     setError(null)
     try {
-      const payloadFacture = {
-        tiers_nom: tiersNom.trim(),
-        tiers_adresse: tiersAdresse.trim() || null,
-        tiers_siret: tiersSiret.trim() || null,
-        date_emission: dateEmission,
-        date_echeance: dateEcheance || null,
-        notes: notes.trim() || null,
-        mentions_legales: mentionsLegales.trim() || null,
-        emetteur_nom: dossierNom || null,
-        emetteur_siret: dossierSiret || null,
-        emetteur_adresse: emetteurAdresse.trim() || null,
-        montant_ht: totaux.montant_ht,
-        montant_tva: totaux.montant_tva,
-        montant_ttc: totaux.montant_ttc,
-      }
-
       // En-tête, remplacement complet des lignes et, le cas échéant, numéro et validation : un seul
       // appel, une seule transaction côté base (voir la migration enregistrer_facture_transactionnel).
       // C'étaient auparavant trois à cinq écritures indépendantes, dont chacune pouvait échouer seule
@@ -189,7 +241,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
       //
       // Le remplacement complet des lignes reste préféré à un diff ligne à ligne : une facture en a
       // rarement plus de quelques-unes.
-      await enregistrerFacture(dossierId, facture?.id ?? null, payloadFacture, lignesValides, statutCible === 'validee')
+      await enregistrerFacture(dossierId, facture?.id ?? null, entete, lignesValides, statutCible === 'validee')
 
       // Hors transaction à dessein : mémoriser l'adresse sur le dossier est un confort, sans rapport
       // avec l'intégrité de la facture, et son échec ne doit pas la remettre en cause.
@@ -247,14 +299,60 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
                 <input id="tiers-nom" required value={tiersNom} onChange={(e) => setTiersNom(e.target.value)} />
               </div>
               <div className="field">
-                <label htmlFor="tiers-siret">SIRET client (optionnel)</label>
-                <input id="tiers-siret" value={tiersSiret} onChange={(e) => setTiersSiret(e.target.value)} />
+                <label htmlFor="type-client">Le client est</label>
+                <select id="type-client" value={mentions.typeClient} onChange={(e) => majMentions({ typeClient: e.target.value as SaisieMentions['typeClient'] })}>
+                  <option value="">— à préciser —</option>
+                  <option value="assujetti">une entreprise établie en France</option>
+                  <option value="organisme_public">un organisme public (Chorus Pro)</option>
+                  <option value="non_assujetti">un particulier, ou un autre non-assujetti</option>
+                  <option value="etranger">établi hors de France</option>
+                </select>
+              </div>
+            </div>
+            <div className="field-row">
+              {sirenOuvert(mentions.typeClient) && (
+                <div className="field">
+                  <label htmlFor="tiers-siren">SIREN du client{versEntreprise(mentions.typeClient) ? '' : ' (s’il en a un)'}</label>
+                  <input id="tiers-siren" inputMode="numeric" value={mentions.siren} onChange={(e) => majMentions({ siren: e.target.value })} />
+                </div>
+              )}
+              <div className="field">
+                <label htmlFor="tiers-siret">
+                  SIRET du client{mentions.typeClient === 'organisme_public' ? ' (celui du service destinataire)' : ' (optionnel)'}
+                </label>
+                <input id="tiers-siret" value={tiersSiret} onChange={(e) => changerSiret(e.target.value)} />
               </div>
             </div>
             <div className="field">
               <label htmlFor="tiers-adresse">Adresse du client</label>
               <textarea id="tiers-adresse" rows={2} value={tiersAdresse} onChange={(e) => setTiersAdresse(e.target.value)} />
             </div>
+            {versEntreprise(mentions.typeClient) && (
+              <div className="field">
+                <label htmlFor="tiers-adresse-electronique">Adresse de facturation électronique (optionnel)</label>
+                <input
+                  id="tiers-adresse-electronique"
+                  value={mentions.adresseElectronique}
+                  onChange={(e) => majMentions({ adresseElectronique: e.target.value })}
+                  placeholder="SIREN, SIREN_SIRET ou SIREN_suffixe"
+                />
+                <span className="muted" style={{ fontSize: '0.78rem' }}>
+                  Telle que l’annuaire de la facturation électronique la publie ; sans elle, la facture part à l’adresse de son SIREN.
+                </span>
+              </div>
+            )}
+            {mentions.typeClient === 'organisme_public' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="code-service">Code service (s’il le demande)</label>
+                  <input id="code-service" value={mentions.codeService} onChange={(e) => majMentions({ codeService: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label htmlFor="numero-engagement">Numéro d’engagement (s’il le demande)</label>
+                  <input id="numero-engagement" value={mentions.numeroEngagement} onChange={(e) => majMentions({ numeroEngagement: e.target.value })} />
+                </div>
+              </div>
+            )}
 
             <div className="field-row">
               <div className="field">
@@ -262,10 +360,87 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
                 <input id="date-emission" type="date" required value={dateEmission} onChange={(e) => setDateEmission(e.target.value)} />
               </div>
               <div className="field">
-                <label htmlFor="date-echeance">Date d'échéance (optionnel)</label>
+                <label htmlFor="date-echeance">Date d'échéance{versEntreprise(mentions.typeClient) ? '' : ' (optionnel)'}</label>
                 <input id="date-echeance" type="date" value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} />
               </div>
             </div>
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="nature-operation">La facture porte sur</label>
+                <select id="nature-operation" value={mentions.nature} onChange={(e) => majMentions({ nature: e.target.value as SaisieMentions['nature'] })}>
+                  <option value="">— à préciser —</option>
+                  <option value="services">des prestations de services</option>
+                  <option value="biens">des livraisons de biens</option>
+                  <option value="mixte">des biens et des services</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="prestation">Date de la livraison ou de la prestation</label>
+                <select id="prestation" value={mentions.prestation} onChange={(e) => majMentions({ prestation: e.target.value as SaisieMentions['prestation'] })}>
+                  <option value="facture">celle de la facture</option>
+                  <option value="date">un autre jour</option>
+                  <option value="periode">une période</option>
+                </select>
+              </div>
+            </div>
+            {mentions.prestation === 'date' && (
+              <div className="field">
+                <label htmlFor="date-prestation">Livrée ou achevée le</label>
+                <input id="date-prestation" type="date" value={mentions.datePrestation} onChange={(e) => majMentions({ datePrestation: e.target.value })} />
+              </div>
+            )}
+            {mentions.prestation === 'periode' && (
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="periode-debut">Du</label>
+                  <input id="periode-debut" type="date" value={mentions.periodeDebut} onChange={(e) => majMentions({ periodeDebut: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label htmlFor="periode-fin">Au</label>
+                  <input id="periode-fin" type="date" value={mentions.periodeFin} onChange={(e) => majMentions({ periodeFin: e.target.value })} />
+                </div>
+              </div>
+            )}
+            {livraisonOuverte(mentions.nature) && (
+              <div className="field">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                  <input
+                    id="livraison-ailleurs"
+                    type="checkbox"
+                    checked={mentions.livraisonAilleurs}
+                    onChange={(e) => majMentions({ livraisonAilleurs: e.target.checked })}
+                  />
+                  Les biens sont livrés ailleurs qu’à l’adresse du client
+                </label>
+                {mentions.livraisonAilleurs && (
+                  <>
+                    <div className="field" style={{ marginTop: 8 }}>
+                      <label htmlFor="livraison-adresse">Adresse de livraison</label>
+                      <input id="livraison-adresse" value={mentions.livraisonAdresse} onChange={(e) => majMentions({ livraisonAdresse: e.target.value })} />
+                    </div>
+                    <div className="field-row">
+                      <div className="field">
+                        <label htmlFor="livraison-code-postal">Code postal</label>
+                        <input id="livraison-code-postal" value={mentions.livraisonCodePostal} onChange={(e) => majMentions({ livraisonCodePostal: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="livraison-ville">Ville</label>
+                        <input id="livraison-ville" value={mentions.livraisonVille} onChange={(e) => majMentions({ livraisonVille: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="livraison-pays">Pays (deux lettres)</label>
+                        <input id="livraison-pays" maxLength={2} value={mentions.livraisonPays} onChange={(e) => majMentions({ livraisonPays: e.target.value })} />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {refusMentions.length > 0 && (
+              <div className="error-text" role="alert">
+                {refusMentions.map((r) => <p key={r} style={{ margin: '0 0 4px' }}>{r}</p>)}
+              </div>
+            )}
 
             <div className="field">
               <label>Lignes</label>
@@ -344,14 +519,35 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
+            {debitsImprimes && (
+              <p className="muted">
+                La facture portera l’option pour le paiement de la TVA d’après les débits, que le dossier a prise (onglet TVA) :
+                la validation la fige.
+              </p>
+            )}
+            {apercu?.cas === 'hors_plateforme' && <p className="muted">{apercu.message}</p>}
+            {apercu?.cas === 'transmissible' && (
+              <p className="muted">Rien n’empêchera cette facture, une fois validée, de partir par une plateforme agréée.</p>
+            )}
+            {apercu?.cas === 'a_completer' && (
+              <div className="alerte-tva" style={{ marginTop: 8 }}>
+                <strong>Pour partir par une plateforme agréée</strong>, cette facture devra encore :
+                <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+                  {apercu.refus.map((r) => <li key={r}>{r}</li>)}
+                  {apercu.ailleurs > 0 && <li>régler la TVA, comme le formulaire le signale plus haut.</li>}
+                </ul>
+                Une facture validée ne se corrige plus que par un avoir : complète-la avant de la valider si elle doit partir ainsi.
+              </div>
+            )}
+
             {error && <p className="error-text">{error}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>
-              <button type="submit" className="btn btn-outline" disabled={!!saving}>
+              <button type="submit" className="btn btn-outline" disabled={!!saving || refusMentions.length > 0}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || refusTaxe != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

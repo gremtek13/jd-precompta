@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import { calculerLigne } from '../../lib/factures'
+import { mentionsImprimees } from '../../lib/factureCii'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
@@ -17,6 +18,9 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
   // lignes de tableau (elle a toute la liste en mémoire), mais l'aperçu peut aussi être ouvert seul.
   const [numeroOrigine, setNumeroOrigine] = useState<string | null>(null)
   const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
+  // Les mentions de la facture électronique (ligne 28.5, étape c4) : celles qu'elle porte, et seulement elles — une
+  // facture d'avant les a nulles, et rien ne s'y imprime à leur place.
+  const mentions = mentionsImprimees(facture)
 
   // CET APERÇU EST LE DOCUMENT QU'ON IMPRIME ET QU'ON ENVOIE (voir .facture-imprimable).
   // `data ?? []` sur une lecture refusée y produisait un tableau de lignes VIDE sous des totaux
@@ -72,6 +76,12 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
           {facture.tiers_adresse && <div className="muted" style={{ whiteSpace: 'pre-line' }}>{facture.tiers_adresse}</div>}
           {facture.tiers_siret && <div className="muted">SIRET {facture.tiers_siret}</div>}
         </div>
+
+        {mentions.length > 0 && (
+          <div className="muted" style={{ marginBottom: 20 }}>
+            {mentions.map((m) => <div key={m.libelle}>{m.libelle} : {m.texte}</div>)}
+          </div>
+        )}
 
         <div className="table-scroll">
           <table>
