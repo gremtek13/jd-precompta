@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { DELAI_AVANT_ABANDON_MS } from './transmissionsFactures'
 
 // LA RÉCEPTION PAR LA PLATEFORME AGRÉÉE DU CLIENT (`plateforme-agreee`, ligne 28.5 de la feuille de route, étape b)
 // SE TESTE SUR SA VRAIE SOURCE.
@@ -1136,7 +1137,9 @@ describe('plateforme-agreee — le dépôt d’une facture émise', () => {
   })
 
   it('un dépôt inconnu de la plateforme n’est tenu pour perdu qu’au-delà du délai — jamais sur un âge illisible', () => {
-    expect(D.DELAI_AVANT_ABANDON_MS).toBe(15 * 60_000)
+    // Le délai de l'abandon par le cabinet, que la base exige (`abandonner_transmission`, confronté à la migration par
+    // transmissionsFactures.test.ts) : le suivi ne tient pas un dépôt pour perdu plus tôt que le cabinet ne le pourrait.
+    expect(D.DELAI_AVANT_ABANDON_MS).toBe(DELAI_AVANT_ABANDON_MS)
     expect(D.suiteDuSuivi(envoi(), { absent: true }, MAINTENANT)).toEqual({ maj: null, message: expect.stringMatching(/pas encore/) })
     const limite = new Date(MAINTENANT - D.DELAI_AVANT_ABANDON_MS).toISOString()
     expect(D.suiteDuSuivi(envoi(limite), { absent: true }, MAINTENANT).maj).toBeNull()

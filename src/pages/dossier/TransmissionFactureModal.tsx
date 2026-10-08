@@ -7,7 +7,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
-import { ETATS_TRANSMISSION, estActive, libelleCanal, transmissionsDe } from '../../lib/transmissionsFactures'
+import { ETATS_TRANSMISSION, abandonnable, estActive, libelleCanal, transmissionsDe } from '../../lib/transmissionsFactures'
 import type { ArticleExoneration, FactureEmise, FactureSuperpdpEvent, StatutTva, TransmissionFacture } from '../../lib/types'
 
 interface Props {
@@ -39,6 +39,8 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
     facture.type === 'avoir' && facture.facture_origine_id ? undefined : null,
   )
   const [transmissions, setTransmissions] = useState<TransmissionFacture[] | null>(null)
+  // L'instant de leur lecture : l'abandon se juge sur lui, la liste qu'on voit étant celle de cet instant.
+  const [luesA, setLuesA] = useState(0)
   const [lectureRatee, setLectureRatee] = useState<string | null>(null)
   // `undefined` : pas encore lue ; `null` : aucune plateforme reliée au dossier.
   const [connexion, setConnexion] = useState<ConnexionPlateformeVue | null | undefined>(undefined)
@@ -58,6 +60,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
         .eq('facture_id', facture.id).order('cree_le').order('id').range(debut, fin),
     )
     setTransmissions(lecture.complete ? lecture.lignes : null)
+    setLuesA(Date.now())
     setLectureRatee(lecture.complete ? null : lecture.motif)
   }
 
@@ -178,6 +181,25 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
     })
   }
 
+  // L'ABANDON D'UNE TRANSMISSION RESTÉE SANS ISSUE CONNUE (`abandonner_transmission`) : elle bloque tout nouvel envoi, et
+  // seul le cabinet peut vérifier sur la plateforme que la facture n'y est pas. La confirmation dit quoi vérifier, et ce
+  // que coûte une erreur : une facture reçue deux fois.
+  function abandonner(t: TransmissionFacture) {
+    if (appelEnCours.current) return
+    const ou = t.canal === 'superpdp'
+      ? `sur Super PDP que ${nature} ${facture.numero ?? ''} n’y est pas (elle y porterait l’identifiant externe ${facture.id})`
+      : `sur la plateforme (${t.hote}) que ${nature} ${facture.numero ?? ''} n’y est pas`
+    if (!window.confirm(`Abandonner cette transmission ? Vérifie d’abord ${ou}.\n\n`
+      + 'Si elle y est et qu’elle repart, le client la recevra deux fois.')) return
+    agir(`abandonner-${t.id}`, async () => {
+      const { error } = await supabase.rpc('abandonner_transmission', { p_transmission_id: t.id })
+      if (error) setErreur(messageErreur(error, 'La transmission n’a pas pu être abandonnée.'))
+      else setMessage('Transmission abandonnée : la facture peut repartir.')
+      await lireTransmissions()
+      onUpdated()
+    })
+  }
+
   function actualiserSuperPdp() {
     agir('actualiser', async () => {
       const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('superpdp-emit', {
@@ -220,6 +242,9 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               <p>
                 <span className={`badge ${ETATS_TRANSMISSION[active.etat].badge}`}>{ETATS_TRANSMISSION[active.etat].libelle}</span>{' '}
                 par {libelleCanal(active)}. {ETATS_TRANSMISSION[active.etat].explication}
+                {active.etat === 'envoi' && (active.canal === 'plateforme'
+                  ? ' « Suivre » la cherche sur la plateforme ; si elle ne la retrouve pas, elle s’abandonne un quart d’heure après son départ, vérification faite.'
+                  : ' Super PDP ne se consulte pas d’ici : un quart d’heure après son départ, elle s’abandonne, vérification faite sur Super PDP.')}
               </p>
             )}
             {avantLesTransmissions && (
@@ -246,6 +271,11 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
                             {t.canal === 'plateforme' && (t.etat === 'envoi' || t.etat === 'depose') && (
                               <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={() => suivre(t)}>
                                 {enCours === `suivre-${t.id}` ? 'Suivi…' : 'Suivre'}
+                              </button>
+                            )}
+                            {abandonnable(t, luesA) && (
+                              <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={() => abandonner(t)}>
+                                {enCours === `abandonner-${t.id}` ? 'Abandon…' : 'Abandonner'}
                               </button>
                             )}
                           </td>

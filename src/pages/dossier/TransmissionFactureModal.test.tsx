@@ -62,6 +62,10 @@ vi.mock('../../lib/supabase', () => {
         }
         throw new Error(`Table non attendue dans ce test : ${table}`)
       },
+      rpc: (nom: string, args: Record<string, unknown>) => {
+        faux.appels.push({ nom, body: args })
+        return new Promise((resolve) => { faux.resoudre = resolve })
+      },
       functions: {
         invoke: (nom: string, options: { body: Record<string, unknown> }) => {
           if (nom === 'plateforme-agreee' && options.body.action === 'statut') {
@@ -255,5 +259,49 @@ describe('TransmissionFactureModal — un avoir', () => {
     monter({ facture: avoir.facture, lignes: avoir.lignes, origine: null })
     expect(await screen.findByText(/L’avoir doit citer la facture qu’il corrige/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Déposer sur/ })).toBeNull()
+  })
+})
+
+// L'ABANDON D'UNE TRANSMISSION RESTÉE SANS ISSUE CONNUE (`abandonner_transmission`) : elle bloque tout nouvel envoi. Le
+// bouton n'existe qu'un quart d'heure après son départ — la base refuserait plus tôt —, la confirmation dit quoi
+// vérifier, et un seul abandon part pour plusieurs clics.
+describe('TransmissionFactureModal — l’abandon d’une transmission sans issue connue', () => {
+  const ilYA = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+
+  it('pas avant un quart d’heure : la fenêtre dit quand', async () => {
+    monter({ transmissions: [transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'envoi', flux_id: null, cree_le: ilYA(5) })] })
+    expect(await screen.findByText(/un quart d’heure après son départ, elle s’abandonne, vérification faite sur Super PDP/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Abandonner' })).toBeNull()
+  })
+
+  it('passé le délai : confirmé en disant quoi vérifier, un seul abandon, et la facture peut repartir', async () => {
+    const envoi = transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'envoi', flux_id: null, cree_le: ilYA(20) })
+    monter({ transmissions: [envoi] })
+    const bouton = await screen.findByRole('button', { name: 'Abandonner' })
+    expect(screen.queryByRole('button', { name: /Déposer sur/ })).toBeNull()
+
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { bouton.click() })
+    expect(faux.appels).toEqual([])
+    expect(confirmation.mock.calls[0][0]).toContain('Vérifie d’abord sur Super PDP que la facture F2026-0001 n’y est pas (elle y porterait l’identifiant externe f1)')
+    expect(confirmation.mock.calls[0][0]).toContain('le client la recevra deux fois')
+
+    confirmation.mockReturnValue(true)
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.appels).toEqual([{ nom: 'abandonner_transmission', body: { p_transmission_id: 't1' } }])
+    faux.transmissions = [{ ...envoi, etat: 'echec', detail: 'Abandonnée par le cabinet.' }]
+    await act(async () => { faux.resoudre?.({ data: null, error: null }) })
+    expect(screen.getByRole('status').textContent).toBe('Transmission abandonnée : la facture peut repartir.')
+    expect(await deposer()).toBeTruthy()
+  })
+
+  it('un abandon refusé par la base se dit', async () => {
+    monter({ transmissions: [transmission({ etat: 'envoi', flux_id: null, cree_le: ilYA(20) })] })
+    const bouton = await screen.findByRole('button', { name: 'Abandonner' })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { bouton.click() })
+    expect(confirmation.mock.calls[0][0]).toContain('Vérifie d’abord sur la plateforme (flux.plateforme-demo.fr) que la facture F2026-0001 n’y est pas')
+    await act(async () => { faux.resoudre?.({ data: null, error: { message: 'Accès refusé à ce dossier.' } }) })
+    expect(screen.getByText('Accès refusé à ce dossier.')).toBeTruthy()
   })
 })
