@@ -59,6 +59,10 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
     nombre: 1,
     raison: 'la copie auto-portée exacte de la précédente, même fonction et même refus en 409',
   },
+  'plateforme-agreee': {
+    nombre: 1,
+    raison: 'les lignes d’UNE facture, bornées par le modèle, pour son dépôt au format CII',
+  },
   'send-email': {
     nombre: 1,
     raison:
