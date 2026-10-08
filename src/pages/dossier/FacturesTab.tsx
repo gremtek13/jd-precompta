@@ -168,85 +168,94 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
               : lectureIncomplete ? 'La liste des factures n’a pas pu être lue.' : 'Aucune facture.'}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr><th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>Statut</th><th></th></tr>
-            </thead>
-            <tbody>
-              {filtered.map((f) => {
-                const origine = f.facture_origine_id ? factures.find((o) => o.id === f.facture_origine_id) : null
-                return (
-                  <tr key={f.id} className="clickable" onClick={() => ouvrir(f)}>
-                    <td>
-                      {f.numero ?? '—'}
-                      {f.type === 'avoir' && (
-                        <>
-                          {' '}<span className="badge badge-neutral">Avoir</span>
-                          <div className="muted" style={{ fontSize: '0.78rem' }}>→ {origine?.numero ?? f.facture_origine_id?.slice(0, 8)}</div>
-                        </>
-                      )}
-                    </td>
-                    <td>{formatDate(f.date_emission)}</td>
-                    <td>{f.tiers_nom}</td>
-                    <td>{formatMoney(f.montant_ttc)}</td>
-                    <td>
-                      {f.statut === 'validee'
-                        ? <span className="badge badge-ok">Validée</span>
-                        : <span className="badge badge-warning">Brouillon</span>}
-                      {f.statut === 'validee' && (() => {
-                        const courante = transmissionCourante(transmissions, f.id)
-                        // Partie par Super PDP, la facture a un cycle de vie que Super PDP rend (reçue, refusée par
-                        // l'acheteur, encaissée…) : il en dit plus que l'état de sa transmission.
-                        if (courante?.canal === 'superpdp' && f.superpdp_dernier_statut) {
-                          return (
-                            <div style={{ marginTop: 4 }}>
-                              <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
-                                Super PDP · {libelleStatutSuperpdp(f.superpdp_dernier_statut)}
+          // REPLIÉE EN FICHES SOUS 860 PIXELS D'ENVELOPPE (08/10/2026). Six colonnes — dont une de quatre boutons — ne
+          // tiennent pas dans le panneau central quand le volet de droite est ouvert (le cas par défaut sur ordinateur) :
+          // la colonne des boutons passait derrière un défilement latéral, et la pastille d'état devenait un disque de
+          // quatre lignes. Chaque facture devient une fiche dont toutes les actions sont à portée (voir `.tableau-adaptable`
+          // dans index.css). `.card` reste l'enveloppe qui défile et qui arrondit l'en-tête : l'enveloppe adaptable est DANS
+          // la carte, et c'est `table-empilable-en-carte` qui rend aux fiches le jeu que la carte, sans marge, ne leur donne pas.
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr><th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>Statut</th><th></th></tr>
+              </thead>
+              <tbody>
+                {filtered.map((f) => {
+                  const origine = f.facture_origine_id ? factures.find((o) => o.id === f.facture_origine_id) : null
+                  return (
+                    <tr key={f.id} className="clickable" onClick={() => ouvrir(f)}>
+                      {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et
+                          chaque enfant direct y serait une pièce à part — le numéro, la pastille « Avoir » et la facture
+                          corrigée écartés au bout de la rangée. */}
+                      <td data-libelle="Numéro">
+                        <div>
+                          {f.numero ?? '—'}
+                          {f.type === 'avoir' && (
+                            <>
+                              {' '}<span className="badge badge-neutral">Avoir</span>
+                              <div className="muted" style={{ fontSize: '0.78rem' }}>→ {origine?.numero ?? f.facture_origine_id?.slice(0, 8)}</div>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td data-libelle="Date">{formatDate(f.date_emission)}</td>
+                      <td data-libelle="Client">{f.tiers_nom}</td>
+                      <td data-libelle="Montant TTC">{formatMoney(f.montant_ttc)}</td>
+                      <td data-libelle="Statut">
+                        <div className="pastilles-empilees">
+                          {f.statut === 'validee'
+                            ? <span className="badge badge-ok">Validée</span>
+                            : <span className="badge badge-warning">Brouillon</span>}
+                          {f.statut === 'validee' && (() => {
+                            const courante = transmissionCourante(transmissions, f.id)
+                            // Partie par Super PDP, la facture a un cycle de vie que Super PDP rend (reçue, refusée par
+                            // l'acheteur, encaissée…) : il en dit plus que l'état de sa transmission.
+                            if (courante?.canal === 'superpdp' && f.superpdp_dernier_statut) {
+                              return (
+                                <span className={`badge badge-une-ligne ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
+                                  Super PDP · {libelleStatutSuperpdp(f.superpdp_dernier_statut)}
+                                </span>
+                              )
+                            }
+                            if (courante) {
+                              return (
+                                <span className={`badge badge-une-ligne ${ETATS_TRANSMISSION[courante.etat].badge}`}>
+                                  {libelleCourtCanal(courante)} · {ETATS_TRANSMISSION[courante.etat].libelle}
+                                </span>
+                              )
+                            }
+                            // Partie par Super PDP avant que chaque envoi laisse sa transmission.
+                            return f.superpdp_invoice_id ? (
+                              <span className={`badge badge-une-ligne ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
+                                Super PDP · {f.superpdp_dernier_statut ? libelleStatutSuperpdp(f.superpdp_dernier_statut) : '…'}
                               </span>
-                            </div>
-                          )
-                        }
-                        if (courante) {
-                          return (
-                            <div style={{ marginTop: 4 }}>
-                              <span className={`badge ${ETATS_TRANSMISSION[courante.etat].badge}`}>
-                                {libelleCourtCanal(courante)} · {ETATS_TRANSMISSION[courante.etat].libelle}
-                              </span>
-                            </div>
-                          )
-                        }
-                        // Partie par Super PDP avant que chaque envoi laisse sa transmission.
-                        return f.superpdp_invoice_id ? (
-                          <div style={{ marginTop: 4 }}>
-                            <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
-                              Super PDP · {f.superpdp_dernier_statut ? libelleStatutSuperpdp(f.superpdp_dernier_statut) : '…'}
-                            </span>
-                          </div>
-                        ) : null
-                      })()}
-                    </td>
-                    <td className="td-actions" onClick={(e) => e.stopPropagation()}>
-                      {f.statut === 'brouillon' && (
-                        <button className="btn btn-danger btn-sm" onClick={() => supprimer(f)}>Supprimer</button>
-                      )}
-                      {f.statut === 'validee' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setApercu(f)}>Aperçu</button>
-                      )}
-                      {f.statut === 'validee' && f.type === 'facture' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
-                      )}
-                      {f.statut === 'validee' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>
-                      )}
-                      {f.statut === 'validee' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                            ) : null
+                          })()}
+                        </div>
+                      </td>
+                      <td className="td-actions" onClick={(e) => e.stopPropagation()}>
+                        {f.statut === 'brouillon' && (
+                          <button className="btn btn-danger btn-sm" onClick={() => supprimer(f)}>Supprimer</button>
+                        )}
+                        {f.statut === 'validee' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setApercu(f)}>Aperçu</button>
+                        )}
+                        {f.statut === 'validee' && f.type === 'facture' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
+                        )}
+                        {f.statut === 'validee' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>
+                        )}
+                        {f.statut === 'validee' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

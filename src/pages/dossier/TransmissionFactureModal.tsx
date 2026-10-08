@@ -310,17 +310,27 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
             {siennes.length > 0 && (
               <div className="field">
                 <label>Transmissions</label>
-                <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
-                  <table>
+                {/* Repliées en fiches : la fenêtre mesure au plus 640 pixels, et cinq colonnes y poussaient le détail — au
+                    long texte, adresse électronique comprise — par-dessus les boutons « Suivre » et « Abandonner », hors de
+                    la vue ; sur téléphone, le détail revenait à la ligne lettre par lettre. Chaque transmission est une fiche
+                    où le détail a toute la largeur et les boutons restent visibles (voir `.tableau-adaptable` dans index.css).
+                    Les fiches portent leur propre bordure : pas de cadre autour d'elles. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable">
                     <thead><tr><th>Date</th><th>Par</th><th>État</th><th>Détail</th><th></th></tr></thead>
                     <tbody>
                       {siennes.map((t) => (
                         <tr key={t.id}>
-                          <td>{formatDate(t.cree_le)} <span className="muted">({dateRelative(t.cree_le)})</span></td>
-                          <td>{libelleCanal(t)}</td>
-                          <td><span className={`badge ${ETATS_TRANSMISSION[t.etat].badge}`}>{ETATS_TRANSMISSION[t.etat].libelle}</span></td>
-                          <td className="muted" style={{ fontSize: '0.82rem' }}>{t.detail ?? '—'}</td>
-                          <td>
+                          {/* Une seule pièce dans la rangée de la fiche : sans `span`, la date et son « il y a… » seraient
+                              deux éléments écartés l'un de l'autre. */}
+                          <td data-libelle="Date"><span>{formatDate(t.cree_le)} <span className="muted">({dateRelative(t.cree_le)})</span></span></td>
+                          <td data-libelle="Par">{libelleCanal(t)}</td>
+                          <td data-libelle="État"><span className={`badge ${ETATS_TRANSMISSION[t.etat].badge}`}>{ETATS_TRANSMISSION[t.etat].libelle}</span></td>
+                          {/* `anywhere` : une adresse de facturation électronique n'a aucune espace (250100021_25010002100014_SSIAD-…),
+                              et un mot insécable que `break-word` ne compte pas dans la largeur minimale repoussait la cellule
+                              hors de la fiche. */}
+                          <td className="muted" data-libelle="Détail" style={{ fontSize: '0.82rem', overflowWrap: 'anywhere' }}>{t.detail ?? '—'}</td>
+                          <td className="td-actions">
                             {t.canal === 'plateforme' && (t.etat === 'envoi' || t.etat === 'depose') && (
                               <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={() => suivre(t)}>
                                 {enCours === `suivre-${t.id}` ? 'Suivi…' : 'Suivre'}
