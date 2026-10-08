@@ -338,7 +338,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   07/10/2026) ; transmission de la facture électronique par la plateforme du client et par Super PDP, sous une
   transmission réservée, depuis l'onglet Factures — mentions saisies avant la validation et imprimées, suivi, abandon
   d'une issue inconnue, statut de Super PDP reporté, avoir interne d'une facture rejetée, numéro de TVA d'un dossier en
-  franchise ou exonéré (28.5 c3 à c5, 08/10/2026).
+  franchise ou exonéré (28.5 c3 à c5, 08/10/2026) ; les encaissements d'une facture émise — registre en base (d1), module
+  (d2), et l'écran : pastille de l'onglet Factures et fenêtre « Encaissements » (d3, 08/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -368,8 +369,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
-  registre des encaissements, en base, et d2, son module, le 08/10/2026 ; d3 l'écran, d4 la déclaration hors application
-  (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
+  registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4 la déclaration hors
+  application, dont la base est en production (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -690,7 +691,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dans son ordre et sous ses mots — confrontés au texte de la fonction, aux messages de l'essai et à une batterie de
   4 000 saisies jouée sur une réplique (`encaissementsBatterie.test.ts`, aucun écart) — ; le reste NET par taux de
   `montantsDuDocument` ; la répartition au prorata des restes (Q3) ; l'échéance ; des propositions dont chacune est un
-  encaissement que la base accepterait → « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE », « LE MODULE DES ENCAISSEMENTS ».
+  encaissement que la base accepterait. L'écran (d3) : une pastille par facture validée selon `resteAEncaisser`, muette
+  pour un statut sans objet et sur une lecture incomplète (`lib/encaissementsAffichage.ts`) ; la fenêtre
+  `EncaissementsFactureModal` lit tout par `lireTout`, n'offre rien sur une lecture partielle, dit les refus avant le clic
+  et n'écrit que par les deux fonctions, sous un verrou relâché après la relecture ; `encaissementsEcritures.test.ts`
+  refuse toute écriture directe du registre hors de la restauration (`sauvegardeDonnees.ts`, deux écritures à table
+  variable) → « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE », « LE MODULE DES ENCAISSEMENTS », « L'ÉCRAN DES ENCAISSEMENTS ».
+- **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
+  § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
+  `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
 - **Le numéro de TVA d'un dossier en franchise ou exonéré** : une case par dossier (`numero_tva_attribue`, décision du
   cabinet du 08/10/2026), refusée par la base hors de ces statuts ; le numéro se calcule du SIREN ; sans elle, ses
   factures sans TVA ne partent pas (G1.47). La facture imprimée porte le numéro de l'émetteur (`numeroTvaImprime`),
@@ -703,7 +712,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5597 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5644 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

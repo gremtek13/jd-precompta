@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
+import type { EncaissementLu, LigneDeFacture, PartLue } from '../../lib/encaissementsFactures'
+import { pastilleEncaissement } from '../../lib/encaissementsAffichage'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -9,6 +11,7 @@ import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
+import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import { ETATS_TRANSMISSION, libelleCourtCanal, transmissionCourante } from '../../lib/transmissionsFactures'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
@@ -53,6 +56,13 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [transmissions, setTransmissions] = useState<TransmissionFacture[]>([])
   const [transmissionsIncompletes, setTransmissionsIncompletes] = useState<string | null>(null)
   const [emailDe, setEmailDe] = useState<FactureEmise | null>(null)
+  // Les encaissements des factures (ligne 28.5, étape d3) : de quoi dire, sur chaque facture validée, ce qui en est
+  // encaissé. L'IDENTIFIANT de la facture ouverte, comme pour la transmission : la fenêtre relit tout elle-même.
+  const [encaissementsDe, setEncaissementsDe] = useState<string | null>(null)
+  const [lignesFactures, setLignesFactures] = useState<LigneDeFacture[]>([])
+  const [encaissements, setEncaissements] = useState<EncaissementLu[]>([])
+  const [partsEncaissements, setPartsEncaissements] = useState<PartLue[]>([])
+  const [encaissementsIncomplets, setEncaissementsIncomplets] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
 
   async function load() {
@@ -70,10 +80,34 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         .select('id, dossier_id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le', { count: 'exact' })
         .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
     )
+    // Les lignes de TOUTES les factures du dossier — par leur facture, la table n'ayant pas de dossier —, ses
+    // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte.
+    const [lignes, encaisses, parts] = await Promise.all([
+      lireTout<LigneDeFacture & { id: string }>((debut, fin) =>
+        supabase.from('facture_lignes')
+          .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
+          .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
+      ),
+      lireTout<EncaissementLu>((debut, fin) =>
+        supabase.from('encaissements_factures')
+          .select('id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<PartLue>((debut, fin) =>
+        supabase.from('encaissements_factures_taux').select('encaissement_id, taux, montant', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('encaissement_id').order('taux').range(debut, fin),
+      ),
+    ])
     setFactures(lecture.lignes)
     setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setTransmissions(envois.lignes)
     setTransmissionsIncompletes(envois.complete ? null : envois.motif)
+    setLignesFactures(lignes.lignes)
+    setEncaissements(encaisses.lignes)
+    setPartsEncaissements(parts.lignes)
+    setEncaissementsIncomplets(
+      !lignes.complete ? lignes.motif : !encaisses.complete ? encaisses.motif : !parts.complete ? parts.motif : null,
+    )
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -98,6 +132,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
   // La facture qu'on transmet, telle que la liste l'a relue en dernier.
   const transmise = transmissionDe ? factures.find((f) => f.id === transmissionDe) ?? null : null
+  const encaissee = encaissementsDe ? factures.find((f) => f.id === encaissementsDe) ?? null : null
 
   function ouvrir(f: FactureEmise) {
     if (f.statut === 'validee') setApercu(f)
@@ -120,6 +155,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         consequence={
           'Une facture peut paraître jamais transmise alors qu’elle l’a été. La fenêtre « Transmettre » relit celles de sa '
           + 'facture avant de proposer un envoi.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les encaissements des factures"
+        accord="lus"
+        motif={encaissementsIncomplets}
+        consequence={
+          'Aucune facture ne dit donc ce qui en est encaissé : une liste tronquée ferait dire « À encaisser » d’une facture '
+          + 'payée. La fenêtre « Encaissements » relit ceux de sa facture.'
         }
       />
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
@@ -231,6 +275,12 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                               </span>
                             ) : null
                           })()}
+                          {/* Rien sur une lecture incomplète : « À encaisser » serait une affirmation que la liste ne
+                              permet pas. Rien non plus quand le statut « Encaissée » est sans objet pour cette facture. */}
+                          {encaissementsIncomplets == null && (() => {
+                            const pastille = pastilleEncaissement(f, lignesFactures, encaissements, partsEncaissements, statutTva)
+                            return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
+                          })()}
                         </div>
                       </td>
                       <td className="td-actions" onClick={(e) => e.stopPropagation()}>
@@ -245,6 +295,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                         )}
                         {f.statut === 'validee' && (
                           <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>
+                        )}
+                        {f.statut === 'validee' && f.type === 'facture' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setEncaissementsDe(f.id)}>Encaissements</button>
                         )}
                         {f.statut === 'validee' && (
                           <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
@@ -305,6 +358,17 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           articleExoneration={articleExoneration}
           numeroTvaAttribue={numeroTvaAttribue}
           onClose={() => setTransmissionDe(null)}
+          onUpdated={load}
+        />
+      )}
+
+      {encaissee && (
+        <EncaissementsFactureModal
+          key={encaissee.id}
+          dossierId={dossierId}
+          facture={encaissee}
+          statutTva={statutTva}
+          onClose={() => setEncaissementsDe(null)}
           onUpdated={load}
         />
       )}

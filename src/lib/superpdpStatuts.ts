@@ -14,20 +14,27 @@ const STATUTS: Record<string, InfoStatut> = {
   'api:rejected': { libelle: 'Rejetée par le destinataire', niveau: 'probleme' },
   'api:acknowledged': { libelle: 'Accusé de réception reçu', niveau: 'attente' },
   'api:accepted': { libelle: 'Acceptée par le destinataire', niveau: 'ok' },
-  'fr:200': { libelle: 'Soumise', niveau: 'attente' },
-  'fr:201': { libelle: 'Envoyée', niveau: 'attente' },
-  'fr:202': { libelle: 'Reçue', niveau: 'attente' },
+  // LES STATUTS DU CYCLE DE VIE, sous les libellés de la DGFiP (ligne 28.5, étape d3) : tableau 8 des spécifications
+  // externes de la facturation électronique, v3.2 du 30/04/2026, § 3.6.4, p. 59 — relu le 08/10/2026. 200, 210, 212
+  // et 213 sont les statuts OBLIGATOIRES, ceux que l'administration reçoit : l'écran les nomme comme elle, pour que
+  // « Encaissée » ici soit « Encaissée » là-bas. Les autres sont facultatifs, et nommés de même. 201 s'y écrit
+  // « Emise », la capitale sans son accent ; on la lui rend.
+  'fr:200': { libelle: 'Déposée', niveau: 'attente' },
+  'fr:201': { libelle: 'Émise par la plateforme', niveau: 'attente' },
+  'fr:202': { libelle: 'Reçue par la plateforme', niveau: 'attente' },
   'fr:203': { libelle: 'Mise à disposition', niveau: 'attente' },
-  'fr:204': { libelle: 'Accusé de réception', niveau: 'attente' },
-  'fr:205': { libelle: 'Acceptée', niveau: 'ok' },
-  'fr:206': { libelle: 'Partiellement acceptée', niveau: 'attente' },
-  'fr:207': { libelle: 'Contestée', niveau: 'probleme' },
-  'fr:208': { libelle: 'En attente', niveau: 'attente' },
+  'fr:204': { libelle: 'Prise en charge', niveau: 'attente' },
+  'fr:205': { libelle: 'Approuvée', niveau: 'ok' },
+  'fr:206': { libelle: 'Approuvée partiellement', niveau: 'attente' },
+  'fr:207': { libelle: 'En litige', niveau: 'probleme' },
+  'fr:208': { libelle: 'Suspendue', niveau: 'attente' },
   'fr:209': { libelle: 'Complétée', niveau: 'ok' },
   'fr:210': { libelle: 'Refusée', niveau: 'probleme' },
-  'fr:211': { libelle: 'Paiement envoyé', niveau: 'ok' },
-  'fr:212': { libelle: 'Paiement reçu', niveau: 'ok' },
+  'fr:211': { libelle: 'Paiement transmis', niveau: 'ok' },
+  'fr:212': { libelle: 'Encaissée', niveau: 'ok' },
   'fr:213': { libelle: 'Rejetée', niveau: 'probleme' },
+  // Hors du tableau 8 : le statut d'un FLUX que le portail public juge irrecevable (annexe 2, v2.3, onglet « Statuts »,
+  // « Objet : Flux »), sous le même libellé.
   'fr:501': { libelle: 'Irrecevable', niveau: 'probleme' },
 }
 

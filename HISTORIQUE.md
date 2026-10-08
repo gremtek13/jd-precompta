@@ -10673,3 +10673,81 @@ une cinquième règle le ferait. (4) Safari iOS n'a pas été éprouvé ; le dé
 sont hors dépôt et ne se rejouent pas depuis lui ; le banc versionné ne visite ni le client ni le super-administrateur.
 (6) Aucun garde ne compare les deux blocs de repli entre eux, ni ne rapproche la classe d'un tableau de ce qu'il porte :
 un tableau qui cacherait une commande sous `table-empilable-etroite` ne serait attrapé que par une mesure.
+
+### 08/10/2026 — L'ÉCRAN DES ENCAISSEMENTS — LIGNE 28.5, ÉTAPE (D), TROISIÈME TEMPS (D3)
+
+(`src/pages/dossier/EncaissementsFactureModal.tsx` et son test, `FacturesTab.tsx` et son test,
+`src/lib/encaissementsAffichage.ts` et son test, `src/lib/encaissementsEcritures.test.ts`, `src/lib/superpdpStatuts.ts`
+et `superpdpStatuts.test.ts` ; au banc, `outils/captures/fauxSupabase.ts` et une visite de `debordements.mjs`.) L'écran
+que le module d2 attendait : ce qui est encaissé de chaque facture émise, et la saisie d'un encaissement. Rien ne part
+d'ici que vers la base ; la déclaration du statut « Encaissée » viendra en d4. Ni migration, ni Edge Function.
+
+**L'ONGLET FACTURES** porte sur chaque facture validée une pastille selon `resteAEncaisser` — « À encaisser »,
+« Encaissée en partie — 600,00 € sur 1 200,00 € », « Encaissée » — et un bouton « Encaissements » sur chaque facture
+(jamais sur un avoir). La pastille se tait quand le statut « Encaissée » est SANS OBJET (un particulier, une livraison
+de biens, un dossier exonéré…) : elle ne dit pas une obligation qui n'existe pas ; elle parle encore quand l'obligation
+n'est qu'à préciser, facultative ou refusée — l'encaissement reste un fait. L'onglet lit en entier les lignes de TOUTES
+les factures du dossier (par leur facture : `facture_lignes` n'a pas de dossier, d'où un filtre sur la jointure
+`factures_emises!inner(dossier_id)`, la première du dépôt), les encaissements du dossier et leurs parts ; une seule de
+ces lectures incomplète, et aucune facture ne prétend rien — un bandeau le dit : une liste tronquée ferait dire « À
+encaisser » d'une facture payée. La pastille ne compte pas les avoirs, comme la base.
+
+**LA FENÊTRE** (`EncaissementsFactureModal`) lit tout par `lireTout`, tri total, compte annoncé : la facture et ses
+avoirs, ses lignes, ses transmissions, son historique Super PDP, les encaissements et parts du DOSSIER (un mouvement se
+juge sur tous ceux qu'il justifie), les mouvements, les règlements groupés, les pièces. Une lecture partielle ou refusée
+n'offre RIEN — ni reste, ni liste, ni formulaire — et chaque manque a son bandeau. Elle dit avant tout geste
+l'obligation et sa raison ; le reste total et par taux ; les encaissements enregistrés (date, moyen, montant, mouvement,
+répartition, enregistré / retiré / annulation) avec l'échéance de chacun, « Échéance dépassée » seulement pour une
+obligation DUE ; l'effet des avoirs, en affichage seulement, et que la base ne les déduit pas ; que rien ne se déclare
+d'ici. La saisie : la date (et, pour le moyen choisi, la date à retenir — le chèque remis, pas crédité ; un acompte se
+dit ; l'échéance de la date saisie aussi), le montant proposé (le reste), le moyen JAMAIS proposé, le mouvement parmi les
+propositions de `propositionsEncaissement` (qui remplissent date, montant et répartition ; leur explication, l'écart de
+frais, les pièces que le mouvement paie déjà), la répartition proposée (`repartitionProposee`, recalculée à chaque
+montant) et corrigible — une part vide ne part pas. Le premier refus de `refusEnregistrement` se dit sous les mots de la
+base et grise le bouton. L'écriture : `enregistrer_encaissement`, dossier en premier, répartition dans l'ordre de la
+saisie ; le retrait : `retirer_encaissement`, après une confirmation qui nomme la date, le montant et la facture et dit
+qu'il reste au registre, marqué retiré ; `refusRetrait` reçoit l'ensemble vide des déclarés jusqu'à d4. Un seul verrou
+`useRef` pour les deux gestes, posé avant le `try`, relâché dans le `finally` après la relecture ; après un geste
+réussi, le formulaire repart du nouveau reste et les propositions se recalculent ; après une erreur, la saisie reste.
+Le jour est celui de Paris (`aujourdHuiAParis`), lu au rendu. Aucune règle de `index.css` n'a été ajoutée : les classes
+existantes suffisent — la liste des encaissements, qui porte « Retirer », et la saisie (`table-formulaire`) se replient
+sous 860 px de carte (`table-empilable`) ; le reste par taux, qui ne porte aucune commande, sous 520 px seulement
+(`table-empilable-etroite`, corrigé à l'intégration : à l'ordinateur il reste un tableau de quatre colonnes), et sa ligne
+de total n'a pas de libellé — la fiche disait « Total Total ».
+
+**LE SCANNER** (`encaissementsEcritures.test.ts`) : aucune écriture directe (`insert`, `upsert`, `update`, `delete`)
+des deux tables du registre dans `src/` ni dans les Edge Functions. Il part de chaque `.from(` (hors stockage et
+constructeurs de JavaScript), lit l'expression jusqu'au `.from(` suivant, nomme la table — une chaîne, une constante, ou
+un paramètre typé par une union de chaînes (`depot.ts`, `importFichiers.ts`) — et tient pour faute une écriture dont il
+ne sait pas nommer la table, sauf `sauvegardeDonnees.ts`, la restauration, dispensée avec sa raison et son nombre (2).
+Il vérifie aussi que la seconde passe de la restauration ne vise pas le registre, et que les deux fonctions ne
+s'appellent que de la fenêtre. Plancher : 400 `.from(` nommés, 40 tables, 80 écritures, les Edge Functions parcourues.
+Défauts plantés : une insertion sur plusieurs lignes, un upsert, une table par constante, par paramètre typé, une table
+illisible, une exception au mauvais nombre ; et ce qu'il ne doit pas voir — une lecture, une écriture d'une autre table
+qui suit, un commentaire, le stockage.
+
+**LES LIBELLÉS DE SUPER PDP** suivent désormais le tableau 8 des spécifications externes v3.2 (§ 3.6.4, p. 59, relu le
+08/10/2026 dans l'archive de la DGFiP) : 200 « Déposée », 201 « Émise par la plateforme » (« Emise » dans la source, la
+capitale sans accent), 202 « Reçue par la plateforme », 203 « Mise à disposition », 204 « Prise en charge », 205
+« Approuvée », 206 « Approuvée partiellement », 207 « En litige », 208 « Suspendue », 209 « Complétée », 210 « Refusée »,
+211 « Paiement transmis », 212 « Encaissée », 213 « Rejetée » ; 501 « Irrecevable » vient de l'annexe 2 (v2.3, onglet
+« Statuts », objet « Flux »). `superpdpStatuts.test.ts` les recopie de la source, pas du module.
+
+**ÉPROUVÉ.** 47 tests de plus (21 de la fenêtre, 5 de l’onglet, 9 de l’affichage, 3 des libellés, 9 du scanner),
+la suite de 5 597 à 5 644, verte sous les quatre fuseaux ; `tsc -b`, lint (63 avertissements, aucun dans les
+fichiers touchés), build. Cinquante-deux mutations de l’écran, du module d’affichage, des libellés et du
+scanner : cinquante mordent.
+Équivalentes, et pourquoi : le verrou posé dans le `try` quand la garde est avant lui (posé avant le premier `await`) ;
+`lu` gardé sur une lecture partielle (le rendu regarde les manques d'abord) ; le refus revérifié dans le geste a été
+RETIRÉ plutôt que gardé sans preuve — un bouton grisé ne reçoit pas de clic.
+
+**AU BANC**, après le rebasage sur la correction des mots coupés (le banc était occupé par elle) : la visite
+`factures/encaissements` — la fenêtre de F2026-0007, une facture mixte dont l'obligation est refusée, un encaissement
+partiel et un chèque retiré — et les 72 autres, aux neuf exécutions (390, 720, 1 024, 1 280, 1 440 px, puis les quatre
+combinaisons extrêmes des volets) : 0 débordement, 0 mot coupé ; captures de la fenêtre relues à 1 440 et 390 px.
+
+**CE QUI RESTE** : l'écran de d4 — la déclaration hors application et la contre-passation, dont la base est en
+production depuis le 08/10/2026 au soir (migration `transmissions_des_encaissements`), le canal de la déclaration (note
+§ 4.2, que l'écran ne dit pas encore), le retard dit sur la pastille ; d'ici là, l'ensemble des déclarés est vide et la
+base refuse d'elle-même le retrait d'un encaissement déclaré. La règle « un refus 210 sur la plateforme du client est
+invisible » (d7).

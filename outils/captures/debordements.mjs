@@ -328,6 +328,18 @@ const VISITES = [
       await page.getByRole('button', { name: /^Déposer sur / }).waitFor({ timeout: 10000 })
     },
   },
+  // LES ENCAISSEMENTS DE LA MÊME FACTURE (ligne 28.5, étape d3) : la pastille « Encaissée en partie — … sur … » de la liste,
+  // puis la fenêtre — l'obligation refusée d'une facture mixte, le reste par taux, deux encaissements dont un retiré (huit
+  // colonnes repliées en fiches), la saisie, ses deux tableaux et le refus dit avant le clic. On attend le bouton
+  // d'enregistrement, le dernier à paraître, une fois tout relu.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/encaissements', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Encaissements').click()
+      await page.getByRole('button', { name: 'Enregistrer l’encaissement', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.
