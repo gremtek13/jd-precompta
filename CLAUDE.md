@@ -97,15 +97,16 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   - `extract-piece` — OCR (Textract) puis citation des champs par un modèle ; réservée à un compte RATTACHÉ au cabinet
     et à `receive-email`, qui présente la clé secrète dans l'en-tête `apikey`.
   - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture, relance ; domaine `precompta.jdarnis.fr`).
-  - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; `superpdp-emit` lit le statut de TVA du
-    dossier et refuse, avant tout appel, ce qu'il ne peut pas transmettre.
+  - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; `superpdp-emit` transmet le CII de
+    l'application, jugé avant tout appel, sous une transmission réservée.
   - `proposer-categorie` — la catégorie d'UNE pièce depuis son texte OCR, sur un clic ; rien d'écrit.
   - `evaluer-extraction` — harnais de MESURE ; ne facture que pendant une fenêtre datée ; `limite: 0` et la question
     « cles » sont gratuites.
   - `banque-connexion` — la connexion bancaire d'un dossier (Enable Banking, bac à sable) ; REND les mouvements, l'écran
     importe.
   - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de flux que publient les plateformes ; REND les
-    factures, l'écran importe ; le secret de la connexion ne revient jamais au navigateur.
+    factures, l'écran importe ; DÉPOSE une facture émise et suit son accusé ; le secret de la connexion ne revient
+    jamais au navigateur.
   - `taux-change-bce` — le cours BCE d'une devise à une date.
 
 ## Stack technique
@@ -144,7 +145,8 @@ supabase/
                     ou les contraintes de lignes_bancaires et ecritures_brouillon : affectation,
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
-                    compteBilan, reportDesSoldes, statutTva, receptionPlateforme ; validationExercice,
+                    compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures ;
+                    validationExercice,
                     liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -318,7 +320,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Facturation** : factures à numérotation légale, avoirs, envoi par e-mail ; Super PDP (réception, émission) ; statut de
   TVA du dossier (28.5 a), réception par la plateforme du client (28.5 b), mentions de la facture et avoir d'un seul
   tenant, générateur CII jugé par le validateur officiel, facture validée figée en base et numérotation fermée (28.5 c,
-  07/10/2026).
+  07/10/2026) ; dépôt de la facture électronique par la plateforme du client et par Super PDP, sous une transmission
+  réservée (28.5 c3, 08/10/2026 — pas encore déployé : il le sera avec les écrans du c4).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -347,10 +350,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a) et (b) en ligne — (b) à éprouver
-  sur la plateforme réelle d'un client ; (c) en cours : c1a, c2 et c1b en ligne ; c3, le dépôt de la facture
-  électronique par la plateforme du client et par Super PDP depuis le CII de l'application ; c4, l'écran qui saisit les
-  mentions et l'aperçu qui les imprime ; c5, banc, mutations, déploiement. Puis (d) le statut « Encaissée » et (e)
-  l'e-reporting.
+  sur la plateforme réelle d'un client ; (c) en cours : c1a, c2 et c1b en ligne ; c3, le dépôt par la plateforme du
+  client et par Super PDP, écrit (08/10/2026) et non déployé ; c4, l'écran qui saisit les mentions, l'aperçu qui les
+  imprime, la transmission et son suivi, l'abandon d'une transmission dont l'issue reste inconnue, et la question au
+  cabinet du numéro de TVA d'un dossier en franchise ou exonéré (règle G1.47) ; c5, banc, mutations, déploiement. Puis
+  (d) le statut « Encaissée » et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -642,6 +646,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   seules colonnes écrites après coup, confrontées au code par `facturesFigees.test.ts`) ; la numérotation passe par
   `enregistrer_facture` seule (reprise depuis le plus haut numéro émis, verrou de la série) → « UNE FACTURE VALIDÉE SE
   FIGE EN BASE ».
+- **Le dépôt d'une facture émise** (plateforme du client et Super PDP) : la facture se relit en base et se juge avant
+  tout appel ; les deux fonctions l'assemblent par `donneesDeLaFacture` (l'écran du c4 le fera aussi), et les trois
+  blocs du générateur sont recopiés au caractère près dans les deux fonctions (`copiesFacturation.test.ts`) ; une seule
+  transmission ACTIVE par facture, tous canaux confondus, RÉSERVÉE avant l'envoi (`transmissions_factures`) ; une issue
+  inconnue laisse « envoi », jamais un nouvel essai, et `suivre` retrouve le dépôt par son identifiant de suivi → « LA
+  FACTURE ÉLECTRONIQUE SE DÉPOSE ».
 - **Réception par la plateforme du client** : la facture doit désigner le dossier (SIREN) ; un flux n'entre qu'une fois
   par dossier ; le point de reprise ne recule jamais et garde une heure de marge ; une page pleine dans le désordre
   arrête la lecture → « LA RÉCEPTION PAR LA PLATEFORME DU CLIENT ».
@@ -650,7 +660,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5339 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5384 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

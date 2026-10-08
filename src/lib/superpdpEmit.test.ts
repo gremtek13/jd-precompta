@@ -105,13 +105,28 @@ describe('superpdp-emit — le câblage du gestionnaire', () => {
       '.update({ superpdp_invoice_id: issue.id })',
     ].map(position)
     expect(etapes).toEqual([...etapes].sort((a, b) => a - b))
+    // Rien ne part avant que la facture soit jugée et écrite : la PREMIÈRE demande de jeton et le premier appel comptent,
+    // quel que soit leur nom.
+    const ecrite = position('const cii = factureCii(donnees)')
+    for (const appel of ['obtenirToken(', 'fetch(', 'actualiserStatut(']) {
+      const i = GESTIONNAIRE.indexOf(appel)
+      expect(i === -1 || i > ecrite, `${appel} avant que la facture soit écrite`).toBe(true)
+    }
     expect(GESTIONNAIRE).toContain('if (refus.length > 0) {')
+    // Un refus que la transmission n'a pas enregistré la laisse réservée, et l'écran le dit.
+    expect(GESTIONNAIRE).toContain('const encoreReservee = erreurSuivi && issue.etat === "echec"')
+    expect(GESTIONNAIRE).toContain('? " Ce refus n\'a pas pu être enregistré : la transmission reste réservée, et la facture ne repartira')
+    expect(GESTIONNAIRE).toContain('return json({ error: `${issue.detail}${encoreReservee}` }, 502)')
     expect(GESTIONNAIRE).toContain('if (erreurReservation?.code === "23505") {')
     // Ce qui part est le fichier jugé, dont l'empreinte est réservée.
     expect(GESTIONNAIRE).toContain('fichier = { xml: cii.xml, sha256: await empreinteSha256(new TextEncoder().encode(cii.xml)) }')
     expect(GESTIONNAIRE).toContain('body: fichier.xml,')
     // Une issue qui n'est pas un envoi s'arrête là : le numéro Super PDP n'est posé que sur un envoi.
-    expect(GESTIONNAIRE.indexOf('if (issue.etat !== "depose") {')).toBeLessThan(position('.update({ superpdp_invoice_id: issue.id })'))
+    // La garde doit EXISTER avant d'être à sa place : un `indexOf` à -1 passerait pour « avant tout ».
+    const garde = position('if (issue.etat !== "depose") {')
+    const sortie = position('return json({ error: `${issue.detail}${encoreReservee}` }, 502)')
+    expect(garde).toBeLessThan(sortie)
+    expect(sortie).toBeLessThan(position('.update({ superpdp_invoice_id: issue.id })'))
   })
 
   it('l’envoi a un délai, et Super PDP ne convertit plus rien', () => {

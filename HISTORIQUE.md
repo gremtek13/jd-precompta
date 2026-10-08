@@ -9317,3 +9317,116 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
 ## Entrées postérieures au 08/10/2026
 
 Datées, une par chantier, à la suite. CLAUDE.md porte leur résumé en quelques lignes et un renvoi vers elles.
+
+### 08/10/2026 — LA FACTURE ÉLECTRONIQUE SE DÉPOSE — LIGNE 28.5, ÉTAPE (C), TROISIÈME TEMPS
+
+(`supabase/functions/plateforme-agreee`, actions `deposer` et `suivre` ; `supabase/functions/superpdp-emit` ;
+`donneesDeLaFacture` dans `src/lib/factureCii.ts` ; migration `transmissions_des_factures` ;
+`copiesFacturation.test.ts`, `superpdpEmit.test.ts`, `supabase/essais/transmissionsFactures.sql`.) Le générateur du
+deuxième temps écrivait une facture validée en CII EN 16931, que le validateur officiel de la norme acceptait, et rien
+ne l'appelait. Une facture émise part désormais par deux chemins, décidés par le cabinet le 07/10/2026 (« Garder aussi
+Super PDP ») : la plateforme agréée du client, par la connexion de l'étape (b), et Super PDP. LES DEUX TRANSMETTENT LE
+MÊME FICHIER, celui que les tests ont jugé : Super PDP ne convertit plus rien. **Rien n'est déployé** : les deux
+fonctions partiront avec les écrans qui les appellent (étape c, quatrième et cinquième temps) — déployé seul,
+`superpdp-emit` refuserait toute facture d'aujourd'hui, aucune ne portant encore les nouvelles mentions que seul l'écran
+du c4 saisira —, et la production garde `superpdp-emit` v12 et `plateforme-agreee` v2.
+
+**L'ASSEMBLAGE D'UNE FACTURE EST ÉCRIT UNE FOIS** (`donneesDeLaFacture`) : le vendeur est l'émetteur FIGÉ à la
+validation (`emetteur_nom`, `emetteur_siret`, `emetteur_adresse`), jamais le dossier d'aujourd'hui — une facture émise
+ne change pas d'émetteur parce que le dossier a changé d'adresse ; le statut de TVA, lui, est celui du dossier
+aujourd'hui, la facture ne le figeant pas ; le numéro de TVA se calcule depuis le SIREN figé (CGI, art. 286 ter), sauf
+pour un dossier en franchise ou exonéré, où il reste vide et où `refusEmission` le dit (G1.47) — la question posée au
+cabinet le 07/10/2026, à trancher avec les écrans. **Une faute, un refus** : un SIREN faux ou absent n'est dit qu'une
+fois, sans « le numéro de TVA manque » à côté ; et le numéro d'un redevable au SIREN valide se réclame s'il manque.
+
+**LES TROIS BLOCS DU GÉNÉRATEUR SONT RECOPIÉS AU CARACTÈRE PRÈS** dans les deux fonctions, qui sont auto-portées :
+`montantsFacture`, `statutTva` et `factureCii`, entre des bornes `── DÉBUT/FIN COPIE`. `copiesFacturation.test.ts`
+compare chaque copie à `src/lib`, l'EXÉCUTE seule (extraite, transpilée) sur les factures d'exemple et sur
+`donneesDeLaFacture`, vérifie que chaque fonction l'appelle avant d'écrire, et y plante des dérives. Les deux copies
+d'avant que portait `superpdp-emit` (le calcul d'une ligne, le motif d'une ligne à 0 %) et leurs deux gardes
+(`superpdpMontants.test.ts`, `superpdpStatutTva.test.ts`) disparaissent, avec la construction du JSON que Super PDP
+convertissait (`/invoices/convert`) — et avec le journal qui recopiait 1 500 caractères du fichier converti, le nom et
+l'adresse du client compris. Aucune facture n'ayant été transmise, il n'a rien écrit.
+
+**UN DÉFAUT TROUVÉ EN BRANCHANT LES AVOIRS** : `Math.round` arrondit le demi vers +∞, donc une ligne d'avoir à -0,125 €
+valait -0,12 € quand la même ligne d'une facture vaut 0,13 €. Or un avoir de la norme porte des montants positifs
+(type 381) : le générateur le relit dans son sens, et ne retrouvait plus les montants enregistrés — l'avoir ne se
+transmettait pas. Une ligne s'arrondit désormais au centime, le demi éloigné de zéro, dans les deux sens ; un montant
+positif s'arrondit exactement comme avant. LATENT, et mesuré : 6 lignes de facture en base, aucune négative, aucun
+avoir.
+
+**LA TABLE DES TRANSMISSIONS** (`transmissions_factures`, migration `transmissions_des_factures`) : une ligne par envoi
+d'une facture VALIDÉE de son dossier — le canal (plateforme, superpdp), l'hôte qui l'a reçue, le flux qu'il a rendu,
+l'empreinte SHA-256 du fichier transmis, l'état (`envoi`, `echec`, `depose`, `accepte`, `rejete`) et le détail. **Une
+seule transmission ACTIVE par facture, tous canaux confondus** (index unique partiel sur `envoi`, `depose`, `accepte` :
+les échecs et les rejets s'accumulent). Il est partiel par nécessité, et aucun upsert ne le vise : une transmission
+s'insère, et le refus 23505 dit « déjà transmise ou en cours ». Un déclencheur refuse une transmission d'une facture non
+validée ou d'un autre dossier, un changement de facture, de canal, d'hôte ou de fichier, un flux renommé, et tout retour
+en arrière (échouée, acceptée ou rejetée, elle ne change plus ; déposée, elle ne redevient ni un envoi ni un échec). Le
+cabinet la LIT, les deux fonctions l'écrivent à la clé secrète, le super-administrateur y insère pour restaurer une
+sauvegarde — sans elles, une facture déjà transmise pourrait repartir —, le client n'y voit rien.
+`supabase/essais/transmissionsFactures.sql` : 38 contrôles sur 38 en production. La sauvegarde l'emporte (ses trois
+listes et deux relations en cascade).
+**ET L'INVENTAIRE DU SCHÉMA SE TROMPAIT DE NOMS** : la table nomme ses six `check` de colonne (`constraint
+transmissions_factures_canal check (…)`), une forme que l'export n'avait jamais portée. `inventaire.py` déduisait leurs
+noms, donc rendait le bon NOMBRE d'objets sous des noms faux : l'empreinte seule l'a vu. Il lit désormais le nom écrit.
+L'export porte 95 migrations, l'inventaire 1 145 objets, égal à la base ; le socle est inchangé.
+
+**LE DÉPÔT PAR LA PLATEFORME DU CLIENT** (`deposer`), dans l'ordre que les tests gardent : la facture se relit en base
+avec son dossier (une facture déjà transmise par Super PDP avant que les transmissions aient leur table est refusée,
+409), ses lignes, le statut de TVA et, pour un avoir, la facture qu'il corrige ; elle se juge (`refusEmission`, 422,
+toutes les raisons ensemble) et s'écrit en CII AVANT le premier appel réseau ; puis le jeton, et seulement alors la
+RÉSERVATION (`envoi`) — un jeton refusé ne laisse rien de réservé, rien n'étant parti —, puis `POST /v1/flows`, sous
+délai, et la mise à jour de la transmission, conditionnée à son état `envoi`. Si cette mise à jour échoue, la réponse
+dit ce que la plateforme a répondu — reçue, refusée, ou peut-être partie —, jamais « partie » sur un refus, et la
+transmission reste `envoi` jusqu'au suivi.
+**Les sources sont publiques** : la description OpenAPI du connecteur « afnor » de banqup (`POST /v1/flows`, un corps
+multipart `flowInfo` + `file`, une réponse 202 qui porte `flowId` ; `GET /v1/flows/{flowId}?docType=Metadata` et son
+accusé `acknowledgement`, Pending, Ok ou Error ; la recherche par `trackingId`), le client pyfrctc pour les noms de
+champs (et la remarque que Super PDP n'accepte pas encore la règle de traitement). Rien des normes XP Z12-012 et XP
+Z12-013. `flowInfo` ne porte que ce qui est sûr — la syntaxe CII, le nom du fichier, son empreinte, et l'identifiant de
+suivi, qui est celui de la transmission —, et c'est un CHAMP, pas un fichier : sans nom de fichier, de type
+application/json, tel que banqup le déclare. D'où un corps composé octet par octet, FormData donnant un nom de fichier à
+une partie JSON.
+**CE QU'UNE RÉPONSE PERMET DE DIRE, des deux côtés** : un 2xx qui rend un identifiant lisible est un dépôt ; un refus
+(3xx, 4xx) n'a rien créé, et la facture peut repartir ; tout le reste — pas de réponse, une réponse coupée, un 5xx, un
+2xx sans identifiant — laisse l'issue INCONNUE, et la transmission reste `envoi` : repartir pourrait transmettre deux
+fois. **`suivre`** tranche ensuite : une transmission `envoi` se cherche par son identifiant de suivi (dix résultats au
+plus) — trouvée, elle prend l'état de son accusé ; absente, elle n'est tenue pour perdue qu'au-delà de quinze minutes,
+NOTRE CHOIX (le dépôt part sous 25 secondes, et une facture transmise deux fois coûte plus qu'une attente), jamais sur
+un âge illisible ; une recherche qui rend d'autres identifiants de suivi ne prouve pas l'absence, elle ne conclut rien.
+Une transmission `depose` relit l'accusé de son flux : Ok, acceptée ; Error, rejetée, avec le code et le message de la
+plateforme, nettoyés (300 caractères, cinq détails au plus, les avertissements nommés). La mise à jour est conditionnée
+à l'état lu : deux suivis concurrents ne s'écrasent pas.
+
+**SUPER PDP, SOUS LA MÊME RÉSERVATION** (`superpdp-emit`) : la facture se relit, se juge et s'écrit avant le jeton ; le
+schematron de Super PDP la valide encore avant l'envoi (`/validation_reports`) ; la transmission se réserve (canal
+`superpdp`, hôte `api.superpdp.tech`) ; l'envoi (`POST /v1.beta/invoices?external_id=…`) part sous 25 secondes. Un 2xx
+qui rend un identifiant entier positif est un dépôt, un 4xx un échec (« Rien n'a été envoyé. »), le reste une issue
+inconnue (« la facture est peut-être partie. Vérifiez sur Super PDP avant toute nouvelle tentative. ») ; un refus que la
+transmission n'a pas pu enregistrer le dit, la transmission restant réservée. Les noms de champs propres à Super PDP ne
+se vérifient pas d'ici : le premier essai réel du cabinet le dira.
+
+**LES JOURNAUX** des deux fonctions ne portent ni le fichier, ni la raison d'un refus, ni le message d'un accusé — ils
+reviennent à l'écran du cabinet — : des codes, des nombres et des états.
+
+**MESURES** : 5 384 tests sous les quatre fuseaux (17 dans `copiesFacturation.test.ts`, 98 dans
+`plateformeAgreee.test.ts`, 9 dans `superpdpEmit.test.ts`) ; 44 mutations, toutes mordent. **La première passe en
+laissait quatre en vie, et les quatre accusaient des tests d'ORDRE** : ils cherchaient le texte exact d'une étape
+(`const plateforme = ouvrirPlateforme()`, `const token = await obtenirToken(`), si bien qu'une seconde ouverture de la
+plateforme ou une demande de jeton glissée plus haut, sous un autre nom, passait — avant que la facture soit jugée, dans
+`deposer` comme dans `superpdp-emit`, et avant les contrôles du canal dans `suivre` ; et la garde qui retient le numéro
+Super PDP sur une issue inconnue se comparait par un `indexOf` qui, à -1, passait pour « avant tout » : retirée, rien ne
+tombait. C'est désormais la PREMIÈRE occurrence qui compte, et chaque garde doit exister avant d'être à sa place. Deux
+mutations de plus gardent le message d'une issue que la transmission n'a pas pu enregistrer. L'essai de la table, 38
+contrôles sur 38 en production. LATENT, et mesuré : aucune transmission, aucune facture transmise par Super PDP, aucune
+connexion à une plateforme en base.
+
+**CE QUI RESTE, dit plutôt que promis** : les écrans (c4) — la saisie des mentions, l'aperçu qui les imprime, la
+transmission et son suivi depuis l'onglet Factures — ; une transmission restée `envoi` que rien ne tranche — sur Super
+PDP, qui n'a pas de suivi par identifiant, ou sur une plateforme dont la recherche ne filtre pas — bloque toute nouvelle
+tentative, et son abandon par le cabinet, vérification faite, viendra avec les écrans ; le statut que Super PDP rend
+(`actualiser`) ne se reporte pas encore sur la transmission, qui reste « déposée » — c'est ce qui empêche un second
+envoi, comme avant —, si bien qu'une facture qu'il rejetterait ne repartirait pas sans un geste ; la réponse du cabinet
+sur le numéro de TVA d'un dossier en franchise ou exonéré (G1.47) ; et le déploiement (c5). Aucune plateforme réelle n'a
+été appelée.

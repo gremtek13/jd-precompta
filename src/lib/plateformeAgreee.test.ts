@@ -1291,7 +1291,17 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
       '.update(suivi).eq("id", transmission.id).eq("etat", "envoi")',
     ].map(position)
     expect(etapes).toEqual([...etapes].sort((a, b) => a - b))
+    // Rien ne part avant que la facture soit jugée et écrite : ni plateforme ouverte, ni jeton, ni appel. C'est la
+    // PREMIÈRE occurrence qui compte — une seconde ouverture glissée plus haut, sous un autre nom, ne doit pas passer.
+    const ecrite = position('const cii = factureCii(donnees)')
+    for (const appel of ['ouvrirPlateforme(', '.jeton(', 'fetch(', 'appelJson(', '.deposer(']) {
+      const i = branche.indexOf(appel)
+      expect(i === -1 || i > ecrite, `${appel} avant que la facture soit écrite`).toBe(true)
+    }
     expect(branche).toContain('if (refus.length > 0) return json(')
+    // Une issue non enregistrée se dit selon ce que la réponse a appris : jamais « partie » sur un refus.
+    expect(branche).toContain('? "La plateforme a refusé la facture, et ce refus n\'a pas pu être enregistré')
+    expect(branche).not.toContain('La facture est partie')
     expect(branche).toContain('if (erreurReservation?.code === "23505") {')
     // L'identifiant de suivi est celui de la transmission, et l'empreinte réservée celle du fichier qui part.
     expect(branche).toContain('{ flowSyntax: SYNTAXE_DEPOSEE, name: nomDuFichier(facture.numero as string), sha256, trackingId: transmission.id }')
@@ -1319,8 +1329,10 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
   it('« suivre » relit la transmission dans le dossier vérifié, refuse un autre canal ou une autre plateforme, et ne réécrit que l’état lu', () => {
     const branche = brancheDe('suivre')
     expect(branche).toContain('.select(COLONNES_TRANSMISSION).eq("id", transmissionId).eq("dossier_id", dossierId).maybeSingle()')
-    const ouverture = branche.indexOf('const plateforme = ouvrirPlateforme()')
-    expect(ouverture).toBeGreaterThan(-1)
+    expect(branche).toContain('const plateforme = ouvrirPlateforme()')
+    // La PREMIÈRE ouverture, quel que soit son nom : une ouverture glissée avant les contrôles appellerait la plateforme
+    // pour une transmission d'un autre canal, d'une autre plateforme ou déjà tranchée.
+    const ouverture = branche.indexOf('ouvrirPlateforme(')
     for (const controle of ['if (transmission.canal !== "plateforme") {', 'if (transmission.hote !== hote) {',
       'if (transmission.etat !== "envoi" && transmission.etat !== "depose") return json({ transmission })']) {
       const i = branche.indexOf(controle)
