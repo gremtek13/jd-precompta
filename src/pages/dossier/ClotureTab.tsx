@@ -1427,14 +1427,17 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, gene
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px' }}>
+      {/* `wrap` aux DEUX rangées : sur téléphone, « Clôturer l'exercice » et « Remplir le formulaire officiel » côte à côte
+          mesurent plus que la carte (109 px de trop, vus au banc). Les boutons passent donc à la ligne entre eux, et le titre
+          de l'exercice aussi, au lieu d'être réduit à un mot par ligne à côté d'eux. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '14px 16px' }}>
         <div>
           <strong>Exercice {annee}</strong>
           <span className="muted" style={{ marginLeft: 10, fontSize: '0.9em' }}>
             2035-A-SD et 2035-B-SD — à relire case par case avant dépôt
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <BoutonCloture cloture={cloture} onCloturer={onCloturer} />
           <button
             className="btn btn-primary btn-sm"
