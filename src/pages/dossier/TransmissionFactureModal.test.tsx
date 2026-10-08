@@ -22,6 +22,9 @@ const faux = vi.hoisted(() => ({
   evenements: [] as unknown[],
   connexion: null as unknown,
   lecturesConnexion: 0,
+  // Pour un avoir : les rejets de la facture qu'il corrige, et ses refus chez Super PDP (210, 213).
+  rejetsOrigine: 0,
+  refusOrigine: 0,
   superpdp: false,
   appels: [] as { nom: string; body: Record<string, unknown> }[],
   // La promesse d'une action reste en attente jusqu'à ce que le cas la résolve.
@@ -43,11 +46,25 @@ vi.mock('../../lib/supabase', () => {
         }
         if (table === 'factures_emises') return requete(() => ({ data: faux.origine, error: null }), 'maybeSingle')
         if (table === 'facture_superpdp_events') {
-          const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => Promise.resolve({ data: faux.evenements, error: null }) }
+          const q: Record<string, unknown> = {
+            select: () => q, eq: () => q,
+            order: () => Promise.resolve({ data: faux.evenements, error: null }),
+            // Le compte des refus de la facture qu'un avoir corrige.
+            in: () => Promise.resolve({ data: null, error: null, count: faux.refusOrigine }),
+          }
           return q
         }
         if (table === 'transmissions_factures') {
-          const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => q }
+          let compte = false
+          const q: Record<string, unknown> = {
+            select: (_: string, options?: { head?: boolean }) => { compte = options?.head === true; return q },
+            eq: () => q, order: () => q,
+            // Le compte des rejets de la facture qu'un avoir corrige : une lecture sans lignes, attendue telle quelle.
+            then: (suite: (r: unknown) => unknown) => {
+              if (!compte) throw new Error('lecture des transmissions sans range')
+              return Promise.resolve({ data: null, error: null, count: faux.rejetsOrigine }).then(suite)
+            },
+          }
           q.range = () => {
             faux.lecturesTransmissions += 1
             const reponse = faux.refusTransmissions
@@ -100,7 +117,7 @@ const FACTURE: FactureEmise = factureCii([ligne()])
 
 function monter(o: {
   facture?: FactureEmise; lignes?: unknown[]; origine?: unknown; connexion?: unknown; superpdp?: boolean
-  transmissions?: TransmissionFacture[]; refusTransmissions?: string
+  transmissions?: TransmissionFacture[]; refusTransmissions?: string; rejetsOrigine?: number; refusOrigine?: number
 } = {}) {
   faux.lignes = o.lignes ?? [ligne()]
   faux.origine = o.origine ?? null
@@ -112,6 +129,8 @@ function monter(o: {
   faux.evenements = []
   faux.connexion = o.connexion === undefined ? CONNEXION : o.connexion
   faux.lecturesConnexion = 0
+  faux.rejetsOrigine = o.rejetsOrigine ?? 0
+  faux.refusOrigine = o.refusOrigine ?? 0
   faux.superpdp = o.superpdp ?? false
   faux.appels = []
   faux.resoudre = null
@@ -322,5 +341,51 @@ describe('TransmissionFactureModal — l’abandon d’une transmission sans iss
     expect(confirmation.mock.calls[0][0]).toContain('Vérifie d’abord sur la plateforme (flux.plateforme-demo.fr) que la facture F2026-0001 n’y est pas')
     await act(async () => { faux.resoudre?.({ data: null, error: { message: 'Accès refusé à ce dossier.' } }) })
     expect(screen.getByText('Accès refusé à ce dossier.')).toBeTruthy()
+  })
+})
+
+// UNE FACTURE REJETÉE OU REFUSÉE S'ANNULE PAR UN AVOIR INTERNE, QUI NE SE TRANSMET PAS (spécifications externes de la
+// DGFiP, § 3.6.4). La base le refuse (garder_transmission_facture) ; la fenêtre le dit avant, et ne propose rien.
+describe('TransmissionFactureModal — l’avoir interne d’une facture rejetée ou refusée', () => {
+  const credit = [ligne({ designation: 'Mission de conseil', quantite: -1, prix_unitaire_ht: 100 })]
+  const avoir = factureCii(credit, { id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-10-02', date_echeance: null })
+  const ORIGINE = { numero: 'F2026-0001', date_emission: '2026-09-15' }
+
+  it('une facture rejetée ne repart pas, et la fenêtre dit pourquoi', async () => {
+    monter({ transmissions: [transmission({ etat: 'rejete', detail: 'Error : SIREN inconnu.' })], superpdp: true })
+    expect(await screen.findByText(/Rejetée par la plateforme du client \(flux.plateforme-demo.fr\) : elle ne repart pas/)).toBeTruthy()
+    expect(screen.getByText(/s’annule par un avoir interne — qui ne se transmet pas —, puis une nouvelle facture \(spécifications externes de la DGFiP, § 3.6.4\)/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('l’avoir d’une facture rejetée par une plateforme est interne : il ne se propose pas', async () => {
+    monter({ facture: avoir, lignes: credit, origine: ORIGINE, rejetsOrigine: 1, superpdp: true })
+    expect(await screen.findByText(/Cet avoir annule une facture rejetée ou refusée : c’est un avoir interne, qui ne se transmet pas/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('l’avoir d’une facture refusée chez Super PDP aussi', async () => {
+    monter({ facture: avoir, lignes: credit, origine: ORIGINE, refusOrigine: 1, superpdp: true })
+    expect(await screen.findByText(/Cet avoir annule une facture rejetée ou refusée/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  // Le garde symétrique : un avoir d'une facture simplement transmise se transmet.
+  it('l’avoir d’une facture ni rejetée ni refusée se dépose', async () => {
+    monter({ facture: avoir, lignes: credit, origine: ORIGINE })
+    expect(await deposer()).toBeTruthy()
+    expect(screen.queryByText(/avoir interne/)).toBeNull()
+  })
+
+  it('une facture refusée par le client chez Super PDP le dit', async () => {
+    faux.evenements = []
+    monter({
+      facture: { ...FACTURE, superpdp_invoice_id: 42 }, superpdp: true,
+      transmissions: [transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'accepte', flux_id: '42' })],
+    })
+    faux.evenements = [{ id: 'e1', facture_id: 'f1', superpdp_event_id: 2, status_code: 'fr:210', status_text: 'Refusée', occurred_at: '2026-10-08T09:00:00+00:00' }]
+    await act(async () => { screen.getByRole('button', { name: 'Actualiser le statut Super PDP' }).click() })
+    await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
+    expect(await screen.findByText(/Refusée par le client : elle s’annule par un avoir interne/)).toBeTruthy()
   })
 })

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  DELAI_AVANT_ABANDON_MS, ETATS_ACTIFS, ETATS_TRANSMISSION, abandonnable, estActive, libelleCanal, libelleCourtCanal,
-  transmissionCourante, transmissionsDe,
+  DELAI_AVANT_ABANDON_MS, ETATS_ACTIFS, ETATS_TRANSMISSION, STATUTS_ANNULATION_SUPERPDP, abandonnable, estActive,
+  libelleCanal, libelleCourtCanal, transmissionCourante, transmissionsDe,
 } from './transmissionsFactures'
 import type { EtatTransmission, TransmissionFacture } from './types'
 
@@ -79,5 +79,20 @@ describe('l’abandon d’une transmission sans issue connue', () => {
       expect(abandonnable(transmission({ etat }), depart + 3_600_000), etat).toBe(false)
     }
     expect(abandonnable(transmission({ etat: 'envoi', cree_le: 'illisible' }), depart + 3_600_000)).toBe(false)
+  })
+})
+
+describe('l’avoir interne d’une facture rejetée ou refusée', () => {
+  const MIGRATION_AVOIR = readFileSync(new URL('../../supabase/schema/20261008065832_avoir_interne_d_une_facture_rejetee.sql', import.meta.url), 'utf8')
+
+  it('les statuts de Super PDP qui l’annulent sont ceux que la base lit', () => {
+    const lus = /e\.status_code in \(([^)]*)\)/.exec(MIGRATION_AVOIR)
+    expect(lus).not.toBeNull()
+    expect([...(lus as RegExpExecArray)[1].matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual([...STATUTS_ANNULATION_SUPERPDP])
+  })
+
+  it('une transmission rejetée dit qu’elle ne repart pas, et pourquoi', () => {
+    expect(ETATS_TRANSMISSION.rejete.explication).toMatch(/Elle ne repart pas : elle s’annule par un avoir interne, qui ne se transmet pas/)
+    expect(ETATS_TRANSMISSION.rejete.explication).toContain('§ 3.6.4')
   })
 })
