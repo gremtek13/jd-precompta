@@ -336,6 +336,7 @@ export default function DossierDetail() {
                 dossierAdresse={dossier?.adresse ?? null}
                 statutTva={dossier?.statut_tva ?? null}
                 articleExoneration={dossier?.article_exoneration ?? null}
+                numeroTvaAttribue={dossier?.numero_tva_attribue ?? false}
                 tvaSurDebits={dossier?.tva_sur_debits ?? false}
                 onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
               />
@@ -360,6 +361,8 @@ export default function DossierDetail() {
                 assujettiTva={dossier.assujetti_tva}
                 statutTva={dossier.statut_tva}
                 articleExoneration={dossier.article_exoneration}
+                numeroTvaAttribue={dossier.numero_tva_attribue}
+                siret={dossier.siret}
                 onStatutUpdated={(modification) => modifierDossier(id, modification)}
                 periodicite={dossier.tva_periodicite}
                 surDebits={dossier.tva_sur_debits}

@@ -25,6 +25,8 @@ interface Props {
   // Le statut de TVA du dossier (lib/statutTva.ts) : la mention proposée sur une facture et les taux admis.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // Un dossier en franchise ou exonéré qui a un numéro de TVA (la case de l'onglet TVA) : ses factures sans TVA partent.
+  numeroTvaAttribue: boolean
   // L'option du dossier pour le paiement de la TVA d'après les débits, que la validation fige sur la facture.
   tvaSurDebits: boolean
   onAdresseUpdated: (adresse: string) => void
@@ -35,7 +37,7 @@ interface Props {
 // agréée — celle du client ou Super PDP (voir TransmissionFactureModal) — ou, comme avant, simplement
 // imprimée/exportée en PDF pour être envoyée manuellement : la transmission électronique n'est jamais
 // obligatoire ici (un client particulier, une plateforme pas encore reliée).
-export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, tvaSurDebits, onAdresseUpdated }: Props) {
+export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -256,6 +258,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           dossierAdresse={dossierAdresse}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
+          numeroTvaAttribue={numeroTvaAttribue}
           tvaSurDebits={tvaSurDebits}
           facture={editing === 'new' ? null : editing}
           onAdresseUpdated={onAdresseUpdated}
@@ -264,7 +267,13 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         />
       )}
 
-      {apercu && <FactureApercu facture={apercu} onClose={() => setApercu(null)} />}
+      {apercu && (
+        <FactureApercu
+          facture={apercu}
+          dossier={{ statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }}
+          onClose={() => setApercu(null)}
+        />
+      )}
 
       {avoirDe && (
         <FactureAvoirModal
@@ -285,6 +294,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           facture={transmise}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
+          numeroTvaAttribue={numeroTvaAttribue}
           onClose={() => setTransmissionDe(null)}
           onUpdated={load}
         />

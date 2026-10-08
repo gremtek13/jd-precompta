@@ -13,6 +13,9 @@
 --   - CE QUE LES CONTRAINTES REFUSENT SEULES : un statut ou un article hors de la liste, un article sur un statut
 --     qui ne le permet pas — jamais effacé en silence quand c'est le statut qu'on change ;
 --   - que les dossiers EXISTANTS sont cohérents : tout dossier assujetti est redevable, et seul lui ;
+--   - LE NUMÉRO DE TVA D'UN DOSSIER EN FRANCHISE OU EXONÉRÉ (migration numero_de_tva_d_un_dossier_non_redevable) : la
+--     case se coche sur ces deux statuts, se refuse sur un autre — jamais effacée quand c'est le statut qu'on change —,
+--     part avec le statut que l'ancien booléen retire, et naît décochée ;
 --   - CE QUE LE CATALOGUE DIT : la fonction du déclencheur n'est appelable par personne ;
 --   - et que RIEN ne reste en base après l'essai.
 --
@@ -32,6 +35,8 @@
 -- porte un statut, le statut non déduit de l'ancien booléen, puis d'une création assujettie, l'article non
 -- effacé avec le statut, l'article admis sur un statut nul (sans `coalesce`), un statut inconnu admis, et la
 -- fonction du déclencheur laissée appelable. Il ne porte aucune instruction de suppression.
+-- Puis, le 08/10/2026, 22 contrôles sur 22 en production après la migration numero_de_tva_d_un_dossier_non_redevable,
+-- dont viennent les contrôles 17 à 21 (« rien n'est resté », d'abord le 17e, est devenu le 22e).
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -54,7 +59,8 @@ begin
   -- ══ 1. Les dossiers existants ════════════════════════════════════════════════════════════════════════════
   select count(*) into incoherents from dossiers
    where assujetti_tva <> coalesce(statut_tva = 'redevable', false)
-      or (article_exoneration is not null and coalesce(statut_tva, '') not in ('exonere', 'redevable'));
+      or (article_exoneration is not null and coalesce(statut_tva, '') not in ('exonere', 'redevable'))
+      or (numero_tva_attribue and coalesce(statut_tva, '') not in ('franchise', 'exonere'));
   verdicts := verdicts || jsonb_build_object('controle', '1. les dossiers existants sont cohérents',
     'observe', incoherents || ' incohérent(s)', 'ok', coalesce(incoherents = 0, false));
 
@@ -230,6 +236,61 @@ begin
       'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
       'ok', coalesce(code_recu = '23514' and message like '%dossiers_article_exoneration_coherent%', false));
 
+    -- ══ 17 à 21. Le numéro de TVA d'un dossier en franchise ou exonéré ═══════════════════════════════════
+    begin
+      code_recu := null; message := null; obs := null;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+      update dossiers set statut_tva = 'franchise', article_exoneration = null, numero_tva_attribue = true where id = dossier_e;
+      select concat_ws(' ', statut_tva, numero_tva_attribue::text) into obs from dossiers where id = dossier_e;
+      update dossiers set statut_tva = 'exonere', article_exoneration = 'cgi_261_4_1', numero_tva_attribue = true where id = dossier_e;
+      select obs || ' | ' || concat_ws(' ', statut_tva, numero_tva_attribue::text) into obs from dossiers where id = dossier_e;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '17. le chef coche le numéro d''un dossier en franchise, puis exonéré',
+      'observe', coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+      'ok', coalesce(obs = 'franchise true | exonere true', false));
+
+    for obs, message in
+      select * from (values ('18. la case sur un dossier qu''on rend redevable est refusée, jamais effacée', 'redevable'),
+                            ('19. la case sur un statut à préciser est refusée', '')) t(o, s)
+    loop
+      begin
+        code_recu := null;
+        update dossiers set statut_tva = 'franchise', article_exoneration = null, numero_tva_attribue = true where id = dossier_e;
+        update dossiers set statut_tva = nullif(message, '') where id = dossier_e;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; message := sqlerrm;
+      end;
+      verdicts := verdicts || jsonb_build_object('controle', obs,
+        'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+        'ok', coalesce(code_recu = '23514' and message like '%dossiers_numero_tva_attribue_coherent%', false));
+    end loop;
+
+    begin
+      code_recu := null; message := null; obs := null;
+      update dossiers set statut_tva = 'franchise', article_exoneration = null, numero_tva_attribue = true where id = dossier_e;
+      update dossiers set assujetti_tva = true where id = dossier_e;
+      select concat_ws(' ', statut_tva, numero_tva_attribue::text, assujetti_tva::text) into obs from dossiers where id = dossier_e;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    verdicts := verdicts || jsonb_build_object('controle', '20. l''ancien booléen qui rend le dossier redevable retire la case avec le statut',
+      'observe', coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+      'ok', coalesce(obs = 'redevable false true', false));
+
+    begin
+      code_recu := null; message := null; obs := null;
+      insert into dossiers (nom, cabinet_id, code_email, statut_tva) values ('ESSAI STATUT TVA', cabinet, 'essai-statut-' || substr(md5(random()::text), 1, 10), 'franchise')
+        returning concat_ws(' ', statut_tva, numero_tva_attribue::text) into obs;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    verdicts := verdicts || jsonb_build_object('controle', '21. un dossier naît sans numéro de TVA coché, même en franchise',
+      'observe', coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), 'ok', coalesce(obs = 'franchise false', false));
+
     raise exception 'ANNULATION_JEU';
   exception when others then
     if sqlerrm <> 'ANNULATION_JEU' then
@@ -246,8 +307,8 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '16. catalogue : la fonction du déclencheur, appelable par personne',
     'observe', obs, 'ok', coalesce(obs = 'security invoker, anon false, authenticated false', false));
 
-  -- ══ 17. Rien n'est resté ═══════════════════════════════════════════════════════════════════════════════════
-  verdicts := verdicts || jsonb_build_object('controle', '17. rien n''est resté en base',
+  -- ══ 22. Rien n'est resté ═══════════════════════════════════════════════════════════════════════════════════
+  verdicts := verdicts || jsonb_build_object('controle', '22. rien n''est resté en base',
     'observe', 'dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers),
     'ok', coalesce(dossiers_avant = (select count(*) from dossiers) and not exists (select 1 from dossiers where nom = 'ESSAI STATUT TVA'), false));
 

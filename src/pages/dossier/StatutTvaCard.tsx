@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
+import { numeroTvaFrancais, sirenDe, sirenValide } from '../../lib/factureCii'
 import {
   EXONERATIONS,
   STATUTS_TVA,
@@ -8,6 +9,7 @@ import {
   exonerationDe,
   manqueMentionTva,
   mentionTva,
+  numeroTvaACocher,
   obligationsFacturationElectronique,
   resumeObligations,
   type EtatObligation,
@@ -22,17 +24,27 @@ import type { ArticleExoneration, PeriodiciteTva, StatutTva } from '../../lib/ty
 // à son changement : sur un champ qui a le focus, les flèches du clavier changent la valeur, donc l'enregistreraient.
 // Ce statut décide du montant de chaque pièce (hors taxes pour un redevable, TVA comprise sinon) : un changement
 // glissé sous la main se verrait sur toutes les déclarations du dossier.
+//
+// UN DOSSIER EN FRANCHISE OU EXONÉRÉ dit ici s'il a un numéro de TVA intracommunautaire (décision du cabinet du
+// 08/10/2026) : une facture électronique sans TVA le porte (règle G1.47 de la DGFiP), et l'application ne peut pas le
+// savoir seule — un redevable en a toujours un, un franchisé ou un exonéré seulement si son service des impôts le lui a
+// attribué. Le numéro se calcule de son SIREN, comme celui d'un redevable ; sans la case, ses factures restent
+// imprimables et envoyables par e-mail, mais ne partent pas par une plateforme.
 
 export interface ModificationStatutTva {
   statut_tva: StatutTva | null
   article_exoneration: ArticleExoneration | null
   assujetti_tva: boolean
+  numero_tva_attribue: boolean
 }
 
 interface Props {
   dossierId: string
   statut: StatutTva | null
   article: ArticleExoneration | null
+  numeroTvaAttribue: boolean
+  // Le SIRET du dossier, dont se calcule le numéro de TVA que la case annonce.
+  siret: string | null
   // Ce que la base a écrit — `assujetti_tva` compris, que son déclencheur déduit du statut.
   onStatutUpdated: (modification: ModificationStatutTva) => void
 }
@@ -40,21 +52,35 @@ interface Props {
 const LIBELLE_STATUT: Record<StatutTva, string> = Object.fromEntries(STATUTS_TVA.map((s) => [s.statut, s.libelle])) as Record<StatutTva, string>
 const EXPLICATION_STATUT: Record<StatutTva, string> = Object.fromEntries(STATUTS_TVA.map((s) => [s.statut, s.explication])) as Record<StatutTva, string>
 
-export default function StatutTvaCard({ dossierId, statut, article, onStatutUpdated }: Props) {
+// Ce que la case annonce : le numéro calculé du SIREN, ou pourquoi il ne se calcule pas.
+function numeroAnnonce(siret: string | null): string {
+  const siren = sirenDe(siret)
+  return sirenValide(siren)
+    ? `Son numéro, calculé de son SIREN : ${numeroTvaFrancais(siren)}.`
+    : 'Son SIRET, dans « Informations du dossier », ne donne pas un SIREN valide : le numéro ne se calcule pas.'
+}
+
+const SANS_NUMERO = 'Sans numéro de TVA intracommunautaire, ses factures sans TVA restent imprimables et envoyables par '
+  + 'e-mail, mais ne partent pas par une plateforme agréée (règle G1.47 de la DGFiP).'
+
+export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAttribue, siret, onStatutUpdated }: Props) {
   // Un statut à préciser s'affiche d'office en édition — c'est la question à laquelle cette carte existe pour
   // répondre —, et c'est le rendu qui le décide, pas cet état : il ne dit que « Changer le statut » a été cliqué.
   const [edition, setEdition] = useState(false)
   const [choix, setChoix] = useState<StatutTva | null>(statut)
   const [articleChoisi, setArticleChoisi] = useState<ArticleExoneration | null>(article)
+  const [numeroChoisi, setNumeroChoisi] = useState(numeroTvaAttribue)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   // Verrou d'exécution : un `useRef`, posé AVANT le `try` et relâché dans le `finally` (voir CLAUDE.md).
   const ecriture = useRef(false)
 
   // Ce que « Enregistrer » écrirait. L'article ne vaut que pour un dossier exonéré ou redevable : la franchise n'en
-  // a pas, et c'est `ecritureDuStatut` qui le retire — la même écriture partout, pour l'aperçu comme pour la base.
-  const prevu = choix == null ? null : ecritureDuStatut(choix, articleChoisi)
-  const modifie = prevu != null && (prevu.statut_tva !== statut || prevu.article_exoneration !== article)
+  // a pas, et c'est `ecritureDuStatut` qui le retire — la même écriture partout, pour l'aperçu comme pour la base. De
+  // même la case du numéro de TVA, qui ne vaut qu'en franchise ou exonéré.
+  const prevu = choix == null ? null : ecritureDuStatut(choix, articleChoisi, numeroChoisi)
+  const modifie = prevu != null && (prevu.statut_tva !== statut || prevu.article_exoneration !== article
+    || prevu.numero_tva_attribue !== numeroTvaAttribue)
   // Ce que le changement fait aux montants du dossier, dit avant le clic.
   const devientRedevable = choix === 'redevable' && statut !== 'redevable'
   const cesseDEtreRedevable = choix != null && choix !== 'redevable' && statut === 'redevable'
@@ -62,6 +88,7 @@ export default function StatutTvaCard({ dossierId, statut, article, onStatutUpda
   function annuler() {
     setChoix(statut)
     setArticleChoisi(article)
+    setNumeroChoisi(numeroTvaAttribue)
     setErreur(null)
     setEdition(false)
   }
@@ -77,7 +104,7 @@ export default function StatutTvaCard({ dossierId, statut, article, onStatutUpda
         .from('dossiers')
         .update(prevu)
         .eq('id', dossierId)
-        .select('statut_tva, article_exoneration, assujetti_tva')
+        .select('statut_tva, article_exoneration, assujetti_tva, numero_tva_attribue')
         .single()
       if (error || !data) {
         setErreur(messageErreur(error, 'Le statut de TVA n’a pas pu être enregistré.'))
@@ -113,6 +140,11 @@ export default function StatutTvaCard({ dossierId, statut, article, onStatutUpda
                 ? 'Ses factures portent la TVA : aucune mention d’exonération n’y est proposée.'
                 : manqueMentionTva(statut, article)}
           </p>
+          {numeroTvaACocher(statut) && (
+            <p className="muted" style={{ margin: '4px 0 0' }}>
+              {numeroTvaAttribue ? <>Le dossier a un numéro de TVA intracommunautaire. {numeroAnnonce(siret)}</> : SANS_NUMERO}
+            </p>
+          )}
           <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => setEdition(true)}>
             Changer le statut
           </button>
@@ -158,6 +190,21 @@ export default function StatutTvaCard({ dossierId, statut, article, onStatutUpda
                   <option key={e.code} value={e.code}>{e.objet} ({e.reference})</option>
                 ))}
               </select>
+            </div>
+          )}
+          {numeroTvaACocher(choix) && (
+            <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                <input
+                  id="statut-tva-numero"
+                  type="checkbox"
+                  checked={numeroChoisi}
+                  disabled={enCours}
+                  onChange={(e) => setNumeroChoisi(e.target.checked)}
+                />
+                Le dossier a un numéro de TVA intracommunautaire, attribué par son service des impôts
+              </label>
+              <p className="muted" style={{ margin: '4px 0 0' }}>{numeroChoisi ? numeroAnnonce(siret) : SANS_NUMERO}</p>
             </div>
           )}
           {prevu != null && (

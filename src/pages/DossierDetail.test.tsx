@@ -16,7 +16,7 @@ import DossierDetail from './DossierDetail'
 
 interface LigneDossier {
   id: string; nom: string; siret: string | null; assujetti_tva: boolean
-  statut_tva: 'redevable' | 'franchise' | 'exonere' | null; article_exoneration: string | null
+  statut_tva: 'redevable' | 'franchise' | 'exonere' | null; article_exoneration: string | null; numero_tva_attribue: boolean
   tva_periodicite: 'mensuelle' | 'trimestrielle'; tva_sur_debits: boolean
   mode_comptable: 'tresorerie' | 'engagement'; compte_notes_de_frais: '455000' | '108000' | '467000'
 }
@@ -147,8 +147,13 @@ vi.mock('./dossier/PiecesTab', () => ({
 // Factures propose la mention de TVA d'une facture et refuse une ligne taxée selon le statut du dossier
 // (lib/statutTva.ts) : doublé pour montrer le statut et l'article qu'il REÇOIT.
 vi.mock('./dossier/FacturesTab', () => ({
-  default: ({ statutTva, articleExoneration }: { statutTva: string | null; articleExoneration: string | null }) => (
-    <p>Factures — statut {statutTva ?? 'à préciser'} — {articleExoneration ?? 'sans article'}</p>
+  default: ({ statutTva, articleExoneration, numeroTvaAttribue }: {
+    statutTva: string | null; articleExoneration: string | null; numeroTvaAttribue: boolean
+  }) => (
+    <p>
+      Factures — statut {statutTva ?? 'à préciser'} — {articleExoneration ?? 'sans article'}
+      {' '}— {numeroTvaAttribue ? 'numéro de TVA' : 'sans numéro de TVA'}
+    </p>
   ),
 }))
 vi.mock('./dossier/InformationsTab', async () => {
@@ -243,11 +248,17 @@ vi.mock('./dossier/BanqueTab', () => doubleTva('Banque'))
 // Le STATUT de TVA s'y règle aussi (StatutTvaCard) : le double rend à la page ce que la base aurait écrit, le
 // booléen déduit compris, et peut retenir sa réponse.
 vi.mock('./dossier/TvaTab', () => ({
-  default: ({ assujettiTva, statutTva, articleExoneration, onStatutUpdated, periodicite, surDebits, onRegimeUpdated }: {
+  default: ({
+    assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits, onRegimeUpdated,
+  }: {
     assujettiTva: boolean
     statutTva: string | null
     articleExoneration: string | null
-    onStatutUpdated: (m: { statut_tva: 'redevable' | 'franchise' | 'exonere'; article_exoneration: null; assujetti_tva: boolean }) => void
+    numeroTvaAttribue: boolean
+    siret: string | null
+    onStatutUpdated: (m: {
+      statut_tva: 'redevable' | 'franchise' | 'exonere'; article_exoneration: null; assujetti_tva: boolean; numero_tva_attribue: boolean
+    }) => void
     periodicite: string
     surDebits: boolean
     onRegimeUpdated: (m: { tva_periodicite?: 'mensuelle' | 'trimestrielle' }) => void
@@ -257,18 +268,19 @@ vi.mock('./dossier/TvaTab', () => ({
         TVA — {assujettiTva ? 'assujetti' : 'exonéré'} — {statutTva ?? 'à préciser'}{articleExoneration ? ` (${articleExoneration})` : ''}
         {' '}— {periodicite} — {surDebits ? 'débits' : 'encaissements'}
       </p>
+      <p>Numéro de TVA : {numeroTvaAttribue ? 'oui' : 'non'} — SIRET {siret ?? 'aucun'}</p>
       <button onClick={() => onRegimeUpdated({ tva_periodicite: 'trimestrielle' })}>Passer au trimestre</button>
       <button
         onClick={() => {
           void (faux.retenueStatut ?? Promise.resolve()).then(() => {
             faux.statutsRendus++
-            onStatutUpdated({ statut_tva: 'franchise', article_exoneration: null, assujetti_tva: false })
+            onStatutUpdated({ statut_tva: 'franchise', article_exoneration: null, assujetti_tva: false, numero_tva_attribue: false })
           })
         }}
       >
         Passer en franchise
       </button>
-      <button onClick={() => onStatutUpdated({ statut_tva: 'redevable', article_exoneration: null, assujetti_tva: true })}>
+      <button onClick={() => onStatutUpdated({ statut_tva: 'redevable', article_exoneration: null, assujetti_tva: true, numero_tva_attribue: false })}>
         Devenir redevable
       </button>
     </>
@@ -336,12 +348,12 @@ beforeEach(() => {
   faux.dossiers = {
     d1: {
       id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, statut_tva: 'exonere',
-      article_exoneration: 'cgi_261_4_1', tva_periodicite: 'trimestrielle',
+      article_exoneration: 'cgi_261_4_1', numero_tva_attribue: true, tva_periodicite: 'trimestrielle',
       tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '455000',
     },
     d2: {
       id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, statut_tva: 'redevable',
-      article_exoneration: null, tva_periodicite: 'mensuelle',
+      article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'mensuelle',
       tva_sur_debits: true, mode_comptable: 'engagement', compte_notes_de_frais: '108000',
     },
   }
@@ -564,7 +576,7 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
     expect(screen.getByText('Vue d’ensemble — statut exonere')).toBeTruthy()
     cleanup()
     await afficher('/dossiers/d1/factures')
-    expect(screen.getByText('Factures — statut exonere — cgi_261_4_1')).toBeTruthy()
+    expect(screen.getByText('Factures — statut exonere — cgi_261_4_1 — numéro de TVA')).toBeTruthy()
     cleanup()
 
     faux.dossiers.d2 = { ...faux.dossiers.d2, statut_tva: null, assujetti_tva: false }
@@ -572,7 +584,7 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
     expect(screen.getByText('Vue d’ensemble — statut à préciser')).toBeTruthy()
     cleanup()
     await afficher('/dossiers/d2/factures')
-    expect(screen.getByText('Factures — statut à préciser — sans article')).toBeTruthy()
+    expect(screen.getByText('Factures — statut à préciser — sans article — sans numéro de TVA')).toBeTruthy()
   })
 
   it('le badge nomme les trois statuts, et un statut à préciser se signale', async () => {
@@ -600,10 +612,13 @@ describe('Page d’un dossier — l’onglet TVA reçoit le régime du dossier a
   it('passe le statut, la périodicité et l’option de CE dossier', async () => {
     await afficher('/dossiers/d1/tva')
     expect(screen.getByText('TVA — exonéré — exonere (cgi_261_4_1) — trimestrielle — encaissements')).toBeTruthy()
+    // La case du numéro de TVA et le SIRET dont il se calcule : ceux de CE dossier.
+    expect(screen.getByText('Numéro de TVA : oui — SIRET 11111111111111')).toBeTruthy()
     cleanup()
 
     await afficher('/dossiers/d2/tva')
     expect(screen.getByText('TVA — assujetti — redevable — mensuelle — débits')).toBeTruthy()
+    expect(screen.getByText('Numéro de TVA : non — SIRET 22222222222222')).toBeTruthy()
   })
 
   it('un régime changé dans l’onglet se voit aussitôt', async () => {

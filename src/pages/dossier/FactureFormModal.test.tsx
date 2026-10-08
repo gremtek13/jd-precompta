@@ -55,7 +55,7 @@ vi.mock('../../lib/supabase', () => ({
 function monter(
   statutTva: StatutTva | null = 'franchise',
   articleExoneration: ArticleExoneration | null = null,
-  autres: { facture?: FactureEmise | null; tvaSurDebits?: boolean; dossierSiret?: string | null } = {},
+  autres: { facture?: FactureEmise | null; tvaSurDebits?: boolean; dossierSiret?: string | null; numeroTvaAttribue?: boolean } = {},
 ) {
   faux.appels = []
   faux.resoudre = null
@@ -67,6 +67,7 @@ function monter(
       dossierAdresse={null}
       statutTva={statutTva}
       articleExoneration={articleExoneration}
+      numeroTvaAttribue={autres.numeroTvaAttribue ?? false}
       tvaSurDebits={autres.tvaSurDebits ?? false}
       facture={autres.facture ?? null}
       onAdresseUpdated={() => {}}
@@ -371,6 +372,19 @@ describe('FactureFormModal — les mentions de la facture électronique', () => 
     await act(async () => { valider().click() })
     expect(confirmation).not.toHaveBeenCalled()
     expect(faux.appels).toHaveLength(1)
+  })
+
+  // La case du numéro de TVA (décision du cabinet du 08/10/2026) : le formulaire juge comme les fonctions.
+  it('un dossier en franchise : sans numéro de TVA, le refus dit où le cocher ; avec, la facture partira', () => {
+    monter('franchise', null, { dossierSiret: SIRET_VENDEUR })
+    completerPourUneEntreprise()
+    expect(screen.getByText(/sa case se coche dans l’onglet TVA du dossier, sous son statut de TVA/)).toBeTruthy()
+    cleanup()
+
+    monter('franchise', null, { dossierSiret: SIRET_VENDEUR, numeroTvaAttribue: true })
+    completerPourUneEntreprise()
+    expect(screen.getByText(/Rien n’empêchera cette facture, une fois validée, de partir/)).toBeTruthy()
+    expect(screen.queryByText(/règle G1\.47/)).toBeNull()
   })
 
   it('un particulier : l’e-reporting, sans encart ni confirmation ; à préciser : la question d’abord', async () => {

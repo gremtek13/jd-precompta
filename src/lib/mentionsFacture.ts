@@ -163,6 +163,8 @@ export interface BrouillonATransmettre {
   lignes: Omit<LigneCii, 'ordre'>[]
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // Un dossier en franchise ou exonéré qui a un numéro de TVA intracommunautaire (la case de l'onglet TVA).
+  numeroTvaAttribue: boolean
   // L'option pour les débits que la validation figera : celle du dossier, s'il est redevable.
   optionDebits: boolean
   aujourdHui: string
@@ -198,7 +200,7 @@ export function apercuDeTransmission(b: BrouillonATransmettre): ApercuTransmissi
   const donnees = donneesDeLaFacture(
     { ...f, numero: NUMERO_EN_ATTENTE, statut: 'validee', option_debits: b.optionDebits },
     b.lignes.map((l, i) => ({ ...l, ordre: i })),
-    { statut_tva: b.statutTva, article_exoneration: b.articleExoneration },
+    { statut_tva: b.statutTva, article_exoneration: b.articleExoneration, numero_tva_attribue: b.numeroTvaAttribue },
     null,
     b.aujourdHui,
   )

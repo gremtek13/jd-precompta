@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { fichiersDuSchema } from '../test/schema'
 import type { ArticleExoneration, StatutTva } from './types'
@@ -9,6 +10,7 @@ import {
   STATUTS_TVA,
   VATEX_FRANCHISE,
   ecritureDuStatut,
+  numeroTvaACocher,
   exonerationDe,
   libelleCourtStatutTva,
   manqueMentionTva,
@@ -70,13 +72,28 @@ describe('libelleCourtStatutTva', () => {
 
 describe('ecritureDuStatut', () => {
   it('passer en franchise retire l’article, dans la même écriture — la base refuserait l’article', () => {
-    expect(ecritureDuStatut('franchise', 'cgi_261_4_1')).toEqual({ statut_tva: 'franchise', article_exoneration: null })
+    expect(ecritureDuStatut('franchise', 'cgi_261_4_1', false)).toEqual({ statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false })
   })
 
   it('un dossier exonéré ou redevable garde l’article choisi', () => {
-    expect(ecritureDuStatut('exonere', 'cgi_261_4_1')).toEqual({ statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1' })
-    expect(ecritureDuStatut('redevable', 'cgi_261_c_2')).toEqual({ statut_tva: 'redevable', article_exoneration: 'cgi_261_c_2' })
-    expect(ecritureDuStatut('exonere', null)).toEqual({ statut_tva: 'exonere', article_exoneration: null })
+    expect(ecritureDuStatut('exonere', 'cgi_261_4_1', false)).toEqual({ statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1', numero_tva_attribue: false })
+    expect(ecritureDuStatut('redevable', 'cgi_261_c_2', false)).toEqual({ statut_tva: 'redevable', article_exoneration: 'cgi_261_c_2', numero_tva_attribue: false })
+    expect(ecritureDuStatut('exonere', null, false)).toEqual({ statut_tva: 'exonere', article_exoneration: null, numero_tva_attribue: false })
+  })
+
+  // LA CASE DU NUMÉRO DE TVA (décision du cabinet du 08/10/2026) : gardée en franchise et exonéré, retirée dans la même
+  // écriture quand le dossier devient redevable — la base la refuserait (dossiers_numero_tva_attribue_coherent).
+  it('la case du numéro de TVA se garde en franchise et exonéré, et part quand le dossier devient redevable', () => {
+    expect(ecritureDuStatut('franchise', null, true).numero_tva_attribue).toBe(true)
+    expect(ecritureDuStatut('exonere', 'cgi_261_4_1', true).numero_tva_attribue).toBe(true)
+    expect(ecritureDuStatut('redevable', null, true).numero_tva_attribue).toBe(false)
+    expect([numeroTvaACocher('franchise'), numeroTvaACocher('exonere'), numeroTvaACocher('redevable'), numeroTvaACocher(null)])
+      .toEqual([true, true, false, false])
+  })
+
+  it('les statuts où la case se coche sont ceux que la base admet', () => {
+    const migration = readFileSync(new URL('../../supabase/schema/20261008070839_numero_de_tva_d_un_dossier_non_redevable.sql', import.meta.url), 'utf8')
+    expect(migration).toContain("check (not numero_tva_attribue or coalesce(statut_tva in ('franchise', 'exonere'), false))")
   })
 })
 
