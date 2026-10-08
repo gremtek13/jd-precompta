@@ -51,6 +51,11 @@ export function libelleCourtStatutTva(statut: StatutTva | null): string {
   }
 }
 
+// ── DÉBUT COPIE statutTva ────────────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui transmettent une facture (superpdp-emit,
+// plateforme-agreee) : le générateur de la facture électronique, qu'elles recopient aussi, en tire le motif d'une
+// ligne à 0 % et le refus d'une ligne taxée. `copiesFacturation.test.ts` compare chaque copie à celui-ci et l'exécute.
+
 export interface Exoneration {
   code: ArticleExoneration
   // Ce que l'article exonère, pour la liste de choix.
@@ -59,9 +64,8 @@ export interface Exoneration {
   reference: string
   // La mention de la facture : la référence de la disposition qui exonère (CGI, ann. II, art. 242 nonies A).
   mention: string
-  // Le code du motif d'exonération (BT-121 de la norme EN 16931), dans la liste VATEX que la France a complétée.
-  // La règle BR-E-10 admet le code OU le texte : superpdp-emit ne transmet que le TEXTE, dont le champ est connu,
-  // et le code partira avec la facture électronique conforme (étape c), une fois qu'un validateur l'aura accepté.
+  // Le code du motif d'exonération (BT-121 de la norme EN 16931), dans la liste VATEX que la France a complétée. La
+  // facture électronique (factureCii.ts) transmet le code ET le texte, et le validateur officiel de la norme les accepte.
   vatex: string
 }
 
@@ -104,36 +108,6 @@ export function exonerationDe(article: ArticleExoneration | null): Exoneration |
 
 export const MENTION_FRANCHISE = 'TVA non applicable, art. 293 B du CGI.'
 export const VATEX_FRANCHISE = 'VATEX-FR-FRANCHISE'
-
-// Ce qu'on écrit en base pour un statut choisi. Un article n'a de sens que pour un dossier exonéré, ou redevable
-// d'une activité en partie exonérée : passer en franchise le RETIRE, dans la même écriture. La base refuse un
-// article sur une franchise plutôt que de l'effacer en silence (`dossiers_article_exoneration_coherent`), donc
-// c'est à l'écran de l'envoyer nul.
-export function ecritureDuStatut(
-  statut: StatutTva, article: ArticleExoneration | null,
-): { statut_tva: StatutTva; article_exoneration: ArticleExoneration | null } {
-  return { statut_tva: statut, article_exoneration: statut === 'franchise' ? null : article }
-}
-
-// La mention de TVA d'une facture du dossier, proposée à sa création. Aucune pour un redevable, qui facture la
-// TVA — une ligne à 0 % d'un redevable dont une partie de l'activité est exonérée prend la mention de son
-// article, que `motifExoneration` donne. Aucune non plus quand on ne sait pas laquelle : `manqueMentionTva` le dit.
-export function mentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
-  if (statut === 'franchise') return MENTION_FRANCHISE
-  if (statut === 'exonere') return exonerationDe(article)?.mention ?? null
-  return null
-}
-
-// Ce qui empêche de proposer la bonne mention, dit à qui rédige la facture.
-export function manqueMentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
-  if (statut == null) {
-    return 'Le statut de TVA du dossier est à préciser (onglet TVA du dossier) : la mention de TVA de la facture en dépend.'
-  }
-  if (statut === 'exonere' && exonerationDe(article) == null) {
-    return 'Le dossier est exonéré sans article d’exonération : saisis la mention de la facture, ou choisis l’article dans l’onglet TVA du dossier.'
-  }
-  return null
-}
 
 export interface MotifExoneration {
   // La catégorie de TVA de la ligne (BT-151) : E, exonérée — la franchise en base comprise, dans la norme.
@@ -178,6 +152,37 @@ export function refusTauxPositif(statut: StatutTva | null, taux: number): string
   if (statut === 'exonere') {
     return `Un dossier exonéré ne facture pas de TVA : une ligne à ${tauxLu} la rendrait due (art. 283, 3 du CGI). `
       + 'Si une partie de son activité est taxable, il est redevable, avec l’article de son exonération.'
+  }
+  return null
+}
+// ── FIN COPIE statutTva ──────────────────────────────────────────────────────────────────────────────────────────────
+
+// Ce qu'on écrit en base pour un statut choisi. Un article n'a de sens que pour un dossier exonéré, ou redevable
+// d'une activité en partie exonérée : passer en franchise le RETIRE, dans la même écriture. La base refuse un
+// article sur une franchise plutôt que de l'effacer en silence (`dossiers_article_exoneration_coherent`), donc
+// c'est à l'écran de l'envoyer nul.
+export function ecritureDuStatut(
+  statut: StatutTva, article: ArticleExoneration | null,
+): { statut_tva: StatutTva; article_exoneration: ArticleExoneration | null } {
+  return { statut_tva: statut, article_exoneration: statut === 'franchise' ? null : article }
+}
+
+// La mention de TVA d'une facture du dossier, proposée à sa création. Aucune pour un redevable, qui facture la
+// TVA — une ligne à 0 % d'un redevable dont une partie de l'activité est exonérée prend la mention de son
+// article, que `motifExoneration` donne. Aucune non plus quand on ne sait pas laquelle : `manqueMentionTva` le dit.
+export function mentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
+  if (statut === 'franchise') return MENTION_FRANCHISE
+  if (statut === 'exonere') return exonerationDe(article)?.mention ?? null
+  return null
+}
+
+// Ce qui empêche de proposer la bonne mention, dit à qui rédige la facture.
+export function manqueMentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
+  if (statut == null) {
+    return 'Le statut de TVA du dossier est à préciser (onglet TVA du dossier) : la mention de TVA de la facture en dépend.'
+  }
+  if (statut === 'exonere' && exonerationDe(article) == null) {
+    return 'Le dossier est exonéré sans article d’exonération : saisis la mention de la facture, ou choisis l’article dans l’onglet TVA du dossier.'
   }
   return null
 }
