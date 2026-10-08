@@ -77,7 +77,7 @@ const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emi
   "tiers_siret, montant_ht, montant_tva, montant_ttc, mentions_legales, notes, type_client, tiers_siren, " +
   "tiers_adresse_electronique, code_service, numero_engagement, nature_operation, date_prestation, periode_debut, " +
   "periode_fin, livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays, option_debits, emetteur_nom, " +
-  "emetteur_siret, emetteur_adresse"
+  "emetteur_siret, emetteur_adresse, superpdp_invoice_id"
 const COLONNES_TRANSMISSION = "id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le"
 // Les factures, dans les deux sens : celles que l'entreprise reçoit (SupplierInvoice, un achat) et celles qu'elle émet
 // (CustomerInvoice, une vente). Le TYPE dit qui est le fournisseur, quel que soit le sens du flux — banqup les définit
@@ -1240,7 +1240,7 @@ export function refusTauxPositif(statut: StatutTva | null, taux: number): string
 export const PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'
 
 // L'unité « pièce » de la recommandation 20 de la CEE-ONU : l'application ne distingue pas encore les unités par ligne
-// (une heure, un kilogramme), et la règle BR-23 en exige une sur chaque ligne. superpdp-emit fait le même choix.
+// (une heure, un kilogramme), et la règle BR-23 en exige une sur chaque ligne.
 export const UNITE_GENERIQUE = 'C62'
 
 // Les taux que la DGFiP admet (règle G1.24), en pour cent.
@@ -1369,7 +1369,7 @@ export function sirenDe(siret: string | null | undefined): string | null {
 }
 
 // Le numéro de TVA intracommunautaire français d'une entreprise : FR, une clé de deux chiffres, le SIREN (CGI, art. 286
-// ter ; clé = (12 + 3 × (SIREN modulo 97)) modulo 97). Le même calcul que superpdp-emit.
+// ter ; clé = (12 + 3 × (SIREN modulo 97)) modulo 97).
 export function numeroTvaFrancais(siren: string): string {
   const cle = (12 + 3 * (Number(siren) % 97)) % 97
   return `FR${String(cle).padStart(2, '0')}${siren}`
@@ -1386,7 +1386,7 @@ export interface AdresseStructuree {
 // Une adresse saisie en texte libre, rangée dans les champs de la norme (BT-35 à BT-38) : la ligne qui commence par un
 // code postal français de cinq chiffres donne le code postal et la ville, les autres sont les lignes de l'adresse.
 // Une adresse sur une seule ligne qui finit par « , 75001 Paris » se lit de même. Rien d'autre n'est interprété : sans
-// code postal reconnu, tout reste dans les lignes, telles qu'écrites — c'est ce qu'en faisait déjà superpdp-emit.
+// code postal reconnu, tout reste dans les lignes, telles qu'écrites.
 export function adresseStructuree(texte: string | null): AdresseStructuree {
   let lignes = (texte ?? '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l !== '')
   if (lignes.length === 1) {
@@ -2082,7 +2082,11 @@ Deno.serve(async (req: Request) => {
       .select(COLONNES_FACTURE).eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()
     if (erreurFacture) return json({ error: `La facture n'a pas pu être lue (${erreurFacture.message}).` }, 503)
     if (!factureLue) return json({ error: "Facture introuvable." }, 404)
-    const facture = factureLue as FactureEnBase & { facture_origine_id: string | null }
+    const facture = factureLue as FactureEnBase & { facture_origine_id: string | null; superpdp_invoice_id: number | null }
+    // Partie par l'ancien chemin de Super PDP, avant que chaque envoi ne laisse sa transmission : elle ne repart pas.
+    if (facture.superpdp_invoice_id !== null) {
+      return json({ error: "Cette facture a déjà été transmise par Super PDP.", deja: true }, 409)
+    }
     const { data: lignesLues, error: erreurLignes } = await admin.from("facture_lignes")
       .select("ordre, designation, quantite, prix_unitaire_ht, taux_tva").eq("facture_id", factureId).order("ordre")
     if (erreurLignes) return json({ error: `Les lignes de la facture n'ont pas pu être lues (${erreurLignes.message}).` }, 503)
@@ -2100,9 +2104,11 @@ Deno.serve(async (req: Request) => {
     }
     const donnees = donneesDeLaFacture(facture, (lignesLues ?? []) as LigneCii[], dossierLu, origine, dateDeParis(Date.now()))
     const refus = refusEmission(donnees)
-    if (refus.length > 0) return json({ error: "Cette facture ne peut pas être transmise telle quelle.", refus }, 422)
+    if (refus.length > 0) return json({ error: `Cette facture ne peut pas être transmise telle quelle : ${refus.join(" ")}`, refus }, 422)
     const cii = factureCii(donnees)
-    if (cii.xml === null) return json({ error: "Cette facture ne peut pas être transmise telle quelle.", refus: cii.refus }, 422)
+    if (cii.xml === null) {
+      return json({ error: `Cette facture ne peut pas être transmise telle quelle : ${cii.refus.join(" ")}`, refus: cii.refus }, 422)
+    }
     const fichier = new TextEncoder().encode(cii.xml)
     const sha256 = await empreinteSha256(fichier)
 
