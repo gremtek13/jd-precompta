@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
-import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
+import type {
+  ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, StatutTva, TransmissionFacture,
+} from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
 // légal que le cabinet émet lui-même. Ce que ce test garde et qu'aucun test de `src/lib` ne peut voir,
@@ -30,6 +32,12 @@ const faux = vi.hoisted(() => ({
   // Les transmissions du dossier (ligne 28.5, étape c4), et le refus de leur lecture, à part de celui des factures.
   transmissions: [] as TransmissionFacture[],
   refusTransmissions: null as string | null,
+  // Ce que la pastille d'encaissement lit (ligne 28.5, étape d3) : les lignes de toutes les factures du dossier, ses
+  // encaissements et leurs parts — et une lecture qui s'arrête avant le compte annoncé.
+  lignesDossier: [] as FactureLigne[],
+  encaissements: [] as EncaissementFacture[],
+  parts: [] as EncaissementFactureTaux[],
+  encaissementsMuetsApres: null as number | null,
 }))
 
 // La fenêtre de transmission a ses propres tests (TransmissionFactureModal.test.tsx) : doublée ici pour montrer ce que
@@ -40,20 +48,46 @@ vi.mock('./TransmissionFactureModal', () => ({
   ),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
+// La fenêtre des encaissements a ses propres tests (EncaissementsFactureModal.test.tsx) : doublée ici pour montrer ce que
+// l'onglet lui passe.
+vi.mock('./EncaissementsFactureModal', () => ({
+  default: ({ facture, statutTva }: { facture: { numero: string | null }; statutTva: string | null }) => (
+    <p>Encaissements de {facture.numero} — {statutTva ?? 'à préciser'}</p>
+  ),
+}))
+
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
+  type Predicat = (ligne: Record<string, unknown>) => boolean
+  return { supabase: {
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       let suppression = false
       let idVise: unknown = null
       let plage: [number, number] | null = null
+      // Les filtres des trois lectures de la pastille sont APPLIQUÉS (src/test/filtresPostgrest.ts) ; celui des lignes
+      // passe par leur facture, la table n'ayant pas de dossier.
+      const predicats: Predicat[] = []
       Object.assign(chaine, {
         select: () => chaine,
         order: () => chaine,
         range: (debut: number, fin: number) => { plage = [debut, fin]; return chaine },
         delete: () => { suppression = true; return chaine },
-        eq: (colonne: string, valeur: unknown) => { if (colonne === 'id') idVise = valeur; return chaine },
+        eq: (colonne: string, valeur: unknown) => {
+          if (colonne === 'id') idVise = valeur
+          predicats.push(colonne === 'factures_emises.dossier_id'
+            ? (l) => faux.factures.some((f) => f.id === l.facture_id && f.dossier_id === valeur)
+            : predicatEq(colonne, valeur))
+          return chaine
+        },
         then: (suite: (r: { data: unknown[] | null; error: unknown; count: number | null }) => unknown) => {
+          const tableDeLaPastille = { facture_lignes: faux.lignesDossier, encaissements_factures: faux.encaissements, encaissements_factures_taux: faux.parts }
+          if (plage && table in tableDeLaPastille) {
+            const toutes = filtrer(tableDeLaPastille[table as keyof typeof tableDeLaPastille] as readonly object[], predicats)
+            const fin = table === 'encaissements_factures' && faux.encaissementsMuetsApres != null
+              ? Math.min(plage[1] + 1, faux.encaissementsMuetsApres) : plage[1] + 1
+            return Promise.resolve({ data: toutes.slice(plage[0], fin), error: null, count: toutes.length }).then(suite)
+          }
           if (suppression) {
             faux.suppressions.push(idVise)
             if (faux.refusSuppression) {
@@ -81,8 +115,8 @@ vi.mock('../../lib/supabase', () => ({
       })
       return chaine
     },
-  },
-}))
+  } }
+})
 
 // Typé sans `as` : le compilateur confronte chaque champ à la table.
 function facture(o: Partial<FactureEmise> = {}): FactureEmise {
@@ -105,6 +139,10 @@ function poser(factures: FactureEmise[]) {
   faux.suppressions = []
   faux.transmissions = []
   faux.refusTransmissions = null
+  faux.lignesDossier = []
+  faux.encaissements = []
+  faux.parts = []
+  faux.encaissementsMuetsApres = null
 }
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
@@ -133,7 +171,7 @@ describe('FacturesTab — ce que chaque ligne permet', () => {
     const l = within(await ligne('CLINIQUE DU PARC'))
     l.getByText('Validée')
     expect(l.queryByRole('button', { name: 'Supprimer' })).toBeNull()
-    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Envoyer par e-mail']) l.getByRole('button', { name: action })
+    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Encaissements', 'Envoyer par e-mail']) l.getByRole('button', { name: action })
   })
 
   it('un brouillon se supprime, mais ne se transmet ni ne se corrige par un avoir', async () => {
@@ -145,7 +183,7 @@ describe('FacturesTab — ce que chaque ligne permet', () => {
     const l = within(await ligne('CABINET VOISIN'))
     l.getByText('Brouillon')
     l.getByRole('button', { name: 'Supprimer' })
-    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Envoyer par e-mail']) {
+    for (const action of ['Aperçu', 'Avoir', 'Transmettre', 'Encaissements', 'Envoyer par e-mail']) {
       expect(l.queryByRole('button', { name: action })).toBeNull()
     }
   })
@@ -164,6 +202,8 @@ describe('FacturesTab — ce que chaque ligne permet', () => {
     l.getByText('Avoir')
     l.getByText('→ F2026-0001')
     expect(l.queryByRole('button', { name: 'Avoir' })).toBeNull()
+    // Un avoir ne s'encaisse pas : seule une facture reçoit le statut « Encaissée ».
+    expect(l.queryByRole('button', { name: 'Encaissements' })).toBeNull()
     l.getByRole('button', { name: 'Aperçu' })
   })
 })
@@ -366,7 +406,7 @@ describe('FacturesTab — la transmission de chaque facture', () => {
     monter()
     within(await ligne('CLINIQUE DU PARC')).getByText('Plateforme du client · Déposée')
     within(await ligne('MAIRIE FICTIVE')).getByText('Super PDP · Refusée au dépôt')
-    within(await ligne('ANCIEN CLIENT')).getByText('Super PDP · Acceptée')
+    within(await ligne('ANCIEN CLIENT')).getByText('Super PDP · Approuvée')
     expect(within(await ligne('JAMAIS PARTIE')).queryByText(/·/)).toBeNull()
   })
 
@@ -397,5 +437,79 @@ describe('FacturesTab — la transmission de chaque facture', () => {
     await ligne('CLINIQUE DU PARC')
     expect(screen.getByText(/Les transmissions des factures/)).toBeTruthy()
     expect(screen.getByText(/Une facture peut paraître jamais transmise/)).toBeTruthy()
+  })
+})
+
+// CE QUI EST ENCAISSÉ DE CHAQUE FACTURE (ligne 28.5, étape d3) : une pastille à côté de celle de la transmission, selon
+// `resteAEncaisser` ; rien quand le statut « Encaissée » est sans objet, et rien du tout sur une lecture incomplète.
+describe('FacturesTab — l’encaissement de chaque facture', () => {
+  const ligneDe = (factureId: string, prix = 1000): FactureLigne => ({
+    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Séance', quantite: 1, prix_unitaire_ht: prix, taux_tva: 20,
+  })
+  const encaisse = (factureId: string, montant: number, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
+    id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: '2026-03-20', montant,
+    moyen: 'virement', ligne_bancaire_id: null, annule_id: null, motif: null, cree_par: null, cree_le: '2026-03-20T09:00:00Z',
+    retire_le: null, retire_par: null, ...o,
+  })
+  const partDe = (factureId: string, montant: number): EncaissementFactureTaux => ({
+    encaissement_id: `e-${factureId}`, dossier_id: 'dossier-de-test', taux: 20, montant,
+  })
+
+  function poserQuatre() {
+    poser([
+      facture(),
+      facture({ id: 'f2', numero: 'F2026-0002', tiers_nom: 'CENTRE PARTIEL' }),
+      facture({ id: 'f3', numero: 'F2026-0003', tiers_nom: 'CENTRE SOLDÉ' }),
+      facture({ id: 'f4', numero: 'F2026-0004', tiers_nom: 'PARTICULIER', type_client: 'non_assujetti' }),
+    ])
+    faux.lignesDossier = ['f1', 'f2', 'f3', 'f4'].map((id) => ligneDe(id))
+    faux.encaissements = [encaisse('f2', 600), encaisse('f3', 1200)]
+    faux.parts = [partDe('f2', 600), partDe('f3', 1200)]
+  }
+
+  it('« À encaisser », « Encaissée en partie — … sur … », « Encaissée » ; rien pour un particulier', async () => {
+    poserQuatre()
+    monter()
+    within(await ligne('CLINIQUE DU PARC')).getByText('À encaisser')
+    within(await ligne('CENTRE PARTIEL')).getByText(/^Encaissée en partie — 600,00\s€ sur 1\s200,00\s€$/)
+    within(await ligne('CENTRE SOLDÉ')).getByText('Encaissée')
+    const particulier = within(await ligne('PARTICULIER'))
+    expect(particulier.queryByText(/^(À encaisser|Encaissée)/)).toBeNull()
+    // Le bouton reste : l'encaissement d'un particulier s'enregistre aussi, il ne se déclare pas.
+    particulier.getByRole('button', { name: 'Encaissements' })
+  })
+
+  // Une ligne qu'aucune base ne porterait — l'encaissement d'une facture de CE dossier rangé sous un autre — sert de
+  // témoin : elle ne doit pas être lue, la lecture est celle du dossier.
+  it('ne lit que les encaissements du dossier', async () => {
+    poserQuatre()
+    faux.encaissements.push(encaisse('f1', 300, { id: 'e-temoin', dossier_id: 'autre-dossier' }))
+    faux.parts.push({ encaissement_id: 'e-temoin', dossier_id: 'autre-dossier', taux: 20, montant: 300 })
+    monter()
+    within(await ligne('CLINIQUE DU PARC')).getByText('À encaisser')
+  })
+
+  it('un encaissement retiré ne compte plus', async () => {
+    poserQuatre()
+    faux.encaissements = [encaisse('f2', 600, { retire_le: '2026-03-21T09:00:00Z' }), encaisse('f3', 1200)]
+    monter()
+    within(await ligne('CENTRE PARTIEL')).getByText('À encaisser')
+  })
+
+  it('une lecture incomplète des encaissements se dit, et aucune facture ne prétend rien', async () => {
+    poserQuatre()
+    faux.encaissementsMuetsApres = 1
+    monter()
+    await ligne('CLINIQUE DU PARC')
+    screen.getByText(/Les encaissements des factures n'ont pas pu être lus en entier/)
+    expect(screen.queryByText('À encaisser')).toBeNull()
+    expect(screen.queryByText('Encaissée')).toBeNull()
+  })
+
+  it('le bouton ouvre la fenêtre de sa facture, avec le statut de TVA du dossier', async () => {
+    poserQuatre()
+    monter('franchise')
+    fireEvent.click(within(await ligne('CENTRE PARTIEL')).getByRole('button', { name: 'Encaissements' }))
+    screen.getByText('Encaissements de F2026-0002 — franchise')
   })
 })

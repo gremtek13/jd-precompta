@@ -22,6 +22,7 @@ import { numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
 import { calculerTotaux } from '../../src/lib/montantsFacture'
+import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
@@ -29,8 +30,8 @@ import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
-  Categorie, CotisationDeclaree, EcritureBrouillon, FactureEmise, FactureLigne, FactureSuperpdpEvent, Immobilisation,
-  NatureImmobilisation, Piece, TransmissionFacture, VehiculeDossier, VentilationBancaire,
+  Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
+  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, TransmissionFacture, VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
 
 type Ligne = Record<string, unknown>
@@ -843,6 +844,28 @@ const FACTURES_D7: FactureEmise[] = [{
 
 const LIGNES_DES_FACTURES_D7: FactureLigne[] = lignesDeFacture('f7', LIGNES_F7)
 
+// LES ENCAISSEMENTS DE CETTE FACTURE (ligne 28.5, étape d3) : un virement de 1 000,00 € — la facture est « Encaissée en
+// partie » —, et un chèque de 500,00 € RETIRÉ, que la fenêtre montre marqué, sans bouton. Aucun ne cite de mouvement :
+// le relevé de l'atelier sert d'autres visites, qui ne doivent pas changer. La répartition est celle que l'écran
+// proposerait, au prorata des TTC de chaque taux, calculée par le module plutôt que recopiée. Sa fenêtre dit aussi
+// l'obligation REFUSÉE d'une facture mixte, et propose de saisir les 1 443,39 € qui restent.
+const repartitionDuBanc = (encaissementId: string, centimes: number): EncaissementFactureTaux[] =>
+  (repartitionProposee(centimes, ttcParTaux(FACTURES_D7[0], LIGNES_DES_FACTURES_D7)
+    .map((t) => ({ taux: t.taux, resteCentimes: t.ttcCentimes }))) ?? [])
+    .map((p) => ({ encaissement_id: encaissementId, dossier_id: 'd7', taux: p.taux, montant: p.centimes / 100 }))
+
+const encaissementDuBanc = (o: Partial<EncaissementFacture> & Pick<EncaissementFacture, 'id'>): EncaissementFacture => ({
+  dossier_id: 'd7', facture_id: 'f7', date_encaissement: '2026-10-01', montant: 1000, moyen: 'virement', ligne_bancaire_id: null,
+  annule_id: null, motif: null, cree_par: 'u1', cree_le: '2026-10-01T09:00:00Z', retire_le: null, retire_par: null, ...o,
+})
+
+const ENCAISSEMENTS_D7: EncaissementFacture[] = [
+  encaissementDuBanc({ id: 'enc1', date_encaissement: '2026-09-30', montant: 500, moyen: 'cheque', cree_le: '2026-09-30T15:00:00Z',
+    retire_le: '2026-10-02T08:00:00Z', retire_par: 'u1' }),
+  encaissementDuBanc({ id: 'enc2' }),
+]
+const PARTS_D7: EncaissementFactureTaux[] = [...repartitionDuBanc('enc1', 50000), ...repartitionDuBanc('enc2', 100000)]
+
 const TABLES: Record<string, Ligne[]> = {
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
@@ -1075,6 +1098,8 @@ const TABLES: Record<string, Ligne[]> = {
   facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7].map((l) => ({ ...l })),
   transmissions_factures: TRANSMISSIONS_D1.map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
+  encaissements_factures: ENCAISSEMENTS_D7.map((e) => ({ ...e })),
+  encaissements_factures_taux: PARTS_D7.map((p) => ({ ...p })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte
