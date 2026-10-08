@@ -174,7 +174,10 @@ export async function compter() {
 export function servir(_requete: Request) { return new Response('ok') }
 `
 
-describe('aucun code mort dans les Edge Functions', () => {
+// Chaque essai COMPILE : le compilateur de TypeScript bâtit un programme entier, et sa durée croît avec les fonctions.
+// Le délai par défaut de Vitest (5 s) garde d'un test asynchrone qui ne rend jamais la main, pas d'un calcul : le balayage
+// des fonctions prenait 3,2 s seul et 5,4 s sous la suite complète le 08/10/2026, et tombait alors sur ce délai-là.
+describe('aucun code mort dans les Edge Functions', { timeout: 60_000 }, () => {
   const trouvees = fonctions()
 
   it('balaie TOUTES les fonctions du dossier, jamais une liste tenue à la main', () => {

@@ -364,6 +364,21 @@ describe('FactureFormModal — les mentions de la facture électronique', () => 
     expect(faux.appels[0].args.p_valider).toBe(true)
   })
 
+  // Ce que le formulaire dit déjà de la TVA ne se redit pas dans la confirmation, mais compte : elle dit le nombre de
+  // TOUS les points, et le premier qu'elle peut nommer.
+  it('la confirmation compte aussi ce que le formulaire dit déjà de la TVA', async () => {
+    monter(null, null, { dossierSiret: SIRET_VENDEUR })
+    completerPourUneEntreprise()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { valider().click() })
+    expect(confirmation.mock.calls[0][0]).toMatch(/— un point à compléter : régler la TVA, comme le formulaire le signale\./)
+
+    saisir('tiers-siren', '')
+    await act(async () => { valider().click() })
+    expect(confirmation.mock.calls[1][0]).toMatch(/— 2 points à compléter, dont : Le SIREN du client manque/)
+    expect(faux.appels).toHaveLength(0)
+  })
+
   it('une facture complète à une entreprise se valide sans confirmation, et l’écran le dit', async () => {
     monter('redevable', null, { dossierSiret: SIRET_VENDEUR })
     completerPourUneEntreprise()

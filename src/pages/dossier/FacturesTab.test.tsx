@@ -377,6 +377,19 @@ describe('FacturesTab — la transmission de chaque facture', () => {
     within(await ligne('CLINIQUE DU PARC')).getByText('Super PDP · Refusée')
   })
 
+  // Le statut que Super PDP a rendu ne dit rien d'une facture dont la transmission courante est passée par la plateforme
+  // du client : c'est elle qui dit où en est la facture.
+  it('le cycle de Super PDP ne recouvre pas une transmission courante par la plateforme du client', async () => {
+    poser([facture({ superpdp_dernier_statut: 'fr:213' })])
+    faux.transmissions = [
+      envoi({ id: 't1', canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'echec', flux_id: null, cree_le: '2026-10-07T08:00:00+00:00' }),
+      envoi({ id: 't2', etat: 'depose', cree_le: '2026-10-08T08:00:00+00:00' }),
+    ]
+    monter()
+    within(await ligne('CLINIQUE DU PARC')).getByText('Plateforme du client · Déposée')
+    expect(within(await ligne('CLINIQUE DU PARC')).queryByText(/Super PDP/)).toBeNull()
+  })
+
   it('une lecture refusée des transmissions se dit à part, et la liste des factures reste', async () => {
     poser([facture()])
     faux.refusTransmissions = 'JWT expired'

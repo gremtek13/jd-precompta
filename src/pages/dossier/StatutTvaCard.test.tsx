@@ -210,6 +210,14 @@ describe('StatutTvaCard — choisir le statut de TVA du dossier', () => {
     expect(screen.queryAllByText(/calculé de son SIREN/)).toHaveLength(0)
   })
 
+  it('la lecture dit la case d’un dossier exonéré, avec ou sans numéro', () => {
+    monter('exonere', 'cgi_261_4_1', { numero: true })
+    expect(screen.getByText(`Le dossier a un numéro de TVA intracommunautaire. Son numéro, calculé de son SIREN : ${TVA_VENDEUR}.`)).toBeTruthy()
+    cleanup()
+    monter('exonere', 'cgi_261_4_1')
+    expect(screen.getByText(/ses factures sans TVA restent imprimables et envoyables par e-mail/)).toBeTruthy()
+  })
+
   it('« Annuler » rend aussi la case enregistrée', () => {
     monter('franchise', null, { numero: true })
     fireEvent.click(bouton('Changer le statut'))

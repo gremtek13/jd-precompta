@@ -25,6 +25,9 @@ const faux = vi.hoisted(() => ({
   // Pour un avoir : les rejets de la facture qu'il corrige, et ses refus chez Super PDP (210, 213).
   rejetsOrigine: 0,
   refusOrigine: 0,
+  // Ces deux comptes peuvent rester EN ATTENTE : tant qu'on ne sait pas si l'avoir est interne, rien n'est proposé.
+  retenirOrigine: false,
+  libererOrigine: [] as (() => void)[],
   superpdp: false,
   appels: [] as { nom: string; body: Record<string, unknown> }[],
   // La promesse d'une action reste en attente jusqu'à ce que le cas la résolve.
@@ -32,6 +35,9 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', () => {
+  const compteDeLOrigine = (reponse: unknown) => (faux.retenirOrigine
+    ? new Promise((resolve) => { faux.libererOrigine.push(() => resolve(reponse)) })
+    : Promise.resolve(reponse))
   const requete = (reponse: () => unknown, fin: string) => {
     const q: Record<string, unknown> = { select: () => q, eq: () => q, order: () => q }
     q[fin] = () => Promise.resolve(reponse())
@@ -50,7 +56,7 @@ vi.mock('../../lib/supabase', () => {
             select: () => q, eq: () => q,
             order: () => Promise.resolve({ data: faux.evenements, error: null }),
             // Le compte des refus de la facture qu'un avoir corrige.
-            in: () => Promise.resolve({ data: null, error: null, count: faux.refusOrigine }),
+            in: () => compteDeLOrigine({ data: null, error: null, count: faux.refusOrigine }),
           }
           return q
         }
@@ -62,7 +68,7 @@ vi.mock('../../lib/supabase', () => {
             // Le compte des rejets de la facture qu'un avoir corrige : une lecture sans lignes, attendue telle quelle.
             then: (suite: (r: unknown) => unknown) => {
               if (!compte) throw new Error('lecture des transmissions sans range')
-              return Promise.resolve({ data: null, error: null, count: faux.rejetsOrigine }).then(suite)
+              return compteDeLOrigine({ data: null, error: null, count: faux.rejetsOrigine }).then(suite)
             },
           }
           q.range = () => {
@@ -118,7 +124,7 @@ const FACTURE: FactureEmise = factureCii([ligne()])
 function monter(o: {
   facture?: FactureEmise; lignes?: unknown[]; origine?: unknown; connexion?: unknown; superpdp?: boolean
   transmissions?: TransmissionFacture[]; refusTransmissions?: string; rejetsOrigine?: number; refusOrigine?: number
-  statutTva?: StatutTva; numeroTvaAttribue?: boolean
+  statutTva?: StatutTva; numeroTvaAttribue?: boolean; retenirOrigine?: boolean
 } = {}) {
   faux.lignes = o.lignes ?? [ligne()]
   faux.origine = o.origine ?? null
@@ -132,6 +138,8 @@ function monter(o: {
   faux.lecturesConnexion = 0
   faux.rejetsOrigine = o.rejetsOrigine ?? 0
   faux.refusOrigine = o.refusOrigine ?? 0
+  faux.retenirOrigine = o.retenirOrigine ?? false
+  faux.libererOrigine = []
   faux.superpdp = o.superpdp ?? false
   faux.appels = []
   faux.resoudre = null
@@ -231,6 +239,20 @@ describe('TransmissionFactureModal — rien n’est proposé sans savoir', () =>
   it('aucune plateforme reliée au dossier : le dire', async () => {
     monter({ connexion: null, superpdp: false })
     expect(await screen.findByText(/Aucune plateforme n’est reliée à ce dossier/)).toBeTruthy()
+  })
+
+  // « Suivre » et « Actualiser » ne se confirment pas : seul le verrou de la fenêtre les retient.
+  it('« Suivre » et « Actualiser » ne partent qu’une fois pour trois clics', async () => {
+    monter({ transmissions: [transmission()] })
+    const suivre = await screen.findByRole('button', { name: 'Suivre' })
+    await act(async () => { suivre.click(); suivre.click(); suivre.click() })
+    expect(faux.appels).toHaveLength(1)
+    cleanup()
+
+    monter({ facture: { ...FACTURE, superpdp_invoice_id: 42 }, superpdp: true })
+    const actualiser = await screen.findByRole('button', { name: 'Actualiser le statut Super PDP' })
+    await act(async () => { actualiser.click(); actualiser.click(); actualiser.click() })
+    expect(faux.appels).toHaveLength(1)
   })
 
   it('un dépôt refusé parce que la connexion a changé relit la connexion, et rien ne repart seul', async () => {
@@ -383,6 +405,17 @@ describe('TransmissionFactureModal — l’avoir interne d’une facture rejeté
     monter({ facture: avoir, lignes: credit, origine: ORIGINE, refusOrigine: 1, superpdp: true })
     expect(await screen.findByText(/Cet avoir annule une facture rejetée ou refusée/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('tant qu’on ne sait pas si la facture corrigée a été rejetée ou refusée, rien n’est proposé', async () => {
+    monter({ facture: avoir, lignes: credit, origine: ORIGINE, superpdp: true, retenirOrigine: true })
+    // Tout le reste est lu — ses transmissions, ses lignes, les plateformes reliées — ; les deux comptes attendent.
+    await vi.waitFor(() => expect(faux.lecturesConnexion).toBe(1))
+    await act(async () => {})
+    expect(faux.libererOrigine).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    await act(async () => { for (const liberer of faux.libererOrigine) liberer() })
+    expect(await deposer()).toBeTruthy()
   })
 
   // Le garde symétrique : un avoir d'une facture simplement transmise se transmet.
