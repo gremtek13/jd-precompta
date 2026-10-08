@@ -9430,3 +9430,162 @@ tentative, et son abandon par le cabinet, vérification faite, viendra avec les 
 envoi, comme avant —, si bien qu'une facture qu'il rejetterait ne repartirait pas sans un geste ; la réponse du cabinet
 sur le numéro de TVA d'un dossier en franchise ou exonéré (G1.47) ; et le déploiement (c5). Aucune plateforme réelle n'a
 été appelée.
+
+### 08/10/2026 — LES ÉCRANS DE LA FACTURE ÉLECTRONIQUE, ET SA MISE EN LIGNE — LIGNE 28.5, ÉTAPE (C), QUATRIÈME ET CINQUIÈME TEMPS
+
+(`src/lib/mentionsFacture.ts`, `src/lib/transmissionsFactures.ts` ; `FactureFormModal`, `FactureApercu`,
+`TransmissionFactureModal`, `FacturesTab`, `StatutTvaCard` ; le bloc SUIVI de `superpdp-emit` ; migrations
+`abandon_d_une_transmission`, `avoir_interne_d_une_facture_rejetee`, `numero_de_tva_d_un_dossier_non_redevable` ;
+`supabase/essais/abandonTransmission.sql`, `transmissionsFactures.sql`, `statutTva.sql`.) Le troisième temps déposait
+une facture par la plateforme du client et par Super PDP, et rien ne l'appelait. Ce temps-ci donne les écrans, règle en
+route ce que leur usage a fait voir, et met le tout en ligne.
+
+**LES NOTES INTERNES NE PARTENT PLUS.** Le générateur transmettait les notes d'une facture et le motif d'un avoir en
+note de facture (BT-22), alors que l'écran les dit internes et que l'aperçu ne les imprime pas. Seules les mentions
+légales partent ; les deux fonctions ne lisent même plus les notes, et `copiesFacturation.test.ts` vérifie que chaque
+fonction qui porte le générateur lit en base chaque colonne qu'il lit — liste confrontée par le compilateur à
+`FactureEnBase` —, et pas les notes. Les exemples « avoir » et « services-debits », régénérés, rejugés par le validateur
+officiel : 8 sur 8, sans erreur ni avertissement. Et `valider.mjs` dit d'aller chercher l'ÉTIQUETTE
+`validation-1.3.16` : `git clone --branch` prenait la branche du même nom, qui a avancé depuis.
+
+**LE FORMULAIRE SAISIT LES MENTIONS** (`mentionsFacture.ts`, `FactureFormModal`). Elles vivaient en base depuis le
+premier temps, et une facture à une entreprise se validait sans le SIREN du client ni la catégorie de l'opération —
+puis ne pouvait plus partir, une facture validée ne se corrigeant que par un avoir. Le formulaire demande à qui elle
+est adressée, le SIREN (déduit d'un SIRET saisi, enregistré sans espaces), l'adresse de facturation électronique, le
+code service et le numéro d'engagement d'un organisme public, la catégorie de l'opération, sa date ou sa période,
+l'adresse de livraison des biens ; un champ que son choix ferme repart à nul dans la même écriture. Ce que la base
+refuserait grise les deux boutons, ses formes confrontées au texte de la migration. **Ce qui empêcherait la facture de
+partir se dit AVANT la validation**, avec le jugement même des fonctions qui la transmettent (`refusEmission` sur le
+brouillon, sans redire ce que le formulaire dit déjà de la TVA, mais en le comptant) ; et valider une telle facture
+adressée à une entreprise ou à un organisme public se confirme, la confirmation disant le premier point et leur nombre.
+
+**L'APERÇU IMPRIME LES MENTIONS** que la facture porte, et seulement elles ; ses notes jamais. **Et le numéro de TVA de
+l'émetteur, qu'il n'imprimait pas** — une mention obligatoire (CGI, ann. II, art. 242 nonies A, I, 2°), trouvée en
+branchant la case du dernier temps : celui que porte la facture électronique, calculé du SIRET figé, et aucun pour un
+statut à préciser, qui ne dit pas si le dossier en a un.
+
+**TRANSMETTRE ET SUIVRE DEPUIS L'ONGLET FACTURES.** Le bouton « Super PDP » d'une facture validée devient
+« Transmettre », et sa fenêtre réunit les deux canaux. Rien n'est proposé tant qu'on ne SAIT pas si la facture est déjà
+partie : ses transmissions lues en entier, sinon aucun bouton. Ce qui l'empêche de partir se dit avant le clic, lignes
+et facture corrigée relues ; « Déposer sur <plateforme> » part avec la version de la connexion (une connexion changée se
+relit, rien ne repart seul), « Envoyer par Super PDP » de même ; tous deux se confirment en nommant la facture, le
+client et le canal. Un seul verrou pour toutes les actions, relâché après la relecture. L'onglet dit, pour chaque
+facture validée, la transmission active ou la plus récente — son canal et son état —, et une lecture refusée des
+transmissions se dit à part.
+
+**UNE TRANSMISSION SANS ISSUE CONNUE S'ABANDONNE**, vérification faite (`abandonner_transmission`). Partie sans réponse
+lisible, elle reste « envoi » et bloque tout nouvel envoi ; le suivi de `plateforme-agreee` la tranche quand la
+plateforme retrouve le dépôt, mais Super PDP ne le permet pas, ni une plateforme dont la recherche ne filtre pas. La
+fonction, `SECURITY DEFINER`, la passe en échec un quart d'heure après son départ, pour un membre du cabinet du
+dossier ; la fenêtre le propose passé ce délai, en disant quoi vérifier et ce que coûterait une erreur — une facture
+reçue deux fois. Le délai est un seul nombre, confronté au texte de la migration et au suivi de la fonction. Essai :
+13 contrôles sur 13 en production.
+
+**LE STATUT QUE REND SUPER PDP SE REPORTE SUR LA TRANSMISSION.** Une facture partie par Super PDP restait « déposée »
+pour toujours. L'historique la dit désormais : 213 « Rejetée » (DGFiP, § 3.6.4, tableau 8) et 501 « Irrecevable »
+(§ 3.4.4) la rejettent, avec ce que Super PDP en dit, nettoyé et borné ; 202 « Reçue par la plateforme » et tout ce qui
+la suit l'acceptent — la refusée par l'acheteur comprise, qui a été reçue ; « api:invalid » la rejette ; tout le reste
+la laisse déposée. Un rejet l'emporte sur une réception, et le report ne vaut que sur une transmission encore déposée.
+Un envoi réussi dont l'écriture du numéro a échoué se suit quand même, par le numéro que la transmission a gardé.
+
+**UNE FACTURE REJETÉE OU REFUSÉE S'ANNULE PAR UN AVOIR INTERNE, QUI NE SE TRANSMET PAS** — « Cette opération ne doit pas
+générer de flux de données réglementaires » (DGFiP, § 3.6.4). La table laissait repartir une facture rejetée comme
+après un échec, et rien n'empêchait de transmettre l'avoir qui l'annule. Le déclencheur refuse désormais l'une et
+l'autre — sauf un rejet postérieur, pour qu'une restauration rejoue son historique ; un échec, qui n'a rien fait partir,
+laisse toujours repartir. Essai : 43 contrôles sur 43.
+
+**LE NUMÉRO DE TVA D'UN DOSSIER EN FRANCHISE OU EXONÉRÉ** (règle G1.47 ; décision du cabinet du 08/10/2026 : « une
+case par dossier »). Une facture sans TVA porte le numéro de TVA intracommunautaire du vendeur ; un redevable en a
+toujours un, un franchisé ou un exonéré seulement si son service des impôts le lui a attribué, et l'application ne
+peut pas le savoir seule. L'onglet TVA porte la case, sous le statut, et dit le numéro qu'elle annonce, calculé du
+SIREN (ou que le SIRET n'en donne pas de valide) ; sans elle, les factures sans TVA restent imprimables et envoyables
+par e-mail, et le refus dit où la cocher. La base la refuse hors de la franchise et de l'exonération plutôt que de
+l'effacer en silence, et l'écran l'envoie fausse quand le dossier devient redevable, dans la même écriture que le
+statut. **Une faute, un refus** : la case cochée, un numéro qui manque encore vient du SIREN, et c'est lui qui se
+réclame ; un statut à préciser se dit seul. Essai `statutTva.sql` : 22 contrôles sur 22 en production.
+
+**UN TEST QUI COMPILE N'A PAS LE DÉLAI D'UN TEST ORDINAIRE.** `edgeFunctionsCodeMort.test.ts` bâtit un programme
+TypeScript entier à chaque essai, et sa durée croît avec les fonctions : 3,2 s seul, 5,4 s sous la suite complète —
+au-delà des 5 s par défaut de Vitest, qui gardent d'un test asynchrone qui ne rend jamais la main. Il porte désormais
+son propre délai.
+
+**MESURES** : 5 498 tests sous les quatre fuseaux. 77 mutations sur le code de ces deux temps — le générateur et la
+case, le numéro imprimé, le câblage de la page, de l'onglet TVA et de l'onglet Factures, la carte du statut, les
+mentions, le formulaire, la fenêtre de transmission, les états d'une transmission, le suivi de Super PDP, ce que les
+fonctions lisent du dossier ; celles qui touchent le bloc copié du générateur ne lancent pas la garde des copies, qui
+les ferait tomber à coup sûr sans rien dire des tests de comportement. **La première passe en laissait cinq en vie, et
+chacune nommait un trou** : un badge de Super PDP qui aurait recouvert une transmission courante par la plateforme du
+client ; la lecture de la case d'un dossier exonéré, que rien ne regardait ; la confirmation qui ne comptait pas ce que
+le formulaire dit déjà de la TVA ; « Suivre » et « Actualiser », que seul le verrou de la fenêtre retient — sans lui,
+trois clics partaient trois fois, et aucun test ne cliquait trois fois sur eux ; un avoir qui se proposait AVANT qu'on
+sache si la facture qu'il corrige avait été rejetée — aucun test ne retenait ces deux lectures. Cinq tests de plus, et
+les 77 mordent. Le faux client de la carte du statut rend désormais les seules colonnes demandées : une colonne oubliée
+dans le `select` arrivait sinon à la page comme si la base l'avait rendue. L'export porte 98 migrations (empreinte globale égale des deux côtés), le socle 77
+instructions inchangées, l'inventaire 1 148 objets, égal à la base. LATENT, et mesuré : aucune transmission, aucune
+facture transmise par Super PDP, aucune connexion à une plateforme en base ; les six factures validées, toutes d'avant
+ces mentions, ne partiraient pas telles quelles ; aucun dossier en franchise ou exonéré, donc aucune case cochée.
+
+**LE BANC NE MESURAIT PAS LE TÉLÉPHONE, ET UN DÉFAUT S'Y CACHAIT** (banc et retouches confiés à un agent économe, selon
+la règle de délégation du 08/10/2026, et relus sur capture). Étendu à ces écrans — des factures fictives : un organisme
+public au nom très long, une facture partie par Super PDP avec son historique, un dépôt refusé au long détail, un envoi
+sans issue connue depuis plus d'un quart d'heure, la facture d'un dossier redevable jamais transmise —, le banc de
+débordements visite le formulaire tous champs ouverts, l'aperçu, les fenêtres de transmission et la case du numéro de
+TVA. Il ne tournait pas tel qu'on l'appelle aux petites largeurs : à 390 px le bouton « Assistant » n'existe pas (le
+téléphone a « Ouvrir l'assistant ») et la première visite plantait ; à 1 024 px le volet ouvert, superposé, interceptait
+les clics. Lancé volet fermé, le téléphone comptait 71 débordements : 64 fois la barre de navigation du bas, fixe et
+large comme l'écran, mesurée contre le panneau ; 7 fois un vrai défaut, du 22/09/2026 — la rangée « Clôturer
+l'exercice » / « Remplir le formulaire officiel » de la carte 2035 sortait du panneau de 109 px. Le banc n'ouvre plus
+le volet que là où il rétrécit le panneau central (1 280 px et plus), ne mesure plus un élément fixe contre le panneau —
+une fenêtre superposée se mesure toujours contre sa carte, éprouvé par un défaut planté dans chacune —, et la rangée
+passe à la ligne.
+
+**ZÉRO DÉBORDEMENT N'ÉTAIT PAS ENCORE LISIBLE.** Le banc admet un tableau qui défile, et ne voyait donc pas qu'à 1 280 px,
+volet ouvert — la disposition par défaut —, les boutons de la liste des factures passaient derrière un défilement
+latéral, ni que la pastille « Super PDP · Issue inconnue » y devenait un disque de quatre lignes ; ni que, dans la
+fenêtre de transmission, le détail d'un dépôt refusé repoussait « Suivre » et « Abandonner » hors de vue, et se coupait
+lettre par lettre sur téléphone ; ni que l'aperçu, sur téléphone, écrasait la désignation. Les captures l'ont montré.
+Les trois tableaux prennent le repli en fiches du projet ; l'aperçu seulement sous 520 px d'enveloppe, pour que la
+facture imprimée — de 650 à 680 px sur une page A4 — garde ses colonnes.
+
+**ET LA FACTURE IMPRIMÉE PORTAIT SES BOUTONS, SORTAIT EN DOUBLE ET TRONQUÉE** — depuis le 08/09/2026, le premier jour
+de la facturation. L'aperçu est le document que le cabinet imprime ou enregistre en PDF pour son client, et personne
+ne l'avait mesuré à l'impression. Mesuré sur un vrai PDF A4 (Chromium, marges de 10 mm) : « Fermer » et « Imprimer /
+Enregistrer en PDF » s'imprimaient en tête de chaque facture ; le voile `position: fixed` qui la porte se répétait sur
+chaque page en coupant ce qui dépassait la première, si bien qu'une facture de 91 lignes sortait en deux pages
+identiques, arrêtée à sa quatrième ligne, sans total ni mentions légales, et qu'une facture d'une page sortait deux
+fois. UNE SEULE CAUSE : la mise en page de l'aperçu était écrite en ligne, et un style en ligne l'emporte sur toute
+règle de feuille, `@media print` comprise — la règle d'impression `display: none` des boutons existait, et perdait. Et
+une cause voisine : le bloc du téléphone (`@media (max-width: 720px)`) n'est pas réservé à l'écran, et la zone
+imprimable d'une page A4 mesure environ 718 px — son `table-layout: fixed` donnait six colonnes égales, la désignation
+tenant dans un sixième de la page (onze lignes pour une phrase). Le taux s'imprimait enfin « 5.5 % », et « 0 % »
+passait sur deux lignes. La mise en page de l'aperçu vit désormais dans index.css, AVANT le bloc d'impression, qui
+l'emporte sans `!important` ; à l'impression, ce qui ne porte pas la facture disparaît, la chaîne qui la porte redevient
+un simple flux, et la carte se pagine comme un texte, l'en-tête du tableau répété sur chaque page ; le tableau des
+lignes prend une disposition automatique, les chiffres insécables (la disposition automatique seule, sous le
+`word-break` du bloc téléphone, les réduisait à une lettre par ligne — mesuré) ; le taux s'écrit « 5,5 % ». Mesuré
+après : une page, une fois, sans boutons ; la facture de 91 lignes en cinq pages complètes, montants et taux intacts,
+rien hors de la page. Trois tests gardent la règle — aucune mise en page en ligne sur l'aperçu, les règles d'écran
+avant le bloc d'impression, l'écriture du taux — et chacun mord quand son défaut est replanté. Un navigateur sans
+`:has()` (Firefox avant la version 121) retombe sur l'ancien comportement.
+
+**LA MISE EN LIGNE.** Les deux fonctions ont été relues en production avant d'être écrasées : `superpdp-emit` (version 12)
+et `plateforme-agreee` (version 2) étaient chacune le dépôt d'avant le troisième temps, sans une différence (541 et
+1 181 lignes). `superpdp-emit` est en ligne en version 13, `plateforme-agreee` en version 6, toutes deux avec `verify_jwt`
+à `true` comme le veut `config.toml` ; aller-retour sans différence résiduelle (1 307 et 2 380 lignes, cinq échappements
+décodés chacune) ; un appel sans session est refusé en 401. Les migrations du quatrième temps étaient déjà en base.
+
+**ET LES BORDURES SE RECOPIENT, FAUTES COMPRISES.** `plateforme-agreee` a demandé quatre transcriptions. Les versions 3,
+4 et 5 ne différaient du dépôt que par la longueur de bordures de commentaire — 25, puis 10, puis 12 lignes sur 33,
+tout le reste égal, vérifié en ramenant chaque bordure à un trait (0 différence sur 2 381 lignes). Le compte fait avant
+d'écrire, la consigne du 30/09, n'a pas suffi : les dix bordures fausses de la version 4 sont revenues À L'IDENTIQUE
+dans la version 5 — même longueur, trait pour trait —, alors qu'elles avaient été recomptées. La transcription recopiait
+la précédente au lieu de compter, et une bordure juste de la version 4 en est sortie fausse. Ce qui a précédé la version
+juste : une RÉPÉTITION des 33 bordures dans un script qui les décode et les compte, sous une forme jamais employée, qui
+ne laisse rien à recopier et se compte à l'œil — par cinq, quatre échappements et un trait littéral, un double trait
+tous les vingt-cinq —, 33 justes du premier coup ; la version 6, transcrite ensuite, est exacte. L'appel lui-même
+portait encore les bordures en échappements seuls : que la forme marquée tienne aussi DANS l'appel reste à éprouver au
+prochain déploiement, et la répétition, elle, ne coûte presque rien.
+
+**CE QUI RESTE** : l'essai réel d'un dépôt sur la plateforme d'un client et d'un envoi par Super PDP, avec le cabinet —
+les noms de champs propres à Super PDP ne se vérifient pas d'ici ; puis (d) le statut « Encaissée » et (e)
+l'e-reporting.
