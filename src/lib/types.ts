@@ -961,3 +961,38 @@ export interface FactureLigne {
   // Pourcentage (0, 5.5, 10, 20...), pas un montant.
   taux_tva: number
 }
+
+// Un encaissement d'une facture émise validée (`encaissements_factures`, ligne 28.5, étape d1), ou l'ANNULATION d'un
+// encaissement déclaré : montant négatif, `annule_id` et `motif` renseignés — et seulement elle. Immuable : jamais
+// déclaré, il se RETIRE (`retire_le`, `retire_par`) et reste au registre ; déclaré, il se contre-passe. Le cabinet le
+// lit ; seules `enregistrer_encaissement` et `retirer_encaissement` l'écrivent. Le client n'en voit rien.
+export type MoyenEncaissement =
+  | 'virement' | 'cheque' | 'carte' | 'prelevement' | 'especes' | 'effet' | 'compensation' | 'autre'
+export interface EncaissementFacture {
+  id: string
+  dossier_id: string
+  facture_id: string
+  // La date de l'encaissement effectif, civile (AAAA-MM-JJ) : la remise d'un chèque, pas son crédit.
+  date_encaissement: string
+  // En euros, au centime ; négatif pour une annulation, et pour elle seule.
+  montant: number
+  moyen: MoyenEncaissement
+  // Le mouvement bancaire qui le prouve, facultatif (espèces, compensation) ; jamais sur une annulation.
+  ligne_bancaire_id: string | null
+  annule_id: string | null
+  motif: string | null
+  cree_par: string | null
+  cree_le: string
+  retire_le: string | null
+  retire_par: string | null
+}
+
+// La répartition d'un encaissement par taux de TVA (règle G7.45 des spécifications de la DGFiP), du signe de son
+// encaissement ; la somme des parts fait le montant. Clé primaire : l'encaissement et le taux (CLES_PRIMAIRES).
+export interface EncaissementFactureTaux {
+  encaissement_id: string
+  dossier_id: string
+  // Pourcentage, l'un des TAUX_ADMIS (factureCii.ts).
+  taux: number
+  montant: number
+}

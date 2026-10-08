@@ -9589,3 +9589,826 @@ prochain déploiement, et la répétition, elle, ne coûte presque rien.
 **CE QUI RESTE** : l'essai réel d'un dépôt sur la plateforme d'un client et d'un envoi par Super PDP, avec le cabinet —
 les noms de champs propres à Super PDP ne se vérifient pas d'ici ; puis (d) le statut « Encaissée » et (e)
 l'e-reporting.
+
+### 08/10/2026 — LE STATUT « ENCAISSÉE » : LA CONCEPTION — LIGNE 28.5, ÉTAPE (D)
+
+La note de conception de l'architecte, telle qu'il l'a rendue, gardée ici parce que les étapes d2 à d9 s'y appuient : ses sources, sa table des données du CDAR et ses points NON VÉRIFIÉS. Le cabinet a répondu le même jour à ses sept questions : toutes les recommandations retenues (Q1 à Q5, Q7), et l'essai réel du statut sur le bac à sable de Super PDP (Q6).
+
+Rédigée le 08/10/2026 par l'architecte, pour le cabinet et pour la session qui orchestre. CONCEPTION SEULEMENT : rien
+n'a été écrit dans le dépôt, aucune migration, aucun déploiement ; la base n'a été lue qu'en lecture (catalogue et
+comptes de lignes, jamais un texte ni un nom). Sources : Légifrance, BOFiP, impots.gouv.fr (spécifications externes de
+la DGFiP et leurs annexes, fiches et FAQ), documentations publiques de plateformes. Les normes AFNOR XP Z12-012 et
+XP Z12-013 n'ont été ni lues ni citées (décision du cabinet du 07/10/2026) ; là où une réponse ne se trouve que là, le
+point est marqué NON VÉRIFIÉ. Rien de `api.superpdp.tech` n'a été appelé, ni aucune API de plateforme.
+
+Les sources sont numérotées [S1]… et décrites à la fin (titre, version, section, adresse).
+
+---
+
+#### 0. Le résumé en dix lignes
+
+1. Le 212 « Encaissée » est le quatrième statut OBLIGATOIRE d'une facture (avec 200, 210, 213) : le FOURNISSEUR dit avoir
+   perçu un paiement partiel ou total, par la plateforme agréée qui a servi à ÉMETTRE la facture [S7 §3.6.4 ; S5 §120].
+2. Il ne vise que les opérations dont la TVA est exigible à l'encaissement — en pratique des prestations de services
+   sans option pour les débits, hors autoliquidation — et porte : numéro et date de la facture, date d'encaissement
+   effectif, montant encaissé en euros PAR TAUX de TVA [S1 ; S2 I ; S5 §50 ; S9].
+3. Un statut par paiement ; un décaissement se déclare en montant négatif avec un motif ; la PPF rejette un encaissement
+   qui n'est pas réparti par taux (REJ_ENCAISSEMENT) [S8 G7.45, P1.15–P1.18].
+4. La PPF ne dédoublonne PAS les statuts (son contrôle d'unicité ne porte que sur les factures [S7 §3.6.7 note 109]) :
+   un 212 envoyé deux fois compte deux fois. L'idempotence est donc entièrement à notre charge.
+5. Aujourd'hui l'application ne connaît AUCUN paiement d'une facture émise : les paiements n'existent que pour les
+   pièces (`paiementsDesPieces`), et une facture émise n'est pas une pièce (la CA3 le dit déjà).
+6. Proposition : une table `encaissements_factures` (et sa répartition par taux), écrite par une fonction SQL qui
+   vérifie tout d'un seul tenant, PROPOSÉE depuis le relevé et la pièce jumelle, jamais déduite seule ; elle sert (d) et
+   servira l'e-reporting des paiements de (e).
+7. Une table `transmissions_encaissements`, calquée sur `transmissions_factures` : une seule déclaration active par
+   encaissement, réservée avant l'envoi, issue inconnue bloquante, suivi par identifiant de suivi, abandon vérifié.
+8. Le message vers la plateforme du client est un CDAR déposé par `POST /v1/flows` (`flowSyntax` CDAR) ; mais le profil
+   exact attendu d'un émetteur (vs celui que la PPF reçoit, qui est public) n'est décrit que par la norme exclue, et une
+   plateforme au moins n'annonce pas encore accepter un 212 par API : d'où une déclaration « hors application »
+   (saisie sur la plateforme, gardée par l'application) livrée AVANT tout envoi.
+9. Super PDP : rien de sa route pour un 212 n'est vérifiable d'ici ; déclaration hors application tant que l'essai réel
+   du cabinet n'a pas tranché.
+10. Découpage en neuf étapes mergeables seules (d1 base → d9 contrôle CA3), sept questions au cabinet, quinze points
+    non vérifiés.
+
+---
+
+#### 1. Le droit et la règle
+
+##### 1.1 Les textes en vigueur et leur calendrier
+
+| Texte | Ce qu'il dit pour (d) | Source |
+|---|---|---|
+| CGI, art. 290 A, I (version du 21/02/2026, modifiée par la loi n° 2026-103 du 19/02/2026, art. 123 (V)) | « Les données relatives au paiement des opérations mentionnées aux articles 289 bis et 290 pour lesquelles la taxe est exigible à l'encaissement en application du 2 de l'article 269 et du 2° du I de l'article 298 bis, à l'exception de celles pour lesquelles la taxe est due par le preneur, sont communiquées à l'administration sous forme électronique […] par la plateforme agréée choisie par l'assujetti. » Transmises par l'assujetti soumis à l'émission (289 bis) ou à l'e-reporting (290) ; le reste par décret. | [S1] |
+| CGI, ann. II, art. 242 nonies P (version du 29/07/2026, décret n° 2026-677, art. 17) | I : les données sont 1° le SIREN, 2° la période OU, pour une facture électronique, la date de la facture, 3° « la date d'encaissement effectif », 4° « le montant encaissé en euros, par taux d'imposition », 5° le numéro de facture. III : une transmission par mois (régimes de l'art. 287, 2, de l'art. 298 bis I 1° et de l'art. 302 septies A), tous les bimestres civils en franchise en base (293 B) ; « pour chacune des plateformes agréées choisies » ; échéances par arrêté. Note : s'applique aux factures émises à compter du 01/09/2026, du 01/09/2027 pour les PME et micro-entreprises. | [S2] |
+| Décret n° 2026-677 et arrêté du 27/07/2026 (JO du 28/07/2026, textes 26 et 27) | Adaptent l'annexe II (242 nonies B et suiv.) et l'annexe IV (41 septies A et suiv.) à la loi de finances pour 2026 : « plateformes agréées », plus de portail public de facturation comme plateforme. | [S3] |
+| BOFiP BOI-TVA-DECLA-20-30-60 (30/09/2026) | La doctrine du 212 : champ (§1), exclusions (§30), redevable (§40), données (§50), date d'encaissement (§60), les quatre statuts (§110), la mise à jour du statut « Encaissée » par la plateforme choisie pour l'émission (§120), fréquences et délais (§160–210). Citée en détail ci-dessous. | [S5] |
+| CGI, art. 1788 D, II (version du 21/02/2026 au 01/01/2027) | Manquement à l'art. 290 A : 500 € par transmission, 15 000 € au plus par année civile ; pas d'amende pour une première infraction réparée spontanément ou dans les trente jours (V). | [S4] |
+| Ordonnance n° 2025-1247 du 17/12/2025 et ordonnance n° 2026-671 du 27/07/2026 | La TVA passe dans le code des impositions sur les biens et services (CIBS) ; le transfert est REPORTÉ du 01/09/2026 au 01/01/2027 [S12] ; l'art. 290 A est abrogé à compter du 01/01/2027, sauf les dispositions maintenues jusqu'aux mesures réglementaires des art. L. 215-39, L. 216-55 et L. 216-56 du CIBS [S1, bandeau]. CIBS L. 216-56 : « L'assujetti communique à l'administration les informations nécessaires à la détermination de l'exigibilité de la taxe […] relatives à l'encaissement des contreparties des opérations mentionnées à l'article L. 216-38 ou à l'article L. 216-55 […] pour lesquelles il est redevable de la taxe. » Les anciennes références du CGI restent admises jusqu'au 30/06/2028 [S12]. | [S1, S11, S12, S13] |
+
+CONSÉQUENCE POUR LE CODE : les PME n'y sont tenues qu'au 01/09/2027, donc sous le CIBS. Les commentaires du code
+citeront l'art. 290 A du CGI ET l'art. L. 216-56 du CIBS ; les messages à l'écran ne citeront aucun article (ils
+diront la règle), pour ne pas vieillir au 01/01/2027. Le décret pris sous le CIBS qui remplacera 242 nonies P n'a pas
+été lu (NON VÉRIFIÉ, point 10).
+
+##### 1.2 Le statut : code, libellé, caractère
+
+Tableau 8 des spécifications externes [S7 §3.6.4, p. 59] : « Facture | 212 | Encaissée | Obligatoire | Selon les
+conditions définies par l'article 290 A du CGI, le fournisseur informe avoir perçu un paiement partiel ou total de la
+facture. » Les statuts transmis à l'administration sont 200 Déposée, 210 Refusée, 212 Encaissée, 213 Rejetée
+[S8 : annexe 2, onglet « Statuts » ; annexe 7, G7.44]. À côté, 211 « Paiement transmis » est facultatif : le destinataire informe avoir payé,
+« ou le fournisseur informe avoir réalisé le remboursement de la facture » [S7 §3.6.4]. Sous le même tableau : « Dans
+les cas des statuts Refusée ou Rejetée, le fournisseur doit procéder à une annulation comptable (avoir interne) » —
+la règle que l'application suit déjà (`REGLE_AVOIR_INTERNE`).
+
+BOFiP §110 [S5] : « les plateformes agréées mettent à disposition de leurs utilisateurs les informations relatives à
+quatre statuts de la facture […] (« Dépôt », « Rejet », « Refus », « Encaissée »). »
+
+##### 1.3 Qui le transmet, et par où
+
+- Le FOURNISSEUR, émetteur de la facture [S6 §10.2 ; S5 §40] — « En cas de mandat de facturation à un tiers, et plus
+  particulièrement d'autofacturation par le client, le fournisseur reste le redevable de la transmission des données de
+  paiement » [S5 §40, remarque]. Pour le cabinet : il agit pour le dossier, la plateforme reste celle du client.
+- PAR LA PLATEFORME QUI A SERVI À L'ÉMISSION : « les émetteurs de factures transmettent les données de paiement de leur
+  facture au moyen de la mise à jour du statut « Encaissée » de la facture par l'intermédiaire de la plateforme agréée
+  choisie pour son émission » [S5 §120, citant ann. IV art. 41 septies G, II et 41 septies O, III]. Une facture partie
+  par la plateforme du client y reçoit son 212 ; une facture partie par Super PDP le reçoit par Super PDP. Jamais l'un
+  pour l'autre — la règle décide du canal, ce n'est pas un choix de l'écran.
+- La plateforme le remonte à l'administration ; « il est recommandé de transmettre le statut « Encaissée » à
+  l'administration par la plateforme agréée dans un délai de vingt-quatre heures à compter de l'horodatage du statut »
+  [S5 §160, remarque ; S7 §3.6.6].
+- Factures à une entité publique (B2G) passées par la plateforme du fournisseur : « Les autres statuts seront transmis
+  par la plateforme agréée d'émission du fournisseur privé » ; Chorus Pro ne produit lui-même le 212 que dans le
+  circuit historique, sans plateforme agréée [S10 §3.4.1.1.1 et p. 54-55] ; la table de correspondance de la DGFiP
+  porte « 212 | Encaissée | Obligatoire | PA > CPRO » [S10b]. Le 212 vaut donc aussi pour `type_client =
+  'organisme_public'`.
+
+##### 1.4 Pour quelles factures
+
+| Cas | 212 ? | Fondement |
+|---|---|---|
+| Prestation de services, TVA exigible à l'encaissement (art. 269, 2, c) | OUI | [S1] ; [S5 §1] ; [S7 §2.3.2 : « Cette obligation ne vise que les prestations de service, dès lors que l'entreprise n'a pas opté pour le paiement de la TVA sur les débits ou doit autoliquider la TVA, ainsi que toutes les opérations pour lesquelles la TVA est exigible à l'encaissement (factures d'acompte et opérations agricoles) »] |
+| Option pour les débits | NON | [S7 §3.7.4 note 119] ; [S6 §10.1] ; tolérance : pas d'amende pour l'optant qui ne transmet pas les rares opérations restées à l'encaissement [S5 §30, remarque] |
+| Livraison de biens | NON (TVA due à la livraison) | [S7 note 119 : « qu'en cas de prestations de services »] — SAUF une facture d'acompte, que l'application ne modélise pas (cadres B1, S1, M1 seulement) |
+| Autoliquidation (TVA due par le preneur) | NON | [S1] ; [S5 §30] |
+| Facture mixte (biens et services, cadre M1) | Pour la part des services seulement — COMMENT la remplir n'est dit nulle part dans les sources publiques | NON VÉRIFIÉ (point 5) |
+| Client assujetti établi en France (B2B) ou entité publique par la plateforme du fournisseur (B2G) | OUI, par le 212 | [S5 §120] ; [S10] |
+| Client particulier (B2C) ou établi hors de France (B2B international) | NON par le 212 : par l'e-reporting des paiements, blocs 10.2 (par facture) et 10.4 (par jour) — étape (e) | [S7 §3.7.4–3.7.6] ; [S9 cas 2 et 3] ; [S8b TG-34/TT-91…TT-95] |
+| Dossier en franchise en base (293 B) | OUI, bimestriel, au taux 0 | [S2 III 2°] ; [S5 §180] ; [S6 §10.4] |
+| Opérations exonérées (261 à 261 E) | NON : hors de la facturation électronique | [S6 §1.2] ; règle G2.32 déjà appliquée par `refusEmission` |
+| Facture d'un redevable mêlant lignes taxées et exonérées | Probablement le paiement entier réparti sur tous les taux de la facture, 0 % compris — NON VÉRIFIÉ (point 7) | — |
+| Facture émise avant le 01/09/2027 par une PME | Facultatif (anticipation admise) | [S2, note] ; [S6 §1.3] |
+| Avoir (type 381) | Pas de 212 sur un avoir dans ce découpage ; le remboursement d'un avoir est un décaissement dont le rattachement n'est pas public | NON VÉRIFIÉ (point 6) |
+
+##### 1.5 Quand
+
+- Le fait générateur est « la date d'encaissement du paiement (hors paiement par chèque bancaire et autres cas prévus
+  dans la doctrine administrative BOI TVA BASE 20 20) » [S7 §3.7.7 note 125] ; « La date d'encaissement effectif est
+  déterminée selon les règles d'exigibilité exposées au BOI-TVA-BASE-20-20 » [S5 §60]. Or [S14] :
+  - chèque : « le jour de cette remise constitue la date d'exigibilité » — la remise en main propre, ou la RÉCEPTION
+    du chèque posté (§40) ; un chèque impayé défait l'exigibilité (§40, fin) ;
+  - virement : « l'inscription au compte du fournisseur de la somme qui y est virée » (§50) ;
+  - effet escompté : le jour de l'échéance (§60) ;
+  - acomptes : « c'est l'encaissement de chacun des acomptes qui donne ouverture à l'exigibilité » (§70).
+  LA DATE DU RELEVÉ N'EST DONC PAS TOUJOURS LA BONNE : juste pour un virement, trop tardive pour un chèque.
+- Les échéances (fiche « Fréquences et délais de transmission », MAJ août 2026 [S9c] ; [S5 §170–210] ; [S7 §3.7.7,
+  tableau 13]) :
+
+| Régime du dossier | Fréquence des données de paiement | Transmises à la plateforme au plus tard |
+|---|---|---|
+| Réel normal mensuel ou trimestriel | mensuelle | avant le 10 du mois suivant (« dans un délai de dix jours suivant la fin du mois », [S5 §190]) |
+| Régime simplifié | mensuelle | entre le 25 et la fin du mois suivant [S5 §200] — régime supprimé au 01/01/2027 selon HISTORIQUE.md (« LA CA3 SE PRÉPARE… »), non revérifié ici |
+| Franchise en base | bimestre civil | entre le 25 et la fin du mois suivant la fin du bimestre [S5 §210] |
+
+  L'application, qui ne connaît pas le jour exact de chaque entreprise, retiendra la borne prudente : le 10 du mois
+  suivant au réel, le 25 du mois suivant le bimestre en franchise.
+
+##### 1.6 Ce que le statut porte
+
+- Fiche officielle [S9] : « C'est par le biais de l'enrichissement du statut « encaissée » de cette facture que ces
+  données de paiement sont transmises. Données comprises dans la transmission du statut « encaissée » : le numéro de
+  facture ; la date de paiement ; le montant encaissé, en euros, par taux de TVA. » FAQ [S6 §10.3] : « en renseignant
+  la date d'encaissement et le montant encaissé réparti par taux de TVA associés pour la facture ».
+- Règles de gestion publiques du message que la PPF reçoit [S8 Annexe 7 V1.9] :
+  - G7.45 : « Dans le cas d'un encaissement (MDT-105 = 212), le montant encaissé (MDT-215) doit être réparti dans le
+    flux par taux de TVA (MDT-224) sinon le cycle de vie est rejeté par le PPF (Motif de rejet : REJ_ENCAISSEMENT) » ;
+    le motif est « L'un ou plusieurs montants encaissés ne sont pas conformes à la répartition par taux de TVA
+    déclarée » [S7 §3.6.10, tableau 12].
+  - G7.12 : le code du montant est « MEN : Montant encaissé (TTC) » (ou MPA payé, RAP reste à payer, ESC escompte…).
+  - P1.15 : pour un 212, « encaissement signifié par une valeur positive et un décaissement signifié par une valeur
+    négative », montant net et devise obligatoires ; P1.17 : un décaissement porte « un motif d'annulation » en
+    commentaire (MDT-126) ; P1.18 : un montant exige son taux ; P1.16 : en encaissement partiel, un montant « RAP »
+    PEUT être joint (non contrôlable).
+  - G7.07 : 19 chiffres au plus, 6 décimales au plus, le point pour séparateur ; les montants en euros (242 nonies P,
+    I, 4° [S2] ; G6.27 le dit pour le flux 10).
+- Paiements PARTIELS : la définition même du 212 parle d'« un paiement partiel ou total » [S7 §3.6.4] : UN STATUT PAR
+  ENCAISSEMENT, autant de statuts que de paiements.
+- Répartition d'un paiement partiel entre plusieurs taux : AUCUNE règle publique trouvée (BOFiP consulté sans
+  résultat) — NON VÉRIFIÉ (point 4), question au cabinet Q3.
+
+##### 1.7 Ce que couvre (d), ce qui relève de (e)
+
+| | (d) statut 212 | (e) e-reporting |
+|---|---|---|
+| Opérations | factures électroniques B2B en France et B2G passées par une plateforme | B2B international, B2C, et leurs paiements |
+| Granularité | un statut par encaissement d'UNE facture | flux périodiques : 10.1/10.3 transactions, 10.2 paiements par facture, 10.4 paiements agrégés par jour |
+| Syntaxe | cycle de vie (CDAR, ou format propre de la plateforme) | FRR (flux 10) |
+| Données de paiement | n° et date de facture, date, montant par taux | les mêmes (TT-91, TT-102, TT-92, TT-93, TT-95) [S8b] |
+
+La table des encaissements proposée au §3 sert les deux : c'est la même donnée, seul le chemin change.
+
+##### 1.8 Une conséquence qui commande toute la conception
+
+Le contrôle d'unicité de la PPF « est réalisé uniquement sur les données réglementaires de facture » [S7 §3.6.7,
+note 109]. Un 212 en double n'est donc rejeté par personne : l'administration compte deux fois l'encaissement, et la CA3
+qu'elle pré-remplira portera une TVA collectée qui n'existe pas. Une déclaration se corrige par une autre (décaissement
+négatif motivé, puis nouvelle déclaration) — jamais en la retirant, ce que le circuit ne permet pas.
+
+---
+
+#### 2. Le message
+
+##### 2.1 Deux formats possibles entre le fournisseur et sa plateforme
+
+[S7 §3.2, p. 20] : « F6 : Flux de cycle de vie, au format syntaxique CDAR » (le CDAR « supporté par le portail public
+de facturation est UN/CEFACT SCRDM CI Cross Domain Application Response message ») ; il peut être « transmis par le
+fournisseur à la PAE ». « F7 : Flux de cycle de vie, dans un autre format syntaxique que le CDAR, en fonction de l'offre
+de services des plateformes […] doivent véhiculer a minima l'ensemble des données relatives aux statuts obligatoires ».
+Un 212 part donc soit en CDAR, soit dans le format propre d'une plateforme ; c'est la plateforme qui fabrique le F6
+qu'elle envoie à l'administration.
+
+##### 2.2 Ce que disent les annexes publiques du CDAR que reçoit la PPF
+
+Annexe 2, « Format sémantique FE CDV – Flux 6 », V2.3 du 30/04/2026, onglet « CDV FE - CI ARM » [S8], avec les règles
+de l'annexe 7 V1.9 [S8]. Ce que le 212 d'une facture y remplit :
+
+| Donnée | Chemin (racine `rsm:CrossDomainAcknowledgementAndResponse`) | Valeur pour un 212 | Règle |
+|---|---|---|---|
+| MDT-3 profil | `ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID` | `urn.cpro.gouv.fr:1p0:CDV:einvoicingF2` (CDV sur une facture) | S1.06, G7.14 |
+| MDT-4, MDT-5 | `ExchangedDocument/ID`, `/Name` | identifiant et nom du message | R |
+| MDT-8 | `ExchangedDocument/IssueDateTime/DateTimeString` @format 204 | AAAAMMJJHHMMSS | G7.06 |
+| MDG-9 / MDT-19, 18, 21 | `ExchangedDocument/SenderTradeParty` | émetteur du flux : rôle WK, matricule 0238 à quatre chiffres — UNE PLATEFORME | G7.47, G7.54 |
+| MDG-16 / MDT-38, 37, 40 | `ExchangedDocument/IssuerTradeParty` | créateur du message : le vendeur (SE), SIREN schéma 0002 | G6.26 |
+| MDG-23 | `ExchangedDocument/RecipientTradeParty` | destinataire(s) du message | G7.32 |
+| MDT-74 | `AcknowledgementDocument/MultipleReferencesIndicator` | `false` (un seul objet) | P1.14 |
+| MDT-78 | `AcknowledgementDocument/IssueDateTime` | « Date et heure du statut » | G7.06 |
+| MDT-87 | `…/ReferenceReferencedDocument/IssuerAssignedID` | numéro de la facture | G1.05, G7.23 |
+| MDT-91 | `…/ReferenceReferencedDocument/TypeCode` | 380 | G7.15, G1.01 |
+| MDT-95 | `…/ReferenceReferencedDocument/ReceiptDateTime` | date de réception de l'objet (requise) | G7.06 |
+| MDT-97 | `…/ReferenceReferencedDocument/ReferenceTypeCode` | URN du CDV sur facture | G7.14 |
+| MDT-100 | `…/ReferenceReferencedDocument/FormattedIssueDateTime` | date d'émission de la facture | G7.31 |
+| MDT-105, 106 | `…/ProcessConditionCode`, `/ProcessCondition` | 212, « Encaissée » | G7.09, G7.44 |
+| MDT-129, 130 | `…/ReferenceReferencedDocument/IssuerTradeParty/GlobalID` | SIREN du vendeur, schéma 0002, une seule fois | G7.17 |
+| MDT-124-2 | `…/SpecifiedDocumentStatus/SequenceNumeric` | 1 | R |
+| MDG-43 (un par taux) | `…/SpecifiedDocumentStatus/SpecifiedDocumentCharacteristic` | MDT-207 `MEN`, MDT-215 montant @currencyID `EUR`, MDT-224 taux | G7.12, P1.15, P1.18, G7.45 |
+| MDT-126 | `…/SpecifiedDocumentStatus/IncludedNote/Content` | motif d'un décaissement | P1.17 |
+| — | — | aucune pièce jointe | G7.49 |
+
+##### 2.3 Ce que les sources publiques ne disent pas — NON VÉRIFIÉ
+
+L'annexe 2 décrit le message de la PLATEFORME vers la PPF (MDG-9 exige un matricule de plateforme, G7.54). Le message
+du FOURNISSEUR vers sa plateforme est défini par la norme exclue ; les documentations publiques n'en donnent que des
+bribes :
+- l'identifiant de profil : la DGFiP écrit `urn.cpro.gouv.fr:1p0:CDV:einvoicingF2` pour la PPF, Sovos annonce
+  `urn:cpro.gouv.fr:1p0:CDV:invoice` pour son entrée [S17] ;
+- les blocs émetteur et créateur d'un message venu d'une solution compatible (pas de matricule 0238) ;
+- LA DONNÉE QUI PORTE LA DATE D'ENCAISSEMENT : l'annexe 2 n'en nomme aucune ainsi ; les candidates sont MDT-110 (« Date
+  statut », `SpecifiedDocumentStatus/ReferenceDateTime`) et MDT-219 (date dans la caractéristique, format 102) ;
+  MDT-78 est l'horodatage du statut, que la doctrine distingue de la date d'encaissement (le délai de vingt-quatre heures
+  court de l'horodatage, [S5 §160]) ;
+- le fuseau des horodatages au format 204 (on retiendra Paris).
+Le générateur rendra donc ces quatre choix PARAMÉTRABLES et le premier essai sur une plateforme réelle les tranchera.
+
+##### 2.4 Canal 1 — la plateforme du client, par son API de flux
+
+D'après la description OpenAPI publique du connecteur « afnor » de banqup, version 1.15.0 [S15] — la source déjà
+retenue pour le dépôt d'une facture (`plateforme-agreee`, « deposer ») :
+- `POST /v1/flows`, corps multipart : `flowInfo` (JSON) + `file` (`application/xml`) ; « A flow can be: an invoice
+  (CII, UBL, Factur-X,...), a lifecycle (CDAR), or a e-reporting file ».
+- `flowInfo` : `flowSyntax` requis, énuméré `CII | UBL | Factur-X | CDAR | FRR` ; `name` requis ; `sha256`,
+  `trackingId` (≤ 64), `flowProfile` et `processingRule` facultatifs. Pour un 212 : `flowSyntax: "CDAR"`, le reste
+  comme pour une facture (le `trackingId` est l'identifiant de la transmission en base).
+- Réponse 202 avec `flowId` ; la plateforme type ensuite le flux (`flowType`) : « CustomerInvoiceLC: a lifecycle (CDAR)
+  related to a customer invoice ».
+- L'accusé (`GET /v1/flows/{flowId}?docType=Metadata`, `acknowledgement` Pending/Ok/Error) porte des raisons propres
+  aux cycles de vie : `InvoiceLCInvalidStatus`, `InvoiceLCStatusError`, `InvoiceLCRuleError`, `InvoiceLCAccessDenied`
+  (« One of the request is not authorized »), `InvoiceLCAmountError` (« One or more amounts are not consistent in
+  regards to the VAT »).
+- La recherche (`POST /v1/flows/search`) filtre par `flowType` (dont `CustomerInvoiceLC`) et `flowDirection` : c'est
+  par elle qu'on lirait, plus tard, les statuts de l'ACHETEUR (210 refusée, 211) et le rejet 601 d'un 212 par la PPF.
+- MISE EN GARDE : les notes de version d'août 2026 de banqup [S16] annoncent que ses partenaires peuvent soumettre par
+  l'API les statuts CDAR 210, 207 et 205 — les statuts de l'acheteur — et ne citent pas le 212 ; un statut soumis
+  par un rôle non autorisé reçoit `InvoiceLCAccessDenied`. Sovos et Invopop, eux, décrivent un 212 envoyé par le
+  vendeur, mais par LEUR propre API [S17, S18]. Rien ne garantit donc qu'une plateforme donnée accepte un 212 par
+  l'API de flux.
+
+##### 2.5 Canal 2 — Super PDP : ce qui n'est PAS vérifiable d'ici
+
+- si son API propre (`/v1.beta`, celle de `superpdp-emit`) offre une route pour poser un événement 212, et ses champs ;
+- si son API de flux accepte le CDAR d'un 212 pour une facture partie par l'API propre (le client pyfrctc, lu pour des
+  noms de champs seulement, se dit « fully tested with SUPER PDP » pour l'API de flux et fabrique des CDAR [S19] : un
+  indice, pas une preuve d'acceptation du 212) ;
+- si les événements que l'application lit déjà (`facture_superpdp_events`, `fr:212`) portent un montant, et qui les a
+  posés (le client dans l'interface de Super PDP ? Super PDP lui-même ?) ;
+- les codes d'erreur et l'accusé d'un statut.
+Le premier essai réel du cabinet (déjà prévu pour l'émission) tranchera ; jusque-là, déclaration hors application.
+
+---
+
+#### 3. Le modèle de données
+
+##### 3.1 Ce qui existe
+
+- `factures_emises` : figée à la validation (`factures_emises_figees`, `v_modifiables`), sans aucune colonne de
+  paiement ; `facture_lignes` porte les taux ; `option_debits` est figée à la validation.
+- `transmissions_factures` : canal, hôte, flux, empreinte, état (`envoi`, `echec`, `depose`, `accepte`, `rejete`),
+  une seule ACTIVE par facture ; `facture_superpdp_events` et `superpdp_dernier_statut` pour Super PDP.
+- Les PAIEMENTS n'existent que pour les PIÈCES : un mouvement rapproché (`lignes_bancaires.piece_id`, statut
+  `rapprochee`) ou la part d'un virement groupé (`reglements_groupes`), lus par `paiementsDesPieces`
+  (`lib/rattachement.ts`) ; `partsDesPaiements` dit la part de chaque paiement (paiement partiel, seuil d'alignement
+  `min(2 %, 5 €)`) ; en engagement, le lettrage s'en déduit (`lib/lettrage.ts`).
+- Une facture émise N'EST PAS une pièce : « les ventes n'entrent que par leurs justificatifs » (décision du
+  28/09/2026, `lib/engagement.ts`), et la CA3 le dit (« CE QUE LE CALCUL NE FAIT PAS… les factures émises dans
+  l'application », HISTORIQUE.md). Une PIÈCE JUMELLE peut pourtant exister : la même vente réimportée depuis la
+  plateforme du client (`pieces.flux_hote`/`flux_id` = `transmissions_factures.hote`/`flux_id`) ou par `superpdp-sync`
+  (`pieces.superpdp_invoice_id` = `factures_emises.superpdp_invoice_id`). Rien ne relie aujourd'hui les deux, et
+  rien n'empêche la vente d'entrer deux fois sous deux formes.
+- Mesuré le 08/10/2026 (comptes seulement) : 6 factures émises, toutes validées, aucune avoir, aucune avec les mentions
+  de l'étape (c) (nature, type de client, option nulles), aucune partie par Super PDP ; 0 transmission, 0 événement
+  Super PDP, 0 connexion à une plateforme, 2 identifiants Super PDP ; 6 pièces de vente (4 de `superpdp-sync`, 2
+  déposées), aucune avec un flux ; 4 dossiers : 2 redevables, 2 à préciser, aucun sur les débits, tous en
+  trésorerie. AUCUNE FACTURE NE POURRAIT RECEVOIR UN 212 AUJOURD'HUI : tout est latent.
+
+##### 3.2 Ce qui manque
+
+Les encaissements d'une facture émise — en trésorerie comme en engagement : leur date légale (un chèque n'est pas daté
+par le relevé), leur montant, leur répartition par taux, les paiements partiels et multiples, le paiement en espèces ou
+par compensation, l'annulation d'une déclaration erronée.
+
+##### 3.3 Les trois options, et le choix
+
+| Option | Pourquoi pas seule |
+|---|---|
+| Colonnes de paiement sur `factures_emises` | Une facture figée ne se modifie plus (`v_modifiables`), et un paiement partiel en appelle plusieurs. |
+| Déduire les encaissements du rapprochement de la pièce jumelle | La jumelle n'existe pas toujours ; espèces et chèques ne passent pas tous au relevé à la bonne date ; un 212 est une AFFIRMATION légale, qui ne peut pas découler en silence d'un rapprochement défait demain. Gardée comme SOURCE DE PROPOSITIONS. |
+| Une table d'encaissements de la facture, saisis ou proposés, confirmés par le cabinet | RETENUE : minimale, indépendante du pont comptable, réutilisable par (e). |
+
+##### 3.4 Le schéma proposé (non écrit)
+
+Trois tables, aucune colonne ajoutée à `factures_emises` (donc `v_modifiables` et `facturesFigees.test.ts` intacts).
+
+**`encaissements_factures`** — un encaissement (ou sa contre-passation) d'une facture émise :
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id` | uuid PK | |
+| `dossier_id` | uuid not null → `dossiers` on delete cascade | |
+| `facture_id` | uuid not null → `factures_emises` on delete cascade | une facture validée de type `facture` du même dossier (déclencheur) |
+| `date_encaissement` | date not null | ≥ 2000-01-01 ; jamais après aujourd'hui à Paris (fonction) |
+| `montant` | numeric not null | `<> 0`, `= round(montant, 2)` ; négatif si et seulement si c'est une contre-passation |
+| `moyen` | text not null | `virement`, `cheque`, `carte`, `prelevement`, `especes`, `effet`, `compensation`, `autre` |
+| `ligne_bancaire_id` | uuid → `lignes_bancaires` (NO ACTION) | le mouvement qui le prouve, facultatif ; un crédit du même dossier |
+| `annule_id` | uuid → `encaissements_factures` | la ligne qu'une contre-passation annule ; unique |
+| `motif` | text | requis sur une contre-passation (P1.17), ≤ 2 000 caractères (la longueur de MDT-126) |
+| `retire_le` | timestamptz | retrait d'un encaissement JAMAIS déclaré (au lieu d'une suppression) |
+| `cree_par`, `cree_le` | uuid, timestamptz | |
+
+- `(montant < 0) = (annule_id is not null)` ; `annule_id is null or motif is not null` ; index unique sur `annule_id`.
+- Déclencheur : rien ne change après l'insertion, sauf `retire_le`, posé une fois, par la fonction, sur une ligne sans
+  déclaration active ou faite. Aucune suppression hors du dossier entier.
+- `ligne_bancaire_id` en NO ACTION, pas en `SET NULL` : un mouvement ne se supprime dans l'application qu'avec son
+  dossier, et la famille `ON DELETE SET NULL` est close ; une preuve qui disparaîtrait en silence ferait mentir
+  l'encaissement.
+- Table AUTO-RÉFÉRENCÉE (`annule_id`) : la restauration la passe en deux temps (`TABLES_AUTO_REFERENCEES`).
+
+**`encaissements_factures_taux`** — la répartition par taux d'un encaissement : `encaissement_id` (→ cascade),
+`dossier_id` (pour une policy directe, comme `facture_superpdp_events`), `taux` numeric (un taux de la règle G1.24, liste
+confrontée par un test à `factureCii.ts`), `montant` numeric (`<> 0`, au centime, du signe de son encaissement) ; clé
+primaire (`encaissement_id`, `taux`).
+
+**`transmissions_encaissements`** — chaque déclaration d'un encaissement, calquée sur `transmissions_factures` :
+`id` (= identifiant de suivi), `dossier_id`, `encaissement_id` (NO ACTION), `facture_id` (cohérent, vérifié),
+`canal` (`plateforme`, `superpdp`, `manuel`), `hote`, `flux_id`, `sha256` (du CDAR déposé ; pour `manuel`, de la
+déclaration rendue sous forme canonique), `etat` (`envoi`, `echec`, `depose`, `accepte`, `rejete`), `detail`,
+`cree_par`, `cree_le`, `maj_le`.
+- Index unique partiel : UNE déclaration active (`envoi`, `depose`, `accepte`) par ENCAISSEMENT.
+- Le canal `manuel` naît `depose` et ne change plus ; il n'a pas de flux.
+- Déclencheur : mêmes invariants que `garder_transmission_facture` (rien ne change de facture, de canal, d'hôte, de
+  fichier ; aucun retour en arrière), plus : la facture doit avoir une transmission ACCEPTÉE sur le MÊME canal et le MÊME
+  hôte — sauf l'ancien chemin Super PDP (§4.5) —, ni rejetée, ni refusée (210/213 chez Super PDP).
+
+**Pourquoi une table de transmissions à part** plutôt qu'une colonne de plus dans `transmissions_factures` : son index
+« une active par facture », son déclencheur d'avoir interne et ses 43 contrôles d'essai portent sur l'ENVOI de la
+facture ; y mêler les statuts obligerait à les réécrire tous. Le doublon de patron est assumé et gardé par les mêmes
+essais.
+
+**RLS** (conventions de CLAUDE.md) : les trois tables en `for select to authenticated using
+(admin_du_dossier(dossier_id))` ; aucune policy d'écriture — le cabinet écrit par les fonctions, les Edge Functions à
+la clé secrète ; insertion pour restaurer par `is_super_admin()`, comme `transmissions_factures`. Le client ne voit rien.
+
+**Les fonctions SQL** (SECURITY DEFINER, `admin_du_dossier` d'abord, colonnes énumérées, refus nommés) :
+- `enregistrer_encaissement(p_facture_id, p_date, p_montant, p_moyen, p_ligne_bancaire_id, p_taux jsonb)` — D'UN SEUL
+  TENANT : l'encaissement et sa répartition, sous VERROU de la ligne de la facture (`select … for update`, sans
+  déclencheur) pour que deux encaissements concurrents se voient. Elle refuse : une facture non validée, un avoir, une
+  facture rejetée ou refusée, une date future ou avant 2000, un montant non positif, une répartition dont la somme
+  n'est pas le montant, un taux absent des lignes de la facture, un cumul qui dépasse le TTC de la facture ou celui d'un
+  taux, un mouvement d'un autre dossier, un débit, un mouvement déjà rattaché à un encaissement non annulé de la même
+  facture, ou des encaissements rattachés à un mouvement qui le dépasseraient (à l'écart d'alignement près).
+- `annuler_encaissement(p_encaissement_id, p_motif)` — la contre-passation d'un encaissement DÉCLARÉ : montant et
+  répartition opposés, motif obligatoire, une seule fois.
+- `retirer_encaissement(p_encaissement_id)` — pose `retire_le` sur un encaissement qu'aucune déclaration n'a fait
+  partir (seulement des échecs) ; pas de `delete` dans le corps, donc pas de confirmation bloquée d'`apply_migration`.
+- `declarer_encaissement_hors_application(p_encaissement_id, p_note)` — inscrit la déclaration faite par le cabinet ou
+  le client directement sur la plateforme (canal `manuel`, hôte de la transmission de la facture).
+- `abandonner_transmission_encaissement(p_id)` — le jumeau d'`abandonner_transmission` (un quart d'heure, vérification
+  faite), le délai confronté au même `DELAI_AVANT_ABANDON_MS`.
+
+**Le TTC par taux d'une facture, en base** : il n'est stocké nulle part. Côté application, c'est la ventilation que la
+facture a TRANSMISE (BG-23) : `montantsDuDocument` (`lib/factureCii.ts`) — ligne par ligne par `calculerLigne`, en
+centimes, sommée par taux —, et c'est contre elle que la plateforme et la PPF jugeront la répartition (G7.45). La
+fonction SQL la recalcule depuis `facture_lignes` EXACTEMENT de même — en double précision, `floor(x·100 + 0,5)`,
+puisque la règle du dépôt est « le calcul est alors le même des deux côtés […] confronté par un test à une table
+relevée en base ». Le piège est réel : une ligne à 1,005 € vaut 1,00 € en flottant et 1,01 € en `numeric`. Le cumul
+global, lui, se juge sur `montant_ttc`, stocké.
+
+**Sauvegarde et export** : les trois tables rejoignent `sauvegarde.ts` (listes, relations et leur comportement à la
+suppression, `CLES_PRIMAIRES`), `restauration.sql`, l'export (`supabase/schema/`), l'inventaire ; `rls.sql` les attrape
+de lui-même (boucle sur `pg_class`). RGPD.md : une ligne au registre (montants et dates d'encaissement d'une facture
+déjà au dossier ; aucune donnée nouvelle de personne).
+
+##### 3.5 D'où viennent les propositions (rien ne s'écrit seul)
+
+1. Les paiements de la PIÈCE JUMELLE (`paiementsDesPieces`), reconnue par son flux ou par `superpdp_invoice_id` :
+   date et montant du mouvement, proposés tels quels.
+2. Les mouvements créditeurs du dossier non rattachés à un encaissement, après la date de la facture, dont le montant
+   est le reste à encaisser à l'écart d'alignement près — les signaux du rapprochement, sans le nom du client exigé.
+3. La saisie libre (espèces, chèque remis avant d'être crédité, compensation).
+Écart sous le seuil d'alignement (`min(2 %, 5 €)`, décision du 23/09/2026) : la proposition est le RESTE entier,
+comme la CA3 le compte, et l'écran dit l'écart (« la banque a crédité 1 197,00 € : 3,00 € de frais, sous le seuil ;
+la facture est encaissée en entier »). Au-delà, c'est un encaissement partiel.
+
+##### 3.6 La répartition par taux
+
+Reste par taux R_t = TTC_t − déjà encaissé net_t, en centimes. Un encaissement qui solde la facture prend exactement
+R_t pour chaque taux ; un encaissement partiel P se répartit au prorata des RESTES (pas des TTC d'origine, pour qu'un
+partiel déjà déclaré ne fasse pas dépasser un taux), plus forts restes d'abord pour les centimes, à égalité le taux le
+plus haut. Le cabinet peut corriger la répartition ; la somme reste P. (Question Q3.)
+
+##### 3.7 La cohérence avec la CA3 — un risque que (d) ne règle pas
+
+La CA3 de l'application compte les recettes depuis les PIÈCES et le relevé ; l'administration pré-remplira la sienne
+depuis les 212. Les deux divergeront tant que la facture émise n'a pas de jumelle comptée, et pour un chèque dont la
+remise et le crédit tombent de part et d'autre d'une fin de mois (la CA3 date au relevé, approximation antérieure à
+(d)). Le remède n'est pas dans (d) : un contrôle (d9) et le PONT « facture émise → pièce de vente », ligne à part.
+
+---
+
+#### 4. Le parcours dans l'application
+
+##### 4.1 Où
+
+Onglet Factures, sur chaque facture VALIDÉE de type `facture` : une pastille d'encaissement à côté de celle de la
+transmission (« Encaissée », « Encaissée en partie — 600,00 € sur 1 200,00 € », « À déclarer », « Déclaration en
+retard »), et un bouton « Encaissements » qui ouvre une fenêtre (`EncaissementsFactureModal`). Rien n'est appelé à
+l'ouverture hors de la base ; aucun appel réseau sans clic.
+
+##### 4.2 Ce que la fenêtre dit avant tout geste
+
+- L'OBLIGATION de cette facture, et pourquoi (module pur, `obligationEncaissee`) : « Due : prestation de services,
+  TVA exigible à l'encaissement » ; « Facultative avant le 1er septembre 2027 pour une PME : la facture est du
+  12/03/2027 » ; « Sans objet : option pour les débits », « … : livraison de biens », « … : client particulier ou
+  établi hors de France, ses paiements relèveront de l'e-reporting », « … : dossier exonéré » ; « À préciser : statut
+  de TVA du dossier » ; « Facture mixte : la part des services n'est pas connue ligne par ligne » (Q4).
+- Le CANAL, imposé par la règle : celui de la transmission acceptée de la facture (« la plateforme du client
+  (hôte) », « Super PDP ») — ou pourquoi il n'y en a pas : jamais transmise, issue inconnue, déposée sans accusé,
+  rejetée (« elle s'annule par un avoir interne, aucun statut ne la suit »), plateforme du dossier changée depuis.
+- Le RESTE à encaisser, par taux ; les encaissements déjà enregistrés et l'état de leur déclaration ; l'ÉCHÉANCE de
+  chacun (« à déclarer avant le 10/11/2027 — paiements d'octobre, régime réel normal »).
+- Une lecture partielle (encaissements, transmissions, mouvements) n'offre AUCUN formulaire et le dit (règle
+  « lecture → formulaire → écriture »).
+
+##### 4.3 Enregistrer un encaissement (sans réseau)
+
+Champs : date (proposée : celle du mouvement ; pour un chèque, l'écran dit « la date de remise ou de réception du
+chèque, pas celle du crédit » [S14 §40]), montant (proposé : le reste), moyen, mouvement (facultatif, parmi les
+propositions), répartition par taux (proposée, corrigible). Refus dits AVANT le clic, dans l'ordre de la base. Le
+paiement antérieur à la facture est admis et signalé (acompte : « l'échéance de déclaration court depuis le paiement »).
+Pas de confirmation : rien ne part, et l'encaissement se retire tant qu'il n'est pas déclaré.
+
+##### 4.4 Déclarer (le 212)
+
+- Hors application (d4) : « Déclaré sur la plateforme » — confirmation : « Vous déclarez avoir saisi sur <plateforme>
+  le statut Encaissée de la facture F2027-0042 (Société X) : 1 200,00 € encaissés le 15/10/2027, dont 1 000,00 € à 20 %
+  et 200,00 € à 0 %. Cette mention ne s'efface pas. » La fenêtre affiche ce qu'il faut saisir, champ par champ.
+- Par l'API de la plateforme du client (d6) — confirmation : « Le statut Encaissée part à l'administration par
+  <plateforme> : facture …, client …, encaissé le …, montants par taux … Il ne se retire pas : une erreur se corrige
+  par une annulation (montant négatif, motif), puis une nouvelle déclaration. » Puis : réservation, dépôt, issue
+  (déposée, refusée — rien n'est parti —, inconnue), « Suivre », « Abandonner » après un quart d'heure, vérification
+  faite sur la plateforme (le texte dit quoi vérifier et ce que coûte une erreur : un encaissement compté deux fois).
+- Par Super PDP (d8) : seulement après l'essai réel ; d'ici là, hors application.
+
+##### 4.5 Avec les états existants
+
+| Situation de la facture | Ce que fait (d) |
+|---|---|
+| Jamais transmise ; transmission `echec` | Encaissements enregistrables ; aucune déclaration (« transmettez d'abord la facture ») |
+| `envoi` (issue inconnue) | Rien ne se déclare tant que ce n'est pas tranché (suivi ou abandon) |
+| `depose`, plateforme du client | Attendre l'accusé `Ok` (`accepte`) : un 212 sur une facture que la plateforme n'a pas encore dite « Déposée » risquerait le rejet pour statuts incohérents (REJ_INC, [S7 §3.6.10]) — inférence, la règle exacte d'enchaînement n'étant pas publique |
+| `depose`, Super PDP | Déclarable si l'historique porte `fr:200` ou une réception (202 et suivants), sans rejet ni refus : le 202 est facultatif et pourrait ne jamais venir |
+| `accepte` | Déclarable par le même canal et le même hôte ; hôte changé : « déposée chez une autre plateforme : son statut ne se déclare plus d'ici » (hors application seulement) |
+| `rejete`, ou `fr:213`/`fr:501` | Aucun statut : avoir interne (§3.6.4) |
+| `fr:210` (refusée par l'acheteur) chez Super PDP | Aucun statut : avoir interne |
+| Refus 210 sur la plateforme du client | INVISIBLE aujourd'hui (l'application ne lit pas les cycles de vie de l'acheteur) : la fenêtre le dit (« vérifiez qu'elle n'a pas été refusée ») jusqu'à d7 |
+| Avoir (381) | Pas de 212 ; l'avoir réduit le reste à encaisser de sa facture d'origine (affichage) |
+| Ancien chemin Super PDP (`superpdp_invoice_id` sans transmission) | Le canal est Super PDP ; un `fr:212` déjà lu dans l'historique vaut « déclaré hors application, montant inconnu » : rien de plus ne se déclare tant que le cabinet ne l'a pas rattaché à un encaissement enregistré (montant relevé sur Super PDP) |
+
+##### 4.6 L'idempotence, mécanisme par mécanisme
+
+1. Une seule déclaration ACTIVE par encaissement (index unique partiel), RÉSERVÉE avant l'envoi : deux clics, deux
+   onglets ou deux canaux ne partent pas ensemble.
+2. Une issue inconnue reste `envoi` et bloque ; « Suivre » la retrouve par son identifiant de suivi ; l'abandon ne vient
+   qu'après un quart d'heure, vérification faite.
+3. Un encaissement est immuable et plafonné (facture, taux, mouvement) sous verrou : le même argent ne s'enregistre pas
+   deux fois, un mouvement ne sert pas deux fois la même facture.
+4. Une déclaration hors application COMPTE : elle bloque l'envoi par l'API du même encaissement.
+5. Un `fr:212` de Super PDP non rattaché bloque toute nouvelle déclaration sur la facture.
+6. Une erreur ne se « renvoie » jamais : contre-passation déclarée, puis nouvel encaissement.
+7. Côté plateforme, `AlreadyExistingFlow` existe chez banqup [S15] ; on ne s'y fie pas.
+8. Le verrou d'exécution de la fenêtre est un `useRef`, relâché après la relecture.
+
+##### 4.7 Corrections
+
+Un encaissement déclaré ne se modifie ni ne se retire ; il se CONTRE-PASSE (`annuler_encaissement`, montant négatif,
+motif), et la contre-passation se déclare comme un encaissement (P1.15, P1.17), puis le bon encaissement s'enregistre.
+Un encaissement jamais déclaré se RETIRE (`retire_le`), sans rien déclarer.
+
+##### 4.8 Libellés
+
+`lib/superpdpStatuts.ts` nomme `fr:212` « Paiement reçu », `fr:211` « Paiement envoyé », `fr:200` « Soumise »,
+`fr:204` « Accusé de réception », `fr:207` « Contestée » : ce ne sont pas les libellés du tableau 8. Pour un statut
+qui a valeur de déclaration, reprendre ceux de la DGFiP (« Encaissée », « Paiement transmis », « Déposée », « Prise en
+charge », « En litige »…) — en d3.
+
+---
+
+#### 5. Les tests, les preuves et les risques
+
+##### 5.1 Par couche
+
+- **Module** (`lib/encaissementsFactures.ts`) : l'obligation (chaque ligne du tableau §1.4, la date du 01/09/2027),
+  les refus dans l'ordre de la base, le TTC par taux (le même que `factureCii`), la répartition (solde exact, partiels,
+  centimes, égalités), le reste, l'échéance (chaque régime, décembre → janvier, bimestres, fuseaux : `test:fuseaux`),
+  les propositions (jumelle, mouvement, seuil). Une fonction à valeur par défaut a son propre test.
+- **Confrontation SQL ↔ TypeScript** du TTC par taux : toutes les factures en base, les exemples figés, la ligne à
+  1,005 €, des quantités à quatre décimales et des prix à six.
+- **Générateur CDAR** (`lib/cdarEncaissee.ts`, pur) : chaque donnée du tableau §2.2, G7.45 (somme par taux = montant),
+  P1.15/P1.18 (devise et taux présents), G7.07 (format), G7.06 (horodatages), P1.14, G1.05, G1.24, le négatif et son
+  motif ; les choix NON VÉRIFIÉS (§2.3) en paramètres explicites, chacun testé.
+- **Instrument** : les exemples figés (`outils/facturation/exemples/cdar-*.xml`, fictifs) passent au schéma XSD
+  UN/CEFACT CDAR D22B (`CrossDomainAcknowledgementAndResponse_100pD22B`), hors du dépôt, version vérifiée, comme
+  `valider.mjs` le fait pour le CII ; leurs empreintes dans `valides.json`. La publication de ce schéma par la CEE-ONU et
+  sa licence restent À VÉRIFIER avant d5 (l'archive des spécifications de la DGFiP n'en porte pas). AUCUN schematron
+  tiré de la norme exclue (celui que porte pyfrctc ne se lit pas).
+- **Copies gardées** : le générateur et le jugement (`refusDeclaration`) recopiés dans `plateforme-agreee` entre
+  `── DÉBUT/FIN COPIE`, extraits, transpilés et exécutés par `copiesFacturation.test.ts` contre `src/lib`, dérives
+  plantées.
+- **Edge Function** (`plateformeAgreee.test.ts`) : l'ordre — relire l'encaissement, la facture, ses lignes, ses
+  transmissions et le dossier, JUGER, puis le jeton, puis réserver, puis `POST /v1/flows` (`flowSyntax` CDAR,
+  `trackingId`) ; l'issue (2xx avec flux, 3xx/4xx, le reste) ; le suivi ; les raisons `InvoiceLC*` en français ; des
+  journaux sans montant, sans numéro, sans nom. Les tests d'ordre comptent la PREMIÈRE occurrence.
+- **Écrans** : refus avant le clic ; deux clics dans le même `act` ; confirmation qui nomme facture, client, montants,
+  date et canal ; liste relue après chaque geste ; lecture partielle sans formulaire ; banc de capture aux quatre
+  largeurs et aux combinaisons extrêmes des volets.
+
+##### 5.2 Essais SQL (`supabase/essais/`)
+
+- `encaissementsFactures.sql` : par impersonation (anonyme, compte rattaché à rien, client, chef) — écriture directe
+  refusée en 42501 ; chaque refus des fonctions exigé par sa RAISON (P0001) ; plafonds, verrou (deux sessions sur une
+  réplique), contre-passation unique, retrait, immuabilité ; rien laissé en base.
+- `transmissionsEncaissements.sql` : les invariants du déclencheur, l'index « une active », le canal `manuel`, la
+  transmission acceptée exigée sur le même canal et le même hôte, l'abandon (le jumeau d'`abandonTransmission.sql`).
+- `rls.sql` (boucle sur `pg_class`, sept mutations) ; `restauration.sql` (deux passes pour `annule_id`) ; puis les
+  trois contrôles de l'export (dérive, socle, inventaire).
+
+##### 5.3 Les risques
+
+| Risque | Parade |
+|---|---|
+| Profil CDAR émetteur → plateforme non public | Paramètres explicites, essai sur bac à sable, déclaration hors application d'abord |
+| Plateforme qui n'accepte pas un 212 par API (`InvoiceLCAccessDenied`) | Le dire en français ; rester en hors application pour cette plateforme |
+| 212 en double, compté deux fois | §4.6 tout entier |
+| CA3 de l'application ≠ pré-remplissage de l'administration | Contrôle d9 ; pont « facture émise → pièce » en ligne à part |
+| Répartition d'un partiel entre taux | Q3, répartition visible et corrigible |
+| Facture mixte, avoir remboursé | Refus explicites (Q4, Q5) |
+| Refus 210 invisible sur la plateforme du client | Avertissement, puis d7 |
+| Date d'un chèque | L'écran le dit ; la date se saisit |
+| Super PDP inconnu | Hors application jusqu'à l'essai réel (Q6) |
+| Bascule CGI → CIBS au 01/01/2027 | Double référence dans les commentaires, aucun article à l'écran |
+| Arrondi flottant ↔ numeric | Calcul identique des deux côtés, confronté par test |
+| Un `fr:212` posé hors de l'application | Rattachement obligatoire avant toute nouvelle déclaration |
+| Pression inutile sur des PME avant le 01/09/2027 | « Facultatif » dit tel quel, aucune alerte de retard avant cette date |
+
+---
+
+#### 6. Le découpage, les questions, ce qui n'a pas pu être vérifié
+
+##### 6.1 Les étapes (chacune mergeable seule)
+
+| Étape | Contenu | Réseau |
+|---|---|---|
+| d1 — la base des encaissements | migration `encaissements_des_factures` : deux tables, `enregistrer_encaissement`, `annuler_encaissement`, `retirer_encaissement`, RLS, déclencheurs ; essai SQL ; export, inventaire ; `types.ts` ; sauvegarde et restauration | non |
+| d2 — le module | `lib/encaissementsFactures.ts` : obligation, refus, TTC par taux, répartition, reste, échéance, propositions ; confrontation SQL ↔ TypeScript | non |
+| d3 — l'écran des encaissements | pastille et fenêtre de l'onglet Factures : lire, enregistrer, contre-passer, retirer ; libellés DGFiP de Super PDP ; banc | non |
+| d4 — la déclaration hors application | migration `transmissions_des_encaissements` (canal `manuel` d'abord), `declarer_encaissement_hors_application`, `abandonner_transmission_encaissement` ; l'écran qui dit quoi saisir sur la plateforme ; essai SQL | non |
+| d5 — le message CDAR | `lib/cdarEncaissee.ts`, exemples figés, instrument XSD UN/CEFACT, tests | non |
+| d6 — le dépôt par la plateforme du client | `plateforme-agreee` (en production en version 6 depuis le 08/10/2026) : `declarer_encaissement`, `suivre_encaissement` ; copies gardées ; écran ; DÉPLOYÉ seulement après un essai réel sur une plateforme qui accepte le 212 (Q6), `verify_jwt` de `config.toml` passé explicitement, version en place comparée au dépôt, aller-retour, bordures comptées avant transcription (HISTORIQUE.md, entrée du 08/10/2026) | oui, au clic |
+| d7 — le cycle de vie lu sur la plateforme du client | recherche `CustomerInvoiceLC` entrants : 210, 211, 205, 207, et le 601 d'un 212 ; bloque le 212 d'une facture refusée | oui, au clic |
+| d8 — Super PDP | la route que l'essai réel aura révélée (API de flux avec ses identifiants, ou API propre) | oui, au clic |
+| d9 — le contrôle avec la CA3 | encaissements déclarés par mois et par taux face aux recettes comptées ; écarts dits | non |
+
+Ordre recommandé : d1 → d2 → d3 → d4 (valeur légale dès d4, sans réseau), puis d5 et d7, et d6 seulement après Q6 ;
+d8 après l'essai Super PDP ; d9 avec ou après le pont « facture émise → pièce ».
+
+##### 6.2 Les questions au cabinet (avec la recommandation)
+
+- **Q1 — La source des paiements.** Enregistrer les encaissements sur la facture émise (table nouvelle, propositions
+  depuis le relevé et la pièce jumelle, confirmation du cabinet), ou attendre un pont « facture émise → pièce de
+  vente » et lire les paiements de la pièce ? RECOMMANDATION : la table maintenant, qui servira aussi (e) ; le pont en
+  ligne à part, avec le contrôle d9.
+- **Q2 — Livrer d'abord sans réseau.** La déclaration « hors application » (saisie sur la plateforme par le cabinet ou
+  le client, gardée par l'application) avant tout envoi par API ? RECOMMANDATION : oui, d4 avant d6 : elle vaut pour
+  toute plateforme, y compris celles qui n'accepteront jamais un 212 d'une solution compatible.
+- **Q3 — Le partiel d'une facture à plusieurs taux.** Répartir au prorata du reste de chaque taux, le cabinet pouvant
+  corriger, le dernier encaissement soldant chaque taux ? RECOMMANDATION : oui (aucune doctrine publique trouvée).
+- **Q4 — La facture mixte (biens et services).** Refuser le statut tant que les lignes ne disent pas leur nature, ou
+  laisser saisir la part des services par taux ? RECOMMANDATION : refuser et le dire ; cas rare pour les dossiers du
+  cabinet.
+- **Q5 — Remboursements et avoirs.** Hors périmètre au départ, sauf l'annulation d'une déclaration erronée (montant
+  négatif, motif) ? RECOMMANDATION : oui ; le remboursement d'un avoir après confirmation sur une plateforme réelle.
+- **Q6 — Les essais réels.** Sur quelle plateforme le cabinet peut-il essayer un 212 (bac à sable), et, pour Super PDP,
+  par quel chemin ? RECOMMANDATION : un essai par plateforme avant tout déploiement de d6 ; Super PDP en hors
+  application tant que son essai n'a pas tranché.
+- **Q7 — Le refus de l'acheteur.** Lire le cycle de vie des factures émises sur la plateforme du client (d7) avant
+  d'ouvrir l'envoi par API ? RECOMMANDATION : oui : sans lui, un 212 peut suivre une facture refusée.
+
+##### 6.3 Les points NON VÉRIFIÉS
+
+1. Le profil CDAR d'un message du fournisseur vers sa plateforme : blocs émetteur et créateur d'une solution
+   compatible, identifiant de profil (DGFiP G7.14 contre Sovos), fuseau des horodatages — défini par la norme exclue.
+2. La donnée qui porte la date d'encaissement dans le CDAR (MDT-110 ? MDT-219 ?).
+3. Quelles plateformes acceptent un 212 d'un vendeur par `POST /v1/flows` (banqup, août 2026 : 205, 207, 210 seulement).
+4. La répartition d'un paiement partiel entre plusieurs taux.
+5. Le 212 d'une facture mixte.
+6. Le remboursement d'un avoir : sur quelle facture, sous quel statut (212 négatif ou 211).
+7. Une facture mêlant lignes taxées et exonérées : les montants à 0 % entrent-ils dans le 212 ?
+8. La facture « déjà payée » (cadre S2) et le paiement antérieur à la facture : les cas d'usage publics de la DGFiP y
+   renvoient à la norme exclue.
+9. Super PDP : sa route pour un 212, ses champs, l'origine et le contenu des `fr:212` de son historique.
+10. Le régime sous le CIBS : l'entrée en vigueur de L. 216-56 (le bandeau dit 01/09/2026, le rapport sur l'ordonnance
+    n° 2026-671 dit le transfert reporté au 01/01/2027), le décret qui remplacera 242 nonies P, la rédaction de
+    l'art. 1788 D à compter du 01/01/2027.
+11. Le décret n° 2026-677 et l'arrêté du 27/07/2026 lus dans une reproduction du Journal officiel (associatheque.fr) ;
+    l'article 242 nonies P consolidé a été lu sur Légifrance, l'arrêté sur Légifrance n'a pas été ouvert.
+12. La suppression du régime simplifié au 01/01/2027 (reprise d'HISTORIQUE.md, non revérifiée).
+13. L'acceptation par la PPF d'un 212 d'une PME avant le 01/09/2027 (l'anticipation est admise en général [S6 §1.3],
+    rien de propre au 212).
+14. Les articles 41 septies G et O de l'annexe IV, cités par le BOFiP, n'ont pas été ouverts eux-mêmes.
+15. La publication par la CEE-ONU, et la licence, du schéma XSD UN/CEFACT CDAR D22B qui servirait d'instrument à d5.
+
+---
+
+#### Sources
+
+- [S1] Légifrance, CGI, art. 290 A, version en vigueur du 21/02/2026 au 01/01/2027 (loi n° 2026-103 du 19/02/2026,
+  art. 123 (V) ; abrogé par l'ordonnance n° 2025-1247, art. 9, à compter du 01/01/2027, bandeau).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044045416 — et la section « Obligations particulières de
+  transmission d'informations (Articles 289 E à 290 A) » :
+  https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006069577/LEGISCTA000006179905/
+- [S2] Légifrance, CGI, annexe II, art. 242 nonies P, version en vigueur depuis le 29/07/2026 (décret n° 2026-677,
+  art. 17), I à III et note d'application. https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000054552572/2026-07-30
+- [S3] Décret n° 2026-677 du 27/07/2026 relatif à la généralisation de la facturation électronique (NOR CPPE2610307D,
+  JO du 28/07/2026, texte 26), art. 7, 9, 16, 17 ; arrêté du 27/07/2026 (NOR CPPE2610309A, JO du 28/07/2026, texte 27),
+  art. 1er. Lus dans la reproduction https://www.associatheque.fr/fr/fichiers/actualite/decret-2026-677-NOR-CPPE2610307D.pdf
+  et https://www.associatheque.fr/fr/fichiers/actualite/arrete-20260707-texte-27-NOR-CPPE2610309A.pdf ; arrêté sur
+  Légifrance : https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000054499535 (non ouvert).
+- [S4] Légifrance, CGI, art. 1788 D, version du 21/02/2026 au 01/01/2027, II et V.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046195593
+- [S5] BOFiP, BOI-TVA-DECLA-20-30-60, « Obligation de transmission des données de paiement », 30/09/2026, §1, §10,
+  §20, §30 (remarque), §40 (remarque), §50, §60, §110, §120, §140, §160 (remarque), §170–210.
+  https://bofip.impots.gouv.fr/node/383690 — actualité ACTU-2026-00145 :
+  https://bofip.impots.gouv.fr/bofip/15176-PGP.html/ACTU-2026-00145
+- [S6] impots.gouv.fr, « Foire aux questions – Je découvre la facturation électronique », version du 01/09/2026,
+  §1.2, §1.3, §10.1–10.4. https://www.impots.gouv.fr/foire-aux-questions-je-decouvre-la-facturation-electronique
+- [S7] DGFiP, « Dossier de spécifications externes de la facturation électronique – Dossier général », version 3.2 du
+  30/04/2026 : §2.3.2 (p. 8-9), §3.2 (F6, F7, p. 20), §3.6.4 et tableau 8 (p. 58-60), §3.6.6 (p. 60), §3.6.7 note 109
+  (p. 60), §3.6.10 et tableau 12 (p. 62), §3.7.4 note 119 (p. 66), §3.7.6 note 122 (p. 66), §3.7.7, tableau 13 et
+  note 125 (p. 67-68). Archive : https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/specification_externes_b2b/specifications-externes-v3.2.zip
+  (page : https://www.impots.gouv.fr/specifications-externes-b2b)
+- [S8] Même archive : « Annexe 2 – Format sémantique FE CDV – Flux 6 », V2.3 du 30/04/2026 (onglets « Statuts » et
+  « CDV FE - CI ARM ») ; « Annexe 7 – Règles de gestion », V1.9 (G1.24, G6.26, G6.27, G7.06, G7.07, G7.09, G7.12,
+  G7.14, G7.15, G7.17, G7.31, G7.32, G7.44, G7.45, G7.47, G7.49, G7.54, P1.14–P1.18, S1.06). [S8b] « Annexe 6 – Format
+  sémantique FE e-reporting », V1.10 (TB-3, TG-34 à TG-36, TT-91 à TT-95).
+- [S9] impots.gouv.fr, fiche « Données de paiement à transmettre à l'administration », MAJ août 2026, cas 1 à 3.
+  https://www.impots.gouv.fr/e-reporting-donnees-de-paiement — [S9c] fiche « Fréquences et délais de transmission des
+  données de transaction et de paiement », MAJ août 2026.
+  https://www.impots.gouv.fr/e-reporting-tableau-des-frequences-et-delais-de-transmission
+- [S10] Même archive V3.2 : « Dossier de spécifications externes FE – Chorus Pro », v1.1, §3.4.1.1.1 « Gestion du
+  statut Encaissée » (p. 45), p. 54-55, tableau des statuts transmis (p. 68), cas de sous-traitance (p. 92). [S10b]
+  Archive V3.1 du 31/10/2025, « Annexe Chorus Pro – Corr. codes interfaces CDV statuts », V1.0, onglet B2G.
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/specification_externes_b2b/specifications-externes-v3.1.zip
+- [S11] Légifrance, CIBS, art. L. 216-56 (créé par l'ordonnance n° 2025-1247) :
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053106723 — art. L. 216-55 :
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053106721/2026-01-07
+- [S12] Légifrance, rapport au Président relatif à l'ordonnance n° 2026-671 du 27/07/2026 (report du transfert au
+  01/01/2027 ; références de l'ancien CGI admises jusqu'au 30/06/2028).
+  https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000054497139
+- [S13] Légifrance, rapport au Président relatif à l'ordonnance n° 2025-1247 du 17/12/2025.
+  https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000053091491
+- [S14] BOFiP, BOI-TVA-BASE-20-20 (07/11/2018), §30 à §80.
+  https://bofip.impots.gouv.fr/bofip/283-PGP.html/identifiant=BOI-TVA-BASE-20-20-20181107
+- [S15] banqup, « Afnor Connector API », description OpenAPI 3.0.1, version 1.15.0 : `POST
+  /spaces/connectors/afnor/v1/flows`, schémas `FlowInfo`, `FullFlowInfo`, `SearchFlowFilters`, `ReasonCodeEnum`.
+  https://integr-assets.btx.fr.banqup.com/1.0.2857/docs/downloads/connectors-afnor.yaml (page :
+  https://docs.btx.banqup.com/docs/communication/conn-afnor/afnor-connector-api ; « Submit a new flow » :
+  https://docs.btx.banqup.com/docs/communication/conn-afnor/create-flow)
+- [S16] banqup, notes de version techniques d'août 2026.
+  https://docs.btx.banqup.com/docs/release-notes/august-2026/api-trn-aug-2026
+- [S17] Sovos Docs, France, « Lifecycle and use cases », mise à jour du 31/08/2026.
+  https://docs.sovos.com/indirect-tax/indirect-tax-products/einvoicing/compliance-network/country-setup-guides/france/lifecycles-and-use-cases/lifecycle-and-use-cases
+- [S18] Invopop, « fr-pa-status » : https://docs.invopop.com/guides/fr-pa-status ; GOBL, addon « fr-ctc-flow6-v1 » :
+  https://docs.gobl.org/addons/fr-ctc-flow6-v1
+- [S19] akretion/pyfrctc (LGPL-2.1 ou ultérieure), `src/pyfrctc/pyfrctc.py` (`send_flow`, `generate_cdar`) — lu pour
+  des noms de champs seulement, aucun code repris. https://github.com/akretion/pyfrctc
+
+Dans le dépôt : `src/lib/statutTva.ts`, `src/lib/transmissionsFactures.ts`, `src/lib/superpdpStatuts.ts`,
+`src/lib/rattachement.ts`, `src/lib/montantsFacture.ts`, `src/lib/engagement.ts`, `src/lib/receptionPlateforme.ts`,
+`src/lib/sauvegarde.ts`, `src/pages/dossier/FacturesTab.tsx`, `src/pages/dossier/TransmissionFactureModal.tsx`,
+`supabase/functions/plateforme-agreee/index.ts` (blocs FLUX et DEPOT, actions `deposer` et `suivre`),
+`supabase/functions/superpdp-emit/index.ts` (blocs ENVOI et SUIVI), `supabase/functions/superpdp-sync/index.ts`,
+`supabase/schema/20260908120056_factures_emises.sql`, `…20260909105804_superpdp_emission_factures.sql`,
+`…20261008045542_transmissions_des_factures.sql`, `…20261008064026_abandon_d_une_transmission.sql` ; HISTORIQUE.md,
+entrées « LE STATUT DE TVA DU DOSSIER », « LA RÉCEPTION PAR LA PLATEFORME DU CLIENT », « LA FACTURE ÉLECTRONIQUE S'ÉCRIT
+EN CII », « UNE FACTURE VALIDÉE SE FIGE EN BASE », « LA CA3 SE PRÉPARE », « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT » et
+l'entrée du 08/10/2026 ; commits 6b3fac6 et 966040e (étape c4).
+
+### 08/10/2026 — LES ENCAISSEMENTS D'UNE FACTURE ÉMISE — LIGNE 28.5, ÉTAPE (D), PREMIER TEMPS (D1)
+
+(Migration `encaissements_des_factures`, version 20261008180607 ; `supabase/essais/encaissementsFactures.sql` ;
+`src/lib/sauvegarde.ts`, `sauvegardeDonnees.ts`, `types.ts`, `encaissementsBase.test.ts`.) Le statut « Encaissée »
+(212) est le quatrième statut obligatoire d'une facture : son émetteur y dit avoir perçu un paiement, avec la date de
+l'encaissement effectif et le montant encaissé PAR TAUX de TVA (CGI, art. 290 A, et ann. II, art. 242 nonies P, I ;
+BOI-TVA-DECLA-20-30-60, §50 et §120 ; spécifications externes de la DGFiP v3.2, § 3.6.4, tableau 8 ; règle G7.45).
+L'application ne connaissait aucun paiement d'une facture émise : les paiements n'existaient que pour les pièces.
+Décisions du cabinet du 08/10/2026 : une table des encaissements maintenant (Q1), la déclaration hors application
+avant tout envoi (Q2), un partiel au prorata du reste de chaque taux (Q3), remboursements et avoirs hors périmètre
+sauf l'annulation d'une déclaration erronée (Q5). Ce premier temps pose le REGISTRE, en base seulement ; rien ne se
+déclare encore.
+
+**UN ENCAISSEMENT EST UNE AFFIRMATION, JAMAIS UNE DÉDUCTION.** Il se saisit (ou se proposera, en d2, depuis le relevé
+et la pièce jumelle) et ne découle pas en silence d'un rapprochement qu'on peut défaire demain. La plateforme de
+l'administration ne dédoublonne pas les statuts (§ 3.6.7, note 109) : un encaissement compté deux fois l'est pour de
+bon, et la TVA avec lui. D'où un registre IMMUABLE : jamais déclaré, un encaissement se RETIRE (`retire_le`,
+`retire_par`) et reste au registre ; déclaré, il se CONTRE-PASSE par une annulation de montant opposé, motivée, qui se
+déclare à son tour (annexe 7, règles P1.15 et P1.17). Rien ne se supprime, sauf avec le dossier.
+**`annuler_encaissement` naîtra en d4**, avec les déclarations qu'elle suppose : sans elles, elle ne pourrait que tout
+refuser, ou contre-passer un encaissement qu'il fallait retirer. Ce qui évite à d4 de réécrire d1 est posé
+maintenant : les colonnes (`annule_id`, `motif`), la règle du signe (un montant négatif est une annulation, et une
+annulation est négative), le motif réservé à l'annulation, l'annulation sans mouvement, les règles du déclencheur
+(même facture, pas l'annulation d'une annulation, montant pour montant, pas d'annulation vivante d'un retiré), l'index
+« une seule annulation VIVANTE par encaissement » — PARTIEL, parce qu'une annulation jamais déclarée se retire et
+que l'encaissement doit pouvoir être annulé de nouveau ; aucun upsert ne le vise —, et `encaissement_declare(uuid)`,
+qui répond « non » tant que rien ne se déclare : le déclencheur et `retirer_encaissement` l'appellent déjà, d4 ne
+remplacera que son corps.
+
+**UNE SEULE FONCTION ÉCRIT** (`enregistrer_encaissement`, `SECURITY DEFINER`) : l'encaissement et sa répartition par
+taux d'un seul tenant, sous le verrou de la ligne de la facture et, s'il cite un mouvement, sous celui du mouvement —
+`FOR NO KEY UPDATE`, qui exclut un autre encaissement ou un retrait de la même facture sans bloquer l'insertion d'une
+transmission qui la désigne. L'accès d'abord, sur le dossier ANNONCÉ (`p_dossier_id`), puis la facture cherchée dans
+ce dossier seulement : un compte qui n'y a pas droit n'apprend pas qu'elle existe. Douze refus, dans l'ordre que le
+module (d2) et l'écran (d3) reprendront : l'accès ; la facture dans ce dossier ; validée ; pas un avoir ; ni rejetée
+par une plateforme, ni rejetée ou refusée chez Super PDP (210, 213) ; des lignes qui redonnent les montants
+enregistrés ; la date (renseignée, pas avant 2000, pas dans l'avenir à Paris) ; un montant positif au centime ; un
+moyen de paiement connu ; le mouvement (de ce dossier, un crédit, qui ne justifie pas déjà un encaissement de cette
+facture, et dont les encaissements ne le dépasseraient pas au-delà de min(2 %, 5 €), le seuil de
+`alignementBanque.ts` décidé le 23/09/2026, calculé en centimes entiers) ; la répartition (lisible, sans taux
+répété, des taux de la facture et admis, des parts positives au centime, dont la somme fait le montant) ; les
+plafonds, de la facture puis de chaque taux. Les montants déjà encaissés sont NETS : non retirés, annulations
+comprises. Chaque refus a son message, sous le code de sa famille (42501 l'accès, P0002 l'introuvable, 22023 le
+reste, 23514 dans les déclencheurs), comme `abandonner_transmission` : P0001 reste à l'annulation des essais.
+`retirer_encaissement` refuse un encaissement d'un autre dossier, déjà retiré, déclaré, ou visé par une annulation
+vivante.
+
+**LE TTC PAR TAUX EST REFAIT EN BASE, AU BIT PRÈS.** La plateforme et l'administration jugent la répartition contre la
+ventilation que la facture a TRANSMISE (BG-23), celle de `montantsDuDocument`, en virgule flottante ; la base ne la
+stocke nulle part. `centimes_ligne_facture` la refait opération par opération en double précision, l'arrondi de
+Math.round écrit avec `floor()` (celui de `round(double precision)` dépend de la plateforme) : en `numeric`, une ligne
+à 1,005 € vaudrait 1,01 € de HT, quand l'application, et donc la facture transmise, compte 1,00 €. Relevé en base : 13
+cas choisis pour départager (demis exacts, avoir, remise à prix négatif, quatre décimales, six décimales, une TVA sur
+un demi-centime) et une grille de 7 800 lignes — tous les taux admis, deux sens, 13 quantités, 20 prix —, dont
+l'empreinte (`3e0c4e81…`) est la même en production (PostgreSQL 17.6), sur la réplique (16) et dans l'application.
+Les six factures de la production redonnent leur en-tête au centime. Une facture dont l'en-tête ne se retrouve pas
+dans ses lignes — `enregistrer_facture` prend l'en-tête tel qu'il vient — refuse ses encaissements (refus 6) plutôt
+que de choisir entre les deux.
+
+**ÉCARTS AVEC LA NOTE DE CONCEPTION, ET LEURS RAISONS** : `annuler_encaissement` en d4 (ci-dessus) ; le dossier en
+premier paramètre des deux fonctions ; l'index de l'annulation partiel ; `retire_par` ajouté ; la restauration par
+VAGUES et non en deux passes (ci-dessous) ; les codes d'erreur par famille plutôt que P0001 ; une borne de dix mille
+milliards d'euros, qui écarte aussi `NaN` et l'infini d'un `numeric` et reste exacte au centime dans le navigateur ;
+le refus 6 ; la liste des taux admis (G1.24) vérifiée par la fonction avant la contrainte ; le seuil des frais jugé
+sur TOUS les encaissements d'un mouvement (un virement peut régler plusieurs factures) ; `cree_par` et `retire_par`
+sans clé vers `auth.users` (un `set null` modifierait une ligne immuable et rouvrirait la famille close, un `no
+action` empêcherait de supprimer le compte d'un membre parti) ; le mouvement en `no action`, comme la note le voulait :
+dans l'application, un mouvement ne se supprime qu'avec son dossier (vérifié dans `src/` et les fonctions).
+
+**LE DÉTECTEUR D'`apply_migration`, MESURÉ** : la migration est passée sans demander de confirmation alors qu'elle
+porte `on delete cascade`, un déclencheur `before insert or update or delete` et `tg_op = 'DELETE'` dans un corps de
+fonction. Les quatre migrations que le cabinet a dû coller (04, 06 et 07/10/2026) portaient toutes un `delete from`
+dans un corps de fonction ; celle-ci n'en porte aucun, ni `drop`, ni `truncate`.
+
+**ÉPROUVÉ.** Sur une réplique locale (PostgreSQL 16), dont les neuf familles d'objets (colonnes, contraintes, index,
+déclencheurs, fonctions, policies, RLS, droits des fonctions et des tables) ont, après la migration, la même empreinte
+qu'en production : l'essai (107 contrôles), ce que la production ne peut pas jouer (13 contrôles : aucune suppression
+directe, ni du rôle des Edge Functions ni du propriétaire de la base ; la suppression du dossier emporte encaissements,
+annulations, parts et mouvements ; une facture validée qui porte un encaissement ne se supprime pas ; un membre du
+cabinet NON super-administrateur enregistre et retire, n'insère pas en direct, ne voit rien hors de ses dossiers ; un
+encaissement DÉCLARÉ, `encaissement_declare` remplacée le temps du contrôle, ne se retire ni par la fonction ni en
+direct ; la restauration dans l'ordre passe, une annulation avant sa cible est refusée), et deux sessions qui
+enregistrent en même temps, une seconde de retard injectée avant l'écriture : sur la même facture, la seconde voit la
+première (« il reste 0,00 € ») ; sur deux factures et un même virement, la seconde voit le virement déjà pris. Cent
+trois mutations de la migration, cent mordent (dont les deux verrous retirés : 2 encaissements pour 1 200 € au lieu
+d'un). Les trois survivantes sont équivalentes : le prix négatif retourné (le produit de deux flottants ne dépend
+pas de leurs signes, la note de `montantsDuDocument` le dit déjà), le demi de la dernière conversion en centimes (un
+montant déjà arrondi au centime n'y tombe jamais), et la seconde moitié de la règle du signe (une annulation de montant
+positif, que le déclencheur refuse avant la contrainte).
+**En production** : la migration par `apply_migration`, empreinte de l'historique égale au fichier (`92a2724d…`) ;
+l'essai, 107 contrôles sur 107, le texte reçu identique au fichier par son empreinte, rien laissé en base (les numéros
+consommés par ses factures d'essai rendus) ; **`rls.sql` ENTIER, pour la première fois depuis le 19/09/2026** — 22
+lignes de verdict (54 tables, dont 46 portant un `dossier_id`, et les trois seaux), 0 en faute, 14 mutations sur 14
+qui mordent (M2 : exactement 3). Ce qui faisait jusqu'ici renoncer au fichier entier, une transcription de six cents
+lignes qui pouvait mentir, se vérifie désormais : le texte transmis — le fichier sans son en-tête ni ses `drop table`,
+les tables de résultats `on commit drop` — porte une ligne TEXTE qui rend sa longueur et son empreinte, égales à
+celles de la copie transmise (32 144 caractères). Les deux tables nouvelles sont vides : ce que leurs policies
+refusent sur une ligne qui EXISTE est l'affaire de l'essai, qui en crée une avant chaque profil. Advisors : 10
+fonctions `SECURITY DEFINER` exécutables par un compte connecté (les deux nouvelles, qui contrôlent l'accès
+elles-mêmes), 5 par l'anonyme, inchangé ; rien de nouveau côté performances, sinon trois index de tables vides
+« jamais utilisés ». L'export porte 99 migrations (`77915f18…`), le socle 77 instructions (inchangé), l'inventaire
+1 202 objets (`17b7ff6d…`, 54 de plus), égal à la base.
+
+**LA SAUVEGARDE** emporte les deux tables (le graphe, l'ordre, les chemins, la clé de la répartition — l'encaissement
+et le taux). `encaissements_factures` se référence elle-même, et la seconde passe des avoirs ne s'y applique pas : la
+colonne ne peut partir à NULL (la règle du signe), ni se reposer ensuite (l'immuabilité). Ses lignes partent par
+VAGUES (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`) : celles qui ne pointent rien, puis les annulations, en écritures
+distinctes — le déclencheur lit la cible, et Postgres ne promet pas l'ordre des lignes d'une même commande.
+`encaissements_factures_taux` suit `facture_lignes`, que son déclencheur lit sans clé étrangère : un test garde cet
+ordre, que le graphe ne voit pas. `restauration.sql` n'a pas changé : il date du 18/09/2026 (40 tables), ne recopie
+pas les déclencheurs et ne peut pas tourner ici (un `drop schema`) — le remettre à jour est un chantier à part.
+
+**CE QUI RESTE, dit plutôt que promis** : le module (d2 : les mêmes refus dans le même ordre, la répartition au
+prorata des restes, le TTC par taux de `montantsDuDocument`, les propositions) ; l'écran (d3) ; les déclarations (d4 :
+`annuler_encaissement`, le corps d'`encaissement_declare`, la table des déclarations ; la date à porter sur une
+contre-passation, NON VÉRIFIÉE dans les sources publiques) ; la facture mixte (Q4) ; la cohérence avec la CA3 (d9). La
+porte de restauration du super-administrateur — le chef du cabinet en production — écrit en direct sans les plafonds
+de la fonction (le déclencheur garde la facture, le mouvement, l'annulation et la répartition par taux) : c'est la
+même que pour les transmissions et les factures validées, et un scanner de d3 devra refuser tout `.insert` sur ces
+tables hors de la restauration. LATENT, et mesuré : aucun encaissement en base.

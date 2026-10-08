@@ -48,7 +48,7 @@
 -- À lancer par l'outil MCP Supabase (`execute_sql`). Les identifiants ci-dessous sont ceux du projet
 -- réel ; sur un autre jeu de données, les remplacer par un client et un chef existants.
 --
--- Dernier passage COMPLET : 19/09/2026 — 16 lignes de verdict (40 tables du schéma + 3 buckets,
+-- Passage COMPLET du 19/09/2026 — 16 lignes de verdict (40 tables du schéma + 3 buckets,
 -- 3 profils), 0 en faute, et 12 mutations sur 12 qui mordent.
 --
 -- 21/09/2026 — les contrôles 5bis et les mutations M5ter/M5quater ont été AJOUTÉS puis rejoués
@@ -83,6 +83,16 @@
 -- tables de résultats créées `on commit drop`, sans le `drop table` qui les précède ici. Le reste du
 -- fichier n'a pas été relancé : la migration ne touche aucune policy. Ce qu'elle fige d'une facture
 -- validée est éprouvé par factures.sql.
+--
+-- 08/10/2026 — PASSAGE COMPLET, le premier depuis le 19/09/2026, après `encaissements_des_factures`,
+-- qui crée deux tables et leurs policies : 22 lignes de verdict (54 tables du schéma, dont 46 portant
+-- un `dossier_id`, + 3 buckets, 3 profils), 0 en faute, et 14 mutations sur 14 qui mordent (M2 :
+-- exactement 3). La transcription, qui faisait renoncer au fichier entier, est vérifiée : le texte
+-- transmis — ce fichier sans son en-tête de commentaires ni ses deux `drop table`, les tables de
+-- résultats `on commit drop`, et une ligne TEXTE ajoutée au verdict, qui rend la longueur et
+-- l'empreinte du texte reçu — est celui de la copie adaptée, caractère pour caractère (HISTORIQUE.md,
+-- entrée de l'étape d1). Les deux tables nouvelles sont vides en production : ce que leurs policies
+-- refusent sur une ligne qui EXISTE est éprouvé par `encaissementsFactures.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

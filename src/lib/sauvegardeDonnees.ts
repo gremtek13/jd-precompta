@@ -364,7 +364,9 @@ export async function restaurerSauvegarde(
     }
 
     await ecrireParLots(etape.table, aEcrire)
-    resultat.lignesParTable[etape.table] = aEcrire.length
+    // Additionné et non remplacé : une table auto-référencée par vagues (TABLES_AUTO_REFERENCEES_PAR_VAGUES) a
+    // plusieurs étapes, et la dernière ne dit que ses propres lignes.
+    resultat.lignesParTable[etape.table] = (resultat.lignesParTable[etape.table] ?? 0) + aEcrire.length
     fait += 1
   }
 

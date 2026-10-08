@@ -439,6 +439,30 @@ describe('restauration', () => {
     expect(ecritures).toEqual([])
   })
 
+  it('écrit un encaissement avant son annulation, en deux écritures, et le relit à l’identique', async () => {
+    // La base refuse une annulation dont la cible n'est pas encore écrite, et Postgres ne promet pas l'ordre des
+    // lignes d'un même lot : deux écritures distinctes, la cible d'abord, quel que soit l'ordre de la sauvegarde.
+    base.tables.factures_emises = [{ id: 'f1', dossier_id: DOSSIER, numero: 1, facture_origine_id: null }]
+    base.tables.encaissements_factures = [
+      { id: 'e2', dossier_id: DOSSIER, facture_id: 'f1', montant: -50, annule_id: 'e1', motif: 'erreur de saisie' },
+      { id: 'e1', dossier_id: DOSSIER, facture_id: 'f1', montant: 50, annule_id: null, motif: null },
+    ]
+    base.tables.encaissements_factures_taux = [
+      { encaissement_id: 'e1', dossier_id: DOSSIER, taux: 20, montant: 50 },
+      { encaissement_id: 'e2', dossier_id: DOSSIER, taux: 20, montant: -50 },
+    ]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(ecritures.filter((e) => e.table === 'encaissements_factures').map((e) => e.nb)).toEqual([1, 1])
+    expect(base.tables.encaissements_factures.map((l) => l.id)).toEqual(['e1', 'e2'])
+    // Le compte d'une table écrite en deux vagues est celui des deux.
+    expect(resultat.lignesParTable.encaissements_factures).toBe(2)
+    expect(resultat.lignesParTable.encaissements_factures_taux).toBe(2)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
   it('écrit les parents avant leurs enfants', async () => {
     base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
     base.tables.lignes_bancaires = [{ id: 'l1', dossier_id: DOSSIER, piece_id: 'p1' }]
