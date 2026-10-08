@@ -21,14 +21,16 @@ import { lignesPourPiece, piecesAComptabiliser } from '../../src/lib/ecritures'
 import { numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
+import { calculerTotaux } from '../../src/lib/montantsFacture'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
+import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
-  Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece, VehiculeDossier,
-  VentilationBancaire,
+  Categorie, CotisationDeclaree, EcritureBrouillon, FactureEmise, FactureLigne, FactureSuperpdpEvent, Immobilisation,
+  NatureImmobilisation, Piece, TransmissionFacture, VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
 
 type Ligne = Record<string, unknown>
@@ -43,14 +45,19 @@ const LOGO_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.g
 const dossiers: Ligne[] = [
   ['d1', 'Cabinet infirmier Moreau', '12345678900012', '86.90D', 'Activités des infirmiers et des sages-femmes'],
   ['d2', 'Sophie Lambert', null, null, null],
-  ['d3', 'Marc Petit', null, null, null],
+  // Marc Petit, en franchise en base, a un numéro de TVA intracommunautaire (`numero_tva_attribue`, plus bas) : la carte
+  // de l'onglet TVA le CALCULE de son SIREN, et seul celui-ci passe la clé de Luhn — aucun SIREN des autres dossiers ne la
+  // passe, et la carte y dirait que le numéro ne se calcule pas.
+  ['d3', 'Marc Petit', '12345678200010', '74.20Z', 'Activités photographiques'],
   ['d4', 'Julie Roux', null, null, null],
   ['d5', 'SCM Les Oliviers', null, null, null],
   ['d6', 'Thomas Girard', null, null, null],
   // Le seul dossier assujetti à la TVA du banc : un conseil qui facture et encaisse par virement.
   // C'est lui que montre l'onglet TVA (voir TVA_D7 plus bas) ; le cabinet infirmier, exonéré comme
-  // toute infirmière, n'a pas de déclaration à déposer.
-  ['d7', 'Atelier Bernard Conseil', '98765432100015', '70.22Z', 'Conseil pour les affaires et autres conseils de gestion'],
+  // toute infirmière, n'a pas de déclaration à déposer. Son SIRET (08/10/2026) est celui des exemples de la facture
+  // électronique (`outils/facturation/exemples`) : l'ancien passait la clé de Luhn sur ses quatorze chiffres, mais pas sur
+  // les neuf du SIREN, et l'aperçu d'une facture de ce redevable n'imprimait alors aucun numéro de TVA — il le calcule du SIREN.
+  ['d7', 'Atelier Bernard Conseil', '98765432400019', '70.22Z', 'Conseil pour les affaires et autres conseils de gestion'],
   // Le seul dossier tenu en ENGAGEMENT (BIC, IS) du banc : une société de design, assujettie, dont les
   // factures passent en 401/411 et que ses règlements soldent (voir ENGAGEMENT_D8 plus bas).
   ['d8', 'SAS Lumen Studio', '11122233300014', '74.10Z', 'Activités spécialisées de design'],
@@ -658,6 +665,184 @@ const SOURCES_D10: SourcesDeValidation = {
 }
 const ECRITURES_D10 = ecrituresDe(SOURCES_D10)
 
+// ── LES FACTURES ÉMISES DU CABINET INFIRMIER (ligne 28.5, étape c4) ────────────────────────────────────────────────
+//
+// Trois factures, pour mesurer ce que l'onglet Factures ne pouvait pas montrer faute de données :
+//   - F2026-0012, validée, à un ORGANISME PUBLIC dont le nom est très long, avec toutes ses mentions (SIREN, code service,
+//     numéro d'engagement, période) : la plateforme du client a refusé son dépôt, en un détail LONG, puis l'envoi par
+//     Super PDP est parti sans réponse il y a plus d'un quart d'heure — c'est ce qui offre « Abandonner » ;
+//   - F2026-0013, validée, à une ENTREPRISE, partie par Super PDP et acceptée : l'historique de ses statuts ;
+//   - un brouillon, à un particulier.
+// Le dossier est exonéré (art. 261, 4, 1°) : chaque ligne est à 0 %, et l'en-tête se déduit des lignes comme
+// `enregistrer_facture` l'écrit. Les lignes sont typées sur celles de l'application (src/lib/types.ts) : une colonne
+// ajoutée à `FactureEmise` fait échouer `tsc -b` ici, au lieu de s'afficher vide sur le banc. Les SIREN et SIRET des
+// clients sont fictifs, mais portent une clé de Luhn valide : le jugement du générateur de la facture électronique
+// ne les refuse pas.
+//
+// Le faux client n'ordonne rien : les factures sont rangées dans l'ordre que la lecture réelle rend (date d'émission
+// décroissante), les transmissions et les événements dans celui de leur date.
+
+// Un instant `minutes` avant MAINTENANT. « Abandonner » se juge sur l'horloge du NAVIGATEUR (lib/transmissionsFactures.ts) :
+// une transmission datée d'avant MAINTENANT est abandonnable le jour où le banc tourne, quel qu'il soit.
+const avantMaintenant = (minutes: number) => new Date(Date.parse(MAINTENANT) - minutes * 60_000).toISOString()
+
+type LigneSaisie = Pick<FactureLigne, 'designation' | 'quantite' | 'prix_unitaire_ht' | 'taux_tva'>
+
+const LIGNES_F12: LigneSaisie[] = [{
+  designation: 'Soins infirmiers à domicile — tournées du matin et du soir auprès des patients du service, du 1er au 31 août 2026 (marché 2026-SSIAD-07)',
+  quantite: 40, prix_unitaire_ht: 46, taux_tva: 0,
+}]
+const LIGNES_F13: LigneSaisie[] = [
+  { designation: 'Soins infirmiers auprès des résidents — forfait d’août 2026', quantite: 1, prix_unitaire_ht: 2150, taux_tva: 0 },
+  { designation: 'Frais de déplacement de la tournée', quantite: 4, prix_unitaire_ht: 37.5, taux_tva: 0 },
+]
+const LIGNES_BROUILLON: LigneSaisie[] = [
+  { designation: 'Soins infirmiers non pris en charge — séance du 22 septembre 2026', quantite: 1, prix_unitaire_ht: 38, taux_tva: 0 },
+]
+
+const PENALITES_DE_RETARD =
+  "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
+  'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.'
+
+const MENTIONS_LEGALES_D1 = [mentionTva('exonere', 'cgi_261_4_1'), PENALITES_DE_RETARD].join('\n')
+
+// L'émetteur est recopié du dossier à chaque enregistrement (jamais relu à l'affichage) : le cabinet infirmier d1.
+const EMETTEUR_D1 = {
+  emetteur_nom: 'Cabinet infirmier Moreau', emetteur_siret: '12345678900012',
+  emetteur_adresse: '12 rue des Mimosas\n13100 Aix-en-Provence',
+}
+
+const FACTURES_D1: FactureEmise[] = [
+  // Le brouillon : « Supprimer » à la place des boutons d'une facture validée, aucun numéro, un client particulier
+  // (non assujetti) sans SIREN ni adresse de facturation électronique, et l'option pour les débits encore nulle.
+  {
+    id: 'f14', dossier_id: 'd1', numero: null, statut: 'brouillon', type: 'facture', facture_origine_id: null,
+    date_emission: '2026-09-24', date_echeance: null,
+    tiers_nom: 'Mme Josiane Faure', tiers_adresse: '3 impasse du Lavoir\n13100 Aix-en-Provence', tiers_siret: null,
+    ...calculerTotaux(LIGNES_BROUILLON),
+    mentions_legales: MENTIONS_LEGALES_D1, notes: 'Séance non remboursée par l’Assurance maladie : règlement à réception.',
+    ...EMETTEUR_D1,
+    superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
+    created_by: 'u1', created_at: '2026-09-24T16:10:00Z', validated_at: null,
+    type_client: 'non_assujetti', tiers_siren: null, tiers_adresse_electronique: null, code_service: null, numero_engagement: null,
+    nature_operation: 'services', date_prestation: '2026-09-22', periode_debut: null, periode_fin: null,
+    livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: null,
+  },
+  // Une ENTREPRISE, partie par Super PDP (4242) et acceptée par son destinataire (fr:205) : son badge de la liste dit le
+  // statut de Super PDP, et la fenêtre de transmission en garde l'historique. La prestation s'est achevée avant la facture.
+  {
+    id: 'f13', dossier_id: 'd1', numero: 'F2026-0013', statut: 'validee', type: 'facture', facture_origine_id: null,
+    date_emission: '2026-09-18', date_echeance: '2026-10-18',
+    tiers_nom: 'Résidence Les Cèdres SAS', tiers_adresse: '7 chemin des Cèdres\n13090 Aix-en-Provence', tiers_siret: '77712345600017',
+    ...calculerTotaux(LIGNES_F13),
+    mentions_legales: MENTIONS_LEGALES_D1, notes: null,
+    ...EMETTEUR_D1,
+    superpdp_invoice_id: 4242, superpdp_dernier_statut: 'fr:205', tiers_email: 'comptabilite@residence-cedres.example',
+    created_by: 'u1', created_at: '2026-09-18T08:30:00Z', validated_at: '2026-09-18T08:55:00Z',
+    type_client: 'assujetti', tiers_siren: '777123456', tiers_adresse_electronique: '777123456',
+    code_service: null, numero_engagement: null,
+    nature_operation: 'services', date_prestation: '2026-08-31', periode_debut: null, periode_fin: null,
+    livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: false,
+  },
+  // L'ORGANISME PUBLIC au nom très long : toutes les mentions d'un client de Chorus Pro, une période plutôt qu'une date, et
+  // l'adresse de facturation électronique qui l'achemine jusqu'à son service.
+  {
+    id: 'f12', dossier_id: 'd1', numero: 'F2026-0012', statut: 'validee', type: 'facture', facture_origine_id: null,
+    date_emission: '2026-09-05', date_echeance: '2026-10-05',
+    tiers_nom: 'CENTRE HOSPITALIER INTERCOMMUNAL DES DEUX VALLÉES — SERVICE DE SOINS INFIRMIERS À DOMICILE',
+    tiers_adresse: '18 avenue des Deux Vallées\nBP 40120\n73000 Chambéry', tiers_siret: '25010002100014',
+    ...calculerTotaux(LIGNES_F12),
+    mentions_legales: MENTIONS_LEGALES_D1, notes: null,
+    ...EMETTEUR_D1,
+    superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: 'achats@ch-deux-vallees.example',
+    created_by: 'u1', created_at: '2026-09-05T08:40:00Z', validated_at: '2026-09-05T08:52:00Z',
+    type_client: 'organisme_public', tiers_siren: '250100021',
+    tiers_adresse_electronique: '250100021_25010002100014_SSIAD-DEUX-VALLEES',
+    code_service: 'SSIAD-DV-0042', numero_engagement: 'EJ2026-004517',
+    nature_operation: 'services', date_prestation: null, periode_debut: '2026-08-01', periode_fin: '2026-08-31',
+    livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: false,
+  },
+]
+
+const lignesDeFacture = (factureId: string, lignes: LigneSaisie[]): FactureLigne[] =>
+  lignes.map((l, i) => ({ id: `${factureId}-l${i + 1}`, facture_id: factureId, ordre: i + 1, ...l }))
+
+const LIGNES_DES_FACTURES_D1: FactureLigne[] = [
+  ...lignesDeFacture('f14', LIGNES_BROUILLON),
+  ...lignesDeFacture('f13', LIGNES_F13),
+  ...lignesDeFacture('f12', LIGNES_F12),
+]
+
+// Ce que la plateforme du client a répondu au dépôt de F2026-0012 : le détail que la fonction a nettoyé (300 caractères au
+// plus) et que la fenêtre de transmission montre dans sa cellule « Détail », adresse sans espace comprise.
+const DETAIL_DU_REFUS_DE_DEPOT =
+  'Dépôt refusé par la plateforme (code 422) : l’adresse de facturation 250100021_25010002100014_SSIAD-DEUX-VALLEES est ' +
+  'inconnue de l’annuaire, et la période du 01/08/2026 au 31/08/2026 recoupe celle d’une facture déjà déposée pour ce ' +
+  'service. Corriger l’adresse, puis renouveler le dépôt.'
+
+// Une seule transmission est ACTIVE par facture (envoi, déposée, acceptée) : F2026-0012 en a une — l'envoi par Super PDP
+// sans issue connue, que le cabinet peut abandonner — derrière un dépôt refusé qui, lui, ne bloque rien. L'hôte du dépôt
+// refusé est celui de la plateforme que le cabinet infirmier a reliée (`CONNEXION_PLATEFORME_D1`, déclarée plus bas).
+const TRANSMISSIONS_D1: TransmissionFacture[] = [
+  {
+    id: 'tr1', dossier_id: 'd1', facture_id: 'f13', canal: 'superpdp', hote: 'api.superpdp.tech', flux_id: '4242',
+    sha256: 'c'.repeat(64), etat: 'accepte', detail: null, cree_le: '2026-09-18T09:00:30Z', maj_le: '2026-09-18T09:20:00Z',
+  },
+  {
+    id: 'tr2', dossier_id: 'd1', facture_id: 'f12', canal: 'plateforme', hote: 'flux.plateforme-alpha.example', flux_id: null,
+    sha256: 'a'.repeat(64), etat: 'echec', detail: DETAIL_DU_REFUS_DE_DEPOT,
+    cree_le: '2026-09-24T14:10:00Z', maj_le: '2026-09-24T14:10:05Z',
+  },
+  {
+    id: 'tr3', dossier_id: 'd1', facture_id: 'f12', canal: 'superpdp', hote: 'api.superpdp.tech', flux_id: null,
+    sha256: 'b'.repeat(64), etat: 'envoi', detail: null, cree_le: avantMaintenant(90), maj_le: avantMaintenant(90),
+  },
+]
+
+// L'historique de F2026-0013 chez Super PDP, du plus ancien au plus récent : la fenêtre le range à l'envers.
+const EVENEMENTS_SUPERPDP_D1: FactureSuperpdpEvent[] = [
+  { id: 'sv1', facture_id: 'f13', superpdp_event_id: 91001, status_code: 'fr:200', status_text: 'Facture déposée sur la plateforme', occurred_at: '2026-09-18T09:01:00Z' },
+  { id: 'sv2', facture_id: 'f13', superpdp_event_id: 91002, status_code: 'fr:202', status_text: 'Facture reçue par la plateforme du destinataire', occurred_at: '2026-09-18T09:04:00Z' },
+  { id: 'sv3', facture_id: 'f13', superpdp_event_id: 91003, status_code: 'fr:205', status_text: 'Facture acceptée par le destinataire', occurred_at: '2026-09-18T09:20:00Z' },
+]
+
+// ── LA FACTURE ÉMISE DU DOSSIER REDEVABLE (d7), JAMAIS TRANSMISE ───────────────────────────────────────────────────
+//
+// Le cabinet infirmier est exonéré : ses lignes sont à 0 %, son aperçu n'imprime aucun numéro de TVA, et toutes ses
+// factures validées ont déjà une transmission ou un refus. L'atelier de conseil en donne le contraire, que le banc ne
+// mesurait pas : une facture VALIDÉE adressée à une entreprise, que rien n'a transmise, à deux taux — 20 % pour la mission,
+// 5,5 % pour les livrets remis aux participants : une opération mixte, dont l'aperçu écrit « 5,5 % » avec sa virgule. Son aperçu
+// imprime le numéro de TVA intracommunautaire de l'émetteur (calculé du SIREN de son SIRET figé, d'où le SIRET du dossier plus
+// haut), et sa fenêtre de transmission offre ce que celle de F2026-0012 n'offre pas — « Envoyer par Super PDP » et « Déposer
+// sur… », les deux boutons les plus larges de la rangée du bas, que les fonctions `invoke` plus bas rendent disponibles pour d7.
+// Les SIREN et SIRET du client sont fictifs, mais portent une clé de Luhn valide.
+const LIGNES_F7: LigneSaisie[] = [
+  {
+    designation: 'Mission de conseil — accompagnement à la mise en place de la facturation électronique, du 14 au 18 septembre 2026',
+    quantite: 3, prix_unitaire_ht: 650, taux_tva: 20,
+  },
+  // Un livre imprimé : le taux réduit de 5,5 %. Les totaux de la facture se déduisent des lignes (`calculerTotaux`) :
+  // 2 048,00 € HT et 395,39 € de TVA (390,00 € à 20 %, 5,39 € à 5,5 %), soit 2 443,39 € TTC.
+  { designation: 'Livret de synthèse remis aux participants — quatre exemplaires imprimés', quantite: 4, prix_unitaire_ht: 24.5, taux_tva: 5.5 },
+]
+
+const FACTURES_D7: FactureEmise[] = [{
+  id: 'f7', dossier_id: 'd7', numero: 'F2026-0007', statut: 'validee', type: 'facture', facture_origine_id: null,
+  date_emission: '2026-09-22', date_echeance: '2026-10-22',
+  tiers_nom: 'Menuiserie Roche & Fils SARL', tiers_adresse: '27 zone artisanale des Bruyères\n69130 Écully', tiers_siret: '55512345400012',
+  ...calculerTotaux(LIGNES_F7),
+  mentions_legales: PENALITES_DE_RETARD, notes: null,
+  emetteur_nom: 'Atelier Bernard Conseil', emetteur_siret: '98765432400019', emetteur_adresse: '4 rue des Tanneurs\n69002 Lyon',
+  superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
+  created_by: 'u1', created_at: '2026-09-22T09:20:00Z', validated_at: '2026-09-22T09:41:00Z',
+  type_client: 'assujetti', tiers_siren: '555123454', tiers_adresse_electronique: '555123454',
+  code_service: null, numero_engagement: null,
+  nature_operation: 'mixte', date_prestation: '2026-09-18', periode_debut: null, periode_fin: null,
+  livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: false,
+}]
+
+const LIGNES_DES_FACTURES_D7: FactureLigne[] = lignesDeFacture('f7', LIGNES_F7)
+
 const TABLES: Record<string, Ligne[]> = {
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
@@ -883,6 +1068,13 @@ const TABLES: Record<string, Ligne[]> = {
   // Et l'ouverture de son exercice 2026, que cette validation a écrite.
   soldes_reportes: VALIDATION_D9.reportes,
   lettrages_manuels: ENGAGEMENT_D8.lettrages,
+  // Les factures émises du cabinet infirmier, leurs lignes, leurs transmissions et l'historique de Super PDP (voir
+  // `FACTURES_D1`), puis celle, jamais transmise, de l'atelier de conseil (`FACTURES_D7`, sans transmission ni événement) :
+  // typées sur l'application, rendues au faux client en lignes nues.
+  factures_emises: [...FACTURES_D1, ...FACTURES_D7].map((f) => ({ ...f })),
+  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7].map((l) => ({ ...l })),
+  transmissions_factures: TRANSMISSIONS_D1.map((t) => ({ ...t })),
+  facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte
@@ -913,6 +1105,16 @@ const CONNEXION_PLATEFORME_D1 = {
   created_at: '2026-09-15T09:00:00.000Z', version: 'v-banc-1',
 }
 
+// Celle de l'atelier de conseil (d7) : une autre plateforme, reliée elle aussi — la fenêtre de transmission de sa facture
+// jamais partie propose alors les DEUX canaux, Super PDP (voir `superpdp-credentials` plus bas) et celle-ci. Aucun écran
+// de l'atelier n'appelle la plateforme avant qu'une fenêtre ne s'ouvre : ses autres visites ne changent pas.
+const CONNEXION_PLATEFORME_D7 = {
+  ...CONNEXION_PLATEFORME_D1,
+  nom: 'Plateforme Bêta', url_flux: 'https://flux.plateforme-beta.example/afnor',
+  url_jeton: 'https://flux.plateforme-beta.example/oauth2/token', hote: 'flux.plateforme-beta.example',
+  organisation_id: 'org-atelier-bernard-conseil', version: 'v-banc-2',
+}
+
 function fluxDuBanc(id: string, sens: 'achat' | 'vente', syntaxe: string, nom: string | null, etat: string) {
   return { id, sens, syntaxe, direction: sens === 'achat' ? 'In' : 'Out', nom, recu_le: '2026-10-06T07:30:00.000Z', mis_a_jour: '2026-10-06T07:31:00.000Z', etat }
 }
@@ -921,7 +1123,7 @@ function plateformeAgreee(corps: Ligne): { data: unknown; error: unknown } {
   const d1 = corps.dossierId === 'd1'
   switch (corps.action) {
     case 'statut':
-      return { data: { connexion: d1 ? CONNEXION_PLATEFORME_D1 : null }, error: null }
+      return { data: { connexion: d1 ? CONNEXION_PLATEFORME_D1 : corps.dossierId === 'd7' ? CONNEXION_PLATEFORME_D7 : null }, error: null }
     case 'tester':
       return { data: { ok: true }, error: null }
     case 'lister':
@@ -1046,7 +1248,8 @@ export const supabase = {
   // « Proposer une catégorie » répond une proposition retenue, avec un extrait LONG : c'est lui qui
   // éprouve le passage à la ligne dans le volet. La connexion bancaire répond pour le cabinet infirmier
   // (voir CONNEXION_D1), et sa plateforme du client et sa synchronisation Super PDP aussi (voir
-  // CONNEXION_PLATEFORME_D1). Tout le reste reste une maquette.
+  // CONNEXION_PLATEFORME_D1) ; l'atelier de conseil (d7) a les deux également, pour la transmission de sa facture
+  // (voir CONNEXION_PLATEFORME_D7). Tout le reste reste une maquette.
   functions: {
     invoke: (nom: string, options?: { body?: Ligne }) => {
       if (nom === 'proposer-categorie') {
@@ -1055,7 +1258,7 @@ export const supabase = {
       if (nom === 'banque-connexion') return Promise.resolve(connexionBancaire(options?.body ?? {}))
       if (nom === 'plateforme-agreee') return Promise.resolve(plateformeAgreee(options?.body ?? {}))
       if (nom === 'superpdp-credentials') {
-        const configured = options?.body?.dossierId === 'd1'
+        const configured = options?.body?.dossierId === 'd1' || options?.body?.dossierId === 'd7'
         return Promise.resolve({ data: { configured, client_id: configured ? 'app-superpdp-moreau' : null }, error: null })
       }
       return Promise.resolve({ data: null, error: { message: 'maquette' } })
