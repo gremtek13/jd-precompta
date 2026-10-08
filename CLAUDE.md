@@ -140,6 +140,7 @@ supabase/
                   réplique locale du schéma.
                   - rls.sql : toutes les tables et le stockage, boucle sur pg_class, se mute lui-même ;
                   - restauration.sql ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
+                    bordures.py (les bordures répétées et comptées, avant de transcrire une fonction) ;
                     socle.py/.sql et inventaire.py/.sql (export ↔ catalogue, après chaque migration) ;
                   - un essai par mécanisme, à rejouer après toute migration qui touche ses fonctions, ses tables
                     ou les contraintes de lignes_bancaires et ecritures_brouillon : affectation,
@@ -453,8 +454,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   retomberait en silence sur `true`) → « ET DÉPLOYER PAR L'OUTIL MCP REMET `verify_jwt` ».
 - **Un déploiement se vérifie** : comparer la copie déployée au dépôt AVANT d'écraser, déployer, puis aller-retour par
   `supabase/essais/allerretour.py` (lecture la plus récente du journal, suit un résultat écrit sur disque). L'outil
-  décode les `\uXXXX` (sans conséquence — ne pas doubler les antislashs) ; les longues bordures `─` se transcrivent mal :
-  les compter avant d'écrire → « Déployer une Edge Function via l'outil MCP décode les échappements ».
+  décode les `\uXXXX` (sans conséquence — ne pas doubler les antislashs). Les longues bordures `─` se transcrivent mal,
+  et une transcription refaite recopie les fautes de la précédente : les répéter d'abord par
+  `supabase/essais/bordures.py`, qui les décode et les compte, sous une forme marquée (par cinq, quatre échappements et
+  un trait littéral, un double trait tous les vingt-cinq) → « Déployer une Edge Function via l'outil MCP décode les
+  échappements », « LES BORDURES SE RECOPIENT ».
 - **Un commit n'est pas un déploiement, un déploiement n'est pas une autorisation** : `edgeFunctionsIam.test.ts` compte
   les actions IAM, pas les ressources (changer de modèle demande un appel réel). `bright-task` vit en production sans
   exister dans le dépôt, neutralisée (410) et non appelée : à supprimer le jour où un outil le permet, ne pas
