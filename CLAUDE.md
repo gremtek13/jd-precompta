@@ -191,10 +191,14 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   `.table-scroll`. Sur téléphone la rangée devient une colonne en `nowrap` ; un bouton aligné sur le bas des champs
   passe par `.field-row.aligne-bas`, jamais par un `alignItems` en ligne. Un tableau qui se replie en fiches
   (`table-empilable`, cellules `data-libelle`) vit dans une enveloppe `.tableau-adaptable`, requête de conteneur sur
-  l'enveloppe seule (`tableauxFormulaires.test.ts`) ; `table-empilable-etroite` ne se replie que sous 520 px.
+  l'enveloppe seule (`tableauxFormulaires.test.ts`) ; `table-empilable-etroite` ne se replie que sous 520 px. Le bloc
+  téléphone ne comprime jamais un tableau (disposition automatique, aucune coupure de mot) : trop large, il défile ; un
+  tableau dont une commande passerait hors de vue se replie sous 860 px de carte (`table-empilable`), un autre sous 520
+  (`-etroite`) ; un nom de fichier porte `.nom-fichier` → « UN MOT NE SE COUPE PLUS AU MILIEU ».
 - **Vérification visuelle** : `outils/captures/` après toute modification de `index.css` ou de la coque.
-  `debordements.mjs` compte ce qui sort du panneau, d'une carte, d'une case de grille, et le texte plus large que sa
-  boîte : 0 aux quatre largeurs de référence et aux combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
+  `debordements.mjs` compte ce qui sort du panneau, d'une carte, d'une case de grille, le texte plus large que sa
+  boîte, et un mot de 2 à 24 caractères coupé au milieu : 0 aux quatre largeurs de référence, à 720 px et aux
+  combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
   1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Ne
   JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
 - **Ce qui s'imprime n'a aucune mise en page en ligne** (l'aperçu d'une facture) : un style en ligne l'emporte sur

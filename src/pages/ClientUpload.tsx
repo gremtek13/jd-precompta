@@ -345,6 +345,10 @@ export default function ClientUpload() {
           total={depots.length}
         />
       </div>
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : c'est l'écran du client, sur son téléphone — mais aussi sur un
+          ordinateur de 1 024 pixels, où le bouton « Préciser » de chaque dépôt passait derrière un défilement latéral. Le statut
+          de chaque dépôt aussi, et le nom d'un fichier sans espace, qui n'a rien à couper, allongeait la page de trois cents
+          pixels. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {depotsAffiches.length === 0 ? (
           <div className="empty-state">
@@ -355,59 +359,61 @@ export default function ClientUpload() {
                 : "Aucun dépôt pour l'instant."}
           </div>
         ) : (
-          <table>
-            <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Précisions</th></tr></thead>
-            <tbody>
-              {depotsAffiches.map((d) => {
-                const cle = d.cible ? cleCible(d.cible) : null
-                const fil = cle ? parCible.get(cle) ?? [] : []
-                const ouvert = cle !== null && filOuvert === cle
-                return (
-                  <Fragment key={d.id}>
-                    <tr>
-                      <td>{d.nomFichier}</td>
-                      <td>{formatDate(d.createdAt)}</td>
-                      <td>
-                        {!d.traite && d.label === 'Analyse en cours…'
-                          ? <span className="badge badge-neutral">Analyse en cours…</span>
-                          : d.traite
-                            ? <span className="badge badge-ok">{d.label}</span>
-                            : <span className="badge badge-neutral">{d.label}</span>}
-                      </td>
-                      <td>
-                        {/* Rien à commenter tant que l'analyse tourne : la ligne n'existe pas encore. */}
-                        {d.cible === null ? (
-                          <span className="muted">—</span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => setFilOuvert(ouvert ? null : cle)}
-                          >
-                            {fil.length > 0 ? `💬 ${fil.length}` : '+ Préciser'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    {ouvert && d.cible && dossierId && (
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Précisions</th></tr></thead>
+              <tbody>
+                {depotsAffiches.map((d) => {
+                  const cle = d.cible ? cleCible(d.cible) : null
+                  const fil = cle ? parCible.get(cle) ?? [] : []
+                  const ouvert = cle !== null && filOuvert === cle
+                  return (
+                    <Fragment key={d.id}>
                       <tr>
-                        <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>
-                          <FilCommentaires
-                            dossierId={dossierId}
-                            cible={d.cible}
-                            commentaires={fil}
-                            estCabinet={false}
-                            autoFocus
-                            onAjout={(c) => setCommentaires((prev) => [...prev, c])}
-                          />
+                        <td data-libelle="Fichier">{d.nomFichier}</td>
+                        <td data-libelle="Déposé le">{formatDate(d.createdAt)}</td>
+                        <td data-libelle="Statut">
+                          {!d.traite && d.label === 'Analyse en cours…'
+                            ? <span className="badge badge-neutral">Analyse en cours…</span>
+                            : d.traite
+                              ? <span className="badge badge-ok">{d.label}</span>
+                              : <span className="badge badge-neutral">{d.label}</span>}
+                        </td>
+                        <td className="td-boutons">
+                          {/* Rien à commenter tant que l'analyse tourne : la ligne n'existe pas encore. */}
+                          {d.cible === null ? (
+                            <span className="muted">—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => setFilOuvert(ouvert ? null : cle)}
+                            >
+                              {fil.length > 0 ? `💬 ${fil.length}` : '+ Préciser'}
+                            </button>
+                          )}
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </tbody>
-          </table>
+                      {ouvert && d.cible && dossierId && (
+                        <tr>
+                          <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>
+                            <FilCommentaires
+                              dossierId={dossierId}
+                              cible={d.cible}
+                              commentaires={fil}
+                              estCabinet={false}
+                              autoFocus
+                              onAjout={(c) => setCommentaires((prev) => [...prev, c])}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

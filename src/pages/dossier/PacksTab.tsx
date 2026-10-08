@@ -208,6 +208,8 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
           'régénérer un pour une période, vérifie qu’il n’a pas déjà été envoyé.'
         }
       />
+      {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, les boutons « ZIP » et « Excel » de chaque pack
+          passaient derrière un défilement latéral que rien n'annonce. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {packs.length === 0 ? (
           // « Aucun pack » seulement sur une lecture COMPLÈTE : une lecture refusée rend aussi une
@@ -216,31 +218,33 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
             {motifPacks ? 'L’historique n’a pas pu être lu.' : 'Aucun pack généré pour l\'instant.'}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Période</th>
-                <th>Générée le</th>
-                <th>Pièces</th>
-                <th>Total</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {packs.map((p) => (
-                <tr key={p.id}>
-                  <td>{formatDate(p.periode_debut)} → {formatDate(p.periode_fin)}</td>
-                  <td>{formatDate(p.generated_at)}</td>
-                  <td>{p.nb_pieces}</td>
-                  <td>{formatMoney(p.total_ttc)}</td>
-                  <td style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-outline btn-sm" onClick={() => download(p.storage_path_zip)}>ZIP</button>
-                    <button className="btn btn-outline btn-sm" onClick={() => download(p.storage_path_excel)}>Excel</button>
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable-etroite">
+              <thead>
+                <tr>
+                  <th>Période</th>
+                  <th>Générée le</th>
+                  <th>Pièces</th>
+                  <th>Total</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {packs.map((p) => (
+                  <tr key={p.id}>
+                    <td data-libelle="Période">{formatDate(p.periode_debut)} → {formatDate(p.periode_fin)}</td>
+                    <td data-libelle="Générée le">{formatDate(p.generated_at)}</td>
+                    <td data-libelle="Pièces">{p.nb_pieces}</td>
+                    <td data-libelle="Total">{formatMoney(p.total_ttc)}</td>
+                    <td className="td-boutons" style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-outline btn-sm" onClick={() => download(p.storage_path_zip)}>ZIP</button>
+                      <button className="btn btn-outline btn-sm" onClick={() => download(p.storage_path_excel)}>Excel</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

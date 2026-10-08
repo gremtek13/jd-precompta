@@ -353,41 +353,50 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvel emprunt</button>
       </div>
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : les trois boutons de chaque emprunt — l'échéancier, la
+          modification, la suppression — sortaient de la vue, sur téléphone comme, volet de droite ouvert, dans le panneau central.
+          Les colonnes masquées sur téléphone le restent. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans
+          marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : emprunts.length === 0 ? (
           <div className="empty-state">Aucun emprunt enregistré.</div>
         ) : (
-          <table>
-            <thead>
-              <tr><th>Nom</th><th className="hide-mobile">Organisme</th><th>Capital initial</th><th className="hide-mobile">Taux</th><th>Mensualité</th><th>Restant dû</th><th></th></tr>
-            </thead>
-            <tbody>
-              {emprunts.map((e) => {
-                const mensualite = genererEcheancier(e)[0].mensualite
-                const restant = capitalRestantDu(e)
-                return (
-                  <tr key={e.id}>
-                    <td>
-                      {e.nom}
-                      {!empruntActif(e) && <div className="muted" style={{ fontSize: '0.78rem' }}>Soldé</div>}
-                    </td>
-                    <td className="hide-mobile">{e.organisme_preteur ?? '—'}</td>
-                    <td>{formatMoney(e.capital_initial)}</td>
-                    <td className="hide-mobile">{`${String(e.taux_annuel).replace('.', ',')} %`}</td>
-                    <td>{formatMoney(mensualite)}</td>
-                    <td>{formatMoney(restant)}</td>
-                    <td className="td-actions">
-                      <button className="btn btn-outline btn-sm" onClick={() => setEcheancierDe(e)}>Échéancier</button>
-                      <button className="btn btn-outline btn-sm" onClick={() => setEditing(e)}>Modifier</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(e)}>Supprimer</button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr><th>Nom</th><th className="hide-mobile">Organisme</th><th>Capital initial</th><th className="hide-mobile">Taux</th><th>Mensualité</th><th>Restant dû</th><th></th></tr>
+              </thead>
+              <tbody>
+                {emprunts.map((e) => {
+                  const mensualite = genererEcheancier(e)[0].mensualite
+                  const restant = capitalRestantDu(e)
+                  return (
+                    <tr key={e.id}>
+                      <td data-libelle="Nom">
+                        {/* Une `div` : repliée, la cellule est une rangée flex, et la mention « Soldé » serait une pièce à part. */}
+                        <div>
+                          {e.nom}
+                          {!empruntActif(e) && <div className="muted" style={{ fontSize: '0.78rem' }}>Soldé</div>}
+                        </div>
+                      </td>
+                      <td className="hide-mobile" data-libelle="Organisme">{e.organisme_preteur ?? '—'}</td>
+                      <td data-libelle="Capital initial">{formatMoney(e.capital_initial)}</td>
+                      <td className="hide-mobile" data-libelle="Taux">{`${String(e.taux_annuel).replace('.', ',')} %`}</td>
+                      <td data-libelle="Mensualité">{formatMoney(mensualite)}</td>
+                      <td data-libelle="Restant dû">{formatMoney(restant)}</td>
+                      <td className="td-actions">
+                        <button className="btn btn-outline btn-sm" onClick={() => setEcheancierDe(e)}>Échéancier</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => setEditing(e)}>Modifier</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => supprimer(e)}>Supprimer</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -639,17 +648,19 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
         )}
 
-        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 20 }}>
-          <table>
+        {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, les décaissements et le solde de fin de
+            chaque mois — ce que le plan dit — sortaient de la vue. */}
+        <div className="table-scroll tableau-adaptable" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 20 }}>
+          <table className="table-empilable-etroite">
             <thead><tr><th>Mois</th><th>Solde début</th><th>Encaissements</th><th>Décaissements</th><th>Solde fin</th></tr></thead>
             <tbody>
               {plan.lignes.map((l) => (
                 <tr key={l.mois}>
-                  <td>{l.mois}</td>
-                  <td>{formatMoney(l.soldeDebut)}</td>
-                  <td>{formatMoney(l.encaissements)}</td>
-                  <td>{formatMoney(l.decaissements)}</td>
-                  <td style={l.soldeFin < 0 ? { color: 'var(--color-danger, #c0392b)', fontWeight: 600 } : undefined}>{formatMoney(l.soldeFin)}</td>
+                  <td data-libelle="Mois">{l.mois}</td>
+                  <td data-libelle="Solde début">{formatMoney(l.soldeDebut)}</td>
+                  <td data-libelle="Encaissements">{formatMoney(l.encaissements)}</td>
+                  <td data-libelle="Décaissements">{formatMoney(l.decaissements)}</td>
+                  <td data-libelle="Solde fin" style={l.soldeFin < 0 ? { color: 'var(--color-danger, #c0392b)', fontWeight: 600 } : undefined}>{formatMoney(l.soldeFin)}</td>
                 </tr>
               ))}
             </tbody>
@@ -880,16 +891,17 @@ function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionne
           />
         </div>
 
-        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginTop: 10, marginBottom: 16 }}>
-          <table>
+        {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : le résultat prévisionnel sortait de la vue. */}
+        <div className="table-scroll tableau-adaptable" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginTop: 10, marginBottom: 16 }}>
+          <table className="table-empilable-etroite">
             <thead><tr><th>Année</th><th>CA prévisionnel</th><th>Charges prévisionnelles</th><th>Résultat prévisionnel</th></tr></thead>
             <tbody>
               {lignes.map((l) => (
                 <tr key={l.annee}>
-                  <td>{l.annee}</td>
-                  <td>{formatMoney(l.ca)}</td>
-                  <td>{formatMoney(l.charges)}</td>
-                  <td>{formatMoney(l.resultat)}</td>
+                  <td data-libelle="Année">{l.annee}</td>
+                  <td data-libelle="CA prévisionnel">{formatMoney(l.ca)}</td>
+                  <td data-libelle="Charges prévisionnelles">{formatMoney(l.charges)}</td>
+                  <td data-libelle="Résultat prévisionnel">{formatMoney(l.resultat)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1028,19 +1040,21 @@ function EcheancierModal({ emprunt, rapprochements, onClose }: { emprunt: Emprun
             ? 'Aucune échéance n’est encore rapprochée d’un mouvement du relevé (Banque) : leurs intérêts ne comptent pas dans la 2035.'
             : `${payees.size} échéance${payees.size > 1 ? 's' : ''} rapprochée${payees.size > 1 ? 's' : ''} d’un mouvement du relevé : la 2035 en compte le découpage validé, qui peut différer de ce tableau.`}
         </p>
-        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
-          <table>
+        {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sept colonnes de chiffres, dont le capital restant dû et la
+            date du paiement, ne tiennent pas dans un téléphone. */}
+        <div className="table-scroll tableau-adaptable" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
+          <table className="table-empilable-etroite">
             <thead><tr><th>#</th><th>Date</th><th>Mensualité</th><th>Intérêts</th><th>Capital remboursé</th><th>Restant dû</th><th>Payée le</th></tr></thead>
             <tbody>
               {lignes.map((l) => (
                 <tr key={l.numero}>
-                  <td>{l.numero}</td>
-                  <td>{formatDate(l.date)}</td>
-                  <td>{formatMoney(l.mensualite)}</td>
-                  <td>{formatMoney(l.interets)}</td>
-                  <td>{formatMoney(l.capitalRembourse)}</td>
-                  <td>{formatMoney(l.capitalRestant)}</td>
-                  <td>{payees.has(l.numero) ? formatDate(payees.get(l.numero)!) : '—'}</td>
+                  <td data-libelle="#">{l.numero}</td>
+                  <td data-libelle="Date">{formatDate(l.date)}</td>
+                  <td data-libelle="Mensualité">{formatMoney(l.mensualite)}</td>
+                  <td data-libelle="Intérêts">{formatMoney(l.interets)}</td>
+                  <td data-libelle="Capital remboursé">{formatMoney(l.capitalRembourse)}</td>
+                  <td data-libelle="Restant dû">{formatMoney(l.capitalRestant)}</td>
+                  <td data-libelle="Payée le">{payees.has(l.numero) ? formatDate(payees.get(l.numero)!) : '—'}</td>
                 </tr>
               ))}
             </tbody>

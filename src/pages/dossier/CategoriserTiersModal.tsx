@@ -108,8 +108,10 @@ export default function CategoriserTiersModal({
         {groupes.length === 0 ? (
           <div className="empty-state">Aucune pièce sans catégorie ne porte de tiers exploitable.</div>
         ) : (
-          <div className="table-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            <table>
+          // Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, le choix de la catégorie — ce pour quoi la
+          // fenêtre s'ouvre — passait derrière un défilement latéral, et la fenêtre ne se remplissait qu'à l'aveugle.
+          <div className="table-scroll tableau-adaptable" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <table className="table-empilable-etroite">
               <thead>
                 <tr>
                   <th>Fournisseur</th>
@@ -124,36 +126,39 @@ export default function CategoriserTiersModal({
                   const badge = BADGE[g.origine]
                   return (
                     <tr key={g.tiersNormalise}>
-                      <td style={{ maxWidth: 260, overflowWrap: 'anywhere' }}>
-                        {g.libelle}
-                        {g.variantes.length > 0 && (
-                          // Le regroupement réunit les graphies qu'un OCR produit pour un même
-                          // fournisseur. Les montrer permet de le contester : c'est une déduction,
-                          // pas un fait, et elle porte ici sur plusieurs pièces d'un coup.
-                          <div
-                            className="muted"
-                            style={{ fontSize: '0.85em', marginTop: 2 }}
-                            title={g.variantes.join('\n')}
-                          >
-                            aussi lu « {g.variantes.map((v) => v.replace(/\s+/g, ' ')).join(' », « ')} »
-                          </div>
-                        )}
-                        {!g.fournisseurIdentifiable && (
-                          // « CARTE BANCAIRE », « m sa » : l'OCR a lu autre chose que le
-                          // fournisseur. Rien ne sera regroupé là-dessus, et une règle apprise sur
-                          // un tel nom ne servirait jamais.
-                          <div style={{ fontSize: '0.85em', marginTop: 2, color: 'var(--color-warning)' }}>
-                            ⚠ ce nom n'identifie aucun fournisseur — vérifie la pièce
-                          </div>
-                        )}
+                      <td data-libelle="Fournisseur" style={{ maxWidth: 260, overflowWrap: 'anywhere' }}>
+                        {/* Une `div` : repliée, la cellule est une rangée flex, et chaque enfant direct y serait une pièce à part. */}
+                        <div>
+                          {g.libelle}
+                          {g.variantes.length > 0 && (
+                            // Le regroupement réunit les graphies qu'un OCR produit pour un même
+                            // fournisseur. Les montrer permet de le contester : c'est une déduction,
+                            // pas un fait, et elle porte ici sur plusieurs pièces d'un coup.
+                            <div
+                              className="muted"
+                              style={{ fontSize: '0.85em', marginTop: 2 }}
+                              title={g.variantes.join('\n')}
+                            >
+                              aussi lu « {g.variantes.map((v) => v.replace(/\s+/g, ' ')).join(' », « ')} »
+                            </div>
+                          )}
+                          {!g.fournisseurIdentifiable && (
+                            // « CARTE BANCAIRE », « m sa » : l'OCR a lu autre chose que le
+                            // fournisseur. Rien ne sera regroupé là-dessus, et une règle apprise sur
+                            // un tel nom ne servirait jamais.
+                            <div style={{ fontSize: '0.85em', marginTop: 2, color: 'var(--color-warning)' }}>
+                              ⚠ ce nom n'identifie aucun fournisseur — vérifie la pièce
+                            </div>
+                          )}
+                        </div>
                       </td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{g.pieceIds.length}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      <td data-libelle="Pièces" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{g.pieceIds.length}</td>
+                      <td data-libelle="Total TTC" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                         {/* Un montant non lu reste « — » : afficher 0,00 € ferait croire à une facture à zéro. */}
                         {g.totalTtc == null ? '—' : formatMoney(g.totalTtc)}
                       </td>
-                      <td><span className={badge.classe} title={badge.aide}>{badge.texte}</span></td>
-                      <td>
+                      <td data-libelle="Origine"><span className={badge.classe} title={badge.aide}>{badge.texte}</span></td>
+                      <td data-libelle="Catégorie">
                         <select
                           style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', maxWidth: 220 }}
                           value={choix[g.tiersNormalise] ?? ''}

@@ -141,11 +141,15 @@ export default function EquipePage() {
         sont assignés explicitement ci-dessous.
       </p>
 
-      <div className="card table-scroll" style={{ padding: 0 }}>
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : le choix du rôle, le bouton des dossiers assignés et « Retirer »
+          passaient derrière un défilement latéral que rien n'annonce — sur téléphone, et à 1 024 pixels avec les courriels du banc étendu
+          (111 pixels de trop).
+          `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
+      <div className="card table-scroll tableau-adaptable" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : (
-          <table>
+          <table className="table-empilable table-empilable-en-carte">
             <thead>
               <tr>
                 <th>Email</th>
@@ -157,8 +161,9 @@ export default function EquipePage() {
             <tbody>
               {membres.map((m) => (
                 <tr key={m.user_id}>
-                  <td>{m.email ?? '—'} {m.user_id === session?.user.id && <span className="muted">(toi)</span>}</td>
-                  <td>
+                  {/* Une `div` : repliée, la cellule est une rangée flex, et « (toi) » serait une pièce à part. */}
+                  <td data-libelle="Email"><div>{m.email ?? '—'} {m.user_id === session?.user.id && <span className="muted">(toi)</span>}</div></td>
+                  <td data-libelle="Rôle">
                     <select
                       value={m.role}
                       onChange={(e) => changerRole(m, e.target.value as RoleCabinetAdmin)}
@@ -173,7 +178,7 @@ export default function EquipePage() {
                       <option value="comptable">Comptable</option>
                     </select>
                   </td>
-                  <td>
+                  <td data-libelle="Dossiers assignés">
                     {m.role === 'comptable_en_chef' ? (
                       <span className="muted">Tous (chef)</span>
                     ) : (

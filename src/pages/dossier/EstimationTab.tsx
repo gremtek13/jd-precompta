@@ -479,42 +479,47 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
         </form>
       </div>
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : la source du repère et son bouton « Retirer » passaient derrière
+          un défilement latéral que rien n'annonce — sur téléphone, et volet de droite ouvert dans le panneau central.
+          `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {references.length === 0 ? (
           <div className="empty-state">
             {referencesIncompletes ? "Les repères annuels n'ont pas pu être lus." : "Aucun repère annuel enregistré pour l'instant."}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Année</th>
-                <th>Chiffre d'affaires</th>
-                <th>Cotisations sociales</th>
-                <th>Bénéfice déclaré</th>
-                <th>Source</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {references.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.annee}</td>
-                  <td>{r.chiffre_affaires != null ? formatMoney(r.chiffre_affaires) : '—'}</td>
-                  <td>{r.total_cotisations_sociales != null ? formatMoney(r.total_cotisations_sociales) : '—'}</td>
-                  <td>{r.resultat_net != null ? formatMoney(r.resultat_net) : '—'}</td>
-                  <td>
-                    <span className={`badge ${r.source === 'calculee' ? 'badge-ok' : 'badge-neutral'}`}>
-                      {r.source === 'calculee' ? 'Calculée' : 'Saisie manuelle'}
-                    </span>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-danger btn-sm" onClick={() => supprimerReference(r.id)}>Retirer</button>
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr>
+                  <th>Année</th>
+                  <th>Chiffre d'affaires</th>
+                  <th>Cotisations sociales</th>
+                  <th>Bénéfice déclaré</th>
+                  <th>Source</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {references.map((r) => (
+                  <tr key={r.id}>
+                    <td data-libelle="Année">{r.annee}</td>
+                    <td data-libelle="Chiffre d'affaires">{r.chiffre_affaires != null ? formatMoney(r.chiffre_affaires) : '—'}</td>
+                    <td data-libelle="Cotisations sociales">{r.total_cotisations_sociales != null ? formatMoney(r.total_cotisations_sociales) : '—'}</td>
+                    <td data-libelle="Bénéfice déclaré">{r.resultat_net != null ? formatMoney(r.resultat_net) : '—'}</td>
+                    <td data-libelle="Source">
+                      <span className={`badge ${r.source === 'calculee' ? 'badge-ok' : 'badge-neutral'}`}>
+                        {r.source === 'calculee' ? 'Calculée' : 'Saisie manuelle'}
+                      </span>
+                    </td>
+                    <td className="td-boutons" onClick={(e) => e.stopPropagation()}>
+                      <button className="btn btn-danger btn-sm" onClick={() => supprimerReference(r.id)}>Retirer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

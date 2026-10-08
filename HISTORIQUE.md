@@ -10526,3 +10526,150 @@ restauration (entrée d1).
 part à 0 % d'une facture taxée (point 7, NON VÉRIFIÉ) ; le jour exact de l'échéance en franchise (arrêté non lu) ; la fin
 du régime simplifié au 01/01/2027, reprise de l'entrée de la CA3 et non revérifiée ; le générateur flottant des trois
 tests cités.
+
+### 08/10/2026 — UN MOT NE SE COUPE PLUS AU MILIEU, ET UN TABLEAU NE CACHE PLUS SES COMMANDES — LE BLOC TÉLÉPHONE DE `index.css`
+
+(`src/index.css` : le bloc `@media (max-width: 720px)` et les blocs `@container tableau` ;
+`outils/captures/debordements.mjs`, quatrième règle ; vingt-quatre fichiers en tout, dont vingt-deux composants d'écran
+— soixante-neuf tableaux se replient désormais en fiches, treize à `HEAD` ; aucun test n'a bougé,
+`tableauxFormulaires.test.ts` compris.) Trouvé en relisant les captures du banc à 390 px : le tableau de la 2035, dans
+l'onglet Clôture, coupait ses mots au milieu (« rembourseme / nts », « 20 / 35-A »). Derrière : un bloc de feuille de
+style qui fabriquait le défaut dans tous les tableaux, un banc qui ne pouvait pas le voir, puis des
+tableaux qui, leurs mots rendus à leur largeur, passaient leurs boutons derrière un défilement. Confié à l'agent
+`retouches` ; ce que la bande du téléphone en paysage demandait n'a pas attendu une décision du cabinet : la règle est
+celle de CLAUDE.md, et la liste des factures en était le précédent le jour même.
+
+**UN MOT SE COUPAIT AU MILIEU, DANS TOUS LES TABLEAUX.** Le bloc téléphone donnait à tout tableau `table-layout: fixed`
+et à toute cellule `word-break: break-word` : des colonnes à parts égales quel que soit leur contenu, qu'aucun
+`.table-scroll` ne faisait jamais défiler — rien ne dépassait —, et dont la plus étroite coupait ses mots n'importe où :
+« rembourseme / nts », « 15 000,0 / 0 € », « 202 / 6 ». Mesuré sur les 72 visites du banc : 1 049 morceaux coupés à
+390 px, dans 28 tableaux — dont 244 montants, 77 coupés dans le nombre même, et 288 années — ; 73 à 720 px, dans cinq
+tableaux de six à huit colonnes ; 203, 139 et 80 à 560, 600 et 690 px, la bande d'un téléphone en paysage ; aucun à
+1 024 px et au-dessus. Le défaut ne vivait que dans ce bloc.
+
+**LE BANC NE POUVAIT PAS LE VOIR.** Ses trois règles mesurent des BOÎTES — ce qui dépasse le panneau, la carte, la case
+de grille, un texte plus large que sa boîte — et un mot qui se coupe reste dans sa boîte : un tableau dont rien ne
+dépasse passait pour « à zéro » en coupant tous ses montants. Quatrième règle : un MORCEAU — une suite de caractères
+sans espace ordinaire, recoupée après un trait d'union ou un tiret, et après une barre oblique sauf entre deux chiffres
+(« 10/09/2026 » n'offre aucune coupure au navigateur), les espaces insécables restant DANS le morceau — de 2 à 24
+caractères dont les rectangles tombent sur plus d'une ligne est une faute, citée avec une barre verticale à l'endroit de
+la coupure ; au-delà de 24 (une adresse, un IBAN, une référence), couper est admis. Elle ne s'arrête pas aux conteneurs
+qui défilent : c'est dans un `.table-scroll` que les mots se coupaient. Éprouvée avant toute correction, sur `HEAD`
+extrait par `git archive` et servi à part : 1 049 fautes à 390 px, 73 à 720 (sortie 1), aucune à 1 024 et au-dessus.
+
+**LE CORRECTIF EST UNE SOUSTRACTION, ET CE QUE LES MESURES ONT DIT.** Le bloc ne fixe plus la disposition et ne dit plus
+rien de la coupure : chaque colonne garde au moins son plus long mot. `word-break: break-word` n'est que l'ancien nom
+d'`overflow-wrap: anywhere`, qui rétrécit la largeur MINIMALE des colonnes — mesuré dans une carte de 330 px, cinq
+colonnes : 11 morceaux coupés avec la disposition fixe et `break-word` (l'état d'avant), 11 avec la disposition
+automatique et `break-word`, 11 avec `anywhere`, 0 avec `overflow-wrap: break-word` seul (un tableau de 460 px, qui
+défile), 0 sans rien. Mais `overflow-wrap: break-word` seul ne suffisait pas non plus : trois fautes restaient au banc
+(« Crédi / t », « Montan / t » : 45,28 px de mot dans 44,94 px de cellule, un en-tête en capitales espacées). Retiré
+comme le reste. La règle qui laissait une pastille passer à la ligne entre deux mots (`td .badge`) n'a plus d'objet hors
+d'une fiche, où elle reste.
+
+**UN TABLEAU QUI NE SE COMPRIME PLUS DÉFILE, ET CACHE CE QU'IL PORTE.** Un mot garde sa largeur : un tableau plus large
+que sa carte défile dans son `.table-scroll`, et CLAUDE.md n'admet cela qu'à condition qu'aucun bouton n'y passe hors de
+vue. Un tableau dont une commande — un bouton, un champ, un sélecteur — sortirait de la vue se replie en fiches, le
+repli du 04/10/2026 (une requête de CONTENEUR sur l'enveloppe `.tableau-adaptable`, jamais sur la fenêtre). Première
+passe : 55 tableaux de plus, sous 520 px de carte (`table-empilable-etroite`, seuil que la balance des comptes avait
+ouvert le 07/10), et sept tableaux nus enveloppés d'un `.table-scroll` — rien n'y dépasse avec les données d'essai, mais
+un nom de pièce sans espace les élargirait. À 390 px plus aucun tableau du banc ne défile ; seul le sélecteur
+d'exercice, fait pour défiler.
+
+**LA BANDE DU TÉLÉPHONE EN PAYSAGE ET L'ORDINATEUR : UN TABLEAU QUI CACHE UNE COMMANDE SE REPLIE SOUS 860 PX.** Entre
+552 et 716 px, quatre tableaux défilaient avec un bouton hors de vue — et défilaient déjà à l'ordinateur, volet de
+droite ouvert, avant la correction. La règle appliquée à toutes les largeurs — 390, 560, 600, 690, 720, 1 024 (barre
+latérale élargie à 420 px comprise), 1 280 et 1 440, volet de droite fermé, ouvert, élargi à 760 px — et à trois sources
+de données : le banc, les DOM des 72 tests d'écran reposés dans la vraie application, et un banc ÉTENDU hors dépôt (faux
+client enrichi : écrans sans données, fenêtres superposées, rôles client et super-administrateur, un nom de fichier de
+53 caractères sans espace). Avant : de 2 tableaux distincts (720 px) à 11 (1 280 px, volet ouvert) cachaient une
+commande ; après : aucun, sauf un cas dit plus bas. **Quinze tableaux passent à `table-empilable`** : la déclaration de
+TVA déposée (« Retirer » : 232 px de trop à 1 024 px, barre à 420), le registre des immobilisations (« Tableau », «
+Modifier », « Retirer » : 275), les échéances de cotisation (« Retirer » : 242 ; 633 avec le banc étendu), les emprunts
+(164), les lignes d'une facture et d'un avoir (« ✕ » : 48 à 58 px de trop à TOUTES les largeurs d'ordinateur), l'équipe
+(177 à 560 px), les documents (538 à 1 280 px volet ouvert, banc étendu), les prestations (121), les mouvements d'un
+compte courant d'associé (94, à toutes les largeurs), les repères de l'estimation (24), l'aperçu d'un relevé PDF (128),
+les postes sans case de la Clôture (39) — et, trouvés par le seul banc étendu, les dépôts du CLIENT (« + Préciser », 19
+boutons hors de vue : 133 px à 1 024) et les cabinets du SUPER-ADMINISTRATEUR (« Plafond IA », « Exporter », « Supprimer
+» : 209 px ; ce tableau n'avait ni enveloppe ni libellés). Le banc versionné ne visite ni le client ni le
+super-administrateur : deux écrans dont les boutons passaient hors de vue n'y étaient pas.
+
+**DEUX BLOCS, DEUX SEUILS : CE QUI S'ÉCRIT UNE FOIS, ET CE QUI NE PEUT PAS.** Une requête de conteneur ne prend pas son
+seuil dans une variable : le repli à 860 px et celui à 520 sont deux blocs, qui disent chaque règle chacun, dans le même
+ordre, à un préfixe de classe près — ils se lisent côte à côte. Le bloc à 860 portait déjà la cellule des boutons
+(`td-actions`), les pastilles et les champs d'un tableau qu'on remplit : il a reçu `td-boutons` (en prolongeant d'un
+sélecteur ses règles de cellule vide et de filet, sans les récrire), la largeur maximale d'une cellule, la coupure d'un
+mot trop long, les champs d'une fiche — `table-formulaire` ou non —, la case de sélection SANS libellé (celle des
+comptes de tiers, « Lettrer », est une ligne comme une autre) et la ligne fusionnée du corps : une douzaine de lignes,
+pas quarante ; `cellule-suite` et `table-empilable-sans-jeu` restent au seul bloc étroit, aucun tableau à 860 n'en a
+besoin. ESSAYÉ ET RETIRÉ : écrire une fois, hors de toute requête, ce qui ne dit rien tant que la cellule n'est pas une
+rangée (`flex-wrap`, `gap`, `justify-content` de `td-boutons`). La règle générale de la cellule repliée
+(`.table-empilable td`, spécificité 0,1,1) l'emporte sur une règle de classe seule (0,1,0), et `td.td-boutons` (0,1,1)
+lui céderait à égalité, écrit avant elle : la règle ne peut vivre que DANS chaque bloc, où son sélecteur la fait gagner.
+La coupure d'un mot trop long (`overflow-wrap: anywhere`) vivait dans le bloc téléphone, une fois par famille, comme si
+elle ne valait que sur téléphone : elle passe dans les blocs de la fiche, qui valent à toute largeur — un nom de 53
+caractères sortait de sa fiche de 35 px à 1 280 px, volet de 760. Un commentaire en tête de la section dit désormais
+QUELLE CLASSE : sous 860 px un tableau qui cache une commande, sous 520 celui qui n'a rien à cacher et dont les mots se
+coupaient.
+
+**UN NOM DE FICHIER EST UN SEUL MOT.** Les « appels de cotisation non rattachés » élargissaient la PAGE : 535 px dans
+une fenêtre de 390 (un lien, `Appel_cotisations_URSSAF_T3_2026_ref_00045678912345.pdf`). Le tableau des documents, lui,
+pesait 1 108 px dans une carte de 936 (1 280 px, volet fermé) : « C'est une facture » et « Supprimer » hors de vue — ce
+que le repli à 860 n'attrape pas, la carte y étant plus large. Une classe `.nom-fichier { overflow-wrap: anywhere }` sur
+les trois liens qui portent un nom de document. `anywhere` et non `break-word`, mesuré : dans la liste, les deux
+ramènent la page à 390 px ; dans le tableau, `break-word` laisse 1 108 px, `anywhere` donne 936. Les échéances de
+cotisation pesaient 1 203 px dans la même carte, par le seul choix de la pièce jointe — un `select` prend la largeur de
+son option la plus longue, 480 px pour ce nom : plafonné à 200 px (190, 200 et 210 tiennent ; 220 laisse 7 px de trop,
+260 en laisse 47 ; `max-width: 100%` ne change rien dans Chromium).
+
+**CE QUE LE REPLI FAIT À L'ORDINATEUR, ET CE QUI N'A PAS BOUGÉ.** Volet de droite ouvert à 1 440 px, la carte mesure
+environ 685 px : les quinze tableaux y sont des fiches — le registre des immobilisations, les échéances, la déclaration
+de TVA, les emprunts, les documents. Comparaison avant/après sur les 72 visites, `HEAD` extrait contre le code final, la
+souris rangée dans un coin avant chaque image : 53 écrans identiques au pixel, 13 qui changent — tous ceux de ces
+tableaux —, trois de 5 px (la coupe à points de suspension d'un libellé passe d'une cellule à une `div` : la crénelure
+du premier et du dernier pixel d'un glyphe) et trois raies de 15 px, le bruit de la prise. Les deux fenêtres de
+facturation, dont la carte ne dépasse jamais 680 px, ne montrent PLUS JAMAIS leurs lignes en tableau, même à 1 440 px :
+ce que 860 px décide, et qu'un cabinet qui voudrait un tableau à l'ordinateur devrait défaire en resserrant les colonnes
+(désignation de 160 px au moins, quatre champs, un bouton : environ 680 px) plutôt qu'en pliant. **Le bruit est mesuré,
+pas supposé** : avec la souris où elle reste, quatre écrans de plus différaient — `54` (1 353 px de bordure verte),
+`57`, `68`, `72` —, sans qu'aucune règle de ce travail y touche. Deux prises du même `HEAD` diffèrent de 1 à 25 px sur
+cinq visites, deux prises du code final de 13 à 2 606 px sur quatre ; recapturées SEULES, les quatre visites sont
+identiques entre `HEAD` et code final ; et une sonde posée sur la prise du `54` montre que, sur le code final, la souris
+survole le champ « Adresse » de l'écran Informations — elle reste où le clic de la visite précédente l'a laissée, sur le
+bouton « Tableau » du registre, que le repli place ailleurs —, quand elle survole une carte sur `HEAD`. Une comparaison
+d'écrans sans souris rangée accuse le code de ce que fait le pointeur.
+
+**LA FACTURE IMPRIMÉE.** Le bloc téléphone vaut aussi sur papier : la zone imprimable d'un A4 mesure environ 718 px.
+`.facture-imprimable table { table-layout: auto }`, posée le jour même pour contrer son `fixed`, est retirée : 0
+différence sur le PDF A4 de la facture d'exemple (une page, une fois, sans bouton) et sur celui de 91 lignes (cinq pages
+à la marge de 10 mm, 184 montants et 91 taux entiers). `white-space: nowrap` sur les colonnes de chiffres reste, par
+intention : sans elle le PDF ne change qu'à 0,1 point près (six mesures de position), elle ne corrige plus rien de
+mesuré. Contre la référence : 115 mesures, 0 différence.
+
+**MESURES.** 5 512 tests sous les quatre fuseaux (206 fichiers, aucun modifié) ; `tsc -b` et le build à 0 ; 63
+avertissements de lint, les mêmes qu'au départ fichier par fichier (`npm run lint` parcourait aussi les copies isolées
+que les agents de la session créent sous `.claude/worktrees/`, et en rendait le double, 126 : le dossier entre au
+`.gitignore`, qu'oxlint suit — 63 de nouveau, mesuré). Les neuf exécutions du banc — 390, 720, 1 024, 1 280, 1 440, puis 1 280 et 1 440 avec les volets élargis,
+1 280 sans volet à barre élargie —, 0 faute, sortie 0 ; et 0 à 560, 600 et 690 px (la première prise à 600 px a rendu
+deux erreurs du PROCESSUS du banc, « la fenêtre null ne s'est pas ouverte », `.main` absent à deux visites : rejouée
+deux fois, 0 — un banc rouge se rejoue avant d'être cru). Les défilements, aux dix-sept largeurs et combinaisons de
+volets : 0 commande cachée (hors le cas dit plus bas), 0 mot coupé, 0 page qui déborde, sur le banc, sur 197 tables de
+DOM de tests d'écran et sur 42 du banc étendu ; les rôles client et super-administrateur à huit largeurs, de 390 à 1 440
+: 0. Un cas réel reste (« Ce qui reste », 1) ; un artefact du banc des DOM aussi : le tableau de la liste des dossiers,
+posé dans une page de dossier volet ouvert, y passe son bouton « Ouvrir » sous le volet — la page des dossiers n'a pas
+de volet.
+
+**CE QUI RESTE, dit plutôt que promis.** (1) Le tableau de bord, « Tous les dossiers » : le bouton « Ouvrir » passe hors
+de vue de 88 px à 1 024 px avec la barre latérale élargie à 420 px (la carte a 524 px, le tableau 612) ; à 1 024 par
+défaut il tient. Non touché : le replier à 860 le ferait aussi à 1 024 par défaut, sur la page d'accueil, et le bouton
+est redondant — la ligne entière est cliquable. La voie serait la colonne qui passe au chevron sous une largeur de
+carte, comme sur téléphone. (2) Des tableaux défilent encore sans qu'aucune commande n'y passe hors de vue : la balance
+des comptes (Débit, Crédit, Solde coupés de 103 px à 1 280 px volet ouvert, 149 à 1 024 avec la barre élargie), les
+appariements de la Banque (« Libellé bancaire », 85 px), les règles proposées (« Règle », 71 px), l'échéancier d'un
+emprunt dans sa fenêtre (« Payée le », 77 px), les packs (12 px) ; la règle de CLAUDE.md les admet. (3) Le banc ne
+contrôle pas qu'une commande ne passe pas hors de vue dans un tableau qui défile : une capture le vérifie, à la main —
+une cinquième règle le ferait. (4) Safari iOS n'a pas été éprouvé ; le dépôt emploie déjà les requêtes de conteneur et
+`:has()`, que ce travail reprend. (5) Les enquêtes complémentaires — banc étendu, DOM des tests, scripts de défilement —
+sont hors dépôt et ne se rejouent pas depuis lui ; le banc versionné ne visite ni le client ni le super-administrateur.
+(6) Aucun garde ne compare les deux blocs de repli entre eux, ni ne rapproche la classe d'un tableau de ce qu'il porte :
+un tableau qui cacherait une commande sous `table-empilable-etroite` ne serait attrapé que par une mesure.

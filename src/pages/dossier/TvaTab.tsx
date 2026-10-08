@@ -666,8 +666,10 @@ export default function TvaTab({
             {ca3.neant ? (
               <p><strong>Déclaration « néant »</strong> : aucune case à remplir (cochez la case néant, 0010).</p>
             ) : (
-              <div className="table-scroll">
-                <table>
+              // Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, la colonne du montant — ce qu'on
+              // reporte sur le formulaire — sortait de la vue de quelques pixels. La carte a sa marge : les fiches n'ont pas de jeu.
+              <div className="table-scroll tableau-adaptable">
+                <table className="table-empilable-etroite table-empilable-sans-jeu">
                   <thead>
                     <tr><th>Ligne</th><th>Libellé</th><th>Code</th><th>Base hors taxe</th><th>Montant</th></tr>
                   </thead>
@@ -679,11 +681,11 @@ export default function TvaTab({
                         <tr key={`titre-${cadre}`}><td colSpan={5}><strong>{titre}</strong></td></tr>,
                         ...lignes.map((l) => (
                           <tr key={l.ligne}>
-                            <td>{l.ligne}</td>
-                            <td>{l.libelle}</td>
-                            <td className="muted">{l.code}</td>
-                            <td>{l.base ? formatMoney(ca3.cases[l.base]) : ''}</td>
-                            <td><strong>{formatMoney(ca3.cases[l.montant])}</strong></td>
+                            <td data-libelle="Ligne">{l.ligne}</td>
+                            <td data-libelle="Libellé">{l.libelle}</td>
+                            <td data-libelle="Code" className="muted">{l.code}</td>
+                            <td data-libelle="Base hors taxe">{l.base ? formatMoney(ca3.cases[l.base]) : ''}</td>
+                            <td data-libelle="Montant"><strong>{formatMoney(ca3.cases[l.montant])}</strong></td>
                           </tr>
                         )),
                       ]
@@ -712,17 +714,20 @@ export default function TvaTab({
                   {ca3.ecartees.length} pièce(s) de la période ne sont pas dans les cases ci-dessus : on ne sait pas
                   les y placer sans deviner. Corrigez-les dans Justificatifs, ou reportez-les à la main.
                 </p>
-                <div className="table-scroll">
-                  <table>
+                {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026), comme les deux tableaux d'écartées qui suivent et celui des
+                    pièces non rattachées : « Pourquoi » — une phrase — est la colonne qui dit quoi corriger, et elle passait derrière
+                    un défilement latéral. La carte a sa marge : les fiches n'ont pas de jeu. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
                     <thead><tr><th>Date</th><th>Pièce</th><th>HT</th><th>TVA</th><th>Pourquoi</th></tr></thead>
                     <tbody>
                       {ca3.ecartees.map((e) => (
                         <tr key={e.piece.id}>
-                          <td>{formatDate(e.piece.date_piece)}</td>
-                          <td>{nomPiece(e.piece)}{e.part < 1 ? ` (part payée : ${pourcentage(e.part)})` : ''}</td>
-                          <td>{formatMoney(e.piece.montant_ht)}</td>
-                          <td>{formatMoney(e.piece.montant_tva)}</td>
-                          <td>{e.detail}</td>
+                          <td data-libelle="Date">{formatDate(e.piece.date_piece)}</td>
+                          <td data-libelle="Pièce">{nomPiece(e.piece)}{e.part < 1 ? ` (part payée : ${pourcentage(e.part)})` : ''}</td>
+                          <td data-libelle="HT">{formatMoney(e.piece.montant_ht)}</td>
+                          <td data-libelle="TVA">{formatMoney(e.piece.montant_tva)}</td>
+                          <td data-libelle="Pourquoi">{e.detail}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -737,16 +742,16 @@ export default function TvaTab({
                   {ca3.releveEcartees.length} recette(s) du relevé encaissée(s) dans la période ne sont pas dans les
                   cases ci-dessus. Corrigez-les dans Banque, ou reportez-les à la main.
                 </p>
-                <div className="table-scroll">
-                  <table>
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
                     <thead><tr><th>Date</th><th>Recette</th><th>Montant</th><th>Pourquoi</th></tr></thead>
                     <tbody>
                       {ca3.releveEcartees.map((e, i) => (
                         <tr key={`${e.part.ligne.id}-${i}`}>
-                          <td>{formatDate(e.part.ligne.date)}</td>
-                          <td>{nomRecette(e.part)}</td>
-                          <td>{formatMoney(e.part.montantReleve)}</td>
-                          <td>{e.detail}</td>
+                          <td data-libelle="Date">{formatDate(e.part.ligne.date)}</td>
+                          <td data-libelle="Recette">{nomRecette(e.part)}</td>
+                          <td data-libelle="Montant">{formatMoney(e.part.montantReleve)}</td>
+                          <td data-libelle="Pourquoi">{e.detail}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -790,17 +795,17 @@ export default function TvaTab({
                   rattachée à aucun mouvement : elle se reporte à la main. Un achat payé hors du compte
                   professionnel se classe en note de frais, qui compte à sa date.
                 </p>
-                <div className="table-scroll">
-                  <table>
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
                     <thead><tr><th>Date</th><th>Pièce</th><th>TTC</th><th>TVA</th><th>Pourquoi</th></tr></thead>
                     <tbody>
                       {ca3.nonPlacees.map(({ piece, motif }) => (
                         <tr key={piece.id}>
-                          <td>{formatDate(piece.date_piece)}</td>
-                          <td>{nomPiece(piece)}</td>
-                          <td>{formatMoney(piece.montant_ttc)}</td>
-                          <td>{formatMoney(piece.montant_tva)}</td>
-                          <td>{LIBELLE_NON_PLACEE[motif]}</td>
+                          <td data-libelle="Date">{formatDate(piece.date_piece)}</td>
+                          <td data-libelle="Pièce">{nomPiece(piece)}</td>
+                          <td data-libelle="TTC">{formatMoney(piece.montant_ttc)}</td>
+                          <td data-libelle="TVA">{formatMoney(piece.montant_tva)}</td>
+                          <td data-libelle="Pourquoi">{LIBELLE_NON_PLACEE[motif]}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -812,18 +817,20 @@ export default function TvaTab({
             {ca3.retenues.length > 0 && (
               <details style={{ marginTop: 12 }}>
                 <summary>Les {ca3.retenues.length} pièce(s) retenues, ligne par ligne</summary>
-                <div className="table-scroll">
-                  <table>
+                {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, la TVA — et le HT de quelques
+                    pixels — sortaient de la vue. La carte a sa marge : les fiches n'ont pas de jeu. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
                     <thead><tr><th>Ligne</th><th>Date</th><th>Pièce</th><th>Part</th><th>HT</th><th>TVA</th></tr></thead>
                     <tbody>
                       {ca3.retenues.map((r) => (
                         <tr key={r.piece.id}>
-                          <td>{r.ligne}</td>
-                          <td>{formatDate(r.piece.date_piece)}</td>
-                          <td>{nomPiece(r.piece)}</td>
-                          <td>{pourcentage(r.part)}</td>
-                          <td>{formatMoney(r.piece.montant_ht)}</td>
-                          <td>{formatMoney(r.piece.montant_tva)}</td>
+                          <td data-libelle="Ligne">{r.ligne}</td>
+                          <td data-libelle="Date">{formatDate(r.piece.date_piece)}</td>
+                          <td data-libelle="Pièce">{nomPiece(r.piece)}</td>
+                          <td data-libelle="Part">{pourcentage(r.part)}</td>
+                          <td data-libelle="HT">{formatMoney(r.piece.montant_ht)}</td>
+                          <td data-libelle="TVA">{formatMoney(r.piece.montant_tva)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -835,20 +842,21 @@ export default function TvaTab({
             {ca3.releveRetenues.length > 0 && (
               <details style={{ marginTop: 12 }}>
                 <summary>Les {ca3.releveRetenues.length} recette(s) du relevé retenues, ligne par ligne</summary>
-                <div className="table-scroll">
-                  <table>
+                {/* Repliée en fiches, comme les pièces retenues plus haut. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
                     <thead><tr><th>Ligne</th><th>Date</th><th>Recette</th><th>Taux</th><th>HT</th><th>TVA</th></tr></thead>
                     <tbody>
                       {ca3.releveRetenues.map((r, i) => {
                         const { ht, tva } = horsTaxeEtTva(r.part.montantReleve, r.part.taux)
                         return (
                           <tr key={`${r.part.ligne.id}-${i}`}>
-                            <td>{r.ligne}</td>
-                            <td>{formatDate(r.part.ligne.date)}</td>
-                            <td>{nomRecette(r.part)}</td>
-                            <td>{r.part.taux == null ? '' : libelleTaux(r.part.taux)}</td>
-                            <td>{formatMoney(r.part.montantReleve < 0 ? -ht : ht)}</td>
-                            <td>{formatMoney(r.part.montantReleve < 0 ? -tva : tva)}</td>
+                            <td data-libelle="Ligne">{r.ligne}</td>
+                            <td data-libelle="Date">{formatDate(r.part.ligne.date)}</td>
+                            <td data-libelle="Recette">{nomRecette(r.part)}</td>
+                            <td data-libelle="Taux">{r.part.taux == null ? '' : libelleTaux(r.part.taux)}</td>
+                            <td data-libelle="HT">{formatMoney(r.part.montantReleve < 0 ? -ht : ht)}</td>
+                            <td data-libelle="TVA">{formatMoney(r.part.montantReleve < 0 ? -tva : tva)}</td>
                           </tr>
                         )
                       })}
@@ -929,6 +937,9 @@ export default function TvaTab({
         )}
       </div>
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : huit colonnes ne tiennent ni dans un téléphone ni, volet de droite
+          ouvert, dans le panneau central — l'écart, l'état du paiement et le bouton « Retirer » passaient derrière un défilement
+          latéral que rien n'annonce. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         <h3 style={{ margin: 16 }}>Déclarations déposées</h3>
         {!loading && declarations.length === 0 ? (
@@ -936,56 +947,61 @@ export default function TvaTab({
             {lectures.declarations ? 'Les déclarations déposées n’ont pas pu être lues.' : 'Aucune déclaration enregistrée pour ce dossier.'}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Période</th><th>Déposée le</th><th>Crédit reçu</th><th>TVA nette déposée</th><th>Recalculée aujourd’hui</th>
-                <th>Écart</th><th>Paiement</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparees.map(({ declaration: d, recalcul, ecart, enEcart }) => {
-                const suivi = suivis.find((s) => s.declaration.id === d.id)
-                const paiement = suivi ? etatDuPaiement(suivi) : null
-                const remboursement = suivi ? etatDuRemboursement(suivi) : null
-                const figee = estFigee(d.periode_fin, frontiere)
-                return (
-                  <tr key={d.id}>
-                    <td>{libellePeriode(d.periode_debut, d.periode_fin)}</td>
-                    <td>{d.date_declaration ? formatDate(d.date_declaration) : '—'}</td>
-                    <td>{formatMoney(d.credit_anterieur)}</td>
-                    <td>{formatMoney(d.tva_declaree)}</td>
-                    {d.cases ? (
-                      <>
-                        <td>{formatMoney(recalcul)}</td>
-                        <td>
-                          {enEcart
-                            ? <span className="badge badge-danger" title="Une pièce de la période a changé depuis le dépôt : à régulariser sur une déclaration suivante (ligne 5B si le calcul a augmenté, 2C s'il a baissé).">{formatMoney(ecart)}</span>
-                            : <span className="badge badge-ok">aucun</span>}
-                        </td>
-                      </>
-                    ) : (
-                      <td colSpan={2} className="muted">saisie à la main, avant l’ouverture</td>
-                    )}
-                    <td>
-                      {/* Sur un relevé lu en partie, ce qui reste dû serait faux : on ne le dit pas. */}
-                      {lectures.lignes ? '—' : (
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr>
+                  <th>Période</th><th>Déposée le</th><th>Crédit reçu</th><th>TVA nette déposée</th><th>Recalculée aujourd’hui</th>
+                  <th>Écart</th><th>Paiement</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparees.map(({ declaration: d, recalcul, ecart, enEcart }) => {
+                  const suivi = suivis.find((s) => s.declaration.id === d.id)
+                  const paiement = suivi ? etatDuPaiement(suivi) : null
+                  const remboursement = suivi ? etatDuRemboursement(suivi) : null
+                  const figee = estFigee(d.periode_fin, frontiere)
+                  return (
+                    <tr key={d.id}>
+                      <td data-libelle="Période">{libellePeriode(d.periode_debut, d.periode_fin)}</td>
+                      <td data-libelle="Déposée le">{d.date_declaration ? formatDate(d.date_declaration) : '—'}</td>
+                      <td data-libelle="Crédit reçu">{formatMoney(d.credit_anterieur)}</td>
+                      <td data-libelle="TVA nette déposée">{formatMoney(d.tva_declaree)}</td>
+                      {d.cases ? (
                         <>
-                          {paiement && <span className={`badge ${paiement.classe}`}>{paiement.texte}</span>}
-                          {remboursement && <> <span className={`badge ${remboursement.classe}`}>{remboursement.texte}</span></>}
+                          <td data-libelle="Recalculée aujourd’hui">{formatMoney(recalcul)}</td>
+                          <td data-libelle="Écart">
+                            {enEcart
+                              ? <span className="badge badge-danger" title="Une pièce de la période a changé depuis le dépôt : à régulariser sur une déclaration suivante (ligne 5B si le calcul a augmenté, 2C s'il a baissé).">{formatMoney(ecart)}</span>
+                              : <span className="badge badge-ok">aucun</span>}
+                          </td>
                         </>
+                      ) : (
+                        <td colSpan={2} className="muted">saisie à la main, avant l’ouverture</td>
                       )}
-                    </td>
-                    <td>
-                      {figee
-                        ? <span className="badge badge-neutral" title="Sa période tombe dans un exercice validé : elle est figée avec lui.">figée</span>
-                        : <button className="btn btn-danger btn-sm" onClick={() => retirer(d)} disabled={ecritureEnCours}>Retirer</button>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      <td data-libelle="Paiement">
+                        {/* Sur un relevé lu en partie, ce qui reste dû serait faux : on ne le dit pas. Une `div` : repliée, la
+                            cellule est une rangée flex, et chaque pastille y serait une pièce à part. */}
+                        <div>
+                          {lectures.lignes ? '—' : (
+                            <>
+                              {paiement && <span className={`badge ${paiement.classe}`}>{paiement.texte}</span>}
+                              {remboursement && <> <span className={`badge ${remboursement.classe}`}>{remboursement.texte}</span></>}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td className="td-boutons">
+                        {figee
+                          ? <span className="badge badge-neutral" title="Sa période tombe dans un exercice validé : elle est figée avec lui.">figée</span>
+                          : <button className="btn btn-danger btn-sm" onClick={() => retirer(d)} disabled={ecritureEnCours}>Retirer</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

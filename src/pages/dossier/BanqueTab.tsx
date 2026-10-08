@@ -1489,8 +1489,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               la page.
             </p>
           )}
-          <div className="table-scroll" style={{ marginTop: 12 }}>
-            <table>
+          {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, le mouvement apparié — sa date et son écart — était
+              coupé au bord, et le libellé bancaire hors de vue ; c'est lui qui dit à quoi la pièce a été appariée. La carte a sa marge. */}
+          <div className="table-scroll tableau-adaptable" style={{ marginTop: 12 }}>
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead>
                 <tr>
                   <th>Pièce</th>
@@ -1503,15 +1505,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               <tbody>
                 {certainsAValider.map((a) => (
                   <tr key={a.piece.id}>
-                    <td>{a.piece.tiers ?? a.piece.nom_fichier}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
-                    <td>{formatDate(a.piece.date_piece!)}</td>
-                    <td>
-                      {formatDate(a.ligne.date)}
-                      <span className="muted" style={{ marginLeft: 6 }}>({a.ecartJours} j)</span>
+                    <td data-libelle="Pièce">{a.piece.tiers ?? a.piece.nom_fichier}</td>
+                    <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
+                    <td data-libelle="Date pièce">{formatDate(a.piece.date_piece!)}</td>
+                    <td data-libelle="Mouvement">
+                      <div>
+                        {formatDate(a.ligne.date)}
+                        <span className="muted" style={{ marginLeft: 6 }}>({a.ecartJours} j)</span>
+                      </div>
                     </td>
-                    <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {libelleExploitable(a.ligne)}
+                    <td data-libelle="Libellé bancaire" className="muted">
+                      {/* La coupe à points de suspension est sur une `div`, pas sur la cellule : voir les mouvements proposés par les règles. */}
+                      <div style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {libelleExploitable(a.ligne)}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1528,8 +1535,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             Le montant et la date collent, mais quelque chose empêche de conclure. Ce sont les cas où
             un humain décide — et les seuls qui méritent son temps.
           </p>
-          <div className="table-scroll">
-            <table>
+          {/* Repliée en fiches, comme les pièces certaines plus haut : « Pourquoi » — ce qui empêche de conclure — est la colonne que
+              l'opérateur vient lire, et elle passait derrière un défilement latéral. */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead>
                 <tr>
                   <th>Pièce</th>
@@ -1542,12 +1551,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               <tbody>
                 {appariementsDouteux.map((a) => (
                   <tr key={`${a.piece.id}-${a.ligne.id}`}>
-                    <td>{a.piece.tiers ?? a.piece.nom_fichier}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
-                    <td>{formatDate(a.piece.date_piece!)}</td>
-                    <td style={{ color: 'var(--color-warning)' }}>{a.motif}</td>
-                    <td className="muted" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {libelleExploitable(a.ligne)}
+                    <td data-libelle="Pièce">{a.piece.tiers ?? a.piece.nom_fichier}</td>
+                    <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
+                    <td data-libelle="Date pièce">{formatDate(a.piece.date_piece!)}</td>
+                    <td data-libelle="Pourquoi" style={{ color: 'var(--color-warning)' }}>{a.motif}</td>
+                    <td data-libelle="Libellé bancaire" className="muted">
+                      <div style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {libelleExploitable(a.ligne)}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1604,8 +1615,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           {planRegles.propositions.length > 0 && (
             <details style={{ marginTop: 10 }}>
               <summary>Voir les {planRegles.propositions.length} mouvement{planRegles.propositions.length > 1 ? 's' : ''}</summary>
-              <div className="table-scroll" style={{ marginTop: 8 }}>
-                <table>
+              {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, le montant et la catégorie — ce que
+                  la règle va écrire — passaient derrière un défilement latéral. La carte a sa marge : les fiches n'ont pas de jeu. */}
+              <div className="table-scroll tableau-adaptable" style={{ marginTop: 8 }}>
+                <table className="table-empilable-etroite table-empilable-sans-jeu">
                   <thead>
                     <tr>
                       <th>Date</th>
@@ -1618,16 +1631,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                   <tbody>
                     {planRegles.propositions.map((p) => (
                       <tr key={p.ligne.id}>
-                        <td>{formatDate(p.ligne.date)}</td>
-                        <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {libelleExploitable(p.ligne)}
+                        <td data-libelle="Date">{formatDate(p.ligne.date)}</td>
+                        <td className="muted" data-libelle="Libellé bancaire">
+                          {/* La coupe à points de suspension est sur une `div` : repliée, la cellule est une rangée flex, dont
+                              le texte ne se coupe pas — alors que la `div` rétrécit à la fiche et s'y termine par « … ». */}
+                          <div style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {libelleExploitable(p.ligne)}
+                          </div>
                         </td>
-                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.ligne.montant)}</td>
-                        <td>
+                        <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.ligne.montant)}</td>
+                        <td data-libelle="Catégorie">
                           {p.categorie.libelle}
                           {p.taux != null ? ` (TVA ${libelleTaux(p.taux)})` : ''}
                         </td>
-                        <td>« {p.regle.motif} »</td>
+                        <td data-libelle="Règle">« {p.regle.motif} »</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1730,6 +1747,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           rapprochement vivent dans le panneau de détail ouvert au clic sur une ligne, pas ici : avec
           plusieurs centaines de mouvements, les répéter sur chaque ligne rendait l'écran interminable
           (voir audit ergonomie). */}
+      {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, la colonne du statut — ses pastilles disent
+          ce que le mouvement est devenu — sortait de la vue, de trois à quatre-vingt-dix pixels selon les mouvements. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -1740,117 +1759,122 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               : `Aucun mouvement bancaire${filter !== 'toutes' || moisFilter !== 'tous' ? ' dans ce filtre' : ''}.`}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Libellé</th>
-                <th>Montant</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((l, rang) => {
-                const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
-                const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(l, reglementsParLigne.get(l.id) ?? []), restesAPayer, payeesEnTrop, l.reglement_groupe)
-                const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
-                const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
-                  ? categories.find((c) => c.id === l.categorie_id) ?? null
-                  : null
-                const empruntDuMouvement = l.statut === 'rapprochee' && l.emprunt_id
-                  ? emprunts.find((e) => e.id === l.emprunt_id) ?? null
-                  : null
-                const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
-                  || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id) || idsPaiementTvaPlausible.has(l.id))
-                return (
-                  <tr
-                    key={l.id}
-                    className={`clickable${mouvementVisible && ligneOuverte?.id === l.id ? ' ligne-ouverte' : ''}`}
-                    onClick={() => ouvrirMouvement(l, rang)}
-                  >
-                    <td>{formatDate(l.date)}</td>
-                    <td>{l.libelle}</td>
-                    <td>{formatMoney(l.montant)}</td>
-                    <td>
-                      {l.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
-                      {/* Une pastille VERTE sur un mouvement qui ne désigne plus rien est une
-                          affirmation fausse, et elle est indiscernable d'un vrai rapprochement : une
-                          pièce sans tiers rend exactement le même libellé nu. Voir
-                          `mouvementRapprocheSansObjet` pour ce qui la produit. */}
-                      {!l.prelevement_personnel && mouvementRapprocheSansObjet(l) && (
-                        <span className="badge badge-danger">Rapproché sans justificatif</span>
-                      )}
-                      {/* Affecté, il n'est pas « Rapproché » d'une pièce : sa preuve est le relevé, et la
-                          pastille le dit plutôt que de laisser un « Rapproché » nu. */}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && l.categorie_id && (
-                        <span className="badge badge-ok">
-                          Affecté{categorieAffectee ? ` — ${categorieAffectee.libelle}` : ''}
-                          {assujettiTva && l.taux_tva != null ? ` · TVA ${libelleTaux(l.taux_tva)}` : ''}
-                        </span>
-                      )}
-                      {/* Rapproché d'un emprunt : l'échéance qu'il paie, ou son déblocage — pas un « Rapproché » nu. */}
-                      {l.statut === 'rapprochee' && l.emprunt_id && (
-                        <span className="badge badge-ok">
-                          {l.montant > 0 ? 'Déblocage d’emprunt' : `Échéance n° ${l.emprunt_echeance}`}
-                          {empruntDuMouvement ? ` — ${empruntDuMouvement.nom}` : ''}
-                        </span>
-                      )}
-                      {/* Ventilé : ses parts vivent à part, et la pastille en dit le nombre plutôt qu'un « Rapproché » nu. */}
-                      {l.statut === 'rapprochee' && l.ventilee && (
-                        <span className="badge badge-ok">
-                          {(partsParLigne.get(l.id)?.length ?? 0) >= 2 ? `Ventilé sur ${partsParLigne.get(l.id)!.length} comptes` : 'Ventilé'}
-                        </span>
-                      )}
-                      {/* Règle plusieurs pièces : ses parts vivent à part, et la pastille en dit le nombre — pas
-                          sur une lecture partielle des parts, où il serait faux. */}
-                      {l.statut === 'rapprochee' && l.reglement_groupe && (
-                        <span className="badge badge-ok">
-                          {!reglementsIncomplets && (reglementsParLigne.get(l.id)?.length ?? 0) >= 2
-                            ? `Règle ${reglementsParLigne.get(l.id)!.length} pièces`
-                            : 'Règle plusieurs pièces'}
-                        </span>
-                      )}
-                      {/* Écrit sur un compte de bilan : son compte, pas un « Rapproché » nu — sa preuve est le relevé. */}
-                      {l.statut === 'rapprochee' && l.compte_bilan && (
-                        <span className="badge badge-ok">
-                          Écrit au {l.compte_bilan}
-                          {libelleDuCompteDeBilan(l.compte_bilan) ? ` — ${libelleDuCompteDeBilan(l.compte_bilan)}` : ''}
-                        </span>
-                      )}
-                      {/* Le paiement d'une déclaration de TVA — ou le remboursement d'un crédit : sa période, pas un
-                          « Rapproché » nu. */}
-                      {l.statut === 'rapprochee' && l.declaration_tva_id && (
-                        <span className="badge badge-ok">
-                          {l.montant > 0 ? 'Remboursement de TVA' : 'Paiement de TVA'}
-                          {declarationPayee(l) ? ` — ${declarationPayee(l)}` : ''}
-                        </span>
-                      )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id && !mouvementRapprocheSansObjet(l) && (
-                        <span className="badge badge-ok">
-                          Rapproché
-                          {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
-                          {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
-                        </span>
-                      )}
-                      {/* Une recette écrite sans taux sur un dossier assujetti : sa TVA n'est dans aucune CA3. */}
-                      {idsRecettesSansTaux.has(l.id) && <span className="badge badge-danger">TVA à choisir</span>}
-                      {/* Un rapprochement d'échéance qui ne peut pas s'écrire : ni au FEC, ni dans la 2035 à sa date. */}
-                      {idsCotisationsRefusees.has(l.id) && <span className="badge badge-danger">Ne s’écrit pas</span>}
-                      {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
-                          écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
-                          seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
-                          pas tant qu'elles n'ont pas été générées. Jugé sur le total payé de la pièce. */}
-                      {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
-                      {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
-                        <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
-                      )}
-                      {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="tableau-adaptable">
+            <table className="table-empilable-etroite">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Libellé</th>
+                  <th>Montant</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((l, rang) => {
+                  const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
+                  const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(l, reglementsParLigne.get(l.id) ?? []), restesAPayer, payeesEnTrop, l.reglement_groupe)
+                  const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
+                  const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
+                    ? categories.find((c) => c.id === l.categorie_id) ?? null
+                    : null
+                  const empruntDuMouvement = l.statut === 'rapprochee' && l.emprunt_id
+                    ? emprunts.find((e) => e.id === l.emprunt_id) ?? null
+                    : null
+                  const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
+                    || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id) || idsPaiementTvaPlausible.has(l.id))
+                  return (
+                    <tr
+                      key={l.id}
+                      className={`clickable${mouvementVisible && ligneOuverte?.id === l.id ? ' ligne-ouverte' : ''}`}
+                      onClick={() => ouvrirMouvement(l, rang)}
+                    >
+                      <td data-libelle="Date">{formatDate(l.date)}</td>
+                      <td data-libelle="Libellé">{l.libelle}</td>
+                      <td data-libelle="Montant">{formatMoney(l.montant)}</td>
+                      <td data-libelle="Statut">
+                        {/* Une `div` : repliée, la cellule est une rangée flex, et chaque pastille y serait une pièce à part. */}
+                        <div>
+                          {l.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
+                          {/* Une pastille VERTE sur un mouvement qui ne désigne plus rien est une
+                              affirmation fausse, et elle est indiscernable d'un vrai rapprochement : une
+                              pièce sans tiers rend exactement le même libellé nu. Voir
+                              `mouvementRapprocheSansObjet` pour ce qui la produit. */}
+                          {!l.prelevement_personnel && mouvementRapprocheSansObjet(l) && (
+                            <span className="badge badge-danger">Rapproché sans justificatif</span>
+                          )}
+                          {/* Affecté, il n'est pas « Rapproché » d'une pièce : sa preuve est le relevé, et la
+                              pastille le dit plutôt que de laisser un « Rapproché » nu. */}
+                          {!l.prelevement_personnel && l.statut === 'rapprochee' && l.categorie_id && (
+                            <span className="badge badge-ok">
+                              Affecté{categorieAffectee ? ` — ${categorieAffectee.libelle}` : ''}
+                              {assujettiTva && l.taux_tva != null ? ` · TVA ${libelleTaux(l.taux_tva)}` : ''}
+                            </span>
+                          )}
+                          {/* Rapproché d'un emprunt : l'échéance qu'il paie, ou son déblocage — pas un « Rapproché » nu. */}
+                          {l.statut === 'rapprochee' && l.emprunt_id && (
+                            <span className="badge badge-ok">
+                              {l.montant > 0 ? 'Déblocage d’emprunt' : `Échéance n° ${l.emprunt_echeance}`}
+                              {empruntDuMouvement ? ` — ${empruntDuMouvement.nom}` : ''}
+                            </span>
+                          )}
+                          {/* Ventilé : ses parts vivent à part, et la pastille en dit le nombre plutôt qu'un « Rapproché » nu. */}
+                          {l.statut === 'rapprochee' && l.ventilee && (
+                            <span className="badge badge-ok">
+                              {(partsParLigne.get(l.id)?.length ?? 0) >= 2 ? `Ventilé sur ${partsParLigne.get(l.id)!.length} comptes` : 'Ventilé'}
+                            </span>
+                          )}
+                          {/* Règle plusieurs pièces : ses parts vivent à part, et la pastille en dit le nombre — pas
+                              sur une lecture partielle des parts, où il serait faux. */}
+                          {l.statut === 'rapprochee' && l.reglement_groupe && (
+                            <span className="badge badge-ok">
+                              {!reglementsIncomplets && (reglementsParLigne.get(l.id)?.length ?? 0) >= 2
+                                ? `Règle ${reglementsParLigne.get(l.id)!.length} pièces`
+                                : 'Règle plusieurs pièces'}
+                            </span>
+                          )}
+                          {/* Écrit sur un compte de bilan : son compte, pas un « Rapproché » nu — sa preuve est le relevé. */}
+                          {l.statut === 'rapprochee' && l.compte_bilan && (
+                            <span className="badge badge-ok">
+                              Écrit au {l.compte_bilan}
+                              {libelleDuCompteDeBilan(l.compte_bilan) ? ` — ${libelleDuCompteDeBilan(l.compte_bilan)}` : ''}
+                            </span>
+                          )}
+                          {/* Le paiement d'une déclaration de TVA — ou le remboursement d'un crédit : sa période, pas un
+                              « Rapproché » nu. */}
+                          {l.statut === 'rapprochee' && l.declaration_tva_id && (
+                            <span className="badge badge-ok">
+                              {l.montant > 0 ? 'Remboursement de TVA' : 'Paiement de TVA'}
+                              {declarationPayee(l) ? ` — ${declarationPayee(l)}` : ''}
+                            </span>
+                          )}
+                          {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id && !mouvementRapprocheSansObjet(l) && (
+                            <span className="badge badge-ok">
+                              Rapproché
+                              {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
+                              {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
+                            </span>
+                          )}
+                          {/* Une recette écrite sans taux sur un dossier assujetti : sa TVA n'est dans aucune CA3. */}
+                          {idsRecettesSansTaux.has(l.id) && <span className="badge badge-danger">TVA à choisir</span>}
+                          {/* Un rapprochement d'échéance qui ne peut pas s'écrire : ni au FEC, ni dans la 2035 à sa date. */}
+                          {idsCotisationsRefusees.has(l.id) && <span className="badge badge-danger">Ne s’écrit pas</span>}
+                          {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
+                              écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
+                              seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
+                              pas tant qu'elles n'ont pas été générées. Jugé sur le total payé de la pièce. */}
+                          {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
+                          {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
+                            <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
+                          )}
+                          {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -2425,13 +2449,17 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
                   return ` ${coches} solde désigné : il en faut exactement deux (ouverture et clôture) pour que la vérification soit possible.`
                 })()}
               </p>
-              <div className="table-scroll" style={{ marginBottom: 14, border: '1px solid var(--color-border)', borderRadius: 8 }}>
-                <table>
+              {/* Repliée en fiches sous 860 pixels de cadre (08/10/2026) : le libellé (180 pixels au moins), le montant et « Retirer »
+                  passaient derrière un défilement latéral, et la ligne qu'on corrige n'était jamais entière à l'écran — sur téléphone,
+                  et volet de droite ouvert dans le panneau central. Le cadre a déjà son trait : les fiches gardent le jeu de 12 pixels
+                  autour d'elles (`table-empilable-en-carte`). */}
+              <div className="table-scroll tableau-adaptable" style={{ marginBottom: 14, border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <table className="table-empilable table-empilable-en-carte">
                   <thead><tr><th>Solde</th><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>
                   <tbody>
                     {pdfRows.map((r, i) => (
                       <tr key={i} style={r.estSolde ? { opacity: 0.6 } : undefined}>
-                        <td style={{ textAlign: 'center' }}>
+                        <td data-libelle="Solde" style={{ textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={!!r.estSolde}
@@ -2439,10 +2467,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
                             onChange={(e) => updatePdfRow(i, { estSolde: e.target.checked })}
                           />
                         </td>
-                        <td><input type="date" value={r.date} onChange={(e) => updatePdfRow(i, { date: e.target.value })} style={{ width: 135 }} /></td>
-                        <td><input value={r.libelle} onChange={(e) => updatePdfRow(i, { libelle: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
-                        <td><input type="number" step="0.01" value={r.montant} onChange={(e) => updatePdfRow(i, { montant: parseFloat(e.target.value) || 0 })} style={{ width: 95 }} /></td>
-                        <td><button type="button" className="btn btn-outline btn-sm" onClick={() => removePdfRow(i)}>Retirer</button></td>
+                        <td data-libelle="Date"><input type="date" value={r.date} onChange={(e) => updatePdfRow(i, { date: e.target.value })} style={{ width: 135 }} /></td>
+                        <td data-libelle="Libellé"><input value={r.libelle} onChange={(e) => updatePdfRow(i, { libelle: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
+                        <td data-libelle="Montant"><input type="number" step="0.01" value={r.montant} onChange={(e) => updatePdfRow(i, { montant: parseFloat(e.target.value) || 0 })} style={{ width: 95 }} /></td>
+                        <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => removePdfRow(i)}>Retirer</button></td>
                       </tr>
                     ))}
                   </tbody>

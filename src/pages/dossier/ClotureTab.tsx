@@ -686,30 +686,38 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             + 'associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n\'est pas fait.'}
         {' '}Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
       </p>
-      <table>
-        <thead><tr><th>Catégorie</th><th>Poste 2035</th><th></th></tr></thead>
-        <tbody>
-          {categoriesSansPoste.map((c) => (
-            <tr key={c.id}>
-              <td>{c.libelle}</td>
-              <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
-                  placeholder="ex. Achats, Loyers, Recettes..."
-                  value={posteAffiche(c)}
-                  onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                />
-                {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
-                  <span className="badge badge-neutral">suggestion</span>
-                )}
-              </td>
-              <td>
-                <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : le champ du poste et « Enregistrer » ne tenaient pas dans un
+          téléphone ni, volet de droite ouvert, dans le panneau central, et le bouton passait derrière un défilement latéral que
+          rien n'annonce. Les cartes d'anomalie qui suivent ne se replient que sous 520 pixels de carte, quand leur montant, la
+          colonne qui dit l'écart, dépassait la carte (mouvements absents, pièces comptées à leur date de facture, amortissements
+          sans justificatif, frais de véhicule, cases « dont », case négative) : aucune n'a de commande ; les autres tiennent, mais
+          ont leur enveloppe de défilement : un nom de pièce sans espace les élargirait au-delà de la carte. */}
+      <div className="table-scroll tableau-adaptable">
+        <table className="table-empilable">
+          <thead><tr><th>Catégorie</th><th>Poste 2035</th><th></th></tr></thead>
+          <tbody>
+            {categoriesSansPoste.map((c) => (
+              <tr key={c.id}>
+                <td data-libelle="Catégorie">{c.libelle}</td>
+                <td data-libelle="Poste 2035" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
+                    placeholder="ex. Achats, Loyers, Recettes..."
+                    value={posteAffiche(c)}
+                    onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                  />
+                  {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                    <span className="badge badge-neutral">suggestion</span>
+                  )}
+                </td>
+                <td className="td-boutons">
+                  <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 
@@ -802,20 +810,22 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             Ces pièces sont validées mais n'entrent dans aucun total : leur montant manquera dans la
             déclaration tant que la cause n'est pas levée.
           </p>
-          <table>
-            <thead><tr><th>Pièce</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
-            <tbody>
-              {piecesExclues.map(({ piece: p, raison }) => (
-                <tr key={p.id}>
-                  <td>{p.tiers ?? p.nom_fichier}</td>
-                  <td className="muted">{raison}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(montantRetenu(p, assujettiTva))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Pièce</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {piecesExclues.map(({ piece: p, raison }) => (
+                  <tr key={p.id}>
+                    <td>{p.tiers ?? p.nom_fichier}</td>
+                    <td className="muted">{raison}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(montantRetenu(p, assujettiTva))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -828,17 +838,17 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             que la catégorie n'a pas de poste 2035, ou tant qu'elle n'est pas revenue sur un compte de
             charge ou de produit.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Date</th><th>Mouvement</th><th>Catégorie</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
               <tbody>
                 {mouvementsExclus.map(({ mouvement: m, raison }) => (
                   <tr key={`${m.origine}|${m.ligne.id}|${m.libelle}`}>
-                    <td>{formatDate(m.ligne.date)}</td>
-                    <td>{m.ligne.libelle}</td>
-                    <td>{m.libelle}</td>
-                    <td className="muted">{raison}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.montantReleve)}</td>
+                    <td data-libelle="Date">{formatDate(m.ligne.date)}</td>
+                    <td data-libelle="Mouvement">{m.ligne.libelle}</td>
+                    <td data-libelle="Catégorie">{m.libelle}</td>
+                    <td data-libelle="Motif" className="muted">{raison}</td>
+                    <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.montantReleve)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -868,17 +878,19 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           </p>
           <details>
             <summary>Voir les échéances</summary>
-            <div className="table-scroll">
-              <table>
+            {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, les intérêts prévus — ce que la 2035
+                ne compte pas — sortaient de la vue. La carte a sa marge : les fiches n'ont pas de jeu. */}
+            <div className="table-scroll tableau-adaptable">
+              <table className="table-empilable-etroite table-empilable-sans-jeu">
                 <thead><tr><th>Exercice</th><th>Emprunt</th><th>Échéance</th><th>Date prévue</th><th style={{ textAlign: 'right' }}>Intérêts prévus</th></tr></thead>
                 <tbody>
                   {echeancesManquantes.map(({ annee, emprunt, echeance }) => (
                     <tr key={`${annee}-${emprunt.id}-${echeance.numero}`}>
-                      <td>{annee}</td>
-                      <td>{emprunt.nom}</td>
-                      <td>n° {echeance.numero}</td>
-                      <td>{formatDate(echeance.date)}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(echeance.interets)}</td>
+                      <td data-libelle="Exercice">{annee}</td>
+                      <td data-libelle="Emprunt">{emprunt.nom}</td>
+                      <td data-libelle="Échéance">n° {echeance.numero}</td>
+                      <td data-libelle="Date prévue">{formatDate(echeance.date)}</td>
+                      <td data-libelle="Intérêts prévus" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(echeance.interets)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -899,16 +911,16 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           </p>
           <details>
             <summary>Voir les pièces</summary>
-            <div className="table-scroll">
-              <table>
+            <div className="table-scroll tableau-adaptable">
+              <table className="table-empilable-etroite table-empilable-sans-jeu">
                 <thead><tr><th>Exercice</th><th>Pièce</th><th>Date de facture</th><th style={{ textAlign: 'right' }}>Montant compté</th></tr></thead>
                 <tbody>
                   {sansPaiement.map(({ annee, piece: p, montant }) => (
                     <tr key={`${annee}-${p.id}`}>
-                      <td>{annee}</td>
-                      <td>{p.tiers ?? p.nom_fichier}</td>
-                      <td>{formatDate(p.date_piece)}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(montant)}</td>
+                      <td data-libelle="Exercice">{annee}</td>
+                      <td data-libelle="Pièce">{p.tiers ?? p.nom_fichier}</td>
+                      <td data-libelle="Date de facture">{formatDate(p.date_piece)}</td>
+                      <td data-libelle="Montant compté" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(montant)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -956,24 +968,26 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             valide pas tant que c'est le cas. Donnez à leur catégorie un poste du formulaire : la liste
             propose ses libellés.
           </p>
-          <table>
-            <thead><tr><th>Poste</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
-            <tbody>
-              {postesSansCase.map((p) => (
-                <tr key={`${p.ligne.nature}:${p.ligne.poste}`}>
-                  <td>{p.ligne.poste}</td>
-                  <td className="muted">
-                    {p.raison === 'case du mauvais sens'
-                      ? `case ${p.codeRefuse} incompatible avec une ${p.ligne.nature}`
-                      : p.raison}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(p.ligne.montant)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Poste</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {postesSansCase.map((p) => (
+                  <tr key={`${p.ligne.nature}:${p.ligne.poste}`}>
+                    <td>{p.ligne.poste}</td>
+                    <td className="muted">
+                      {p.raison === 'case du mauvais sens'
+                        ? `case ${p.codeRefuse} incompatible avec une ${p.ligne.nature}`
+                        : p.raison}
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(p.ligne.montant)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {categoriesSansCase.length > 0 && (
             <div className="table-scroll tableau-adaptable" style={{ marginTop: 14 }}>
               <table className="table-formulaire table-empilable">
@@ -1100,26 +1114,28 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             part quand même en case CH. Retrouve le justificatif, ou retire l’immobilisation depuis
             l’onglet Immobilisations avant de déposer cette déclaration.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th>
-                <th>Bien</th>
-                <th>Acquisition</th>
-                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
-              </tr>
-            </thead>
-            <tbody>
-              {amortissementsSansJustificatif.map(({ annee, immo, dotation }) => (
-                <tr key={`${annee}-${immo.id}`}>
-                  <td>{annee}</td>
-                  <td>{immo.libelle}</td>
-                  <td>{formatDate(immo.date_acquisition)}</td>
-                  <td style={{ textAlign: 'right' }}>{formatMoney(dotation)}</td>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead>
+                <tr>
+                  <th>Exercice</th>
+                  <th>Bien</th>
+                  <th>Acquisition</th>
+                  <th style={{ textAlign: 'right' }}>Dotation comptée</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {amortissementsSansJustificatif.map(({ annee, immo, dotation }) => (
+                  <tr key={`${annee}-${immo.id}`}>
+                    <td data-libelle="Exercice">{annee}</td>
+                    <td data-libelle="Bien">{immo.libelle}</td>
+                    <td data-libelle="Acquisition">{formatDate(immo.date_acquisition)}</td>
+                    <td data-libelle="Dotation comptée" style={{ textAlign: 'right' }}>{formatMoney(dotation)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1133,30 +1149,32 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             à aucun poste de charges. Il faut retirer l'un des deux — le choix vous revient, il engage
             l'exercice entier.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th>
-                <th>Poste au réel</th>
-                <th style={{ textAlign: 'right' }}>Montant au réel</th>
-                <th style={{ textAlign: 'right' }}>Barème kilométrique</th>
-              </tr>
-            </thead>
-            <tbody>
-              {doublonsVehicules.map(({ annee, doublon }) => (
-                <tr key={annee}>
-                  <td>{annee}</td>
-                  <td>{doublon.postes.map((p) => p.poste).join(', ')}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                    {formatMoney(doublon.totalPostes)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(doublon.montantIndemnites)}
-                  </td>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead>
+                <tr>
+                  <th>Exercice</th>
+                  <th>Poste au réel</th>
+                  <th style={{ textAlign: 'right' }}>Montant au réel</th>
+                  <th style={{ textAlign: 'right' }}>Barème kilométrique</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {doublonsVehicules.map(({ annee, doublon }) => (
+                  <tr key={annee}>
+                    <td data-libelle="Exercice">{annee}</td>
+                    <td data-libelle="Poste au réel">{doublon.postes.map((p) => p.poste).join(', ')}</td>
+                    <td data-libelle="Montant au réel" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                      {formatMoney(doublon.totalPostes)}
+                    </td>
+                    <td data-libelle="Barème kilométrique" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(doublon.montantIndemnites)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1176,24 +1194,26 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             dotation de ce matériel de transport : réintégrez-la sur la déclaration, ou retirez le bien du registre s’il
             n’est pas le véhicule du cadre 7. L’application ne le fait pas à votre place.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th><th>Bien</th><th style={{ textAlign: 'right' }}>Dotation comptée en CH</th>
-              </tr>
-            </thead>
-            <tbody>
-              {amortissementsVehicules.map(({ annee, immobilisation, dotation }) => (
-                <tr key={`${annee}-${immobilisation.id}`}>
-                  <td>{annee}</td>
-                  <td>{immobilisation.libelle}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                    {formatMoney(dotation)}
-                  </td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Exercice</th><th>Bien</th><th style={{ textAlign: 'right' }}>Dotation comptée en CH</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {amortissementsVehicules.map(({ annee, immobilisation, dotation }) => (
+                  <tr key={`${annee}-${immobilisation.id}`}>
+                    <td>{annee}</td>
+                    <td>{immobilisation.libelle}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                      {formatMoney(dotation)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1204,29 +1224,31 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             Ces véhicules sont déclarés et leurs kilomètres saisis, mais l'indemnité n'a pas pu être
             calculée : leur déduction manque ligne 23 du formulaire, et rien sur le PDF ne le dirait.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th><th>Véhicule</th><th style={{ textAlign: 'right' }}>Km pro</th><th>Motif</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vehiculesNonCalcules.map((n, i) => (
-                <tr key={`${n.annee}-${i}`}>
-                  <td>{n.annee}</td>
-                  <td>
-                    {n.vehicule.type}
-                    {n.vehicule.type !== 'cyclomoteur' && ` ${n.vehicule.puissanceFiscale} CV`}
-                    {n.vehicule.electrique && ' électrique'}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {n.vehicule.kmProfessionnel.toLocaleString('fr-FR')}
-                  </td>
-                  <td className="muted">{n.motif}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Exercice</th><th>Véhicule</th><th style={{ textAlign: 'right' }}>Km pro</th><th>Motif</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {vehiculesNonCalcules.map((n, i) => (
+                  <tr key={`${n.annee}-${i}`}>
+                    <td>{n.annee}</td>
+                    <td>
+                      {n.vehicule.type}
+                      {n.vehicule.type !== 'cyclomoteur' && ` ${n.vehicule.puissanceFiscale} CV`}
+                      {n.vehicule.electrique && ' électrique'}
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {n.vehicule.kmProfessionnel.toLocaleString('fr-FR')}
+                    </td>
+                    <td className="muted">{n.motif}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1238,33 +1260,37 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             peut donc pas la dépasser. Les deux cases sont éloignées sur le formulaire, c'est le genre
             d'écart qu'une relecture ne rapproche pas toute seule.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Case porteuse</th>
-                <th>Cases « dont »</th>
-                <th style={{ textAlign: 'right' }}>Total « dont »</th>
-                <th style={{ textAlign: 'right' }}>Porteuse</th>
-              </tr>
-            </thead>
-            <tbody>
-              {incoherences.map((i) => (
-                <tr key={i.porteuse.code}>
-                  <td>
-                    <span style={{ fontFamily: 'monospace' }}>{i.porteuse.code}</span>
-                    <span className="muted" style={{ marginLeft: 8 }}>{i.porteuse.libelle}</span>
-                  </td>
-                  <td style={{ fontFamily: 'monospace' }}>{i.sousCases.map((c) => c.code).join(' + ')}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                    {formatMoney(i.totalSousCases)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(i.montantPorteuse)}
-                  </td>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead>
+                <tr>
+                  <th>Case porteuse</th>
+                  <th>Cases « dont »</th>
+                  <th style={{ textAlign: 'right' }}>Total « dont »</th>
+                  <th style={{ textAlign: 'right' }}>Porteuse</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {incoherences.map((i) => (
+                  <tr key={i.porteuse.code}>
+                    <td data-libelle="Case porteuse">
+                      <div>
+                        <span style={{ fontFamily: 'monospace' }}>{i.porteuse.code}</span>
+                        <span className="muted" style={{ marginLeft: 8 }}>{i.porteuse.libelle}</span>
+                      </div>
+                    </td>
+                    <td data-libelle="Cases « dont »" style={{ fontFamily: 'monospace' }}>{i.sousCases.map((c) => c.code).join(' + ')}</td>
+                    <td data-libelle="Total « dont »" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                      {formatMoney(i.totalSousCases)}
+                    </td>
+                    <td data-libelle="Porteuse" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(i.montantPorteuse)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1277,19 +1303,21 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             rattache le plus souvent à une dépense d’un exercice antérieur, et sa place est à arbitrer avant de
             signer. Le calcul ne le retourne plus en dépense — il le laissait compter deux fois à l’envers.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Exercice</th><th>Case</th><th>Postes</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
               <tbody>
                 {negatives.map((n) => (
                   <tr key={`${n.annee}-${n.case.code}`}>
-                    <td>{n.annee}</td>
-                    <td>
-                      <span style={{ fontFamily: 'monospace' }}>{n.case.code}</span>
-                      <span className="muted" style={{ marginLeft: 8 }}>{n.case.libelle}</span>
+                    <td data-libelle="Exercice">{n.annee}</td>
+                    <td data-libelle="Case">
+                      <div>
+                        <span style={{ fontFamily: 'monospace' }}>{n.case.code}</span>
+                        <span className="muted" style={{ marginLeft: 8 }}>{n.case.libelle}</span>
+                      </div>
                     </td>
-                    <td>{n.postes.join(', ')}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>{formatMoney(n.montant)}</td>
+                    <td data-libelle="Postes">{n.postes.join(', ')}</td>
+                    <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>{formatMoney(n.montant)}</td>
                   </tr>
                 ))}
               </tbody>

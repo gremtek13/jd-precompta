@@ -408,6 +408,10 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
       {error && <p className="error-text">{error}</p>}
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : la catégorie et les deux boutons de chaque document —
+          « C'est une facture », « Supprimer » — passaient derrière un défilement latéral, que le nom d'un fichier sans espace (rien
+          à couper) allongeait encore : sur téléphone, et volet de droite ouvert dans le panneau central. Les colonnes masquées sur
+          téléphone le restent. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -416,87 +420,92 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             {recherche.trim() ? `Aucun document ne correspond à « ${recherche.trim()} ».` : 'Aucun document.'}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th className="col-checkbox"></th>
-                <th>Fichier</th>
-                <th>Catégorie</th>
-                <th className="hide-mobile">Sous-dossier</th>
-                <th className="hide-mobile">Ajouté le</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((d) => (
-                <Fragment key={d.id}>
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
                 <tr>
-                  <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
-                  </td>
-                  <td>
-                    <a href="#" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
-                    {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
-                    {doublonParDocument.has(d.id) && (
-                      <span
-                        className="badge badge-danger"
-                        style={{ marginLeft: 8, fontSize: '0.7rem' }}
-                        title={`${doublonParDocument.get(d.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
-                      >
-                        Doublon de contenu
-                      </span>
-                    )}
-                    {avecTexteOcr.has(d.id) && (
-                      <button
-                        type="button"
-                        className="lien-texte-lu"
-                        onClick={(e) => { e.preventDefault(); basculerTexteOcr(d.id) }}
-                      >
-                        {ocrOuvert?.documentId === d.id ? '▾ texte lu' : '▸ texte lu'}
-                      </button>
-                    )}
-                  </td>
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <select
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
-                      value={d.categorie}
-                      onChange={(e) => changerCategorie(d, e.target.value as CategorieDocument)}
-                    >
-                      {(Object.keys(LABEL_CATEGORIE) as CategorieDocument[]).map((c) => (
-                        <option key={c} value={c}>{LABEL_CATEGORIE[c]}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="hide-mobile">{sousDossierLabel(d.sous_dossier_id)}</td>
-                  <td className="hide-mobile">{formatDate(d.created_at)}</td>
-                  <td className="td-actions" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-outline btn-sm" onClick={() => convertirEnPiece(d)}>C'est une facture</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
-                  </td>
+                  <th className="col-checkbox"></th>
+                  <th>Fichier</th>
+                  <th>Catégorie</th>
+                  <th className="hide-mobile">Sous-dossier</th>
+                  <th className="hide-mobile">Ajouté le</th>
+                  <th></th>
                 </tr>
-                {ocrOuvert?.documentId === d.id && (
+              </thead>
+              <tbody>
+                {filtered.map((d) => (
+                  <Fragment key={d.id}>
                   <tr>
-                    <td colSpan={6} style={{ background: 'var(--color-surface-2)' }}>
-                      <div className="texte-lu">
-                        <div className="texte-lu-entete">
-                          <strong>Texte lu sur le document</strong>
-                          <span className="muted">
-                            Tel que la reconnaissance automatique l'a lu, sans correction. Sur un
-                            relevé SNIR ou un appel de cotisation, c'est ce qui permet de retrouver un
-                            montant sans rouvrir le PDF.
+                    <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
+                    </td>
+                    <td data-libelle="Fichier">
+                      {/* Une `div` : repliée, la cellule est une rangée flex, et chaque enfant direct y serait une pièce à part. */}
+                      <div>
+                        <a href="#" className="nom-fichier" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
+                        {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
+                        {doublonParDocument.has(d.id) && (
+                          <span
+                            className="badge badge-danger"
+                            style={{ marginLeft: 8, fontSize: '0.7rem' }}
+                            title={`${doublonParDocument.get(d.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
+                          >
+                            Doublon de contenu
                           </span>
-                        </div>
-                        {ocrOuvert.texte === null
-                          ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
-                          : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+                        )}
+                        {avecTexteOcr.has(d.id) && (
+                          <button
+                            type="button"
+                            className="lien-texte-lu"
+                            onClick={(e) => { e.preventDefault(); basculerTexteOcr(d.id) }}
+                          >
+                            {ocrOuvert?.documentId === d.id ? '▾ texte lu' : '▸ texte lu'}
+                          </button>
+                        )}
                       </div>
                     </td>
+                    <td data-libelle="Catégorie" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <select
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
+                        value={d.categorie}
+                        onChange={(e) => changerCategorie(d, e.target.value as CategorieDocument)}
+                      >
+                        {(Object.keys(LABEL_CATEGORIE) as CategorieDocument[]).map((c) => (
+                          <option key={c} value={c}>{LABEL_CATEGORIE[c]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="hide-mobile" data-libelle="Sous-dossier">{sousDossierLabel(d.sous_dossier_id)}</td>
+                    <td className="hide-mobile" data-libelle="Ajouté le">{formatDate(d.created_at)}</td>
+                    <td className="td-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="btn btn-outline btn-sm" onClick={() => convertirEnPiece(d)}>C'est une facture</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
+                    </td>
                   </tr>
-                )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                  {ocrOuvert?.documentId === d.id && (
+                    <tr>
+                      <td colSpan={6} style={{ background: 'var(--color-surface-2)' }}>
+                        <div className="texte-lu">
+                          <div className="texte-lu-entete">
+                            <strong>Texte lu sur le document</strong>
+                            <span className="muted">
+                              Tel que la reconnaissance automatique l'a lu, sans correction. Sur un
+                              relevé SNIR ou un appel de cotisation, c'est ce qui permet de retrouver un
+                              montant sans rouvrir le PDF.
+                            </span>
+                          </div>
+                          {ocrOuvert.texte === null
+                            ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
+                            : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

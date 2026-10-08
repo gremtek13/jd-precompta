@@ -492,24 +492,26 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
             d'une section estimée du document (pas encore un appel définitif) — remplacée automatiquement
             si tu déposes plus tard l'appel définitif pour la même date.
           </p>
-          <table>
-            <thead><tr><th>Échéance</th><th>Montant appelé</th><th>Statut</th></tr></thead>
-            <tbody>
-              {echeancesProposees.map((e, i) => (
-                <tr key={i}>
-                  <td>{formatDate(e.date)}</td>
-                  <td>{formatMoney(e.montant)}</td>
-                  <td>
-                    {dateFigee(e.date, anneesValidees)
-                      ? <span className="muted" title={`${dateFigee(e.date, anneesValidees)} : une échéance ne s’y ajoute plus.`}>Exercice validé</span>
-                      : e.previsionnel
-                        ? <span className="badge badge-warning">Prévisionnel</span>
-                        : <span className="badge badge-ok">Définitif</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Échéance</th><th>Montant appelé</th><th>Statut</th></tr></thead>
+              <tbody>
+                {echeancesProposees.map((e, i) => (
+                  <tr key={i}>
+                    <td>{formatDate(e.date)}</td>
+                    <td>{formatMoney(e.montant)}</td>
+                    <td>
+                      {dateFigee(e.date, anneesValidees)
+                        ? <span className="muted" title={`${dateFigee(e.date, anneesValidees)} : une échéance ne s’y ajoute plus.`}>Exercice validé</span>
+                        : e.previsionnel
+                          ? <span className="badge badge-warning">Prévisionnel</span>
+                          : <span className="badge badge-ok">Définitif</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <button
               className="btn btn-primary btn-sm"
@@ -547,7 +549,7 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             {documentsNonRattaches.map((d) => (
               <li key={d.id}>
-                <a href="#" onClick={(e) => { e.preventDefault(); voirDocument(d.storage_path) }}>{d.nom_fichier}</a>
+                <a href="#" className="nom-fichier" onClick={(e) => { e.preventDefault(); voirDocument(d.storage_path) }}>{d.nom_fichier}</a>
               </li>
             ))}
           </ul>
@@ -617,6 +619,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
         />
       </div>
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : huit colonnes, dont le paiement, la pièce jointe et le bouton
+          « Retirer », ne tiennent ni dans un téléphone ni, volet de droite ouvert, dans le panneau central — « Retirer » passait derrière
+          un défilement latéral que rien n'annonce, et le choix de la pièce jointe, large comme son nom de fichier, élargissait la ligne.
+          `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -627,107 +633,117 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
               : "Aucune échéance enregistrée pour l'instant."}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Échéance</th>
-                <th>Appelé</th>
-                <th>Versé</th>
-                <th>dont CSG-CRDS</th>
-                <th>CSG déductible</th>
-                <th>Paiement</th>
-                <th>Pièce jointe</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {cotisationsAffichees.map((c) => {
-                const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
-                const documentsDisponibles = documentsNonRattaches
-                const paiement = paiementDe.get(c.id)
-                const refus = refuses.get(c.id)
-                const verse = verseDe(c)
-                const figee = figeeDe(c)
-                return (
-                  <tr key={c.id}>
-                    <td>
-                      {formatDate(c.echeance)}
-                      {c.previsionnel && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Prévisionnel</span>}
-                    </td>
-                    <td>{formatMoney(c.montant_appele)}</td>
-                    <td>
-                      {verse == null
-                        ? '—'
-                        : c.montant_verse != null
-                          ? formatMoney(verse)
-                          // Le montant du mouvement qui la paie, faute de versement saisi : dit d'où il vient.
-                          : <>{formatMoney(verse)} <span className="muted">(relevé)</span></>}
-                    </td>
-                    <td>{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
-                    <td>{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
-                    <td>
-                      {/* Sur une lecture partielle du relevé, on ne sait pas : on ne dit rien plutôt que
-                          d'annoncer « — » sur une échéance dont le paiement n'a pas été lu. */}
-                      {paiementsIncomplets || !paiement
-                        ? <span className="muted">—</span>
-                        : (
-                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                            <span>{paiement.montant > 0 ? 'Remboursée' : 'Prélevée'} le {formatDate(paiement.date)}</span>
-                            {figee
-                              // Figée : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
-                              ? refus
-                                ? <span className="muted" title={refus}>Ne s’écrit pas</span>
-                                : ecrituresIncompletes
-                                  ? null
-                                  : idsSansEcritureJuste.has(c.id)
-                                    ? (
-                                      <span className="muted" title={`${figee} : aucune écriture ne s’y passe plus.`}>
-                                        {lignesEcrites.has(paiement.id) ? 'Écriture différente' : 'Sans écriture'}
-                                      </span>
-                                    )
-                                    : <span className="badge badge-ok">Écrite</span>
-                              : refus
-                                ? <span className="badge badge-danger" title={refus}>Ne s’écrit pas</span>
-                                : ecrituresIncompletes
-                                  ? null
-                                  : idsSansEcritureJuste.has(c.id)
-                                    ? <span className="badge badge-warning">{lignesEcrites.has(paiement.id) ? 'À réécrire' : 'Sans écriture'}</span>
-                                    : <span className="badge badge-ok">Écrite</span>}
-                            {refus && !figee && <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{refus} Annule ce rapprochement dans l’onglet Banque.</span>}
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr>
+                  <th>Échéance</th>
+                  <th>Appelé</th>
+                  <th>Versé</th>
+                  <th>dont CSG-CRDS</th>
+                  <th>CSG déductible</th>
+                  <th>Paiement</th>
+                  <th>Pièce jointe</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cotisationsAffichees.map((c) => {
+                  const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
+                  const documentsDisponibles = documentsNonRattaches
+                  const paiement = paiementDe.get(c.id)
+                  const refus = refuses.get(c.id)
+                  const verse = verseDe(c)
+                  const figee = figeeDe(c)
+                  return (
+                    <tr key={c.id}>
+                      {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et chaque
+                          enfant direct y serait une pièce à part. */}
+                      <td data-libelle="Échéance">
+                        <div>
+                          {formatDate(c.echeance)}
+                          {c.previsionnel && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Prévisionnel</span>}
+                        </div>
+                      </td>
+                      <td data-libelle="Appelé">{formatMoney(c.montant_appele)}</td>
+                      <td data-libelle="Versé">
+                        <div>
+                          {verse == null
+                            ? '—'
+                            : c.montant_verse != null
+                              ? formatMoney(verse)
+                              // Le montant du mouvement qui la paie, faute de versement saisi : dit d'où il vient.
+                              : <>{formatMoney(verse)} <span className="muted">(relevé)</span></>}
+                        </div>
+                      </td>
+                      <td data-libelle="dont CSG-CRDS">{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
+                      <td data-libelle="CSG déductible">{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
+                      <td data-libelle="Paiement">
+                        {/* Sur une lecture partielle du relevé, on ne sait pas : on ne dit rien plutôt que
+                            d'annoncer « — » sur une échéance dont le paiement n'a pas été lu. */}
+                        {paiementsIncomplets || !paiement
+                          ? <span className="muted">—</span>
+                          : (
+                            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                              <span>{paiement.montant > 0 ? 'Remboursée' : 'Prélevée'} le {formatDate(paiement.date)}</span>
+                              {figee
+                                // Figée : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
+                                ? refus
+                                  ? <span className="muted" title={refus}>Ne s’écrit pas</span>
+                                  : ecrituresIncompletes
+                                    ? null
+                                    : idsSansEcritureJuste.has(c.id)
+                                      ? (
+                                        <span className="muted" title={`${figee} : aucune écriture ne s’y passe plus.`}>
+                                          {lignesEcrites.has(paiement.id) ? 'Écriture différente' : 'Sans écriture'}
+                                        </span>
+                                      )
+                                      : <span className="badge badge-ok">Écrite</span>
+                                : refus
+                                  ? <span className="badge badge-danger" title={refus}>Ne s’écrit pas</span>
+                                  : ecrituresIncompletes
+                                    ? null
+                                    : idsSansEcritureJuste.has(c.id)
+                                      ? <span className="badge badge-warning">{lignesEcrites.has(paiement.id) ? 'À réécrire' : 'Sans écriture'}</span>
+                                      : <span className="badge badge-ok">Écrite</span>}
+                              {refus && !figee && <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{refus} Annule ce rapprochement dans l’onglet Banque.</span>}
+                            </span>
+                          )}
+                      </td>
+                      <td data-libelle="Pièce jointe" onClick={(e) => e.stopPropagation()}>
+                        {documentAttache ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <a href="#" className="nom-fichier" onClick={(e) => { e.preventDefault(); voirDocument(documentAttache.storage_path) }}>
+                              {documentAttache.nom_fichier}
+                            </a>
+                            <button className="btn btn-outline btn-sm" onClick={() => detacherDocument(documentAttache.id)}>Détacher</button>
                           </span>
+                        ) : documentsDisponibles.length > 0 ? (
+                          <select
+                            // 200 pixels au plus : un `select` prend la largeur de son option la plus longue — un nom de fichier de 53
+                            // caractères, 480 pixels —, et le tableau, plus large que sa carte, passait « Retirer » hors de vue.
+                            style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', maxWidth: 200 }}
+                            defaultValue=""
+                            onChange={(e) => attacherDocument(c.id, e.target.value)}
+                          >
+                            <option value="" disabled>Attacher…</option>
+                            {documentsDisponibles.map((d) => <option key={d.id} value={d.id}>{d.nom_fichier}</option>)}
+                          </select>
+                        ) : (
+                          <span className="muted">—</span>
                         )}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {documentAttache ? (
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <a href="#" onClick={(e) => { e.preventDefault(); voirDocument(documentAttache.storage_path) }}>
-                            {documentAttache.nom_fichier}
-                          </a>
-                          <button className="btn btn-outline btn-sm" onClick={() => detacherDocument(documentAttache.id)}>Détacher</button>
-                        </span>
-                      ) : documentsDisponibles.length > 0 ? (
-                        <select
-                          style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
-                          defaultValue=""
-                          onChange={(e) => attacherDocument(c.id, e.target.value)}
-                        >
-                          <option value="" disabled>Attacher…</option>
-                          {documentsDisponibles.map((d) => <option key={d.id} value={d.id}>{d.nom_fichier}</option>)}
-                        </select>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {figee
-                        ? <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
-                        : <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="td-boutons" onClick={(e) => e.stopPropagation()}>
+                        {figee
+                          ? <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
+                          : <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>
