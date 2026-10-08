@@ -35,6 +35,10 @@ export interface Dossier {
   // L'exonération du dossier, dans une liste fermée. Permise à un dossier exonéré, et à un dossier
   // redevable dont une partie de l'activité est exonérée ; nulle ailleurs — la base le refuse.
   article_exoneration: ArticleExoneration | null
+  // Un dossier en franchise ou exonéré qui a un numéro de TVA intracommunautaire (décision du cabinet du
+  // 08/10/2026) : le numéro se calcule de son SIREN, comme celui d'un redevable, et ses factures sans TVA
+  // peuvent partir par une plateforme (règle G1.47 de la DGFiP). Faux sur tout autre statut — la base le refuse.
+  numero_tva_attribue: boolean
   // Le régime de TVA d'un dossier assujetti, que l'onglet TVA lit pour préparer la CA3 (voir
   // lib/declarationTva.ts). Trimestrielle par défaut : à partir de 2027 le régime simplifié disparaît
   // et c'est la périodicité de droit sous 1 000 000 € de chiffre d'affaires. `tva_sur_debits` est

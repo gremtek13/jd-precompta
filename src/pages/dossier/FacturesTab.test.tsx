@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES } from '../../test/factures'
+import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
@@ -29,6 +30,14 @@ const faux = vi.hoisted(() => ({
   // Les transmissions du dossier (ligne 28.5, étape c4), et le refus de leur lecture, à part de celui des factures.
   transmissions: [] as TransmissionFacture[],
   refusTransmissions: null as string | null,
+}))
+
+// La fenêtre de transmission a ses propres tests (TransmissionFactureModal.test.tsx) : doublée ici pour montrer ce que
+// l'onglet lui PASSE — le statut de TVA du dossier et la case de son numéro, dont elle tire ce qui empêche de partir.
+vi.mock('./TransmissionFactureModal', () => ({
+  default: ({ facture, statutTva, numeroTvaAttribue }: { facture: { numero: string | null }; statutTva: string | null; numeroTvaAttribue: boolean }) => (
+    <p>Transmettre {facture.numero} — {statutTva ?? 'à préciser'} — {numeroTvaAttribue ? 'numéro de TVA' : 'sans numéro de TVA'}</p>
+  ),
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -98,11 +107,12 @@ function poser(factures: FactureEmise[]) {
   faux.refusTransmissions = null
 }
 
-function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null) {
+function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
   return render(
     <FacturesTab
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
-      dossierAdresse={null} statutTva={statutTva} articleExoneration={articleExoneration} tvaSurDebits={false} onAdresseUpdated={() => {}}
+      dossierAdresse={null} statutTva={statutTva} articleExoneration={articleExoneration} numeroTvaAttribue={numeroTvaAttribue}
+      tvaSurDebits={false} onAdresseUpdated={() => {}}
     />,
   )
 }
@@ -287,6 +297,46 @@ describe('FacturesTab — la facture neuve reçoit le statut de TVA du dossier',
     fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle facture' }))
     const taux = document.querySelectorAll('tbody tr')[0].querySelectorAll('input')[3] as HTMLInputElement
     expect(taux.value).toBe('20')
+  })
+})
+
+// LA CASE DU NUMÉRO DE TVA (décision du cabinet du 08/10/2026) : l'onglet la passe au formulaire, à l'aperçu et à la
+// fenêtre de transmission — chacun en tire ce que la facture d'un dossier en franchise ou exonéré peut porter.
+describe('FacturesTab — la case du numéro de TVA du dossier', () => {
+  const sansTva = () => facture({ emetteur_siret: SIRET_VENDEUR, montant_tva: 0, montant_ttc: 1000 })
+
+  it('l’aperçu imprime le numéro d’un dossier en franchise qui a coché sa case, et aucun sans elle', async () => {
+    poser([sansTva()])
+    const { unmount } = monter('franchise', null, true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aperçu' }))
+    expect(await screen.findByText(`N° TVA intracommunautaire ${TVA_VENDEUR}`)).toBeTruthy()
+    unmount()
+
+    poser([sansTva()])
+    monter('franchise', null, false)
+    fireEvent.click(await screen.findByRole('button', { name: 'Aperçu' }))
+    await screen.findByRole('button', { name: 'Imprimer / Enregistrer en PDF' })
+    expect(screen.queryByText(/N° TVA intracommunautaire/)).toBeNull()
+  })
+
+  it('la fenêtre de transmission reçoit le statut et la case', async () => {
+    poser([sansTva()])
+    monter('franchise', null, true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Transmettre' }))
+    expect(screen.getByText('Transmettre F2026-0001 — franchise — numéro de TVA')).toBeTruthy()
+  })
+
+  it('le formulaire d’une facture neuve la reçoit : sans elle, la règle G1.47 se dit avant la validation', async () => {
+    for (const [numero, attendu] of [[false, 1], [true, 0]] as const) {
+      poser([])
+      const { unmount } = monter('franchise', null, numero)
+      fireEvent.click(await screen.findByRole('button', { name: '+ Nouvelle facture' }))
+      const champs = document.querySelectorAll('tbody tr')[0].querySelectorAll('input')
+      fireEvent.change(champs[0], { target: { value: 'Séance de coaching' } })
+      fireEvent.change(champs[2], { target: { value: '60' } })
+      expect(screen.queryAllByText(/sa case se coche dans l’onglet TVA du dossier/), String(numero)).toHaveLength(attendu)
+      unmount()
+    }
   })
 })
 

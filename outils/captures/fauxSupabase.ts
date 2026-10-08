@@ -65,9 +65,11 @@ const dossiers: Ligne[] = [
   // Le statut de TVA fait foi et le booléen en est déduit (ligne 28.5) : la migration a rendu redevable
   // tout dossier assujetti, et laissé les autres à préciser. Le cabinet infirmier a depuis reçu le sien —
   // exonéré, ses soins (art. 261, 4, 1°) —, Marc Petit est en franchise en base, les autres restent à préciser.
+  // Marc Petit a un numéro de TVA intracommunautaire (la case de l'onglet TVA) ; le cabinet infirmier n'en a pas.
   assujetti_tva: id === 'd7' || id === 'd8',
   statut_tva: id === 'd7' || id === 'd8' ? 'redevable' : id === 'd1' ? 'exonere' : id === 'd3' ? 'franchise' : null,
   article_exoneration: id === 'd1' ? 'cgi_261_4_1' : null, adresse: null,
+  numero_tva_attribue: id === 'd3',
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))

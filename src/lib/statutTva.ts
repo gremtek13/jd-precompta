@@ -160,12 +160,20 @@ export function refusTauxPositif(statut: StatutTva | null, taux: number): string
 // Ce qu'on écrit en base pour un statut choisi. Un article n'a de sens que pour un dossier exonéré, ou redevable
 // d'une activité en partie exonérée : passer en franchise le RETIRE, dans la même écriture. La base refuse un
 // article sur une franchise plutôt que de l'effacer en silence (`dossiers_article_exoneration_coherent`), donc
-// c'est à l'écran de l'envoyer nul.
+// c'est à l'écran de l'envoyer nul. De même la case du numéro de TVA, qui n'a de sens qu'en franchise ou exonéré
+// (`dossiers_numero_tva_attribue_coherent`) : un redevable en a toujours un.
 export function ecritureDuStatut(
-  statut: StatutTva, article: ArticleExoneration | null,
-): { statut_tva: StatutTva; article_exoneration: ArticleExoneration | null } {
-  return { statut_tva: statut, article_exoneration: statut === 'franchise' ? null : article }
+  statut: StatutTva, article: ArticleExoneration | null, numeroAttribue: boolean,
+): { statut_tva: StatutTva; article_exoneration: ArticleExoneration | null; numero_tva_attribue: boolean } {
+  return {
+    statut_tva: statut,
+    article_exoneration: statut === 'franchise' ? null : article,
+    numero_tva_attribue: (statut === 'franchise' || statut === 'exonere') && numeroAttribue,
+  }
 }
+
+// La case du numéro de TVA ne se pose qu'à un dossier en franchise ou exonéré.
+export const numeroTvaACocher = (statut: StatutTva | null) => statut === 'franchise' || statut === 'exonere'
 
 // La mention de TVA d'une facture du dossier, proposée à sa création. Aucune pour un redevable, qui facture la
 // TVA — une ligne à 0 % d'un redevable dont une partie de l'activité est exonérée prend la mention de son

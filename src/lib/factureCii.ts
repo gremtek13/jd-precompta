@@ -62,8 +62,12 @@ export interface VendeurCii {
   siret: string | null
   adresse: string | null
   // Le numéro de TVA intracommunautaire du dossier (BT-31). Celui d'un dossier redevable se calcule sur son SIREN
-  // (`numeroTvaFrancais`) ; un dossier en franchise ou exonéré n'en a pas toujours un, et le module ne l'invente pas.
+  // (`numeroTvaFrancais`) ; un dossier en franchise ou exonéré n'en a pas toujours un : il se calcule de même quand le
+  // cabinet a dit qu'il en a un (`numero_tva_attribue`), et le module ne l'invente jamais.
   numeroTva: string | null
+  // Le cabinet a dit que ce dossier en franchise ou exonéré a un numéro de TVA (la case de l'onglet TVA) : s'il manque
+  // encore, c'est qu'il ne se calcule pas, et ce n'est plus la case qui se réclame.
+  numeroTvaAttribue: boolean
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
 }
@@ -430,14 +434,15 @@ export function refusEmission(d: DonneesCii): string[] {
   }
 
   // Une ligne à 0 % ou au taux normal demande le numéro de TVA du vendeur (règles BR-S-02, BR-E-02, G1.47). Celui d'un
-  // dossier redevable découle de son SIREN, et un statut à préciser se dit déjà : un numéro absent ne se réclame que
-  // s'il ne découle pas d'une faute déjà dite.
+  // dossier redevable découle de son SIREN, comme celui d'un dossier en franchise ou exonéré dont le cabinet a dit qu'il
+  // en a un, et un statut à préciser se dit déjà : un numéro absent ne se réclame que s'il ne découle pas d'une faute
+  // déjà dite.
   if (triees.length > 0 && !horsChamp) {
     if (!v.numeroTva) {
-      if (v.statutTva === 'franchise' || v.statutTva === 'exonere') {
+      if ((v.statutTva === 'franchise' || v.statutTva === 'exonere') && !v.numeroTvaAttribue) {
         refus.push('Le numéro de TVA intracommunautaire du dossier est nécessaire à une facture sans TVA (règle G1.47 de la DGFiP) : '
-          + 'l’application ne le connaît pas pour un dossier en franchise ou exonéré.')
-      } else if (v.statutTva === 'redevable' && sirenValide(sirenVendeur)) {
+          + 's’il en a un, sa case se coche dans l’onglet TVA du dossier, sous son statut de TVA.')
+      } else if (v.statutTva !== null && sirenValide(sirenVendeur)) {
         refus.push('Le numéro de TVA intracommunautaire du dossier manque.')
       }
     } else if (sirenValide(sirenVendeur) && v.numeroTva !== numeroTvaFrancais(sirenVendeur)) {
@@ -671,17 +676,24 @@ export interface FactureEnBase extends FactureCii {
 
 // Ce que le générateur reçoit, assemblé depuis la base — le même assemblage pour l'écran qui dit les refus avant le clic
 // et pour les fonctions qui transmettent. Le vendeur est l'émetteur que la facture a figé ; le statut de TVA est celui du
-// dossier aujourd'hui, que la facture ne fige pas ; le numéro de TVA se calcule sur le SIREN figé. Celui d'un dossier en
-// franchise ou exonéré n'est pas inventé : l'application ne le connaît pas, et `refusEmission` le réclame.
+// dossier aujourd'hui, que la facture ne fige pas ; le numéro de TVA se calcule sur le SIREN figé. Un dossier en
+// franchise ou exonéré n'a de numéro que si le cabinet l'a dit (`numero_tva_attribue`, décision du 08/10/2026) : sans
+// cela, aucun n'est inventé, et `refusEmission` le réclame.
+export interface DossierCii {
+  statut_tva: StatutTva | null
+  article_exoneration: ArticleExoneration | null
+  numero_tva_attribue: boolean
+}
+
 export function donneesDeLaFacture(
   facture: FactureEnBase,
   lignes: LigneCii[],
-  dossier: { statut_tva: StatutTva | null; article_exoneration: ArticleExoneration | null },
+  dossier: DossierCii,
   origine: OrigineCii | null,
   aujourdHui: string,
 ): DonneesCii {
   const siren = sirenDe(facture.emetteur_siret)
-  const sansNumero = dossier.statut_tva === 'franchise' || dossier.statut_tva === 'exonere'
+  const sansNumero = (dossier.statut_tva === 'franchise' || dossier.statut_tva === 'exonere') && !dossier.numero_tva_attribue
   return {
     facture,
     lignes,
@@ -690,6 +702,7 @@ export function donneesDeLaFacture(
       siret: facture.emetteur_siret,
       adresse: facture.emetteur_adresse,
       numeroTva: !sansNumero && sirenValide(siren) ? numeroTvaFrancais(siren) : null,
+      numeroTvaAttribue: dossier.numero_tva_attribue,
       statutTva: dossier.statut_tva,
       articleExoneration: dossier.article_exoneration,
     },
@@ -739,4 +752,14 @@ export function mentionsImprimees(f: FactureEmise): MentionImprimee[] {
     if (f.numero_engagement) mentions.push({ libelle: 'Numéro d’engagement', texte: f.numero_engagement })
   }
   return mentions
+}
+
+// Le numéro de TVA intracommunautaire que la facture imprimée porte sous l'identité de l'émetteur (CGI, ann. II,
+// art. 242 nonies A, I, 2°) : celui que porte la facture électronique, calculé du SIRET figé (`donneesDeLaFacture`) —
+// et aucun pour un statut à préciser, qui ne dit pas si le dossier en a un : l'imprimer l'inventerait peut-être.
+export function numeroTvaImprime(f: Pick<FactureEmise, 'emetteur_siret'>, dossier: DossierCii): string | null {
+  if (dossier.statut_tva == null) return null
+  if ((dossier.statut_tva === 'franchise' || dossier.statut_tva === 'exonere') && !dossier.numero_tva_attribue) return null
+  const siren = sirenDe(f.emetteur_siret)
+  return sirenValide(siren) ? numeroTvaFrancais(siren) : null
 }

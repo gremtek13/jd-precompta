@@ -9,6 +9,7 @@ import type {
 import type { Predicat } from '../../test/filtresPostgrest'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
+import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET lib/liquidationTva.ts, ET SE TESTE LÀ. Ce qui se joue ici est ce
 // qu'aucun test des modules ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
@@ -177,10 +178,16 @@ const MONTANT = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}$`)
 const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as HTMLElement
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
-function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, valides = [], espion }: {
+function Hote({
+  periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, numero = false, siret = null, valides = [],
+  espion,
+}: {
   periodicite?: PeriodiciteTva
   surDebits?: boolean
   assujetti?: boolean
+  // La case du numéro de TVA d'un dossier en franchise ou exonéré, et le SIRET dont il se calcule.
+  numero?: boolean
+  siret?: string | null
   // Le statut de TVA du dossier : redevable quand il est assujetti, à préciser sinon — sauf mention contraire.
   statut?: StatutTva | null
   article?: ArticleExoneration | null
@@ -193,6 +200,7 @@ function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = tr
     statut_tva: statut === undefined ? (assujetti ? 'redevable' as const : null) : statut,
     article_exoneration: article,
     assujetti_tva: assujetti,
+    numero_tva_attribue: numero,
   })
   return (
     <AvecExercicesValides annees={valides}>
@@ -201,6 +209,8 @@ function Hote({ periodicite = 'trimestrielle', surDebits = false, assujetti = tr
         assujettiTva={tva.assujetti_tva}
         statutTva={tva.statut_tva}
         articleExoneration={tva.article_exoneration}
+        numeroTvaAttribue={tva.numero_tva_attribue}
+        siret={siret}
         onStatutUpdated={(m) => { espion?.(m); setTva(m) }}
         periodicite={regime.tva_periodicite}
         surDebits={regime.tva_sur_debits}
@@ -250,10 +260,17 @@ describe('l’onglet TVA', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Changer le statut' }))
     fireEvent.click(screen.getByRole('button', { name: 'Franchise en base (art. 293 B du CGI)' }))
     await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
-    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { statut_tva: 'franchise', article_exoneration: null } }])
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false } }])
     expect(screen.getByText('Pas de déclaration de TVA')).toBeTruthy()
     expect(screen.getByText(/En franchise en base, le dossier ne facture ni ne déclare de TVA/)).toBeTruthy()
     expect(screen.queryAllByText('CA3 — 1er trimestre 2027')).toHaveLength(0)
+  })
+
+  // La case du numéro de TVA (décision du cabinet du 08/10/2026) : l'onglet la passe à la carte du statut, avec le SIRET
+  // dont le numéro se calcule.
+  it('la carte du statut reçoit la case du numéro de TVA et le SIRET du dossier', async () => {
+    await afficher({ assujetti: false, statut: 'franchise', numero: true, siret: SIRET_VENDEUR })
+    expect(screen.getByText(`Le dossier a un numéro de TVA intracommunautaire. Son numéro, calculé de son SIREN : ${TVA_VENDEUR}.`)).toBeTruthy()
   })
 
   it('un statut à préciser le dit, et l’onglet ne prépare rien', async () => {

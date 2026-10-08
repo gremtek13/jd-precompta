@@ -31,6 +31,7 @@ import {
   donneesDeLaFacture,
   factureCii,
   mentionsImprimees,
+  numeroTvaImprime,
   montantsDuDocument,
   numeroAdmis,
   numeroTvaFrancais,
@@ -42,7 +43,7 @@ import {
   type DonneesCii,
 } from './factureCii'
 import { lireFactureXml } from './factureElectronique'
-import type { FactureEmise } from './types'
+import type { FactureEmise, StatutTva } from './types'
 
 // Depuis la racine du dépôt, d'où la suite se lance : sous jsdom, import.meta.url n'est pas une adresse de fichier.
 const DOSSIER_EXEMPLES = `${resolve(process.cwd(), 'outils/facturation/exemples')}/`
@@ -275,7 +276,7 @@ describe('refusEmission : chaque faute, seule, rend son refus et lui seul', () =
 describe('donneesDeLaFacture : la facture de la base, assemblée pour le générateur', () => {
   const lignes = [ligne()]
   const zero = [ligne({ taux_tva: 0 })]
-  const redevable = { statut_tva: 'redevable', article_exoneration: null } as const
+  const redevable = { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false } as const
 
   it('le vendeur est l’émetteur figé par la facture, son numéro de TVA tiré du SIREN figé', () => {
     const d = donneesDeLaFacture(facture(lignes), lignes, redevable, null, AUJOURD_HUI)
@@ -288,16 +289,42 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
     expect(d.vendeur).toMatchObject({ nom: 'Autre nom', siret: '98765432400019', numeroTva: numeroTvaFrancais(SIREN_CLIENT) })
   })
 
-  it('un dossier en franchise ou exonéré n’a pas de numéro inventé, et le refus le dit (règle G1.47)', () => {
-    for (const dossier of [{ statut_tva: 'franchise', article_exoneration: null }, { statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1' }] as const) {
-      const d = donneesDeLaFacture(facture(zero, { type_client: 'organisme_public', tiers_siren: SIREN_PUBLIC, tiers_siret: '10000020700017' }), zero, dossier, null, AUJOURD_HUI)
+  const NON_REDEVABLES = [
+    { statut_tva: 'franchise', article_exoneration: null },
+    { statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1' },
+  ] as const
+  const factureAuPublic = facture(zero, { type_client: 'organisme_public', tiers_siren: SIREN_PUBLIC, tiers_siret: '10000020700017' })
+
+  it('un dossier en franchise ou exonéré sans la case n’a pas de numéro inventé, et le refus dit où la cocher (règle G1.47)', () => {
+    for (const dossier of NON_REDEVABLES) {
+      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: false }, null, AUJOURD_HUI)
       expect(d.vendeur).toMatchObject({ numeroTva: null, statutTva: dossier.statut_tva, articleExoneration: dossier.article_exoneration })
-      expect(refusEmission(d)).toEqual([expect.stringContaining('règle G1.47')])
+      expect(refusEmission(d)).toEqual([
+        'Le numéro de TVA intracommunautaire du dossier est nécessaire à une facture sans TVA (règle G1.47 de la DGFiP) : '
+          + 's’il en a un, sa case se coche dans l’onglet TVA du dossier, sous son statut de TVA.',
+      ])
     }
   })
 
+  // LA CASE PAR DOSSIER (décision du cabinet du 08/10/2026) : le numéro qu'il a se calcule de son SIREN, comme celui
+  // d'un redevable, et la facture sans TVA peut partir.
+  it('un dossier en franchise ou exonéré qui a un numéro : il se calcule du SIREN figé, et la facture part', () => {
+    for (const dossier of NON_REDEVABLES) {
+      const d = donneesDeLaFacture(factureAuPublic, zero, { ...dossier, numero_tva_attribue: true }, null, AUJOURD_HUI)
+      expect(d.vendeur).toMatchObject({ numeroTva: TVA_VENDEUR, statutTva: dossier.statut_tva })
+      expect(refusEmission(d), dossier.statut_tva).toEqual([])
+    }
+  })
+
+  it('la case ne fabrique rien sans SIREN valide : le refus reste celui du SIREN', () => {
+    const d = donneesDeLaFacture(facture(zero, { type_client: 'organisme_public', tiers_siren: SIREN_PUBLIC, tiers_siret: '10000020700017', emetteur_siret: '12345678900010' }),
+      zero, { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: true }, null, AUJOURD_HUI)
+    expect(d.vendeur.numeroTva).toBeNull()
+    expect(refusEmission(d)).toEqual([expect.stringContaining('ne donne pas un SIREN valide')])
+  })
+
   it('un statut à préciser : le numéro se calcule, et seul le statut se réclame', () => {
-    const d = donneesDeLaFacture(facture(zero), zero, { statut_tva: null, article_exoneration: null }, null, AUJOURD_HUI)
+    const d = donneesDeLaFacture(facture(zero), zero, { statut_tva: null, article_exoneration: null, numero_tva_attribue: false }, null, AUJOURD_HUI)
     expect(d.vendeur.numeroTva).toBe(TVA_VENDEUR)
     expect(refusEmission(d)).toEqual([expect.stringContaining('Le statut de TVA du dossier est à préciser')])
   })
@@ -305,7 +332,7 @@ describe('donneesDeLaFacture : la facture de la base, assemblée pour le génér
   it('un SIREN figé faux ou absent : une faute, un refus — le numéro de TVA qui en découle ne se réclame pas', () => {
     for (const emetteur_siret of ['12345678900010', null]) {
       for (const statut_tva of ['redevable', null] as const) {
-        const d = donneesDeLaFacture(facture(lignes, { emetteur_siret }), lignes, { statut_tva, article_exoneration: null }, null, AUJOURD_HUI)
+        const d = donneesDeLaFacture(facture(lignes, { emetteur_siret }), lignes, { statut_tva, article_exoneration: null, numero_tva_attribue: false }, null, AUJOURD_HUI)
         expect(d.vendeur.numeroTva).toBeNull()
         const attendus = [expect.stringContaining('ne donne pas un SIREN valide')]
         if (statut_tva === null) attendus.push(expect.stringContaining('Le statut de TVA du dossier est à préciser'))
@@ -500,6 +527,30 @@ describe('les mentions imprimées', () => {
       { libelle: 'Numéro d’engagement', texte: 'EJ-1' },
     ]))
     expect(mentions({ code_service: 'SOINS', numero_engagement: 'EJ-1' }).map((m) => m.libelle)).not.toContain('Code service')
+  })
+})
+
+describe('le numéro de TVA imprimé sous l’émetteur', () => {
+  const figee = { emetteur_siret: SIRET_VENDEUR }
+  const dossier = (statut_tva: StatutTva | null, numero_tva_attribue = false) =>
+    ({ statut_tva, article_exoneration: null, numero_tva_attribue })
+
+  it('celui que porte la facture électronique, pour un redevable et pour un dossier qui a coché sa case', () => {
+    expect(numeroTvaImprime(figee, dossier('redevable'))).toBe(TVA_VENDEUR)
+    expect(numeroTvaImprime(figee, dossier('franchise', true))).toBe(TVA_VENDEUR)
+    expect(numeroTvaImprime(figee, dossier('exonere', true))).toBe(TVA_VENDEUR)
+    for (const d of [dossier('redevable'), dossier('franchise', true)]) {
+      const lignes = [ligne({ taux_tva: d.statut_tva === 'redevable' ? 20 : 0 })]
+      expect(numeroTvaImprime(figee, d)).toBe(donneesDeLaFacture(facture(lignes), lignes, d, null, AUJOURD_HUI).vendeur.numeroTva)
+    }
+  })
+
+  it('aucun sans la case, pour un statut à préciser, ni sans SIREN valide', () => {
+    expect(numeroTvaImprime(figee, dossier('franchise'))).toBeNull()
+    expect(numeroTvaImprime(figee, dossier('exonere'))).toBeNull()
+    expect(numeroTvaImprime(figee, dossier(null))).toBeNull()
+    expect(numeroTvaImprime({ emetteur_siret: '12345678900010' }, dossier('redevable'))).toBeNull()
+    expect(numeroTvaImprime({ emetteur_siret: null }, dossier('redevable'))).toBeNull()
   })
 })
 

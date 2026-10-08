@@ -68,6 +68,9 @@ interface Props {
   // Le statut de TVA du dossier, qui fait foi — `assujettiTva` en est déduit (lib/statutTva.ts). Il se règle ici.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // La case du numéro de TVA d'un dossier en franchise ou exonéré, et le SIRET dont il se calcule.
+  numeroTvaAttribue: boolean
+  siret: string | null
   onStatutUpdated: (modification: ModificationStatutTva) => void
   periodicite: PeriodiciteTva
   surDebits: boolean
@@ -206,7 +209,8 @@ function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire
 }
 
 export default function TvaTab({
-  dossierId, assujettiTva, statutTva, articleExoneration, onStatutUpdated, periodicite, surDebits, onRegimeUpdated,
+  dossierId, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits,
+  onRegimeUpdated,
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
   const { anneesValidees, frontiere } = useExercicesValides()
@@ -254,7 +258,14 @@ export default function TvaTab({
   }
 
   const statut = (
-    <StatutTvaCard dossierId={dossierId} statut={statutTva} article={articleExoneration} onStatutUpdated={onStatutUpdated} />
+    <StatutTvaCard
+      dossierId={dossierId}
+      statut={statutTva}
+      article={articleExoneration}
+      numeroTvaAttribue={numeroTvaAttribue}
+      siret={siret}
+      onStatutUpdated={onStatutUpdated}
+    />
   )
   const facturationElectronique = (
     <FacturationElectroniqueCard statut={statutTva} article={articleExoneration} periodicite={periodicite} surDebits={surDebits} />

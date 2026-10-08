@@ -3,7 +3,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { CAS_DE_REFUS, donnees, EXEMPLES } from '../test/facturesCii'
 import * as cii from './factureCii'
-import type { FactureCii, FactureEnBase, LigneCii } from './factureCii'
+import type { DossierCii, FactureCii, FactureEnBase, LigneCii } from './factureCii'
 import * as montants from './montantsFacture'
 import * as statut from './statutTva'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from './types'
@@ -169,9 +169,11 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
   numeroAdmis: (m) => ['F2026-0001', ' F1', 'F1 ', 'F 1', 'F  1', 'x'.repeat(35), 'x'.repeat(36), 'A2026-0001', ''].map((n) => m.numeroAdmis(n)),
   refusEmission: (m) => [...EXEMPLES.map((e) => m.refusEmission(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.refusEmission(donnees(c)))],
   cadreDeFacturation: (m) => (['biens', 'services', 'mixte'] as const).map((n) => m.cadreDeFacturation(n)),
-  donneesDeLaFacture: (m) => EXEMPLES.slice(0, 2).flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.map((siret) =>
-    m.donneesDeLaFacture({ ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null },
-      e.donnees.lignes, { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null }, e.donnees.origine, '2026-10-08')))),
+  donneesDeLaFacture: (m) => EXEMPLES.slice(0, 2).flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.flatMap((siret) =>
+    [false, true].map((attribue) => m.donneesDeLaFacture(
+      { ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null }, e.donnees.lignes,
+      { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null, numero_tva_attribue: attribue },
+      e.donnees.origine, '2026-10-08'))))),
   factureCii: (m) => [...EXEMPLES.map((e) => m.factureCii(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.factureCii(donnees(c)))],
 }
 
@@ -213,6 +215,10 @@ const LUES_PAR_LE_GENERATEUR: Record<keyof FactureEnBase, true> = {
   emetteur_adresse: true,
 }
 
+// De même les colonnes du DOSSIER que le générateur lit : sans `numero_tva_attribue`, un dossier en franchise qui a un
+// numéro de TVA verrait ses factures refusées par la fonction alors que l'écran les dit transmissibles.
+const LUES_DU_DOSSIER: Record<keyof DossierCii, true> = { statut_tva: true, article_exoneration: true, numero_tva_attribue: true }
+
 /** Les colonnes d'un `const NOM = "…" + "…"`, telles que la fonction les passe à `.select(`. */
 function colonnesDe(source: string, nom: string, ou: string): string[] {
   const m = new RegExp(`^const ${nom} = ((?:"[^"]*"\\s*\\+\\s*)*"[^"]*")`, 'm').exec(source)
@@ -230,6 +236,18 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
       for (const c of Object.keys(LUES_PAR_LE_GENERATEUR)) expect(lues, `${fonction} : ${c}`).toContain(c)
       // Une note interne n'a rien à faire dans ce que la fonction transmet : elle ne la lit même pas.
       expect(lues).not.toContain('notes')
+    },
+  )
+
+  it.each(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)))(
+    '%s : lit du dossier chaque colonne que le générateur en lit',
+    (fonction) => {
+      const lectures = [...sourceDe(fonction).matchAll(/\.from\("dossiers"\)\s*\.select\("([^"]*)"\)/g)]
+        .map((m) => m[1].split(',').map((c) => c.trim()))
+      // Une lecture au moins porte tout ce que le générateur lit ; aucune autre forme n'est reconnue.
+      expect(lectures.length, `${fonction} : aucune lecture du dossier reconnue`).toBeGreaterThan(0)
+      expect(lectures.some((cols) => Object.keys(LUES_DU_DOSSIER).every((c) => cols.includes(c))),
+        `${fonction} : ${JSON.stringify(lectures)}`).toBe(true)
     },
   )
 

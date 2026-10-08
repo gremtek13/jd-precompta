@@ -32,6 +32,8 @@ interface Props {
   // Le statut de TVA du dossier (lib/statutTva.ts), qui décide de la mention proposée et des taux admis.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  // Un dossier en franchise ou exonéré qui a un numéro de TVA (la case de l'onglet TVA) : ses factures sans TVA partent.
+  numeroTvaAttribue: boolean
   // L'option du dossier pour le paiement de la TVA d'après les débits : la validation la fige sur la facture.
   tvaSurDebits: boolean
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
@@ -44,7 +46,7 @@ interface Props {
 // qui ouvre FactureApercu à la place dans ce cas) : toute la logique ici suppose qu'on peut encore
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
-export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, tvaSurDebits, facture, onAdresseUpdated, onClose, onSaved }: Props) {
+export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, facture, onAdresseUpdated, onClose, onSaved }: Props) {
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
@@ -178,6 +180,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     lignes: lignesValides,
     statutTva,
     articleExoneration,
+    numeroTvaAttribue,
     optionDebits,
     aujourdHui: aujourdHuiSql(),
   })

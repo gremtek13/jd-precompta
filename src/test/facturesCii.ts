@@ -20,6 +20,7 @@ export function vendeur(o: Partial<VendeurCii> = {}): VendeurCii {
     siret: SIRET_VENDEUR,
     adresse: '12 rue des Exemples\n13001 Marseille',
     numeroTva: TVA_VENDEUR,
+    numeroTvaAttribue: false,
     statutTva: 'redevable',
     articleExoneration: null,
     ...o,
@@ -190,7 +191,8 @@ export const EXEMPLES: Exemple[] = [
     nom: 'franchise',
     donnees: donnees({
       lignes: [ligne({ designation: 'Séance de coaching', quantite: 3, prix_unitaire_ht: 60, taux_tva: 0 })],
-      vendeur: { statutTva: 'franchise' },
+      // Un dossier en franchise qui a un numéro de TVA : sans lui, la facture ne partirait pas (règle G1.47).
+      vendeur: { statutTva: 'franchise', numeroTvaAttribue: true },
       facture: { numero: 'F2026-0015', mentions_legales: 'TVA non applicable, art. 293 B du CGI.' },
     }),
     numero: 'F2026-0015',
@@ -224,7 +226,7 @@ export const EXEMPLES: Exemple[] = [
     nom: 'exonere-organisme-public',
     donnees: donnees({
       lignes: [ligne({ designation: 'Actes de soins infirmiers — septembre 2026', quantite: 1, prix_unitaire_ht: 640, taux_tva: 0 })],
-      vendeur: { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' },
+      vendeur: { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1', numeroTvaAttribue: true },
       facture: {
         numero: 'F2026-0017',
         type_client: 'organisme_public',
@@ -331,6 +333,12 @@ export const CAS_DE_REFUS: [string, Cas, string][] = [
   ['l’adresse électronique d’un autre SIREN', { facture: { tiers_adresse_electronique: '123456782' } }, 'L’adresse de facturation électronique du client ne commence pas par son SIREN'],
   ['un statut de TVA à préciser', { vendeur: { statutTva: null } }, 'Le statut de TVA du dossier est à préciser'],
   ['un statut de TVA à préciser, ligne à 0 %', { lignes: [ligne({ taux_tva: 0 })], vendeur: { statutTva: null } }, 'Le statut de TVA du dossier est à préciser'],
+  // Le numéro qui manque découle peut-être du statut à préciser : le réclamer à côté dirait deux fois la même faute.
+  [
+    'un statut de TVA à préciser, sans numéro de TVA',
+    { lignes: [ligne({ taux_tva: 0 })], vendeur: { statutTva: null, numeroTva: null } },
+    'Le statut de TVA du dossier est à préciser',
+  ],
   ['aucune ligne', { lignes: [] }, 'La facture n’a aucune ligne.'],
   // Sans ligne, rien ne demande le numéro de TVA du dossier (BR-S-02, BR-E-02 et G1.47 partent des lignes).
   ['aucune ligne, sans numéro de TVA', { lignes: [], vendeur: { numeroTva: null } }, 'La facture n’a aucune ligne.'],
@@ -370,6 +378,12 @@ export const CAS_DE_REFUS: [string, Cas, string][] = [
   ],
   ['sans numéro de TVA, redevable', { vendeur: { numeroTva: null } }, 'Le numéro de TVA intracommunautaire du dossier manque.'],
   ['sans numéro de TVA, en franchise', { lignes: [ligne({ taux_tva: 0 })], vendeur: { statutTva: 'franchise', numeroTva: null } }, 'règle G1.47 de la DGFiP'],
+  // La case cochée, le numéro qui manque encore ne se calcule pas : ce n'est plus la case qui se réclame.
+  [
+    'sans numéro de TVA, en franchise, la case cochée',
+    { lignes: [ligne({ taux_tva: 0 })], vendeur: { statutTva: 'franchise', numeroTva: null, numeroTvaAttribue: true } },
+    'Le numéro de TVA intracommunautaire du dossier manque.',
+  ],
   ['un numéro de TVA d’un autre SIREN', { vendeur: { numeroTva: 'FR00123456782' } }, 'ne correspond pas à son SIREN'],
   ['une facture sans échéance', { facture: { date_echeance: null } }, 'Indique la date d’échéance'],
   ['une échéance hors des bornes', { facture: { date_echeance: '2100-01-01' } }, 'La date d’échéance n’est pas une date admise'],

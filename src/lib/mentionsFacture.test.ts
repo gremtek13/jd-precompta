@@ -189,6 +189,7 @@ describe('apercuDeTransmission : ce qui empêcherait la facture validée de part
     lignes: [{ designation: 'Prestation de conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
     statutTva: 'redevable',
     articleExoneration: null,
+    numeroTvaAttribue: false,
     optionDebits: false,
     aujourdHui: '2026-10-08',
     ...b,
@@ -232,6 +233,18 @@ describe('apercuDeTransmission : ce qui empêcherait la facture validée de part
       lignes: [{ designation: 'Conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 0 }],
     }))
     expect(sansArticle).toEqual({ cas: 'a_completer', refus: [], ailleurs: 1 })
+  })
+
+  // La case du numéro de TVA (décision du cabinet du 08/10/2026) : un dossier en franchise qui en a un transmet ses
+  // factures sans TVA ; sans elle, le refus dit où la cocher.
+  it('un dossier en franchise partira s’il a un numéro de TVA, et le refus dit où le dire sinon', () => {
+    const sansTva = { montant_tva: 0, montant_ttc: 100 }
+    const lignes = [{ designation: 'Conseil', quantite: 1, prix_unitaire_ht: 100, taux_tva: 0 }]
+    expect(apercuDeTransmission(brouillon(sansTva, { statutTva: 'franchise', numeroTvaAttribue: true, lignes })))
+      .toEqual({ cas: 'transmissible' })
+    expect(apercuDeTransmission(brouillon(sansTva, { statutTva: 'franchise', numeroTvaAttribue: false, lignes }))).toEqual({
+      cas: 'a_completer', refus: [expect.stringContaining('sa case se coche dans l’onglet TVA du dossier')], ailleurs: 0,
+    })
   })
 
   it('sans rien filtrer d’autre : une quantité à cinq décimales se dit', () => {

@@ -18,6 +18,7 @@ interface Props {
   // Le statut de TVA du dossier aujourd'hui : la facture ne le fige pas, et les fonctions qui la transmettent le relisent.
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
+  numeroTvaAttribue: boolean
   onClose: () => void
   // La liste des factures se relit : l'état de leurs transmissions, et le numéro qu'a rendu Super PDP.
   onUpdated: () => void
@@ -33,7 +34,7 @@ const COLONNES_TRANSMISSION = 'id, dossier_id, facture_id, canal, hote, flux_id,
 // CE QUI L'EMPÊCHE DE PARTIR SE DIT AVANT LE CLIC, avec le jugement même des fonctions (`refusEmission`, sur la facture
 // assemblée par `donneesDeLaFacture`) ; elles le refont de leur côté, sur la facture relue en base. Et rien n'est
 // proposé tant qu'on ne SAIT pas si elle est déjà partie : ses transmissions lues en entier, sinon aucun bouton.
-export default function TransmissionFactureModal({ dossierId, facture, statutTva, articleExoneration, onClose, onUpdated }: Props) {
+export default function TransmissionFactureModal({ dossierId, facture, statutTva, articleExoneration, numeroTvaAttribue, onClose, onUpdated }: Props) {
   const [lignes, setLignes] = useState<LigneCii[] | null>(null)
   // Pour un avoir : la facture qu'il corrige, dont il transmet le numéro et la date. `undefined` tant qu'elle n'est pas lue ;
   // nulle pour une facture, et pour un avoir qui n'en cite aucune — `refusEmission` le dit alors.
@@ -245,7 +246,8 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   // échoué après l'envoi — superpdp-emit le retrouve, et la suit de même.
   const chezSuperPdp = facture.superpdp_invoice_id != null || (siennes?.some((t) => t.canal === 'superpdp' && t.flux_id != null) ?? false)
   const refus = lignes != null && origine !== undefined
-    ? refusEmission(donneesDeLaFacture(facture, lignes, { statut_tva: statutTva, article_exoneration: articleExoneration }, origine, aujourdHuiSql()))
+    ? refusEmission(donneesDeLaFacture(facture, lignes,
+      { statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue }, origine, aujourdHuiSql()))
     : null
   // Rejetée, elle ne repart pas : elle s'annule par un avoir interne (DGFiP, § 3.6.4). Refusée par l'acheteur chez Super
   // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.

@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import { calculerLigne } from '../../lib/factures'
-import { mentionsImprimees } from '../../lib/factureCii'
+import { mentionsImprimees, numeroTvaImprime, type DossierCii } from '../../lib/factureCii'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
@@ -11,7 +11,9 @@ import type { FactureEmise, FactureLigne } from '../../lib/types'
 // dialogue d'impression du navigateur ("Enregistrer en PDF") suffit à obtenir un fichier envoyable en
 // attendant. Seul .facture-imprimable reste visible en impression (voir index.css), tout le reste de
 // l'appli (menu, boutons, autres onglets) est masqué.
-export default function FactureApercu({ facture, onClose }: { facture: FactureEmise; onClose: () => void }) {
+// Le dossier tel que la page l'a lu : son statut de TVA décide du numéro imprimé sous l'émetteur — la facture ne le fige
+// pas, et la facture électronique le prend de même.
+export default function FactureApercu({ facture, dossier, onClose }: { facture: FactureEmise; dossier: DossierCii; onClose: () => void }) {
   const [lignes, setLignes] = useState<FactureLigne[] | null>(null)
   // Numéro de la facture corrigée, affiché uniquement pour un avoir (voir facture_origine_id) — une
   // requête à part plutôt qu'une jointure : FacturesTab connaît déjà cette info pour ses propres
@@ -21,6 +23,7 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
   // Les mentions de la facture électronique (ligne 28.5, étape c4) : celles qu'elle porte, et seulement elles — une
   // facture d'avant les a nulles, et rien ne s'y imprime à leur place.
   const mentions = mentionsImprimees(facture)
+  const numeroTva = numeroTvaImprime(facture, dossier)
 
   // CET APERÇU EST LE DOCUMENT QU'ON IMPRIME ET QU'ON ENVOIE (voir .facture-imprimable).
   // `data ?? []` sur une lecture refusée y produisait un tableau de lignes VIDE sous des totaux
@@ -59,6 +62,7 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
             <strong>{facture.emetteur_nom}</strong>
             {facture.emetteur_adresse && <div className="muted" style={{ whiteSpace: 'pre-line' }}>{facture.emetteur_adresse}</div>}
             {facture.emetteur_siret && <div className="muted">SIRET {facture.emetteur_siret}</div>}
+            {numeroTva && <div className="muted">N° TVA intracommunautaire {numeroTva}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ margin: 0 }}>{facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>

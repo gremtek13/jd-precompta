@@ -2,8 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureApercu from './FactureApercu'
 import { MENTIONS_VIDES } from '../../test/factures'
-import { SIREN_CLIENT } from '../../test/facturesCii'
-import type { FactureEmise } from '../../lib/types'
+import { SIREN_CLIENT, SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
+import type { DossierCii } from '../../lib/factureCii'
+import type { FactureEmise, StatutTva } from '../../lib/types'
 
 // L'APERÇU EST LE DOCUMENT QU'ON IMPRIME ET QU'ON ENVOIE (ligne 28.5, étape c4) : il imprime les mentions que la facture
 // porte — le SIREN du client, la catégorie de l'opération, sa date ou sa période, l'adresse de livraison, l'option pour
@@ -35,13 +36,15 @@ function validee(o: Partial<FactureEmise> = {}): FactureEmise {
 
 afterEach(() => cleanup())
 
+const REDEVABLE: DossierCii = { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }
+
 describe('FactureApercu — les mentions imprimées', () => {
   it('imprime les mentions que la facture porte', async () => {
     render(<FactureApercu facture={validee({
       type_client: 'organisme_public', tiers_siren: SIREN_CLIENT, nature_operation: 'mixte', periode_debut: '2026-09-01',
       periode_fin: '2026-09-30', livraison_adresse: '3 quai des Essais', livraison_code_postal: '1000', livraison_ville: 'Bruxelles',
       livraison_pays: 'BE', option_debits: true, code_service: 'SERVICE-ACHATS', numero_engagement: 'EJ-42',
-    })} onClose={() => {}} />)
+    })} dossier={REDEVABLE} onClose={() => {}} />)
     await screen.findByText('Mission de conseil')
     for (const texte of [
       'SIREN du client : 987 654 324',
@@ -55,9 +58,25 @@ describe('FactureApercu — les mentions imprimées', () => {
   })
 
   it('une facture d’avant n’imprime aucune mention à la place de celles qu’elle n’a pas, et jamais ses notes', async () => {
-    render(<FactureApercu facture={validee()} onClose={() => {}} />)
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
     await screen.findByText('Mission de conseil')
     expect(screen.queryByText(/SIREN du client|Opérations :|Période :|Adresse de livraison|Code service/)).toBeNull()
     expect(screen.queryByText(/relancer/)).toBeNull()
+  })
+
+  // CGI, ann. II, art. 242 nonies A, I, 2° : le numéro de TVA de l'émetteur, celui que porte la facture électronique.
+  it('le numéro de TVA de l’émetteur : un redevable, un dossier qui a coché sa case ; aucun sinon', async () => {
+    const cas: [StatutTva | null, boolean, string | null][] = [
+      ['redevable', false, TVA_VENDEUR], ['franchise', true, TVA_VENDEUR], ['exonere', true, TVA_VENDEUR],
+      ['franchise', false, null], ['exonere', false, null], [null, false, null],
+    ]
+    for (const [statut_tva, numero_tva_attribue, attendu] of cas) {
+      render(<FactureApercu facture={validee({ emetteur_siret: SIRET_VENDEUR })}
+        dossier={{ statut_tva, article_exoneration: null, numero_tva_attribue }} onClose={() => {}} />)
+      await screen.findByText('Mission de conseil')
+      const imprime = screen.queryByText(/^N° TVA intracommunautaire/)?.textContent ?? null
+      expect(imprime, `${statut_tva} ${numero_tva_attribue}`).toBe(attendu && `N° TVA intracommunautaire ${attendu}`)
+      cleanup()
+    }
   })
 })

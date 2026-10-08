@@ -2,7 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import { facture as factureCii, ligne } from '../../test/facturesCii'
-import type { FactureEmise, TransmissionFacture } from '../../lib/types'
+import type { FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 
 // LA FENÊTRE QUI TRANSMET UNE FACTURE VALIDÉE (ligne 28.5, étape c4), par la plateforme du client ou par Super PDP.
 // Le doublon, ici, sort de l'application : une facture transmise deux fois à une plateforme agréée ne se reprend pas.
@@ -118,6 +118,7 @@ const FACTURE: FactureEmise = factureCii([ligne()])
 function monter(o: {
   facture?: FactureEmise; lignes?: unknown[]; origine?: unknown; connexion?: unknown; superpdp?: boolean
   transmissions?: TransmissionFacture[]; refusTransmissions?: string; rejetsOrigine?: number; refusOrigine?: number
+  statutTva?: StatutTva; numeroTvaAttribue?: boolean
 } = {}) {
   faux.lignes = o.lignes ?? [ligne()]
   faux.origine = o.origine ?? null
@@ -136,8 +137,8 @@ function monter(o: {
   faux.resoudre = null
   render(
     <TransmissionFactureModal
-      dossierId="d1" facture={o.facture ?? FACTURE} statutTva="redevable" articleExoneration={null}
-      onClose={() => {}} onUpdated={() => {}}
+      dossierId="d1" facture={o.facture ?? FACTURE} statutTva={o.statutTva ?? 'redevable'} articleExoneration={null}
+      numeroTvaAttribue={o.numeroTvaAttribue ?? false} onClose={() => {}} onUpdated={() => {}}
     />,
   )
 }
@@ -205,6 +206,20 @@ describe('TransmissionFactureModal — rien n’est proposé sans savoir', () =>
     monter({ facture: factureCii([ligne()], { tiers_siren: null }) })
     expect(await screen.findByText(/Le SIREN du client manque/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  // La case du numéro de TVA (décision du cabinet du 08/10/2026) : la fenêtre juge comme les fonctions, sur le dossier
+  // tel que la page l'a lu.
+  it('un dossier en franchise sans numéro de TVA : le refus dit où le cocher ; avec, la facture part', async () => {
+    const sansTva = [ligne({ taux_tva: 0 })]
+    monter({ facture: factureCii(sansTva), lignes: sansTva, statutTva: 'franchise' })
+    expect(await screen.findByText(/sa case se coche dans l’onglet TVA du dossier, sous son statut de TVA/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    cleanup()
+
+    monter({ facture: factureCii(sansTva), lignes: sansTva, statutTva: 'franchise', numeroTvaAttribue: true })
+    expect(await deposer()).toBeTruthy()
+    expect(screen.queryByText(/règle G1\.47/)).toBeNull()
   })
 
   it('des transmissions illisibles : on ne sait pas si elle est partie, rien n’est proposé', async () => {
