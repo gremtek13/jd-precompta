@@ -1207,7 +1207,12 @@ Deno.serve(async (req: Request) => {
       console.error(`[superpdp-emit] issue de l'envoi non enregistrée sur la transmission : ${erreurSuivi.message}`)
     }
     if (issue.etat !== "depose") {
-      return json({ error: issue.detail }, 502)
+      // Un refus que la transmission n'a pas enregistré la laisse réservée : le dire, sans quoi « Rien n'a été envoyé »
+      // ferait recliquer sur un refus « déjà une transmission en cours ».
+      const encoreReservee = erreurSuivi && issue.etat === "echec"
+        ? " Ce refus n'a pas pu être enregistré : la transmission reste réservée, et la facture ne repartira qu'après vérification."
+        : ""
+      return json({ error: `${issue.detail}${encoreReservee}` }, 502)
     }
 
     const { error: updateError } = await admin.from("factures_emises").update({ superpdp_invoice_id: issue.id }).eq("id", factureId)

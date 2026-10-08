@@ -2141,11 +2141,15 @@ Deno.serve(async (req: Request) => {
     const { data: apres, error: erreurSuivi } = await admin.from("transmissions_factures")
       .update(suivi).eq("id", transmission.id).eq("etat", "envoi").select(COLONNES_TRANSMISSION).maybeSingle()
     if (erreurSuivi || !apres) {
-      console.error(`[plateforme-agreee] deposer : issue non enregistrée (${reponseDepot.statut})`)
-      return json({
-        error: "La facture est partie, mais l'issue du dépôt n'a pas pu être enregistrée : « Suivre » la retrouvera.",
-        transmission,
-      }, 500)
+      console.error(`[plateforme-agreee] deposer : issue non enregistrée (${reponseDepot.statut}, ${issue.etat})`)
+      // Ce que la réponse a appris se dit tel quel — jamais « partie » sur un refus — ; la transmission, elle, reste
+      // « envoi » en base, et c'est « Suivre » qui la tranchera.
+      const constat = issue.etat === "depose"
+        ? "La plateforme a reçu la facture, mais ce dépôt n'a pas pu être enregistré : « Suivre » le retrouvera."
+        : issue.etat === "echec"
+        ? "La plateforme a refusé la facture, et ce refus n'a pas pu être enregistré : la facture pourra repartir après un « Suivre », passé un quart d'heure."
+        : "La facture est peut-être partie, et l'issue de son dépôt n'a pas pu être enregistrée : « Suivre » dira si la plateforme l'a reçue."
+      return json({ error: constat, transmission }, 500)
     }
     if (issue.etat === "echec") {
       const e = erreurPlateforme("dépôt de la facture", reponseDepot, "de dépôt des flux")
