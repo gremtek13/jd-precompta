@@ -660,8 +660,10 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
           {ecritureSuspendue && (
             <p className="error-text">Écriture suspendue : une lecture est partielle (voir plus haut). Rechargez la page.</p>
           )}
-          <div className="table-scroll">
-            <table aria-label="Dotations à écrire">
+          {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, l'état de la dotation — ce qui dit si elle
+              est à écrire ou à réécrire — sortait de la vue de quelques pixels. La carte a sa marge : les fiches n'ont pas de jeu. */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu" aria-label="Dotations à écrire">
               <thead>
                 <tr>
                   <th>Bien</th>
@@ -673,12 +675,15 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
               <tbody>
                 {aTraiter.map((d: DotationDuRegistre) => (
                   <tr key={`${d.immobilisation.id}-${d.annee}`}>
-                    <td>{d.immobilisation.libelle}</td>
-                    <td>{d.annee}{d.annee === anneeCourante ? ' (en cours)' : ''}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(d.montant)}</td>
-                    <td>
-                      {LIBELLE_ETAT[d.etat]}
-                      {d.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{d.refus}</div>}
+                    <td data-libelle="Bien">{d.immobilisation.libelle}</td>
+                    <td data-libelle="Exercice">{d.annee}{d.annee === anneeCourante ? ' (en cours)' : ''}</td>
+                    <td data-libelle="Dotation" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(d.montant)}</td>
+                    <td data-libelle="État">
+                      {/* Une `div` : repliée, la cellule est une rangée flex, et le refus serait une pièce à part. */}
+                      <div>
+                        {LIBELLE_ETAT[d.etat]}
+                        {d.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{d.refus}</div>}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -710,6 +715,10 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         />
       </div>
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : huit colonnes et trois boutons ne tiennent ni dans un téléphone
+          ni, volet de droite ouvert, dans le panneau central — « Tableau », « Modifier » et « Retirer » passaient derrière un
+          défilement latéral que rien n'annonce. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur
+          donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -720,145 +729,160 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
               : "Aucune immobilisation enregistrée pour l'instant."}
           </div>
         ) : (
-          <table aria-label="Registre des immobilisations">
-            <thead>
-              <tr>
-                <th>Libellé</th>
-                <th>Nature</th>
-                <th>Valeur</th>
-                <th>Acquisition</th>
-                <th>Mise en service</th>
-                <th>Durée</th>
-                <th>Dotation {exerciceAffiche}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {immobilisationsAffichees.map((i) => (
-                <Fragment key={i.id}>
-                  <tr>
-                    <td>
-                      {i.libelle}
-                      {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
-                          création de cet écran pose toujours le lien. La dotation, elle, continue de
-                          partir en case CH — voir `immobilisationSansJustificatif`. */}
-                      {immobilisationSansJustificatif(i) && (
-                        <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
-                      )}
-                    </td>
-                    <td>
-                      {natureLabel(i.nature_id)}
-                      {!i.nature_id && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Nature à choisir</span>}
-                    </td>
-                    <td>
-                      {formatMoney(i.valeur)}
-                      {factureDifferente(i) != null && (
-                        <span className="badge badge-warning" style={{ marginLeft: 8 }}>Facture : {formatMoney(factureDifferente(i))}</span>
-                      )}
-                    </td>
-                    <td>{formatDate(i.date_acquisition)}</td>
-                    <td>
-                      {i.date_mise_en_service ? formatDate(i.date_mise_en_service) : <span className="muted">à l’acquisition</span>}
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(dotationDeLExercice(i, exerciceAffiche))}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-                        <button className="btn btn-outline btn-sm" aria-expanded={plansOuverts.has(i.id)} onClick={() => basculerPlan(i.id)}>
-                          Tableau
-                        </button>
-                        {/* Un bien figé par un exercice validé ne se modifie ni ne se retire plus : sa ligne le dit, au lieu de
-                            deux boutons que la base refuserait. */}
-                        {figes.has(i.id) ? (
-                          <span className="muted" title={phraseBienFige(figes.get(i.id)!)}>Figé</span>
-                        ) : (
-                          <>
-                            <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => ouvrirEdition(i)}>Modifier</button>
-                            <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => retirer(i)}>Retirer</button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {edition?.id === i.id && (
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte" aria-label="Registre des immobilisations">
+              <thead>
+                <tr>
+                  <th>Libellé</th>
+                  <th>Nature</th>
+                  <th>Valeur</th>
+                  <th>Acquisition</th>
+                  <th>Mise en service</th>
+                  <th>Durée</th>
+                  <th>Dotation {exerciceAffiche}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {immobilisationsAffichees.map((i) => (
+                  <Fragment key={i.id}>
                     <tr>
-                      <td colSpan={8}>
-                        <form onSubmit={enregistrerEdition} aria-label={`Modifier ${i.libelle}`}>
-                          <div className="field-row">
-                            <label className="field">
-                              Libellé
-                              <input value={edition.bien.libelle} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, libelle: e.target.value } })} />
-                            </label>
-                            <label className="field">
-                              Nature
-                              <select value={edition.bien.natureId} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, natureId: e.target.value } })}>
-                                <option value="">— Choisir —</option>
-                                {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle} ({n.compte_immobilisation})</option>)}
-                              </select>
-                            </label>
-                            <label className="field">
-                              Valeur
-                              <input type="number" min={0.01} step="0.01" value={edition.bien.valeur} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, valeur: e.target.value } })} />
-                            </label>
-                          </div>
-                          <div className="field-row">
-                            <label className="field">
-                              Acquisition
-                              <input type="date" value={edition.bien.dateAcquisition} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateAcquisition: e.target.value } })} />
-                            </label>
-                            <label className="field">
-                              Mise en service
-                              <input type="date" value={edition.bien.dateMiseEnService} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateMiseEnService: e.target.value } })} />
-                            </label>
-                            <label className="field">
-                              Durée (années)
-                              <input type="number" min={1} value={edition.bien.duree} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, duree: e.target.value } })} />
-                            </label>
-                          </div>
-                          <p className="muted">
-                            L’amortissement part de la mise en service — de l’acquisition quand elle est vide. Les dotations déjà
-                            écrites ne changent pas d’elles-mêmes : elles paraîtront « à réécrire » ci-dessus.
-                          </p>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            <button type="submit" className="btn btn-primary btn-sm" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
-                            <button type="button" className="btn btn-outline btn-sm" onClick={() => setEdition(null)}>Annuler</button>
-                          </div>
-                        </form>
+                      {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et chaque
+                          enfant direct y serait une pièce à part — le libellé et sa pastille écartés au bout de la rangée. */}
+                      <td data-libelle="Libellé">
+                        <div>
+                          {i.libelle}
+                          {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
+                              création de cet écran pose toujours le lien. La dotation, elle, continue de
+                              partir en case CH — voir `immobilisationSansJustificatif`. */}
+                          {immobilisationSansJustificatif(i) && (
+                            <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-libelle="Nature">
+                        <div>
+                          {natureLabel(i.nature_id)}
+                          {!i.nature_id && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Nature à choisir</span>}
+                        </div>
+                      </td>
+                      <td data-libelle="Valeur">
+                        <div>
+                          {formatMoney(i.valeur)}
+                          {factureDifferente(i) != null && (
+                            <span className="badge badge-warning" style={{ marginLeft: 8 }}>Facture : {formatMoney(factureDifferente(i))}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-libelle="Acquisition">{formatDate(i.date_acquisition)}</td>
+                      <td data-libelle="Mise en service">
+                        {i.date_mise_en_service ? formatDate(i.date_mise_en_service) : <span className="muted">à l’acquisition</span>}
+                      </td>
+                      <td data-libelle="Durée" style={{ whiteSpace: 'nowrap' }}>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
+                      <td data-libelle={`Dotation ${exerciceAffiche}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(dotationDeLExercice(i, exerciceAffiche))}</td>
+                      <td className="td-boutons">
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button className="btn btn-outline btn-sm" aria-expanded={plansOuverts.has(i.id)} onClick={() => basculerPlan(i.id)}>
+                            Tableau
+                          </button>
+                          {/* Un bien figé par un exercice validé ne se modifie ni ne se retire plus : sa ligne le dit, au lieu de
+                              deux boutons que la base refuserait. */}
+                          {figes.has(i.id) ? (
+                            <span className="muted" title={phraseBienFige(figes.get(i.id)!)}>Figé</span>
+                          ) : (
+                            <>
+                              <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => ouvrirEdition(i)}>Modifier</button>
+                              <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => retirer(i)}>Retirer</button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  )}
-                  {plansOuverts.has(i.id) && (
-                    <tr>
-                      <td colSpan={8}>
-                        <table aria-label={`Tableau d’amortissement de ${i.libelle}`}>
-                          <thead>
-                            <tr>
-                              <th>Exercice</th>
-                              <th style={{ textAlign: 'right' }}>Dotation</th>
-                              <th style={{ textAlign: 'right' }}>Amortissement cumulé</th>
-                              <th style={{ textAlign: 'right' }}>Valeur nette</th>
-                              <th>Écriture</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {planAmortissement(i).map((a) => (
-                              <tr key={a.annee}>
-                                <td>{a.annee}</td>
-                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.dotation)}</td>
-                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.cumul)}</td>
-                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.valeurNette)}</td>
-                                <td title={etatDeLExercice(i, a.annee).titre}>{etatDeLExercice(i, a.annee).texte}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                    {edition?.id === i.id && (
+                      <tr>
+                        <td colSpan={8}>
+                          <form onSubmit={enregistrerEdition} aria-label={`Modifier ${i.libelle}`}>
+                            <div className="field-row">
+                              <label className="field">
+                                Libellé
+                                <input value={edition.bien.libelle} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, libelle: e.target.value } })} />
+                              </label>
+                              <label className="field">
+                                Nature
+                                <select value={edition.bien.natureId} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, natureId: e.target.value } })}>
+                                  <option value="">— Choisir —</option>
+                                  {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle} ({n.compte_immobilisation})</option>)}
+                                </select>
+                              </label>
+                              <label className="field">
+                                Valeur
+                                <input type="number" min={0.01} step="0.01" value={edition.bien.valeur} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, valeur: e.target.value } })} />
+                              </label>
+                            </div>
+                            <div className="field-row">
+                              <label className="field">
+                                Acquisition
+                                <input type="date" value={edition.bien.dateAcquisition} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateAcquisition: e.target.value } })} />
+                              </label>
+                              <label className="field">
+                                Mise en service
+                                <input type="date" value={edition.bien.dateMiseEnService} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateMiseEnService: e.target.value } })} />
+                              </label>
+                              <label className="field">
+                                Durée (années)
+                                <input type="number" min={1} value={edition.bien.duree} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, duree: e.target.value } })} />
+                              </label>
+                            </div>
+                            <p className="muted">
+                              L’amortissement part de la mise en service — de l’acquisition quand elle est vide. Les dotations déjà
+                              écrites ne changent pas d’elles-mêmes : elles paraîtront « à réécrire » ci-dessus.
+                            </p>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <button type="submit" className="btn btn-primary btn-sm" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
+                              <button type="button" className="btn btn-outline btn-sm" onClick={() => setEdition(null)}>Annuler</button>
+                            </div>
+                          </form>
+                        </td>
+                      </tr>
+                    )}
+                    {plansOuverts.has(i.id) && (
+                      <tr>
+                        <td colSpan={8}>
+                          {/* Le tableau d'amortissement se replie lui aussi, dans SA propre enveloppe : c'est la plus proche enveloppe qui
+                              décide du repli, et celle du registre ne dirait rien de la place qu'il a une fois le bien replié en fiche.
+                              Pas de jeu autour de ses fiches : la fiche du bien a déjà le sien. */}
+                          <div className="table-scroll tableau-adaptable">
+                            <table className="table-empilable-etroite table-empilable-sans-jeu" aria-label={`Tableau d’amortissement de ${i.libelle}`}>
+                              <thead>
+                                <tr>
+                                  <th>Exercice</th>
+                                  <th style={{ textAlign: 'right' }}>Dotation</th>
+                                  <th style={{ textAlign: 'right' }}>Amortissement cumulé</th>
+                                  <th style={{ textAlign: 'right' }}>Valeur nette</th>
+                                  <th>Écriture</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {planAmortissement(i).map((a) => (
+                                  <tr key={a.annee}>
+                                    <td data-libelle="Exercice">{a.annee}</td>
+                                    <td data-libelle="Dotation" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.dotation)}</td>
+                                    <td data-libelle="Amortissement cumulé" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.cumul)}</td>
+                                    <td data-libelle="Valeur nette" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.valeurNette)}</td>
+                                    <td data-libelle="Écriture" title={etatDeLExercice(i, a.annee).titre}>{etatDeLExercice(i, a.annee).texte}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

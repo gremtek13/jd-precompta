@@ -110,39 +110,45 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
           <h3 style={{ margin: 0 }}>Prestations ponctuelles</h3>
           <button className="btn btn-primary btn-sm" onClick={() => setEditingSupplement('new')}>+ Nouvelle prestation</button>
         </div>
+        {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : les trois boutons de chaque prestation — « Marquer facturée »,
+            « Modifier », « Supprimer » — passaient derrière un défilement latéral, sur téléphone comme, volet de droite ouvert, dans
+            le panneau central. Les colonnes masquées sur téléphone le restent. `table-empilable-en-carte` rend aux fiches le jeu que
+            la carte, sans marge, ne leur donne pas. */}
         <div className="card table-scroll" style={{ padding: 0 }}>
           {loading ? (
             <p className="muted" style={{ padding: 20 }}>Chargement…</p>
           ) : supplements.length === 0 ? (
             <div className="empty-state">Aucune prestation ponctuelle enregistrée.</div>
           ) : (
-            <table>
-              <thead>
-                <tr><th>Type</th><th className="hide-mobile">Libellé</th><th>Montant HT</th><th>Statut</th><th className="hide-mobile">Demandée le</th><th></th></tr>
-              </thead>
-              <tbody>
-                {supplements.map((s) => (
-                  <tr key={s.id}>
-                    <td>{LABEL_TYPE_SUPPLEMENT[s.type]}</td>
-                    <td className="hide-mobile">{s.libelle}</td>
-                    <td>{formatMoney(s.montant_ht)}</td>
-                    <td>
-                      <span className={`badge ${s.statut === 'facturee' ? 'badge-ok' : 'badge-neutral'}`}>
-                        {LABEL_STATUT_SUPPLEMENT[s.statut]}
-                      </span>
-                    </td>
-                    <td className="hide-mobile">{formatDate(s.date_demande)}</td>
-                    <td className="td-actions">
-                      {s.statut === 'a_facturer' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => setFacturerSupplement(s)}>Marquer facturée</button>
-                      )}
-                      <button className="btn btn-outline btn-sm" onClick={() => setEditingSupplement(s)}>Modifier</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimerSupplement(s)}>Supprimer</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tableau-adaptable">
+              <table className="table-empilable table-empilable-en-carte">
+                <thead>
+                  <tr><th>Type</th><th className="hide-mobile">Libellé</th><th>Montant HT</th><th>Statut</th><th className="hide-mobile">Demandée le</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {supplements.map((s) => (
+                    <tr key={s.id}>
+                      <td data-libelle="Type">{LABEL_TYPE_SUPPLEMENT[s.type]}</td>
+                      <td className="hide-mobile" data-libelle="Libellé">{s.libelle}</td>
+                      <td data-libelle="Montant HT">{formatMoney(s.montant_ht)}</td>
+                      <td data-libelle="Statut">
+                        <span className={`badge ${s.statut === 'facturee' ? 'badge-ok' : 'badge-neutral'}`}>
+                          {LABEL_STATUT_SUPPLEMENT[s.statut]}
+                        </span>
+                      </td>
+                      <td className="hide-mobile" data-libelle="Demandée le">{formatDate(s.date_demande)}</td>
+                      <td className="td-actions">
+                        {s.statut === 'a_facturer' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => setFacturerSupplement(s)}>Marquer facturée</button>
+                        )}
+                        <button className="btn btn-outline btn-sm" onClick={() => setEditingSupplement(s)}>Modifier</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => supprimerSupplement(s)}>Supprimer</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </section>
@@ -479,25 +485,29 @@ function MouvementsModal({ compte, mouvements, onClose, onChanged }: {
         </form>
         {erreur && <p className="error-text">{erreur}</p>}
 
+        {/* Repliée en fiches sous 860 pixels d'enveloppe (08/10/2026), comme les prestations : le solde et « Supprimer » sortaient de
+            la vue, à toute largeur — la fenêtre n'a jamais plus de 600 pixels. Le cadre entoure les fiches, qui gardent leur jeu. */}
         <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
           {mouvements.length === 0 ? (
             <div className="empty-state">Aucun mouvement enregistré.</div>
           ) : (
-            <table>
-              <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th className="hide-mobile">Libellé</th><th>Solde</th><th></th></tr></thead>
-              <tbody>
-                {avecSolde.map((m) => (
-                  <tr key={m.id}>
-                    <td>{formatDate(m.date)}</td>
-                    <td>{LABEL_TYPE_MOUVEMENT_CCA[m.type]}</td>
-                    <td>{m.type === 'retrait' ? '-' : '+'}{formatMoney(m.montant)}</td>
-                    <td className="hide-mobile">{m.libelle ?? '—'}</td>
-                    <td>{formatMoney(m.soldeApres)}</td>
-                    <td className="td-actions"><button className="btn btn-danger btn-sm" onClick={() => supprimer(m)}>Supprimer</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="tableau-adaptable">
+              <table className="table-empilable table-empilable-en-carte">
+                <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th className="hide-mobile">Libellé</th><th>Solde</th><th></th></tr></thead>
+                <tbody>
+                  {avecSolde.map((m) => (
+                    <tr key={m.id}>
+                      <td data-libelle="Date">{formatDate(m.date)}</td>
+                      <td data-libelle="Type">{LABEL_TYPE_MOUVEMENT_CCA[m.type]}</td>
+                      <td data-libelle="Montant">{m.type === 'retrait' ? '-' : '+'}{formatMoney(m.montant)}</td>
+                      <td className="hide-mobile" data-libelle="Libellé">{m.libelle ?? '—'}</td>
+                      <td data-libelle="Solde">{formatMoney(m.soldeApres)}</td>
+                      <td className="td-actions"><button className="btn btn-danger btn-sm" onClick={() => supprimer(m)}>Supprimer</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>

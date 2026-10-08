@@ -914,6 +914,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       {/* EN PREMIER, avant même « sans catégorie » : celles-là ne produisent RIEN, celle-ci produit
           quelque chose de FAUX. Un total manquant finit par se remarquer ; un total juste en
           apparence et compté deux fois, non. */}
+      {/* Les tableaux des cartes d'anomalie qui suivent se replient en fiches sous 520 pixels de carte (08/10/2026), comme celui
+          des écritures plus bas : quatre à cinq colonnes dont un bouton (« Réécrire », « Régénérer »…) ne tenaient pas dans
+          un téléphone, et le bouton passait derrière un défilement latéral que rien n'annonce. Une `div` par cellule qui
+          porte plusieurs éléments : repliée, la cellule est une rangée flex, et chaque enfant direct y serait une pièce à part. */}
       {sansObjet.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -928,35 +932,41 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             {' '}Aucun autre contrôle ne peut les voir — les trois autres partent de la pièce, celui-ci
             part de l'écriture.
           </p>
-          <table>
-            <thead><tr><th>Pièce</th><th>Compté au brouillon</th><th>Ce qui a changé</th><th>Ce qu'il faut faire</th></tr></thead>
-            <tbody>
-              {sansObjet.map((o) => (
-                <tr key={o.piece.id}>
-                  <td>{o.piece.tiers ?? o.piece.nom_fichier}</td>
-                  <td>{formatMoney(o.montant)} <span className="muted">({o.nbLignes} ligne{o.nbLignes > 1 ? 's' : ''})</span></td>
-                  <td>{LIBELLE_MOTIF_SANS_OBJET[o.motif]}</td>
-                  <td className="muted">
-                    {ACTION_MOTIF_SANS_OBJET[o.motif]}
-                    {/* Le bouton n'existe QUE pour la facture d'un bien. Les trois autres motifs se
-                        réparent en amont puis se régénèrent : l'écriture doit y revenir, pas
-                        disparaître. */}
-                    {(o.motif === 'bien_sans_nature' || o.motif === 'bien_repris') && (
-                      <div style={{ marginTop: 8 }}>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          disabled={retrait === o.piece.id}
-                          onClick={() => retirerEcriture(o)}
-                        >
-                          {retrait === o.piece.id ? 'Retrait…' : "Retirer l'écriture"}
-                        </button>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Pièce</th><th>Compté au brouillon</th><th>Ce qui a changé</th><th>Ce qu'il faut faire</th></tr></thead>
+              <tbody>
+                {sansObjet.map((o) => (
+                  <tr key={o.piece.id}>
+                    <td data-libelle="Pièce">{o.piece.tiers ?? o.piece.nom_fichier}</td>
+                    <td data-libelle="Compté au brouillon">
+                      <div>{formatMoney(o.montant)} <span className="muted">({o.nbLignes} ligne{o.nbLignes > 1 ? 's' : ''})</span></div>
+                    </td>
+                    <td data-libelle="Ce qui a changé">{LIBELLE_MOTIF_SANS_OBJET[o.motif]}</td>
+                    <td data-libelle="Ce qu'il faut faire" className="muted">
+                      <div>
+                        {ACTION_MOTIF_SANS_OBJET[o.motif]}
+                        {/* Le bouton n'existe QUE pour la facture d'un bien. Les trois autres motifs se
+                            réparent en amont puis se régénèrent : l'écriture doit y revenir, pas
+                            disparaître. */}
+                        {(o.motif === 'bien_sans_nature' || o.motif === 'bien_repris') && (
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              disabled={retrait === o.piece.id}
+                              onClick={() => retirerEcriture(o)}
+                            >
+                              {retrait === o.piece.id ? 'Retrait…' : "Retirer l'écriture"}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -991,20 +1001,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             dans la charge. Les montants se corrigent depuis l'onglet Justificatifs, puis l'écriture
             est à régénérer.
           </p>
-          <table>
-            <thead><tr><th>Pièce</th><th>HT</th><th>TVA lue</th><th>TTC</th><th>Ce qui cloche</th></tr></thead>
-            <tbody>
-              {tvaImpossible.map(({ piece: p, motif }) => (
-                <tr key={p.id}>
-                  <td>{p.tiers ?? p.nom_fichier}</td>
-                  <td>{formatMoney(p.montant_ht)}</td>
-                  <td>{formatMoney(p.montant_tva)}</td>
-                  <td>{formatMoney(p.montant_ttc)}</td>
-                  <td className="muted">{LIBELLE_MOTIF_TVA[motif]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Pièce</th><th>HT</th><th>TVA lue</th><th>TTC</th><th>Ce qui cloche</th></tr></thead>
+              <tbody>
+                {tvaImpossible.map(({ piece: p, motif }) => (
+                  <tr key={p.id}>
+                    <td data-libelle="Pièce">{p.tiers ?? p.nom_fichier}</td>
+                    <td data-libelle="HT">{formatMoney(p.montant_ht)}</td>
+                    <td data-libelle="TVA lue">{formatMoney(p.montant_tva)}</td>
+                    <td data-libelle="TTC">{formatMoney(p.montant_ttc)}</td>
+                    <td data-libelle="Ce qui cloche" className="muted">{LIBELLE_MOTIF_TVA[motif]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1052,32 +1064,34 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               d’après la pièce et ses paiements actuels.
             </p>
           )}
-          <table>
-            <thead><tr><th>Pièce</th><th>Montant actuel</th><th>Date actuelle</th><th></th></tr></thead>
-            <tbody>
-              {piecesDesynchronisees.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.tiers ?? p.nom_fichier}</td>
-                  <td>{formatMoney(p.montant_ttc)}</td>
-                  <td>{p.date_piece ? formatDate(p.date_piece) : <span className="muted">sans date</span>}</td>
-                  <td>
-                    <button
-                      className="btn btn-outline btn-sm"
-                      disabled={regenerating === p.id || brouillonIncomplet !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
-                      title={brouillonIncomplet
-                        ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
-                        : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
-                        ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
-                        : undefined}
-                      onClick={() => regenererEcriture(p)}
-                    >
-                      {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Pièce</th><th>Montant actuel</th><th>Date actuelle</th><th></th></tr></thead>
+              <tbody>
+                {piecesDesynchronisees.map((p) => (
+                  <tr key={p.id}>
+                    <td data-libelle="Pièce">{p.tiers ?? p.nom_fichier}</td>
+                    <td data-libelle="Montant actuel">{formatMoney(p.montant_ttc)}</td>
+                    <td data-libelle="Date actuelle">{p.date_piece ? formatDate(p.date_piece) : <span className="muted">sans date</span>}</td>
+                    <td className="td-boutons">
+                      <button
+                        className="btn btn-outline btn-sm"
+                        disabled={regenerating === p.id || brouillonIncomplet !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
+                        title={brouillonIncomplet
+                          ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
+                          : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
+                          ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
+                          : undefined}
+                        onClick={() => regenererEcriture(p)}
+                      >
+                        {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {/* Une pièce que la frontière coupe : sa part validée ne se réécrit plus, et le contrôle ne compare que
               l'autre (lib/ecritures.ts) — le dire évite de chercher pourquoi l'ancien compte reste dans l'exercice. */}
           {frontiere && piecesDesynchronisees.some((p) => ecritures.some((e) => e.piece_id === p.id && estFigee(e.date, frontiere))) && (
@@ -1102,8 +1116,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             s’applique aujourd’hui ; si la catégorie n’a plus de compte de charge ou de produit, ou si la
             recette attend son taux, c’est depuis la fiche du mouvement, dans Banque.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Catégorie</th><th></th></tr></thead>
               <tbody>
                 {affectesPerimes.map((m) => {
@@ -1112,14 +1126,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   const refus = m.nature ? refusAffectation(m.ligne, m.categorie, assujettiTva, m.taux) : null
                   return (
                     <tr key={m.ligne.id}>
-                      <td>{formatDate(m.ligne.date)}</td>
-                      <td>{m.ligne.libelle}</td>
-                      <td>{formatMoney(m.ligne.montant)}</td>
-                      <td>
-                        {m.categorie.libelle} <span className="muted">({m.categorie.compte_comptable ?? 'sans compte'})</span>
-                        {m.taux != null && <span className="muted"> · TVA {libelleTaux(m.taux)}</span>}
+                      <td data-libelle="Date">{formatDate(m.ligne.date)}</td>
+                      <td data-libelle="Mouvement">{m.ligne.libelle}</td>
+                      <td data-libelle="Montant">{formatMoney(m.ligne.montant)}</td>
+                      <td data-libelle="Catégorie">
+                        <div>
+                          {m.categorie.libelle} <span className="muted">({m.categorie.compte_comptable ?? 'sans compte'})</span>
+                          {m.taux != null && <span className="muted"> · TVA {libelleTaux(m.taux)}</span>}
+                        </div>
                       </td>
-                      <td>
+                      <td className="td-boutons">
                         <button
                           className="btn btn-outline btn-sm"
                           disabled={reaffectation === m.ligne.id || !m.nature || refus !== null}
@@ -1161,8 +1177,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             qui s’applique aujourd’hui ; si une catégorie n’a plus de compte de charge ou de produit, ou si une
             part de recette attend son taux, modifie la ventilation depuis la fiche du mouvement, dans Banque.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th></th></tr></thead>
               <tbody>
                 {ventilesPerimes.map((l) => {
@@ -1171,10 +1187,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   const reecrivable = !refus && ecritureDeLaVentilation(l, parts, categories, modele, assujettiTva) !== null
                   return (
                     <tr key={l.id}>
-                      <td>{formatDate(l.date)}</td>
-                      <td>{l.libelle}</td>
-                      <td>{formatMoney(l.montant)}</td>
-                      <td>
+                      <td data-libelle="Date">{formatDate(l.date)}</td>
+                      <td data-libelle="Mouvement">{l.libelle}</td>
+                      <td data-libelle="Montant">{formatMoney(l.montant)}</td>
+                      <td className="td-boutons">
                         <button
                           className="btn btn-outline btn-sm"
                           disabled={reaffectation === l.id || !reecrivable}
@@ -1207,19 +1223,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             compte, d’un autre montant ou à une autre date. La base écrit le compte et l’écriture ensemble, donc cet écart
             ne devrait pas exister — il se dit plutôt que de se cacher. « Réécrire » la reprend sur le compte du mouvement.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Compte</th><th></th></tr></thead>
               <tbody>
                 {bilanPerimes.map((l) => {
                   const refus = l.compte_bilan ? refusCompteDeBilanDuMouvement(l, l.compte_bilan, modele) : null
                   return (
                     <tr key={l.id}>
-                      <td>{formatDate(l.date)}</td>
-                      <td>{l.libelle}</td>
-                      <td>{formatMoney(l.montant)}</td>
-                      <td>{l.compte_bilan}</td>
-                      <td>
+                      <td data-libelle="Date">{formatDate(l.date)}</td>
+                      <td data-libelle="Mouvement">{l.libelle}</td>
+                      <td data-libelle="Montant">{formatMoney(l.montant)}</td>
+                      <td data-libelle="Compte">{l.compte_bilan}</td>
+                      <td className="td-boutons">
                         <button
                           className="btn btn-outline btn-sm"
                           disabled={reaffectation === l.id || refus !== null}
@@ -1305,8 +1321,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             banque pour un prélèvement, le remboursement demandé (445830) pour un encaissement. La base écrit le
             rapprochement et l’écriture ensemble, donc cet écart ne devrait pas exister. « Réécrire » la reprend.
           </p>
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Déclaration</th><th></th></tr></thead>
               <tbody>
                 {paiementsTvaPerimes.map((l) => {
@@ -1318,11 +1334,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     : refusPaiementTva(l, declaration)
                   return (
                     <tr key={l.id}>
-                      <td>{formatDate(l.date)}</td>
-                      <td>{l.libelle}</td>
-                      <td>{formatMoney(l.montant)}</td>
-                      <td>{declaration ? libellePeriode(declaration.periode_debut, declaration.periode_fin) : '—'}</td>
-                      <td>
+                      <td data-libelle="Date">{formatDate(l.date)}</td>
+                      <td data-libelle="Mouvement">{l.libelle}</td>
+                      <td data-libelle="Montant">{formatMoney(l.montant)}</td>
+                      <td data-libelle="Déclaration">{declaration ? libellePeriode(declaration.periode_debut, declaration.periode_fin) : '—'}</td>
+                      <td className="td-boutons">
                         <button
                           className="btn btn-outline btn-sm"
                           disabled={reaffectation === l.id || raison !== null}
@@ -1353,24 +1369,26 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             balance ne disent donc pas le même résultat. Cause habituelle : la pièce ou le relevé
             bancaire a été supprimé après la génération de l'écriture.
           </p>
-          <table>
-            <thead><tr><th>Date</th><th>Compte</th><th>Libellé</th><th>Montant</th><th>Ce qui manque</th></tr></thead>
-            <tbody>
-              {ruptures.map((r, i) => (
-                <tr key={`${r.ecriture.id}-${r.motif}-${i}`}>
-                  <td>{formatDate(r.ecriture.date)}</td>
-                  <td>{r.ecriture.compte}</td>
-                  <td>{r.ecriture.libelle}</td>
-                  <td>{formatMoney(r.ecriture.sens === 'debit' ? r.ecriture.montant : -r.ecriture.montant)}</td>
-                  <td>
-                    {r.motif === 'sans_justificatif'
-                      ? 'aucun justificatif'
-                      : 'aucun mouvement bancaire'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Date</th><th>Compte</th><th>Libellé</th><th>Montant</th><th>Ce qui manque</th></tr></thead>
+              <tbody>
+                {ruptures.map((r, i) => (
+                  <tr key={`${r.ecriture.id}-${r.motif}-${i}`}>
+                    <td data-libelle="Date">{formatDate(r.ecriture.date)}</td>
+                    <td data-libelle="Compte">{r.ecriture.compte}</td>
+                    <td data-libelle="Libellé">{r.ecriture.libelle}</td>
+                    <td data-libelle="Montant">{formatMoney(r.ecriture.sens === 'debit' ? r.ecriture.montant : -r.ecriture.montant)}</td>
+                    <td data-libelle="Ce qui manque">
+                      {r.motif === 'sans_justificatif'
+                        ? 'aucun justificatif'
+                        : 'aucun mouvement bancaire'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1384,20 +1402,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? 'Une écriture de ces pièces ne s’équilibre pas — le plus souvent une facture dont la TVA ne recoupe pas le TTC. Chaque écriture part sous son propre numéro dans le FEC, et une écriture déséquilibrée fait rejeter le fichier.'
               : 'Le total des débits ne correspond pas à celui des crédits sur ces pièces — un montant réel de mouvement bancaire différent de la pièce (frais, paiement partiel...) l’explique parfois, mais ça mérite toujours une vérification avant l’export FEC.'}
           </p>
-          <table>
-            <thead><tr><th>Pièce</th><th>Écart</th></tr></thead>
-            <tbody>
-              {groupesDesequilibres.map((g) => {
-                const piece = pieceById(g.pieceId)
-                return (
-                  <tr key={g.pieceId}>
-                    <td>{piece?.tiers ?? piece?.nom_fichier ?? g.pieceId.slice(0, 8)}</td>
-                    <td>{formatMoney(g.solde)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Pièce</th><th>Écart</th></tr></thead>
+              <tbody>
+                {groupesDesequilibres.map((g) => {
+                  const piece = pieceById(g.pieceId)
+                  return (
+                    <tr key={g.pieceId}>
+                      <td>{piece?.tiers ?? piece?.nom_fichier ?? g.pieceId.slice(0, 8)}</td>
+                      <td>{formatMoney(g.solde)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1409,30 +1429,32 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             compte comptable associé — les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait. Un compte déjà
             renseigné est une suggestion à vérifier, pas une valeur figée — modifie-le avant d'enregistrer si besoin.
           </p>
-          <table>
-            <thead><tr><th>Catégorie</th><th>Compte</th><th></th></tr></thead>
-            <tbody>
-              {categoriesSansCompte.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.libelle}</td>
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 120 }}
-                      placeholder="ex. 606100"
-                      value={compteAffiche(c)}
-                      onChange={(e) => setComptesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                    />
-                    {!comptesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
-                      <span className="badge badge-neutral">suggestion</span>
-                    )}
-                  </td>
-                  <td>
-                    <button className="btn btn-outline btn-sm" onClick={() => saveCompte(c.id)}>Enregistrer</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Catégorie</th><th>Compte</th><th></th></tr></thead>
+              <tbody>
+                {categoriesSansCompte.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.libelle}</td>
+                    <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 120 }}
+                        placeholder="ex. 606100"
+                        value={compteAffiche(c)}
+                        onChange={(e) => setComptesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                      />
+                      {!comptesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                        <span className="badge badge-neutral">suggestion</span>
+                      )}
+                    </td>
+                    <td>
+                      <button className="btn btn-outline btn-sm" onClick={() => saveCompte(c.id)}>Enregistrer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1512,16 +1534,18 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             que la part datée après. Une opération trouvée après la validation se corrige sur l’exercice suivant —
             l’exercice validé, lui, ne se rouvre pas.
           </p>
-          <div className="table-scroll">
-            <table>
+          {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : « Ce qui s'écrit » est une phrase, et elle dépassait la carte de
+              quelques pixels — un défilement latéral pour rien. */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Pièce</th><th>Montant</th><th>Date</th><th>Ce qui s’écrit</th></tr></thead>
               <tbody>
                 {generation.dansUnExerciceValide.map(({ piece, suite }) => (
                   <tr key={piece.id}>
-                    <td>{piece.tiers ?? piece.nom_fichier}</td>
-                    <td>{formatMoney(piece.montant_ttc)}</td>
-                    <td>{piece.date_piece ? formatDate(piece.date_piece) : <span className="muted">sans date</span>}</td>
-                    <td>{CE_QUI_S_ECRIT[suite](formatDate(frontiere))}</td>
+                    <td data-libelle="Pièce">{piece.tiers ?? piece.nom_fichier}</td>
+                    <td data-libelle="Montant">{formatMoney(piece.montant_ttc)}</td>
+                    <td data-libelle="Date">{piece.date_piece ? formatDate(piece.date_piece) : <span className="muted">sans date</span>}</td>
+                    <td data-libelle="Ce qui s’écrit">{CE_QUI_S_ECRIT[suite](formatDate(frontiere))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1660,6 +1684,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         />
       </div>
 
+      {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, le montant et le sens — ce qui fait
+          l'écriture — sortaient de la vue, ou passaient derrière un défilement latéral que rien n'annonce. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -1668,46 +1694,56 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             {recherche.trim() ? `Aucune écriture ne correspond à « ${recherche.trim()} ».` : "Aucune écriture proposée pour l'instant."}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Compte</th>
-                <th>Libellé</th>
-                <th>Montant</th>
-                <th>Sens</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ecrituresAffichees.map((e) => (
-                <tr key={e.id}>
-                  <td>
-                    {formatDate(e.date)}
-                    {e.statut === 'validee' && (
-                      <>{' '}<span className="badge badge-ok" title="Exercice validé : cette écriture ne se modifie ni ne se retire plus.">validée</span></>
-                    )}
-                  </td>
-                  <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
-                    {e.compte}
-                    {/* Le lettrage de la ligne (lib/lettrage.ts) : la facture et les règlements qui la soldent portent le
-                        même code, celui du FEC (EcritureLet). */}
-                    {lettrage.has(e.id) && (
-                      <>{' '}<span className="badge badge-neutral" title={`Lettrée le ${formatDate(lettrage.get(e.id)!.date)} : les lignes de ce code se soldent sur ce compte — une facture et ses règlements, ou les pièces lettrées à la main.`}>
-                        lettrage {lettrage.get(e.id)!.code}
-                      </span></>
-                    )}
-                  </td>
-                  <td>{e.libelle}</td>
-                  <td>{formatMoney(e.montant)}</td>
-                  <td>
-                    {e.sens === 'debit'
-                      ? <span className="badge badge-neutral">Débit</span>
-                      : <span className="badge badge-ok">Crédit</span>}
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable-etroite">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Compte</th>
+                  <th>Libellé</th>
+                  <th>Montant</th>
+                  <th>Sens</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ecrituresAffichees.map((e) => (
+                  <tr key={e.id}>
+                    {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et chaque
+                        enfant direct y serait une pièce à part — la date et sa pastille écartées au bout de la rangée. */}
+                    <td data-libelle="Date">
+                      <div>
+                        {formatDate(e.date)}
+                        {e.statut === 'validee' && (
+                          <>{' '}<span className="badge badge-ok" title="Exercice validé : cette écriture ne se modifie ni ne se retire plus.">validée</span></>
+                        )}
+                      </div>
+                    </td>
+                    <td data-libelle="Compte">
+                      {/* La chasse fixe est sur la `div`, pas sur la cellule : repliée, le libellé de la fiche (`::before`) hériterait de
+                          celle de la cellule, et « Compte » s'écrirait en chiffres de machine. */}
+                      <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                        {e.compte}
+                        {/* Le lettrage de la ligne (lib/lettrage.ts) : la facture et les règlements qui la soldent portent le
+                            même code, celui du FEC (EcritureLet). */}
+                        {lettrage.has(e.id) && (
+                          <>{' '}<span className="badge badge-neutral" title={`Lettrée le ${formatDate(lettrage.get(e.id)!.date)} : les lignes de ce code se soldent sur ce compte — une facture et ses règlements, ou les pièces lettrées à la main.`}>
+                            lettrage {lettrage.get(e.id)!.code}
+                          </span></>
+                        )}
+                      </div>
+                    </td>
+                    <td data-libelle="Libellé">{e.libelle}</td>
+                    <td data-libelle="Montant">{formatMoney(e.montant)}</td>
+                    <td data-libelle="Sens">
+                      {e.sens === 'debit'
+                        ? <span className="badge badge-neutral">Débit</span>
+                        : <span className="badge badge-ok">Crédit</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

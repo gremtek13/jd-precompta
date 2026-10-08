@@ -188,17 +188,19 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
               {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà importé(s), ${nbErreur} en erreur`}
             </p>
 
-            <div className="table-scroll" style={{ maxHeight: 320, border: '1px solid var(--color-border)', borderRadius: 8 }}>
-              <table>
+            {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, le statut de chaque fichier passait
+                derrière un défilement latéral, que le nom d'un fichier sans espace allongeait encore. */}
+            <div className="table-scroll tableau-adaptable" style={{ maxHeight: 320, border: '1px solid var(--color-border)', borderRadius: 8 }}>
+              <table className="table-empilable-etroite">
                 <thead>
                   <tr><th>Fichier</th><th>Sous-dossier</th><th>Statut</th></tr>
                 </thead>
                 <tbody>
                   {fichiers.map((f, i) => (
                     <tr key={i}>
-                      <td>{f.file.name}</td>
-                      <td>{f.cheminDossier || '—'}</td>
-                      <td>
+                      <td data-libelle="Fichier">{f.file.name}</td>
+                      <td data-libelle="Sous-dossier">{f.cheminDossier || '—'}</td>
+                      <td data-libelle="Statut">
                         {f.statut === 'attente' && <span className="muted">En attente</span>}
                         {f.statut === 'upload' && <span className="badge badge-neutral">Envoi…</span>}
                         {f.statut === 'extraction' && <span className="badge badge-neutral">Extraction…</span>}

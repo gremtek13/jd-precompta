@@ -27,6 +27,19 @@
 // le libellé réduit à un mot par ligne. Deux règles de plus : un élément ne sort pas de sa carte
 // (`.card`, `.kpi`, `.widget`, `.cockpit`) ni de sa case de grille (`.bento > *`) ; et un texte ne sort
 // pas de sa boîte — un mot plus large que sa colonne déborde sans que la boîte bouge.
+//
+// UN MOT COUPÉ AU MILIEU NE DÉBORDAIT PAS (08/10/2026). Le bloc téléphone de index.css (`@media (max-width: 720px)`) donnait à
+// TOUT tableau `table-layout: fixed` et à toute cellule `word-break: break-word` : des colonnes à parts égales, que les
+// `.table-scroll` ne faisaient jamais défiler — rien ne dépassait —, et une colonne écrasée coupait ses mots n'importe où :
+// « rembourseme / nts », « 15 000,0 / 0 € », « 202 / 6 ». Le banc ne le voyait pas : un mot qui se coupe reste dans sa boîte,
+// et c'est la boîte que les trois règles mesurent. Mesuré à 390 pixels sur les 72 visites : 1 049 morceaux de 2 à 24 caractères
+// coupés, dans 28 tableaux, dont 244 montants (77 coupés dans le nombre) et 288 années ; à 720 pixels, 73, dans cinq tableaux
+// de six à huit colonnes ; à 1 024, 1 280 et 1 440, aucun. Quatrième règle : un MORCEAU — une suite de caractères sans espace
+// ordinaire, recoupée après un trait d'union ou un tiret, et après une barre oblique sauf entre deux chiffres (« 10/09/2026 »
+// n'offre aucune coupure au navigateur) — dont les rectangles tombent sur plus d'une ligne est une faute, citée avec une barre
+// verticale à l'endroit de la coupure. Les espaces insécables restent DANS le morceau : un montant en est un seul. Au-delà de 24
+// caractères (adresse électronique, IBAN, référence longue), couper est admis. Elle ne s'arrête pas aux conteneurs qui défilent :
+// c'est dans un `.table-scroll` que les mots se coupaient.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
@@ -431,7 +444,62 @@ for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
       if (trouvees.some((t) => t.el.contains(e))) continue
       textes.push(`${e.scrollWidth - e.clientWidth} px de texte hors de sa boîte — <${e.tagName.toLowerCase()}> ${extrait(e)}`)
     }
-    return [...trouvees.map((t) => t.texte), ...textes]
+    // Un mot coupé au milieu (voir l'en-tête). Le même cadre et la même exclusion des éléments fixes que ci-dessus, mais PAS
+    // celle des conteneurs qui défilent : un mot coupé dans un `.table-scroll` l'est aussi. Un jeton est une suite sans espace
+    // ORDINAIRE — `\s` compterait aussi les insécables, qui doivent rester dans le morceau —, et il se recoupe après un trait
+    // d'union ou un tiret, et après une barre oblique sauf entre deux chiffres : le navigateur n'y propose aucune coupure.
+    const estChiffre = (c) => c !== undefined && c >= '0' && c <= '9'
+    const morceauxDe = (jeton) => {
+      const bornes = []
+      let debut = 0
+      for (let i = 0; i < jeton.length - 1; i++) {
+        const c = jeton[i]
+        if ('-‐–—'.includes(c) || (c === '/' && !(estChiffre(jeton[i - 1]) && estChiffre(jeton[i + 1])))) {
+          bornes.push([debut, i + 1])
+          debut = i + 1
+        }
+      }
+      bornes.push([debut, jeton.length])
+      return bornes
+    }
+    // Le morceau tel que l'écran le coupe : une barre verticale devant chaque caractère qui tombe plus bas que le précédent.
+    const rangee = document.createRange()
+    const coupureDe = (n, debut, fin) => {
+      let sortie = ''
+      let haut = null
+      let i = debut
+      for (const car of n.nodeValue.slice(debut, fin)) {
+        rangee.setStart(n, i)
+        rangee.setEnd(n, i + car.length)
+        const r = [...rangee.getClientRects()].find((x) => x.width > 0)
+        if (r) {
+          if (haut !== null && r.top - haut > 3) sortie += '|'
+          haut = r.top
+        }
+        sortie += car
+        i += car.length
+      }
+      return sortie
+    }
+    const coupes = []
+    const marche = document.createTreeWalker(cadre, NodeFilter.SHOW_TEXT)
+    for (let n = marche.nextNode(); n; n = marche.nextNode()) {
+      const parent = n.parentElement
+      if (!parent || !n.nodeValue.trim() || fixes.some((f) => f.contains(parent))) continue
+      for (const jeton of n.nodeValue.matchAll(/[^ \t\n\r]+/g)) {
+        for (const [debut, fin] of morceauxDe(jeton[0])) {
+          // De 2 à 24 caractères : au-delà (adresse électronique, IBAN, référence longue), couper est admis.
+          const longueur = [...jeton[0].slice(debut, fin)].length
+          if (longueur < 2 || longueur > 24) continue
+          rangee.setStart(n, jeton.index + debut)
+          rangee.setEnd(n, jeton.index + fin)
+          const sommets = [...rangee.getClientRects()].filter((r) => r.width > 0).map((r) => r.top).sort((a, b) => a - b)
+          if (!sommets.some((s, i) => i > 0 && s - sommets[i - 1] > 3)) continue
+          coupes.push(`mot coupé au milieu — « ${coupureDe(n, jeton.index + debut, jeton.index + fin)} » dans <${parent.tagName.toLowerCase()}> (${Math.round(parent.getBoundingClientRect().width)} px)`)
+        }
+      }
+    }
+    return [...trouvees.map((t) => t.texte), ...textes, ...coupes]
   }, fenetre ?? null)
   total += fautes.length
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)

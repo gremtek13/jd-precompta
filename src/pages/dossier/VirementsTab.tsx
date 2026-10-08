@@ -233,6 +233,8 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
         />
       </div>
 
+      {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, le bouton « Retirer » — et l'état de
+          l'écriture — passaient derrière un défilement latéral que rien n'annonce. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -246,53 +248,55 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
                 : "Aucun virement personnel marqué pour l'instant."}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Libellé</th>
-                <th>Montant</th>
-                <th>Écriture</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {affichees.map((l) => (
-                <tr key={l.id}>
-                  <td>{formatDate(l.date)}</td>
-                  <td>{l.libelle}</td>
-                  <td>{formatMoney(l.montant)}</td>
-                  <td>
-                    {/* Sur une lecture partielle des écritures, on ne sait pas : on ne dit rien plutôt
-                        que d'annoncer « sans écriture » un virement dont l'écriture n'a pas été lue. */}
-                    {lectureEcritures
-                      ? <span className="muted">—</span>
-                      : idsSansEcritureJuste.has(l.id)
-                        ? dateFigee(l.date, anneesValidees)
-                          // Figé : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
-                          ? (
-                            <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne s’écrit plus.`}>
-                              {idsAvecEcriture.has(l.id) ? 'Écriture différente' : 'Sans écriture'}
-                            </span>
-                          )
-                          : <span className="badge badge-warning">{idsAvecEcriture.has(l.id) ? 'À réécrire' : 'Sans écriture'}</span>
-                        : l.montant === 0
-                          ? <span className="muted">Rien à écrire</span>
-                          : <span className="badge badge-ok">Compte {compte}</span>}
-                  </td>
-                  <td>
-                    {dateFigee(l.date, anneesValidees)
-                      ? <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne se retire plus.`}>Figé</span>
-                      : (
-                        <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(l.id)}>
-                          Retirer
-                        </button>
-                      )}
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable-etroite">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Libellé</th>
+                  <th>Montant</th>
+                  <th>Écriture</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {affichees.map((l) => (
+                  <tr key={l.id}>
+                    <td data-libelle="Date">{formatDate(l.date)}</td>
+                    <td data-libelle="Libellé">{l.libelle}</td>
+                    <td data-libelle="Montant">{formatMoney(l.montant)}</td>
+                    <td data-libelle="Écriture">
+                      {/* Sur une lecture partielle des écritures, on ne sait pas : on ne dit rien plutôt
+                          que d'annoncer « sans écriture » un virement dont l'écriture n'a pas été lue. */}
+                      {lectureEcritures
+                        ? <span className="muted">—</span>
+                        : idsSansEcritureJuste.has(l.id)
+                          ? dateFigee(l.date, anneesValidees)
+                            // Figé : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
+                            ? (
+                              <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne s’écrit plus.`}>
+                                {idsAvecEcriture.has(l.id) ? 'Écriture différente' : 'Sans écriture'}
+                              </span>
+                            )
+                            : <span className="badge badge-warning">{idsAvecEcriture.has(l.id) ? 'À réécrire' : 'Sans écriture'}</span>
+                          : l.montant === 0
+                            ? <span className="muted">Rien à écrire</span>
+                            : <span className="badge badge-ok">Compte {compte}</span>}
+                    </td>
+                    <td className="td-boutons">
+                      {dateFigee(l.date, anneesValidees)
+                        ? <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne se retire plus.`}>Figé</span>
+                        : (
+                          <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(l.id)}>
+                            Retirer
+                          </button>
+                        )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

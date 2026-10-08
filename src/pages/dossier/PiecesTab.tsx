@@ -683,6 +683,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
         </p>
       )}
 
+      {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, la colonne du statut — « Validée »,
+          « Rapprochée » — sortait de la vue de vingt-trois pixels, et rien n'annonçait le défilement latéral. L'enveloppe du repli
+          est une `div` posée DANS la carte : la carte est déjà un conteneur (`liste-pieces`, qui efface les colonnes secondaires),
+          et la requête sans nom de ce bloc se lit désormais sur l'enveloppe, qui a la largeur de la carte (sans marge intérieure). */}
       <div className="card table-scroll liste-pieces" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -691,186 +695,197 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
             {recherche.trim() ? `Aucune pièce ne correspond à « ${recherche.trim()} ».` : 'Aucune pièce.'}
           </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th className="col-checkbox"></th>
-                <th>Date</th>
-                <th>Tiers</th>
-                <th className="hide-mobile hide-tres-etroit">Catégorie</th>
-                <th className="hide-mobile hide-etroit">Sous-dossier</th>
-                <th>Montant TTC</th>
-                <th className="hide-mobile hide-etroit">Confiance</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <Fragment key={p.id}>
-                <tr className={`clickable${ficheVisible && editing?.id === p.id ? ' ligne-ouverte' : ''}`}>
-                  <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
-                  </td>
-                  <td onClick={() => ouvrirPiece(p)}>{formatDate(p.date_piece)}</td>
-                  <td onClick={() => ouvrirPiece(p)}>
-                    {p.tiers ?? '—'}
-                    {/* La dernière précision est lue ICI, sur la ligne, pas dans la fiche : si
-                        l'opérateur doit ouvrir une modale pour savoir ce qu'est « BOULANGER
-                        MARSEILLE », il choisira la catégorie sans l'avoir lue. Le plus récent des
-                        commentaires prime — quand le cabinet a rappelé le client, sa note vaut mieux
-                        que la précision initiale. */}
-                    {(() => {
-                      const fil = filDeLaPiece(p.id)
-                      const dernier = dernierCommentaire(fil)
-                      if (!dernier) return null
-                      return (
-                        <div className="piece-precision" title={fil.map((c) => `${c.origine === 'cabinet' ? 'Cabinet' : 'Client'} : ${c.texte}`).join('\n')}>
-                          <span className={`badge ${dernier.origine === 'cabinet' ? 'badge-neutral' : 'badge-ok'}`}>
-                            {dernier.origine === 'cabinet' ? 'Cabinet' : 'Client'}
-                          </span>
-                          <span>{dernier.texte}</span>
-                          {fil.length > 1 && <span className="muted"> +{fil.length - 1}</span>}
-                        </div>
-                      )
-                    })()}
-                    {/* « BOULANGER MARSEILLE » ne dit pas ce qui a été acheté — le texte du document,
-                        lui, le dit. Il était lu à l'extraction puis jeté ; il se consulte maintenant
-                        ici, sans quitter la ligne ni ouvrir la fiche. */}
-                    {avecTexteOcr.has(p.id) && (
-                      <button
-                        type="button"
-                        className="lien-texte-lu"
-                        onClick={(e) => { e.stopPropagation(); basculerTexteOcr(p.id) }}
-                        title="Afficher le texte lu par la reconnaissance automatique sur ce document"
-                      >
-                        {ocrOuvert?.pieceId === p.id ? '▾ texte lu' : '▸ texte lu'}
-                      </button>
-                    )}
-                  </td>
-                  <td className="hide-mobile hide-tres-etroit" onClick={() => ouvrirPiece(p)}>
-                    {p.categorie_id ? (
-                      categorieLabel(p.categorie_id)
-                    ) : suggestionPour(p) ? (
-                      <>— <span className="muted" style={{ fontSize: '0.8rem' }}>(suggéré : {categorieLabel(suggestionPour(p))})</span></>
-                    ) : '—'}
-                  </td>
-                  <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
-                  <td onClick={() => ouvrirPiece(p)}>
-                    {formatMoney(p.montant_ttc)}
-                    {/* Le montant affiché est en euros ; le document, lui, dit autre chose. Sans ce
-                        rappel, chercher « 24 » sur une facture OpenAI ne donne rien — la ligne
-                        porte 20,52. */}
-                    {p.devise !== DEVISE_PIVOT && (
-                      <div className="muted" style={{ fontSize: '0.75rem' }}>
-                        {p.montant_devise != null ? `${p.montant_devise.toFixed(2)} ${p.devise}` : p.devise}
-                        {/* Provisoire tant que la banque n'a pas tranché : le taux BCE ignore le
-                            spread et les frais réellement appliqués. Le dire évite qu'un montant à
-                            quelques centimes près passe pour définitif. */}
-                        {p.taux_change == null
-                          ? ' — à convertir'
-                          : p.conversion_source === 'bce' && ' — provisoire'}
-                      </div>
-                    )}
-                    {/* Sur la ligne, pas seulement dans un onglet de contrôle : c'est ici que la
-                        pièce se valide, et une fois validée le chiffre part tel quel en TVA
-                        déductible. Le badge dit ce qui est démontré faux, pas « à vérifier ». */}
-                    {motifTvaParPiece.has(p.id) && (
-                      <div style={{ marginTop: 4 }}>
-                        <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={`TVA lue : ${formatMoney(p.montant_tva)} — ${LIBELLE_MOTIF_TVA[motifTvaParPiece.get(p.id)!]}`}>
-                          TVA impossible
-                        </span>
-                      </div>
-                    )}
-                    {moisSuspectParPiece.has(p.id) && (
-                      <div style={{ marginTop: 4 }}>
-                        <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={moisSuspectParPiece.get(p.id)}>
-                          Mois à vérifier
-                        </span>
-                      </div>
-                    )}
-                    {dateImpossibleParPiece.has(p.id) && (
-                      <div style={{ marginTop: 4 }}>
-                        <span
-                          className="badge badge-danger"
-                          style={{ fontSize: '0.7rem' }}
-                          title={`Datée du ${formatDate(dateImpossibleParPiece.get(p.id)!.date)}, déposée le ${formatDate(dateImpossibleParPiece.get(p.id)!.borne)} : on ne photographie pas une facture qui n'existe pas encore. Ce qui a été lu est autre chose — une validité, une échéance, ou un chiffre mal reconnu. Telle quelle, la pièce part dans un exercice où personne ne la compte comme manquante.`}
-                        >
-                          Date impossible
-                        </span>
-                      </div>
-                    )}
-                    {deviseNonConvertieIds.has(p.id) && (
-                      <div style={{ marginTop: 4 }}>
-                        <span
-                          className="badge badge-danger"
-                          style={{ fontSize: '0.7rem' }}
-                          title={`Montant en ${p.devise} sans taux de change : ce qui entre en comptabilité est la valeur en devise prise pour des euros. Le montant définitif se lit sur le relevé bancaire, pas sur un cours de référence.`}
-                        >
-                          Devise non convertie
-                        </span>
-                      </div>
-                    )}
-                    {doublonParPiece.has(p.id) && (
-                      <div style={{ marginTop: 4 }}>
-                        <span
-                          className="badge badge-danger"
-                          style={{ fontSize: '0.7rem' }}
-                          title={`${doublonParPiece.get(p.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
-                        >
-                          Doublon de contenu
-                        </span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>
-                    {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
-                    {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
-                    {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}
-                    {!p.confiance && <span className="muted">—</span>}
-                    {/* Une facture électronique, pas une lecture de document : sa confiance dit ce que l'import a
-                        vérifié (le destinataire, la cohérence des montants), et ses remarques sont dans ses notes. */}
-                    {p.source === 'plateforme' && (
-                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 2 }}>facture électronique</div>
-                    )}
-                  </td>
-                  <td onClick={() => ouvrirPiece(p)}>
-                    {p.statut === 'validee'
-                      ? <span className="badge badge-ok">Validée</span>
-                      : <span className="badge badge-warning">À valider</span>}
-                    {/* Distinct de la validation (voir audit ergonomie comparatif) : une pièce validée
-                        n'est pas forcément encore rapprochée d'un mouvement bancaire réel — l'un ne
-                        dit rien de l'autre, jamais fusionnés dans un seul badge "tout est fait". */}
-                    {p.statut === 'validee' && (
-                      <div style={{ marginTop: 4 }}>
-                        {piecesRapprochees.has(p.id)
-                          ? <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Rapprochée</span>
-                          : <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
-                      </div>
-                    )}
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable-etroite">
+              <thead>
+                <tr>
+                  <th className="col-checkbox"></th>
+                  <th>Date</th>
+                  <th>Tiers</th>
+                  <th className="hide-mobile hide-tres-etroit">Catégorie</th>
+                  <th className="hide-mobile hide-etroit">Sous-dossier</th>
+                  <th>Montant TTC</th>
+                  <th className="hide-mobile hide-etroit">Confiance</th>
+                  <th>Statut</th>
                 </tr>
-                {ocrOuvert?.pieceId === p.id && (
-                  <tr>
-                    <td colSpan={8} style={{ background: 'var(--color-surface-2)' }}>
-                      <div className="texte-lu">
-                        <div className="texte-lu-entete">
-                          <strong>Texte lu sur le document</strong>
-                          <span className="muted">
-                            Tel que la reconnaissance automatique l'a lu, sans correction — c'est ce
-                            qui a servi à remplir les champs ci-dessus.
-                          </span>
-                        </div>
-                        {ocrOuvert.texte === null
-                          ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
-                          : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+              </thead>
+              <tbody>
+                {filtered.map((p) => (
+                  <Fragment key={p.id}>
+                  <tr className={`clickable${ficheVisible && editing?.id === p.id ? ' ligne-ouverte' : ''}`}>
+                    <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
+                    </td>
+                    <td data-libelle="Date" onClick={() => ouvrirPiece(p)}>{formatDate(p.date_piece)}</td>
+                    <td data-libelle="Tiers" onClick={() => ouvrirPiece(p)}>
+                      {p.tiers ?? '—'}
+                      {/* La SUITE du texte — la précision, le lien « texte lu », les pastilles — dans un bloc (`cellule-suite`) : repliée,
+                          la cellule est une rangée flex, et chaque enfant direct y serait une pièce à part, écartée au bout de la
+                          rangée ; le bloc passe sous le texte, sur toute la largeur de la fiche. */}
+                      <div className="cellule-suite">
+                        {/* La dernière précision est lue ICI, sur la ligne, pas dans la fiche : si
+                            l'opérateur doit ouvrir une modale pour savoir ce qu'est « BOULANGER
+                            MARSEILLE », il choisira la catégorie sans l'avoir lue. Le plus récent des
+                            commentaires prime — quand le cabinet a rappelé le client, sa note vaut mieux
+                            que la précision initiale. */}
+                        {(() => {
+                          const fil = filDeLaPiece(p.id)
+                          const dernier = dernierCommentaire(fil)
+                          if (!dernier) return null
+                          return (
+                            <div className="piece-precision" title={fil.map((c) => `${c.origine === 'cabinet' ? 'Cabinet' : 'Client'} : ${c.texte}`).join('\n')}>
+                              <span className={`badge ${dernier.origine === 'cabinet' ? 'badge-neutral' : 'badge-ok'}`}>
+                                {dernier.origine === 'cabinet' ? 'Cabinet' : 'Client'}
+                              </span>
+                              <span>{dernier.texte}</span>
+                              {fil.length > 1 && <span className="muted"> +{fil.length - 1}</span>}
+                            </div>
+                          )
+                        })()}
+                        {/* « BOULANGER MARSEILLE » ne dit pas ce qui a été acheté — le texte du document,
+                            lui, le dit. Il était lu à l'extraction puis jeté ; il se consulte maintenant
+                            ici, sans quitter la ligne ni ouvrir la fiche. */}
+                        {avecTexteOcr.has(p.id) && (
+                          <button
+                            type="button"
+                            className="lien-texte-lu"
+                            onClick={(e) => { e.stopPropagation(); basculerTexteOcr(p.id) }}
+                            title="Afficher le texte lu par la reconnaissance automatique sur ce document"
+                          >
+                            {ocrOuvert?.pieceId === p.id ? '▾ texte lu' : '▸ texte lu'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hide-mobile hide-tres-etroit" onClick={() => ouvrirPiece(p)}>
+                      {p.categorie_id ? (
+                        categorieLabel(p.categorie_id)
+                      ) : suggestionPour(p) ? (
+                        <>— <span className="muted" style={{ fontSize: '0.8rem' }}>(suggéré : {categorieLabel(suggestionPour(p))})</span></>
+                      ) : '—'}
+                    </td>
+                    <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
+                    <td data-libelle="Montant TTC" onClick={() => ouvrirPiece(p)}>
+                      {formatMoney(p.montant_ttc)}
+                      <div className="cellule-suite">
+                        {/* Le montant affiché est en euros ; le document, lui, dit autre chose. Sans ce
+                            rappel, chercher « 24 » sur une facture OpenAI ne donne rien — la ligne
+                            porte 20,52. */}
+                        {p.devise !== DEVISE_PIVOT && (
+                          <div className="muted" style={{ fontSize: '0.75rem' }}>
+                            {p.montant_devise != null ? `${p.montant_devise.toFixed(2)} ${p.devise}` : p.devise}
+                            {/* Provisoire tant que la banque n'a pas tranché : le taux BCE ignore le
+                                spread et les frais réellement appliqués. Le dire évite qu'un montant à
+                                quelques centimes près passe pour définitif. */}
+                            {p.taux_change == null
+                              ? ' — à convertir'
+                              : p.conversion_source === 'bce' && ' — provisoire'}
+                          </div>
+                        )}
+                        {/* Sur la ligne, pas seulement dans un onglet de contrôle : c'est ici que la
+                            pièce se valide, et une fois validée le chiffre part tel quel en TVA
+                            déductible. Le badge dit ce qui est démontré faux, pas « à vérifier ». */}
+                        {motifTvaParPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={`TVA lue : ${formatMoney(p.montant_tva)} — ${LIBELLE_MOTIF_TVA[motifTvaParPiece.get(p.id)!]}`}>
+                              TVA impossible
+                            </span>
+                          </div>
+                        )}
+                        {moisSuspectParPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={moisSuspectParPiece.get(p.id)}>
+                              Mois à vérifier
+                            </span>
+                          </div>
+                        )}
+                        {dateImpossibleParPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              className="badge badge-danger"
+                              style={{ fontSize: '0.7rem' }}
+                              title={`Datée du ${formatDate(dateImpossibleParPiece.get(p.id)!.date)}, déposée le ${formatDate(dateImpossibleParPiece.get(p.id)!.borne)} : on ne photographie pas une facture qui n'existe pas encore. Ce qui a été lu est autre chose — une validité, une échéance, ou un chiffre mal reconnu. Telle quelle, la pièce part dans un exercice où personne ne la compte comme manquante.`}
+                            >
+                              Date impossible
+                            </span>
+                          </div>
+                        )}
+                        {deviseNonConvertieIds.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              className="badge badge-danger"
+                              style={{ fontSize: '0.7rem' }}
+                              title={`Montant en ${p.devise} sans taux de change : ce qui entre en comptabilité est la valeur en devise prise pour des euros. Le montant définitif se lit sur le relevé bancaire, pas sur un cours de référence.`}
+                            >
+                              Devise non convertie
+                            </span>
+                          </div>
+                        )}
+                        {doublonParPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              className="badge badge-danger"
+                              style={{ fontSize: '0.7rem' }}
+                              title={`${doublonParPiece.get(p.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
+                            >
+                              Doublon de contenu
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>
+                      {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
+                      {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
+                      {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}
+                      {!p.confiance && <span className="muted">—</span>}
+                      {/* Une facture électronique, pas une lecture de document : sa confiance dit ce que l'import a
+                          vérifié (le destinataire, la cohérence des montants), et ses remarques sont dans ses notes. */}
+                      {p.source === 'plateforme' && (
+                        <div className="muted" style={{ fontSize: '0.75rem', marginTop: 2 }}>facture électronique</div>
+                      )}
+                    </td>
+                    <td data-libelle="Statut" onClick={() => ouvrirPiece(p)}>
+                      <div>
+                        {p.statut === 'validee'
+                          ? <span className="badge badge-ok">Validée</span>
+                          : <span className="badge badge-warning">À valider</span>}
+                        {/* Distinct de la validation (voir audit ergonomie comparatif) : une pièce validée
+                            n'est pas forcément encore rapprochée d'un mouvement bancaire réel — l'un ne
+                            dit rien de l'autre, jamais fusionnés dans un seul badge "tout est fait". */}
+                        {p.statut === 'validee' && (
+                          <div style={{ marginTop: 4 }}>
+                            {piecesRapprochees.has(p.id)
+                              ? <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Rapprochée</span>
+                              : <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
-                )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                  {ocrOuvert?.pieceId === p.id && (
+                    <tr>
+                      <td colSpan={8} style={{ background: 'var(--color-surface-2)' }}>
+                        <div className="texte-lu">
+                          <div className="texte-lu-entete">
+                            <strong>Texte lu sur le document</strong>
+                            <span className="muted">
+                              Tel que la reconnaissance automatique l'a lu, sans correction — c'est ce
+                              qui a servi à remplir les champs ci-dessus.
+                            </span>
+                          </div>
+                          {ocrOuvert.texte === null
+                            ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
+                            : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

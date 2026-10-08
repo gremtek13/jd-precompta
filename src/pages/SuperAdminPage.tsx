@@ -291,102 +291,109 @@ export default function SuperAdminPage() {
 
       {exportErreur && <p className="error-text">{exportErreur}</p>}
 
+      {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : dix colonnes et trois boutons par cabinet — « Plafond IA »,
+          « Exporter », « Supprimer » — ne tiennent pas dans un ordinateur de 1 024 pixels, où ils passaient derrière un défilement
+          latéral. Les colonnes masquées sur téléphone le restent. `table-empilable-en-carte` rend aux fiches le jeu que la carte,
+          sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : cabinets.length === 0 ? (
           <div className="empty-state">Aucun cabinet.</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th className="hide-mobile"></th>
-                <th>Cabinet</th>
-                <th>Dossiers</th>
-                <th className="hide-mobile">Admins</th>
-                <th className="hide-mobile">Clients</th>
-                <th className="hide-mobile">Tokens agent (E/S)</th>
-                <th className="hide-mobile">Coût estimé agent</th>
-                <th className="hide-mobile">Plafond IA (mois)</th>
-                <th className="hide-mobile">Créé le</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {cabinets.map((c) => (
-                <tr key={c.id}>
-                  <td className="hide-mobile">
-                    <span
-                      title={c.couleur_primaire ?? 'Aucune couleur configurée'}
-                      style={{
-                        display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
-                        background: c.couleur_primaire ?? 'var(--color-border)',
-                        border: '1px solid var(--color-border)',
-                      }}
-                    />
-                  </td>
-                  <td style={{ fontWeight: 600 }}>{c.nom}</td>
-                  <td>{c.nb_dossiers}</td>
-                  <td className="hide-mobile">{c.nb_admins}</td>
-                  <td className="hide-mobile">{c.nb_clients}</td>
-                  <td className="hide-mobile">
-                    {c.tokens_entree === 0 && c.tokens_sortie === 0
-                      ? <span className="muted">—</span>
-                      : `${c.tokens_entree.toLocaleString('fr-FR')} / ${c.tokens_sortie.toLocaleString('fr-FR')}`}
-                  </td>
-                  <td className="hide-mobile">{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
-                  <td className="hide-mobile">
-                    {c.limite_ia_alerte_usd == null && c.limite_ia_blocage_usd == null ? (
-                      <span className="muted">Aucun</span>
-                    ) : (
-                      <>
-                        <span
-                          className={`badge ${
-                            c.limite_ia_blocage_usd != null && c.cout_mois_usd >= c.limite_ia_blocage_usd ? 'badge-danger'
-                            : c.limite_ia_alerte_usd != null && c.cout_mois_usd >= c.limite_ia_alerte_usd ? 'badge-warning'
-                            : 'badge-ok'
-                          }`}
-                        >
-                          {formatUsd(c.cout_mois_usd)}
-                        </span>
-                        <div className="muted" style={{ fontSize: '0.78rem' }}>
-                          alerte {c.limite_ia_alerte_usd != null ? formatUsd(c.limite_ia_alerte_usd) : '—'} · blocage {c.limite_ia_blocage_usd != null ? formatUsd(c.limite_ia_blocage_usd) : '—'}
-                        </div>
-                      </>
-                    )}
-                  </td>
-                  <td className="hide-mobile">{formatDate(c.created_at)}</td>
-                  <td className="td-actions">
-                    <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirPlafond(c)}>
-                      Plafond IA
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      disabled={c.nb_dossiers === 0 || exportEnCours !== null}
-                      title={c.nb_dossiers === 0 ? 'Aucun dossier à exporter.' : undefined}
-                      onClick={() => exporterCabinet(c)}
-                    >
-                      {exportEnCours === c.id
-                        ? (exportProgression ? `Export… (${exportProgression.fait}/${exportProgression.total})` : 'Export…')
-                        : 'Exporter'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm"
-                      disabled={c.nb_dossiers > 0 || c.nb_admins > 0}
-                      title={c.nb_dossiers > 0 || c.nb_admins > 0
-                        ? `Retire d'abord ses ${c.nb_dossiers} dossier(s) et ${c.nb_admins} membre(s) d'équipe.`
-                        : undefined}
-                      onClick={() => setASupprimer(c)}
-                    >
-                      Supprimer
-                    </button>
-                  </td>
+          <div className="tableau-adaptable">
+            <table className="table-empilable table-empilable-en-carte">
+              <thead>
+                <tr>
+                  <th className="hide-mobile"></th>
+                  <th>Cabinet</th>
+                  <th>Dossiers</th>
+                  <th className="hide-mobile">Admins</th>
+                  <th className="hide-mobile">Clients</th>
+                  <th className="hide-mobile">Tokens agent (E/S)</th>
+                  <th className="hide-mobile">Coût estimé agent</th>
+                  <th className="hide-mobile">Plafond IA (mois)</th>
+                  <th className="hide-mobile">Créé le</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cabinets.map((c) => (
+                  <tr key={c.id}>
+                    <td className="hide-mobile" data-libelle="Couleur">
+                      <span
+                        title={c.couleur_primaire ?? 'Aucune couleur configurée'}
+                        style={{
+                          display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+                          background: c.couleur_primaire ?? 'var(--color-border)',
+                          border: '1px solid var(--color-border)',
+                        }}
+                      />
+                    </td>
+                    <td data-libelle="Cabinet" style={{ fontWeight: 600 }}>{c.nom}</td>
+                    <td data-libelle="Dossiers">{c.nb_dossiers}</td>
+                    <td className="hide-mobile" data-libelle="Admins">{c.nb_admins}</td>
+                    <td className="hide-mobile" data-libelle="Clients">{c.nb_clients}</td>
+                    <td className="hide-mobile" data-libelle="Tokens agent (E/S)">
+                      {c.tokens_entree === 0 && c.tokens_sortie === 0
+                        ? <span className="muted">—</span>
+                        : `${c.tokens_entree.toLocaleString('fr-FR')} / ${c.tokens_sortie.toLocaleString('fr-FR')}`}
+                    </td>
+                    <td className="hide-mobile" data-libelle="Coût estimé agent">{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
+                    <td className="hide-mobile" data-libelle="Plafond IA (mois)">
+                      {c.limite_ia_alerte_usd == null && c.limite_ia_blocage_usd == null ? (
+                        <span className="muted">Aucun</span>
+                      ) : (
+                        // Une `div` : repliée, la cellule est une rangée flex, et la pastille et ses seuils y seraient deux pièces à part.
+                        <div>
+                          <span
+                            className={`badge ${
+                              c.limite_ia_blocage_usd != null && c.cout_mois_usd >= c.limite_ia_blocage_usd ? 'badge-danger'
+                              : c.limite_ia_alerte_usd != null && c.cout_mois_usd >= c.limite_ia_alerte_usd ? 'badge-warning'
+                              : 'badge-ok'
+                            }`}
+                          >
+                            {formatUsd(c.cout_mois_usd)}
+                          </span>
+                          <div className="muted" style={{ fontSize: '0.78rem' }}>
+                            alerte {c.limite_ia_alerte_usd != null ? formatUsd(c.limite_ia_alerte_usd) : '—'} · blocage {c.limite_ia_blocage_usd != null ? formatUsd(c.limite_ia_blocage_usd) : '—'}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="hide-mobile" data-libelle="Créé le">{formatDate(c.created_at)}</td>
+                    <td className="td-actions">
+                      <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirPlafond(c)}>
+                        Plafond IA
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        disabled={c.nb_dossiers === 0 || exportEnCours !== null}
+                        title={c.nb_dossiers === 0 ? 'Aucun dossier à exporter.' : undefined}
+                        onClick={() => exporterCabinet(c)}
+                      >
+                        {exportEnCours === c.id
+                          ? (exportProgression ? `Export… (${exportProgression.fait}/${exportProgression.total})` : 'Export…')
+                          : 'Exporter'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        disabled={c.nb_dossiers > 0 || c.nb_admins > 0}
+                        title={c.nb_dossiers > 0 || c.nb_admins > 0
+                          ? `Retire d'abord ses ${c.nb_dossiers} dossier(s) et ${c.nb_admins} membre(s) d'équipe.`
+                          : undefined}
+                        onClick={() => setASupprimer(c)}
+                      >
+                        Supprimer
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

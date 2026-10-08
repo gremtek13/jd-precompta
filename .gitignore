@@ -29,3 +29,6 @@ supabase/.temp/
 
 # Captures produites par outils/captures/vitrine.mjs — des images, pas des sources.
 outils/captures/sorties/
+
+# Copies isolées du dépôt que les agents de la session créent pour travailler sans gêner le reste.
+.claude/worktrees/

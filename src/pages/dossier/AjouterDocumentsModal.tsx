@@ -178,16 +178,18 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
               {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà présent(s), ${nbErreur} en erreur`}
             </p>
 
-            <div className="table-scroll" style={{ maxHeight: 280, border: '1px solid var(--color-border)', borderRadius: 8 }}>
-              <table>
+            {/* Repliée en fiches sous 520 pixels d'enveloppe (08/10/2026) : sur téléphone, le statut de chaque fichier et son bouton
+                de retrait passaient derrière un défilement latéral, que le nom d'un fichier sans espace allongeait encore. */}
+            <div className="table-scroll tableau-adaptable" style={{ maxHeight: 280, border: '1px solid var(--color-border)', borderRadius: 8 }}>
+              <table className="table-empilable-etroite">
                 <thead>
                   <tr><th>Fichier</th><th>Statut</th><th></th></tr>
                 </thead>
                 <tbody>
                   {fichiers.map((f, i) => (
                     <tr key={i}>
-                      <td>{f.file.name}</td>
-                      <td>
+                      <td data-libelle="Fichier">{f.file.name}</td>
+                      <td data-libelle="Statut">
                         {f.statut === 'attente' && <span className="muted">En attente</span>}
                         {f.statut === 'upload' && <span className="badge badge-neutral">Envoi…</span>}
                         {f.statut === 'extraction' && <span className="badge badge-neutral">Extraction…</span>}
@@ -195,7 +197,7 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
                         {f.statut === 'doublon' && <span className="badge badge-neutral">{f.message}</span>}
                         {f.statut === 'erreur' && <span className="badge badge-danger">{f.message ?? 'Erreur'}</span>}
                       </td>
-                      <td style={{ width: 36 }}>
+                      <td className="td-boutons col-retrait">
                         {f.statut === 'attente' && (
                           <button type="button" className="btn btn-outline btn-sm" title="Retirer" onClick={() => retirer(i)}>✕</button>
                         )}

@@ -179,8 +179,11 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, credite, 
 
             <div className="field">
               <label>Lignes créditées</label>
-              <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
-                <table>
+              {/* Repliée en fiches sous 860 pixels d'enveloppe (08/10/2026), comme les lignes d'une facture — donc toujours : la
+                  fenêtre n'a jamais plus de 680 pixels. La quantité, le prix, le taux et le bouton de retrait passaient derrière un
+                  défilement latéral. Le cadre entoure les fiches, qui gardent leur jeu (`table-empilable-en-carte`). */}
+              <div className="table-scroll tableau-adaptable" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <table className="table-empilable table-empilable-en-carte">
                   <thead>
                     <tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA %</th><th>Montant TTC</th><th></th></tr>
                   </thead>
@@ -189,12 +192,12 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, credite, 
                       const c = calculerLigne(parseFloat(l.quantite) || 0, parseFloat(l.prix_unitaire_ht) || 0, parseFloat(l.taux_tva) || 0)
                       return (
                         <tr key={i}>
-                          <td><input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160 }} /></td>
-                          <td><input type="number" step="0.01" min="0" value={l.quantite} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
-                          <td><input type="number" step="0.01" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
-                          <td><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
-                          <td>{formatMoney(c.montant_ttc)}</td>
-                          <td><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)}>✕</button></td>
+                          <td data-libelle="Désignation"><input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160 }} /></td>
+                          <td data-libelle="Qté"><input type="number" step="0.01" min="0" value={l.quantite} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="PU HT"><input type="number" step="0.01" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
+                          <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
+                          <td data-libelle="Montant TTC">{formatMoney(c.montant_ttc)}</td>
+                          <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)}>✕</button></td>
                         </tr>
                       )
                     })}

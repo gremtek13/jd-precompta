@@ -250,6 +250,16 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    ordinateur ; empilée sur mobile (voir media query), sinon des boutons pleine largeur forcée dans une
    colonne étroite font éclater leur texte mot par mot. */
 .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* La colonne du seul bouton de retrait d'une liste de fichiers (AjouterDocumentsModal) : étroite, comme l'était sa largeur en ligne
+   — qui, posée en ligne, aurait empêché la fiche repliée de la prendre en entier (voir `td-boutons`). */
+.col-retrait { width: 36px; }
+/* Un NOM DE FICHIER — le lien d'un document, d'un appel de cotisation — est un seul mot quand il n'a pas d'espace : `Appel_cotisations_URSSAF_
+   T3_2026_ref_00045678912345.pdf`, 53 caractères, plus large qu'un téléphone. Dans une liste, c'est la PAGE entière qu'il élargissait
+   (535 pixels de large dans une fenêtre de 390, mesuré le 08/10/2026 sur les appels de cotisation non rattachés) ; dans un tableau, il
+   élargissait la colonne, la carte défilait, et « C'est une facture » et « Supprimer » (Documents, volet de droite fermé à 1 280
+   pixels : 1 108 pixels de tableau dans 936) passaient hors de vue. `anywhere` et non `break-word` : celui-ci suffit dans une liste,
+   mais ne change rien à la largeur minimale d'une colonne — le tableau gardait ses 1 108 pixels ; `anywhere` l'a ramené à 936. */
+.nom-fichier { overflow-wrap: anywhere; }
 
 /* ---------- Coque de l'application ---------- */
 /* Sur ordinateur, trois volets à la manière des applications récentes : la barre latérale posée sur
@@ -871,16 +881,21 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 }
 
 /* ---------- Tableau qui se replie en fiches ---------- */
-/* `table-layout: fixed` plus haut convient à un tableau qu'on LIT de colonnes courtes : un texte long revient
-   à la ligne dans sa colonne. Il est désastreux sur un tableau qu'on REMPLIT — huit colonnes de champs
-   comprimées dans 360 px donnent des en-têtes à une lettre par ligne et des champs de deux caractères
-   (constaté sur la carte Véhicules) —, et sur un tableau qu'on lit dont une colonne porte une PHRASE : cinq
-   colonnes dans 330 px coupaient les mots en leur milieu, « Dotatio / n » (constaté sur la concordance de la
-   2035, le 04/10/2026).
-   Le défilement latéral ne vaudrait pas mieux : on n'en verrait jamais plus de deux colonnes à la fois. La
-   ligne se replie donc en fiche empilée (`table-empilable`), chaque cellule précédée de son libellé — c'est
-   l'en-tête du tableau qui redescend dans chaque cellule. Un tableau qu'on remplit porte en plus
-   `table-formulaire`, pour ses champs. */
+/* Sur téléphone, un tableau de colonnes courtes qu'on LIT garde la largeur que ses colonnes lui demandent et défile dans son
+   `.table-scroll` s'il dépasse sa carte (bloc téléphone, plus bas) ; il était comprimé à parts égales (`table-layout: fixed`)
+   jusqu'au 08/10/2026. La compression est désastreuse sur un tableau qu'on REMPLIT — huit colonnes de champs dans 360 px
+   donnent des en-têtes à une lettre par ligne et des champs de deux caractères (constaté sur la carte Véhicules) —, et sur un
+   tableau qu'on lit dont une colonne porte une PHRASE : cinq colonnes dans 330 px coupaient les mots en leur milieu,
+   « Dotatio / n » (constaté sur la concordance de la 2035, le 04/10/2026).
+   Le défilement latéral qui la remplace ne vaut pas mieux : on n'en voit jamais plus de deux colonnes à la fois, et un bouton ou
+   un montant peut rester hors de vue. La ligne se replie donc en fiche empilée (`table-empilable`), chaque cellule précédée de
+   son libellé — c'est l'en-tête du tableau qui redescend dans chaque cellule. Un tableau qu'on remplit porte en plus
+   `table-formulaire`, pour ses champs.
+   QUELLE CLASSE (08/10/2026). Un tableau qui défile n'est admis que si aucune COMMANDE — un bouton, un champ, un sélecteur — n'y
+   passe hors de vue, à aucune largeur : téléphone, 1 024 pixels, volet de droite ouvert, volets élargis au plus. Celui qui en
+   cache une se replie sous 860 pixels de carte (`table-empilable`, ce bloc), comme la liste des factures. Celui qui n'a rien à
+   cacher mais dont les mots se coupaient sur téléphone ne se replie que sous 520 pixels (`table-empilable-etroite`, plus bas) :
+   une fiche par ligne allonge un tableau de quarante lignes, et ne doit pas le faire tant qu'il tient. */
 /* LA FICHE EMPILÉE SUIT LA PLACE DE LA CARTE, PAS LA LARGEUR DE LA FENÊTRE (04/10/2026). Elle ne valait
    d'abord que sur téléphone ; mais la carte Véhicules, passée à neuf colonnes avec l'état du forfait, écrasait
    aussi ses champs à 1 024 pixels, et volet de droite ouvert à 1 280 — un kilométrage réduit à un chiffre
@@ -911,8 +926,14 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
     padding: 8px 0;
     border-bottom: 1px solid var(--color-border);
     /* Les alignements à droite posés en style inline pour la vue tableau n'ont plus de sens une fois
-       la cellule devenue une ligne libellé/valeur. */
-    text-align: left !important;
+       la cellule devenue une ligne libellé/valeur, ni la largeur maximale d'une cellule (un nom de fournisseur à 260 pixels) :
+       elle raccourcirait le filet de la fiche. */
+    text-align: left !important; max-width: none !important;
+    /* Un mot plus long que la fiche (une référence, un nom de fichier sans espace) s'y coupe plutôt que de la déborder : sa carte
+       défilait, et la commande qui suivait le mot passait hors de vue (banc étendu, Documents à 1 280 pixels, volet de droite large
+       de 760 : le lien d'un nom de 53 caractères sortait de sa fiche de 35 pixels). Ce n'est plus l'affaire du téléphone seul : la
+       fiche vaut à toute largeur où sa carte est étroite. */
+    overflow-wrap: anywhere;
   }
   .table-empilable tr td:last-child { border-bottom: none; }
 
@@ -929,30 +950,49 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
      montant, juste en dessous, annonce déjà le sien. */
   .table-empilable tfoot td[colspan] { display: none; }
 
-  /* La cellule des BOUTONS d'une ligne (`.td-actions`, qui les fait déjà passer à la ligne) : ils se suivent à gauche, sans
-     libellé. `space-between`, fait pour une valeur en face de son libellé, les écarterait au bout de chaque ligne. Sans
-     bouton — une transmission dont rien n'est plus à faire —, la cellule ne montre rien : ni ses marges, ni la ligne de
-     séparation de la cellule d'avant, qui doublerait alors le bord de la fiche. */
-  .table-empilable td.td-actions { justify-content: flex-start; gap: 6px; }
-  .table-empilable td.td-actions:empty { display: none; }
-  .table-empilable td:has(+ td.td-actions:empty) { border-bottom: none; }
+  /* La cellule des BOUTONS d'une ligne : ils se suivent à gauche, sans libellé. `space-between`, fait pour une valeur en face de
+     son libellé, les écarterait au bout de chaque ligne. Sans bouton — une transmission dont rien n'est plus à faire —, la cellule
+     ne montre rien : ni ses marges, ni la ligne de séparation de la cellule d'avant, qui doublerait alors le bord de la fiche.
+     Deux classes : `td-actions` fait de la cellule un `flex` à toute largeur — et le filet qui la sépare de la ligne suivante cesse
+     alors de s'aligner sur celui des autres cellules d'une ligne plus haute (vu sur capture, 1 440 px : les virements) ; `td-boutons`
+     garde sa cellule de tableau, et ne devient une rangée qu'une fois la ligne repliée. */
+  .table-empilable td.td-actions,
+  .table-empilable td.td-boutons { justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+  .table-empilable td.td-actions:empty,
+  .table-empilable td.td-boutons:empty { display: none; }
+  .table-empilable td:has(+ td.td-actions:empty),
+  .table-empilable td:has(+ td.td-boutons:empty) { border-bottom: none; }
 
-  /* Une pastille d'état tient à la place qu'a la ligne : elle ne force plus sa largeur (voir `.badge-une-ligne`). */
+  /* Une pastille d'état tient à la place qu'a la ligne : elle ne force plus sa largeur (voir `.badge-une-ligne`), et passe à la
+     ligne entre deux mots, jamais au milieu d'un (« Rapproc / hée »). */
   .table-empilable .badge-une-ligne { white-space: normal; }
   .table-empilable .pastilles-empilees { align-items: flex-end; }
+  .table-empilable td .badge { overflow-wrap: normal; }
 
   /* Une carte SANS marge intérieure (la liste des factures : `.card` à `padding: 0`, pour que l'en-tête du tableau aille
      jusqu'à son bord) : repliées, les fiches y toucheraient la bordure. Le jeu est celui du repli étroit plus bas. */
   .table-empilable-en-carte { padding: 12px 12px 0; }
 
-  /* Un tableau qu'on REMPLIT : le champ occupe ce qui reste, à droite du libellé. `min-width: 0` sans quoi
-     un `input` refuse de descendre sous sa largeur intrinsèque et repousse le libellé hors de l'écran. */
+  /* Un champ dans une fiche — le choix du rôle d'un membre, la catégorie d'un document, les lignes d'une facture — occupe ce qui
+     reste, à droite du libellé. `min-width: 0` sans quoi un `input` refuse de descendre sous sa largeur intrinsèque (le
+     `select` d'une pièce jointe prend celle de son nom de fichier le plus long) et repousse le libellé hors de l'écran. Une
+     case à cocher garde sa taille : elle n'est pas un champ qu'on remplit. Un tableau qu'on REMPLIT (`table-formulaire`) les
+     règle de même, quel que soit le type du champ. */
+  .table-empilable td input:not([type="checkbox"]):not([type="radio"]),
+  .table-empilable td select,
   .table-formulaire td input,
-  .table-formulaire td select {
-    flex: 1 1 auto; min-width: 0; max-width: 62%;
-    /* 16px : en dessous, Safari iOS zoome à la mise au point et l'écran part de travers. */
-    font-size: 16px;
-  }
+  .table-formulaire td select { flex: 1 1 auto; min-width: 0; max-width: 62%; }
+  /* 16px : en dessous, Safari iOS zoome à la mise au point et l'écran part de travers. */
+  .table-formulaire td input,
+  .table-formulaire td select { font-size: 16px; }
+
+  /* La case de sélection d'une liste (les documents) n'est pas une valeur en face d'un libellé : en tête de la fiche, sans filet
+     — celui du bloc téléphone (`width: 26px`) la laisserait au bord d'un trait de la largeur d'une case. Seule celle qui n'a pas
+     de libellé : la case « Lettrer » des comptes de tiers, elle, est une ligne de la fiche comme une autre. Une ligne fusionnée
+     du CORPS porte un bloc — le texte lu d'un document, un formulaire de modification, un tableau d'amortissement — et non une
+     valeur en face d'un libellé : toute la largeur de la fiche, rien d'écarté au bord. */
+  .table-empilable td.col-checkbox:not([data-libelle]) { width: 100%; border-bottom: none; }
+  .table-empilable tbody td[colspan] { display: block; }
 
   .table-formulaire td.td-action { padding-top: 10px; }
   .table-formulaire td.td-action:empty { display: none; }
@@ -990,7 +1030,11 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 8px 0;
     border-bottom: 1px solid var(--color-border);
-    text-align: left !important;
+    /* Comme l'alignement posé en ligne pour la vue tableau, la largeur maximale d'une cellule (un nom de fournisseur à 260 pixels)
+       n'a plus de sens une fois la cellule devenue une ligne de la fiche : elle en raccourcirait le filet. */
+    text-align: left !important; max-width: none !important;
+    /* Un mot plus long que la fiche s'y coupe plutôt que de la déborder, comme dans le bloc à 860 pixels. */
+    overflow-wrap: anywhere;
   }
   .table-empilable-etroite tr td:last-child { border-bottom: none; }
 
@@ -1001,6 +1045,40 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   }
   .table-empilable-etroite td:not([data-libelle])::before { content: none; }
   .table-empilable-etroite tfoot td[colspan] { display: none; }
+
+  /* Les règles qui suivent sont celles du bloc à 860 pixels, une à une (08/10/2026) : une requête de conteneur ne prend pas son
+     seuil dans une variable, et deux seuils veulent deux blocs. La cellule des boutons (`td-actions` et `td-boutons`, dont la
+     raison est dite là-bas), les pastilles, les champs, la case de sélection et la cellule fusionnée du corps y sont les mêmes ;
+     d'ici seulement, le jeu autour des fiches et la suite d'un texte de cellule. */
+  .table-empilable-etroite td.td-actions,
+  .table-empilable-etroite td.td-boutons { justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+  .table-empilable-etroite td.td-actions:empty,
+  .table-empilable-etroite td.td-boutons:empty { display: none; }
+  .table-empilable-etroite td:has(+ td.td-actions:empty),
+  .table-empilable-etroite td:has(+ td.td-boutons:empty) { border-bottom: none; }
+  .table-empilable-etroite .badge-une-ligne { white-space: normal; }
+  .table-empilable-etroite .pastilles-empilees { align-items: flex-end; }
+  .table-empilable-etroite td .badge { overflow-wrap: normal; }
+  /* Un champ dans une fiche — les lignes d'une facture — occupe ce qui reste, à droite de son libellé ; `min-width: 0` sans quoi un
+     `input` refuse de descendre sous sa largeur intrinsèque et repousse le libellé hors de la fiche. Une case à cocher garde sa
+     taille : elle n'est pas un champ qu'on remplit. */
+  .table-empilable-etroite td input:not([type="checkbox"]):not([type="radio"]),
+  .table-empilable-etroite td select { flex: 1 1 auto; min-width: 0; max-width: 62%; }
+  /* La SUITE d'un texte de cellule — la précision d'une pièce, ses pastilles : un bloc (`cellule-suite`) que la rangée de la fiche
+     ne doit pas écarter au bout, à côté du texte. Il passe dessous, sur toute la largeur ; vide, il n'existe pas (sans quoi
+     l'interstice des lignes de la rangée resterait). */
+  .table-empilable-etroite td:has(> .cellule-suite) { flex-wrap: wrap; }
+  .table-empilable-etroite td > .cellule-suite { flex: 1 0 100%; }
+  .table-empilable-etroite td > .cellule-suite:empty { display: none; }
+  /* La case à cocher de sélection d'une liste (les pièces) n'est pas une valeur en face d'un libellé : en tête de la fiche, sans
+     filet — celui du bloc téléphone (`width: 26px`) la laissait au bord d'un trait de la largeur d'une case. */
+  .table-empilable-etroite td.col-checkbox:not([data-libelle]) { width: 100%; border-bottom: none; }
+  /* Le jeu de 12 pixels est celui d'une carte SANS marge intérieure (la balance, les listes) : dans une carte qui a la
+     sienne, ou dans un cadre qui entoure déjà le tableau, la fiche s'y retrouverait enfoncée de deux marges. */
+  .table-empilable-etroite.table-empilable-sans-jeu { padding: 0; }
+  /* Une ligne fusionnée du CORPS porte un bloc — le texte lu d'une pièce, un formulaire de modification, un tableau
+     d'amortissement — et non une valeur en face d'un libellé : toute la largeur de la fiche, rien d'écarté au bord. */
+  .table-empilable-etroite tbody td[colspan] { display: block; }
 }
 
 /* Le bouton « Assistant » de l'en-tête du dossier (voir AssistantDossier) — enfoncé tant que
@@ -1574,13 +1652,33 @@ a.nav-menu-item { text-decoration: none; }
   /* Empêche le zoom automatique de Safari iOS à la mise au point d'un champ en dessous de 16px. */
   .field input, .field select, .field textarea { font-size: 16px; }
 
-  /* table-layout:fixed : un texte long dans une cellule revient à la ligne dans sa colonne au lieu de
-     faire grandir tout le tableau hors de l'écran. */
-  table { font-size: 0.85rem; table-layout: fixed; width: 100%; }
-  th, td { padding: 8px 6px; overflow-wrap: break-word; word-break: break-word; }
-  /* Une pastille peut passer à la ligne entre deux mots ("Non / rapprochée"), jamais au milieu d'un
-     mot ("Rapproc / hée") comme le permettait la règle de coupure des cellules ci-dessus. */
-  td .badge { word-break: normal; overflow-wrap: normal; }
+  /* UN MOT NE SE COUPE PLUS AU MILIEU (08/10/2026). Ce bloc donnait à tout tableau `table-layout: fixed` et à toute cellule
+     `word-break: break-word` : des colonnes à parts égales, quel que soit leur contenu, qu'un `.table-scroll` ne faisait jamais
+     défiler puisque rien ne dépassait — et une colonne écrasée coupait ses mots n'importe où : « rembourseme / nts »,
+     « 15 000,0 / 0 € », « 202 / 6 » (1 049 morceaux sur les 72 visites du banc à 390 px, dans 28 tableaux, dont 244 montants ;
+     73 à 720 px). La disposition automatique donne à chaque colonne au moins son plus long mot, et la cellule ne dit plus rien
+     de la coupure : `word-break: break-word` est le nom ancien d'`overflow-wrap: anywhere`, qui rétrécit la largeur MINIMALE des
+     colonnes (mesuré dans une carte de 330 px, cinq colonnes : 11 morceaux coupés avec lui, aucun sans) ; et `overflow-wrap:
+     break-word`, qui n'y change rien, ne sert à rien non plus dans une colonne qui a toujours son plus long mot — sauf à couper
+     à quelques centièmes de pixel près un mot qui y tient (« Crédi / t » dans un en-tête en capitales : 45,28 px de mot pour
+     44,94 de cellule). Un tableau plus large que l'écran défile donc dans son `.table-scroll`, sa première colonne lisible ;
+     celui dont une commande sortirait de la vue se replie en fiches (voir « Quelle classe », plus haut : sous 860 pixels de carte
+     pour `table-empilable`, sous 520 pour `table-empilable-etroite`). */
+  table { font-size: 0.85rem; width: 100%; }
+  th, td { padding: 8px 6px; }
+  /* Ce que la fiche empilée a de propre à ce bloc : une colonne masquée sur téléphone (`hide-mobile`) le reste dans la fiche — la
+     règle plus bas est moins précise que celle qui rend sa cellule en `flex`, et la ferait reparaître —, et les boutons d'une
+     fiche prennent sa largeur, l'un sous l'autre, comme `td-actions` plus bas. Sur téléphone la fiche à 860 pixels est toujours
+     repliée ; celle à 520 pixels (`-etroite`) ne l'est que sous cette largeur de carte. La coupure d'un mot plus long que la fiche
+     (`overflow-wrap`) ne dépend pas de la fenêtre : elle est dans les blocs de la fiche. */
+  .table-empilable td.hide-mobile { display: none; }
+  .table-empilable td.td-boutons { flex-direction: column; align-items: stretch; }
+  .table-empilable td.td-boutons .btn { width: 100%; }
+  @container tableau (max-width: 520px) {
+    .table-empilable-etroite td.hide-mobile { display: none; }
+    .table-empilable-etroite td.td-boutons { flex-direction: column; align-items: stretch; }
+    .table-empilable-etroite td.td-boutons .btn { width: 100%; }
+  }
   th.col-checkbox, td.col-checkbox { width: 26px; padding-right: 0; }
   .td-actions { flex-direction: column; align-items: stretch; }
   .td-actions .btn { width: 100%; }
@@ -1688,8 +1786,7 @@ a.nav-menu-item { text-decoration: none; }
   .widget-action:has(.recherche) { flex-basis: 100%; }
   .widget-action .recherche { width: 100%; }
   /* La colonne d'action se réduit à un chevron : la ligne entière est déjà cliquable (tr.clickable),
-     le chevron ne fait que le dire. Largeur fixée, sinon table-layout:fixed lui donnerait une colonne
-     entière comme aux autres. */
+     le chevron ne fait que le dire. Largeur posée : la colonne n'a que la place du chevron. */
   th.col-ouvrir, td.col-ouvrir { width: 26px; padding-left: 0; padding-right: 4px; }
   .col-ouvrir .btn { display: none; }
   .chevron-mobile { display: block; }
@@ -1726,17 +1823,18 @@ a.nav-menu-item { text-decoration: none; }
 .facture-imprimable { width: min(720px, 95vw); max-height: 92vh; overflow-y: auto; }
 .facture-imprimable-actions { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 16px; }
 
-/* Le tableau des lignes a sa propre disposition. Le bloc téléphone (`@media (max-width: 720px)`) n'est pas réservé à l'écran :
-   la zone imprimable d'une page A4 mesure environ 718 pixels dans Chromium, donc ses règles s'appliquent aussi à la facture
-   IMPRIMÉE — dont `table-layout: fixed`, qui donne six colonnes égales : la désignation tenait dans un sixième de la page
-   (onze lignes pour une phrase) pendant que les colonnes de chiffres gaspillaient leur place. À l'écran, entre 580 et 720
-   pixels, la même règle coupait « DÉSIGNATIO / N ». La disposition automatique laisse à la désignation ce que les chiffres
-   ne prennent pas ; sous 520 pixels, la ligne est une fiche (`table-empilable-etroite`) et la disposition n'y change rien. */
-.facture-imprimable table { table-layout: auto; }
-/* Seule la désignation passe à la ligne. Le même bloc téléphone laisse casser n'importe où (`word-break: break-word`), et la
-   disposition automatique retire d'abord la place à ce qui peut se couper : sans ceci, elle réduisait les colonnes de chiffres
-   à leur lettre — « 46,0 / 0 € », « TV / A », « 1 840, / 00 € », mesuré sur le PDF A4 — pour donner toute la page à la
-   désignation. Un chiffre garde sa largeur, et ses colonnes celle de leur plus long montant. */
+/* Le bloc téléphone (`@media (max-width: 720px)`) n'est pas réservé à l'écran : la zone imprimable d'une page A4 mesure environ
+   718 pixels dans Chromium, donc ses règles s'appliquent aussi à la facture IMPRIMÉE. Il lui imposait `table-layout: fixed`, qui
+   donne six colonnes égales — la désignation tenait dans un sixième de la page (onze lignes pour une phrase) pendant que les
+   colonnes de chiffres gaspillaient leur place, et « DÉSIGNATIO / N » se coupait à l'écran entre 580 et 720 pixels —, et il
+   laissait casser n'importe où. Il ne fait plus ni l'un ni l'autre (08/10/2026) : la règle `table-layout: auto` qui y suppléait
+   est retirée, mesurée sur le PDF A4 de 91 lignes et sur l'aperçu à 390, 560, 600, 720 et 1 440 pixels, mêmes colonnes avec
+   et sans elle. Sous 520 pixels, la ligne est une fiche (`table-empilable-etroite`). */
+/* Seule la désignation passe à la ligne : un en-tête à deux mots, un montant, un taux gardent leur ligne, quelle que soit la
+   place que réclame une désignation longue. Le bloc téléphone laissait casser n'importe où (`word-break: break-word`), et la
+   disposition automatique retirait d'abord la place à ce qui pouvait se couper — « 46,0 / 0 € », « TV / A », « 1 840, / 00 € »,
+   mesuré sur le PDF A4. Depuis qu'il ne casse plus, le PDF de 91 lignes ne change qu'à 0,1 point près sans cette règle : elle ne
+   corrige plus rien de mesuré, et garde l'intention pour la prochaine colonne dont l'en-tête aurait deux mots. */
 .facture-imprimable th:not(:first-child), .facture-imprimable td:not(:first-child) { white-space: nowrap; }
 
 /* Impression d'une facture (voir FactureApercu) — ne garder que le contenu de la facture, UNE fois et en entier. La technique

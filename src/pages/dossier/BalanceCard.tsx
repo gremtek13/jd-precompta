@@ -227,16 +227,18 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
           </p>
           <details>
             <summary>Voir les soldes d’ouverture</summary>
-            <div className="table-scroll">
-              <table>
+            {/* Les trois tableaux « compte, libellé, débit, crédit » de cette carte se replient en fiches sous 520 pixels
+                d'enveloppe (08/10/2026) : sur téléphone, le crédit sortait de la vue. La carte a sa marge : pas de jeu. */}
+            <div className="table-scroll tableau-adaptable">
+              <table className="table-empilable-etroite table-empilable-sans-jeu">
                 <thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead>
                 <tbody>
                   {ouverture.map((a) => (
                     <tr key={a.id}>
-                      <td>{a.compte}{a.compte_origine && a.compte_origine !== a.compte ? ` (${a.compte_origine})` : ''}</td>
-                      <td>{a.libelle}</td>
-                      <td>{a.sens === 'debit' ? formatMoney(a.montant) : ''}</td>
-                      <td>{a.sens === 'credit' ? formatMoney(a.montant) : ''}</td>
+                      <td data-libelle="Compte">{a.compte}{a.compte_origine && a.compte_origine !== a.compte ? ` (${a.compte_origine})` : ''}</td>
+                      <td data-libelle="Libellé">{a.libelle}</td>
+                      <td data-libelle="Débit">{a.sens === 'debit' ? formatMoney(a.montant) : ''}</td>
+                      <td data-libelle="Crédit">{a.sens === 'credit' ? formatMoney(a.montant) : ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -297,16 +299,16 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
             {lecture.colonnes.credit + 1}.
           </p>
 
-          <div className="table-scroll">
-            <table>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead>
               <tbody>
                 {lecture.lignes.map((l) => (
                   <tr key={l.compte}>
-                    <td>{l.compte}</td>
-                    <td>{l.libelle}</td>
-                    <td>{l.debit ? formatMoney(l.debit) : ''}</td>
-                    <td>{l.credit ? formatMoney(l.credit) : ''}</td>
+                    <td data-libelle="Compte">{l.compte}</td>
+                    <td data-libelle="Libellé">{l.libelle}</td>
+                    <td data-libelle="Débit">{l.debit ? formatMoney(l.debit) : ''}</td>
+                    <td data-libelle="Crédit">{l.credit ? formatMoney(l.credit) : ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -377,16 +379,16 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
                   </ul>
                   <details style={{ marginBottom: 10 }}>
                     <summary>Voir ce qui sera écrit</summary>
-                    <div className="table-scroll">
-                      <table>
+                    <div className="table-scroll tableau-adaptable">
+                      <table className="table-empilable-etroite table-empilable-sans-jeu">
                         <thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead>
                         <tbody>
                           {preparation.lignes.map((l, n) => (
                             <tr key={n}>
-                              <td>{l.compte}{l.compteOrigine && l.compteOrigine !== l.compte ? ` (${l.compteOrigine})` : ''}</td>
-                              <td>{l.libelle}</td>
-                              <td>{l.sens === 'debit' ? formatMoney(l.montant) : ''}</td>
-                              <td>{l.sens === 'credit' ? formatMoney(l.montant) : ''}</td>
+                              <td data-libelle="Compte">{l.compte}{l.compteOrigine && l.compteOrigine !== l.compte ? ` (${l.compteOrigine})` : ''}</td>
+                              <td data-libelle="Libellé">{l.libelle}</td>
+                              <td data-libelle="Débit">{l.sens === 'debit' ? formatMoney(l.montant) : ''}</td>
+                              <td data-libelle="Crédit">{l.sens === 'credit' ? formatMoney(l.montant) : ''}</td>
                             </tr>
                           ))}
                         </tbody>
