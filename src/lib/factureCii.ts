@@ -35,7 +35,7 @@ import type { ArticleExoneration, FactureEmise, NatureOperation, StatutTva } fro
 export const PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'
 
 // L'unité « pièce » de la recommandation 20 de la CEE-ONU : l'application ne distingue pas encore les unités par ligne
-// (une heure, un kilogramme), et la règle BR-23 en exige une sur chaque ligne. superpdp-emit fait le même choix.
+// (une heure, un kilogramme), et la règle BR-23 en exige une sur chaque ligne.
 export const UNITE_GENERIQUE = 'C62'
 
 // Les taux que la DGFiP admet (règle G1.24), en pour cent.
@@ -164,7 +164,7 @@ export function sirenDe(siret: string | null | undefined): string | null {
 }
 
 // Le numéro de TVA intracommunautaire français d'une entreprise : FR, une clé de deux chiffres, le SIREN (CGI, art. 286
-// ter ; clé = (12 + 3 × (SIREN modulo 97)) modulo 97). Le même calcul que superpdp-emit.
+// ter ; clé = (12 + 3 × (SIREN modulo 97)) modulo 97).
 export function numeroTvaFrancais(siren: string): string {
   const cle = (12 + 3 * (Number(siren) % 97)) % 97
   return `FR${String(cle).padStart(2, '0')}${siren}`
@@ -181,7 +181,7 @@ export interface AdresseStructuree {
 // Une adresse saisie en texte libre, rangée dans les champs de la norme (BT-35 à BT-38) : la ligne qui commence par un
 // code postal français de cinq chiffres donne le code postal et la ville, les autres sont les lignes de l'adresse.
 // Une adresse sur une seule ligne qui finit par « , 75001 Paris » se lit de même. Rien d'autre n'est interprété : sans
-// code postal reconnu, tout reste dans les lignes, telles qu'écrites — c'est ce qu'en faisait déjà superpdp-emit.
+// code postal reconnu, tout reste dans les lignes, telles qu'écrites.
 export function adresseStructuree(texte: string | null): AdresseStructuree {
   let lignes = (texte ?? '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter((l) => l !== '')
   if (lignes.length === 1) {

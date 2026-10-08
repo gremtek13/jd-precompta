@@ -986,7 +986,7 @@ const D = executer<{
   dateDeParis: (ms: number) => string
   nomDuFichier: (numero: string) => string
   empreinteSha256: (octets: Uint8Array) => Promise<string>
-  corpsDuDepot: (info: Record<string, string>, fichier: Uint8Array, frontiere: string) => { typeContenu: string; corps: Uint8Array }
+  corpsDuDepot: (info: Record<string, string>, fichier: Uint8Array, frontiere: string) => { typeContenu: string; corps: Uint8Array<ArrayBuffer> }
   issueDuDepot: (reponse: Reponse) => { etat: string; fluxId?: string; detail: string | null }
   detailDeLAccuse: (details: unknown) => string | null
   accuseDuFlux: (brut: unknown) => Accuse | null
@@ -1297,6 +1297,10 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     expect(branche).toContain('{ flowSyntax: SYNTAXE_DEPOSEE, name: nomDuFichier(facture.numero as string), sha256, trackingId: transmission.id }')
     expect(branche).toContain('.insert({ dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256 })')
     expect(branche).toContain('const sha256 = await empreinteSha256(fichier)')
+    // Une facture partie par l'ancien chemin de Super PDP, sans transmission en base, ne repart pas.
+    const anciennement = branche.indexOf('if (facture.superpdp_invoice_id !== null) {')
+    expect(anciennement).toBeGreaterThan(-1)
+    expect(anciennement).toBeLessThan(branche.indexOf('const plateforme = ouvrirPlateforme()'))
   })
 
   it('la fonction n’écrit que sa connexion et des transmissions : jamais une facture', () => {
