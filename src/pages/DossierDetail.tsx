@@ -336,6 +336,7 @@ export default function DossierDetail() {
                 dossierAdresse={dossier?.adresse ?? null}
                 statutTva={dossier?.statut_tva ?? null}
                 articleExoneration={dossier?.article_exoneration ?? null}
+                tvaSurDebits={dossier?.tva_sur_debits ?? false}
                 onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
               />
             )}
