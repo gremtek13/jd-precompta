@@ -12,6 +12,10 @@
 --     de facture, ni de dossier, ni de canal, ni d'hôte, ni de fichier ; son flux ne se renomme pas ; elle ne revient
 --     pas en arrière ;
 --   - UNE SEULE TRANSMISSION ACTIVE PAR FACTURE, tous canaux confondus, et une nouvelle après un échec ;
+--   - UNE FACTURE REJETÉE OU REFUSÉE S'ANNULE PAR UN AVOIR INTERNE, qui ne se transmet pas (DGFiP, spécifications
+--     externes, § 3.6.4 ; migration `avoir_interne_d_une_facture_rejetee`) : une facture rejetée ne repart pas, sauf
+--     un rejet postérieur — une restauration rejoue l'historique avec ses dates — ; l'avoir d'une facture rejetée, ou
+--     refusée chez Super PDP (statut 210), ne se transmet pas ; celui d'une facture simplement transmise, si ;
 --   - CE QUE LE CATALOGUE DIT, faute de pouvoir le jouer sans suppression : ni modification ni suppression depuis le
 --     navigateur (deux policies seulement), la suppression d'un dossier ou d'une facture emporte ses transmissions, et
 --     personne n'appelle le déclencheur en RPC ;
@@ -30,6 +34,11 @@
 --
 -- ÉPROUVÉ LE 08/10/2026 : 38 contrôles sur 38 en production — les contrôles 1 à 3 rejoués après la correction de leur
 -- verdict, qui n'attendait d'abord que le refus de la RLS. Aucune campagne de mutations sur une réplique pour cet essai.
+-- Puis, le même jour, 43 sur 43 après la migration `avoir_interne_d_une_facture_rejetee`, dont viennent les contrôles
+-- 38 à 42 (« rien n'est resté », d'abord le 38e, est devenu le 43e).
+--
+-- L'AVOIR D'ESSAI se crée par `enregistrer_facture`, sous le chef du cabinet, dans la sous-transaction du contrôle :
+-- son numéro de la série « A » est consommé puis rendu par l'annulation, et rien ne reste.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -37,7 +46,7 @@ declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   empreinte text := repeat('ab', 32);
 
-  facture_v uuid; dossier_f uuid; autre_dossier uuid; brouillon uuid; ident uuid; chef_super boolean;
+  facture_v uuid; dossier_f uuid; autre_dossier uuid; brouillon uuid; ident uuid; chef_super boolean; avoir uuid;
   accepte boolean; code_recu text; message_recu text; obs text; attendu boolean; requete text; motif text;
   a text; b text; vus int; n_maj int;
   transmissions_avant int; factures_avant int;
@@ -287,8 +296,76 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '37. catalogue : une seule transmission active par facture',
     'observe', obs, 'ok', obs like 'CREATE UNIQUE INDEX transmissions_factures_une_active%(facture_id) WHERE%envoi%depose%accepte%');
 
-  -- ══ 38. Rien n'est resté ══════════════════════════════════════════════════════════════════════════════════════
-  verdicts := verdicts || jsonb_build_object('controle', '38. rien n''est resté en base',
+  -- ══ 38 et 39. Une facture rejetée ne repart pas, sauf un rejet postérieur (la restauration) ════════════════════
+  for obs, attendu in
+    select * from (values ('38. après un rejet, aucune transmission ne part', false),
+                          ('39. un rejet postérieur n''empêche pas de restaurer une transmission antérieure', true)) t(o, x)
+  loop
+    accepte := false; code_recu := null; message_recu := null;
+    begin
+      set local role service_role;
+      insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id)
+        values (dossier_f, facture_v, 'plateforme', 'pa.exemple.fr', empreinte, 'rejete', 'flux-1');
+      if attendu then
+        insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, cree_le)
+          values (dossier_f, facture_v, 'superpdp', 'api.superpdp.tech', empreinte, 'echec', now() - interval '1 day');
+      else
+        insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256)
+          values (dossier_f, facture_v, 'superpdp', 'api.superpdp.tech', empreinte);
+      end if;
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', obs,
+      'observe', coalesce(code_recu, '?') || ' ' || coalesce(message_recu, ''),
+      'ok', case when attendu then accepte and code_recu = 'P0001'
+        else not accepte and code_recu = '23514' and message_recu like 'Une facture rejetée ne repart pas%' end);
+  end loop;
+
+  -- ══ 40 à 42. L'avoir d'une facture rejetée ou refusée est interne ; celui d'une facture transmise se transmet ═════
+  for obs, motif, attendu in
+    select * from (values
+      ('40. l''avoir d''une facture rejetée par une plateforme ne se transmet pas', 'rejete', false),
+      ('41. l''avoir d''une facture refusée chez Super PDP (210) ne se transmet pas', 'fr:210', false),
+      ('42. l''avoir d''une facture transmise et acceptée se transmet', 'accepte', true)
+    ) t(o, m, x)
+  loop
+    accepte := false; code_recu := null; message_recu := null; avoir := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select r.facture_id into avoir from enregistrer_facture(dossier_f, null,
+        jsonb_build_object('type', 'avoir', 'facture_origine_id', facture_v, 'date_emission', current_date,
+          'montant_ht', -1, 'montant_tva', 0, 'montant_ttc', -1, 'notes', 'essai'),
+        '[{"designation": "essai", "quantite": -1, "prix_unitaire_ht": 1, "taux_tva": 0}]'::jsonb, true) r;
+      reset role;
+      set local role service_role;
+      if motif = 'fr:210' then
+        insert into facture_superpdp_events (dossier_id, facture_id, superpdp_event_id, status_code, status_text, occurred_at)
+          values (dossier_f, facture_v, -1, 'fr:210', 'essai', now());
+        insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id)
+          values (dossier_f, facture_v, 'superpdp', 'api.superpdp.tech', empreinte, 'accepte', '-1');
+      else
+        insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id)
+          values (dossier_f, facture_v, 'plateforme', 'pa.exemple.fr', empreinte, motif, 'flux-1');
+      end if;
+      insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256)
+        values (dossier_f, avoir, 'plateforme', 'pa.exemple.fr', empreinte);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', obs,
+      'observe', 'avoir ' || coalesce(left(avoir::text, 8), '?') || ' — ' || coalesce(code_recu, '?') || ' ' || coalesce(message_recu, ''),
+      'ok', avoir is not null and case when attendu then accepte and code_recu = 'P0001'
+        else not accepte and code_recu = '23514' and message_recu like 'Cet avoir annule une facture rejetée ou refusée%' end);
+  end loop;
+
+  -- ══ 43. Rien n'est resté ══════════════════════════════════════════════════════════════════════════════════════
+  verdicts := verdicts || jsonb_build_object('controle', '43. rien n''est resté en base',
     'observe', 'transmissions ' || transmissions_avant || ' -> ' || (select count(*) from transmissions_factures)
       || ', factures ' || factures_avant || ' -> ' || (select count(*) from factures_emises),
     'ok', transmissions_avant = (select count(*) from transmissions_factures)

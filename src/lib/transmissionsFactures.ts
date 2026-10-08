@@ -6,9 +6,18 @@ import type { EtatTransmission, TransmissionFacture } from './types'
 // la base le garantit (transmissions_factures_une_active). Ce module ne lit rien : il dit l'état d'une facture depuis
 // ses transmissions, que l'onglet Factures et la fenêtre de transmission ont lues.
 
-// Les états qui empêchent un nouvel envoi : partie sans issue connue, déposée, acceptée. Les échecs et les rejets
-// s'accumulent, et la facture peut repartir après eux.
+// Les états qui empêchent un nouvel envoi : partie sans issue connue, déposée, acceptée. Les échecs s'accumulent, et la
+// facture repart après eux : rien n'était parti. UNE FACTURE REJETÉE, elle, ne repart pas : elle s'annule par un avoir
+// interne, qui ne se transmet pas, puis une nouvelle facture (spécifications externes de la DGFiP, § 3.6.4) — la base
+// le garantit (garder_transmission_facture, migration avoir_interne_d_une_facture_rejetee).
 export const ETATS_ACTIFS: readonly EtatTransmission[] = ['envoi', 'depose', 'accepte']
+
+// Les statuts d'une facture, dans l'historique de Super PDP, qui l'annulent par un avoir interne : 210 « Refusée » par
+// l'acheteur, 213 « Rejetée » par une plateforme (DGFiP, § 3.6.4). Les mêmes que la base lit.
+export const STATUTS_ANNULATION_SUPERPDP: readonly string[] = ['fr:210', 'fr:213']
+
+// La référence que l'écran cite, et que la base suit.
+export const REGLE_AVOIR_INTERNE = 'spécifications externes de la DGFiP, § 3.6.4'
 
 export const estActive = (t: Pick<TransmissionFacture, 'etat'>) => ETATS_ACTIFS.includes(t.etat)
 
@@ -40,7 +49,8 @@ export const ETATS_TRANSMISSION: Record<EtatTransmission, InfoEtat> = {
   rejete: {
     libelle: 'Rejetée',
     badge: 'badge-danger',
-    explication: 'La plateforme l’a rejetée, et dit pourquoi : une facture validée ne se corrige que par un avoir.',
+    explication: 'La plateforme l’a rejetée, et dit pourquoi. Elle ne repart pas : elle s’annule par un avoir interne, '
+      + `qui ne se transmet pas, puis une nouvelle facture (${REGLE_AVOIR_INTERNE}).`,
   },
   echec: {
     libelle: 'Refusée au dépôt',

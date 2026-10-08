@@ -7,7 +7,9 @@ import { lireTout } from '../../lib/lectureComplete'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
-import { ETATS_TRANSMISSION, abandonnable, estActive, libelleCanal, transmissionsDe } from '../../lib/transmissionsFactures'
+import {
+  ETATS_TRANSMISSION, REGLE_AVOIR_INTERNE, STATUTS_ANNULATION_SUPERPDP, abandonnable, estActive, libelleCanal, transmissionsDe,
+} from '../../lib/transmissionsFactures'
 import type { ArticleExoneration, FactureEmise, FactureSuperpdpEvent, StatutTva, TransmissionFacture } from '../../lib/types'
 
 interface Props {
@@ -37,6 +39,11 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   // nulle pour une facture, et pour un avoir qui n'en cite aucune — `refusEmission` le dit alors.
   const [origine, setOrigine] = useState<OrigineCii | null | undefined>(
     facture.type === 'avoir' && facture.facture_origine_id ? undefined : null,
+  )
+  // Pour un avoir : la facture qu'il corrige a-t-elle été rejetée par une plateforme, ou refusée par l'acheteur ? Il est
+  // alors interne, et ne se transmet pas. `undefined` tant qu'on ne le sait pas.
+  const [avoirInterne, setAvoirInterne] = useState<boolean | undefined>(
+    facture.type === 'avoir' && facture.facture_origine_id ? undefined : false,
   )
   const [transmissions, setTransmissions] = useState<TransmissionFacture[] | null>(null)
   // L'instant de leur lecture : l'abandon se juge sur lui, la liste qu'on voit étant celle de cet instant.
@@ -71,6 +78,20 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
     setEvenements(error ? null : (data ?? []) as FactureSuperpdpEvent[])
   }
 
+  // La facture que l'avoir corrige a-t-elle été rejetée (une transmission `rejete`) ou refusée chez Super PDP (210,
+  // 213) ? Les mêmes questions que la base pose avant toute transmission de l'avoir.
+  async function lireAnnulationDeLOrigine(origineId: string) {
+    const [rejets, refus] = await Promise.all([
+      supabase.from('transmissions_factures').select('id', { count: 'exact', head: true })
+        .eq('facture_id', origineId).eq('etat', 'rejete'),
+      supabase.from('facture_superpdp_events').select('id', { count: 'exact', head: true })
+        .eq('facture_id', origineId).in('status_code', [...STATUTS_ANNULATION_SUPERPDP]),
+    ])
+    const erreur = rejets.error ?? refus.error
+    if (erreur) setLectureRatee(messageErreur(erreur, 'Les transmissions de la facture corrigée n’ont pas pu être lues.'))
+    else setAvoirInterne((rejets.count ?? 0) > 0 || (refus.count ?? 0) > 0)
+  }
+
   async function lireCanaux() {
     const [plateforme, statutSuperpdp] = await Promise.all([
       lireConnexionPlateforme(dossierId),
@@ -95,11 +116,13 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
         else setLignes((data ?? []) as LigneCii[])
       })
     if (facture.type === 'avoir' && facture.facture_origine_id) {
-      supabase.from('factures_emises').select('numero, date_emission').eq('id', facture.facture_origine_id).maybeSingle()
+      const origineId = facture.facture_origine_id
+      supabase.from('factures_emises').select('numero, date_emission').eq('id', origineId).maybeSingle()
         .then(({ data, error }) => {
           if (error) setLectureRatee(messageErreur(error, 'La facture que l’avoir corrige n’a pas pu être lue.'))
           else setOrigine(data ? { numero: data.numero, date_emission: data.date_emission } : null)
         })
+      lireAnnulationDeLOrigine(origineId)
     }
     lireTransmissions()
     lireCanaux()
@@ -224,7 +247,12 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   const refus = lignes != null && origine !== undefined
     ? refusEmission(donneesDeLaFacture(facture, lignes, { statut_tva: statutTva, article_exoneration: articleExoneration }, origine, aujourdHuiSql()))
     : null
-  const peutPartir = siennes != null && active == null && !avantLesTransmissions && refus != null && refus.length === 0
+  // Rejetée, elle ne repart pas : elle s'annule par un avoir interne (DGFiP, § 3.6.4). Refusée par l'acheteur chez Super
+  // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.
+  const rejet = siennes?.find((t) => t.etat === 'rejete') ?? null
+  const refuseeParLeClient = evenements?.some((e) => e.status_code === 'fr:210') ?? false
+  const peutPartir = siennes != null && active == null && rejet == null && !avantLesTransmissions && avoirInterne === false
+    && refus != null && refus.length === 0
 
   return (
     <div style={overlayStyle}>
@@ -250,6 +278,24 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
                 {active.etat === 'envoi' && (active.canal === 'plateforme'
                   ? ' « Suivre » la cherche sur la plateforme ; si elle ne la retrouve pas, elle s’abandonne un quart d’heure après son départ, vérification faite.'
                   : ' Super PDP ne se consulte pas d’ici : un quart d’heure après son départ, elle s’abandonne, vérification faite sur Super PDP.')}
+              </p>
+            )}
+            {rejet && (
+              <p className="alerte-tva" style={{ marginTop: 0 }}>
+                Rejetée par {libelleCanal(rejet)} : elle ne repart pas. Elle s’annule par un avoir interne — qui ne se
+                transmet pas —, puis une nouvelle facture ({REGLE_AVOIR_INTERNE}).
+              </p>
+            )}
+            {refuseeParLeClient && (
+              <p className="alerte-tva" style={{ marginTop: 0 }}>
+                Refusée par le client : elle s’annule par un avoir interne — qui ne se transmet pas —, puis une nouvelle
+                facture ({REGLE_AVOIR_INTERNE}).
+              </p>
+            )}
+            {avoirInterne === true && (
+              <p className="alerte-tva" style={{ marginTop: 0 }}>
+                Cet avoir annule une facture rejetée ou refusée : c’est un avoir interne, qui ne se transmet pas
+                ({REGLE_AVOIR_INTERNE}).
               </p>
             )}
             {avantLesTransmissions && (
@@ -323,7 +369,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               </div>
             )}
 
-            {active == null && !avantLesTransmissions && refus != null && refus.length > 0 && (
+            {active == null && rejet == null && avoirInterne === false && !avantLesTransmissions && refus != null && refus.length > 0 && (
               <div className="alerte-tva" style={{ marginTop: 8 }}>
                 <strong>Elle ne peut pas partir telle quelle</strong> :
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
