@@ -203,7 +203,7 @@ describe('les colonnes modifiables d\'une facture validée (garder_factures_vali
     expect(vues).toEqual([
       'dossier/FacturesTab.tsx delete ',
       'send-email/index.ts update tiers_email',
-      'superpdp-emit/index.ts update superpdp_dernier_statut',
+      'superpdp-emit/index.ts update superpdp_dernier_statut,superpdp_invoice_id',
       'superpdp-emit/index.ts update superpdp_invoice_id',
     ])
   })

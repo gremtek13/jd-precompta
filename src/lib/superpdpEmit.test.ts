@@ -80,6 +80,54 @@ describe('superpdp-emit — ce que la réponse à l’envoi permet de dire', () 
   })
 })
 
+// CE QUE L'HISTORIQUE DE SUPER PDP DIT DE LA TRANSMISSION (ligne 28.5, étape c4). Les codes « fr: » sont ceux des
+// spécifications externes de la DGFiP : 202 à 212, la facture a été reçue par la plateforme du destinataire ; 213
+// « Rejetée » et 501 « Irrecevable », elle ne l'a pas été.
+type Evenement = { id: number; status_code: string; status_text: string }
+const S = executer<{
+  REJETS_SUPERPDP: Set<string>
+  RECEPTIONS_SUPERPDP: Set<string>
+  suiteDeLHistorique: (evenements: Evenement[]) => { etat: 'accepte' | 'rejete'; detail: string | null } | null
+}>(bloc('SUIVI'), ['REJETS_SUPERPDP', 'RECEPTIONS_SUPERPDP', 'suiteDeLHistorique'])
+
+describe('superpdp-emit — ce que l’historique dit de la transmission', () => {
+  const ev = (id: number, status_code: string, status_text = 'texte') => ({ id, status_code, status_text })
+
+  it('déposée, émise, validée ou inconnue : la transmission reste déposée', () => {
+    expect(S.suiteDeLHistorique([])).toBeNull()
+    expect(S.suiteDeLHistorique([ev(1, 'api:uploaded'), ev(2, 'api:validated'), ev(3, 'fr:200'), ev(4, 'api:sent'), ev(5, 'fr:201')])).toBeNull()
+    // « api:rejected » ne dit pas si c'est l'acheteur ou une plateforme : il ne décide rien.
+    expect(S.suiteDeLHistorique([ev(1, 'api:rejected'), ev(2, 'xx:999')])).toBeNull()
+  })
+
+  it('reçue par la plateforme du destinataire, ou au-delà — refusée par l’acheteur comprise : acceptée', () => {
+    for (const code of ['fr:202', 'fr:203', 'fr:204', 'fr:205', 'fr:210', 'fr:212']) {
+      expect(S.suiteDeLHistorique([ev(1, 'fr:200'), ev(2, code)]), code).toEqual({ etat: 'accepte', detail: null })
+    }
+  })
+
+  it('rejetée, irrecevable ou invalide : rejetée, avec ce que Super PDP en dit, nettoyé et borné', () => {
+    expect(S.suiteDeLHistorique([ev(1, 'fr:200'), ev(2, 'fr:213', 'Anomalie\n sur  le SIREN\u0007')]))
+      .toEqual({ etat: 'rejete', detail: 'Super PDP : fr:213 — Anomalie sur le SIREN.' })
+    expect(S.suiteDeLHistorique([ev(1, 'fr:501')])?.etat).toBe('rejete')
+    expect(S.suiteDeLHistorique([ev(1, 'api:invalid')])?.etat).toBe('rejete')
+    expect(S.suiteDeLHistorique([ev(1, 'fr:213', 'x'.repeat(500))])?.detail).toBe(`Super PDP : fr:213 — ${'x'.repeat(300)}.`)
+    expect(S.suiteDeLHistorique([{ id: 1, status_code: 'fr:213', status_text: null as unknown as string }])?.detail).toBe('Super PDP : fr:213.')
+  })
+
+  it('un rejet l’emporte sur une réception, dans quelque ordre qu’ils arrivent', () => {
+    expect(S.suiteDeLHistorique([ev(2, 'fr:213'), ev(1, 'fr:202')])?.etat).toBe('rejete')
+    expect(S.suiteDeLHistorique([ev(1, 'fr:213'), ev(2, 'fr:202')])?.etat).toBe('rejete')
+  })
+
+  it('les codes sont ceux des statuts que l’écran sait nommer, et les deux listes ne se croisent pas', async () => {
+    const { libelleStatutSuperpdp } = await import('./superpdpStatuts')
+    for (const code of [...S.REJETS_SUPERPDP, ...S.RECEPTIONS_SUPERPDP]) expect(libelleStatutSuperpdp(code), code).not.toBe(code)
+    expect([...S.REJETS_SUPERPDP].filter((c) => S.RECEPTIONS_SUPERPDP.has(c))).toEqual([])
+    expect([...S.RECEPTIONS_SUPERPDP].sort()).toEqual(Array.from({ length: 11 }, (_, i) => `fr:${202 + i}`))
+  })
+})
+
 describe('superpdp-emit — le câblage du gestionnaire', () => {
   const GESTIONNAIRE = SOURCE.slice(SOURCE.indexOf('Deno.serve('))
   const position = (texte: string) => {
@@ -127,6 +175,27 @@ describe('superpdp-emit — le câblage du gestionnaire', () => {
     const sortie = position('return json({ error: `${issue.detail}${encoreReservee}` }, 502)')
     expect(garde).toBeLessThan(sortie)
     expect(sortie).toBeLessThan(position('.update({ superpdp_invoice_id: issue.id })'))
+  })
+
+  it('ce que l’historique dit se reporte sur la transmission déposée, après l’envoi comme à l’actualisation', () => {
+    const reports = [...GESTIONNAIRE.matchAll(/await actualiserStatut\(admin, headers, dossierId, factureId, (\w+(?:\.\w+)?)\)\n\s*await reporterSurLaTransmission\(admin, factureId, \1, evenements\)/g)]
+    expect(reports.map((m) => m[1])).toEqual(['numeroSuperPdp', 'issue.id'])
+    expect(GESTIONNAIRE.match(/actualiserStatut\(/g)).toHaveLength(2)
+    const report = SOURCE.slice(SOURCE.indexOf('async function reporterSurLaTransmission('), SOURCE.indexOf('// ── DÉBUT CLÉS SUPABASE'))
+    expect(report).toContain('const suite = suiteDeLHistorique(evenements)')
+    expect(report).toContain('.eq("facture_id", factureId).eq("canal", "superpdp").eq("flux_id", String(superpdpInvoiceId)).eq("etat", "depose")')
+    expect(report).toContain('const { error } = await admin.from("transmissions_factures")')
+  })
+
+  it('une facture dont le numéro Super PDP ne s’est pas écrit se suit par sa transmission, et le reprend', () => {
+    const numero = position('let numeroSuperPdp = facture.superpdp_invoice_id')
+    expect(numero).toBeLessThan(position('const token = await obtenirToken('))
+    expect(GESTIONNAIRE).toContain('.eq("facture_id", factureId).eq("canal", "superpdp").not("flux_id", "is", null)')
+    expect(GESTIONNAIRE).toContain('if (erreurTransmise) {')
+    expect(GESTIONNAIRE).toContain('if (Number.isSafeInteger(lu) && lu > 0) numeroSuperPdp = lu')
+    expect(GESTIONNAIRE).toContain('if (!numeroSuperPdp) {')
+    // Le numéro se repose avec le statut, sur la facture.
+    expect(SOURCE).toContain('.update({ superpdp_dernier_statut: dernier?.status_code ?? null, superpdp_invoice_id: superpdpInvoiceId })')
   })
 
   it('l’envoi a un délai, et Super PDP ne convertit plus rien', () => {
