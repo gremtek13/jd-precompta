@@ -159,14 +159,22 @@ def inventaire(fichiers: list[Path]) -> set[str]:
     rls: set[str] = set()
 
     def contraintes_de_colonne(t: str, col: str, definition: str) -> None:
-        if re.search(r'\bprimary key\b', definition):
-            inv.add(f'contrainte|{t}.{t}_pkey')
-        if re.search(r'\bunique\b', definition):
-            inv.add(f'contrainte|{t}.{t}_{col}_key')
-        if re.search(r'\breferences\b', definition):
-            inv.add(f'contrainte|{t}.{t}_{col}_fkey')
-        for _ in re.finditer(r'\bcheck ?\(', definition):
-            inv.add(f'contrainte|{t}.{t}_{col}_check')
+        # Une contrainte de colonne peut porter son nom (`constraint nom check (…)`) : c'est alors lui que Postgres
+        # retient, et non celui qu'il déduirait. Le 08/10/2026, `transmissions_factures` a nommé ses six `check` de
+        # colonne : la première version de cette fonction les déduisait, donc rendait le bon NOMBRE d'objets sous des
+        # noms faux — l'empreinte seule l'a vu.
+        for m in re.finditer(r'(?:\bconstraint "?(\w+)"? )?(\bprimary key\b|\bunique\b|\breferences\b|\bcheck ?\()', definition):
+            nom, genre = m.group(1), m.group(2)
+            if nom:
+                inv.add(f'contrainte|{t}.{nom}')
+            elif genre == 'primary key':
+                inv.add(f'contrainte|{t}.{t}_pkey')
+            elif genre == 'unique':
+                inv.add(f'contrainte|{t}.{t}_{col}_key')
+            elif genre == 'references':
+                inv.add(f'contrainte|{t}.{t}_{col}_fkey')
+            else:
+                inv.add(f'contrainte|{t}.{t}_{col}_check')
 
     for f in fichiers:
         for brute in instructions(f.read_text(encoding='utf-8')):
