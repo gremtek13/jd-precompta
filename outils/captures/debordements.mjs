@@ -5,9 +5,17 @@
 //
 //   npx vite --config outils/captures/vite.config.ts        # sert l'application (voir vitrine.mjs)
 //   node outils/captures/debordements.mjs [largeur] [sans]  # « sans » : panneau de droite fermé
+//                                                           # sans « sans », il ne s'ouvre qu'à partir de 1 280 px : dessous il
+//                                                           # se superpose et ne rétrécit rien (le total le dit), et sur
+//                                                           # téléphone le bouton « Assistant » n'existe pas
 //   node outils/captures/debordements.mjs 1440 ouvert barre=200 panneau=760
 //                                                           # les volets à une largeur choisie (lib/largeurVolets.ts) :
 //                                                           # retenue comme le navigateur la retient, puis bornée par la coque
+//   node outils/captures/debordements.mjs 390               # téléphone : la barre du bas (`position: fixed`) n'est pas posée
+//                                                           # dans le panneau, elle n'est donc pas mesurée contre lui
+//   Les visites `factures/*` ouvrent chacune une fenêtre superposée et la mesurent contre sa carte (`fenetre`), dont celles
+//   d'une facture de REDEVABLE jamais transmise (dossier d7) : son aperçu, qui imprime le numéro de TVA de l'émetteur, et sa
+//   fenêtre de transmission, la seule à offrir à la fois « Envoyer par Super PDP » et « Déposer sur… ».
 //
 // Un élément compte s'il dépasse le bord droit du panneau central SANS être dans un conteneur qui
 // défile (un tableau dans .table-scroll a le droit d'être plus large que l'écran : il défile). Seul le
@@ -30,6 +38,14 @@ const ONGLETS = [
 // brouillon en 401/411, la Clôture sans 2035, les factures sans règlement de la Checklist et de Banque,
 // le chiffre d'affaires facturé de l'Estimation, et les comptes de tiers de la Balance des comptes.
 const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation', 'statistiques']
+// Les fenêtres de facturation (formulaire, aperçu, transmission) sont SUPERPOSÉES : leur voile est un `div` en
+// `position: fixed`, posé par un style en ligne, et leur carte son seul enfant. Aucune classe ne les désigne — celle de la
+// plateforme du client en porte une, `.plateforme-client` —, mais sur l'onglet Factures aucun autre élément n'est ainsi posé.
+// L'APERÇU fait exception (08/10/2026) : sa mise en page est une classe, `.facture-apercu-voile`, pour que l'impression puisse
+// la défaire — un style en ligne l'emporterait sur `@media print` ; le voile est donc désigné des deux manières. `:is()` en
+// fait un seul sélecteur, que `FENETRE_FACTURE` et le `${fenetre} *` de la mesure prolongent sans changer de sens.
+const VOILE_FACTURE = ':is(div[style*="position: fixed"], .facture-apercu-voile)'
+const FENETRE_FACTURE = `${VOILE_FACTURE} > .card`
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
@@ -63,6 +79,18 @@ const VISITES = [
   // qu'on change ; le point « à préciser » du paramétrage de la Vue d'ensemble.
   { dossier: 'd1', onglet: 'tva', nom: 'statut/exonéré' },
   { dossier: 'd3', onglet: 'tva', nom: 'statut/franchise' },
+  // La case du numéro de TVA intracommunautaire (décision du cabinet du 08/10/2026), que la carte ne propose qu'en édition,
+  // à un dossier en franchise ou exonéré — ici cochée, avec le numéro que la carte calcule du SIREN du dossier. La route est
+  // celle de la visite précédente, que la page ne recharge pas : la carte y est peut-être déjà en édition, et son bouton
+  // « Changer le statut » alors absent.
+  {
+    dossier: 'd3', onglet: 'tva', nom: 'statut/franchise-modifier',
+    apres: async (page) => {
+      const changer = page.getByRole('button', { name: 'Changer le statut', exact: true })
+      if (await changer.count()) await changer.click()
+      await page.locator('#statut-tva-numero').waitFor({ timeout: 10000 })
+    },
+  },
   { dossier: 'd2', onglet: 'tva', nom: 'statut/à-préciser' },
   { dossier: 'd2', onglet: 'checklist', nom: 'statut/vue-d-ensemble' },
   {
@@ -214,7 +242,98 @@ const VISITES = [
     dossier: 'd1', onglet: 'pieces', nom: 'plateforme/fiche',
     apres: (page) => page.getByRole('cell', { name: 'Laboratoire Biosanté Provence' }).first().click(),
   },
+  // LES FACTURES ÉMISES (ligne 28.5, étape c4) : le tableau de l'onglet est mesuré par la visite ordinaire, mais ce que
+  // l'étape a ajouté ne paraît qu'à un clic, dans une fenêtre. Chacune est SUPERPOSÉE : elle se mesure contre sa propre carte
+  // (`fenetre`), pas contre le panneau central. Les quatre visites du cabinet infirmier restent sur la MÊME route, que la page ne recharge pas :
+  // la fenêtre de l'une serait encore ouverte à l'arrivée de la suivante, et son voile interceptant le clic, celui-ci
+  // expirerait. Chacune commence donc par fermer ce qui est ouvert (`fermerLesFenetres`), comme on le ferait à la main.
+  //
+  // Le formulaire d'une facture neuve, tous ses champs ouverts : un organisme public (SIREN, adresse de facturation
+  // électronique, code service, numéro d'engagement), des biens et des services sur une période, livrés ailleurs
+  // (adresse, code postal, ville, pays). Laissé vide, il montre aussi ce qu'il refuse et ce qui empêcherait la facture de partir.
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/nouvelle', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: '+ Nouvelle facture', exact: true }).click()
+      await page.locator('select#type-client').selectOption('organisme_public')
+      await page.locator('select#nature-operation').selectOption('mixte')
+      await page.locator('select#prestation').selectOption('periode')
+      await page.locator('#livraison-ailleurs').check()
+      await page.locator('#livraison-pays').waitFor({ timeout: 10000 })
+    },
+  },
+  // L'aperçu imprimable de la facture à l'organisme public : son nom très long, ses mentions (SIREN, opérations, période, code
+  // service, numéro d'engagement) et son tableau de lignes.
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/apercu', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0012', 'Aperçu').click()
+      await page.getByRole('cell', { name: /Soins infirmiers à domicile/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  // La transmission de la même facture : son dépôt refusé, au détail long, et son envoi par Super PDP sans issue connue
+  // depuis plus d'un quart d'heure — le bouton « Abandonner », que seule cette transmission-là offre.
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/transmettre', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0012', 'Transmettre').click()
+      await page.getByRole('button', { name: 'Abandonner', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  // Et celle d'une facture partie par Super PDP : l'historique de ses statuts, et « Actualiser le statut Super PDP ».
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/super-pdp', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0013', 'Transmettre').click()
+      await page.getByText('Facture acceptée par le destinataire').waitFor({ timeout: 10000 })
+    },
+  },
+  // LA FACTURE D'UN REDEVABLE QUE RIEN N'A TRANSMISE (dossier d7, 08/10/2026). Toutes celles du cabinet infirmier sont à 0 %,
+  // exonérées, et déjà parties ou refusées : le banc ne voyait ni un aperçu qui imprime le numéro de TVA de l'émetteur, ni ce
+  // que la fenêtre de transmission offre à une facture jamais envoyée. La route change de dossier : la fenêtre de la visite
+  // précédente est refermée, mais `fermerLesFenetres` ne coûte rien.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/apercu-redevable', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Aperçu').click()
+      await page.getByText(/N° TVA intracommunautaire FR/).waitFor({ timeout: 10000 })
+    },
+  },
+  // Sa fenêtre de transmission : aucune transmission à lister, ses deux canaux reliés — « Envoyer par Super PDP » et
+  // « Déposer sur… » s'ajoutent à « Fermer » dans la rangée du bas, la plus chargée de la fenêtre. On attend le DERNIER
+  // des boutons, qui n'apparaît qu'une fois les deux canaux relus.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/transmettre-neuve', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Transmettre').click()
+      await page.getByRole('button', { name: /^Déposer sur / }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
+
+// Le bouton d'une ligne du tableau des factures, désignée par son numéro.
+function boutonDeFacture(page, numero, nom) {
+  return page.locator('tr', { hasText: numero }).getByRole('button', { name: nom, exact: true })
+}
+
+// Ferme les fenêtres de facturation qu'une visite précédente a laissées ouvertes : « Annuler » sur le formulaire, « Fermer »
+// sur l'aperçu et sur la transmission. Une fenêtre qui n'a ni l'un ni l'autre est une faute du banc, dite plutôt que
+// attendue jusqu'à l'expiration d'un clic.
+async function fermerLesFenetres(page) {
+  const voile = page.locator(VOILE_FACTURE)
+  for (let i = 0; i < 5 && (await voile.count()) > 0; i++) {
+    const fermer = voile.first().getByRole('button', { name: /^(Annuler|Fermer)$/ })
+    if ((await fermer.count()) === 0) throw new Error('une fenêtre de facturation est ouverte sans bouton « Annuler » ni « Fermer »')
+    await fermer.first().click()
+    await page.waitForTimeout(200)
+  }
+}
 
 // Choisit un exercice dans le sélecteur de l'en-tête du dossier, dont les boutons sont des onglets.
 function exercice(annee) {
@@ -225,6 +344,14 @@ function exercice(annee) {
 }
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
+// LE PANNEAU DE DROITE N'EST OUVERT QUE LÀ OÙ IL RÉTRÉCIT LE PANNEAU CENTRAL (08/10/2026). Sous 1 280 pixels
+// (`SEUIL_VOLET_EN_LIGNE`, lib/largeurVolets.ts) il se SUPERPOSE à la page (voir CLAUDE.md, « Le panneau de droite ») :
+// il n'enlève rien au panneau mesuré, et son voile intercepte les clics des visites à `apres` — à 1 024 pixels, la
+// première expirait. Sur téléphone, le bouton « Assistant » est masqué (celui du mobile s'appelle « Ouvrir l'assistant ») :
+// le chercher plantait le banc dès la première visite. Le total dit ce qui a été fait, pour qu'un « fermé » demandé et un
+// « fermé » imposé ne se confondent pas.
+const LARGEUR_DU_PANNEAU_A_COTE = 1280
+const panneauOuvert = avecPanneau && largeur >= LARGEUR_DU_PANNEAU_A_COTE
 const choisies = Object.fromEntries(process.argv.slice(4).map((a) => a.split('=')).filter(([, v]) => /^\d+$/.test(v ?? '')))
 
 const RACINE_NAVIGATEURS = '/opt/pw-browsers'
@@ -247,8 +374,10 @@ let total = 0
 for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
   await page.goto(`${BASE}#/dossiers/${dossier}/${onglet}`)
   await page.waitForTimeout(900)
-  const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
-  if (avecPanneau && (await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
+  if (panneauOuvert) {
+    const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
+    if ((await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
+  }
   await page.waitForTimeout(300)
   if (apres) {
     await apres(page)
@@ -270,10 +399,17 @@ for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
       return false
     }
     const extrait = (e) => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60)
+    // Un élément en `position: fixed` — avec tout ce qu'il porte — n'est pas posé DANS le panneau : il se place contre la
+    // fenêtre du navigateur. Sur téléphone, la barre du bas (`div.nav-groupes`) est exactement aussi large que l'écran, donc
+    // que le panneau, et chaque visite la citait à « 0 px hors du panneau » (64 fois à 390 px) : des fautes qui n'en étaient
+    // pas, parmi lesquelles les vraies passaient inaperçues. Les mesurer contre `.main` n'a pas de sens. Mais la visite d'une
+    // FENÊTRE mesure la sienne contre sa carte, et le voile de cette fenêtre est lui-même fixe : l'exclusion y viderait la mesure.
+    const fixes = fenetre ? [] : [...document.querySelectorAll(contenu)].filter((e) => getComputedStyle(e).position === 'fixed')
     const trouvees = []
     for (const e of document.querySelectorAll(contenu)) {
       const r = e.getBoundingClientRect()
       if (r.width === 0 || r.height === 0 || defile(e)) continue
+      if (fixes.some((f) => f.contains(e))) continue
       // La carte ou la case de grille qui le porte : le premier ancêtre qui en est une.
       const carte = e.parentElement?.closest('.card, .kpi, .widget, .cockpit, .bento > *')
       const bord = carte ? carte.getBoundingClientRect().right : null
@@ -302,5 +438,8 @@ for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
 }
 await navigateur.close()
 const volets = Object.entries(choisies).map(([k, v]) => `${k} ${v}`).join(', ')
-console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${avecPanneau ? 'ouvert' : 'fermé'}${volets ? ` (largeurs choisies : ${volets})` : ''}.`)
+const etatDuPanneau = panneauOuvert ? 'ouvert'
+  : avecPanneau ? `fermé (sous ${LARGEUR_DU_PANNEAU_A_COTE} px il se superpose au lieu de rétrécir le panneau central : l’ouvrir ne mesurerait rien de plus)`
+  : 'fermé'
+console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}.`)
 process.exitCode = total > 0 ? 1 : 0
