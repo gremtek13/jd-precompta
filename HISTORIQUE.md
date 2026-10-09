@@ -13366,3 +13366,64 @@ cabinet en trop, au mieux). Appel facturé ou externe : `AssistantTab.envoyer` (
 `ImmobilisationsTab.enregistrer` (`UNIQUE (piece_id)`, message dédié au code 23505), `BanqueTab` et `ConnexionBancaireCard`
 (tout passe par `sousVerrou`), `TransmissionFactureModal` (`agir`), `RetourBanque` (la promesse est gardée dans un ref), les
 mises à jour et upserts à clé naturelle, et les suppressions : idempotents.
+
+### 09/10/2026 — TROIS TESTS TIRAIENT LEURS CAS D'UN GÉNÉRATEUR QUI BOUCLE — LIGNE 28.7
+
+(`src/test/encaissementsBatterie.ts` : `entierTire` ; `src/test/tirage.test.ts` ; `src/lib/reportDesSoldes.test.ts`,
+`src/lib/liquidationTva.test.ts`, `src/lib/tvaDuReleve.test.ts`.) Trouvé le 08/10/2026 en écrivant la batterie des
+encaissements (28.5 d2) : trois tests tiraient leurs cas d'un générateur congruentiel écrit en virgule flottante,
+`x = (x * 1103515245 + 12345) % 2147483648`. Le produit passe 2⁵³, perd ses derniers chiffres, et la suite retombe
+dans un cycle de 10 466 états quelle que soit la graine (mesuré sur neuf graines, dont celles des trois tests : queue
+de 689 à 6 805 états, cycle 10 466). Ses états sont presque tous pairs : sur le cycle, 44 impairs sur 10 466 (0,4 %),
+et la plupart divisibles par 2⁶ à 2⁹. Un défaut des TESTS, pas de l'application.
+
+**CE QUE CHAQUE TEST VOYAIT, MESURÉ** (mêmes graines, même nombre de tirages, avant → après) :
+- `reportDesSoldes.test.ts`, « sur des exercices tirés au hasard » : trois modèles × 200 exercices, environ 3 300
+  tirages par modèle. Aucun ne boucle seul (les queues font 4 003 à 5 231 tirages), mais les graines 7, 11 et 13
+  retombent dans la même suite : 8 305 valeurs distinctes sur 10 052 tirages, et 501 exercices distincts sur 600 —
+  99 exercices joués deux fois sous deux modèles. Après : 10 308 valeurs distinctes, 600 exercices. Paires débit/crédit
+  atteintes, longueurs, bénéfices, pertes et résultats nuls : du même ordre des deux côtés.
+- `liquidationTva.test.ts`, « sur quarante CA3 tirées au hasard » : 40 graines × 61 tirages = 2 440, tous distincts
+  avant comme après (61 tirages restent loin de la queue la plus courte). Rien d'écourté par le cycle ; une
+  combinaison de la pièce immobilisée (`p3` en avoir de vente) n'était jamais tirée, elle l'est.
+- `tvaDuReleve.test.ts`, « et sur de grands montants » : 20 000 montants tirés de deux états chacun, soit 40 000
+  tirages, qui bouclent — 12 889 états distincts, **6 440 montants distincts sur 20 000**. Et les états étant pairs, le
+  montant l'était presque toujours : **6 montants seulement tombaient sur un demi-centime exact à 20 %** (un TTC ≡ 3
+  centimes modulo 6, la seule borne où l'arrondi décide ; aux trois autres taux elle n'existe pas), au lieu d'un
+  sixième. Après : 19 999 montants distincts, 3 324 demi-centimes exacts.
+
+**LE CORRECTIF** : les trois tirent de `tirage` (mulberry32, exact sur 32 bits), sous leurs graines d'avant, sans
+rien changer de ce qu'ils vérifient. `entierTire(suivant, n)` — un entier de [0, n) — rejoint `tirage` ; la batterie
+des encaissements en tire désormais ses entiers, au tirage près (l'empreinte jugée par la base est inchangée : elle
+appelle `entier` jusqu'à n = 10¹⁵ + 1, d'où l'absence de plafond — au-delà de 2³², la plage est parcourue à pas de
+n / 2³², sans prétendre en atteindre chaque entier). `src/test/tirage.test.ts` garde le générateur (même suite pour la
+même graine, [0, 1), 100 000 tirages pour au moins 99 990 valeurs, des bits bas qui varient) et `entierTire` (bornes
+atteintes, 20 000 montants jusqu'à 10⁹ et tous les résidus modulo 6, refus d'une plage qui n'est pas un entier
+positif), et balaie src/, supabase/ et outils/ (586 fichiers, plancher 500) : une multiplication par un littéral d'au
+moins 2²² suivie d'un modulo, l'un de sept multiplicateurs congruentiels connus (une constante nommée échapperait à la
+première forme), un `Math.random` dans un test. Deux admis, comptés : `AuthContext.test.tsx` (un jeton distinct par
+copie de session, que rien ne lit) et la liste des multiplicateurs du balayage lui-même. Remis en place, les trois
+tests d'avant le font tomber, chacun sous ses deux formes.
+
+**LES AUTRES TIRAGES DU DÉPÔT** : aucun autre générateur écrit ainsi. `Math.random` vit dans `ClientUpload.tsx` (un
+identifiant local de dépôt, code de l'application) et `AuthContext.test.tsx` (un jeton distinct) ; `random()` et
+`gen_random_uuid()` dans les essais SQL (des codes et des identifiants uniques) ; `crypto.randomUUID()` dans les Edge
+Functions et l'assistant. Aucun ne décide d'un cas de test.
+
+**LES MUTATIONS** : 534 mutants des quatre modules que ces tests gardent (opérateurs de comparaison, d'égalité,
+arithmétiques et logiques, `Math.round`/`max`/`min`/`abs`, booléens, littéraux + 1), joués contre leur fichier de
+tests à 62eb973 et après le correctif. `reportDesSoldes.ts` 82 mutants, 63 tués par le fichier des deux côtés (26 par
+le test tiré au hasard, des deux côtés) ; `tvaDuReleve.ts` 40, 35 (19 et 19) ; `declarationTva.ts` contre
+`liquidationTva.test.ts` 221, 33 (21 et 21) ; `liquidationTva.ts` 191, 143 avant et 142 après (13 et 11). **Deux
+divergences, une seule cause** : un solde de liquidation d'un centime exactement. `solde !== 1` au lieu de `!== 0`
+(qui efface la ligne) et `solde > 1` au lieu de `> 0` (qui la met au crédit) n'étaient tués par le test tiré au hasard
+que parce que deux de ses quarante CA3 portaient un centime au débit, et le second par lui seul : sous `tirage`,
+aucune. C'est de la chance, pas une couverture : sur 4 000 CA3 tirées, 27 portent un centime au débit, une sur 150.
+La borne s'écrit donc (`liquidationTva.test.ts`, « un arrondi d'un centime a sa ligne, au débit du 658000 comme au
+crédit du 758000 ») : avec elle, les 274 mutants tués avant le sont après, et aucun ne l'est désormais qui ne l'était
+pas. Le demi-centime retrouvé de `tvaDuReleve` ne tue rien de plus : l'exhaustif jusqu'à 2 000 € le tuait déjà.
+Campagne jouée sous une charge de 11 à 16 (machine partagée) ; les divergences et les deux mutants sans rapport (un
+blocage de 120 s, `periodeDuTrimestre` à cinq trimestres) ont été rejoués SEULS : le blocage persiste des deux côtés,
+l'autre était la charge (dix échecs une fois seul, des deux côtés). Durées : inchangées — le test des grands
+montants, joué cinq fois de chaque côté en alternance sous une charge de 31 à 34, de 1,7 à 2,2 s avant et de 1,5 à
+2,2 s après.

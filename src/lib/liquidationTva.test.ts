@@ -20,6 +20,7 @@ import type { DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from './
 import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
+import { tirage } from '../test/encaissementsBatterie'
 
 function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
   return {
@@ -124,6 +125,25 @@ describe('ecritureDeLaLiquidation — les écritures que la base a acceptées', 
     ]))
   })
 
+  // LA BORNE D'UN CENTIME, écrite plutôt que tirée : un solde d'un centime garde sa ligne et son sens. Les quarante CA3
+  // tirées au hasard ne l'atteignent que par chance — une sur 150 environ porte un centime au débit : deux sous le
+  // générateur d'avant le 09/10/2026, aucune sous `tirage` — et c'était le seul test qui tuait `solde > 1` au lieu de
+  // `solde > 0`.
+  it('un arrondi d’un centime a sa ligne, au débit du 658000 comme au crédit du 758000', () => {
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.59 })))).toEqual(parCompte([
+      { compte: '445710', sens: 'debit', montant: 99.59 },
+      { compte: '445660', sens: 'credit', montant: 20.60 },
+      { compte: '445510', sens: 'credit', montant: 79 },
+      { compte: '658000', sens: 'debit', montant: 0.01 },
+    ]))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.61 })))).toEqual(parCompte([
+      { compte: '445710', sens: 'debit', montant: 99.61 },
+      { compte: '445660', sens: 'credit', montant: 20.60 },
+      { compte: '445510', sens: 'credit', montant: 79 },
+      { compte: '758000', sens: 'credit', montant: 0.01 },
+    ]))
+  })
+
   // Le crédit déclaré (60 €) est plus petit que celui des comptes (60,10 €) : les dix centimes perdus sont une charge.
   it('une TVA collectée négative — un avoir consenti seul — se crédite, et la déductible sur immobilisations a sa ligne', () => {
     const d: DeclarationLiquidable = {
@@ -191,19 +211,12 @@ function piece(o: Partial<Piece> = {}): Piece {
   }
 }
 
-// Un générateur déterministe : la même suite à chaque exécution.
-function generateur(graine: number): () => number {
-  let x = graine
-  return () => {
-    x = (x * 1103515245 + 12345) % 2147483648
-    return x / 2147483648
-  }
-}
-
 const T1_2027 = { debut: '2027-01-01', fin: '2027-03-31' }
 
+// Les pièces sortent de `tirage` (src/test/encaissementsBatterie.ts) : la même suite à chaque exécution, exacte sur
+// 32 bits — le congruentiel en virgule flottante d'avant le 09/10/2026 bouclait sur 10 466 valeurs.
 function ca3Aleatoire(graine: number): DeclarationCa3 {
-  const alea = generateur(graine)
+  const alea = tirage(graine)
   const pieces: Piece[] = []
   const lignes: LigneBancaire[] = []
   const taux = [20, 10, 5.5, 8.5]

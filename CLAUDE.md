@@ -135,8 +135,9 @@ src/
   test/           fabriques des tests (faux clients, dont `clientRetenu.ts`, le client qui ne rend rien tant qu'on ne
                   le libère pas, filtres PostgREST, factures fictives, la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
                   supabase/essais/batterieEncaissements.mjs). Un tirage « au hasard » se fait par `tirage`
-                  (src/test/encaissementsBatterie.ts), exact sur 32 bits : le congruentiel écrit en virgule
-                  flottante boucle sur 10 466 valeurs.
+                  (src/test/encaissementsBatterie.ts), exact sur 32 bits, un entier par `entierTire` : le
+                  congruentiel écrit en virgule flottante boucle sur 10 466 valeurs ; tirage.test.ts le refuse
+                  dans tout le dépôt, avec `Math.random` dans un test → « TROIS TESTS TIRAIENT LEURS CAS ».
 supabase/
   functions/      une Edge Function par sous-dossier, auto-portée.
   essais/         essais à REJOUER, jamais seulement relire, par impersonation (anonyme, compte rattaché à
@@ -779,7 +780,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6050 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6063 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
