@@ -120,7 +120,7 @@ describe('ValidationExerciceCard — l’ouverture de l’exercice suivant', () 
     expect(screen.getByText((
       `La validation l’écrit dans le même geste : 4 soldes reportés au 01/01/2026, ${formatMoney(4000)} au débit comme au crédit. `
         + `Entreprise individuelle : le compte de l’exploitant (108) et le bénéfice de l’exercice (${formatMoney(2760)}) passent au `
-        + 'capital individuel (101000), comme le prévoit le plan comptable (art. 941-10) : l’exercice 2026 repart d’un compte '
+        + 'capital individuel (101000), comme le prévoit le plan comptable (art. 1211-10) : l’exercice 2026 repart d’un compte '
         + 'de l’exploitant vide.').replace(/\s+/g, ' '),
     )).toBeTruthy()
     const lignes = [...document.querySelectorAll('.apercu-report tbody tr')].map((tr) => [...tr.children].map((c) => c.textContent))

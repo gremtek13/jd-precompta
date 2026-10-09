@@ -74,7 +74,7 @@ export const COMPTE_ARRONDIS_PRODUIT = '758000'
 
 // Les comptes du RÉSULTAT REPORTÉ (ligne 34, voir lib/reportDesSoldes.ts), décision du cabinet du 06/10/2026. Pour une
 // entreprise individuelle, le compte de l'exploitant et le résultat passent en fin d'exercice au capital individuel
-// (PCG, art. 941-10) ; une société garde son résultat en 120 (bénéfice) ou 129 (perte), EN ATTENTE D'AFFECTATION —
+// (PCG, art. 1211-10) ; une société garde son résultat en 120 (bénéfice) ou 129 (perte), EN ATTENTE D'AFFECTATION —
 // comme la reprise d'une balance le fait déjà (lib/aNouveaux.ts). La base écrit exactement ces numéros
 // (`soldes_a_reporter`).
 //

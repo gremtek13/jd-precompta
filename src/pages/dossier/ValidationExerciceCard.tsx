@@ -236,14 +236,15 @@ function ApercuDuReport({ annee, report }: { annee: number; report: ReportDesSol
 const nombre = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } as const
 
 // Où va le résultat, et ce que devient le compte de l'exploitant — décision du cabinet : une entreprise individuelle
-// verse son compte de l'exploitant et son résultat au capital individuel (PCG, art. 941-10), une société garde son
-// résultat en attente d'affectation, que le cabinet décide.
+// verse son compte de l'exploitant et son résultat au capital individuel (PCG, art. 1211-10, version du 1er janvier
+// 2026 — l'ancien art. 941-10, renuméroté), une société garde son résultat en attente d'affectation, que le cabinet
+// décide.
 function phraseDuResultat(annee: number, report: ReportDesSoldes): string {
   const r = report.resultat
   const leResultat = r > 0 ? `le bénéfice de l’exercice (${formatMoney(r)})` : `la perte de l’exercice (${formatMoney(-r)})`
   if (report.individuel) {
     return `Entreprise individuelle : le compte de l’exploitant (108)${r !== 0 ? ` et ${leResultat} passent` : ' passe'} au capital `
-      + `individuel (101000), comme le prévoit le plan comptable (art. 941-10) : l’exercice ${annee + 1} repart d’un compte de `
+      + `individuel (101000), comme le prévoit le plan comptable (art. 1211-10) : l’exercice ${annee + 1} repart d’un compte de `
       + 'l’exploitant vide.'
   }
   if (r === 0) return ''

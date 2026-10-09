@@ -14,8 +14,9 @@ import { compteDuDirigeant } from './virementPersonnel'
 // Décisions du cabinet le 06/10/2026 : les à-nouveaux de l'exercice suivant s'écrivent À LA VALIDATION d'un exercice,
 // dans le même clic, et reprennent exactement ses soldes figés ; tant qu'un exercice n'est pas validé, le suivant n'a
 // pas d'ouverture, et l'écran le dit. Pour une entreprise individuelle, le compte de l'exploitant (108) et le résultat
-// passent au capital individuel (101), comme le prévoit le plan comptable (art. 941-10) : le nouvel exercice repart
-// d'un 108 vide. Une société garde son résultat en 120 ou 129, en attente d'affectation.
+// passent au capital individuel (101), comme le prévoit le plan comptable (art. 1211-10, version du 1er janvier 2026 ;
+// la migration, figée, le cite sous son ancien numéro, 941-10) : le nouvel exercice repart d'un 108 vide. Une société
+// garde son résultat en 120 ou 129, en attente d'affectation.
 //
 // LA BASE ÉCRIT, L'APPLICATION MONTRE. `valider_exercice` calcule les soldes par `soldes_a_reporter` et les écrit dans
 // `soldes_reportes` (supabase/schema/20261007052231_report_des_soldes.sql, éprouvé par
