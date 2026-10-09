@@ -14507,3 +14507,123 @@ fois propre). Le minuteur vit désormais dans un `useRef`, annulé au démontage
 revenue après le démontage n'en arme aucun ; un presse-papiers refusé (permission, page non sécurisée) se dit à côté du
 bouton, au lieu de partir en rejet non géré sans rien dire. Rouge avant : quatre des cinq tests nouveaux ; six mutations
 sur six mordent — la sixième, le minuteur précédent laissé armé, a demandé le test de deux copies rapprochées.
+
+### 09/10/2026 — L'E-REPORTING : L'OBLIGATION DITE JUSTE — LIGNE 28.5, ÉTAPE (E), PREMIER TEMPS (E1)
+
+(`src/lib/periodesEreporting.ts` et son test, nouveaux ; `src/lib/statutTva.ts`, `src/lib/encaissementsFactures.ts`,
+`src/pages/dossier/StatutTvaCard.tsx`, `src/pages/dossier/TvaTab.tsx` et leurs tests ; le test de
+`src/pages/DossierDetail.tsx`.) Aucune migration, aucun appel réseau, aucune Edge Function. Le premier temps du découpage
+de la conception de l'e-reporting (09/10/2026, §6.1) : dire juste l'obligation avant de rien construire. Il ne dépend
+d'aucune des dix questions posées au cabinet, toutes sans réponse. Sources relues le 09/10/2026 : BOI-TVA-DECLA-20-30-50
+(§10, §20), -20-30-50-10 (§20, §50 à §100), -20-30-50-30 (§40 à §100) et BOI-TVA-DECLA-20-30-60 (§1, §30, §170 à §210),
+tous du 30/09/2026 ; BOI-TVA-DECLA-20-10-20 (§20, §40) ; BOI-TVA-CHAMP-30-10-20-10 (§20 à §80) ; la FAQ « J'approfondis
+la facturation électronique » (01/09/2026, §2.10, §3.3, §4.1) ; la fiche « Fréquences et délais de transmission » (août
+2026) et le « Tableau des opérations situées dans le champ » d'impots.gouv.fr ; l'actualité du 22/09/2026 qui supprime
+le régime simplifié au 01/01/2027 ; le tableau 13 des spécifications externes de la DGFiP v3.2. Les normes AFNOR
+XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+**CE QUE L'APPLICATION DISAIT, ET QUI ÉTAIT FAUX.** À un dossier exonéré, la carte « Facturation électronique » disait
+« Réception des factures électroniques seulement » et, de l'émission, de l'e-reporting des ventes et de celui des
+encaissements, « Il n'y est pas tenu » ; l'infobulle du badge « TVA » de l'en-tête le répétait. Faux pour ses ACHATS à
+un fournisseur établi hors de France — un abonnement à un logiciel facturé de l'étranger suffit —, que tout assujetti
+établi en France déclare (CGI, art. 290, I-3° ; BOI-TVA-DECLA-20-30-50-10, §60 ; le tableau d'impots.gouv.fr : « Achat de
+prestations de formation auprès d'un assujetti allemand » → « E-reporting par le destinataire assujetti établi en
+France »), et pour ses opérations taxables s'il en a (la redevance que verse un collaborateur à un praticien appelle une
+facture électronique, FAQ §2.10 ; les actes sans finalité thérapeutique, les expertises, les locaux aménagés loués sont
+taxables, BOI-TVA-CHAMP-30-10-20-10, §20 à §80). Et l'onglet TVA disait d'un franchisé ou d'un exonéré qu'il « n'a pas de
+déclaration à déposer », sans réserve : faux dès qu'il achète un service à un prestataire établi hors de France, dont il
+doit la TVA (CGI, art. 283, 2), avec un numéro de TVA demandé pour cela (BOI-TVA-DECLA-20-10-20, §40) — et la CA3 de
+l'application ne prépare pas cette autoliquidation.
+
+**LE MODULE (`lib/periodesEreporting.ts`)**, pur : entrées obligatoires, aucune valeur par défaut, le jour passé par
+l'appelant ; calendrier civil (`lib/format.ts`), éprouvé sous les quatre fuseaux.
+- QUI EST TENU, ET DE QUOI (`obligationsEreporting`). Les ACHATS à l'étranger : dus quel que soit le statut, « à
+  préciser » compris — seule leur fréquence en dépend. Écart assumé avec le tableau §1.3 de la conception, qui les disait
+  à préciser : le §60 vise tout assujetti établi en France, comme la réception. Les VENTES à un particulier ou à
+  l'étranger et les PAIEMENTS : dus pour un redevable et un franchisé (BOI-TVA-DECLA-20-30-50, §20), « en partie » pour
+  un redevable en partie exonéré, « le cas échéant » pour un exonéré — ses opérations exonérées en sortent (§20), ses
+  opérations taxables, que son statut ne sait pas dire (Q5), y entrent —, à préciser sans statut ; pas de paiements sur
+  option pour les débits (BOI-TVA-DECLA-20-30-60, §30 et sa tolérance ; FAQ §4.1), option qui ne regarde pas un
+  franchisé.
+- À PARTIR DE QUAND : les factures — à défaut, les opérations — du 1er septembre 2027 pour une PME ou une
+  micro-entreprise (`DEBUT_EREPORTING_PME` ; BOI-TVA-DECLA-20-30-50, §10 ; -60, §1). Pour un paiement, la date de SA
+  facture décide (`dansLObligation`), celle de l'encaissement range la période.
+- LA FRÉQUENCE, PROPOSÉE, JAMAIS DÉCIDÉE — le régime est une donnée que l'entreprise communique à sa plateforme
+  (actualité du 22/09/2026). Les transactions, ventes et achats ensemble « quelle que soit l'opération effectuée » (§40) :
+  par décade au réel normal mensuel (§50), chaque mois au trimestriel (§60), par bimestre civil en franchise (§70). Les
+  paiements : chaque mois au réel, mensuel ou trimestriel (-60, §170), par bimestre civil en franchise (§180). ÉCRITE
+  pour ces régimes ; À CONFIRMER pour un exonéré, que les textes ne disent pas — « chaque mois », celle du réel normal
+  trimestriel, est proposée (point 3 de la conception, Q4). La périodicité d'un dossier non redevable n'y entre pas :
+  l'onglet TVA ne la montre qu'à un redevable.
+- LES PÉRIODES ET L'ÉCHÉANCE LA PLUS PROCHE QUE LAISSENT LES SOURCES (`periodeDe`, date limite de dépôt sur la
+  plateforme). La première décade, le 20. La deuxième, le 30 (doctrine, §90 ; fiche, « sauf mois de février ») plutôt
+  que le dernier jour du mois du tableau 13, et le dernier jour de février plutôt que les dix jours de la doctrine (le
+  2 mars). La troisième et le mois, le 10 du mois suivant — la fiche écrit « Avant le 10 du mois suivant », mais aussi
+  « 10 jours après la fin de la période, soit […] 10 du mois suivant », et le tableau 13 « Le 10 du mois suivant » : le
+  10 est le dernier des dix jours. Le bimestre civil, le 25 du mois qui le suit, borne d'une fenêtre « entre le 25 et la
+  fin du mois » propre à l'entreprise (§100 ; -60, §210). La raison d'une borne retenue voyage avec la période
+  (`prudence`). Le délai mensuel du régime simplifié disparaît avec lui au 01/01/2027, avant l'obligation d'une PME.
+- AUCUNE TRANSMISSION À BLANC (`transmissionAttendue`) : aucune pour une période sans opération (§80 — écrit pour les
+  transactions, « à confirmer » pour les paiements, point 9 de la conception) ; le calendrier d'un dossier
+  (`calendrierEreporting`) commence au 1er septembre 2027 — vide avant — et dit de chaque période qu'elle est en cours
+  (elle ne se déclare qu'une fois finie), close (déclarable jusqu'à son échéance comprise) ou échue. Ce que le dossier y
+  a déclaré, et s'il avait de quoi, viendra de e4 et e5.
+- **ET LE CALENDRIER BOUCLAIT SANS FIN SUR UNE MUTATION.** Il avançait d'abord de la fin d'une période au début de la
+  suivante : un bimestre d'un seul mois (mutation P38) le faisait tourner à l'infini, et le banc de mutations restait
+  pendu onze minutes — un défaut à venir de `periodeDe` aurait gelé l'écran qui le lira. Il avance désormais d'un mois
+  par tour et interroge `periodeDe` aux 1er, 11 et 21 de chaque mois (toute décade, tout mois, tout bimestre en contient
+  un) : il finit quoi que rendent les périodes, et un test le mène sur dix ans. Le banc arrête désormais une exécution
+  qui ne finit pas, avec tout son groupe de processus.
+
+**`echeanceDeDeclaration` (d2) S'Y BRANCHE**, comme la conception le demande (§5.1) : une seule source pour le rythme
+des paiements, que le statut « Encaissée » et l'e-reporting partagent. Ses attendus écrits à la main en d2 n'ont pas
+changé d'un caractère, et un test confronte la fonction au module chaque jour de 2027 et 2028, dans les deux statuts qui
+déclarent (731 jours).
+
+**À L'ÉCRAN.** La carte « Facturation électronique » a CINQ lignes : « Transmettre ses achats à l'étranger
+(e-reporting) » est nouvelle, et un état aussi, « Le cas échéant », neutre (rien n'y est en défaut, et l'application ne
+sait pas s'il en a). L'exonéré lit « Même exonéré, il y est tenu : ses achats à un fournisseur établi hors de France — un
+logiciel en ligne, une formation, de la publicité —, chaque mois (fréquence à confirmer : les textes ne la disent pas
+pour un dossier exonéré ; celle du réel normal trimestriel est proposée, à confirmer avec son service des impôts). Il lui
+faut alors un numéro de TVA intracommunautaire. » ; ses ventes et ses paiements « le cas échéant », la redevance d'un
+collaborateur donnée en exemple aux seuls soins. Le franchisé se voit demander un numéro de TVA pour ses achats ;
+« ses opérations avec l'étranger » devient « à des clients établis hors de France ». Le résumé et l'infobulle de
+l'en-tête suivent (`resumeObligations`). L'onglet TVA d'un dossier non redevable s'intitule « Déclaration de TVA » et
+dit : « … Mais la TVA d'un service qu'il achète à un prestataire établi hors de France — un logiciel en ligne, une
+formation, de la publicité — est due par lui (autoliquidation, art. 283, 2 du CGI) : il la déclare alors, avec un numéro
+de TVA intracommunautaire. L'application ne prépare pas encore cette déclaration. » L'article est cité à l'écran comme
+l'art. 283, 3 l'est déjà dans le refus d'une ligne taxée.
+
+**ÉPROUVÉ.** Quarante-neuf tests de plus (5 991 → 6 040). Trente-neuf pour le module, chaque cas tiré à la main d'une
+source que cite une ligne de commentaire (BOFiP, fiche, tableau 13, actualité, conception), jamais du module : une
+propriété (chaque jour de 2027 et 2028 dans une période et une seule, sans trou ni recouvrement), les quatre fuseaux posés
+par le test lui-même, un calendrier mené sur dix ans. Six de plus pour `statutTva` — dont le texte faux qui ne revient
+pas : « n'y est pas tenu », « seulement », « pas de déclaration à déposer » ; la confrontation de
+`echeanceDeDeclaration` au module ; et les écrans : la carte (cinq lignes, « Le cas échéant » neutre), l'onglet TVA d'un
+franchisé et d'un exonéré (sans aucune lecture de la base), l'infobulle de l'en-tête. **Quatre-vingt-douze mutations,
+toutes mordent** — 58 du module, 24 des phrases, 10 des écrans et du branchement de d2 —, jouées sur une copie hors du
+dépôt, chaque groupe d'abord vert sans mutation. La mutation du bimestre d'un seul mois a révélé la boucle sans fin (plus
+haut) ; celle du dernier jour d'une période ne mordait pas avant le test qui la vise. **La barrière** (règles communes
+v4) : `tsc -b` ; `tsc -p tsconfig.edge.json`, les 25 erreurs connues ; `npm run lint`, 63 avertissements, aucun dans
+les fichiers de e1 ; `npm run build` ; les 21 fichiers de test de e1 et des modules qu'elle touche sous les quatre
+fuseaux ; la suite entière sous Paris, 6 040 tests. Chaque échec y fut un délai dépassé sous la charge de la machine (une
+dizaine d'agents, une charge jusqu'à 40 sur quatre cœurs), aucune assertion fausse, et chaque fichier tombé passe rejoué
+seul. **Le banc** : neuf exécutions (390, 720, 1 024, 1 280 et 1 440 px, puis les quatre combinaisons extrêmes des
+volets), 0 débordement, dont l'onglet TVA d'un dossier exonéré, en franchise, à préciser et redevable ; captures relues
+à 1 440 et 390 px.
+
+**ET LE BANC, SERVI D'UNE COPIE, MESURAIT DANS UNE POLICE DE REPLI.** Une copie du dépôt dont `node_modules` n'est fait
+que de liens vers celui du dépôt principal voit Vite résoudre les polices hors de sa racine et les refuser (« outside of
+Vite serving allow list ») : 208 refus au banc de d3 aussi. Le texte se mesurait alors dans une police de repli, aux
+métriques différentes de Manrope. La copie du banc de e1 ouvre le `node_modules` réel (`server.fs.allow`, dans la copie
+seulement) : 0 refus, et chaque capture vérifie que Manrope est chargée. À reprendre par tout banc joué d'une copie.
+
+**CE QUI RESTE, ET CE QUI ATTEND LE CABINET.** Q4, la fréquence de chaque dossier, que la carte d'e5 gardera confirmée ;
+Q5, l'exonéré qui a des actes taxables — son statut ne le dit pas, d'où « le cas échéant » ; Q8 et le point 3 du §1.7
+(les mentions d'une facture à un client établi hors de France, e7) ; les points 9 (paiements à blanc) et 10 (le jour
+exact des échéances) restent « à confirmer ». La consigne de l'assistant (`agent-comptable`) dit d'une exonération
+qu'elle « en sort pour ses opérations exonérées » — juste, mais muette sur les achats : à compléter au prochain
+déploiement de la fonction. Une ligne de feuille de route pour la CA3 de l'autoliquidation (e11), que l'administration
+pré-remplira depuis l'e-reporting des achats. Au 01/01/2027 la TVA passe au CIBS : les articles cités à l'écran (283, 2 ;
+283, 3 ; 293 B) seront à relire. L'acquisition intracommunautaire d'un franchisé ou d'un exonéré sous le seuil du régime
+dérogatoire (point 15 de la conception) n'est pas tranchée.

@@ -38,6 +38,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
+import { declarationDuNonRedevable } from '../../lib/statutTva'
 import type {
   ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
   VentilationBancaire,
@@ -275,16 +276,11 @@ export default function TvaTab({
     return (
       <>
         {statut}
+        {/* Ni « pas de déclaration » sans réserve : un franchisé ou un exonéré qui achète un service à l'étranger en
+            doit la TVA (lib/statutTva.ts, `declarationDuNonRedevable`), et l'onglet ne prépare pas cette déclaration. */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginTop: 0 }}>Pas de déclaration de TVA</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            {statutTva === 'franchise'
-              ? 'En franchise en base, le dossier ne facture ni ne déclare de TVA : il n’a pas de déclaration à déposer.'
-              : statutTva === 'exonere'
-                ? 'Exonéré, le dossier ne facture ni ne déclare de TVA : il n’a pas de déclaration à déposer.'
-                : 'Tant que son statut de TVA est à préciser, le dossier est traité comme ne récupérant pas la TVA : '
-                  + 'redevable, il préparerait ici ses déclarations.'}
-          </p>
+          <h3 style={{ marginTop: 0 }}>Déclaration de TVA</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>{declarationDuNonRedevable(statutTva)}</p>
         </div>
         {facturationElectronique}
       </>

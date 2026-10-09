@@ -246,27 +246,39 @@ describe('StatutTvaCard — choisir le statut de TVA du dossier', () => {
 describe('FacturationElectroniqueCard — ce que le statut fait devoir au dossier', () => {
   const etats = () => [...document.querySelectorAll('.obligations-fe .badge')].map((b) => b.textContent)
 
-  it('un dossier exonéré ne doit que la réception', () => {
+  // LE TEXTE FAUX NE REVIENT PAS (ligne 28.5, étape e1) : la carte disait d'un dossier exonéré « Réception des factures
+  // électroniques seulement » et, sur trois lignes, « Il n'y est pas tenu » — faux pour ses achats à un fournisseur établi
+  // hors de France (BOI-TVA-DECLA-20-30-50-10, §60), et pour ses opérations taxables s'il en a.
+  it('un dossier exonéré : la réception, ses achats à l’étranger, et le reste le cas échéant', () => {
     render(<FacturationElectroniqueCard statut="exonere" article="cgi_261_4_1" periodicite="trimestrielle" surDebits={false} />)
-    expect(etats()).toEqual(['Due', 'Non due', 'Non due', 'Non due'])
-    expect(screen.getByText(/^Réception des factures électroniques seulement/)).toBeTruthy()
+    expect(etats()).toEqual(['Due', 'Le cas échéant', 'Le cas échéant', 'Due', 'Le cas échéant'])
+    // « Le cas échéant » ne s'affiche pas comme une alerte : rien n'y est en défaut.
+    expect(document.querySelectorAll('.obligations-fe .badge')[1].className).toContain('badge-neutral')
+    expect(screen.getByText(/^Réception des factures électroniques depuis le 1er septembre 2026 ; au 1er septembre 2027, e-reporting de ses achats à l’étranger/)).toBeTruthy()
+    expect(screen.getByText('Transmettre ses achats à l’étranger (e-reporting)')).toBeTruthy()
+    expect(screen.getByText(/^Même exonéré, il y est tenu : ses achats à un fournisseur établi hors de France/)).toBeTruthy()
+    expect(screen.getByText(/la redevance que lui verse un collaborateur, par exemple/)).toBeTruthy()
     expect(screen.getAllByText(/Ses opérations exonérées \(art\. 261, 4, 1° du CGI\) en sortent\./)).toHaveLength(3)
+    expect(screen.queryAllByText(/n’y est pas tenu|électroniques seulement|^Non due$/)).toHaveLength(0)
   })
 
-  it('un franchisé doit tout, tous les deux mois', () => {
+  it('un franchisé doit tout, tous les deux mois, et ses achats à l’étranger lui demandent un numéro de TVA', () => {
     render(<FacturationElectroniqueCard statut="franchise" article={null} periodicite="trimestrielle" surDebits={false} />)
-    expect(etats()).toEqual(['Due', 'Due', 'Due', 'Due'])
-    expect(screen.getByText(/ses opérations avec l’étranger, tous les deux mois/)).toBeTruthy()
+    expect(etats()).toEqual(['Due', 'Due', 'Due', 'Due', 'Due'])
+    expect(screen.getByText(/^Ses ventes à des particuliers et à des clients établis hors de France, tous les deux mois\./)).toBeTruthy()
+    expect(screen.getByText(/tous les deux mois\. Il lui faut alors un numéro de TVA intracommunautaire\./)).toBeTruthy()
   })
 
-  it('un statut à préciser ne promet rien d’autre que la réception', () => {
+  it('un statut à préciser promet la réception et les achats à l’étranger', () => {
     render(<FacturationElectroniqueCard statut={null} article={null} periodicite="trimestrielle" surDebits={false} />)
-    expect(etats()).toEqual(['Due', 'À préciser', 'À préciser', 'À préciser'])
+    expect(etats()).toEqual(['Due', 'À préciser', 'À préciser', 'Due', 'À préciser'])
+    expect(screen.getByText(/quel que soit son statut de TVA ; leur fréquence en dépend/)).toBeTruthy()
   })
 
   it('un redevable en partie exonéré, sur option pour les débits', () => {
     render(<FacturationElectroniqueCard statut="redevable" article="cgi_261_4_1" periodicite="mensuelle" surDebits />)
-    expect(etats()).toEqual(['Due', 'Due en partie', 'Due en partie', 'Non due'])
-    expect(screen.getByText(/par décade/)).toBeTruthy()
+    expect(etats()).toEqual(['Due', 'Due en partie', 'Due en partie', 'Due', 'Non due'])
+    // Ses ventes et ses achats, par décade.
+    expect(screen.getAllByText(/par décade/)).toHaveLength(2)
   })
 })

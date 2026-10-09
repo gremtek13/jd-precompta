@@ -255,7 +255,25 @@ afterEach(() => {
 describe('l’onglet TVA', () => {
   it('ne lit rien et le dit, sur un dossier qui n’est pas assujetti', async () => {
     await afficher({ assujetti: false })
-    expect(screen.getByText('Pas de déclaration de TVA')).toBeTruthy()
+    expect(screen.getByText('Déclaration de TVA')).toBeTruthy()
+    expect(faux.lectures).toBe(0)
+  })
+
+  // LE TEXTE FAUX NE REVIENT PAS (ligne 28.5, étape e1) : l'onglet disait d'un franchisé ou d'un exonéré qu'il « n’a pas de
+  // déclaration à déposer », sans réserve. Un service acheté à un prestataire établi hors de France lui fait devoir la
+  // TVA (CGI, art. 283, 2), et la CA3 de l'application ne prépare pas cette autoliquidation : l'écran le dit.
+  it.each([
+    ['franchise', /^En franchise en base, le dossier ne facture pas de TVA et n’en déclare pas sur ses ventes\. Mais la TVA d’un service/],
+    ['exonere', /^Exonéré, le dossier ne facture pas de TVA et n’en déclare pas sur ses opérations exonérées\. Mais la TVA d’un service/],
+  ] as const)('%s : l’autoliquidation d’un service acheté à l’étranger, que l’application ne prépare pas encore', async (statut, debut) => {
+    await afficher({ assujetti: false, statut, article: statut === 'exonere' ? 'cgi_261_4_1' : null })
+    const phrase = screen.getByText(debut)
+    expect(phrase.textContent).toContain('est due par lui (autoliquidation, art. 283, 2 du CGI) : il la déclare alors, avec un numéro de TVA intracommunautaire.')
+    expect(phrase.textContent).toMatch(/L’application ne prépare pas encore cette déclaration\.$/)
+    expect(screen.queryAllByText(/pas de déclaration à déposer/)).toHaveLength(0)
+    expect(screen.queryAllByText('Pas de déclaration de TVA')).toHaveLength(0)
+    // La carte de la facturation électronique, sous elle, dit l'e-reporting de ses achats.
+    expect(screen.getByText('Transmettre ses achats à l’étranger (e-reporting)')).toBeTruthy()
     expect(faux.lectures).toBe(0)
   })
 
@@ -268,8 +286,8 @@ describe('l’onglet TVA', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Franchise en base (art. 293 B du CGI)' }))
     await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
     expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false } }])
-    expect(screen.getByText('Pas de déclaration de TVA')).toBeTruthy()
-    expect(screen.getByText(/En franchise en base, le dossier ne facture ni ne déclare de TVA/)).toBeTruthy()
+    expect(screen.getByText('Déclaration de TVA')).toBeTruthy()
+    expect(screen.getByText(/^En franchise en base, le dossier ne facture pas de TVA et n’en déclare pas sur ses ventes\./)).toBeTruthy()
     expect(screen.queryAllByText('CA3 — 1er trimestre 2027')).toHaveLength(0)
   })
 
@@ -289,12 +307,13 @@ describe('l’onglet TVA', () => {
   it('la facturation électronique suit le statut ENREGISTRÉ, sur un redevable comme sur un exonéré', async () => {
     await afficher({ periodicite: 'mensuelle' })
     expect(screen.getByText('Facturation électronique')).toBeTruthy()
-    expect(screen.getByText(/ses opérations avec l’étranger, par décade/)).toBeTruthy()
+    expect(screen.getByText(/à des clients établis hors de France, par décade/)).toBeTruthy()
     cleanup()
 
     await afficher({ assujetti: false, statut: 'exonere', article: 'cgi_261_4_1' })
-    expect(screen.getByText(/Exonéré, le dossier ne facture ni ne déclare de TVA/)).toBeTruthy()
-    expect(screen.getByText(/^Réception des factures électroniques seulement/)).toBeTruthy()
+    expect(screen.getByText(/^Exonéré, le dossier ne facture pas de TVA et n’en déclare pas sur ses opérations exonérées\./)).toBeTruthy()
+    expect(screen.getByText(/^Réception des factures électroniques depuis le 1er septembre 2026 ; au 1er septembre 2027, e-reporting de ses achats à l’étranger/)).toBeTruthy()
+    expect(screen.queryAllByText(/électroniques seulement/)).toHaveLength(0)
   })
 
   it('montre la CA3 de la dernière période close, case par case', async () => {

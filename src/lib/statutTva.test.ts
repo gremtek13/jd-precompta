@@ -9,6 +9,7 @@ import {
   MENTION_FRANCHISE,
   STATUTS_TVA,
   VATEX_FRANCHISE,
+  declarationDuNonRedevable,
   ecritureDuStatut,
   numeroTvaACocher,
   exonerationDe,
@@ -192,15 +193,34 @@ describe('refusTauxPositif', () => {
 })
 
 describe('obligationsFacturationElectronique', () => {
-  const cles = ['reception', 'emission', 'transactions', 'paiements']
+  const cles = ['reception', 'emission', 'transactions', 'achats', 'paiements']
   const etats = (o: ReturnType<typeof obligationsFacturationElectronique>) => o.map((x) => x.etat)
+  const de = (o: ReturnType<typeof obligationsFacturationElectronique>, cle: string) => o.find((x) => x.cle === cle)!
+  const CAS: [StatutTva | null, ArticleExoneration | null][] = [
+    [null, null], ['redevable', null], ['redevable', 'cgi_261_4_1'], ['franchise', null], ['exonere', 'cgi_261_4_1'], ['exonere', null],
+    ['exonere', 'cgi_261_4_4_b'], ['exonere', 'cgi_261_c_2'],
+  ]
 
-  it('quatre obligations, toujours dans le même ordre', () => {
-    const cas: [StatutTva | null, ArticleExoneration | null][] = [
-      [null, null], ['redevable', null], ['redevable', 'cgi_261_4_1'], ['franchise', null], ['exonere', 'cgi_261_4_1'], ['exonere', null],
-    ]
-    for (const [statut, article] of cas) {
+  it('cinq obligations, toujours dans le même ordre — les achats à l’étranger ont la leur', () => {
+    for (const [statut, article] of CAS) {
       expect(obligationsFacturationElectronique(statut, article, 'trimestrielle', false).map((o) => o.cle)).toEqual(cles)
+    }
+    expect(de(obligationsFacturationElectronique('franchise', null, 'trimestrielle', false), 'achats').libelle)
+      .toBe('Transmettre ses achats à l’étranger (e-reporting)')
+  })
+
+  // LE TEXTE FAUX NE REVIENT PAS : un dossier exonéré « n'y est pas tenu », écrit sur trois lignes, était faux pour ses
+  // achats à l'étranger (BOI-TVA-DECLA-20-30-50-10, §60) et pour ses opérations taxables.
+  it('aucun statut ne dit plus « Il n’y est pas tenu », ni aucun état « non dû » à un dossier exonéré', () => {
+    for (const [statut, article] of CAS) {
+      for (const periodicite of ['mensuelle', 'trimestrielle'] as const) {
+        for (const surDebits of [false, true]) {
+          for (const o of obligationsFacturationElectronique(statut, article, periodicite, surDebits)) {
+            expect(o.detail, `${statut} ${article} ${o.cle}`).not.toMatch(/n’y est pas tenu|n'y est pas tenu/)
+          }
+        }
+      }
+      if (statut === 'exonere') expect(etats(obligationsFacturationElectronique(statut, article, 'trimestrielle', false))).not.toContain('non_due')
     }
   })
 
@@ -213,71 +233,134 @@ describe('obligationsFacturationElectronique', () => {
     expect(DEBUT_RECEPTION).toBe('2026-09-01')
   })
 
-  it('un dossier exonéré ne doit que la réception : ses opérations exonérées sortent du reste', () => {
+  // Un dossier exonéré (BOI-TVA-DECLA-20-30-50-10, §20 et §60 ; FAQ « J'approfondis » d'impots.gouv.fr, §2.10) : la
+  // réception, ses achats à l'étranger, et le reste s'il a des opérations taxables.
+  it('un dossier exonéré : ses achats à l’étranger sont dus, ses opérations taxables le cas échéant, avec la date', () => {
     const o = obligationsFacturationElectronique('exonere', 'cgi_261_4_1', 'trimestrielle', false)
-    expect(etats(o)).toEqual(['due', 'non_due', 'non_due', 'non_due'])
-    for (const x of o.slice(1)) {
-      expect(x.depuis).toBeNull()
-      expect(x.detail).toContain('Ses opérations exonérées (art. 261, 4, 1° du CGI) en sortent.')
-    }
-    expect(obligationsFacturationElectronique('exonere', null, 'trimestrielle', false)[1].detail).toContain('Ses opérations exonérées en sortent.')
+    expect(etats(o)).toEqual(['due', 'le_cas_echeant', 'le_cas_echeant', 'due', 'le_cas_echeant'])
+    expect(o.slice(1).map((x) => x.depuis)).toEqual(['2027-09-01', '2027-09-01', '2027-09-01', '2027-09-01'])
+    expect(de(o, 'achats').detail).toBe('Même exonéré, il y est tenu : ses achats à un fournisseur établi hors de France — un '
+      + 'logiciel en ligne, une formation, de la publicité —, chaque mois (fréquence à confirmer : les textes ne la disent pas '
+      + 'pour un dossier exonéré ; celle du réel normal trimestriel est proposée, à confirmer avec son service des impôts). '
+      + 'Il lui faut alors un numéro de TVA intracommunautaire. À partir du 1er septembre 2027 pour une PME ou une '
+      + 'micro-entreprise (1er septembre 2026 pour une ETI ou une grande entreprise).')
+    expect(de(o, 'emission').detail).toBe('Ses opérations exonérées (art. 261, 4, 1° du CGI) en sortent. S’il a aussi des '
+      + 'opérations taxables — la redevance que lui verse un collaborateur, par exemple —, ses factures à des professionnels '
+      + 'établis en France s’émettent sous forme électronique. À partir du 1er septembre 2027 pour une PME ou une '
+      + 'micro-entreprise (1er septembre 2026 pour une ETI ou une grande entreprise).')
+    expect(de(o, 'transactions').detail).toMatch(/^Ses opérations exonérées \(art\. 261, 4, 1° du CGI\) en sortent\. S’il a aussi des opérations taxables à des particuliers ou à des clients établis hors de France, elles s’y déclarent, chaque mois \(fréquence à confirmer\)\. À partir du 1er septembre 2027/)
+    expect(de(o, 'paiements').detail).toMatch(/^Ses opérations exonérées \(art\. 261, 4, 1° du CGI\) en sortent\. S’il a aussi des prestations de services taxables : le statut « Encaissée » de ses factures et l’e-reporting de ses paiements, chaque mois \(fréquence à confirmer\)\. À partir du 1er septembre 2027/)
+  })
+
+  it('l’exemple de la redevance d’un collaborateur ne vaut que pour les soins, et un exonéré sans article le dit aussi', () => {
+    // FAQ « J'approfondis », §2.10 : la collaboration libérale d'un professionnel de santé.
+    const enseignement = obligationsFacturationElectronique('exonere', 'cgi_261_4_4_b', 'trimestrielle', false)
+    expect(de(enseignement, 'emission').detail).toMatch(/^Ses opérations exonérées \(art\. 261, 4, 4° b du CGI\) en sortent\. S’il a aussi des opérations taxables, ses factures/)
+    expect(enseignement.map((x) => x.detail).join(' ')).not.toMatch(/collaborateur/)
+    const sansArticle = obligationsFacturationElectronique('exonere', null, 'trimestrielle', false)
+    expect(de(sansArticle, 'transactions').detail).toMatch(/^Ses opérations exonérées en sortent\. S’il a aussi/)
+    expect(etats(sansArticle)).toEqual(['due', 'le_cas_echeant', 'le_cas_echeant', 'due', 'le_cas_echeant'])
   })
 
   it('un franchisé est dans le champ : émission et e-reporting au 1er septembre 2027, tous les deux mois', () => {
     const o = obligationsFacturationElectronique('franchise', null, 'trimestrielle', false)
-    expect(etats(o)).toEqual(['due', 'due', 'due', 'due'])
-    expect(o.slice(1).map((x) => x.depuis)).toEqual([DEBUT_EMISSION_PME, DEBUT_EMISSION_PME, DEBUT_EMISSION_PME])
+    expect(etats(o)).toEqual(['due', 'due', 'due', 'due', 'due'])
+    expect(o.slice(1).map((x) => x.depuis)).toEqual([DEBUT_EMISSION_PME, DEBUT_EMISSION_PME, DEBUT_EMISSION_PME, DEBUT_EMISSION_PME])
     expect(DEBUT_EMISSION_PME).toBe('2027-09-01')
-    expect(o[2].detail).toContain('tous les deux mois')
-    expect(o[3].detail).toContain('tous les deux mois')
+    expect(de(o, 'transactions').detail).toMatch(/^Ses ventes à des particuliers et à des clients établis hors de France, tous les deux mois\. /)
+    expect(de(o, 'achats').detail).toMatch(/^Ses achats à un fournisseur établi hors de France — un logiciel en ligne, une formation, de la publicité —, tous les deux mois\. Il lui faut alors un numéro de TVA intracommunautaire\. À partir du 1er septembre 2027/)
+    expect(de(o, 'paiements').detail).toContain('tous les deux mois')
   })
 
   it('l’option pour les débits ne regarde pas un franchisé, qui ne facture pas de TVA', () => {
-    expect(obligationsFacturationElectronique('franchise', null, 'trimestrielle', true)[3].etat).toBe('due')
+    expect(de(obligationsFacturationElectronique('franchise', null, 'trimestrielle', true), 'paiements').etat).toBe('due')
   })
 
-  it('un redevable mensuel transmet ses transactions par décade, un trimestriel chaque mois ; ses paiements chaque mois', () => {
+  it('un redevable mensuel transmet ses ventes et ses achats par décade, un trimestriel chaque mois ; ses paiements chaque mois', () => {
     const mensuel = obligationsFacturationElectronique('redevable', null, 'mensuelle', false)
-    expect(etats(mensuel)).toEqual(['due', 'due', 'due', 'due'])
-    expect(mensuel[2].detail).toContain('par décade')
-    expect(mensuel[3].detail).toContain('chaque mois')
+    expect(etats(mensuel)).toEqual(['due', 'due', 'due', 'due', 'due'])
+    expect(de(mensuel, 'transactions').detail).toContain('par décade')
+    expect(de(mensuel, 'achats').detail).toContain('par décade')
+    expect(de(mensuel, 'paiements').detail).toContain('chaque mois')
     const trimestriel = obligationsFacturationElectronique('redevable', null, 'trimestrielle', false)
-    expect(trimestriel[2].detail).toContain('chaque mois')
-    expect(trimestriel[2].detail).not.toContain('par décade')
+    expect(de(trimestriel, 'transactions').detail).toContain('chaque mois')
+    expect(de(trimestriel, 'transactions').detail).not.toContain('par décade')
+    expect(de(trimestriel, 'achats').detail).toContain('chaque mois')
+    // Un redevable a toujours un numéro de TVA : la ligne ne lui en demande pas.
+    expect(de(trimestriel, 'achats').detail).not.toMatch(/numéro de TVA/)
   })
 
   it('sur option pour les débits, un redevable n’a pas de données de paiement à transmettre', () => {
     const o = obligationsFacturationElectronique('redevable', null, 'trimestrielle', true)
-    expect(o[3]).toMatchObject({ cle: 'paiements', etat: 'non_due', depuis: null })
-    expect(o[3].detail).toMatch(/option pour les débits/)
-    expect(o[1].etat).toBe('due')
+    expect(de(o, 'paiements')).toMatchObject({ cle: 'paiements', etat: 'non_due', depuis: null })
+    expect(de(o, 'paiements').detail).toMatch(/option pour les débits/)
+    expect(de(o, 'emission').etat).toBe('due')
+    expect(de(o, 'achats').etat).toBe('due')
   })
 
-  it('un redevable en partie exonéré n’est tenu que pour ses opérations taxables, et le dit', () => {
+  it('un redevable en partie exonéré n’est tenu que pour ses opérations taxables, et le dit — ses achats, en entier', () => {
     const o = obligationsFacturationElectronique('redevable', 'cgi_261_4_1', 'trimestrielle', false)
-    expect(etats(o)).toEqual(['due', 'en_partie', 'en_partie', 'en_partie'])
-    for (const x of o.slice(1)) {
-      expect(x.detail).toContain('Pour ses opérations taxables. Ses opérations exonérées (art. 261, 4, 1° du CGI) en sortent.')
-      expect(x.depuis).toBe(DEBUT_EMISSION_PME)
+    expect(etats(o)).toEqual(['due', 'en_partie', 'en_partie', 'due', 'en_partie'])
+    for (const cle of ['emission', 'transactions', 'paiements']) {
+      expect(de(o, cle).detail).toContain('Pour ses opérations taxables. Ses opérations exonérées (art. 261, 4, 1° du CGI) en sortent.')
+      expect(de(o, cle).depuis).toBe(DEBUT_EMISSION_PME)
     }
+    expect(de(o, 'achats').detail).not.toContain('Pour ses opérations taxables')
   })
 
-  it('un statut à préciser ne promet rien d’autre que la réception', () => {
+  it('un statut à préciser promet la réception et les achats à l’étranger, et rien d’autre', () => {
     const o = obligationsFacturationElectronique(null, null, 'trimestrielle', false)
-    expect(etats(o)).toEqual(['due', 'a_preciser', 'a_preciser', 'a_preciser'])
-    for (const x of o.slice(1)) {
-      expect(x.depuis).toBeNull()
-      expect(x.detail).toMatch(/à préciser/)
+    expect(etats(o)).toEqual(['due', 'a_preciser', 'a_preciser', 'due', 'a_preciser'])
+    for (const cle of ['emission', 'transactions', 'paiements']) {
+      expect(de(o, cle).depuis).toBeNull()
+      expect(de(o, cle).detail).toMatch(/à préciser/)
     }
+    expect(de(o, 'achats').depuis).toBe('2027-09-01')
+    expect(de(o, 'achats').detail).toMatch(/quel que soit son statut de TVA ; leur fréquence en dépend, à préciser dans l’onglet TVA\./)
   })
 })
 
 describe('resumeObligations', () => {
   it('dit en une phrase ce que chaque statut doit', () => {
-    expect(resumeObligations(null, null)).toMatch(/^Réception des factures électroniques depuis le 1er septembre 2026 ; le reste dépend du statut de TVA, à préciser\.$/)
-    expect(resumeObligations('exonere', 'cgi_261_4_1')).toMatch(/^Réception des factures électroniques seulement/)
+    expect(resumeObligations(null, null)).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; e-reporting de ses '
+      + 'achats à l’étranger au 1er septembre 2027 ; le reste dépend du statut de TVA, à préciser.')
+    expect(resumeObligations('exonere', 'cgi_261_4_1')).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; '
+      + 'au 1er septembre 2027, e-reporting de ses achats à l’étranger, et émission et e-reporting de ses opérations taxables '
+      + 's’il en a : ses opérations exonérées en sortent.')
     expect(resumeObligations('franchise', null)).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; émission et e-reporting au 1er septembre 2027.')
     expect(resumeObligations('redevable', null)).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; émission et e-reporting au 1er septembre 2027.')
-    expect(resumeObligations('redevable', 'cgi_261_4_1')).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; émission et e-reporting au 1er septembre 2027, pour ses opérations taxables.')
+    expect(resumeObligations('redevable', 'cgi_261_4_1')).toBe('Réception des factures électroniques depuis le 1er septembre 2026 ; '
+      + 'émission et e-reporting au 1er septembre 2027, pour ses opérations taxables, et e-reporting de ses achats à l’étranger.')
+  })
+
+  it('ne dit plus d’un dossier exonéré « Réception des factures électroniques seulement »', () => {
+    for (const article of [null, ...EXONERATIONS.map((e) => e.code)]) {
+      expect(resumeObligations('exonere', article)).not.toMatch(/seulement/)
+      expect(resumeObligations('exonere', article)).toContain('e-reporting de ses achats à l’étranger')
+    }
+  })
+})
+
+describe('declarationDuNonRedevable — ce que l’onglet TVA dit quand il ne prépare pas de CA3', () => {
+  // CGI, art. 283, 2 : la TVA d'un service acheté à un prestataire non établi est due par le preneur ; BOI-TVA-DECLA-20-10-20,
+  // §40 : un numéro de TVA lui est attribué pour cela, franchisé ou exonéré compris.
+  it('un franchisé ou un exonéré : pas de TVA sur ses ventes, mais celle d’un service acheté à l’étranger, que l’application ne prépare pas', () => {
+    const suite = 'Mais la TVA d’un service qu’il achète à un prestataire établi hors de France — un logiciel en ligne, une '
+      + 'formation, de la publicité — est due par lui (autoliquidation, art. 283, 2 du CGI) : il la déclare alors, avec un '
+      + 'numéro de TVA intracommunautaire. L’application ne prépare pas encore cette déclaration.'
+    expect(declarationDuNonRedevable('franchise')).toBe(`En franchise en base, le dossier ne facture pas de TVA et n’en déclare pas sur ses ventes. ${suite}`)
+    expect(declarationDuNonRedevable('exonere')).toBe(`Exonéré, le dossier ne facture pas de TVA et n’en déclare pas sur ses opérations exonérées. ${suite}`)
+  })
+
+  it('ne dit plus, sans réserve, « il n’a pas de déclaration à déposer »', () => {
+    for (const statut of ['redevable', 'franchise', 'exonere', null] as (StatutTva | null)[]) {
+      expect(declarationDuNonRedevable(statut)).not.toMatch(/pas de déclaration à déposer/)
+    }
+  })
+
+  it('un statut à préciser se dit à préciser ; un redevable prépare ses déclarations ici', () => {
+    expect(declarationDuNonRedevable(null)).toBe('Tant que son statut de TVA est à préciser, le dossier est traité comme ne '
+      + 'récupérant pas la TVA : redevable, il préparerait ici ses déclarations.')
+    expect(declarationDuNonRedevable('redevable')).toBe('Redevable, le dossier prépare ses déclarations de TVA dans cet onglet.')
   })
 })

@@ -243,15 +243,19 @@ export default function StatutTvaCard({ dossierId, statut, article, numeroTvaAtt
   )
 }
 
+// « Le cas échéant » : due s'il a de telles opérations — un dossier exonéré pour ses opérations taxables, que son statut ne
+// dit pas. Neutre, comme « Non due » : rien n'y est en défaut, et l'application ne sait pas s'il en a.
 const CLASSE_ETAT: Record<EtatObligation, string> = {
   due: 'badge-ok',
   en_partie: 'badge-ok',
+  le_cas_echeant: 'badge-neutral',
   non_due: 'badge-neutral',
   a_preciser: 'badge-warning',
 }
 const LIBELLE_ETAT: Record<EtatObligation, string> = {
   due: 'Due',
   en_partie: 'Due en partie',
+  le_cas_echeant: 'Le cas échéant',
   non_due: 'Non due',
   a_preciser: 'À préciser',
 }
