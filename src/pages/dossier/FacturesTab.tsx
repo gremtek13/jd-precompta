@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 import type {
-  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue, StatutPlateformeLu,
+  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
 } from '../../lib/encaissementsFactures'
 import { pastilleDeclaration, pastilleEncaissement } from '../../lib/encaissementsAffichage'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -15,7 +15,16 @@ import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
-import { ETATS_TRANSMISSION, libelleCourtCanal, transmissionCourante } from '../../lib/transmissionsFactures'
+import {
+  ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
+} from '../../lib/transmissionsFactures'
+import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
+import {
+  COLONNES_STATUT_LU, CONSEQUENCE_ANNULATION, auteurDuStatut, classeStatutLu, libelleStatutLu, statutDeLaPastille,
+  type StatutLu,
+} from '../../lib/statutsLus'
+import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
+import BilanReleveStatuts from './BilanReleveStatuts'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -36,10 +45,6 @@ interface Props {
   tvaSurDebits: boolean
   onAdresseUpdated: (adresse: string) => void
 }
-
-// Les statuts lus sur la plateforme du client (étape d7) : aucun tant que rien ne les relève — leur lecture ici vient
-// avec l'écran de l'étape d7. `pastilleDeclaration` les exige sans valeur par défaut ; la base les lit déjà.
-const AUCUN_STATUT_LU: readonly StatutPlateformeLu[] = []
 
 // Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
 // en place (Super PDP, voir SuperPdpModal). Une facture validée peut être transmise par une plateforme
@@ -74,6 +79,18 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [declarations, setDeclarations] = useState<DeclarationLue[]>([])
   const [evenementsSuperpdp, setEvenementsSuperpdp] = useState<EvenementSuperpdpLu[]>([])
   const [declarationsIncompletes, setDeclarationsIncompletes] = useState<string | null>(null)
+  // Les statuts du cycle de vie lus sur la plateforme du client (ligne 28.5, étape d7) : le dernier sur chaque facture,
+  // et un refus ou un rejet qui éteint « À déclarer ». Le cabinet seul les voit.
+  const [statutsLus, setStatutsLus] = useState<StatutLu[]>([])
+  const [statutsIncomplets, setStatutsIncomplets] = useState<string | null>(null)
+  // La connexion à la plateforme du client, telle que la base la garde (aucun appel à la plateforme) : `undefined` tant
+  // qu'elle n'est pas lue ou quand sa lecture a échoué, `null` quand le dossier n'en a pas. Le bouton qui relève les
+  // statuts n'existe que si elle existe.
+  const [connexion, setConnexion] = useState<ConnexionPlateformeVue | null | undefined>(undefined)
+  const [connexionErreur, setConnexionErreur] = useState<string | null>(null)
+  const [resultatReleve, setResultatReleve] = useState<ResultatReleve | null>(null)
+  const [erreurReleve, setErreurReleve] = useState<string | null>(null)
+  const [releveOccupe, setReleveOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
 
   async function load() {
@@ -95,7 +112,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte. Puis les
     // déclarations du dossier, échouées et rejetées comprises, et l'historique de Super PDP de ses factures (par leur
     // facture, comme les lignes) : `pastilleDeclaration` décide lui-même de ce qui est déclaré, et de ce qui ne le sera pas.
-    const [lignes, encaisses, parts, declares, evenements] = await Promise.all([
+    const [lignes, encaisses, parts, declares, evenements, statuts] = await Promise.all([
       lireTout<LigneDeFacture & { id: string }>((debut, fin) =>
         supabase.from('facture_lignes')
           .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
@@ -120,6 +137,11 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           .select('id, facture_id, status_code, factures_emises!inner(dossier_id)', { count: 'exact' })
           .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('occurred_at').order('id').range(debut, fin),
       ),
+      // Les statuts lus du dossier, tri TOTAL : `lu_le` n'est pas unique, un relevé en écrit plusieurs à la suite.
+      lireTout<StatutLu>((debut, fin) =>
+        supabase.from('statuts_factures_recus').select(COLONNES_STATUT_LU, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('lu_le').order('id').range(debut, fin),
+      ),
     ])
     setFactures(lecture.lignes)
     setLectureIncomplete(lecture.complete ? null : lecture.motif)
@@ -134,9 +156,52 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     setDeclarations(declares.lignes)
     setEvenementsSuperpdp(evenements.lignes)
     setDeclarationsIncompletes(!declares.complete ? declares.motif : !evenements.complete ? evenements.motif : null)
+    setStatutsLus(statuts.lignes)
+    setStatutsIncomplets(statuts.complete ? null : statuts.motif)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
+
+  async function lireConnexion() {
+    const r = await lireConnexionPlateforme(dossierId)
+    setConnexion(r.erreur === null ? r.donnees.connexion : undefined)
+    setConnexionErreur(r.erreur)
+  }
+  // La connexion se lit en base par `plateforme-agreee` (action « statut ») : rien ne part chez la plateforme. Une
+  // réponse arrivée après un changement de dossier ne s'écrit pas.
+  useEffect(() => {
+    let annule = false
+    lireConnexionPlateforme(dossierId).then((r) => {
+      if (annule) return
+      setConnexion(r.erreur === null ? r.donnees.connexion : undefined)
+      setConnexionErreur(r.erreur)
+    })
+    return () => { annule = true }
+  }, [dossierId])
+
+  // LE RELEVÉ DES STATUTS, SUR UN CLIC : la fonction lit la plateforme du client, garde ce qui se rattache à une facture
+  // du dossier et rend son bilan. Un verrou posé avant le `try`, relâché dans le `finally` APRÈS la relecture des
+  // factures, des statuts et de la connexion : un second clic pendant qu'elle court relirait la plateforme pour rien, et
+  // la pastille dirait encore ce qu'elle disait avant.
+  const releveEnCours = useRef(false)
+  async function relever() {
+    if (releveEnCours.current) return
+    releveEnCours.current = true
+    setReleveOccupe(true)
+    setErreurReleve(null)
+    setResultatReleve(null)
+    try {
+      const r = await releverEtNommer(dossierId, false)
+      if (r.erreur !== null) setErreurReleve(r.erreur)
+      else setResultatReleve(r.resultat)
+      await Promise.all([load(), lireConnexion()])
+    } catch (e) {
+      setErreurReleve(messageErreur(e, 'Les statuts de la plateforme n’ont pas pu être lus.'))
+    } finally {
+      releveEnCours.current = false
+      setReleveOccupe(false)
+    }
+  }
 
   // Le jour à Paris, lu au rendu : une déclaration en retard l'est au jour de la base, pas à celui du chargement.
   const aujourdHui = aujourdHuiAParis()
@@ -203,6 +268,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           + 'déjà déclaré. La fenêtre « Encaissements » relit celles de sa facture.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les statuts lus sur la plateforme du client"
+        accord="lus"
+        motif={statutsIncomplets}
+        consequence={
+          'Aucune facture ne dit donc son dernier statut ni ce qui reste à déclarer : un refus de l’acheteur qu’on ne verrait '
+          + 'pas laisserait dire « À déclarer » d’une facture refusée. La fenêtre « Encaissements » relit ceux de sa facture.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
         par une facture d'avoir plutôt qu'en la rouvrant.
@@ -233,6 +307,28 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvelle facture</button>
       </div>
+
+      {/* La plateforme du client et le cycle de vie de ses factures émises : relevé sur un clic, jamais à l'ouverture. */}
+      {connexion && (
+        <div className="plateforme-statuts">
+          <p>
+            Plateforme du client : {connexion.nom} <span className="muted">({connexion.hote})</span> —{' '}
+            {connexion.cycle_vie_lu_le
+              ? `statuts des factures émises lus le ${formatDate(connexion.cycle_vie_lu_le)}.`
+              : 'les statuts des factures émises n’ont pas encore été lus.'}
+          </p>
+          <button type="button" className="btn btn-outline btn-sm" disabled={releveOccupe} onClick={relever}>
+            {releveOccupe ? 'Lecture des statuts…' : 'Lire les statuts de la plateforme'}
+          </button>
+        </div>
+      )}
+      {connexionErreur && (
+        <p className="muted">
+          Plateforme du client : {connexionErreur} Les statuts de ses factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.
+        </p>
+      )}
+      {erreurReleve && <p className="error-text">{erreurReleve}</p>}
+      {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} />}
 
       {erreur && <p className="error-text">{erreur}</p>}
 
@@ -312,6 +408,21 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                               </span>
                             ) : null
                           })()}
+                          {/* Le cycle de vie lu sur la plateforme du client : le dernier statut, ou le refus s'il y en a un.
+                              Rien sur une lecture incomplète : un refus manquant laisserait lire un statut trompeur. */}
+                          {f.statut === 'validee' && statutsIncomplets == null && (() => {
+                            const s = statutDeLaPastille(statutsLus, f.id)
+                            if (!s) return null
+                            const auteur = auteurDuStatut(s.createur_role)
+                            return (
+                              <span
+                                className={`badge badge-une-ligne ${classeStatutLu(s.code)}`}
+                                title={`Lu sur ${s.hote} le ${formatDate(s.lu_le)}${auteur ? `, posé par ${auteur}` : ''}`}
+                              >
+                                Cycle de vie · {libelleStatutLu(s.code)}
+                              </span>
+                            )
+                          })()}
                           {/* Rien sur une lecture incomplète : « À encaisser » serait une affirmation que la liste ne
                               permet pas. Rien non plus quand le statut « Encaissée » est sans objet pour cette facture. */}
                           {encaissementsIncomplets == null && (() => {
@@ -321,10 +432,11 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                           {/* Ce qui reste à DÉCLARER, une seconde pastille : un fait (l'encaissement) et une obligation (sa
                               déclaration) ne partagent pas une couleur. Rien si une seule des listes dont elle dépend est
                               incomplète. */}
-                          {encaissementsIncomplets == null && declarationsIncompletes == null && transmissionsIncompletes == null && (() => {
+                          {encaissementsIncomplets == null && declarationsIncompletes == null && transmissionsIncompletes == null
+                            && statutsIncomplets == null && (() => {
                             const pastille = pastilleDeclaration(
                               dossierId, f, lignesFactures, encaissements, declarations, transmissions, evenementsSuperpdp,
-                              AUCUN_STATUT_LU, statutTva, aujourdHui,
+                              statutsLus, statutTva, aujourdHui,
                             )
                             return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
                           })()}
@@ -338,7 +450,18 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                           <button className="btn btn-outline btn-sm" onClick={() => setApercu(f)}>Aperçu</button>
                         )}
                         {f.statut === 'validee' && f.type === 'facture' && (
-                          <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
+                          // Refusée ou rejetée sur sa plateforme, elle s'annule par un avoir INTERNE : le bouton le dit, et
+                          // l'avoir ne se transmettra pas (la fenêtre de transmission et la base le refusent).
+                          statutsIncomplets == null && annuleeSurSaPlateforme(statutsLus, f.id) ? (
+                            <button
+                              className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}
+                              title={`Refusée ou rejetée sur sa plateforme : ${CONSEQUENCE_ANNULATION}.`}
+                            >
+                              Avoir interne
+                            </button>
+                          ) : (
+                            <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
+                          )
                         )}
                         {f.statut === 'validee' && (
                           <button className="btn btn-outline btn-sm" onClick={() => setTransmissionDe(f.id)}>Transmettre</button>

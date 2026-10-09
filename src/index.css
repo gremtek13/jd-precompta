@@ -1968,6 +1968,33 @@ a.nav-menu-item { text-decoration: none; }
   .plateforme-resume dd { margin-bottom: 6px; }
 }
 
+/* Le cycle de vie des factures émises, lu sur la plateforme du client (ligne 28.5, étape d7) : la rangée de l'onglet
+   Factures qui nomme la plateforme et porte « Lire les statuts » — le texte passe à la ligne, le bouton sous lui
+   plutôt que de déborder —, puis le bilan d'un relevé, encadré comme une étape : les statuts gardés, un refus en tête
+   dans la teinte du danger, ce qui n'a pas été gardé et pourquoi. Un hôte ou une raison longue se coupe où il faut. */
+.plateforme-statuts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px;
+  font-size: 0.88rem;
+}
+.plateforme-statuts > p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }
+.releve-statuts {
+  margin: 0 0 14px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  overflow-wrap: anywhere;
+}
+.releve-statuts > h3 { margin: 0 0 8px; font-size: 1rem; }
+.releve-statuts > p { margin: 0 0 8px; font-size: 0.88rem; }
+.releve-statuts > .alerte-tva { margin: 0 0 8px; }
+.releve-sous-titre { font-weight: 600; }
+.releve-annulation { color: var(--color-danger-text); }
+.releve-avertissement { font-size: 0.8rem; color: var(--color-text-light); }
+/* Les statuts d'une facture, dans la fenêtre des encaissements : une fiche par statut, le refus en tête. */
+.statuts-lus { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 0.86rem; }
+.statuts-lus li { padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.statuts-lus li.releve-annulation { border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border)); }
+.statuts-lus .releve-avertissement { margin-top: 2px; }
+
 /* Alerte de saisie, sous les trois champs de montant de la fiche pièce. Un fond teinté plutôt qu'un
    simple texte rouge : elle contredit une valeur que l'écran affiche juste au-dessus, et doit se
    distinguer des libellés d'aide qui l'entourent. Discrète malgré tout — elle informe, elle
@@ -2019,8 +2046,9 @@ a.nav-menu-item { text-decoration: none; }
 /* Les étapes de la fenêtre des encaissements (ligne 28.5, étape d4) : « Déclaré sur la plateforme » — ce qu'il faut
    saisir sur la plateforme, la note, l'inscription — et « Contre-passer ». Un encadré sous la liste, pour qu'on voie
    ce qu'on est en train d'inscrire ; ses boutons passent à la ligne plutôt que de déborder (la fenêtre rétrécit sur
-   téléphone). La vérification qu'aucune lecture ne fait (le refus de l'acheteur sur la plateforme du client) se lit
-   avant les champs, en teinte d'avertissement : ce n'est pas un refus, le bouton n'en est pas grisé. La colonne
+   téléphone). Ce qu'on sait d'un refus de l'acheteur sur la plateforme du client — statuts lus jusqu'au bout et quand,
+   ou pas encore — se lit avant les champs, en teinte d'avertissement, avec le bouton qui les relève : ce n'est pas un
+   refus, le bouton d'inscription n'en est pas grisé. La colonne
    « Déclaration » de la liste porte des phrases : petites, et un mot long (un hôte, une note) passe à la ligne. */
 .etape-encaissement {
   margin-top: 4px; padding: 12px 14px;
@@ -2030,10 +2058,12 @@ a.nav-menu-item { text-decoration: none; }
 .etape-encaissement > h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
 .etape-encaissement > p { margin: 0 0 10px; }
 .verification-declaration {
-  padding: 8px 10px; border-radius: var(--radius-sm);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin: 0 0 10px; padding: 8px 10px; border-radius: var(--radius-sm);
   background: var(--color-warning-light); color: var(--color-text);
   font-size: 0.84rem; line-height: 1.45;
 }
+.verification-declaration > p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }
 .rangee-boutons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 .cellule-declaration { font-size: 0.82rem; }
 .cellule-declaration div { overflow-wrap: anywhere; }

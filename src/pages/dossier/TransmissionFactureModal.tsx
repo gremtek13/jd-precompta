@@ -8,9 +8,14 @@ import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
-  ETATS_TRANSMISSION, REGLE_AVOIR_INTERNE, STATUTS_ANNULATION_SUPERPDP, abandonnable, estActive, libelleCanal, transmissionsDe,
+  ETATS_TRANSMISSION, REGLE_AVOIR_INTERNE, STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP, abandonnable,
+  annuleeSurSaPlateforme, estActive, libelleCanal, transmissionsDe,
 } from '../../lib/transmissionsFactures'
+import { CONSEQUENCE_ANNULATION, libelleStatutLu, statutsDeLaFacture, type StatutLu } from '../../lib/statutsLus'
 import type { ArticleExoneration, FactureEmise, FactureSuperpdpEvent, StatutTva, TransmissionFacture } from '../../lib/types'
+
+// Ce que la fenêtre lit d'un statut lu sur la plateforme du client : de quoi dire un refus, et où.
+type StatutAnnulant = Pick<StatutLu, 'id' | 'facture_id' | 'code' | 'hote' | 'emis_le' | 'lu_le'>
 
 interface Props {
   dossierId: string
@@ -57,6 +62,10 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   const [superpdpErreur, setSuperpdpErreur] = useState<string | null>(null)
   const [evenements, setEvenements] = useState<FactureSuperpdpEvent[] | null>(null)
   const [evenementsErreur, setEvenementsErreur] = useState<string | null>(null)
+  // Les statuts de la facture lus sur la plateforme du client (étape d7) : refusée (210) ou rejetée (213) là-bas, elle
+  // ne part pas — la base refuserait sa réservation. `null` tant qu'ils ne sont pas lus en entier.
+  const [statuts, setStatuts] = useState<StatutAnnulant[] | null>(null)
+  const [statutsErreur, setStatutsErreur] = useState<string | null>(null)
   const [enCours, setEnCours] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -79,18 +88,32 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
     setEvenements(error ? null : (data ?? []) as FactureSuperpdpEvent[])
   }
 
-  // La facture que l'avoir corrige a-t-elle été rejetée (une transmission `rejete`) ou refusée chez Super PDP (210,
-  // 213) ? Les mêmes questions que la base pose avant toute transmission de l'avoir.
+  // Les statuts de la facture lus sur la plateforme du client, EN ENTIER : un refus qu'on ne verrait pas laisserait
+  // proposer un envoi que la base refuserait. Tri total.
+  async function lireStatuts() {
+    const lecture = await lireTout<StatutAnnulant>((debut, fin) =>
+      supabase.from('statuts_factures_recus').select('id, facture_id, code, hote, emis_le, lu_le', { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('facture_id', facture.id).order('lu_le').order('id').range(debut, fin),
+    )
+    setStatuts(lecture.complete ? lecture.lignes : null)
+    setStatutsErreur(lecture.complete ? null : lecture.motif ?? 'lecture incomplète')
+  }
+
+  // La facture que l'avoir corrige a-t-elle été rejetée (une transmission `rejete`), refusée chez Super PDP (210, 213),
+  // ou refusée ou rejetée sur la plateforme du client (210, 213 lus, étape d7) ? Les mêmes questions que la base pose
+  // avant toute transmission de l'avoir.
   async function lireAnnulationDeLOrigine(origineId: string) {
-    const [rejets, refus] = await Promise.all([
+    const [rejets, refus, statutsLus] = await Promise.all([
       supabase.from('transmissions_factures').select('id', { count: 'exact', head: true })
         .eq('facture_id', origineId).eq('etat', 'rejete'),
       supabase.from('facture_superpdp_events').select('id', { count: 'exact', head: true })
         .eq('facture_id', origineId).in('status_code', [...STATUTS_ANNULATION_SUPERPDP]),
+      supabase.from('statuts_factures_recus').select('id', { count: 'exact', head: true })
+        .eq('facture_id', origineId).in('code', [...STATUTS_ANNULATION_PLATEFORME]),
     ])
-    const erreur = rejets.error ?? refus.error
+    const erreur = rejets.error ?? refus.error ?? statutsLus.error
     if (erreur) setLectureRatee(messageErreur(erreur, 'Les transmissions de la facture corrigée n’ont pas pu être lues.'))
-    else setAvoirInterne((rejets.count ?? 0) > 0 || (refus.count ?? 0) > 0)
+    else setAvoirInterne((rejets.count ?? 0) > 0 || (refus.count ?? 0) > 0 || (statutsLus.count ?? 0) > 0)
   }
 
   async function lireCanaux() {
@@ -126,6 +149,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
       lireAnnulationDeLOrigine(origineId)
     }
     lireTransmissions()
+    lireStatuts()
     lireCanaux()
     // L'historique de Super PDP se lit toujours : la facture peut y être partie sans en porter le numéro, que sa
     // transmission a gardé si son écriture a échoué après l'envoi. Il ne s'affiche que pour une facture partie par lui.
@@ -253,8 +277,12 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
   // PDP, sa transmission reste acceptée — elle a été reçue —, et c'est l'historique qui le dit.
   const rejet = siennes?.find((t) => t.etat === 'rejete') ?? null
   const refuseeParLeClient = evenements?.some((e) => e.status_code === 'fr:210') ?? false
-  const peutPartir = siennes != null && active == null && rejet == null && !avantLesTransmissions && avoirInterne === false
-    && refus != null && refus.length === 0
+  // Refusée (210) ou rejetée (213) sur la plateforme du client — une facture qu'il a peut-être déposée lui-même, sans
+  // transmission ici : la base refuserait sa réservation. La fenêtre en dit le refus le plus récent.
+  const annuleeLa = statuts != null && annuleeSurSaPlateforme(statuts, facture.id)
+  const refusLu = annuleeLa && statuts ? statutsDeLaFacture(statuts, facture.id)[0] ?? null : null
+  const peutPartir = siennes != null && statuts != null && !annuleeLa && active == null && rejet == null
+    && !avantLesTransmissions && avoirInterne === false && refus != null && refus.length === 0
 
   return (
     <div style={overlayStyle}>
@@ -269,7 +297,12 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
           <p className="error-text">
             {lectureRatee} On ne sait donc pas si elle est déjà partie : rien n’est proposé. Rouvre cette fenêtre.
           </p>
-        ) : siennes == null ? (
+        ) : statutsErreur ? (
+          <p className="error-text">
+            Les statuts de la facture lus sur la plateforme du client n’ont pas pu être lus en entier ({statutsErreur}). On ne
+            sait donc pas si l’acheteur l’a refusée : rien n’est proposé. Rouvre cette fenêtre.
+          </p>
+        ) : siennes == null || statuts == null ? (
           <p className="muted">Chargement…</p>
         ) : (
           <>
@@ -292,6 +325,11 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               <p className="alerte-tva" style={{ marginTop: 0 }}>
                 Refusée par le client : elle s’annule par un avoir interne — qui ne se transmet pas —, puis une nouvelle
                 facture ({REGLE_AVOIR_INTERNE}).
+              </p>
+            )}
+            {refusLu && (
+              <p className="alerte-tva" style={{ marginTop: 0 }}>
+                {libelleStatutLu(refusLu.code)} sur la plateforme du client ({refusLu.hote}) : elle ne part pas — {CONSEQUENCE_ANNULATION}.
               </p>
             )}
             {avoirInterne === true && (
@@ -381,7 +419,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               </div>
             )}
 
-            {active == null && rejet == null && avoirInterne === false && !avantLesTransmissions && refus != null && refus.length > 0 && (
+            {active == null && rejet == null && !annuleeLa && avoirInterne === false && !avantLesTransmissions && refus != null && refus.length > 0 && (
               <div className="alerte-tva" style={{ marginTop: 8 }}>
                 <strong>Elle ne peut pas partir telle quelle</strong> :
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>

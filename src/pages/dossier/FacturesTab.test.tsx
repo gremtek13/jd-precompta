@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
+import type { ReleveStatuts } from '../../lib/receptionPlateforme'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import type {
-  ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, FactureSuperpdpEvent, StatutTva,
-  TransmissionEncaissement, TransmissionFacture,
+  ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, FactureSuperpdpEvent,
+  StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
@@ -45,6 +46,21 @@ const faux = vi.hoisted(() => ({
   evenements: [] as FactureSuperpdpEvent[],
   declarationsMuettesApres: null as number | null,
   evenementsMuetsApres: null as number | null,
+  // Les statuts lus sur la plateforme du client (ligne 28.5, étape d7), et une lecture qui s'arrête avant le compte.
+  statuts: [] as StatutFactureRecu[],
+  statutsMuetsApres: null as number | null,
+  // La connexion à la plateforme, telle que `plateforme-agreee` (action « statut ») la rend ; une chaîne : son refus.
+  connexion: null as unknown,
+  refusConnexion: null as string | null,
+  // Les appels à la fonction, hors de la lecture de la connexion ; le relevé reste EN ATTENTE jusqu'à ce que le cas le
+  // résolve.
+  appels: [] as Record<string, unknown>[],
+  resoudreReleve: null as null | ((v: unknown) => void),
+  lecturesStatuts: 0,
+  lecturesConnexion: 0,
+  // Les lectures qui suivent le relevé restent en attente : la relecture que le verrou doit couvrir.
+  retenirRelectures: false,
+  libererRelectures: null as null | (() => void),
 }))
 
 // La fenêtre de transmission a ses propres tests (TransmissionFactureModal.test.tsx) : doublée ici pour montrer ce que
@@ -64,9 +80,28 @@ vi.mock('./EncaissementsFactureModal', () => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean
+  let barriere: Promise<void> | null = null
   return { supabase: {
+    functions: {
+      invoke: (nom: string, options: { body: Record<string, unknown> }) => {
+        if (nom === 'plateforme-agreee' && options.body.action === 'statut') {
+          faux.lecturesConnexion += 1
+          const reponse = faux.refusConnexion
+            ? { data: null, error: { context: new Response(JSON.stringify({ error: faux.refusConnexion }), { status: 403 }) } }
+            : { data: { connexion: faux.connexion }, error: null }
+          return (barriere ?? Promise.resolve()).then(() => reponse)
+        }
+        faux.appels.push({ nom, ...options.body })
+        return new Promise((resolve) => {
+          faux.resoudreReleve = (v) => {
+            if (faux.retenirRelectures) barriere = new Promise<void>((r) => { faux.libererRelectures = () => { barriere = null; r() } })
+            resolve(v)
+          }
+        })
+      },
+    },
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       let suppression = false
@@ -92,20 +127,24 @@ vi.mock('../../lib/supabase', async () => {
             : predicatEq(colonne, valeur))
           return chaine
         },
+        in: (colonne: string, valeurs: unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return chaine },
         then: (suite: (r: { data: unknown[] | null; error: unknown; count: number | null }) => unknown) => {
           const tableDeLaPastille = {
             facture_lignes: faux.lignesDossier, encaissements_factures: faux.encaissements, encaissements_factures_taux: faux.parts,
             transmissions_encaissements: faux.declarations, facture_superpdp_events: faux.evenements,
+            statuts_factures_recus: faux.statuts,
           }
+          if (table === 'statuts_factures_recus') faux.lecturesStatuts += 1
           if (plage && table in tableDeLaPastille) {
             const toutes = filtrer(tableDeLaPastille[table as keyof typeof tableDeLaPastille] as readonly object[], predicats)
             const muetApres = table === 'encaissements_factures' ? faux.encaissementsMuetsApres
               : table === 'transmissions_encaissements' ? faux.declarationsMuettesApres
-                : table === 'facture_superpdp_events' ? faux.evenementsMuetsApres : null
+                : table === 'facture_superpdp_events' ? faux.evenementsMuetsApres
+                  : table === 'statuts_factures_recus' ? faux.statutsMuetsApres : null
             const fin = muetApres != null ? Math.min(plage[1] + 1, muetApres) : plage[1] + 1
             const rendu = (toutes.slice(plage[0], fin) as Record<string, unknown>[])
               .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l))
-            return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
+            return (barriere ?? Promise.resolve()).then(() => ({ data: rendu, error: null, count: toutes.length })).then(suite)
           }
           if (suppression) {
             faux.suppressions.push(idVise)
@@ -128,8 +167,10 @@ vi.mock('../../lib/supabase', async () => {
           if (faux.refusLecture) {
             return Promise.resolve({ data: null, error: { message: faux.refusLecture }, count: null }).then(suite)
           }
-          const tranche = plage ? faux.factures.slice(plage[0], plage[1] + 1) : faux.factures
-          return Promise.resolve({ data: tranche, error: null, count: faux.compteAnnonce ?? faux.factures.length }).then(suite)
+          // Les filtres s'appliquent : la lecture des numéros d'un relevé (`.in('id', …)`) n'en rend que les siens.
+          const filtrees = filtrer(faux.factures, predicats)
+          const tranche = plage ? filtrees.slice(plage[0], plage[1] + 1) : filtrees
+          return Promise.resolve({ data: tranche, error: null, count: faux.compteAnnonce ?? filtrees.length }).then(suite)
         },
       })
       return chaine
@@ -166,6 +207,16 @@ function poser(factures: FactureEmise[]) {
   faux.evenements = []
   faux.declarationsMuettesApres = null
   faux.evenementsMuetsApres = null
+  faux.statuts = []
+  faux.statutsMuetsApres = null
+  faux.connexion = null
+  faux.refusConnexion = null
+  faux.appels = []
+  faux.resoudreReleve = null
+  faux.lecturesStatuts = 0
+  faux.lecturesConnexion = 0
+  faux.retenirRelectures = false
+  faux.libererRelectures = null
 }
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
@@ -659,5 +710,222 @@ describe('FacturesTab — la déclaration des encaissements de chaque facture', 
     await ligne('À DÉCLARER')
     screen.getByText(/aucune ne dit ce qui reste à déclarer de ses encaissements/)
     expect(screen.queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+  })
+
+  // UN REFUS LU SUR LA PLATEFORME DU CLIENT (étape d7) : 210 « Refusée » ou 213 « Rejetée » — aucun statut « Encaissée »
+  // ne suit une facture annulée par un avoir interne, et la pastille se tait d'elle-même.
+  it('une facture refusée (210) ou rejetée (213) sur la plateforme du client ne se déclare plus', async () => {
+    poserCinq()
+    faux.statuts = [statutLu({ facture_id: 'f1', code: '210' }), statutLu({ id: 's2', facture_id: 'f2', code: '213' })]
+    monter()
+    expect(within(await ligne('À DÉCLARER')).queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+    expect(within(await ligne('EN RETARD')).queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+    within(await ligne('À DÉCLARER')).getByText('Cycle de vie · Refusée')
+    within(await ligne('EN RETARD')).getByText('Cycle de vie · Rejetée')
+  })
+
+  it('un statut qui n’annule pas (207) laisse la pastille, et des statuts lus en partie la taisent', async () => {
+    poserCinq()
+    faux.statuts = [statutLu({ facture_id: 'f1', code: '207' })]
+    monter()
+    within(await ligne('À DÉCLARER')).getByText('À déclarer')
+    cleanup()
+
+    poserCinq()
+    faux.statuts = [statutLu({ facture_id: 'f2', code: '205' }), statutLu({ id: 's2', facture_id: 'f1', code: '210' })]
+    faux.statutsMuetsApres = 1
+    monter()
+    await ligne('À DÉCLARER')
+    screen.getByText(/^Les statuts lus sur la plateforme du client n'ont pas pu être lus en entier/)
+    screen.getByText(/laisserait dire « À déclarer » d’une facture refusée/)
+    expect(screen.queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+    expect(screen.queryByText(/^Cycle de vie/)).toBeNull()
+  })
+})
+
+// Un statut lu sur la plateforme du client, typé sans `as`.
+function statutLu(o: Partial<StatutFactureRecu> = {}): StatutFactureRecu {
+  return {
+    id: 's1', dossier_id: 'dossier-de-test', facture_id: 'f1', hote: 'flux.plateforme-demo.fr', flux_id: `flux-${o.id ?? 's1'}`,
+    code: '205', message_id: null, emis_le: '20261005101500', createur_role: 'BY', date_statut: '2026-10-05', motifs: null,
+    commentaire: null, montants: [], lu_par: null, lu_le: '2026-10-08T09:00:00Z', ...o,
+  }
+}
+
+const CONNEXION = {
+  nom: 'Plateforme Démo', url_flux: 'https://flux.plateforme-demo.fr', url_jeton: 'https://flux.plateforme-demo.fr/jeton',
+  hote: 'flux.plateforme-demo.fr', client_id: 'cabinet', organisation_id: null, portee: null, recherche_depuis: null,
+  derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null, created_at: '2026-10-01T08:00:00Z', version: 'v1',
+}
+
+// Le bilan d'un relevé tel que `plateforme-agreee` le rend (FICTIF).
+function releve(o: Partial<ReleveStatuts> = {}): ReleveStatuts {
+  return {
+    hote: 'flux.plateforme-demo.fr', version: 'v1', depuis: null, issues: [],
+    ecartes: { autre_flux: 0, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 },
+    en_attente: 0, en_erreur: 0, reportes: 0, complete: true, motif: null, cycle_vie_depuis: '2026-10-09T08:00:00Z',
+    cycle_vie_lu_le: '2026-10-09T09:00:00Z', erreur_reprise: null, ...o,
+  }
+}
+
+// LE CYCLE DE VIE DES FACTURES ÉMISES DANS L'ONGLET (ligne 28.5, étape d7) : la pastille du dernier statut lu sous le
+// libellé de la DGFiP — le refus, s'il y en a un —, l'avoir interne proposé, et le relevé SUR UN CLIC, jamais à
+// l'ouverture : un seul appel pour trois clics, le verrou tenu jusqu'après la relecture, le bilan dit, une erreur dite.
+describe('FacturesTab — les statuts lus sur la plateforme du client', () => {
+  it('la pastille du dernier statut lu, sous le libellé de la DGFiP ; le refus l’emporte ; l’avoir devient interne', async () => {
+    poser([
+      facture(),
+      facture({ id: 'f2', numero: 'F2026-0002', tiers_nom: 'CABINET REFUSANT' }),
+      facture({ id: 'f3', numero: 'F2026-0003', tiers_nom: 'SANS STATUT' }),
+    ])
+    faux.statuts = [
+      statutLu({ id: 's1', facture_id: 'f1', code: '205', lu_le: '2026-10-08T09:00:00Z' }),
+      // Lus au même instant : le plus tard horodaté est le dernier.
+      statutLu({ id: 's2', facture_id: 'f1', code: '207', lu_le: '2026-10-09T09:00:00Z', emis_le: '20261006080000' }),
+      statutLu({ id: 's3', facture_id: 'f1', code: '206', lu_le: '2026-10-09T09:00:00Z', emis_le: '20261005080000' }),
+      statutLu({ id: 's4', facture_id: 'f2', code: '210', lu_le: '2026-10-08T09:00:00Z' }),
+      // Un « Encaissée » lu APRÈS le refus ne le recouvre pas.
+      statutLu({ id: 's5', facture_id: 'f2', code: '212', lu_le: '2026-10-09T09:00:00Z' }),
+      // Un statut d'un autre dossier n'est pas lu.
+      statutLu({ id: 's6', dossier_id: 'autre-dossier', facture_id: 'f3', code: '213' }),
+    ]
+    monter()
+    const premiere = within(await ligne('CLINIQUE DU PARC'))
+    expect(premiere.getByText('Cycle de vie · En litige').className).toBe('badge badge-une-ligne badge-danger')
+    premiere.getByRole('button', { name: 'Avoir' })
+    const refusee = within(await ligne('CABINET REFUSANT'))
+    expect(refusee.getByText('Cycle de vie · Refusée').className).toBe('badge badge-une-ligne badge-danger')
+    expect(refusee.getByText('Cycle de vie · Refusée').getAttribute('title'))
+      .toMatch(/^Lu sur flux\.plateforme-demo\.fr le \d\d\/10\/2026, posé par l’acheteur$/)
+    const avoir = refusee.getByRole('button', { name: 'Avoir interne' })
+    expect(avoir.getAttribute('title')).toContain('elle s’annule par un avoir interne, qui ne se transmet pas, puis une nouvelle facture')
+    expect(refusee.queryByRole('button', { name: 'Avoir' })).toBeNull()
+    expect(within(await ligne('SANS STATUT')).queryByText(/^Cycle de vie/)).toBeNull()
+  })
+
+  it('sans connexion à la plateforme : aucun bouton, et rien ne part chez elle à l’ouverture', async () => {
+    poser([facture()])
+    monter()
+    await ligne('CLINIQUE DU PARC')
+    expect(faux.lecturesConnexion).toBe(1)
+    expect(screen.queryByRole('button', { name: 'Lire les statuts de la plateforme' })).toBeNull()
+    expect(faux.appels).toEqual([])
+  })
+
+  it('une connexion illisible se dit, sans bouton', async () => {
+    poser([facture()])
+    faux.refusConnexion = 'Accès refusé à ce dossier.'
+    monter()
+    expect(await screen.findByText(/^Plateforme du client : Accès refusé à ce dossier\. Les statuts de ses factures ne se relèvent pas d’ici/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Lire les statuts de la plateforme' })).toBeNull()
+  })
+
+  it('trois clics, un seul relevé ; le verrou tient jusqu’après la relecture ; le bilan dit chaque statut', async () => {
+    poser([facture(), facture({ id: 'f2', numero: 'F2026-0002', tiers_nom: 'CABINET REFUSANT' })])
+    faux.connexion = CONNEXION
+    monter()
+    expect(await screen.findByText(/les statuts des factures émises n’ont pas encore été lus\./)).toBeTruthy()
+    // Rien n'est relevé à l'ouverture : seule la connexion a été lue, en base.
+    expect(faux.appels).toEqual([])
+    const bouton = screen.getByRole('button', { name: 'Lire les statuts de la plateforme' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.appels).toEqual([{ nom: 'plateforme-agreee', action: 'relever', dossierId: 'dossier-de-test', depuisLeDebut: false }])
+    expect(screen.getByRole('button', { name: 'Lecture des statuts…' })).toHaveProperty('disabled', true)
+
+    // La plateforme a rendu un refus de f2 : la base l'a gardé, et la relecture le montrera.
+    faux.statuts = [statutLu({ id: 's9', facture_id: 'f2', code: '210' })]
+    faux.connexion = { ...CONNEXION, cycle_vie_lu_le: '2026-10-09T09:00:00Z' }
+    faux.retenirRelectures = true
+    const lecturesAvant = faux.lecturesStatuts
+    await act(async () => {
+      faux.resoudreReleve?.({
+        data: releve({
+          issues: [
+            { flux: 'L1', issue: 'garde', facture_id: 'f2', code: '210', avertissements: ['L’horodatage n’est pas lisible : il est écarté.'] },
+            { flux: 'L2', issue: 'garde', facture_id: 'f1', code: '205', avertissements: [] },
+            { flux: 'L3', issue: 'deja_lu' },
+            { flux: 'L4', issue: 'deja_lu' },
+            { flux: 'L5', issue: 'ecarte', ecart: 'autre_vendeur', raison: 'Le statut désigne une autre entreprise que le dossier.', code: '210', detail: null },
+            {
+              flux: 'L6', issue: 'ecarte', ecart: 'autre_objet', raison: 'Le message porte sur un autre statut, pas sur une facture.', code: '601',
+              detail: { reference: 'MSG-42', date_objet: '2026-10-07', motifs: 'REJ_SEMAN : donnée absente', commentaire: null },
+            },
+            { flux: 'L7', issue: 'echec', raison: 'La plateforme n’a pas répondu à temps (téléchargement d’un statut).', statut_http: 504 },
+          ],
+          en_attente: 2, reportes: 1, ecartes: { autre_flux: 3, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 },
+        }),
+        error: null,
+      })
+    })
+    // La relecture court : le bouton reste pris, et un clic ne relance rien.
+    expect(faux.lecturesStatuts).toBeGreaterThan(lecturesAvant)
+    const pris = screen.getByRole('button', { name: 'Lecture des statuts…' })
+    expect(pris).toHaveProperty('disabled', true)
+    await act(async () => { pris.click() })
+    expect(faux.appels).toHaveLength(1)
+    await act(async () => { faux.libererRelectures?.() })
+
+    screen.getByRole('heading', { name: /^Statuts lus sur flux\.plateforme-demo\.fr le \d\d\/10\/2026$/ })
+    // Les gardés, le refus en tête, en rouge, avec sa conséquence ; ses données écartées en petit.
+    const gardes = screen.getAllByText(/^F2026-000[12]$/, { selector: 'strong' }).map((n) => n.closest('li') as HTMLElement)
+    expect(gardes.map((li) => li.textContent)).toEqual([
+      'F2026-0002 : Refusée — elle s’annule par un avoir interne, qui ne se transmet pas, puis une nouvelle facture '
+        + '(spécifications externes de la DGFiP, § 3.6.4).Données écartées du message : L’horodatage n’est pas lisible : il est écarté.',
+      'F2026-0001 : Approuvée',
+    ])
+    expect(gardes[0].className).toBe('releve-annulation')
+    screen.getByText('2 statuts déjà lus : reconnus, ils ne s’écrivent pas deux fois.')
+    screen.getByText('2 statuts en attente : la plateforme n’a pas fini de les traiter, ils reviendront.')
+    screen.getByText('1 statut prêt non lu cette fois (le temps ou le nombre) : le prochain relevé le lira.')
+    screen.getByText('3 messages écartés : ce ne sont pas des statuts de factures émises.')
+    // Les écartés avec leur raison telle quelle ; le 601 du dossier avec ce qu'il porte.
+    screen.getByText('Le statut désigne une autre entreprise que le dossier.')
+    screen.getByText('La plateforme de l’administration a rejeté un statut : le message MSG-42 du 07/10/2026 ; motifs : REJ_SEMAN : donnée absente.')
+    screen.getByText('La plateforme n’a pas répondu à temps (téléchargement d’un statut). Le prochain relevé le reprendra.')
+    // La relecture : la pastille dit le refus, l'avoir devient interne, la connexion dit quand.
+    within(await ligne('CABINET REFUSANT')).getByText('Cycle de vie · Refusée')
+    within(await ligne('CABINET REFUSANT')).getByRole('button', { name: 'Avoir interne' })
+    screen.getByText(/statuts des factures émises lus le \d\d\/10\/2026\./)
+    expect(screen.getByRole('button', { name: 'Lire les statuts de la plateforme' })).toHaveProperty('disabled', false)
+  })
+
+  it('un relevé incomplet le dit, et un point de reprise non enregistré aussi', async () => {
+    poser([facture()])
+    faux.connexion = CONNEXION
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Lire les statuts de la plateforme' })
+    await act(async () => { bouton.click() })
+    await act(async () => {
+      faux.resoudreReleve?.({
+        data: releve({
+          complete: false, motif: 'cinquante statuts lus, la suite au prochain relevé', cycle_vie_lu_le: null,
+          erreur_reprise: 'La connexion à la plateforme a changé entre-temps : le point de reprise des statuts n’est pas enregistré.',
+        }),
+        error: null,
+      })
+    })
+    screen.getByRole('heading', { name: 'Statuts lus en partie sur flux.plateforme-demo.fr' })
+    screen.getByText('Pas de nouveau statut sur une facture du dossier.')
+    screen.getByText('Relevé incomplet : cinquante statuts lus, la suite au prochain relevé. Relancez la lecture pour la suite.')
+    screen.getByText('La connexion à la plateforme a changé entre-temps : le point de reprise des statuts n’est pas enregistré. '
+      + 'Rien n’est perdu : le prochain relevé relira ces statuts, et reconnaîtra ceux déjà gardés.')
+  })
+
+  it('un relevé refusé par la plateforme se dit, avec ce qu’il faut faire, et le verrou se relâche', async () => {
+    poser([facture()])
+    faux.connexion = CONNEXION
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Lire les statuts de la plateforme' })
+    await act(async () => { bouton.click() })
+    const corps = JSON.stringify({ error: 'La plateforme refuse l’identifiant ou le secret (401).', identifiants_refuses: true })
+    await act(async () => { faux.resoudreReleve?.({ data: null, error: { context: new Response(corps, { status: 502 }) } }) })
+    screen.getByText(/^La plateforme refuse l’identifiant ou le secret \(401\)\. L’identifiant ou le secret enregistrés ne sont plus acceptés/)
+    const libre = screen.getByRole('button', { name: 'Lire les statuts de la plateforme' })
+    expect(libre).toHaveProperty('disabled', false)
+    await act(async () => { libre.click() })
+    expect(faux.appels).toHaveLength(2)
+    const acces = JSON.stringify({ error: 'La plateforme refuse l’accès (recherche des statuts, 403).', acces_refuse: true })
+    await act(async () => { faux.resoudreReleve?.({ data: null, error: { context: new Response(acces, { status: 502 }) } }) })
+    screen.getByText(/^La plateforme refuse l’accès \(recherche des statuts, 403\)\. Demandez au client d’ouvrir au cabinet le droit de lire/)
   })
 })
