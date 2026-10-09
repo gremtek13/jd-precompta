@@ -15732,3 +15732,823 @@ libellé collé au texte (« Nouveau posteCatégorie… ») : une cellule fusion
 fichier sans ses lignes de commentaire. Les trois contrôles de l'export égaux après chaque migration (106 migrations,
 empreinte globale c06035e67b4374900d74eaa999f50d31 ; socle 78 instructions, f01053c781688bbfbee8c70ac43924a6 ;
 inventaire 1 365 objets, 8cb853171952af846feb1856c07ed195). `rls.sql` n'est pas rejoué : aucune policy n'a bougé.
+
+### 09/10/2026 — L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION
+
+La note de conception de l'architecte, telle qu'il l'a rendue, gardée ici parce que les étapes P0 à P10 s'y appuient : ses sources, ses points NON VÉRIFIÉS et ses sept questions au cabinet, posées le 09/10/2026 et encore sans réponse.
+
+Rédigée le 09/10/2026 par l'architecte, pour le cabinet et pour la session qui orchestre. CONCEPTION SEULEMENT : rien n'a été
+écrit dans le dépôt, aucune migration, aucun déploiement ; la base n'a été lue qu'en lecture (le catalogue — policies,
+fonctions et leur corps, contraintes, droits de table et de colonne — et des comptes de lignes, jamais un texte ni un nom
+rendu). Lecture du dépôt dans une copie isolée, au commit 6a36368. Aucun outil de navigateur ; MEG a été lu sur les pages
+publiques de son éditeur, rien de propriétaire n'est recopié ; aucune plateforme, aucune banque, aucun prestataire appelé.
+Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+**LA DÉCISION, MOT POUR MOT** (cabinet, 09/10/2026) : « si on veut que l'expert comptable remplace MEG il faut que le client
+puisse faire sa facturation électronique et les devis sur l'app client et la vision bancaire. » MEG (« Mon Expert en
+Gestion ») est l'application de gestion que les cabinets donnent aujourd'hui à leurs clients [S12]. La décision LÈVE, pour
+ces trois domaines et pour eux seuls, la règle « les accès clients sont restreints (dépôt de pièces, pas de montants,
+catégories, packs ni autres onglets) — ne jamais les élargir sans décision explicite ».
+
+Les sources sont numérotées [S1]… et décrites à la fin.
+
+---
+
+#### 0. Le résumé en douze lignes
+
+1. La restriction des accès clients tient aujourd'hui aux ÉCRANS, pas à la base : un client lit déjà, par l'API, les
+   montants de ses pièces et de TOUT son relevé, ses catégories, ses cotisations — et les notes internes que le cabinet
+   écrit sur une pièce. Les factures émises et tout ce qui les suit lui sont, elles, fermées en base (§1).
+2. Le principe retenu : un DROIT par accès et par domaine — Ventes (devis, factures, facture électronique), Banque —,
+   posé par le cabinet, tenu en BASE par des policies `to authenticated` et par les fonctions qui écrivent, jamais par
+   l'écran seul. Un accès d'aujourd'hui, sans droit, ne voit rien changer (§3, §7).
+3. Le client passe par les MÊMES portes que le cabinet : `enregistrer_facture`, les fonctions des encaissements,
+   `plateforme-agreee`, `superpdp-emit`, `send-email`, `banque-connexion`. Leur contrôle d'accès s'élargit d'un prédicat
+   (`gere_les_ventes`, `gere_la_banque`) ; leurs refus, leurs gardes et leurs copies restent. Aucune écriture directe
+   d'une table métier par le client (§3).
+4. Une seule série de factures par dossier, que la facture soit validée par le client ou par le cabinet ; la base
+   sérialise déjà la numérotation. Validée par le cabinet, c'est une facture émise par un tiers au nom du client :
+   mandat préalable, acceptation, mention recommandée [S4] (§4).
+5. Les devis sont neufs : une table, une série « D » propre, une durée de validité, émis puis figés, acceptés ou refusés,
+   transformés en facture ; ils n'entrent ni en comptabilité ni dans la facture électronique (§4).
+6. La facture électronique côté client : relier SA plateforme (le secret ne revient à aucun navigateur, comme
+   aujourd'hui), transmettre, relever le cycle de vie, enregistrer et déclarer ses encaissements — tout existe déjà
+   côté cabinet (§5).
+7. La banque côté client : son compte, ses mouvements avec montants et libellés, le solde LU (à la banque, ou au dernier
+   relevé contrôlé ; jamais calculé), ce qui attend un justificatif, la pièce déposée à côté du mouvement, et la
+   connexion dont SEUL le titulaire donne l'accord (§6).
+8. Un client ne doit jamais pouvoir écrire un mouvement bancaire : ce que la banque rend s'importe par le SERVEUR, sur un
+   lot qu'il a signé à la lecture — l'aperçu d'abord, sans relire la banque, ce qui tient aussi la règle des 90 jours
+   (§6.5).
+9. Reste au cabinet : écritures, catégories, rapprochement, TVA, déclarations, validation, révision, réception des
+   factures d'achat. Il voit tout ce que fait le client, et qui l'a fait (§2.6, §2.7).
+10. Un préalable : les notes internes des pièces sortent de la table que le client lit (P0 ; la suppression de la
+    colonne attend l'accord du cabinet) (§3.6).
+11. Une dépendance comptable : une facture émise ne compte nulle part aujourd'hui (décision du 28/09/2026, ligne 28.6) ;
+    si le client facture ici, la question 28.6-Q2 se rouvre (EC-Q3) (§5.6).
+12. Onze étapes, P0 à P10, chacune livrable et contrôlable seule ; sept questions au cabinet ; quatorze points non
+    vérifiés (§9, §11, §13).
+
+---
+
+#### 1. Ce qui existe — mesuré le 09/10/2026
+
+##### 1.1 Le client aujourd'hui : quatre écrans
+
+| Écran | Route | Ce qu'il lit | Ce qu'il écrit |
+|---|---|---|---|
+| Accueil (`ClientHome`) | `/accueil` | le dossier ; ses pièces, documents, mouvements bancaires (tous, `select('*')`), cotisations ; les clôtures | rien (la photo passe par `deposerFichier`) |
+| Mes pièces (`ClientUpload`) | `/mes-pieces` | les mêmes, et les précisions | des pièces « à valider » (policy restreinte depuis le 07/10/2026), des documents, leur texte OCR, des précisions (`piece_commentaires`, origine client) |
+| Mes informations (`ClientInformations`) | `/mes-informations` | `informations_dossier` | `informations_dossier` |
+| Ma simulation (`ClientSimulation`) | `/ma-simulation` | cotisations, pièces validées, mouvements rapprochés, catégories, ventilations, règlements groupés, repères annuels | rien |
+
+L'Accueil et Mes pièces ne se servent des mouvements que pour leur DATE (`moisManquantsDe` : les mois de relevé
+manquants) ; Ma simulation, de leurs montants (le chiffre d'affaires encaissé).
+
+##### 1.2 Ce que la base laisse lire au client — plus que ses écrans
+
+Relu dans `pg_policies` et les droits de table : un membre (`memberships`) du dossier LIT `dossiers` (dont `notes`),
+`cabinets` (dont les plafonds de coût de l'assistant), `pieces` (toutes les colonnes : montants, catégorie, `notes`),
+`piece_textes_ocr`, `piece_commentaires`, `documents_divers` (dont `notes`), `sous_dossiers`, `lignes_bancaires` (toutes
+les colonnes : date, libellé et libellé brut, montant, statut, catégorie, taux de TVA, compte de bilan, découpage d'une
+échéance d'emprunt, déclaration de TVA rapprochée…), `ventilations_bancaires`, `reglements_groupes`, `categories`,
+`tiers_categories`, `cotisations_declarees`, `references_annuelles`, `references_postes_annuels`, `informations_dossier`,
+`exercices_clotures`, et dans le stockage tous les fichiers du dossier (seau `pieces`). Aucun droit de colonne n'existe :
+`authenticated` a tous les droits de table, la RLS est la seule barrière.
+
+CONSÉQUENCE : « pas de montants, pas de catégories » est une règle d'ÉCRAN. Pour la banque, la décision du 09/10/2026 ne
+fait rien LIRE de nouveau au client : elle lui fait VOIR ce que son navigateur reçoit déjà, et lui ouvre des GESTES.
+
+**ET UN DÉFAUT, QUE LA CONCEPTION NE PEUT PAS TAIRE** : `pieces.notes` s'intitule « Notes internes » dans la fiche d'une
+pièce (`FichePiece.tsx`), le cabinet y écrit, l'import par la plateforme y garde ses remarques (`notesDImport`) — et le
+client les reçoit à chaque lecture de ses pièces (`select('*')`), sans qu'aucun écran les lui montre. Mesuré : 11 pièces
+annotées, 10 dans `test` et 1 dans un bac à sable, deux dossiers sans aucun accès client ; aucune dans les deux dossiers
+qui en ont un. LATENT.
+`dossiers.notes` (0 ligne, aucun écran ne l'écrit) et `documents_divers.notes` (7 lignes, origine à établir) sont dans le
+même cas. Traité en P0 (§3.6).
+
+##### 1.3 Ce qui est fermé au client en base
+
+`factures_emises` et `facture_lignes` (`admin_du_dossier` seul), `transmissions_factures`, `encaissements_factures` et
+`_taux`, `transmissions_encaissements`, `statuts_factures_recus`, `facture_superpdp_events`, `emails_envoyes`,
+`controles_releves_bancaires`, les règles bancaires, `ecritures_brouillon`, `exercices_valides`, `soldes_reportes`,
+`declarations_tva`, `volet_social_pamc`, la révision, l'assistant, les packs. Sans AUCUNE policy : `connexions_bancaires`,
+`connexions_plateformes`, `superpdp_credentials`, `facture_numerotation`, `super_admins`.
+
+##### 1.4 Les portes qui supposent « cabinet »
+
+- **Fonctions SQL `SECURITY DEFINER`**, chacune ouverte par `if not admin_du_dossier(…) then raise … 42501` :
+  `enregistrer_facture` (son corps porte `delete from facture_lignes`, donc la recréer passe par l'éditeur SQL du
+  cabinet), `prochain_numero_facture` (exécution retirée à tous, appelée par `enregistrer_facture`),
+  `abandonner_transmission`, `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`,
+  `annuler_encaissement`. Parmi ces sept, `enregistrer_facture` est la seule dont le corps porte une suppression (relu
+  par expression régulière sur `pg_proc.prosrc` ; les gardes des factures en portent, mais aucune n'est à toucher).
+- **Edge Functions** : `plateforme-agreee`, `superpdp-emit`, `superpdp-sync`, `superpdp-credentials`, `send-email`,
+  `banque-connexion`, `agent-comptable`, `proposer-categorie`, `create-client-access` appellent
+  `rpc('admin_du_dossier')` avec le jeton de l'appelant, avant tout appel extérieur. Seule `extract-piece` accepte un
+  client (`memberships`).
+
+##### 1.5 L'accès client en base
+
+`memberships` (id, user_id, dossier_id, role, email, created_at) : `role` ne vaut que « client » (contrainte
+`memberships_role_check`) ; unique (user_id, dossier_id) ; lu par le cabinet du dossier ou par soi-même ; inséré et
+supprimé par le cabinet ; AUCUNE policy de mise à jour. Créé par `create-client-access`, mot de passe saisi par le
+cabinet. `AuthContext` n'en lit que `dossier_id`. Aucun rôle, aucun droit.
+
+##### 1.6 Les comptes (données FICTIVES)
+
+4 dossiers, 1 cabinet, 1 compte au cabinet ; 2 accès clients (un seul compte) sur deux bacs à sable, aucun sur `test`.
+6 factures émises (un bac à sable), aucune transmission, aucun encaissement. `test` : 429 mouvements — 416 non rapprochés,
+10 rapprochés, 3 ignorés —, dont 44 venus de la connexion au bac à sable d'Enable Banking ; aucune connexion à une
+plateforme ; 2 identifiants Super PDP, sur des bacs à sable.
+
+##### 1.7 Ce qui manque pour la décision
+
+- aucun devis, nulle part ;
+- le client ne facture pas : tables et portes lui sont fermées ;
+- un seul compte bancaire par dossier, par construction (un relevé, le 512000, une connexion : `connexions_bancaires_dossier_unique`) ;
+- aucun solde : ni lu à la banque (l'accord ne demande que les mouvements : `access: { transactions: true }`), ni montré
+  du relevé contrôlé (`controles_releves_bancaires`, réservé au cabinet) ;
+- la connexion bancaire fait cliquer le cabinet — « le chemin du CLIENT » attendu depuis le 30/09/2026 (ligne 24,
+  RGPD.md §8.8) ; la route `/retour-banque` n'existe que pour le cabinet (`App.tsx`) ;
+- une facture émise ne compte nulle part — ni 2035, ni CA3, ni écritures : une vente n'entre que par sa pièce (décision
+  du 28/09/2026, rappelée par la ligne 28.6).
+
+---
+
+#### 2. Ce que le client voit et fait, écran par écran
+
+Les règles du projet valent telles quelles : on TUTOIE le client (convention écrite dans `lib/resteAEnvoyer.ts`) ; aucun
+appel extérieur à l'ouverture d'un écran ; le vide ne se dit que d'une liste lue en entier ; lue en partie, une liste ne
+commande aucun geste ; un verrou `useRef` relâché après la relecture ; une confirmation qui nomme ce qu'elle engage ; une
+facture validée ne se corrige que par un avoir.
+
+##### 2.1 La navigation
+
+Six entrées au plus, selon les droits de l'accès SUR LA SOCIÉTÉ AFFICHÉE (un client à plusieurs sociétés peut avoir les
+Ventes de l'une et pas de l'autre) : Accueil, Mes pièces, Mes ventes (droit Ventes), Ma banque (droit Banque), Mes
+informations, Ma simulation (droit Banque, EC-Q1). Sans le droit, l'entrée n'existe pas et la route renvoie à l'accueil ;
+la base refuse de toute façon. Sur téléphone, ce que le banc de débordements trouvera lisible à 390 px décide : au-delà
+de cinq entrées, « Mes informations » passe dans le menu « … » (point 10). La retouche en cours le même jour (la
+navigation du client affichée sur ordinateur à l'accueil aussi) est le socle de cette barre.
+
+##### 2.2 L'accueil
+
+Les tuiles d'aujourd'hui restent. S'y ajoutent, selon les droits : « À encaisser » et « À déclarer » (les pastilles de
+l'onglet Factures, comptées), « Devis en attente de réponse » et « Devis expirés » ; « Justificatifs demandés par ton
+cabinet », le solde lu et sa date. Chacune mène à son écran, et se tait sur une lecture incomplète.
+
+##### 2.3 Mes ventes › Devis
+
+- La liste : numéro, date, client, montant TTC, état — brouillon, envoyé (émis), accepté, refusé, expiré (DÉDUIT : émis,
+  sans réponse, date de validité passée), facturé (DÉDUIT : au moins une facture tirée de lui) ; recherche, année.
+- Créer et modifier un brouillon ; « Émettre » donne le numéro et fige le devis (confirmation qui nomme le client et le
+  montant) ; « Aperçu / PDF » (impression, bloc « Bon pour accord ») ; « Envoyer par e-mail ».
+- « Accepté » ou « Refusé », avec la date de la réponse ; une acceptation après la date de validité se confirme en le
+  disant.
+- « Transformer en facture » (devis accepté) : une facture BROUILLON reprend le client, les lignes et les mentions, et
+  porte le lien vers le devis ; elle se valide ensuite comme toute facture.
+- « Dupliquer » : un brouillon neuf, pour une nouvelle version ; un devis émis ne se modifie jamais.
+
+##### 2.4 Mes ventes › Factures
+
+Ce que l'onglet Factures du cabinet fait, réutilisé et non recopié (§9, P4) : la liste et ses pastilles (validée,
+transmission, cycle de vie, à encaisser, à déclarer) ; créer un brouillon, le valider (numéro, facture figée ; ce qui
+l'empêcherait de partir est dit avant) ; l'aperçu et le PDF ; l'avoir, et l'avoir interne d'une facture refusée ou
+rejetée ; l'envoi par e-mail ; « Transmettre » par sa plateforme ou par Super PDP, « Suivre », « Abandonner » une issue
+inconnue ; « Lire les statuts de la plateforme » ; « Encaissements » : enregistrer, retirer, déclarer hors application,
+contre-passer. Ne lui sont PAS offerts : changer l'adresse du dossier depuis la facture (le formulaire du cabinet le
+fait : réservé au cabinet), le statut de TVA et la case du numéro de TVA (onglet TVA du cabinet). Un statut de TVA à
+préciser se dit : « Ton cabinet doit d'abord préciser ton statut de TVA : tes factures ne peuvent pas partir. »
+
+##### 2.5 Ma banque
+
+- **Le compte suivi** : la banque, le nom du compte, ses quatre derniers chiffres, l'échéance de l'accord, la dernière
+  mise à jour. Les autres comptes ouverts par l'accord sont nommés « non suivis » (§6.6).
+- **Le solde**, LU et daté, jamais calculé : « à la banque le … » (lu par la connexion) ou « au relevé du … » (dernier
+  relevé dont le solde a été contrôlé) ; sans l'un ni l'autre, rien, et la raison.
+- **Les mouvements** : date, libellé, montant, et un ÉTAT pour le client — « Justifié », « Rien à fournir » (ignoré par
+  le cabinet), « Justificatif envoyé, en attente du cabinet », « Demandé par ton cabinet », « Sans justificatif » (neutre :
+  beaucoup ne demandent rien) ; filtre par période et par état, recherche. Jamais la catégorie ni l'écriture.
+- **« Joindre le justificatif »** sur un mouvement : le dépôt d'aujourd'hui (`deposerFichier`), puis la proposition qui
+  le rattache au mouvement ; le mouvement passe aussitôt « Justificatif envoyé ». Ou « Choisir une pièce déjà déposée ».
+- **Le fil du mouvement** : la question du cabinet (« Demander au client »), la réponse du client ; une parole datée ne
+  se réécrit pas.
+- **La connexion** : « Connecter ma banque », le choix de la banque et de l'espace (professionnel ou particulier),
+  l'accord sur le site de la banque, le retour, le choix du compte ; « Mettre à jour mes mouvements » (aperçu, puis
+  « Importer ») ; « Renouveler l'accord » ; « Retirer ». La phrase qui l'ouvre : « Seul le titulaire du compte peut
+  donner l'accord, avec ses identifiants, sur le site de sa banque. »
+
+##### 2.6 Ce qui RESTE au cabinet
+
+Les écritures et le plan comptable ; les catégories, l'affectation, la ventilation et le rapprochement des mouvements
+(le client propose une pièce, le cabinet rapproche) ; les règles bancaires ; l'import d'un relevé en fichier ; la TVA (le
+statut, la case du numéro, la CA3, l'e-reporting), la 2035 et ses annexes, la DSCS, les cotisations ; les
+immobilisations, le financement ; la validation d'un exercice et la clôture ; la révision ; la réception des factures
+d'ACHAT par la plateforme du client ou par Super PDP (elles entrent en pièces « à valider ») ; les accès et leurs droits ;
+l'assistant, les packs, la sauvegarde. Le cabinet garde aussi TOUS les gestes ouverts au client.
+
+##### 2.7 Ce que le cabinet voit de ce que fait le client
+
+Tout, déjà, par `admin_du_dossier` ; ce qui manque, c'est QUI : chaque écriture du client se signe et le cabinet le lit.
+`factures_emises.created_by` existe ; s'ajoutent `valide_par` (à la validation, figé avec la facture),
+`transmissions_factures.cree_par`, `devis.emis_par` et `decide_par`, `connexions_bancaires.accord_par` et `accord_le`, et
+l'auteur des propositions de justificatif et des précisions ; `encaissements_factures.cree_par`,
+`transmissions_encaissements.cree_par` et `statuts_factures_recus.lu_par` existent. À l'écran : « par le client » sur une
+facture, un devis, une transmission, un encaissement (le compte se reconnaît parmi les accès du dossier) ; un filtre
+« Émises par le client » ; dans la fiche d'un mouvement, la pièce proposée par le client EN TÊTE, nommée comme telle ;
+dans l'onglet Banque, « Proposés par le client » ; sur la carte de la connexion, « Accord donné depuis l'espace client
+par … le … » ; et une carte de la Vue d'ensemble, « Espace client : ce qui a bougé depuis le … » (P10). Aucune
+notification par e-mail.
+
+---
+
+#### 3. Les droits, dans la base
+
+##### 3.1 Le principe
+
+- Un DROIT par accès et par domaine, porté par l'accès (`memberships`) : `droit_ventes`, `droit_banque`, booléens non
+  nuls, FAUX par défaut. Le dépôt de pièces reste ouvert à tout accès, comme aujourd'hui.
+- Le droit se tient en BASE : une policy de lecture `to authenticated` par table ouverte, une fonction `SECURITY DEFINER`
+  qui vérifie l'accès par écriture ; l'écran ne fait que ne pas offrir ce que la base refuserait.
+- Aucun prédicat vrai sans session : chaque prédicat client passe par `auth.uid()` (nul pour `anon`, donc aucune ligne
+  d'accès ne correspond).
+- Les droits ne se posent que par le cabinet du dossier, par une fonction ; le client ne peut ni les lire chez un autre ni
+  se les donner (aucune policy de mise à jour sur `memberships`, et il n'en aura pas).
+- Une policy qui ouvre une lecture au client est une policy ÉLARGIE au sens des règles du projet : la décision du
+  09/10/2026 l'autorise dans son principe, mais chacune (P2, P5, P7) se présente au cabinet, avec ce qu'elle ouvre, avant
+  d'être appliquée.
+
+##### 3.2 Les fonctions d'accès (P1)
+
+| Fonction | Rend | Remarques |
+|---|---|---|
+| `client_du_dossier(p_dossier_id uuid, p_droit text)` | vrai si `auth.uid()` a un accès à ce dossier portant ce droit (`ventes`, `banque` ; `membre` pour un accès quelconque ; tout autre mot : faux) | `stable`, `SECURITY DEFINER`, `search_path` fixé ; ne lit que `memberships` |
+| `gere_les_ventes(p_dossier_id)` | `admin_du_dossier(d) or client_du_dossier(d, 'ventes')` | le prédicat des tables et des fonctions de la vente |
+| `gere_la_banque(p_dossier_id)` | `admin_du_dossier(d) or client_du_dossier(d, 'banque')` | celui de la banque |
+| `droits_sur_le_dossier(p_dossier_id)` | `{cabinet, membre, ventes, banque}` | appelée par les Edge Functions avec le jeton de l'appelant, et par l'écran |
+| `changer_droits_acces(p_membership_id, p_ventes, p_banque)` | l'accès relu | la SEULE écriture des droits ; refuse (42501) qui n'est pas `admin_du_dossier` du dossier de l'accès ; exécution retirée à `anon` |
+
+Les quatre premières n'écrivent rien : l'advisor « security definer executable » les comptera, bénignes au sens de
+CLAUDE.md ; la cinquième écrit sous son propre contrôle, et rejoint la liste des fonctions qui écrivent.
+
+##### 3.3 Table par table
+
+| Table | Le client LIT (aujourd'hui → demain) | Le client ÉCRIT | Par quelle porte |
+|---|---|---|---|
+| `factures_emises` | non → droit Ventes | jamais directement | `enregistrer_facture`, `supprimer_brouillon_facture` (P2) |
+| `facture_lignes` | non → Ventes, par sa facture | jamais | `enregistrer_facture` |
+| `facture_numerotation`, `devis_numerotation` | non → non (aucune policy) | jamais | la fonction qui valide ou émet |
+| `transmissions_factures`, `facture_superpdp_events` | non → Ventes | jamais | `plateforme-agreee`, `superpdp-emit` (clé de service) ; `abandonner_transmission` |
+| `statuts_factures_recus` | non → Ventes | jamais | `plateforme-agreee` (`relever`) |
+| `encaissements_factures`, `_taux` | non → Ventes | jamais | `enregistrer_encaissement`, `retirer_encaissement`, `annuler_encaissement` |
+| `transmissions_encaissements` | non → Ventes | jamais | `declarer_encaissement_hors_application` |
+| `emails_envoyes` | non → Ventes, types `facture` et `devis` seulement | jamais | `send-email` |
+| `devis`, `devis_factures` (P5) | — → Ventes | jamais | `enregistrer_devis`, `decider_devis`, `facturer_devis`, `supprimer_brouillon_devis` |
+| `lignes_bancaires` | tout accès → droit Banque (P7 resserre) | jamais | `banque-connexion` (`importer`, le serveur écrit) |
+| `ventilations_bancaires`, `reglements_groupes` | tout accès → Banque (P7) | jamais | — |
+| `controles_releves_bancaires` | non → Banque | jamais | — |
+| `justificatifs_proposes` (P7) | — → Banque | ses propositions | `proposer_justificatif`, `retirer_proposition` |
+| `precisions_mouvements` (P7) | — → Banque | ses messages | `ecrire_precision_mouvement` |
+| `connexions_bancaires`, `connexions_plateformes`, `superpdp_credentials` | non → non (aucune policy) | jamais | leurs Edge Functions |
+| `memberships` | ses accès → ses accès, droits compris | jamais | `changer_droits_acces` (cabinet) |
+| `pieces` | tout → tout, SAUF les notes internes (P0) | son dépôt « à valider » (policy existante) | policy `pieces_insert` |
+| `notes_internes_pieces` (P0) | — → JAMAIS | jamais | le cabinet seul |
+
+Deux choix motivés. **Le fil d'un mouvement vit dans une table à part** (`precisions_mouvements`) plutôt que dans
+`piece_commentaires` : l'y loger demanderait de remplacer la contrainte `commentaire_porte_sur_une_seule_cible`
+(`num_nonnulls(piece_id, document_id) = 1`) — un `drop` sur une table gardée — et deux règles de visibilité (tout accès
+pour une pièce, le droit Banque pour un mouvement) dans un même prédicat ; le composant `FilCommentaires` et
+`lib/commentaires.ts` se réutilisent avec une troisième sorte de cible. **La proposition d'un justificatif est une ligne,
+pas un message** : le mouvement en tire son état, le rapprochement sa candidate en tête, et une pièce supprimée emporte
+sa proposition (cascade : l'état « Sans justificatif » redevient vrai) sans emporter la parole du client.
+
+##### 3.4 Fonction par fonction
+
+| Fonction | Ce qui change | Migration |
+|---|---|---|
+| `enregistrer_facture` | contrôle `gere_les_ventes` ; écrit `valide_par = auth.uid()` à la validation | recréée : son corps porte `delete from facture_lignes`, donc l'éditeur SQL du cabinet avec sa ligne d'historique (procédure de CLAUDE.md) |
+| `supprimer_brouillon_facture(p_facture_id)` (neuve) | un brouillon de son dossier, sous `gere_les_ventes` ; l'onglet du cabinet l'emprunte aussi (un seul chemin) | dans la même migration (une suppression dans le corps) |
+| `prochain_numero_facture` | contrôle `gere_les_ventes` (elle est appelée sous l'identité de l'appelant) ; exécution toujours retirée à tous | `apply_migration` |
+| `abandonner_transmission` | `gere_les_ventes` | `apply_migration` |
+| `enregistrer_encaissement` | `gere_les_ventes` ; et un refus NEUF, juste après celui de l'accès : un mouvement bancaire ne se désigne qu'avec `gere_la_banque` — le module d2 le redit à son rang, et la batterie se rejoue sur une réplique | `apply_migration` |
+| `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement` | `gere_les_ventes` | `apply_migration` |
+| `garder_transmission_facture` (garde) | `cree_par` immuable | `apply_migration` |
+| les fonctions des devis (P5), de la banque (P7) | neuves, sur le même patron : l'accès d'abord, les colonnes énumérées, des refus nommés et ordonnés que le module redit avant le clic | P5 : l'éditeur SQL si une suppression de brouillon est dans un corps |
+
+Le message d'un refus d'accès reste « Accès refusé à ce dossier. » (42501) pour tous : il ne dit pas si le dossier
+existe. L'écran, qui connaît ses droits, n'offre jamais le geste.
+
+##### 3.5 Edge Functions, action par action
+
+Le contrôle devient `rpc('droits_sur_le_dossier', …)` avec le jeton de l'appelant, AVANT toute lecture d'un secret et tout
+appel extérieur, puis une table « qui peut quoi » propre à la fonction ; sans le droit, la même réponse qu'aujourd'hui
+(404 « Dossier introuvable. »).
+
+| Fonction | Action | Cabinet | Client Ventes | Client Banque |
+|---|---|---|---|---|
+| `plateforme-agreee` | `statut` (vue publique, aucun secret) | oui | oui | — |
+| | `enregistrer`, `tester`, `retirer` (le secret entre, ne ressort jamais) | oui | selon EC-Q4 (recommandé : oui) | — |
+| | `lister`, `telecharger`, `retenir`, `repartir` (réception des factures d'ACHAT en pièces) | oui | non | — |
+| | `deposer`, `suivre` (écrivent `cree_par`) | oui | oui | — |
+| | `relever` (écrit `lu_par`) | oui | oui | — |
+| `superpdp-credentials` | `status` | oui | oui | — |
+| | `save`, `remove` | oui | selon EC-Q4 | — |
+| `superpdp-emit` | `envoyer`, `actualiser` | oui | oui | — |
+| `superpdp-sync` | réception | oui | non | — |
+| `send-email` | `facture`, `devis` (plafond par dossier et par jour pour un client) | oui | oui | — |
+| | `relance_pieces` | oui | non | — |
+| `banque-connexion` | `statut` (solde lu et accord compris) | oui | — | oui |
+| | `banques`, `demarrer`, `finaliser`, `choisir_compte`, `retirer` | oui | — | oui |
+| | `mouvements` (aperçu et lot signé), `importer` (neuve) | oui | — | oui |
+| `agent-comptable`, `proposer-categorie`, `create-client-access`, `create-team-member`, `evaluer-extraction` | — | inchangé | non | non |
+
+Le plafond d'e-mails (NOTRE CHOIX : 30 par dossier et par jour pour un appelant client, compté dans `emails_envoyes`)
+tient le domaine d'envoi du cabinet à l'abri d'un compte client qui enverrait en masse : le contenu reste la facture ou le
+devis, et le message personnel.
+
+##### 3.6 Ce qu'un client ne doit JAMAIS voir, et ce qui le garantit
+
+| Ce qu'il ne voit jamais | Ce qui le garantit | À faire |
+|---|---|---|
+| Les autres dossiers | toute policy client passe par `memberships` du dossier ; invariant 3 de `rls.sql` | rejouer |
+| Les secrets des connexions (banque, plateforme, Super PDP) | trois tables sans policy ; les fonctions ne rendent qu'une vue publique, tests existants | inchangé |
+| Les notes internes du cabinet | AUJOURD'HUI RIEN : `pieces.notes` est lisible (§1.2) | P0 : une table du cabinet seul (`notes_internes_pieces`), la copie des notes, les écrans et l'import y écrivent ; vider puis supprimer `pieces.notes` attend l'accord du cabinet (EC-Q7) ; établir l'origine de `documents_divers.notes` et l'usage de `dossiers.notes` |
+| La révision | tables `revision_*` sous `admin_du_dossier` | inchangé |
+| Les écritures, la TVA déclarée, la validation, le volet social, l'assistant, les packs, les règles | `admin_du_dossier` | inchangé |
+| Sans le droit Ventes : les factures, devis et ce qui les suit | policies `client_du_dossier(…, 'ventes')` (P2, P5) | essai et `rls.sql` |
+| Sans le droit Banque : les mouvements, leurs parts, le solde, la connexion | P7 resserre les lectures d'aujourd'hui ; l'Accueil et Mes pièces lisent la couverture du relevé (des mois, sans montant ni libellé) par `couverture_du_releve` | essai et `rls.sql` |
+
+Et une règle pour la suite : **un texte du cabinet seul ne se range jamais dans une table que le client lit**. Dans un
+domaine ouvert, tout texte saisi est PARTAGÉ — les notes d'une facture (le formulaire dit aujourd'hui « Notes internes
+(n'apparaissent pas sur la facture) » : elles deviennent « non imprimées, visibles par le client et par le cabinet » ; 0
+facture annotée en base), la note d'une déclaration, le motif d'une contre-passation — et l'écran le dit au-dessus du
+champ.
+
+##### 3.7 Les essais
+
+- `rls.sql` (rejoué ENTIER à P0, P1, P2, P5, P7) : un profil de plus, « client avec droits », à côté du client sans
+  droit ; deux invariants : 3 bis — sans le droit d'un domaine, aucune ligne de ses tables ; 4 bis — avec le droit, aucune
+  écriture directe (42501) ; et des mutations qui doivent mordre : le droit retiré au profil, le prédicat
+  `client_du_dossier` remplacé par « membre ». Un refus de la RLS en LECTURE rend zéro ligne : 3 bis ne prouve rien sur
+  une table vide, d'où un contrôle POSITIF (avec le droit, le client voit bien ses lignes) sur le bac à sable qui porte
+  les six factures et un accès client — comme S3bis le fait pour le stockage.
+- Un essai par mécanisme, par impersonation des quatre profils, rien laissé en base (sous-transactions annulées) :
+  `notesInternes.sql` (P0), `droitsAcces.sql` (P1 : le client ne change pas ses droits — un `update` sans policy ne lève
+  pas, il ne touche aucune ligne : l'essai RELIT la ligne —, `changer_droits_acces` le refuse en 42501),
+  `ventesClient.sql` (P2 : chaque refus exigé par sa RAISON, la numérotation cabinet puis client sans trou ni doublon,
+  `valide_par` figé), `devis.sql` (P5), `banqueClient.sql` (P7), `connexionBancaire.sql` étendu (P8) ; et ceux que les
+  fonctions touchées obligent à rejouer : `factures.sql`, `transmissionsFactures.sql`, `abandonTransmission.sql`,
+  `encaissementsFactures.sql`, `transmissionsEncaissements.sql`, `statutsFacturesRecus.sql`, `restauration.sql`.
+- Après chaque migration, les trois contrôles de l'export (dérive, socle, inventaire).
+
+---
+
+#### 4. La numérotation, les devis, les avoirs
+
+##### 4.1 Les factures : une série par dossier, quel que soit celui qui valide
+
+| Texte | Ce qu'il dit | Source |
+|---|---|---|
+| CGI, ann. II, art. 242 nonies A, I, 7° (en vigueur depuis le 01/01/2025) | « Un numéro unique basé sur une séquence chronologique et continue » ; des « séries distinctes lorsque les conditions d'exercice de l'activité de l'assujetti le justifient », et « un usage conforme à leur justification initiale » | [S2] |
+| BOI-TVA-DECLA-30-20-20-10, §80 à §130 | séries distinctes admises (§80), un préfixe propre conseillé, pas deux factures de même numéro la même année (§90) ; parmi les exemples, les modalités d'émission, « l'autofacturation et la facturation pour compte de tiers » (§100) ; la séquence d'un mandataire est « propre à l'assujetti » et ne s'insère pas dans les siennes (§120, §130) | [S3] |
+| BOI-TVA-DECLA-30-20-10-30, §90 à §210 | un tiers émet au nom de l'assujetti sur un mandat conclu AVANT la première facture (§90, §110), sans forme imposée, écrit recommandé (§120, §130) ; chaque facture ACCEPTÉE par l'assujetti, expressément ou tacitement (§150, §160) ; il reste entièrement responsable (§170, §180) ; mention recommandée « au nom et pour le compte » (§200, §210) | [S4] |
+| CGI, art. 289, I-2 (version du 31/12/2023 ; abrogé au 01/01/2027 par l'ord. n° 2025-1247, hors le 3 du I, le IV et le VII, maintenus) | « Sous réserve de son acceptation par l'assujetti, chaque facture est alors émise en son nom et pour son compte. » | [S5] |
+
+LA DÉCISION PROPOSÉE (EC-Q2) :
+- **Une seule série par dossier**, celle d'aujourd'hui (`F`, `A`, l'année, `facture_numerotation`), que la facture soit
+  validée par le client ou par le cabinet. La base la sérialise déjà : un verrou sur la ligne de la série dans
+  `prochain_numero_facture`, la reprise depuis le plus haut numéro émis, la validation dans la même transaction que le
+  numéro — deux validations simultanées, l'une du client, l'autre du cabinet, prennent deux numéros qui se suivent.
+- **Les deux peuvent valider**. Validée par le CLIENT, la facture est la sienne. Validée par le CABINET, c'est une facture
+  émise par un tiers au nom du client — ce qui est le cas de TOUTES les factures de l'application aujourd'hui : il faut le
+  mandat préalable (la lettre de mission), l'acceptation (l'espace client la rend visible à l'instant : l'acceptation
+  tacite court du délai que fixe le mandat), et l'aperçu imprime alors « Facture établie par <cabinet> au nom et pour le
+  compte de <client> » (§210, recommandé). `valide_par` dit qui ; la base le fige avec la facture.
+- **Écartées** : deux séries (« F » client, « M » cabinet) — permises par le §100, mais elles déroutent les clients du
+  client, et rien ne les exige ; la validation réservée au client (le cabinet ne pourrait plus dépanner) ; une
+  approbation par le cabinet de chaque facture du client (le client est l'émetteur, et une facture attendue se retarde).
+- **Un client qui vient d'un autre logiciel** : sa série d'avant ne se poursuit pas ici ; l'application ouvre la sienne, et
+  le préfixe la distingue (§90). La date du changement se note dans le dossier. Deux logiciels EN MÊME TEMPS pour le
+  même dossier sont à proscrire : rien ne protège deux séries de même préfixe tenues ailleurs.
+- **Les factures d'honoraires du cabinet** (ligne 47, à venir) ne se rangeront JAMAIS dans `factures_emises` du dossier du
+  client : un accès Ventes les verrait comme ses propres ventes.
+
+##### 4.2 Les avoirs
+
+Inchangés : série « A », `enregistrer_facture`, d'un seul tenant, plafonnés par ce qui reste à créditer ; l'avoir interne
+d'une facture refusée ou rejetée ne se transmet pas. Le client les fait comme le cabinet.
+
+##### 4.3 Les devis
+
+**Ce que disent les sources.** Aucune obligation générale de devis : il est obligatoire « dans certains cas » —
+travaux et dépannage du bâtiment, déménagement, services à la personne, optique et audioprothèse, chirurgie esthétique,
+funéraire… — et ses mentions dépendent du secteur ; la durée de validité figure dans la plupart des listes ; le devis est
+une offre qui engage le professionnel une fois acceptée, le client seulement par sa signature (« bon pour accord ») [S6].
+Envers un particulier, l'information précontractuelle (caractéristiques, prix, délai, identité) est due quoi qu'il en
+soit [S7]. Un devis n'est pas une facture : ni l'art. 242 nonies A ni la facture électronique ne le visent. Les acomptes
+reçus avant l'opération appellent, eux, une FACTURE (CGI, art. 289, I-1 c [S5]).
+
+**Ce que l'application fera** :
+- Les MENTIONS imprimées : l'émetteur (nom, adresse, SIREN ou SIRET, numéro de TVA s'il en a un, et la mention de son
+  statut de TVA — l'art. 293 B pour une franchise, l'article qui exonère —, tirées de `lib/statutTva.ts` comme pour la
+  facture) ; le client (nom, adresse ; SIREN pour une entreprise) ; numéro et date ; « Devis valable jusqu'au … » ; les
+  lignes (désignation, quantité, prix unitaire hors taxes, taux), les totaux HT, TVA et TTC ; les conditions (délai
+  d'exécution ou de livraison, paiement, acompte demandé) ; un bloc « Bon pour accord — date et signature ».
+- La DURÉE de validité : aucune durée légale générale ; NOTRE CHOIX, un mois par défaut, modifiable, figée à l'émission.
+- La NUMÉROTATION : une série propre par dossier et par année, `D2026-0001`, prise à l'émission sous le même verrou que
+  les factures (table `devis_numerotation`) ; aucune règle ne l'exige continue, l'application la tient continue quand
+  même.
+- Les ÉTATS : brouillon, émis (figé) ; la RÉPONSE (acceptée ou refusée, sa date, qui l'a saisie), une fois ; « expiré » et
+  « facturé » se DÉDUISENT. Un devis émis ne se modifie pas, il se duplique.
+- La TRANSFORMATION : `facturer_devis` crée la facture brouillon par `enregistrer_facture` (sous l'identité de
+  l'appelant, donc ses droits) et inscrit le lien dans `devis_factures` (un devis, plusieurs factures possibles : acompte
+  puis solde, plus tard) — `factures_emises` ne change pas.
+- HORS PÉRIMÈTRE, dit à l'écran : les devis réglementés d'une profession (prothèse dentaire, optique, audioprothèse,
+  chirurgie esthétique, bâtiment avec ses mentions propres, services à la personne) — leurs modèles sont officiels ; la
+  signature électronique par le client du client ; la facture d'acompte (à suivre, §12).
+
+**Le modèle** (P5, non écrit) : `devis` (dossier, numéro nul jusqu'à l'émission puis unique par dossier, statut, dates
+d'émission et de validité, le client et ses mentions — mêmes colonnes et mêmes contraintes que `factures_emises` —, objet,
+conditions, mentions légales, notes partagées, LIGNES EN `jsonb` vérifiées par la fonction (aucune table de lignes à
+remplacer, donc aucune suppression dans un corps), totaux au centime avec TTC = HT + TVA, émetteur figé à l'émission,
+réponse et sa date, auteurs et horodatages) ; `devis_numerotation` ; `devis_factures` (devis, facture unique). Une garde :
+émis, plus rien ne change que la réponse, une fois ; un brouillon seul se supprime. RLS : lecture par `gere_les_ventes`,
+aucune écriture directe ; insertion de restauration par `is_super_admin()`.
+
+---
+
+#### 5. La facture électronique côté client
+
+##### 5.1 La connexion à SA plateforme
+
+Rien ne change de ce qui la protège : `connexions_plateformes` et `superpdp_credentials` n'ont aucune policy ; le secret
+entre par la fonction et n'en ressort jamais, pas même masqué ; l'adresse est jugée (https, domaine public, pas de réseau
+interne) avant d'y envoyer quoi que ce soit ; une facture qui ne désigne pas le dossier (SIREN) ne s'importe pas. Ce qui
+change : QUI peut la relier. L'identité OAuth2 est celle de l'entreprise du client, qu'il crée lui-même sur sa
+plateforme : la relier lui-même évite de faire circuler un secret jusqu'au cabinet (EC-Q4, recommandé). Il voit le nom de
+la plateforme, son hôte, et les dates de la dernière recherche et du dernier relevé des statuts.
+
+##### 5.2 La transmission
+
+Les mêmes fonctions, la même facture relue et jugée avant tout appel, la même transmission RÉSERVÉE, une seule active par
+facture, tous canaux confondus ; « Suivre » et « Abandonner » un quart d'heure après une issue inconnue. Une facture
+refusée ou rejetée ne repart pas. Le client voit l'état, le canal, le détail que la plateforme rend.
+
+##### 5.3 Le cycle de vie
+
+« Lire les statuts de la plateforme » sur un clic du client comme du cabinet, la même pastille sous les libellés de la
+DGFiP, le refus d'abord ; un 210 ou un 213 fait proposer l'avoir interne. Le commentaire de l'acheteur est pour lui.
+
+##### 5.4 Les encaissements et le statut « Encaissée »
+
+Enregistrer, retirer, contre-passer, déclarer hors application : la conception d4 prévoyait déjà que « le cabinet ou le
+client » saisisse le statut sur la plateforme. L'envoi par l'API (d6) viendra pour les deux, après l'essai réel. Désigner
+le mouvement bancaire qui prouve un encaissement demande AUSSI le droit Banque (§3.4) : sans lui, la fenêtre
+« Encaissements » ne lit pas les mouvements et ne propose rien depuis la banque, et elle le dit — une lecture que la RLS
+refuse rend zéro ligne, sans erreur, et « aucun mouvement ne correspond » serait une affirmation fausse.
+
+##### 5.5 La réception des factures d'achat
+
+Reste au cabinet dans cette conception : elles entrent en pièces « à valider » et c'est lui qui les arbitre. Plus tard,
+« Récupérer mes factures reçues » pourrait s'ouvrir au client par le même chemin (§12).
+
+##### 5.6 Ce que la comptabilité en fait — la question qui se rouvre
+
+Une facture émise ne compte NULLE PART : la décision du 28/09/2026 fait entrer une vente par sa pièce — la jumelle
+qui revient de la plateforme, ou le PDF déposé (ligne 28.6). Le 09/10/2026, le cabinet a été interrogé (28.6-Q2) :
+« pas maintenant ; à rouvrir si le cabinet veut que la facturation de l'application nourrisse directement la 2035 et la
+CA3 ». Remplacer MEG, c'est ce cas : un client qui facture ici ne déposera pas en plus le PDF de chaque facture, et ses
+factures à des particuliers n'auront jamais de jumelle. EC-Q3 la repose ; la réponse ouvre un chantier COMPTABLE à part
+(la facture validée devient la source de sa vente, le pont 28.6 empêche qu'elle compte deux fois), qui doit précéder
+l'usage réel de « Mes ventes » par un client.
+
+---
+
+#### 6. La banque côté client
+
+##### 6.1 Ce qui devient visible, exactement
+
+- À L'ÉCRAN, pour un accès qui a le droit Banque : la date, le libellé (tel qu'importé), le montant et le sens de chaque
+  mouvement du relevé du dossier ; l'état du §2.5 ; le nom de la pièce rapprochée ou proposée ; le solde lu et sa date ; la
+  banque, le nom du compte, ses quatre derniers chiffres, l'échéance de l'accord.
+- JAMAIS À L'ÉCRAN : la catégorie, le compte, la ventilation, le taux, le découpage d'une échéance, l'écriture — le métier
+  du cabinet.
+- DANS LA BASE : rien de neuf à lire pour un accès qui a le droit (§1.2) ; MOINS pour un accès qui ne l'a pas — P7 lui
+  retire les mouvements, leurs parts et leurs montants, et l'Accueil comme Mes pièces liront la couverture du relevé par
+  une fonction qui ne rend que des mois. L'ORDRE COMPTE : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur ;
+  un écran qui lirait encore les mouvements sans le droit croirait le relevé vide et réclamerait au client tous les mois
+  de l'année. Les écrans passent donc à la couverture AVANT que la policy se resserre (les deux temps de P7).
+
+##### 6.2 L'état d'un mouvement, pour le client
+
+Un module pur (`lib/banqueClient.ts`, P9), sur `mouvementJustifieParLeReleve` et les statuts du relevé : justifié
+(rapproché d'une pièce, d'une échéance, affecté, ventilé, compte de bilan, déclaration de TVA, personnel), rien à fournir
+(ignoré par le cabinet), justificatif envoyé (une proposition non retirée), demandé (une question du cabinet sans réponse),
+sans justificatif (le reste). Muet sur une lecture partielle de l'une de ses sources.
+
+##### 6.3 La pièce déposée à côté du mouvement
+
+`proposer_justificatif(p_ligne_bancaire_id, p_piece_id)` : un mouvement et une pièce du même dossier, l'appelant
+`gere_la_banque` ; une ligne datée et signée ; `retirer_proposition(p_id)` pose `retire_le` (une proposition ne se
+supprime pas : c'est une parole datée). Elle n'écrit RIEN dans le relevé : le rapprochement reste au cabinet, qui voit la
+pièce proposée en tête des candidates de la fiche du mouvement, « proposée par le client le … ». Le fil
+(`precisions_mouvements`, `ecrire_precision_mouvement`) porte la question du cabinet et la réponse du client, l'origine
+DÉDUITE de l'appelant (jamais déclarée), aucune mise à jour, la suppression d'un hors-sujet au cabinet.
+
+##### 6.4 Le solde : lu, jamais calculé
+
+- À la banque : l'API du prestataire rend les soldes d'un compte (`GET /accounts/{account_id}/balances` : montant,
+  devise, type ISO 20022, date de référence) ; l'accord porte des droits distincts pour les soldes et pour les
+  mouvements [S9] — celui d'aujourd'hui ne demande que les mouvements : il faudra un accord RENOUVELÉ. Lu avec les
+  mouvements, sur le même clic ; gardé sur la connexion (colonnes neuves de `connexions_bancaires`, toujours sans
+  policy) et rendu par `statut`.
+- Au relevé : le solde final du dernier relevé dont le contrôle de solde est cohérent (`controles_releves_bancaires`,
+  ouvert en lecture au droit Banque), avec la fin de sa période.
+- Jamais un solde « estimé » par addition : un mouvement manquant le rendrait faux sans un mot.
+
+##### 6.5 La connexion bancaire par le client, et l'import par le serveur
+
+- Le client mène tout le chemin d'aujourd'hui depuis Ma banque : liste des banques, demande d'accord, site de sa banque,
+  retour (`/retour-banque` ajoutée aux routes du client), choix du compte, renouvellement, retrait. Le prestataire agit
+  sous le consentement exprès du titulaire, sur les seuls comptes qu'il désigne [S8] : c'est le chemin naturel. La
+  connexion garde QUI a lancé l'accord et quand (`accord_par`, `accord_le`, client ou cabinet), et la carte du cabinet le
+  dit. Le cabinet garde son bouton, pour un accord donné par le client à ses côtés ; sa carte rappelle que l'accord
+  appartient au titulaire.
+- **L'IMPORT CHANGE DE MAINS** : aujourd'hui le NAVIGATEUR du cabinet écrit les mouvements que la fonction lui a rendus.
+  Ouvert tel quel au client, ce chemin lui laisserait écrire n'importe quel mouvement dans son propre relevé. Désormais :
+  `mouvements` rend l'aperçu ET un lot SIGNÉ par le serveur (HMAC sur le dossier, l'empreinte du compte, la période, les
+  mouvements et l'heure ; secret de fonction neuf) ; « Importer » renvoie le lot tel quel ; `importer` vérifie la
+  signature, l'âge (trente minutes, NOTRE CHOIX), le dossier, le droit et que le compte choisi est encore celui du lot,
+  puis applique la copie gardée de `planImport` et de
+  `statutPourLibelle` (blocs `── DÉBUT/FIN COPIE`, confrontés à `src/lib`), écarte ce qui tombe dans un exercice validé en
+  le disant, écrit à la clé de service (`upsert` sur `(dossier_id, id_externe)`, ignorer les doublons) et rend ce que la
+  base a ÉCRIT. Le cabinet passe par la même action : un seul chemin, et plus aucun mouvement de la connexion écrit par
+  un navigateur.
+- Pourquoi un lot signé plutôt qu'une table d'attente ou une relecture : relire la banque à l'import se ferait refuser
+  au-delà de 90 jours sans nouvel accord (le 422 du 30/09/2026) ; une table d'attente garderait des mouvements bancaires
+  en double, à purger ; la signature ne garde rien et ne se contrefait pas.
+- Synchronisation automatique : toujours NON (« aucun appel réseau externe silencieux » ; RGPD.md §8.8). Le client met à
+  jour d'un clic.
+
+##### 6.6 Un compte par dossier
+
+L'application tient un relevé par dossier, sur le 512000, avec une connexion. Un client qui a deux comptes
+professionnels n'en voit qu'un ; les autres comptes ouverts par l'accord sont « non suivis ». Plusieurs comptes sont un
+chantier de STRUCTURE (le compte de chaque mouvement, des 512 distincts, une connexion ou un compte importé par compte,
+le rapprochement et le contrôle de solde par compte, le FEC) : EC-Q6 demande s'il presse.
+
+---
+
+#### 7. Plusieurs personnes chez un client
+
+| Option | Pour | Contre |
+|---|---|---|
+| (a) Pas de droits : tout accès voit tout | rien à construire | la secrétaire voit la banque et le revenu estimé du dirigeant ; impossible de reprendre un droit sans retirer l'accès |
+| **(b) Deux cases par accès, Ventes et Banque, posées par le cabinet** | simple à expliquer ; tenu en base ; le dépôt de pièces reste à tous | une case de plus par domaine futur |
+| (c) Des rôles nommés (dirigeant, collaborateur, comptable interne…) | lisible | les rôles figent des combinaisons ; il faudrait les redéfinir à chaque domaine |
+
+RECOMMANDATION (EC-Q1) : (b). La personne qui a les deux cases a tout l'espace ; une secrétaire peut avoir Ventes sans
+Banque. Les accès d'aujourd'hui n'ont aucune case : ils gardent exactement ce qu'ils voient — à une exception près, que
+la question pose : « Ma simulation » se calcule SUR LA BANQUE (le chiffre d'affaires encaissé) et montre le revenu estimé
+du dirigeant ; tenir la case Banque en base retire à un accès sans elle les mouvements dont elle se nourrit. Proposition :
+la simulation suit la case Banque. C'est le cabinet qui crée les accès et coche les cases ; le client ne gère pas ses
+collaborateurs (plus tard, si le cabinet le veut). Une case changée vaut à l'instant en base ; l'écran du client la voit à
+sa prochaine connexion, et d'ici là la base refuse le geste qu'il offrirait encore.
+
+---
+
+#### 8. RGPD.md : ce qui change dans le registre
+
+- **§1, qui est responsable de quoi** — une troisième configuration. Pour ses devis, ses factures, ses encaissements et
+  la vue de sa banque, le client se sert de l'application pour SA gestion commerciale : il est responsable du traitement
+  des données de ses clients et prospects ; le cabinet qui lui ouvre l'espace agit pour lui (sous-traitant, art. 28), et
+  l'éditeur en sous-traitant ultérieur. La lettre de mission porte la clause (EC-Q2). Qualification NON VÉRIFIÉE par un
+  conseil : à faire confirmer.
+- **§2, le registre** : « Facturation et relances » devient « Facturation » (émise par le client, ou par le cabinet en
+  son nom sur mandat) ; une ligne « Devis » neuve (proposer une offre à un client ou prospect du client ; mesures
+  précontractuelles ; ses clients et prospects, particuliers compris ; identité, adresse, e-mail, lignes, montants,
+  réponse ; conservation : le devis accepté suit sa facture, dix ans ; un devis refusé ou expiré, trois ans à compter de
+  la demande ou du dernier contact, repère du référentiel de la CNIL [S10]) ; « Connexion bancaire » : sur le clic du
+  client ou du cabinet, l'accord donné par le titulaire et qui l'a lancé, le solde lu et sa date, le lot signé qui ne
+  garde rien ; une ligne « Justificatifs proposés et précisions sur un mouvement » (le client, le cabinet ; textes
+  libres, qui peuvent nommer un tiers) ; « Gestion des accès » : les droits de chaque accès, qui les a posés ;
+  « Journalisation » : les e-mails envoyés par un client, et leur plafond.
+- **§3, les sous-traitants** : aucun neuf. Enable Banking sert désormais au clic du client, qui accepte ses conditions
+  lui-même (déjà le cas). Resend envoie aussi les e-mails des clients.
+- **§6, les droits des personnes** : le client lit désormais directement ses factures et sa banque ; les droits des
+  clients du client s'exercent auprès de LUI, dans les limites des durées légales (une facture ne s'efface pas avant dix
+  ans).
+- **§7, les mesures** : les droits par domaine tenus en base et rejoués (`rls.sql`, deux profils de client) ; le lot
+  bancaire signé ; le plafond d'e-mails ; les notes internes hors de portée du client (P0).
+- **§8.8** : « Qui se connecte » est résolu par le chemin du client (P8, P9) ; restent le prestataire et son contrat.
+- **§8.9 (neuf), l'espace client élargi** : la qualification du §1 ; la durée des devis refusés ; la double
+  authentification des accès qui portent un droit (Supabase Auth la propose par application d'authentification, et le
+  jeton en dit le niveau, `aal` [S11] ; NON VÉRIFIÉ pour le plan gratuit) ; le mot de passe initial choisi par le cabinet
+  (le « mot de passe oublié », en cours le 09/10/2026, permet au client de choisir le sien).
+
+---
+
+#### 9. Les étapes (chacune livrable et contrôlable seule)
+
+| Étape | Contenu | Base | Écrans | Edge Functions | Essais et preuves | Dépend de |
+|---|---|---|---|---|---|---|
+| **P0 — Les notes internes hors de portée du client** | `notes_internes_pieces` (pièce, dossier, texte, auteur, date), copie des notes existantes ; `FichePiece` et l'import par la plateforme y écrivent ; l'origine de `documents_divers.notes` et l'usage de `dossiers.notes` établis | oui (non destructive) ; puis vider et supprimer `pieces.notes` : ÉCRIT, présenté, appliqué seulement sur l'accord du cabinet | `FichePiece` | non | `notesInternes.sql` ; `rls.sql` entier ; sauvegarde et restauration ; export | EC-Q7 pour la seconde moitié |
+| **P1 — Les droits d'un accès** | `droit_ventes`, `droit_banque` ; les cinq fonctions du §3.2 ; l'onglet Accès : deux cases par accès, la phrase « Le client pourra uniquement déposer des pièces… » réécrite ; `AuthContext` lit les droits | oui | Accès client ; rien ne change pour le client | non | `droitsAcces.sql` ; `rls.sql` entier ; tests d'écran et de contexte | EC-Q1 |
+| **P2 — Les ventes en base** | policies de lecture du §3.3 ; `valide_par`, `cree_par` ; les contrôles du §3.4 ; `supprimer_brouillon_facture` ; le refus neuf d'un mouvement sans droit Banque, redit par le module d2, batterie rejouée sur une réplique | oui, en DEUX migrations : `apply_migration`, puis l'éditeur SQL du cabinet pour `enregistrer_facture` et la suppression d'un brouillon ; policies élargies présentées au cabinet | l'onglet du cabinet supprime un brouillon par la fonction | non | `ventesClient.sql` et les six essais des factures et encaissements ; `rls.sql` entier ; `batterieEncaissements.mjs` | P1, EC-Q2 |
+| **P3 — Les fonctions de la vente acceptent le client** | `droits_sur_le_dossier` et la table du §3.5 dans `plateforme-agreee`, `superpdp-emit`, `superpdp-credentials`, `send-email` ; `cree_par` écrit ; le plafond d'e-mails ; les défauts connus de ces fonctions corrigés au passage | non | non | quatre redéploiements par la session (`verify_jwt` de `config.toml`, version en place comparée, aller-retour, bordures comptées) | contrats HTTP : client avec droit accepté, sans droit ou d'un autre dossier refusé AVANT tout appel ou dépense, aucun secret rendu ; `DEFAUTS_CONNUS` recompté | P2, EC-Q4 |
+| **P4 — « Mes ventes » : les factures du client** | route `/mes-ventes` ; l'onglet Factures et ses fenêtres réutilisés avec une propriété « public » (tutoiement, gestes du cabinet retirés) ; l'accueil compte « À encaisser », « À déclarer » ; côté cabinet « par le client » et le filtre ; la mention du mandataire à l'impression | non | oui | non | tests d'écran (droit, lecture partielle, verrous, deux puis trois clics), `ecransAvantLecture`, banc de débordements aux quatre largeurs et sur téléphone | P3 ; EC-Q3 avant l'usage réel |
+| **P5 — Les devis en base** | `devis`, `devis_numerotation`, `devis_factures` ; `enregistrer_devis`, `decider_devis`, `facturer_devis`, `supprimer_brouillon_devis` ; la garde ; `lib/devis.ts` (mentions, totaux par `calculerLigne`, validité au jour de Paris, refus dans l'ordre de la base) | oui (l'éditeur SQL si une suppression est dans un corps) ; policies élargies présentées | non | non | `devis.sql` ; `rls.sql` entier ; sauvegarde (`CLES_PRIMAIRES`, relations) ; module et mutations | P2 |
+| **P6 — Les devis à l'écran** | « Mes ventes › Devis » ; côté cabinet « Documents › Devis émis » (`TABS_VALIDES`, `GROUPES_PARCOURS`) ; formulaire (les lignes du formulaire de facture), aperçu et impression (règles de la facture imprimée), e-mail `devis`, « Transformer en facture » | le type `devis` d'`emails_envoyes` : contrainte remplacée par une plus large (un `drop` de contrainte, sans perte de donnée : présenté au cabinet) | oui | `send-email` redéployée | tests d'écran ; impression mesurée sur un vrai PDF ; banc | P4, P5 |
+| **P7 — La banque en base** | `justificatifs_proposes`, `precisions_mouvements` et leurs fonctions ; lecture de `controles_releves_bancaires` ; `couverture_du_releve` ; PUIS les lectures client des mouvements, ventilations et règlements resserrées au droit Banque (`alter policy`, après que l'Accueil et Mes pièces lisent la couverture) | oui, en deux temps ; policies élargies et resserrées présentées | Accueil, Mes pièces (couverture), Ma simulation (droit Banque) | non | `banqueClient.sql` ; `rls.sql` entier | P1, EC-Q1 |
+| **P8 — La connexion bancaire du client** | `droits_sur_le_dossier` ; lot signé et `importer` (copies gardées de `planImport` et `statutPourLibelle`, frontière de validation) ; solde lu (accord renouvelé avec les soldes) ; `accord_par`, `accord_le` ; route `/retour-banque` du client ; la carte du cabinet importe par `importer` | colonnes de `connexions_bancaires` | carte de la connexion du cabinet | `banque-connexion` redéployée ; secret neuf (PLAN_DE_REPRISE §3, `variablesEnvironnement.test.ts`) | lot altéré, périmé, d'un autre dossier refusés ; client sans droit refusé avant tout appel au prestataire ; `connexionBancaire.sql` étendu ; aucun identifiant de session ni de compte rendu | P1, EC-Q5 |
+| **P9 — « Ma banque »** | l'écran du §2.5, `lib/banqueClient.ts` ; côté cabinet : la pièce proposée en tête de la fiche du mouvement, le fil, « Demander au client », le filtre « Proposés par le client » | non | oui | non | tests d'écran ; banc (dont la fiche d'un mouvement sur téléphone) | P7, P8 |
+| **P10 — Ce que le cabinet voit** | la carte « Espace client : ce qui a bougé » de la Vue d'ensemble, tirée des colonnes d'auteur ; muette sur une lecture partielle | non | oui | non | tests d'écran | P4, P6, P9 |
+
+Chaque étape met à jour RGPD.md pour ce qu'elle ajoute, CLAUDE.md et HISTORIQUE.md, et la feuille de route. Ordre
+recommandé : P0 et P1 tout de suite (ils ne changent rien pour le client et ferment ce qui doit l'être) ; puis la vente
+(P2 → P3 → P4) une fois EC-Q2 et EC-Q4 répondues, EC-Q3 avant tout usage réel ; les devis (P5, P6) ; la banque (P7 → P8 →
+P9) une fois EC-Q5 répondue ; P10 pour finir.
+
+---
+
+#### 10. Les risques
+
+| Risque | Parade |
+|---|---|
+| Un droit tenu par l'écran seul (le cas d'aujourd'hui pour « pas de montants ») | policies et fonctions ; `rls.sql` avec deux profils de client et ses mutations |
+| Un client se donne un droit | aucune policy de mise à jour sur `memberships` ; `changer_droits_acces` réservée au cabinet ; l'essai relit la ligne |
+| Un client écrit un faux mouvement dans son relevé | aucune policy d'insertion ; l'import par le serveur sur un lot signé |
+| Des notes du cabinet lues par le client | P0 ; la règle « un texte du cabinet seul ne va jamais dans une table que le client lit » |
+| Deux validations simultanées (client et cabinet) | le verrou de la série, existant ; essai cabinet puis client |
+| Les factures du client n'entrent pas en comptabilité | EC-Q3, avant l'usage réel |
+| Une vente comptée deux fois (la facture source et sa jumelle) | le pont 28.6, à étendre au chantier d'EC-Q3 |
+| Le mandat de facturation du cabinet, jamais écrit (le cas de toutes les factures d'aujourd'hui) | EC-Q2 ; `valide_par` ; la mention recommandée |
+| Un compte client utilisé pour envoyer des e-mails en masse depuis le domaine du cabinet | le plafond ; le contenu borné à la facture ou au devis ; le journal lu par le cabinet |
+| Une policy élargie appliquée sans que le cabinet l'ait vue | chaque migration concernée présentée avant application (P2, P5, P6, P7) |
+| `apply_migration` attend une confirmation (une suppression dans un corps, un `drop` de contrainte) | la procédure de l'éditeur SQL et de la ligne d'historique |
+| Un écran qui offre un geste que la base refuse (droits changés en cours de session) | le refus 42501 dit ; les droits relus à la connexion |
+| Le mot de passe d'un client connu du cabinet ; l'inscription publique ouverte | « mot de passe oublié » (en cours) ; fermer l'inscription (un clic du cabinet) ; la double authentification (§8) |
+| La barre du téléphone déborde | le banc à 390 px décide ; « Mes informations » dans le menu « … » |
+| Les copies de `planImport` et `statutPourLibelle` divergent | blocs bornés, extraits, transpilés, exécutés contre `src/lib` |
+| La simulation disparaît pour un accès sans droit Banque | EC-Q1 le dit au cabinet avant P7 |
+| Agents en parallèle sur `Layout` et l'onglet Factures | P4 part de la tête de `main` après leur fusion |
+
+---
+
+#### 11. Les questions au cabinet
+
+Rédigées à part (`questions_cabinet.md`), chacune avec sa recommandation et sa raison : EC-Q1 les droits par personne ;
+EC-Q2 qui valide une facture, et ce que la lettre de mission doit dire ; EC-Q3 la facture émise comme source de la
+recette ; EC-Q4 qui relie la plateforme agréée ; EC-Q5 la mise à jour de la banque par le client et le solde ; EC-Q6
+plusieurs comptes bancaires ; EC-Q7 la suppression de la colonne des notes internes.
+
+---
+
+#### 12. Ce que MEG fait d'autre côté client, et qui pourrait suivre (sans rien engager)
+
+D'après les pages publiques de son éditeur [S12], affirmations commerciales non éprouvées :
+- un lien de paiement en ligne sur la facture et le devis (MEG cite Stripe parmi ses connexions) ;
+- les relances automatiques des factures impayées ;
+- les notes de frais et les indemnités kilométriques saisies par le client ;
+- les achats : factures fournisseurs centralisées, paiement des fournisseurs (MEG cite Libeo) ;
+- un tableau de bord de pilotage : trésorerie, résultat, comparaison au budget ou à l'année précédente ;
+- le suivi de trésorerie, prévisionnel compris ;
+- la facture électronique « intégrée », l'archivage légal des factures, et l'e-reporting automatique des ventes à des
+  particuliers et à l'international ;
+- plusieurs comptes bancaires synchronisés (MEG cite Powens) ;
+- des connexions à des offres de financement ;
+- le logo du client sur ses factures et devis.
+
+---
+
+#### 13. Les points NON VÉRIFIÉS
+
+1. La qualification RGPD du §8 (le client responsable, le cabinet sous-traitant) : à faire confirmer par un conseil.
+2. Le « facturant » d'une facture électronique émise par un mandataire (un bloc du profil étendu de la DGFiP ?) : non
+   lu ; le CII de l'application n'en porte pas.
+3. Le texte du code des impositions sur les biens et services qui reprend l'art. 289 du CGI après le 01/01/2027 : non
+   identifié ; les commentaires citeront les deux, comme en (d) et (e).
+4. Que l'accord d'Enable Banking doive être RENOUVELÉ pour ajouter les soldes (droits fixés à l'ouverture de la session) :
+   déduit de la référence de l'API [S9], non éprouvé ; et toutes les banques ne rendent pas tous les types de solde.
+5. Ce que fait le détecteur d'`apply_migration` d'un `for delete` dans une policy ou d'un `drop constraint` : inconnu ;
+   le plan prévoit l'éditeur SQL au besoin.
+6. La double authentification de Supabase Auth sur le plan gratuit : non vérifiée.
+7. Le référentiel de la CNIL sur la gestion commerciale : lu par sa présentation publique, le PDF non ouvert.
+8. Les fonctions de MEG : les pages de l'éditeur, non éprouvées ; ses droits d'utilisateurs ne sont décrits nulle part
+   de public (un programme de formation tiers qui les évoque rend une erreur 404).
+9. Les règles sectorielles des devis (bâtiment, services à la personne, optique et audioprothèse, chirurgie esthétique) :
+   nommées par la fiche de service-public.gouv.fr [S6], non lues.
+10. Six entrées dans la barre du téléphone à 390 px : à mesurer.
+11. Le délai d'acceptation tacite d'une facture émise par le cabinet : il est contractuel [S4 §160] ; à fixer dans la
+    lettre de mission.
+12. Qu'une plateforme agréée accepte qu'un même identifiant OAuth2 serve tour à tour au client et au cabinet : rien ne
+    s'y oppose dans ce qui a été lu ; à éprouver au premier essai réel.
+13. La limite de débit de Resend pour un plafond de 30 e-mails par dossier et par jour : non relue.
+14. Le texte des écrans de MEG : non vu (aucun outil de navigateur) ; si la session le transmet, il complétera le §2
+    sans changer les droits.
+
+---
+
+#### Sources
+
+- [S1] La décision du cabinet du 09/10/2026, citée en tête, et la consigne de la session.
+- [S2] Légifrance, CGI, annexe II, art. 242 nonies A, version en vigueur depuis le 01/01/2025 (décret n° 2024-1195 du
+  21/12/2024), I, 1°, 2° et 7°. https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046086694/
+- [S3] BOFiP, BOI-TVA-DECLA-30-20-20-10, en vigueur depuis le 18/10/2013, §70 à §130, §550, §560.
+  https://bofip.impots.gouv.fr/bofip/140-PGP.html
+- [S4] BOFiP, BOI-TVA-DECLA-30-20-10-30, en vigueur depuis le 29/06/2022 (délivrance des factures, personnes tenues de les
+  délivrer), §90, §110, §120, §130, §150 à §180, §200, §210. https://bofip.impots.gouv.fr/bofip/13244-PGP.html
+- [S5] Légifrance, CGI, art. 289, version en vigueur depuis le 31/12/2023 (loi n° 2023-1322, art. 91), abrogé au
+  01/01/2027 par l'ordonnance n° 2025-1247 (art. 9) hors les dispositions maintenues ; I-1 c et I-2.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048827413
+- [S6] service-public.gouv.fr, « Devis » (F31144), vérifiée le 09/09/2022.
+  https://www.service-public.gouv.fr/particuliers/vosdroits/F31144
+- [S7] Légifrance, code de la consommation, art. L111-1, version en vigueur depuis le 01/10/2021.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044142438
+- [S8] Légifrance, code monétaire et financier, art. L133-41, version en vigueur depuis le 06/08/2018 (service
+  d'information sur les comptes : consentement exprès, comptes désignés par l'utilisateur).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000037294362
+- [S9] Enable Banking, référence de l'API : `GET /accounts/{account_id}/balances` (`balance_amount`, `balance_type`,
+  `reference_date`) ; l'objet `Access` et ses droits `balances` et `transactions`. https://enablebanking.com/docs/api/reference/
+- [S10] CNIL, référentiel relatif à la gestion des activités commerciales (prospects : trois ans à compter de la collecte
+  ou du dernier contact émanant du prospect ; clients : la relation, puis trois ans), lu par sa présentation.
+  https://www.cnil.fr/fr/gestion-commerciale-et-gestion-des-impayes-la-cnil-publie-deux-nouveaux-referentiels
+- [S11] Supabase, « JWT Claims Reference » (`aal`) et l'authentification multifacteur.
+  https://supabase.com/docs/guides/auth/jwt-fields
+- [S12] MEG, pages publiques : https://mon-expert-en-gestion.com ; /tpe/ ; /professions-liberales/ ;
+  /gestion-de-la-facture-electronique/ (lues le 09/10/2026).
+- [S13] HISTORIQUE.md : « LA RÉCEPTION PAR LA PLATEFORME DU CLIENT », « LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE »,
+  « LA FACTURE ÉLECTRONIQUE SE DÉPOSE », « LES ÉCRANS DE LA FACTURE ÉLECTRONIQUE », « LE STATUT « ENCAISSÉE » : LA
+  CONCEPTION », « UNE VENTE PEUT ENTRER DEUX FOIS », « Une table que le CLIENT écrit » ; RGPD.md §8.8 ; les questions
+  28.6-Q2 et 23-motDePasse.
+
+Dans le dépôt (commit 6a36368) : `src/App.tsx`, `src/context/AuthContext.tsx`, `src/components/Layout.tsx`,
+`src/pages/Client*.tsx`, `src/lib/depot.ts`, `src/lib/resteAEnvoyer.ts`, `src/pages/dossier/AccesTab.tsx`,
+`FacturesTab.tsx`, `FactureFormModal.tsx`, `FichePiece.tsx`, `BanqueTab.tsx`, `ConnexionBancaireCard.tsx`,
+`src/lib/affectationBanque.ts`, `src/lib/ongletsDossier.ts`, `supabase/functions/{create-client-access,
+plateforme-agreee, banque-connexion, send-email, superpdp-emit, superpdp-sync, superpdp-credentials}/index.ts`,
+`supabase/essais/rls.sql`. En base (lecture, 09/10/2026) : `pg_policies` (schémas `public` et `storage`), `pg_proc`
+(corps de `enregistrer_facture`, `prochain_numero_facture`, `admin_du_dossier` et des gardes des factures), les
+contraintes de `memberships`, `factures_emises`, `transmissions_*`, `encaissements_factures`, `connexions_*`,
+`piece_commentaires`, les droits de table et de colonne, et des comptes de lignes. Feuille de route Notion : lignes 24,
+28.5, 28.6, 47 et 52 lues.
+
+#### Les sept questions au cabinet, telles que posées le 09/10/2026
+
+Le contexte en trois lignes : vous avez décidé que vos clients puissent faire leurs devis, leurs factures et leur
+facture électronique, et voir leur banque, dans leur espace. Tout cela existe déjà côté cabinet ; il s'agit de l'ouvrir
+au client sans rien lui ouvrir d'autre. Chaque question se répond d'une ligne ; ma recommandation est donnée.
+
+---
+
+**EC-Q1 — Qui, chez votre client, voit quoi ?** Pour chaque personne qui a un accès (le dirigeant, une secrétaire, un
+conjoint collaborateur), vous cocheriez deux cases : « Ventes » (devis, factures, facture électronique) et « Banque »
+(comptes, mouvements, connexion bancaire). Le dépôt de pièces reste ouvert à tous. Et « Ma simulation », qui montre le
+revenu estimé du dirigeant et se calcule sur la banque, suivrait la case « Banque ».
+**Ma recommandation** : oui aux deux cases et à la simulation sous « Banque » — c'est la base qui les fait respecter, pas
+seulement l'écran ; les accès d'aujourd'hui n'ont aucune case cochée et ne voient rien changer, sauf la simulation pour
+qui n'aurait pas « Banque ».
+
+**EC-Q2 — Qui valide une facture, et ce que dit la lettre de mission.** Une seule numérotation par client, que la
+facture soit validée par lui ou par vous ; l'application note qui l'a validée. Quand c'est vous, c'est une facture émise
+« au nom et pour le compte » du client : l'administration demande un mandat écrit AVANT la première facture et
+l'acceptation de chaque facture par le client, et recommande d'imprimer « Facture établie par <cabinet> au nom et pour le
+compte de <client> ». C'est déjà le cas de toutes les factures faites dans l'application. Et pour ses devis et ses
+factures, le client devient responsable des données de SES clients, vous agissez pour lui : une clause de
+sous-traitance (RGPD) dans la même lettre.
+**Ma recommandation** : oui à la série unique ; le mandat et la clause dans la lettre de mission avant le premier client
+réel ; la mention imprimée quand vous validez.
+
+**EC-Q3 — Les factures faites par le client comptent-elles en comptabilité ?** Aujourd'hui une facture émise ne compte
+nulle part : une vente n'entre que par sa pièce (le PDF déposé, ou la facture qui revient de la plateforme). Vous aviez
+répondu « pas maintenant » le 09/10/2026 (28.6-Q2). Si le client facture ici à la place de MEG, il ne déposera pas en
+plus chacune de ses factures, et celles à des particuliers ne reviendront jamais de la plateforme.
+**Ma recommandation** : oui, maintenant — la facture validée devient la source de sa vente (l'application empêche qu'elle
+compte deux fois), en un chantier comptable à part, avant que vos clients facturent réellement ici.
+
+**EC-Q4 — Qui relie la plateforme agréée du client (et Super PDP) ?** Pour transmettre ses factures, l'application se
+branche sur la plateforme du client avec un identifiant et un secret que LUI crée sur sa plateforme. Aujourd'hui seul le
+cabinet peut les saisir. Proposition : le client peut les saisir lui-même, vous aussi ; le secret ne s'affiche jamais à
+personne, et vous voyez qui a relié.
+**Ma recommandation** : oui, les deux — cela évite que le secret circule jusqu'à vous par e-mail.
+
+**EC-Q5 — La banque du client.** Le client connecte sa banque lui-même (seul le titulaire du compte peut donner l'accord),
+puis met à jour ses mouvements d'un clic ; c'est le serveur, et non son navigateur, qui les écrit, si bien qu'il ne peut
+rien y ajouter de faux. Il voit aussi le solde LU à la banque — ce qui demande à chaque client de renouveler une fois son
+accord. Pas de mise à jour automatique en arrière-plan.
+**Ma recommandation** : oui aux trois — la mise à jour reste au clic, comme aujourd'hui ; l'automatique pourra se
+rouvrir avec le prestataire définitif.
+
+**EC-Q6 — Vos clients ont-ils plusieurs comptes professionnels ?** L'application tient un seul compte bancaire par
+dossier. Si beaucoup de vos clients en ont deux ou plus, c'est un chantier de structure à part (chaque mouvement porte
+son compte, un rapprochement par compte).
+**Ma recommandation** : un compte d'abord, comme aujourd'hui ; dites « beaucoup » et j'ouvre la ligne de la feuille de
+route.
+
+**EC-Q7 — Les notes internes des pièces.** Le champ « Notes internes » de la fiche d'une pièce est aujourd'hui lisible
+par le client à travers l'application (aucun écran ne le lui montre, mais son navigateur le reçoit). Aucune note n'est
+dans un dossier qui a un accès client aujourd'hui. Proposition : déplacer ces notes dans une table que seul le cabinet
+lit, puis vider et supprimer l'ancien champ — une suppression de colonne, après copie, qui demande votre accord.
+**Ma recommandation** : oui — rien n'est perdu (les notes sont copiées d'abord, et vérifiées), et c'est la seule façon
+qu'elles restent internes.

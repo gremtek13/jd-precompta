@@ -323,7 +323,14 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Qui voit quoi** : `rls.sql` pour les tables et le stockage (pas la suppression d'un fichier) ;
   `edgeFunctionsHttp.test.ts` pour les Edge Functions en HTTP, contre leur source et un monde factice.
 - RLS activée sur toutes les tables. **Les accès clients sont restreints** (dépôt de pièces, pas de montants, catégories,
-  packs ni autres onglets) — ne jamais les élargir sans décision explicite.
+  packs ni autres onglets) — ne jamais les élargir sans décision explicite. **Trois domaines font exception** (décision
+  du cabinet du 09/10/2026, « remplacer MEG ») : les devis, les factures et leur facture électronique, la vue de la
+  banque — chacun pour un accès qui en porte le DROIT, posé par le cabinet, tenu en base (policy `to authenticated`,
+  fonction qui le vérifie), jamais par l'écran seul ; le client y écrit par les mêmes fonctions que le cabinet, et une
+  policy qui lui ouvre une lecture se présente au cabinet avant d'être appliquée. Conçu, rien n'est construit.
+  **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
+  de son relevé, les catégories et les notes internes des pièces (P0) ; un texte du cabinet seul ne se range jamais dans
+  une table que le client lit → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -413,8 +420,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'écran de l'échéance payée depuis le compte
   personnel et la migration de son retrait, à coller par le cabinet ; l'opération découverte après coup, conçue,
   questions au cabinet (B1 à B13). Aucun exercice n'est encore validé en base.
-- **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT (seul le titulaire
-  du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
+- **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu avec l'espace
+  client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
+  automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone) ; au tableau de bord, la longueur minimale à 10,
   le modèle d'e-mail en français et l'inscription publique à fermer ; la réinitialisation depuis l'onglet Accès (un lien
@@ -444,6 +452,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
   révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2 (le module) et R3
   (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS ».
+- **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
+  électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
+  portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
+  titulaire, import par le serveur sur un lot signé, pièce déposée à côté du mouvement) ; onze étapes P0 à P10, sept
+  questions au cabinet → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
