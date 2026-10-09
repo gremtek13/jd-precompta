@@ -76,6 +76,14 @@
 -- faux (`coalesce`) : sans l'annulation de chaque contrôle, vingt-sept contrôles tombent, dont les vingt-deux qui
 -- attendent un succès.
 --
+-- REJOUÉ EN PRODUCTION LE 09/10/2026, juste après la migration `paiement_personnel_des_cotisations` (ligne 26.6) : 151
+-- contrôles sur 151, et 4/1/1/77/998/3/2/1/43/0/0/0/0 lignes avant comme après. La lecture de la cascade (141)
+-- attendait encore la liste du 07/10 au matin : `garder_factures_validees` (migration `factures_validees_figees`, le
+-- 07/10 au soir), qui laisse elle aussi passer la cascade d'un dossier, y manquait — le contrôle serait tombé à tout
+-- rejeu depuis —, et `garder_ecriture_paiement_personnel` s'y ajoute ; les deux sont dans la valeur attendue. Le texte
+-- reçu par la base est celui de la copie transmise, ses commentaires retirés et la ligne qui dit le texte reçu
+-- ajoutée (71 524 caractères, empreinte 3929d97a…).
+--
 -- MIS AU POINT SUR UNE RÉPLIQUE LOCALE, ET MUTÉ AVANT D'ÊTRE CRU. Trente-quatre mutations, chacune jouée dans
 -- la transaction de l'essai puis annulée, toutes mordent :
 --   - le code TEL QU'IL ÉTAIT avant la migration corrective, fonction par fonction : chacun des sept
@@ -504,7 +512,7 @@ begin
     array['valeur', '140. chaque déclencheur figeant refuse aussi la suppression, et il est actif', 'postgres', $q$select string_agg(c.relname || ':' || ((t.tgtype & 8) <> 0)::text || ':' || t.tgenabled::text, ',' order by c.relname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname in ('ecritures_brouillon_intangibles', 'pieces_figees_par_la_validation', 'lignes_bancaires_figees_par_la_validation', 'ventilations_bancaires_figees_par_la_validation', 'reglements_groupes_figes_par_la_validation', 'immobilisations_figees_par_la_validation', 'vehicules_figes_par_la_validation', 'cotisations_declarees_figees_par_la_validation', 'a_nouveaux_figes_par_la_validation', 'declarations_tva_figees_par_la_validation', 'soldes_reportes_ecrits_par_la_validation')$q$, '',
       'a_nouveaux:true:O,cotisations_declarees:true:O,declarations_tva:true:O,ecritures_brouillon:true:O,immobilisations:true:O,lignes_bancaires:true:O,pieces:true:O,reglements_groupes:true:O,soldes_reportes:true:O,vehicules:true:O,ventilations_bancaires:true:O'],
     array['valeur', '141. chacun laisse passer la cascade d''un dossier qu''on supprime', 'postgres', $q$select string_agg(p.proname, ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'garder%' and p.prosrc like '%not exists (select 1 from public.dossiers where id = old.dossier_id)%'$q$, '',
-      'garder_a_nouveaux_valides,garder_bien_valide,garder_cotisation_valide,garder_declaration_valide,garder_ecritures_validees,garder_mouvement_valide,garder_parts_mouvement_valide,garder_piece_validee,garder_soldes_reportes,garder_vehicule_valide'],
+      'garder_a_nouveaux_valides,garder_bien_valide,garder_cotisation_valide,garder_declaration_valide,garder_ecriture_paiement_personnel,garder_ecritures_validees,garder_factures_validees,garder_mouvement_valide,garder_parts_mouvement_valide,garder_piece_validee,garder_soldes_reportes,garder_vehicule_valide'],
     array['valeur', '142. un exercice validé part avec son dossier', 'postgres', $q$select string_agg(confdeltype::text, ',') from pg_constraint where conrelid = 'public.exercices_valides'::regclass and contype = 'f'$q$, '', 'c'],
     array['valeur', '143. les droits d''exécution (anonyme, connecté)', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || a, 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || a, 'execute'), ',' order by f collate "C") from (values
       ('valider_exercice', '(uuid, integer, jsonb, jsonb, jsonb)'), ('verifier_exercice_valide', '(uuid, integer)'), ('empreinte_exercice', '(uuid, integer, text)'),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement } from './affectationBanque'
 import { ecritureDeLaDotation } from './amortissements'
 import { comptesPartagesEntreCases, concordance2035, ouAgir, phraseDeLEcart, type EcartDeSource } from './concordance2035'
+import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import { cotisationsComptees, ecritureDeLaCotisation } from './cotisationRapprochee'
 import { calculerDeclaration2035 } from './declaration2035'
 import { ecritureDeLEcheance } from './echeanceEmprunt'
@@ -287,6 +288,50 @@ describe('concordance2035 — ce que la 2035 compte et que le brouillon ne porte
     expect(ouAgir(c.ecarts[0])).toBe('Banque')
   })
 
+  // PAYÉE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : la 2035 la compte au jour du paiement, son écriture
+  // la désigne ce jour-là — la cotisation hors CSG-CRDS au 646000 face au 108000 —, et les deux concordent.
+  const payeePerso = (o: Partial<CotisationDeclaree> = {}) => cotisation({
+    id: 'perso', echeance: '2025-09-05', montant_appele: 500, montant_csg_crds: 48.5, paiement_personnel_le: '2025-09-10', ...o,
+  })
+  const ecritePerso = (c: CotisationDeclaree) =>
+    brouillon(ecritureDuPaiementPersonnel(c, TRESORERIE), { cotisation_id: c.id, date: c.paiement_personnel_le! })
+
+  it('une échéance payée depuis le compte personnel concorde avec son écriture, au jour du paiement', () => {
+    const d = dossier()
+    const c = payeePerso()
+    d.cotisations.push(c)
+    d.ecritures.push(...ecritePerso(c))
+    expect(concordance(d).ecarts).toEqual([])
+    // Payée en 2026 pour une échéance de 2025 : elle compte en 2026, comme son écriture.
+    const e = dossier()
+    const tardive = payeePerso({ paiement_personnel_le: '2026-01-10' })
+    e.cotisations.push(tardive)
+    e.ecritures.push(...ecritePerso(tardive))
+    expect(concordance(e).ecarts).toEqual([])
+    expect(motifs(concordance(e, { annee: 2026 }).ecarts).filter(([cle]) => cle === 'cotisation:perso')).toEqual([])
+  })
+
+  it('payée depuis le compte personnel sans son écriture : une écriture manque, pas un paiement', () => {
+    const d = dossier()
+    d.cotisations.push(payeePerso())
+    const c = concordance(d)
+    expect(motifs(c.ecarts)).toEqual([['cotisation:perso', 'sans_ecriture']])
+    expect(c.ecarts[0]).toMatchObject({ declaration: -451.5, reference: { type: 'cotisation', id: 'perso' } })
+    expect(c.ecarts[0].libelle).toBe('Échéance de cotisation du 05/09/2025, réglée sur le compte personnel le 10/09/2025')
+    expect(ouAgir(c.ecarts[0])).toBe('Cotisations')
+  })
+
+  it('un paiement personnel qui ne peut pas s’écrire : comptée à son échéance, le paiement est à reprendre', () => {
+    const d = dossier()
+    d.cotisations.push(payeePerso({ montant_csg_crds: 600 }))
+    const c = concordance(d)
+    expect(motifs(c.ecarts)).toEqual([['cotisation:perso', 'paiement_personnel_refuse']])
+    expect(phraseDeLEcart(c.ecarts[0])).toBe(
+      'Son paiement depuis le compte personnel ne s’écrit pas, elle reste comptée à son échéance. '
+      + 'La CSG-CRDS de cette échéance (600,00 €) dépasse son montant (500,00 €).')
+    expect(ouAgir(c.ecarts[0])).toBe('Cotisations')
+  })
+
   it('nomme chaque source comme la carte la dit', () => {
     // Un véhicule sans modèle se nomme par ce que le barème en sait ; une échéance porte ses deux dates.
     const d = dossier()
@@ -518,8 +563,9 @@ describe('ouAgir', () => {
   })
   const d = dossier()
   const sourcePiece = { type: 'piece', id: 'facture', piece: d.pieces[0] } as const
-  const sourceCotisation = (o: { ligne?: LigneBancaire | null; refus?: string | null } = {}) => ({
-    type: 'cotisation', id: 'appel', cotisation: d.cotisations[0], ligne: o.ligne ?? null, refus: o.refus ?? null,
+  const sourceCotisation = (o: { ligne?: LigneBancaire | null; paiementPersonnel?: string | null; refus?: string | null } = {}) => ({
+    type: 'cotisation', id: 'appel', cotisation: d.cotisations[0], ligne: o.ligne ?? null,
+    paiementPersonnel: o.paiementPersonnel ?? null, refus: o.refus ?? null,
   }) as const
 
   it('un poste ou un compte manquant se complète là où il manque, quelle que soit la source', () => {

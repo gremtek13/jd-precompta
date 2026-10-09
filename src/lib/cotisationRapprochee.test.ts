@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { MouvementBancaire } from './affectationBanque'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT, LIBELLES_COMPTES } from './comptes'
 import {
-  avertissementRetraitEcheance, cotisationsAEcrire, cotisationsComptees, csgDeLEcriture, ecritureDeLaCotisation,
-  montantDeLEcheance, rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE, refusRapprochementCotisation,
+  avertissementRetraitEcheance, compteeASonEcheance, cotisationsAEcrire, cotisationsComptees, csgDeLEcriture,
+  ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE,
+  REFUS_MONTANTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel, refusRapprochementCotisation,
 } from './cotisationRapprochee'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon } from './types'
-import { fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
@@ -171,6 +172,55 @@ describe('refusRapprochementCotisation — dit avant d’écrire ce que la base 
       position = ici
     }
   })
+
+  // JAMAIS LES DEUX (lib/cotisationPersonnelle.ts) : une échéance payée depuis le compte personnel ne se paie pas aussi
+  // par un mouvement. La base le refuse au moment où le mouvement la désigne — le déclencheur
+  // `garder_mouvement_paiement_personnel`, après tous les refus de `rapprocher_cotisation` —, d'où ce refus en dernier.
+  it('une échéance payée depuis le compte personnel : jamais les deux, et ce refus vient en dernier', () => {
+    const payee = cotisation({ paiement_personnel_le: '2026-01-10' })
+    const message = refusRapprochementCotisation(mouvement(), payee, 'tresorerie')
+    expect(message).toBe('Cette échéance est payée depuis le compte personnel, le 10/01/2026 : un mouvement ne la paie pas aussi.')
+    expect(refusRapprochementCotisation(mouvement(), payee, 'engagement')).toBe(message)
+    expect(refusRapprochementCotisation(mouvement({ montant: 0 }), payee, 'tresorerie')).toBe('Un mouvement de zéro euro n’a rien à écrire.')
+    expect(refusRapprochementCotisation(mouvement({ reglement_groupe: true }), payee, 'tresorerie')).toBe(REFUS_REGLE_EN_GROUPE)
+    // Le message est celui du déclencheur, la date à la place de son « % ».
+    const declencheur = [...derniereDefinitionSql('garder_mouvement_paiement_personnel').matchAll(/raise exception '((?:[^']|'')*)'/g)]
+      .map((m) => m[1].replace(/''/g, "'"))
+    expect(declencheur).toEqual([message!.replace('10/01/2026', '%')])
+  })
+})
+
+describe('refusMontantsDuPaiementPersonnel — ce que les montants de l’échéance empêchent d’écrire', () => {
+  it('rien à redire d’un appel ni d’un remboursement au centime', () => {
+    expect(refusMontantsDuPaiementPersonnel(cotisation(), 'tresorerie')).toBeNull()
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: -120, montant_csg_crds: -11.64 }), 'tresorerie')).toBeNull()
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_csg_crds: 500 }), 'tresorerie')).toBeNull()
+  })
+
+  it('dans l’ordre de la fonction, sous ses mots', () => {
+    const cles = [
+      refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: 0, montant_csg_crds: 0.001 }), 'tresorerie')?.cle,
+      refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: 100.005, montant_csg_crds: 900 }), 'tresorerie')?.cle,
+      refusMontantsDuPaiementPersonnel(cotisation({ montant_csg_crds: 900.001 }), 'tresorerie')?.cle,
+      refusMontantsDuPaiementPersonnel(cotisation({ montant_csg_crds: 900 }), 'tresorerie')?.cle,
+    ]
+    expect(cles).toEqual(REFUS_MONTANTS_PAIEMENT_PERSONNEL.map((r) => r.cle))
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_csg_crds: 900 }), 'tresorerie')?.message)
+      .toBe('La CSG-CRDS de cette échéance (900,00 €) dépasse son montant (500,00 €).')
+    // Les euros comme la base les écrit (`to_char`), sans séparateur de milliers.
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: 1234.5, montant_csg_crds: 2000 }), 'tresorerie')?.message)
+      .toBe('La CSG-CRDS de cette échéance (2000,00 €) dépasse son montant (1234,50 €).')
+  })
+
+  it('le versement saisi fait foi sur l’appel', () => {
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_verse: 0 }), 'tresorerie')?.cle).toBe('echeance_nulle')
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: 0, montant_verse: 30, montant_csg_crds: null }), 'tresorerie')).toBeNull()
+  })
+
+  it('en engagement, la CSG-CRDS ne s’écrit pas à part : elle ne peut rien empêcher', () => {
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_csg_crds: 900.001 }), 'engagement')).toBeNull()
+    expect(refusMontantsDuPaiementPersonnel(cotisation({ montant_appele: 0 }), 'engagement')?.cle).toBe('echeance_nulle')
+  })
 })
 
 describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotisation et sa CSG-CRDS en face', () => {
@@ -304,6 +354,53 @@ describe('cotisationsComptees — la date et le montant auxquels une échéance 
     const [payee, attente] = cotisationsComptees([cotisation(), cotisation({ id: 'c2' })], [rapproche()], 'tresorerie')
     expect(payee.refus).toBeNull()
     expect(attente.refus).toBeNull()
+  })
+
+  // PAYÉE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : elle compte au jour de ce paiement, pour son
+  // montant — le versement saisi, sinon l'appel —, comme son écriture face au compte du dirigeant.
+  it('payée depuis le compte personnel : au jour du paiement, pour le versement saisi ou l’appel', () => {
+    const [appel, verse] = cotisationsComptees([
+      cotisation({ paiement_personnel_le: '2026-01-10' }),
+      cotisation({ id: 'c2', montant_verse: 480, paiement_personnel_le: '2026-01-12' }),
+    ], [], 'tresorerie')
+    expect(appel).toMatchObject({ date: '2026-01-10', montant: 500, csgCrds: 48.5, ligne: null, paiementPersonnel: '2026-01-10', refus: null })
+    expect(verse).toMatchObject({ date: '2026-01-12', montant: 480, paiementPersonnel: '2026-01-12' })
+  })
+
+  it('un remboursement reçu sur le compte personnel compte en négatif, sa CSG-CRDS aussi ; une CSG-CRDS non saisie reste inconnue', () => {
+    const [rembourse, sansCsg] = cotisationsComptees([
+      cotisation({ montant_appele: -120, montant_csg_crds: 11.64, paiement_personnel_le: '2026-01-10' }),
+      cotisation({ id: 'c2', montant_csg_crds: null, paiement_personnel_le: '2026-01-10' }),
+    ], [], 'tresorerie')
+    expect(rembourse).toMatchObject({ montant: -120, csgCrds: -11.64 })
+    expect(sansCsg.csgCrds).toBeNull()
+  })
+
+  it('un paiement personnel qui ne peut pas s’écrire ne date rien, et dit pourquoi — en trésorerie seulement', () => {
+    const depasse = cotisation({ montant_csg_crds: 900, paiement_personnel_le: '2026-01-10' })
+    expect(cotisationsComptees([depasse], [], 'tresorerie')[0]).toMatchObject({
+      date: '2025-12-05', paiementPersonnel: null, refus: 'La CSG-CRDS de cette échéance (900,00 €) dépasse son montant (500,00 €).',
+    })
+    expect(cotisationsComptees([depasse], [], 'engagement')[0]).toMatchObject({ date: '2026-01-10', paiementPersonnel: '2026-01-10', refus: null })
+  })
+
+  // Les deux à la fois : la base le refuse, sous la fonction comme sans elle (deux déclencheurs, sous le verrou de
+  // l'échéance). Si la lecture le rendait quand même, aucun des deux ne la daterait : elle resterait comptée à son
+  // échéance, et la concordance dirait pourquoi au lieu de choisir à la place du cabinet.
+  it('payée par un mouvement ET depuis le compte personnel, elle n’est datée par aucun des deux', () => {
+    const [c] = cotisationsComptees([cotisation({ paiement_personnel_le: '2026-01-10' })], [rapproche()], 'tresorerie')
+    expect(c).toMatchObject({
+      date: '2025-12-05', ligne: null, paiementPersonnel: null,
+      refus: 'Cette échéance est payée depuis le compte personnel, le 10/01/2026 : un mouvement ne la paie pas aussi.',
+    })
+  })
+
+  it('compteeASonEcheance : ni prélèvement ni paiement personnel qui s’écrive', () => {
+    const comptees = cotisationsComptees([
+      cotisation(), cotisation({ id: 'c2', paiement_personnel_le: '2026-01-10' }), cotisation({ id: 'c3' }),
+      cotisation({ id: 'c4', montant_csg_crds: 900, paiement_personnel_le: '2026-01-10' }),
+    ], [rapproche()], 'tresorerie')
+    expect(comptees.map(compteeASonEcheance)).toEqual([false, false, true, true])
   })
 
   it('rend une entrée par échéance, dans l’ordre reçu', () => {

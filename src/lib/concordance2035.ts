@@ -29,8 +29,10 @@ import type { EcritureBrouillon } from './types'
 // dans le résultat, ni d'un côté ni de l'autre.
 
 // Ce que la concordance ne sait pas rapprocher d'une source de la 2035 : une écriture sans pièce, sans
-// mouvement, sans bien, ni véhicule, ni déclaration de TVA — le lien a été rompu (sa pièce supprimée, la clé mise à
-// nul). Une échéance de cotisation sans paiement n'a pas d'écriture : sa référence est l'échéance elle-même.
+// mouvement, sans bien, ni véhicule, ni déclaration de TVA, ni échéance payée depuis le compte personnel — le lien a
+// été rompu (sa pièce supprimée, la clé mise à nul). Une échéance de cotisation sans mouvement a pour référence
+// l'échéance elle-même : payée depuis le compte personnel, son écriture la désigne (`cotisation_id`) ; sans paiement,
+// elle n'a pas d'écriture.
 export type ReferenceEcriture = {
   type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'ecriture'
   id: string
@@ -43,11 +45,16 @@ export type MotifEcart =
   | 'ecriture_autre_exercice'
   // ... sa catégorie n'a pas de compte : rien ne peut l'écrire.
   | 'sans_compte'
-  // ... une échéance de cotisation comptée à son échéance, sans prélèvement rapproché : rien à écrire.
+  // ... une échéance de cotisation comptée à son échéance, sans prélèvement rapproché ni paiement depuis le compte
+  // personnel : rien à écrire.
   | 'echeance_sans_paiement'
   // ... une échéance rapprochée d'un mouvement qui ne peut pas la payer par une écriture (un encaissement sur
   // un appel, une CSG-CRDS qui dépasse le mouvement) : comptée à son échéance, son rapprochement est à revoir.
   | 'rapprochement_refuse'
+  // ... une échéance payée depuis le compte personnel dont le paiement ne peut pas s'écrire (une CSG-CRDS qui dépasse
+  // l'échéance — une sauvegarde restaurée, que la base n'a pas jugée) : comptée à son échéance, son paiement est à
+  // reprendre.
+  | 'paiement_personnel_refuse'
   // ... la dotation d'un bien sans nature : son compte d'amortissement n'est pas connu, rien ne peut l'écrire.
   | 'bien_sans_nature'
   // Les deux, mais pas le même montant.
@@ -124,6 +131,8 @@ function referenceDeLEcriture(e: EcritureBrouillon): ReferenceEcriture {
   if (e.immobilisation_id) return { type: 'bien', id: e.immobilisation_id }
   if (e.vehicule_id) return { type: 'vehicule', id: e.vehicule_id }
   if (e.declaration_tva_id) return { type: 'declaration', id: e.declaration_tva_id }
+  // Le paiement d'une échéance depuis le compte personnel : son écriture désigne l'échéance, comme la source.
+  if (e.cotisation_id) return { type: 'cotisation', id: e.cotisation_id }
   if (e.ligne_bancaire_id) return { type: 'mouvement', id: e.ligne_bancaire_id }
   return { type: 'ecriture', id: e.id }
 }
@@ -146,7 +155,8 @@ function libelleDeSource(s: SourceDeclaration): { libelle: string; date: string 
     case 'bien': return { libelle: `Dotation : ${s.immobilisation.libelle}`, date: null }
     case 'vehicule': return { libelle: `Forfait kilométrique : ${nomDuVehicule(s.vehicule)}`, date: null }
     case 'cotisation': return {
-      libelle: `Échéance de cotisation du ${formatDate(s.cotisation.echeance)}${s.ligne ? `, prélevée le ${formatDate(s.ligne.date)}` : ''}`,
+      libelle: `Échéance de cotisation du ${formatDate(s.cotisation.echeance)}${s.ligne ? `, prélevée le ${formatDate(s.ligne.date)}`
+        : s.paiementPersonnel ? `, réglée sur le compte personnel le ${formatDate(s.paiementPersonnel)}` : ''}`,
       date: null,
     }
     case 'csg': return { libelle: 'CSG déductible', date: null }
@@ -304,7 +314,12 @@ function motifDeLEcart(x: {
   // l'ancien compte.
   if (declare.has(null)) return 'sans_compte'
   if (declare.size > 0 && ecrit.size === 0) {
-    if (g.source?.type === 'cotisation' && !g.source.ligne) return g.source.refus ? 'rapprochement_refuse' : 'echeance_sans_paiement'
+    // Une échéance que rien ne date : sans paiement, ou avec un paiement qui ne s'écrit pas. Payée depuis le compte
+    // personnel et sans écriture, elle n'est pas « sans paiement » : son écriture manque (`sans_ecriture`).
+    if (g.source?.type === 'cotisation' && !g.source.ligne && !g.source.paiementPersonnel) {
+      if (!g.source.refus) return 'echeance_sans_paiement'
+      return g.source.cotisation.paiement_personnel_le ? 'paiement_personnel_refuse' : 'rapprochement_refuse'
+    }
     if (g.source?.type === 'bien' && !g.source.immobilisation.nature_id) return 'bien_sans_nature'
     return x.autresExercices.length > 0 ? 'ecriture_autre_exercice' : 'sans_ecriture'
   }
@@ -338,6 +353,7 @@ export const LIBELLES_MOTIFS: Readonly<Record<MotifEcart, string>> = {
   sans_compte: 'catégorie sans compte',
   echeance_sans_paiement: 'échéance sans prélèvement rapproché',
   rapprochement_refuse: 'rapprochement qui ne s’écrit pas',
+  paiement_personnel_refuse: 'paiement personnel qui ne s’écrit pas',
   bien_sans_nature: 'bien sans nature',
   montant_different: 'montant différent',
   compte_different: 'compte différent',
@@ -370,6 +386,8 @@ export function phraseDeLEcart(e: EcartDeSource): string {
       return 'Sans nature, son compte d’amortissement n’est pas connu : rien ne peut écrire sa dotation. Choisir sa nature, puis l’écrire.'
     case 'rapprochement_refuse':
       return `Son rapprochement ne s’écrit pas, elle reste comptée à son échéance. ${e.source?.type === 'cotisation' ? e.source.refus : ''}`.trim()
+    case 'paiement_personnel_refuse':
+      return `Son paiement depuis le compte personnel ne s’écrit pas, elle reste comptée à son échéance. ${e.source?.type === 'cotisation' ? e.source.refus : ''}`.trim()
     case 'montant_different':
       return `L’écriture porte ${formatMoney(Math.abs(e.ecritures))}, la 2035 ${formatMoney(Math.abs(e.declaration))} : à régénérer ou à réécrire.`
     case 'compte_different':
@@ -399,6 +417,7 @@ export function phraseDeLEcart(e: EcartDeSource): string {
 // (Immobilisations), un forfait (la carte Véhicules d'Informations du dossier) ou une échéance (Cotisations),
 // rapprocher un prélèvement ou réaffecter un mouvement (Banque), compléter un poste (Clôture), retrouver la
 // liquidation d'une déclaration (TVA). Un mouvement affecté ou ventilé se réaffecte ou se réécrit dans Écritures.
+// Un paiement depuis le compte personnel qui ne s'écrit pas se reprend dans Cotisations.
 export function ouAgir(e: EcartDeSource): string {
   if (e.motif === 'sans_poste') return 'Clôture — Postes manquants'
   if (e.motif === 'sans_compte') return 'Écritures — Comptes manquants'

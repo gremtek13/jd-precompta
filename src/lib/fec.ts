@@ -70,6 +70,13 @@ export function referenceDeLaLiquidation(date: string): string {
   return `CA3 au ${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
 }
 
+// La pièce du paiement d'une échéance de cotisation DEPUIS LE COMPTE PERSONNEL de l'exploitant (lib/cotisationPersonnelle.ts) :
+// le relevé de ce compte au jour du paiement, que le cabinet a vu et qui n'est pas dans l'application — c'est ce qu'un
+// vérificateur demandera. La date de l'écriture est celle du paiement. La piste d'audit la nomme de même.
+export function referenceDuPaiementPersonnel(date: string): string {
+  return `Compte personnel du ${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`
+}
+
 // Libellé du compte pour la colonne CompteLib — les comptes que l'application tient elle-même (TVA,
 // banque, tiers, dotations et amortissements) d'abord, sinon celui de la catégorie qui porte ce
 // compte_comptable, sinon celui du plan comptable pour un compte de bilan choisi par le cabinet (ligne 26.7,
@@ -108,7 +115,8 @@ export interface NumerotationFec {
   // Dans l'ordre du fichier — voir `ordonnerLignes`.
   lignes: LigneFec[]
   // Les écritures que rien ne rattache : ni une pièce, ni un mouvement justifié par le relevé, ni un bien, ni
-  // un véhicule — le reste d'une pièce supprimée, que `absenceFec` chiffre. Hors du fichier, et une écriture
+  // un véhicule, ni une déclaration de TVA, ni une échéance payée depuis le compte personnel — le reste d'une pièce
+  // supprimée, que `absenceFec` chiffre. Hors du fichier, et une écriture
   // qu'on ne peut pas numéroter empêche de valider son exercice.
   horsFec: EcritureBrouillon[]
 }
@@ -182,8 +190,10 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
 // fichier. LE FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts) de même, une écriture par ligne du cadre 7,
 // au même journal et à la même date : sa pièce est le BARÈME KILOMÉTRIQUE de l'exercice, appliqué au
 // kilométrage déclaré. LA LIQUIDATION D'UNE DÉCLARATION DE TVA (ligne 26.8, lib/liquidationTva.ts) de même, une
-// écriture par déclaration, au dernier jour de sa période : sa pièce est la CA3 arrêtée à cette date. Les autres
-// écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
+// écriture par déclaration, au dernier jour de sa période : sa pièce est la CA3 arrêtée à cette date. UNE ÉCHÉANCE DE
+// COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL (ligne 26.6, lib/cotisationPersonnelle.ts) de même, une écriture par
+// échéance, au jour du paiement : sa pièce est le relevé du compte personnel de ce jour (`referenceDuPaiementPersonnel`).
+// Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 export function numeroterFec(
   ecritures: readonly EcritureBrouillon[], pieces: readonly Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en engagement mettrait
@@ -227,6 +237,8 @@ export function numeroterFec(
       cle = `forfait|${e.vehicule_id}|${e.date}`
     } else if (e.declaration_tva_id) {
       cle = `liquidation|${e.declaration_tva_id}|${e.date}`
+    } else if (e.cotisation_id) {
+      cle = `paiement-personnel|${e.cotisation_id}|${e.date}`
     } else {
       horsFec.push(e)
       continue
@@ -260,6 +272,10 @@ export function numeroterFec(
       if (!pieceId && rows[0].declaration_tva_id && !rows[0].ligne_bancaire_id) {
         return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
           pieceRef: referenceDeLaLiquidation(rows[0].date) }
+      }
+      if (!pieceId && rows[0].cotisation_id && !rows[0].ligne_bancaire_id) {
+        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: referenceDuPaiementPersonnel(rows[0].date) }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!

@@ -187,9 +187,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   // UNE ÉCHÉANCE QUE LE RELEVÉ PAIE N'EST PLUS UNE DETTE, même sans versement saisi : l'échéancier des
   // dettes et le plan de trésorerie ne la comptent plus parmi ce qui reste à payer. Avant, seul un
   // versement saisi la retirait, et une cotisation prélevée restait « due » sur l'état qu'on montre à une
-  // banque. Un rapprochement qui ne s'écrit pas (un encaissement sur un appel) ne paie rien.
-  const payeesParLeReleve = new Set(cotisationsDatees.flatMap((c) => (c.ligne ? [c.cotisation.id] : [])))
-  const cotisationsAPayer = cotisations.filter((c) => !payeesParLeReleve.has(c.id))
+  // banque. Un rapprochement qui ne s'écrit pas (un encaissement sur un appel) ne paie rien. NI UNE ÉCHÉANCE
+  // PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (lib/cotisationPersonnelle.ts) : l'organisme est payé, et
+  // l'argent n'est jamais sorti du compte professionnel — le plan de trésorerie n'a rien à en attendre.
+  const payees = new Set(cotisationsDatees.flatMap((c) => (c.ligne || c.paiementPersonnel ? [c.cotisation.id] : [])))
+  const cotisationsAPayer = cotisations.filter((c) => !payees.has(c.id))
   // LES DÉBLOCAGES D'EMPRUNT NE SONT PAS UN RYTHME D'ACTIVITÉ (lib/echeanceEmprunt.ts) : écrits au 512, ils
   // entreraient dans la moyenne des encaissements du plan de trésorerie et flatteraient le taux
   // d'endettement, sur le document qu'on présente à une banque. Le solde, lui, les compte.

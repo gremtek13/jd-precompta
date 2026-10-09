@@ -409,6 +409,12 @@ export interface EcritureBrouillon {
   // autre écriture. Clé sans action à la suppression : une déclaration ne se retire que par
   // `retirer_declaration_tva`, qui emporte sa liquidation.
   declaration_tva_id: string | null
+  // L'échéance de cotisation PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant dont cette écriture est le paiement
+  // (ligne 26.6 — voir lib/cotisationPersonnelle.ts) : à la date du paiement, sans pièce, ni mouvement, ni bien, ni
+  // véhicule, ni déclaration. Nul sur toute autre écriture — une échéance rapprochée s'écrit par son mouvement. Clé en
+  // cascade : supprimer l'échéance emporte son écriture, et la base ne la laisse écrire, modifier ou retirer qu'avec ce
+  // paiement. Une ligne lue de la base le porte toujours ; absent d'un objet construit à la main, il vaut nul.
+  cotisation_id?: string | null
   // Ce que porte une écriture VALIDÉE (ligne 26.6, étape d — voir supabase/essais/validationExercice.sql) :
   // sa date de validation, son journal et son numéro définitif, et les champs du FEC qui se lisaient ailleurs
   // — la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire —, pour que le FEC
@@ -571,6 +577,12 @@ export interface CotisationDeclaree {
   // arrive et corrige le montant (voir CotisationsTab.creerEcheancesProposees).
   previsionnel: boolean
   created_at: string
+  // Le jour où l'exploitant l'a payée DEPUIS SON COMPTE PERSONNEL (ligne 26.6 — voir lib/cotisationPersonnelle.ts) :
+  // un apport, écrit face au compte du dirigeant, et la date à laquelle la 2035 la compte. Nul sinon, et toujours nul
+  // sur une échéance qu'un mouvement paie. Seule `enregistrer_paiement_personnel_cotisation` le pose, avec son
+  // écriture ; tant qu'il est posé, les montants de l'échéance ne changent plus. Une ligne lue de la base le porte
+  // toujours ; absent d'un objet construit à la main, il vaut nul.
+  paiement_personnel_le?: string | null
 }
 
 // Détail par poste (Achats, Loyer, Assurance...) d'un repère annuel — complète le CA et les

@@ -38,6 +38,11 @@
 
 -- ─────────────────────────────── 1. tables ne dépendant que de `dossiers`
 
+-- RÉGÉNÉRÉE LE 09/10/2026 depuis le catalogue, après `paiement_personnel_des_cotisations` (colonne
+-- `paiement_personnel_le`) — ligne 26.6 : la date à laquelle l'exploitant a payé l'échéance depuis son compte
+-- personnel ; nulle tant qu'elle n'est pas payée ainsi. Le déclencheur qui la garde
+-- (`cotisations_declarees_paiement_personnel`) vit dans cette migration-là : ce socle ne porte pas les
+-- déclencheurs d'une table.
 create table public.cotisations_declarees (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -47,6 +52,7 @@ create table public.cotisations_declarees (
   montant_csg_crds numeric,
   created_at timestamp with time zone default now() not null,
   previsionnel boolean default false not null,
+  paiement_personnel_le date,
   constraint cotisations_declarees_pkey PRIMARY KEY (id),
   constraint cotisations_declarees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
 );
@@ -278,7 +284,11 @@ create table public.immobilisations (
 -- quatrième, `vehicule_id`, de même : un véhicule dont le forfait est écrit se retire par
 -- `retirer_vehicule`, qui emporte son forfait. La cinquième, `declaration_tva_id`, de même : une
 -- déclaration de TVA dont la liquidation est écrite se retire par `retirer_declaration_tva`, qui emporte
--- sa liquidation et remet à traiter les mouvements qui la paient.
+-- sa liquidation et remet à traiter les mouvements qui la paient. La sixième, `cotisation_id`, est EN
+-- CASCADE : l'écriture du paiement d'une échéance depuis le compte personnel n'existe que par cette
+-- échéance, et la supprimer emporte son écriture proposée — jamais une écriture validée, que
+-- `ecritures_brouillon_intangibles` refuse de supprimer, ni l'échéance d'un exercice validé, que
+-- `garder_cotisation_valide` refuse à la date du paiement.
 --
 -- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
 -- `immobilisation_id`, sa clé, ses deux contraintes, son index) — ligne 26.6, étape b. Une dotation ne
@@ -290,7 +300,11 @@ create table public.immobilisations (
 -- écriture proposée n'en porte rien. Le déclencheur qui la rend intangible, `ecritures_brouillon_intangibles`,
 -- vit dans cette migration-là : ce socle ne porte pas les déclencheurs d'une table. PUIS LE 06/10/2026, après
 -- `liquidation_de_la_tva` (colonne `declaration_tva_id`, sa clé, sa contrainte, son index) — ligne 26.8 : la
--- liquidation d'une déclaration de TVA ne porte ni pièce, ni mouvement, ni bien, ni véhicule.
+-- liquidation d'une déclaration de TVA ne porte ni pièce, ni mouvement, ni bien, ni véhicule. PUIS LE
+-- 09/10/2026, après `paiement_personnel_des_cotisations` (colonne `cotisation_id`, sa clé, sa contrainte, son
+-- index) — ligne 26.6 : l'écriture d'une échéance de cotisation payée depuis le compte personnel ne porte ni
+-- pièce, ni mouvement, ni bien, ni véhicule, ni déclaration de TVA. Son déclencheur,
+-- `ecritures_brouillon_paiement_personnel`, vit dans cette migration-là.
 create table public.ecritures_brouillon (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -314,13 +328,16 @@ create table public.ecritures_brouillon (
   comp_aux_num text,
   comp_aux_lib text,
   declaration_tva_id uuid,
+  cotisation_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
+  constraint ecritures_brouillon_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_vehicule_id_fkey FOREIGN KEY (vehicule_id) REFERENCES vehicules(id),
+  constraint ecritures_brouillon_cotisation_sans_autre_source CHECK (((cotisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL) AND (declaration_tva_id IS NULL)))),
   constraint ecritures_brouillon_dotation_au_31_decembre CHECK (((immobilisation_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
   constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
   constraint ecritures_brouillon_forfait_au_31_decembre CHECK (((vehicule_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
@@ -345,6 +362,7 @@ CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_broui
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
 CREATE INDEX ecritures_brouillon_declaration_tva_id_idx ON public.ecritures_brouillon USING btree (declaration_tva_id);
+CREATE INDEX ecritures_brouillon_cotisation_id_idx ON public.ecritures_brouillon USING btree (cotisation_id);
 CREATE INDEX ecritures_brouillon_dossier_date_idx ON public.ecritures_brouillon USING btree (dossier_id, date);
 CREATE INDEX ecritures_brouillon_piece_validee_idx ON public.ecritures_brouillon USING btree (piece_id) WHERE (statut = 'validee'::text);
 

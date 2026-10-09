@@ -14226,3 +14226,169 @@ trouve prêt : le jumeau du solde et la règle de l'ouverture, les littéraux ex
 dans la migration et l'essai, à reprendre mot pour mot avant le clic et à confronter au texte de la fonction ; R3 :
 l'appel `justifier_solde` (onze paramètres, rend la décision écrite), deux tables lisibles par `lireTout` sous la RLS du
 cabinet, la sauvegarde et la restauration déjà faites.
+
+### 09/10/2026 — UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL S'ÉCRIT — LIGNE 26.6
+
+(Migration `paiement_personnel_des_cotisations`, version 20261009084127 ; `retrait_du_paiement_personnel`, à coller par
+le cabinet ; `src/lib/cotisationPersonnelle.ts` et son test ; `cotisationRapprochee.ts`, `concordance2035.ts`,
+`declaration2035.ts`, `fec.ts`, `pisteAudit.ts`, `prealablesValidation.ts`, `appariementBanque.ts`, `sauvegarde.ts`,
+`types.ts`, `ClotureTab.tsx`, `FinancementTab.tsx` ; la copie de l'assistant (`agent-comptable`) ; les essais
+`cotisationPersonnelle.sql` et `retraitPaiementPersonnel.sql`, le contrôle 141 de `validationExercice.sql` ; le socle.)
+**LE CONSTAT** (« UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », CE QUI RESTE) : une échéance payée de la poche de
+l'exploitant n'avait ni mouvement ni écriture — la 2035 la comptait à son échéance, le FEC nulle part, et la concordance
+la disait en écart : son exercice ne se validait pas, sans geste pour le lever.
+
+**LA RÈGLE.** Ce que le dirigeant paie de sa poche pour son activité est un APPORT, comme une note de frais : l'échéance
+s'écrit face au compte du dirigeant (`compteDuDirigeant`) au lieu de la banque — « les apports ou les retraits
+personnels de l'exploitant […] sont enregistrés en cours d'exercice dans le compte 108 » (PCG au 1er janvier 2026, art.
+1211-10, I ; son solde passe au 101 en fin d'exercice). En trésorerie ce compte EST le 108000 : la CSG-CRDS qu'il prend
+au débit et l'apport qu'il reçoit au crédit s'y compensent, et l'écriture garde leur solde — la cotisation hors CSG-CRDS
+au 646000 face au 108000 ; une échéance toute de CSG-CRDS n'écrit rien. La 2035 dit la même chose (le moteur ôte la
+CSG-CRDS du 646000). Le sens vient du signe de l'échéance (un remboursement reçu sur le compte personnel : un
+prélèvement). Une écriture, une date : celle du PAIEMENT, que le cabinet saisit — jamais proposée —, et la 2035 compte
+l'échéance ce jour-là (CGI, art. 93 ; BOI-BNC-BASE-40-60-50-20 § 270 : les cotisations comptent « l'année au cours de
+laquelle elles ont été effectivement payées »).
+
+**EN ENGAGEMENT, DÉCIDÉ : ÉCRIRE, PAS REFUSER.** Toute l'échéance au 646000, face au compte choisi pour le dirigeant
+(455, 108 ou 467) — celui de ses notes de frais et de ses virements personnels : deux comptes pour la même personne
+partageraient ce qu'on lui doit. Refuser laissait une charge réelle sans écriture, et la validation en engagement n'a
+pas de concordance pour le voir.
+
+**JAMAIS LES DEUX.** Une échéance se paie par un mouvement OU par le compte personnel : la fonction le refuse, et deux
+déclencheurs le tiennent sans elle — sur l'échéance (la date ne se pose pas sur une échéance rapprochée), sur le
+mouvement (`cotisation_id` ne désigne pas une échéance payée, sous un verrou PARTAGÉ de sa ligne, que la fonction prend
+en exclusif) ; le module le dit avant le clic, en dernier, comme la base (`refusRapprochementCotisation`), et
+l'appariement ne la propose plus. Cinq scénarios de deux sessions sur une réplique : la seconde attend la première, puis
+la voit.
+
+**LA FONCTION** `enregistrer_paiement_personnel_cotisation(dossier, échéance, date, écriture)` (SECURITY DEFINER) :
+l'accès au dossier annoncé avant de rien lire, puis seize refus dans l'ordre que le module reprend sous les mêmes mots
+(`REFUS_PAIEMENT_PERSONNEL`, confronté au texte de la migration ET aux messages lus en base par l'essai) — l'échéance du
+dossier, déjà payée, rapprochée, figée ; la date absente, d'avant 2000, dans l'avenir (à Paris), figée, d'avant
+l'ouverture d'un dossier repris ; les montants (nulle, au centime, CSG-CRDS au centime et pas au-delà) ; l'écriture
+illisible ou qui n'est pas celle qu'elle refait en centimes entiers ; un déséquilibre, défensif. Les déclencheurs ne
+laissent poser la date et écrire l'écriture qu'à elle (le réglage `jd.paiement_personnel` de la transaction, sur
+l'échéance qu'elle écrit) et à la restauration (le super-administrateur, dans un dossier sans exercice validé) ; une
+échéance payée ne change plus ni de montants ni de dossier ; l'écriture ne se modifie pas, et ne part qu'avec son
+échéance, son dossier, ou le retrait. La clé `ecritures_brouillon.cotisation_id` est EN CASCADE.
+
+**LA VALIDATION FIGE AUSSI LE PAIEMENT** : `garder_cotisation_valide` date une échéance par son mouvement, sinon son
+paiement personnel, sinon son échéance. Le contrôle 141 de `validationExercice.sql` attendait la liste du 07/10 au matin
+: `garder_factures_validees` (le 07/10 au soir) y manquait déjà — il serait tombé à tout rejeu —, et
+`garder_ecriture_paiement_personnel` s'y ajoute.
+
+**LE RETRAIT SE COLLE** : `retirer_paiement_personnel_cotisation` (cinq refus, module `refusRetraitPaiementPersonnel`)
+supprime des lignes du brouillon dans son corps — une migration à part, que le cabinet colle avec sa ligne d'historique
+(bloc répété sur une réplique : la ligne rend l'empreinte 87853d28…). `cotisationPersonnelle.test.ts` confronte ses
+refus à son essai, et au texte de la fonction dès que l'export la porte (`RETRAIT_EXPORTE`, à passer à `true` avec son
+fichier).
+
+**CE QUI LE LIT.** La 2035 (`cotisationsComptees` : `paiementPersonnel`), la concordance (l'écriture désigne l'échéance
+; motif `paiement_personnel_refuse`), un préalable défensif (`paiements-personnels-a-reprendre` : l'écriture manque ou
+ne suit plus — une sauvegarde restaurée, un modèle changé sur un brouillon vide), le FEC (journal OD, pièce « Compte
+personnel du JJ/MM/AAAA », datée du paiement), la piste d'audit (ce relevé pour justificatif, sans empreinte plutôt
+qu'une preuve qu'il n'y a pas), Clôture (`compteeASonEcheance`), Financement (payée, rien à attendre du plan de
+trésorerie), la sauvegarde (la relation en cascade), l'assistant (le refus du rapprochement, sa lecture, une règle du
+prompt). Chaque endroit qui énumère les sources d'une écriture la connaît, ou l'écarte par construction : l'analyse du
+brouillon, `ecrituresSansObjet` et les lettrages partent de la pièce, les contrôles de l'assistant chacun de sa clé, et
+la vue des comptes de tiers d'un dossier en engagement la range, comme un virement personnel, parmi les « Écritures sans
+pièce » du compte du dirigeant. L'écran est décrit pour une phase C (Cotisations), pas écrit.
+
+**ÉPROUVÉ.** Sur une réplique dont `signature.sql` dit qu'elle EST la production (avant, puis après la migration) :
+l'essai, 90 contrôles ; l'essai du retrait, 24 ; quinze contrôles de suppression et d'un membre non
+super-administrateur, hors du dépôt ; cinquante-six mutations de la base, toutes mordent après un témoin vert ; les
+treize essais qui tournent sur la réplique (abandonTransmission, connexionBancaire, encaissementsFactures, factures,
+forfaitKilometrique, lettrageManuel, liquidationTva, receptionPlateforme, reportDesSoldes, statutTva,
+statutsFacturesRecus, transmissionsEncaissements, transmissionsFactures), mêmes verdicts avant et après — à l'identique,
+aux identifiants tirés au hasard près. En production, sans suppression : l'essai 90/90 (rejoué après
+`revision_des_soldes`, le même texte : les mêmes 90), et rejoués cotisationRapprochee 49/49, validationExercice 151/151,
+reglesAffectation 23/23, virementPersonnel 28/28, dotations 30/30, affectation 34/34, reglementGroupe 48/48,
+echeanceEmprunt 48/48, compteBilan 62/62, ventilation 66/66 — chaque texte reçu égal à sa copie par son empreinte ;
+`rls.sql` en entier, 0 en faute, quatorze mutations qui mordent. L'export : dérive 104 = 104 (avec les deux migrations
+des autres agents, hors du correctif), socle 78 instructions (une de plus : l'index), inventaire 1 365 objets, égaux des
+deux côtés ; `forfaitKilometrique` aussi, 35/35 en production (les deux contrôles de contraintes qui manquent de données
+sur la réplique y passent). La barrière, allégée après un redémarrage du conteneur : `tsc -b` vert ; `tsc -p
+tsconfig.edge.json` aux vingt-cinq erreurs connues, les mêmes ; lint, soixante-trois avertissements, les mêmes ; build
+vert ; mes huit fichiers de test et les trente des modules touchés (dont les gardes des copies de l'assistant et les
+scanners des Edge Functions), 1 878 tests, verts sous Paris, UTC, New York et Auckland ; la suite entière sous Paris, 6
+055 tests (63 de plus que la base : 40 du module, 23 dans les fichiers voisins), verte, sans un délai dépassé. Le banc
+des débordements, sur un port à part : 0 à 1 440, 1 280, 1 024, 720 et 390 px. Cinquante-six mutations du code (le
+module, les montants et la date de `cotisationRapprochee.ts`, la concordance, la 2035, le FEC, la piste d'audit, le
+préalable, l'appariement, la copie de l'assistant) mordent toutes, après un témoin vert, chaque fichier remis et vérifié
+par comparaison à sa copie. Le jour où le fichier du retrait entrera dans l'export, répété : le test vire au rouge tant
+que `RETRAIT_EXPORTE` n'est pas basculé, puis passe.
+
+**LA CONCURRENCE EN BASE.** Deux migrations d'autres agents ont été appliquées autour de celle-ci :
+`identite_des_factures_recues` (avant) et `revision_des_soldes` (après) ; aucune ne touche un objet de celle-ci. Leurs
+textes, relevés de l'historique pour les contrôles de l'export (le second en quatre morceaux, bordures marquées, chacun
+vérifié par son empreinte), ne sont pas dans le correctif.
+
+**CE QUI RESTE.** L'écran (phase C, après le retrait collé) ; l'assistant ne compte pas encore les paiements à reprendre
+(un préalable défensif) ; le FEC à vingt-deux champs d'un BNC ; et `restauration.sql`, qui ne tourne plus : sur la
+réplique, avant comme après la migration, il s'arrête à sa ligne 96, sur une table que son schéma d'essai ne crée pas
+(`connexions_bancaires`, du 30/09) — un défaut de l'essai, antérieur, à reprendre à part.
+
+### 09/10/2026 — L'OPÉRATION DÉCOUVERTE APRÈS COUP : LA CONCEPTION — LIGNE 26.6
+
+Rien d'écrit : une conception, et des questions au cabinet. Sources lues le 09/10/2026 : le PCG consolidé au 1er janvier
+2026 (recueil de l'ANC : art. 111-1, 122-6, 1021-1 à 1032-2) ; CGI art. 93, 93 A et 99 (Légifrance) ;
+BOI-BNC-BASE-20-10-10 (§ 1, § 10), BOI-BNC-BASE-40-10 (§ 260, version du 22/07/2026), BOI-BNC-BASE-40-60-50-20 (§ 270 à
+300), BOI-CF-IOR-60-40-20 (§ 120, § 190) ; LPF art. A47 A-1 (le tableau des BNC en trésorerie) ; la fiche « Déclarer le
+résultat BNC » d'impots.gouv.fr (23/10/2025).
+
+**CE QU'EXIGE L'ARTICLE 1031-4.** « Pour les comptabilités informatisées lorsque la date de l'opération correspond à une
+période déjà figée par la clôture, l'opération concernée est enregistrée à la date du premier jour de la période non
+encore clôturée, avec mention expresse de sa date de survenance. » Ses voisins : la validation interdit toute
+modification (1031-3) ; chaque écriture cite sa pièce, datée (1032-1, 1032-2) ; une correction d'erreur ou d'omission
+passe au résultat de l'exercice où elle est constatée, sur une ligne séparée si elle est significative (122-6). Dans
+l'application, la clôture est la validation d'un exercice : « le premier jour de la période non encore clôturée » est le
+lendemain de la frontière, le 1er janvier du premier exercice non validé. Le PCG ne s'impose qu'aux entités tenues
+d'établir des comptes annuels (111-1) ; un BNC en trésorerie tient un livre-journal de ses recettes et dépenses (CGI,
+art. 99) : l'application suit 1031-3 et 1031-4 par choix, celui de la validation (décision du 04/10/2026).
+
+**POUR UN BNC EN TRÉSORERIE, LES DEUX ANNÉES DIVERGENT.** En comptabilité, l'opération s'écrit en N+1. À l'impôt, elle
+appartient à l'année de son PAIEMENT : les recettes « encaissées au cours de l'année d'imposition », quelle que soit
+l'année des opérations (BOI-BNC-BASE-20-10-10 § 1) ; les dépenses « effectivement acquittées au titre de l'année
+d'imposition » (BOI-BNC-BASE-40-10 § 260), rattachées « à l'année civile au cours de laquelle elles ont été
+effectivement acquittées » (CE, 4 juillet 1973, n° 78172). Donc une 2035 RECTIFICATIVE de N — complète, elle « annule et
+remplace » —, la 2042 de N corrigée en conséquence, et rien dans la 2035 de N+1. NON VÉRIFIÉ : la procédure exacte
+(rectificative spontanée ou réclamation, LPF R*196-1), les intérêts d'une recette omise, une tolérance pour reporter une
+petite dépense (aucune trouvée), la portée du § 290 de BOI-BNC-BASE-40-60-50-20 (des cotisations « mêmes impayées »
+déductibles l'année où elles sont dues : il suit le § 280, qui vise l'option 93 A), la TVA d'un dossier assujetti.
+
+**POUR LA BASE.** La frontière reste : rien ne s'écrit à une date figée. Une régularisation est une écriture datée du
+LENDEMAIN DE LA FRONTIÈRE — la date que la base vérifie elle-même, sous le verrou partagé de la validation —, qui porte
+sa date de survenance (une colonne `date_survenance`, antérieure ou égale à la frontière, obligatoire sur elle, nulle
+ailleurs) et sa source : la pièce (elle existe déjà : `dansUnExerciceValide`, « payee », « note_de_frais », « facture »)
+ou, pour ce qui n'a pas de ligne dans l'application (un paiement depuis le compte personnel, une recette sans pièce),
+une ligne d'une table `regularisations` (nature, catégorie ou compte, montant, date de survenance, motif obligatoire,
+auteur). Une fonction `enregistrer_regularisation` (SECURITY DEFINER) vérifie l'écriture composée par l'application,
+comme les autres ; son retrait, qui supprime, se colle. Une échéance de cotisation d'un exercice validé ne s'insère pas
+(`garder_cotisation_valide`) : son paiement découvert après passe par une régularisation, pas par une échéance.
+
+**POUR LA 2035.** Le moteur compte une source à la date de son paiement (`rattachement.ts`) : la régularisation PORTE ce
+paiement — sa date de survenance, en trésorerie le jour où l'argent est sorti ou entré —, elle tombe donc en N, jamais
+en N+1, et la 2035 de N+1 reste juste sans rien changer. La 2035 rectificative de N est le moteur rejoué sur N avec ses
+régularisations ; sa différence avec la 2035 validée (gardée dans `exercices_valides.declaration`) doit être exactement
+les régularisations, sinon c'est autre chose qui a changé, et elle le dit. Gardée à part (une table
+`declarations_rectificatives`, immuable une fois notée déposée), jamais dans l'exercice validé. LA CONCORDANCE range une
+écriture par l'année de `coalesce(date_survenance, date)` : celle de N+1 ne voit plus la régularisation, celle de la
+rectificative de N la retrouve.
+
+**POUR LE FEC.** Celui de N+1 la porte : EcritureDate = le 1er janvier N+1 (la date de comptabilisation, A47 A-1 champ 4
+; BOI-CF-IOR-60-40-20 § 120) ; PieceRef et PieceDate = la pièce, datée en N (champ 10) ; la mention expresse dans
+EcritureLib (« opération du JJ/MM/AAAA ») ; et, dans le tableau des BNC en trésorerie, DateRglt (champ 19) = le paiement
+en N, le jour où l'application produira ces vingt-deux champs. Celui de N ne change pas. NON VÉRIFIÉ : ce que Test
+Compta Demat dit d'une PieceDate antérieure à l'exercice.
+
+**OÙ LE GESTE NAÎTRA.** Les refus d'aujourd'hui en sont les portes : « … : un paiement ne s'y déclare plus. » (le
+paiement personnel d'une échéance, daté dans un exercice validé), « … : cette échéance ne change plus. », et les pièces
+`dansUnExerciceValide` dont `ecritures.ts` dit déjà qu'elles « relèvent de l'exercice suivant (PCG, art. 1031-4) » et
+que rien ne les écrira. Chacun offrira « Régulariser sur l'exercice AAAA », avec sa confirmation qui nomme la date de
+l'écriture, la date de survenance, la rectificative de N et la 2042.
+
+**LE MODÈLE PROPOSÉ, PAR ÉTAPES.** (1) Trésorerie seulement : les pièces d'un exercice validé (dépenses, recettes) et
+les paiements depuis le compte personnel, en régularisation datée du lendemain de la frontière ; (2) la 2035
+rectificative préparée, notée déposée par le cabinet, et la validation de N+1 qui l'attend ; (3) le FEC à vingt-deux
+champs ; (4) l'engagement (122-6, et 93 A) et un relevé entier découvert après, après les réponses du cabinet. Les
+questions (B1 à B13) et mes recommandations sont dans `questions_cabinet.md`.

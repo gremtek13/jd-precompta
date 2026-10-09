@@ -21,7 +21,7 @@ import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { natureDuCompte } from '../../lib/affectationBanque'
-import { cotisationsComptees } from '../../lib/cotisationRapprochee'
+import { compteeASonEcheance, cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -694,11 +694,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
   // « facturée en décembre et payée on ne sait quand ».
   const sansPaiement = declarationsOuvertes.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
-  // Les échéances de cotisation qu'aucun prélèvement rapproché ne date : elles comptent à leur échéance,
-  // pour le versement saisi ou l'appel — une SUPPOSITION, dite comme celle des pièces ci-dessus
-  // (lib/cotisationRapprochee.ts). Seulement celles des exercices affichés.
+  // Les échéances de cotisation qu'aucun paiement connu ne date — ni un prélèvement rapproché, ni un paiement depuis le
+  // compte personnel (lib/cotisationPersonnelle.ts) : elles comptent à leur échéance, pour le versement saisi ou l'appel —
+  // une SUPPOSITION, dite comme celle des pièces ci-dessus (lib/cotisationRapprochee.ts). Seulement celles des exercices
+  // affichés.
   const echeancesSansPaiement = comptees
-    .filter((c) => c.ligne === null && exercices.includes(anneeDe(c.date)) && ouvert(anneeDe(c.date)))
+    .filter((c) => compteeASonEcheance(c) && exercices.includes(anneeDe(c.date)) && ouvert(anneeDe(c.date)))
     .sort((x, y) => x.date.localeCompare(y.date))
 
   // LA CARTE DES POSTES MANQUANTS VIT DANS LES DEUX MODÈLES. En engagement la 2035 n'est pas produite,

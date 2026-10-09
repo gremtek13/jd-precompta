@@ -5,6 +5,8 @@ import {
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
+import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
+import { cotisationsComptees } from './cotisationRapprochee'
 import { paiementsDesPieces } from './rattachement'
 import { lignesPourPiece } from './ecritures'
 import type { ModeleComptable } from './engagement'
@@ -617,6 +619,11 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       cotisations: [echeance('c1', D(a, '02-05'), 500)],
       lignes: [L1, ligne('l2', { date: D(a, '02-05'), montant: 500, cotisation_id: 'c1' })],
     })],
+    // Une échéance payée depuis le compte personnel sans son écriture : défensif, la base les écrit ensemble. Elle compte
+    // dans l'exercice de son PAIEMENT — ici un paiement de décembre qui reste dans l'exercice de l'échéance de novembre.
+    ['paiements-personnels-a-reprendre', (a) => ({
+      cotisations: [{ ...echeance('c1', D(a, '11-05'), 500), paiement_personnel_le: D(a, '12-20') }],
+    })],
     ['rapproches-sans-objet', (a) => ({ lignes: [L1, ligne('l2', { date: D(a, '09-01'), montant: -15 })] })],
     ['reglements-groupes-incoherents', (a) => ({
       lignes: [L1, ligne('l2', { date: D(a, '09-01'), montant: -100, reglement_groupe: true })],
@@ -718,6 +725,44 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
+  })
+})
+
+// UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : déclarée avec son écriture, elle ne
+// bloque plus la validation — la 2035 la compte au jour du paiement, son écriture la porte ce jour-là, la concordance les
+// trouve d'accord, et la numérotation la range au journal des opérations diverses. Avant elle, une échéance payée de la
+// poche de l'exploitant restait en écart, sans geste pour le lever.
+describe('prealablesDeValidation — une échéance payée depuis le compte personnel', () => {
+  const payee: CotisationDeclaree = { ...echeance('c1', '2025-05-05', 500), montant_csg_crds: 48.5, paiement_personnel_le: '2025-05-10' }
+  const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000' })
+    .map((l, i) => ecriture(`pp${i}`, { piece_id: null, cotisation_id: 'c1', date: '2025-05-10', ...l }))
+
+  // La 2035 et la concordance recalculées AVEC les échéances, comme les écrans les calculent (`cotisationsComptees`).
+  function avecCotisations(o: Surcharges): DonneesDeValidation {
+    const d = donnees(o)
+    const declaration = calculerDeclaration2035(
+      d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
+      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [],
+    )
+    const concordance = concordance2035(
+      declaration, d.ecritures, { piecesValidees: new Set(d.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set() }, null,
+    )
+    return { ...d, declaration, concordance }
+  }
+
+  it('déclarée avec son écriture : rien à redire, et son écriture est numérotée au journal OD', () => {
+    const etat = prealablesDeValidation(avecCotisations({ cotisations: [payee], ecritures: [E1, E2, ...ecrite] }))
+    expect(etat.prealables).toEqual([])
+    expect(etat.numerotation!.lignes.filter((l) => l.ecriture.cotisation_id === 'c1').map((l) => [l.journal, l.pieceRef]))
+      .toEqual([['OD', 'Compte personnel du 10/05/2025'], ['OD', 'Compte personnel du 10/05/2025']])
+  })
+
+  it('sans paiement connu, l’échéance reste en écart dans la concordance — la règle d’avant', () => {
+    expect(ids(avecCotisations({ cotisations: [{ ...payee, paiement_personnel_le: null }] }))).toContain('concordance')
+  })
+
+  it('payée sans son écriture : la concordance le dit, et le paiement est à reprendre', () => {
+    expect(ids(avecCotisations({ cotisations: [payee] }))).toEqual(expect.arrayContaining(['concordance', 'paiements-personnels-a-reprendre']))
   })
 })
 
