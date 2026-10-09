@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './sauvegarde'
+import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './sauvegarde'
 
 // LE REGISTRE DES ENCAISSEMENTS NE S'ÉCRIT QUE PAR SES DEUX FONCTIONS (ligne 28.5, étape d3).
 //
@@ -14,12 +14,24 @@ import { TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PAR_VAGUES } from './s
 // mêmes portes avec un montant que personne n'aurait plafonné — et rien d'autre que ce test ne la verrait : les tests
 // d'écran doublent Supabase.
 //
+// SES DÉCLARATIONS NON PLUS (ligne 28.5, étape d4) : `transmissions_encaissements` garde ce qui a été dit à
+// l'administration, qui ne dédoublonne pas — une déclaration inscrite deux fois, ou effacée, ferait compter deux fois un
+// encaissement, ou laisserait retirer un encaissement déclaré. Dans `src/`, seule `declarer_encaissement_hors_application`
+// l'écrit (et `annuler_encaissement` écrit la contre-passation au registre) ; la policy laisse la même porte à la
+// restauration, et à elle seule. Les Edge Functions des étapes d6 et d8 l'écriront avec la clé secrète, sous la garde de
+// la base (migration transmissions_des_encaissements) : aujourd'hui aucune ne l'écrit, et le jour où l'une le fera, elle
+// s'inscrira ici, nommément.
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
 // nombre. Un plancher distingue « zéro faute » d'« aveugle ». Et il est éprouvé par des défauts plantés, plus bas.
 
 export const TABLES_DU_REGISTRE = ['encaissements_factures', 'encaissements_factures_taux'] as const
+export const TABLES_DES_DECLARATIONS = ['transmissions_encaissements'] as const
+
+// Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
+const FONCTIONS_QUI_DECLARENT: readonly string[] = []
 
 /**
  * Les fichiers qui écrivent dans une table qu'ils ne nomment pas en clair, avec la raison et le NOMBRE de ces écritures.
@@ -116,12 +128,14 @@ export function sitesFrom(source: Source): SiteFrom[] {
 }
 
 /**
- * Les écritures directes qui pourraient atteindre le registre : celles qui nomment une de ses tables, et celles dont la
- * table ne se lit pas — sauf dans un fichier dispensé, au nombre près.
+ * Les écritures directes qui pourraient atteindre l'une des `tables` : celles qui en nomment une, et celles dont la table
+ * ne se lit pas — sauf dans un fichier dispensé, au nombre près.
  */
-export function ecrituresDuRegistre(
+export function ecrituresDesTables(
   sources: readonly Source[],
-  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+  tables: readonly string[],
+  exceptions: Record<string, { nombre: number; raison: string }>,
+  qui: string,
 ): string[] {
   const fautes: string[] = []
   const illisiblesParFichier = new Map<string, number>()
@@ -133,14 +147,33 @@ export function ecrituresDuRegistre(
       if (!exceptions[site.chemin]) fautes.push(`${lieu} — .${site.ecriture}() sur une table que le scanner ne sait pas nommer`)
       continue
     }
-    const visee = site.tables.find((t) => (TABLES_DU_REGISTRE as readonly string[]).includes(t))
-    if (visee) fautes.push(`${lieu} — .${site.ecriture}() sur ${visee} : seules ses deux fonctions l’écrivent`)
+    const visee = site.tables.find((t) => tables.includes(t))
+    if (visee) fautes.push(`${lieu} — .${site.ecriture}() sur ${visee} : ${qui}`)
   }
   for (const [chemin, { nombre }] of Object.entries(exceptions)) {
     const reel = illisiblesParFichier.get(chemin) ?? 0
     if (reel !== nombre) fautes.push(`exception « ${chemin} » annonce ${nombre} écriture(s) illisible(s), il y en a ${reel}`)
   }
   return fautes
+}
+
+/** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
+export function ecrituresDuRegistre(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DU_REGISTRE, exceptions, 'seules ses deux fonctions l’écrivent')
+}
+
+/** Les déclarations, dans `src/` : la porte de la restauration exceptée, seule leur fonction les écrit. */
+export function ecrituresDesDeclarations(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(
+    sources.filter((s) => s.chemin.startsWith('src/')), TABLES_DES_DECLARATIONS, exceptions,
+    'seule declarer_encaissement_hors_application les écrit',
+  )
 }
 
 describe('le registre des encaissements ne s’écrit que par ses deux fonctions', () => {
@@ -158,12 +191,37 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((t) => t.table)).toContain('encaissements_factures')
   })
 
-  it('les deux fonctions ne s’appellent que de la fenêtre des encaissements', () => {
+  it('les quatre fonctions ne s’appellent que de la fenêtre des encaissements', () => {
     const appelants = (fonction: string) => sources
       .filter((s) => new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(s.texte)))
       .map((s) => s.chemin)
-    expect(appelants('enregistrer_encaissement')).toEqual(['src/pages/dossier/EncaissementsFactureModal.tsx'])
-    expect(appelants('retirer_encaissement')).toEqual(['src/pages/dossier/EncaissementsFactureModal.tsx'])
+    const quatre = ['enregistrer_encaissement', 'retirer_encaissement', 'declarer_encaissement_hors_application', 'annuler_encaissement']
+    for (const fonction of quatre) {
+      expect(appelants(fonction), fonction).toEqual(['src/pages/dossier/EncaissementsFactureModal.tsx'])
+    }
+    // Lues dans les sources, et non dans la liste : une fonction qui écrirait le registre ou ses déclarations sans y
+    // figurer — ou une liste raccourcie — se voit.
+    const appelees = new Set(sources.flatMap((s) =>
+      [...sansCommentairesPleins(s.texte).matchAll(/\.rpc\(\s*['"](\w*encaissement\w*)['"]/g)].map((m) => m[1])))
+    expect([...appelees].sort()).toEqual([...quatre].sort())
+  })
+
+  it('aucune écriture directe des déclarations dans src/, hors de la restauration', () => {
+    expect(ecrituresDesDeclarations(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function n’écrit encore les déclarations, sauf celles qui s’inscrivent nommément', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    const ecrivent = [...new Set(fonctions.flatMap(sitesFrom)
+      .filter((s) => s.ecriture != null && (s.tables == null || s.tables.some((t) => (TABLES_DES_DECLARATIONS as readonly string[]).includes(t))))
+      .map((s) => s.chemin))]
+    expect(ecrivent).toEqual(FONCTIONS_QUI_DECLARENT)
+  })
+
+  it('la restauration rejoue les déclarations par l’insertion, jamais par sa seconde passe', () => {
+    expect(ORDRE_RESTAURATION).toContain('transmissions_encaissements')
+    const secondes = [...TABLES_AUTO_REFERENCEES, ...TABLES_AUTO_REFERENCEES_PAR_VAGUES].map((t) => t.table)
+    for (const t of TABLES_DES_DECLARATIONS) expect(secondes).not.toContain(t)
   })
 
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
@@ -174,7 +232,12 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(new Set(nommes.flatMap((s) => s.tables ?? [])).size).toBeGreaterThanOrEqual(40)
     expect(sites.filter((s) => s.ecriture != null).length).toBeGreaterThanOrEqual(80)
     // Les deux tables du registre sont LUES par les écrans : le scanner les voit passer.
-    for (const t of TABLES_DU_REGISTRE) expect(nommes.some((s) => s.tables?.includes(t) && s.ecriture == null), t).toBe(true)
+    for (const t of [...TABLES_DU_REGISTRE, ...TABLES_DES_DECLARATIONS]) {
+      expect(nommes.some((s) => s.tables?.includes(t) && s.ecriture == null), t).toBe(true)
+    }
+    // Les déclarations sont lues par la fenêtre ET par l'onglet : le scanner voit les deux.
+    expect(new Set(nommes.filter((s) => s.tables?.includes('transmissions_encaissements')).map((s) => s.chemin)))
+      .toEqual(new Set(['src/pages/dossier/EncaissementsFactureModal.tsx', 'src/pages/dossier/FacturesTab.tsx']))
     // Les Edge Functions sont parcourues.
     expect(sites.some((s) => s.chemin.startsWith('supabase/functions/'))).toBe(true)
     // Une table passée par un paramètre typé se lit : le dépôt d'une pièce ou d'un document.
@@ -217,6 +280,25 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(ecrituresDuRegistre([{ chemin: 'src/r.ts', texte }], { 'src/r.ts': { nombre: 2, raison: 'essai' } })).toEqual([])
     expect(ecrituresDuRegistre([{ chemin: 'src/r.ts', texte }], { 'src/r.ts': { nombre: 1, raison: 'essai' } }))
       .toEqual(['exception « src/r.ts » annonce 1 écriture(s) illisible(s), il y en a 2'])
+  })
+
+  it('attrape une écriture directe des déclarations, par une chaîne ou une constante ; ne voit pas l’Edge Function', () => {
+    const jugerD = (texte: string, chemin = 'src/faux.ts') => ecrituresDesDeclarations([{ chemin, texte }], {})
+    expect(jugerD(`
+      await supabase
+        .from('transmissions_encaissements')
+        .insert({ encaissement_id: id, canal: 'manuel', hote, etat: 'depose' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur transmissions_encaissements : seule declarer_encaissement_hors_application les écrit'])
+    expect(jugerD(`
+      const DECLARATIONS = 'transmissions_encaissements'
+      await supabase.from(DECLARATIONS).update({ etat: 'accepte' }).eq('id', id)`)).toHaveLength(1)
+    expect(jugerD(`await supabase.from('transmissions_encaissements').delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerD(`await supabase.from(table).upsert(lignes)`)).toEqual(['src/faux.ts:1 — .upsert() sur une table que le scanner ne sait pas nommer'])
+    // Une lecture ne crie pas ; une Edge Function relève du test qui les nomme.
+    expect(jugerD(`await supabase.from('transmissions_encaissements').select('*', { count: 'exact' })`)).toEqual([])
+    expect(jugerD(`await admin.from('transmissions_encaissements').insert(x)`, 'supabase/functions/f/index.ts')).toEqual([])
+    // Le registre, lui, ne prend pas la déclaration pour une de ses tables.
+    expect(juger(`await supabase.from('transmissions_encaissements').insert(x)`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {

@@ -2,14 +2,18 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
-import type { EncaissementFacture, EncaissementFactureTaux, FactureEmise, LigneBancaire, StatutTva } from '../../lib/types'
+import type {
+  EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, StatutTva, TransmissionEncaissement,
+  TransmissionFacture,
+} from '../../lib/types'
 
-// LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étape d3). Ce que ces cas gardent, et qu'aucun test du
-// module d2 ne voit parce que tout vit dans le câblage : les refus de la base dits AVANT le clic et le bouton grisé
-// tant qu'un refus tient ; un seul enregistrement pour plusieurs clics, et le verrou tenu jusqu'après la relecture ; une
-// erreur de la base dite, et le verrou relâché ; rien de proposé sur une lecture partielle ; le retrait et sa
-// confirmation, qui nomme ce qu'on retire ; la liste relue et les propositions recalculées après chaque geste. Le faux
-// client APPLIQUE les filtres qui décident de ce que la fenêtre voit (src/test/filtresPostgrest.ts). Données FICTIVES.
+// LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étapes d3 et d4). Ce que ces cas gardent, et qu'aucun
+// test du module d2 ne voit parce que tout vit dans le câblage : les refus de la base dits AVANT le clic et le bouton
+// grisé tant qu'un refus tient ; un seul appel pour plusieurs clics, et le verrou tenu jusqu'après la relecture ; une
+// erreur de la base dite, et le verrou relâché ; rien de proposé sur une lecture partielle ; le retrait, la déclaration
+// hors application et la contre-passation, et leurs confirmations, qui nomment ce qu'on écrit ; la liste relue et les
+// propositions recalculées après chaque geste. Le faux client APPLIQUE les filtres qui décident de ce que la fenêtre voit
+// (src/test/filtresPostgrest.ts). Données FICTIVES.
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, Record<string, unknown>[]>,
   // Lecture partielle : la table cesse de rendre des lignes au-delà de ce rang, en annonçant le vrai total.
@@ -33,8 +37,30 @@ vi.mock('../../lib/supabase', async () => {
   let barriere: Promise<void> | null = null
   const executer = (nom: string, args: Record<string, unknown>) => {
     if (faux.erreurRpc) return { data: null, error: { message: faux.erreurRpc } }
-    // Ce que font les deux fonctions de la base (supabase/schema/20261008180607_encaissements_des_factures.sql).
-    if (nom === 'enregistrer_encaissement') {
+    // Ce que font les quatre fonctions de la base (supabase/schema/20261008180607_encaissements_des_factures.sql et
+    // 20261008221156_transmissions_des_encaissements.sql), sans leurs refus : l'écran les dit avant le clic.
+    if (nom === 'declarer_encaissement_hors_application') {
+      const e = faux.tables.encaissements_factures.find((x) => x.id === args.p_encaissement_id) as Record<string, unknown>
+      // L'hôte que la base inscrit : celui où l'encaissement annulé a été déclaré, ou celui qui a accepté la facture.
+      const hote = e.annule_id != null
+        ? faux.tables.transmissions_encaissements.find((d) => d.encaissement_id === e.annule_id)?.hote
+        : faux.tables.transmissions_factures.find((t) => t.facture_id === e.facture_id && t.etat !== 'echec')?.hote
+      faux.tables.transmissions_encaissements.push({
+        id: `t-enc-${faux.rpcs.length}`, dossier_id: args.p_dossier_id, encaissement_id: e.id, facture_id: e.facture_id,
+        canal: 'manuel', hote, flux_id: null, sha256: null, etat: 'depose', detail: null, note: args.p_note, cree_par: null,
+        cree_le: '2027-11-02T10:00:00Z', maj_le: '2027-11-02T10:00:00Z',
+      })
+    } else if (nom === 'annuler_encaissement') {
+      const e = faux.tables.encaissements_factures.find((x) => x.id === args.p_encaissement_id) as Record<string, unknown>
+      const id = `e-cp-${faux.rpcs.length}`
+      faux.tables.encaissements_factures.push({
+        ...e, id, date_encaissement: args.p_date, montant: -(e.montant as number), ligne_bancaire_id: null,
+        annule_id: e.id, motif: args.p_motif, cree_le: '2027-11-02T10:00:00Z', retire_le: null, retire_par: null,
+      })
+      for (const p of faux.tables.encaissements_factures_taux.filter((x) => x.encaissement_id === e.id)) {
+        faux.tables.encaissements_factures_taux.push({ ...p, encaissement_id: id, montant: -(p.montant as number) })
+      }
+    } else if (nom === 'enregistrer_encaissement') {
       const id = `e-nouveau-${faux.rpcs.length}`
       faux.tables.encaissements_factures.push({
         id, dossier_id: args.p_dossier_id, facture_id: args.p_facture_id, date_encaissement: args.p_date,
@@ -62,9 +88,14 @@ vi.mock('../../lib/supabase', async () => {
         const predicats: Predicat[] = []
         let debut = 0
         let fin = Number.MAX_SAFE_INTEGER
+        // Les colonnes demandées, et elles seules, comme PostgREST : une colonne oubliée dans un `select` manque à l'écran.
+        let colonnes: string[] | null = null
         const c: Record<string, unknown> = {}
         Object.assign(c, {
-          select: () => c,
+          select: (liste: string) => {
+            colonnes = liste === '*' ? null : liste.split(',').map((x) => x.trim())
+            return c
+          },
           eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
           order: () => c,
@@ -75,6 +106,7 @@ vi.mock('../../lib/supabase', async () => {
               if (faux.refus[table]) return { data: null, error: { message: faux.refus[table] }, count: null }
               const toutes = filtrer(faux.tables[table] ?? [], predicats)
               const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, faux.muetApres[table] ?? Infinity))
+                .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l))
               return { data: rendu, error: null, count: toutes.length }
             }
             return (barriere ?? Promise.resolve()).then(reponse).then(suite)
@@ -119,7 +151,8 @@ const onUpdated = vi.fn()
 
 function monter(o: {
   facture?: FactureEmise; factures?: FactureEmise[]; mouvements?: LigneBancaire[]; encaissements?: EncaissementFacture[]
-  parts?: EncaissementFactureTaux[]; statutTva?: StatutTva | null
+  parts?: EncaissementFactureTaux[]; statutTva?: StatutTva | null; transmissions?: TransmissionFacture[]
+  evenements?: FactureSuperpdpEvent[]; declarations?: TransmissionEncaissement[]
 } = {}) {
   const f = o.facture ?? FACTURE
   // Des copies en objets nus : le faux client les modifie comme la base, et le jeu d'essai reste intact.
@@ -127,8 +160,9 @@ function monter(o: {
   faux.tables = {
     factures_emises: nues([f, ...(o.factures ?? [])]),
     facture_lignes: LIGNES_CII.map((l, i) => ({ ...l, id: `l${i + 1}`, facture_id: f.id })),
-    transmissions_factures: [],
-    facture_superpdp_events: [],
+    transmissions_factures: nues(o.transmissions ?? []),
+    facture_superpdp_events: nues(o.evenements ?? []),
+    transmissions_encaissements: nues(o.declarations ?? []),
     encaissements_factures: nues(o.encaissements ?? []),
     encaissements_factures_taux: nues(o.parts ?? []),
     lignes_bancaires: nues(o.mouvements ?? [mouvement()]),
@@ -174,11 +208,12 @@ afterEach(() => {
 })
 
 describe('EncaissementsFactureModal — ce que la fenêtre dit avant tout geste', () => {
-  it('l’obligation et sa raison, le reste par taux, aucun encaissement, et rien qui se déclare d’ici', async () => {
+  it('l’obligation et sa raison, le reste par taux, aucun encaissement, et pourquoi rien ne se déclare d’ici', async () => {
     monter()
     await bouton()
     screen.getByText('Due : des prestations de services, dont la TVA est due à l’encaissement.')
-    screen.getByText(/rien ne se déclare d’ici/)
+    // Jamais transmise par l'application : son statut ne se déclare pas d'ici, et la fenêtre dit pourquoi.
+    screen.getByText(/^Aucune transmission de cette facture par l'application n'a été acceptée par une plateforme/)
     screen.getByText(/^Reste à encaisser : 1\s355,50\s€$/)
     const taux = screen.getAllByRole('row').map((r) => r.textContent)
     expect(taux).toContain('20 %1\u202f200,00\u00a0€0,00\u00a0€1\u202f200,00\u00a0€')
@@ -445,4 +480,391 @@ describe('EncaissementsFactureModal — le retrait d’un encaissement jamais d�
     await screen.findByText('Cet encaissement est annulé par une contre-passation : retirez d\'abord celle-ci.')
     screen.getByText('Annulation')
   })
+})
+
+// ── LA DÉCLARATION HORS APPLICATION ET LA CONTRE-PASSATION (ligne 28.5, étape d4) ──────────────────────────────────────
+//
+// La facture a été acceptée par la plateforme du client : son statut « Encaissée » se déclare là, hors de l'application,
+// et la fenêtre inscrit que c'est fait. Les refus des deux fonctions sont ceux du module (encaissementsFactures.ts), dits
+// sous les mots de la base ; ce qui se garde ici est leur câblage.
+const HOTE = 'flux.plateforme-demo.fr'
+const acceptee = (o: Partial<TransmissionFacture> = {}): TransmissionFacture => ({
+  id: 't1', dossier_id: 'd1', facture_id: 'f1', canal: 'plateforme', hote: HOTE, flux_id: 'FLUX-1', sha256: 'a'.repeat(64),
+  etat: 'accepte', detail: null, cree_le: '2027-10-02T08:00:00Z', maj_le: '2027-10-02T08:05:00Z', ...o,
+})
+const declaration = (o: Partial<TransmissionEncaissement> = {}): TransmissionEncaissement => ({
+  id: 'te1', dossier_id: 'd1', encaissement_id: 'e1', facture_id: 'f1', canal: 'manuel', hote: HOTE, flux_id: null, sha256: null,
+  etat: 'depose', detail: null, note: null, cree_par: null, cree_le: '2027-10-06T08:00:00Z', maj_le: '2027-10-06T08:00:00Z', ...o,
+})
+const ligneDe = async (texte: string | RegExp) => (await screen.findByText(texte)).closest('tr') as HTMLElement
+
+// Un chèque de 600 € du 05/10/2027, DÉCLARÉ avec une note (e1) ; un virement de 300 € du 20/10/2027, à déclarer (e2).
+function monterDeclarations(o: Parameters<typeof monter>[0] = {}) {
+  return monter({
+    transmissions: [acceptee()],
+    encaissements: [encaissement(), encaissement({ id: 'e2', date_encaissement: '2027-10-20', montant: 300, moyen: 'virement' })],
+    parts: [
+      part({ montant: 500 }), part({ taux: 0, montant: 100 }),
+      part({ encaissement_id: 'e2', montant: 250 }), part({ encaissement_id: 'e2', taux: 0, montant: 50 }),
+    ],
+    declarations: [declaration({ note: 'Saisi par Mme Fictive le 06/10/2027, référence PLAT-001' })],
+    ...o,
+  })
+}
+
+// Le chèque déclaré (e1), et sa contre-passation du 25/10/2027, pas encore déclarée (e9).
+const AVEC_CONTRE_PASSATION: Parameters<typeof monter>[0] = {
+  encaissements: [
+    encaissement(),
+    encaissement({ id: 'e9', date_encaissement: '2027-10-25', montant: -600, annule_id: 'e1', motif: 'Chèque revenu impayé' }),
+  ],
+  parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 }), part({ encaissement_id: 'e9', montant: -500 }),
+    part({ encaissement_id: 'e9', taux: 0, montant: -100 })],
+}
+
+describe('EncaissementsFactureModal — ce que la colonne « Déclaration » dit', () => {
+  it('déclaré : où, quand, la note — et « Contre-passer » à la place de « Retirer » ; à déclarer : où, et avant quand', async () => {
+    monterDeclarations()
+    const declare = within(await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027'))
+    screen.getByText(/^Il se déclare hors de l’application, sur flux\.plateforme-demo\.fr — la plateforme qui a accepté la facture/)
+    declare.getByText('Note : Saisi par Mme Fictive le 06/10/2027, référence PLAT-001')
+    declare.getByRole('button', { name: 'Contre-passer' })
+    expect(declare.queryByRole('button', { name: 'Retirer' })).toBeNull()
+    expect(declare.queryByRole('button', { name: 'Déclaré sur la plateforme' })).toBeNull()
+    declare.getByText('Un encaissement déclaré ne se retire pas : il se contre-passe, et l\'annulation se déclare à son tour.')
+    // Déclaré, il n'a plus d'échéance.
+    expect(declare.queryByText(/à déclarer au plus tard/)).toBeNull()
+
+    const aDeclarer = within(await ligneDe('À déclarer sur flux.plateforme-demo.fr'))
+    aDeclarer.getByText('Paiements d’octobre 2027 : à déclarer au plus tard le 10/11/2027.')
+    aDeclarer.getByRole('button', { name: 'Retirer' })
+    aDeclarer.getByRole('button', { name: 'Déclaré sur la plateforme' })
+    expect(aDeclarer.queryByRole('button', { name: 'Contre-passer' })).toBeNull()
+    // Pas déclaré, il se retire : la contre-passation n'est pas son affaire, et rien n'en dit le refus.
+    expect(aDeclarer.queryByText(/n'est pas déclaré : il se retire, sans contre-passation/)).toBeNull()
+  })
+
+  // Une ligne qu'aucune base ne porterait — une déclaration de e2 rangée sous un autre dossier — sert de témoin : la
+  // lecture est celle du dossier, et e2 reste à déclarer.
+  it('ne lit que les déclarations du dossier', async () => {
+    monterDeclarations({ declarations: [declaration(), declaration({ id: 'te-temoin', dossier_id: 'autre', encaissement_id: 'e2' })] })
+    within(await ligneDe('À déclarer sur flux.plateforme-demo.fr')).getByRole('button', { name: 'Déclaré sur la plateforme' })
+  })
+
+  it('une obligation due en retard le dit ; un encaissement déclaré, non', async () => {
+    monterDeclarations({
+      encaissements: [encaissement({ date_encaissement: '2027-09-20' }), encaissement({ id: 'e2', date_encaissement: '2027-09-25', montant: 300 })],
+    })
+    const enRetard = within(await ligneDe('À déclarer sur flux.plateforme-demo.fr'))
+    enRetard.getByText('Échéance dépassée')
+    expect(screen.getAllByText('Échéance dépassée')).toHaveLength(1)
+  })
+
+  it('jamais acceptée par une plateforme : la colonne dit pourquoi, et rien ne s’offre', async () => {
+    monter({ encaissements: [encaissement()], parts: [part()] })
+    const l = within(await ligneDe('05/10/2027'))
+    expect(l.getAllByText(/^Aucune transmission de cette facture par l'application n'a été acceptée/)).toHaveLength(1)
+    expect(l.queryByRole('button', { name: 'Déclaré sur la plateforme' })).toBeNull()
+    // Le statut reste dû : l'échéance se dit encore.
+    l.getByText(/Paiements d’octobre 2027/)
+  })
+
+  it('une facture rejetée : aucun statut ne la suit, et aucune échéance ne se dit', async () => {
+    monter({ transmissions: [acceptee({ etat: 'rejete' })], encaissements: [encaissement()], parts: [part()] })
+    const l = within(await ligneDe('05/10/2027'))
+    l.getByText('Cette facture a été rejetée ou refusée : elle s\'annule par un avoir interne, et aucun statut « Encaissée » ne la suit.')
+    expect(l.queryByText(/à déclarer au plus tard/)).toBeNull()
+    expect(l.queryByRole('button', { name: 'Déclaré sur la plateforme' })).toBeNull()
+  })
+
+  it('sans objet, à préciser, facture mixte : rien ne s’offre, et la fenêtre dit pourquoi ; facultative : il s’offre', async () => {
+    const cas: [Parameters<typeof monter>[0], RegExp | null][] = [
+      [{ facture: facture({ type_client: 'non_assujetti' }) }, /^Aucun encaissement de cette facture ne se déclare\.$/],
+      [{ statutTva: null }, /^Rien ne se déclare d’ici : précisez d’abord le statut de TVA du dossier\.$/],
+      [{ facture: facture({ option_debits: null }) }, /^Rien ne se déclare d’ici tant que l’obligation est à préciser\.$/],
+      [{ facture: facture({ nature_operation: 'mixte' }) }, /^Rien ne se déclare d’ici pour une facture mixte/],
+      [{ facture: facture({ date_emission: '2026-09-15' }), encaissements: [encaissement({ date_encaissement: '2026-09-20' })] }, null],
+    ]
+    for (const [o, texte] of cas) {
+      const { unmount } = monter({ transmissions: [acceptee()], encaissements: [encaissement()], parts: [part()], ...o })
+      const l = within(await ligneDe(/^Enregistré$/))
+      if (texte) {
+        screen.getByText(texte)
+        l.getByText('Ne se déclare pas d’ici : voir le statut « Encaissée » ci-dessus.')
+        expect(l.queryByRole('button', { name: 'Déclaré sur la plateforme' }), String(texte)).toBeNull()
+      } else {
+        l.getByRole('button', { name: 'Déclaré sur la plateforme' })
+        // Facultative : aucune alerte de retard, l'échéance fût-elle passée.
+        l.getByText(/à déclarer au plus tard le 10\/10\/2026/)
+        expect(l.queryByText('Échéance dépassée')).toBeNull()
+      }
+      unmount()
+    }
+  })
+
+  it('une contre-passation dit ce qu’elle annule et son motif ; l’encaissement annulé se dit contre-passé', async () => {
+    monterDeclarations(AVEC_CONTRE_PASSATION)
+    const cp = within(await ligneDe(/^Annule l’encaissement du 05\/10\/2027 de 600,00\s€/))
+    cp.getByText(/motif : « Chèque revenu impayé »/)
+    cp.getByText('À déclarer sur flux.plateforme-demo.fr')
+    cp.getByText('Annulation')
+    cp.getByRole('button', { name: 'Déclaré sur la plateforme' })
+    // Pas encore déclarée, une contre-passation se retire encore ; rien ne dit qu'elle ne se contre-passe pas.
+    cp.getByRole('button', { name: 'Retirer' })
+    expect(cp.queryByText(/Une annulation ne se contre-passe pas/)).toBeNull()
+    const annule = within(await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027'))
+    annule.getByText('Contre-passé')
+    annule.getByText('Cet encaissement est déjà annulé par une contre-passation.')
+    expect(annule.queryByRole('button', { name: 'Contre-passer' })).toBeNull()
+  })
+})
+
+describe('EncaissementsFactureModal — « Déclaré sur la plateforme »', () => {
+  const ouvrir = async () => {
+    const l = await ligneDe('À déclarer sur flux.plateforme-demo.fr')
+    fireEvent.click(within(l).getByRole('button', { name: 'Déclaré sur la plateforme' }))
+  }
+  const inscrire = () => screen.getByRole('button', { name: 'Inscrire la déclaration' })
+  const note = () => champ('Note (facultative) : qui l’a saisi, quand, sous quelle référence')
+  const champsASaisir = () => [...document.querySelectorAll('.etape-encaissement tbody tr')].map((r) => r.textContent)
+
+  it('dit ce qu’il faut saisir sur la plateforme, champ par champ, et de vérifier que l’acheteur n’a pas refusé', async () => {
+    monterDeclarations()
+    await ouvrir()
+    expect(champsASaisir()).toEqual([
+      `Plateforme${HOTE}`, 'Numéro de la factureF2027-0042', 'Date de paiement20/10/2027',
+      'Montant encaissé TTC, en euros300,00 €', 'Dont, au taux de 20 %250,00 €', 'Dont, au taux de 0 %50,00 €',
+    ])
+    screen.getByText(/^Vérifiez d’abord sur flux\.plateforme-demo\.fr que l’acheteur n’a pas refusé la facture/)
+    expect(inscrire()).toHaveProperty('disabled', false)
+    // « Annuler » referme l'étape sans rien écrire.
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }))
+    expect(screen.queryByRole('button', { name: 'Inscrire la déclaration' })).toBeNull()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('chez Super PDP, le refus de l’acheteur est lu : la fenêtre ne demande pas de le vérifier', async () => {
+    // Acceptée chez Super PDP : seul le canal distingue ce cas de celui de la plateforme du client.
+    monterDeclarations({
+      transmissions: [acceptee({ canal: 'superpdp', hote: 'api.superpdp.tech' })],
+      declarations: [declaration({ hote: 'api.superpdp.tech' })],
+    })
+    const l = await ligneDe('À déclarer sur api.superpdp.tech')
+    fireEvent.click(within(l).getByRole('button', { name: 'Déclaré sur la plateforme' }))
+    expect(champsASaisir()[0]).toBe('Plateformeapi.superpdp.tech')
+    expect(screen.queryByText(/que l’acheteur n’a pas refusé la facture/)).toBeNull()
+  })
+
+  it('une contre-passation : des montants négatifs, et le motif d’annulation en commentaire', async () => {
+    monterDeclarations(AVEC_CONTRE_PASSATION)
+    await ouvrir()
+    expect(champsASaisir()).toEqual([
+      `Plateforme${HOTE}`, 'Numéro de la factureF2027-0042', 'Date du décaissement25/10/2027',
+      'Montant décaissé TTC, en euros (négatif)-600,00 €', 'Dont, au taux de 20 %-500,00 €', 'Dont, au taux de 0 %-100,00 €',
+      'Commentaire : le motif d’annulationChèque revenu impayé',
+    ])
+    screen.getByText(/ses montants se saisissent en négatif, et son motif d’annulation en commentaire du statut/)
+    // Elle suit l'encaissement qu'elle annule : la vérification de la facture ne la regarde pas.
+    expect(screen.queryByText(/que l’acheteur n’a pas refusé la facture/)).toBeNull()
+
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { inscrire().click() })
+    expect(confirmation.mock.calls[0][0]).toMatch(new RegExp(
+      '^Vous déclarez avoir saisi sur flux\\.plateforme-demo\\.fr le statut « Encaissée » de la facture F2027-0042 \\(Client Fictif SAS\\) : '
+      + '-600,00\\s€ décaissés le 25/10/2027, dont -500,00\\s€ à 20 % et -100,00\\s€ à 0 %, avec le motif d’annulation « Chèque revenu impayé »\\. '
+      + 'Cette mention ne s’efface pas\\.',
+    ))
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('la note se mesure comme la base : plus de 2 000 caractères est refusé avant le clic, un emoji compte un caractère', async () => {
+    monterDeclarations()
+    await ouvrir()
+    fireEvent.change(note(), { target: { value: 'a'.repeat(2001) } })
+    screen.getByText('La note de la déclaration dépasse 2 000 caractères.')
+    expect(inscrire()).toHaveProperty('disabled', true)
+    // 2 000 caractères, dont un emoji : 2 001 unités UTF-16, et pourtant admis.
+    fireEvent.change(note(), { target: { value: `${'a'.repeat(1999)}🙂` } })
+    expect(screen.queryByText(/La note de la déclaration dépasse/)).toBeNull()
+    expect(inscrire()).toHaveProperty('disabled', false)
+  })
+
+  it('la confirmation nomme ce qui est déclaré et le dit irréversible ; refusée, rien ne part', async () => {
+    monterDeclarations()
+    await ouvrir()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { inscrire().click() })
+    const texte = confirmation.mock.calls[0][0] as string
+    expect(texte).toMatch(new RegExp(
+      '^Vous déclarez avoir saisi sur flux\\.plateforme-demo\\.fr le statut « Encaissée » de la facture F2027-0042 \\(Client Fictif SAS\\) : '
+      + '300,00\\s€ encaissés le 20/10/2027, dont 250,00\\s€ à 20 % et 50,00\\s€ à 0 %\\. Cette mention ne s’efface pas\\.',
+    ))
+    expect(texte).toContain('une déclaration inscrite ici ne se retire plus, et une erreur ne se corrige que par une contre-passation')
+    expect(faux.rpcs).toEqual([])
+    // L'étape reste ouverte : rien n'a été inscrit.
+    inscrire()
+  })
+
+  it('une note faite d’espaces part nulle', async () => {
+    monterDeclarations()
+    await ouvrir()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(note(), { target: { value: '   ' } })
+    await act(async () => { inscrire().click() })
+    expect(faux.rpcs).toEqual([{ nom: 'declarer_encaissement_hors_application', args: { p_dossier_id: 'd1', p_encaissement_id: 'e2', p_note: null } }])
+  })
+
+  // LES TROIS CLICS DANS LE MÊME `act` : il en faut trois pour voir un verrou posé dans le `try` (voir plus haut).
+  it('trois clics, un seul appel ; le verrou tient jusqu’après la relecture, puis la ligne relue se dit déclarée', async () => {
+    monterDeclarations()
+    await ouvrir()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(note(), { target: { value: 'Saisi par le client' } })
+    faux.retenirLectures = true
+    const b = inscrire()
+    await act(async () => { b.click(); b.click(); b.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'declarer_encaissement_hors_application', args: { p_dossier_id: 'd1', p_encaissement_id: 'e2', p_note: 'Saisi par le client' },
+    }])
+    expect(Object.keys(faux.rpcs[0].args)[0]).toBe('p_dossier_id')
+    // La relecture court : rien ne se rouvre, rien ne se ferme, rien ne repart.
+    expect(screen.getByRole('button', { name: 'Fermer' })).toHaveProperty('disabled', true)
+    for (const bouton of screen.getAllByRole('button', { name: /^(Retirer|Contre-passer)$/ })) expect(bouton).toHaveProperty('disabled', true)
+    expect(onUpdated).not.toHaveBeenCalled()
+
+    await act(async () => { faux.libererLectures?.() })
+    expect(screen.getByRole('status').textContent)
+      .toMatch(/^Déclaration inscrite : l’encaissement du 20\/10\/2027 \(300,00\s€\) est déclaré sur flux\.plateforme-demo\.fr\.$/)
+    expect(onUpdated).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Inscrire la déclaration' })).toBeNull()
+    const l = within(await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 02/11/2027'))
+    l.getByText('Note : Saisi par le client')
+    l.getByRole('button', { name: 'Contre-passer' })
+    expect(l.queryByRole('button', { name: 'Retirer' })).toBeNull()
+  })
+
+  it('une erreur de la base se dit, l’étape reste avec sa note, et le verrou est relâché', async () => {
+    monterDeclarations()
+    await ouvrir()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(note(), { target: { value: 'Réf. 42' } })
+    faux.erreurRpc = 'Cet encaissement est déjà déclaré : une déclaration ne se fait qu\'une fois.'
+    await act(async () => { inscrire().click() })
+    await screen.findByText(faux.erreurRpc)
+    expect(note().value).toBe('Réf. 42')
+    await act(async () => { inscrire().click() })
+    expect(faux.rpcs).toHaveLength(2)
+  })
+})
+
+describe('EncaissementsFactureModal — « Contre-passer » un encaissement déclaré', () => {
+  const ouvrir = async () => {
+    const l = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+    fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
+  }
+  const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' })
+  const motif = () => champ('Motif d’annulation, que la plateforme portera')
+  const saisir = (date: string, texte: string) => {
+    fireEvent.change(champ('Date du décaissement'), { target: { value: date } })
+    fireEvent.change(motif(), { target: { value: texte } })
+  }
+
+  it('les refus de la base dans son ordre, la date jamais proposée ; le bouton grisé tant qu’un refus tient', async () => {
+    monterDeclarations()
+    await ouvrir()
+    expect(champ('Date du décaissement').value).toBe('')
+    screen.getByText(/^Le jour où l’encaissement est défait — le chèque revenu impayé, la somme rendue — ou, pour une déclaration faite/)
+    const etapes: [string, string, string | null][] = [
+      ['', 'Chèque revenu impayé', 'La date de la contre-passation est à renseigner.'],
+      ['2027-10-04', '', 'Une contre-passation ne se date pas avant l\'encaissement qu\'elle annule, du 05/10/2027.'],
+      ['2027-11-03', '', 'Une contre-passation ne se date pas dans l\'avenir : nous sommes le 02/11/2027.'],
+      ['2027-11-01', '   ', 'Le motif de la contre-passation est à renseigner.'],
+      ['2027-11-01', 'x'.repeat(2001), 'Le motif de la contre-passation dépasse 2 000 caractères.'],
+      ['2027-11-02', 'Chèque revenu impayé', null],
+    ]
+    for (const [date, texte, refus] of etapes) {
+      saisir(date, texte)
+      if (refus) screen.getByText(refus)
+      expect(enregistrerCp(), `${date} ${texte.slice(0, 5)}`).toHaveProperty('disabled', refus != null)
+    }
+    expect(screen.queryByText(/^(La date de la|Une contre-passation ne|Le motif de la)/)).toBeNull()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('la confirmation nomme ce qui sera écrit et ce qui suit ; refusée, rien ne part', async () => {
+    monterDeclarations()
+    await ouvrir()
+    saisir('2027-11-01', 'Chèque revenu impayé')
+    screen.getByText(/^Sera écrit : -600,00\s€, dont -500,00\s€ à 20 % et -100,00\s€ à 0 %, du même moyen de paiement\s+\(Chèque\)\.$/)
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { enregistrerCp().click() })
+    const texte = confirmation.mock.calls[0][0] as string
+    expect(texte).toMatch(/^Contre-passer l’encaissement du 05\/10\/2027 de 600,00\s€ sur la facture F2027-0042 \(Client Fictif SAS\) \?/)
+    expect(texte).toMatch(/Sera écrite au registre une contre-passation datée du 01\/11\/2027 : -600,00\s€, dont -500,00\s€ à 20 % et -100,00\s€ à 0 %, du même moyen de paiement \(Chèque\), motif « Chèque revenu impayé »\./)
+    expect(texte).toContain('Elle se déclare ensuite à son tour sur flux.plateforme-demo.fr ; puis le bon encaissement s’enregistre : l’annulation libère le reste de la facture et le mouvement.')
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('trois clics, un seul appel ; relue, la contre-passation est à déclarer et le reste revient', async () => {
+    monterDeclarations()
+    await screen.findByText(/^Reste à encaisser : 455,50\s€$/)
+    await ouvrir()
+    saisir('2027-11-01', 'Chèque revenu impayé')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.retenirLectures = true
+    const b = enregistrerCp()
+    await act(async () => { b.click(); b.click(); b.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: 'd1', p_encaissement_id: 'e1', p_date: '2027-11-01', p_motif: 'Chèque revenu impayé' },
+    }])
+    expect(Object.keys(faux.rpcs[0].args)[0]).toBe('p_dossier_id')
+    // L'étape se referme dès la réponse ; la relecture court encore : rien ne se ferme, rien ne repart.
+    expect(screen.getByRole('button', { name: 'Fermer' })).toHaveProperty('disabled', true)
+    for (const bouton of screen.getAllByRole('button', { name: /^(Retirer|Déclaré sur la plateforme)$/ })) {
+      expect(bouton).toHaveProperty('disabled', true)
+    }
+    expect(onUpdated).not.toHaveBeenCalled()
+
+    await act(async () => { faux.libererLectures?.() })
+    expect(screen.getByRole('status').textContent)
+      .toMatch(/^Contre-passation enregistrée : -600,00\s€ le 01\/11\/2027\. Elle se déclare à son tour sur flux\.plateforme-demo\.fr\.$/)
+    expect(onUpdated).toHaveBeenCalledTimes(1)
+    screen.getByText(/^Reste à encaisser : 1\s055,50\s€$/)
+    const cp = within(await ligneDe(/^Annule l’encaissement du 05\/10\/2027/))
+    cp.getByRole('button', { name: 'Déclaré sur la plateforme' })
+    within(await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')).getByText('Contre-passé')
+  })
+
+  it('une erreur de la base se dit, la saisie reste, et le verrou est relâché', async () => {
+    monterDeclarations()
+    await ouvrir()
+    saisir('2027-11-01', 'Chèque revenu impayé')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.erreurRpc = 'Cet encaissement est déjà annulé par une contre-passation.'
+    await act(async () => { enregistrerCp().click() })
+    await screen.findByText(faux.erreurRpc)
+    expect(motif().value).toBe('Chèque revenu impayé')
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs).toHaveLength(2)
+  })
+})
+
+describe('EncaissementsFactureModal — des déclarations lues en partie n’offrent aucun formulaire', () => {
+  const cas: [string, () => void][] = [
+    ['tronquées', () => { faux.muetApres = { transmissions_encaissements: 1 } }],
+    ['refusées', () => { faux.refus = { transmissions_encaissements: 'JWT expired' } }],
+  ]
+  for (const [nom, poser] of cas) {
+    it(`des déclarations ${nom} : le bandeau dit sa conséquence, et ni enregistrer, ni retirer, ni déclarer, ni contre-passer`, async () => {
+      poser()
+      monterDeclarations({ declarations: [declaration(), declaration({ id: 'te2', encaissement_id: 'e2' })] })
+      await screen.findByText(/^Les déclarations des encaissements n'ont pas pu être lues en entier/)
+      screen.getByText(/un encaissement déclaré qu’on ne verrait pas se retirerait, ou se déclarerait une seconde fois/)
+      for (const bouton of ['Enregistrer l’encaissement', 'Retirer', 'Déclaré sur la plateforme', 'Contre-passer']) {
+        expect(screen.queryByRole('button', { name: bouton }), bouton).toBeNull()
+      }
+      expect(screen.queryByText(/Reste à encaisser/)).toBeNull()
+    })
+  }
 })

@@ -340,6 +340,24 @@ const VISITES = [
       await page.getByRole('button', { name: 'Enregistrer l’encaissement', exact: true }).waitFor({ timeout: 10000 })
     },
   },
+  // LA DÉCLARATION DE SES ENCAISSEMENTS (ligne 28.5, étape d4), sur F2026-0008, acceptée par la plateforme du client : la
+  // colonne « Déclaration » — déclaré avec une note longue, contre-passé, une contre-passation et un chèque à déclarer —,
+  // puis l'étape « Déclaré sur la plateforme » du chèque (ce qu'il faut saisir, la vérification du refus de l'acheteur,
+  // la note), celle de la contre-passation (ses montants négatifs, son motif en commentaire), et le formulaire
+  // « Contre-passer » du virement déclaré. On attend le bouton de l'étape, le dernier à paraître.
+  ...[
+    { nom: 'factures/declarer', bouton: 'Déclaré sur la plateforme', rang: 'last', attendu: 'Inscrire la déclaration' },
+    { nom: 'factures/declarer-contre-passation', bouton: 'Déclaré sur la plateforme', rang: 'first', attendu: 'Inscrire la déclaration' },
+    { nom: 'factures/contre-passer', bouton: 'Contre-passer', rang: 'first', attendu: 'Enregistrer la contre-passation' },
+  ].map(({ nom, bouton, rang, attendu }) => ({
+    dossier: 'd7', onglet: 'factures', nom, fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0008', 'Encaissements').click()
+      await page.getByRole('button', { name: bouton, exact: true })[rang]().click()
+      await page.getByRole('button', { name: attendu, exact: true }).waitFor({ timeout: 10000 })
+    },
+  })),
 ]
 
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.
