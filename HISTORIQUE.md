@@ -11418,3 +11418,1816 @@ retient pas (`garder_transmission_facture` compare `lu_le` à `cree_le`, comme l
 de quelques millisecondes, et la fenêtre de transmission de la phase C le dira avant le clic. Deux relevés concurrents peuvent faire reculer le point de reprise d'un cran (la règle de
 `retenir`) : ils ne font que relire. Un statut écrit d'une facture d'un dossier repart avec la sauvegarde ; un statut
 écarté ne se garde nulle part, l'écran seul le dit.
+
+### 09/10/2026 — L'E-REPORTING : LA CONCEPTION — LIGNE 28.5, ÉTAPE (E)
+
+La note de conception de l'architecte, telle qu'il l'a rendue, gardée ici parce que les étapes e1 à e11 s'y appuient : ses sources, ses points NON VÉRIFIÉS et ses dix questions au cabinet, posées le 09/10/2026 et encore sans réponse. L'étape e1 — l'obligation dite juste, sans migration ni réseau — a été lancée le même jour : elle ne dépend d'aucune réponse.
+
+Rédigée le 09/10/2026 par l'architecte, pour le cabinet et pour la session qui orchestre. CONCEPTION SEULEMENT : rien
+n'a été écrit dans le dépôt, aucune migration, aucun déploiement ; la base n'a été lue qu'en lecture (catalogue et
+comptes de lignes, jamais un texte ni un nom rendu). Lecture du dépôt dans une copie isolée, au commit 62eb973.
+
+Sources : Légifrance, BOFiP, impots.gouv.fr (spécifications externes de la DGFiP v3.2 et leurs annexes, fiches, FAQ,
+actualités), la documentation publique d'une plateforme (banqup). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni
+lues ni citées, sous aucune forme (décision du cabinet du 07/10/2026) ; là où une réponse ne se trouve que là, le point
+est marqué NON VÉRIFIÉ. Rien de `api.superpdp.tech` n'a été appelé ni lu, ni aucune API de plateforme. Les documents
+téléchargés ont été traités comme des données (un dossier vide chacun, scripts à part, Python en `-I`).
+
+Les sources sont numérotées [S1]… et décrites à la fin.
+
+---
+
+#### 0. Le résumé en dix lignes
+
+1. L'e-reporting vise ce qui ne passe pas par la facture électronique : les ventes à des PARTICULIERS (et autres
+   non-assujettis), les ventes à des clients établis HORS DE FRANCE, et — ce qu'on oublie — les ACHATS à un fournisseur
+   établi hors de France ; plus les paiements des prestations dont la TVA est due à l'encaissement [S1 ; S7 ; S16].
+2. Les opérations exonérées par les articles 261 à 261 E en sortent [S1 ; S7 §20] : les SOINS des professions de santé
+   (261, 4, 1°) n'ont ni e-reporting de vente ni de paiement [S15 §2.10].
+3. Mais un praticien exonéré reste un assujetti : ses achats de services à un prestataire non établi (logiciels en
+   ligne, formations, publicité…) se déclarent PAR LUI, comme preneur [S1, I-3° c ; S7 §60 ; S16], avec un numéro de TVA
+   [S13 §40 ; S24 G2.33]. L'application dit aujourd'hui à un dossier exonéré qu'il « n'y est pas tenu » : c'est faux.
+4. Ses actes TAXABLES y entrent aussi — esthétique sans finalité thérapeutique, expertises, locaux équipés loués,
+   ventes [S12 §20 à §80] —, en franchise en base comme au réel [S6 §20].
+5. Un dossier en franchise en base est tenu (ventes et paiements, tous les deux mois) [S6 §20 ; S9 §70 ; S10 §180] ; un
+   redevable aussi (ventes par décade ou par mois, paiements par mois) [S9 ; S10].
+6. Calendrier : opérations à compter du 01/09/2027 pour une PME ou une micro-entreprise — tous les dossiers du cabinet
+   [S6 §10]. Le régime simplifié est supprimé au 01/01/2027 [S20] : restent la décade (réel mensuel), le mois (réel
+   trimestriel) et le bimestre (franchise). Aucune transmission « à blanc » [S3 art. 16 ; S9 §80].
+7. Le message est le flux 10 de la DGFiP (XML ; schémas XSD publiés, qui se compilent et jugent — éprouvé ici) ; ce
+   qu'une plateforme attend d'une SOLUTION COMPATIBLE (émetteur, dépôts en cours de période, rectification) n'est
+   décrit que par la norme exclue : NON VÉRIFIÉ, paramètres explicites, essai réel.
+8. Ce qui manque en base : la fiche « hors de France » d'une pièce (numéro de facture, pays, identifiant, nature,
+   ventilation par taux), les mentions d'une facture à un client étranger, et le registre des déclarations par période
+   (contenu figé, empreinte, déclaration rectificative qui remplace la période entière).
+9. Proposition : dire juste l'obligation d'abord (e1), puis les achats à l'étranger (e2 à e4), la déclaration hors
+   application par période (e5), le fichier (e6) ; les ventes internationales (e7) et les recettes sans facture (e8)
+   seulement si le cabinet a des dossiers concernés ; l'API (e9, e10) après un essai réel ; la CA3 ensuite (e11).
+10. Onze étapes mergeables seules, dix questions au cabinet, vingt-deux points non vérifiés.
+
+---
+
+#### 1. À qui l'obligation s'applique — la première question
+
+##### 1.1 Les textes et leur calendrier
+
+| Texte | Ce qu'il dit pour (e) | Source |
+|---|---|---|
+| CGI, art. 290 (version en vigueur depuis le 21/02/2026, loi n° 2026-103, art. 123 (V)) | I : « Les assujettis qui sont établis ou ont leur domicile ou leur résidence habituelle en France communiquent à l'administration » « les données relatives aux opérations suivantes », « lorsqu'elles ne sont pas exonérées en application des articles 261 à 261 E » ; 1° des opérations au profit d'un assujetti (exportations, livraisons intracommunautaires, prestations non situées en France ou rendues à un preneur non établi) ; 2° « Les opérations réalisées au profit d'une personne non assujettie suivantes : » ; 3° « Les acquisitions de biens ou de prestations de services suivantes réalisées par une personne assujettie : », dont c) « Les prestations situées en France en application du 1° de l'article 259 et de l'article 259 A » « et acquises auprès d'une personne assujettie qui n'est pas établie en France » ; III : par la plateforme agréée choisie ; IV : opérations classifiées exclues. Abrogé au 01/01/2027 ; mais « les dispositions du présent article sont maintenues en vigueur » « jusqu'à leur reprise par les mesures réglementaires » visées notamment au dernier alinéa de l'art. L. 216-55 du CIBS (ord. n° 2025-1247, art. 9, 15 et 49). | [S1] |
+| CGI, art. 290 A | Les données de paiement des opérations des art. 289 bis et 290 dont la TVA est exigible à l'encaissement, hors autoliquidation (lu en (d)). | [S2] ; [S10 §1] |
+| CGI, ann. II, art. 242 nonies M, O, P (décret n° 2026-677) | M : les données de transaction ; « la base d'imposition totale » ; les 9° et 10° abrogés. O : la fréquence par régime, « tous les bimestres civils » en franchise ; « Le nombre et la fréquence des transmissions s'apprécient au niveau de chacune des plateformes agréées » ; « En l'absence de transactions mentionnées aux I et II de l'article 290 […], aucune transmission n'est requise ». P : paiements par mois au réel, par bimestre civil en franchise. | [S3] |
+| CGI, ann. IV, art. 41 septies L, M, P (arrêté du 27/07/2026) | Les modalités : fichier XML vers l'administration par une plateforme agréée ; délais. | [S4] ; non ouverts eux-mêmes |
+| CGI, art. 1788 D (version du 21/02/2026 au 01/01/2027) | I (art. 290) et II (art. 290 A) : « une amende égale à 500 € par transmission », 15 000 € au plus par an ; V : pas d'amende pour une première infraction réparée spontanément ou « dans les trente jours suivant une première demande de l'administration ». | [S5] |
+| CIBS, art. L. 216-55 (ord. n° 2025-1247) | « L'assujetti communique à l'administration les informations relatives aux opérations suivantes » ; 1° a) opérations en lien avec un autre État membre, Monaco ou un territoire tiers ; b) opérations effectuées en France non soumises à l'obligation de facturation de L. 216-38 ; « Un décret détermine les catégories d'opérations concernées ». Décret non trouvé (point 2). | [S27] |
+| BOFiP BOI-TVA-DECLA-20-30-50, -10, -20, -30 et -60 (30/09/2026) | La doctrine de l'e-reporting de transaction et de paiement, citée paragraphe par paragraphe ci-dessous. | [S6] à [S11] |
+| Spécifications externes de la DGFiP v3.2 (30/04/2026), annexes 6 (v1.10) et 7 (v1.9), XSD | Le flux 10, ses blocs, ses règles, ses délais. | [S22] à [S25] |
+
+CONSÉQUENCE POUR LE CODE : comme pour (d), les commentaires citeront le CGI ET le CIBS ; les écrans ne citeront aucun
+article. Les PME y entrent au 01/09/2027 sous des textes du CGI « maintenus » tant que le décret du CIBS n'est pas pris
+(point 2).
+
+##### 1.2 Les opérations dans le champ, et celles qui en sortent
+
+| Opération | E-reporting ? | Bloc du flux 10 | Paiements ? | Fondement |
+|---|---|---|---|---|
+| Vente ou prestation TAXABLE à un particulier ou à un non-assujetti (association…), en France ou à l'étranger — franchise en base comprise | OUI, par le vendeur | 10.3, agrégé par jour, catégorie et taux | OUI pour les prestations (10.4, agrégé par jour et taux), sauf option pour les débits | [S1 I-2°] ; [S7 §70–§90] ; [S8 §40–§60] ; [S10 §150] ; [S14 §1.1] |
+| Vente ou prestation à un assujetti établi hors de France | OUI, par le vendeur | 10.1, facture par facture | Seulement si une TVA française est exigible à l'encaissement (prestation située en France, 259 A) ; jamais sur une opération autoliquidée | [S1 I-1°] ; [S7 §50] ; [S15 §4.1] ; [S22 note 119] |
+| ACHAT d'un service à un prestataire non établi (art. 259, 1°, et 283, 2 : autoliquidation), d'un bien situé en France à un non-établi, acquisition intracommunautaire taxable | OUI, par l'ACHETEUR établi en France | 10.1, facture par facture, rôle « acheteur » (BY), sans le détail des lignes | Non (les données de paiement sont celles du fournisseur) | [S1 I-3°] ; [S7 §60] ; [S8 §70 remarque] ; [S16 : « Achat de prestations de formation auprès d'un assujetti allemand » → « E-reporting par le destinataire assujetti établi en France »] |
+| Client assujetti absent de l'annuaire (tolérance) | OUI, « comme s'il avait réalisé l'opération au profit d'un non-assujetti » | 10.3 | comme une vente à un particulier | [S7 §100] ; [S22 §2.3.3] |
+| Opérations exonérées par les art. 261 à 261 E (soins, enseignement, assurance…), et leurs équivalents hors de France | NON | — | NON | [S1] ; [S7 §20 et remarque 1] ; [S14 §1.2] ; [S15 §2.10] |
+| Opérations hors du champ de la TVA (indemnités, opérations sans contrepartie) | NON | — | NON | [S14 §1.2, §7.2] |
+| Importations (art. 291) | NON | — | — | [S7 §60, remarque] ; [S16, dernière ligne] |
+| Opération située dans un autre État membre entre deux assujettis établis en France | NON (ni facture électronique ni e-reporting) | — | — | [S15 §1.5] |
+| Monaco, DROM, COM | Règles propres (IV du BOI) | — | — | [S7 §160–§220] ; hors du découpage (refus dit) |
+
+##### 1.3 Pour les dossiers que tient l'application
+
+| Dossier | Ses ventes | Ses paiements | Ses achats à l'étranger | Fréquence |
+|---|---|---|---|---|
+| Praticien de santé EXONÉRÉ (médecin, infirmier, kinésithérapeute, sage-femme, orthophoniste, ostéopathe, psychologue…), sans autre activité | RIEN : ses soins sont exonérés [S15 §2.10] ; la rétrocession d'un remplaçant n'appelle pas de facture électronique, la redevance d'un collaborateur, si (facture électronique, étape (c), pas e-reporting) [S15 §2.10] | RIEN | OUI, s'il en a, à partir du 01/09/2027 ; un numéro de TVA est alors requis [S13 §20 remarque, §40] | Non dite par les sources pour un exonéré pur : réel normal présumé (point 3) |
+| Praticien exonéré qui a AUSSI des actes taxables : esthétique sans finalité thérapeutique (§40), expertise (§80), location de locaux aménagés « même […] à des confrères » (§20), ventes de produits | Ces actes-là : à un particulier → 10.3 ; à une entreprise en France → facture électronique (c) | Prestations à un particulier → 10.4 | OUI | Celle de son régime pour ces actes — franchise en base s'il reste sous ses seuils (point 4) |
+| Praticien hors du cadre réglementé (naturopathe, sophrologue…) : TAXABLE [S12 §30], le plus souvent en franchise | OUI (10.3) | OUI (10.4, au taux 0 en franchise) | OUI | Bimestre en franchise |
+| Professionnel libéral en FRANCHISE en base (consultant, coach, formateur non exonéré, traducteur…) | À des particuliers : 10.3 ; à des clients étrangers : 10.1 | 10.4 / 10.2 selon le cas, au taux 0 | OUI | Bimestre |
+| Professionnel libéral REDEVABLE (avocat, architecte, consultant…) | idem, avec la TVA | idem | OUI | Décade (réel mensuel) ou mois (réel trimestriel) |
+| Statut de TVA à préciser | à préciser | à préciser | à préciser | à préciser |
+
+##### 1.4 Les fréquences et les délais (à partir du 01/09/2027 pour une PME)
+
+| Régime du dossier | Transactions (ventes et achats) : période | Transactions : au plus tard | Paiements : période | Paiements : au plus tard |
+|---|---|---|---|---|
+| Réel normal mensuel | la décade (1–10, 11–20, 21–fin) | 10 jours après la fin de la décade : le 20 ; le 30 (« sauf mois de février ») ; le 10 du mois suivant [S9 §50, §90 ; S19] | le mois | le 10 du mois suivant [S10 §170, §190] |
+| Réel normal trimestriel (de droit sous 1 000 000 € de chiffre d'affaires dès 2027 [S20]) | le mois [S9 §60] | le 10 du mois suivant [S9 §90] | le mois | le 10 du mois suivant |
+| Franchise en base | le bimestre civil (janvier-février…) [S9 §70] | « entre le 25 et la fin du mois suivant » [S9 §100] | le bimestre civil [S10 §180] | idem [S10 §210] |
+| Régime simplifié | supprimé au 01/01/2027, avant l'obligation des PME [S20] — sans objet | | | |
+
+- Le tableau 13 des spécifications donne, pour la deuxième décade, « Dernier jour du mois » et, en franchise, « Le
+  dernier jour du mois suivant » [S22 p. 68] ; la doctrine dit dix jours, et « entre le 25 et la fin du mois » à un jour
+  propre à l'entreprise. L'application retiendra la BORNE PRUDENTE, comme (d) : le 20, le 30 (le dernier jour en
+  février), le 10, le 25 (point 10).
+- « En l'absence d'opérations réalisées sur une période concernée, aucune transmission n'est attendue » [S9 §80].
+- La fréquence suit le régime « quelle que soit l'opération effectuée » [S9 §40] : les achats suivent celle des ventes.
+- impots.gouv.fr rappelle que l'entreprise doit « communiquer à [sa] plateforme agréée [son] régime de TVA et tout
+  changement de régime » [S20] : le régime d'e-reporting d'un dossier est une donnée, pas une déduction.
+
+##### 1.5 Ce que mesure la base (09/10/2026, comptes seulement)
+
+Données FICTIVES ; quatre dossiers, dont `test` le seul vivant. Ensemble : deux dossiers au code NAF 86 (santé humaine)
+au statut de TVA à préciser, deux redevables sans code NAF ; tous en trimestriel, aucun sur les débits, aucun numéro de
+TVA attribué ; six factures émises, toutes validées, AUCUNE avec un type de client (antérieures à l'étape c), toutes à
+20 % ; aucun encaissement, aucune transmission. Dossier `test` : NAF 86, statut à préciser ; 40 pièces d'achat, toutes
+avec leur texte OCR, dont QUATRE EN DOLLARS ; aucune ne porte un numéro de TVA d'un autre État membre ni une mention
+d'autoliquidation (« reverse charge », « article 196 »…), six portent un numéro de TVA français ; 2 pièces de vente ;
+181 crédits et 248 débits au relevé. Rien de la clientèle réelle ne se mesure ici : la part des dossiers concernés est
+une question au cabinet (Q1).
+
+##### 1.6 La réponse à la première question
+
+L'obligation vise bien les dossiers du cabinet, mais pas d'abord là où on l'attend :
+- par leurs ACHATS à l'étranger, presque tous, praticiens exonérés compris — un abonnement à un logiciel facturé
+  depuis l'Irlande ou les États-Unis suffit ;
+- par leurs VENTES, seulement les activités NON exonérées : franchisés et redevables hors santé, praticiens non
+  réglementés, actes taxables des praticiens ;
+- par les PAIEMENTS, seulement ces ventes-là, quand ce sont des prestations.
+Le cas le plus courant du cabinet est donc l'e-reporting d'ACHAT ; le cas d'école — les recettes de particuliers d'un
+commerçant — est ici minoritaire, et ses recettes SANS facture (relevé, caisse) sont le morceau le plus lourd : il ne se
+construit que si le cabinet a des dossiers qui en ont besoin (Q1, Q9).
+
+##### 1.7 Ce que l'application dit aujourd'hui, et qui est faux ou incomplet
+
+1. `obligationsFacturationElectronique('exonere', …)` (`src/lib/statutTva.ts`) : la ligne « Transmettre ses autres
+   ventes (e-reporting) » dit « Il n'y est pas tenu » ; `resumeObligations('exonere')` : « Réception des factures
+   électroniques seulement ». Faux pour ses achats à l'étranger [S7 §60], et pour ses opérations taxables — y compris en
+   ÉMISSION : la redevance d'un collaborateur appelle une facture électronique [S15 §2.10]. Affiché par
+   `StatutTvaCard.tsx` et l'en-tête du dossier (`DossierDetail.tsx`).
+2. L'onglet TVA (`TvaTab.tsx`) dit d'un dossier exonéré ou en franchise : « il n'a pas de déclaration à déposer ». Faux
+   s'il autoliquide un service acheté à l'étranger (CGI, art. 283, 2 ; numéro de TVA attribué pour cela [S13 §40]) — et
+   la CA3 de l'application ne prépare pas l'autoliquidation (`lib/declarationTva.ts`, « CE QUE CE CALCUL NE FAIT PAS »).
+   L'administration pré-remplira pourtant ces lignes depuis l'e-reporting des achats (étape e11, ligne de la feuille de
+   route à ouvrir).
+3. Une facture à un client établi hors de France ne demande ni son pays, ni son numéro de TVA, ni le régime de
+   l'opération (autoliquidation, exportation, livraison intracommunautaire, hors champ), ni la mention qui va avec
+   (`lib/mentionsFacture.ts` : seul `sirenOuvert` le distingue). C'est d'abord une lacune des mentions de la facture
+   (étape c), et l'e-reporting international en a besoin (étape e7).
+4. Le statut de TVA ne sait pas dire « exonéré, avec des actes taxables en franchise » : `exonere` efface tout le reste,
+   `franchise` refuse un article d'exonération (contrainte `dossiers_article_exoneration_coherent`). Q5.
+
+---
+
+#### 2. Le message
+
+##### 2.1 Le flux 10 et ses quatre blocs
+
+Le flux de transmission des données de transaction et de paiement (F10) est « le format conçu pour assurer les échanges
+entre les plateformes agréées […], le portail public de facturation et l'administration fiscale » [S22 §3.7.2] :
+- TB-1 `ReportDocument` (l'en-tête), puis SOIT TB-2 `TransactionsReport` (10.1 factures internationales, 10.3
+  transactions agrégées), SOIT TB-3 `PaymentsReport` (10.2 paiements par facture, 10.4 paiements agrégés) : « Les deux
+  transmissions agrégées sont à transmettre distinctement (sinon elles seront rejetées) » [S24 G6.29] ;
+- le DÉCLARANT porte un rôle unique, « BY, si le déclarant est Acheteur / SE, si le déclarant est Vendeur » [S23 TT-15 ;
+  S24 G7.52] : les achats et les ventes d'une période partent dans DEUX fichiers distincts ;
+- « Chaque fichier est « mono-objet » » [S22 note 129].
+Pour une période d'un dossier : jusqu'à TROIS fichiers — ventes (SE, 10.1 + 10.3), achats (BY, 10.1), paiements (SE,
+10.2 + 10.4) —, chacun avec ses propres période et échéance quand le régime les sépare (décade et mois au réel mensuel).
+
+Racine `Report` sans espace de noms, éléments non qualifiés [S25 ereporting.xsd]. Presque toutes les feuilles sont des
+`xs:string` : le schéma juge la STRUCTURE, pas les formats ni les codes — les règles de l'annexe 7 seront à notre charge,
+une par une.
+
+##### 2.2 L'en-tête (TB-1) et la période
+
+| Donnée | Chemin | Valeur | Règles |
+|---|---|---|---|
+| TT-1 | `ReportDocument/Id` | identifiant de la transmission, ≤ 50 caractères, alphanumériques et « - + _ / espace » ; « unique par période […] et par déclarant », doublon REJETÉ | G1.104, G8.05 |
+| TT-2 | `ReportDocument/Name` | facultatif | — |
+| TT-3 | `ReportDocument/IssueDateTime/DateTimeString` | AAAAMMJJHHMMSS, APRÈS la fin de la période | G7.53, G7.43 |
+| TT-4 | `ReportDocument/TypeCode` | `IN` (initiale) ou `RE` (rectificative) | G8.01 |
+| TG-3 TT-8/TT-7/TT-9/TT-10 | `ReportDocument/Sender` | vers l'administration : le matricule de la plateforme, schéma 0238 [G6.22] ; d'une solution compatible vers sa plateforme : NON VÉRIFIÉ (le XSD documente « le déclarant ou son OD ») | G6.22 |
+| TG-5 TT-13/TT-12 | `ReportDocument/Issuer/Id` | le SIREN du dossier, schéma 0002, « connu de la base INSEE » | G6.26 |
+| TT-14 | `ReportDocument/Issuer/Name` | raison sociale du déclarant | — |
+| TT-15 | `ReportDocument/Issuer/RoleCode` | `SE` (ventes, paiements) ou `BY` (achats) | G7.52 |
+| TT-17/TT-18 ou TT-89/TT-90 | `…/ReportPeriod/StartDate`, `EndDate` | AAAAMMJJ ; début ≤ date du contrôle ; fin > début ; fin < date du contrôle | G1.09, G1.36, G6.24, G6.25, G7.43 |
+
+##### 2.3 Les blocs
+
+**10.1 — un ACHAT à un fournisseur non établi (rôle BY)**, une `Invoice` par facture reçue [S23 TG-8 ; S8 §70–§80] :
+
+| Donnée | Valeur | Règles |
+|---|---|---|
+| TT-19 numéro, TT-20 date d'émission | ceux de la facture du fournisseur | G1.05, G1.09, G1.36, G1.07 |
+| TT-21 type | 380 facture, 381 avoir (montants positifs, comme le CII de l'application — point 21) | G1.01 |
+| TT-22 devise | celle de la facture (ISO 4217) | G1.10 |
+| TT-28 cadre, TT-29 profil | B1 / S1 / M1 selon la nature ; `urn.cpro.gouv.fr:1p0:ereporting` | G1.02, S1.12, G6.08 |
+| TG-12 vendeur : TT-33 + TT-33-1, TT-34, TT-35 | Union : son numéro de TVA, schéma 0223 (TT-34 alors obligatoire) ; hors Union : « le code pays […] et les seize premiers caractères de la dénomination sociale », schéma 0227 ; pays | G2.19, G2.33 ; [S8 §80] |
+| TG-14 acheteur : TT-36 + TT-37, TT-38 | le SIREN du dossier (0002) ET son numéro de TVA, « systématiquement complété » | G6.28, G2.33 |
+| TT-52 (+ TT-202), TT-51 | total de TVA en euros (obligatoire), total HT (facultatif) | G6.23, G1.53 |
+| TG-23 : TT-54, TT-55, TT-57, TT-56, TT-58/59 | par taux : base, TVA, taux, code (S, E, AE, K, G, O, Z), motif d'une exonération | G1.24, G2.31, G1.40, G1.53 |
+| TG-24 lignes | « Par mesure de simplification, le détail des lignes de factures n'est pas attendu » pour un achat | [S8 §70 remarque] ; [S22 §2.3.3] |
+
+Un service autoliquidé s'écrit au code AE, taux 0, TVA 0 (la TVA due se calcule dans la CA3) — représentation déduite
+de G2.31 et de la norme EN 16931, NON VÉRIFIÉE pour le flux 10 (point 5).
+
+**10.1 — une VENTE à un client établi hors de France (rôle SE)** : les mêmes données, le dossier en vendeur (SIREN 0002 et
+numéro de TVA, G2.33), le client en acheteur (0223 ou 0227, pays TT-39), l'option pour les débits (TT-24, G1.44), et les
+lignes (TG-24 : désignation, quantité, prix) exigées à partir du 01/09/2027 [S17 ; S24 G6.15]. Le code de TVA dit le
+régime de l'opération (AE, K, G, O, S) — que l'application ne connaît pas (§1.7, 3).
+
+**10.3 — les ventes à des particuliers (rôle SE)**, une `Transactions` par jour, devise et catégorie [S22 §3.7.5 ; S8 §60] :
+
+| Donnée | Valeur | Règles |
+|---|---|---|
+| TT-77 date | « Date à laquelle les transactions ont été comptabilisées » (point 6) | G1.09, G1.36, G1.07 |
+| TT-78 devise | EUR | G1.10 |
+| TT-80 option débits | si le dossier a opté (prestations, factures doubles) | G1.67, P1.11 |
+| TT-81 catégorie | TLB1 biens, TPS1 services, TNT1 opérations non situées en France (258 A I 1°, 259 B), TMA1 marge | G1.68 |
+| TT-82, TT-83 | total HT, total TVA (en euros) | G1.14, G1.53, G6.23 |
+| TT-85 nombre | facultatif depuis la simplification | [S22 §2.3.3] |
+| TG-32 : TT-86, TT-87, TT-88 | par taux : taux, base, TVA | G1.24, G1.53 |
+
+Une facture qui mêle biens et services : « Les opérateurs doivent distinguer les LB et les PS en e-reporting B2C (cf.
+lignes de facture) » [S23 onglet « Correspondance »] — les lignes de l'application ne le disent pas : refusée, comme en
+(d) (Q4 de (d)). Une vente d'un franchisé : TPS1 ou TLB1 au taux 0 (point 7).
+
+**10.2 — le paiement d'une facture internationale (rôle SE)** : TT-91 numéro, TT-102 date de la facture, TT-92 date du
+paiement, par taux TT-93 et TT-95 (en euros, 6 décimales au plus) [S23 ; S24 G6.27, G7.07]. Seulement quand une TVA
+française est exigible à l'encaissement (§1.2).
+
+**10.4 — les paiements des ventes à des particuliers (rôle SE)**, une `Transactions/Payment` par jour : TT-96 date, par
+taux TT-97 et TT-99 [S23 ; S10 §150 : « globalisées par jour et par taux »]. Seulement les prestations, hors option pour
+les débits.
+
+##### 2.4 La rectification, l'unicité, le cycle de vie
+
+- « En cas d'erreur sur des données de transaction ou de paiement transmises au titre d'une période, la plateforme agréée
+  peut transmettre un flux de transmission rectificatif (type RE) […]. Ce flux de transmission rectificatif annule et
+  remplace l'ensemble des données agrégées et précédemment transmises au titre de cette période » — par type de données
+  et par rôle du déclarant [S22 §3.7.7, p. 69, note 127]. Une correction n'est donc JAMAIS une opération de plus : c'est
+  la période ENTIÈRE, de nouveau.
+- « L'unicité est déterminée à partir du numéro de transmission, de l'identifiant du déclarant (SIREN) et de la période
+  de la transmission » [S22 note 131 ; S24 G8.05] : contrairement au statut « Encaissée » (que la plateforme de
+  l'administration ne dédoublonne pas, (d) §1.8), un même fichier renvoyé est REJETÉ (REJ_UNI), pas compté deux fois.
+  Ce que ferait une SECONDE
+  transmission initiale de la même période sous un autre identifiant n'est dit nulle part (point 8) : l'application n'en
+  enverra jamais.
+- Statuts d'un objet : 300 « Déposée » (« contrôlées comme conformes par le PPF et transmises à l'administration
+  fiscale »), 301 « Rejetée » ; motifs REJ_SEMAN, REJ_UNI, REJ_COH, REJ_PER [S22 tableaux 5 et 6].
+- La plateforme transmet « dans un délai de 8h à l'issue du dernier jour du délai de dépôt » [S22 p. 70].
+
+##### 2.5 Ce que les sources publiques ne disent pas — NON VÉRIFIÉ
+
+Les annexes décrivent le flux de la PLATEFORME vers l'administration. Celui d'une SOLUTION COMPATIBLE vers sa plateforme
+relève de la norme exclue :
+- le bloc émetteur (TG-3) d'un fichier déposé par une solution compatible pour le compte du dossier ;
+- si la plateforme accepte des dépôts EN COURS de période (opération par opération, jour par jour) qu'elle agrège, ou un
+  fichier par période ; et comment elle rectifie (un `RE` déposé par le client, ou un nouveau dépôt qu'elle consolide) ;
+- comment elle rend les statuts 300 et 301 à son client.
+Le générateur rendra ces choix PARAMÉTRABLES, sans valeur par défaut (comme `ChoixCdar` en d5), et le premier essai réel
+les tranchera.
+
+##### 2.6 Canal 1 — la plateforme du client, par son API de flux
+
+La description OpenAPI publique de banqup (v1.15.0, déjà retenue pour le dépôt d'une facture et en (d)) [S26] :
+- `POST /v1/flows` : « A flow can be: an invoice (CII, UBL, Factur-X,...), a lifecycle (CDAR), or a e-reporting file » ;
+  `flowSyntax` énuméré `CII | UBL | Factur-X | CDAR | FRR` ;
+- `flowType` (posé par la plateforme) : `AggregatedCustomerTransactionReport` (« aggregated B2C sales (FRR 10.3) »),
+  `UnitaryCustomerTransactionReport` (« international B2B sales or a B2C transaction flow reported individually (FRR
+  10.1) »), `AggregatedCustomerPaymentReport` (« FRR 10.4 »), `UnitaryCustomerPaymentReport` (« FRR 10.2 »),
+  `UnitarySupplierTransactionReport` (« international B2B purchases (FRR 10.1) »), `MultiFlowReport`, et les cycles de vie
+  `StateTransactionReportLC`, `StatePaymentReportLC` ;
+- `processingRule` : `B2BInt`, `B2C`…
+Cette plateforme-là reçoit donc des fichiers FRR d'un client, achats compris — et accepte des transactions B2C « reported
+individually », ce que la plateforme de l'administration, elle, refuse (« La transmission de facture en B2C n'est pas
+autorisée », G6.28) : elle AGRÈGE. Ce qu'elle attend dans le fichier, et ce que font les autres plateformes, reste à
+éprouver (Q10).
+
+Une autre voie existe pour les seules ventes FACTURÉES : déposer la facture elle-même (à un particulier, à un client
+étranger) et laisser la plateforme en tirer l'e-reporting — « Selon l'offre de services de votre plateforme, il est
+possible que vous déposiez ou transmettiez la facture, charge à la plateforme d'émission d'extraire et transmettre les
+seules données de e-reporting utiles » [S14 §9.1 ; S22 §3.7.2, figures 54 et 55]. Elle dépend de l'offre de chaque
+plateforme et ne couvre ni les achats ni les recettes sans facture : écartée comme chemin principal, notée pour plus tard.
+
+##### 2.7 Canal 2 — Super PDP
+
+Rien n'est vérifiable d'ici : son offre d'e-reporting, sa route, ses champs. Hors application tant que l'essai réel du
+cabinet n'a pas tranché (Q10).
+
+##### 2.8 L'instrument
+
+Les XSD du flux 10 sont dans l'archive publique des spécifications [S25] — contrairement au CDAR de (d5), aucune
+redistribution tierce n'est nécessaire. Éprouvé ici, hors du dépôt, avec xmllint : le schéma se compile ; deux flux
+FICTIFS (des transactions B2C d'un franchisé, des paiements 10.2 et 10.4) passent ; deux faux sont refusés — un élément
+inconnu (« This element is not expected »), un montant à virgule (« '150,00' is not a valid value of the atomic type
+'xs:decimal' »). Mais un fichier qui porte à la fois des transactions et des paiements, que G6.29 fait rejeter, PASSE le
+schéma : ce que le schéma ne voit pas, le module le refusera, et ses tests le prouveront. Aucun schematron public pour le
+flux 10 (« Ces contrôles sont décrits au travers de schematrons » [S22 note 128], non publiés) : les règles de l'annexe 7
+seront éprouvées une à une par les tests du module.
+
+---
+
+#### 3. Le modèle de données
+
+##### 3.1 Ce qui existe
+
+- `factures_emises` (figées à la validation) : `type_client` (`non_assujetti`, `etranger`…), `nature_operation`,
+  `date_prestation` / `periode_debut` / `periode_fin`, `option_debits` figée ; ses lignes et leurs taux ;
+  `montantsDuDocument` (`lib/factureCii.ts`) en tire la ventilation par taux. Aucune mention internationale (§1.7, 3).
+- Le registre des encaissements (d1) : `enregistrer_encaissement` accepte TOUTE facture validée de type `facture` — à un
+  particulier ou à un client étranger aussi —, avec la répartition par taux, les retraits et les contre-passations
+  (négatives, datées du décaissement). Il servira tel quel aux paiements 10.2 et 10.4 des ventes facturées.
+- `pieces` : `tiers`, `date_piece`, montants HT/TVA/TTC, `devise`, `montant_devise`, `taux_change`, `type_piece`,
+  `source` ; le texte OCR dans `piece_textes_ocr`. NI numéro de facture, NI pays, NI identifiant du fournisseur, NI nature
+  de l'opération. La citation de l'OCR ne connaît que `tiers`, `date`, `devise` et trois totaux
+  (`lib/extractionChamps.ts`).
+- Le dossier : `statut_tva`, `article_exoneration`, `numero_tva_attribue`, `tva_periodicite` (trimestrielle par défaut),
+  `tva_sur_debits` ; son SIREN dans `siret`.
+- Les recettes du relevé (`lignes_bancaires` affectées, `taux_tva`), datées à l'encaissement, sans la qualité du client.
+
+##### 3.2 Ce qui manque
+
+- Pour un ACHAT à l'étranger (et une vente à l'étranger facturée hors de l'application) : la fiche de la facture.
+- Pour une VENTE à un client étranger facturée dans l'application : son pays, son identifiant, le régime de l'opération
+  — à saisir AVANT la validation (la facture se fige).
+- Pour une recette SANS facture d'un dossier non exonéré : la qualité du client (particulier ou non), la catégorie, la
+  date de l'opération.
+- Pour chaque période : ce qui a été déclaré, figé, et la chaîne de ses rectifications.
+- Pour chaque dossier : son régime d'e-reporting (fréquence), confirmé.
+
+##### 3.3 Les options, et le choix
+
+| Question | Options | Choix |
+|---|---|---|
+| Où vivent les données d'un achat à l'étranger ? | (a) colonnes sur `pieces` ; (b) une table à part, une ligne par pièce, et sa ventilation par taux ; (c) rien en base, tout recalculé du texte OCR | (b) : `pieces` est lue par tant de modules, par la sauvegarde et, pour ses dépôts, par le client ; une table à part ne touche à aucune de ses policies, reste invisible au client, et porte ses propres contrôles. (c) est impossible : le numéro et l'identifiant ne se déduisent pas sûrement, et rien ne s'écrit sans le cabinet. |
+| À quel grain se déclare-t-on ? | (a) une marque « déclarée » sur chaque opération ; (b) un registre par période, contenu figé | (b) : la rectification remplace la PÉRIODE ENTIÈRE (§2.4) ; une marque par opération ne dirait pas ce qui a été envoyé. |
+| Que fige-t-on ? | (a) le fichier XML ; (b) le contenu canonique (JSON trié) et son empreinte | (b) : la déclaration hors application ne dépend alors pas des paramètres non vérifiés de l'en-tête (§2.5) ; le XML en est un rendu, reproductible ; une API figera en plus l'empreinte du fichier déposé, comme `transmissions_factures`. |
+| Qui vérifie le contenu ? | (a) la base le recalcule ; (b) le module le calcule, la base vérifie la forme | (b) : le contenu agrège des sources nombreuses (factures, encaissements, fiches, relevé) ; la base vérifie la période, l'unicité, la chaîne des rectifications et l'empreinte (règle du dépôt : « ce qui est testé en TypeScript n'est pas réécrit en SQL — sauf quand la base doit VÉRIFIER une écriture »). |
+| Par quel chemin ? | (1) hors application ; (2) déposer les factures et laisser la plateforme agréger ; (3) un fichier FRR par API | (1) d'abord, (3) après un essai réel ; (2) noté (§2.6). |
+
+##### 3.4 Le schéma proposé (non écrit)
+
+Aucune colonne ajoutée à `pieces` ni à `lignes_bancaires`. Trois tables nouvelles (étapes e2 et e5), plus des colonnes de
+mentions sur `factures_emises` (étape e7, si le cabinet en décide).
+
+**`pieces_hors_de_france`** — la fiche d'une pièce dont la contrepartie est établie hors de France :
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `piece_id` | uuid PK → `pieces` on delete cascade | une pièce `achat` (ou `vente` émise hors de l'application) du même dossier |
+| `dossier_id` | uuid not null → `dossiers` on delete cascade | pour une policy directe |
+| `sens` | text | `achat` ou `vente`, cohérent avec `type_piece` |
+| `numero` | text not null | 35 caractères au plus, caractères de G1.05 |
+| `date_facture` | date not null | 2000–2099 (G1.36), jamais dans l'avenir à Paris |
+| `type_document` | text | `380` ou `381` |
+| `devise` | text | ISO 4217, celle de la pièce |
+| `pays` | text | ISO 3166, jamais `FR` |
+| `identifiant` | text | n° de TVA (0223) ou « code pays + 16 premiers caractères du nom » (0227), 18 au plus |
+| `schema_identifiant` | text | `0223` ou `0227` ; 0223 seulement dans l'Union, et l'identifiant commence par le pays (EL pour la Grèce) |
+| `nature` | text | `biens`, `services`, `mixte` |
+| `autoliquidation` | boolean | vrai seulement pour un achat |
+| `date_operation` | date | facultative : la réalisation, quand elle diffère |
+| `retire_le` | timestamptz | la pièce n'était pas une opération avec l'étranger : la fiche se retire, elle ne se supprime pas |
+| `cree_par`, `cree_le`, `maj_par`, `maj_le` | | |
+
+**`pieces_hors_de_france_taux`** : `piece_id` (→ cascade), `dossier_id`, `code_tva` (`S`, `E`, `AE`, `K`, `G`, `O`, `Z` —
+G2.31), `taux` (liste de G1.24, confrontée à `TAUX_ADMIS`), `base`, `tva` (au centime), `motif_code` / `motif_texte`
+(obligatoires sur `E`, G1.40) ; clé (`piece_id`, `code_tva`, `taux`) ; `AE` impose taux 0 et TVA 0.
+
+**`declarations_ereporting`** — chaque déclaration d'une période, calquée sur `transmissions_encaissements` :
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id` | uuid PK | sert d'identifiant de transmission (TT-1, 36 caractères ≤ 50) et de suivi |
+| `dossier_id` | uuid not null | |
+| `nature` | text | `transactions` ou `paiements` |
+| `role` | text | `SE` ou `BY` ; `BY` seulement pour des transactions |
+| `periode_debut`, `periode_fin` | date | une décade, un mois ou un bimestre civil, selon le régime du dossier ; fin passée à Paris |
+| `type_transmission` | text | `IN` ou `RE` |
+| `remplace_id` | uuid → `declarations_ereporting`, unique | requis si et seulement si `RE` ; même dossier, nature, rôle et période |
+| `canal`, `hote`, `flux_id` | text | `manuel` d'abord ; `plateforme`, `superpdp` écrits dans les contraintes pour plus tard |
+| `contenu` | jsonb not null | le contenu canonique déclaré (opérations, agrégats, totaux) |
+| `sha256` | text not null | de la forme canonique ; la fonction le recalcule et refuse un écart |
+| `nb_operations` | integer | > 0 : jamais une déclaration à blanc |
+| `etat` | text | `envoi`, `echec`, `depose`, `accepte`, `rejete`, `remplacee` |
+| `detail`, `note`, `cree_par`, `cree_le`, `maj_le` | | |
+
+- Index unique partiel : UNE déclaration ACTIVE (`envoi`, `depose`, `accepte`) par (dossier, nature, rôle, début, fin).
+- Une rectificative s'écrit d'un seul tenant avec le passage de la précédente à `remplacee`.
+- Déclencheur : rien ne change après l'insertion que l'état, en avant ; aucune suppression hors du dossier entier.
+- Table AUTO-RÉFÉRENCÉE (`remplace_id`) : la restauration l'écrit par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`).
+
+**Les fonctions** (SECURITY DEFINER, `admin_du_dossier` d'abord, colonnes énumérées, refus nommés et ordonnés, que le
+module redira avant le clic et qu'une batterie confrontera sur une réplique, comme d2) :
+- `enregistrer_fiche_hors_de_france(p_piece_id, …, p_taux jsonb)` — d'un seul tenant, la fiche et sa ventilation ; refuse
+  une pièce d'un autre dossier ou d'un autre sens, un pays `FR`, un identifiant mal formé pour son schéma, un taux hors
+  G1.24, un code hors G2.31, une exonération sans motif, un `AE` à taux non nul, une ventilation dont la somme s'écarte de
+  plus d'un centime des montants de la pièce dans sa devise (G1.53). Modifiable tant qu'on veut : la déclaration fige ce
+  qui est parti, et le module dira « à rectifier » si la fiche change ensuite.
+- `retirer_fiche_hors_de_france(p_piece_id)` — une pièce qui n'était pas une opération avec l'étranger : pose `retire_le`,
+  comme en d1 ; aucun `delete` dans un corps de fonction (une suppression de données demande l'accord du cabinet, et
+  `apply_migration` la soumet à une confirmation qui n'arrive pas).
+- `declarer_ereporting_hors_application(p_dossier_id, p_nature, p_role, p_debut, p_fin, p_contenu, p_sha256, p_note,
+  p_remplace_id)` — vérifie l'accès, la période (bornes d'une décade, d'un mois ou d'un bimestre ; finie à Paris),
+  `nb_operations > 0`, l'empreinte, l'absence d'une déclaration active (initiale) ou la désignation de l'active (rectificative).
+- Plus tard (e9) : `abandonner_declaration_ereporting`, le jumeau d'`abandonner_transmission`, au même
+  `DELAI_AVANT_ABANDON_MS`.
+
+**RLS** : les trois tables en `for select to authenticated using (admin_du_dossier(dossier_id))` ; aucune policy
+d'écriture ; insertion pour restaurer par `is_super_admin()`. Le client ne voit rien.
+
+**Sauvegarde et export** : `sauvegarde.ts` (listes, relations et leur comportement à la suppression, `CLES_PRIMAIRES`),
+`restauration.sql`, l'export (`supabase/schema/`), l'inventaire, `rls.sql` (de lui-même), RGPD.md (l'identité de
+fournisseurs et de clients étrangers — des entreprises, parfois un nom de travailleur indépendant hors de l'Union dans
+l'identifiant 0227 ; les ventes à des particuliers ne sont transmises qu'agrégées par jour [S8 §50]).
+
+##### 3.5 Les mentions d'une facture internationale (e7, si des dossiers en émettent)
+
+Colonnes de `factures_emises`, saisies avant la validation et figées avec elle : `client_pays`, `client_numero_tva`,
+`regime_international` (autoliquidation par le client dans l'Union ; prestation hors Union ; livraison
+intracommunautaire ; exportation ; opération taxable en France, 259 A ; hors champ, 259 B). Chacune décide de la mention
+imprimée, du code de TVA du 10.1 et de l'exigibilité des paiements. Pour un franchisé ou un exonéré, le numéro de TVA du
+dossier (`numero_tva_attribue`) est alors requis [S13 §40, second tiret ; S24 G2.33]. La vente à un PARTICULIER établi
+hors de l'Union d'une prestation de l'art. 259 B (conseil…) relève de TNT1 : même choix, sur la facture à un
+non-assujetti.
+
+##### 3.6 Les recettes sans facture (e8, si des dossiers en ont besoin)
+
+Une recette du relevé ou une pièce de vente d'un dossier non exonéré qui vend à des particuliers : la qualité du client,
+la catégorie (TLB1, TPS1), le taux, la date de l'opération. Trois façons possibles (Q9) : un réglage par dossier
+(« ses recettes viennent de particuliers »), une marque par mouvement, un journal des recettes du jour saisi ou importé.
+La date du relevé n'est pas celle de l'opération (une remise de carte arrive un ou deux jours après, nette de commission ;
+un chèque est daté par sa remise [(d) §1.5]) : toute date proposée est dite telle, et corrigeable. Une recette déjà
+rattachée à l'encaissement d'une facture émise (`encaissements_factures.ligne_bancaire_id`) n'entre JAMAIS une seconde
+fois.
+
+##### 3.7 La cohérence avec la CA3 — un risque que (e) ne règle pas seul
+
+L'administration pré-remplira la CA3 depuis l'e-reporting. Aujourd'hui la CA3 de l'application ne prépare pas
+l'autoliquidation (lignes A3, B2, B4 et la TVA due correspondante) et ne connaît pas la CA3 d'un exonéré ou d'un franchisé
+qui autoliquide (§1.7, 2). La fiche « hors de France » est la source naturelle de ces lignes : étape e11, avec la ligne 28.
+
+---
+
+#### 4. Le parcours dans l'application
+
+##### 4.1 Où
+
+- Onglet TVA, pour TOUS les statuts (le branchement `if (!assujettiTva)` de `TvaTab.tsx` aujourd'hui court-circuite tout
+  pour un exonéré ou un franchisé : la carte doit vivre dans les deux branches) : une carte « E-reporting ».
+- La fiche d'une pièce d'achat (`FichePiece.tsx`) : une section « Fournisseur établi hors de France ».
+- L'onglet Factures : une pastille sur les factures à un particulier ou à un client étranger (« E-reporting : septembre
+  2027, déclarée »), muette sur une lecture incomplète, comme celle de d3.
+Aucun appel réseau à l'ouverture ; aucun sans clic.
+
+##### 4.2 La carte « E-reporting »
+
+- Le régime d'e-reporting du dossier (« tous les deux mois », « chaque mois », « par décade ») et d'où il vient (proposé
+  depuis le statut et la périodicité ; confirmé par le cabinet — Q4).
+- Avant le 01/09/2027 : « À partir des opérations du 1er septembre 2027 (PME, micro-entreprise). » Aucune alerte avant.
+- Puis une ligne par période échue ou en cours, et pour chacune ses trois déclarations — Ventes, Achats à l'étranger,
+  Paiements — sous un état : « Rien à déclarer » (dit SEULEMENT d'une période dont TOUTES les sources ont été lues en
+  entier et où aucune pièce candidate n'attend sa fiche — « le vide est une affirmation »), « À déclarer avant le
+  10/10/2027 », « En retard », « Déclarée le … (hors application) », « À rectifier : 2 opérations ont changé depuis »,
+  « À vérifier : 1 pièce d'achat ressemble à un achat à l'étranger ».
+- Une lecture partielle (pièces, fiches, factures, encaissements, déclarations) n'offre AUCUN geste et le dit (règle
+  « lecture → formulaire → écriture »).
+
+##### 4.3 La fenêtre d'une déclaration
+
+- Le contenu, opération par opération pour les achats et les ventes internationales, jour par jour pour les
+  particuliers : la source de chaque ligne (la pièce, la facture, l'encaissement), sa date, ses montants par taux ; les
+  totaux.
+- Les refus, avant le clic et dans l'ordre de la base : période non finie, dossier sans numéro de TVA (pour des achats ou
+  des ventes internationales : « Le dossier n'a pas de numéro de TVA : un assujetti qui achète un service à un
+  prestataire établi hors de France en demande un au service des impôts pour autoliquider la TVA ; cochez ensuite la case
+  de l'onglet TVA. »), facture à un particulier mêlant biens et services, facture internationale sans ses mentions (avant
+  e7), régime d'e-reporting à confirmer.
+- « Télécharger le détail (CSV) » ; puis, à partir de e6, « Télécharger le fichier (XML) » pour un dépôt sur le portail
+  de la plateforme.
+- « Déclarée sur la plateforme… » — confirmation : « Vous déclarez avoir transmis par <plateforme> l'e-reporting des
+  achats à l'étranger de septembre 2027 de <dossier> : 3 factures, 412,50 € hors taxe. Cette mention ne s'efface pas ;
+  une erreur se corrige par une déclaration rectificative de toute la période. » La déclaration garde le contenu figé
+  et son empreinte.
+- « À rectifier » : la fenêtre montre l'écart (ajouté, retiré, changé) et propose la rectificative de la période ENTIÈRE.
+- Le verrou d'exécution est un `useRef`, relâché après la relecture.
+
+##### 4.4 La fiche « Fournisseur établi hors de France » d'une pièce
+
+- PROPOSÉE (jamais posée seule) quand un signal le suggère : une devise autre que l'euro ; un numéro de TVA d'un autre
+  État membre ou une mention d'autoliquidation lus dans le texte OCR DÉJÀ STOCKÉ (expressions régulières locales, sans
+  appel réseau ni modèle) ; un fournisseur déjà qualifié dans le dossier (`cleFournisseur`).
+- Champs : numéro de facture (proposé du texte), pays (déduit du préfixe d'un numéro de TVA de l'Union, sinon saisi),
+  numéro de TVA ou nom, nature, autoliquidation, ventilation par taux (proposée depuis les montants de la pièce).
+- Les cas que la fiche refuse et met « à trancher » (Q7) : une TVA étrangère facturée, une TVA française facturée par un
+  fournisseur étranger (guichet unique), une acquisition de biens par un exonéré sous le seuil du régime dérogatoire
+  (point 15).
+
+##### 4.5 L'idempotence, mécanisme par mécanisme
+
+1. Une seule déclaration ACTIVE par dossier, nature, rôle et période (index unique partiel) : deux clics, deux onglets,
+   deux canaux ne déclarent pas deux fois.
+2. Jamais deux initiales pour une période : toute correction est une rectificative qui REMPLACE (§2.4).
+3. L'identifiant de transmission est celui de la déclaration, jamais réutilisé pour un autre contenu ; renvoyé tel quel,
+   le fichier est rejeté par la plateforme de l'administration (REJ_UNI), pas compté deux fois.
+4. Une déclaration hors application COMPTE : elle bloque l'envoi par l'API de la même période.
+5. Une source ne nourrit qu'une ligne : la facture émise, jamais la recette du relevé qui l'encaisse ; la pièce jumelle
+   d'une facture émise n'entre pas.
+6. Plus tard, l'API : réservation avant l'envoi, issue inconnue bloquante, suivi par identifiant, abandon après un quart
+   d'heure, vérification faite.
+
+##### 4.6 Corrections et opérations tardives
+
+- Une facture d'achat reçue après la déclaration de sa période, une fiche corrigée, un encaissement retiré : la période
+  passe « à rectifier », et sa rectificative la remplace entière (Q6).
+- La contre-passation d'un encaissement (d4) entre dans la période de SA date, en montant négatif (point 9).
+
+##### 4.7 Libellés
+
+« Déposée » (300) et « Rejetée » (301), et les motifs du tableau 6 en français [S22], recopiés de la source et non du
+module, comme `superpdpStatuts.test.ts` le fait pour le tableau 8.
+
+---
+
+#### 5. Les tests, les preuves et les risques
+
+##### 5.1 Par couche
+
+- **Périodes et échéances** (`lib/periodesEreporting.ts`, pur) : chaque régime ; décade de février (28 et 29) ; décembre →
+  janvier ; bimestres ; avant et après le 01/09/2027 ; aucun envoi à blanc ; `test:fuseaux`. `echeanceDeDeclaration` (d2)
+  s'y branche : un test confronte les deux sur une table de dates — une seule source pour la fréquence des paiements.
+- **Obligation** (`statutTva.ts`) : chaque ligne du tableau §1.3, dont l'exonéré qui achète à l'étranger.
+- **Contenu** (`lib/ereporting.ts`, pur) : chaque cas du §1.2 ; ventilation identique à `montantsDuDocument` ; encaissements
+  nets des retraits, contre-passations datées ; refus dans l'ordre de la base ; une lecture partielle ne rend rien.
+- **Fiche « hors de France »** : propositions depuis des textes OCR fictifs (numéros de TVA des vingt-sept États, EL et
+  XI ; faux positifs : un SIREN, un IBAN, un numéro de commande), refus confrontés au texte de la fonction et à une batterie
+  sur une réplique (comme `encaissementsBatterie.test.ts`).
+- **Fichier FRR** (`lib/fluxEreporting.ts`, pur) : chaque règle citée au §2 (G1.104, G8.01, G8.05, G7.43, G7.53, G6.24,
+  G6.25, G6.26, G7.52, G6.29, G6.28, G2.19, G2.33, G2.31, G1.24, G1.53, G1.14, G7.07, G6.23, G6.27, G1.68, S1.12, G1.02,
+  G1.40), les choix non vérifiés en paramètres sans défaut (`@ts-expect-error` sur un choix omis).
+- **Instrument** (`outils/facturation/ereporting/valider.mjs`) : les XSD de l'archive officielle v3.2, empreinte SHA-256 de
+  l'archive vérifiée ; xmllint ; l'outil s'éprouve d'abord sur deux documents faux que le schéma refuse (un élément
+  inconnu, un montant à virgule — tous deux refusés le 09/10/2026) et s'arrête s'il en laisse passer un ; ce que le
+  schéma laisse passer (transactions et paiements dans un même fichier, G6.29) est gardé par les tests du module, pas par
+  l'outil ; exemples fictifs et `valides.json`.
+- **Écrans** : carte et fenêtre (refus avant le clic, deux clics dans le même `act`, confirmation qui nomme tout, liste
+  relue, lecture partielle sans geste), fiche de la pièce ; banc de capture aux quatre largeurs et aux combinaisons
+  extrêmes des volets.
+- **Copies gardées** (e9) : le générateur recopié dans `plateforme-agreee` entre `── DÉBUT/FIN COPIE`, extrait,
+  transpilé et exécuté contre `src/lib`, bornes posées dès e6.
+
+##### 5.2 Essais SQL (`supabase/essais/`)
+
+- `horsDeFrance.sql` et `declarationsEreporting.sql`, par impersonation (anonyme, compte rattaché à rien, client, chef) :
+  écriture directe refusée en 42501, chaque refus exigé par sa RAISON (P0001), unicité, rectificative d'un seul tenant,
+  immuabilité ; rien laissé en base.
+- `rls.sql` (boucle sur `pg_class`, mutations) ; `restauration.sql` (vagues pour `remplace_id`) ; les trois contrôles de
+  l'export (dérive, socle, inventaire).
+
+##### 5.3 Les risques
+
+| Risque | Parade |
+|---|---|
+| Un dossier exonéré se croit hors de l'e-reporting (l'application le lui dit) | e1, en premier |
+| Un achat à l'étranger passe inaperçu (aucune fiche) | Signaux, état « à vérifier », jamais « rien à déclarer » tant qu'une candidate attend |
+| Dossier sans numéro de TVA | Refus dit, avec la démarche (SIE) |
+| Protocole solution compatible → plateforme non public | Hors application d'abord ; paramètres explicites ; essai réel |
+| Rectification mal comprise par une plateforme | La période entière, toujours ; essai réel avant l'API |
+| Une vente comptée deux fois (facture émise et recette du relevé) | Une source par opération (§4.5, 5) ; e8 conditionnel |
+| CA3 de l'application ≠ pré-remplissage de l'administration (autoliquidation) | e11 avec la ligne 28 ; ligne de feuille de route à ouvrir |
+| Le décret du CIBS change le périmètre au 01/09/2027 (L. 216-55 ne nomme pas les achats) | Relire Légifrance avant e2 ; e1 et e5 n'en dépendent pas |
+| Régime qui change en cours d'année (sortie de franchise, option mensuelle) | Régime d'e-reporting daté et confirmé par dossier (Q4) |
+| Factures internationales sans leurs mentions obligatoires (lacune de l'étape c) | e7 ; d'ici là, refus dit dans l'e-reporting |
+| Praticien exonéré avec des actes taxables mal représenté | Q5 |
+| Dates de la carte, du chèque, des espèces | Dites et corrigeables (e8) |
+| Bascule CGI → CIBS au 01/01/2027 | Double référence dans les commentaires, aucun article à l'écran |
+| Amende de 500 € par transmission manquée | Échéances prudentes, état « En retard » ; première infraction réparable [S5 V] |
+| Arrondis (somme par taux, centimes) | Même calcul que `montantsDuDocument`, en centimes ; tolérance d'un centime de G1.53 vérifiée, jamais utilisée |
+
+---
+
+#### 6. Le découpage, les questions, ce qui n'a pas pu être vérifié
+
+##### 6.1 Les étapes (chacune mergeable seule)
+
+| Étape | Contenu | Migration | Réseau |
+|---|---|---|---|
+| e1 — l'obligation dite juste | `lib/periodesEreporting.ts` (fréquences, périodes, échéances prudentes, calendrier, pas d'envoi à blanc) ; `echeanceDeDeclaration` (d2) s'y branche ; `obligationsFacturationElectronique` et `resumeObligations` corrigés (exonéré : ses achats à l'étranger et ses opérations taxables) ; textes de `StatutTvaCard` et de l'en-tête ; tests | non | non |
+| e2 — la fiche « hors de France », en base | migration `pieces_hors_de_france` (deux tables, `enregistrer_fiche_hors_de_france`, retrait, RLS, déclencheurs) ; essai SQL ; `types.ts` ; sauvegarde et restauration ; export, inventaire ; RGPD.md | oui | non |
+| e3 — la fiche à l'écran | section de `FichePiece` ; propositions depuis le texte OCR stocké (pures, sans modèle) ; refus avant le clic ; batterie sur réplique | non | non |
+| e4 — le contenu des déclarations | `lib/ereporting.ts` : achats (fiches), ventes facturées à des particuliers (factures émises), paiements (registre d1) ; états d'une période ; refus | non | non |
+| e5 — la déclaration hors application | migration `declarations_ereporting` (contenu figé, empreinte, IN/RE, une active), `declarer_ereporting_hors_application` ; essai SQL ; carte et fenêtre de l'onglet TVA ; détail CSV | oui | non |
+| e6 — le fichier FRR | `lib/fluxEreporting.ts` (choix non vérifiés en paramètres), exemples fictifs, instrument XSD ; téléchargement du XML dans la fenêtre | non | non |
+| e7 — les ventes à l'étranger (si Q1 b) | mentions d'une facture internationale (colonnes figées, formulaire, mention imprimée) ; 10.1 vendeur et 10.2 | oui | non |
+| e8 — les recettes sans facture (si Q1 a) | qualité du client, catégorie, date ; 10.3 et 10.4 hors factures | oui | non |
+| e9 — le dépôt par la plateforme du client | `plateforme-agreee` : `deposer_ereporting`, `suivre_ereporting` (flowSyntax FRR), cycle de vie 300/301 ; `abandonner_declaration_ereporting` ; copies gardées ; DÉPLOYÉ après un essai réel, `verify_jwt` de `config.toml` passé explicitement, version en place comparée, aller-retour, bordures comptées | oui (l'abandon) | oui, au clic |
+| e10 — Super PDP | la route que l'essai réel aura révélée | non | oui, au clic |
+| e11 — la CA3 | autoliquidation (A3, B2, B4) depuis les fiches ; CA3 d'un exonéré ou d'un franchisé qui autoliquide ; contrôle des ventes déclarées face aux recettes comptées | selon | non |
+
+Ordre recommandé : e1 tout de suite (il corrige ce que l'application affirme) ; puis e2 → e3 → e4 → e5 (valeur légale dès
+e5, sans réseau, un an avant l'échéance) ; e6 ; e7 et e8 selon Q1 ; e9 et e10 après Q10 ; e11 avec la ligne 28. Avant
+e2 : relire Légifrance pour le décret de l'art. L. 216-55 du CIBS (point 2).
+
+##### 6.2 Les questions au cabinet
+
+Rédigées à part (`questions_cabinet.md`), chacune avec ma recommandation : Q1 les dossiers concernés ; Q2 l'ordre et le
+chemin ; Q3 le numéro de TVA exigé ; Q4 le régime d'e-reporting par dossier ; Q5 le praticien exonéré qui a des actes
+taxables ; Q6 l'opération tardive ; Q7 l'achat facturé avec une TVA ; Q8 les factures à l'étranger ; Q9 les recettes
+sans facture ; Q10 les essais réels.
+
+##### 6.3 Les points NON VÉRIFIÉS
+
+1. Le fichier qu'une SOLUTION COMPATIBLE dépose sur une plateforme : son en-tête (TG-3), les dépôts en cours de période,
+   l'agrégation, la rectification, le retour des statuts 300/301 — défini par la norme exclue.
+2. Le décret pris pour le dernier alinéa de l'art. L. 216-55 du CIBS : non trouvé ; s'il paraît avant le 01/09/2027, il
+   fixe « les catégories d'opérations concernées » — et L. 216-55 ne nomme pas les acquisitions.
+3. Le régime, donc la fréquence, d'un praticien exonéré qui n'a que des achats autoliquidés : réel normal présumé
+   (trimestriel, donc mensuel pour l'e-reporting).
+4. Le régime d'un praticien exonéré dont les actes taxables restent sous les seuils de la franchise : bimestre présumé.
+5. La représentation d'un achat autoliquidé dans le 10.1 (code AE, taux 0, TVA 0) ; celle d'un achat hors de l'Union
+   (AE ou O).
+6. La date qui range une opération : date de la facture ou de la réalisation (note 125 : « la date de réalisation de
+   l'opération » ; TT-77 : « comptabilisées ») ; pour une vente facturée, l'application proposera la date de la
+   prestation quand la facture la dit, sinon sa date d'émission.
+7. La catégorie d'une vente d'un franchisé à un particulier : TPS1 ou TLB1 au taux 0 (et non TNT1).
+8. Une seconde transmission initiale sous un autre identifiant pour une période déjà transmise : cumulée ou rejetée.
+9. Un paiement négatif (contre-passation, remboursement) dans le 10.2 et le 10.4 : dans la période du décaissement, ou
+   rectification de la période d'origine ; et l'absence d'envoi à blanc pour les PAIEMENTS (le décret ne l'écrit que pour
+   les transactions).
+10. Le jour exact des échéances : « entre le 25 et la fin du mois » (jour propre à l'entreprise) ; deuxième décade (le 30
+    pour la doctrine, le dernier jour du mois pour le tableau 13).
+11. Les contrôles des schematrons de la plateforme de l'administration, non publiés ; ceux que chaque plateforme ajoute.
+12. Les articles 41 septies K à P de l'annexe IV, cités par le BOFiP, n'ont pas été ouverts ; l'art. 290 A ne l'a pas été
+    dans cette session (lu en (d)) ; l'art. 242 nonies M consolidé non plus (le décret et le BOFiP l'ont été).
+13. L'art. 286 ter du CGI (identification du preneur, 4°) est annoncé abrogé par l'ord. n° 2025-1247 : la règle sous le
+    CIBS n'a pas été lue (le BOFiP du 16/02/2022 l'a été).
+14. Un achat à un fournisseur étranger qui a facturé sa propre TVA, ou la TVA française par le guichet unique : à
+    déclarer, et comment.
+15. Les acquisitions intracommunautaires de biens d'un exonéré ou d'un franchisé sous le seuil de 10 000 € du régime
+    dérogatoire (CGI, art. 256 bis) : hors du 10.1 si elles ne sont pas taxables en France — seuil et option non relus.
+16. Le cadre de facturation (TT-28) d'une facture REÇUE de l'étranger : B1/S1/M1, ou B2/S2/M2 pour une facture déjà payée
+    (abonnement prélevé).
+17. Le fuseau des horodatages (TT-3) : Paris retenu, comme pour le CDAR.
+18. Super PDP : son offre d'e-reporting et sa route.
+19. La licence de réutilisation des XSD de la DGFiP comme instrument (non copiés dans le dépôt) : impots.gouv.fr n'a pas
+    été relu sur ce point (le BOFiP est sous licence Etalab 2.0).
+20. Le client assujetti absent de l'annuaire, déclaré « comme » un particulier (tolérance) : comment l'application le
+    saurait (aucune lecture de l'annuaire aujourd'hui).
+21. Le signe des montants d'un AVOIR dans le flux 10 : positifs sous le type 381 dans le 10.1 (la convention du CII, que
+    l'application suit déjà) ; et des agrégats 10.3 d'un jour où les avoirs l'emportent (négatifs, que G1.14 admet en
+    forme) — le sens n'est dit nulle part pour le flux 10.
+22. Les mentions obligatoires d'une facture à un client établi hors de France (son numéro de TVA, « Autoliquidation »,
+    la référence d'une exonération à l'exportation ou intracommunautaire) : tirées du tableau des données de facture
+    [S17] ; l'art. 242 nonies A de l'annexe II n'a pas été relu dans sa version en vigueur — à faire avant e7.
+
+---
+
+#### Sources
+
+- [S1] Légifrance, CGI, art. 290, version en vigueur depuis le 21/02/2026 (loi n° 2026-103 du 19/02/2026, art. 123 (V)) ;
+  note d'abrogation au 01/01/2027 et de maintien (ord. n° 2025-1247, art. 9, 15 et 49). Lu par citations courtes : chapeau
+  du I, 2°, 3° et c, note. https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053546668/2026-02-21
+- [S2] Légifrance, CGI, art. 290 A (version du 21/02/2026), non rouvert ici : lu en (d).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053546674/2026-02-21
+- [S3] Décret n° 2026-677 du 27/07/2026 (JO du 28/07/2026, texte 26), art. 14 (242 nonies M), 16 (242 nonies O), 17
+  (242 nonies P), lu dans la reproduction déjà téléchargée pour (d) (associatheque.fr).
+- [S4] Arrêté du 27/07/2026 (JO du 28/07/2026, texte 27), art. 1er, points M, N et O (art. 41 septies L, M, P de l'annexe IV).
+- [S5] Légifrance, CGI, art. 1788 D, version du 21/02/2026 au 01/01/2027, I, II et V.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046195593
+- [S6] BOFiP, BOI-TVA-DECLA-20-30-50, 30/09/2026, §1, §10, §20, §30. https://bofip.impots.gouv.fr/doctrine/pgp/13897-PGP
+- [S7] BOFiP, BOI-TVA-DECLA-20-30-50-10, 30/09/2026 (champ d'application), §1, §20 (et remarques), §30 à §100, §150, §160
+  à §220. https://bofip.impots.gouv.fr/doctrine/pgp/13898-PGP
+- [S8] BOFiP, BOI-TVA-DECLA-20-30-50-20, 30/09/2026 (données à transmettre), §10, §40 à §80, §100, §110.
+  https://bofip.impots.gouv.fr/doctrine/pgp/13899-PGP
+- [S9] BOFiP, BOI-TVA-DECLA-20-30-50-30, 30/09/2026 (modalités), §20, §40 à §100.
+  https://bofip.impots.gouv.fr/doctrine/pgp/13900-PGP
+- [S10] BOFiP, BOI-TVA-DECLA-20-30-60, 30/09/2026 (données de paiement), §1 à §50, §100 à §210.
+  https://bofip.impots.gouv.fr/doctrine/pgp/13901-PGP
+- [S11] BOFiP, actualité ACTU-2026-00145 du 30/09/2026. https://bofip.impots.gouv.fr/bofip/15176-PGP.html/ACTU-2026-00145
+- [S12] BOFiP, BOI-TVA-CHAMP-30-10-20-10 (professions médicales et paramédicales), version du 09/04/2025, §20, §30, §40,
+  §80. https://bofip.impots.gouv.fr/bofip/1139-PGP.html/identifiant=BOI-TVA-CHAMP-30-10-20-10-20250409
+- [S13] BOFiP, BOI-TVA-DECLA-20-10-20 (numéro individuel d'identification), version en vigueur depuis le 16/02/2022, §20
+  (remarque), §40. https://bofip.impots.gouv.fr/bofip/1149-PGP.html/identifiant=BOI-TVA-DECLA-20-10-20-20140219
+- [S14] impots.gouv.fr, « Foire aux questions – Je découvre la facturation électronique », version du 01/09/2026, §1.1,
+  §1.2, §1.3, §2.2, §7.1, §7.2, §8.1, §9.1, §9.3, §10.1 à §10.4.
+  https://www.impots.gouv.fr/foire-aux-questions-je-decouvre-la-facturation-electronique
+- [S15] impots.gouv.fr, « Foire aux questions – J'approfondis la facturation électronique », version du 01/09/2026, §1.1,
+  §1.2, §1.5, §2.10, §3.1, §3.3, §4.1. https://www.impots.gouv.fr/foire-aux-questions-japprofondis-la-facturation-electronique
+- [S16] impots.gouv.fr, « E-reporting – Tableau des opérations situées dans le champ ».
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/japprof_tableau-des-operations-situees-dans-le-champ-du-e-reporting_vf.pdf
+- [S17] impots.gouv.fr, « Données de transaction (e-reporting de transaction) à transmettre », MAJ août 2026.
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/japprof_donnees-de-transactions-a-transmettre_vf.pdf
+- [S18] impots.gouv.fr, « Données de paiement à transmettre à l'administration », MAJ août 2026.
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/japprof_donnees-de-paiement-a-transmettre_vf.pdf
+- [S19] impots.gouv.fr, « Fréquences et délais de transmission des données de transaction et de paiement », MAJ août 2026.
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/japprof_frequences-et-delais-de-transmission.pdf
+- [S20] impots.gouv.fr, actualité « Le régime simplifié d'imposition à la TVA est supprimé à compter du 1er janvier
+  2027 », publiée le 22/09/2026, modifiée le 23/09/2026 (loi de finances pour 2025, art. 38).
+  https://www.impots.gouv.fr/actualite/le-regime-simplifie-dimposition-la-tva-est-supprime-compter-du-1er-janvier-2027
+- [S21] impots.gouv.fr, « J'approfondis mes connaissances sur la réforme » (liens des fiches).
+  https://www.impots.gouv.fr/japprofondis-mes-connaissances-sur-la-reforme
+- [S22] DGFiP, « Dossier de spécifications externes de la facturation électronique – Dossier général », v3.2 du
+  30/04/2026 : §2.3.2, §2.3.3 (simplifications et tolérances), §2.3.5, §3.7.1 à §3.7.10 (tableaux 5, 6 et 13 ; notes 117
+  à 132). https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/specification_externes_b2b/specifications-externes-v3.2.zip
+- [S23] Même archive : « Annexe 6 – Format sémantique FE e-reporting », V1.10 du 30/04/2026, onglets « E-REPORTING - Flux
+  10 » et « E-REPORTING - Correspondance ».
+- [S24] Même archive : « Annexe 7 – Règles de gestion », V1.9 : G1.01, G1.02, G1.05, G1.07, G1.09, G1.10, G1.14, G1.24,
+  G1.36, G1.40, G1.44, G1.53, G1.57, G1.65 à G1.68, G1.102, G1.104, G2.19, G2.31, G2.33, G6.07 à G6.30, G7.07, G7.43,
+  G7.52, G7.53, G8.01, G8.05, P1.11, S1.12.
+- [S25] Même archive : « 3- XSD_v3.2/1 - E-reporting » (ereporting.xsd, report.xsd, transaction.xsd, payment.xsd,
+  parametre.xsd) et Changelog_XSD.md.
+- [S26] banqup, « Afnor Connector API », description OpenAPI 3.0.1, version 1.15.0 — schéma `FlowInfo` (`flowSyntax`,
+  `flowType`, `processingRule`) et `POST /v1/flows` ; documentation publique d'une plateforme, lue pour des noms de champs,
+  déjà retenue en (d). Son en-tête la dit conforme à la norme exclue : elle est lue comme ce qu'UNE plateforme publie de
+  son API, jamais comme la norme, dont rien n'a été lu. https://integr-assets.btx.fr.banqup.com/1.0.2857/docs/downloads/connectors-afnor.yaml (page :
+  https://docs.btx.banqup.com/docs/communication/conn-afnor/afnor-connector-api)
+- [S27] Légifrance, CIBS, art. L. 216-55 (ord. n° 2025-1247), structure lue par citations courtes.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053106721/2026-01-07
+- [S28] HISTORIQUE.md : « LE STATUT « ENCAISSÉE » : LA CONCEPTION » (08/10/2026) et les entrées d1 à d5 ; « LA CA3 SE
+  PRÉPARE… » (28/09/2026).
+
+Dans le dépôt (commit 62eb973) : `src/lib/statutTva.ts`, `src/lib/encaissementsFactures.ts` (`obligationEncaissee`,
+`echeanceDeDeclaration`), `src/lib/types.ts` (`Dossier`, `FactureEmise`, `TypeClient`, `NatureOperation`),
+`src/lib/mentionsFacture.ts`, `src/lib/factureCii.ts`, `src/lib/declarationTva.ts`, `src/lib/extractionChamps.ts`,
+`src/pages/dossier/TvaTab.tsx`, `src/pages/dossier/StatutTvaCard.tsx`, `src/pages/DossierDetail.tsx`,
+`supabase/functions/plateforme-agreee/index.ts` (bloc FLUX), `supabase/schema/20261008180607_encaissements_des_factures.sql`,
+`outils/facturation/valider.mjs`, `outils/facturation/cdar/valider.mjs`.
+
+Hors du dépôt, dans le carnet de la session : les documents téléchargés (`d/ereporting/dl/`, un dossier chacun), les trois
+flux FICTIFS éprouvés au schéma (`d/ereporting/essai_xsd/`), les outils d'extraction (`d/ereporting/outils/`).
+
+#### Les dix questions au cabinet, telles que posées le 09/10/2026
+
+Le contexte en trois lignes : l'e-reporting démarre pour vos dossiers avec les opérations du 1er septembre 2027. Les
+soins exonérés n'y entrent pas ; mais tout dossier, même exonéré, y déclare ses ACHATS à un fournisseur établi hors de
+France (logiciels en ligne, formations, publicité…), et les activités non exonérées y déclarent leurs ventes à des
+particuliers. Chaque question se répond d'une ligne ; ma recommandation est donnée.
+
+---
+
+**Q1 — Vos dossiers concernés.** Pour vos vrais dossiers (la base n'a que des données fictives) :
+a) combien vendent à des PARTICULIERS une activité NON exonérée (franchise ou TVA : consultant, coach, naturopathe,
+   actes esthétiques, expertises pour un particulier…) — aucun, quelques-uns, beaucoup ?
+b) combien facturent des clients établis HORS DE FRANCE — aucun, quelques-uns, beaucoup ?
+c) la plupart achètent-ils des services à l'étranger (abonnements, formations, publicité en ligne) — oui ou non ?
+→ Réponse attendue, par exemple : « a quelques-uns, b aucun, c oui ».
+**Ma recommandation** : ces réponses décident de deux étapes : sans « beaucoup » en a, on ne construit pas l'e-reporting
+des recettes sans facture (étape e8) ; avec « aucun » en b, pas celui des ventes à l'étranger (étape e7).
+
+**Q2 — L'ordre et le chemin.** Commencer par corriger ce que l'application dit d'un dossier exonéré (elle lui dit qu'il
+« n'y est pas tenu »), puis traiter les achats à l'étranger, puis les ventes facturées dans l'application ; et livrer
+d'abord SANS RÉSEAU : l'application prépare chaque période, donne le détail et le fichier, le cabinet ou le client
+déclare sur la plateforme, l'application garde ce qui a été déclaré. L'envoi par l'API de la plateforme seulement après
+un essai réel.
+**Ma recommandation** : oui — le même chemin que le statut « Encaissée ».
+
+**Q3 — Le numéro de TVA.** Un dossier exonéré ou en franchise qui achète un service à l'étranger doit avoir un numéro de
+TVA (pour autoliquider la TVA, et le fichier de l'administration l'exige). L'application refuse de préparer ses achats
+tant que la case « numéro de TVA attribué » n'est pas cochée, et lui dit d'en demander un au service des impôts ?
+**Ma recommandation** : oui.
+
+**Q4 — La fréquence de chaque dossier.** Un réglage par dossier — tous les deux mois, chaque mois, ou par décade —
+proposé depuis son statut de TVA et la périodicité de sa CA3, que le cabinet confirme. Pour un praticien exonéré (dont
+la fréquence n'est écrite nulle part), « chaque mois » par défaut, à confirmer avec son service des impôts ?
+**Ma recommandation** : oui (impots.gouv.fr demande d'ailleurs de déclarer son régime à sa plateforme).
+
+**Q5 — Le praticien exonéré qui a aussi des actes taxables** (esthétique sans finalité thérapeutique, expertises,
+location de locaux équipés à des confrères, ventes de produits). Aujourd'hui le statut « exonéré » efface tout le reste.
+Ajouter au statut une case « a aussi des opérations taxables (en franchise ou redevable) » ?
+**Ma recommandation** : oui, avec l'étape e1 pour le texte, puis dans le calcul.
+
+**Q6 — L'opération qui arrive après la déclaration de sa période** (une facture d'achat reçue en retard, une pièce
+corrigée). On déclare une RECTIFICATIVE de la période entière, jamais un ajout à la période en cours ?
+**Ma recommandation** : oui — c'est le seul mécanisme que décrit la DGFiP (la rectificative « annule et remplace » la
+période).
+
+**Q7 — L'achat à un fournisseur étranger qui a facturé une TVA** (la sienne, ou la TVA française par le guichet
+unique — ce qui arrive quand on ne lui a pas donné de numéro de TVA). L'application le met de côté « à trancher par le
+cabinet » au lieu de le déclarer d'office ?
+**Ma recommandation** : oui.
+
+**Q8 — Les factures à un client établi hors de France.** L'application n'en demande aujourd'hui ni le pays, ni le
+numéro de TVA du client, ni le régime (autoliquidation, exportation…), alors que la facture doit porter ces mentions et
+que l'e-reporting en a besoin. Les ajouter au formulaire (étape e7) ?
+**Ma recommandation** : oui si Q1 b n'est pas « aucun » — c'est aussi une mention obligatoire de la facture ; sinon plus
+tard, et l'e-reporting refuse ces factures en le disant.
+
+**Q9 — Les recettes sans facture d'un dossier non exonéré qui vend à des particuliers** (carte, espèces, virement).
+Choisir : a) un réglage par dossier « ses recettes viennent de particuliers » ; b) une marque mouvement par mouvement ;
+c) un journal des recettes du jour saisi ou importé. La date du relevé serait proposée comme date de l'opération, dite
+approximative et corrigeable.
+**Ma recommandation** : a, et seulement si Q1 a est « beaucoup » ; sinon ces dossiers déclarent directement sur leur
+plateforme et l'application leur rappelle l'échéance.
+
+**Q10 — Les essais réels.** Sur quelle plateforme pouvez-vous essayer un dépôt d'e-reporting (bac à sable) ? Et Super
+PDP propose-t-il l'e-reporting à vos clients ?
+**Ma recommandation** : un essai par plateforme avant tout envoi par API ; d'ici là, déclaration hors application.
+
+### 09/10/2026 — LA RÉVISION DES COMPTES : LA CONCEPTION — LIGNE 41
+
+La note de conception de l'architecte, telle qu'il l'a rendue, gardée ici parce que les étapes R1 à R9 s'y appuient : ses sources, ses points NON VÉRIFIÉS et ses douze questions au cabinet, posées le 09/10/2026. Relevé en concevant, et confié à une correction à part : la suppression de plusieurs documents à la fois (`supprimerSelection`, onglet Documents) passait un échec sous silence, et l'écran de la validation d'un exercice citait un article du plan comptable d'avant sa renumérotation.
+
+Rédigée le 09/10/2026 par l'architecte, pour le cabinet et pour la session qui orchestre. CONCEPTION SEULEMENT : rien
+n'a été écrit dans le dépôt, aucune migration, aucune écriture en base. La base n'a été lue qu'en lecture (catalogue,
+policies, comptes de lignes du dossier `test` — jamais un libellé, un nom ni un texte). Sources publiques seulement :
+Légifrance (arrêtés d'agrément des normes de la profession, décret, ordonnance, codes), BOFiP, et le plan comptable
+général dans la version consolidée que publie l'ANC. Les normes AFNOR exclues par le cabinet n'ont rien à voir ici et
+n'ont été ni lues ni citées. Les sources sont numérotées [S1]… et décrites à la fin ; ce qui n'a pas pu être lu dans
+le texte lui-même est marqué NON VÉRIFIÉ (§8).
+
+La ligne de la feuille de route (phase 3, P1, « Hors BNC » : non) : « justifier chaque solde de bilan par une pièce,
+cycle par cycle, et en laisser trace — c'est ce qui est opposable en contrôle. Les contrôles d'intégrité existent ;
+manquent la structure de dossier de révision et la mémoire des justifications d'un exercice à l'autre. »
+
+---
+
+#### 0. Le résumé en dix lignes
+
+1. Réviser est le cœur du métier que l'ordonnance de 1945 réserve à l'expert-comptable — « réviser et apprécier les
+   comptabilités » (art. 2 [S5]). La mission de présentation exige des contrôles « sur les comptes de bilan et de
+   résultat les plus significatifs », « par exemple justification des soldes, rapprochement avec des pièces
+   justificatives, dénouement des opérations bancaires à la clôture » (NP 2300, A6 [S1]), une revue analytique (§13,
+   A7) et un dossier de travail (§16, A8, A9).
+2. Ce dossier doit permettre « à un autre expert-comptable expérimenté n'ayant pas pris part à la mission » de
+   comprendre les problèmes rencontrés et d'apprécier les travaux (A8). La norme de management de la qualité, en
+   vigueur depuis le 01/01/2025, veut savoir « quand et par qui la documentation a été créée, modifiée ou revue » et
+   éviter « les modifications non autorisées » (A28-2 [S2]) ; la revue est confiée à une personne compétente, qui peut
+   être celle qui supervise (§30, A30-1).
+3. Pour un BNC en trésorerie, la loi exige le livre-journal, le registre des immobilisations et leurs pièces (CGI,
+   art. 99 [S7]) : la justification des soldes est une diligence de l'expert-comptable, pas une obligation propre du
+   praticien. Mais l'application tient une comptabilité en partie double : chaque dossier a des soldes de bilan à
+   justifier (512, 108 et 101, 164, comptes 2 et 28, 275, 445, 580).
+4. L'application prouve déjà la régularité en la forme (FEC, numérotation, validation, piste d'audit, empreintes), le
+   relevé qui boucle, la concordance de la 2035 au centime, et trente points en erreur de la Checklist, que la
+   validation reprend ou écarte avec sa raison. Ce qui manque : rapprocher chaque SOLDE de sa preuve (relevé au 31/12,
+   tableau d'emprunt, registre, déclaration), le documenter, le faire revoir, s'en souvenir l'année suivante.
+5. Décidé : deux niveaux. Le COMPTE pour les soldes de bilan — une décision par solde : justifié par des pièces,
+   accepté sur motif, ou anomalie ; le CYCLE pour le travail et la revue — programme, conclusion, journal, points à
+   suivre, revue du chef. Les comptes de résultat se révisent par cycle (revue analytique, couverture des pièces).
+6. Tout est une AFFIRMATION datée et signée, jamais une déduction : l'application propose la preuve, le cabinet décide
+   d'un clic. Rien ne se modifie : une décision se remplace par une autre, l'historique reste. L'état d'un solde (à
+   justifier, justifié, à revoir…) se DÉDUIT des décisions et des soldes du jour ; il n'est pas stocké.
+7. La base vérifie au clic que le solde justifié est celui des écritures (même calcul des deux côtés, en centimes,
+   confronté par un test), refuse un exercice non terminé ou dont l'ouverture n'est pas encore définitive, et garde
+   une trace immuable. Le client ne voit rien : lecture `admin_du_dossier`, écriture par fonctions seulement.
+8. La mémoire : une justification « permanente » (contrat, tableau d'emprunt, bail) est PROPOSÉE à l'exercice suivant ;
+   le registre reporte de lui-même la facture de chaque bien ; les points à suivre d'un cycle se relisent l'année
+   d'après ; un dossier permanent (lettre de mission, organisation comptable, contrats) vit à part.
+9. La validation de l'exercice fige les soldes que la révision justifie. La révision des soldes devient un préalable de
+   la validation à une étape à part, une fois éprouvée ; un geste « Finaliser le dossier de travail », après
+   l'attestation, fige la révision et lui donne une empreinte chaînée à celle de l'exercice (ligne 44).
+10. Neuf étapes fusionnables seules (R1, la base des soldes, à R9, la finalisation et l'export), aucune Edge Function,
+    aucun appel réseau ; douze questions au cabinet ; vingt points non vérifiés. Sur le dossier `test`, tout est
+    LATENT : aucune écriture, donc aucun solde à justifier aujourd'hui.
+
+---
+
+#### 1. Ce qu'exige la profession
+
+##### 1.1 Les textes en vigueur
+
+| Texte | Ce qu'il dit pour la révision | Source |
+|---|---|---|
+| Ordonnance n° 45-2138 du 19/09/1945, art. 2 (version en vigueur depuis le 08/05/2017) | Est expert-comptable « celui qui fait profession habituelle de réviser et d'apprécier les comptabilités des entreprises et organismes auxquels il n'est pas lié par un contrat de travail » ; il « fait aussi profession de tenir, centraliser, ouvrir, arrêter, surveiller, redresser et consolider » ces comptabilités ; « Il fait rapport de ses constatations, conclusions et suggestions. » | [S5] |
+| Arrêté du 10/06/2022 portant agrément du cadre de référence (en vigueur le 01/07/2022) | La présentation des comptes est une mission d'ASSURANCE : « exprimer une assurance modérée sur la cohérence et la vraisemblance des comptes annuels ou intermédiaires », objet de la norme 2300. L'« assistance comptable » est une autre prestation, sans assurance, encadrée par le code de déontologie, la norme anti-blanchiment et la norme de qualité. | [S3] |
+| Arrêté du 01/09/2016, art. 4 et son annexe : la NP 2300 (exercices clos à compter du 31/12/2016) | Sections : acceptation de la mission ; prise de connaissance générale de l'entité ; appréciation de l'organisation de la comptabilité ; appréciation de la régularité en la forme ; préparation des comptes ; examen de la cohérence et de la vraisemblance ; documentation des travaux ; rapport. Détail aux §1.2 à §1.5 ci-dessous. | [S1] |
+| Arrêté du 30/05/2024 portant agrément de la norme professionnelle de management de la qualité et du glossaire (en vigueur le 01/01/2025 ; abroge la NPMQ de 2016, annexe 3 de l'arrêté de 2016) | Jugement professionnel et esprit critique (§2, §26) ; adaptation à la taille de la structure (§4, §8, §38) ; « La structure dispose des ressources technologiques appropriées et s'assure périodiquement de leur efficacité », ressources qui « comprennent notamment les applications, l'infrastructure » (§24, A24) ; dossiers de travail, confidentialité, intégrité, accessibilité, conservation (§28, A28-1 à A28-3) ; consultations consignées (§29) ; supervision et revue (§30, A30-1). | [S2] |
+| Décret n° 2012-432 du 30/03/2012, code de déontologie (art. 141 à 169) | Compétence, conscience professionnelle et indépendance d'esprit (art. 145) ; s'assurer que les collaborateurs auxquels on confie des travaux ont une compétence appropriée (art. 148) ; apprécier une mission avant de l'accepter (art. 150) ; « un contrat écrit définissant leur mission » (art. 151) ; devoir d'information et de conseil (art. 155). | [S4] |
+| Plan comptable général (règlement ANC n° 2014-03, version consolidée au 01/01/2026) | Champ : les entités tenues d'établir des comptes annuels (art. 111-1) ; régularité, sincérité, importance relative (art. 121-3) ; documentation des procédures, conservée aussi longtemps que les documents comptables (art. 1011-2) ; piste d'audit (art. 1011-3) ; inventaire : « Les données d'inventaire sont conservées et organisées de manière à justifier le contenu de chacun des postes du bilan » (art. 1021-3) ; validation et clôture (art. 1031-3, 1031-4) ; pièce justificative datée et sa référence (art. 1032-1, 1032-2) ; le 108 viré au 101 en fin d'exercice (art. 1211-10). | [S6] |
+| CGI, art. 99 (version du 21/02/2026 au 01/01/2027) | Le BNC en déclaration contrôlée tient « un livre-journal servi au jour le jour » de ses recettes et dépenses, qui comporte « l'identité déclarée par le client ainsi que le montant, la date et la forme du versement des honoraires », et un document des immobilisations « appuyé des pièces justificatives correspondantes » ; il les conserve selon l'art. L102 B du LPF ; sous un seuil de recettes, il peut retenir la date du relevé bancaire, à condition de tout enregistrer au plus tard le 31 décembre. | [S7] |
+| LPF, art. L102 B (version au 01/01/2027) et loi n° 2026-534 du 25/06/2026, art. 36 | Livres, registres, documents et pièces conservés DIX ans (six jusqu'ici), pour ceux dont le délai expire après le 01/01/2027 ; établis ou reçus sur support informatique, ils sont conservés sous cette forme pendant ce délai ; la documentation des traitements, jusqu'à l'expiration de la troisième année suivante. | [S8] |
+| BOI-BNC-DECLA-10-20 (12/09/2012) | Livre-journal (§10 à §150) ; conservation (§180, §190) ; secret professionnel : une référence à un document annexe accessible au lieu de l'identité (§280, §290) ; les relevés individuels (SNIR) remplacent le livre-journal pour les seuls médecins conventionnés en secteur I (§330, §340), « les autres catégories de praticiens conventionnés (chirurgiens-dentistes, auxiliaires médicaux…) » tenant un livre-journal pour toutes leurs recettes (§350) ; registre des immobilisations (§420 à §460). | [S9] |
+| BOI-BNC-BASE-20-10-10 (06/07/2016) | Une recette est encaissée quand le bénéficiaire en a « la libre disposition » (§10) : un chèque à sa remise, ou à la réception de la lettre qui le porte ; un virement à son inscription au crédit du compte (§20). | [S10] |
+| Code civil, art. 2224 | Les actions personnelles se prescrivent par cinq ans à compter du jour où le titulaire d'un droit a connu ou aurait dû connaître les faits lui permettant de l'exercer. | [S12] |
+
+##### 1.2 Ce que le dossier de travail contient (NP 2300, §16 et A9)
+
+« L'expert-comptable constitue un dossier de travail contenant la documentation de ses travaux et notamment les
+éléments importants sur lesquels se fondent ses conclusions » (§16). Le glossaire le définit comme l'« ensemble de la
+documentation relative à la réalisation de la mission » [S1, annexe 1]. A8 précise qu'il « peut être dématérialisé ».
+A9 en donne une liste indicative, que la conception range comme la pratique des cabinets : un dossier PERMANENT (ce qui
+vaut pour plusieurs exercices) et un dossier de l'EXERCICE.
+
+| Élément (A9) | Ce que l'application a déjà | Ce que la ligne 41 ajoute |
+|---|---|---|
+| « les informations utiles sur l'entité pour la mission en cours et les missions ultérieures » | Informations du dossier, code NAF, statut de TVA, véhicule | Dossier permanent (R7) |
+| « un exemplaire de la lettre de mission » | Rien | Dossier permanent (R7) — l'art. 151 du code de déontologie l'exige |
+| « des documents juridiques de l'entité et contrats importants » | Documents administratifs, sans rôle | Dossier permanent et citations (R7) |
+| « la description de l'entité et de son activité » | Informations, NAF | Dossier permanent (R7) |
+| « la présentation de l'organisation comptable » | Rien de propre au dossier | Dossier permanent (R7) ; voir aussi PCG art. 1011-2 |
+| « les documents de travail relatifs aux comptes de la période concernée » | Balance des comptes, Écritures, FEC, piste d'audit, 2035 | Feuilles de révision par cycle (R3, R4) |
+| « un programme de travail adapté » | Rien | Programme proposé par cycle, exécution consignée (R4) |
+| « le grand livre si celui-ci a été utilisé comme support des contrôles effectués et qu'il fait apparaître les contrôles opérés » | Écritures, FEC | Chaque solde justifié renvoie à ses écritures (R3) |
+| « les feuilles de travail relatives à la préparation des comptes » | Écritures d'inventaire écrites par l'application (dotations, forfaits, liquidation de la TVA) | Conclusions par cycle (R4) |
+| « la formalisation de l'examen de cohérence et de vraisemblance » | Concordance de la 2035 avec les écritures | Revue analytique (R5) |
+| « une note de synthèse générale » | Rien | Cycle « ensemble » (R4) |
+| « un exemplaire des comptes définitifs » | La 2035 validée, gardée telle quelle (`exercices_valides.declaration`) | Export du dossier (R9) |
+| « une copie signée du rapport établi. La signature du rapport peut être électronique. » | Rien | Documents du cabinet (R8), export (R9) |
+
+##### 1.3 Ce que le dossier doit prouver
+
+- **Qu'un autre l'aurait compris** : la documentation « doit permettre à un autre expert-comptable expérimenté n'ayant
+  pas pris part à la mission de comprendre les problématiques rencontrées au cours de la mission et d'apprécier la
+  pertinence des travaux réalisés » (NP 2300, A8). L'expert-comptable « formalise également les discussions intervenues
+  avec la direction » qui peuvent avoir une incidence significative ; une information contradictoire ou incohérente
+  est documentée avec « la manière dont cette contradiction ou cette incohérence a été résolue pour la présentation
+  finale des comptes », et son « éventuel impact sur son rapport » (A8).
+- **Qui a fait quoi, quand, et que rien n'a bougé depuis** : les procédures de la structure peuvent « déterminer quand
+  et par qui la documentation a été créée, modifiée ou revue », protéger « l'intégrité de l'information, notamment
+  lorsque l'information est partagée au sein de l'équipe », éviter « les modifications non autorisées de la
+  documentation de la mission » et prévoir « la création de sauvegardes de la documentation à des stades appropriés
+  de la mission » (NPMQ, A28-2 [S2]). Le §28 vise « la confidentialité, l'intégrité et l'accessibilité de la
+  documentation des missions ».
+- **Que chaque chiffre a sa pièce** : chaque écriture « s'appuie sur une pièce justificative datée » (PCG, art. 1032-2)
+  et l'organisation du traitement permet de remonter des comptes aux pièces et des pièces aux comptes (art. 1011-3) ;
+  les données d'inventaire sont organisées « de manière à justifier le contenu de chacun des postes du bilan »
+  (art. 1021-3 — une obligation des entités tenues d'établir des comptes annuels, que la révision d'un BNC reprend
+  comme méthode).
+
+CONSÉQUENCE POUR LE MODÈLE : une décision de révision est DATÉE, SIGNÉE (son auteur), IMMUABLE, et cite ses pièces par
+leur EMPREINTE SHA-256 — l'empreinte est la preuve, pas le nom du fichier (règle déjà posée par la piste d'audit).
+
+##### 1.4 Les contrôles sur les soldes et la revue analytique (NP 2300)
+
+- **Les contrôles par épreuves** : quand l'entité tient sa comptabilité, l'expert-comptable vérifie « l'existence et la
+  mise à jour des livres comptables obligatoires » et contrôle par épreuves la qualité des enregistrements, « en tenant
+  compte du principe d'importance relative et du caractère significatif » : pièce justificative, imputation, bonne
+  période (§11). « Lorsque l'expert-comptable tient la comptabilité, sur la base des informations et estimations
+  communiquées par la direction, il lui propose les écritures comptables d'inventaire et s'assure de leur correcte
+  comptabilisation » (§12).
+- **La justification des soldes** : « L'expert-comptable effectue les contrôles par épreuves qu'il estime appropriés sur
+  les comptes de bilan et de résultat les plus significatifs de l'activité de l'entité, par exemple justification des
+  soldes, rapprochement avec des pièces justificatives, dénouement des opérations bancaires à la clôture… Ces contrôles
+  peuvent être allégés lorsque les enregistrements comptables sont assurés par l'expert-comptable » (A6). C'est le cas
+  du cabinet : les contrôles d'intégrité de l'application sont cet allègement, et la conception les reprend au lieu de
+  les refaire.
+- **La revue analytique et la lecture d'ensemble** : l'expert-comptable « met en œuvre une revue analytique lors de
+  l'examen de la cohérence et de la vraisemblance des comptes qu'il effectue à la fin de ses travaux » (§13) ; il
+  « effectue des rapprochements entre les rubriques du bilan et du compte de résultat avec les éléments identiques de
+  l'exercice précédent », « analyse les variations significatives » au regard des faits marquants et « se réfère, le
+  cas échéant, à des entités similaires » (A7).
+- **Les incohérences** : face à des variations significatives ou des tendances inattendues, il « détermine les
+  diligences complémentaires » (§14) ; confirmées, il « s'efforce d'obtenir des explications de la direction », et si
+  elles ne suffisent pas il « en tire les conséquences dans son rapport » : conclusion avec observation(s) ou refus
+  d'attester (§15, §18).
+
+##### 1.5 La revue
+
+« La supervision relève de la responsabilité du responsable de la mission. » « La revue des dossiers revêt un caractère
+technique. Elle consiste à examiner un dossier pour s'assurer que les travaux ont été effectués conformément aux
+obligations légales et réglementaires applicables ainsi qu'aux exigences des normes professionnelles. La revue de
+dossier est réalisée par une personne ayant la compétence appropriée » (NPMQ, §30). « Supervision et revue s'exercent
+tout au long de la mission. Ces deux actions peuvent, en pratique, être réalisées par la même personne » (A30-1). Le
+code de déontologie demande de s'assurer de la compétence des collaborateurs à qui l'on confie des travaux (art. 148).
+
+Pour le cabinet : la PRÉPARATION est ouverte à tout membre affecté au dossier, la REVUE au chef du cabinet — comme la
+validation d'un exercice, décision du 04/10/2026 (question Q2) ; un cabinet d'une personne prépare et revoit lui-même,
+ce que A30-1 admet, et la trace le dit.
+
+##### 1.6 La conservation
+
+- La NPMQ ne fixe pas de durée : la structure définit des procédures « portant sur la conservation de la documentation
+  des missions pendant une durée appropriée pour répondre à ses besoins ou aux obligations prescrites par les textes »
+  (§28), elle « détermine le délai de conservation de la documentation des missions en tenant compte notamment de la
+  nature de ses missions et des incidences sur sa responsabilité » (A28-3), et « fixe un délai pour finaliser les
+  dossiers de travail d'une mission » (A28-1).
+- Les pièces du CLIENT, elles, ont une durée légale : dix ans désormais (LPF, art. L102 B, pour les pièces dont le
+  délai expire après le 01/01/2027 [S8]), sous leur forme informatique quand elles ont été reçues ainsi.
+- La documentation des procédures comptables se garde aussi longtemps que les documents comptables (PCG, art. 1011-2).
+- La responsabilité civile se prescrit par cinq ans à compter de la connaissance du dommage (C. civ., art. 2224 [S12]) —
+  un dommage fiscal peut se révéler longtemps après l'exercice.
+
+Proposition (Q7) : dix ans après la fin de l'exercice, comme les pièces ; et la suppression d'un dossier, qui emporte
+son dossier de travail, le dit et propose de l'exporter d'abord.
+
+##### 1.7 Ce qui relève du jugement et ne s'automatise pas (ligne 60)
+
+« L'atteinte de ces objectifs implique l'exercice du jugement professionnel et de l'esprit critique » (NPMQ, §2 ; §26
+pour l'équipe). Le glossaire définit le jugement professionnel comme l'« appréciation d'une situation afin de prendre
+une décision appropriée » [S1, annexe 1]. La ligne 60 de la feuille de route le dit pour le produit : une machine peut
+DÉTECTER et DOCUMENTER, pas TRANCHER. Restent donc au cabinet, et seulement à lui :
+
+- le seuil de signification et l'importance relative (NP 2300, §11, A6) ;
+- la suffisance d'une preuve : un relevé qui boucle prouve un solde de banque, pas qu'aucun compte ne manque ;
+- le caractère professionnel d'une dépense, la part privée d'une dépense mixte, immobiliser ou passer en charge ;
+- l'explication d'une variation, d'un écart avec le relevé SNIR, d'un mouvement ignoré ;
+- accepter un écart qu'on n'explique pas, et son effet sur le rapport (§15) ;
+- la conclusion de chaque cycle, la note de synthèse, le type d'attestation (§17, §18) — et la signer.
+
+LA RÈGLE DU PRODUIT, appliquée : l'application CALCULE, PROPOSE la preuve, SIGNALE ce qui ne tient pas, ENREGISTRE la
+décision avec son auteur ; elle ne marque jamais un solde « justifié » d'elle-même, même quand sa preuve tombe juste
+au centime.
+
+##### 1.8 Les obligations propres aux dossiers du cabinet (BNC, professions de santé, trésorerie)
+
+- **Ce que le praticien doit tenir** (CGI, art. 99 [S7]) : le livre-journal de ses recettes et dépenses, jour par jour,
+  avec pour chaque honoraire l'identité déclarée, le montant, la date et la forme du versement ; le registre des
+  immobilisations appuyé de ses pièces. Pour les professions soumises au secret, une référence à un document annexe
+  remplace l'identité (BOI-BNC-DECLA-10-20, §280, §290). Les relevés SNIR ne remplacent le livre-journal que pour les
+  médecins conventionnés en secteur I ; les auxiliaires médicaux tiennent un livre-journal de toutes leurs recettes
+  (§350).
+- **Ce que l'application en porte** : les ENCAISSEMENTS, lus sur le relevé et écrits au compte de leur catégorie (ligne
+  26.6) ; le détail patient par patient reste dans le logiciel du praticien, couvert par le secret médical — décision
+  du cabinet du 24/09/2026, à ne pas rouvrir (CLAUDE.md, « Pas d'hébergement HDS »). La révision du cycle des recettes
+  rapproche donc des TOTAUX : les encaissements écrits, le relevé SNIR saisi au volet social (`volet_social_pamc` :
+  honoraires conventionnés, dépassements), le total du logiciel du praticien que le cabinet obtient.
+- **La date d'une recette** : la libre disposition (BOI-BNC-BASE-20-10-10, §10, §20 [S10]) — le virement de
+  l'Assurance maladie à son inscription au crédit, ce que fait l'application ; le CHÈQUE à sa remise ou à sa réception,
+  qui peut précéder de plusieurs jours son crédit en banque. Un chèque reçu fin décembre et crédité en janvier appartient
+  à l'exercice de décembre — sauf l'exception de l'art. 99, cinquième alinéa, qui laisse un exploitant sous un seuil de
+  recettes retenir la date du relevé (seuil non vérifié, §8). C'est un point du cycle des recettes, que l'application
+  ne voit pas.
+- **Les espèces** : l'application n'a pas de caisse (reste de la ligne 26.6, étape a) ; un praticien payé en espèces a
+  des recettes que le relevé ne montre qu'à leur dépôt, s'il y en a un. La révision le demande, elle ne le calcule pas.
+
+##### 1.9 La conséquence qui commande toute la conception
+
+Une révision est une suite d'AFFIRMATIONS datées du cabinet sur des chiffres qui, eux, peuvent encore changer jusqu'à
+la validation de l'exercice. D'où quatre règles :
+
+1. une décision porte le SOLDE qu'elle justifie, au centime, et la base vérifie à l'instant du clic que c'est bien
+   celui des écritures ;
+2. l'état d'un solde se DÉDUIT de la dernière décision et du solde du jour — « à revoir » dès que les deux divergent ;
+3. une décision ne se modifie ni ne se supprime : elle se REMPLACE, et l'historique est la trace ;
+4. la VALIDATION fige les chiffres (déjà fait, ligne 26.6), la FINALISATION fige les affirmations (R9).
+
+---
+
+#### 2. Les cycles des dossiers du cabinet
+
+##### 2.1 Les cycles retenus
+
+Le découpage suit les comptes que l'application écrit déjà (lib/comptes.ts) et ceux que le cabinet peut choisir (un
+compte de bilan pour un mouvement, ligne 26.7 ; le compte d'une catégorie). Il est TOTAL sur les classes 1 à 7 : tout
+compte a un cycle, et un compte hors de ces classes est déjà refusé par la validation (`report-hors-classes`). Les
+cycles des seuls dossiers BIC / IS (stocks, provisions, régularisations) reçoivent leurs comptes, mais disent « non
+couvert » jusqu'aux lignes 35 et 36.
+
+| Cycle | Comptes de bilan | Comptes de résultat | Dossiers |
+|---|---|---|---|
+| Trésorerie | 50 à 54, 58, 59 (512000, 580000) | — | tous |
+| Recettes | — | 70 à 79, sauf ceux d'un autre cycle | tous |
+| Dépenses | — | 60 à 67, sauf ceux d'un autre cycle (625110 y reste) | tous |
+| Immobilisations | 20 à 29 (275000 compris) ; 404 en engagement | 681, 675, 775 | registre non vide ou compte de classe 2 |
+| Emprunts | 16, 17 (164000) | 661100, 616800 | un emprunt, ou un compte 16 |
+| Social de l'exploitant | 42, 43 (personnel : plus tard, phase 5) | 646000 (641, 645 : plus tard) | tous |
+| TVA | 44 (445…) | 658000, 758000 (arrondis de la CA3) | redevables |
+| Exploitant et capitaux | 10 à 15, 18 ; 45 ; 467 (compte du dirigeant en engagement) | — | tous |
+| Tiers | 40, 41, 46 à 49 (hors 404, 467) | — | engagement |
+| Stocks | 3 | 603, 713 | BIC (ligne 36) : « non couvert » |
+| Ensemble | aucun compte : revue analytique, lecture d'ensemble, synthèse, conclusion | | tous |
+
+L'unité de PREUVE n'est pas la même partout : un solde de bilan se prouve par une pièce externe (relevé, tableau,
+contrat) ou par un registre que l'application tient ; un compte de résultat se prouve par la couverture de ses écritures
+(chaque écriture a sa pièce, ce que la piste d'audit établit déjà) et par la revue analytique.
+
+##### 2.2 Cycle par cycle : ce que l'application prouve déjà, ce qui manque, ce qui reste au jugement
+
+**Trésorerie (512000, 580000).**
+- Prouvé aujourd'hui : le relevé qui boucle — solde d'ouverture + mouvements = solde de clôture, conservé
+  (`controlerSolde`, `controles_releves_bancaires`, point « releve-incoherent ») ; aucun mouvement à traiter jusqu'au
+  31 décembre (refus de `valider_exercice`) ; chaque mouvement écrit sur un compte ou classé ; les mouvements rapprochés
+  sans objet (`mouvementsRapprochesSansObjet`), les ventilations et règlements groupés incohérents ; les mouvements
+  ignorés, dits avec leur montant (`mouvementsIgnoresHorsFec`) ; les mois sans mouvement (`moisManquantsDe`) ; une
+  écriture de banque sans mouvement (`rupturesPisteAudit`, motif « sans_mouvement »).
+- Ce qui manque : le SOLDE. Rien ne compare aujourd'hui le 512 au 31 décembre au solde de la banque à cette date (preuve
+  « relevé au 31/12 », §3.6) ; le 580 soldé au 31 décembre ; la caisse ; plusieurs comptes bancaires sur un seul 512000 ;
+  le dénouement (un mouvement de janvier qui relève de décembre).
+- Au jugement : la suffisance du relevé cité, la nature d'un mouvement ignoré, l'explication d'un écart.
+
+**Recettes.**
+- Prouvé : chaque encaissement affecté ou ventilé s'écrit au compte de sa catégorie, avec son taux sur un dossier
+  redevable (`recettesAffecteesSansTaux`) ; la 2035 concorde avec les écritures, source par source (`concordance2035`) ;
+  une pièce validée dont le montant n'apparaît pas au relevé (`piecesMontantIntrouvableEnBanque`) ; les chiffres du
+  relevé SNIR sont saisis par exercice (`volet_social_pamc`).
+- Ce qui manque : rapprocher les recettes de l'exercice du relevé SNIR et du total du logiciel du praticien, l'écart dit
+  et jamais expliqué par l'application ; les mois sans recette ou anormaux (revue analytique mensuelle) ; les chèques
+  reçus en fin d'exercice (§1.8) ; les recettes en espèces ; les encaissements des factures émises face aux recettes
+  (étape d9 de la ligne 28.5).
+- Au jugement : l'explication d'un écart (tiers payant, rejets, dépassements, activité hors convention, remplacements,
+  rétrocessions) ; l'exhaustivité.
+
+**Dépenses.**
+- Prouvé : les trois portes de l'écriture (`piecesValideesSansCategorie`, `categoriesSansCompte`, `categoriesSansPoste`) ;
+  la TVA impossible (`piecesTvaImpossible`), absente (`piecesSansTva`), la devise non convertie ; la date impossible, la
+  pièce sans date, le mois d'abonnement en double (`moisEnDoubleSurAbonnement`), le document déposé deux fois
+  (`chargerDoublonsDeTexte`) ; l'écriture à générer, à régénérer ou sans objet (`analyserEcritures`,
+  `ecrituresSansObjet`) ; la pièce payée en partie ou en trop (`piecesPayeesEnPartie`, `piecesPayeesEnTrop`) ; le
+  barème et les frais réels du véhicule (`doublonFraisVehicules`), le forfait à écrire ; le poste sans case, la case
+  négative (`valeursDesCases`, `casesNegatives`).
+- Ce qui manque : la revue analytique par poste, d'un exercice sur l'autre ; les dépenses affectées sans pièce (le relevé
+  pour seule preuve) au-delà du seuil de signification ; une charge récurrente absente un mois — à n'ajouter que si le
+  contrôle PROUVE, comme `moisEnDoubleSurAbonnement` exige le mois voisin vide pour ne pas crier au loup.
+- Au jugement : le caractère professionnel, la part privée, les frais de véhicule, immobiliser ou non.
+
+**Immobilisations et amortissements.**
+- Prouvé : chaque bien du registre a sa facture (`immobilisationsSansJustificatif`) ; son acquisition s'écrit au compte
+  de sa nature (`acquisitionsDesBiens`) ; ses dotations, au prorata depuis la mise en service, sont écrites
+  (`dotationsDuRegistre`, `dotationsEnDefaut`) ; un véhicule amorti l'année du barème (`amortissementsSousLeBareme`) ;
+  un bien figé par la validation (`biensFiges`).
+- Ce qui manque : le rapprochement EXPLICITE des soldes 2 et 28 avec le registre (preuve « registre », §3.6) ; les
+  cessions et mises au rebut (non modélisées) ; le dépôt de garantie (275000) et tout compte de bilan choisi par le
+  cabinet, sans preuve de l'application : le contrat ou l'acte se cite.
+- Au jugement : l'existence du bien, le seuil d'immobilisation, la durée, une dépréciation.
+
+**Emprunts.**
+- Prouvé : chaque échéance rapprochée se découpe en capital, intérêts et assurance, vérifiés par la base
+  (`rapprocher_echeance_emprunt`) ; une échéance que le relevé couvre sans mouvement rapproché
+  (`echeancesNonRapprochees`) ; une écriture qui ne suit plus son découpage (`echeancesDesynchronisees`).
+- Ce qui manque : le capital restant dû au 31 décembre face au 164 (preuve « échéancier », §3.6) ; le tableau de la
+  banque, cité une fois et repris chaque année.
+- Au jugement : l'écart entre l'échéancier calculé et le tableau de la banque (différé, taux variable, renégociation).
+
+**Social de l'exploitant.**
+- Prouvé : les échéances rapprochées et écrites (`cotisationsAEcrire`), les rapprochements qui ne s'écrivent pas
+  (`rapprochementsCotisationRefuses`), la CSG-CRDS saisie ou non (`partCsgNonDeductible`), l'estimation Urssaf testée
+  contre le moteur de l'Urssaf.
+- Ce qui manque : le total du 646000 de l'exercice face aux avis et à la régularisation de l'année précédente (documents
+  « cotisation ») ; une cotisation payée depuis le compte personnel (déjà dite par la concordance, sans geste).
+- Au jugement : le rattachement d'une régularisation, la part déductible.
+
+**TVA (dossiers redevables).**
+- Prouvé : la liquidation de chaque déclaration et son paiement (`liquidationsDesynchronisees`,
+  `paiementsTvaDesynchronises`) ; les périodes sans déclaration (`periodesNonDeclarees`) ; la CA3 comparée au calcul de
+  sa période (lib/declarationTva.ts).
+- Ce qui manque : les soldes 445 au 31 décembre face aux déclarations et à leurs paiements (preuve « déclarations ») ;
+  la cohérence entre TVA collectée et recettes par taux.
+- Au jugement : une régularisation, un prorata, une déclaration déposée ailleurs.
+
+**Exploitant et capitaux.**
+- Prouvé : chaque virement personnel a son écriture (`virementsPersonnelsAEcrire`) ; la validation reporte le 108, le
+  101 et le résultat au 101000 (`soldes_reportes`), et l'exercice validé se relit tel qu'il a été validé
+  (`verifier_exercice_valide`, empreinte chaînée).
+- Ce qui manque : le 101 face au report (preuve « report ») ; la décomposition du 108 (prélèvements, apports,
+  CSG-CRDS, forfaits, notes de frais, parts personnelles des ventilations).
+- Au jugement : la vraisemblance des prélèvements au regard du résultat.
+
+**Tiers (engagement).**
+- Prouvé : le lettrage déduit du rapprochement, les comptes de tiers à une date et depuis quand (`comptesDeTiers`), les
+  lettrages faits à la main qui ne tiennent plus (`etatsDesLettragesManuels`).
+- Ce qui manque : la justification par compte AUXILIAIRE, le dénouement en janvier, les créances douteuses.
+- Au jugement : la recouvrabilité.
+
+**Ensemble.**
+- Prouvé : la concordance de la 2035 au centime, la numérotation du FEC (`defautsDeNumerotation`), la validation et ses
+  préalables (`prealablesDeValidation`), la piste d'audit produite (`pisteAudit`).
+- Ce qui manque : la revue analytique d'un exercice sur l'autre (R5), la note de synthèse, la conclusion.
+- Au jugement : tout ce qui précède.
+
+##### 2.3 La régularité en la forme est déjà prouvée
+
+La section « Appréciation de la régularité en la forme de la comptabilité » de la NP 2300 est, pour un dossier tenu
+dans l'application, déjà couverte, et c'est l'allègement que A6 admet : livre-journal et grand livre (Écritures, FEC
+de l'article A47 A-1) ; une pièce justificative par écriture, référencée (piste d'audit, PCG art. 1011-3 et 1032-1) ;
+numérotation continue par journal dans l'ordre des dates (`defautsDeNumerotation`) ; intangibilité après validation
+(PCG art. 1031-3, déclencheurs `garder_ecritures_validees` et sources figées) ; empreinte SHA-256 de chaque fichier ;
+bonne période (date impossible, pièce sans date, rattachement au paiement) ; imputation (catégorie sans compte ou sans
+poste, poste sans case). Le dossier de travail n'a pas à refaire ces contrôles : il doit DIRE qu'ils sont levés à la
+date de la validation — ce que l'export (R9) écrit, la validation étant refusée tant qu'un seul ne l'est pas.
+
+##### 2.4 Mesuré le 09/10/2026 (comptes seulement)
+
+- La base : 4 dossiers, tous tenus en trésorerie ; aucun exercice validé, aucune écriture validée ; 3 écritures au
+  brouillon, toutes dans des bacs à sable abandonnés ; aucun objet de révision dans le catalogue.
+- Le dossier `test` : 42 pièces (11 validées) ; 429 mouvements, dont 416 à traiter, du 01/01/2025 au 15/09/2026 ;
+  AUCUNE écriture ; aucun bien, aucun emprunt, aucune échéance de cotisation ; 38 documents, tous avec empreinte, dont
+  19 relevés, 7 « cotisation », 5 attestations, 7 autres ; 1 contrôle de relevé, sur l'année 2025 entière, qui ne
+  boucle pas ; statut de TVA à préciser ; volet social vide.
+- LATENT : la révision de 2025 n'aurait aujourd'hui aucun solde de bilan à justifier. Elle commencera quand les
+  mouvements seront écrits (ligne 26.6), et sa première trouvaille est déjà connue : le relevé de 2025 ne boucle pas.
+
+---
+
+#### 3. Le modèle
+
+##### 3.1 Ce qui existe, et pourquoi ne pas le réutiliser
+
+| Objet existant | Pourquoi il ne porte pas la révision |
+|---|---|
+| `piece_commentaires` (fil de précisions client ↔ cabinet) | Le client le LIT (policy de lecture par `memberships`) : une note de révision y serait vue du client. |
+| `documents_divers` et le compartiment de stockage `pieces` | Le client les lit (policies `membres peuvent lire leurs documents`, `pieces_storage_select`) : une feuille de travail du cabinet n'y va pas. Les documents du client, eux, s'y CITENT sans difficulté. |
+| `informations_dossier` | Le client le lit et le modifie : le dossier permanent du cabinet n'y vit pas. |
+| `exercices_clotures` | Le geste qui arrête les relances et purge le texte lu des pièces sensibles ; pas une révision. |
+| `exercices_valides` | La validation : elle fige les chiffres, pas les affirmations du cabinet sur eux. |
+| La Checklist, les préalables, la concordance | Des CONTRÔLES recalculés à chaque lecture ; aucun ne garde ce que le cabinet a décidé, ni quand, ni qui. |
+
+##### 3.2 Les options, et le choix
+
+| Option | Verdict |
+|---|---|
+| Réviser par COMPTE seulement | Écartée seule : les comptes de résultat n'ont pas de solde « à justifier », ils se révisent par revue analytique et couverture des pièces ; aucune place pour la conclusion d'un cycle ni pour sa revue. |
+| Réviser par CYCLE seulement | Écartée seule : perd la trace solde par solde que la ligne demande, et la mémoire d'un compte d'un exercice à l'autre. |
+| Une liste libre de points de contrôle par exercice | Écartée : souple, mais rien n'y prouve que chaque solde a été regardé — le vide n'y serait pas une affirmation. |
+| **Le compte pour les soldes de bilan, le cycle pour le travail et la revue** | **RETENUE.** Décidé par l'architecte, comme la consigne le permettait. |
+| L'état stocké (« à justifier », « justifié ») | Écarté : il mentirait dès qu'une écriture change. L'état se DÉDUIT, comme le lettrage. |
+| Une décision qu'on modifie | Écartée : NPMQ A28-2, et la règle de `piece_commentaires` (« une parole datée ne se réécrit pas »). Une décision se REMPLACE (chaîne `remplace_id`). |
+| La base fait confiance au solde envoyé | Écartée : la trace doit être une preuve. La base recalcule le solde au clic, par le même calcul que l'application, confronté par un test (règle du dépôt : « quand la base doit VÉRIFIER une écriture »). |
+| L'application marque « justifié » quand sa preuve tombe juste | Écartée : « l'application signale, elle ne corrige jamais toute seule » ; le jugement de suffisance est celui du cabinet (§1.7). |
+
+##### 3.3 Le schéma proposé (non écrit)
+
+Conventions du dépôt : `to authenticated`, lecture `admin_du_dossier(dossier_id)`, AUCUNE policy d'écriture ordinaire
+(le cabinet écrit par des fonctions `SECURITY DEFINER` qui vérifient l'accès et énumèrent leurs colonnes), insertion de
+restauration réservée à `is_super_admin()`, déclencheurs de garde (rien ne se modifie, rien ne se supprime hors de la
+cascade du dossier), clés étrangères nouvelles en NO ACTION (la famille `ON DELETE SET NULL` est close).
+
+**R1 — `revision_justifications`** : une décision sur le solde d'un compte de bilan, à la fin d'un exercice.
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id` | uuid, clé primaire | |
+| `dossier_id` | uuid not null → `dossiers` on delete cascade | |
+| `annee` | integer not null | 2000 à 2100 |
+| `compte` | text not null | `^[1-5][0-9]{2,}$`, le motif de `soldes_reportes` |
+| `solde` | numeric(16,2) not null | débit positif ; égal au clic à `solde_du_compte` |
+| `etat` | text not null | `justifie`, `accepte` (sur motif, sans pièce), `anomalie` |
+| `motif` | text | 1 à 4 000 caractères ; obligatoire pour `accepte` et `anomalie` |
+| `portee` | text not null | `exercice` ou `permanente` (proposée à l'exercice suivant) |
+| `preuve_application` | jsonb | objet ou nul, 64 Kio au plus : ce que l'écran a montré au clic (versionné, relu sans deviner, comme l'instantané de la 2035) |
+| `remplace_id` | uuid → `revision_justifications` (NO ACTION) | la décision remplacée : même dossier, même année, même compte ; unique |
+| `reprise_de` | uuid → `revision_justifications` (NO ACTION) | la décision de l'exercice précédent qu'elle reprend : même dossier, même compte, `annee − 1` |
+| `auteur` | uuid not null | repère d'audit, sans clé étrangère (comme `exercices_valides.valide_par`) |
+| `cree_le` | timestamptz not null | |
+
+- Index unique PARTIEL `(dossier_id, annee, compte) where remplace_id is null` : une seule PREMIÈRE décision par compte
+  et par exercice. C'est un invariant, jamais la cible d'un upsert (la règle « un index unique partiel ne peut pas être
+  visé par un upsert » ne s'applique pas).
+- Avec `unique (remplace_id)`, chaque compte porte une CHAÎNE linéaire de décisions ; la décision courante est celle
+  qu'aucune autre ne remplace. Aucun horodatage ne départage : la chaîne est l'ordre, et elle survit à une restauration.
+
+**R1 — `revision_preuves`** : ce qu'une décision cite.
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id` | uuid, clé primaire | |
+| `dossier_id` | uuid not null → `dossiers` on delete cascade | |
+| `justification_id` | uuid not null → `revision_justifications` on delete cascade | même dossier |
+| `piece_id` | uuid → `pieces` (NO ACTION) | même dossier |
+| `document_id` | uuid → `documents_divers` (NO ACTION) | même dossier |
+| `fichier_id` | uuid, sans clé jusqu'à R8 | toujours nul jusqu'à R8 (la garde le refuse) |
+| `empreinte` | text | `^[0-9a-f]{64}$` ou nul : le SHA-256 de la source, RECOPIÉ par la fonction au moment de la citation ; nul quand la source n'en a pas, et l'écran le dit |
+| `precision` | text | 500 caractères au plus (« relevé de décembre, page 2 ») |
+
+- `num_nonnulls(piece_id, document_id, fichier_id) = 1` dès R1 : R8 n'aura qu'à AJOUTER la clé étrangère de
+  `fichier_id` — aucune contrainte à retirer, donc aucune migration qui supprime quoi que ce soit.
+- Uniques : `(justification_id, piece_id)`, `(justification_id, document_id)`, `(justification_id, fichier_id)`.
+- NO ACTION vers `pieces` et `documents_divers` : une pièce ou un document CITÉ — même par une décision remplacée depuis,
+  l'historique devant garder ses preuves — ne se supprime plus, sauf avec le dossier entier (la vérification d'une clé
+  NO ACTION se fait en fin d'instruction : la cascade d'un dossier qui emporte les deux passe). Question Q8.
+
+**R4 — `revision_conclusions`** : la feuille d'un cycle.
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id`, `dossier_id`, `annee` | | comme ci-dessus |
+| `cycle` | text not null | `tresorerie`, `recettes`, `depenses`, `immobilisations`, `emprunts`, `social`, `tva`, `capitaux`, `tiers`, `stocks`, `ensemble` |
+| `etat` | text not null | `revise`, `anomalie` |
+| `travaux` | jsonb not null | le programme et ce qui en a été fait : `[{ travail, fait, note }]`, proposé par le module, rempli par le cabinet |
+| `conclusion` | text not null | 1 à 8 000 caractères |
+| `a_suivre` | text | 4 000 au plus : ce que l'exercice suivant doit reprendre (la mémoire du cycle) |
+| `remplace_id` | uuid → `revision_conclusions` (NO ACTION) | même dossier, année, cycle ; unique ; une seule première par cycle |
+| `auteur`, `cree_le` | | |
+
+**R4 — `revision_notes`** : le journal d'un cycle, jamais modifié — les « discussions intervenues avec la direction »
+(NP 2300, A8), les consultations (NPMQ, §29 : leurs conclusions « sont consignées dans la documentation de la
+mission »), un travail fait. Colonnes : `id`, `dossier_id`, `annee`, `cycle`, `nature` (`echange_direction`,
+`consultation`, `travail`), `texte` (1 à 4 000), `auteur`, `cree_le`.
+
+**R4 — `revision_revues`** : la revue d'une conclusion. Colonnes : `id`, `dossier_id`, `annee`, `conclusion_id`
+(→ `revision_conclusions`, NO ACTION, unique : une revue par conclusion — revoir de nouveau suppose une nouvelle
+conclusion), `avis` (`approuve`, `a_reprendre`), `observation` (obligatoire pour `a_reprendre`), `revu_par`,
+`revu_le`.
+
+**R5 — `revision_seuils`** (le seuil de signification d'un exercice, fixé par le cabinet, motivé, en chaîne
+`remplace_id`) et **`revision_explications`** (l'explication d'une variation : `objet_type` `poste_2035` ou `compte`,
+`objet`, `montant`, `montant_precedent`, `source_precedent` `validee` | `reference` | `aucune`, `explication`, chaîne
+`remplace_id`). Les montants sont ceux que l'explication commente : s'ils changent, elle devient « à revoir ».
+
+**R7 — `dossier_permanent`** : `nature` (`lettre_mission`, `description`, `organisation_comptable`, `statuts`, `bail`,
+`contrat_emprunt`, `contrat`, `autre`), `titre`, `texte`, au plus une citation (`piece_id`, `document_id`,
+`fichier_id`), `valable_du`, `valable_jusqu_au`, chaîne `remplace_id`, `auteur`, `cree_le`.
+
+**R8 — `revision_fichiers`** et le compartiment de stockage `revision` (privé, premier segment du chemin = le dossier,
+lecture, dépôt et retrait `admin_du_dossier`, aucune mise à jour) : les documents du cabinet — feuilles de calcul,
+notes, tableau obtenu de la banque, attestation signée —, avec leur empreinte, invisibles du client.
+
+**R9 — `revision_finalisations`** : `(dossier_id, annee)` en clé primaire, `finalise_le`, `finalise_par`, `empreinte`
+(SHA-256 de tout ce que la révision de l'exercice porte, dans un ordre fixe, sous une forme qui survit à une
+restauration — la règle de `empreinte_exercice`), `empreinte_exercice` (celle de `exercices_valides`, le maillon).
+
+##### 3.4 Les fonctions, et l'ordre de leurs refus
+
+**`solde_du_compte(dossier, annee, compte)`**, interne (aucun rôle ne l'exécute) : la somme, débit moins crédit, des
+écritures du brouillon datées de l'exercice et de son ouverture — la balance reprise datée de l'exercice et les soldes
+reportés au 1er janvier, exactement `ouvertureDeLExercice` (lib/reportDesSoldes.ts). Le jumeau TypeScript part de
+`calculerBalance` ; un test les confronte sur une table relevée en base.
+
+**`justifier_solde(dossier, annee, compte, solde, etat, motif, portee, preuves, preuve_application, remplace_id,
+reprise_de)`**, `SECURITY DEFINER`, sous le verrou consultatif EXCLUSIF de la révision du dossier (`cle_revision`) et le
+verrou PARTAGÉ de la validation (`cle_validation`, pour qu'une validation n'avance pas pendant la décision). Elle
+refuse, dans cet ordre, que le module R2 reprend mot pour mot :
+
+1. un appelant qui n'est pas `admin_du_dossier` (42501, « Accès refusé au dossier. ») ;
+2. un exercice hors de 2000 à 2100 (22023) ;
+3. un exercice pas encore terminé, l'année lue à Paris (« L'exercice N n'est pas terminé : ses soldes se justifient une
+   fois clos. ») ;
+4. (R9) un dossier de travail finalisé (« Le dossier de travail de l'exercice N est finalisé : rien ne s'y ajoute
+   plus. ») ;
+5. un compte qui n'est pas de bilan (« Seul un compte de bilan, classes 1 à 5, se justifie par son solde. ») ;
+6. un exercice antérieur à la reprise du dossier (« L'exercice N précède la reprise du dossier : il est dans les
+   comptes repris. ») ;
+7. un exercice dont l'ouverture n'est pas encore définitive — quelque chose le précède (une reprise, un exercice validé,
+   une écriture) et l'exercice N−1 n'est pas validé (« L'exercice N−1 n'est pas validé : les soldes de N ne sont pas
+   encore définitifs. ») ; la règle est celle de `etatDeLOuverture` (« en-attente »), confrontée de même ;
+8. un état, une portée ou un motif invalides (« Une anomalie se motive. », « Un solde accepté sans pièce se motive. ») ;
+9. un solde qui n'est plus celui des écritures (« Le solde du compte C a changé : il vaut X au 31/12/N. ») ;
+10. une décision remplacée qui n'est pas la décision courante, ou l'absence de remplacement quand il y en a une (« Une
+    autre décision a été prise sur ce compte depuis : relire avant de décider. ») ;
+11. une reprise qui ne vise pas une décision de l'exercice précédent sur le même compte ;
+12. des preuves illisibles, d'un autre dossier, ou citées deux fois ;
+13. un solde « justifié » sans pièce, sans document et sans preuve de l'application (« Un solde justifié cite au moins
+    une pièce, un document ou la preuve de l'application. »).
+
+Elle recopie l'empreinte de chaque source (`pieces.storage_hash`, `documents_divers.storage_hash`) et rend l'identifiant
+et l'instant de la décision.
+
+**`conclure_cycle`**, **`noter_revision`** (R4) : mêmes refus 1 à 4, le cycle de la liste, la conclusion courante
+remplacée et non une autre. **`revoir_cycle`** (R4) : réservé au chef du cabinet (`est_chef_du_cabinet`, qui comprend
+le super-administrateur) ; refuse une conclusion qui n'est plus la courante, et une revue « à reprendre » sans
+observation. **`finaliser_dossier_de_travail`** (R9) : chef seul, exercice validé, pas déjà finalisé ; calcule et
+pose l'empreinte. **`verifier_dossier_de_travail`** (R9) : la recalcule, comme `verifier_exercice_valide`.
+
+Aucune de ces fonctions ne contient d'instruction de suppression : `apply_migration` ne demandera pas de confirmation.
+
+##### 3.5 Les états, déduits
+
+D'un SOLDE de bilan de l'exercice, par le module (R2), jamais stocké :
+
+| État | Quand |
+|---|---|
+| en attente | l'ouverture de l'exercice n'est pas définitive (N−1 non validé), ou l'exercice est dans les comptes repris |
+| soldé | solde nul et aucune décision : rien à justifier |
+| à justifier | solde non nul, aucune décision |
+| justifié | décision courante « justifié », son solde est celui du jour, chaque fichier cité porte encore l'empreinte citée |
+| accepté | décision courante « accepté », son solde est celui du jour |
+| anomalie | décision courante « anomalie » |
+| à revoir | décision courante dont le solde n'est plus celui du jour (une écriture a changé avant la validation), ou dont un fichier cité a changé d'empreinte ou n'en a plus |
+
+Deux mentions s'y ajoutent : « après la validation » (décision postérieure à `exercices_valides.valide_le`) et « reprise
+de N−1 ». D'un CYCLE : non commencé, en cours, révisé (conclusion `revise`, tous ses soldes décidés, aucune anomalie),
+anomalie, revu (revue `approuve` postérieure à toute décision, conclusion et note du cycle), revue périmée.
+
+##### 3.6 Les preuves que l'application propose
+
+Chacune est une fonction pure du module (R2), avec ce qu'elle ÉTABLIT et ce qu'elle N'ÉTABLIT PAS — l'écran dit les
+deux, et seul le clic du cabinet en fait une justification (son instantané part dans `preuve_application`).
+
+| Preuve | Comptes | Elle établit | Elle n'établit pas | Sources |
+|---|---|---|---|---|
+| Relevé au 31/12 | 512000 | Le solde de la banque au 31 décembre, tiré d'un relevé qui BOUCLE : celui dont la période finit le 31/12, sinon celui qui couvre le 31/12 (son solde initial et ses mouvements jusqu'au 31/12 inclus) ; comparé au 512 ; un écart nommé avec ses causes possibles — ouverture absente (l'écart vaut alors le solde initial du premier relevé), mouvements ignorés, à traiter, écriture de banque sans mouvement | Qu'aucun compte bancaire ne manque ; le relevé lui-même, dont le document se cite ; une remise de chèques de fin d'exercice | `controles_releves_bancaires`, `lignes_bancaires` par fichier source, écritures du 512 |
+| Virements internes soldés | 580000 | Que le compte est soldé au 31/12, ou la liste des virements sans contrepartie | — | écritures du 580 |
+| Registre, valeurs brutes | 20…, 21… | Que le solde de chaque compte d'immobilisation est la somme des acquisitions écrites des biens de sa nature (ouverture comprise), et la facture de chacun, citée avec son empreinte | L'existence du bien, une cession, un bien hors registre | `immobilisations`, `natures_immobilisation`, `acquisitionsDesBiens`, pièces |
+| Registre, amortissements | 28… | Que le solde est le cumul des dotations du registre au 31/12, ouverture comprise | La durée, le mode | `dotationsDuRegistre` |
+| Échéancier | 164000 | Que le solde est la somme des capitaux restant dus au 31/12 selon l'échéancier de chaque emprunt (`capitalRestantDu`, la date passée EXPLICITEMENT : sa valeur par défaut est « aujourd'hui ») | Le tableau de la banque (différé, taux variable) : il se cite | `emprunts`, `genererEcheancier`, écritures du 164 |
+| Déclarations de TVA | 445… | Que chaque solde est ce que disent les déclarations de l'exercice et leurs paiements rapprochés : la déclaration de la dernière période, payée en janvier, laisse son montant au 445510 ; un crédit au 445670 ; 4456 et 4457 soldés si toutes les périodes sont déclarées | Une déclaration déposée ailleurs et non enregistrée | `declarations_tva`, `lignes_bancaires.declaration_tva_id`, lib/liquidationTva.ts |
+| Report validé | 101000 | Que l'ouverture du compte est celle que la validation de N−1 a écrite, et que N−1 se relit tel qu'il a été validé | — | `soldes_reportes`, `exercices_valides`, `verifier_exercice_valide` |
+| Décomposition de l'exploitant | 108000 | De quoi le solde est fait : prélèvements et apports du relevé, CSG-CRDS des cotisations, forfaits kilométriques, notes de frais, parts personnelles des ventilations | La vraisemblance des prélèvements | écritures du 108 et leurs sources |
+| — | 275000, tout compte de bilan choisi (ligne 26.7), 455, 467 | Rien : un contrat, un acte, un relevé de compte courant se cite | | |
+
+##### 3.7 La mémoire d'un exercice à l'autre
+
+- **Une justification permanente se propose, elle ne se recopie pas seule.** À l'ouverture de la révision de N+1, chaque
+  compte dont la décision courante de N est `permanente` (un bail, un contrat de prêt, un tableau d'amortissement)
+  porte « Reprendre la justification de N » : un clic crée une décision de N+1 (`reprise_de`) qui cite les mêmes
+  sources, empreintes relues. Le solde a changé (un emprunt qui s'amortit) : l'écran le dit et demande quelle ligne du
+  tableau justifie le nouveau. Rien n'est validé ni importé automatiquement — règle du projet.
+- **Le registre se souvient de lui-même** : chaque bien, tant qu'il est au registre, re-propose sa facture chaque année
+  dans la preuve « registre ».
+- **Les points à suivre** (`a_suivre`) d'un cycle de N s'affichent en tête du même cycle de N+1.
+- **La revue analytique** compare N à N−1 : la 2035 VALIDÉE de N−1 (l'instantané que `exercices_valides` garde), sinon
+  les repères annuels lus d'une ancienne 2035 (Estimation), sinon rien — jamais un recalcul silencieux de N−1.
+- **Le dossier permanent** (R7) vaut pour tous les exercices de sa période de validité.
+
+##### 3.8 Qui voit quoi
+
+| Profil | Lit | Écrit |
+|---|---|---|
+| Anonyme | rien | rien |
+| Client (`memberships`) | rien — aucune policy ne le nomme ; les documents du cabinet sont dans un compartiment à part (R8) | rien |
+| Membre du cabinet affecté au dossier (`comptable`) | toute la révision du dossier | décisions, conclusions, notes (`admin_du_dossier`) |
+| Chef du cabinet (`comptable_en_chef`) | idem | idem, plus la revue et la finalisation (`est_chef_du_cabinet`) |
+| Super-administrateur | tout | tout, et l'insertion de restauration |
+| Edge Functions | rien : aucune ne lit ni n'écrit la révision | — |
+| Assistant comptable | rien : il ne lit pas la révision — dit plutôt que promis (Q11) | — |
+
+##### 3.9 Ce que la validation fige, ce que la finalisation fige
+
+- La VALIDATION de N (existante, ligne 26.6) fige ses écritures et ses sources : les soldes de N deviennent définitifs,
+  et elle écrit l'ouverture de N+1 — la révision des soldes de N+1 devient possible à ce moment-là, pas avant.
+- Une décision prise avant la validation et dont le solde est le solde définitif reste valable ; une autre devient « à
+  revoir » (R6 empêche qu'on valide dans cet état, selon Q1).
+- Après la validation, la révision de N reste OUVERTE : décisions, notes, conclusions, revues s'ajoutent, marquées
+  « après la validation » — la note de synthèse et le rapport viennent après les comptes définitifs (A9). Le délai de
+  finalisation est celui que le cabinet fixe (NPMQ, A28-1 ; Q6).
+- La FINALISATION de N (R9) fige tout ce que la révision de N porte : plus rien ne s'y ajoute, et son empreinte se
+  vérifie.
+- Une anomalie trouvée APRÈS la validation se corrige sur l'exercice suivant, « à la date du premier jour de la période
+  non encore clôturée, avec mention expresse de sa date de survenance » (PCG, art. 1031-4) : l'application ne sait pas
+  encore écrire cette écriture (reste dit de la ligne 26.6, étape d). La révision documente l'anomalie et son report ;
+  l'écriture reste à modéliser, ligne à ouvrir.
+
+##### 3.10 Sauvegarde, restauration, export, registre
+
+- `sauvegarde.ts` : les tables rejoignent `RELATIONS` (clés vers `pieces` et `documents_divers` en NO ACTION),
+  `ORDRE_RESTAURATION` (après `pieces` et `documents_divers`, avant `exercices_valides` ; `revision_finalisations`
+  APRÈS `exercices_valides`, ce qui amende la règle « `exercices_valides` ferme la marche » et son test),
+  `CLES_PRIMAIRES` (`revision_finalisations` : dossier et année), `CHEMINS_DOSSIER`, et
+  `TABLES_AUTO_REFERENCEES_PAR_VAGUES` pour `remplace_id` et `reprise_de` : immuables, elles ne peuvent pas partir à
+  nul puis se reposer, elles partent par vagues — le mécanisme des encaissements.
+- `supabase/essais/restauration.sql` rejoué ; une pièce citée absente de la sauvegarde est un lien perdu, refusé avant
+  d'écrire (`liensPerdus`).
+- `exportCabinet.ts` et son manifeste ; l'export du schéma (une migration par fichier), l'inventaire et le socle.
+- `RGPD.md` : un traitement — le dossier de travail du cabinet ; données : identifiants des membres du cabinet (auteur),
+  textes professionnels ; destinataires : le cabinet seul ; durée : Q7 ; consigne : aucune donnée de patient dans un
+  texte de révision (les données de patients sont dans les fichiers, RGPD.md §4).
+- `PLAN_DE_REPRISE.md` : le compartiment `revision` (R8), que ni la sauvegarde ni le pack n'emportent aujourd'hui.
+- `suppressionDossier.ts` (R8) : vider aussi le compartiment `revision` ; et la confirmation de suppression d'un dossier
+  NOMME ce qu'on perd — le dossier de travail de ses exercices —, en proposant d'abord l'export (R9, Q7).
+
+##### 3.11 Le lien avec la feuille de route
+
+| Ligne | Lien |
+|---|---|
+| 26.6 — tenir toute la comptabilité d'un BNC (en cours, reste e) | La révision suppose les mouvements écrits ; la validation fige les soldes qu'elle justifie ; R6 ajoute la révision aux préalables. |
+| 34 — report des soldes (fait) | L'ouverture de N+1 est la base de ses soldes de bilan ; le 101 se justifie par le report. |
+| 33 — bilan (Hors BNC) | Non requis : la révision travaille sur les COMPTES. Le futur bilan regroupera ces comptes en postes, et la révision par compte alimentera sa justification sans être refaite. |
+| 35, 36 — inventaire, stocks (Hors BNC) | Les cycles et comptes y sont déjà rangés (« non couvert ») ; ces lignes les ouvriront. |
+| 42 — exercices décalés (Hors BNC) | La révision raisonne en année civile, comme la validation ; même chantier. |
+| 43 — plan comptable personnalisable | Le rangement des comptes en cycles se fait par préfixe : un sous-compte du cabinet tombe dans le cycle de son compte. |
+| 44 — inaltérabilité et archivage à valeur probante | Trace immuable dès R1, empreinte chaînée à R9 ; l'horodatage qualifié et l'archivage de dix ans valent aussi pour le dossier de travail — ils restent la ligne 44. |
+| 60 — jugement professionnel (hors d'atteinte) | La révision détecte et documente ; elle ne tranche jamais (§1.7). |
+| 24 — connexion bancaire | Un solde lu à la banque au 31/12 deviendrait une preuve du 512 ; plus tard. |
+| 27 — déclarations TNS | Les chiffres du relevé SNIR, déjà saisis, servent le cycle des recettes. |
+| 28.5 (d9) — encaissements face à la CA3 | Le cycle des recettes pourra montrer les encaissements des factures émises face aux recettes comptées. |
+
+---
+
+#### 4. Le parcours dans l'application
+
+##### 4.1 Où
+
+Un onglet « Révision » dans le groupe Comptabilité, juste avant « Clôture » (la révision précède la validation) :
+`TABS_VALIDES` (DossierDetail.tsx) et `GROUPES_PARCOURS` (lib/ongletsDossier.ts), sous `AnneeProvider key={id}` comme
+tous les onglets. Il suit l'exercice choisi dans l'en-tête ; la vue « Toutes » liste chaque exercice avec son avancement.
+ClotureTab, déjà long de près de 1 600 lignes et de seize cartes propres, ne le reçoit pas.
+
+##### 4.2 Ce que l'écran dit avant tout geste
+
+- L'état de l'ouverture : « L'exercice 2026 attend la validation de 2025 : ses soldes de bilan ne sont pas encore
+  définitifs » — et aucun geste sur les soldes.
+- L'avancement : soldes à justifier, justifiés, acceptés, en anomalie, à revoir ; cycles révisés, revus (tuiles de
+  tableau de bord, `KpiTile`, `ProgressRing`).
+- Par cycle applicable au dossier, une carte : ses comptes de bilan (compte, libellé, solde au 31/12, preuve proposée en
+  une ligne, état en pastille), ses contrôles existants (les points de la Checklist et les préalables qui le concernent,
+  avec leur nombre et l'onglet où agir — l'application ne les refait pas, elle les range), ses points à suivre de N−1.
+- Une lecture partielle de quoi que ce soit (décisions, écritures, ouverture, relevés, registre, déclarations) : le
+  bandeau `BandeauLecturePartielle` le dit et l'écran n'offre AUCUN geste — une décision est une écriture.
+
+##### 4.3 Justifier un solde
+
+Dans le panneau de droite (`PanneauDroit`, garde de sortie tant qu'un motif est saisi) : la preuve proposée, ce qu'elle
+établit et ce qu'elle n'établit pas ; les pièces et documents à citer (recherche par le moteur commun), une précision
+par source ; la portée ; puis « Justifier », « Accepter sur motif » ou « Signaler une anomalie ». Les refus de la base
+sont dits avant le clic, dans son ordre et sous ses mots ; le verrou d'exécution est un `useRef` relâché après la
+relecture ; la liste se relit après chaque geste. La décision ne s'efface pas : le texte le dit (« elle se remplacera
+par une autre, et l'historique reste »). L'historique d'un compte se déplie : qui, quand, quoi, quelles empreintes.
+
+##### 4.4 Le cycle : programme, conclusion, journal, revue (R4)
+
+Le module propose un programme par cycle, que le cabinet coche et annote ; par exemple, Trésorerie : obtenir le relevé
+au 31/12 de chaque compte ; rapprocher le solde ; examiner les mouvements ignorés et non rapprochés ; vérifier le 580
+soldé ; demander s'il existe des espèces. Recettes : rapprocher du relevé SNIR et du logiciel du praticien ; examiner
+les mois sans recette ; les chèques reçus fin décembre ; les recettes hors convention. Immobilisations : registre face
+aux comptes 2 et 28 ; factures ; biens sortis ; dépenses de plus de 500 € passées en charge. Emprunts : tableau de la
+banque, capital restant dû, intérêts, assurance. Social : avis de l'année et régularisation, CSG-CRDS. TVA :
+déclarations, soldes, cohérence avec les recettes. Exploitant : report, prélèvements. Puis la conclusion (« révisé » ou
+« anomalie »), les points à suivre, le journal ; la revue du chef (« approuvé » ou « à reprendre » avec observation).
+Le cycle « ensemble » porte la note de synthèse et la conclusion d'ensemble, dont le type d'attestation envisagé (§18).
+
+##### 4.5 La revue analytique (R5)
+
+Un tableau N face à N−1, par poste de la 2035 et par compte, avec la variation en euros et en pourcentage ; le seuil
+de signification de l'exercice, fixé et motivé par le cabinet ; au-delà du seuil, une explication par variation est
+attendue (dite, pas imposée avant R6) ; les recettes mois par mois. L'application ne qualifie aucune variation de
+« normale ».
+
+##### 4.6 La validation et la finalisation
+
+- La carte « Valider l'exercice » (R6) gagne un préalable « révision des soldes » — bloquant ou avertissement selon Q1 —
+  et un avertissement « cycles non revus ». `prealablesValidation.test.ts` exige déjà que chaque point en erreur de la
+  Checklist soit repris ou écarté : la révision suit la même discipline.
+- Une carte « Finaliser le dossier de travail » (R9), sous la révision d'un exercice validé, réservée au chef : ce qui
+  manque (conclusions, revues, synthèse), le délai écoulé depuis la validation, puis la finalisation, dont la
+  confirmation nomme ce qu'elle fige ; ensuite l'empreinte se vérifie, et l'export se télécharge.
+
+##### 4.7 Ce que les autres écrans disent
+
+- Justificatifs et Documents administratifs : la suppression d'une pièce ou d'un document cité est refusée par la base ;
+  l'écran le dit avant (« cette pièce justifie le solde du 164000 en révision de 2025 ») au lieu d'un échec de clé —
+  dans `supprimerSelection` aussi, qui aujourd'hui passe un échec sous silence (`if (deleteError) continue`), et dans
+  « transformer en pièce », qui supprime le document après avoir créé la pièce.
+- La Checklist ne porte pas la révision avant R6 ; l'assistant ne la porte pas (Q11).
+
+---
+
+#### 5. Les tests, les preuves et les risques
+
+##### 5.1 Par couche
+
+- **Module** (R2, `lib/revision.ts`, `lib/revisionCycles.ts`, `lib/revisionPreuves.ts`, purs) : le rangement d'un compte
+  en cycle, total sur les classes 1 à 7 (tout compte que lib/comptes.ts nomme, toute nature d'immobilisation, tout
+  compte de catégorie en base y a un cycle) ; les états déduits (chaque ligne du tableau §3.5) ; chaque preuve avec ses
+  cas limites (relevé finissant le 31/12, le couvrant, ne bouclant pas, absent ; ouverture absente ; emprunt soldé dans
+  l'année ; déclaration de fin d'année payée en janvier ; crédit de TVA) ; les refus dans l'ordre de `justifier_solde`,
+  confrontés au TEXTE de la fonction ; la mémoire (reprise proposée, solde changé, empreinte changée) ; le rangement des
+  contrôles existants — un test lit les identifiants des points de la Checklist et des préalables et refuse celui qui
+  n'a pas de cycle, la discipline de `POINTS_DE_LA_CHECKLIST_ECARTES`. Les fonctions qui ont une valeur par défaut ont
+  leur propre test ; aucun module de calcul n'importe `supabase.ts`.
+- **Confrontation SQL ↔ TypeScript** : `solde_du_compte` et la règle de l'ouverture, sur une table relevée en base dans
+  des dossiers jetables (écritures, balance reprise, soldes reportés, exercice antérieur à la reprise), en centimes.
+- **Écrans** (R3, R4, R5, R6, R9) : l'onglet monté sous `clientRetenu` (`ecransAvantLecture.test.tsx` : rien d'affirmé
+  avant d'avoir lu) ; faux clients qui APPLIQUENT les filtres (`filtresPostgrest.ts`) ; lecture partielle sans geste ;
+  deux clics dans le même `act` ; refus avant le clic ; liste relue après chaque geste ; `lireTout` à tri total (les
+  scanners `lecturesPaginees`, `lecturesVerifiees`, `lecturesSignalees`, `triTotal` le gardent déjà) ; banc de capture
+  (`outils/captures/debordements.mjs`, zéro aux quatre largeurs, à 720 px et aux combinaisons extrêmes des volets).
+- **Mutations** : chaque mutation de la logique mord, ou elle est équivalente et justifiée ; une suite rouge avant la
+  mutation ne prouve rien.
+
+##### 5.2 Les essais SQL (supabase/essais/)
+
+- `revisionSoldes.sql` (R1) et `revisionCycles.sql` (R4) : par impersonation — anonyme, compte rattaché à rien, client,
+  collaborateur affecté, chef — : écriture directe refusée en 42501 ; chaque refus des fonctions exigé par sa RAISON ;
+  solde faux refusé ; chaîne et reprise tenues ; rien ne se modifie, rien ne se supprime (ce qu'une suppression
+  rencontre se joue sur une réplique locale, l'outil d'exécution soumettant toute suppression à une confirmation) ;
+  revue refusée au collaborateur ; dossiers jetables, rien laissé en base.
+- `rls.sql` rejoué en entier (la boucle sur `pg_class` attrape les tables nouvelles ; les quatorze mutations mordent
+  toujours) ; avec R8, le compartiment `revision` y entre.
+- `restauration.sql` (vagues de `remplace_id` et `reprise_de`) ; avec R6, si la base porte le préalable,
+  `validationExercice.sql` (151 contrôles) et `reportDesSoldes.sql` rejoués.
+- Après chaque migration, les trois contrôles de l'export (dérive, socle, inventaire).
+
+##### 5.3 Ce que chaque étape touche
+
+| Étape | Données | Écrans | Edge Functions | Copies gardées |
+|---|---|---|---|---|
+| R1 | deux tables ; `solde_du_compte`, `justifier_solde`, la clé du verrou `cle_revision` ; deux gardes ; clés NO ACTION vers `pieces` et `documents_divers` | aucun | aucune | aucune |
+| R2 | aucune | aucun | aucune | aucune |
+| R3 | aucune | onglet nouveau ; DossierDetail, ongletsDossier ; Justificatifs et Documents (suppression d'un cité) | aucune | aucune |
+| R4, R5, R7 | tables et fonctions de leur objet | l'onglet | aucune | aucune |
+| R6 | rien, ou `valider_exercice` si la base porte le préalable (Q1) | ValidationExerciceCard, préalables | aucune | aucune |
+| R8 | compartiment `revision`, une table, une clé ajoutée | l'onglet, suppression d'un dossier | aucune | aucune |
+| R9 | une table, trois fonctions, les gardes amendées | l'onglet, export | aucune | aucune |
+
+##### 5.4 Les risques
+
+| Risque | Parade |
+|---|---|
+| La charge : un clic par solde, chaque année, chaque dossier | Seuls les soldes NON NULS demandent une décision ; preuves proposées ; reprise de N−1 ; « accepté sur motif » (Q3) ; acceptation en lot à rouvrir après un exercice réel (Q10). |
+| La fausse assurance : « justifier » d'un clic une preuve qui ne prouve pas | L'écran dit ce que la preuve établit et ce qu'elle n'établit pas ; une preuve qui ne boucle pas n'est pas présentée comme suffisante ; la décision porte son auteur. |
+| Le solde de l'écran et celui de la base divergent | Même calcul des deux côtés, en centimes, confronté par un test ; la base refuse au clic. |
+| Une pièce ou un document cité ne se supprime plus | Voulu (Q8) ; l'écran le dit avant, y compris dans la suppression multiple et « transformer en pièce ». |
+| Un dossier repris en cours de vie sans balance : le 512 ne retrouve pas le relevé | C'est un vrai défaut, que la preuve nomme (l'écart vaut le solde initial du premier relevé) ; la reprise de balance (ligne 29) le lève. |
+| La restauration d'une chaîne immuable | Vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), `restauration.sql`. |
+| Un texte libre qui contiendrait des données de patients | Consigne écrite à l'écran et au registre ; aucune donnée de patient dans les tables (RGPD.md §4). |
+| Le préalable de validation (R6) rend un exercice invalidable sans geste | Chaque refus porte son geste (justifier, accepter sur motif) ; R6 seulement après un exercice réel révisé (Q1). |
+| `valider_exercice` modifiée (R6, si la base porte le préalable) | Essais `validationExercice.sql` et `reportDesSoldes.sql` rejoués en entier ; sinon, préalable dans l'application seule, comme la concordance de la 2035. |
+| Le compartiment `revision` (R8) laissé plein après la suppression d'un dossier | `suppressionDossier.ts` le vide et le compte dans son bilan, comme `pieces` et `packs`. |
+| Un fichier cité retiré du stockage par l'API (un membre du cabinet le peut, le retrait d'un dossier exigeant ce droit) | L'empreinte ne se vérifie plus et l'écran le dit ; la prévention est la ligne 44 (archivage non modifiable). |
+| L'engagement et les dossiers BIC / IS ne sont couverts qu'en partie | Les cycles « tiers » et « stocks » disent « non couvert » ; plus tard. |
+| Une anomalie trouvée après la validation ne s'écrit pas (PCG art. 1031-4) | Documentée et reportée ; l'écriture reste une ligne à ouvrir. |
+| RETOUR ARRIÈRE | Avant tout usage réel : retirer tables et fonctions — migration DESTRUCTIVE, à faire accepter par le cabinet, collée par lui avec sa ligne d'historique. Après usage réel : jamais ; on masque l'onglet, les données du dossier de travail restant en base. |
+
+---
+
+#### 6. Le découpage (chaque étape fusionnable seule)
+
+| Étape | Contenu | Preuves | Réseau |
+|---|---|---|---|
+| R1 — la base des soldes révisés | migration `revision_des_soldes` : `revision_justifications`, `revision_preuves`, `solde_du_compte`, `justifier_solde`, `cle_revision`, gardes, RLS ; sauvegarde et restauration ; `types.ts` ; export, inventaire | essai `revisionSoldes.sql` ; `rls.sql`, `restauration.sql` ; trois contrôles de l'export ; `sauvegarde.test.ts` | non |
+| R2 — le module de la révision | rangement des comptes, cycles du dossier, soldes de l'exercice, états déduits, preuves proposées, refus avant le clic, mémoire, contrôles rangés par cycle | tests du module ; confrontation SQL ↔ TypeScript ; confrontation au texte de la fonction ; mutations | non |
+| R3 — l'écran : les soldes de bilan et leur mémoire | onglet « Révision », cartes par cycle, panneau « justifier », historique, reprise de N−1 ; suppression d'un cité dans Justificatifs et Documents | tests d'écran ; `ecransAvantLecture` ; banc de capture | non |
+| R4 — les cycles | migration `revision_des_cycles` : conclusions, journal, revues ; programme proposé ; revue du chef ; cycle « ensemble » | essai `revisionCycles.sql` ; tests du module et de l'écran ; banc | non |
+| R5 — la revue analytique | migration `revue_analytique` : seuils, explications ; N face à N−1 par poste et par compte, recettes mensuelles ; dépenses affectées sans pièce au-delà du seuil | essai ; tests ; banc | non |
+| R6 — la révision dans la validation | préalable « révision des soldes » (Q1), avertissement « cycles non revus » ; éventuellement la base | `prealablesValidation.test.ts` ; si la base change, `validationExercice.sql` et `reportDesSoldes.sql` | non |
+| R7 — le dossier permanent | migration `dossier_permanent` ; lettre de mission, description, organisation comptable, contrats, validité | essai ; tests ; banc | non |
+| R8 — les documents du cabinet | compartiment `revision` (privé, `admin_du_dossier`), `revision_fichiers`, clé de `revision_preuves.fichier_id` ; dépôt avec empreinte ; suppression d'un dossier qui le vide | `rls.sql` (stockage) ; test de `suppressionDossier` ; essai | non |
+| R9 — finaliser et exporter le dossier de travail | migration `finalisation_du_dossier_de_travail` : table, `finaliser_dossier_de_travail`, `verifier_dossier_de_travail`, gardes amendées ; export (classeur, sources citées, 2035 validée, FEC, piste d'audit, manifeste d'empreintes) ; confirmation de suppression d'un dossier qui propose l'export | essai ; tests de l'export (un livrable incomplet le dit) ; banc | non |
+
+Ordre recommandé : R1 → R2 → R3, qui livre déjà la valeur de la ligne (chaque solde de bilan justifié, tracé, repris
+l'année suivante) ; puis R4 et R5 ; R6 seulement après un premier exercice réel révisé ; R7, R8, R9 ensuite, R9 après
+R8 pour que l'attestation signée entre au dossier.
+
+Plus tard, chacun par une décision à part : les demandes au client nées de la révision (« envoyez le tableau
+d'amortissement »), reliées à « Ce qu'il reste à envoyer » ; l'assistant ; la justification par compte auxiliaire et le
+dénouement (engagement) ; les cycles BIC / IS (lignes 35, 36) ; le personnel (phase 5) ; la caisse ; l'écriture d'une
+opération découverte après la clôture (PCG art. 1031-4) ; un solde lu à la banque comme preuve (ligne 24).
+
+---
+
+#### 7. Les questions au cabinet
+
+Douze questions, chacune avec la recommandation, rédigées pour une réponse d'une ligne : voir `questions_cabinet.md`.
+En bref : Q1 la révision bloque-t-elle la validation (oui pour les soldes, à R6) ; Q2 qui revoit (le chef) ; Q3
+accepter un solde sur motif (oui) ; Q4 le seuil de signification (fixé par le cabinet) ; Q5 la mission (présentation,
+NP 2300) ; Q6 finaliser à part, rappel à 60 jours ; Q7 conserver dix ans, proposer l'export avant de supprimer un
+dossier ; Q8 un document cité ne se supprime plus ; Q9 les documents du cabinet à part ; Q10 pas d'acceptation en lot
+au départ ; Q11 hors du premier découpage : demandes au client, assistant, révision en cours d'exercice ; Q12 commencer
+par R1 à R3.
+
+---
+
+#### 8. Les points NON VÉRIFIÉS
+
+1. Que la NP 2300 agréée en 2016 soit toujours le texte en vigueur au 09/10/2026 : aucun arrêté postérieur trouvé ; le
+   cadre de référence de 2022 y renvoie encore ; l'arrêté de 2024 n'abroge que la NPMQ de 2016.
+2. Le texte de la NP 2300 et de la NPMQ de 2024 a été lu sur Légifrance au travers d'un outil qui ne rend que des
+   citations courtes : les numéros de paragraphe (§3, §7, §10 à §18, A6 à A9 ; §2, §4, §6, §8, §24, A24, §26 à §31,
+   A28-1 à A28-3, A30-1, §36 à §38) sont à relire dans le texte avant d'être cités dans le code.
+3. Le caractère « indicatif » de la liste de A9 (rapporté comme tel, non lu mot pour mot).
+4. Le glossaire agréé en 2024 (annexe 2 de l'arrêté du 30/05/2024) n'a pas été lu : les définitions citées sont celles
+   du glossaire de 2016.
+5. Les articles du code de déontologie (142, 145, 148, 150, 151, 155) lus de même, par citations courtes.
+6. La durée de conservation propre au dossier de travail d'un expert-comptable : aucun texte trouvé hors de la NPMQ
+   (A28-3) ; la jurisprudence sur le point de départ de la prescription n'a été vue que dans une source secondaire.
+7. Ce que l'administration peut demander du dossier de travail du cabinet (droit de communication face au secret
+   professionnel) : non lu.
+8. Le contrôle de qualité de l'Ordre et ce qu'il examine des dossiers : non lu.
+9. Le seuil de recettes de l'art. L. 162-4, 2°, du code des impositions sur les biens et services, auquel renvoie
+   l'exception de l'art. 99, cinquième alinéa (date du relevé) : non ouvert.
+10. La version de l'art. 99 du CGI à compter du 01/01/2027 (la version lue s'arrête à cette date) : non lue.
+11. BOI-BNC-DECLA-10-20 lu dans sa version du 12/09/2012, affichée comme en vigueur ; une version plus récente n'a pas
+    été cherchée.
+12. BOI-BNC-BASE-20-10-20 (option de l'art. 93 A, comptabilité d'engagement d'un BNC) vu au travers d'une recherche
+    seulement.
+13. L'art. L123-12 du code de commerce (inventaire des commerçants), utile aux seuls dossiers BIC / IS : non ouvert sur
+    Légifrance.
+14. La date de la renumérotation du PCG (l'article du compte 101 était cité « 941-10 » ; il est « 1211-10 » dans la
+    version du 01/01/2026, §9).
+15. Le texte du PCG a été lu dans le PDF de l'ANC, extrait localement : le PDF fait foi, pas l'extraction (une mise en
+    page en colonnes peut mêler des lignes ; les articles cités ont été relus à l'écran de l'extraction, sans colonnes).
+16. La norme anti-blanchiment (identification du client, conservation des pièces de vigilance) n'a pas été lue : elle
+    touche le dossier permanent, mais relève d'un autre chantier.
+17. Ce qu'un relevé de la caisse (SNIR) et le total du logiciel d'un praticien laissent normalement d'écart avec ses
+    encaissements : aucune source publique lue — c'est du jugement, et l'application ne le qualifiera pas.
+18. Qu'une connexion bancaire (ligne 24) rende un solde à une date, utilisable comme preuve du 512 : non vérifié.
+19. Le comportement d'un `on delete cascade` du dossier face aux nouvelles clés NO ACTION est déduit des cascades
+    existantes (règle de fin d'instruction) : à jouer sur une réplique en R1.
+20. Le nombre de soldes de bilan non nuls d'un dossier réel (estimé entre cinq et dix pour un BNC en trésorerie) : aucun
+    exercice n'est écrit ; à mesurer sur le premier exercice tenu.
+
+---
+
+#### 9. Trouvé en passant
+
+**L'article du plan comptable sur le compte 101 est cité sous un numéro qui n'est plus le sien.** Le code, une
+migration et un MESSAGE À L'ÉCRAN disent « comme le prévoit le plan comptable (art. 941-10) » ; dans la version
+consolidée au 01/01/2026, le fonctionnement du compte 101 et du 108 est à l'**article 1211-10** (« Les apports ou les
+retraits personnels de l'exploitant […] sont enregistrés en cours d'exercice dans le compte 108 « Compte de
+l'exploitant ». En fin d'exercice, le solde de ce compte est viré au compte 101 « Capital ». »). Le même dépôt cite,
+lui, la numérotation nouvelle pour la validation (art. 1031-3, 1031-4). Endroits : `src/pages/dossier/ValidationExerciceCard.tsx`
+(commentaire, ligne 239, et le message de `phraseDuResultat`, ligne 246), `src/pages/dossier/ValidationExerciceCard.test.tsx`
+(ligne 123, qui attend ce message), `src/lib/reportDesSoldes.ts` (ligne 17), `src/lib/comptes.ts` (ligne 77),
+`supabase/schema/20261007052231_report_des_soldes.sql` (ligne 9 — une migration appliquée, qu'on ne réécrit pas ; le
+commentaire de l'export reste ce qui a été joué). Aucun calcul n'en dépend. Le message à l'écran contredit aussi la
+règle posée par la conception (d) : « les messages à l'écran ne citeront aucun article (ils diront la règle), pour ne
+pas vieillir ». Correction proposée hors de ce chantier : retirer le numéro du message, corriger les commentaires.
+
+---
+
+#### Sources
+
+- [S1] Arrêté du 1er septembre 2016 portant agrément des normes professionnelles relatives au cadre de référence, au
+  glossaire, à la norme professionnelle de maîtrise de la qualité (NPMQ), à la norme professionnelle relative à la
+  mission de présentation de comptes (NP 2300), à la norme professionnelle relative aux missions d'assurance sur des
+  informations autres que des comptes complets historiques (NP 3100), NOR ECFE1614833A, JORF n° 0215 du 15/09/2016,
+  texte n° 13 : art. 4 et 7 ; annexe 1 (glossaire : « dossier de travail », « documentation de la mission »,
+  « jugement professionnel », « cohérence », « vraisemblance ») ; NP 2300, §2, §3, §7, §10 à §18, A1, A6 à A9.
+  https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000033119261
+- [S2] Arrêté du 30 mai 2024 portant agrément de la norme professionnelle de management de la qualité et du glossaire,
+  NOR ECOE2409898A, JORF n° 0169 du 17/07/2024, texte n° 8, en vigueur le 01/01/2025 (art. 2 : abroge l'annexe 3 de
+  l'arrêté du 01/09/2016) : annexe 1, §2, §4, §6, §8, §24, A24, §26, §27, §28, A28-1, A28-2, A28-3, §29, §30, A30-1,
+  §31, §36, §37, §38. https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000050001060
+- [S3] Arrêté du 10 juin 2022 portant agrément du cadre de référence, NOR ECOE2212835A, JORF n° 0150 du 30/06/2022,
+  texte n° 4, en vigueur le 01/07/2022 (abroge l'annexe 1 de l'arrêté du 13/04/2022) : sections « Les missions
+  d'assurance sur des comptes complets historiques », « Les missions sans assurance ».
+  https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000045978380 ; arrêté du 13/04/2022 :
+  https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000045640369
+- [S4] Décret n° 2012-432 du 30 mars 2012 relatif à l'exercice de l'activité d'expertise comptable, NOR EFIE1209095D,
+  titre III, chapitre II, « Code de déontologie des professionnels de l'expertise comptable » (art. 141 à 169) :
+  art. 142, 145, 146, 148, 150, 151, 155. https://www.legifrance.gouv.fr/eli/decret/2012/3/30/EFIE1209095D/jo/texte —
+  article 146 consolidé : https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000025599653
+- [S5] Ordonnance n° 45-2138 du 19 septembre 1945, art. 2, version en vigueur depuis le 08/05/2017 (ordonnance
+  n° 2016-394 du 31/03/2016, art. 8 ; décret n° 2017-799 du 05/05/2017, art. 2).
+  https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000032364676
+- [S6] Autorité des normes comptables, règlement ANC n° 2014-03 relatif au plan comptable général, version consolidée
+  au 1er janvier 2026 : art. 111-1, 121-1, 121-3, 1011-2, 1011-3, 1011-4, 1021-1, 1021-3, 1031-1, 1031-3, 1031-4,
+  1032-1, 1032-2, 1211-10. https://www.anc.gouv.fr/files/anc/files/1_Normes_fran%C3%A7aises/recueil/2026/PCG--1er-janvier-2026.pdf
+  (texte extrait localement du PDF, dans le dossier `telecharges/pcg2026/` à côté de ce document).
+- [S7] Code général des impôts, art. 99, version en vigueur du 21/02/2026 au 01/01/2027 (loi n° 2026-103 du
+  19/02/2026, art. 126). https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000033815251/
+- [S8] Livre des procédures fiscales, art. L102 B, version au 01/01/2027 ; loi n° 2026-534 du 25 juin 2026 relative à
+  la lutte contre les fraudes sociales et fiscales, art. 36 (JORF n° 0148 du 26/06/2026).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006315183/2027-01-01 ;
+  https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000054309787
+- [S9] BOFiP, BOI-BNC-DECLA-10-20, « BNC — Régime de la déclaration contrôlée — Obligations comptables », 12/09/2012 :
+  §10 à §150, §180, §190, §280, §290, §320 à §410, §420 à §460. https://bofip.impots.gouv.fr/bofip/4809-PGP
+- [S10] BOFiP, BOI-BNC-BASE-20-10-10, 06/07/2016 : §10, §20. https://bofip.impots.gouv.fr/bofip/6440-PGP
+- [S11] BOFiP, BOI-BNC-BASE-20-10-20 (option de l'art. 93 A du CGI), vu par recherche seulement.
+  https://bofip.impots.gouv.fr/doctrine/pgp/6441-PGP
+- [S12] Code civil, art. 2224. https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000019017112
+
+Dans le dépôt (commit c79e899 et le correctif d7) : `src/lib/controles.ts`, `src/lib/prealablesValidation.ts`
+(`POINTS_DE_LA_CHECKLIST_ECARTES`, `CARTES_DE_CLOTURE`), `src/lib/validationExercice.ts`, `src/lib/reportDesSoldes.ts`,
+`src/lib/pisteAudit.ts`, `src/lib/concordance2035.ts`, `src/lib/controlesReleves.ts`, `src/lib/soldeReleve.ts`,
+`src/lib/comptes.ts`, `src/lib/ecritures.ts` (`calculerBalance`, `ecrituresSansObjet`), `src/lib/emprunts.ts`,
+`src/lib/sauvegarde.ts`, `src/lib/suppressionDossier.ts`, `src/lib/ongletsDossier.ts`, `src/lib/resteAEnvoyer.ts`,
+`src/pages/dossier/ChecklistTab.tsx`, `src/pages/dossier/ClotureTab.tsx`, `src/pages/dossier/DocumentsTab.tsx`,
+`src/pages/dossier/ValidationExerciceCard.tsx`, `supabase/schema/20261004133627_validation_des_exercices.sql`,
+`supabase/schema/20261008180607_encaissements_des_factures.sql` ; HISTORIQUE.md, entrées « LE STATUT « ENCAISSÉE » :
+LA CONCEPTION », « LA 2035 SE COMPARE AUX ÉCRITURES », « UN EXERCICE VALIDÉ SE FIGE EN BASE », « UN EXERCICE SE VALIDE
+DEPUIS CLÔTURE », « Un contrôle qui part d'un côté d'une relation », « Une piste d'audit se PRODUIT » ; la feuille de
+route (Notion), lignes 26.6, 33, 34, 35, 36, 41, 42, 43, 44, 45, 60, lues le 09/10/2026. Base lue en lecture :
+`list_tables`, colonnes, contraintes, policies des tables et du stockage, fonctions d'accès, comptes de lignes.
+
+#### Les douze questions au cabinet, telles que posées le 09/10/2026
+
+Chaque question se répond d'une ligne : « Q1 oui », ou « Q1 non : … ». La recommandation est celle de l'architecte ;
+le détail est dans `conception_revision.md` (le paragraphe entre parenthèses).
+
+Ce qui est déjà décidé, sauf avis contraire : on révise par COMPTE pour les soldes de bilan (chaque solde reçoit une
+décision : justifié par des pièces, accepté sur motif, ou anomalie) et par CYCLE pour le travail et la revue
+(programme, conclusion, journal, points à suivre). L'application PROPOSE la preuve, le cabinet DÉCIDE d'un clic ; rien
+ne se modifie, une décision se remplace et l'historique reste ; le client ne voit rien de la révision. (§3.2)
+
+---
+
+**Q1 — La révision bloque-t-elle la validation d'un exercice ?**
+Proposition : pour valider, chaque solde de bilan non nul doit avoir une décision (justifié ou accepté sur motif, pas
+d'anomalie ouverte) ; les cycles non revus et la note de synthèse restent un simple avertissement — ils viennent après
+les comptes définitifs. Ce verrou n'arrive qu'à l'étape R6, après un premier exercice réel révisé.
+**Recommandation : oui, à R6.** (§4.6, §5.4)
+
+**Q2 — Qui revoit ?**
+Proposition : tout membre du cabinet affecté au dossier prépare (justifie, conclut, note) ; seul le chef du cabinet
+revoit et finalise, comme il est seul à valider. Le chef peut préparer et revoir le même dossier — la norme de qualité
+l'admet (A30-1) —, et la trace le dit.
+**Recommandation : oui.** (§1.5)
+
+**Q3 — Peut-on clore un solde sans pièce, sur un motif ?**
+Exemples : un petit solde sans importance (importance relative, NP 2300 §11), ou une anomalie qu'on n'explique pas et
+qu'on porte au rapport (§15). Le motif est obligatoire, et le dossier dit « accepté sans pièce » tel quel.
+**Recommandation : oui.** (§3.3)
+
+**Q4 — Le seuil de signification : qui le fixe ?**
+Proposition : le cabinet, par dossier et par exercice, avec un motif ; l'application n'en calcule aucun. Sans seuil,
+toutes les variations s'affichent et aucune explication n'est exigée.
+**Recommandation : oui, fixé par le cabinet, aucun seuil par défaut.** (§1.7, §4.5)
+
+**Q5 — Quelle mission faites-vous pour ces dossiers BNC ?**
+Présentation des comptes avec attestation (norme NP 2300), ou tenue et 2035 sans attestation (« assistance
+comptable », sans assurance) ? Cela décide de ce que le dossier de travail doit contenir.
+**Recommandation : concevoir le dossier pour la présentation (le plus exigeant, qui couvre l'autre) ; le type de
+mission se renseigne par dossier.** (§1.1, §1.2)
+
+**Q6 — Quand le dossier de travail se fige-t-il ?**
+Proposition : par un geste à part, « Finaliser le dossier de travail », du chef du cabinet, après la validation et
+l'attestation (la note de synthèse et le rapport signé viennent après les comptes définitifs). La norme de qualité
+laisse au cabinet le délai de finalisation (A28-1) : un rappel à 60 jours après la validation, sans blocage.
+**Recommandation : oui, geste à part, rappel à 60 jours.** (§3.9, §4.6)
+
+**Q7 — Combien de temps garder le dossier de travail, et que faire en supprimant un dossier ?**
+Proposition : dix ans après la fin de l'exercice, comme les pièces du client (dix ans désormais, LPF art. L102 B ; la
+responsabilité civile se prescrit par cinq ans à compter de la connaissance du dommage). Supprimer un dossier emporte
+son dossier de travail : la confirmation le nomme et propose d'abord de l'exporter.
+**Recommandation : oui, dix ans, et l'export proposé avant toute suppression.** (§1.6, §3.10)
+
+**Q8 — Une pièce ou un document cité dans la révision peut-il encore être supprimé ?**
+Proposition : non, même si la décision qui le citait a été remplacée depuis — l'historique doit garder ses preuves.
+Seule la suppression du dossier entier l'emporte. L'écran le dit avant le geste.
+**Recommandation : non, il ne se supprime plus.** (§3.3, §4.7)
+
+**Q9 — Vos propres documents de travail (feuilles de calcul, notes, attestation signée) vont-ils dans l'application ?**
+Proposition : oui, dans un espace de stockage à part que le client ne voit pas — aujourd'hui, tout fichier déposé dans
+un dossier lui est lisible.
+**Recommandation : oui, à l'étape R8.** (§3.1, §3.3)
+
+**Q10 — Accepter en un geste tous les soldes que l'application prouve entièrement ?**
+(Relevé qui boucle au 31/12, registre des immobilisations, échéancier d'emprunt, déclarations de TVA.)
+**Recommandation : non pour commencer — un clic par compte, l'auteur de chaque décision tracé ; à rouvrir après un
+premier exercice réel.** (§5.4)
+
+**Q11 — Laisser hors du premier découpage :**
+les demandes au client nées de la révision (« envoyez le tableau d'amortissement »), la lecture de la révision par
+l'assistant comptable, et la révision en cours d'exercice (seuls les exercices terminés se révisent) ?
+**Recommandation : oui, chacun plus tard par une décision à part.** (§6)
+
+**Q12 — Commencer par R1 à R3 ?**
+La base des soldes révisés, le module des preuves, puis l'écran « Révision » : chaque solde de bilan justifié, tracé,
+et repris l'année suivante. Les cycles, la revue analytique, le verrou de la validation, le dossier permanent, les
+documents du cabinet et la finalisation suivent.
+**Recommandation : oui.** (§6)
