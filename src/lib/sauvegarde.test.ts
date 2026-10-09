@@ -11,14 +11,17 @@ import {
   tablesSansChemin,
   violationsOrdre,
   CHEMINS_DOSSIER,
+  LIENS_GARDES,
   ORDRE_RESTAURATION,
   PREREQUIS_AUTH,
   RELATIONS,
   TABLES_AUTO_REFERENCEES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES,
+  TOUS_LES_LIENS,
   vaguesParLien,
   type Relation,
 } from './sauvegarde'
+import { derniereDefinitionSql } from '../test/schema'
 
 // Ces tests sont la RÉPÉTITION de la restauration. Une sauvegarde jamais restaurée n'est pas une
 // sauvegarde, et un essai annuel ne prouve rien du mois suivant : la seule répétition qui tienne est
@@ -100,7 +103,42 @@ describe('ordre de restauration', () => {
     const enDeuxPasses = TABLES_AUTO_REFERENCEES.map((a) => `${a.table}.${a.colonne}`)
     const parVagues = TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => `${a.table}.${a.colonne}`)
     expect([...enDeuxPasses, ...parVagues].sort()).toEqual(auto)
-    expect(parVagues).toEqual(['encaissements_factures.annule_id'])
+    expect(parVagues).toEqual([
+      'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
+    ])
+  })
+
+  it('écrit les preuves de la révision après les pièces, les documents et les décisions', () => {
+    // Deux dépendances qu'aucune clé étrangère ne porte (ligne 41, étape R1) : la garde d'une preuve exige que la pièce ou
+    // le document cité existe dans son dossier, et le lit sans clé (hypothèse Q8). `violationsOrdre` les compte, par
+    // `LIENS_GARDES` ; ce test les nomme, pour qu'un reclassement de la liste se lise.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    for (const lue of ['pieces', 'documents_divers', 'revision_justifications']) {
+      expect(rang(lue), lue).toBeGreaterThanOrEqual(0)
+      expect(rang(lue), lue).toBeLessThan(rang('revision_preuves'))
+    }
+    expect(violationsOrdre(ORDRE_RESTAURATION, LIENS_GARDES)).toEqual([])
+    expect(RELATIONS.filter((r) => r.enfant.startsWith('revision_')).map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'revision_justifications.dossier_id>dossiers:cascade',
+        'revision_justifications.remplace_id>revision_justifications:bloque',
+        'revision_justifications.reprise_de>revision_justifications:bloque',
+        'revision_preuves.dossier_id>dossiers:cascade',
+        'revision_preuves.justification_id>revision_justifications:cascade',
+      ])
+  })
+
+  it('signale une preuve placée avant la pièce qu’elle cite, que le graphe des clés ne voit pas', () => {
+    // Un ordre partiel : les tables qu'il ne cite pas y sont absentes, et seul compte ici ce qui est mal placé.
+    const faux = ['dossiers', 'revision_justifications', 'revision_preuves', 'pieces', 'documents_divers']
+    const malPlaces = (relations?: readonly Relation[]) =>
+      violationsOrdre(faux, relations).filter((v) => v.motif === 'parent_apres_enfant')
+    expect(malPlaces()).toEqual([
+      { enfant: 'revision_preuves', parent: 'documents_divers', motif: 'parent_apres_enfant' },
+      { enfant: 'revision_preuves', parent: 'pieces', motif: 'parent_apres_enfant' },
+    ])
+    // Le graphe des seules clés étrangères ne l'aurait pas dit.
+    expect(malPlaces(RELATIONS)).toEqual([])
   })
 
   it('écrit la répartition d’un encaissement après les lignes de facture dont son déclencheur lit les taux', () => {
@@ -302,6 +340,36 @@ describe('liens perdus après restauration', () => {
     })).toEqual([])
   })
 
+  it('attrape une source citée par la révision, absente de la sauvegarde, que rien ne permet d’effacer', () => {
+    // La preuve cite exactement une source : le lien vide ne passerait pas la base, et la garde refuserait la preuve.
+    const perdus = liensPerdus({
+      dossiers: [{ id: 'd1' }],
+      pieces: [],
+      documents_divers: [{ id: 'doc1', dossier_id: 'd1' }],
+      revision_justifications: [{ id: 'j1', dossier_id: 'd1', remplace_id: null, reprise_de: null }],
+      revision_preuves: [
+        { id: 'r1', dossier_id: 'd1', justification_id: 'j1', piece_id: 'p-disparue', document_id: null },
+        { id: 'r2', dossier_id: 'd1', justification_id: 'j1', piece_id: null, document_id: 'doc1' },
+      ],
+    })
+    expect(perdus).toEqual([
+      { table: 'revision_preuves', colonne: 'piece_id', parent: 'pieces', valeur: 'p-disparue', effacable: false },
+    ])
+  })
+
+  it('les liens qu’une garde tient sont ceux que sa garde lit, et aucune clé étrangère ne les porte', () => {
+    // Confrontés à la DERNIÈRE définition de la garde exportée : un lien ajouté ou retiré d'un seul côté se voit ici.
+    const garde = derniereDefinitionSql('garder_revision_preuve')
+    expect(garde).toContain('from public.pieces p where p.id = new.piece_id and p.dossier_id = new.dossier_id for share')
+    expect(garde).toContain('from public.documents_divers d where d.id = new.document_id and d.dossier_id = new.dossier_id for share')
+    expect(LIENS_GARDES.map((l) => `${l.enfant}.${l.colonne}>${l.parent}`)).toEqual([
+      'revision_preuves.document_id>documents_divers', 'revision_preuves.piece_id>pieces',
+    ])
+    const cles = new Set(RELATIONS.map((r) => `${r.enfant}.${r.colonne}`))
+    for (const lien of LIENS_GARDES) expect(cles.has(`${lien.enfant}.${lien.colonne}`), lien.colonne).toBe(false)
+    expect(TOUS_LES_LIENS).toEqual([...RELATIONS, ...LIENS_GARDES])
+  })
+
   it('signale chaque ligne fautive, pas seulement la première', () => {
     // Un rapport qui s'arrête au premier lien perdu ferait réparer une restauration en autant
     // d'allers-retours qu'elle compte de trous.
@@ -429,6 +497,17 @@ describe('lignes supposées déjà présentes dans la base d’arrivée', () => 
       pieces: [{ id: 'p1', dossier_id: null, sous_dossier_id: null }],
     })).toEqual([])
   })
+
+  it('réclame aussi la source qu’une preuve de la révision cite, liée par une garde et non par une clé', () => {
+    // La garde de la preuve exige la pièce dans la base d'arrivée exactement comme une clé l'exigerait (ligne 41, R1).
+    expect(referencesExternes({
+      revision_preuves: [{ id: 'r1', dossier_id: 'd1', justification_id: 'j1', piece_id: 'p1', document_id: null }],
+    })).toEqual([
+      { table: 'revision_preuves', colonne: 'dossier_id', parent: 'dossiers', valeurs: ['d1'] },
+      { table: 'revision_preuves', colonne: 'justification_id', parent: 'revision_justifications', valeurs: ['j1'] },
+      { table: 'revision_preuves', colonne: 'piece_id', parent: 'pieces', valeurs: ['p1'] },
+    ])
+  })
 })
 
 describe('plan de réinsertion', () => {
@@ -528,6 +607,30 @@ describe('plan de réinsertion', () => {
     expect(sauvegarde.encaissements_factures[0].annule_id).toBe('e1')
   })
 
+  it('écrit une décision de la révision après TOUTES ses cibles : un maillon de chaîne par vague, la reprise ensuite', () => {
+    // Une décision en remplace une (`remplace_id`) et reprend celle de l'exercice précédent (`reprise_de`) : immuable,
+    // elle ne part pas à NULL, et sa garde lit chaque cible. L'ordre de la sauvegarde n'y change rien.
+    const reprise = { id: 'j4', annee: 2025, remplace_id: null, reprise_de: 'j3' }
+    const troisieme = { id: 'j3', annee: 2024, remplace_id: 'j2', reprise_de: null }
+    const premiere = { id: 'j1', annee: 2024, remplace_id: null, reprise_de: null }
+    const seconde = { id: 'j2', annee: 2024, remplace_id: 'j1', reprise_de: null }
+    const autre = { id: 'j5', annee: 2024, remplace_id: null, reprise_de: null }
+    const plan = planReinsertion({ revision_justifications: [reprise, troisieme, premiere, seconde, autre] })
+    expect(plan.etapes.map((e) => e.lignes.map((l) => l.id))).toEqual([['j1', 'j5'], ['j2'], ['j3'], ['j4']])
+    expect(plan.secondePasse).toEqual([])
+    // Par une seule colonne, la reprise partirait avec la première vague, avant sa cible.
+    expect(vaguesParLien([reprise, troisieme, premiere, seconde, autre], 'remplace_id').map((v) => v.map((l) => l.id)))
+      .toEqual([['j4', 'j1', 'j5'], ['j2'], ['j3']])
+  })
+
+  it('une décision qui pointe une décision absente part dans la première vague — et `liensPerdus` refuse', () => {
+    const orpheline = { id: 'j2', dossier_id: 'd1', remplace_id: 'absente', reprise_de: null }
+    expect(vaguesParLien([orpheline], ['remplace_id', 'reprise_de'])).toEqual([[orpheline]])
+    expect(liensPerdus({ dossiers: [{ id: 'd1' }], revision_justifications: [orpheline] })).toEqual([
+      { table: 'revision_justifications', colonne: 'remplace_id', parent: 'revision_justifications', valeur: 'absente', effacable: false },
+    ])
+  })
+
   it('couvre chaque table auto-référencée déclarée', () => {
     // Le lien entre la constante et le plan : une auto-référence ajoutée à TABLES_AUTO_REFERENCEES
     // sans que le plan sache la traiter donnerait une seconde passe muette.
@@ -623,6 +726,21 @@ describe('tables pointées mais absentes du plan', () => {
       pieces: { acces: 'direct' },
     })
     expect(trouve).toEqual([{ parent: 'pieces', pointeePar: ['lignes_bancaires'], effacable: true }])
+  })
+
+  it('signale les sources qu’une preuve de la révision cite, sorties du plan, que seule une garde lie', () => {
+    // Sans pièces ni documents dans le plan, chaque preuve restaurée serait refusée par sa garde : aucune clé ne le dit.
+    const trouve = parentsHorsPlan(['dossiers', 'revision_justifications', 'revision_preuves'], {
+      dossiers: { acces: 'le_dossier' },
+      revision_justifications: { acces: 'direct' },
+      revision_preuves: { acces: 'direct' },
+      pieces: { acces: 'direct' },
+      documents_divers: { acces: 'direct' },
+    })
+    expect(trouve).toEqual([
+      { parent: 'documents_divers', pointeePar: ['revision_preuves'], effacable: false },
+      { parent: 'pieces', pointeePar: ['revision_preuves'], effacable: false },
+    ])
   })
 
   it('laisse tablesSansChemin dire seule ce qu’elle dit déjà', () => {

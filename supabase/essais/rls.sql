@@ -118,6 +118,16 @@
 -- caractère (32 144 caractères, empreinte 95048df511611d0bd486747149697640). Ce que la garde et les
 -- contraintes refusent, et que le client ne peut pas écrire d'identité, est éprouvé par
 -- `identiteFacturesRecues.sql`.
+-- 09/10/2026 — PASSAGE COMPLET après `revision_des_soldes` (ligne 41, étape R1), qui crée
+-- `revision_justifications` et `revision_preuves`, deux policies chacune (lecture sous
+-- `admin_du_dossier`, insertion de restauration réservée au super-admin), et après
+-- `paiement_personnel_des_cotisations`, appliquée entre-temps par une autre étape, qui ne touche aucune
+-- policy : 22 lignes de verdict (58 tables du schéma, dont 50 portant un `dossier_id`, + 3 buckets,
+-- 3 profils), 0 en faute, et 14 mutations sur 14 qui mordent (M2 : exactement 3). Le texte reçu est
+-- celui des passages précédents, caractère pour caractère (32 144 caractères, empreinte
+-- 95048df511611d0bd486747149697640) : seul cet en-tête a changé depuis. Les deux tables nouvelles sont
+-- vides en production : ce que leurs policies et leurs gardes refusent sur une ligne qui EXISTE est
+-- éprouvé par `revisionSoldes.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

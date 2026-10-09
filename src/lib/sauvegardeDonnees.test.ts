@@ -493,6 +493,56 @@ describe('restauration', () => {
     expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 
+  it('écrit les décisions de la révision par vagues, leurs preuves après les sources citées, et les relit à l’identique', async () => {
+    // Ligne 41, étape R1 : une décision immuable ne part pas à NULL pour se compléter, et sa garde lit chacune de ses
+    // cibles — la décision qu'elle remplace, celle qu'elle reprend. La garde d'une preuve lit sa pièce ou son document,
+    // sans clé étrangère (`LIENS_GARDES`). L'ordre de la sauvegarde n'y change rien.
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
+    base.tables.documents_divers = [{ id: 'doc1', dossier_id: DOSSIER }]
+    base.tables.revision_justifications = [
+      { id: 'j3', dossier_id: DOSSIER, annee: 2025, compte: '512000', remplace_id: null, reprise_de: 'j2' },
+      { id: 'j2', dossier_id: DOSSIER, annee: 2024, compte: '512000', remplace_id: 'j1', reprise_de: null },
+      { id: 'j1', dossier_id: DOSSIER, annee: 2024, compte: '512000', remplace_id: null, reprise_de: null },
+    ]
+    base.tables.revision_preuves = [
+      { id: 'r2', dossier_id: DOSSIER, justification_id: 'j3', piece_id: null, document_id: 'doc1' },
+      { id: 'r1', dossier_id: DOSSIER, justification_id: 'j1', piece_id: 'p1', document_id: null },
+    ]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    expect(sauvegarde.contenu.revision_justifications).toHaveLength(3)
+    expect(sauvegarde.contenu.revision_preuves).toHaveLength(2)
+    expect(sauvegarde.manifeste.liensPerdus).toEqual([])
+    baseVide()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(ecritures.filter((e) => e.table === 'revision_justifications').map((e) => e.nb)).toEqual([1, 1, 1])
+    expect(base.tables.revision_justifications.map((l) => l.id)).toEqual(['j1', 'j2', 'j3'])
+    const tables = ecritures.map((e) => e.table)
+    for (const lue of ['pieces', 'documents_divers', 'revision_justifications']) {
+      expect(tables.indexOf(lue), lue).toBeGreaterThanOrEqual(0)
+      expect(tables.indexOf(lue), lue).toBeLessThan(tables.indexOf('revision_preuves'))
+    }
+    expect(resultat.lignesParTable.revision_justifications).toBe(3)
+    expect(resultat.lignesParTable.revision_preuves).toBe(2)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('refuse, avant d’écrire, une preuve de la révision dont la pièce manque à la sauvegarde', async () => {
+    baseVide()
+    const sauvegarde = {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, cabinet_id: CABINET }],
+        pieces: [],
+        revision_justifications: [{ id: 'j1', dossier_id: DOSSIER, remplace_id: null, reprise_de: null }],
+        revision_preuves: [{ id: 'r1', dossier_id: DOSSIER, justification_id: 'j1', piece_id: 'p-absente', document_id: null }],
+      },
+    }
+    await expect(restaurerSauvegarde(sauvegarde))
+      .rejects.toThrow('revision_preuves.piece_id pointe pieces « p-absente », absent de la sauvegarde.')
+    expect(ecritures).toEqual([])
+  })
+
   it('écrit les parents avant leurs enfants', async () => {
     base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
     base.tables.lignes_bancaires = [{ id: 'l1', dossier_id: DOSSIER, piece_id: 'p1' }]

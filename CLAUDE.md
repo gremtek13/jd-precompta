@@ -146,7 +146,8 @@ supabase/
                   soumet à une confirmation qui n'arrive pas) : ce qu'une suppression rencontre se joue sur une
                   réplique locale du schéma.
                   - rls.sql : toutes les tables et le stockage, boucle sur pg_class, se mute lui-même ;
-                  - restauration.sql ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
+                  - restauration.sql (sur une réplique : le plan de sauvegarde.ts, gardé par
+                    restaurationEssai.test.ts) ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
                     bordures.py (les bordures répétées et comptées, avant de transcrire une fonction) ;
                     socle.py/.sql et inventaire.py/.sql (export ↔ catalogue, après chaque migration) ;
                     signature.sql (les neuf familles d'objets, réplique ↔ production, avant de croire ce qu'on joue
@@ -158,7 +159,7 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues ;
+                    identiteFacturesRecues, revisionSoldes ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -416,7 +417,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
-  étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION ».
+  étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
+  révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2 (le module) et R3
+  (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -445,9 +448,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 12 fonctions au 08/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 14 fonctions au 09/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`, `retirer_encaissement`,
-  `declarer_encaissement_hors_application` et `annuler_encaissement` écrivent, chacune avec son propre contrôle d'accès ; plus
+  `declarer_encaissement_hors_application`, `annuler_encaissement` et `justifier_solde` écrivent, chacune avec son propre contrôle d'accès ; plus
   aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une
   NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -661,6 +664,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un contrôle qui part d'un côté d'une relation ne voit pas l'autre** : partir de l'écriture (`rupturesPisteAudit`,
   `ecrituresSansObjet`), du mouvement, du bien… Le contrôle des écritures compare le compte, le montant, la ventilation
   de la TVA et les dates attendues → « Un contrôle qui part d'un côté d'une relation ».
+- **La révision des soldes** (ligne 41, R1) : une DÉCISION par solde d'un compte de bilan à la fin d'un exercice
+  (justifié, accepté sur motif, anomalie), immuable : elle se REMPLACE (chaîne `remplace_id`) et, permanente, se REPREND
+  l'exercice suivant. Seule `justifier_solde` l'écrit — treize refus dans un ordre fixé, sous le verrou de la
+  validation puis celui de la révision, au solde de `solde_du_compte` (jumeau `soldeDuCompteCentimes`) ; une preuve
+  RECOPIE l'empreinte de sa source, et une source citée ne se supprime plus (`garder_source_citee`, hypothèse Q8) :
+  les écrans qui suppriment devront le dire avant le clic (R3) → « LA BASE DES SOLDES RÉVISÉS ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026** (règlement ANC n° 2014-03 consolidé : le 108
   et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une migration déjà
   appliquée garde l'ancien numéro → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ».

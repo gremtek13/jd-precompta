@@ -97,6 +97,11 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'regles_affectation_bancaire', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'regles_affectation_bancaire', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'regles_bancaires_ignorees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_justifications', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_justifications', parent: 'revision_justifications', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'revision_justifications', parent: 'revision_justifications', colonne: 'reprise_de', aLaSuppression: 'bloque' },
+  { enfant: 'revision_preuves', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_preuves', parent: 'revision_justifications', colonne: 'justification_id', aLaSuppression: 'cascade' },
   { enfant: 'soldes_reportes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'sous_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'statuts_factures_recus', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -119,6 +124,21 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'ventilations_bancaires', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
   { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
+
+// Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
+// de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
+// l'insertion, et `garder_source_citee` refuse ensuite de supprimer ou de déplacer la source — une règle que le cabinet
+// peut encore changer (hypothèse Q8), d'où une fonction plutôt qu'une clé qu'il faudrait alors retirer. Pour la
+// restauration, ils comptent comme des clés sans action : la source doit être écrite AVANT la preuve, et une source
+// absente de la sauvegarde est un lien perdu, que rien ne permet d'effacer (une preuve cite exactement une source).
+// `sauvegarde.test.ts` les confronte au texte de la garde, et à l'absence de clé dans l'export.
+export const LIENS_GARDES: readonly Relation[] = [
+  { enfant: 'revision_preuves', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'bloque' },
+  { enfant: 'revision_preuves', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
+]
+
+/** Tout ce que la restauration doit respecter : les clés étrangères, et les liens qu'une garde tient. */
+export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDES]
 
 // L'ordre dans lequel réinsérer les tables pour qu'une restauration aboutisse : toute table parente
 // précède ses enfants. Calculé par tri topologique sur RELATIONS, puis figé ici — et vérifié à chaque
@@ -150,6 +170,11 @@ export const RELATIONS: readonly Relation[] = [
 // déclaration de son encaissement — et le lisent là, sans clé étrangère. Elles ne comptent qu'un statut lu AVANT la
 // ligne qu'elles gardent (`lu_le`, que la restauration rejoue) : réinsérés d'abord, les statuts laissent passer tout ce
 // qui les précédait, et refusent ce qui n'aurait pas pu naître après eux. `sauvegarde.test.ts` garde cet ordre.
+//
+// La révision des comptes (ligne 41, étape R1) vient après le brouillon et avant `exercices_valides` : ses décisions ne
+// lisent rien qu'une validation fige, et une décision prise APRÈS la validation se restaure comme une autre. Les
+// décisions partent par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`) ; leurs preuves suivent les pièces et les
+// documents qu'elles citent, que leur garde lit sans clé étrangère (`LIENS_GARDES`, que `violationsOrdre` compte).
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -206,6 +231,8 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'piece_commentaires',
   'piece_textes_ocr',
   'ecritures_brouillon',
+  'revision_justifications',
+  'revision_preuves',
   'exercices_valides',
 ]
 
@@ -236,21 +263,34 @@ export const TABLES_AUTO_REFERENCEES: readonly { table: string; colonne: string 
 // rien, puis celles dont la cible est déjà écrite. Une vague par écriture distincte, et non l'ordre des lignes dans
 // un même lot : le déclencheur lit la cible, et Postgres ne promet pas l'ordre dans lequel une commande traite ses
 // lignes. Une annulation ne s'annule pas (le même déclencheur) : deux vagues suffisent, et le plan en ferait plus.
+//
+// `revision_justifications` aussi (ligne 41, étape R1), et par DEUX colonnes : une décision en remplace une autre du même
+// compte et du même exercice (`remplace_id`), et reprend la justification permanente de l'exercice précédent
+// (`reprise_de`). Immuable, elle ne part pas à NULL pour se compléter ensuite, et sa garde lit chaque cible : une
+// décision part dans la vague qui suit l'écriture de TOUTES ses cibles — une chaîne de remplacements fait autant de
+// vagues qu'elle a de maillons.
 export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] = [
   { table: 'encaissements_factures', colonne: 'annule_id' },
+  { table: 'revision_justifications', colonne: 'remplace_id' },
+  { table: 'revision_justifications', colonne: 'reprise_de' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
-// pointe que des lignes des précédentes. Une ligne qui pointe une ligne ABSENTE de la sauvegarde part dans la première
-// vague : `liensPerdus` l'a déjà signalée, et la restauration refuse avant d'écrire. Un cycle, que la base refuse, ne
-// fait pas boucler le plan : ce qui ne peut plus avancer part en dernier, et c'est la base qui dira non.
-export function vaguesParLien(lignes: Record<string, unknown>[], colonne: string): Record<string, unknown>[][] {
+// pointe que des lignes des précédentes, par chacune des colonnes données. Une ligne qui pointe une ligne ABSENTE de la
+// sauvegarde part comme si son lien était vide : `liensPerdus` l'a déjà signalée, et la restauration refuse avant
+// d'écrire. Un cycle, que la base refuse, ne fait pas boucler le plan : ce qui ne peut plus avancer part en dernier, et
+// c'est la base qui dira non.
+export function vaguesParLien(
+  lignes: Record<string, unknown>[],
+  colonnes: string | readonly string[],
+): Record<string, unknown>[][] {
+  const liens = typeof colonnes === 'string' ? [colonnes] : colonnes
   const presents = new Set(lignes.map((l) => String(l.id)))
   const ecrits = new Set<string>()
   const vagues: Record<string, unknown>[][] = []
   let reste = lignes
   while (reste.length > 0) {
-    const vague = reste.filter((l) => l[colonne] == null || !presents.has(String(l[colonne])) || ecrits.has(String(l[colonne])))
+    const vague = reste.filter((l) => liens.every((c) => l[c] == null || !presents.has(String(l[c])) || ecrits.has(String(l[c]))))
     if (vague.length === 0) {
       vagues.push(reste)
       break
@@ -327,7 +367,7 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
   }
 
   const perdus: LienPerdu[] = []
-  for (const relation of RELATIONS) {
+  for (const relation of TOUS_LES_LIENS) {
     const lignes = contenu[relation.enfant]
     if (!lignes) continue
     // Une table parente absente de la sauvegarde n'est pas un lien perdu mais un périmètre : on ne
@@ -416,7 +456,7 @@ export interface ViolationOrdre {
 // contrôle toujours rouge.
 export function violationsOrdre(
   ordre: readonly string[],
-  relations: readonly Relation[] = RELATIONS,
+  relations: readonly Relation[] = TOUS_LES_LIENS,
 ): ViolationOrdre[] {
   const rang = new Map(ordre.map((table, i) => [table, i]))
   const violations: ViolationOrdre[] = []
@@ -545,6 +585,8 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   reglements_groupes: { acces: 'direct' },
   regles_affectation_bancaire: { acces: 'direct' },
   regles_bancaires_ignorees: { acces: 'direct' },
+  revision_justifications: { acces: 'direct' },
+  revision_preuves: { acces: 'direct' },
   soldes_reportes: { acces: 'direct' },
   sous_dossiers: { acces: 'direct' },
   statuts_factures_recus: { acces: 'direct' },
@@ -656,7 +698,7 @@ export function parentsHorsPlan(
   const dansLePlan = new Set(planExportDossier(ordre, chemins).map((e) => e.table))
   const parTable = new Map<string, ParentHorsPlan>()
 
-  for (const relation of RELATIONS) {
+  for (const relation of TOUS_LES_LIENS) {
     if (!dansLePlan.has(relation.enfant)) continue
     if (dansLePlan.has(relation.parent)) continue
     // Une table sans chemin déclaré relève de `tablesSansChemin`, qui le dit mieux : la compter ici
@@ -792,7 +834,7 @@ export interface ReferenceExterne {
 export function referencesExternes(contenu: Contenu): ReferenceExterne[] {
   const externes: ReferenceExterne[] = []
 
-  for (const relation of RELATIONS) {
+  for (const relation of TOUS_LES_LIENS) {
     const lignes = contenu[relation.enfant]
     if (!lignes) continue
     // La table parente est là : ses liens relèvent de `liensPerdus`, pas d'ici.
@@ -867,10 +909,10 @@ export function planReinsertion(
     const lignes = contenu[table]
     if (!lignes || lignes.length === 0) continue
 
-    const parVagues = TABLES_AUTO_REFERENCEES_PAR_VAGUES.find((a) => a.table === table)
-    if (parVagues) {
-      // Les lignes partent telles quelles, lien compris : aucune seconde passe ne le reposerait.
-      for (const vague of vaguesParLien(lignes, parVagues.colonne)) etapes.push({ table, lignes: vague })
+    const parVagues = TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((a) => a.table === table).map((a) => a.colonne)
+    if (parVagues.length > 0) {
+      // Les lignes partent telles quelles, liens compris : aucune seconde passe ne les reposerait.
+      for (const vague of vaguesParLien(lignes, parVagues)) etapes.push({ table, lignes: vague })
       continue
     }
 

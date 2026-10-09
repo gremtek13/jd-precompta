@@ -1063,3 +1063,48 @@ export interface StatutFactureRecu {
   lu_par: string | null
   lu_le: string
 }
+
+// Une décision de la révision sur le solde d'un compte de bilan à la fin d'un exercice (`revision_justifications`,
+// ligne 41, étape R1) : justifié par des pièces, accepté sur motif (hypothèse Q3 du cabinet), ou en anomalie. Elle porte
+// le solde qu'elle justifie — celui des écritures au clic, débit positif — et ne se modifie jamais : une autre la
+// REMPLACE (`remplace_id`), et la décision courante d'un compte est celle qu'aucune ne remplace. Son ÉTAT (à justifier,
+// justifié, à revoir…) n'est pas stocké : il se déduit du solde du jour. Le cabinet la lit ; seule `justifier_solde`
+// l'écrit depuis le navigateur ; le client n'en voit rien.
+export type EtatDecisionRevision = 'justifie' | 'accepte' | 'anomalie'
+// `permanente` : la justification vaut au-delà de l'exercice (un bail, un tableau d'emprunt) et se propose à l'exercice
+// suivant, qui la reprend (`reprise_de`).
+export type PorteeDecisionRevision = 'exercice' | 'permanente'
+export interface RevisionJustification {
+  id: string
+  dossier_id: string
+  annee: number
+  // Classes 1 à 5, au moins trois chiffres (le motif de `soldes_reportes`).
+  compte: string
+  solde: number
+  etat: EtatDecisionRevision
+  // Obligatoire pour un solde accepté sans pièce et pour une anomalie ; 4 000 caractères au plus.
+  motif: string | null
+  portee: PorteeDecisionRevision
+  // L'instantané de ce que l'écran a montré au clic (étape R2) : un objet non vide, 64 Kio au plus.
+  preuve_application: Record<string, unknown> | null
+  remplace_id: string | null
+  reprise_de: string | null
+  // Repère d'audit, sans clé étrangère : qui a décidé.
+  auteur: string
+  cree_le: string
+}
+
+// Ce qu'une décision de la révision cite (`revision_preuves`) : une pièce ou un document du dossier — un fichier du
+// cabinet à l'étape R8 —, avec l'empreinte SHA-256 de la source recopiée au moment de la citation (nulle quand la source
+// n'en portait pas) et une précision (500 caractères au plus). Une source citée ne se supprime plus et ne change plus de
+// dossier, sauf avec son dossier (hypothèse Q8 du cabinet, `garder_source_citee`).
+export interface RevisionPreuve {
+  id: string
+  dossier_id: string
+  justification_id: string
+  piece_id: string | null
+  document_id: string | null
+  fichier_id: string | null
+  empreinte: string | null
+  precision: string | null
+}

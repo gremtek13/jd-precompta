@@ -14075,3 +14075,154 @@ s'interdit le rapprochement d'un montant, d'une date ou d'un client, et la lectu
 Tant qu'il ne se désigne pas, aucun point « facture transmise sans jumelle » : il pousserait à importer des jumelles
 dans un dossier qui a déposé ses PDF. `superpdp-sync` ne garde pas d'identité, et n'en a pas besoin : l'identifiant de
 Super PDP suffit à ses pièces.
+
+### 09/10/2026 — LA BASE DES SOLDES RÉVISÉS — LIGNE 41, ÉTAPE R1
+
+(Migration `revision_des_soldes`, version 20261009091615, texte de 36 302 octets, empreinte
+`3cc715c718e821a7efbedd0349fe08da` — `supabase/schema/20261009091615_revision_des_soldes.sql` ; l'essai
+`supabase/essais/revisionSoldes.sql` ; `supabase/essais/restauration.sql` remis au plan de la sauvegarde, et
+`src/lib/restaurationEssai.test.ts` ; `src/lib/revisionSoldes.ts` et son test ; `types.ts`, `sauvegarde.ts` et ses
+tests, `sauvegardeDonnees.test.ts`, `encaissementsEcritures.test.ts` ; une ligne du registre de RGPD.md, le § 6 de
+PLAN_DE_REPRISE.md, les passages de `rls.sql` et de `supabase/schema/README.md`.) La première étape de la révision des
+comptes conçue le même jour (« LA RÉVISION DES COMPTES : LA CONCEPTION ») : la base où une DÉCISION sur le solde d'un
+compte de bilan se pose, se remplace et cite ses preuves. Aucun écran (R3), aucune Edge Function. Données mesurées en
+production le 09/10/2026, comptes seulement : aucune écriture dans le dossier `test`, aucun exercice validé — aucun
+solde n'est à justifier, et tout ce qui suit est LATENT. Sources : l'ordonnance n° 45-2138 du 19/09/1945, art. 2 ; la NP
+2300 (arrêté du 01/09/2016), A6 ; la norme de management de la qualité (arrêté du 30/05/2024), A28-2 ; le PCG, art.
+1021-3.
+
+**LES QUESTIONS SANS RÉPONSE, PRISES COMME HYPOTHÈSES, RANGÉES POUR SE REPRENDRE SANS RIEN DÉTRUIRE.** Q3 — un solde
+accepté sans pièce, sur un motif obligatoire — vit dans `justifier_solde` (refus 8) : la table admet l'état, une
+fonction remplacée cesserait de l'écrire. Q8 — une pièce ou un document CITÉ ne se supprime plus et ne change plus de
+dossier, sauf avec le dossier entier, même cité par une décision remplacée depuis — vit dans un déclencheur,
+`garder_source_citee`, et NON dans la clé étrangère NO ACTION que la conception écrivait : une clé qu'une autre réponse
+obligerait à relâcher devrait être retirée, une migration destructive ; une fonction se remplace. La garde tient même
+plus que la clé : elle refuse aussi le changement de dossier d'une source citée (une clé l'aurait laissé passer, et une
+preuve du dossier A citerait une pièce du dossier B), et la garde des preuves verrouille la source `FOR SHARE` jusqu'à
+la fin de la transaction, quand une clé ne prend que `KEY SHARE`, qui laisse changer le dossier. Q2 — tout membre
+affecté prépare (`admin_du_dossier`, refus 1) ; Q11 — seul un exercice terminé se révise (refus 3) ; Q7 — la suppression
+d'un dossier emporte sa révision (clés du dossier en cascade ; la conservation au-delà passera par l'export de R9). Q1
+est l'étape R6 : `valider_exercice` ne change pas.
+
+**LA BASE.** `revision_justifications` : une décision (dossier ; exercice ; compte de classe 1 à 5 ; solde au centime,
+débit positif ; état `justifie`, `accepte` ou `anomalie` ; motif ; portée `exercice` ou `permanente` ; l'instantané de
+l'écran ; la décision qu'elle remplace et celle qu'elle reprend ; un auteur sans clé, comme `valide_par` ; l'instant).
+Une seule PREMIÈRE décision par compte et par exercice (index unique partiel, qu'aucun upsert ne vise) et une seule
+suite à chacune (`unique (remplace_id)`) : chaque compte porte une CHAÎNE, la décision courante est celle qu'aucune ne
+remplace, et la chaîne survit à une restauration. `revision_preuves` : une pièce OU un document du dossier (un fichier
+du cabinet attend R8 : la colonne est là, sans clé, la garde la refuse), l'empreinte SHA-256 RECOPIÉE au moment de la
+citation (nulle quand la source n'en porte pas une en minuscules hexadécimales), une précision. Deux gardes, aux droits
+de l'appelant : rien ne se modifie ni ne se supprime, sauf avec le dossier, qu'une ligne ne voit plus pendant la cascade
+; une décision en remplace une du même compte et du même exercice, une reprise vise une décision du même compte à
+l'exercice précédent ; une preuve appartient à une décision de son dossier et cite une source de son dossier. La RLS :
+le cabinet LIT (`admin_du_dossier`, `to authenticated`), le super-administrateur insère pour restaurer, le client ne
+voit rien — et ne rencontre jamais la garde des sources, qu'il ne peut ni supprimer ni déplacer. `solde_du_compte`,
+interne : les écritures de l'exercice, proposées comme validées, et son ouverture (`ouvertureDeLExercice`), chaque ligne
+comptée pour Math.round(montant × 100) en double précision, comme le navigateur — une écriture n'est pas contrainte au
+centime, et une somme de `numeric` arrondie à la fin ne dirait pas toujours ce que dit l'écran (relevé : 1,005 vaut
+1,00, 0,125 vaut 0,13, 2,675 au crédit vaut −2,68). `cle_revision` : le verrou consultatif de la révision, pris EXCLUSIF
+après le verrou PARTAGÉ de la validation, toujours dans cet ordre.
+
+**`justifier_solde` ET SES TREIZE REFUS, DANS CET ORDRE** (22023, sauf l'accès en 42501) : 1. l'accès, sur le dossier
+annoncé — un dossier qui n'existe pas se refuse comme un dossier interdit ; 2. l'exercice hors de 2000 à 2100 ; 3.
+l'exercice pas terminé, l'année lue à Paris ; 4. réservé à R9 ; 5. un compte qui n'est pas de bilan ; 6. un exercice
+antérieur à la reprise ; 7. une ouverture qui attend la validation de l'exercice précédent (la règle de
+`etatDeLOuverture`) ; 8. l'état, la portée, le motif (une anomalie et un solde accepté se motivent, des blancs ne sont
+pas un motif, 4 000 caractères au plus) ; 9. un solde qui n'est pas au centime, ou qui n'est plus celui des écritures —
+le message dit le solde du jour et son côté ; 10. une décision à remplacer qui n'est pas du compte et de l'exercice, ou
+pas la courante, ou aucun remplacement quand il y en a une ; 11. une reprise qui ne vise pas une décision du compte à
+l'exercice précédent, ou pas permanente, ou remplacée depuis ; 12. des preuves illisibles, une précision de blancs ou de
+plus de 500 caractères, une source citée deux fois (l'identifiant comparé comme un uuid, la casse ignorée), une source
+d'un autre dossier, un instantané qui n'est pas un objet non vide de 64 Kio au plus ; 13. un solde « justifié » qui ne
+cite rien. Écarts à la conception : le refus 1 dit « Accès refusé à ce dossier. », comme les autres fonctions ; le refus
+9 dit le côté du solde (« au débit », « au crédit », « est nul ») ; les refus 10 et 11 ont un message par raison. Le
+type d'un identifiant de preuve ne se contrôle pas à part : le motif de l'uuid refuse tout ce qui n'est pas une chaîne
+JSON — la première campagne de mutations l'a montré (retirer ce contrôle ne faisait rien virer au rouge) ; il est
+retiré, et deux contrôles de l'essai (un identifiant dans un objet, une précision en nombre) et deux mutations (la
+précision en nombre, le motif sans ancre) gardent ce qui reste.
+
+**L'ÉPREUVE.** Sur une réplique locale (PostgreSQL 16) dont `signature.sql` a montré les neuf familles égales à la
+production — avant la migration, `paiement_personnel_des_cotisations` (étape 26.6, appliquée entre-temps) comprise, et
+après, production migrée contre réplique migrée : l'essai (165 verdicts) ; ce que la production ne joue pas (30 verdicts
+: les suppressions directes refusées, la cascade du dossier qui emporte ensemble sources et révision, une source citée
+qui ne se supprime pas et une source non citée qui se supprime, un membre du cabinet qui n'est pas super-administrateur,
+la restauration par vagues) ; huit courses de deux sessions (deux premières décisions concurrentes ; une citation puis
+la suppression de sa source, une suppression puis la citation, un changement de dossier puis la citation ; une
+validation puis une décision, une décision puis une validation ; une restauration qui cite puis une suppression ; l'état
+final) ; et cent trente-cinq mutations de la migration, dont cent trente-quatre mordent — la survivante est équivalente
+: le solde écrit est celui que le refus 9 a exigé égal au solde annoncé, dans une colonne au centime. En production : la
+migration par `apply_migration`, sans confirmation demandée (le texte ne porte aucune instruction de suppression),
+l'empreinte de l'historique égale au fichier ; l'essai, **165 verdicts sur 165**, le texte reçu de 76 915 caractères
+(`4be20935…`) égal au fichier, rien laissé ; `rls.sql` EN ENTIER (22 lignes de verdict, 58 tables dont 50 portant un
+`dossier_id`, 3 buckets, 0 en faute, 14 mutations sur 14 qui mordent, M2 : exactement 3 ; le texte reçu inchangé, 32 144
+caractères, `95048df5…`) ; les advisors : `justifier_solde` rejoint les fonctions `SECURITY DEFINER` qu'un compte
+connecté exécute (14 avec celle de l'étape 26.6), et écrit avec son propre contrôle ; côté performances, un index d'une
+table vide « jamais utilisé ». Les bordures de l'essai (de 56 à 98 traits) ont été ramenées à dix AVANT de transmettre
+ses 77 000 caractères : une longue bordure se recopie mal (« LES BORDURES SE RECOPIENT ») ; rejoué sur la réplique après
+ce changement, 165 sur 165.
+
+**L'EXPORT.** 104 migrations, empreinte globale `3be31fb0…` des deux côtés — les deux migrations d'autres étapes
+appliquées le même jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`), recopiées de
+l'historique par tranches vérifiées le temps du contrôle, ne sont pas dans ce correctif. Le socle : 77 instructions dans
+les fichiers (`5114d8a3…`, que cette migration ne touche pas), 78 en base (`f01053c7…`) — l'écart est celui de
+`paiement_personnel_des_cotisations`, qui ajoute une colonne à `cotisations_declarees` et une colonne, une contrainte et
+un index à `ecritures_brouillon`, deux tables du socle : le socle doit les porter. L'inventaire : 1 365 objets en base
+(`8cb85317…`), 1 363 dans l'export — les deux qui manquent sont les deux colonnes de la même migration, que le `create
+table` du socle, rejoué après elle, efface ; elles ajoutées, l'empreinte est celle de la base.
+
+**`restauration.sql`, REMIS AU PLAN.** Il datait du 18/09/2026 — 40 tables sur 58, aucune vague (l'entrée de l'étape d1
+le disait). Il recopie désormais l'ordre, les chemins et les vagues de `sauvegarde.ts`, et `restaurationEssai.test.ts`
+l'y confronte à chaque exécution de la suite, un défaut planté par écart (l'ordre, un rang, un chemin, une vague, la
+seconde passe, un accès). Les vagues partent une instruction par vague : Postgres vérifie une clé étrangère à la fin de
+chaque instruction, et une vague qui écrirait une ligne avant celle qu'elle désigne échoue — planté (la vague
+`remplace_id` oubliée), l'essai s'arrête sur la clé. Ce qu'il ne voit pas — tout écrire en une instruction, que Postgres
+accepte et que les gardes refuseraient — est gardé par `sauvegardeDonnees.test.ts` et l'essai de la réplique. Il se joue
+sur une réplique (il crée et supprime un schéma) : le 09/10/2026, le dossier `test` de la réplique semé par les
+fonctions de la base (deux pièces, un document, quatre écritures, 2024 validé, cinq décisions dont une chaîne de trois
+et une reprise, quatre preuves), 58 tables recréées, 53 restaurées et identiques, les décisions en quatre vagues, 0
+écart.
+
+**L'APPLICATION.** `src/lib/revisionSoldes.ts` : `soldeDuCompteCentimes` (le jumeau de `solde_du_compte`) et
+`refusDeLOuverture` (refus 6 et 7), confrontés à une table RELEVÉE sur la fonction de la base (18 soldes, dont les
+arrondis du binaire ; 16 ouvertures), à `calculerBalance` (moins d'un centime d'écart sur chaque cas) et aux littéraux
+de la migration (motif des comptes, états, portées, blancs, longueurs, bornes de l'exercice), lus dans la dernière
+définition exportée. `types.ts` (`RevisionJustification`, `RevisionPreuve`). `sauvegarde.ts` : cinq relations ; l'ordre
+(la révision avant `exercices_valides`) ; le chemin direct ; deux liens restaurés par VAGUES sur une même table
+(`vaguesParLien` prend plusieurs colonnes : une ligne part quand TOUTES ses cibles sont écrites) ; et `LIENS_GARDES` —
+les deux liens qu'une garde tient sans clé étrangère, que `liensPerdus`, `violationsOrdre`, `parentsHorsPlan` et
+`referencesExternes` lisent avec les relations (`TOUS_LES_LIENS`), confrontés au texte de la garde.
+`encaissementsEcritures.test.ts` refuse toute écriture directe des deux tables dans `src/` hors de la restauration, et
+toute Edge Function qui les nomme. **Trente-six mutations du code**, la suite verte avant — vingt et une du module
+(l'arrondi, les bornes de l'exercice, le sens, le compte, l'ouverture, les refus 6 et 7, chaque littéral), quinze de ce
+que l'étape change dans `sauvegarde.ts` (les vagues, les liens gardés, l'ordre, les relations, le chemin) —, jouées
+contre les tests qui les gardent : le premier passage en laissait deux en vie, `referencesExternes` et `parentsHorsPlan`
+qui ne liraient que les clés ; deux contrôles les gardent désormais (la source qu'une preuve cite, réclamée à la base
+d'arrivée ; des sources sorties du plan), et toutes mordent. La barrière, sous sa forme allégée du même jour (dix agents
+sur quatre cœurs ; la session joue les quatre fuseaux de la suite entière à l'intégration) : `tsc -b` vert ;
+`tsconfig.edge.json`, les 25 erreurs connues et aucune autre ; le lint, les mêmes 63 avertissements, aucun dans les
+fichiers de l'étape ; la construction, mêmes avertissements ; la suite entière sous le fuseau de Paris, deux ouvriers, 6
+056 tests (65 de plus) : 6 049 verts et sept délais dépassés sous une charge de 18 à 22, dans quatre fichiers que
+l'étape ne modifie pas — deux lisent `types.ts`, pour trois types qu'elle ne touche pas, les deux autres rien de ce
+qu'elle change. Rejoués seuls, `encaissementsFactures`, `copiesFacturation` et `cdarEncaisseeCopie` passent ;
+`cdarRecuCopie` dépasse encore son délai seul, deux fois sous une charge de 18 (7,6 puis 6,5 s, le test qui fait
+compiler deux fois par TypeScript la copie de `cdarRecu` dans `plateforme-agreee`), puis passe seul, 7 sur 7, la charge
+retombée à 8 — aucun délai relevé. Sous les quatre fuseaux, les vingt-sept fichiers de l'étape et de ce qu'elle touche
+(ses cinq fichiers de test, ceux de la sauvegarde, ceux qui lisent les migrations, les essais, RGPD.md ou
+PLAN_DE_REPRISE.md), puis les deux qui lisent `types.ts` en texte : verts, le seul délai dépassé — la grille de 180 000
+assertions d'`encaissementsFactures` — rejoué seul et vert sous chacun. RGPD.md : une ligne du registre (le dossier de
+travail du cabinet ; le client n'en voit rien ; aucune donnée de patient attendue dans un motif ou une précision).
+
+**CE QUI RESTE, ET LES RISQUES.** L'hypothèse Q8 est active en production : une pièce ou un document CITÉ ne se supprime
+plus et ne change plus de dossier. Aucune décision n'existe, donc rien ne l'est aujourd'hui ; mais l'écran de R3 devra
+le dire AVANT le clic là où une pièce ou un document se supprime (`FichePiece`, la suppression groupée de `PiecesTab`,
+`DocumentsTab`) — la base le refuse déjà avec sa raison, que ces écrans rendent, et chacun supprime la ligne AVANT le
+fichier : un refus ne retire aucun fichier. Et « transformer en pièce » (`DocumentsTab`), qui crée la pièce PUIS retire
+le document, en deux écritures : sur un document cité, la pièce naît, le document reste, et les deux désignent le MÊME
+fichier — supprimer ensuite la pièce retirerait ce fichier du stockage sous le document cité, dont seule l'empreinte
+resterait. R3 doit refuser avant le clic la transformation d'un document cité. La porte de restauration du
+super-administrateur (le chef du cabinet en production) insère en direct, sans les refus de la fonction : les gardes
+tiennent la chaîne, la reprise et les sources, pas le solde ni l'ouverture — comme pour les encaissements. Ce que R2
+trouve prêt : le jumeau du solde et la règle de l'ouverture, les littéraux exportés, les messages et l'ordre des refus
+dans la migration et l'essai, à reprendre mot pour mot avant le clic et à confronter au texte de la fonction ; R3 :
+l'appel `justifier_solde` (onze paramètres, rend la décision écrite), deux tables lisibles par `lireTout` sous la RLS du
+cabinet, la sauvegarde et la restauration déjà faites.
