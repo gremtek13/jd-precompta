@@ -1197,7 +1197,7 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
   function echeance(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
     return {
       id: 'c-due', dossier_id: 'd', echeance: '2026-11-05', montant_appele: 300, montant_verse: null,
-      montant_csg_crds: null, previsionnel: false, created_at: '2026-01-02T09:00:00Z', ...o,
+      montant_csg_crds: null, previsionnel: false, created_at: '2026-01-02T09:00:00Z', paiement_personnel_le: null, ...o,
     }
   }
   function prelevement(o: Partial<LigneBancaire> = {}): LigneBancaire {
@@ -1261,6 +1261,17 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
     const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
     expect(cotisationsDues(modale)).toBe('1 200,00 €')
     expect(echeancesDeCotisation(modale)).toEqual(['400,00 €', '300,00 €'])
+  })
+
+  it('ne compte pas non plus l’échéance payée depuis le compte personnel', async () => {
+    // Payée de la poche de l'exploitant le 25 août, sans aucun mouvement (lib/cotisationPersonnelle.ts) : l'organisme est
+    // payé, elle n'est plus une dette — et l'argent n'est jamais sorti du compte professionnel. C'est le CÂBLAGE de
+    // l'écran (`c.ligne || c.paiementPersonnel`) qui le tient : sans le paiement personnel, elle resterait due.
+    poser([])
+    faux.cotisations = [echeance({ id: 'c-perso', echeance: '2026-10-05', montant_appele: 400, paiement_personnel_le: '2026-08-25' }), echeance()]
+    const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
+    expect(cotisationsDues(modale)).toBe('300,00 €')
+    expect(echeancesDeCotisation(modale)).toEqual(['300,00 €'])
   })
 
   it('un encaissement rapproché d’un appel ne le paie pas', async () => {

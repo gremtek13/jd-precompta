@@ -14324,9 +14324,22 @@ textes, relevés de l'historique pour les contrôles de l'export (le second en q
 vérifié par son empreinte), ne sont pas dans le correctif.
 
 **CE QUI RESTE.** L'écran (phase C, après le retrait collé) ; l'assistant ne compte pas encore les paiements à reprendre
-(un préalable défensif) ; le FEC à vingt-deux champs d'un BNC ; et `restauration.sql`, qui ne tourne plus : sur la
-réplique, avant comme après la migration, il s'arrête à sa ligne 96, sur une table que son schéma d'essai ne crée pas
-(`connexions_bancaires`, du 30/09) — un défaut de l'essai, antérieur, à reprendre à part.
+(un préalable défensif) ; le FEC à vingt-deux champs d'un BNC. `restauration.sql`, trouvé arrêté sur une table que son
+schéma d'essai ne créait pas (`connexions_bancaires`, du 30/09), a été remis au plan de la sauvegarde par R1 dans le
+même lot — 58 tables recréées, 0 écart (« `restauration.sql`, REMIS AU PLAN », plus haut).
+
+**LA SUITE, LE MÊME JOUR, APRÈS LA RELECTURE DU LOT.** Les deux colonnes sont OBLIGATOIRES dans `types.ts`, nullables,
+comme la règle le veut (« un type de `types.ts` décrit la table ») : facultatives, une fabrique pouvait les oublier — 63
+objets de 39 fichiers de test le faisaient — et un appel de `refusRapprochementCotisation` sans la date du paiement
+personnel sautait le refus en silence (trois appels de test, que le compilateur nomme désormais) ; la vue de
+l'appariement (`CotisationRapprochable`) suit, et un garde au compilateur tient la règle (deux `@ts-expect-error` dans
+`cotisationPersonnelle.test.ts` : l'une ou l'autre colonne redevenue facultative, `tsc -b` tombe). Deux câblages
+n'avaient pas de test : l'échéancier des dettes de Financement (`c.ligne || c.paiementPersonnel`) et la carte de Clôture
+(`compteeASonEcheance`) ; chacun a le sien, seul à tomber sous la mutation. Le contrôle 141 de `validationExercice.sql`
+part désormais des 22 déclencheurs posés avant une suppression, lus du catalogue : l'ancien cherchait la condition à la
+lettre dans les fonctions `garder%`, en laissait échapper neuf, et ne mordait sur aucune des sept mutations que le
+nouveau voit, sur une réplique dont la signature est celle de la production ; rejoué en production, 151 contrôles sur
+151 (73 922 caractères, empreinte 0da2f766…). L'en-tête de `socle.sql` compte 78 instructions.
 
 ### 09/10/2026 — L'OPÉRATION DÉCOUVERTE APRÈS COUP : LA CONCEPTION — LIGNE 26.6
 

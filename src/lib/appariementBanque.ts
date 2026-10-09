@@ -308,7 +308,8 @@ export interface CotisationRapprochable {
   montant_appele: number
   montant_verse: number | null
   // Payée depuis le compte personnel de l'exploitant (lib/cotisationPersonnelle.ts) : aucun mouvement ne la paie plus.
-  paiement_personnel_le?: string | null
+  // Obligatoire, comme la colonne : un appelant qui l'oublierait proposerait une échéance déjà payée.
+  paiement_personnel_le: string | null
 }
 
 export interface RapprochementPropose {

@@ -135,7 +135,7 @@ function cotisation(id: string, o: Record<string, unknown> = {}) {
   return {
     id, dossier_id: 'dossier-de-test', organisme: 'URSSAF', echeance: '2025-03-05',
     montant_appele: 300, montant_verse: 300, montant_csg_crds: null,
-    previsionnel: false, document_id: null, created_at: '2025-03-05T09:00:00Z', ...o,
+    previsionnel: false, document_id: null, created_at: '2025-03-05T09:00:00Z', paiement_personnel_le: null, ...o,
   }
 }
 
@@ -296,6 +296,24 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
     within(titre.parentElement!).getByText(/Déficit de 420 € : case 5QE/)
     expect(screen.getByText('Cotisations comptées à leur échéance (1)')).toBeTruthy()
+  })
+
+  it('une échéance payée depuis le compte personnel compte à son paiement, et la carte se tait', async () => {
+    // Décembre 2025, payée de la poche de l'exploitant le 10 janvier 2026, sans aucun mouvement
+    // (lib/cotisationPersonnelle.ts) : elle compte en 2026, à la date de son paiement — une lecture, pas une supposition.
+    // Le CÂBLAGE de la carte (`compteeASonEcheance`) la tait ; réduit au seul mouvement, il la dirait comptée à son
+    // échéance, dans l'exercice de son paiement.
+    poser({}, [], [cotisation('c1', { echeance: '2025-12-05', montant_appele: 300, montant_verse: null, paiement_personnel_le: '2026-01-10' })])
+    faux.parTable.lignes_bancaires = []
+    const en2025 = monter(2025)
+    const titre2025 = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre2025.parentElement!).getByText(/Déficit de 120 € : case 5QE/)
+    en2025.unmount()
+
+    monter(2026)
+    const titre2026 = await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    within(titre2026.parentElement!).getByText(/Déficit de 300 € : case 5QE/)
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 
   it('se tait sur une échéance prélevée', async () => {

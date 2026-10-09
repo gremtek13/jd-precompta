@@ -18,7 +18,7 @@ function repeter(n: number, ligne: Ligne): Ligne[] {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2025-01-01', compte: '512000', libelle: 'Ligne',
-    montant: 0, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+    montant: 0, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
     ...NON_VALIDEE, created_at: '2025-01-01T10:00:00Z', ...o,
   }
 }

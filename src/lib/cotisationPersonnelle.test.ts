@@ -602,3 +602,24 @@ describe('le retrait d’un paiement depuis le compte personnel', () => {
     expect(avertissementSuppressionEcheancePayee(cotisation())).toBeNull()
   })
 })
+
+// LES DEUX COLONNES SONT OBLIGATOIRES DANS types.ts, nullables — un type décrit la table (CLAUDE.md). Facultatives, une
+// fabrique les oubliait sans que rien le dise, et un appel de `refusRapprochementCotisation` sans la date du paiement
+// personnel sautait son refus en silence. Ce garde vit au COMPILATEUR (`tsc -b` type-vérifie les tests) : redevenues
+// facultatives, les deux directives ci-dessous n'auraient plus d'erreur à attendre, et le build tomberait (TS2578).
+describe('les colonnes du paiement personnel sont obligatoires dans types.ts', () => {
+  it('une échéance ou une écriture construite sans elles ne compile pas', () => {
+    // @ts-expect-error — `paiement_personnel_le` manque : une échéance lue de la base le porte toujours.
+    const echeance: CotisationDeclaree = {
+      id: 'c', dossier_id: 'd', echeance: '2026-03-05', montant_appele: 1, montant_verse: null, montant_csg_crds: null,
+      previsionnel: false, created_at: '2026-01-01T00:00:00Z',
+    }
+    // @ts-expect-error — `cotisation_id` manque : une écriture lue de la base le porte toujours.
+    const ecriture: EcritureBrouillon = {
+      id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, date: '2026-03-05', compte: '646000', libelle: 'x',
+      montant: 1, sens: 'debit', statut: 'proposee', created_at: '2026-01-01T00:00:00Z', immobilisation_id: null,
+      vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
+    }
+    expect([echeance.paiement_personnel_le, ecriture.cotisation_id]).toEqual([undefined, undefined])
+  })
+})

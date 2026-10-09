@@ -31,7 +31,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
   return {
     id: 'c1', dossier_id: 'd1', echeance: '2025-03-05', montant_appele: 412, montant_verse: null,
-    montant_csg_crds: null, previsionnel: false, created_at: '2025-01-10T09:00:00Z', ...o,
+    montant_csg_crds: null, previsionnel: false, created_at: '2025-01-10T09:00:00Z', paiement_personnel_le: null, ...o,
   }
 }
 

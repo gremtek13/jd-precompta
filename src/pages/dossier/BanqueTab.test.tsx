@@ -1931,7 +1931,7 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     preparer()
     faux.cotisations = [{
       id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2025-06-05', montant_appele: 90, montant_verse: null,
-      montant_csg_crds: null, previsionnel: false, created_at: '2025-01-10T09:00:00Z',
+      montant_csg_crds: null, previsionnel: false, created_at: '2025-01-10T09:00:00Z', paiement_personnel_le: null,
     }]
     faux.muet = { cotisations_declarees: 0 }
     rendre()
@@ -2301,7 +2301,7 @@ describe('BanqueTab — une échéance de cotisation rapprochée s’écrit', ()
   function echeance(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
     return {
       id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2025-06-05', montant_appele: 100, montant_verse: null,
-      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z', ...o,
+      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z', paiement_personnel_le: null, ...o,
     }
   }
   function preparer(ligne: Partial<LigneBancaire> = {}, cotisation: Partial<CotisationDeclaree> = {}) {
@@ -4851,7 +4851,7 @@ describe('BanqueTab — un exercice validé', () => {
     faux.pieces = []
     faux.cotisations = [{
       id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2025-06-05', montant_appele: 100, montant_verse: null,
-      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z',
+      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z', paiement_personnel_le: null,
     }]
     faux.lignes = [
       ligneDeTest({ id: 'l-perso', libelle: 'VIR COMPTE PERSO', montant: -500, statut: 'ignoree', prelevement_personnel: true }),
@@ -5095,7 +5095,7 @@ describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouveme
 
   function ligneDuBrouillon(id: string, pieceId: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon {
     return {
-      id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+      id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
       date: '2025-06-01', compte, libelle: 'Imprimerie Duval', sens, montant, statut: 'proposee', created_at: '2025-06-02T09:00:00Z',
       ...NON_VALIDEE,
     }

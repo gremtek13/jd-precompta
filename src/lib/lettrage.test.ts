@@ -19,7 +19,7 @@ import { fichiersDuSchema } from '../test/schema'
 const ecriture = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id'>): EcritureBrouillon => ({
   dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2026-03-10', compte: '606100', libelle: 'Fournisseur',
   montant: 100, sens: 'debit', statut: 'proposee', created_at: '2026-03-10T09:00:00Z', immobilisation_id: null,
-  vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, ...o,
+  vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, ...o,
 })
 
 const piece = (o: Partial<Piece> & Pick<Piece, 'id'>): Piece => ({

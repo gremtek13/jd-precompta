@@ -686,8 +686,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de
   `paiementsDesPieces` (rapprochements ET parts d'un virement groupé : un filtre sur `piece_id` les oublierait) ; une
-  échéance de cotisation payée compte à son prélèvement. Les moteurs prennent leurs entrées en paramètres OBLIGATOIRES,
-  sans valeur par défaut → « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON PAIEMENT ».
+  échéance de cotisation payée compte à son prélèvement, ou au jour de son paiement depuis le compte personnel. Les
+  moteurs prennent leurs entrées en paramètres OBLIGATOIRES, sans valeur par défaut → « LA 2035 COMPTE UNE PIÈCE À LA
+  DATE DE SON PAIEMENT ».
 - **La CA3** (`lib/declarationTva.ts`) : exigibilité à l'encaissement ou au paiement, part de chaque paiement, aucune
   somme négative sur une ligne de taux, arrondi fiscal par ligne, taux reconnu ou pièce écartée, montants au centime des
   écritures ; une déclaration enregistrée écrit sa liquidation → « LA CA3 SE PRÉPARE », « LA TVA SE LIQUIDE ».
@@ -725,8 +726,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ailleurs, avant le clic et en base.
 - **Validation d'un exercice** : intangibilité par DÉCLENCHEURS (deux chemins écrivent sans fonction), frontière au
   31 décembre du dernier exercice validé, sources figées, deux sorties seulement (suppression du dossier, restauration) ;
-  préalables dits avant le clic (`prealablesValidation.ts`, `POINTS_DE_LA_CHECKLIST_ECARTES`, `CARTES_DE_CLOTURE`) →
-  « UN EXERCICE VALIDÉ SE FIGE EN BASE », « UN EXERCICE SE VALIDE DEPUIS CLÔTURE ».
+  une échéance de cotisation se fige à la date qui la compte, `coalesce(mouvement, paiement personnel, échéance)`
+  (`garder_cotisation_valide`) ; préalables dits avant le clic (`prealablesValidation.ts`,
+  `POINTS_DE_LA_CHECKLIST_ECARTES`, `CARTES_DE_CLOTURE`) → « UN EXERCICE VALIDÉ SE FIGE EN BASE », « UN EXERCICE SE
+  VALIDE DEPUIS CLÔTURE ».
 
 ### Import, OCR, classification
 

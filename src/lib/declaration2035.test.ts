@@ -722,7 +722,7 @@ describe('calculerDeclaration2035 — indemnités kilométriques', () => {
 const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
   id: 'c-1', dossier_id: 'd-1', echeance: '2025-03-05',
   montant_appele: 3000, montant_verse: 3000, montant_csg_crds: 970,
-  previsionnel: false, created_at: '2025-03-05T09:00:00Z', ...o,
+  previsionnel: false, created_at: '2025-03-05T09:00:00Z', paiement_personnel_le: null, ...o,
 })
 // Des échéances qu'aucun mouvement ne paie : elles comptent à leur échéance, pour le versement saisi.
 const aEcheance = (cs: CotisationDeclaree[]) => cotisationsComptees(cs, [], 'tresorerie')

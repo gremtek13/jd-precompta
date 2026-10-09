@@ -45,7 +45,7 @@ const ligne = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
 
 const ecriture = (id: string, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id, dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-12', compte: '606100', libelle: 'Fournisseur',
-  montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
+  montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE,
   created_at: '2025-04-01T09:00:00Z', ...o,
 })
 
@@ -80,7 +80,7 @@ const partReglee = (id: string, ligne: string, pieceId: string | null, montant: 
 })
 const echeance = (id: string, date: string, montant: number): CotisationDeclaree => ({
   id, dossier_id: 'd1', echeance: date, montant_appele: montant, montant_verse: null, montant_csg_crds: null,
-  previsionnel: false, created_at: '2025-01-01T00:00:00Z',
+  previsionnel: false, created_at: '2025-01-01T00:00:00Z', paiement_personnel_le: null,
 })
 const bien = (id: string, o: Partial<Immobilisation> = {}): Immobilisation => ({
   id, dossier_id: 'd1', piece_id: 'p9', nature_id: 'n1', libelle: 'Fauteuil', valeur: 1200, date_acquisition: '2025-01-01',

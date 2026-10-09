@@ -54,7 +54,7 @@ const { AUCUN_LETTRAGE_MANUEL, lireLettragesManuels } = await import('./lettrage
 
 function ligne(id: string, dossier: string, pieceId: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon {
   return {
-    id, dossier_id: dossier, piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+    id, dossier_id: dossier, piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
     date: '2026-09-08', compte, libelle: 'Écriture', sens, montant, statut: 'proposee', created_at: '2026-09-08T09:00:00Z',
     ...NON_VALIDEE,
   }

@@ -83,7 +83,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, date: '2026-03-31', compte: '445710',
-  libelle: 'CA3', sens: 'debit', montant: 0, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+  libelle: 'CA3', sens: 'debit', montant: 0, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
   ...NON_VALIDEE, created_at: '2026-04-15T10:00:00Z', ...o,
 })
 

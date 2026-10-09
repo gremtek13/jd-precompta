@@ -11,7 +11,7 @@ import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-10', compte: '606100',
-  libelle: 'Fournisseur', montant: 100, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+  libelle: 'Fournisseur', montant: 100, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
   ...NON_VALIDEE, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 

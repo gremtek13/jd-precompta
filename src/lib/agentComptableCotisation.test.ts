@@ -74,12 +74,12 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
 
 const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
   id: 'c', dossier_id: 'd', echeance: '2026-03-05', montant_appele: 500, montant_verse: null, montant_csg_crds: null,
-  previsionnel: false, created_at: '2026-01-02T09:00:00Z', ...o,
+  previsionnel: false, created_at: '2026-01-02T09:00:00Z', paiement_personnel_le: null, ...o,
 })
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2026-03-05', compte: COMPTE_BANQUE,
-  libelle: 'PRLV URSSAF', sens: 'credit', montant: 500, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-06T09:00:00Z', ...o,
+  libelle: 'PRLV URSSAF', sens: 'credit', montant: 500, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-06T09:00:00Z', ...o,
 })
 // L'écriture juste d'un rapprochement, telle que src/lib la compose.
 const conforme = (l: LigneBancaire, c: CotisationDeclaree, mode: ModeComptable, date = l.date): EcritureBrouillon[] =>

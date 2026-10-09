@@ -28,7 +28,7 @@ const RECETTES = categorie({ id: 'cat-recettes', code: 'ventes_prestations', lib
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-03-12', compte: '627000',
-    libelle: 'FRAIS TENUE DE COMPTE', montant: 8.5, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
+    libelle: 'FRAIS TENUE DE COMPTE', montant: 8.5, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
     ...o,
   }
 }

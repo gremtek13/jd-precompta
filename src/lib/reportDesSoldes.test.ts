@@ -509,7 +509,7 @@ describe('les lignes d’un exercice, tirées de sa numérotation', () => {
   function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
     return {
       id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2026-03-12', compte: '512000', libelle: 'Ligne',
-      montant: 0, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+      montant: 0, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
       ...NON_VALIDEE, created_at: '2026-03-12T10:00:00Z', ...o,
     }
   }
@@ -654,7 +654,7 @@ describe('ce que l’écran dit de l’ouverture', () => {
 describe('une chaîne d’exercices', () => {
   const ecriture = (id: string, ligne: string, date: string, compte: string, sens: SensEcriture, montant: number): EcritureBrouillon => ({
     id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: ligne, date, compte, libelle: 'Mouvement', montant, sens,
-    statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
+    statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE,
     created_at: `${date}T10:00:00Z`,
   })
   const mouvement = (id: string, date: string, montant: number, o: Partial<MouvementBancaire> = {}): MouvementBancaire => ({
