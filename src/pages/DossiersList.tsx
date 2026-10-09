@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
@@ -435,6 +435,17 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [libelleNaf, setLibelleNaf] = useState<string | null>(null)
   const [detectingNaf, setDetectingNaf] = useState(false)
 
+  // Verrou d'exécution en `useRef`, pas en état React : `setSaving(true)` ne prend effet qu'au rendu suivant, donc
+  // `disabled={saving}` laisse passer deux soumissions rapprochées — sur un FORMULAIRE le déclencheur n'est même pas le double
+  // clic mais deux « Entrée » (CLAUDE.md, motif déjà vu sur AccesTab et FactureAvoirModal). Posé AVANT le `try` : dedans, le
+  // `return` de la deuxième soumission sortirait par le `finally`, qui relâcherait le verrou de la PREMIÈRE, encore en cours.
+  //
+  // Le doublon ne coûte pas qu'une ligne de trop : la base n'en dédoublonne aucune (`dossiers` n'a d'unique que le code e-mail que
+  // ses déclencheurs fabriquent pour chaque ligne), donc deux dossiers de même nom, dont le second est à repérer puis à supprimer.
+  // Le verrou se relâche dans le `finally` sans attendre la relecture de la liste : le formulaire se referme sur un succès, et la
+  // liste relue (`onCreated`) est celle du tableau de bord derrière lui, pas la sienne.
+  const creationEnCours = useRef(false)
+
   // Détection best-effort de la profession dès que le SIRET est complet (14 chiffres) — voir
   // lib/sirene.ts. Jamais bloquant : un échec laisse juste le champ vide, à compléter plus tard.
   async function detecterNaf() {
@@ -452,23 +463,29 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (creationEnCours.current) return
+    creationEnCours.current = true
     setSaving(true)
     setError(null)
-    const { error } = await supabase.from('dossiers').insert({
-      nom,
-      siret: siret || null,
-      contact_nom: contactNom || null,
-      contact_email: contactEmail || null,
-      code_naf: codeNaf,
-      libelle_naf: libelleNaf,
-    })
-    setSaving(false)
-    if (error) {
-      setError(error.message)
-      return
+    try {
+      const { error } = await supabase.from('dossiers').insert({
+        nom,
+        siret: siret || null,
+        contact_nom: contactNom || null,
+        contact_email: contactEmail || null,
+        code_naf: codeNaf,
+        libelle_naf: libelleNaf,
+      })
+      if (error) {
+        setError(error.message)
+        return
+      }
+      onCreated()
+      onClose()
+    } finally {
+      creationEnCours.current = false
+      setSaving(false)
     }
-    onCreated()
-    onClose()
   }
 
   return (
