@@ -1585,7 +1585,9 @@ function ReportDeclarationRevenus({ annee, valeurs, formulaire: fige }: {
   formulaire?: Map<string, number>
 }) {
   const formulaire = fige ?? arrondirPourFormulaire(valeurs, annee)
-  const montant = (code: string) => `${formaterMontant(formulaire.get(code) ?? 0)} €`
+  // Un montant ne se coupe pas en fin de ligne : `formaterMontant` est fait pour le PDF et sépare tout par des espaces
+  // ordinaires. À l'écran, comme `formatMoney` mais à l'euro : espaces fines insécables entre les milliers, insécable avant l'euro.
+  const montant = (code: string) => `${formaterMontant(formulaire.get(code) ?? 0).replace(/ /g, '\u202f')}\u00a0€`
   const deficit = formulaire.get('CR') ?? 0
   const brutNegatif = formulaire.get('DC') ?? 0
   return (

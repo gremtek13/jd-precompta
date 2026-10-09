@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import VoletSocialCard from './VoletSocialCard'
 import type { VoletSocialPamc } from '../../lib/types'
@@ -115,6 +115,37 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(screen.getByText('4 646 €')).toBeTruthy()
   })
 
+  // UN MONTANT NE SE COUPE PAS EN FIN DE LIGNE. `formaterMontant`, fait pour le PDF de la 2035 (pdf-lib n'écrit que du WinAnsi),
+  // sépare les milliers par des espaces ORDINAIRES : « 60 000 » restait au bout d'une ligne et « € » passait à la suivante. L'écran
+  // écrit comme `formatMoney` — espace fine insécable entre les milliers, insécable avant l'euro —, mais à l'euro, comme le
+  // formulaire. `getByText` ramène toute espace, insécable comprise, à une espace ordinaire : seul `textContent` voit la
+  // différence, et c'est lui que ce test lit.
+  it('écrit chaque montant avec des espaces insécables, pour qu’aucun ne se coupe en fin de ligne', async () => {
+    await afficher()
+    saisir(/Profession/, 'auxiliaire_medical')
+    saisir(/Honoraires conventionnés/, '80000')
+    const cellules = (repere: string | RegExp) =>
+      within(screen.getByText(repere).closest('tr')!).getAllByRole('cell').map((c) => c.textContent)
+    expect(cellules('DSCS').at(-1)).toBe('80\u202f000\u00a0€')
+    expect(cellules('DSAV').at(-1)).toBe('80\u202f000\u00a0€')
+    expect(cellules(/^Assiette/)).toEqual([
+      'Assiette : revenu brut social 60\u202f000\u00a0€, moins l\'abattement de 26 % (15\u202f600\u00a0€)',
+      '44\u202f400\u00a0€',
+    ])
+    expect(cellules('Total à la charge du praticien').at(-1)).toBe('4\u202f646\u00a0€')
+    // Et aucun montant de la carte n'a gardé une espace ordinaire, entre ses milliers ou avant l'euro.
+    const texte = document.body.textContent ?? ''
+    expect(texte).not.toMatch(/ €/)
+    expect(texte).not.toMatch(/\d \d{3}(?!\d)/)
+  })
+
+  it('sépare chaque millier par une insécable, pas le premier seulement', async () => {
+    // Deux séparateurs : une substitution qui n'en changerait qu'un laisserait « 1 234 567 » se couper au milieu.
+    render(<VoletSocialCard dossierId="d" annee={2025} valeurs={new Map([['AA', 1_234_567], ['BA', 0]])} blocage={null} />)
+    await act(async () => {})
+    expect(within(screen.getByText('DSCS').closest('tr')!).getAllByRole('cell').at(-1)!.textContent).toBe('1\u202f234\u202f567\u00a0€')
+  })
+
   it('ne rend pas de ratio quand les honoraires dépassent les recettes, et dit pourquoi', async () => {
     await afficher()
     saisir(/Profession/, 'auxiliaire_medical')
@@ -190,7 +221,7 @@ describe('le volet social d’un praticien conventionné', () => {
     saisir(/Honoraires conventionnés/, '50000')
     expect(screen.getByText('3 700 €')).toBeTruthy()
     const curps = screen.getByText(/^CURPS/).closest('tr')!
-    expect(curps.textContent).toMatch(/0 €$/)
+    expect(curps.textContent).toMatch(/0\u00a0€$/)
   })
 
   it('un revenu faible prend l’abattement minimal, et ne le dit pas « de 26 % »', async () => {
@@ -201,9 +232,9 @@ describe('le volet social d’un praticien conventionné', () => {
     saisir(/Profession/, 'auxiliaire_medical')
     saisir(/Honoraires conventionnés/, '10000')
     const assiette = screen.getByText(/^Assiette/).closest('tr')!
-    expect(assiette.textContent).toMatch(/l'abattement minimal, 1,76 % du plafond de la sécurité sociale \(829 €\)/)
+    expect(assiette.textContent).toMatch(/l'abattement minimal, 1,76 % du plafond de la sécurité sociale \(829\u00a0€\)/)
     expect(assiette.textContent).not.toMatch(/26 %/)
-    expect(assiette.textContent).toMatch(/171 €$/)
+    expect(assiette.textContent).toMatch(/171\u00a0€$/)
   })
 
   it('rappelle au remplaçant ce que porte DSAV, et seulement à lui', async () => {

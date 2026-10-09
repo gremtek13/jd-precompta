@@ -211,9 +211,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Ne
   JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
   Sous un `node_modules` fait de liens (worktree d'agent), Vite refuse les polices et le banc mesure la police de
-  repli sans échouer : `server.fs.allow` doit nommer le `node_modules` réel. Un montant affiché ne se coupe pas en fin
-  de ligne (`formatMoney`, ou des espaces fines insécables) ; `formaterMontant`, fait pour le PDF, sépare les milliers
-  par des espaces ordinaires → « UN MONTANT SE COUPAIT EN FIN DE LIGNE ».
+  repli sans échouer : `outils/captures/vite.config.ts` autorise le `node_modules` réel (`realpathSync` d'un paquet)
+  et ne surveille pas `.claude` sous la racine (jamais en `**/.claude/**` : un worktree n'y verrait plus ses sources).
+  Un montant affiché ne se coupe pas en fin de ligne : `formatMoney`, ou `formaterMontant(n)` (PDF) aux espaces
+  passées en U+202F puis U+00A0 et « € » ; `getByText` ramène l'insécable à une espace : lire `textContent` → « LE
+  BANC D'UN WORKTREE MESURAIT LA POLICE DE REPLI », « UN MONTANT SE COUPAIT EN FIN DE LIGNE ».
 - **Ce qui s'imprime n'a aucune mise en page en ligne** (l'aperçu d'une facture) : un style en ligne l'emporte sur
   `@media print`, et la facture sortait avec ses boutons, en double, tronquée. Le bloc du téléphone (`max-width: 720px`)
   vaut aussi à l'impression (A4 ≈ 718 px) ; une impression se mesure sur un vrai PDF → « ET LA FACTURE IMPRIMÉE PORTAIT
@@ -827,7 +829,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6610 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6617 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

@@ -13843,3 +13843,100 @@ les 25 erreurs connues, les mêmes ; lint 0 et ses 63 avertissements, les mêmes
 **Vérifié en production après coup (lecture seule, par la session).** Le cache `taux_change_bce` ne porte que 39 lignes,
 écrites le 18/09/2026 (32) et le 30/09/2026 (7) — les deux jours où la fonction a été déployée et vérifiée depuis le
 serveur. C'est cohérent avec un appel qui n'aboutit jamais depuis la page, sans le prouver.
+
+### 09/10/2026 — DEUX MONTANTS QUI POUVAIENT SE COUPER EN FIN DE LIGNE, ET LE BANC D'UN WORKTREE : SES POLICES, ET LES COPIES QU'IL VOYAIT
+
+(`src/pages/dossier/VoletSocialCard.tsx`, `ClotureTab.tsx` (le report vers la 2042), `TvaTab.tsx` et leurs trois fichiers de
+test ; `outils/captures/vite.config.ts`. Ni `index.css` ni la coque.) L'entrée de l'annexe 2035-E (« UN MONTANT SE COUPAIT EN
+FIN DE LIGNE SANS QUE LE BANC LE VOIE », plus haut) avait corrigé sa carte et laissé le même motif, `${formaterMontant(n)} €`,
+dans le volet social et dans le report vers la 2042 de Clôture. Confié à `retouches`, avec l'ordre de chercher TOUTES les
+copies par la valeur — un montant d'écran dont les milliers ou l'euro sont séparés par une espace ordinaire —, de rejouer le
+banc avec ses polices servies et, en cours de route (13 h 11, constaté par la session), d'empêcher le serveur du banc de voir
+les copies de travail des autres agents.
+
+**UN MONTANT SE COUPAIT EN FIN DE LIGNE, AILLEURS AUSSI — mesuré avant de corriger.** Sur l'arbre d'origine, servi par le banc
+avec ses polices, la Clôture du dossier d1 écrit 84 montants ; sur 14 largeurs de 320 à 1 440 px, 31 sont coupés — l'euro seul
+sur la ligne suivante —, dont deux à 390 px (les cellules du volet social : « 120 |€ », « 178 |€ »), tous jusqu'à 1 024 px,
+aucun à 1 280 et 1 440. Le banc des débordements ne le voit pas : sa quatrième règle part de morceaux SANS espace ordinaire, et
+un montant à espaces ordinaires lui est trois morceaux entiers. Un script hors dépôt compte les montants dont les rectangles
+tombent sur deux lignes, insécables comprises : après la correction, il en reste 2 sur les 14 largeurs, et aucun n'est un
+montant corrigé (voir plus bas).
+
+**Les copies, cherchées par la valeur.** Dans les sources : tout « € » d'un écran (pages et composants), `formaterMontant`,
+les expressions régulières de milliers, `toLocaleString`, `Intl`, `toFixed`, « euros », « M€ ». Puis À L'EXÉCUTION, parce
+qu'une recherche ne voit que ce à quoi on a pensé : 90 visites (cinq dossiers du banc, dix-huit onglets, 1 440 px), chaque
+montant écrit avec une espace ordinaire relevé par sa FORME (chiffres remplacés par des 9). D'origine : le report de la
+Clôture, le volet social, les 73 € TTC de l'onglet TVA — et un message de `src/lib/prealablesValidation.ts`. Après : ce dernier
+seul.
+
+**Corrigés** : le volet social (`euros`), le report vers la 2042 (`montant`), et les deux montants que l'onglet TVA écrit dans
+ses phrases (les 150 € du seuil de remboursement au 31 décembre, les 73 € TTC des cadeaux). La forme de `Annexe2035ECard` : les
+chiffres de `formaterMontant` — arrondi, signe —, ses espaces passées en U+202F, puis U+00A0 et « € ». `formatMoney` ne
+convenait pas : il écrit les centimes, et ces écrans disent des euros entiers, comme le formulaire (le report le dit lui-même).
+`formaterMontant` et le PDF ne bougent pas : pdf-lib casse sur U+202F.
+
+**Trouvés, non corrigés — `src/lib` et Edge Functions, hors de la consigne de `retouches`.** Ce qui s'affiche :
+`prealablesValidation.ts:305` et `:328` (« écart de 1200,00 € » : espace ordinaire, aucun séparateur de milliers ; MESURÉ coupé à
+690 px dans le banc, « 1200,00 |€ » ; `prealablesValidation.test.ts` en épingle le texte, lignes 190 et 381) ;
+`declaration2035E.ts:196` et `:201` (des entiers sans mise en forme, « 168300 € », dans la carte de l'annexe) et `:76`
+(« 7,6 M€ ») ; `encaissementsFactures.ts:935` (« 5 € au plus » ; son test épingle le texte, et les modèles de refus des lignes
+345 à 354 recopient les messages de la base : une migration) ; `planTresorerie.ts:84` ; `engagement.ts:69-70` (les mots du
+cabinet, repris tels quels). Ce que l'application garde ou compare, à ne pas changer sans décision : `factureElectronique.ts:507`
+(`montantEnTexte`, dont l'empreinte repère les doublons de contenu), `factures.ts:20` (la mention légale, « 40 € »),
+`cdarEncaissee.ts:217`, `devises.ts:104`. Hors de l'écran : `send-email` (l'e-mail écrit « 1 234,56 € » avec une espace
+ordinaire avant l'euro) ; deux `window.alert` de `BanqueTab` (lignes 2181 et 2294) qui écrivent « 1234.56 € » — un autre défaut,
+sans format français. À 320 px, un montant de `formatMoney` dans une cellule plus étroite que lui se coupe entre le nombre et
+l'euro (le `overflow-wrap` des fiches) : sous les largeurs de référence, non traité.
+
+**Les tests.** Sept, un par montant, qui lisent `textContent` : `getByText` ramène toute espace — insécable comprise, `\s` — à
+une espace ordinaire, et un test de texte qui croirait garder les insécables ne garderait rien. Deux sont à DEUX séparateurs
+(1 234 567 €) : une substitution sans l'indicateur `g` n'en change qu'un, et les montants à cinq chiffres ne la voient pas.
+**Rouge avant** : sept sur sept sur les trois sources d'origine, chacun pour la bonne raison (les espaces ordinaires reçues à la
+place des insécables attendues). Trois assertions de `VoletSocialCard.test.tsx` lisaient `textContent` avec une espace
+ordinaire avant l'euro — le défaut lui-même — : mises à jour. **Treize mutations, treize mordent** (milliers laissés ordinaires,
+espace ordinaire, fine ou absente avant l'euro, insécable ordinaire entre les milliers, sans `g`, et les deux littéraux de
+l'onglet TVA, chacun par son propre test) ; les deux mutations sans `g` ne sont attrapées que par les tests à deux séparateurs.
+
+**Un piège de l'outil d'édition.** Un ` ` tapé dans l'appel d'une édition est DÉCODÉ : le fichier reçoit le caractère,
+invisible, là où le dépôt écrit partout la séquence — trente-cinq occurrences dans six fichiers, vues parce que le motif
+cherché par la campagne de mutations ne s'y trouvait plus. Aucun de ces fichiers n'en contenait à l'origine (compté avant) ;
+reconverties par un script, recomptées à zéro. Une double barre n'arrange rien (elle reste double) : une édition qui écrit une
+insécable passe par un script.
+
+**LE BANC D'UN WORKTREE MESURAIT LA POLICE DE REPLI — CORRIGÉ.** Mesuré sur l'arbre d'origine dans ce worktree : 20 fichiers de
+police en 403, vingt lignes « outside of Vite serving allow list » au journal de Vite, aucune graisse de Manrope chargée (cinq
+faces en erreur). La consigne disait « ajouter à `server.fs.allow` le `node_modules` RÉEL (`realpathSync`) » ; mais ce dossier
+est RÉEL — ce sont ses paquets qui sont des liens —, et `realpathSync` du dossier rend le dossier : rien n'aurait changé. La
+config part de l'emplacement réel d'un paquet (Vite lui-même). Après : 5 fichiers en 200, 5 faces chargées, aucun refus au
+journal. Éprouvée sur quatre dispositions : dépôt ordinaire (rien n'est ajouté, la liste reste celle de Vite — une liste posée
+REMPLACE la sienne, d'où la racine de l'espace de travail remise avec le dossier réel), dossier réel aux paquets en liens,
+`node_modules` lui-même en lien, et sans Vite (elle ne lève pas).
+
+**LE SERVEUR DU BANC VOYAIT LES COPIES DES AUTRES AGENTS.** Constaté par la session à 13 h 11 : un agent préparait sa copie
+pendant un passage du banc, Vite a vu changer `.claude/worktrees/agent-…/index.html` et `tsconfig.json` — les copies vivent
+DANS le dépôt, donc sous la racine surveillée —, et le banc a levé « Execution context was destroyed » au milieu d'un passage.
+Mesuré dans ce worktree avec une copie factice (`.claude/worktrees/agent-factice/`, ignorée de git), une page ouverte et
+marquée, chaque fichier modifié ensuite : le `tsconfig.json` d'une copie recharge la page entière (son `index.html` est
+seulement nommé au journal). La config exclut `.claude` SOUS LA RACINE SERVIE, par une fonction, et non par le motif
+`**/.claude/**` demandé : une copie isolée est elle-même sous `.claude/worktrees/`, le motif ignorerait donc tous SES fichiers.
+Trois variantes jouées : sans filtre, la copie recharge la page ; avec `**/.claude/**`, rien ne la recharge — pas même l'
+`index.html` de la racine —, et une source modifiée est servie dans son ANCIENNE version (« v1 -> v1 ») : le banc d'un worktree
+aurait mesuré du code périmé sans le dire ; avec la racine ancrée, la copie est muette, l'`index.html` de la racine recharge
+la page et la source est servie à jour. `**/node_modules/**` figure déjà dans la liste de Vite (sa source,
+`resolveChokidarOptions`) : écrit quand même, la config dit ce qu'elle veut. Le balayage des dépendances, lui, ne parcourt pas
+`.claude/` (un dossier caché ; témoin positif : la même copie dans un dossier visible est balayée). Un banc servi par une autre
+configuration que celle-ci doit y reporter la même exclusion.
+
+**Le banc, avec la configuration finale et les polices servies.** `debordements.mjs` joué dix fois, 80 visites chacune, 0
+débordement à chaque passage : 390, 720, 1 024, 1 024 avec la barre à 420, 1 280 volet ouvert puis fermé, 1 440 volet ouvert
+puis fermé, 1 440 volet ouvert avec la barre à 200 et le volet à 760, puis la barre à 420 et le volet à 760. Zéro refus au
+journal de Vite sur toute la durée. Le banc a été rejoué depuis le début quand la surveillance des copies s'est ajoutée : un
+serveur Vite redémarre quand sa configuration change, et le modifier en plein passage aurait reproduit le défaut décrit.
+
+**La barrière.** `tsc -b` : 0. `tsc -p tsconfig.edge.json` : les 25 erreurs connues, aucune nouvelle (16 `agent-comptable`, 6
+`evaluer-extraction`, 2 `receive-email`, 1 `extract-piece`). `npm run lint` : 63 avertissements, 0 erreur, les mêmes. `npm run
+build` : vert. La config du banc, que `tsc -b` n'inclut pas, type-vérifiée à part : 0. Les trois fichiers de test touchés sous
+les quatre fuseaux : 194 sur 194 à chacun. La suite entière sous Paris : 6 189 verts sur 6 192, trois délais de 5 s dans deux
+fichiers (la charge de la machine : 11 à 16) ; `cdarEncaisseeCopie.test.ts` rejoué seul est vert, `cdarRecuCopie.test.ts` mord
+encore sur le délai (6,1 s seul) — et le même test, sur un arbre pur de `d435637` sans le correctif, sous la même charge, tombe
+de la même façon (5,5 s) : aucun des deux ne lit un des sept fichiers.
