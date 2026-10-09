@@ -439,6 +439,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
   révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2 (le module) et R3
   (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS ».
+- **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
+  lu par la base, figé à la première écriture ; étapes PC1 à PC9, douze questions au cabinet → « LE PLAN COMPTABLE
+  PERSONNALISABLE : LA CONCEPTION ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -493,7 +496,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   par un contrôle (`rupturesPisteAudit`, `mouvementsRapprochesSansObjet`, `immobilisationsSansJustificatif`). Il ne
   relâche rien à l'INSERTION : une restauration qui sacrifierait un lien le dit (`LienPerdu.effacable`) →
   « LA FAMILLE `ON DELETE SET NULL` EST CLOSE ».
-- **`dossier_id` NULLABLE** sur `categories` et `natures_immobilisation` (lignes partagées du cabinet) : jamais
+- **`dossier_id` NULLABLE** sur `categories` et `natures_immobilisation` (lignes partagées par TOUS les cabinets) : jamais
   `WHERE dossier_id = ?` seul.
 - **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`, épinglée au schéma) ; une table auto-référencée se
   restaure en deux passes ; le plan free n'a AUCUNE sauvegarde automatique (PLAN_DE_REPRISE.md).

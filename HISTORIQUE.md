@@ -14627,3 +14627,840 @@ déploiement de la fonction. Une ligne de feuille de route pour la CA3 de l'auto
 pré-remplira depuis l'e-reporting des achats. Au 01/01/2027 la TVA passe au CIBS : les articles cités à l'écran (283, 2 ;
 283, 3 ; 293 B) seront à relire. L'acquisition intracommunautaire d'un franchisé ou d'un exonéré sous le seuil du régime
 dérogatoire (point 15 de la conception) n'est pas tranchée.
+
+### 09/10/2026 — LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION — LIGNE 43
+
+La note de conception de l'architecte, telle qu'il l'a rendue, gardée ici parce que les étapes PC1 à PC9 s'y appuient : son inventaire des comptes que l'application écrit elle-même, ses sources, ses points NON VÉRIFIÉS et ses douze questions au cabinet, posées le 09/10/2026 et encore sans réponse. Relevé en concevant, et à confier à des corrections à part : la reprise d'une balance ne range que trois comptes de rôle (un 4455100 repris ne se solde jamais) ; les catégories et natures « partagées » le sont par tous les cabinets, et leur enregistrement par un chef qui n'est pas super-administrateur se perd sans un mot ; trois libellés et le refus du 468 suivent le plan comptable de 2019 ; la consigne de l'assistant nomme un cabinet pour tous ; le compte d'amortissement tronque son sixième chiffre.
+
+Rédigée le 09/10/2026 par l'architecte, pour le cabinet et pour la session qui orchestre. CONCEPTION SEULEMENT : rien
+n'a été écrit dans le dépôt, aucune migration, aucune écriture en base. La base n'a été lue qu'en lecture (catalogue :
+fonctions, contraintes, déclencheurs, policies ; comptes de lignes et numéros de compte — jamais un libellé de pièce ou
+de mouvement, un nom ni un texte ; `piece_textes_ocr` jamais). Lecture du dépôt dans une copie isolée, au commit
+6b598ba. La base porte trois migrations de plus que l'export de ce commit (`identite_des_factures_recues`,
+`paiement_personnel_des_cotisations`, `revision_des_soldes`, d'autres chantiers en cours) : elles ont été lues aussi.
+
+Sources publiques seulement : le plan comptable général (règlement ANC n° 2014-03) dans ses versions consolidées au
+01/01/2026 et au 01/01/2019 publiées par l'ANC ; Légifrance (LPF, art. A47 A-1) ; le BOFiP (format du fichier des
+écritures comptables) ; la notice de la 2035 telle que le dépôt la cite. Les normes AFNOR exclues par le cabinet n'ont
+rien à voir ici et n'ont été ni lues ni citées. Les documents téléchargés ont été traités comme des données (un dossier
+vide chacun, scripts à part, lecture du PDF sans exécution). Les sources sont numérotées [S1]… et décrites à la fin ; ce
+qui n'a pas pu être lu dans le texte lui-même est marqué NON VÉRIFIÉ (§8).
+
+La ligne de la feuille de route (phase 3, P2, effort « Semaines », Hors BNC : non) : « Les comptes PCG viennent d'une
+liste fixe. Chaque cabinet a ses habitudes de ventilation et ses sous-comptes. Sans cela, reprendre un dossier venu
+d'ailleurs impose de tout recatégoriser. » Précisée le 04/10/2026 : ce qui est fixe, ce sont les comptes que
+l'application écrit elle-même — la banque, la TVA, les tiers, le compte du dirigeant, l'emprunt, les cotisations, les
+amortissements et le forfait kilométrique —, « c'est eux qu'un plan personnalisé devra rendre réglables ».
+
+---
+
+#### 0. Le résumé en dix lignes
+
+1. Un plan de comptes est celui de l'ENTITÉ : « L'entité établit un plan de comptes conforme au plan de comptes figurant
+   à l'article 1121-1 » (PCG, art. 1011-5 [S1]). Il vit donc dans le DOSSIER ; le cabinet en tient un MODÈLE, qui sème
+   un dossier neuf et ne touche jamais un dossier existant ; l'application garde ses comptes par défaut, ceux
+   d'aujourd'hui, pour tout rôle qu'un dossier ne règle pas.
+2. L'inventaire : 26 comptes fixes dans `src/lib/comptes.ts` (24 que l'application écrit, 2 qu'elle propose seulement),
+   employés 127 fois dans 23 fichiers de `src/` — 155 fois dans 27 fichiers avec les ensembles qui en sont faits — ;
+   l'assistant en recopie 21 (54 emplois, et sa consigne les nomme 35 fois) ; 10 fichiers les citent en entier dans un
+   message ; en base, 14 fonctions les nomment en dur — dont 10 portent une suppression dans leur corps —, 2 contraintes
+   en listent, un déclencheur fige le compte du dirigeant.
+3. Ce qui se règle : le SOUS-COMPTE de chaque rôle sous sa racine du PCG, son libellé, le préfixe des comptes
+   auxiliaires des tiers. Ce qui ne se règle jamais : la racine (« Le numéro de chaque compte divisionnaire commence
+   toujours par le numéro du compte […] dont il constitue une subdivision », art. 1131-1), les trois chiffres de tête
+   du FEC, la classe (1 à 5 bilan, 6 et 7 résultat), le compte d'amortissement qui suit celui du bien, le report au 101
+   d'une entreprise individuelle, la case de la 2035 que nourrit chaque rôle.
+4. Une écriture porte le compte du plan, jamais un code traduit à l'export : une écriture validée est intangible
+   (art. 1031-3), et « A compter des exercices clos en 2015, le transcodage n'est plus admis » (BOFiP [S4] §350).
+5. La base lit le plan elle-même (`compte_du_role`), comme elle lit déjà dans le dossier le compte du dirigeant : le
+   navigateur compose, la base recompose depuis le plan et refuse l'écart. Le chemin des pièces, que la base ne vérifie
+   pas aujourd'hui, reçoit une garde sur les comptes de rôle.
+6. Le plan d'un dossier se règle tant qu'il n'a ni écriture ni à-nouveau ; ensuite il est figé, comme son modèle
+   comptable depuis le 28/09/2026. Un exercice validé l'était déjà : ses écritures portent leur compte et leur libellé.
+7. La reprise d'un dossier venu d'ailleurs PROPOSE le plan depuis sa balance (le seul 512…, le 44566…, le 401…), puis
+   range ses à-nouveaux sur ce plan, à des zéros près. Aujourd'hui seuls 512…, 44566 et 44571 le sont : un 4455100
+   repris n'est jamais soldé par le 445510 qu'écrit son paiement (trouvé en passant, §9).
+8. Trouvé aussi : les catégories et natures « partagées » sont communes à TOUS les cabinets et seul le
+   super-administrateur les règle ; aucun écran ne crée une catégorie propre à un dossier ; trois libellés suivent le
+   PCG de 2019 (467, 658, 758) et le 468 est refusé sous un sens qui n'est plus le sien.
+9. Neuf étapes : PC1 à PC3 neutres (le plan existe et tout le lit, aux valeurs d'aujourd'hui), PC4 le rend réglable
+   (accord du cabinet pour deux contraintes à remplacer), PC5 le modèle du cabinet, PC6 la reprise, PC7 à PC9 sur
+   décision du cabinet.
+10. Douze questions au cabinet. Sur la base d'aujourd'hui tout est LATENT : aucun compte fixe n'est écrit nulle part
+    (trois écritures en base, toutes sur des comptes de catégorie, dans un bac à sable abandonné).
+
+---
+
+#### 1. Ce que disent les textes
+
+##### 1.1 Les textes en vigueur
+
+| Texte | Ce qu'il dit pour la ligne 43 | Source |
+|---|---|---|
+| PCG, art. 1011-5 | « L'entité établit un plan de comptes conforme au plan de comptes figurant à l'article 1121-1 et aux dispositions des articles 1131-1 et suivants. Le compte est la plus petite unité retenue pour le classement et l'enregistrement des mouvements comptables. » | [S1] |
+| PCG, art. 1111-1 et 1121-1 | Le cadre comptable (classes, comptes à deux chiffres) et la liste des comptes ; « Le plan de comptes minimal comprend l'ensemble des comptes imprimés en caractères normaux. » | [S1] |
+| PCG, art. 1131-1 | « Lorsque les comptes prévus par les normes comptables ne suffisent pas à l'entité pour enregistrer distinctement toutes ses opérations, elle peut ouvrir toute subdivision nécessaire. Chaque compte à deux chiffres et plus peut être subdivisé en tant que de besoin. Le numéro de chaque compte divisionnaire commence toujours par le numéro du compte ou sous-compte dont il constitue une subdivision. » ; le plan « doit permettre un passage simplifié de la balance des comptes à la présentation normalisée des documents de synthèse ». | [S1] |
+| PCG, art. 1131-2 | « Dans les comptes à trois chiffres et plus, le zéro terminal ou la série terminale de zéros a une signification de regroupement de comptes ou de compte global. » | [S1] |
+| PCG, art. 1131-3 | Le compte 28 « fonctionne comme un compte de sens contraire de celui des comptes de la classe concernée » ; 281 « Amortissements des immobilisations corporelles (même ventilation que celle du compte 21) » (liste de l'art. 1121-1). | [S1] |
+| PCG, art. 1141-1, 1141-2 | Classes 1 à 5 : comptes de bilan ; classes 6 et 7 : comptes de gestion. | [S1] |
+| PCG, art. 1211-10 | Exploitant individuel : apports et retraits « enregistrés en cours d'exercice dans le compte 108 « Compte de l'exploitant ». En fin d'exercice, le solde de ce compte est viré au compte 101 « Capital ». » | [S1] |
+| PCG, art. 1214-46 (version 2026) | « Les opérations dont le solde peut être indifféremment soit débiteur, soit créditeur sont comptabilisées à des subdivisions ouvertes sous le compte 467 « Divers comptes débiteurs et produits à recevoir » ou le compte 468 « Divers comptes créditeurs et charges à payer ». » — la version de 2019 ne nommait que le 467, « Autres comptes débiteurs ou créditeurs ». | [S1], [S2] |
+| PCG, art. 1031-3 | Le caractère définitif des enregistrements est assuré par « une procédure de validation, qui interdit toute modification ou suppression de l'enregistrement ». | [S1] |
+| LPF, art. A47 A-1, VII 1° (version du 02/08/2013) | CompteNum : « Le numéro de compte, dont les trois premiers caractères doivent correspondre à des chiffres respectant les normes du plan comptable français » ; CompteLib : « Le libellé de compte, conformément à la nomenclature du plan comptable français » ; CompAuxNum : « Le numéro de compte auxiliaire (à blanc si non utilisé) ». | [S3] |
+| LPF, art. A47 A-1, VIII 7° | Un BNC en comptabilité de trésorerie : vingt-deux informations ; CompteNum « (à blanc si non utilisé) », CompteLib « Le libellé de compte ». | [S3] |
+| BOFiP, BOI-CF-IOR-60-40-20 (07/06/2017) | §130 : « Le numéro de compte répond aux normes fixées par le plan Comptable Général. » §140 : « Les subdivisions mises en place par l'entreprise pour décliner le plan comptable général doivent évidemment figurer ». §150 : « Le libellé de compte correspond à l'intitulé complet du compte tel qu'il est défini dans la nomenclature ». §160 : « Le numéro de compte auxiliaire correspond à la codification des comptes de tiers utilisée au sein de l'entreprise. » §170 : « Le libellé de compte auxiliaire reprend la désignation littérale du tiers. » §350 : les données « doivent obligatoirement respecter les normes comptables et la nomenclature du plan de comptes français » ; « A compter des exercices clos en 2015, le transcodage n'est plus admis. » | [S4] |
+| Notice 2035-NOT-SD (millésime 2026), telle que `src/lib/cases2035.ts` la porte | Les cases que nourrissent les comptes fixes : CH (dotations), BK et BT (charges sociales personnelles), BN (frais financiers), BH (primes d'assurance), BJ (transport et déplacements), BM (autres frais divers de gestion), AF (gains divers), BV (CSG déductible). La 2035 se remplit par LIGNE, jamais par numéro de compte. | [S5] |
+
+##### 1.2 Les conséquences pour la conception
+
+- Le plan appartient au dossier (art. 1011-5) ; le cabinet n'en tient qu'un modèle. Qui l'emporte : toujours le dossier.
+- Un compte réglable est une SUBDIVISION de la racine que le PCG donne au rôle (art. 1131-1) : la racine ne se règle
+  pas, le suffixe si. Sa forme : des chiffres (A47 A-1, VII 1°) ; l'application, qui n'écrit que des comptes généraux
+  numériques, garde des chiffres seulement pour un compte de rôle.
+- Deux numéros qui ne diffèrent que par des zéros de fin désignent le même compte global (art. 1131-2) : deux rôles ne
+  peuvent pas se tenir sur le même compte « à des zéros près », et une reprise range « à des zéros près ».
+- Le compte d'amortissement d'un bien n'est pas un rôle : il suit le compte du bien (art. 1131-3, liste 28).
+- Le libellé d'un compte de rôle est l'intitulé de la nomenclature, ou celui de la subdivision que l'entité a ouverte
+  (A47 A-1, BOFiP §150) ; les libellés par défaut de l'application suivent le PCG de 2026 (§9, point 3).
+- Les comptes auxiliaires suivent « la codification des comptes de tiers utilisée au sein de l'entreprise » (§160) :
+  leur préfixe se règle, la clé du tiers reste la sienne (§170).
+- Aucun transcodage (§350) : une écriture porte le compte du plan du dossier, et le FEC la relit telle quelle.
+- La 2035 ne lit aucun numéro : un rôle garde sa case quel que soit son sous-compte.
+
+---
+
+#### 2. L'inventaire
+
+Méthode : la VALEUR, pas le nom. Deux relevés par l'analyseur de TypeScript (jamais par la ligne) sur tout `src/` et
+`supabase/functions/` hors tests — l'un relève chaque emploi d'une constante de compte avec la fonction qui l'enferme,
+l'autre chaque numéro de six chiffres et chaque racine du PCG dans une chaîne, un gabarit, un texte d'écran, une
+expression régulière ou un commentaire — ; en base, le texte de toutes les fonctions du schéma `public` (97), lu ligne à
+ligne, les contraintes CHECK, les déclencheurs et les valeurs par défaut des colonnes.
+
+##### 2.1 Les vingt-six comptes que l'application tient (`src/lib/comptes.ts`)
+
+« Écrit » = l'application compose la ligne ; « Vérifié » = une fonction SQL recompose l'attendu et refuse un écart, ou
+une contrainte le borne ; « Lu » = un module ou un écran retrouve des lignes par ce numéro. Les pièces (charge, TVA,
+banque, tiers, contrepartie du dirigeant) s'écrivent depuis le navigateur sans fonction (la génération, « Régénérer »,
+et le rapprochement qui écrit ou redate leur contrepartie de banque) : la base ne vérifie AUCUN de leurs comptes.
+
+| Rôle | Compte | Racine (PCG 2026) | Écrit (src/lib) | Vérifié en base | Lu ailleurs | 2035 |
+|---|---|---|---|---|---|---|
+| banque | 512000 | 512 Banques | ecritures `ligneContrepartieBanque` ; contrepartieBanque ; engagement `lignesReglementEngagement` ; affectationBanque `ecritureDuMouvement` (et le virement personnel) ; ventilationBanque ; echeanceEmprunt ; cotisationRapprochee ; liquidationTva `ecritureDuPaiementTva` | affecter, ventiler, classer_virement_personnel, ecrire_mouvement_compte_bilan, rapprocher_echeance_emprunt, rapprocher_cotisation, rapprocher_declaration_tva ; `lignes_bancaires_compte_bilan_format` (≠ 512) ; refus_compte_de_bilan (^512, ^5[1-4]) | FinancementTab (filtre de la requête), tableauPilotage, pisteAudit, contrepartieBanque (filtres d'une mise à jour et d'un comptage), ecritures (désynchronisations), aNouveaux (ouverture de la banque), FicheMouvement | — |
+| tva_deductible | 445660 | 44566 TVA sur autres biens et services | montantRetenu `compteTvaDe` (pièce d'achat) | liquidation_attendue | EcrituresTab (total), contrepartieBanque, aNouveaux (équivalent) | — |
+| tva_immobilisations | 445620 | 44562 TVA sur immobilisations | montantRetenu `compteTvaDe` (facture d'un bien) | liquidation_attendue | EcrituresTab, contrepartieBanque | — |
+| tva_collectee | 445710 | 44571 TVA collectée | montantRetenu ; affectationBanque ; ventilationBanque | affecter, ventiler, liquidation_attendue | EcrituresTab, aNouveaux | — |
+| tva_a_decaisser | 445510 | 44551 TVA à décaisser | liquidationTva | liquidation_attendue, rapprocher_declaration_tva | messages (TvaTab, FicheMouvement, EcrituresTab) | — |
+| credit_tva_a_reporter | 445670 | 44567 Crédit de TVA à reporter | liquidationTva | liquidation_attendue | message (TvaTab) | — |
+| remboursement_tva_demande | 445830 | 44583 Remboursement de taxes sur le chiffre d'affaires demandé | liquidationTva | liquidation_attendue, rapprocher_declaration_tva | messages | — |
+| arrondi_charge | 658000 | 658 Pénalités et autres charges | liquidationTva ; declaration2035 | liquidation_attendue, ecrire_liquidation_tva | message (TvaTab) | BM |
+| arrondi_produit | 758000 | 758 Indemnités et autres produits | idem | idem | idem — c'est aussi le compte de la catégorie partagée « gains divers » | AF |
+| fournisseurs | 401000 | 401 Fournisseurs | engagement `compteDeTiers` ; auxiliaire F | lettrer_pieces ; `lettrages_manuels_compte` | lettrage, lettragesLecture (filtre), ComptesDeTiersCard, FEC (auxiliaire), ecritures `ecrituresSansObjet` | — |
+| fournisseurs_immobilisations | 404000 | 404 Fournisseurs d'immobilisations | engagement ; auxiliaire FI | idem | idem, contrepartieBanque (reconnaît la facture d'un bien) | — |
+| clients | 411000 | 411 Clients | engagement ; auxiliaire C | idem | idem | — |
+| exploitant | 108000 | 108 Compte de l'exploitant | ecritures `ligneContrepartieDirigeant` ; virementPersonnel `compteDuDirigeant` ; cotisationRapprochee (CSG-CRDS) ; forfait et ventilation (part du dirigeant) | classer_virement_personnel, ecrire_forfait_kilometrique, ecrire_mouvement_compte_bilan (refus), rapprocher_cotisation, ventiler, enregistrer_paiement_personnel_cotisation, soldes_a_reporter ; `dossiers_compte_notes_de_frais_check` | contrepartieBanque (une SUPPRESSION filtrée sur ce compte), reportDesSoldes, FicheMouvement, VirementsTab, FormulaireVentilation | BV (CSG) hors écriture |
+| associe | 455000 | 455 Associés – Comptes courants | dirigeant associé, en engagement | `dossiers_compte_notes_de_frais_check`, lettrer_pieces, `lettrages_manuels_compte` | lettrage, ComptesDeTiersCard | — |
+| autres_debiteurs_crediteurs | 467000 | 467 Divers comptes débiteurs et produits à recevoir (ou 468, art. 1214-46) | dirigeant non associé, en engagement | idem | idem | — |
+| emprunt | 164000 | 164 Emprunts auprès des établissements de crédit | echeanceEmprunt (échéance, déblocage) | rapprocher_echeance_emprunt ; refus_compte_de_bilan (^164) | FicheMouvement | — |
+| interets_emprunt | 661100 | 6611 Intérêts des emprunts et dettes | echeanceEmprunt | rapprocher_echeance_emprunt | FicheMouvement, partsDuReleve | BN |
+| assurance_emprunt | 616800 | 616 Primes d'assurances | echeanceEmprunt | rapprocher_echeance_emprunt | FicheMouvement | BH |
+| cotisations_exploitant | 646000 | 646 Cotisations sociales personnelles de l'exploitant | cotisationRapprochee ; declaration2035 | rapprocher_cotisation, enregistrer_paiement_personnel_cotisation | message (CotisationsTab) | BK, BT |
+| dotations_amortissements | 681100 | 6811 Dotations aux amortissements sur immobilisations incorporelles et corporelles | amortissements `ecritureDeLaDotation` ; declaration2035 | ecrire_dotation_amortissement | message (ImmobilisationsTab) | CH |
+| indemnites_kilometriques | 625110 | 6251 Voyages et déplacements | forfaitKilometrique ; declaration2035 | ecrire_forfait_kilometrique | message (VehiculesCard) ; doit rester distinct du compte des frais réels (catégorie « carburant / déplacements », 625100) | BJ |
+| virements_internes | 580000 | 58 Virements internes | proposé pour un mouvement sans justificatif (compteDeBilan) | aucune (le compte est choisi ; refus par racine) | message, consigne de l'assistant | — |
+| depots_cautionnements_verses | 275000 | 275 Dépôts et cautionnements versés | proposé (compteDeBilan) | aucune | idem | — |
+| capital_individuel | 101000 | 101 Capital | reportDesSoldes (miroir) | soldes_a_reporter l'ÉCRIT, valider_exercice | ValidationExerciceCard | — |
+| resultat_benefice | 120000 | 120 Résultat de l'exercice – bénéfice | aNouveaux (reprise), reportDesSoldes | soldes_a_reporter l'écrit ; une reprise ne le vérifie pas | ValidationExerciceCard, BalanceCard | — |
+| resultat_perte | 129000 | 129 Résultat de l'exercice – perte | idem | idem | idem | — |
+
+Les libellés que l'application donne à ces comptes (`LIBELLES_COMPTES`, 23 entrées ; les trois comptes du report n'y
+sont pas, à dessein) et le dirigeant au choix (`COMPTES_NOTES_DE_FRAIS`, `CompteNotesDeFrais` de `types.ts` : trois
+littéraux) vivent à côté.
+
+##### 2.2 Les comptes que l'application déduit
+
+| Famille | D'où vient le numéro | Bornes en base | Remarque |
+|---|---|---|---|
+| Compte d'immobilisation | La nature du bien (`natures_immobilisation.compte_immobilisation`, défaut 218000) — l'écriture d'ACQUISITION d'une pièce (navigateur) | `natures_immobilisation_compte_immobilisation_format` : `^2[01][0-9]{4}$`, six chiffres exactement | 8 natures partagées, 7 comptes distincts, aucune nature propre à un dossier |
+| Compte d'amortissement | « 28 suivi du compte sans son 2, sur six chiffres » : `compte_amortissement` en base, `compteAmortissement` en TypeScript et dans l'assistant | aucune | Tronque le sixième chiffre : 218310 et 218319 donneraient tous deux 281831 (§9, point 5) |
+| Compte d'une catégorie | `categories.compte_comptable` ; 8 suggestions par code (`SUGGESTIONS_COMPTE_PAR_CODE`) | affecter et ventiler exigent `^[67][0-9]{2}` ; l'écran exige trois chiffres en tête | 10 catégories, toutes partagées par TOUS les cabinets (§9, point 2) |
+| Compte de bilan d'un mouvement (ligne 26.7) | Choisi par le cabinet, ramené à six chiffres au moins (`lireCompteSaisi` : zéros de fin retirés, complété à six) | `lignes_bancaires_compte_bilan_format`, refus_compte_de_bilan | Les refus vont par RACINE du PCG, sauf le compte du dirigeant (paramètre) |
+| À-nouveaux d'une reprise | Le numéro lu dans la balance, sauf 512… ramené au 512000 et 44566 / 44571 « à des zéros près » ramenés au 445660 / 445710 (`compteDeLApplication`) ; le résultat d'avant en 120000 ou 129000 | `a_nouveaux_compte_check` : `^[1-5][0-9]{2,}$` | Les autres comptes de rôle de la balance gardent leur numéro (§9, point 1) |
+| Soldes reportés (ligne 34) | `soldes_a_reporter` : les comptes de l'exercice validé ; le 108, le 101 et le résultat au 101000 (entreprise individuelle), sinon 120000 / 129000 | `soldes_reportes_compte_check` | Figés dès leur écriture |
+
+##### 2.3 La base : ce qui nomme un compte
+
+Quatorze fonctions nomment un compte de rôle en dur — dix d'entre elles portent une suppression dans leur corps, et la
+réécrire passe donc par l'éditeur SQL, collée par le cabinet (règle du dépôt) :
+
+| Fonction | Comptes en dur | Suppression dans le corps |
+|---|---|---|
+| affecter_mouvement_bancaire | 512000, 445710 | oui |
+| classer_virement_personnel | 512000, 108000 (dirigeant en trésorerie) | oui |
+| ecrire_mouvement_compte_bilan | 512000, 108000 (dirigeant, pour le refus) | oui |
+| ventiler_mouvement_bancaire | 512000, 445710, 108000 | oui |
+| rapprocher_echeance_emprunt | 512000, 164000, 661100, 616800 | oui |
+| rapprocher_cotisation | 512000, 646000, 108000 | oui |
+| rapprocher_declaration_tva | 512000, 445510, 445830 | oui |
+| ecrire_dotation_amortissement | 681100 | oui |
+| ecrire_forfait_kilometrique | 625110, 108000 | oui |
+| ecrire_liquidation_tva | 658000, 758000 | oui |
+| liquidation_attendue | 445710, 445660, 445620, 445670, 445510, 445830, 658000, 758000 | non |
+| lettrer_pieces | 401000, 404000, 411000, 455000, 467000 | non |
+| soldes_a_reporter | 101000, 120000, 129000, 108000 | non |
+| enregistrer_paiement_personnel_cotisation (en base, hors de l'export de 6b598ba) | 646000, 108000 | non |
+
+S'y ajoutent : `compte_amortissement` (la règle du 28) ; trois fonctions qui ne jugent que la CLASSE ou la RACINE du
+PCG, justes sous tout plan (`refus_compte_de_bilan` — dix-huit refus par forme et par racine, le dirigeant en paramètre
+—, `valider_exercice` et `justifier_solde`, classes 1 à 5) ; et le déclencheur `verrouiller_modele_comptable`, qui fige
+`compte_notes_de_frais` dès la première écriture.
+
+Contraintes : deux LISTES de comptes en dur — `dossiers_compte_notes_de_frais_check` (455000, 108000, 467000) et
+`lettrages_manuels_compte` (401000, 404000, 411000, 455000, 467000) — ; une forme figée à six chiffres
+(`natures_immobilisation_compte_immobilisation_format`) ; des bornes de classe (`a_nouveaux_compte_check`,
+`soldes_reportes_compte_check`, `revision_justifications_compte`, `lignes_bancaires_compte_bilan_format`) ; la liste
+des journaux (AC, VE, BQ, OD) dans `ecritures_brouillon_validation_complete`. Valeurs par défaut :
+`dossiers.compte_notes_de_frais` = 455000, `natures_immobilisation.compte_immobilisation` = 218000.
+
+##### 2.4 Ce que l'application lit par le numéro
+
+Un compte de rôle n'est pas qu'écrit : l'application RETROUVE des lignes par lui. Sous un plan personnalisé, chacune de
+ces lectures doit prendre le compte du plan, sans quoi elle se tait sans le dire :
+
+- la trésorerie et la situation intermédiaire (`FinancementTab` : `.eq('compte', COMPTE_BANQUE)` dans la requête),
+  le tableau de pilotage (`soldesFinDeMois`, `lignesBanque`), l'ouverture de la banque d'un plan de trésorerie
+  (`aNouveaux`) ;
+- la piste d'audit (une ligne de banque sans mouvement), les désynchronisations (`tresorerieDesynchronisee`,
+  `engagementDesynchronise`), les écritures sans objet (`COMPTES_DE_TIERS`) ;
+- `contrepartieBanque.ts` : une MISE À JOUR filtrée sur « pas la banque », un COMPTAGE sur la banque, et une SUPPRESSION
+  filtrée sur le 108000 — sous un plan où l'exploitant serait au 108100, elle ne supprimerait rien, en silence ;
+- le lettrage (`COMPTES_LETTRABLES`, la requête de `lettragesLecture`), le sens d'un compte de tiers
+  (`ComptesDeTiersCard`), l'ordre des comptes, et le compte AUXILIAIRE du FEC (`auxiliaireDuTiers`, indexé par le
+  numéro : un 401100 n'aurait plus d'auxiliaire) ;
+- les totaux de TVA de l'onglet Écritures ; le compte du dirigeant d'un écran (`VirementsTab`, `FormulaireVentilation`,
+  `FicheMouvement`) ;
+- en base, `lettrer_pieces` (somme sur le compte), `soldes_a_reporter` (« individuel » = trésorerie ou
+  `compte_notes_de_frais = '108000'`), `solde_du_compte` (révision, numéro quelconque).
+
+##### 2.5 Les messages qui citent un compte
+
+Quinze fichiers de `src/` citent un compte dans un texte que l'écran montre. Ceux qui nomment une RACINE restent vrais
+sous tout plan (« leur TVA reste aux comptes 4457 et 4456 », « le compte 512 du brouillon », « 455 – Compte courant
+d'associé » dans le choix du dirigeant, `engagement.ts`) ; dix nomment le compte ENTIER par défaut et mentiraient sous
+un plan personnalisé : `TvaTab` (445510, 445670, 658000, 758000), `ValidationExerciceCard` (101000, 120000, 129000),
+`compteDeBilan.ts` (580000), `FicheMouvement` (445830, 445510, 445710), `EcrituresTab` (445510, 445830),
+`CotisationsTab` (646000, 108000), `BalanceCard` (512000), `ImmobilisationsTab` (681100), `VehiculesCard` (625110),
+`ConcordanceCard` (108000).
+
+##### 2.6 Ce qui se juge par la classe ou la racine du PCG, et ne se règle jamais
+
+`affectationBanque` et l'assistant (`natureDuCompte` : ^6, ^7), `categorisationIa`, `proposer-categorie` et
+`evaluer-extraction` (le sens d'une catégorie), `concordance2035` (^[67]), `reportDesSoldes` (^[67], ^(101|108|12),
+^[1-5]), `compteDeBilan` et `refus_compte_de_bilan` (dix-huit refus par forme et par racine), `balanceImport`
+(^[1-8]\d{2,}), `amortissements` (^2[01]), `forfaitKilometrique` (2182, le matériel de transport), `comptes.ts`
+(libellés du plan par préfixe). Toutes jugent ce que le PCG fixe ; un sous-compte du cabinet y tombe là où tombe sa
+racine.
+
+##### 2.7 L'assistant et les autres fonctions
+
+- `agent-comptable` recopie 21 des 26 constantes (tout sauf 580000, 275000, 101000, 120000, 129000) dans quinze blocs
+  gardés, 54 emplois ; sa consigne les nomme 35 fois (« face au 512000 », « au 108000 Compte de l'exploitant »…). Treize
+  fichiers de tests gardent ses blocs ; dix nomment un compte — cinq extraient un `const COMPTE_X = "…"` de la source
+  par expression régulière et le comparent à `src/lib`, les autres épinglent des numéros dans leurs jeux d'essai.
+- `proposer-categorie` et `evaluer-extraction` ne lisent que la classe (6 ou 7) : rien à changer.
+- Aucune autre fonction ne nomme un compte (`plateforme-agreee` et `superpdp-emit` citent des codes de statut, pas des
+  comptes).
+
+##### 2.8 Ce qui épingle les numéros aujourd'hui
+
+- Sept tests confrontent les littéraux d'une fonction SQL exportée à `src/lib` : `reportDesSoldes.test.ts`
+  (`soldes_a_reporter`, `valider_exercice`), `echeanceEmprunt.test.ts`, `amortissements.test.ts`,
+  `compteDeBilan.test.ts` (qui EXÉCUTE `refus_compte_de_bilan` par un petit interprète), `baremeKilometrique.test.ts`,
+  `lettrage.test.ts`, `cotisationRapprochee.test.ts`.
+- Treize essais en base rejouent les mécanismes qui écrivent ces comptes : affectation, reglesAffectation,
+  virementPersonnel, echeanceEmprunt, ventilation, cotisationRapprochee, dotations, forfaitKilometrique,
+  lettrageManuel, compteBilan, reportDesSoldes, liquidationTva, validationExercice (plus celui du paiement personnel
+  d'une cotisation, en cours).
+
+##### 2.9 Ce que mesure la base (09/10/2026, comptes seulement)
+
+- Quatre dossiers, tous en trésorerie, `compte_notes_de_frais` à sa valeur par défaut (455000) partout.
+- `ecritures_brouillon` : trois lignes, toutes proposées, dans un bac à sable abandonné, sur 606100 (une) et 625700
+  (deux) — des comptes de catégorie. Le dossier `test` n'a aucune écriture.
+- Aucun à-nouveau, aucun solde reporté, aucun compte de bilan sur un mouvement, aucun lettrage fait à la main, aucun
+  exercice validé, aucune décision de révision.
+- Dix catégories, toutes partagées (aucune propre à un dossier), toutes avec un compte et un poste ; huit natures,
+  toutes partagées, sept comptes distincts, tous sur six chiffres terminés par 0.
+- LATENT, donc : aucun compte fixe n'est écrit nulle part, et un plan par défaut égal aux constantes d'aujourd'hui ne
+  change rien à aucune donnée.
+
+##### 2.10 L'inventaire en chiffres
+
+| Où | Combien |
+|---|---|
+| Comptes fixes (`comptes.ts`) | 26 rôles : 24 écrits par l'application, 2 proposés seulement ; + 3 familles déduites (immobilisation, amortissement, catégorie) |
+| Emplois dans `src/` (hors `comptes.ts`) | 127 des 26 constantes, dans 23 fichiers ; 155 avec les ensembles qui en sont faits (libellés, comptes de tiers, comptes du dirigeant, suggestions de catégorie, motifs du report), dans 27 fichiers (19 modules de `src/lib`, 8 écrans) |
+| Messages | 15 fichiers citent un compte, 10 un compte entier par défaut |
+| Assistant | 21 constantes recopiées, 54 emplois, 35 mentions dans la consigne, 15 blocs gardés, 13 fichiers de tests |
+| Fonctions SQL | 14 nomment un compte de rôle (10 avec une suppression dans le corps) ; 1 en déduit un (le 28) ; 3 jugent la classe ou la racine ; 1 déclencheur fige le dirigeant |
+| Contraintes | 2 listes de comptes en dur ; 1 forme à six chiffres ; 4 bornes de classe ; 1 liste de journaux ; 2 valeurs par défaut |
+| Tests et essais | 7 confrontations SQL ↔ TypeScript, 10 gardes de l'assistant qui nomment un compte (5 extraient la constante de la source), 13 essais de mécanisme |
+
+---
+
+#### 3. La conception
+
+##### 3.1 Le principe
+
+Le plan est celui du dossier ; le modèle est celui du cabinet ; les valeurs par défaut sont celles de l'application. Un
+rôle que le dossier ne règle pas prend la valeur par défaut — jamais celle du modèle à la volée : le modèle s'APPLIQUE
+(il se copie dans le dossier), il ne s'hérite pas. Ainsi le plan effectif d'un dossier ne dépend que de ses propres
+lignes et de valeurs par défaut qui ne changent jamais pour un rôle existant ; un changement du modèle ne touche aucun
+dossier existant, et une sauvegarde restaurée retrouve exactement son plan.
+
+##### 3.2 Les options, et le choix
+
+| Question | Options | Choix |
+|---|---|---|
+| Où vit le plan ? | (a) cabinet seul ; (b) dossier seul ; (c) les deux, le dossier l'emporte | (c). Le plan est celui de l'entité (art. 1011-5) — un dossier repris garde le sien (§140 : les subdivisions de l'entreprise figurent au FEC) ; le cabinet a ses habitudes pour les dossiers qu'il ouvre. |
+| Le modèle s'hérite ou se copie ? | (a) héritage à la lecture (dossier, sinon modèle, sinon défaut) ; (b) copie à la création et sur demande d'un dossier vide | (b). L'héritage ferait changer les comptes d'un dossier déjà écrit au premier changement du modèle — il faudrait le figer à sa première écriture par un déclencheur sur des tables chaudes, et une sauvegarde ne porterait pas le plan effectif. La copie est explicite, et la restauration (qui insère ligne à ligne) n'a aucun conflit. |
+| Écrire le compte réel, ou un code traduit à l'export ? | (a) l'écriture porte le compte du plan ; (b) l'écriture garde le compte de l'application et le FEC traduit | (a). Le FEC est la copie des écritures (A47 A-1), le transcodage n'est plus admis (§350), une écriture validée ne change plus (art. 1031-3) ; la balance, la révision, le report et le lettrage lisent les comptes tels qu'écrits. (b) ferait dépendre le FEC d'un exercice validé d'une table qui change. |
+| Quand le plan d'un dossier peut-il changer ? | (a) tant que le dossier n'a ni écriture ni à-nouveau ; (b) toujours, en réécrivant le non validé ; (c) par exercice, en reclassant | (a), le précédent du modèle comptable (décision du 28/09/2026, déclencheur `verrouiller_modele_comptable`). (b) ferait réécrire des centaines d'écritures par treize chemins ; (c) est une étape à part (PC9), sur demande. |
+| Comment la base connaît-elle le plan ? | (a) le navigateur l'envoie ; (b) la base le lit | (b), comme elle lit déjà le compte du dirigeant dans le dossier : le navigateur compose, la base recompose. |
+| Le compte du dirigeant | (a) une colonne nouvelle (le RÔLE choisi), l'ancienne retirée ; (b) `compte_notes_de_frais` garde le COMPTE, tenu cohérent avec le plan | (b) : le nom reste vrai, aucune colonne retirée ; seule sa contrainte en dur est remplacée (PC4). |
+| Un compte par rôle, ou plusieurs selon un attribut (taux, organisme, prêt, associé, banque) ? | (a) un compte par rôle ; (b) des sous-comptes par attribut | (a) d'abord : (b) change la composition ET la vérification de chaque mécanisme concerné ; les comptes « portés par l'objet » (un prêt, un associé) sont une étape à part (PC8), sur décision (Q8). |
+| Les catégories (habitudes de ventilation) | (a) dans la ligne 43 ; (b) à part | Les catégories propres à un dossier, et celles qu'on tire de sa balance, dans la ligne (PC7) ; celles du cabinet, qui changent des policies, dans une ligne à part (Q9). |
+
+##### 3.3 Ce qui se règle, ce qui ne se règle jamais
+
+| Se règle | Fondement |
+|---|---|
+| Le sous-compte de chaque rôle, sous sa racine : 512100, 445661, 401100, 646100… | Art. 1131-1 (subdivision « en tant que de besoin ») ; BOFiP §140 |
+| Le libellé (CompteLib) d'un compte de rôle | A47 A-1 VII 1° ; BOFiP §150 (l'intitulé de la subdivision ouverte) |
+| Le préfixe des comptes auxiliaires des fournisseurs, des fournisseurs d'immobilisations et des clients (F, FI, C aujourd'hui) | BOFiP §160 (« la codification des comptes de tiers utilisée au sein de l'entreprise ») |
+| Le compte du dirigeant en engagement : la racine 455, 108, 467 ou 468, et son sous-compte | Art. 1211-10, 1214-46 ; décision du cabinet du 28/09/2026 |
+| La longueur des numéros, si le cabinet tient des dossiers sur une autre longueur (Q5) | Art. 1131-2 |
+
+| Ne se règle jamais | Fondement |
+|---|---|
+| La racine d'un rôle (512, 44566, 44562, 44571, 44551, 44567, 44583, 658, 758, 401, 404, 411, 108, 455, 467 ou 468, 164, 6611, 616, 646, 6811, 6251, 58, 275, 101, 120, 129) | Art. 1131-1 ; A47 A-1 VII 1° ; BOFiP §130 |
+| Trois chiffres en tête ; pour un compte de rôle, l'application va plus loin : des chiffres seulement | A47 A-1 VII 1° |
+| La classe et son sens : 1 à 5 bilan, 6 et 7 résultat — l'affectation, la ventilation, la concordance, le report, la catégorisation en dépendent | Art. 1141-1, 1141-2 |
+| Le compte d'amortissement suit le compte du bien | Art. 1131-3 ; liste du 28 (« même ventilation ») |
+| Le report : le 108 et le résultat d'une entreprise individuelle au 101 ; le résultat d'une société en 120 ou 129, en attente d'affectation | Art. 1211-10 ; décision du cabinet du 06/10/2026 |
+| La case de la 2035 que nourrit un rôle | Notice 2035-NOT-SD |
+| Un même compte « à des zéros près » ne porte qu'un rôle | Art. 1131-2 |
+| Un compte, un libellé dans un même fichier | A47 A-1 ; `valider_exercice` |
+
+##### 3.4 Le schéma proposé (non écrit)
+
+**`roles_comptables`** — le catalogue, données de référence posées par migration, jamais écrites ensuite :
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `role` | text PK | les 26 clés (banque, tva_deductible, …, resultat_perte) |
+| `racines` | text[] not null | les racines du PCG admises (467 et 468 pour autres_debiteurs_crediteurs) |
+| `compte_defaut` | text not null | la constante d'aujourd'hui |
+| `libelle_defaut` | text not null | le libellé d'aujourd'hui, mis au PCG 2026 pour 467, 658, 758 (§9, point 3) |
+| `prefixe_auxiliaire_defaut` | text | F, FI, C pour les trois rôles de tiers, nul ailleurs |
+| `ordre` | integer not null | l'ordre d'affichage |
+
+Une TABLE plutôt qu'une fonction : ajouter un rôle est une INSERTION (une clé étrangère la vise), là où une liste dans
+une contrainte se remplace par un `drop`. Lecture : `for select to authenticated using (true)`, le précédent de
+`taux_change_bce`.
+
+**`plan_comptable_dossier`** — les rôles qu'un dossier règle :
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `dossier_id` | uuid → `dossiers` on delete cascade | |
+| `role` | text → `roles_comptables` | PK (`dossier_id`, `role`) |
+| `compte` | text not null | chiffres seulement, six à dix (ou la longueur du dossier, Q5), commence par une racine du rôle |
+| `libelle` | text | nul = celui du catalogue ; sinon non vide, 200 caractères au plus |
+| `prefixe_auxiliaire` | text | seulement sur les trois rôles de tiers : `^[A-Z0-9]{1,5}$`, distincts entre eux |
+| `origine` | text | `dossier`, `modele_du_cabinet`, `balance_reprise` — ce qui l'a posé, pour l'écran |
+| `regle_par`, `regle_le` | uuid, timestamptz | |
+
+**`plan_comptable_cabinet`** (PC5) — le modèle : `cabinet_id` → `cabinets`, les mêmes colonnes ; PK (`cabinet_id`,
+`role`).
+
+**Les fonctions** (SECURITY DEFINER quand elles écrivent ; accès vérifié d'abord ; colonnes énumérées ; refus nommés et
+ordonnés, que le module redira avant le clic, confrontés au texte de la fonction comme pour les encaissements) :
+- `compte_du_role(p_dossier_id, p_role) returns text` — STABLE : la ligne du dossier, sinon le défaut du catalogue ;
+  lève sur un rôle inconnu (jamais un compte nul écrit).
+- `compte_du_dirigeant(p_dossier_id) returns text` — `compte_notes_de_frais` en engagement, le compte du rôle
+  `exploitant` en trésorerie ; remplace le `case when mode_comptable = 'engagement' then compte_notes_de_frais else
+  '108000' end` recopié dans cinq fonctions.
+- `plan_du_dossier(p_dossier_id)` — le plan effectif (rôle, compte, libellé, préfixe, origine), pour l'application et
+  l'assistant, après `admin_du_dossier`.
+- `regler_plan_du_dossier(p_dossier_id, p_comptes jsonb)` (PC4) — refus, dans l'ordre : accès ; dossier qui porte une
+  écriture, un à-nouveau ou un solde reporté (« Le plan de ce dossier ne se change plus : le brouillon porte N
+  écritures, qui resteraient sur les anciens comptes ») ; rôle inconnu ; forme ; racine (« La banque se tient sous le
+  512 ») ; deux rôles sur le même compte à des zéros près ; un compte de rôle identifié par son numéro (banque, TVA,
+  tiers, dirigeant, emprunt, report) égal au compte d'une catégorie ou d'une nature que le dossier voit ; les indemnités
+  kilométriques sur un compte de catégorie (le barème et les frais réels doivent rester séparables) ; libellé ;
+  préfixe. Écrit les lignes, et remet `compte_notes_de_frais` au nouveau compte du rôle choisi pour le dirigeant, dans
+  la même transaction. Sous le verrou EXCLUSIF du dossier (`cle_validation`).
+- `appliquer_modele_du_cabinet(p_dossier_id)` (PC5) — même verrou et même refus sur un dossier écrit ; copie le
+  modèle dans le dossier. `regler_modele_du_cabinet(p_cabinet_id, p_comptes jsonb)` — `est_chef_du_cabinet`, mêmes
+  refus de forme et de racine, aucun verrou de dossier : le modèle ne touche aucun dossier.
+
+**Les déclencheurs** :
+- `garder_plan_comptable_dossier` (PC1) : la forme, la racine, le préfixe ; aucune écriture directe hors des fonctions
+  (aucune policy d'écriture) ; la restauration par le super-administrateur dans un dossier qui ne porte encore aucune
+  écriture, comme les autres tables figées.
+- `garder_comptes_des_pieces` (PC4) : une ligne de PIÈCE (`piece_id` non nul, le seul chemin que la base ne vérifie pas)
+  dont le compte commence par la racine d'un rôle que la génération écrit (banque, TVA, tiers, dirigeant) doit porter
+  le compte du plan pour ce rôle, sauf s'il est celui de la catégorie de sa pièce. Il ferme la seule fenêtre où un
+  navigateur composerait avec un plan qui vient de changer (la première génération d'un dossier vide). Il prend
+  lui-même le verrou partagé du dossier avant de lire le plan : les déclencheurs `before` d'une table s'exécutent dans
+  l'ordre de leurs noms, et celui qui le prend aujourd'hui (`ecritures_brouillon_intangibles`) passerait après lui.
+
+**Les contraintes remplacées (PC4)** — DESTRUCTIF au sens des règles du dépôt (deux `drop constraint`), sans perte de
+données, à faire accepter par le cabinet (Q4) : `dossiers_compte_notes_de_frais_check` devient un contrôle que le compte
+est celui d'un des rôles `associe`, `exploitant` ou `autres_debiteurs_crediteurs` du plan du dossier ;
+`lettrages_manuels_compte`, un contrôle que le compte est lettrable dans ce plan (fournisseurs, fournisseurs
+d'immobilisations, clients, et le dirigeant quand il est en 455, 467 ou 468). Pour le plan par défaut, chacun est
+exactement aussi strict que la liste qu'il remplace. Si la longueur se règle (Q5), une troisième :
+`natures_immobilisation_compte_immobilisation_format`, et `compte_amortissement` se généralise à la longueur du compte.
+
+**RLS** : `roles_comptables` en lecture pour tout compte connecté ; `plan_comptable_dossier` en `for select to
+authenticated using (admin_du_dossier(dossier_id))` ; `plan_comptable_cabinet` en `admin_du_cabinet(cabinet_id)` ;
+aucune policy d'écriture. Le client ne voit rien.
+
+##### 3.5 Comment la base lit le plan sans croire le navigateur
+
+Chaque fonction de la §2.3 garde sa forme — l'écriture composée par l'application, comparée en MULTIENSEMBLE à
+l'attendue — ; seul l'attendu change de source : `'512000'` devient `public.compte_du_role(v_ligne.dossier_id,
+'banque')`, le `case … '108000' end` devient `public.compte_du_dirigeant(…)`. Les messages nomment le compte du plan
+(« L'écriture proposée ne correspond pas à ce mouvement et au compte du dirigeant (%) » le fait déjà). Chaque fonction
+prend le verrou PARTAGÉ du dossier avant de lire le plan, et `regler_plan_du_dossier` le verrou EXCLUSIF : un
+changement de plan et une première écriture ne se croisent pas — l'un attend l'autre, et le second voit le premier.
+Le navigateur lit le plan par `plan_du_dossier` ; s'il compose avec un plan périmé, la base refuse l'écart, comme
+aujourd'hui pour une catégorie changée entre deux clics.
+
+##### 3.6 Le compte du dirigeant
+
+En trésorerie, le dirigeant est le rôle `exploitant` (108…). En engagement, `compte_notes_de_frais` désigne l'un des
+trois comptes `associe` (455…), `exploitant` (108…) ou `autres_debiteurs_crediteurs` (467… ou 468…) du plan — le
+choix d'aujourd'hui, dont les sous-comptes deviennent réglables. `soldes_a_reporter` dit « individuel » d'un dossier
+en trésorerie ou dont le dirigeant est le compte du rôle `exploitant`, au lieu de comparer à '108000'. `lettrer_pieces`
+apparie les trois tiers et le dirigeant quand il est en 455, 467 ou 468 — jamais le 108, comme aujourd'hui.
+
+##### 3.7 Ce que devient un exercice validé
+
+- Ses écritures portent leur compte, le libellé de ce compte et leur compte auxiliaire
+  (`ecritures_brouillon_validation_complete`), sous des déclencheurs qui refusent toute modification : rien de ce que la
+  ligne 43 change ne les atteint ; le FEC d'un exercice validé se relit depuis eux (`numerotationValidee`).
+- Le plan est figé avant même la validation : un dossier qui a une écriture ne change plus de plan. Les soldes
+  reportés s'écrivent donc sur les comptes mêmes de l'exercice, et le capital ou le résultat sur ceux du plan.
+- Le libellé d'un compte de rôle peut, lui, changer à tout moment : les écritures proposées n'en portent aucun (il se
+  pose à la validation), les validées gardent le leur.
+- Renuméroter un dossier vivant (PC9, sur demande) ne réécrirait jamais une écriture : un plan DATÉ par exercice, et une
+  écriture de reclassement au premier jour du premier exercice non validé — l'ouverture de l'exercice suivant portant
+  les anciens comptes, puisque les soldes reportés sont figés.
+
+##### 3.8 La reprise d'un dossier venu d'ailleurs
+
+1. Le plan d'abord, proposé depuis la balance (PC6, module pur `planDepuisLaBalance`) : pour chaque rôle, les comptes de
+   la balance sous ses racines, toutes classes (le 6611… d'avant dit l'habitude du cabinet aussi bien que le 512…). Un
+   seul : proposé, avec le libellé de la balance — le CompteLib continue. Plusieurs (deux 512…, deux 164…, deux 455…) :
+   listés, le cabinet choisit ; l'application ne tient qu'une banque, un emprunt par rôle et un dirigeant, et le dit.
+   Aucun : le plan reste celui du dossier. Rien ne s'enregistre sans le clic (`regler_plan_du_dossier`, dossier vide).
+2. Les à-nouveaux ensuite, rangés sur ce plan : tout compte de la balance égal à un compte de rôle « à des zéros près »
+   prend le numéro du rôle (4455100 → 445510 si le plan tient le 445510, ou le plan prend le 4455100 à l'étape 1) ; tous
+   les 512… vont à la banque, réunis et dits, comme aujourd'hui. La base vérifie les deux cas sans ambiguïté :
+   `enregistrer_a_nouveaux` refuse un compte équivalent à un compte de rôle sans lui être égal, et un 512… qui n'est pas
+   la banque du plan. Un autre sous-compte sous la racine d'un rôle (un second 401…, un 164200) s'ouvre tel quel, et
+   l'écran dit que l'application n'y écrira pas.
+3. Les auxiliaires : le préfixe du logiciel précédent se règle dans le plan (§3.9) ; la correspondance d'un tiers à son
+   ancien compte auxiliaire et le détail des à-nouveaux par tiers (une balance auxiliaire) restent à la ligne 31
+   (« les auxiliaires des à-nouveaux et des soldes reportés »).
+4. Les catégories : les comptes de charges et de produits de la balance d'avant disent les habitudes de ventilation du
+   dossier ; PC7 les PROPOSE comme catégories propres au dossier (compte et libellé de la balance, poste de la 2035 à
+   choisir), pour ne pas « tout recatégoriser ».
+
+##### 3.9 Les libellés et les comptes auxiliaires
+
+- Le libellé d'un compte de rôle : celui du plan du dossier, sinon celui du catalogue. `libelleCompteTenu(compte, plan)`
+  reste le seul endroit (un CompteNum, un CompteLib) ; les libellés par défaut passent au PCG 2026 pour 467, 658 et 758.
+- Le compte auxiliaire : le préfixe du rôle dans le plan, suivi de la clé d'identité du tiers (`cleFournisseur`), ou
+  « DIVERS » ; un préfixe par rôle, distinct des deux autres, sans quoi deux natures de tiers partageraient un
+  auxiliaire. Figé avec le reste du plan dès la première écriture.
+
+##### 3.10 Qui voit et règle quoi ; sauvegarde, export, RGPD
+
+- Le modèle du cabinet : lu par tout membre du cabinet, réglé par le chef. Le plan d'un dossier : lu et réglé comme son
+  modèle comptable, par ceux à qui le dossier est ouvert (`admin_du_dossier`) — ou par le chef seul (Q3).
+- Sauvegarde d'un dossier : `plan_comptable_dossier` y entre (clé primaire composée dans `CLES_PRIMAIRES`, relation au
+  dossier en cascade, restaurée juste après `dossiers`) ; `roles_comptables` est une table de référence présente dans
+  toute base par migration — le second parent « hors plan » VOULU après `cabinets` (`parentsHorsPlan`). L'export d'un
+  cabinet porte son modèle.
+- `rls.sql` attrape les nouvelles tables de lui-même ; l'export, l'inventaire et le socle les recensent.
+- RGPD.md : un libellé réglé peut porter le nom d'un associé (« compte courant M. … ») — une donnée d'identification
+  minime, du même ordre que l'auxiliaire d'un tiers.
+
+---
+
+#### 4. Le parcours dans l'application
+
+##### 4.1 Le plan du dossier
+
+- Une carte « Plan de comptes du dossier » dans Écritures, à côté du modèle comptable, qui suit la même règle et la dit
+  de la même façon (« Il ne se change plus : le brouillon porte N écritures, qui resteraient sur les anciens comptes »).
+- Une ligne par rôle, groupés (Banque, TVA, Tiers, Dirigeant, Emprunt, Charges de l'exploitant, Report) : la racine
+  du PCG, fixe et montrée ; le suffixe, saisi ; le libellé ; le préfixe des auxiliaires pour les trois tiers ;
+  l'origine (application, modèle du cabinet, balance reprise, dossier).
+- Les refus avant le clic, dans l'ordre de la base ; la confirmation NOMME chaque compte qui change, de quoi à quoi ;
+  le verrou d'exécution est un `useRef`, relâché après la relecture ; une lecture ratée n'offre aucun formulaire.
+- Le plan se lit une fois avec le dossier (`DossierDetail`), gardé AVEC l'identifiant pour lequel il a été lu ; tant
+  qu'il n'est pas revenu, aucun geste qui écrirait une écriture ne part (`ecransAvantLecture`).
+
+##### 4.2 Le modèle du cabinet
+
+Une page du cabinet, à côté de sa charte : le même tableau, sans verrou ; « Nouveau dossier » applique le modèle après
+la création (s'il échoue, le dossier garde le plan de l'application, et sa carte le dit avec « Appliquer le modèle du
+cabinet », offert tant que le dossier est vide).
+
+##### 4.3 La reprise
+
+Dans la carte de la balance reprise : 1. « Le plan du dossier, proposé depuis la balance » (ce qui est proposé, ce qui
+est à choisir, ce qui reste), 2. les à-nouveaux, rangés sur ce plan, avec les comptes réunis ou ramenés. Une fois des
+à-nouveaux enregistrés, le plan est figé : pour le changer, on retire d'abord les à-nouveaux (le geste existe).
+
+##### 4.4 Ce que disent les autres écrans
+
+Les dix fichiers qui nomment un compte entier le prennent dans le plan ; ceux qui nomment une racine restent tels
+quels. La consigne de l'assistant se compose avec le plan du dossier.
+
+---
+
+#### 5. Les tests, les preuves et les risques
+
+##### 5.1 Les jeux d'essai
+
+- `PLAN_DECALE` (fictif) : chaque rôle sur un sous-compte autre que le défaut (512100, 445661, 445621, 445711, 445511,
+  445671, 445831, 658100, 758100, 401100, 404100, 411100, 108100, 455100, 467100, 164100, 661110, 616810, 646100,
+  681110, 625111, 580100, 275100, 101100, 120100, 129100) et des préfixes FO, IM, CL.
+- Chaque test d'un module qui compose ou lit un compte de rôle tourne aussi sous `PLAN_DECALE` : une constante oubliée
+  y écrit un 512000 que le test refuse. Un test vérifie que chaque rôle du catalogue est exercé par au moins un test
+  sous ce plan.
+- Une balance fictive par cas de reprise : six chiffres, sept, huit ; deux banques ; deux emprunts ; un 4455100 ; un
+  401 nu ; un 44566 à cinq chiffres.
+
+##### 5.2 Par couche
+
+- **Catalogue** (`src/lib/planComptable.ts`, pur) : `ROLES_COMPTABLES` confronté au texte de la migration (clés,
+  racines, défauts, libellés, préfixes), comme `v_modifiables` l'est par `facturesFigees.test.ts` ; `PLAN_PAR_DEFAUT`
+  égal aux constantes d'aujourd'hui, ÉPINGLÉ (changer le défaut d'un rôle existant changerait les comptes des dossiers
+  qui ne le règlent pas).
+- **Refus du plan** (`refusDuPlan`, pur) : chaque refus, dans l'ordre de la fonction, sous ses mots ; mutations.
+- **Composition et lecture** : chaque module de la §2.1 et de la §2.4 sous les deux plans.
+- **Aucun compte de rôle en dur** (`comptesEnDur.test.ts`) : un relevé par l'analyseur de TypeScript sur TOUT `src/` et
+  `supabase/functions/`, qui refuse un numéro de six chiffres ou une constante de compte hors du catalogue ; les
+  exceptions portent leur raison ET leur nombre (commentaires, tests, libellés du plan par préfixe, suggestions de
+  catégorie, exemples d'un écran) ; un défaut PLANTÉ le prouve ; un plancher distingue « zéro faute » d'« aveugle ».
+- **Confrontations SQL ↔ TypeScript** : les sept tests de la §2.8 passent des littéraux aux CLÉS de rôle
+  (« la ligne de banque de `rapprocher_echeance_emprunt` est `compte_du_role(…, 'banque')` »).
+- **Écrans** : la carte (refus avant le clic, deux clics dans le même `act`, confirmation qui nomme, verrou dit, lecture
+  ratée sans formulaire), la reprise, et chaque message des dix fichiers rendu sous `PLAN_DECALE`.
+- **Assistant** : ses blocs prennent le plan en paramètre ; les cinq gardes qui extraient un `const COMPTE_X` passent à
+  la copie du module de plan (bornes `── DÉBUT/FIN PLAN`), exécutée contre `src/lib` ; sa consigne se teste sous les
+  deux plans.
+
+##### 5.3 Les essais en base (`supabase/essais/`)
+
+- `planComptable.sql` (nouveau), par impersonation (anonyme, compte rattaché à rien, client, membre non affecté, membre
+  affecté, chef) : lecture, écriture directe refusée en 42501, chaque refus de `regler_plan_du_dossier` exigé par sa
+  RAISON, le verrou (une écriture, un à-nouveau), la synchronisation du dirigeant, les deux contraintes remplacées
+  (le compte du dirigeant hors du plan, un lettrage sur un compte non lettrable), la garde des lignes de pièce, le
+  modèle (chef seul), son application à un dossier vide puis écrit. Rien laissé en base.
+- Après PC2 : les treize essais de mécanisme rejoués TELS QUELS (la neutralité), puis, à PC4, chacun avec une variante
+  au plan décalé — dans une sous-transaction : le dossier d'essai reçoit `PLAN_DECALE`, le mécanisme écrit les comptes
+  du plan, l'écriture composée avec les défauts est refusée.
+- `rls.sql`, `restauration.sql` (le plan d'un dossier restauré), `signature.sql` avant de croire une réplique, et les
+  trois contrôles de l'export (dérive, socle, inventaire) après chaque migration.
+
+##### 5.4 Les risques
+
+| Risque | Parade |
+|---|---|
+| Une constante oubliée écrit encore 512000 dans un dossier au 512100 : deux banques, un FEC faux | `comptesEnDur.test.ts` ; `PLAN_DECALE` dans tous les tests ; la base refuse l'écart sur les treize chemins de fonction, la garde sur celui des pièces |
+| Une lecture par numéro oubliée se tait (la SUPPRESSION de `contrepartieBanque` filtrée sur 108000 ne supprimerait rien) | Inventaire de la §2.4 repris un par un ; tests sous `PLAN_DECALE` |
+| PC2 change un comportement en voulant n'en changer aucun | Étape neutre : plan par défaut partout ; les treize essais rejoués à l'identique ; confrontations SQL ↔ TypeScript |
+| Dix fonctions collées à la main par le cabinet | Une seule migration, dans une transaction, avec sa ligne d'historique ; empreinte de l'historique vérifiée ; corps des fonctions comparés au texte ; les trois contrôles de l'export |
+| Deux contraintes retirées (PC4) | Accord du cabinet (Q4) ; remplacées par des contrôles au moins aussi stricts pour le plan par défaut ; l'essai les éprouve |
+| Un plan change pendant la première génération | Verrou exclusif du changement, partagé des écritures ; garde des lignes de pièce |
+| Une reprise range mal (deux banques, deux emprunts) | Proposition seulement, le cabinet choisit ; la base refuse un compte équivalent non égal |
+| Un rôle identifié par son numéro posé sur le compte d'une catégorie (la banque d'une catégorie) | Refus de `regler_plan_du_dossier` ; le cas inverse (une catégorie réglée après coup sur un compte de rôle) existe déjà aujourd'hui avec les constantes, inchangé |
+| La consigne de l'assistant nomme les anciens comptes | Composée avec le plan, testée sous les deux plans ; redéployée par la session (`verify_jwt` de `config.toml`, aller-retour) |
+| Une sauvegarde sans le plan restaurée : défauts au lieu du plan, écritures sur d'autres comptes | Table dans le plan de sauvegarde ; `sauvegardeTables.test.ts` attrape une table oubliée ; `restauration.sql` |
+| Le défaut d'un rôle existant changé un jour | Défauts épinglés par un test ; un changement exigerait de poser d'abord le défaut actuel dans chaque dossier écrit qui ne le règle pas |
+| RETOUR ARRIÈRE | PC1 à PC3 se défont sans perte (fonctions recollées depuis l'export, application revenue en arrière) tant qu'aucun plan n'est réglé ; retirer les tables est DESTRUCTIF (accord). Après PC4 et un premier plan réglé et écrit : jamais ; on masque la carte, les plans restent. |
+
+---
+
+#### 6. Le découpage (chaque étape fusionnable seule)
+
+| Étape | Contenu | Preuves | Collé par le cabinet ? |
+|---|---|---|---|
+| PC1 — le catalogue et le plan d'un dossier, en base (neutre) | migration `plan_comptable_des_dossiers` : `roles_comptables` (26 rôles), `plan_comptable_dossier`, `compte_du_role`, `compte_du_dirigeant`, `plan_du_dossier`, garde, RLS ; `types.ts` ; sauvegarde et restauration ; `src/lib/planComptable.ts` (catalogue, plan par défaut, confrontation) ; export, inventaire | `planComptable.sql` (lecture, refus d'écriture) ; `rls.sql`, `restauration.sql` ; trois contrôles de l'export ; tests du catalogue | non, sauf si l'outil demande une confirmation |
+| PC2 — la base lit le plan (neutre) | migration `la_base_lit_le_plan` : les quatorze fonctions de la §2.3 lisent `compte_du_role` / `compte_du_dirigeant` sous le verrou partagé du dossier ; les sept confrontations passent aux clés de rôle | les treize essais rejoués à l'identique ; confrontations ; contrôles de l'export | OUI : dix corps portent une suppression |
+| PC3 — l'application et l'assistant lisent le plan (neutre) | le plan lu avec le dossier ; chaque module et écran de la §2.1, §2.4, §2.5 prend le plan en paramètre OBLIGATOIRE ; `CompteNotesDeFrais` devient un compte validé par le plan ; l'assistant (blocs, consigne, gardes), redéployé par la session | `comptesEnDur.test.ts` ; `PLAN_DECALE` ; `ecransAvantLecture` ; gardes de copie ; barrière | non |
+| PC4 — régler le plan d'un dossier | migration `regler_le_plan_du_dossier` : la fonction, le verrou, la garde des lignes de pièce, les deux contraintes remplacées ; carte « Plan de comptes du dossier » ; libellés par défaut au PCG 2026 ; préfixes des auxiliaires | `planComptable.sql` complet ; les treize essais au plan décalé ; tests du module et de l'écran ; banc de capture | OUI : deux `drop constraint` (accord, Q4) |
+| PC5 — le modèle du cabinet | migration `modele_de_plan_du_cabinet` : table, `regler_modele_du_cabinet`, `appliquer_modele_du_cabinet` ; page du cabinet ; « Nouveau dossier » l'applique ; export d'un cabinet | essai ; tests ; banc | non |
+| PC6 — la reprise propose le plan | `planDepuisLaBalance` ; à-nouveaux rangés sur le plan ; `enregistrer_a_nouveaux` refuse l'équivalent non égal et une seconde banque ; carte de la balance en deux temps | tests sur les balances fictives ; essai ; banc | OUI : le corps d'`enregistrer_a_nouveaux` porte une suppression |
+| PC7 — les catégories du dossier, dont celles de sa balance (si Q9 a) | création et modification d'une catégorie propre au dossier (aucun écran aujourd'hui) ; proposées depuis les classes 6 et 7 de la balance d'avant ; le silence de l'enregistrement d'une catégorie partagée corrigé (§9, point 2) | tests ; essai ; banc | non |
+| PC8 — les comptes portés par l'objet (si Q8) | un compte par emprunt (`emprunts.compte`, défaut le rôle), puis par associé ; la fonction de l'échéance lit celui du prêt | essais ; tests | selon |
+| PC9 — renuméroter un dossier vivant (sur demande) | plan daté par exercice ; écriture de reclassement au 1er janvier du premier exercice non validé | essais ; tests | selon |
+
+Ordre recommandé : PC1 → PC2 → PC3 (neutres, chacune vérifiable seule : rien ne change pour personne), puis PC4, qui
+porte la valeur de la ligne ; puis PC6 (la reprise, le cœur de « reprendre un dossier venu d'ailleurs »), PC5, PC7 ;
+PC8 et PC9 sur décision. Hors de la ligne 43, une ligne à ouvrir : « Catégories et natures par cabinet » (aujourd'hui
+communes à tous les cabinets ; ses policies changent, donc accord du cabinet).
+
+Ce que la conception laisse de côté : les sous-comptes par attribut autres que l'objet (TVA par taux, cotisations par
+organisme — `cotisations_declarees` ne porte aucun organisme —, plusieurs banques — un relevé ne dit pas de quel compte
+il vient) ; les journaux (AC, VE, BQ, OD, AN) ; les comptes généraux alphanumériques (« 401DUPONT ») — l'application
+tient des collectifs et des auxiliaires ; les vingt-deux champs du FEC d'un BNC (chantier ouvert ailleurs) ; les
+auxiliaires des à-nouveaux (ligne 31) ; le seuil d'immobilisation par dossier ; l'analytique.
+
+---
+
+#### 7. Les questions au cabinet
+
+Douze questions, chacune avec la recommandation, rédigées pour une réponse d'une ligne : voir plus bas.
+En bref : Q1 le modèle sème, ne s'hérite pas ; Q2 le plan se fige à la première écriture ; Q3 qui règle ; Q4 l'accord
+pour remplacer deux contraintes ; Q5 la longueur des numéros ; Q6 le préfixe des auxiliaires ; Q7 le 467 ou le 468 du
+dirigeant non associé, et les libellés du PCG 2026 ; Q8 les sous-comptes par objet ; Q9 les catégories ; Q10 les
+journaux ; Q11 l'ordre ; Q12 le 468 sur un mouvement du relevé.
+
+---
+
+#### 8. Les points NON VÉRIFIÉS
+
+1. Le règlement qui a changé la nomenclature (ANC n° 2022-06 du 04/11/2022, homologué par arrêté du 26/12/2023, JO du
+   30/12/2023, applicable aux exercices ouverts à compter du 01/01/2025) : lu dans des sources secondaires seulement ;
+   le CHANGEMENT lui-même est vérifié dans les deux versions consolidées de l'ANC (2019 et 2026).
+2. Les cases de la 2035 que nourrissent les comptes fixes : celles de `src/lib/cases2035.ts`, lecture de la notice
+   2035-NOT-SD 2026 par le dépôt, non relue ici.
+3. Le PCG 2026 imprime en italique les comptes facultatifs : l'extraction du PDF perd l'italique ; aucun choix de la
+   conception n'en dépend.
+4. Ce que les autres logiciels font de la longueur des comptes et de la codification des auxiliaires : aucune source
+   publique lue ; le cabinet le sait (Q5, Q6).
+5. Si `apply_migration` demande une confirmation pour un déclencheur qui teste `tg_op = 'DELETE'` sans rien supprimer
+   (PC1) : inconnu ; s'il la demande, le cabinet colle.
+6. La règle « trois chiffres en tête » telle que l'outil de la DGFiP la contrôle (`trt_txt.pl`) : lue par le dépôt le
+   28/09/2026, non relue ici ; le texte de l'art. A47 A-1 l'a été.
+7. L'effet d'une restauration d'une sauvegarde plus récente qui porterait un rôle inconnu de la base d'arrivée (clé
+   étrangère refusée) : à éprouver à PC1.
+8. Qu'un compte courant de dirigeant non associé relève bien des « opérations dont le solde peut être indifféremment
+   soit débiteur, soit créditeur » (art. 1214-46) : la doctrine n'a pas été lue ; c'est la lecture usuelle.
+9. Le silence de l'enregistrement d'une catégorie partagée par un chef qui n'est pas super-administrateur (§9, point 2)
+   : déduit des policies (la clause USING écarte la ligne, PostgREST ne lève pas sur zéro ligne) ; non éprouvé, aucune
+   écriture n'étant permise à cette conception.
+10. Le coût de la garde des lignes de pièce sur une génération de plusieurs centaines de lignes : à mesurer à PC4.
+11. Les trois migrations en base au-delà de l'export de 6b598ba (paiement personnel d'une cotisation, révision R1,
+    identité des factures reçues) sont celles d'autres chantiers ; leur forme finale dans le dépôt peut différer.
+
+---
+
+#### 9. Trouvé en passant
+
+1. **La reprise ne range que trois comptes de rôle.** `compteDeLApplication` (`src/lib/aNouveaux.ts`) ramène les 512…
+   au 512000 et, « à des zéros près », le 44566 et le 44571 au 445660 et au 445710 — rien d'autre. Une balance tenue sur
+   une autre longueur ou en sous-comptes ouvre donc ses fournisseurs, son 108, son emprunt, sa TVA à décaisser ou ses
+   amortissements sur des numéros que l'application n'écrit jamais : 4455100 repris face au 445510 qu'écrit le paiement
+   de la TVA saisie à la main (l'écran dit pourtant « sa TVA est dans les à-nouveaux, au 445510 ou au 445670 ») — le
+   compte ne se solde jamais ; 164100 face au 164000 des échéances ; 2818300 face au 281830 des dotations ; 4010000 face
+   au 401000. Deux comptes pour un, dans la balance, le FEC et la révision. LATENT (aucun à-nouveau en base). PC6 le
+   corrige ; d'ici là, la carte de la balance pourrait le dire.
+2. **Les catégories et natures « partagées » le sont par TOUS les cabinets.** `categories` et `natures_immobilisation`
+   n'ont pas de `cabinet_id` : une ligne à `dossier_id` nul est commune à l'application entière, et seules les policies
+   du super-administrateur l'écrivent. Les dix catégories et les huit natures sont de ce genre. Conséquences : (a) le
+   compte qu'un super-administrateur y pose vaut pour les dossiers de tous les cabinets ; (b) « Comptes manquants »
+   (`saveCompte`, Écritures) et « Postes manquants » (`savePoste`, Clôture) écrivent une catégorie partagée par un
+   `update … eq('id')` dont seule l'erreur est lue — pour un chef qui n'est pas super-administrateur, la policy écarte
+   la ligne, rien ne s'écrit, et rien ne le dit (NON ÉPROUVÉ, §8) ; (c) aucun écran ne crée une catégorie propre à un
+   dossier, et aucun ne change le compte d'une catégorie qui en a déjà un — la précision du 04/10/2026 (« le compte de
+   chaque catégorie […] se choisit déjà ») ne vaut que pour une catégorie sans compte. CLAUDE.md et
+   `ImmobilisationsTab.tsx` disent « partagées par le cabinet ». LATENT : le seul chef est aussi super-administrateur,
+   et les dix catégories ont un compte et un poste.
+3. **Trois libellés et un refus suivent le PCG de 2019.** Le PCG 2026 nomme le 467 « Divers comptes débiteurs et
+   produits à recevoir », le 468 « Divers comptes créditeurs et charges à payer » (les 4686 et 4687 ont disparu), le 658
+   « Pénalités et autres charges », le 758 « Indemnités et autres produits » ; l'application écrit encore « Autres
+   comptes débiteurs ou créditeurs », « Divers — charges à payer et produits à recevoir », « Charges diverses de gestion
+   courante », « Produits divers de gestion courante » (`LIBELLES_COMPTES`, `LIBELLES_DU_PLAN`,
+   `COMPTES_NOTES_DE_FRAIS`), jusque dans le CompteLib du FEC. Et `refus_compte_de_bilan` / `refusCompteDeBilan`
+   refusent tout 468 comme « compte de régularisation », quand le 468 de 2026 est aussi celui des créditeurs divers, en
+   miroir du 467 que l'application accepte. LATENT (aucun 467 ni 468 en base). Libellés : avec PC4 ; le refus : une
+   correction à part (Q12).
+4. **La consigne de l'assistant nomme « le cabinet JD Consult » pour tous les cabinets**
+   (`supabase/functions/agent-comptable/index.ts`, la consigne du modèle) — l'application est multi-cabinets.
+5. **Le compte d'amortissement tronque le sixième chiffre.** `compte_amortissement` (« '28' || substr(p_compte, 2, 4) »)
+   et sa copie TypeScript gardent six chiffres en laissant tomber le dernier : deux comptes d'immobilisation qui ne
+   diffèrent que par lui (218310, 218319) partageraient l'amortissement 281831. LATENT : les huit natures se terminent
+   toutes par 0. Avec PC4 (et Q5), la nature pourrait porter son compte d'amortissement, déduit par défaut.
+
+---
+
+#### Sources
+
+- [S1] Autorité des normes comptables, règlement ANC n° 2014-03 relatif au plan comptable général, version consolidée
+  au 1er janvier 2026 : art. 1011-5, 1021-2, 1031-3, 1031-4, 1111-1, 1121-1 (liste des comptes, classes 1 à 7), 1131-1 à
+  1131-4, 1141-1 à 1141-3, 1211-10, 1212-28, 1214-46, 1215-58.
+  https://www.anc.gouv.fr/files/anc/files/1_Normes_fran%C3%A7aises/recueil/2026/PCG--1er-janvier-2026.pdf — PDF de
+  183 pages, SHA-256 55c824b25472fb4f9e8aaafd8b88112805d95f12615f5d00bf373231e806fc1e, texte extrait localement (le PDF
+  fait foi).
+- [S2] Même règlement, version consolidée au 1er janvier 2019 (comptes 467, 468, 4686, 4687, 658, 758 ; art. 944-46),
+  dans la copie déjà téléchargée par le chantier voisin de la session (`d/petits_defauts/`), lue comme une donnée.
+- [S3] Légifrance, Livre des procédures fiscales, art. A47 A-1, version en vigueur depuis le 02/08/2013 : VII 1°
+  (CompteNum, CompteLib, CompAuxNum, CompAuxLib), VIII 3° et 7°.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000027804775
+- [S4] BOFiP, BOI-CF-IOR-60-40-20, « Format du fichier des écritures comptables », version du 07/06/2017 : §130, §140,
+  §150, §160, §170, §350 (et la version du 13/12/2013 pour le texte complet du §150).
+  https://bofip.impots.gouv.fr/bofip/9028-PGP.html
+- [S5] Notice 2035-NOT-SD, millésime 2026, telle que `src/lib/cases2035.ts` la cite (cases AF, BH, BJ, BK, BT, BM, BN,
+  BV, CH) — non relue ici.
+- [S6] Sources secondaires sur le règlement ANC n° 2022-06 (date, homologation, application), non relues au Journal
+  officiel :
+  - Option Finance, « Actualité comptable : règlements ANC homologués fin décembre 2023 » :
+    https://www.optionfinance.fr/entreprise-expertise/actualite-comptable-reglements-anc-homologues-fin-decembre-2023.html
+  - Lefebvre Dalloz, « Modernisation des états financiers : date de 1ère application » :
+    https://formation.lefebvre-dalloz.fr/actualite/modernisation-des-etats-financiers-date-de-1ere-application-et-modalites-liees-aux-changements-de-modeles
+
+Dans le dépôt (commit 6b598ba) : `src/lib/comptes.ts`, `engagement.ts`, `ecritures.ts`, `contrepartieBanque.ts`,
+`montantRetenu.ts`, `affectationBanque.ts`, `ventilationBanque.ts`, `virementPersonnel.ts`, `echeanceEmprunt.ts`,
+`cotisationRapprochee.ts`, `amortissements.ts`, `forfaitKilometrique.ts`, `liquidationTva.ts`, `declarationTva.ts`,
+`declaration2035.ts`, `concordance2035.ts`, `cases2035.ts`, `reportDesSoldes.ts`, `aNouveaux.ts`, `balanceImport.ts`,
+`lettrage.ts`, `lettragesLecture.ts`, `pisteAudit.ts`, `tableauPilotage.ts`, `fec.ts`, `compteDeBilan.ts`,
+`categorisationIa.ts`, `types.ts`, `sauvegarde.ts`, `sauvegardeDonnees.ts` ; les écrans `EcrituresTab`,
+`FicheMouvement`, `FinancementTab`, `ComptesDeTiersCard`, `VirementsTab`, `FormulaireVentilation`, `ImmobilisationsTab`,
+`ClotureTab`, `TvaTab`, `ValidationExerciceCard`, `CotisationsTab`, `BalanceCard`, `VehiculesCard`, `ConcordanceCard`,
+`ChecklistTab`, `StatistiquesTab`, `AssistantTab` ; `supabase/functions/agent-comptable/index.ts`, `proposer-categorie`,
+`evaluer-extraction` ; `supabase/schema/` (export) ; HISTORIQUE.md, entrées « LA COMPTABILITÉ D'ENGAGEMENT », « UN
+MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN », « UNE BALANCE REPRISE DEVIENT LES À-NOUVEAUX », « UN EXERCICE
+VALIDÉ SE FIGE EN BASE », « LE FEC SUIT L'ARTICLE A47 A-1 », « LA RÉVISION DES COMPTES : LA CONCEPTION »,
+« L'E-REPORTING : LA CONCEPTION ». La ligne 43 de la feuille de route (Notion), lue le 09/10/2026. Base lue en lecture :
+`list_tables`, `list_migrations`, colonnes, contraintes, déclencheurs, policies, texte des 97 fonctions du schéma
+`public`, comptes de lignes et numéros de compte.
+
+Hors du dépôt, dans le carnet de la session (`d/plan_comptable/`) : le PDF du PCG et son texte extrait, les deux relevés
+par l'analyseur de TypeScript (`outils/releve_comptes.cjs`, `outils/releve_usages.cjs`, et leurs sorties), le texte des
+fonctions lues en base (`base/fonctions/`).
+
+#### Les douze questions au cabinet, telles que posées le 09/10/2026
+
+Chaque question se répond d'une ligne : « Q1 oui », ou « Q1 non : … ». La recommandation est celle de l'architecte ; le
+détail est dans la note ci-dessus (le paragraphe entre parenthèses).
+
+Le contexte en quatre lignes : aujourd'hui l'application écrit elle-même vingt-six comptes fixes (la banque au 512000,
+la TVA, les tiers, le compte du dirigeant, l'emprunt, les cotisations, les dotations, le forfait kilométrique, le report
+du résultat). La ligne 43 les rend réglables, dossier par dossier, sous la racine que le plan comptable leur impose : la
+banque d'un dossier peut devenir le 512100, jamais un 411. Rien de ce qui est déjà écrit ne change, et tant qu'aucun
+plan n'est réglé, l'application se comporte exactement comme aujourd'hui.
+
+Ce qui est déjà décidé, sauf avis contraire, parce que les textes le tranchent : le plan est celui du DOSSIER
+(« L'entité établit un plan de comptes », PCG art. 1011-5), le cabinet en tient un modèle ; une écriture porte le compte
+du plan, jamais un code traduit à l'export (le transcodage n'est plus admis depuis 2015) ; la racine, la classe, les
+trois chiffres de tête, le compte d'amortissement qui suit celui du bien et la case de la 2035 ne se règlent pas. (§1,
+§3.3)
+
+---
+
+**Q1 — Le modèle du cabinet ne fait que semer.**
+Proposition : le modèle du cabinet s'applique à la création d'un dossier (et, sur demande, à un dossier qui n'a encore
+rien d'écrit) ; ensuite le dossier garde son propre plan, et un changement du modèle ne touche jamais un dossier
+existant.
+**Recommandation : oui.** (§3.1, §3.2)
+
+**Q2 — Le plan d'un dossier se fige à sa première écriture.**
+Proposition : le plan d'un dossier se change tant qu'il n'a ni écriture ni à-nouveau ; ensuite il ne change plus, comme
+son modèle comptable depuis le 28/09/2026. Renuméroter un dossier déjà écrit (un plan daté, et une écriture de
+reclassement au 1er janvier du premier exercice non validé) reste une étape à part, faite seulement si vous en avez
+besoin un jour.
+**Recommandation : oui.** (§3.2, §3.7, PC9)
+
+**Q3 — Qui règle le plan ?**
+Proposition : le modèle du cabinet, le chef seul ; le plan d'un dossier, comme son modèle comptable aujourd'hui, par
+tout membre de l'équipe à qui le dossier est ouvert. Autre choix possible : le chef seul pour les deux.
+**Recommandation : comme le modèle comptable.** (§3.10)
+
+**Q4 — Votre accord pour une migration « destructive » au sens des règles du dépôt.**
+Deux contraintes de la base listent des comptes en dur : le compte du dirigeant d'un dossier en engagement (455000,
+108000 ou 467000) et les comptes d'un lettrage fait à la main (401000, 404000, 411000, 455000, 467000). Pour que ces
+comptes deviennent réglables, il faut les retirer (deux `drop constraint`) et les remplacer par des contrôles contre le
+plan du dossier, exactement aussi stricts pour le plan par défaut. Aucune donnée n'est perdue. La migration sera
+collée par vous dans l'éditeur SQL de Supabase, avec sa ligne d'historique, à l'étape PC4.
+**Recommandation : accord.** (§3.4, PC4)
+
+**Q5 — La longueur des numéros de compte.**
+Vos dossiers, et ceux que vous reprenez, sont-ils tenus en six chiffres (512000) ? Si certains le sont en sept ou huit
+(51200000), le plan d'un dossier porterait sa longueur, et l'application écrirait tous ses comptes à cette longueur — y
+compris les comptes d'immobilisation, aujourd'hui figés à six chiffres (une troisième contrainte à remplacer).
+**Recommandation : six chiffres ; une longueur par dossier seulement si vous reprenez des dossiers tenus autrement.**
+(§3.3, §3.4)
+
+**Q6 — Les comptes auxiliaires des tiers.**
+Proposition : le préfixe des comptes auxiliaires se règle par dossier, pour les fournisseurs, les fournisseurs
+d'immobilisations et les clients (F, FI et C aujourd'hui) — un dossier repris garde ainsi la codification de son ancien
+logiciel. La correspondance d'un tiers à son ancien compte auxiliaire, et le détail des à-nouveaux tiers par tiers,
+viendront avec la ligne 31.
+**Recommandation : oui.** (§3.8, §3.9)
+
+**Q7 — Le dirigeant non associé, et les libellés du plan comptable de 2026.**
+Le plan comptable en vigueur (version consolidée de 2026) range une opération dont le solde peut être débiteur ou
+créditeur sous le 467 (« Divers comptes débiteurs et produits à recevoir ») OU le 468 (« Divers comptes créditeurs et
+charges à payer ») ; celui de 2019 ne nommait que le 467.
+Proposition : garder le 467 par défaut pour le dirigeant non associé, et permettre le 468 ; et mettre au plan de 2026
+les libellés que l'application donne encore sous leur nom de 2019 (467, 468, 658, 758).
+**Recommandation : oui.** (§1.1, §9 point 3)
+
+**Q8 — Des sous-comptes selon l'objet ou l'attribut.**
+Lesquels vous servent vraiment : un compte par emprunt (164100, 164200…) ; un compte courant par associé (455100,
+455200…) ; la TVA collectée ou déductible par taux ; les cotisations par organisme ; plusieurs comptes bancaires ? Aucun
+n'est dans la ligne 43 : chacun change la façon dont un mécanisme écrit ET vérifie ses écritures.
+**Recommandation : aucun pour commencer ; un compte par emprunt d'abord, si vous reprenez des dossiers à plusieurs
+prêts.** (§3.2, PC8)
+
+**Q9 — Les catégories, vos habitudes de ventilation.**
+Constat : les dix catégories (et les huit natures d'immobilisation) sont aujourd'hui communes à TOUS les cabinets, seul
+le super-administrateur peut en changer le compte, et aucun écran ne crée une catégorie propre à un dossier.
+a) Dans la ligne 43 : créer et modifier les catégories propres à un dossier, et proposer celles de sa balance reprise
+   (ses comptes de charges et de produits d'avant), pour ne pas « tout recatégoriser » (PC7) ?
+b) Les catégories et natures propres au cabinet, qui changent des règles d'accès : dans une ligne à part ?
+**Recommandation : a oui, b ligne à part.** (§3.8, §9 point 2)
+
+**Q10 — Les journaux.**
+Les codes de journaux (AC, VE, BQ, OD, AN) restent ceux de l'application ?
+**Recommandation : oui, hors de la ligne 43.** (§6)
+
+**Q11 — L'ordre.**
+PC1 à PC3 d'abord : le plan existe et tout le lit, sans que rien ne change pour personne ; puis PC4, qui le rend
+réglable ; puis la reprise (PC6), le modèle du cabinet (PC5) et les catégories du dossier (PC7) ; le reste sur décision.
+**Recommandation : oui.** (§6)
+
+**Q12 — Le 468 sur un mouvement du relevé (trouvé en passant).**
+Un mouvement sans justificatif ne peut pas aller sur un 468 : l'application le refuse comme « compte de
+régularisation », le sens qu'il avait dans le plan de 2019, alors qu'elle accepte le 467 qui en est aujourd'hui le
+miroir. Corriger à part pour traiter le 468 comme le 467 ?
+**Recommandation : oui, une correction à part, hors de la ligne 43.** (§9 point 3)
+
+---
+
+Les réponses recommandées, à recopier telles quelles ou à corriger :
+
+```
+Q1 oui
+Q2 oui
+Q3 comme le modèle comptable
+Q4 accord
+Q5 six chiffres
+Q6 oui
+Q7 oui
+Q8 aucun pour commencer
+Q9 a oui, b ligne à part
+Q10 oui
+Q11 oui
+Q12 oui
+```
