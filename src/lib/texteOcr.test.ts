@@ -131,8 +131,18 @@ describe('enregistrerTexteOcr', () => {
   it('ne fait pas échouer l’appelant quand la base refuse', () => {
     // Ce texte est un confort de relecture, pas une donnée comptable. Un dépôt qui échouerait parce
     // que l'OCR n'a pas pu être archivé ferait perdre au client son document — sans commune mesure.
+    // Il ne lève pas — mais il REND la raison : la conversion d'un document en pièce la lit, puisque
+    // la suppression du document qui suit emporterait le texte en cascade.
     reponses.upsert = { error: { message: 'new row violates row-level security policy' } }
-    return expect(enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'FOUR')).resolves.toBeUndefined()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    return expect(enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'FOUR'))
+      .resolves.toBe('new row violates row-level security policy')
+  })
+
+  it('ne rend rien quand le texte est écrit, ni quand il n’y a rien à écrire', () => {
+    reponses.upsert = { error: null }
+    return expect(enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'FOUR')).resolves.toBeNull()
+      .then(() => expect(enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, '  ')).resolves.toBeNull())
   })
 })
 

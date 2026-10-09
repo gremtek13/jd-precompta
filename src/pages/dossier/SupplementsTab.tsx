@@ -76,13 +76,16 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
 
   async function supprimerSupplement(s: Supplement) {
     if (!window.confirm(`Supprimer "${s.libelle}" ?`)) return
-    await supabase.from('supplements').delete().eq('id', s.id)
+    // Refusée, la suppression se DIT : la relecture remet le supplément, et sans un mot on le croirait parti.
+    const { error: erreurSuppression } = await supabase.from('supplements').delete().eq('id', s.id)
+    if (erreurSuppression) window.alert(`Le supplément n’a pas pu être supprimé : ${messageErreur(erreurSuppression, 'refus de la base')}.`)
     load()
   }
 
   async function supprimerCompte(c: CompteCourantAssocie) {
     if (!window.confirm(`Supprimer le compte courant de ${c.nom_associe} et tous ses mouvements ? Cette action est irréversible.`)) return
-    await supabase.from('comptes_courants_associes').delete().eq('id', c.id)
+    const { error: erreurSuppression } = await supabase.from('comptes_courants_associes').delete().eq('id', c.id)
+    if (erreurSuppression) window.alert(`Le compte courant n’a pas pu être supprimé : ${messageErreur(erreurSuppression, 'refus de la base')}.`)
     load()
   }
 

@@ -17,6 +17,7 @@ import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { libelleIssue, type PropositionCategorie } from '../../lib/categorisationIa'
 import { proposerCategorie } from '../../lib/propositionCategorie'
+import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -515,7 +516,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     setDeleting(true)
     setError(null)
     try {
-      const { error: deleteError } = await supabase.from('pieces').delete().eq('id', piece.id)
+      // La ligne supprimée se LIT (`.select('id')`) : PostgREST rend une suppression qui ne touche aucune ligne comme un
+      // succès, et retirer les fichiers sur la seule absence d'erreur laisserait une pièce visible sans son fichier.
+      const { data: supprimee, error: deleteError } = await supabase.from('pieces').delete().eq('id', piece.id).select('id').maybeSingle()
+      if (!deleteError && !supprimee) {
+        throw new Error(messageBilanSuppressionPieces({ demandes: 1, supprimes: 0, motifs: [AUCUNE_PIECE_SUPPRIMEE] }) ?? AUCUNE_PIECE_SUPPRIMEE)
+      }
       if (deleteError) {
         // Contrainte de clé étrangère (23503) : la pièce est encore référencée par une table qui
         // REFUSE la suppression. Gardé comme garde-fou, mais ce chemin ne peut pas se lever

@@ -54,10 +54,12 @@ vi.mock('../../lib/supabase', () => ({
             faux.updates.push(ligne)
             return { eq: () => Promise.resolve({ error: null }) }
           },
+          // La suppression rend la ligne supprimée (`.select('id').maybeSingle()`) : c'est elle qui autorise le retrait
+          // des fichiers. Le cas où la base n'en supprime aucune est joué dans `FichePiece.ecritures.test.tsx`.
           delete: () => ({
             eq: (_c: string, id: unknown) => {
               faux.suppressions.push(id)
-              return Promise.resolve({ error: null })
+              return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id }, error: null }) }) }
             },
           }),
         }

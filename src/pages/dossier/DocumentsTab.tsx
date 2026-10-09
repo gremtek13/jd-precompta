@@ -209,7 +209,12 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   )
 
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
-    await supabase.from('documents_divers').update({ categorie }).eq('id', doc.id)
+    const { error: erreurCategorie } = await supabase.from('documents_divers').update({ categorie }).eq('id', doc.id)
+    // Refusé, le choix se DIT : la relecture remet l'ancienne catégorie dans la liste, et sans un mot l'opérateur
+    // croirait son choix pris — puis chercherait le document sous la nouvelle.
+    setError(erreurCategorie
+      ? `La catégorie du document n’a pas pu être changée : ${messageErreur(erreurCategorie, 'refus de la base')}.`
+      : null)
     load()
   }
 
@@ -332,16 +337,36 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
       // Rattaché à la pièce avant que le document ne disparaisse — sinon le texte serait perdu au
       // moment même où il redevient utile, sur une pièce qu'il faut justement arbitrer.
-      await enregistrerTexteOcr(dossierId, { type: 'piece', id: piece.id as string }, texte)
+      //
+      // Et ce rattachement se VÉRIFIE : raté, la suppression du document qui suit emporterait le texte en cascade —
+      // exactement la perte que la relecture ci-dessus refuse de risquer. Le document reste donc, avec son texte.
+      const erreurTexte = await enregistrerTexteOcr(dossierId, { type: 'piece', id: piece.id as string }, texte)
+      if (erreurTexte) {
+        setError(
+          `La pièce a bien été créée dans Justificatifs, mais le texte lu n'a pas pu lui être rattaché (${erreurTexte}) : ` +
+          `le document reste ici pour ne pas perdre ce texte. Retire-le à la main une fois la pièce complétée.`,
+        )
+        load()
+        return
+      }
 
       // La suppression est vérifiée, et son échec se DIT : la pièce, elle, est déjà créée. Passé
       // sous silence, le même fichier vivrait des deux côtés, et le réflexe — recliquer — créerait
       // une pièce de plus à chaque fois.
-      const { error: deleteError } = await supabase.from('documents_divers').delete().eq('id', doc.id)
+      //
+      // « Retiré » se LIT (`.select('id')`) : PostgREST rend une suppression qui ne touche aucune ligne
+      // comme un succès — la policy a écarté la ligne, ou un autre onglet l'a déjà retirée.
+      const { data: retire, error: deleteError } = await supabase
+        .from('documents_divers').delete().eq('id', doc.id).select('id').maybeSingle()
       if (deleteError) {
         setError(
           `La pièce a bien été créée dans Justificatifs, mais le document n'a pas pu être retiré d'ici ` +
-          `(${deleteError.message}). Retire-le à la main, sinon le même fichier existe en double.`,
+          `(${messageErreur(deleteError, 'refus de la base')}). Retire-le à la main, sinon le même fichier existe en double.`,
+        )
+      } else if (!retire) {
+        setError(
+          `La pièce a bien été créée dans Justificatifs, mais le document n'a pas été retiré d'ici ` +
+          `(${AUCUNE_LIGNE_SUPPRIMEE}). S'il est encore dans la liste, retire-le à la main, sinon le même fichier existe en double.`,
         )
       } else {
         setError(null)

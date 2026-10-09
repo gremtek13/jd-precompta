@@ -5,6 +5,7 @@ import { extraireErreurFonction } from '../lib/invokeErreur'
 import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import { messageErreur } from '../lib/messageErreur'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
   comptable_en_chef: 'Comptable en chef',
@@ -126,10 +127,13 @@ export default function EquipePage() {
   }
 
   async function toggleAssignation(userId: string, dossierId: string, assigne: boolean) {
-    if (assigne) {
-      await supabase.from('dossier_assignations').delete().eq('user_id', userId).eq('dossier_id', dossierId)
-    } else {
-      await supabase.from('dossier_assignations').insert({ user_id: userId, dossier_id: dossierId })
+    // Refusée, l'assignation se DIT : la relecture remet la case comme avant, et sans un mot le comptable garderait —
+    // ou n'aurait jamais — l'accès au dossier qu'on croit lui avoir retiré ou donné.
+    const { error: erreurAssignation } = assigne
+      ? await supabase.from('dossier_assignations').delete().eq('user_id', userId).eq('dossier_id', dossierId)
+      : await supabase.from('dossier_assignations').insert({ user_id: userId, dossier_id: dossierId })
+    if (erreurAssignation) {
+      window.alert(`L’assignation n’a pas pu être ${assigne ? 'retirée' : 'ajoutée'} : ${messageErreur(erreurAssignation, 'refus de la base')}.`)
     }
     load()
   }

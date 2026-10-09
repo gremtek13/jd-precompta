@@ -223,12 +223,15 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
 
   async function attacherDocument(cotisationId: string, documentId: string) {
     if (!documentId) return
-    await supabase.from('documents_divers').update({ attached_to_cotisation_id: cotisationId }).eq('id', documentId)
+    // Refusé, le rattachement se DIT : la relecture laisse l'avis sans son document, et sans un mot on le croirait joint.
+    const { error: erreurRattachement } = await supabase.from('documents_divers').update({ attached_to_cotisation_id: cotisationId }).eq('id', documentId)
+    setError(erreurRattachement ? `Le document n’a pas pu être rattaché : ${messageErreur(erreurRattachement, 'refus de la base')}` : null)
     load()
   }
 
   async function detacherDocument(documentId: string) {
-    await supabase.from('documents_divers').update({ attached_to_cotisation_id: null }).eq('id', documentId)
+    const { error: erreurRattachement } = await supabase.from('documents_divers').update({ attached_to_cotisation_id: null }).eq('id', documentId)
+    setError(erreurRattachement ? `Le document n’a pas pu être détaché : ${messageErreur(erreurRattachement, 'refus de la base')}` : null)
     load()
   }
 

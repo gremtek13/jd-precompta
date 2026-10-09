@@ -1,10 +1,11 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
-  ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, LigneBancaire, NatureImmobilisation,
-  PeriodiciteTva, Piece, ReglementGroupe, StatutTva, TransmissionFacture, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
+  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, StatutTva, TransmissionFacture,
+  VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -31,6 +32,8 @@ const faux = vi.hoisted(() => ({
   // de PostgREST (voir lib/lectureComplete.ts), et le seul levier qui produise une lecture
   // INCOMPLÈTE plutôt qu'une lecture refusée. Les deux ne disent pas la même chose à l'écran.
   tronquees: new Set<string>(),
+  // La mise à jour des informations du dossier (la coche d'un justificatif) que la base refuse, avec sa raison.
+  refusMajInfos: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -51,8 +54,10 @@ vi.mock('../../lib/supabase', async () => {
         // Le statut demandé décide de ce que rend la table `pieces` : c'est tout l'objet du test, les
         // deux piles devant être distinguables.
         let statut: string | null = null
+        let valeurMaj: Record<string, unknown> | null = null
         Object.assign(chaine, {
           select: () => chaine,
+          update: (valeur: Record<string, unknown>) => { valeurMaj = valeur; return chaine },
           eq: (colonne: string, valeur: string) => {
             if (colonne === 'statut') statut = valeur
             if (filtrees.has(table)) predicats.push(predicatEq(colonne, valeur))
@@ -63,8 +68,19 @@ vi.mock('../../lib/supabase', async () => {
           or: (expression: string) => { if (filtrees.has(table)) predicats.push(predicatOr(expression)); return chaine },
           order: () => chaine,
           range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          // Les informations du dossier, lues à l'unité : c'est d'elles que viennent les points à cocher.
+          maybeSingle: () => Promise.resolve({
+            data: table === 'informations_dossier' ? (faux.parTable.informations_dossier?.[0] ?? null) : null,
+            error: null,
+          }),
           then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
+            if (valeurMaj && table === 'informations_dossier') {
+              // Refusée, la mise à jour n'applique rien : la relecture rend la coche d'avant.
+              if (faux.refusMajInfos) return Promise.resolve({ data: null, error: { message: faux.refusMajInfos }, count: 0 }).then(suite)
+              const maj = valeurMaj
+              faux.parTable.informations_dossier = faux.parTable.informations_dossier.map((l) => ({ ...(l as object), ...maj }))
+              return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+            }
             const cle = table === 'pieces' && statut ? `pieces:${statut}` : table
             if (faux.refusees.has(table)) {
               return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
@@ -166,6 +182,7 @@ function poser(pieces: {
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
+  faux.refusMajInfos = null
 }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
@@ -2365,5 +2382,48 @@ describe('ChecklistTab — la même vente portée par plusieurs pièces (ligne 2
     expect(onglets).toEqual(['pieces'])
     expect(screen.getByText(/« contradictoire\.xml » désigne F2026-0007 et F2026-0008\./)).toBeDefined()
     expect(screen.queryByText(POINT)).toBeNull()
+  })
+})
+
+// UNE COCHE REFUSÉE SE DIT (09/10/2026, `ecrituresVerifiees.test.ts`). Marquer un justificatif reçu jetait le résultat
+// de la mise à jour : refusée, la relecture remettait la coche comme avant, sans un mot — et l'opérateur, qui venait de
+// cliquer, croyait le justificatif noté. Rouge sur le code d'avant.
+describe('ChecklistTab — la coche d’un justificatif', () => {
+  function infos(o: Partial<InformationsDossier> = {}): InformationsDossier {
+    return {
+      id: 'infos-1', dossier_id: 'dossier-de-test', vehicule_type: 'aucun', vehicule_libelle: null,
+      jours_travailles_an: null, tickets_restaurant: true, justificatif_tickets_restaurant_recu: false,
+      cheques_vacances: false, justificatif_cheques_vacances_recu: false, notes: null,
+      updated_at: '2026-09-16T09:00:00Z', ...o,
+    }
+  }
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('refusée, elle le dit avec la raison de la base, et la base garde la coche d’avant', async () => {
+    poser({})
+    faux.parTable.informations_dossier = [infos()]
+    faux.refusMajInfos = 'permission denied for table informations_dossier'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    monter()
+    await screen.findByText('Justificatif titres-restaurant reçu')
+    const coche = screen.getByTitle('Cliquer pour marquer comme reçu/non reçu')
+    await act(async () => { coche.click() })
+
+    expect(alerte).toHaveBeenCalledWith('Ce justificatif n’a pas pu être marqué : permission denied for table informations_dossier.')
+    expect((faux.parTable.informations_dossier[0] as InformationsDossier).justificatif_tickets_restaurant_recu).toBe(false)
+  })
+
+  it('acceptée, elle ne dit rien, et la base la garde', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « dit son refus » serait satisfait par un écran qui crie à chaque coche.
+    poser({})
+    faux.parTable.informations_dossier = [infos()]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    monter()
+    await screen.findByText('Justificatif titres-restaurant reçu')
+    const coche = screen.getByTitle('Cliquer pour marquer comme reçu/non reçu')
+    await act(async () => { coche.click() })
+
+    expect(alerte).not.toHaveBeenCalled()
+    expect((faux.parTable.informations_dossier[0] as InformationsDossier).justificatif_tickets_restaurant_recu).toBe(true)
   })
 })
