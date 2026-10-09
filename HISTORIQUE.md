@@ -11197,3 +11197,90 @@ DOM relevé : un squelette et pas un mot de plus (la salutation de `ClientHome` 
 la lecture du dossier : un repli, pas une affirmation). **Trouvé en passant, non corrigé** : `AccesTab` n'a aucun état
 de chargement — « Aucun accès client pour ce dossier. » s'y lit au premier rendu, avant la fin de `load()`, y compris
 pour un dossier qui en a un.
+
+### 09/10/2026 — AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT D'AVOIR LU — LE BALAYAGE DES JUMEAUX DE `ClientUpload`
+
+(`src/pages/dossier/AccesTab.tsx`, `PacksTab.tsx`, `BanqueTab.tsx`, `EcrituresTab.tsx`, `FinancementTab.tsx`, `TvaTab.tsx`,
+`ImmobilisationsTab.tsx`, `VoletSocialCard.tsx` et leurs tests ; `src/test/clientRetenu.ts` et
+`src/pages/ecransAvantLecture.test.tsx`, nouveaux.) **Pourquoi.** En corrigeant `ClientUpload` (« RÉCLAMAIT AU CLIENT
+AVANT D'AVOIR RIEN LU »), un jumeau avait été vu côté cabinet : `AccesTab` disait « Aucun accès client pour ce dossier. »
+au premier rendu. « Chercher toutes les copies avant de corriger la première » : la question a été posée à TOUS les écrans.
+
+**La mesure.** Une sonde (hors du dépôt) a monté les 47 montages de 45 fichiers qui lisent la base — `src/pages`,
+`src/pages/dossier`, la coque, les cartes et fenêtres qui lisent elles-mêmes — sous un faux client UNIVERSEL : toute chaîne
+se construit (`from`, `rpc`, `functions.invoke`, `storage`, `auth`), aucune réponse ne revient avant d'être libérée. Quatre
+relevés par écran : toutes les lectures retenues ; toutes revenues vides ; chaque table retenue seule, les autres
+revenues ; toutes refusées. Puis, à la main, ce que la sonde ne voit pas : les boutons offerts pendant la lecture, les
+relectures, et les lectures dont la clé change écran ouvert (`[dossierId, annee]`, `[période]`).
+
+**Fautifs au premier rendu (texte relevé avant toute réponse).** `AccesTab` : « Aucun accès client pour ce dossier. » ;
+`PacksTab` : « Aucun pack généré pour l'instant. » ; `BanqueTab`, carte « Écarts à vérifier » : « 0 mouvement(s)
+bancaire(s) non rapproché(s) (0,00 €) · 0 pièce(s) validée(s)… · 0 échéance(s)… » ; `EcrituresTab` : « 0 écriture
+proposée » (les tests de l'onglet l'attendaient déjà : « le compte « 0 écriture proposée » s'affiche dès le premier
+rendu ») ; `FinancementTab` : « Mensualités en cours 0,00 € », « Capital restant dû 0,00 € » (la trésorerie voisine disait
+déjà « — ») ; `TvaTab` : le tableau « Déclarations déposées » sans ligne ; `ImmobilisationsTab` : le tableau « Natures »
+sans ligne — un tableau vide se lit comme une liste vide, sans un mot. **Calculé sur des listes pas encore lues, offert
+avant la fin de la lecture.** `EcrituresTab` : « Exporter la piste d'audit » actif — un CSV presque vide, et qui a l'air
+complet ; `FinancementTab` : les quatre « Générer » actifs — situation, plan de trésorerie, dettes et ratios faits de
+zéros, et le prévisionnel ouvert comme s'il n'en existait aucun, alors que son enregistrement remplace tous les champs
+de celui qui existe (« Lecture → formulaire → écriture de tous les champs »). **Une clé qui change écran ouvert.**
+`VoletSocialCard` reste montée quand l'exercice change dans l'en-tête (la Clôture la garde pour 2025 et 2026) : sous
+« Volet social 2026 », les chiffres et le « Enregistré. » de 2025 jusqu'au retour de la lecture — et « Enregistrer »
+les upsertait sur 2026 ; `PacksTab` : l'aperçu (« 22 pièce(s) validée(s) — 2 200,00 € ») et son bandeau de lecture
+partielle restaient sous les nouvelles dates, « Générer le pack » actif.
+
+**Sondés, sans faute** (un squelette, « Chargement… », un titre, un repli générique) : `ClientHome`, `ClientUpload` (depuis
+#111), `ClientInformations`, `ClientSimulation`, `DossiersList`, `DossierDetail` (les onglets attendent le dossier et les
+exercices validés), `SuperAdminPage`, `EquipePage`, `CabinetBrandingPage`, `RetourBanque`, la coque (`Layout`,
+`BarreDossiers`), `AssistantTab`, `BalanceCard`, `ChecklistTab`, `ClotureTab`, `ConnexionBancaireCard`, `CotisationsTab`,
+`DocumentsTab`, `EncaissementsFactureModal`, `EstimationTab`, `FactureApercu`, `FactureAvoirModal`, `FactureFormModal`,
+`FacturesTab`, `FichePiece`, `InformationsTab`, `PiecesTab`, `PlateformeClientModal`, `StatistiquesTab` (trésorerie et
+engagement), `SuperPdpModal`, `SupplementsTab`, `TransmissionFactureModal`, `VehiculesCard`, `VirementsTab`. Chaque table
+retenue seule y garde l'attente entière, sauf là où ce qui reste affiché ne dépend pas d'elle (la connexion bancaire, les
+relevés classés de `ImportCsv`, la charte du cabinet). Sur un refus de toutes les lectures, aucun écran ne reste en
+« Chargement… » ; seul `DossierDetail` garde les deux squelettes de son en-tête à côté de son message d'erreur.
+
+**Les correctifs et leurs règles.** Un état d'attente levé en dernier, après les lectures dont l'affichage dépend ; à sa
+place, « Chargement… » ou le squelette déjà en usage dans l'écran ; ni calcul, ni texte, ni bandeau changés. Le choix pour
+la relecture suit l'écran : **première lecture seulement** pour `AccesTab` et l'historique de `PacksTab` (état
+`chargement`, comme `ClientUpload` : la liste déjà lue reste sous les yeux après une création, un retrait, une
+génération) ; **la règle du tableau voisin** pour `BanqueTab` et `EcrituresTab`, dont `loading` repasse déjà à vrai à
+chaque relecture — le compte suit la table juste en dessous ; `FinancementTab` de même (tuiles à « — », « Générer » grisés
+pendant chaque lecture) ; `TvaTab` et `ImmobilisationsTab` gardaient déjà leur `loading` à la première lecture seulement.
+**Une lecture garde la clé pour laquelle elle a été faite** (la règle déjà écrite pour `DossierDetail`) :
+`VoletSocialCard` range l'exercice dans sa lecture et dans son message, et n'en montre une que pour l'exercice affiché ;
+`PacksTab` range la période dans son aperçu, motif de lecture partielle compris. Rien de neuf n'est posé dans un effet :
+63 avertissements de lint, les mêmes. Un refus laisse l'écran dans l'état qu'il prenait déjà (le bandeau, le message) :
+vérifié écran par écran par le garde ci-dessous et par un test dans `AccesTab` et `BanqueTab`.
+
+**Les gardes.** Un test par écran corrigé, qui retient ses lectures, vérifie que rien ne s'affirme, puis l'état lu ; les
+deux règles de relecture d'`AccesTab` et `PacksTab` ont le leur. Les tests qui lisaient l'écran juste après le montage
+attendent l'état lu (`AccesTab`, `TvaTab`, les « Générer » de `FinancementTab`). **Un garde transversal**,
+`ecransAvantLecture.test.tsx`, monte les 43 montages sous `src/test/clientRetenu.ts` (le faux client universel, en
+mode retenir, vide ou refus) et exige : avant toute réponse, aucun texte qui dise « aucun », « rien », un « 0 » ou un
+« 0,00 € » isolé, ni un tableau sans ligne — sept phrases fixes en exception, chacune avec sa raison et son nombre ;
+après des réponses vides, puis refusées, plus aucun « Chargement… » ni `aria-busy`. La liste part de TOUT : chaque
+fichier de `src/pages`, `src/components` et `src/context` qui importe le client, ou un module de `src/lib` qui y mène
+(fermeture transitive), est monté ou écarté avec sa raison (dix fichiers qui ne lisent qu'à un geste ou reçoivent leurs
+données) ; plancher de 45 fichiers ; un écran qui ne demande rien, ou ne rend rien, échoue. Ce qu'il ne voit pas, et que
+les tests des écrans gardent : un état lu en partie, une relecture, une clé qui change.
+
+**Éprouvé.** Sur l'ancien code (une copie propre de a53020d, sources d'avant et tests d'après), les douze tests nouveaux
+qui le visent échouent — les symétriques (refus, relecture, lecture partielle) passent sur les deux — et le garde
+transversal tombe sur sept écrans (`AccesTab`, `PacksTab`, `BanqueTab`, `EcrituresTab`, `FinancementTab`, `TvaTab`,
+`ImmobilisationsTab`) en nommant le texte fautif. Vingt-trois mutations des correctifs au premier passage : vingt et une
+mordaient ; les deux survivantes (le bandeau de la période d'avant, le « Enregistré. » de l'autre exercice) accusaient le
+jeu d'essai et mordent depuis leurs tests. Les correctifs de `PacksTab` et `VoletSocialCard` ont ensuite quitté l'effet
+pour la clé gardée avec la lecture (un `setState` dans un effet ajoutait deux avertissements de lint) : leurs six
+mutations rejouées, cinq mordent, une est équivalente — la seconde ceinture d'« Enregistrer » dans `VoletSocialCard`,
+que le bouton absent rend inatteignable. Sept défauts plantés dans le garde (un écran retiré, une exception retirée ou
+inventée, une phrase mal comptée ou d'un autre écran, un client qui ne compte rien, un client qui rend tout de suite) :
+tous mordent — le dernier fait tomber 36 écrans, la preuve qu'il n'est pas aveugle. La suite passe de 5 778 à 5 838
+tests, verte sous les quatre fuseaux ; `tsc -b` et le build à 0 ; 63 avertissements de lint, les mêmes.
+
+**Trouvé en passant, non corrigé — une écriture commandée par une liste pas encore revenue.** La sœur de « une lecture
+partielle ne commande aucune écriture » : pendant la PREMIÈRE lecture, la liste est vide et rien ne suspend le geste.
+`BanqueTab` : l'import d'un relevé (CSV, PDF, connexion bancaire) dédoublonne contre `lignes` et applique `regles`, que
+`lectureIncomplete` / `suspension` ne couvrent que tronqués, pas absents ; `CotisationsTab` : « Créer les N échéances »
+d'un appel déposé dédoublonne contre `cotisations`. La fenêtre est courte (le temps de la première lecture, quand le geste
+demande un fichier et un clic), mais le doublon s'écrit en base. À balayer comme famille, avec son garde.

@@ -31,6 +31,10 @@ const faux = vi.hoisted(() => ({
   // que le verrou ferme.
   appels: [] as unknown[],
   resoudre: null as null | ((v: unknown) => void),
+  // La lecture des accès attend que le test la libère (voir `retenir`) : c'est ainsi qu'on regarde l'écran PENDANT la
+  // lecture, au lieu de parier sur la vitesse du faux client.
+  porte: null as Promise<void> | null,
+  lectures: 0,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -42,12 +46,16 @@ vi.mock('../../lib/supabase', () => ({
         select: () => chaine,
         delete: () => { suppression = true; faux.suppressions += 1; return chaine },
         eq: () => (suppression ? Promise.resolve({ error: faux.erreurSuppression }) : chaine),
-        then: (suite: (r: { data: unknown[] | null; error: unknown }) => unknown) =>
-          Promise.resolve(
+        then: (suite: (r: { data: unknown[] | null; error: unknown }) => unknown) => {
+          faux.lectures += 1
+          // La réponse se compose quand elle PART : une lecture retenue rend l'état de la base à sa libération.
+          const repondre = () => (
             faux.erreurLecture
               ? { data: null, error: faux.erreurLecture }
-              : { data: faux.lignes, error: null },
-          ).then(suite),
+              : { data: faux.lignes, error: null }
+          )
+          return (faux.porte ? faux.porte.then(repondre) : Promise.resolve(repondre())).then(suite)
+        },
       })
       return chaine
     },
@@ -67,14 +75,32 @@ function monter() {
   return render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
 }
 
+// Retient les lectures suivantes jusqu'à ce que le test appelle la fonction rendue.
+function retenir(): () => Promise<void> {
+  let ouvrir = () => {}
+  faux.porte = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux.porte = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+// Un tour d'horloge DANS l'`act` : ce que l'écran avait à faire des réponses déjà livrées est rendu avant qu'on le regarde.
+function laisserPasserUnTour() {
+  return act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+}
+
 async function cliquerRetirer() {
   // « Retirer » vit dans la ligne du client, à côté de « Relancer » : on s'ancre sur l'adresse.
-  const ligne = screen.getByText('client@exemple.fr').closest('tr')
+  // Attendue HORS de l'`act` : la ligne n'existe qu'une fois la lecture revenue.
+  const ligne = (await screen.findByText('client@exemple.fr')).closest('tr')
   if (!ligne) throw new Error('ligne de l’accès introuvable')
   await act(async () => { within(ligne).getByRole('button', { name: /^Retirer$/ }).click() })
 }
 
 beforeEach(() => {
+  faux.porte = null
+  faux.lectures = 0
   faux.lignes = [{ id: 'm1', user_id: 'u1', email: 'client@exemple.fr' }]
   faux.erreurLecture = null
   faux.erreurSuppression = null
@@ -88,9 +114,8 @@ describe('« Aucun accès » est une affirmation, pas un écran vide', () => {
   it('DIT que la liste n’a pas pu être lue, au lieu d’affirmer qu’il n’y a personne', async () => {
     faux.erreurLecture = { message: 'JWT expired' }
     monter()
-    await act(async () => {})
 
-    expect(screen.getByText(/JWT expired/)).toBeTruthy()
+    expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/ne pas en conclure que personne ne l'a/)).toBeTruthy()
     expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
   })
@@ -101,9 +126,63 @@ describe('« Aucun accès » est une affirmation, pas un écran vide', () => {
     faux.lignes = []
     faux.erreurLecture = null
     monter()
-    await act(async () => {})
 
-    expect(screen.getByText(/Aucun accès client pour ce dossier/)).toBeTruthy()
+    expect(await screen.findByText(/Aucun accès client pour ce dossier/)).toBeTruthy()
+  })
+})
+
+describe('« Aucun accès » ne se dit qu’une fois la liste revenue', () => {
+  // Au premier rendu la liste est vide faute d'avoir été lue : l'écran disait « Aucun accès client pour ce dossier. » d'un
+  // dossier qui en a un — le pire sens pour cet écran-là, celui où l'on vérifie qu'un client qui part n'entre plus.
+  it('dit « Chargement… » tant que la lecture n’est pas revenue, puis la liste lue', async () => {
+    const liberer = retenir()
+    monter()
+    await laisserPasserUnTour()
+
+    expect(faux.lectures).toBe(1)
+    expect(screen.getByText('Chargement…')).toBeTruthy()
+    expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
+    expect(screen.queryAllByText('client@exemple.fr')).toHaveLength(0)
+
+    await liberer()
+    expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
+  })
+
+  it('ne dit « aucun accès » d’un dossier vide qu’après l’avoir lu', async () => {
+    faux.lignes = []
+    const liberer = retenir()
+    monter()
+    await laisserPasserUnTour()
+    expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
+
+    await liberer()
+    expect(await screen.findByText(/Aucun accès client pour ce dossier/)).toBeTruthy()
+  })
+
+  it('une lecture refusée laisse le refus, pas « Chargement… »', async () => {
+    faux.erreurLecture = { message: 'JWT expired' }
+    const liberer = retenir()
+    monter()
+    await laisserPasserUnTour()
+    await liberer()
+
+    expect(await screen.findByText(/JWT expired/)).toBeTruthy()
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
+  })
+
+  it('la relecture qui suit un retrait laisse sous les yeux la liste déjà lue', async () => {
+    // La règle de `ClientUpload` : le chargement ne vaut que pour la PREMIÈRE lecture.
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenir()
+    await cliquerRetirer()
+    await laisserPasserUnTour()
+
+    expect(faux.lectures).toBe(2)
+    expect(screen.getByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
+    await liberer()
   })
 })
 
@@ -111,7 +190,6 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
   it('ne retire rien quand la confirmation est refusée', async () => {
     window.confirm = () => false
     monter()
-    await act(async () => {})
     await cliquerRetirer()
     expect(faux.suppressions).toBe(0)
   })
@@ -120,7 +198,6 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
     let question = ''
     window.confirm = (m?: string) => { question = m ?? ''; return false }
     monter()
-    await act(async () => {})
     await cliquerRetirer()
     expect(question).toContain('client@exemple.fr')
   })
@@ -131,7 +208,6 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
     // signal au lieu de le donner.
     faux.erreurSuppression = { message: 'permission denied' }
     monter()
-    await act(async () => {})
     await cliquerRetirer()
 
     expect(faux.suppressions).toBe(1)
@@ -140,7 +216,6 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
 
   it('retire sans rien dire quand tout se passe bien', async () => {
     monter()
-    await act(async () => {})
     await cliquerRetirer()
 
     expect(faux.suppressions).toBe(1)

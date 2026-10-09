@@ -406,7 +406,7 @@ describe('EcrituresTab — l’écriture d’acquisition d’un bien', () => {
   it('n’écrit pas un bien sans nature : ni sur le compte d’un bien, ni en charge', async () => {
     poser({ pieces: [facture()], immobilisations: [{ ...BIEN, nature_id: null }], natures_immobilisation: [NATURE] })
     monter(true)
-    // Attendre la FIN du chargement : le compte « 0 écriture proposée » s'affiche dès le premier rendu.
+    // Attendre la FIN du chargement : tant qu'elle n'est pas là, l'écran ne dit que « Chargement… ».
     await screen.findByText("Aucune écriture proposée pour l'instant.")
     expect(screen.queryByRole('button', { name: /Générer les écritures manquantes \(1\)/ })).toBeNull()
     expect(screen.queryByText(/en attente de génération/)).toBeNull()
@@ -2900,5 +2900,27 @@ describe('EcrituresTab — les forfaits kilométriques', () => {
     // Le FEC, lui, ne dépend pas des véhicules : il part.
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     expect(telecharge.fichiers.map((f) => f.nom)).toEqual(['123456789FEC20251231.txt'])
+  })
+})
+
+// LE COMPTE DES ÉCRITURES ET LA PISTE D'AUDIT ATTENDENT LE BROUILLON. Avant sa lecture, l'écran disait « 0 écriture
+// proposée » d'un brouillon peut-être plein — les tests d'ici l'attendaient pour cette raison —, et la piste d'audit
+// s'exportait sur des listes vides : un fichier presque vide, et qui a l'air complet. Le compte suit la règle de la table
+// (`loading` repasse à vrai à chaque relecture) ; le bouton de la piste se grise tant qu'elle dure.
+describe('EcrituresTab — rien ne se compte ni ne s’exporte avant la lecture du brouillon', () => {
+  it('dit « Chargement… » à la place du compte, et la piste d’audit attend', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()] })
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    monter()
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    expect(screen.queryAllByText(/\d+ écritures? proposées?/)).toHaveLength(0)
+    expect(screen.getAllByText('Chargement…').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(true)
+
+    faux.retenue = null
+    await act(async () => { faux.relacher?.() })
+    expect(await screen.findByText(/1 écriture proposée/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(false)
   })
 })

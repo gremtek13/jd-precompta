@@ -28,12 +28,20 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   // dans chaque pack. Elle n'était simplement pas comptée du tout ici — alors que le générateur, lui,
   // la recense déjà et la remonte après coup. L'opérateur choisissait donc une période, lisait
   // « 4 pièces », et apprenait après génération qu'il en existait 18 autres.
-  const [preview, setPreview] = useState<{ nbValidees: number; nbAValider: number; total: number; sansDate: number } | null>(null)
-  const [previewIncomplet, setPreviewIncomplet] = useState<string | null>(null)
+  //
+  // L'aperçu garde la période pour laquelle il a été lu, et le motif d'une lecture partielle avec lui : voir `apercu` plus bas.
+  const [preview, setPreview] = useState<{
+    debut: string; fin: string; nbValidees: number; nbAValider: number; total: number; sansDate: number; motif: string | null
+  } | null>(null)
   // L'historique des packs, lu en entier ou non. Tronqué, il cache un pack déjà généré — donc déjà
   // envoyé au comptable, peut-être — et invite à le régénérer : les mêmes pièces lui partiraient
   // deux fois. Vide sur une lecture refusée, il affirmait « aucun pack » au lieu de le dire.
   const [motifPacks, setMotifPacks] = useState<string | null>(null)
+  // Vrai tant que la PREMIÈRE lecture de l'historique n'est pas revenue : avant elle, la liste est vide faute d'avoir été
+  // lue, et l'écran disait « Aucun pack généré pour l'instant. » au premier rendu — d'un dossier dont les packs sont peut-être
+  // déjà partis au comptable. Il ne vaut que pour la première lecture : `loadPacks()` repart après une génération, et
+  // l'historique déjà lu reste sous les yeux jusqu'à la relecture.
+  const [chargementPacks, setChargementPacks] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,6 +52,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     )
     setPacks(lecture.lignes)
     setMotifPacks(lecture.complete ? null : lecture.motif)
+    setChargementPacks(false)
   }
 
   // L'APERÇU EST ANNULABLE, et c'est ce qui manquait. Ses dépendances ne sont pas `dossierId`
@@ -59,7 +68,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   //
   // Ce que ça coûte : l'opérateur lit « 22 pièces validées — 1 697,39 € », génère, et le pack ne
   // contient pas cela. C'est le même écran dont l'aperçu était déjà « plus optimiste que le
-  // générateur qui allait refuser juste après » — et `previewIncomplet` se trompe de la même façon,
+  // générateur qui allait refuser juste après » — et le motif de l'aperçu se trompe de la même façon,
   // une lecture périmée pouvant effacer le bandeau d'une période réellement partielle.
   //
   // Le garde est le drapeau d'annulation déjà utilisé par l'aperçu de `FichePiece` : la lecture
@@ -88,8 +97,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     // lectures ne verrait rien — à ce moment-là, la demande est encore la plus récente.
     if (estPerimee()) return
     const rows = lecture.lignes
-    setPreviewIncomplet(lecture.complete && sansDate.complete ? null : (lecture.motif ?? sansDate.motif))
     setPreview({
+      debut: periodeDebut,
+      fin: periodeFin,
+      motif: lecture.complete && sansDate.complete ? null : (lecture.motif ?? sansDate.motif),
       nbValidees: rows.filter((r) => r.statut === 'validee').length,
       nbAValider: rows.filter((r) => r.statut === 'a_valider').length,
       total: rows.filter((r) => r.statut === 'validee').reduce((s, r) => s + (r.montant_ttc ?? 0), 0),
@@ -103,6 +114,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     loadPreview(() => perimee)
     return () => { perimee = true }
   }, [dossierId, periodeDebut, periodeFin])
+
+  // L'aperçu d'une AUTRE période ne dit rien de celle-ci : dès que les dates changent, il ne se montre plus — ni compte,
+  // ni total, ni bandeau de la période d'avant —, et « Générer » attend la lecture de la nouvelle, au lieu de les laisser
+  // sous les nouvelles dates jusqu'à son retour.
+  const apercu = preview !== null && preview.debut === periodeDebut && preview.fin === periodeFin ? preview : null
 
   async function handleGenerate() {
     setGenerating(true)
@@ -167,15 +183,15 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
           </div>
         </div>
 
-        {preview && (
+        {apercu && (
           <p className="muted">
-            {preview.nbValidees} pièce(s) validée(s) — {formatMoney(preview.total)}
-            {preview.nbAValider > 0 && (
-              <span style={{ color: 'var(--color-warning)' }}> · {preview.nbAValider} pièce(s) encore à valider dans cette période, non incluses</span>
+            {apercu.nbValidees} pièce(s) validée(s) — {formatMoney(apercu.total)}
+            {apercu.nbAValider > 0 && (
+              <span style={{ color: 'var(--color-warning)' }}> · {apercu.nbAValider} pièce(s) encore à valider dans cette période, non incluses</span>
             )}
-            {preview.sansDate > 0 && (
+            {apercu.sansDate > 0 && (
               <span style={{ color: 'var(--color-warning)' }}>
-                {' '}· {preview.sansDate} pièce(s) validée(s) sans date — elles n’entrent dans AUCUNE
+                {' '}· {apercu.sansDate} pièce(s) validée(s) sans date — elles n’entrent dans AUCUNE
                 période et seront recensées à part dans le récapitulatif
               </span>
             )}
@@ -184,7 +200,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
 
         <BandeauLecturePartielle
           quoi="Les pièces de la période"
-          motif={previewIncomplet}
+          motif={apercu?.motif ?? null}
           consequence={
             'Le compte et le total ci-dessus portent donc sur une partie des pièces. La génération ' +
             'du pack refusera de toute façon tant que la lecture est partielle.'
@@ -193,7 +209,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
 
         {error && <p className="error-text">{error}</p>}
 
-        <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !preview || preview.nbValidees === 0}>
+        <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !apercu || apercu.nbValidees === 0}>
           {generating ? 'Génération…' : 'Générer le pack'}
         </button>
       </div>
@@ -211,7 +227,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
       {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, les boutons « ZIP » et « Excel » de chaque pack
           passaient derrière un défilement latéral que rien n'annonce. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
-        {packs.length === 0 ? (
+        {chargementPacks ? (
+          // Ni l'historique ni « Aucun pack… » : tant que rien n'a été lu, ni l'un ni l'autre ne serait vrai.
+          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : packs.length === 0 ? (
           // « Aucun pack » seulement sur une lecture COMPLÈTE : une lecture refusée rend aussi une
           // liste vide, et l'affirmation deviendrait fausse au lieu d'une panne dite.
           <div className="empty-state">

@@ -287,17 +287,21 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
         </div>
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Mensualités en cours (total)</span>
-          <strong style={{ fontSize: '1.3rem' }}>{formatMoney(Math.round(mensualiteTotale * 100) / 100)}</strong>
+          {/* Comme la trésorerie : avant la lecture des emprunts, « 0,00 € » se disait d'un dossier qui en rembourse peut-être. */}
+          <strong style={{ fontSize: '1.3rem' }}>{loading ? '—' : formatMoney(Math.round(mensualiteTotale * 100) / 100)}</strong>
         </div>
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Capital restant dû (total)</span>
-          <strong style={{ fontSize: '1.3rem' }}>{formatMoney(Math.round(capitalRestantTotal * 100) / 100)}</strong>
+          <strong style={{ fontSize: '1.3rem' }}>{loading ? '—' : formatMoney(Math.round(capitalRestantTotal * 100) / 100)}</strong>
         </div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Situation intermédiaire</h3>
-        <button className="btn btn-outline btn-sm" onClick={() => setSituationOuverte(true)}>Générer</button>
+        {/* Les quatre « Générer » attendent la lecture : avant elle, la situation, le plan et les ratios se calculeraient sur
+            des listes vides — des zéros présentés comme l'état du dossier —, et le prévisionnel s'ouvrirait comme s'il n'en
+            existait aucun, alors que son enregistrement remplace tous les champs de celui qui existe peut-être. */}
+        <button className="btn btn-outline btn-sm" disabled={loading} onClick={() => setSituationOuverte(true)}>Générer</button>
       </div>
       <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
         Recettes, charges et résultat depuis le 1er janvier jusqu'à une date choisie, regroupés par
@@ -307,7 +311,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Plan de trésorerie</h3>
-        <button className="btn btn-outline btn-sm" onClick={() => setTresorerieOuverte(true)}>Générer</button>
+        <button className="btn btn-outline btn-sm" disabled={loading} onClick={() => setTresorerieOuverte(true)}>Générer</button>
       </div>
       <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
         Projection mensuelle du solde bancaire sur les prochains mois, à partir du rythme réel
@@ -317,7 +321,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Dettes & ratios bancaires</h3>
-        <button className="btn btn-outline btn-sm" onClick={() => setDettesOuvertes(true)}>Générer</button>
+        <button className="btn btn-outline btn-sm" disabled={loading} onClick={() => setDettesOuvertes(true)}>Générer</button>
       </div>
       <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
         Échéancier consolidé des dettes (emprunts + cotisations sociales) et deux ratios usuels pour
@@ -328,7 +332,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
         <h3 style={{ margin: 0 }}>Prévisionnel à 3 ans</h3>
         <button
           className="btn btn-outline btn-sm" onClick={() => setPrevisionnelOuvert(true)}
-          disabled={!!previsionnelIllisible}
+          disabled={loading || !!previsionnelIllisible}
         >
           {previsionnel ? 'Modifier' : 'Générer'}
         </button>

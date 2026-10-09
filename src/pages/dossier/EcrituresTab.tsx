@@ -1485,24 +1485,30 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <p className="muted" style={{ margin: 0 }}>
-          {/* Une écriture validée n'est plus « proposée » : la validation l'a figée (lib/validationExercice.ts). */}
-          {nbProposees} écriture{nbProposees > 1 ? 's' : ''} proposée{nbProposees > 1 ? 's' : ''}
-          {nbValidees > 0 && ` — ${nbValidees} validée${nbValidees > 1 ? 's' : ''}`}
-          {/* Sur une lecture partielle, ce compte n'est plus celui des pièces en attente : il y met
-              aussi celles dont on n'a pas pu lire l'écriture. Il se tait plutôt que de l'affirmer. */}
-          {enAttente.length > 0 && brouillonIncomplet === null && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
-          {nbSansContrepartie > 0 && (
-            <> — <span className="badge badge-warning">
-              {modele.mode === 'engagement'
-                ? `${nbSansContrepartie} facture${nbSansContrepartie > 1 ? 's' : ''} sans règlement rapproché`
-                : `${nbSansContrepartie} en attente de rapprochement bancaire`}
-            </span></>
-          )}
-          {piecesDesynchronisees.length > 0 && (
-            <> — <span className="badge badge-danger">{piecesDesynchronisees.length} à régénérer</span></>
-          )}
-          {groupesDesequilibres.length > 0 && (
-            <> — <span className="badge badge-danger">{groupesDesequilibres.length} déséquilibrée{groupesDesequilibres.length > 1 ? 's' : ''}</span></>
+          {/* Avant la lecture du brouillon, ce compte disait « 0 écriture proposée » d'un brouillon peut-être plein. Il suit
+              la règle de la table plus bas : `loading` repasse à vrai à chaque relecture. */}
+          {loading ? 'Chargement…' : (
+            <>
+              {/* Une écriture validée n'est plus « proposée » : la validation l'a figée (lib/validationExercice.ts). */}
+              {nbProposees} écriture{nbProposees > 1 ? 's' : ''} proposée{nbProposees > 1 ? 's' : ''}
+              {nbValidees > 0 && ` — ${nbValidees} validée${nbValidees > 1 ? 's' : ''}`}
+              {/* Sur une lecture partielle, ce compte n'est plus celui des pièces en attente : il y met
+                  aussi celles dont on n'a pas pu lire l'écriture. Il se tait plutôt que de l'affirmer. */}
+              {enAttente.length > 0 && brouillonIncomplet === null && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
+              {nbSansContrepartie > 0 && (
+                <> — <span className="badge badge-warning">
+                  {modele.mode === 'engagement'
+                    ? `${nbSansContrepartie} facture${nbSansContrepartie > 1 ? 's' : ''} sans règlement rapproché`
+                    : `${nbSansContrepartie} en attente de rapprochement bancaire`}
+                </span></>
+              )}
+              {piecesDesynchronisees.length > 0 && (
+                <> — <span className="badge badge-danger">{piecesDesynchronisees.length} à régénérer</span></>
+              )}
+              {groupesDesequilibres.length > 0 && (
+                <> — <span className="badge badge-danger">{groupesDesequilibres.length} déséquilibrée{groupesDesequilibres.length > 1 ? 's' : ''}</span></>
+              )}
+            </>
           )}
         </p>
         <button
@@ -1653,8 +1659,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </button>
         <button
           className="btn btn-outline btn-sm"
+          // `loading` : avant la lecture du brouillon et des pièces, la piste se bâtirait sur des listes vides — un fichier
+          // presque vide, et qui a l'air complet.
           disabled={
-            typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null
+            loading || typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null
             || reportesIncomplets !== null
           }
           title={

@@ -40,6 +40,8 @@ const faux = vi.hoisted(() => ({
   suppressions: [] as { table: string }[],
   misesAJour: [] as { table: string; valeur: Record<string, unknown> }[],
   erreurSuppression: null as { message: string; code: string } | null,
+  // Les lectures attendent que le test les libère (voir `retenir`) : on regarde l'écran PENDANT elles.
+  porte: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -60,31 +62,33 @@ vi.mock('../../lib/supabase', async () => {
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
-      maybeSingle: () => Promise.resolve(faux.refusees.has(table)
+      maybeSingle: () => (faux.porte ?? Promise.resolve()).then(() => (faux.refusees.has(table)
         ? { data: null, error: { message: 'JWT expired' } }
-        : { data: null, error: null }),
+        : { data: null, error: null })),
       then: (suite: (r: unknown) => unknown) => {
         if (operation === 'delete') {
           return Promise.resolve({ data: null, error: faux.erreurSuppression }).then(suite)
         }
         if (operation === 'update') return Promise.resolve({ data: null, error: null }).then(suite)
-        const donnees = filtrer(table === 'pieces' ? faux.pieces
-          : table === 'emprunts' ? faux.emprunts
-          : table === 'categories' ? faux.categories
-          : table === 'immobilisations' ? faux.immobilisations
-          : table === 'ecritures_brouillon' ? faux.ecritures
-          : table === 'a_nouveaux' ? faux.aNouveaux
-          : table === 'lignes_bancaires' ? faux.paiements
-          : table === 'ventilations_bancaires' ? faux.ventilations
-          : table === 'reglements_groupes' ? faux.reglements
-          : table === 'cotisations_declarees' ? faux.cotisations : [], predicats)
-        const muet = faux.muet[table]
-        if (muet != null) {
-          return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
-        }
-        return Promise.resolve({ data: donnees, error: null, count: donnees.length }).then(suite)
+        // Une lecture retenue rend l'état de la base à sa libération, comme un serveur lent.
+        return (faux.porte ?? Promise.resolve()).then(() => lire()).then(suite)
       },
     })
+    const lire = () => {
+      const donnees = filtrer(table === 'pieces' ? faux.pieces
+        : table === 'emprunts' ? faux.emprunts
+        : table === 'categories' ? faux.categories
+        : table === 'immobilisations' ? faux.immobilisations
+        : table === 'ecritures_brouillon' ? faux.ecritures
+        : table === 'a_nouveaux' ? faux.aNouveaux
+        : table === 'lignes_bancaires' ? faux.paiements
+        : table === 'ventilations_bancaires' ? faux.ventilations
+        : table === 'reglements_groupes' ? faux.reglements
+        : table === 'cotisations_declarees' ? faux.cotisations : [], predicats)
+      const muet = faux.muet[table]
+      if (muet != null) return { data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }
+      return { data: donnees, error: null, count: donnees.length }
+    }
     return c
   }
   return { supabase: { from: (table: string) => chaine(table) } }
@@ -121,10 +125,18 @@ function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   }
 }
 
+// Les quatre « Générer » attendent la lecture du dossier — avant elle, ils calculeraient sur des listes vides : on attend
+// qu'ils s'offrent, HORS de l'`act`, puis on clique.
+async function cliquerGenerer(titre: HTMLElement) {
+  const bouton = within(titre.closest('div')!).getByRole('button', { name: 'Générer' }) as HTMLButtonElement
+  await waitFor(() => expect(bouton.disabled).toBe(false))
+  await act(async () => { bouton.click() })
+}
+
 async function ouvrirLaSituation(au: string, assujettiTva = true, modeComptable: 'tresorerie' | 'engagement' = 'tresorerie') {
   render(<FinancementTab dossierId="d" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
   const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
-  await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+  await cliquerGenerer(titre)
   // La date par défaut est « aujourd'hui » : on la fixe, sinon le test dirait autre chose chaque mois.
   await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: au } }) })
   return screen.getByRole('heading', { name: 'Situation intermédiaire', level: 2 }).closest('.card') as HTMLElement
@@ -160,6 +172,7 @@ afterEach(() => {
   faux.suppressions = []
   faux.misesAJour = []
   faux.erreurSuppression = null
+  faux.porte = null
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -235,7 +248,7 @@ describe('FinancementTab — situation intermédiaire', () => {
     // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
     // sienne.
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
 
     // Le libellé est coupé en plusieurs nœuds par le `<strong>` du montant : on lit le texte du
     // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
@@ -262,7 +275,7 @@ describe('FinancementTab — situation intermédiaire', () => {
 
     render(<FinancementTab dossierId="d" assujettiTva modeComptable="engagement" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
 
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
     expect(ligne).toMatch(/14\s?937,76\s€/)
@@ -284,7 +297,7 @@ describe('FinancementTab — situation intermédiaire', () => {
 
     render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
 
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
     // Sans recette encaissée, aucune CAF ne se dégage encore : l'écran dit « — », et c'est le
@@ -312,7 +325,7 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
   async function ouvrir(carte: string) {
     render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
   }
 
@@ -649,7 +662,7 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
     const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
     // Attendre la fin du chargement : la modale reçoit l'ouverture à l'ouverture, pas après.
     await waitFor(() => expect(screen.queryAllByText('—')).toHaveLength(0))
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: date } }) })
     const modale = screen.getByRole('heading', { name: 'Situation intermédiaire', level: 2 }).closest('.card') as HTMLElement
     const carte = within(modale).getByText('Trésorerie à cette date').closest('.card') as HTMLElement
@@ -717,7 +730,7 @@ describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
     faux.immobilisations = []
     render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     // 12 000 € ramenés à douze mois sur 241 jours en 30/360 (8,03 mois) : 17 925,31 € — et non
     // 14 937,76 €, le même calcul sur le hors taxes.
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
@@ -793,7 +806,7 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, montant: 10000 }]
     render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     // 10 000 € ramenés à douze mois : 14 937,76 €, comme la même recette portée par une pièce.
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
     expect(ligne).toMatch(/14\s?937,76\s€/)
@@ -938,7 +951,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
   }
 
@@ -1143,7 +1156,7 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
     faux.ventilations = [part('v1', 'cat-recettes', 10000), part('v2', null, 500)]
     render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     // 10 000 € ramenés à douze mois : 14 937,76 €. Comptée, la part personnelle en ferait 15 684,65.
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
     expect(ligne).toMatch(/14\s?937,76\s€/)
@@ -1219,7 +1232,7 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
     render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
-    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await cliquerGenerer(titre)
     return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
   }
   function cotisationsDues(modale: HTMLElement): string {
@@ -1318,5 +1331,45 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
     await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
     await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
     expect((screen.getByLabelText('Charges de référence (€)') as HTMLInputElement).value).toBe('198')
+  })
+})
+
+// LES TUILES ET LES « GÉNÉRER » ATTENDENT LA LECTURE. Avant elle, « Mensualités en cours » et « Capital restant dû »
+// disaient « 0,00 € » d'un dossier qui rembourse peut-être un prêt — la trésorerie, elle, disait déjà « — » —, et les
+// quatre « Générer » s'ouvraient sur des listes vides : une situation, un plan et des ratios faits de zéros, et un
+// prévisionnel ouvert comme s'il n'en existait aucun, dont l'enregistrement remplace tous les champs de celui qui existe.
+describe('FinancementTab — rien ne se chiffre avant la lecture', () => {
+  const PRET: Emprunt = {
+    id: 'emp-1', dossier_id: 'd', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2026-01-05', duree_mois: 60, created_at: '2026-01-05T10:00:00Z',
+  }
+  const tuile = (libelle: string) => screen.getByText(libelle).parentElement?.querySelector('strong')?.textContent ?? ''
+  const generer = () => screen.getAllByRole('button', { name: 'Générer' }) as HTMLButtonElement[]
+
+  it('dit « — » et grise les quatre « Générer » tant que la lecture n’est pas revenue', async () => {
+    // Le prêt est en cours ce jour-là : sans date figée, le test changerait d'avis à son terme.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.emprunts = [PRET]
+    let liberer = () => {}
+    faux.porte = new Promise<void>((resolve) => { liberer = resolve })
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    expect(tuile('Mensualités en cours (total)')).toBe('—')
+    expect(tuile('Capital restant dû (total)')).toBe('—')
+    expect(generer()).toHaveLength(4)
+    expect(generer().every((b) => b.disabled)).toBe(true)
+
+    faux.porte = null
+    await act(async () => { liberer() })
+    await waitFor(() => expect(tuile('Capital restant dû (total)')).toMatch(/€$/))
+    expect(tuile('Mensualités en cours (total)')).toMatch(/€$/)
+    expect(tuile('Mensualités en cours (total)')).not.toMatch(/^0,00/)
+    expect(generer().every((b) => !b.disabled)).toBe(true)
   })
 })

@@ -131,7 +131,8 @@ src/
   pages/          un composant par écran de premier niveau.
   pages/dossier/  les onglets d'un dossier et leurs modales. Liste et ordre : lib/ongletsDossier.ts
                   (GROUPES_PARCOURS, DossierTab), source UNIQUE de la barre latérale et de la barre d'onglets.
-  test/           fabriques des tests (faux clients, filtres PostgREST, factures fictives, la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
+  test/           fabriques des tests (faux clients, dont `clientRetenu.ts`, le client qui ne rend rien tant qu'on ne
+                  le libère pas, filtres PostgREST, factures fictives, la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
                   supabase/essais/batterieEncaissements.mjs). Un tirage « au hasard » se fait par `tirage`
                   (src/test/encaissementsBatterie.ts), exact sur 32 bits : le congruentiel écrit en virgule
                   flottante boucle sur 10 466 valeurs.
@@ -451,7 +452,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Qui prend `data` prend `error`** : une lecture dont l'échec ressemble à un résultat vide se vérifie comme une
   écriture (`lecturesVerifiees.test.ts`, `edgeFunctionsLectures.test.ts`). Légitime seulement si l'échec tombe du côté
   FERMÉ. **Le vide est une AFFIRMATION** : un état vide ne se dit que d'une liste lue en entier — et revenue : avant sa
-  première lecture, l'écran dit « Chargement… » (`ClientUpload`, `ClientHome`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU ».
+  première lecture, l'écran dit « Chargement… » (ou ses squelettes), et ce qui s'en calcule attend aussi — un compte, un
+  total, un tableau, un export, un formulaire ; une lecture dont la CLÉ change écran ouvert (l'exercice, la période)
+  repart en chargement. `ecransAvantLecture.test.tsx` monte tous les écrans qui lisent la base sous un client qui ne rend
+  rien (`src/test/clientRetenu.ts`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU », « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT
+  D'AVOIR LU ».
 - **Lecture → formulaire → écriture de tous les champs** : une lecture ratée n'offre AUCUN formulaire, sinon le premier
   « Enregistrer » écrase → « ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE ».
 - **PostgREST plafonne les lignes rendues sans le dire** : toute lecture de collection passe par `lireTout` (tranches,
@@ -748,7 +753,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5775 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5838 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

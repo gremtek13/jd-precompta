@@ -16,18 +16,26 @@ const faux = vi.hoisted(() => ({
   // Non nul : l'enregistrement attend qu'on le libère, pour éprouver le verrou.
   suspendu: null as null | { liberer: () => void },
   enregistrementRefuse: false,
+  // La ligne de chaque exercice, quand un test en distingue plusieurs (sinon `ligne`), et une lecture retenue jusqu'à ce
+  // que le test la libère : c'est ainsi qu'on regarde la carte PENDANT la lecture d'un autre exercice.
+  parAnnee: {} as Record<number, unknown>,
+  porte: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table !== 'volet_social_pamc') throw new Error(`table inattendue : ${table}`)
+      let annee: number | null = null
       const lecture = {
         select: () => lecture,
-        eq: () => lecture,
-        maybeSingle: () => Promise.resolve(faux.lectureRefusee
-          ? { data: null, error: { message: 'JWT expired' } }
-          : { data: faux.ligne, error: null }),
+        eq: (colonne: string, valeur: unknown) => { if (colonne === 'annee') annee = Number(valeur); return lecture },
+        maybeSingle: () => {
+          const repondre = () => (faux.lectureRefusee
+            ? { data: null, error: { message: 'JWT expired' } }
+            : { data: annee !== null && annee in faux.parAnnee ? faux.parAnnee[annee] : faux.ligne, error: null })
+          return faux.porte ? faux.porte.then(repondre) : Promise.resolve(repondre())
+        },
       }
       return {
         ...lecture,
@@ -76,6 +84,8 @@ beforeEach(() => {
   faux.enregistrements = []
   faux.suspendu = null
   faux.enregistrementRefuse = false
+  faux.parAnnee = {}
+  faux.porte = null
 })
 
 describe('le volet social d’un praticien conventionné', () => {
@@ -224,5 +234,40 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(screen.getByText(/sont suspendues/)).toBeTruthy()
     expect(screen.queryByText('Total à la charge du praticien')).toBeNull()
     expect(screen.queryByText('proposées : ligne 4 de la 2035-A')).toBeNull()
+  })
+})
+
+// UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête (l'onglet Clôture la
+// garde pour 2025 comme pour 2026) : elle montrait sous « Volet social 2026 » les chiffres de 2025 jusqu'au retour de la
+// lecture, et « Enregistrer » les écrivait sur 2026 — un upsert de tous les champs, par-dessus ce qui y est peut-être.
+describe('le volet social, quand l’exercice change', () => {
+  it('ne montre ni le formulaire ni le message de l’exercice d’avant pendant la lecture du nouveau', async () => {
+    faux.parAnnee = {
+      2025: ligne({ annee: 2025, recettes_brutes: 61_000 }),
+      2026: ligne({ id: 'v2', annee: 2026, recettes_brutes: 73_000 }),
+    }
+    const { rerender } = render(<VoletSocialCard dossierId="d" annee={2025} valeurs={VALEURS} blocage={null} />)
+    expect((await screen.findByLabelText(/Recettes brutes totales/) as HTMLInputElement).value).toBe('61000')
+    saisir(/Profession/, 'auxiliaire_medical')
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(screen.getByText('Enregistré.')).toBeTruthy()
+
+    let liberer = () => {}
+    faux.porte = new Promise<void>((resolve) => { liberer = resolve })
+    rerender(<VoletSocialCard dossierId="d" annee={2026} valeurs={VALEURS} blocage={null} />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    expect(screen.getByText('Volet social 2026 — praticien ou auxiliaire médical conventionné')).toBeTruthy()
+    expect(screen.getByText('Chargement…')).toBeTruthy()
+    expect(screen.queryByLabelText(/Recettes brutes totales/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+    expect(screen.queryAllByText('Enregistré.')).toHaveLength(0)
+
+    faux.porte = null
+    await act(async () => { liberer() })
+    expect((await screen.findByLabelText(/Recettes brutes totales/) as HTMLInputElement).value).toBe('73000')
+    // « Enregistré. » disait l'enregistrement de 2025 : il ne revient pas sous le formulaire de 2026.
+    expect(screen.queryAllByText('Enregistré.')).toHaveLength(0)
+    expect(faux.enregistrements).toHaveLength(1)
   })
 })

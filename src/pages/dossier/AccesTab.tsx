@@ -29,6 +29,11 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // fait. Même famille que la suppression d'un dossier : une lecture dont l'échec ressemble à un
   // résultat vide se vérifie comme une écriture.
   const [erreurLecture, setErreurLecture] = useState<string | null>(null)
+  // Vrai tant que la PREMIÈRE lecture n'est pas revenue : avant elle, la liste est vide faute d'avoir été lue, et l'écran
+  // disait « Aucun accès client pour ce dossier. » au premier rendu, y compris pour un dossier qui en a un. Il ne vaut que
+  // pour la première lecture : `load()` repart après une création ou un retrait, et la liste déjà lue reste sous les yeux
+  // jusqu'à la relecture. Un autre dossier remonte l'onglet (`AnneeProvider key`), donc repart à vrai.
+  const [chargement, setChargement] = useState(true)
 
   // Verrou d'exécution en `useRef`, pas en état React : `setInviting(true)` ne prend effet qu'au
   // rendu suivant, donc `disabled={inviting}` laisse passer deux soumissions rapprochées — sur un
@@ -48,6 +53,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     const { data, error: loadError } = await supabase.from('memberships').select('id, user_id, email').eq('dossier_id', dossierId)
     setErreurLecture(loadError ? messageErreur(loadError, "La liste des accès n'a pas pu être lue.") : null)
     setRows(data ?? [])
+    setChargement(false)
   }
 
   useEffect(() => { load() }, [dossierId])
@@ -164,7 +170,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
 
       <h3>Accès actuels</h3>
       <div className="card table-scroll" style={{ padding: 0 }}>
-        {erreurLecture ? (
+        {chargement ? (
+          // Ni la liste ni « Aucun accès… » : tant que rien n'a été lu, ni l'une ni l'autre ne serait vraie.
+          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : erreurLecture ? (
           <div className="empty-state error-text">
             {erreurLecture} On ne peut donc pas dire qui a accès à ce dossier — surtout ne pas en
             conclure que personne ne l'a. Recharge la page.

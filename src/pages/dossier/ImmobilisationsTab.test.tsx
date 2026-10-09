@@ -964,3 +964,23 @@ describe('ImmobilisationsTab — ce qu’un exercice validé a figé', () => {
     screen.getByText(/la base refusera de les modifier, et le dira\./)
   })
 })
+
+// LE TABLEAU DES NATURES ATTEND SA LECTURE : pendant la première, il s'affichait sans ligne — ce qu'il montre d'un dossier
+// qui n'aurait aucune nature, ni à lui ni au cabinet.
+describe('ImmobilisationsTab — les natures attendent leur lecture', () => {
+  it('dit « Chargement… » à la place du tableau, puis les natures lues', async () => {
+    poser([])
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    monter()
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    expect(screen.queryByRole('table', { name: 'Natures' })).toBeNull()
+    const carteNatures = screen.getByRole('heading', { name: 'Natures et comptes' }).closest('.card') as HTMLElement
+    expect(within(carteNatures).getByText('Chargement…')).toBeTruthy()
+
+    await act(async () => { faux.relacher?.(); faux.retenue = null })
+    const natures = within(await screen.findByRole('table', { name: 'Natures' }))
+    expect(natures.getByText('Matériel informatique')).toBeTruthy()
+    expect(within(carteNatures).queryAllByText('Chargement…')).toHaveLength(0)
+  })
+})
