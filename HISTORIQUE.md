@@ -11150,3 +11150,50 @@ destinataire, d'où le tenir (une colonne de la connexion, ou la liste publique 
 L'instrument vient d'une redistribution : qui a l'archive de la CEE-ONU sous la main (`XMLSchemas-D22B_0.zip`, depuis
 un navigateur) peut en confronter les quatre fichiers aux empreintes de `valider.mjs`, la seule confrontation qui
 reste. (4) Toujours en attente depuis d4 : la date d'une contre-passation.
+
+### 09/10/2026 — « MES PIÈCES » RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU — `ClientUpload` N'AVAIT AUCUN ÉTAT DE CHARGEMENT
+
+(`src/pages/ClientUpload.tsx`, `src/pages/ClientUpload.test.tsx`.) **Le défaut.** L'écran « Mes pièces » du client
+lisait ses six collections dans `load()` sans rien dire de l'attente : au premier rendu, les listes étaient vides FAUTE
+D'AVOIR ÉTÉ LUES, et « ce qu'il reste à envoyer » (`exercicesAReclamer`, `moisManquantsDe`, `pointsUtiles`) se calculait
+sur ce vide — il réclamait « Relevés bancaires 2026 — Mois manquants : janvier, … » et « 0 déposé(s) », « Mes dépôts »
+disait « Aucun dépôt pour l'instant. » —, puis l'écran changeait d'avis. « Le vide est une AFFIRMATION » (CLAUDE.md) :
+`ClientHome` (`chargement`, squelette `aria-busy`) et `ChecklistTab` (`loading`) attendaient déjà leurs lectures, seul
+`ClientUpload` ne le faisait pas.
+
+**La preuve.** Trouvé sur la CI de la demande de fusion #110 : le test « cesse de le réclamer une fois la clôture
+cochée » vérifiait l'absence de 2026 sans attendre les lectures. La seule lecture de `exercices_clotures` retardée de
+30 ms dans le faux client, il échoue à chaque fois (`expected [ …(1) ] to have a length of +0 but got 1`) — et six des
+dix tests avec lui, tous ceux qui lisent l'écran juste après `monter()`, qui n'attendait que le titre « Mes dépôts »,
+là dès le premier rendu.
+
+**Le correctif.** Un état `chargement`, vrai au départ, levé EN DERNIER dans `load()`, après les listes ; tant qu'il
+tient, « Chargement… » (le balisage de `PiecesTab`, `index.css` inchangé) prend la place du bloc « Ce qu'il reste à
+envoyer » et de la table comme de l'état vide de « Mes dépôts ». **La règle : il ne vaut que pour la PREMIÈRE lecture.**
+`load()` repart après chaque dépôt (`handleFiles`) : le remettre à vrai à chaque appel — ce que fait `ClientHome`, qui
+ne relit jamais pour un même dossier — ferait disparaître la liste au moment où le client vérifie son envoi. Changer de
+société remonte l'écran (`<Outlet key>`), donc le drapeau repart à vrai avec lui. Ni les calculs, ni les textes, ni les
+bandeaux de lecture partielle ne changent. Deux conséquences dites : un fichier déposé pendant la toute première lecture
+n'apparaît qu'à sa fin, et un `load()` qui LÈVERAIT laisserait « Chargement… » comme les deux autres écrans (aucune des
+lectures n'en lève : elles rendent leur erreur en objet).
+
+**Les tests.** `monter()` attend la fin de « Chargement… » — c'est lui, et non la vitesse du faux client, qui décidait
+de ce que chaque test lisait — et le test de la clôture attend `Relevés bancaires 2027` avant de vérifier l'absence de
+2026. Avec le correctif seul et les anciens tests, le même retard de 30 ms en fait tomber sept (« Unable to find » :
+l'écran dit « Chargement… » quand ils regardent) : c'étaient les tests, pas l'écran, à rendre sûrs. Le faux client sait
+RETENIR la réponse d'une table (`retenir`). Trois tests nouveaux : toutes les lectures retenues → ni « Relevés bancaires
+2026 » ni « Aucun dépôt pour l'instant. », deux « Chargement… », puis l'état lu ; seule la lecture des clôtures retenue,
+les cinq autres revenues (la CI) → idem ; la relecture d'après un dépôt retenue → la liste déjà lue reste, aucun
+« Chargement… ».
+
+**Éprouvé.** L'ancien composant fait échouer les deux premiers, au message de la CI, les onze autres passent. Six
+mutations du correctif, toutes mordent : le drapeau remis à vrai à chaque `load()` (la règle de `ClientHome` recopiée)
+fait tomber le troisième seul ; levé avant la lecture des clôtures, le deuxième seul ; « Chargement… » ôté d'un des deux
+blocs, les deux premiers ; jamais levé, les treize ; initialement faux (le code d'avant), les deux premiers. Le retard
+de 30 ms, puis de 300 ms (trois fois chacun), laisse la suite verte.
+
+**Écarté, à ne pas réenquêter.** `ClientHome` et `ChecklistTab` n'ont PAS ce défaut — sondés, toutes lectures retenues,
+DOM relevé : un squelette et pas un mot de plus (la salutation de `ClientHome` reste générique, « Bonjour 👋 », jusqu'à
+la lecture du dossier : un repli, pas une affirmation). **Trouvé en passant, non corrigé** : `AccesTab` n'a aucun état
+de chargement — « Aucun accès client pour ce dossier. » s'y lit au premier rendu, avant la fin de `load()`, y compris
+pour un dossier qui en a un.

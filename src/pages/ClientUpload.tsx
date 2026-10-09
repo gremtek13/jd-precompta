@@ -44,6 +44,12 @@ export default function ClientUpload() {
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  // Vrai tant que la PREMIÈRE lecture n'est pas revenue. Avant elle les listes sont vides faute d'avoir été lues, pas
+  // faute d'envois : « ce qu'il reste à envoyer » se calculait sur ce vide, réclamait « Relevés bancaires 2026 — Mois
+  // manquants : janvier, … » et disait « Aucun dépôt pour l'instant. », puis changeait d'avis. Il ne vaut QUE pour la
+  // première lecture : `load()` est rappelé après chaque dépôt, et le remettre à vrai à chaque appel — comme le fait
+  // `ClientHome`, qui ne relit pas après une action — ferait disparaître la liste au moment où le client vient d'envoyer.
+  const [chargement, setChargement] = useState(true)
   // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
   // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
@@ -117,6 +123,8 @@ export default function ClientUpload() {
     setPrecisionsIncompletes(commentairesData.motif)
     setAnneesCloturees(clotures.annees)
     setClotureInconnue(clotures.erreur)
+    // En dernier, après toutes les listes : le rendu qui lève le drapeau les trouve toutes en place.
+    setChargement(false)
   }
 
   useEffect(() => { load() }, [dossierId])
@@ -268,7 +276,9 @@ export default function ClientUpload() {
 
       <h3>Ce qu'il reste à envoyer</h3>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>
-        {items.map((item) => (
+        {chargement ? (
+          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : items.map((item) => (
           <div key={item.id} className="checklist-item">
             <span
               className="pastille"
@@ -350,7 +360,10 @@ export default function ClientUpload() {
           de chaque dépôt aussi, et le nom d'un fichier sans espace, qui n'a rien à couper, allongeait la page de trois cents
           pixels. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
-        {depotsAffiches.length === 0 ? (
+        {chargement ? (
+          // Ni la table ni « Aucun dépôt… » : tant que rien n'a été lu, ni l'une ni l'autre ne serait vraie.
+          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : depotsAffiches.length === 0 ? (
           <div className="empty-state">
             {recherche.trim()
               ? `Aucun dépôt ne correspond à « ${recherche.trim()} ».`
