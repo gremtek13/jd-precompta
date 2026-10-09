@@ -108,11 +108,34 @@ découvre avant.
    `socle/2_objets_sans_migration.sql`, et trouvé par `supabase/essais/inventaire.py`, qui compare nom
    par nom tout le catalogue à ce que l'export reconstruit. **Ce qui reste ouvert : aucune procédure
    ne rejoue cet export, et celle qu'écrivait le §4 échoue** — voir son étape 2.
-6. **Les réglages d'authentification** du tableau de bord Supabase (règles de mot de passe
-   notamment) : aucun fichier de ce dépôt ne les porte. L'application n'envoie en revanche aucun lien
-   par e-mail — les comptes sont créés avec leur mot de passe par `create-cabinet`,
-   `create-team-member` et `create-client-access` —, donc l'URL du site et les adresses de
-   redirection n'y jouent aucun rôle.
+6. **Les réglages d'authentification** du tableau de bord Supabase : aucun fichier de ce dépôt ne
+   les porte. Les comptes sont créés avec leur mot de passe par `create-cabinet`,
+   `create-team-member` et `create-client-access` ; mais depuis le 09/10/2026 l'application envoie
+   un lien par e-mail — « Mot de passe oublié », sur l'écran de connexion —, et ce lien ne marche
+   qu'avec ces réglages :
+   - Authentication → URL Configuration : Site URL `https://compta.jdarnis.fr`, et
+     `https://compta.jdarnis.fr/**` parmi les adresses de redirection (l'application demande le
+     retour sur `https://compta.jdarnis.fr/`) ;
+   - Authentication → Emails → SMTP Settings : `smtp.resend.com`, port 465, utilisateur `resend`,
+     expéditeur `no-reply@precompta.jdarnis.fr` (nom « JD Precompta »), et pour mot de passe une clé
+     d'API de Resend à part, limitée à l'envoi — jamais celle de `send-email`, et elle ne se relit
+     pas : on en recrée une ;
+   - Authentication → Rate Limits : 30 e-mails par heure, la valeur que pose un SMTP personnalisé ;
+   - Sign In / Providers → Email : longueur minimale des mots de passe à 10 (la règle de l'écran et
+     des trois fonctions), durée du lien à 3 600 secondes (le modèle l'annonce) ;
+   - Emails → Templates → « Reset Password », en français :
+
+     ```
+     Objet : Choisir un nouveau mot de passe — JD Precompta
+
+     <h2>Choisir un nouveau mot de passe</h2>
+     <p>Bonjour,</p>
+     <p>Une demande de nouveau mot de passe a été faite pour le compte {{ .Email }} sur JD Precompta.</p>
+     <p><a href="{{ .ConfirmationURL }}">Choisir un nouveau mot de passe</a></p>
+     <p>Ce lien ne sert qu'une fois et expire au bout d'une heure. Si vous n'êtes pas à l'origine de cette demande,
+     ignorez ce message : votre mot de passe actuel reste valable.</p>
+     ```
+
    **L'inscription publique est à FERMER** (Authentication → Sign In / Providers, « Allow new users
    to sign up ») : aucun écran ne s'en sert — les trois fonctions ci-dessus passent par
    `auth.admin.createUser`, que ce réglage n'affecte pas —, et un projet neuf la laisse ouverte, ce
@@ -120,7 +143,10 @@ découvre avant.
    alors dans les données (la RLS exige un rattachement, voir `rls.sql`, invariant 2), et
    `extract-piece` exige elle aussi un compte rattaché ; mais c'est une porte que rien d'autre ne
    ferme. **Sur le projet actuel, elle était encore ouverte le 26/09/2026** (lu sur
-   `/auth/v1/settings`, `disable_signup: false`) : ce point vaut aussi hors reprise.
+   `/auth/v1/settings`, `disable_signup: false`) : ce point vaut aussi hors reprise. Et depuis le
+   SMTP de Resend (09/10/2026), elle laisse aussi n'importe qui faire partir des e-mails de
+   confirmation depuis `no-reply@precompta.jdarnis.fr`, vers n'importe quelle adresse, jusqu'à 30 par
+   heure.
 7. **Les identifiants Super PDP, les connexions bancaires et les connexions aux plateformes agréées des
    dossiers.** Leurs tables (`superpdp_credentials`, `connexions_bancaires`, `connexions_plateformes`)
    n'ont aucune policy : la sauvegarde, lue avec la session du navigateur, en rend zéro ligne — 2
