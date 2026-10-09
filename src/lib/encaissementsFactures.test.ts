@@ -14,7 +14,8 @@ import {
   type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
-import { formatMoney } from './format'
+import { ajouterJours, formatMoney } from './format'
+import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
 import { paiementsDesPieces, type LignePayante, type PartReglee } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
@@ -1468,6 +1469,26 @@ describe('echeanceDeDeclaration — le 10 du mois suivant au réel, le 25 du moi
       '2027-02-10', '2027-03-25', '2027-03-10', '2027-03-25', '2027-04-10', '2027-05-25', '2027-11-10', '2027-11-25',
       '2028-01-10', '2028-01-25', '2028-01-10', '2028-01-25', '2028-03-10', '2028-03-25',
     ])
+  })
+
+  // UNE SEULE SOURCE POUR LE RYTHME DES PAIEMENTS (étape e1) : le statut « Encaissée » et l'e-reporting des paiements se
+  // déclarent au même rythme, et lib/periodesEreporting.ts le dit. Chaque jour de deux années, dans les deux statuts qui
+  // déclarent : la même fréquence, la même période, la même échéance. Les attendus écrits à la main ci-dessus, inchangés
+  // depuis l'étape d2, prouvent que le branchement n'a rien changé à ce que la fonction rend.
+  it('rend, jour après jour, la période et l’échéance des paiements de lib/periodesEreporting.ts', () => {
+    let jours = 0
+    for (let jour = '2027-01-01'; jour <= '2028-12-31'; jour = ajouterJours(jour, 1)) {
+      for (const statut of ['redevable', 'franchise'] as const) {
+        const frequence = frequenceDesPaiements(statut)!.frequence
+        const periode = periodeDe(jour, frequence)!
+        expect(echeanceDeDeclaration(jour, statut), `${statut} ${jour}`).toMatchObject({
+          frequence: frequence === 'bimestre' ? 'bimestrielle' : 'mensuelle',
+          periodeDebut: periode.debut, periodeFin: periode.fin, date: periode.echeance,
+        })
+      }
+      jours++
+    }
+    expect(jours).toBe(731)
   })
 })
 

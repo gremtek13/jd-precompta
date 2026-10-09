@@ -422,8 +422,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base, dans
   `plateforme-agreee` et à l'écran le 09/10/2026 (le premier relevé réel reste à faire) ; l'essai réel sur le bac à sable de Super PDP — et (e)
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
-  dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1 en cours → « L'E-REPORTING : LA
-  CONCEPTION ».
+  dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
+  09/10/2026 (`lib/periodesEreporting.ts`) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE
+  JUSTE ».
 - **Défauts connus des Edge Functions** (27, `DEFAUTS_CONNUS`) : vingt corps mal formés qui font lever neuf fonctions
   ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune) ; deux d'`evaluer-extraction` ;
   trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
@@ -856,6 +857,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   pastille « Cycle de vie · … » montre le dernier statut sous le libellé de la DGFiP — le refus s'il y en a un — et un
   210 ou un 213 fait proposer l'« Avoir interne » ; la transmission refuse avant le clic une facture refusée sur sa
   plateforme → « LE CYCLE DE VIE DES FACTURES ÉMISES », « L'ÉCRAN DU CYCLE DE VIE DES FACTURES ÉMISES ».
+- **L'e-reporting** (`lib/periodesEreporting.ts`, e1) : les ACHATS à un fournisseur établi hors de France se déclarent
+  pour tout assujetti, exonéré et franchisé compris ; les ventes et les paiements selon le statut (« le cas échéant »
+  pour un exonéré) ; à partir des factures du 1er septembre 2027. La fréquence est PROPOSÉE, jamais décidée ;
+  l'échéance est la plus proche que laissent les sources ; aucune transmission à blanc ; `echeanceDeDeclaration` (d2)
+  en tire sa période. Aucun écran ne dit plus d'un exonéré qu'il « n'y est pas tenu », ni d'un non-redevable qu'il
+  « n'a pas de déclaration à déposer » → « L'E-REPORTING : L'OBLIGATION DITE JUSTE ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.

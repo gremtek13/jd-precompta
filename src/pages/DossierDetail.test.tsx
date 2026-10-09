@@ -603,6 +603,24 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
     await afficher('/dossiers/d2/checklist')
     expect(screen.getByRole('button', { name: 'TVA : redevable' }).className).toContain('badge-ok')
   })
+
+  // LE TEXTE FAUX NE REVIENT PAS (ligne 28.5, étape e1) : l'infobulle du badge disait d'un dossier exonéré « Réception
+  // des factures électroniques seulement » — faux pour ses achats à un fournisseur établi hors de France, qu'il déclare
+  // par l'e-reporting à partir du 1er septembre 2027 comme tout assujetti.
+  it('l’infobulle du badge d’un dossier exonéré dit ses achats à l’étranger, et plus « réception seulement »', async () => {
+    await afficher('/dossiers/d1/checklist')
+    const infobulle = screen.getByRole('button', { name: 'TVA : exonéré' }).getAttribute('title') ?? ''
+    expect(infobulle).toContain('Réception des factures électroniques depuis le 1er septembre 2026 ; au 1er septembre 2027, '
+      + 'e-reporting de ses achats à l’étranger, et émission et e-reporting de ses opérations taxables s’il en a : ses '
+      + 'opérations exonérées en sortent. Il se règle dans l’onglet TVA.')
+    expect(infobulle).not.toMatch(/seulement/)
+    cleanup()
+
+    faux.dossiers.d1 = { ...faux.dossiers.d1, statut_tva: null, article_exoneration: null }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByRole('button', { name: 'TVA : à préciser' }).getAttribute('title'))
+      .toContain('e-reporting de ses achats à l’étranger au 1er septembre 2027 ; le reste dépend du statut de TVA, à préciser.')
+  })
 })
 
 // L'ONGLET TVA PRÉPARE LA DÉCLARATION SELON LE RÉGIME DU DOSSIER : une périodicité ou une option

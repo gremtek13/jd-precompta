@@ -1,7 +1,8 @@
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF } from './alignementBanque'
 import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
-import { ajouterMois, anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
+import { dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
+import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
 import type { PaiementsDesPieces } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
@@ -23,7 +24,7 @@ import type {
 //   - ce que la base REFUSERAIT, dans son ordre et sous ses mots (`refusEnregistrement`, `refusRetrait`) ;
 //   - le TTC par taux que la facture a transmis, et ce qu'il en reste à encaisser (`resteAEncaisser`) ;
 //   - la répartition par taux proposée pour un encaissement (`repartitionProposee`) ;
-//   - l'échéance de sa déclaration (`echeanceDeDeclaration`) ;
+//   - l'échéance de sa déclaration (`echeanceDeDeclaration`), que lib/periodesEreporting.ts calcule depuis l'étape e1 ;
 //   - les encaissements que la pièce jumelle et le relevé permettent de proposer (`propositionsEncaissement`) ;
 //   - depuis l'étape d4, ce qui est déclaré (`encaissementsDeclares`), où le statut se déclare
 //     (`plateformeDeLaDeclaration`), ce que la déclaration hors application et la contre-passation refuseraient
@@ -838,9 +839,6 @@ export interface EcheanceDeclaration {
   libelle: string
 }
 
-const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
-const deMois = (mois: number) => (/^[aeiouy]/.test(MOIS[mois - 1]) ? `d’${MOIS[mois - 1]}` : `de ${MOIS[mois - 1]}`)
-
 /**
  * Quand l'encaissement doit être déclaré (CGI, ann. II, art. 242 nonies P, III ; BOI-TVA-DECLA-20-30-60, §170 à §210).
  * Au réel, chaque mois : les données doivent parvenir à l'administration dans les dix jours qui suivent la fin du mois
@@ -850,32 +848,25 @@ const deMois = (mois: number) => (/^[aeiouy]/.test(MOIS[mois - 1]) ? `d’${MOIS
  * au 01/01/2027, avant que l'obligation ne commence pour une PME : le 10 reste la borne prudente pour tout redevable.
  * Null pour un dossier exonéré ou au statut à préciser, et pour une date qui n'en est pas une. Sur le calendrier civil :
  * le fuseau de qui regarde n'y change rien.
+ *
+ * LA FRÉQUENCE, LA PÉRIODE ET L'ÉCHÉANCE VIENNENT DE lib/periodesEreporting.ts (étape e1) : le statut « Encaissée » et
+ * l'e-reporting des paiements se déclarent au même rythme, et une seule source le dit. Le statut « Encaissée » est sans
+ * objet pour un dossier exonéré (`obligationEncaissee`) : ce que le module propose à un exonéré pour ses éventuelles
+ * prestations taxables ne vaut pas ici.
  */
 export function echeanceDeDeclaration(dateEncaissement: string, statutTva: StatutTva | null): EcheanceDeclaration | null {
-  if ((statutTva !== 'redevable' && statutTva !== 'franchise') || !dateCivile(dateEncaissement)) return null
-  const annee = anneeDe(dateEncaissement)
-  const mois = moisDe(dateEncaissement)
-  if (statutTva === 'redevable') {
-    const debut = `${dateEncaissement.slice(0, 7)}-01`
-    const date = `${ajouterMois(debut, 1).slice(0, 7)}-10`
-    return {
-      frequence: 'mensuelle',
-      periodeDebut: debut,
-      periodeFin: dernierJourDuMois(debut),
-      date,
-      libelle: `Paiements ${deMois(mois)} ${annee} : à déclarer au plus tard le ${formatDate(date)}.`,
-    }
-  }
-  const premier = mois % 2 === 1 ? mois : mois - 1
-  const debut = `${annee}-${String(premier).padStart(2, '0')}-01`
-  const date = `${ajouterMois(debut, 2).slice(0, 7)}-25`
+  if (statutTva !== 'redevable' && statutTva !== 'franchise') return null
+  const frequence = frequenceDesPaiements(statutTva)
+  const periode = frequence == null ? null : periodeDe(dateEncaissement, frequence.frequence)
+  if (frequence == null || periode == null) return null
+  const date = periode.echeance
   return {
-    frequence: 'bimestrielle',
-    periodeDebut: debut,
-    periodeFin: dernierJourDuMois(ajouterMois(debut, 1)),
+    frequence: frequence.frequence === 'bimestre' ? 'bimestrielle' : 'mensuelle',
+    periodeDebut: periode.debut,
+    periodeFin: periode.fin,
     date,
-    libelle: `Paiements ${deMois(premier)} et ${MOIS[premier]} ${annee} : à déclarer au plus tard le ${formatDate(date)} `
-      + '(du 25 à la fin du mois selon l’entreprise ; l’application retient le 25).',
+    libelle: `Paiements ${periode.libelleDe} : à déclarer au plus tard le ${formatDate(date)}`
+      + `${periode.prudence ? ` (${periode.prudence})` : ''}.`,
   }
 }
 

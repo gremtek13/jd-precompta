@@ -13,6 +13,7 @@
 // motif d'une ligne à 0 % qu'on transmet à une plateforme, et ce que le dossier doit à la facturation
 // électronique —, sans jamais deviner un statut qu'on ne connaît pas : à préciser, il se dit à préciser.
 
+import { libelleFrequence, obligationsEreporting, type EtatObligation, type ObjetEreporting } from './periodesEreporting'
 import type { ArticleExoneration, PeriodiciteTva, StatutTva } from './types'
 
 export interface StatutTvaPropose {
@@ -198,23 +199,28 @@ export function manqueMentionTva(statut: StatutTva | null, article: ArticleExone
 // ── Ce que le dossier doit à la facturation électronique ──────────────────────────────────────────────────────
 //
 // Tout assujetti — même exonéré, même en franchise — doit pouvoir RECEVOIR ses factures sous forme électronique
-// depuis le 1er septembre 2026. L'émission et l'e-reporting ne visent que les opérations imposables, dans le
-// champ et NON EXONÉRÉES : un dossier exonéré n'y est pas tenu pour ses opérations exonérées, un franchisé si.
-// Pour une PME ou une micro-entreprise, ils commencent au 1er septembre 2027 (le 1er septembre 2026 pour une ETI
-// ou une grande entreprise, que l'application ne distingue pas : ses dossiers sont des cabinets et des
-// praticiens). Les données de paiement — le statut « Encaissée » et l'e-reporting des paiements — ne concernent
-// que les prestations dont la TVA est due à l'encaissement : pas sur option pour les débits.
-// Fréquences (FAQ de la DGFiP, mise à jour d'août 2026) : les transactions par décade au réel normal mensuel,
-// chaque mois au réel normal trimestriel, tous les deux mois en franchise ; les paiements chaque mois, tous les
-// deux mois en franchise.
+// depuis le 1er septembre 2026. L'ÉMISSION et l'e-reporting de ses VENTES ne visent que les opérations imposables,
+// dans le champ et NON EXONÉRÉES : un franchisé y est tenu ; un dossier exonéré ne l'est pas pour ses opérations
+// exonérées, mais l'est pour les autres s'il en a — la redevance que lui verse un collaborateur appelle une facture
+// électronique (FAQ « J'approfondis » d'impots.gouv.fr, §2.10). Et TOUT assujetti établi en France, exonéré compris,
+// déclare par l'e-reporting ses ACHATS à un fournisseur établi hors de France : un abonnement à un logiciel facturé
+// de l'étranger suffit. L'application disait d'un dossier exonéré qu'il « n'y est pas tenu » et ne devait que la
+// réception — faux pour ses achats, et pour ses opérations taxables. Pour une PME ou une micro-entreprise, l'émission
+// et l'e-reporting commencent au 1er septembre 2027 (le 1er septembre 2026 pour une ETI ou une grande entreprise, que
+// l'application ne distingue pas : ses dossiers sont des cabinets et des praticiens). Les données de paiement — le
+// statut « Encaissée » et l'e-reporting des paiements — ne concernent que les prestations dont la TVA est due à
+// l'encaissement : pas sur option pour les débits.
+//
+// Qui est tenu à l'e-reporting et de quoi, depuis quand et à quelle fréquence vit dans lib/periodesEreporting.ts,
+// avec ses sources ; ce module en écrit les phrases, sans rien décider d'autre que l'émission et la réception.
 
 export const DEBUT_RECEPTION = '2026-09-01'
 export const DEBUT_EMISSION_PME = '2027-09-01'
 
-export type EtatObligation = 'due' | 'en_partie' | 'non_due' | 'a_preciser'
+export type { EtatObligation }
 
 export interface ObligationFacturationElectronique {
-  cle: 'reception' | 'emission' | 'transactions' | 'paiements'
+  cle: 'reception' | 'emission' | 'transactions' | 'achats' | 'paiements'
   libelle: string
   etat: EtatObligation
   // La date à partir de laquelle elle est due ; nulle quand elle ne l'est pas, ou qu'on ne le sait pas.
@@ -223,6 +229,18 @@ export interface ObligationFacturationElectronique {
 }
 
 const A_PRECISER = 'Dépend du statut de TVA du dossier, à préciser dans l’onglet TVA.'
+const CALENDRIER = 'À partir du 1er septembre 2027 pour une PME ou une micro-entreprise (1er septembre 2026 pour une ETI ou une grande entreprise).'
+const EMISSION = 'Émettre ses factures électroniques'
+const VENTES = 'Transmettre ses autres ventes (e-reporting)'
+const ACHATS = 'Transmettre ses achats à l’étranger (e-reporting)'
+const PAIEMENTS = 'Transmettre ses encaissements'
+// Les exemples sont des SERVICES : c'est l'achat à l'étranger le plus courant d'un cabinet ou d'un praticien, et celui
+// dont il doit lui-même la TVA (autoliquidation).
+const SES_ACHATS = 'ses achats à un fournisseur établi hors de France — un logiciel en ligne, une formation, de la publicité —'
+// Un franchisé ou un exonéré n'a de numéro de TVA que s'il le demande, et un tel achat le lui fait demander
+// (BOI-TVA-DECLA-20-10-20, §20 et §40) ; un redevable en a toujours un.
+const NUMERO_REQUIS = 'Il lui faut alors un numéro de TVA intracommunautaire.'
+const majuscule = (texte: string) => texte.charAt(0).toUpperCase() + texte.slice(1)
 
 export function obligationsFacturationElectronique(
   statut: StatutTva | null, article: ArticleExoneration | null, periodicite: PeriodiciteTva, surDebits: boolean,
@@ -234,7 +252,15 @@ export function obligationsFacturationElectronique(
     ? `Ses opérations exonérées (${exoneration.reference}) en sortent.`
     : 'Ses opérations exonérées en sortent.'
   const pourSesOperationsTaxables = enPartie ? `Pour ses opérations taxables. ${horsChamp} ` : ''
-  const etatDansLeChamp: EtatObligation = enPartie ? 'en_partie' : 'due'
+  const ereporting = obligationsEreporting(statut, article, periodicite, surDebits)
+  const rythme = (objet: ObjetEreporting, avecLaRaison: boolean) => {
+    const frequence = ereporting[objet].frequence
+    return frequence == null ? '' : libelleFrequence(frequence, avecLaRaison)
+  }
+  // L'état et la date d'une ligne d'e-reporting sont ceux du module : seule la phrase s'écrit ici.
+  const ligne = (
+    cle: ObligationFacturationElectronique['cle'], libelle: string, objet: ObjetEreporting, detail: string,
+  ): ObligationFacturationElectronique => ({ cle, libelle, etat: ereporting[objet].etat, depuis: ereporting[objet].depuis, detail })
 
   const reception: ObligationFacturationElectronique = {
     cle: 'reception',
@@ -247,60 +273,88 @@ export function obligationsFacturationElectronique(
   if (statut == null) {
     return [
       reception,
-      { cle: 'emission', libelle: 'Émettre ses factures électroniques', etat: 'a_preciser', depuis: null, detail: A_PRECISER },
-      { cle: 'transactions', libelle: 'Transmettre ses autres ventes (e-reporting)', etat: 'a_preciser', depuis: null, detail: A_PRECISER },
-      { cle: 'paiements', libelle: 'Transmettre ses encaissements', etat: 'a_preciser', depuis: null, detail: A_PRECISER },
+      { cle: 'emission', libelle: EMISSION, etat: 'a_preciser', depuis: null, detail: A_PRECISER },
+      ligne('transactions', VENTES, 'ventes', A_PRECISER),
+      ligne('achats', ACHATS, 'achats',
+        `${majuscule(SES_ACHATS)}, quel que soit son statut de TVA ; leur fréquence en dépend, à préciser dans l’onglet TVA. ${CALENDRIER}`),
+      ligne('paiements', PAIEMENTS, 'paiements', A_PRECISER),
     ]
   }
 
   if (statut === 'exonere') {
-    const nonDue = `${horsChamp} Il n’y est pas tenu.`
+    // L'exemple de la FAQ ne vaut que pour une profession de santé : la collaboration libérale d'un praticien.
+    const exemple = article === 'cgi_261_4_1' ? ' — la redevance que lui verse un collaborateur, par exemple —' : ''
     return [
       reception,
-      { cle: 'emission', libelle: 'Émettre ses factures électroniques', etat: 'non_due', depuis: null, detail: nonDue },
-      { cle: 'transactions', libelle: 'Transmettre ses autres ventes (e-reporting)', etat: 'non_due', depuis: null, detail: nonDue },
-      { cle: 'paiements', libelle: 'Transmettre ses encaissements', etat: 'non_due', depuis: null, detail: nonDue },
+      {
+        cle: 'emission', libelle: EMISSION, etat: 'le_cas_echeant', depuis: DEBUT_EMISSION_PME,
+        detail: `${horsChamp} S’il a aussi des opérations taxables${exemple}, ses factures à des professionnels établis en France `
+          + `s’émettent sous forme électronique. ${CALENDRIER}`,
+      },
+      ligne('transactions', VENTES, 'ventes', `${horsChamp} S’il a aussi des opérations taxables à des particuliers ou à des `
+        + `clients établis hors de France, elles s’y déclarent, ${rythme('ventes', false)}. ${CALENDRIER}`),
+      ligne('achats', ACHATS, 'achats', `Même exonéré, il y est tenu : ${SES_ACHATS}, ${rythme('achats', true)}. `
+        + `${NUMERO_REQUIS} ${CALENDRIER}`),
+      ligne('paiements', PAIEMENTS, 'paiements', `${horsChamp} S’il a aussi des prestations de services taxables : le statut `
+        + `« Encaissée » de ses factures et l’e-reporting de ses paiements, ${rythme('paiements', false)}. ${CALENDRIER}`),
     ]
   }
 
-  const frequenceTransactions = statut === 'franchise'
-    ? 'tous les deux mois'
-    : periodicite === 'mensuelle' ? 'par décade' : 'chaque mois'
-  const frequencePaiements = statut === 'franchise' ? 'tous les deux mois' : 'chaque mois'
-  const calendrier = 'À partir du 1er septembre 2027 pour une PME ou une micro-entreprise (1er septembre 2026 pour une ETI ou une grande entreprise).'
-
-  const paiements: ObligationFacturationElectronique = statut === 'redevable' && surDebits
-    ? {
-      cle: 'paiements', libelle: 'Transmettre ses encaissements', etat: 'non_due', depuis: null,
-      detail: 'Sur option pour les débits, la TVA de ses prestations est due à la facture : il n’a pas de données de paiement à transmettre.',
-    }
-    : {
-      cle: 'paiements', libelle: 'Transmettre ses encaissements', etat: etatDansLeChamp, depuis: DEBUT_EMISSION_PME,
-      detail: `${pourSesOperationsTaxables}Le statut « Encaissée » de ses factures et l’e-reporting de ses paiements, pour ses prestations de services, ${frequencePaiements}. ${calendrier}`,
-    }
-
+  const numero = statut === 'franchise' ? ` ${NUMERO_REQUIS}` : ''
   return [
     reception,
     {
-      cle: 'emission', libelle: 'Émettre ses factures électroniques', etat: etatDansLeChamp, depuis: DEBUT_EMISSION_PME,
-      detail: `${pourSesOperationsTaxables}Ses factures à des professionnels établis en France. ${calendrier}`,
+      cle: 'emission', libelle: EMISSION, etat: enPartie ? 'en_partie' : 'due', depuis: DEBUT_EMISSION_PME,
+      detail: `${pourSesOperationsTaxables}Ses factures à des professionnels établis en France. ${CALENDRIER}`,
     },
-    {
-      cle: 'transactions', libelle: 'Transmettre ses autres ventes (e-reporting)', etat: etatDansLeChamp, depuis: DEBUT_EMISSION_PME,
-      detail: `${pourSesOperationsTaxables}Ses ventes à des particuliers et ses opérations avec l’étranger, ${frequenceTransactions}. ${calendrier}`,
-    },
-    paiements,
+    ligne('transactions', VENTES, 'ventes', `${pourSesOperationsTaxables}Ses ventes à des particuliers et à des clients établis `
+      + `hors de France, ${rythme('ventes', false)}. ${CALENDRIER}`),
+    ligne('achats', ACHATS, 'achats', `${majuscule(SES_ACHATS)}, ${rythme('achats', false)}.${numero} ${CALENDRIER}`),
+    ligne('paiements', PAIEMENTS, 'paiements', ereporting.paiements.etat === 'non_due'
+      ? 'Sur option pour les débits, la TVA de ses prestations est due à la facture : il n’a pas de données de paiement à transmettre.'
+      : `${pourSesOperationsTaxables}Le statut « Encaissée » de ses factures et l’e-reporting de ses paiements, pour ses `
+        + `prestations de services, ${rythme('paiements', false)}. ${CALENDRIER}`),
   ]
 }
 
 // La même chose en une phrase, pour un en-tête ou une infobulle.
 export function resumeObligations(statut: StatutTva | null, article: ArticleExoneration | null): string {
   if (statut == null) {
-    return 'Réception des factures électroniques depuis le 1er septembre 2026 ; le reste dépend du statut de TVA, à préciser.'
+    return 'Réception des factures électroniques depuis le 1er septembre 2026 ; e-reporting de ses achats à l’étranger au '
+      + '1er septembre 2027 ; le reste dépend du statut de TVA, à préciser.'
   }
   if (statut === 'exonere') {
-    return 'Réception des factures électroniques seulement, depuis le 1er septembre 2026 : ses opérations exonérées sortent de l’émission et de l’e-reporting.'
+    return 'Réception des factures électroniques depuis le 1er septembre 2026 ; au 1er septembre 2027, e-reporting de ses '
+      + 'achats à l’étranger, et émission et e-reporting de ses opérations taxables s’il en a : ses opérations exonérées en sortent.'
   }
-  const enPartie = statut === 'redevable' && exonerationDe(article) != null ? ', pour ses opérations taxables' : ''
+  // L'émission ne vise que ses opérations taxables ; l'e-reporting de ses achats à l'étranger, tous ses achats.
+  const enPartie = statut === 'redevable' && exonerationDe(article) != null
+    ? ', pour ses opérations taxables, et e-reporting de ses achats à l’étranger'
+    : ''
   return `Réception des factures électroniques depuis le 1er septembre 2026 ; émission et e-reporting au 1er septembre 2027${enPartie}.`
+}
+
+// ── Ce que l'onglet TVA dit d'un dossier dont il ne prépare pas la déclaration ─────────────────────────────────────
+//
+// Un dossier en franchise ou exonéré ne facture pas de TVA et n'en déclare pas sur ses ventes. Mais un assujetti,
+// franchisé ou exonéré compris, qui achète un service à un prestataire établi hors de France en est « redevable de la
+// taxe en France en application du 2° de l'article 283 du CGI », et un numéro de TVA lui est attribué pour cela, sur
+// demande à son service des impôts (BOI-TVA-DECLA-20-10-20, §40 ; la TVA passe au CIBS le 01/01/2027, article
+// correspondant non relu). L'onglet disait « il n'a pas de déclaration à déposer », sans réserve. Et la CA3 de
+// l'application ne prépare pas l'autoliquidation (lib/declarationTva.ts, « CE QUE CE CALCUL NE FAIT PAS ») : la phrase
+// le dit.
+
+const AUTOLIQUIDATION = 'Mais la TVA d’un service qu’il achète à un prestataire établi hors de France — un logiciel en '
+  + 'ligne, une formation, de la publicité — est due par lui (autoliquidation, art. 283, 2 du CGI) : il la déclare alors, '
+  + 'avec un numéro de TVA intracommunautaire. L’application ne prépare pas encore cette déclaration.'
+
+export function declarationDuNonRedevable(statut: StatutTva | null): string {
+  switch (statut) {
+    case 'franchise': return `En franchise en base, le dossier ne facture pas de TVA et n’en déclare pas sur ses ventes. ${AUTOLIQUIDATION}`
+    case 'exonere': return `Exonéré, le dossier ne facture pas de TVA et n’en déclare pas sur ses opérations exonérées. ${AUTOLIQUIDATION}`
+    // L'onglet prépare la CA3 d'un redevable : cette phrase ne le concerne que si l'écran le croit non assujetti.
+    case 'redevable': return 'Redevable, le dossier prépare ses déclarations de TVA dans cet onglet.'
+    case null: return 'Tant que son statut de TVA est à préciser, le dossier est traité comme ne récupérant pas la TVA : '
+      + 'redevable, il préparerait ici ses déclarations.'
+  }
 }
