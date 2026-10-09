@@ -307,6 +307,8 @@ export interface CotisationRapprochable {
   echeance: string
   montant_appele: number
   montant_verse: number | null
+  // Payée depuis le compte personnel de l'exploitant (lib/cotisationPersonnelle.ts) : aucun mouvement ne la paie plus.
+  paiement_personnel_le?: string | null
 }
 
 export interface RapprochementPropose {
@@ -366,6 +368,10 @@ export function sensCotisationCoherent(
  * Comparées au montant réellement VERSÉ quand il est connu — un appel n'est pas toujours prélevé
  * pour son montant appelé exact (régularisation, paiement partiel) — sinon au montant appelé, seul
  * chiffre disponible avant paiement. Dans le SENS que l'échéance attend (`sensCotisationCoherent`).
+ *
+ * Jamais une échéance PAYÉE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : elle est payée, aucun
+ * mouvement ne la paie aussi — la base le refuse —, et la proposer ferait aussi passer le mouvement pour justifié
+ * aux yeux des règles d'affectation (`justificatifPossible`).
  */
 export function candidatsCotisations<C extends CotisationRapprochable>(
   ligne: LigneBancaire,
@@ -375,6 +381,7 @@ export function candidatsCotisations<C extends CotisationRapprochable>(
 ): C[] {
   return cotisations.filter((c) =>
     !dejaRapprochees.has(c.id)
+    && !c.paiement_personnel_le
     && sensCotisationCoherent(c, ligne)
     && montantEgal(c.montant_verse ?? c.montant_appele, ligne.montant)
     && Math.abs(jourDe(c.echeance) - jourDe(ligne.date)) <= joursTolerance)

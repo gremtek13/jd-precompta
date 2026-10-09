@@ -2,6 +2,7 @@ import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMou
 import { libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
+import { euroCommeLaBase, remplirModele } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
@@ -53,9 +54,13 @@ export const REFUS_COTISATION_CLASSEE =
 // d'ici : l'échéance déjà rapprochée d'un AUTRE mouvement (l'écran ne propose que celles qu'aucun ne paie)
 // et l'écriture validée. Un mouvement déjà rapproché d'une échéance n'est pas refusé : un nouveau
 // rapprochement remplace le précédent.
+//
+// UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL ne se paie pas aussi par un mouvement (lib/cotisationPersonnelle.ts) :
+// la base le refuse au moment où le mouvement la désignerait — le déclencheur `garder_mouvement_paiement_personnel`,
+// après tous les refus de la fonction —, d'où ce refus en dernier, sous ses mots.
 export function refusRapprochementCotisation(
   ligne: MouvementBancaire,
-  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'paiement_personnel_le'>,
   mode: ModeComptable,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
@@ -79,6 +84,47 @@ export function refusRapprochementCotisation(
   if (!auCentime(csg)) return 'La CSG-CRDS de cette échéance n’est pas au centime.'
   if (centimes(csg) > centimes(Math.abs(ligne.montant))) {
     return `La CSG-CRDS de cette échéance (${formatMoney(csg)}) dépasse le mouvement (${formatMoney(Math.abs(ligne.montant))}).`
+  }
+  if (cotisation.paiement_personnel_le) {
+    return `Cette échéance est payée depuis le compte personnel, le ${formatDate(cotisation.paiement_personnel_le)} : un mouvement ne la paie pas aussi.`
+  }
+  return null
+}
+
+// CE QUI DÉCIDE QU'UN PAIEMENT DEPUIS LE COMPTE PERSONNEL PEUT S'ÉCRIRE, d'après les seuls montants de l'échéance et le
+// modèle du dossier : les refus de `enregistrer_paiement_personnel_cotisation` qui ne tiennent qu'à eux, sous ses mots
+// et dans son ordre. Ils vivent ici, et non dans lib/cotisationPersonnelle.ts qui les reprend à leur rang, parce que
+// `cotisationsComptees` en a besoin : un paiement qui ne PEUT pas s'écrire ne date rien, comme un rapprochement.
+export const REFUS_MONTANTS_PAIEMENT_PERSONNEL = [
+  { cle: 'echeance_nulle', modele: "Une échéance de zéro euro n'a rien à payer." },
+  { cle: 'montant_centime', modele: "Le montant de cette échéance n'est pas au centime." },
+  { cle: 'csg_centime', modele: "La CSG-CRDS de cette échéance n'est pas au centime." },
+  { cle: 'csg_depasse', modele: 'La CSG-CRDS de cette échéance (% €) dépasse son montant (% €).' },
+] as const
+
+export type CleRefusMontantsPaiementPersonnel = (typeof REFUS_MONTANTS_PAIEMENT_PERSONNEL)[number]['cle']
+
+export interface RefusMontantsPaiementPersonnel {
+  cle: CleRefusMontantsPaiementPersonnel
+  message: string
+}
+
+// Le montant de l'échéance (le versement saisi, sinon l'appel) ; en trésorerie, sa CSG-CRDS, qui ne peut pas le
+// dépasser — sa part au 646000 serait négative. Les montants se comparent en CENTIMES ENTIERS, comme la base.
+export function refusMontantsDuPaiementPersonnel(
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds'>,
+  mode: ModeComptable,
+): RefusMontantsPaiementPersonnel | null {
+  const refus = (cle: CleRefusMontantsPaiementPersonnel, ...valeurs: string[]): RefusMontantsPaiementPersonnel => ({
+    cle, message: remplirModele(REFUS_MONTANTS_PAIEMENT_PERSONNEL.find((r) => r.cle === cle)!.modele, valeurs),
+  })
+  const montant = montantDeLEcheance(cotisation)
+  if (montant === 0) return refus('echeance_nulle')
+  if (!auCentime(montant)) return refus('montant_centime')
+  const csg = csgDeLEcriture(cotisation, mode)
+  if (!auCentime(csg)) return refus('csg_centime')
+  if (centimes(csg) > centimes(Math.abs(montant))) {
+    return refus('csg_depasse', euroCommeLaBase(centimes(csg)), euroCommeLaBase(centimes(Math.abs(montant))))
   }
   return null
 }
@@ -116,8 +162,12 @@ export interface CotisationComptee {
   csgCrds: number | null
   // Le mouvement qui la paie, quand le rapprochement le connaît et qu'il s'écrit.
   ligne: MouvementBancaire | null
-  // Pourquoi son rapprochement ne s'écrit pas, quand elle en a un qui ne le peut pas : elle reste alors
-  // comptée à son échéance, et la concordance de la 2035 le dit au lieu de la croire sans prélèvement.
+  // Le jour de son paiement depuis le compte personnel (lib/cotisationPersonnelle.ts), quand c'est lui qui la date —
+  // donc quand il peut s'écrire. Jamais avec `ligne` : une échéance se paie par l'un ou par l'autre.
+  paiementPersonnel: string | null
+  // Pourquoi son rapprochement, ou son paiement depuis le compte personnel, ne s'écrit pas, quand elle en a un qui ne
+  // le peut pas : elle reste alors comptée à son échéance, et la concordance de la 2035 le dit au lieu de la croire
+  // sans paiement.
   refus: string | null
 }
 
@@ -130,11 +180,17 @@ export interface CotisationComptee {
 // prélèvement — la 2035 et le FEC disent enfin la même année. Sa CSG-CRDS reste celle saisie sur
 // l'échéance, dans le sens du paiement.
 //
-// SANS MOUVEMENT, elle compte à son échéance, pour le versement saisi ou à défaut l'appel — la règle
-// d'avant, qui reste une SUPPOSITION : une échéance que personne n'a rapprochée n'est pas une échéance
+// PAYÉE DEPUIS LE COMPTE PERSONNEL DE L'EXPLOITANT (lib/cotisationPersonnelle.ts), elle compte au jour de ce paiement,
+// pour son montant — le versement saisi, sinon l'appel : c'est la date et le montant de son écriture, face au compte du
+// dirigeant. Sa CSG-CRDS est celle saisie, dans le sens du paiement, comme pour un prélèvement.
+//
+// SANS MOUVEMENT NI PAIEMENT PERSONNEL, elle compte à son échéance, pour le versement saisi ou à défaut l'appel — la
+// règle d'avant, qui reste une SUPPOSITION : une échéance que personne n'a rapprochée n'est pas une échéance
 // impayée. Et un rapprochement qui ne PEUT pas s'écrire (un encaissement sur un appel, un mouvement de
 // zéro euro, une CSG-CRDS qui dépasse le mouvement) ne date rien : l'échéance reste comptée à son
-// échéance, et la Checklist dit pourquoi (`rapprochementsCotisationRefuses`).
+// échéance, et la Checklist dit pourquoi (`rapprochementsCotisationRefuses`). Un paiement personnel qui ne peut pas
+// s'écrire non plus (`refusMontantsDuPaiementPersonnel`) — la base l'a vérifié en le posant et fige ensuite les
+// montants de l'échéance, mais une sauvegarde restaurée n'a pas eu ce juge.
 //
 // Le mode comptable est un paramètre OBLIGATOIRE : il décide si la CSG-CRDS passe au 108000, donc si une
 // CSG-CRDS qui dépasse le mouvement empêche l'écriture. Seul le MODE compte ici, pas le compte des notes de
@@ -154,13 +210,26 @@ export function cotisationsComptees(
     if (ligne && !refus) {
       const montant = -ligne.montant
       const csgCrds = cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
-      return { cotisation, date: ligne.date, montant, csgCrds, ligne, refus: null }
+      return { cotisation, date: ligne.date, montant, csgCrds, ligne, paiementPersonnel: null, refus: null }
+    }
+    const paiement = !ligne ? cotisation.paiement_personnel_le ?? null : null
+    const refusPersonnel = paiement ? refusMontantsDuPaiementPersonnel(cotisation, mode) : null
+    if (paiement && !refusPersonnel) {
+      const montant = montantDeLEcheance(cotisation)
+      const csgCrds = cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
+      return { cotisation, date: paiement, montant, csgCrds, ligne: null, paiementPersonnel: paiement, refus: null }
     }
     return {
       cotisation, date: cotisation.echeance, montant: montantDeLEcheance(cotisation),
-      csgCrds: cotisation.montant_csg_crds, ligne: null, refus,
+      csgCrds: cotisation.montant_csg_crds, ligne: null, paiementPersonnel: null, refus: refus ?? refusPersonnel?.message ?? null,
     }
   })
+}
+
+// L'échéance compte-t-elle à son échéance, faute de paiement connu qui la date ? Ni un prélèvement rapproché qui
+// s'écrit, ni un paiement depuis le compte personnel qui s'écrit : c'est la SUPPOSITION que Clôture liste.
+export function compteeASonEcheance(c: Pick<CotisationComptee, 'ligne' | 'paiementPersonnel'>): boolean {
+  return c.ligne === null && c.paiementPersonnel === null
 }
 
 export interface RapprochementCotisation<L extends MouvementBancaire = MouvementBancaire> {

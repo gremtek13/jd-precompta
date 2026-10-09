@@ -2,7 +2,7 @@ import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
-import { referenceDeLaLiquidation } from './fec'
+import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
 import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
@@ -60,12 +60,15 @@ export interface RuptureAudit {
 // pour la même raison : son justificatif est le BARÈME appliqué au kilométrage du cadre 7, et sa clé vers le
 // véhicule est sans action elle aussi — un véhicule ne se retire qu'avec son forfait (`retirer_vehicule`). NI LA
 // LIQUIDATION D'UNE DÉCLARATION DE TVA (lib/liquidationTva.ts) : son justificatif est la CA3, et sa clé est sans
-// action — une déclaration ne se retire qu'avec sa liquidation (`retirer_declaration_tva`).
+// action — une déclaration ne se retire qu'avec sa liquidation (`retirer_declaration_tva`). NI LE PAIEMENT D'UNE
+// ÉCHÉANCE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : son justificatif est le relevé du compte
+// personnel au jour du paiement, et sa clé est en cascade — l'écriture part avec son échéance, et la base ne la laisse
+// retirer qu'avec le paiement : `cotisation_id` ne tombe jamais à nul sous elle.
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
-      && !ecriture.declaration_tva_id) {
+      && !ecriture.declaration_tva_id && !ecriture.cotisation_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
@@ -108,10 +111,11 @@ export interface AbsenceFec {
 // Les écritures des mouvements justifiés par le relevé, elles, y sont — au journal de banque, avec le
 // relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements, les forfaits kilométriques
 // et la liquidation de la TVA, au journal des opérations diverses avec le tableau d'amortissement, le barème ou la
-// CA3 pour pièce.
+// CA3 pour pièce, et le paiement d'une échéance depuis le compte personnel, avec le relevé de ce compte.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
   const horsFec = ecritures.filter((e) =>
-    !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id)
+    !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id
+    && !e.cotisation_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -214,6 +218,7 @@ export function pisteAudit(
     if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.cotisation_id) return ligneDuPaiementPersonnel(e)
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -394,6 +399,31 @@ function ligneDeLiquidation(e: EcritureBrouillon): LignePisteAudit {
     pieceDate: e.date,
     pieceMontantTtc: null,
     pieceFichier: `Déclaration de TVA : ${referenceDeLaLiquidation(e.date)}`,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
+  }
+}
+
+// La ligne du paiement d'une échéance de cotisation depuis le compte personnel de l'exploitant : le relevé de ce compte au
+// jour du paiement pour justificatif — la pièce que le FEC lui donne (`referenceDuPaiementPersonnel`). Rien du relevé
+// professionnel : l'argent n'y est pas passé. Sans empreinte : le relevé personnel n'est pas un fichier déposé, et le
+// dire vide plutôt que de laisser croire à une preuve.
+function ligneDuPaiementPersonnel(e: EcritureBrouillon): LignePisteAudit {
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: e.date,
+    pieceMontantTtc: null,
+    pieceFichier: `Paiement depuis le compte personnel : ${referenceDuPaiementPersonnel(e.date)}`,
     pieceEmpreinte: null,
     mouvementDate: null,
     mouvementLibelle: null,

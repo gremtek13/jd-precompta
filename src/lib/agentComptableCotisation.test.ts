@@ -102,6 +102,7 @@ const PHRASE_DU_CODE: Record<string, string | RegExp> = {
   prelevement_sur_un_remboursement: /^Cette échéance est négative — un remboursement : un prélèvement ne la paie pas\./,
   csg_pas_au_centime: 'La CSG-CRDS de cette échéance n’est pas au centime.',
   csg_au_dela_du_mouvement: /^La CSG-CRDS de cette échéance \(.+\) dépasse le mouvement \(.+\)\.$/,
+  payee_depuis_le_compte_personnel: /^Cette échéance est payée depuis le compte personnel, le \d\d\/\d\d\/\d{4} : un mouvement ne la paie pas aussi\.$/,
 }
 
 // Des mouvements qui portent chacun ce qui décide d'un refus — et plusieurs à la fois, pour l'ORDRE.
@@ -142,6 +143,11 @@ const ECHEANCES: CotisationDeclaree[] = [
   cotisation({ id: 'csg-millieme', montant_csg_crds: 48.505 }),
   cotisation({ id: 'csg-tout', montant_csg_crds: 500 }),
   cotisation({ id: 'csg-au-dela', montant_csg_crds: 25 }),
+  // Payée depuis le compte personnel (ligne 26.6) : refusée en dernier, après les refus du mouvement et des montants —
+  // la base la refuse quand le mouvement la désignerait. Avec une CSG-CRDS au-delà d'un petit mouvement, c'est la CSG-CRDS
+  // qui se dit d'abord.
+  cotisation({ id: 'payee-perso', paiement_personnel_le: '2026-03-10' }),
+  cotisation({ id: 'payee-perso-csg', montant_csg_crds: 25, paiement_personnel_le: '2026-03-10' }),
 ]
 
 describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
@@ -274,7 +280,8 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
 
   it('lit les échéances et ce qui les paie, sous le même refus de lecture partielle', () => {
-    expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\("id, echeance, montant_appele, montant_verse, montant_csg_crds"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    // Et le jour d'un paiement depuis le compte personnel (ligne 26.6), qui fait refuser un rapprochement.
+    expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\("id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Le relevé entier porte ce qui décide d'un refus : le lien, et tout autre classement du mouvement.
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, [^"]*ventilee\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
@@ -291,6 +298,10 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
     expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000[^\n]*mode_comptable === "engagement" \? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement[^"]*"\}\. Ce n'est pas une anomalie\./)
     // Et la description de l'outil les annonce, pour que le modèle sache les demander.
     expect(source).toMatch(/échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire/)
+  })
+
+  it('dit au modèle qu’une échéance payée depuis le compte personnel s’écrit face au compte du dirigeant, sans pièce ni mouvement', () => {
+    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant \(un apport\) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au 646000 face au compte du dirigeant — \$\{dossierRow\.mode_comptable === "engagement" \? dossierRow\.compte_notes_de_frais \+ ", toute l'échéance" : "108000 Compte de l'exploitant, pour l'échéance hors CSG-CRDS[^"]*"\}[^\n]*Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel\. Ce n'est pas une anomalie\./)
   })
 })
 

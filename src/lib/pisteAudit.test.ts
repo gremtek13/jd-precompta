@@ -542,6 +542,34 @@ describe('pisteAudit — la liquidation de la TVA', () => {
   })
 })
 
+// LE PAIEMENT D'UNE ÉCHÉANCE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : son justificatif est le relevé
+// du compte personnel au jour du paiement, la pièce que le FEC lui donne ; rien du relevé professionnel.
+describe('pisteAudit — l’échéance payée depuis le compte personnel', () => {
+  const paiement = (o: Partial<EcritureBrouillon> = {}) => ecriture({
+    id: 'perso-d', piece_id: null, ligne_bancaire_id: null, vehicule_id: null, immobilisation_id: null, declaration_tva_id: null,
+    cotisation_id: 'co1', date: '2026-03-10', compte: '646000', montant: 700, libelle: 'Cotisation, échéance du 05/03/2026', ...o,
+  })
+
+  it('n’est pas une rupture, et est dans le FEC', () => {
+    const lignes = [paiement(), paiement({ id: 'perso-c', compte: '108000', sens: 'credit' })]
+    expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
+    expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
+    // L'en-tête et les deux lignes de l'écriture.
+    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
+    // Le garde symétrique : la même écriture sans son échéance est bien une rupture, et hors du FEC.
+    expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
+    expect(absenceFec([paiement({ cotisation_id: null })], new Set()).nb).toBe(1)
+  })
+
+  it('donne le relevé du compte personnel de ce jour pour justificatif, sans empreinte ni mouvement', () => {
+    const [ligne] = pisteAudit([paiement()], [], [], [], SANS_REGISTRE)
+    expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceDate, ligne.pieceId, ligne.mouvementDate, ligne.manque]).toEqual([
+      'Paiement depuis le compte personnel : Compte personnel du 10/03/2026', null, '2026-03-10', null, null, [],
+    ])
+    expect([ligne.debit, ligne.credit]).toEqual([700, 0])
+  })
+})
+
 describe('genererPisteAuditCsv', () => {
   const uneLigne = () =>
     pisteAudit(

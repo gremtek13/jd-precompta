@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { formaterFec, genererFec, libelleCompte, nomFichierFec, numeroterFec, numerotationValidee, type NumerotationFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
-import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
+import type { ModeleComptable } from './engagement'
+import type { ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { lignesPourPiece, type LigneAGenerer } from './ecritures'
 import { defautsDeNumerotation } from './validationExercice'
@@ -1001,6 +1003,56 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     ]
     const rows = colonnes(genererFec([...dotation, ...liquidation], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
     expect([...new Set(rows.map((r) => `${r[2]} ${r[8]}`))]).toEqual(['OD00001 CA3 au 31/03/2026', "OD00002 Tableau d'amortissement 2026"])
+  })
+})
+
+// UNE ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : une écriture par
+// échéance au journal des OPÉRATIONS DIVERSES, au jour du paiement — une écriture, une date —, le relevé du compte
+// personnel de ce jour pour pièce. L'argent n'est pas passé par la banque professionnelle : rien au journal de banque.
+describe('genererFec — l’échéance payée depuis le compte personnel', () => {
+  const echeance: CotisationDeclaree = {
+    id: 'co1', dossier_id: 'd1', echeance: '2026-03-05', montant_appele: 1000, montant_verse: null, montant_csg_crds: 300,
+    previsionnel: false, created_at: '2026-02-01T00:00:00Z', paiement_personnel_le: '2026-03-10',
+  }
+  const paiement = (c: CotisationDeclaree, modele: ModeleComptable): EcritureBrouillon[] =>
+    ecritureDuPaiementPersonnel(c, modele).map((l, i) => ligne('', {
+      id: `${c.id}-${i}`, piece_id: null, cotisation_id: c.id, date: c.paiement_personnel_le!, ...l,
+    }))
+  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+
+  it('la porte au journal OD, au jour du paiement, le relevé du compte personnel pour pièce', () => {
+    const fec = genererFec(paiement(echeance, TRESO), [], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const rows = colonnes(fec).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
+      ['OD', 'OD00001', '20260310', '646000', "Cotisations sociales personnelles de l'exploitant", '', 'Compte personnel du 10/03/2026', '20260310', '700,00', '0,00'],
+      ['OD', 'OD00001', '20260310', '108000', "Compte de l'exploitant", '', 'Compte personnel du 10/03/2026', '20260310', '0,00', '700,00'],
+    ])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+  })
+
+  it('en engagement, face au compte du dirigeant, sans compte auxiliaire', () => {
+    const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const rows = colonnes(genererFec(paiement(echeance, ENGAGEMENT), [], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+    expect(rows.map((r) => [r[0], r[4], r[6], r[7], r[8], r[11], r[12]])).toEqual([
+      ['OD', '646000', '', '', 'Compte personnel du 10/03/2026', '1000,00', '0,00'],
+      ['OD', '455000', '', '', 'Compte personnel du 10/03/2026', '0,00', '1000,00'],
+    ])
+  })
+
+  it('une écriture par échéance, numérotée avec les autres opérations diverses dans l’ordre des dates', () => {
+    const seconde = { ...echeance, id: 'co2', echeance: '2026-02-05', paiement_personnel_le: '2026-02-12' }
+    const dotation = [
+      ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
+      ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
+    ]
+    const n = numeroterFec([...dotation, ...paiement(echeance, TRESO), ...paiement(seconde, TRESO)], [], [], [], 'tresorerie', [])
+    expect(n.horsFec).toEqual([])
+    expect([...new Set(n.lignes.map((l) => `${l.journal}${l.numero} ${l.pieceRef} ${l.pieceDate}`))]).toEqual([
+      'OD1 Compte personnel du 12/02/2026 2026-02-12',
+      'OD2 Compte personnel du 10/03/2026 2026-03-10',
+      "OD3 Tableau d'amortissement 2026 2026-12-31",
+    ])
   })
 })
 

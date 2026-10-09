@@ -537,6 +537,15 @@ describe('planRapprochementAutomatique', () => {
       expect(candidatsCotisations(encaissement, [cot({ montant_verse: -38.4 })], new Set()).map((c) => c.id)).toEqual(['c1'])
     })
 
+    // Payée depuis le compte personnel (lib/cotisationPersonnelle.ts), une échéance n'attend plus aucun mouvement : la
+    // base refuserait de la rapprocher, et la proposer ferait passer le mouvement pour justifié.
+    it('une échéance payée depuis le compte personnel n’est plus proposée', () => {
+      const payee = cot({ paiement_personnel_le: '2025-06-10' })
+      expect(candidatsCotisations(ligne({ id: 'l1' }), [payee], new Set())).toEqual([])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [payee], vide).retenus).toEqual([])
+      expect(candidatsCotisations(ligne({ id: 'l1' }), [cot({ paiement_personnel_le: null })], new Set()).map((c) => c.id)).toEqual(['c1'])
+    })
+
     it('une échéance de zéro euro n’attend aucun mouvement', () => {
       expect(sensCotisationCoherent({ montant_appele: 0, montant_verse: null }, { montant: -1 })).toBe(false)
       expect(sensCotisationCoherent({ montant_appele: 0, montant_verse: null }, { montant: 1 })).toBe(false)

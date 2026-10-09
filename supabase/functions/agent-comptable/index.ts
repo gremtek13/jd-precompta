@@ -1347,7 +1347,10 @@ function mouvementsVentilesDesynchronises(
 // le mouvement), qui ne datent rien. Une copie restée muette répondrait « rien à signaler » sur un dossier
 // dont le FEC n'a aucune cotisation.
 // Gardé par `agentComptableCotisation.test.ts`, qui extrait ce bloc et le compare à src/lib.
-interface CotisationRow { id: string; echeance: string; montant_appele: number; montant_verse: number | null; montant_csg_crds: number | null }
+interface CotisationRow {
+  id: string; echeance: string; montant_appele: number; montant_verse: number | null; montant_csg_crds: number | null
+  paiement_personnel_le: string | null
+}
 interface MouvementCotisationRow {
   id: string; date: string; montant: number; statut: string; cotisation_id: string | null
   piece_id: string | null; categorie_id: string | null; emprunt_id: string | null
@@ -1372,8 +1375,9 @@ function csgDeLEcriture(c: Pick<CotisationRow, "montant_csg_crds">, mode: ModeCo
 }
 
 // Pourquoi ce rapprochement ne peut pas s'écrire, ou `null` : les refus de src/lib et de
-// `rapprocher_cotisation`, dans le même ordre. L'assistant les COMPTE, comme la Checklist ; la raison est
-// un code et non la phrase de l'écran.
+// `rapprocher_cotisation`, dans le même ordre — le dernier, une échéance payée depuis le compte personnel de
+// l'exploitant, que la base refuse quand le mouvement la désignerait. L'assistant les COMPTE, comme la Checklist ;
+// la raison est un code et non la phrase de l'écran.
 function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation: CotisationRow, mode: ModeComptable): string | null {
   if (ligne.reglement_groupe) return "regle_en_groupe"
   if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"
@@ -1387,6 +1391,7 @@ function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation:
   const csg = csgDeLEcriture(cotisation, mode)
   if (!auCentimeCotisation(csg)) return "csg_pas_au_centime"
   if (centimesCotisation(csg) > centimesCotisation(Math.abs(ligne.montant))) return "csg_au_dela_du_mouvement"
+  if (cotisation.paiement_personnel_le) return "payee_depuis_le_compte_personnel"
   return null
 }
 
@@ -2695,7 +2700,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les ÉCHÉANCES DE COTISATION (bloc COTISATION) : celle qu'un mouvement rapproché paie doit avoir son
       // écriture, sans quoi elle manque au FEC.
       lireTout<CotisationRow>((d, f) =>
-        admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les NATURES (bloc AMORTISSEMENT) : le compte d'immobilisation d'où la dotation tire son compte 28, et sur
       // lequel la facture du bien s'écrit — sans nature, ni l'une ni l'autre ne se compose. Celles du cabinet
       // comprises, comme les catégories.
@@ -3061,7 +3066,8 @@ Règles impératives :
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (445710) et déductible (445660, 445620) de la période, porte la TVA à payer au 445510 TVA à décaisser — un crédit reporté au 445670, un remboursement demandé au 445830 — et l'arrondi à l'euro de la CA3 au 658000 ou au 758000. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le 445510 face au 512000 ; le REMBOURSEMENT d'un crédit par le Trésor crédite le 445830 : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
-- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
+- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
+- Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au 646000 face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : "108000 Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au 108000, s'y compense avec l'apport"}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== "108000" ? "le résultat y attend son affectation, au 120000 pour un bénéfice et au 129000 pour une perte" : "le compte de l'exploitant et le résultat passent au 101000 Capital individuel, et l'exercice repart d'un compte de l'exploitant vide"}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
 - Modèle comptable du dossier : ${repereModele}

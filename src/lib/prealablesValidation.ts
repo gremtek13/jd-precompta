@@ -19,6 +19,7 @@ import { mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffectees
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { cotisationsAEcrire, cotisationsComptees, rapprochementsCotisationRefuses } from './cotisationRapprochee'
+import { paiementsPersonnelsAReprendre } from './cotisationPersonnelle'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
@@ -525,6 +526,16 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     nb: rapprochementsCotisationRefuses(d.lignes, d.cotisations, d.modele.mode, frontiere).filter((c) => mouvementDeLExercice(c.ligne)).length,
     message: "rapprochement(s) d'une échéance de cotisation qui ne peuvent pas s'écrire : les annuler.",
   })
+  // LES PAIEMENTS DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : la base écrit le paiement et son écriture
+  // ensemble et fige les montants de l'échéance tant qu'il tient — ce préalable est DÉFENSIF, et il vaut dans les deux
+  // modèles : en engagement, aucune concordance ne verrait une écriture qui manque. Un paiement compte dans l'exercice
+  // de sa date, celle de son écriture.
+  bloque({
+    id: 'paiements-personnels-a-reprendre', cible: 'cotisations',
+    nb: paiementsPersonnelsAReprendre(d.ecritures, d.cotisations, d.modele, frontiere)
+      .filter((p) => dansLExercice(p.cotisation.paiement_personnel_le)).length,
+    message: "échéance(s) de cotisation payée(s) depuis le compte personnel dont l'écriture manque, ne suit plus l'échéance ou ne peut pas s'écrire : retirer le paiement, puis le déclarer de nouveau.",
+  })
   bloque({
     id: 'rapproches-sans-objet', nb: mouvementsRapprochesSansObjet([...d.lignes]).filter(mouvementDeLExercice).length, cible: 'banque',
     message: "mouvement(s) bancaire(s) rapproché(s) sans justificatif : annuler ou refaire ces rapprochements.",
@@ -658,7 +669,7 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
     ecartee: "une pièce dont aucun paiement n'est rapproché a une écriture sans banque, déséquilibrée, refusée sous « ecritures-desequilibrees » (ou sans écriture, sous « ecritures-a-generer ») ; une note de frais compte à sa date, qui est celle de son paiement",
   },
   'Cotisations comptées à leur échéance': {
-    ecartee: "une échéance qu'aucun prélèvement ne paie n'a pas d'écriture : la concordance la dit en écart, refusée sous « concordance »",
+    ecartee: "une échéance qu'aucun prélèvement ni paiement depuis le compte personnel ne date n'a pas d'écriture : la concordance la dit en écart, refusée sous « concordance »",
   },
   'Postes sans case du formulaire': { prealable: 'postes-sans-case' },
   'Cotisations dont la CSG-CRDS n’est pas saisie': { prealable: 'csg-non-saisie' },

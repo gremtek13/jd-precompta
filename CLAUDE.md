@@ -159,7 +159,7 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes ;
+                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -341,7 +341,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
   une catégorie, règles d'affectation en lot, virement personnel (108), échéance d'emprunt (164, 661, 616), ventilation,
   règlement de plusieurs pièces par un virement (ligne 26), taux de TVA d'une recette sans facture, échéance de
-  cotisation (646, CSG-CRDS au 108) — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de
+  cotisation (646, CSG-CRDS au 108), l'échéance payée depuis le compte personnel (09/10/2026, en base ; l'écran à venir)
+  — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de
   la nature, 445620, 404), forfait kilométrique (625110), note de frais face au 108 en trésorerie ; la 2035 comparée aux
   écritures ; la validation d'un exercice, qui le fige en base.
 - **Comptabilité d'engagement**, étape 1 (ligne 31, 28/09/2026) ; lettrage déduit du rapprochement (05/10) et fait à la
@@ -392,7 +393,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   décalés.
 - **FEC** : restent les vingt-deux champs d'un BNC en trésorerie et les montants en devise (réponse de
   l'expert-comptable du cabinet attendue).
-- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat. Aucun exercice n'est encore validé en base.
+- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'écran de l'échéance payée depuis le compte
+  personnel et la migration de son retrait, à coller par le cabinet ; l'opération découverte après coup, conçue,
+  questions au cabinet (B1 à B13). Aucun exercice n'est encore validé en base.
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT (seul le titulaire
   du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
@@ -450,7 +453,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   gratuitement : longueur minimale et classes de caractères des mots de passe.
 - `anon_/authenticated_security_definer_function_executable` (5 et 14 fonctions au 09/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`, `retirer_encaissement`,
-  `declarer_encaissement_hors_application`, `annuler_encaissement` et `justifier_solde` écrivent, chacune avec son propre contrôle d'accès ; plus
+  `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde` et
+  `enregistrer_paiement_personnel_cotisation` écrivent, chacune avec son propre contrôle d'accès ; plus
   aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une
   NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -649,6 +653,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE »,
   « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI »,
   « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN ».
+- **Une échéance de cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10) : face au compte du
+  dirigeant (en trésorerie, la cotisation hors CSG-CRDS au 646000 face au 108000), datée du paiement que le cabinet
+  saisit, jamais proposé, par `enregistrer_paiement_personnel_cotisation` ; un mouvement OU le compte personnel, jamais
+  les deux (la fonction et deux déclencheurs) → « UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL S'ÉCRIT ». L'opération
+  découverte après la validation de son exercice est conçue, pas modélisée → « L'OPÉRATION DÉCOUVERTE APRÈS COUP ».
 - **Les écritures d'inventaire** suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS S'ÉCRIVENT »,
   « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN TRÉSORERIE » ;
   et la 2035 reste calculée depuis les sources, comparée aux écritures source par source → « LA 2035 SE COMPARE AUX

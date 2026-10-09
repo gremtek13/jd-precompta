@@ -57,6 +57,12 @@
 -- la déclaration de TVA dont un mouvement est le paiement ou le remboursement) : 49 contrôles sur 49 en
 -- production, le texte transmis identique au fichier, ses commentaires et les contrôles 49 et 50 retirés pour la
 -- même raison qu'au 04/10.
+-- REJOUÉ LE 09/10/2026 après `paiement_personnel_des_cotisations`, qui pose un déclencheur sur le rapprochement d'une
+-- échéance (un mouvement ne paie pas une échéance payée depuis le compte personnel) et remplace
+-- `garder_cotisation_valide` : 49 contrôles sur 49 en production, « écritures 3 -> 3, mouvements true, échéances
+-- 43 -> 43, dossiers 4 -> 4 », le texte reçu par la base celui de la copie (38 915 caractères, empreinte 2fa13e5a…),
+-- ses commentaires et les contrôles 49 et 50 retirés pour la même raison qu'au 04/10. Le refus nouveau, et les deux
+-- sens de l'exclusion, s'éprouvent dans cotisationPersonnelle.sql.
 create temp table essai_cotisation (controle text, observe text, ok boolean) on commit drop;
 
 do $$

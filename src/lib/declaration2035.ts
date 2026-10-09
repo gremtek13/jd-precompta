@@ -104,9 +104,14 @@ export type SourceDeclaration =
   | { type: 'mouvement'; id: string; ligne: MouvementBancaire }
   | { type: 'bien'; id: string; immobilisation: Immobilisation }
   | { type: 'vehicule'; id: string; vehicule: VehiculeDossier }
-  // Une échéance de cotisation : son écriture désigne le mouvement qui la paie, quand il y en a un ; `refus`
-  // dit pourquoi un rapprochement qu'elle porte ne s'écrit pas (lib/cotisationRapprochee.ts).
-  | { type: 'cotisation'; id: string; cotisation: CotisationDeclaree; ligne: MouvementBancaire | null; refus: string | null }
+  // Une échéance de cotisation : son écriture désigne le mouvement qui la paie, quand il y en a un, sinon l'échéance
+  // elle-même, payée depuis le compte personnel (`paiementPersonnel`, le jour du paiement — lib/cotisationPersonnelle.ts) ;
+  // `refus` dit pourquoi un rapprochement ou un paiement personnel qu'elle porte ne s'écrit pas
+  // (lib/cotisationRapprochee.ts).
+  | {
+    type: 'cotisation'; id: string; cotisation: CotisationDeclaree; ligne: MouvementBancaire | null; paiementPersonnel: string | null
+    refus: string | null
+  }
   // La part déductible de la CSG-CRDS de l'exercice (case BV) : une seule, calculée sur le total.
   | { type: 'csg' }
   // L'arrondi de la liquidation d'une déclaration de TVA (lib/liquidationTva.ts).
@@ -425,15 +430,20 @@ export function calculerDeclaration2035(
   // Une cotisation sans ventilation laisse sa CSG dans la ligne 25 — on ne sait pas l'en extraire,
   // et inventer un taux sur le montant total serait une valeur plausible et fausse.
   //
-  // Le paiement fait foi quand le rapprochement le connaît — sa date et son montant, ceux du FEC ; à
-  // défaut, le versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`). Chaque échéance
-  // porte ce qui va au 646000, sa CSG-CRDS en moins : c'est le montant de son écriture.
+  // Le paiement fait foi quand le rapprochement le connaît — sa date et son montant, ceux du FEC ; payée
+  // depuis le compte personnel, le versement saisi ou l'appel au jour de ce paiement ; à défaut, le
+  // versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`). Chaque échéance porte ce qui va
+  // au 646000, sa CSG-CRDS en moins : c'est le montant de son écriture, face à la banque ou au compte du
+  // dirigeant.
   for (const c of cotisations) {
     if (anneeDe(c.date) !== annee) continue
     const centimes = enCentimes(c.montant) - enCentimes(c.csgCrds ?? 0)
     if (centimes === 0) continue
     ajouter({
-      source: { type: 'cotisation', id: c.cotisation.id, cotisation: c.cotisation, ligne: c.ligne, refus: c.refus },
+      source: {
+        type: 'cotisation', id: c.cotisation.id, cotisation: c.cotisation, ligne: c.ligne, paiementPersonnel: c.paiementPersonnel,
+        refus: c.refus,
+      },
       poste: POSTE_COTISATIONS,
       nature: 'depense',
       compte: COMPTE_COTISATIONS_EXPLOITANT,
