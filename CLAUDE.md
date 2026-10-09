@@ -382,8 +382,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix à trancher par un premier
   essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base et dans
   `plateforme-agreee` le 09/10/2026 (l'écran à venir) ; l'essai réel sur le bac à sable de Super PDP — et (e)
-  l'e-reporting.
+  l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
+  dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1 en cours → « L'E-REPORTING : LA
+  CONCEPTION ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
+- **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
+  la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
+  étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION ».
 
 ## Feuille de route — page Notion à tenir à jour
 
