@@ -93,6 +93,15 @@
 -- l'empreinte du texte reçu — est celui de la copie adaptée, caractère pour caractère (HISTORIQUE.md,
 -- entrée de l'étape d1). Les deux tables nouvelles sont vides en production : ce que leurs policies
 -- refusent sur une ligne qui EXISTE est éprouvé par `encaissementsFactures.sql`.
+--
+-- 08/10/2026 — PASSAGE COMPLET après `transmissions_des_encaissements`, qui crée
+-- `transmissions_encaissements` et ses deux policies (lecture sous `admin_du_dossier`, insertion de
+-- restauration réservée au super-admin) : 22 lignes de verdict (55 tables du schéma, dont 47 portant un
+-- `dossier_id`, + 3 buckets, 3 profils), 0 en faute, et 14 mutations sur 14 qui mordent (M2 : exactement
+-- 3). Le texte reçu est celui du passage précédent, caractère pour caractère (32 144 caractères,
+-- empreinte 95048df511611d0bd486747149697640) : seul cet en-tête a changé depuis. La table nouvelle est
+-- vide en production : ce que ses policies et son déclencheur refusent sur une ligne qui EXISTE est
+-- éprouvé par `transmissionsEncaissements.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

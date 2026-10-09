@@ -131,8 +131,8 @@ src/
   pages/          un composant par écran de premier niveau.
   pages/dossier/  les onglets d'un dossier et leurs modales. Liste et ordre : lib/ongletsDossier.ts
                   (GROUPES_PARCOURS, DossierTab), source UNIQUE de la barre latérale et de la barre d'onglets.
-  test/           fabriques des tests (faux clients, filtres PostgREST, factures fictives, la batterie des
-                  encaissements jouée sur une réplique). Un tirage « au hasard » se fait par `tirage`
+  test/           fabriques des tests (faux clients, filtres PostgREST, factures fictives, la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
+                  supabase/essais/batterieEncaissements.mjs). Un tirage « au hasard » se fait par `tirage`
                   (src/test/encaissementsBatterie.ts), exact sur 32 bits : le congruentiel écrit en virgule
                   flottante boucle sur 10 466 valeurs.
 supabase/
@@ -145,12 +145,15 @@ supabase/
                   - restauration.sql ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
                     bordures.py (les bordures répétées et comptées, avant de transcrire une fonction) ;
                     socle.py/.sql et inventaire.py/.sql (export ↔ catalogue, après chaque migration) ;
+                    signature.sql (les neuf familles d'objets, réplique ↔ production, avant de croire ce qu'on joue
+                    sur une réplique) ; batterieEncaissements.mjs (la batterie des encaissements jugée par la base
+                    d'une réplique, au jour de la base) ;
                   - un essai par mécanisme, à rejouer après toute migration qui touche ses fonctions, ses tables
                     ou les contraintes de lignes_bancaires et ecritures_brouillon : affectation,
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
-                    abandonTransmission, encaissementsFactures ; validationExercice,
+                    abandonTransmission, encaissementsFactures, transmissionsEncaissements ; validationExercice,
                     liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -369,8 +372,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
-  registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4 la déclaration hors
-  application, dont la base est en production (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
+  registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
+  (leur écran à venir ; la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -400,9 +403,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 10 fonctions au 08/10/2026) : vérifiés bénins par
-  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`
-  et `retirer_encaissement` écrivent, chacune avec son propre contrôle d'accès ; plus
+- `anon_/authenticated_security_definer_function_executable` (5 et 12 fonctions au 08/10/2026) : vérifiés bénins par
+  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`, `retirer_encaissement`,
+  `declarer_encaissement_hors_application` et `annuler_encaissement` écrivent, chacune avec son propre contrôle d'accès ; plus
   aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une
   NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -683,8 +686,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `encaissements_factures_taux`, ligne 28.5 d1) : un REGISTRE, jamais déduit d'un rapprochement, que seule
   `enregistrer_encaissement` écrit — douze refus dans un ordre que d2 et d3 reprennent, plafonds de la facture, de chaque
   taux et du mouvement (seuil min(2 %, 5 €)) sous verrou, montants NETS des retirés et des annulations. Il ne se modifie
-  pas : jamais déclaré, il se retire (`retirer_encaissement`) ; déclaré, il se contre-passe (d4, qui donne son corps à
-  `encaissement_declare`). Le TTC par taux est REFAIT en base comme `montantsDuDocument`, en double précision
+  pas : jamais déclaré, il se retire (`retirer_encaissement`) ; déclaré, il se contre-passe (`annuler_encaissement`, d4). Le TTC par taux est REFAIT en base comme `montantsDuDocument`, en double précision
   (`centimes_ligne_facture`), confronté à une table relevée en base (`encaissementsBase.test.ts`). La restauration
   écrit une annulation APRÈS sa cible, par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), jamais en deux passes. Le module
   `lib/encaissementsFactures.ts` (d2) le dit avant le clic : l'obligation, le plus sûr d'abord ; les refus de la base,
@@ -697,6 +699,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   et n'écrit que par les deux fonctions, sous un verrou relâché après la relecture ; `encaissementsEcritures.test.ts`
   refuse toute écriture directe du registre hors de la restauration (`sauvegardeDonnees.ts`, deux écritures à table
   variable) → « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE », « LE MODULE DES ENCAISSEMENTS », « L'ÉCRAN DES ENCAISSEMENTS ».
+- **La déclaration du statut « Encaissée »** (`transmissions_encaissements`, ligne 28.5 d4) : hors application d'abord
+  (canal `manuel` : le cabinet ou le client saisit le statut sur la plateforme, `declarer_encaissement_hors_application`
+  le garde, déposé, sans flux ni fichier), sur la plateforme QUI A ACCEPTÉ la facture (transmission acceptée, ou Super
+  PDP déposée avec le statut 200) — une facture que l'application n'a pas transmise ne se déclare pas d'ici ; une seule
+  déclaration ACTIVE par encaissement, tous canaux confondus (la plateforme de l'administration ne dédoublonne pas) ; un
+  encaissement déclaré ne se retire plus, il se CONTRE-PASSE (`annuler_encaissement` : montant et parts opposés, motif
+  obligatoire, datée du décaissement, entre l'encaissement et aujourd'hui à Paris — décision à confirmer par le
+  cabinet), et la contre-passation se déclare à son tour sur la même plateforme. La garde ne compte, pour une
+  déclaration d'hier (une restauration), que ce qui était connu avant elle. Les refus, dans l'ordre (huit et douze), le
+  module les dit avant le clic (`refusDeclaration`, `refusContrePassation`) → « LA DÉCLARATION HORS APPLICATION ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -712,7 +724,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5644 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5663 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

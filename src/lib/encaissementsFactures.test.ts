@@ -2,12 +2,15 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF, seuilAlignement } from './alignementBanque'
 import {
-  BORNE_MONTANT_EUROS, DATE_PLANCHER, MOYENS_ENCAISSEMENT, REFUS_ENREGISTREMENT, REFUS_RETRAIT, SEUIL_PLAFOND_CENTIMES,
-  SEUIL_POUR_CENT, centimesExacts, echeanceDeDeclaration, ecartDeFrais, euroCommeLaBase, obligationEncaissee,
-  piecesJumelles, propositionsEncaissement, refusDeLaFacture, refusEnregistrement, refusRetrait, remplirModele,
+  BORNE_MONTANT_EUROS, DATE_PLANCHER, ETATS_DECLARANTS, LONGUEUR_MAX_TEXTE, MOYENS_ENCAISSEMENT, REFUS_CONTRE_PASSATION,
+  REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
+  centimesExacts, contrePassationDe, echeanceDeDeclaration, ecartDeFrais, encaissementsDeclares, euroCommeLaBase,
+  obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
+  refusContrePassation, refusDeclaration, refusDeLaFacture, refusEnregistrement, refusRetrait, remplirModele,
   repartitionProposee, resteAEncaisser, tauxCommeLaBase, ttcParTaux,
-  type ContexteFacture, type EcheanceDeclaration, type EncaissementLu, type FacturePourEncaissement, type FacturePourObligation,
-  type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement,
+  type CleRefusContrePassation, type ContexteFacture, type DeclarationLue, type EcheanceDeclaration, type EncaissementLu,
+  type EncaissementPourContrePassation, type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture,
+  type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { formatMoney } from './format'
@@ -16,7 +19,7 @@ import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
 import type { MoyenEncaissement, StatutTva } from './types'
 import { tirage } from '../test/encaissementsBatterie'
-import { derniereDefinitionSql } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE MODULE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étape d2), confronté à ce qui fait foi : la migration
 // d1 (supabase/schema/20261008180607_encaissements_des_factures.sql) pour l'ordre et les mots des refus, ses
@@ -775,6 +778,340 @@ describe('refusRetrait — les refus de retirer_encaissement', () => {
     expect(ESSAI).toContain("message_recu = 'Cet encaissement est déjà retiré.'")
     expect(ESSAI).toContain("message_recu = 'Encaissement introuvable dans ce dossier.'")
     expect(ESSAI).toContain("message_recu = 'Cet encaissement est annulé par une contre-passation : retirez d''abord celle-ci.'")
+  })
+})
+
+// ── Les déclarations et la contre-passation (étape d4) ──────────────────────────────────────────────────────────────
+
+// L'essai de l'étape d4, joué en production : les messages que la base a rendus pour chaque refus.
+const ESSAI_D4 = readFileSync(new URL('../../supabase/essais/transmissionsEncaissements.sql', import.meta.url), 'utf8')
+
+// La migration de l'étape d4, trouvée par ce qu'elle crée : sa version n'est connue qu'une fois appliquée.
+const MIGRATION_D4 = fichiersDuSchema().find((f) => f.texte.includes('create table public.transmissions_encaissements ('))?.texte ?? ''
+
+// Le tuple d'un contrôle de l'essai d4, de « ('42. » au tuple suivant ou à la fin de sa liste. Un message se cherche
+// DANS le tuple de son contrôle : une recherche qui court au-delà rendrait en silence le message d'un autre contrôle.
+function tupleDeLEssaiD4(numero: string): string {
+  const debut = ESSAI_D4.indexOf(`('${numero}. `)
+  expect(debut, `contrôle ${numero} de l’essai d4`).toBeGreaterThanOrEqual(0)
+  expect(ESSAI_D4.indexOf(`('${numero}. `, debut + 1), `contrôle ${numero} unique dans l’essai d4`).toBe(-1)
+  const fins = [ESSAI_D4.indexOf("\n        ('", debut + 1), ESSAI_D4.indexOf('\n      ) t(', debut)].filter((i) => i > 0)
+  return ESSAI_D4.slice(debut, Math.min(...fins))
+}
+
+// Le message qu'un contrôle refusé de l'essai d4 attend de la base : la dernière chaîne de son tuple. Un motif LIKE finit
+// par « % ».
+function messageDeLEssaiD4(numero: string): string {
+  const m = /'(?:22023|P0002)', '((?:[^']|'')*)'\),?\s*$/.exec(tupleDeLEssaiD4(numero))
+  expect(m, `message du contrôle ${numero} de l’essai d4`).not.toBeNull()
+  return (m as RegExpExecArray)[1].replace(/''/g, "'")
+}
+
+// Un refus de la contre-passation tel que l'essai l'écrit en SQL : guillemets doublés, l'expression à la place du « % ».
+function modeleEnSql(cle: CleRefusContrePassation, expression: string): string {
+  const { modele } = REFUS_CONTRE_PASSATION.find((r) => r.cle === cle) as (typeof REFUS_CONTRE_PASSATION)[number]
+  return `'${modele.replace(/'/g, "''").replace('%', `' || ${expression} || '`)}'`
+}
+
+function attendreLeMessageDeLEssaiD4(numero: string, recu: string | undefined) {
+  const attendu = messageDeLEssaiD4(numero)
+  if (attendu.endsWith('%')) expect(recu?.startsWith(attendu.slice(0, -1)), `${numero} : ${recu}`).toBe(true)
+  else expect(recu, numero).toBe(attendu)
+}
+
+function declaration(o: Partial<DeclarationLue> = {}): DeclarationLue {
+  return { id: 'dcl1', dossier_id: D, encaissement_id: 'e1', facture_id: 'f1', canal: 'manuel', hote: 'pa.exemple.fr', etat: 'depose', ...o }
+}
+
+function transmission(o: Partial<TransmissionPourDeclaration> = {}): TransmissionPourDeclaration {
+  return { facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', etat: 'accepte', ...o }
+}
+
+function aContrePasser(o: Partial<EncaissementPourContrePassation> = {}): EncaissementPourContrePassation {
+  return { ...encaissement(), date_encaissement: '2027-10-15', ...o }
+}
+
+describe('les refus des déclarations, tels que la migration les écrit', () => {
+  it('declarer_encaissement_hors_application : les mêmes messages, dans le même ordre', () => {
+    const sql = derniereDefinitionSql('declarer_encaissement_hors_application')
+    expect(messagesSql(sql)).toHaveLength(8)
+    expect(REFUS_DECLARATION.map((r) => r.modele)).toEqual(messagesSql(sql))
+    expect(new Set(REFUS_DECLARATION.map((r) => r.cle)).size).toBe(REFUS_DECLARATION.length)
+    for (const args of argumentsSql(sql)) expect(args).toEqual([])
+  })
+
+  it('annuler_encaissement : les mêmes messages, dans le même ordre, et leurs valeurs écrites comme le module les écrit', () => {
+    const sql = derniereDefinitionSql('annuler_encaissement')
+    expect(messagesSql(sql)).toHaveLength(12)
+    expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(sql))
+    expect(new Set(REFUS_CONTRE_PASSATION.map((r) => r.cle)).size).toBe(REFUS_CONTRE_PASSATION.length)
+    const attendus: Record<string, string[]> = {
+      date_avant_encaissement: ["to_char(v_encaissement.date_encaissement, 'DD/MM/YYYY')"],
+      date_future: ["to_char(v_aujourd_hui, 'DD/MM/YYYY')"],
+    }
+    const args = argumentsSql(sql)
+    expect(args).toHaveLength(REFUS_CONTRE_PASSATION.length)
+    REFUS_CONTRE_PASSATION.forEach((r, i) => {
+      expect(args[i], r.cle).toEqual(attendus[r.cle] ?? [])
+      expect(r.modele.split('%').length - 1, r.cle).toBe(args[i].length)
+    })
+    expect(sql).toContain("(now() at time zone 'Europe/Paris')::date")
+  })
+
+  it('vire au rouge sur une dérive plantée dans le texte des fonctions', () => {
+    const sql = derniereDefinitionSql('declarer_encaissement_hors_application')
+    const attendu = REFUS_DECLARATION.map((r) => r.modele)
+    const a = "raise exception 'Cet encaissement est retiré : il n''a jamais été déclaré, et ne se déclare plus.'"
+    const b = "raise exception 'Cet encaissement est déjà déclaré : une déclaration ne se fait qu''une fois.'"
+    expect(sql).toContain(a)
+    expect(sql).toContain(b)
+    expect(messagesSql(sql.replace(a, '§').replace(b, a).replace('§', b))).not.toEqual(attendu)
+    expect(messagesSql(sql.replace('déjà déclaré', 'bien déclaré'))).not.toEqual(attendu)
+    const autre = derniereDefinitionSql('annuler_encaissement')
+    expect(messagesSql(autre.replace("'Le motif de la contre-passation est à renseigner.'", "'Le motif est à renseigner.'")))
+      .not.toEqual(REFUS_CONTRE_PASSATION.map((r) => r.modele))
+  })
+
+  it('les états qui déclarent, le statut 200, les statuts qui annulent et les longueurs sont ceux de la migration', () => {
+    expect(MIGRATION_D4).not.toBe('')
+    const etats = (texte: string) => [...texte.matchAll(/'([a-z]+)'/g)].map((m) => m[1])
+    const corps = /t\.etat in \(([^)]*)\)\)\s*$/.exec(derniereDefinitionSql('encaissement_declare'))
+    expect(etats((corps as RegExpExecArray)[1])).toEqual([...ETATS_DECLARANTS])
+    const index = /create unique index transmissions_encaissements_une_active[^;]*where etat in \(([^)]*)\);/.exec(MIGRATION_D4)
+    expect(etats((index as RegExpExecArray)[1])).toEqual([...ETATS_DECLARANTS])
+    const sql = derniereDefinitionSql('declarer_encaissement_hors_application')
+    expect(sql).toContain(`e.status_code = '${STATUT_DEPOSEE_SUPERPDP}'`)
+    const statuts = /e\.status_code in \(([^)]*)\)/.exec(sql)
+    expect([...((statuts as RegExpExecArray)[1]).matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual([...STATUTS_ANNULATION_SUPERPDP])
+    expect(sql).toContain(`if length(v_note) > ${LONGUEUR_MAX_TEXTE} then`)
+    expect(sql).toContain("v_note text := case when btrim(p_note) = '' then null else p_note end;")
+    const annuler = derniereDefinitionSql('annuler_encaissement')
+    expect(annuler).toContain(`if length(p_motif) > ${LONGUEUR_MAX_TEXTE} then`)
+    expect(annuler).toContain("if p_motif is null or btrim(p_motif) = '' then")
+    expect(MIGRATION_D4).toContain(`check (btrim(note) <> '' and length(note) <= ${LONGUEUR_MAX_TEXTE})`)
+  })
+})
+
+describe('encaissementsDeclares et plateformeAcceptee', () => {
+  it('un encaissement est déclaré par une déclaration active : partie sans issue connue, déposée, acceptée', () => {
+    const declares = encaissementsDeclares([
+      declaration({ encaissement_id: 'e1', etat: 'envoi' }), declaration({ encaissement_id: 'e2', etat: 'depose' }),
+      declaration({ encaissement_id: 'e3', etat: 'accepte' }), declaration({ encaissement_id: 'e4', etat: 'echec' }),
+      declaration({ encaissement_id: 'e5', etat: 'rejete' }),
+    ])
+    expect([...declares].sort()).toEqual(['e1', 'e2', 'e3'])
+    expect(encaissementsDeclares([])).toEqual(new Set())
+  })
+
+  it('la plateforme qui a accepté la facture : sa transmission acceptée, ou Super PDP déposée avec le statut 200', () => {
+    const fr200 = { facture_id: 'f1', status_code: 'fr:200' }
+    expect(plateformeAcceptee('f1', [transmission()], [])).toBe('pa.exemple.fr')
+    expect(plateformeAcceptee('f1', [transmission({ canal: 'superpdp', hote: 'api.superpdp.tech' })], [])).toBe('api.superpdp.tech')
+    const spdp = transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'depose' })
+    expect(plateformeAcceptee('f1', [spdp], [fr200])).toBe('api.superpdp.tech')
+    expect(plateformeAcceptee('f1', [spdp], [])).toBeNull()
+    expect(plateformeAcceptee('f1', [spdp], [{ facture_id: 'f1', status_code: 'fr:201' }])).toBeNull()
+    expect(plateformeAcceptee('f1', [spdp], [{ facture_id: 'f2', status_code: 'fr:200' }])).toBeNull()
+    // Le statut 200 ne vaut que chez Super PDP : la plateforme du client dit l'acceptation par son accusé.
+    expect(plateformeAcceptee('f1', [transmission({ etat: 'depose' })], [fr200])).toBeNull()
+    for (const etat of ['envoi', 'echec', 'rejete'] as const) {
+      expect(plateformeAcceptee('f1', [transmission({ etat })], [fr200]), etat).toBeNull()
+      expect(plateformeAcceptee('f1', [{ ...spdp, etat }], [fr200]), `superpdp ${etat}`).toBeNull()
+    }
+    expect(plateformeAcceptee('f1', [transmission({ facture_id: 'f2' })], [])).toBeNull()
+    expect(plateformeAcceptee('f1', [], [])).toBeNull()
+  })
+
+  it('une contre-passation se déclare là où son encaissement l’a été', () => {
+    const annulation = encaissement({ id: 'a1', montant: -100, annule_id: 'e1' })
+    expect(plateformeDeLaDeclaration(annulation, [declaration({ hote: 'autre.exemple.fr' })], [transmission()], [])).toBe('autre.exemple.fr')
+    expect(plateformeDeLaDeclaration(annulation, [declaration({ etat: 'rejete' })], [transmission()], [])).toBeNull()
+    expect(plateformeDeLaDeclaration(encaissement(), [], [transmission()], [])).toBe('pa.exemple.fr')
+    expect(plateformeDeLaDeclaration(encaissement(), [], [], [])).toBeNull()
+  })
+})
+
+describe('refusDeclaration — les refus de declarer_encaissement_hors_application', () => {
+  const e1 = encaissement()
+  const ACCEPTEE = [transmission()]
+  const refusD = (o: {
+    encaissements?: EncaissementLu[]; declarations?: DeclarationLue[]; transmissions?: TransmissionPourDeclaration[];
+    evenements?: { facture_id: string; status_code: string }[]; note?: string | null; id?: string; dossier?: string
+  } = {}) => refusDeclaration(o.dossier ?? D, o.id ?? 'e1', o.encaissements ?? [e1], o.declarations ?? [], o.transmissions ?? ACCEPTEE,
+    o.evenements ?? [], o.note === undefined ? null : o.note)
+
+  it('accepte un encaissement vivant, jamais déclaré, d’une facture acceptée', () => {
+    expect(refusD()).toBeNull()
+    expect(refusD({ note: 'Saisi par le client le 07/10.' })).toBeNull()
+    // Une déclaration échouée ou rejetée ne le retient pas.
+    expect(refusD({ declarations: [declaration({ etat: 'rejete' }), declaration({ id: 'x', canal: 'plateforme', etat: 'echec' })] })).toBeNull()
+    // Le rejet ou le refus d'une AUTRE facture ne la retient pas.
+    expect(refusD({ transmissions: [transmission(), transmission({ facture_id: 'f2', etat: 'rejete' })] })).toBeNull()
+    expect(refusD({ evenements: [{ facture_id: 'f2', status_code: 'fr:210' }, { facture_id: 'f2', status_code: 'fr:213' }] })).toBeNull()
+    // Une contre-passation, quand l'encaissement qu'elle annule est déclaré — la facture refusée depuis n'y change rien.
+    const annulation = encaissement({ id: 'a1', montant: -100, annule_id: 'e1' })
+    expect(refusD({ id: 'a1', encaissements: [e1, annulation], declarations: [declaration()], transmissions: [],
+      evenements: [{ facture_id: 'f1', status_code: 'fr:210' }] })).toBeNull()
+  })
+
+  it('refuse, dans l’ordre de la base, avec les messages qu’elle a rendus en production', () => {
+    attendreLeMessageDeLEssaiD4('6', refusD({ dossier: 'd2' })?.message)
+    attendreLeMessageDeLEssaiD4('7', refusD({ id: 'inconnu' })?.message)
+    attendreLeMessageDeLEssaiD4('8', refusD({ encaissements: [{ ...e1, retire_le: '2027-10-20T10:00:00Z' }] })?.message)
+    attendreLeMessageDeLEssaiD4('9', refusD({ declarations: [declaration()] })?.message)
+    attendreLeMessageDeLEssaiD4('10', refusD({ declarations: [declaration({ canal: 'plateforme', etat: 'envoi' })] })?.message)
+    const annulation = encaissement({ id: 'a1', montant: -100, annule_id: 'e1' })
+    attendreLeMessageDeLEssaiD4('11', refusD({ id: 'a1', encaissements: [e1, annulation] })?.message)
+    attendreLeMessageDeLEssaiD4('12', refusD({ id: 'a1', encaissements: [e1, annulation], declarations: [declaration({ etat: 'rejete' })] })?.message)
+    attendreLeMessageDeLEssaiD4('13', refusD({ transmissions: [transmission({ etat: 'rejete' })] })?.message)
+    attendreLeMessageDeLEssaiD4('14', refusD({ evenements: [{ facture_id: 'f1', status_code: 'fr:210' }] })?.message)
+    attendreLeMessageDeLEssaiD4('15', refusD({ evenements: [{ facture_id: 'f1', status_code: 'fr:213' }] })?.message)
+    attendreLeMessageDeLEssaiD4('16', refusD({ transmissions: [] })?.message)
+    attendreLeMessageDeLEssaiD4('17', refusD({ transmissions: [transmission({ etat: 'echec' })] })?.message)
+    attendreLeMessageDeLEssaiD4('18', refusD({ transmissions: [transmission({ etat: 'envoi' })] })?.message)
+    attendreLeMessageDeLEssaiD4('19', refusD({ transmissions: [transmission({ etat: 'depose' })] })?.message)
+    attendreLeMessageDeLEssaiD4('20', refusD({ transmissions: [transmission({ canal: 'superpdp', hote: 'api.superpdp.tech', etat: 'depose' })],
+      evenements: [{ facture_id: 'f1', status_code: 'fr:201' }] })?.message)
+    attendreLeMessageDeLEssaiD4('22', refusD({ note: 'n'.repeat(2001) })?.message)
+    attendreLeMessageDeLEssaiD4('23', refusD({ note: ` ${'n'.repeat(1999)} ` })?.message)
+    attendreLeMessageDeLEssaiD4('24b', refusD({ declarations: [declaration()], evenements: [{ facture_id: 'f1', status_code: 'fr:210' }] })?.message)
+    attendreLeMessageDeLEssaiD4('24c', refusD({ id: 'a1', encaissements: [e1, annulation], note: 'n'.repeat(2001) })?.message)
+    attendreLeMessageDeLEssaiD4('24d', refusD({ transmissions: [], note: 'n'.repeat(2001) })?.message)
+  })
+
+  it('suit l’ordre de la base : chaque refus corrigé laisse paraître le suivant', () => {
+    const annulation = encaissement({ id: 'a1', montant: -100, annule_id: 'e1', retire_le: '2027-10-20T10:00:00Z' })
+    let o = {
+      id: 'a1', dossier: 'd2', encaissements: [e1, annulation], declarations: [declaration({ encaissement_id: 'a1' })],
+      transmissions: [transmission({ etat: 'rejete' })], note: 'n'.repeat(2001) as string | null,
+    }
+    const etapes: [string, () => void][] = [
+      ['encaissement_introuvable', () => { o = { ...o, dossier: D } }],
+      ['retire', () => { o = { ...o, encaissements: [e1, { ...annulation, retire_le: null }] } }],
+      ['deja_declare', () => { o = { ...o, declarations: [] } }],
+      ['contre_passation_non_declaree', () => { o = { ...o, id: 'e1' } }],
+      ['facture_rejetee', () => { o = { ...o, transmissions: [transmission({ etat: 'depose' })] } }],
+      ['sans_transmission_acceptee', () => { o = { ...o, transmissions: ACCEPTEE } }],
+      ['note_trop_longue', () => { o = { ...o, note: null } }],
+    ]
+    const vus: string[] = []
+    for (const [cle, corriger] of etapes) {
+      vus.push(refusD(o)?.cle ?? 'aucun')
+      expect(vus[vus.length - 1], `avant de corriger ${cle}`).toBe(cle)
+      corriger()
+    }
+    expect(refusD(o)).toBeNull()
+    expect(vus).toEqual(REFUS_DECLARATION.map((r) => r.cle).filter((cle) => cle !== 'acces'))
+  })
+
+  it('mesure la note comme la base : des espaces seuls ne sont pas une note, un caractère est un caractère', () => {
+    expect(refusD({ note: ' '.repeat(5000) })).toBeNull()
+    expect(refusD({ note: '' })).toBeNull()
+    // Une tabulation, un saut de ligne ne sont pas des espaces pour btrim : 2 001 sauts de ligne sont trop longs.
+    expect(refusD({ note: '\n'.repeat(2001) })?.cle).toBe('note_trop_longue')
+    // Un emoji est un caractère pour length, deux unités pour String.length.
+    expect(refusD({ note: '💶'.repeat(2000) })).toBeNull()
+    expect(refusD({ note: '💶'.repeat(2001) })?.cle).toBe('note_trop_longue')
+    expect(refusD({ note: 'n'.repeat(2000) })).toBeNull()
+  })
+})
+
+describe('refusContrePassation — les refus d’annuler_encaissement', () => {
+  const e1 = aContrePasser()
+  const DECLARE = [declaration()]
+  const refusC = (o: {
+    encaissements?: EncaissementPourContrePassation[]; declarations?: DeclarationLue[]; date?: string | null;
+    motif?: string | null; id?: string; dossier?: string
+  } = {}) => refusContrePassation(o.dossier ?? D, o.id ?? 'e1', o.encaissements ?? [e1], o.declarations ?? DECLARE,
+    o.date === undefined ? '2027-11-02' : o.date, o.motif === undefined ? 'Chèque revenu impayé' : o.motif, AUJOURD_HUI)
+
+  it('accepte la contre-passation d’un encaissement déclaré, datée de lui à aujourd’hui', () => {
+    expect(refusC()).toBeNull()
+    expect(refusC({ date: '2027-10-15' })).toBeNull()
+    expect(refusC({ declarations: [declaration({ etat: 'accepte' })] })).toBeNull()
+    // Une contre-passation retirée, jamais déclarée, ne le retient plus.
+    expect(refusC({ encaissements: [e1, aContrePasser({ id: 'a1', montant: -100, annule_id: 'e1', retire_le: '2027-10-21T10:00:00Z' })] })).toBeNull()
+    expect(refusC({ motif: 'm'.repeat(2000) })).toBeNull()
+  })
+
+  it('refuse, dans l’ordre de la base, avec les messages qu’elle a rendus en production', () => {
+    attendreLeMessageDeLEssaiD4('32', refusC({ dossier: 'd2' })?.message)
+    attendreLeMessageDeLEssaiD4('33', refusC({ id: 'inconnu' })?.message)
+    const annulation = aContrePasser({ id: 'a1', montant: -100, annule_id: 'e1' })
+    attendreLeMessageDeLEssaiD4('34', refusC({ id: 'a1', encaissements: [e1, annulation] })?.message)
+    attendreLeMessageDeLEssaiD4('35', refusC({ encaissements: [{ ...e1, retire_le: '2027-10-20T10:00:00Z' }], declarations: [] })?.message)
+    attendreLeMessageDeLEssaiD4('36', refusC({ declarations: [] })?.message)
+    attendreLeMessageDeLEssaiD4('37', refusC({ declarations: [declaration({ canal: 'plateforme', etat: 'echec' })] })?.message)
+    attendreLeMessageDeLEssaiD4('38', refusC({ declarations: [declaration({ etat: 'rejete' })] })?.message)
+    attendreLeMessageDeLEssaiD4('39', refusC({ declarations: [declaration({ canal: 'plateforme', etat: 'envoi' })] })?.message)
+    attendreLeMessageDeLEssaiD4('40', refusC({ encaissements: [e1, annulation] })?.message)
+    attendreLeMessageDeLEssaiD4('41', refusC({ date: null })?.message)
+    // Les messages qui portent une date : l'essai les construit avec la sienne, le module avec celle qu'il reçoit — sur
+    // le même modèle.
+    expect(refusC({ date: '2027-10-14' })?.message).toBe("Une contre-passation ne se date pas avant l'encaissement qu'elle annule, du 15/10/2027.")
+    expect(tupleDeLEssaiD4('42')).toContain(`'22023', ${modeleEnSql('date_avant_encaissement', "to_char(jour, 'DD/MM/YYYY')")})`)
+    expect(refusC({ date: '2027-11-03' })?.message).toBe("Une contre-passation ne se date pas dans l'avenir : nous sommes le 02/11/2027.")
+    expect(tupleDeLEssaiD4('43')).toContain(`'22023', ${modeleEnSql('date_future', "to_char(aujourd_hui, 'DD/MM/YYYY')")})`)
+    attendreLeMessageDeLEssaiD4('44', refusC({ motif: null })?.message)
+    attendreLeMessageDeLEssaiD4('45', refusC({ motif: '   ' })?.message)
+    attendreLeMessageDeLEssaiD4('46', refusC({ motif: 'm'.repeat(2001) })?.message)
+    attendreLeMessageDeLEssaiD4('47', refusC({ date: null, motif: null })?.message)
+    attendreLeMessageDeLEssaiD4('48', refusC({ declarations: [], date: null, motif: null })?.message)
+    attendreLeMessageDeLEssaiD4('48b', refusC({ encaissements: [e1, annulation], declarations: [declaration({ canal: 'plateforme', etat: 'envoi' })] })?.message)
+    attendreLeMessageDeLEssaiD4('48c', refusC({ encaissements: [e1, annulation], date: null, motif: null })?.message)
+  })
+
+  it('suit l’ordre de la base : chaque refus corrigé laisse paraître le suivant', () => {
+    const annulation = aContrePasser({ id: 'a1', montant: -100, annule_id: 'e1' })
+    // Au départ la contre-passation est RETIRÉE elle aussi : la base dit qu'elle ne se contre-passe pas avant de dire
+    // qu'elle est retirée.
+    let o = {
+      id: 'a1', dossier: 'd2',
+      encaissements: [{ ...e1, retire_le: '2027-10-20T10:00:00Z' }, { ...annulation, retire_le: '2027-10-21T10:00:00Z' }] as EncaissementPourContrePassation[],
+      declarations: [declaration({ canal: 'plateforme', etat: 'envoi' })], date: 'pas une date' as string | null,
+      motif: 'm'.repeat(2001) as string | null,
+    }
+    const etapes: [string, () => void][] = [
+      ['encaissement_introuvable', () => { o = { ...o, dossier: D } }],
+      ['contre_passation', () => { o = { ...o, id: 'e1', declarations: [] } }],
+      ['retire', () => { o = { ...o, encaissements: [e1, annulation] } }],
+      ['non_declare', () => { o = { ...o, declarations: [declaration({ canal: 'plateforme', etat: 'envoi' })] } }],
+      ['issue_inconnue', () => { o = { ...o, declarations: DECLARE } }],
+      ['deja_contre_passe', () => { o = { ...o, encaissements: [e1, { ...annulation, retire_le: '2027-10-21T10:00:00Z' }] } }],
+      ['date_absente', () => { o = { ...o, date: '2027-10-14' } }],
+      ['date_avant_encaissement', () => { o = { ...o, date: '2027-11-03' } }],
+      ['date_future', () => { o = { ...o, date: '2027-11-02', motif: '' } }],
+      ['motif_absent', () => { o = { ...o, motif: 'm'.repeat(2001) } }],
+      ['motif_trop_long', () => { o = { ...o, motif: 'Chèque revenu impayé' } }],
+    ]
+    const vus: string[] = []
+    for (const [cle, corriger] of etapes) {
+      vus.push(refusC(o)?.cle ?? 'aucun')
+      expect(vus[vus.length - 1], `avant de corriger ${cle}`).toBe(cle)
+      corriger()
+    }
+    expect(refusC(o)).toBeNull()
+    expect(vus).toEqual(REFUS_CONTRE_PASSATION.map((r) => r.cle).filter((cle) => cle !== 'acces'))
+  })
+
+  it('mesure le motif comme la base, et tient une date qui n’en est pas une pour absente', () => {
+    expect(refusC({ motif: '\n' })).toBeNull()
+    expect(refusC({ motif: '💶'.repeat(2000) })).toBeNull()
+    expect(refusC({ motif: '💶'.repeat(2001) })?.cle).toBe('motif_trop_long')
+    for (const date of ['', '2027-02-30', '15/10/2027', '2027-13-01']) expect(refusC({ date })?.cle, date).toBe('date_absente')
+  })
+})
+
+describe('contrePassationDe — ce que la contre-passation écrira', () => {
+  it('le montant et chaque part, opposés, en centimes, du taux le plus fort au plus faible', () => {
+    const parts = [part({ taux: 0, montant: 18.44 }), part({ taux: 20, montant: 442.64 }), part({ taux: 5.5, montant: 38.92 }),
+      part({ encaissement_id: 'e2', taux: 20, montant: 7 })]
+    expect(contrePassationDe(encaissement({ montant: 500 }), parts)).toEqual({
+      montantCentimes: -50000,
+      parts: [{ taux: 20, centimes: -44264 }, { taux: 5.5, centimes: -3892 }, { taux: 0, centimes: -1844 }],
+    })
+    // Un montant que la virgule flottante écrit juste en dessous du centime se compte au centime.
+    expect(contrePassationDe(encaissement({ montant: 4.35 }), [part({ montant: 4.35 })]).montantCentimes).toBe(-435)
   })
 })
 

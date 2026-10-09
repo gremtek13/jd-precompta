@@ -1,9 +1,10 @@
 import {
-  repartitionProposee, resteAEncaisser,
-  type ContexteFacture, type EncaissementLu, type FacturePourEncaissement, type LigneDeFacture, type MouvementLu, type PartLue,
-  type PartSaisie, type SaisieEncaissement,
+  refusEnregistrement, repartitionProposee, resteAEncaisser,
+  type CleRefusEnregistrement, type ContexteFacture, type EncaissementLu, type FacturePourEncaissement, type LigneDeFacture,
+  type MouvementLu, type PartLue, type PartSaisie, type SaisieEncaissement,
 } from '../lib/encaissementsFactures'
 import { TAUX_ADMIS } from '../lib/factureCii'
+import { ajouterJours, anneeDe } from '../lib/format'
 import { calculerTotaux } from '../lib/montantsFacture'
 import type { EtatTransmission } from '../lib/types'
 
@@ -13,15 +14,19 @@ import type { EtatTransmission } from '../lib/types'
 // jugées une à une sur une réplique locale du schéma de production (les neuf familles d'objets à l'empreinte de la
 // production, le 08/10/2026), et le test confronte les deux par l'empreinte de leurs réponses. Les noms (`F1`,
 // `M1355`…) deviennent des identifiants en base ; ici ils servent d'identifiants. Le script qui l'a jouée construit ce
-// monde dans une transaction, appelle la fonction en chef du cabinet pour chaque saisie, annule tout (HISTORIQUE.md,
-// « LE MODULE DES ENCAISSEMENTS »).
+// monde dans une transaction, appelle la fonction en chef du cabinet pour chaque saisie, annule tout : il vit dans le
+// dépôt depuis l'étape d4 (supabase/essais/batterieEncaissements.mjs), et la batterie se rejoue n'importe quel jour.
 //
 // Ce que la batterie ne joue pas, et que les tests unitaires jouent : une date qui n'en est pas une (PostgREST ne la
 // lirait pas comme une date, la fonction ne la reçoit jamais), un nombre qui n'en est pas un (JSON l'écrit `null`).
 
-/** Le jour où la base a jugé la batterie : elle lit sa date à Paris, le module la reçoit. */
+/** Le jour où la base a jugé la batterie dont encaissementsBatterie.test.ts fige l'empreinte : elle lit sa date à Paris,
+ * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. */
 export const AUJOURD_HUI_RELEVE = '2026-10-08'
-const DEMAIN = '2026-10-09'
+
+/** Le nombre de saisies de la batterie, et la graine de son tirage. */
+export const SAISIES_DE_LA_BATTERIE = 4000
+export const GRAINE_DE_LA_BATTERIE = 20261008
 
 export const DOSSIERS = { A: 'ac538d93-7da3-4403-bca6-2d7836810a6f', B: '001c7ed7-c23b-4590-901e-693489f8af24' } as const
 type NomDossier = keyof typeof DOSSIERS
@@ -212,8 +217,10 @@ function generateur(graine: number) {
 
 const euros = (centimes: number) => centimes / 100
 
-/** Les saisies de la batterie, dans leur ordre. */
-export function batterie(nombre: number, graine: number): CasDeBatterie[] {
+/** Les saisies de la batterie, dans leur ordre, pour une base qui la juge le jour `aujourdHui` (à Paris). */
+export function batterie(nombre: number, graine: number, aujourdHui: string): CasDeBatterie[] {
+  const demain = ajouterJours(aujourdHui, 1)
+  const anneeSuivante = `${anneeDe(aujourdHui) + 1}-01-01`
   const g = generateur(graine)
   const l = lecturesDuMonde(MONDE)
   const tauxDe = (factureId: string) => [...new Set(MONDE.factures.find((f) => f.id === factureId)?.lignes.map((x) => x.taux))]
@@ -233,8 +240,8 @@ export function batterie(nombre: number, graine: number): CasDeBatterie[] {
     const taux = tauxDe(factureId)
 
     const date = g.pondere<string | null>([
-      [4, () => null], [4, () => '1999-12-31'], [3, () => '2000-01-01'], [10, () => AUJOURD_HUI_RELEVE], [4, () => DEMAIN],
-      [2, () => '2027-01-01'],
+      [4, () => null], [4, () => '1999-12-31'], [3, () => '2000-01-01'], [10, () => aujourdHui], [4, () => demain],
+      [2, () => anneeSuivante],
       [73, () => `2026-${String(1 + g.entier(9)).padStart(2, '0')}-${String(1 + g.entier(28)).padStart(2, '0')}`],
     ])
 
@@ -308,4 +315,16 @@ export function batterie(nombre: number, graine: number): CasDeBatterie[] {
     cas.push({ dossier, facture: factureId, date, montant, moyen, ligne, repartition })
   }
   return cas
+}
+
+// Le code de chaque refus, dans la famille que la base lui donne ; les autres sont des paramètres invalides (22023).
+const CODES_DES_REFUS: Partial<Record<CleRefusEnregistrement, string>> = { acces: '42501', facture_introuvable: 'P0002' }
+
+/** Ce que le module répond à chaque saisie, écrit comme la base l'écrit : `ok`, ou le code et le message du refus. */
+export function reponsesDuModule(cas: readonly CasDeBatterie[], aujourdHui: string): string[] {
+  return cas.map((c) => {
+    const e = entreeDuCas(MONDE, c)
+    const r = refusEnregistrement(e.contexte, e.saisie, e.mouvements, aujourdHui)
+    return r ? `${CODES_DES_REFUS[r.cle] ?? '22023'} ${r.message}` : 'ok'
+  })
 }

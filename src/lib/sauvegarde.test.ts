@@ -112,6 +112,21 @@ describe('ordre de restauration', () => {
     expect(rang('encaissements_factures')).toBeLessThan(rang('encaissements_factures_taux'))
   })
 
+  it('écrit les déclarations d’un encaissement après les transmissions et l’historique de Super PDP que leur garde lit', () => {
+    // Deux dépendances qu'aucune clé étrangère ne porte (étape d4) : la garde de `transmissions_encaissements` refuse
+    // une déclaration qui n'est pas faite sur la plateforme qui a reçu la facture, ou d'une facture que cette plateforme
+    // n'a pas acceptée (le statut 200 de Super PDP compris) — et elle le lit dans ces deux tables. Réinsérée avant
+    // elles, une déclaration du registre ferait échouer la restauration.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    for (const lue of ['transmissions_factures', 'facture_superpdp_events', 'encaissements_factures']) {
+      expect(rang(lue), lue).toBeGreaterThanOrEqual(0)
+      expect(rang(lue), lue).toBeLessThan(rang('transmissions_encaissements'))
+    }
+    // Ni auto-référence, ni vagues : la déclaration d'une contre-passation ne lit pas celle de son encaissement.
+    expect(RELATIONS.filter((r) => r.enfant === 'transmissions_encaissements').map((r) => `${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual(['dossiers:cascade', 'encaissements_factures:bloque', 'factures_emises:bloque'])
+  })
+
   it('rend l’ordre de suppression exactement inverse', () => {
     const suppression = ordreSuppression()
     expect(suppression[0]).toBe(ORDRE_RESTAURATION[ORDRE_RESTAURATION.length - 1])
