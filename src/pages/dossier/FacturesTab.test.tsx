@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import type {
-  ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, StatutTva, TransmissionFacture,
+  ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, FactureSuperpdpEvent, StatutTva,
+  TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
 
 // LE DERNIER DES DIX-SEPT ONGLETS À RECEVOIR UN TEST DE RENDU, et celui qui porte le seul document
@@ -38,6 +39,12 @@ const faux = vi.hoisted(() => ({
   encaissements: [] as EncaissementFacture[],
   parts: [] as EncaissementFactureTaux[],
   encaissementsMuetsApres: null as number | null,
+  // Ce que la pastille de déclaration lit en plus (ligne 28.5, étape d4) : les déclarations du dossier et l'historique
+  // de Super PDP de ses factures — et une lecture des déclarations qui s'arrête avant le compte annoncé.
+  declarations: [] as TransmissionEncaissement[],
+  evenements: [] as FactureSuperpdpEvent[],
+  declarationsMuettesApres: null as number | null,
+  evenementsMuetsApres: null as number | null,
 }))
 
 // La fenêtre de transmission a ses propres tests (TransmissionFactureModal.test.tsx) : doublée ici pour montrer ce que
@@ -68,8 +75,13 @@ vi.mock('../../lib/supabase', async () => {
       // Les filtres des trois lectures de la pastille sont APPLIQUÉS (src/test/filtresPostgrest.ts) ; celui des lignes
       // passe par leur facture, la table n'ayant pas de dossier.
       const predicats: Predicat[] = []
+      // Les colonnes demandées, et elles seules, comme PostgREST (une jointure `table!inner(…)` ne rend rien ici).
+      let colonnes: string[] | null = null
       Object.assign(chaine, {
-        select: () => chaine,
+        select: (liste?: string) => {
+          colonnes = !liste || liste === '*' ? null : liste.split(',').map((x) => x.trim()).filter((x) => !x.includes('('))
+          return chaine
+        },
         order: () => chaine,
         range: (debut: number, fin: number) => { plage = [debut, fin]; return chaine },
         delete: () => { suppression = true; return chaine },
@@ -81,12 +93,19 @@ vi.mock('../../lib/supabase', async () => {
           return chaine
         },
         then: (suite: (r: { data: unknown[] | null; error: unknown; count: number | null }) => unknown) => {
-          const tableDeLaPastille = { facture_lignes: faux.lignesDossier, encaissements_factures: faux.encaissements, encaissements_factures_taux: faux.parts }
+          const tableDeLaPastille = {
+            facture_lignes: faux.lignesDossier, encaissements_factures: faux.encaissements, encaissements_factures_taux: faux.parts,
+            transmissions_encaissements: faux.declarations, facture_superpdp_events: faux.evenements,
+          }
           if (plage && table in tableDeLaPastille) {
             const toutes = filtrer(tableDeLaPastille[table as keyof typeof tableDeLaPastille] as readonly object[], predicats)
-            const fin = table === 'encaissements_factures' && faux.encaissementsMuetsApres != null
-              ? Math.min(plage[1] + 1, faux.encaissementsMuetsApres) : plage[1] + 1
-            return Promise.resolve({ data: toutes.slice(plage[0], fin), error: null, count: toutes.length }).then(suite)
+            const muetApres = table === 'encaissements_factures' ? faux.encaissementsMuetsApres
+              : table === 'transmissions_encaissements' ? faux.declarationsMuettesApres
+                : table === 'facture_superpdp_events' ? faux.evenementsMuetsApres : null
+            const fin = muetApres != null ? Math.min(plage[1] + 1, muetApres) : plage[1] + 1
+            const rendu = (toutes.slice(plage[0], fin) as Record<string, unknown>[])
+              .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l))
+            return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
           }
           if (suppression) {
             faux.suppressions.push(idVise)
@@ -143,6 +162,10 @@ function poser(factures: FactureEmise[]) {
   faux.encaissements = []
   faux.parts = []
   faux.encaissementsMuetsApres = null
+  faux.declarations = []
+  faux.evenements = []
+  faux.declarationsMuettesApres = null
+  faux.evenementsMuetsApres = null
 }
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
@@ -511,5 +534,130 @@ describe('FacturesTab — l’encaissement de chaque facture', () => {
     monter('franchise')
     fireEvent.click(within(await ligne('CENTRE PARTIEL')).getByRole('button', { name: 'Encaissements' }))
     screen.getByText('Encaissements de F2026-0002 — franchise')
+  })
+})
+
+// CE QUI RESTE À DÉCLARER DE CHAQUE FACTURE (ligne 28.5, étape d4) : une seconde pastille, quand le statut « Encaissée »
+// est DÛ — « À déclarer », « Déclaration en retard » au jour de Paris —, et rien du tout sur une lecture incomplète.
+describe('FacturesTab — la déclaration des encaissements de chaque facture', () => {
+  // Des prestations de services à une entreprise, émises après le 01/09/2027 : le statut « Encaissée » est dû.
+  const due = (o: Partial<FactureEmise> = {}) => facture({
+    date_emission: '2027-10-01', type_client: 'assujetti', nature_operation: 'services', option_debits: false, ...o,
+  })
+  const ligneDe = (factureId: string): FactureLigne => ({
+    id: `l-${factureId}`, facture_id: factureId, ordre: 1, designation: 'Conseil', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20,
+  })
+  const encaisse = (factureId: string, date: string, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
+    id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: date, montant: 600,
+    moyen: 'virement', ligne_bancaire_id: null, annule_id: null, motif: null, cree_par: null, cree_le: `${date}T09:00:00Z`,
+    retire_le: null, retire_par: null, ...o,
+  })
+  const acceptee = (factureId: string, o: Partial<TransmissionFacture> = {}): TransmissionFacture => ({
+    id: `t-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, canal: 'plateforme', hote: 'flux.plateforme-demo.fr',
+    flux_id: 'FLUX-1', sha256: 'a'.repeat(64), etat: 'accepte', detail: null, cree_le: '2027-10-02T08:00:00Z',
+    maj_le: '2027-10-02T08:00:00Z', ...o,
+  })
+  const declaree = (encaissementId: string, factureId: string, o: Partial<TransmissionEncaissement> = {}): TransmissionEncaissement => ({
+    id: `d-${encaissementId}`, dossier_id: 'dossier-de-test', encaissement_id: encaissementId, facture_id: factureId, canal: 'manuel',
+    hote: 'flux.plateforme-demo.fr', flux_id: null, sha256: null, etat: 'depose', detail: null, note: null, cree_par: null,
+    cree_le: '2027-10-21T08:00:00Z', maj_le: '2027-10-21T08:00:00Z', ...o,
+  })
+
+  // Le jour à Paris : le 02/11/2027. Un paiement d'octobre se déclare avant le 10/11, un de septembre avant le 10/10.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-11-02T10:00:00Z'))
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  function poserCinq() {
+    poser([
+      due({ tiers_nom: 'À DÉCLARER' }),
+      due({ id: 'f2', numero: 'F2027-0002', tiers_nom: 'EN RETARD' }),
+      due({ id: 'f3', numero: 'F2027-0003', tiers_nom: 'DÉJÀ DÉCLARÉE' }),
+      due({ id: 'f4', numero: 'F2027-0004', tiers_nom: 'FACULTATIVE', date_emission: '2026-10-01' }),
+      due({ id: 'f5', numero: 'F2027-0005', tiers_nom: 'JAMAIS TRANSMISE' }),
+    ])
+    faux.lignesDossier = ['f1', 'f2', 'f3', 'f4', 'f5'].map(ligneDe)
+    faux.transmissions = ['f1', 'f2', 'f3', 'f4'].map((id) => acceptee(id))
+    faux.encaissements = [
+      encaisse('f1', '2027-10-20'), encaisse('f2', '2027-09-20'), encaisse('f3', '2027-09-20'), encaisse('f4', '2026-10-05'),
+      encaisse('f5', '2027-10-20'),
+    ]
+    faux.parts = faux.encaissements.map((e) => ({ encaissement_id: e.id, dossier_id: 'dossier-de-test', taux: 20, montant: 600 }))
+    faux.declarations = [declaree('e-f3', 'f3')]
+  }
+
+  it('« À déclarer », « Déclaration en retard » ; rien pour une facture déclarée, facultative, ou que l’application n’a pas transmise', async () => {
+    poserCinq()
+    monter()
+    const pastille = (l: HTMLElement) => within(l).queryByText(/^(À déclarer|Déclaration en retard)$/)
+    expect(pastille(await ligne('À DÉCLARER'))?.className).toBe('badge badge-une-ligne badge-warning')
+    expect(pastille(await ligne('À DÉCLARER'))?.textContent).toBe('À déclarer')
+    expect(pastille(await ligne('EN RETARD'))?.className).toBe('badge badge-une-ligne badge-danger')
+    expect(pastille(await ligne('EN RETARD'))?.textContent).toBe('Déclaration en retard')
+    expect(pastille(await ligne('DÉJÀ DÉCLARÉE'))).toBeNull()
+    expect(pastille(await ligne('FACULTATIVE'))).toBeNull()
+    // Jamais transmise par l'application : le statut reste dû, mais une déclaration faite ailleurs ne s'inscrirait pas
+    // ici — la pastille s'allumerait sans que rien d'ici puisse l'éteindre. La fenêtre dit l'échéance, et pourquoi.
+    expect(pastille(await ligne('JAMAIS TRANSMISE'))).toBeNull()
+    // La pastille de l'encaissement reste à côté : deux faits, deux pastilles.
+    within(await ligne('EN RETARD')).getByText(/^Encaissée en partie/)
+  })
+
+  it('ne lit que les déclarations du dossier', async () => {
+    poserCinq()
+    // Une déclaration de f1 rangée sous un autre dossier : aucune base ne la porterait, elle ne doit pas être lue.
+    faux.declarations.push(declaree('e-f1', 'f1', { id: 'd-temoin', dossier_id: 'autre-dossier' }))
+    monter()
+    within(await ligne('À DÉCLARER')).getByText('À déclarer')
+  })
+
+  it('une facture refusée chez Super PDP ne se déclare plus : l’historique, lu par sa facture, la tait', async () => {
+    poserCinq()
+    faux.transmissions[0] = acceptee('f1', { canal: 'superpdp', hote: 'api.superpdp.tech' })
+    faux.evenements = [
+      { id: 'ev1', facture_id: 'f1', superpdp_event_id: 1, status_code: 'fr:210', status_text: 'Refusée', occurred_at: '2027-10-25T08:00:00Z' },
+      // L'historique d'une facture d'un autre dossier ne compte pas.
+      { id: 'ev2', facture_id: 'f-ailleurs', superpdp_event_id: 2, status_code: 'fr:210', status_text: 'Refusée', occurred_at: '2027-10-25T08:00:00Z' },
+    ]
+    monter()
+    expect(within(await ligne('À DÉCLARER')).queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+    within(await ligne('EN RETARD')).getByText('Déclaration en retard')
+  })
+
+  it('une lecture incomplète des déclarations se dit, et aucune facture ne prétend rien à déclarer', async () => {
+    poserCinq()
+    faux.declarations.push(declaree('e-f1', 'f1'))
+    faux.declarationsMuettesApres = 1
+    monter()
+    await ligne('À DÉCLARER')
+    screen.getByText(/^Les déclarations des encaissements n'ont pas pu être lues en entier/)
+    screen.getByText(/une liste tronquée ferait dire « À déclarer » d’un encaissement déjà déclaré/)
+    expect(screen.queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+    // L'encaissement, lui, se lit encore : sa pastille reste.
+    within(await ligne('À DÉCLARER')).getByText(/^Encaissée en partie/)
+  })
+
+  it('un historique de Super PDP lu en partie tait aussi la pastille : une facture refusée paraîtrait à déclarer', async () => {
+    poserCinq()
+    faux.evenements = [
+      { id: 'ev1', facture_id: 'f2', superpdp_event_id: 1, status_code: 'fr:200', status_text: 'Déposée', occurred_at: '2027-10-25T08:00:00Z' },
+      { id: 'ev2', facture_id: 'f1', superpdp_event_id: 2, status_code: 'fr:210', status_text: 'Refusée', occurred_at: '2027-10-25T08:00:00Z' },
+    ]
+    faux.evenementsMuetsApres = 1
+    monter()
+    await ligne('À DÉCLARER')
+    screen.getByText(/^Les déclarations des encaissements n'ont pas pu être lues en entier/)
+    expect(screen.queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
+  })
+
+  it('une lecture refusée des transmissions tait aussi la pastille de déclaration, et le bandeau le dit', async () => {
+    poserCinq()
+    faux.refusTransmissions = 'JWT expired'
+    monter()
+    await ligne('À DÉCLARER')
+    screen.getByText(/aucune ne dit ce qui reste à déclarer de ses encaissements/)
+    expect(screen.queryByText(/^(À déclarer|Déclaration en retard)$/)).toBeNull()
   })
 })

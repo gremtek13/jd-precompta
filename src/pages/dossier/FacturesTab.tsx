@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
-import type { EncaissementLu, LigneDeFacture, PartLue } from '../../lib/encaissementsFactures'
-import { pastilleEncaissement } from '../../lib/encaissementsAffichage'
+import type {
+  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
+} from '../../lib/encaissementsFactures'
+import { pastilleDeclaration, pastilleEncaissement } from '../../lib/encaissementsAffichage'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -60,9 +62,14 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   // encaissé. L'IDENTIFIANT de la facture ouverte, comme pour la transmission : la fenêtre relit tout elle-même.
   const [encaissementsDe, setEncaissementsDe] = useState<string | null>(null)
   const [lignesFactures, setLignesFactures] = useState<LigneDeFacture[]>([])
-  const [encaissements, setEncaissements] = useState<EncaissementLu[]>([])
+  const [encaissements, setEncaissements] = useState<EncaissementPourContrePassation[]>([])
   const [partsEncaissements, setPartsEncaissements] = useState<PartLue[]>([])
   const [encaissementsIncomplets, setEncaissementsIncomplets] = useState<string | null>(null)
+  // Leurs déclarations, et l'historique de Super PDP qui dit une facture refusée (ligne 28.5, étape d4) : de quoi dire,
+  // sur chaque facture dont le statut « Encaissée » est dû, ce qui reste à déclarer.
+  const [declarations, setDeclarations] = useState<DeclarationLue[]>([])
+  const [evenementsSuperpdp, setEvenementsSuperpdp] = useState<EvenementSuperpdpLu[]>([])
+  const [declarationsIncompletes, setDeclarationsIncompletes] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
 
   async function load() {
@@ -81,21 +88,33 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
     )
     // Les lignes de TOUTES les factures du dossier — par leur facture, la table n'ayant pas de dossier —, ses
-    // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte.
-    const [lignes, encaisses, parts] = await Promise.all([
+    // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte. Puis les
+    // déclarations du dossier, échouées et rejetées comprises, et l'historique de Super PDP de ses factures (par leur
+    // facture, comme les lignes) : `pastilleDeclaration` décide lui-même de ce qui est déclaré, et de ce qui ne le sera pas.
+    const [lignes, encaisses, parts, declares, evenements] = await Promise.all([
       lireTout<LigneDeFacture & { id: string }>((debut, fin) =>
         supabase.from('facture_lignes')
           .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
           .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
       ),
-      lireTout<EncaissementLu>((debut, fin) =>
+      lireTout<EncaissementPourContrePassation>((debut, fin) =>
         supabase.from('encaissements_factures')
-          .select('id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le', { count: 'exact' })
+          .select('id, dossier_id, facture_id, date_encaissement, montant, ligne_bancaire_id, annule_id, retire_le', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       lireTout<PartLue>((debut, fin) =>
         supabase.from('encaissements_factures_taux').select('encaissement_id, taux, montant', { count: 'exact' })
           .eq('dossier_id', dossierId).order('encaissement_id').order('taux').range(debut, fin),
+      ),
+      lireTout<DeclarationLue>((debut, fin) =>
+        supabase.from('transmissions_encaissements')
+          .select('id, dossier_id, encaissement_id, facture_id, canal, hote, etat', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
+      ),
+      lireTout<EvenementSuperpdpLu & { id: string }>((debut, fin) =>
+        supabase.from('facture_superpdp_events')
+          .select('id, facture_id, status_code, factures_emises!inner(dossier_id)', { count: 'exact' })
+          .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('occurred_at').order('id').range(debut, fin),
       ),
     ])
     setFactures(lecture.lignes)
@@ -108,10 +127,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     setEncaissementsIncomplets(
       !lignes.complete ? lignes.motif : !encaisses.complete ? encaisses.motif : !parts.complete ? parts.motif : null,
     )
+    setDeclarations(declares.lignes)
+    setEvenementsSuperpdp(evenements.lignes)
+    setDeclarationsIncompletes(!declares.complete ? declares.motif : !evenements.complete ? evenements.motif : null)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
 
+  // Le jour à Paris, lu au rendu : une déclaration en retard l'est au jour de la base, pas à celui du chargement.
+  const aujourdHui = aujourdHuiAParis()
   const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
   const avantRecherche = factures.filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
   const filtered = avantRecherche.filter((f) =>
@@ -153,8 +177,8 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         quoi="Les transmissions des factures"
         motif={transmissionsIncompletes}
         consequence={
-          'Une facture peut paraître jamais transmise alors qu’elle l’a été. La fenêtre « Transmettre » relit celles de sa '
-          + 'facture avant de proposer un envoi.'
+          'Une facture peut paraître jamais transmise alors qu’elle l’a été, et aucune ne dit ce qui reste à déclarer de ses '
+          + 'encaissements. La fenêtre « Transmettre » relit celles de sa facture avant de proposer un envoi.'
         }
       />
       <BandeauLecturePartielle
@@ -164,6 +188,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         consequence={
           'Aucune facture ne dit donc ce qui en est encaissé : une liste tronquée ferait dire « À encaisser » d’une facture '
           + 'payée. La fenêtre « Encaissements » relit ceux de sa facture.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les déclarations des encaissements"
+        accord="lues"
+        motif={declarationsIncompletes}
+        consequence={
+          'Aucune facture ne dit donc ce qui reste à déclarer : une liste tronquée ferait dire « À déclarer » d’un encaissement '
+          + 'déjà déclaré. La fenêtre « Encaissements » relit celles de sa facture.'
         }
       />
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
@@ -279,6 +312,16 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                               permet pas. Rien non plus quand le statut « Encaissée » est sans objet pour cette facture. */}
                           {encaissementsIncomplets == null && (() => {
                             const pastille = pastilleEncaissement(f, lignesFactures, encaissements, partsEncaissements, statutTva)
+                            return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
+                          })()}
+                          {/* Ce qui reste à DÉCLARER, une seconde pastille : un fait (l'encaissement) et une obligation (sa
+                              déclaration) ne partagent pas une couleur. Rien si une seule des listes dont elle dépend est
+                              incomplète. */}
+                          {encaissementsIncomplets == null && declarationsIncompletes == null && transmissionsIncompletes == null && (() => {
+                            const pastille = pastilleDeclaration(
+                              dossierId, f, lignesFactures, encaissements, declarations, transmissions, evenementsSuperpdp, statutTva,
+                              aujourdHui,
+                            )
                             return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
                           })()}
                         </div>

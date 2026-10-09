@@ -1,6 +1,8 @@
 import {
-  obligationEncaissee, resteAEncaisser,
-  type EncaissementLu, type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture, type PartLue,
+  echeanceDeDeclaration, obligationEncaissee, refusDeclaration, resteAEncaisser,
+  type DeclarationLue, type EncaissementPourContrePassation, type EncaissementLu, type EvenementSuperpdpLu,
+  type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture, type PartLue, type PartProposee,
+  type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { formatMoney } from './format'
 import type { StatutTva } from './types'
@@ -12,7 +14,7 @@ import type { StatutTva } from './types'
 export interface PastilleEncaissement {
   libelle: string
   /** Une classe de pastille d'index.css. */
-  classe: 'badge-ok' | 'badge-warning' | 'badge-neutral'
+  classe: 'badge-ok' | 'badge-warning' | 'badge-neutral' | 'badge-danger'
 }
 
 /**
@@ -42,6 +44,59 @@ export function pastilleEncaissement(
     libelle: `Encaissée en partie — ${formatMoney(r.encaisseCentimes / 100)} sur ${formatMoney(r.ttcCentimes / 100)}`,
     classe: 'badge-warning',
   }
+}
+
+/**
+ * La pastille de DÉCLARATION d'une facture de l'onglet Factures (ligne 28.5, étape d4) : « À déclarer » quand un
+ * encaissement — ou une contre-passation — qui compte n'est pas déclaré, « Déclaration en retard » quand l'échéance de
+ * l'un d'eux est passée au jour de Paris (`aujourdHui`). Une SECONDE pastille, à côté de celle de l'encaissement : l'une
+ * dit un fait (ce que le client a payé), qui vaut quelle que soit l'obligation ; l'autre une obligation envers
+ * l'administration, qui ne vaut que lorsqu'elle est DUE. Les fondre ferait porter deux statuts à une couleur — une facture
+ * « Encaissée » peut avoir une déclaration en retard.
+ *
+ * Rien quand l'obligation n'est pas due : facultative, rien n'est en retard ni exigé, et la fenêtre dit ce qui se
+ * déclare ; sans objet, à préciser ou refusée, rien ne se déclare d'ici. Un encaissement compte « à déclarer » quand la
+ * base inscrirait sa déclaration (`refusDeclaration` sans refus), et seulement alors. Pas quand la facture a été rejetée
+ * ou refusée : aucun statut ne la suit, elle s'annule par un avoir interne. Pas non plus quand aucune plateforme ne l'a
+ * acceptée par l'application — jamais transmise d'ici, déposée sans accusé, ou déposée par le client lui-même : une
+ * déclaration faite ailleurs ne s'inscrirait pas ici, et « Déclaration en retard » s'y allumerait sans que rien d'ici
+ * puisse l'éteindre. Le statut y reste dû : la fenêtre le dit, avec son échéance, et pourquoi il ne se déclare pas d'ici.
+ *
+ * Les listes sont celles du dossier, LUES EN ENTIER — une déclaration qui manquerait ferait dire « À déclarer » d'un
+ * encaissement déjà déclaré : l'appelant qui ne les a pas toutes n'en affiche aucune.
+ */
+export function pastilleDeclaration(
+  dossierId: string,
+  facture: FacturePourEncaissement & FacturePourObligation,
+  lignes: readonly Pick<LigneDeFacture, 'facture_id' | 'taux_tva'>[],
+  encaissements: readonly (EncaissementLu & Pick<EncaissementPourContrePassation, 'date_encaissement'>)[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  transmissions: readonly TransmissionPourDeclaration[],
+  evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+  statutTva: StatutTva | null,
+  aujourdHui: string,
+): PastilleEncaissement | null {
+  // Un brouillon, un avoir : `obligationEncaissee` les dit sans objet, et rien ne se déclare.
+  if (obligationEncaissee(facture, lignes, statutTva).etat !== 'due') return null
+  const aDeclarer = encaissements.filter((e) => e.facture_id === facture.id
+    && refusDeclaration(dossierId, e.id, encaissements, declarations, transmissions, evenementsSuperpdp, null) == null)
+  if (aDeclarer.length === 0) return null
+  const enRetard = aDeclarer.some((e) => {
+    const echeance = echeanceDeDeclaration(e.date_encaissement, statutTva)
+    return echeance != null && echeance.date < aujourdHui
+  })
+  return enRetard
+    ? { libelle: 'Déclaration en retard', classe: 'badge-danger' }
+    : { libelle: 'À déclarer', classe: 'badge-warning' }
+}
+
+/**
+ * Les parts d'un encaissement en mots, telles que la confirmation les nomme : « 1 000,00 € à 20 %, 100,00 € à 5,5 % et
+ * 50,00 € à 0 % ». Dans l'ordre reçu ; une liste vide rend une chaîne vide.
+ */
+export function partsEnMots(parts: readonly PartProposee[]): string {
+  const mots = parts.map((p) => `${formatMoney(p.centimes / 100)} à ${tauxAffiche(p.taux)}`)
+  return mots.length <= 1 ? mots.join('') : `${mots.slice(0, -1).join(', ')} et ${mots[mots.length - 1]}`
 }
 
 /**

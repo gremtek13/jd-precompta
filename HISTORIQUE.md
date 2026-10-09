@@ -10890,3 +10890,101 @@ puisque chaque étape en base (d1, d2, d4) en a besoin.
 **CE QUI ATTEND LE CABINET.** La date d'une contre-passation (ci-dessus) ; la facture déposée par le client lui-même
 (un « dépôt hors application ») ; l'ancien chemin de Super PDP ; si la note d'une déclaration lui sert ; la ligne de la
 feuille de route « monter une réplique depuis le dépôt ».
+
+### 09/10/2026 — L'ÉCRAN DE LA DÉCLARATION HORS APPLICATION — LIGNE 28.5, ÉTAPE (D), QUATRIÈME TEMPS (D4), PHASE C
+
+(`src/pages/dossier/EncaissementsFactureModal.tsx` et son test, `FacturesTab.tsx` et son test,
+`src/lib/encaissementsAffichage.ts` et son test, `src/lib/encaissementsEcritures.test.ts`, un bloc en fin de
+`src/index.css` ; au banc, `outils/captures/fauxSupabase.ts` et trois visites de `debordements.mjs`.) L'écran que la
+base et le module de d4 attendaient. Rien ne part d'ici vers une plateforme ni vers l'administration : la décision du
+cabinet (08/10/2026, Q2) est la déclaration HORS APPLICATION — le cabinet ou le client saisit le statut « Encaissée »
+sur la plateforme, l'application garde ce qui a été déclaré. Ni migration, ni Edge Function, ni changement du module
+d2/d4 : deux fonctions pures s'ajoutent au module d'affichage (`pastilleDeclaration`, `partsEnMots`).
+
+**LA FENÊTRE LIT LES DÉCLARATIONS DU DOSSIER** (`transmissions_encaissements`, `lireTout`, compte annoncé, tri total
+`cree_le` puis `id`), et le canal des transmissions de la facture, que `refusDeclaration` lit. Lues en partie ou
+refusées, elles n'offrent AUCUN geste — ni enregistrer, ni retirer, ni déclarer, ni contre-passer — et le bandeau dit
+leur conséquence propre : un encaissement déclaré qu'on ne verrait pas se retirerait, ou se déclarerait une seconde
+fois, et l'administration le compterait deux fois. La constante `AUCUN_DECLARE` de d3 a disparu :
+`encaissementsDeclares(lu.declarations)` partout.
+
+**CE QUE LA FENÊTRE DIT.** Sous l'obligation, où le statut se déclare : « sur <hôte> — la plateforme qui a accepté la
+facture », ou pourquoi rien ne se déclare d'ici (facture rejetée ; aucune transmission acceptée ; sans objet ; à
+préciser — « précisez d'abord le statut de TVA du dossier » quand c'est lui qui manque — ; facture mixte). C'est le
+canal de la note §4.2, que d3 ne disait pas. La colonne « Déclaration » de chaque encaissement : déclaré (« Déclaré à
+la main sur <hôte> le <date> », la note) ; à déclarer (« À déclarer sur <hôte> », l'échéance, « Échéance dépassée »
+pour une obligation DUE seulement) ; ou le refus de la base qui l'empêche, sous ses mots. Une facture rejetée ne dit
+plus d'échéance : aucun statut ne la suit. Une contre-passation dit l'encaissement qu'elle annule et son motif ;
+l'encaissement annulé porte « Contre-passé ».
+
+**« DÉCLARÉ SUR LA PLATEFORME »** s'offre sur un encaissement ou une contre-passation qui compte, pas encore déclaré,
+que la base inscrirait (`refusDeclaration` sans note), sous une obligation due ou facultative. L'étape dit ce qu'il faut
+saisir, champ par champ (conception §1.6) — la plateforme, le numéro, la date de paiement (du décaissement pour une
+contre-passation), le montant TTC en euros, chaque taux ; pour une contre-passation, des montants négatifs et le motif
+d'annulation en commentaire (P1.15, P1.17). Pour un encaissement dont la facture a été acceptée par la plateforme du
+CLIENT, elle demande de vérifier que l'acheteur ne l'a pas refusée : l'application ne lit pas encore ce refus (d7) ;
+chez Super PDP, le refus est lu et la base le juge, la phrase ne paraît pas (ajout de la session au brief). La note est
+facultative, mesurée comme la base la mesure (des blancs ne sont pas une note — elle part nulle —, un emoji compte un
+caractère) ; le refus « plus de 2 000 caractères » grise le bouton. La confirmation nomme ce qui est déclaré (« Vous
+déclarez avoir saisi sur <hôte> le statut « Encaissée » de la facture <n> (<client>) : <montant> encaissés le <date>,
+dont … Cette mention ne s'efface pas. ») et dit qu'une erreur ne se corrigera que par une contre-passation.
+
+**« CONTRE-PASSER »** remplace « Retirer » sur un encaissement déclaré (le message de `refusRetrait` dit pourquoi il ne
+se retire plus) ; il s'offre quand `refusContrePassation` sans date ne refuse que la date — tout ce qui la précède est
+jugé. La date n'est jamais proposée ; la règle est dite à côté (le jour où l'encaissement est défait, ou où la
+déclaration fautive est corrigée ; ni avant l'encaissement, ni dans l'avenir, au jour de Paris). Le motif est
+obligatoire. L'étape dit ce qui sera écrit (`contrePassationDe`) ; la confirmation le nomme, avec la suite : la
+déclarer sur la même plateforme, puis enregistrer le bon encaissement.
+
+Les deux gestes écrivent par leur fonction seule, partagent le verrou `useRef` des deux autres (posé avant le `try`,
+relâché dans le `finally` après la relecture), disent l'erreur par `messageErreur`, relisent tout. L'étape se referme
+sur un succès, reste sur une erreur avec sa saisie.
+
+**LA PASTILLE.** Une SECONDE pastille dans l'onglet Factures, à côté de celle de l'encaissement : l'une dit un fait
+(ce que le client a payé, qui vaut sous toute obligation), l'autre une obligation envers l'administration ; les fondre
+ferait porter deux statuts à une couleur — une facture « Encaissée » peut avoir une déclaration en retard.
+`pastilleDeclaration` : rien si l'obligation n'est pas DUE ; « À déclarer » (`badge-warning`) tant qu'un encaissement ou
+une contre-passation qui compte n'est pas déclaré et que la base inscrirait sa déclaration ; « Déclaration en retard »
+(`badge-danger`) dès qu'une échéance est passée au jour de Paris (le jour de l'échéance n'est pas un retard) ; rien pour
+une facture rejetée ou refusée, ni pour une facture qu'aucune plateforme n'a acceptée par l'application. Ce dernier
+point a été tranché par la session à l'intégration : l'agent allumait la pastille sur une facture jamais acceptée (« le
+statut reste dû ») ; mais une déclaration faite ailleurs — une facture déposée par le client lui-même — ne s'inscrirait
+pas ici, et « Déclaration en retard » resterait allumée sans que rien d'ici puisse l'éteindre : pour cette facture, la
+liste des déclarations n'est pas complète, et le vide est une affirmation. La fenêtre, elle, dit l'échéance et pourquoi
+le statut ne se déclare pas d'ici. La mutation qui rouvre la pastille à toute facture non rejetée mord dans les deux
+fichiers de test. L'onglet lit pour
+elle les déclarations du dossier, l'historique de Super PDP de ses factures (par jointure, comme les lignes) et la date
+de chaque encaissement ; une seule de ces lectures incomplète — ou celle des transmissions — et elle se tait, un
+bandeau le dit.
+
+**LE SCANNER** (`encaissementsEcritures.test.ts`) s'étend à `transmissions_encaissements` : aucune écriture directe dans
+`src/` hors de la restauration (même doctrine, mêmes sites, même exception comptée) ; les Edge Functions qui l'écriront
+(d6, d8 : la migration les désigne) s'inscriront nommément dans `FONCTIONS_QUI_DECLARENT`, vide aujourd'hui ; la
+restauration la rejoue par l'insertion, jamais par sa seconde passe ; les quatre fonctions ne s'appellent que de la
+fenêtre ; le plancher voit la table lue par la fenêtre ET par l'onglet. Défauts plantés : une insertion sur plusieurs
+lignes, une mise à jour par constante, une suppression, un upsert illisible ; ce qu'il ne doit pas voir — une lecture,
+une Edge Function, le registre qui prendrait la déclaration pour sienne.
+
+**LES FAUX CLIENTS RENDENT LES SEULES COLONNES DEMANDÉES.** Celui de la fenêtre, et celui de l'onglet pour les tables des
+pastilles, appliquaient les filtres mais rendaient toutes les colonnes : une colonne oubliée dans un `select` (le canal
+des transmissions, la note, la date d'un encaissement) passait pour lue. Ils projettent désormais la liste du `select`.
+
+**ÉPROUVÉ.** 39 tests de plus (21 de la fenêtre, 6 de l'onglet, 8 de l'affichage, 4 du scanner), la suite de 5 663 à
+5 702, verte sous les quatre fuseaux ; `tsc -b`, lint (63 avertissements, les mêmes), build. Quatre-vingt-une mutations
+de la fenêtre, de l'onglet, de la pastille et du scanner : soixante-dix-huit mordaient d'emblée. Trois survivaient :
+« Contre-passer » jugé sur toute ligne non retirée (une ligne à déclarer aurait dit « il se retire, sans
+contre-passation ») — deux assertions l'attrapent ; la liste des fonctions gardées raccourcie — les fonctions se lisent
+désormais dans les sources ; la garde « brouillon ou avoir » de la pastille, ÉQUIVALENTE (`obligationEncaissee` les dit
+déjà sans objet) — RETIRÉE plutôt que gardée sans preuve. Ensuite, quatre-vingts sur quatre-vingts. Une mutation de
+plus, qui affaiblit l'assertion elle-même (« appelée de la fenêtre » au lieu de « de la fenêtre seule »), survit : on
+ne mute pas l'oracle.
+
+**AU BANC** : trois visites de plus — l'étape « Déclaré sur la plateforme » d'un chèque (avec la vérification du refus
+de l'acheteur), celle d'une contre-passation (montants négatifs, motif en commentaire), le formulaire « Contre-passer » —
+et les 73 autres, aux neuf exécutions (390, 720, 1 024, 1 280, 1 440 px, puis les quatre combinaisons extrêmes des
+volets) : 0 débordement, 0 mot coupé, 76 visites propres à chaque fois. Captures de la fenêtre relues à 1 440 et 390 px.
+
+**CE QUI ATTEND LE CABINET.** La date d'une contre-passation (inchangé depuis d4) ; une facture jamais transmise par
+l'application, ou déposée par le client lui-même : son statut reste dû mais ne se déclare pas d'ici, et la pastille se
+tait — un « dépôt hors application » qui nommerait la plateforme la rendrait déclarable (question posée au cabinet le
+09/10/2026) ; le refus de l'acheteur sur la plateforme du client reste à lire (d7).

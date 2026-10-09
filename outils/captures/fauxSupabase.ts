@@ -31,7 +31,8 @@ import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
-  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, TransmissionFacture, VehiculeDossier, VentilationBancaire,
+  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, TransmissionEncaissement, TransmissionFacture, VehiculeDossier,
+  VentilationBancaire,
 } from '../../src/lib/types'
 
 type Ligne = Record<string, unknown>
@@ -866,6 +867,62 @@ const ENCAISSEMENTS_D7: EncaissementFacture[] = [
 ]
 const PARTS_D7: EncaissementFactureTaux[] = [...repartitionDuBanc('enc1', 50000), ...repartitionDuBanc('enc2', 100000)]
 
+// ── LA DÉCLARATION DES ENCAISSEMENTS (ligne 28.5, étape d4) ──────────────────────────────────────────────────────────
+//
+// F2026-0007 ne peut rien déclarer — une facture mixte, dont l'obligation est refusée, que rien n'a transmise —, et la base
+// refuserait une déclaration qui la viserait. D'où une seconde facture de l'atelier, F2026-0008 : une formation (des
+// services, à 20 %), ACCEPTÉE par la plateforme du client (celle que l'atelier a reliée, `CONNEXION_PLATEFORME_D7`), émise
+// en 2026 — l'obligation y est facultative, et « Déclaré sur la plateforme » s'offre. Ses encaissements disent les trois
+// états de la colonne « Déclaration » : un virement de 600,00 € déclaré à la main avec une note LONGUE (elle éprouve le
+// passage à la ligne), puis contre-passé — le virement rendu au client — par une contre-passation PAS ENCORE déclarée ; un
+// virement de 900,00 € déclaré, qui offre « Contre-passer » ; un chèque de 300,00 €, à déclarer.
+const LIGNES_F8: LigneSaisie[] = [
+  {
+    designation: 'Formation des équipes comptables à la facture électronique — deux sessions d’une journée, octobre 2026',
+    quantite: 2, prix_unitaire_ht: 750, taux_tva: 20,
+  },
+]
+
+const FACTURE_F8: FactureEmise = {
+  ...FACTURES_D7[0],
+  id: 'f8', numero: 'F2026-0008', date_emission: '2026-09-24', date_echeance: '2026-10-24',
+  ...calculerTotaux(LIGNES_F8),
+  created_at: '2026-09-24T09:00:00Z', validated_at: '2026-09-24T09:10:00Z',
+  nature_operation: 'services', date_prestation: '2026-09-23',
+}
+const LIGNES_DE_F8: FactureLigne[] = lignesDeFacture('f8', LIGNES_F8)
+
+const TRANSMISSIONS_D7: TransmissionFacture[] = [{
+  id: 'tr8', dossier_id: 'd7', facture_id: 'f8', canal: 'plateforme', hote: 'flux.plateforme-beta.example', flux_id: 'fx-beta-208',
+  sha256: 'd'.repeat(64), etat: 'accepte', detail: null, cree_le: '2026-09-24T09:15:00Z', maj_le: '2026-09-24T09:40:00Z',
+}]
+
+const ENCAISSEMENTS_F8: EncaissementFacture[] = [
+  encaissementDuBanc({ id: 'enc3', facture_id: 'f8', date_encaissement: '2026-09-28', montant: 600, cree_le: '2026-09-28T16:00:00Z' }),
+  encaissementDuBanc({
+    id: 'enc4', facture_id: 'f8', date_encaissement: '2026-10-02', montant: -600, annule_id: 'enc3',
+    motif: 'Virement rendu au client : la même somme avait été réglée deux fois, par virement et par chèque.',
+    cree_le: '2026-10-02T11:00:00Z',
+  }),
+  encaissementDuBanc({ id: 'enc5', facture_id: 'f8', date_encaissement: '2026-10-01', montant: 900 }),
+  encaissementDuBanc({ id: 'enc6', facture_id: 'f8', date_encaissement: '2026-10-06', montant: 300, moyen: 'cheque', cree_le: '2026-10-06T10:00:00Z' }),
+]
+const PARTS_F8: EncaissementFactureTaux[] = ENCAISSEMENTS_F8.map((e) => ({
+  encaissement_id: e.id, dossier_id: 'd7', taux: 20, montant: e.montant,
+}))
+
+const declarationDuBanc = (o: Partial<TransmissionEncaissement> & Pick<TransmissionEncaissement, 'id' | 'encaissement_id'>): TransmissionEncaissement => ({
+  dossier_id: 'd7', facture_id: 'f8', canal: 'manuel', hote: 'flux.plateforme-beta.example', flux_id: null, sha256: null,
+  etat: 'depose', detail: null, note: null, cree_par: 'u1', cree_le: '2026-09-29T10:12:00Z', maj_le: '2026-09-29T10:12:00Z', ...o,
+})
+const DECLARATIONS_ENCAISSEMENTS_D7: TransmissionEncaissement[] = [
+  declarationDuBanc({
+    id: 'te3', encaissement_id: 'enc3',
+    note: 'Saisi sur flux.plateforme-beta.example par Mme Bernard le 29/09/2026 à 10 h 12, référence de la plateforme STAT-212-0004417',
+  }),
+  declarationDuBanc({ id: 'te5', encaissement_id: 'enc5', note: 'Saisi par le client lui-même', cree_le: '2026-10-02T08:30:00Z', maj_le: '2026-10-02T08:30:00Z' }),
+]
+
 const TABLES: Record<string, Ligne[]> = {
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
@@ -1094,12 +1151,14 @@ const TABLES: Record<string, Ligne[]> = {
   // Les factures émises du cabinet infirmier, leurs lignes, leurs transmissions et l'historique de Super PDP (voir
   // `FACTURES_D1`), puis celle, jamais transmise, de l'atelier de conseil (`FACTURES_D7`, sans transmission ni événement) :
   // typées sur l'application, rendues au faux client en lignes nues.
-  factures_emises: [...FACTURES_D1, ...FACTURES_D7].map((f) => ({ ...f })),
-  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7].map((l) => ({ ...l })),
-  transmissions_factures: TRANSMISSIONS_D1.map((t) => ({ ...t })),
+  // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
+  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8].map((f) => ({ ...f })),
+  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8].map((l) => ({ ...l })),
+  transmissions_factures: [...TRANSMISSIONS_D1, ...TRANSMISSIONS_D7].map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
-  encaissements_factures: ENCAISSEMENTS_D7.map((e) => ({ ...e })),
-  encaissements_factures_taux: PARTS_D7.map((p) => ({ ...p })),
+  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8].map((e) => ({ ...e })),
+  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8].map((p) => ({ ...p })),
+  transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

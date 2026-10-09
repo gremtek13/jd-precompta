@@ -2015,3 +2015,26 @@ a.nav-menu-item { text-decoration: none; }
 @media (max-width: 720px) {
   .obligations-fe li { flex-direction: column; gap: 4px; }
 }
+
+/* Les étapes de la fenêtre des encaissements (ligne 28.5, étape d4) : « Déclaré sur la plateforme » — ce qu'il faut
+   saisir sur la plateforme, la note, l'inscription — et « Contre-passer ». Un encadré sous la liste, pour qu'on voie
+   ce qu'on est en train d'inscrire ; ses boutons passent à la ligne plutôt que de déborder (la fenêtre rétrécit sur
+   téléphone). La vérification qu'aucune lecture ne fait (le refus de l'acheteur sur la plateforme du client) se lit
+   avant les champs, en teinte d'avertissement : ce n'est pas un refus, le bouton n'en est pas grisé. La colonne
+   « Déclaration » de la liste porte des phrases : petites, et un mot long (un hôte, une note) passe à la ligne. */
+.etape-encaissement {
+  margin-top: 4px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.etape-encaissement > h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
+.etape-encaissement > p { margin: 0 0 10px; }
+.verification-declaration {
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--color-warning-light); color: var(--color-text);
+  font-size: 0.84rem; line-height: 1.45;
+}
+.rangee-boutons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.cellule-declaration { font-size: 0.82rem; }
+.cellule-declaration div { overflow-wrap: anywhere; }
+.note-declaration { font-style: italic; }

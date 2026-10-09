@@ -342,7 +342,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   transmission réservée, depuis l'onglet Factures — mentions saisies avant la validation et imprimées, suivi, abandon
   d'une issue inconnue, statut de Super PDP reporté, avoir interne d'une facture rejetée, numéro de TVA d'un dossier en
   franchise ou exonéré (28.5 c3 à c5, 08/10/2026) ; les encaissements d'une facture émise — registre en base (d1), module
-  (d2), et l'écran : pastille de l'onglet Factures et fenêtre « Encaissements » (d3, 08/10/2026).
+  (d2), et l'écran : pastille de l'onglet Factures et fenêtre « Encaissements » (d3, 08/10/2026) ; la déclaration hors
+  application et la contre-passation, en base et à l'écran (d4, 08 et 09/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -373,7 +374,7 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
-  (leur écran à venir ; la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
+  et à l'écran le 09/10/2026 (la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -708,7 +709,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   obligatoire, datée du décaissement, entre l'encaissement et aujourd'hui à Paris — décision à confirmer par le
   cabinet), et la contre-passation se déclare à son tour sur la même plateforme. La garde ne compte, pour une
   déclaration d'hier (une restauration), que ce qui était connu avant elle. Les refus, dans l'ordre (huit et douze), le
-  module les dit avant le clic (`refusDeclaration`, `refusContrePassation`) → « LA DÉCLARATION HORS APPLICATION ».
+  module les dit avant le clic (`refusDeclaration`, `refusContrePassation`). L'écran (`EncaissementsFactureModal`) lit
+  les déclarations du dossier par `lireTout` — lues en partie, il n'offre AUCUN geste — ; dit de chaque encaissement
+  où il est déclaré, ou où et avant quand le déclarer, ou pourquoi pas d'ici ; « Déclaré sur la plateforme »
+  (obligation due ou facultative) dit ce qu'il faut saisir champ par champ, de vérifier que l'acheteur n'a pas refusé
+  la facture sur la plateforme du client (invisible jusqu'à d7), et confirme en nommant ce qui est déclaré ;
+  « Contre-passer » remplace « Retirer » sur un déclaré, date jamais proposée. L'onglet Factures porte une SECONDE
+  pastille, « À déclarer » / « Déclaration en retard », pour une obligation DUE et sur ce qui se déclare d'ici
+  seulement (`pastilleDeclaration`), muette sur toute lecture incomplète. `encaissementsEcritures.test.ts` refuse toute
+  écriture directe de `transmissions_encaissements` dans `src/` hors de la restauration, et nomme les Edge Functions
+  qui l'écriront (aucune avant d6) → « LA DÉCLARATION HORS APPLICATION », « L'ÉCRAN DE LA DÉCLARATION HORS
+  APPLICATION ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -724,7 +735,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5663 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5702 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
