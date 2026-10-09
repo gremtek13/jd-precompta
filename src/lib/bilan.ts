@@ -3,6 +3,7 @@ import { calculerBalance } from './ecritures'
 import { auxiliaireDuTiers, type ModeleComptable } from './engagement'
 import { anneeDe, formatDate, formatMoney } from './format'
 import { etatDeLOuverture, exploitantIndividuel, ouvertureDeLExercice, type EtatDeLOuverture } from './reportDesSoldes'
+import { refusDeLOuverture, soldeDuCompteCentimes } from './revisionSoldes'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece, SensEcriture, SoldeReporte } from './types'
 
 // LE BILAN D'UN EXERCICE À SA CLÔTURE — ligne 33 de la feuille de route, première brique (09/10/2026).
@@ -11,7 +12,8 @@ import type { ANouveau, Categorie, EcritureBrouillon, Piece, SensEcriture, Solde
 // capitaux propres » ; « aucune compensation ne peut être opérée entre les postes d'actif et de passif » (PCG, art. 112-2,
 // version consolidée au 1er janvier 2026 ; code de commerce, art. L123-13 et L123-19). Il se lit ici depuis les SOLDES :
 // l'ouverture de l'exercice — la balance reprise ou les soldes reportés de l'exercice validé qui le précède
-// (`ouvertureDeLExercice`) — et ses écritures, les mêmes que la Balance des comptes de l'exercice. Rien n'est écrit.
+// (`ouvertureDeLExercice`) — et ses écritures, les mêmes que la Balance des comptes de l'exercice ; le solde de chaque
+// compte est celui que la révision justifie (`soldeDuCompteCentimes`, lib/revisionSoldes.ts). Rien n'est écrit.
 //
 // LE FORMAT EST CELUI DU 2033-A-SD (millésime 2026, cerfa n° 15948*08), le bilan simplifié du régime réel simplifié, qui
 // suit le modèle abrégé du PCG (art. 822-1) : ses rubriques et leurs cases, pour que le même calcul serve un jour la
@@ -481,11 +483,14 @@ function partsDesTiers(
 
 export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
   const exercice = d.exercice
-  const debut = `${exercice}-01-01`
   const dateCloture = `${exercice}-12-31`
   const dateReprise = d.reprise.length > 0 ? d.reprise.map((a) => a.date).sort(parNumero)[0] : null
+  const entreesDeLOuverture = { reprise: d.reprise, reportes: d.reportes, anneesValidees: d.anneesValidees, ecritures: d.ecritures }
 
-  if (dateReprise !== null && debut < dateReprise) {
+  // Un exercice qui FINIT avant la reprise est dans les comptes repris : la règle est lue là où la révision et la base
+  // la tiennent (`refusDeLOuverture`, comme `justifier_solde` et `valider_exercice` : « 31 décembre < reprise »), pour
+  // qu'un exercice sans bilan soit aussi un exercice sans révision.
+  if (dateReprise !== null && refusDeLOuverture(exercice, entreesDeLOuverture) === 'anterieur-a-la-reprise') {
     return {
       etat: 'non-etabli', exercice, dateCloture,
       motif: {
@@ -495,9 +500,7 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
       },
     }
   }
-  const ouverture = etatDeLOuverture(exercice, {
-    reprise: d.reprise, reportes: d.reportes, anneesValidees: d.anneesValidees, ecritures: d.ecritures,
-  })
+  const ouverture = etatDeLOuverture(exercice, entreesDeLOuverture)
   if (ouverture.type === 'en-attente') {
     return {
       etat: 'non-etabli', exercice, dateCloture,
@@ -513,20 +516,28 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
   const lignesOuverture = ouvertureDeLExercice(d.reprise, d.reportes, exercice)
   const lignesExercice = d.ecritures.filter((e) => anneeDe(e.date) === exercice)
 
-  // Le solde de chaque compte, en centimes : l'ouverture, puis l'exercice. Un compte que l'exercice ne mouvemente pas
-  // garde donc le solde de son ouverture.
+  // Le solde de chaque compte à la clôture, en centimes, débit positif — son ouverture, puis l'exercice : CELUI QUE LA
+  // RÉVISION JUSTIFIE, que `solde_du_compte` refait en base (lib/revisionSoldes.ts). La révision montrera une décision
+  // là où le bilan montre une rubrique, et deux écritures du même calcul finiraient par diverger sans que rien le dise.
+  // Chaque compte ne reçoit que ses propres lignes, tous exercices : la fonction filtre l'exercice elle-même, et chaque
+  // ligne n'est lue qu'une fois.
+  const lignesParCompte = new Map<string, EcritureBrouillon[]>()
+  for (const e of d.ecritures) {
+    const lignes = lignesParCompte.get(e.compte)
+    if (lignes) lignes.push(e)
+    else lignesParCompte.set(e.compte, [e])
+  }
+  const mouvementes = new Set(lignesExercice.map((e) => e.compte))
   const soldes = new Map<string, number>()
-  const mouvementes = new Set<string>()
+  for (const compte of new Set([...lignesOuverture.map((a) => a.compte), ...mouvementes])) {
+    soldes.set(compte, soldeDuCompteCentimes(compte, exercice, {
+      ecritures: lignesParCompte.get(compte) ?? [], reprise: d.reprise, reportes: d.reportes,
+    }))
+  }
+  // Toute écriture est en partie double : la somme des soldes de tous les comptes, classes 6 et 7 comprises, est nulle,
+  // sauf des lignes qui ne s'équilibrent pas.
   let desequilibreDesLignes = 0
-  for (const a of lignesOuverture) {
-    soldes.set(a.compte, (soldes.get(a.compte) ?? 0) + centimesDe(a))
-    desequilibreDesLignes += centimesDe(a)
-  }
-  for (const e of lignesExercice) {
-    soldes.set(e.compte, (soldes.get(e.compte) ?? 0) + centimesDe(e))
-    mouvementes.add(e.compte)
-    desequilibreDesLignes += centimesDe(e)
-  }
+  for (const solde of soldes.values()) desequilibreDesLignes += solde
   // Le libellé d'un compte : celui de la Balance des comptes de l'exercice, au caractère près.
   const libelles = new Map(calculerBalance([...lignesExercice], [...d.categories], lignesOuverture).map((l) => [l.compte, l.libelle]))
   const libelleDe = (compte: string) => libelles.get(compte) ?? compte

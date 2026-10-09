@@ -15620,3 +15620,7 @@ deux comptes dans la Balance, le FEC et le détail du bilan — qui range bien l
 « solde inhabituel » d'un 164000 devenu débiteur à force d'échéances remboursées. Question 9 au cabinet : les ramener
 aux comptes de l'application dans une brique de la reprise (164… vers 164000, 108… vers 108000, les tiers vers 401000
 et 411000 avec leur auxiliaire).
+
+**Suite (relecture du lot, constat 3).** Le bilan lit désormais le solde de clôture et le refus « antérieur à la reprise »
+à leur source, la révision (`soldeDuCompteCentimes`, `refusDeLOuverture` : « 31 décembre < reprise », comme la base) —
+quatre mutations de la révision seule, qui survivaient aux tests du bilan, y mordent.
