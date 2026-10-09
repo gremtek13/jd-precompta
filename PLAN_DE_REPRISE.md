@@ -264,14 +264,18 @@ qu'une restauration ratée défait sans bruit.
 
 Un plan de reprise jamais exécuté est une intention. Deux niveaux de répétition existent :
 
-- **À chaque exécution de la suite de tests** : l'ordre des 40 tables, la carte des chemins d'accès,
-  les liens perdus, la double passe et le refus d'une sauvegarde incomplète sont rejoués par
+- **À chaque exécution de la suite de tests** : l'ordre des 58 tables, la carte des chemins d'accès,
+  les liens perdus, la double passe, les vagues et le refus d'une sauvegarde incomplète sont rejoués par
   `npm test` (voir `src/lib/sauvegarde.test.ts`, `sauvegardeDonnees.test.ts`,
-  `sauvegardeFichier.test.ts`).
+  `sauvegardeFichier.test.ts`) ; `restaurationEssai.test.ts` garde que l'essai ci-dessous recopie ce
+  plan-là, et non un plus ancien.
 - **Contre Postgres, à la demande** : `supabase/essais/restauration.sql` fabrique un schéma jetable
-  portant les VRAIES contraintes du projet, y restaure un dossier réel, compare le résultat à la
-  source par empreinte de contenu, puis se supprime. Dernier passage le 18/09/2026 : 35 tables
-  restaurées, 35 identiques, 0 écart.
+  portant les VRAIES contraintes du projet, y restaure un dossier, compare le résultat à la source par
+  empreinte de contenu, puis se supprime. Il se joue sur une réplique locale du schéma (il crée et
+  supprime un schéma, ce que l'outil d'exécution de la production soumet à une confirmation qui
+  n'arrive pas). Passages : le 18/09/2026 en production, 35 tables restaurées, 35 identiques, 0 écart ;
+  le 09/10/2026 sur la réplique, un dossier semé (dont une chaîne de décisions de la révision),
+  53 tables restaurées, 53 identiques, 0 écart.
 
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.

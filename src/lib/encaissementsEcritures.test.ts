@@ -28,6 +28,11 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // que la plateforme a refusé. Seule plateforme-agreee l'écrit, à la clé secrète, quand elle relève le cycle de vie, et
 // par une insertion seulement ; dans `src/`, rien, sauf la restauration (la policy le lui permet, à elle seule).
 //
+// LA RÉVISION DES COMPTES NON PLUS (ligne 41, étape R1) : `revision_justifications` et `revision_preuves` gardent ce que
+// le cabinet a décidé de chaque solde de bilan, et seule `justifier_solde` vérifie, au clic, que le solde décidé est celui
+// des écritures. Aucune Edge Function ne la lit ni ne l'écrit ; dans `src/`, rien ne l'écrit en direct, sauf la
+// restauration.
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -36,6 +41,7 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 export const TABLES_DU_REGISTRE = ['encaissements_factures', 'encaissements_factures_taux'] as const
 export const TABLES_DES_DECLARATIONS = ['transmissions_encaissements'] as const
 export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
+export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuves'] as const
 
 // Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
 const FONCTIONS_QUI_DECLARENT: readonly string[] = []
@@ -167,6 +173,19 @@ export function ecrituresDesTables(
   return fautes
 }
 
+/**
+ * La révision des comptes (ligne 41, étape R1) : ses deux tables, dans `src/` et les Edge Functions. Une décision porte
+ * le solde qu'elle justifie, et seule `justifier_solde` le vérifie — avec la décision courante, la reprise, l'ouverture
+ * de l'exercice et les preuves. La policy laisse la porte de la restauration au super-administrateur, le chef du cabinet
+ * en production : une écriture directe écrite demain depuis un écran passerait les gardes sans aucun de ces contrôles.
+ */
+export function ecrituresDeLaRevision(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DE_LA_REVISION, exceptions, 'seule justifier_solde l’écrit')
+}
+
 /** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
 export function ecrituresDuRegistre(
   sources: readonly Source[],
@@ -268,6 +287,25 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(rang('statuts_factures_recus')).toBeLessThan(rang('transmissions_encaissements'))
   })
 
+  it('aucune écriture directe de la révision, hors de la restauration (ligne 41, étape R1)', () => {
+    expect(ecrituresDeLaRevision(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme la révision : ni ne la lit, ni ne l’écrit', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const t of TABLES_DE_LA_REVISION) {
+      expect(fonctions.filter((f) => f.texte.includes(t)).map((f) => f.chemin), t).toEqual([])
+    }
+  })
+
+  it('la restauration rejoue la révision par l’insertion — les décisions par vagues —, jamais par sa seconde passe', () => {
+    for (const t of TABLES_DE_LA_REVISION) expect(ORDRE_RESTAURATION).toContain(t)
+    expect(TABLES_AUTO_REFERENCEES.map((t) => t.table)).not.toContain('revision_justifications')
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table === 'revision_justifications').map((t) => t.colonne))
+      .toEqual(['remplace_id', 'reprise_de'])
+  })
+
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
   // cassé, un dossier qu'on ne parcourt plus.
   it('voit encore quelque chose', () => {
@@ -356,6 +394,19 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(jugerS(`const T = 'statuts_factures_recus'\nawait supabase.from(T).update({ code: '212' })`)).toHaveLength(1)
     expect(jugerS(`await supabase.from('statuts_factures_recus').select('*', { count: 'exact' })`)).toEqual([])
     expect(jugerS(`await admin.from('statuts_factures_recus').insert(x)`, 'supabase/functions/f/index.ts')).toEqual([])
+  })
+
+  it('attrape une écriture directe de la révision, dans src/ comme dans une Edge Function', () => {
+    const jugerR = (texte: string, chemin = 'src/faux.ts') => ecrituresDeLaRevision([{ chemin, texte }], {})
+    expect(jugerR(`
+      await supabase
+        .from('revision_justifications')
+        .insert({ dossier_id: d, annee: 2025, compte: '512000', solde: 0, etat: 'accepte' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur revision_justifications : seule justifier_solde l’écrit'])
+    expect(jugerR(`await supabase.from('revision_preuves').delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerR(`const T = 'revision_justifications'\nawait supabase.from(T).update({ etat: 'justifie' })`)).toHaveLength(1)
+    expect(jugerR(`await admin.from('revision_preuves').insert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerR(`await supabase.from('revision_justifications').select('*', { count: 'exact' })`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {
