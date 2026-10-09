@@ -138,7 +138,8 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
   })
 
   it('tire le même compte d’amortissement du compte d’immobilisation', () => {
-    for (const compte of ['218300', '215400', '205000', '211000', '213100', '218400']) {
+    // Le sixième chiffre significatif compris (218311 → 2818311), que la copie tronquait comme src/lib.
+    for (const compte of ['218300', '215400', '205000', '211000', '213100', '218400', '218310', '218311', '218319', '205011']) {
       expect(deployee.compteAmortissement(compte), compte).toBe(compteAmortissement(compte))
     }
   })
@@ -297,11 +298,27 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     echoue(() => memesDotations(derivee))
   })
 
+  const COMPTE_DE_LA_COPIE = '  return `28${compteImmobilisation.slice(1)}`.replace(/0+$/, "").padEnd(6, "0")\n}\n\nconst dateDeLaDotation'
+
   it('attrape un compte d’amortissement décalé d’un chiffre', () => {
-    const derivee = planter(['  return `28${compteImmobilisation.slice(1, 5)}`\n}\n\nconst dateDeLaDotation', '  return `28${compteImmobilisation.slice(2, 6)}`\n}\n\nconst dateDeLaDotation'])
+    const derivee = planter([COMPTE_DE_LA_COPIE, '  return `28${compteImmobilisation.slice(2)}`.replace(/0+$/, "").padEnd(6, "0")\n}\n\nconst dateDeLaDotation'])
     echoue(() => expect(derivee.compteAmortissement('218300')).toBe(compteAmortissement('218300')))
     // Et le registre le voit : une dotation écrite sur le bon compte n'y serait plus conforme.
     echoue(() => memeRegistre(derivee))
+  })
+
+  // Le défaut corrigé le 09/10/2026 : `28` et les chiffres 2 à 5 du compte du bien. Il ne se voit que sur un sixième
+  // chiffre significatif — les comptes des natures communes finissent tous par un zéro.
+  it('attrape le sixième chiffre tronqué', () => {
+    const derivee = planter([COMPTE_DE_LA_COPIE, '  return `28${compteImmobilisation.slice(1, 5)}`\n}\n\nconst dateDeLaDotation'])
+    expect(derivee.compteAmortissement('218300')).toBe(compteAmortissement('218300'))
+    echoue(() => expect(derivee.compteAmortissement('218311')).toBe(compteAmortissement('218311')))
+  })
+
+  // `padEnd` complète sans jamais tronquer ; une longueur fixée par `slice` rendrait le défaut par l'autre bout.
+  it('attrape un compte complété ET coupé à six chiffres', () => {
+    const derivee = planter([COMPTE_DE_LA_COPIE, '  return `28${compteImmobilisation.slice(1)}`.replace(/0+$/, "").padEnd(6, "0").slice(0, 6)\n}\n\nconst dateDeLaDotation'])
+    echoue(() => expect(derivee.compteAmortissement('218311')).toBe(compteAmortissement('218311')))
   })
 
   it('attrape un exercice repris dans les à-nouveaux dont la dotation serait réclamée', () => {

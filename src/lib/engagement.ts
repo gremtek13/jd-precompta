@@ -80,7 +80,7 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
   },
   {
     compte: '467000',
-    libelle: '467 – Autres comptes débiteurs ou créditeurs',
+    libelle: '467 – Divers comptes débiteurs et produits à recevoir',
     explication:
       'Pour une personne qui n’est pas associée, ou lorsqu’aucun compte plus spécifique ne convient.',
   },

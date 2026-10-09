@@ -1493,9 +1493,10 @@ function dotationDeLExercice(bien: Omit<ImmobilisationRow, "id" | "nature_id" | 
   ) / 100
 }
 
-// 28 suivi du compte sans son 2, sur six chiffres (218300 → 281830) — `compte_amortissement` en base.
+// 28 suivi du compte sans son 2 ni ses zéros de fin, complété à six chiffres (218300 → 281830) ; un sixième chiffre
+// significatif se garde (218311 → 2818311) — `compte_amortissement` en base.
 function compteAmortissement(compteImmobilisation: string): string {
-  return `28${compteImmobilisation.slice(1, 5)}`
+  return `28${compteImmobilisation.slice(1)}`.replace(/0+$/, "").padEnd(6, "0")
 }
 
 const dateDeLaDotation = (annee: number) => `${annee}-12-31`
@@ -3046,7 +3047,8 @@ Deno.serve(async (req: Request) => {
   const repereModele = dossierRow.mode_comptable === "engagement"
     ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
     : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au 108000 Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse."
-  const systemPrompt = `Tu es l'assistant comptable interne du cabinet JD Consult, pour le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
+  // L'application est multi-cabinets : la consigne ne nomme aucun cabinet (elle nommait le premier, pour tous).
+  const systemPrompt = `Tu es l'assistant comptable interne du cabinet qui suit le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 
 Règles impératives :
 - Réponds uniquement à partir des données renvoyées par tes outils ; n'invente jamais un chiffre ou une pièce.
@@ -3055,7 +3057,9 @@ Règles impératives :
 - Si les données sont insuffisantes pour répondre avec certitude, dis-le plutôt que de deviner.
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
-- Le STATUT DE TVA du dossier (resume_dossier : statut_tva) : « redevable » facture la TVA et la récupère — ses pièces sont retenues hors taxes ; « franchise » (art. 293 B du CGI) et « exonere » (art. 261 à 261 E du CGI, les soins au premier rang ; article_exoneration dit lequel) ne la facturent ni ne la récupèrent — leurs pièces sont retenues TVA comprise. Une franchise reste dans le champ de la facturation électronique (émission et e-reporting au 1er septembre 2027 pour une PME) ; une exonération en sort pour ses opérations exonérées ; et tout dossier reçoit ses factures sous forme électronique depuis le 1er septembre 2026. Un statut null est À PRÉCISER : ne le devine pas, il se règle dans l'onglet TVA.
+- Le STATUT DE TVA du dossier (resume_dossier : statut_tva) : « redevable » facture la TVA et la récupère — ses pièces sont retenues hors taxes ; « franchise » (art. 293 B du CGI) et « exonere » (art. 261 à 261 E du CGI, les soins au premier rang ; article_exoneration dit lequel) ne la facturent ni ne la récupèrent — leurs pièces sont retenues TVA comprise. Un statut null est À PRÉCISER : ne le devine pas, il se règle dans l'onglet TVA.
+- La FACTURATION ÉLECTRONIQUE : tout dossier, même exonéré ou en franchise, reçoit ses factures sous forme électronique depuis le 1er septembre 2026. Au 1er septembre 2027 pour une PME, l'émission des factures électroniques et l'e-reporting des ventes (à des particuliers, à des clients établis hors de France) visent les opérations taxables : une franchise y est tenue, un dossier exonéré seulement pour ses opérations taxables s'il en a — ses opérations exonérées en sortent. Et tout assujetti, même exonéré ou en franchise, déclare par l'e-reporting ses achats à un fournisseur établi hors de France (un logiciel en ligne, une formation, de la publicité). Le statut « Encaissée » et l'e-reporting des paiements ne visent que les prestations de services dont la TVA est due à l'encaissement, pas celles d'un dossier qui a opté pour les débits.
+- L'AUTOLIQUIDATION : la TVA d'un service acheté à un prestataire établi hors de France est due par le dossier qui l'achète, même en franchise ou exonéré (art. 283, 2 du CGI) : il la déclare alors, avec un numéro de TVA intracommunautaire. L'application ne prépare pas encore cette déclaration, ni l'autoliquidation dans la CA3 d'un redevable : ne dis jamais d'un dossier en franchise ou exonéré qu'il n'a aucune TVA à déclarer.
 - Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le 445710 la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.

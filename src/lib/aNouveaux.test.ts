@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compteDeLApplication, dateOuverture, ouvertureBanque, preparerANouveaux } from './aNouveaux'
+import { compteDeLApplication, compteQueLApplicationEcrit, dateOuverture, ouvertureBanque, preparerANouveaux } from './aNouveaux'
 import type { LigneBalance } from './balanceImport'
 import type { ANouveau } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
@@ -42,7 +42,75 @@ describe('compteDeLApplication', () => {
   })
 })
 
+// LES COMPTES QUE LA REPRISE NE RANGE PAS, alors que l'application écrit elle-même ce qu'ils portent : un 4455100 s'ouvre
+// sous ce numéro quand le paiement de la TVA écrit au 445510, un 164100 garde le capital quand les échéances écrivent au
+// 164000. Rien ne change de ce qui s'écrit : l'écran le DIT (BalanceCard), en attendant que la reprise range le plan
+// (ligne 43). Les comptes sont fictifs, et leurs racines celles du plan comptable de 2026.
+describe('compteQueLApplicationEcrit', () => {
+  it('nomme le compte de l’application pour un compte de rôle sur une autre longueur', () => {
+    for (const [balance, application] of [
+      ['4455100', '445510'], ['445620000', '445620'], ['4456700', '445670'], ['44583', '445830'],
+      ['4010000', '401000'], ['404', '404000'], ['41100000', '411000'], ['108', '108000'], ['4550000', '455000'],
+      ['467', '467000'], ['164', '164000'], ['1640000', '164000'], ['1010000', '101000'], ['120', '120000'],
+      ['1290000', '129000'], ['2750', '275000'], ['58', '580000'],
+    ]) expect(compteQueLApplicationEcrit(balance), balance).toBe(application)
+  })
+
+  it('nomme le compte de l’application pour un autre sous-compte de la racine d’un rôle', () => {
+    expect(compteQueLApplicationEcrit('164100')).toBe('164000')
+    expect(compteQueLApplicationEcrit('445661')).toBe('445660')
+    expect(compteQueLApplicationEcrit('445711')).toBe('445710')
+    expect(compteQueLApplicationEcrit('401100')).toBe('401000')
+    expect(compteQueLApplicationEcrit('1081')).toBe('108000')
+  })
+
+  // Le compte du bien et celui de son amortissement, sur six chiffres sans leurs zéros de fin — et un sixième chiffre
+  // significatif qui se garde, comme `compteAmortissement` le garde.
+  it('nomme la forme à six chiffres d’un compte de bien ou d’amortissement', () => {
+    expect(compteQueLApplicationEcrit('2183')).toBe('218300')
+    expect(compteQueLApplicationEcrit('2183000')).toBe('218300')
+    expect(compteQueLApplicationEcrit('28183')).toBe('281830')
+    expect(compteQueLApplicationEcrit('2818300')).toBe('281830')
+    expect(compteQueLApplicationEcrit('2805')).toBe('280500')
+  })
+
+  it('se tait sur un compte que l’application écrit sous ce numéro, sur un compte rangé, et sur un autre compte', () => {
+    for (const numero of [
+      '445510', '401000', '108000', '164000', '120000', '275000', '580000', '218300', '281830', '2818311', '218311',
+      // Rangés par la reprise elle-même : la banque, et la TVA déductible ou collectée à des zéros près.
+      '512', '51210000', '44566', '4456600', '44571000',
+      // Mêmes premiers chiffres, autre compte du plan : 4456 n'est pas 44566, 4457 n'est pas 44571, 12 n'est pas 120.
+      '4456', '445700', '12',
+      // Aucun rôle : l'application n'y écrit pas d'elle-même.
+      '1681', '2611', '4386', '271000', '5300',
+    ]) expect(compteQueLApplicationEcrit(numero), numero).toBeNull()
+  })
+})
+
 describe('preparerANouveaux', () => {
+  it('dit les comptes repris sous leur numéro alors que l’application écrit sous un autre, sans rien changer à ce qui s’écrit', () => {
+    const p = preparerANouveaux([
+      ligne('51210000', 3000, 0, 'Banque'),
+      ligne('4455100', 0, 400, 'TVA à décaisser'),
+      ligne('164100', 0, 2000, 'Emprunt'),
+      ligne('44566', 100, 0, 'TVA déductible'),
+      ligne('401000', 0, 700, 'Fournisseurs'),
+    ], 2026)
+    expect(p.refus).toBeNull()
+    expect(p.nonRanges).toEqual([
+      { compteOrigine: '4455100', libelle: 'TVA à décaisser', compte: '445510' },
+      { compteOrigine: '164100', libelle: 'Emprunt', compte: '164000' },
+    ])
+    // Les rangés restent à leur place, et les à-nouveaux gardent le numéro de la balance.
+    expect(p.rapproches.map((r) => r.compteOrigine)).toEqual(['51210000', '44566'])
+    expect(p.lignes.map((l) => l.compte)).toEqual(['512000', '4455100', '164100', '445660', '401000'])
+  })
+
+  it('ne dit rien d’une balance tenue sur les comptes de l’application', () => {
+    const p = preparerANouveaux([ligne('512000', 900, 0), ligne('445510', 0, 200), ligne('108000', 0, 700)], 2026)
+    expect(p.nonRanges).toEqual([])
+  })
+
   it('ouvre les seuls comptes de bilan, et reprend le résultat en 120 en attente d’affectation', () => {
     const p = preparerANouveaux(BALANCE_2025, 2026)
     expect(p.refus).toBeNull()

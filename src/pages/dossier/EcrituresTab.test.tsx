@@ -54,7 +54,15 @@ const faux = vi.hoisted(() => ({
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
   retenirApresRpc: false,
+  // Ce que l'écran croit de qui regarde (`useAuth().isSuperAdmin`), et ce qu'en sait la BASE : la policy d'écriture
+  // d'une catégorie commune (`dossier_id` nul) ne laisse passer que le super-administrateur, et écarte la ligne sans
+  // lever pour tout autre (supabase/essais/categoriesCommunes.sql). Les deux se séparent quand un droit change en
+  // cours de session.
+  superAdmin: true,
+  superAdminEnBase: true,
 }))
+
+vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ isSuperAdmin: faux.superAdmin }) }))
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
@@ -63,6 +71,9 @@ vi.mock('../../lib/supabase', async () => {
     colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur
       : colonne.startsWith('>') ? String(ligne[colonne.slice(1)]) > String(valeur)
         : ligne[colonne] === valeur
+  // La policy d'écriture de `categories` : une ligne commune, le super-administrateur seul — les autres lignes passent.
+  const policeLaisse = (table: string, ligne: Record<string, unknown>) =>
+    table !== 'categories' || ligne.dossier_id != null || faux.superAdminEnBase
   return {
     supabase: {
       rpc: (nom: string, args: Record<string, unknown>) => {
@@ -158,7 +169,8 @@ vi.mock('../../lib/supabase', async () => {
               if (faux.refusMiseAJour) {
                 return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour }, count: 0 }).then(suite)
               }
-              const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) => correspond(ligne, colonne, valeur))
+              const vise = (ligne: Record<string, unknown>) =>
+                filtres.every(([colonne, valeur]) => correspond(ligne, colonne, valeur)) && policeLaisse(table, ligne)
               faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
                 vise(l as Record<string, unknown>) ? { ...(l as Record<string, unknown>), ...miseAJour } : l)
               return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
@@ -192,7 +204,22 @@ vi.mock('../../lib/supabase', async () => {
             const reponse = { data: rendu, error: null, count: toutes.length }
             return (faux.retenue ?? Promise.resolve()).then(() => reponse).then(suite)
           },
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          // Une mise à jour LUE AVEC SA LIGNE (`.select('id').maybeSingle()`) : la base rend la ligne modifiée, ou rien —
+          // sans erreur — quand la policy l'écarte. C'est ce que l'écran vérifie après le compte d'une catégorie.
+          maybeSingle: () => {
+            if (!miseAJour) return Promise.resolve({ data: null, error: null })
+            const valeurs: Record<string, unknown> = miseAJour
+            faux.misesAJour.push({ table, valeurs })
+            if (faux.refusMiseAJour) return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour } })
+            let rendue: { id: unknown } | null = null
+            faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => {
+              const ligne = l as Record<string, unknown>
+              if (!filtres.every(([colonne, valeur]) => correspond(ligne, colonne, valeur)) || !policeLaisse(table, ligne)) return l
+              rendue ??= { id: ligne.id }
+              return { ...ligne, ...valeurs }
+            })
+            return Promise.resolve({ data: rendue, error: null })
+          },
         })
         return chaine
       },
@@ -247,6 +274,8 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.rpcs = []
   faux.erreurRpc = null
   faux.retenirApresRpc = false
+  faux.superAdmin = true
+  faux.superAdminEnBase = true
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], natures_immobilisation: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [], reglements_groupes: [],
@@ -1850,6 +1879,68 @@ describe('EcrituresTab — un compte saisi commence par trois chiffres', () => {
     await saisir(' 622 600 ')
     expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '622600' } }])
     expect(screen.queryAllByText(/n'est pas un numéro de compte/)).toHaveLength(0)
+  })
+})
+
+// UNE CATÉGORIE COMMUNE À TOUS LES CABINETS (`dossier_id` nul) ne se règle que par le super-administrateur : sa policy
+// écarte la ligne pour tout autre, sans lever, et « Enregistrer » se perdait sans un mot — éprouvé en base par
+// supabase/essais/categoriesCommunes.sql. L'écran le dit avant le clic, et vérifie après le clic la ligne rendue.
+describe('EcrituresTab — le compte d’une catégorie commune à tous les cabinets', () => {
+  const COMMUNE = {
+    id: 'cat-commune', dossier_id: null, code: 'sans_suggestion', libelle: 'Catégorie commune',
+    ordre: 2, compte_comptable: null, poste_2035: 'Achats',
+  }
+  const DU_DOSSIER = { ...COMMUNE, id: 'cat-dossier', dossier_id: 'dossier-de-test', libelle: 'Catégorie du dossier' }
+  const carte = async () => within((await screen.findByText('Comptes manquants')).closest('.card') as HTMLElement)
+
+  it('ne l’offre pas à qui n’est pas super-administrateur, et dit pourquoi', async () => {
+    poser({ categories: [COMMUNE], pieces: [piece({ categorie_id: 'cat-commune' })] })
+    faux.superAdmin = false
+    faux.superAdminEnBase = false
+    monter()
+
+    const ligne = within((await carte()).getByText('Catégorie commune').closest('tr') as HTMLElement)
+    ligne.getByText('Catégorie commune à tous les cabinets : seul l’administrateur de l’application en règle le compte.')
+    expect(ligne.queryByPlaceholderText('ex. 606100')).toBeNull()
+    expect(ligne.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+  })
+
+  // Le garde symétrique : une catégorie du dossier se règle toujours, et une catégorie commune par le super-administrateur.
+  it('l’offre pour une catégorie du dossier, et pour une catégorie commune au super-administrateur', async () => {
+    poser({ categories: [COMMUNE, DU_DOSSIER], pieces: [piece({ categorie_id: 'cat-commune' }), piece({ id: 'p2', categorie_id: 'cat-dossier' })] })
+    faux.superAdmin = false
+    faux.superAdminEnBase = false
+    monter()
+    const duDossier = within((await carte()).getByText('Catégorie du dossier').closest('tr') as HTMLElement)
+    await act(async () => { fireEvent.change(duDossier.getByPlaceholderText('ex. 606100'), { target: { value: '606300' } }) })
+    await act(async () => { duDossier.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '606300' } }])
+    expect(screen.queryByText(/Rien n’a été enregistré/)).toBeNull()
+  })
+
+  it('l’offre au super-administrateur, qui l’enregistre', async () => {
+    poser({ categories: [COMMUNE], pieces: [piece({ categorie_id: 'cat-commune' })] })
+    monter()
+    const ligne = within((await carte()).getByText('Catégorie commune').closest('tr') as HTMLElement)
+    await act(async () => { fireEvent.change(ligne.getByPlaceholderText('ex. 606100'), { target: { value: '606300' } }) })
+    await act(async () => { ligne.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '606300' } }])
+    expect(screen.queryByText(/Rien n’a été enregistré/)).toBeNull()
+    await waitFor(() => expect(screen.queryByText('Comptes manquants')).toBeNull())
+  })
+
+  // L'écran croit encore au droit — perdu en cours de session — : la base écarte la ligne sans lever, et l'écran le dit au
+  // lieu de croire l'enregistrement fait.
+  it('dit qu’une écriture dont la base ne rend aucune ligne n’a rien enregistré', async () => {
+    poser({ categories: [COMMUNE], pieces: [piece({ categorie_id: 'cat-commune' })] })
+    faux.superAdminEnBase = false
+    monter()
+    const ligne = within((await carte()).getByText('Catégorie commune').closest('tr') as HTMLElement)
+    await act(async () => { fireEvent.change(ligne.getByPlaceholderText('ex. 606100'), { target: { value: '606300' } }) })
+    await act(async () => { ligne.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toHaveLength(1)
+    expect(await screen.findByText(/Rien n’a été enregistré : la base n’a modifié aucune catégorie/)).toBeTruthy()
+    expect((faux.parTable.categories[0] as { compte_comptable: string | null }).compte_comptable).toBeNull()
   })
 })
 

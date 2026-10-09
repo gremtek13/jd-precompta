@@ -6,7 +6,7 @@ import {
 } from './amortissements'
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
-import { fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
 
 // TYPÉ sans `as` : le compilateur confronte chaque champ à la table.
@@ -158,12 +158,44 @@ describe('planAmortissement', () => {
   })
 })
 
+// LA TABLE DU COMPTE D'AMORTISSEMENT, RELEVÉE EN BASE le 09/10/2026 par `compte_amortissement`, après la migration
+// `compte_amortissement_meme_ventilation` : la base REFUSE une dotation qui ne crédite pas ce compte, donc un écart ici
+// est une dotation juste refusée en production. Les huit natures communes (sixième chiffre nul : le compte d'avant), un
+// sixième chiffre significatif (le défaut corrigé), et quatre formes que la contrainte des natures refuse aujourd'hui
+// (quatre, sept et huit chiffres), où les deux côtés doivent encore s'accorder.
+const COMPTES_AMORTISSEMENT_BASE: [string, string][] = [
+  ['200000', '280000'], ['201000', '280100'], ['201100', '280110'], ['205000', '280500'], ['205010', '280501'],
+  ['205011', '2805011'], ['210000', '281000'], ['211000', '281100'], ['212000', '281200'], ['213100', '281310'],
+  ['213500', '281350'], ['215400', '281540'], ['215410', '281541'], ['218000', '281800'], ['218100', '281810'],
+  ['218200', '281820'], ['2183', '281830'], ['218300', '281830'], ['218301', '2818301'], ['218310', '281831'],
+  ['2183100', '281831'], ['21831000', '281831'], ['21831001', '281831001'], ['218311', '2818311'], ['218319', '2818319'],
+  ['218400', '281840'], ['218700', '281870'], ['219999', '2819999'],
+]
+
 describe('compteAmortissement — 28 suivi du compte sans son 2, comme `compte_amortissement` en base', () => {
   it('rend le compte du plan comptable', () => {
     expect(compteAmortissement('218300')).toBe('281830')
     expect(compteAmortissement('205000')).toBe('280500')
     expect(compteAmortissement('215400')).toBe('281540')
     expect(compteAmortissement('218000')).toBe('281800')
+  })
+
+  // « Même ventilation que celle du compte 21 » (PCG, art. 1121-1, compte 281) : deux comptes de biens qui ne diffèrent
+  // que par leur sixième chiffre gardent deux comptes d'amortissement. Tronqué, 218310 et 218311 rendaient tous deux 281831.
+  it('garde le sixième chiffre quand il est significatif', () => {
+    expect(compteAmortissement('218310')).toBe('281831')
+    expect(compteAmortissement('218311')).toBe('2818311')
+    expect(new Set(['218310', '218311', '218319'].map(compteAmortissement)).size).toBe(3)
+  })
+
+  it.each(COMPTES_AMORTISSEMENT_BASE)('%s : le compte que la base attend, %s', (compte, attendu) => {
+    expect(compteAmortissement(compte)).toBe(attendu)
+  })
+
+  it('suit le texte de la fonction SQL exportée', () => {
+    expect(derniereDefinitionSql('compte_amortissement')).toContain(
+      "select rpad(v.compte, greatest(length(v.compte), 6), '0')\n  from (select rtrim('28' || substr(p_compte, 2), '0') as compte) as v",
+    )
   })
 
   it('porte un libellé, que la balance et le FEC reprennent', () => {
@@ -228,7 +260,7 @@ describe('refusDotation — les refus de la base, dits avant le clic, dans son o
       'La nature de ce bien est introuvable.', 'de ce bien est validée : elle ne se remplace plus.',
     ]) expect(sql).toContain(sansApostrophes(phrase))
     expect(sql).toContain(`('${COMPTE_DOTATIONS_AMORTISSEMENTS}', 'debit', v_montant)`)
-    expect(sql).toContain("select '28' || substr(p_compte, 2, 4)")
+    expect(sql).toContain('v_compte_amortissement := public.compte_amortissement(v_compte_immobilisation);')
   })
 })
 

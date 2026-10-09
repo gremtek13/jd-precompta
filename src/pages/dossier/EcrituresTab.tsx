@@ -40,7 +40,9 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { useAuth } from '../../context/AuthContext'
 import { messageErreur } from '../../lib/messageErreur'
+import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
 
 // Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
@@ -141,6 +143,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
+  // Une catégorie commune à tous les cabinets ne se règle que par le super-administrateur (lib/categoriesCommunes.ts).
+  const { isSuperAdmin } = useAuth()
   const [recherche, setRecherche] = useState('')
   // Exercice partagé avec Pièces/Banque/Statistiques/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
@@ -334,9 +338,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setError(`« ${valeur} » n'est pas un numéro de compte : il commence par trois chiffres, comme 606100. Le fichier des écritures (FEC) n'en accepte pas d'autre.`)
       return
     }
-    const { error: saveError } = await supabase.from('categories').update({ compte_comptable: valeur }).eq('id', categorieId)
+    // Seconde ceinture : le champ d'une catégorie commune n'est pas rendu à qui ne peut pas la régler.
+    if (categorie && !categorieReglableIci(categorie, isSuperAdmin)) {
+      setError(categorieCommuneNonReglable('compte'))
+      return
+    }
+    // Lue avec la ligne modifiée : une policy qui écarte la ligne ne lève rien, et PostgREST rend un succès sur zéro ligne.
+    const { data: modifiee, error: saveError } = await supabase.from('categories').update({ compte_comptable: valeur }).eq('id', categorieId)
+      .select('id').maybeSingle()
     if (saveError) {
-      setError(saveError.message)
+      setError(messageErreur(saveError, 'Le compte n’a pas pu être enregistré.'))
+      return
+    }
+    if (!modifiee) {
+      setError(CATEGORIE_NON_MODIFIEE)
       return
     }
     load()
@@ -1436,20 +1451,27 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                 {categoriesSansCompte.map((c) => (
                   <tr key={c.id}>
                     <td>{c.libelle}</td>
-                    <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input
-                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 120 }}
-                        placeholder="ex. 606100"
-                        value={compteAffiche(c)}
-                        onChange={(e) => setComptesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                      />
-                      {!comptesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
-                        <span className="badge badge-neutral">suggestion</span>
-                      )}
-                    </td>
-                    <td>
-                      <button className="btn btn-outline btn-sm" onClick={() => saveCompte(c.id)}>Enregistrer</button>
-                    </td>
+                    {categorieReglableIci(c, isSuperAdmin) ? (
+                      <>
+                        <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 120 }}
+                            placeholder="ex. 606100"
+                            value={compteAffiche(c)}
+                            onChange={(e) => setComptesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                          />
+                          {!comptesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                            <span className="badge badge-neutral">suggestion</span>
+                          )}
+                        </td>
+                        <td>
+                          <button className="btn btn-outline btn-sm" onClick={() => saveCompte(c.id)}>Enregistrer</button>
+                        </td>
+                      </>
+                    ) : (
+                      // Commune à tous les cabinets : la base n'en laisserait rien écrire, et le clic se perdait sans un mot.
+                      <td colSpan={2} className="muted">{categorieCommuneNonReglable('compte')}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

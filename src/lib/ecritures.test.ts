@@ -1048,7 +1048,7 @@ describe('calculerBalance — les comptes de tiers', () => {
       ['401000', '411000', '455000', '108000', '467000'].map((compte) => ecriture({ compte })), [], [],
     )
     expect(balance.map((l) => l.libelle)).toEqual([
-      "Compte de l'exploitant", 'Fournisseurs', 'Clients', 'Associés — comptes courants', 'Autres comptes débiteurs ou créditeurs',
+      "Compte de l'exploitant", 'Fournisseurs', 'Clients', 'Associés — comptes courants', 'Divers comptes débiteurs et produits à recevoir',
     ])
   })
 })

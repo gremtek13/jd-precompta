@@ -145,7 +145,7 @@ export default function ClientHome() {
   }
 
   if (!dossierId) {
-    return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte JD Consult.</p>
+    return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
   }
 
   // Juste le prénom si on a un nom complet ("Marie Dupont" → "Marie") — plus chaleureux qu'un nom

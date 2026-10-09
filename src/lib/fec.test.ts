@@ -974,7 +974,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
       ['OD', 'OD00001', '20260331', '445710', 'TVA collectée', '', 'CA3 au 31/03/2026', '20260331', '100,40', '0,00'],
       ['OD', 'OD00001', '20260331', '445510', 'TVA à décaisser', '', 'CA3 au 31/03/2026', '20260331', '0,00', '79,00'],
       ['OD', 'OD00001', '20260331', '445660', 'TVA déductible', '', 'CA3 au 31/03/2026', '20260331', '0,00', '20,60'],
-      ['OD', 'OD00001', '20260331', '758000', 'Produits divers de gestion courante', '', 'CA3 au 31/03/2026', '20260331', '0,00', '0,80'],
+      ['OD', 'OD00001', '20260331', '758000', 'Indemnités et autres produits', '', 'CA3 au 31/03/2026', '20260331', '0,00', '0,80'],
     ])
   })
 

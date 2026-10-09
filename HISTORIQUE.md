@@ -15624,3 +15624,111 @@ et 411000 avec leur auxiliaire).
 **Suite (relecture du lot, constat 3).** Le bilan lit désormais le solde de clôture et le refus « antérieur à la reprise »
 à leur source, la révision (`soldeDuCompteCentimes`, `refusDeLOuverture` : « 31 décembre < reprise », comme la base) —
 quatre mutations de la révision seule, qui survivaient aux tests du bilan, y mordent.
+
+### 09/10/2026 — CINQ DÉFAUTS RELEVÉS EN CONCEVANT LE PLAN COMPTABLE PERSONNALISABLE — LIGNE 43
+
+(L'architecte, sur la consigne de la session : revérifier les cinq défauts que la conception de la ligne 43 a relevés en
+passant — « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », §9 —, corriger ceux dont la correction ne préempte
+aucune des questions PC1 à PC9 et Q1 à Q12, dire les autres.) Deux migrations appliquées, aucune suppression, aucune
+policy touchée ; une fonction à redéployer, `agent-comptable`.
+
+**1. Les catégories et les natures « partagées » : CONFIRMÉ par impersonation, corrigé à l'écran sans élargir aucun droit.**
+`categories` et `natures_immobilisation` n'ont pas de `cabinet_id` : une ligne à `dossier_id` nul est commune à
+l'application entière, et ses policies d'écriture (`dossier_id is null and is_super_admin()`) ne laissent passer que le
+super-administrateur. La conception l'avait DÉDUIT ; `supabase/essais/categoriesCommunes.sql` l'éprouve (9 contrôles sur
+9 en production) : un chef de cabinet qui n'est pas super-administrateur — le compte client du jeu, rattaché comme chef
+le temps d'un bloc annulé, la base n'ayant qu'un chef, qui est aussi super-administrateur — qui écrit le compte ou le
+poste d'une catégorie commune, ou le compte d'une nature commune, modifie ZÉRO ligne et ne reçoit AUCUNE erreur ; lue
+avec sa ligne (`returning`), l'écriture n'en rend aucune ; le même chef écrit bien une catégorie de son dossier, et le
+super-administrateur la catégorie et la nature communes ; rien ne reste. L'essai sait échouer : sans le passage au rôle
+`authenticated`, les contrôles 2 à 5 virent au rouge (une ligne chacun). Trois cartes de deux onglets — les seules
+écritures de `categories` dans `src/` — l'écrivaient par un `update … eq('id')` dont seule l'erreur était lue :
+« Comptes manquants » (Écritures), « Postes manquants » et « Postes sans case » (Clôture) — ce dernier, celui où renvoie le refus de la validation d'un exercice, aurait laissé ce refus
+sans issue ni raison. **Corrigé** (`lib/categoriesCommunes.ts`) : pour une catégorie commune et qui n'est pas
+super-administrateur, ni champ ni bouton, la phrase « Catégorie commune à tous les cabinets : seul l'administrateur de
+l'application en règle le compte » (ou le poste) ; et après tout clic, la ligne relue (`.select('id').maybeSingle()`) —
+zéro ligne se dit (« Rien n'a été enregistré : la base n'a modifié aucune catégorie… »), un droit perdu en cours de
+session ne se perd plus en silence. Les natures communes, qu'aucun écran ne modifie, sont dites « Commune à tous les
+cabinets » et non plus « Partagée par le cabinet » (onglet Immobilisations). Ce qui reste : qui règle ces lignes, et si
+un cabinet ou un dossier aura les siennes, est Q9 ; le bandeau de lecture de la Balance des comptes dit encore « Les
+catégories du cabinet », et deux commentaires d'Edge Functions (`proposer-categorie`, `evaluer-extraction`) « celles du
+cabinet (dossier_id nul) » — laissés, pour ne pas redéployer deux fonctions pour un commentaire.
+
+**2. Le compte d'amortissement tronquait le sixième chiffre : CONFIRMÉ aux trois endroits où il vit, corrigé des trois
+de la même façon.** `compte_amortissement` en base (`'28' || substr(p_compte, 2, 4)`), `compteAmortissement` dans
+`src/lib/amortissements.ts` et sa copie dans `agent-comptable` (`28${c.slice(1, 5)}`) : 218310 et 218311 rendaient
+tous deux 281831 — mesuré en base avant la migration. Le PCG consolidé au 1er janvier 2026 (art. 1121-1) donne au
+compte 280 « même ventilation que celle du compte 20 » et au 281 « même ventilation que celle du compte 21 », et
+« le zéro terminal ou la série terminale de zéros a une signification de regroupement » (art. 1131-2). La règle devient :
+28 suivi du compte sans son 2 ni ses zéros de fin, complété à six chiffres — le même compte qu'avant pour tout compte
+dont le sixième chiffre est un zéro (les huit natures de la base, toutes communes), sept chiffres quand il est
+significatif (218311 → 2818311). Côté base, `rpad` vers la plus grande des deux longueurs : `rpad` TRONQUE une chaîne
+plus longue que la longueur demandée, et le défaut serait revenu par l'autre bout. Migration
+`compte_amortissement_meme_ventilation` (un `create or replace`, droits inchangés, aucun index ni contrainte ne
+dépendant de la fonction) ; `ecrire_dotation_amortissement`, qui l'appelle, ne change pas. `amortissements.test.ts`
+confronte `compteAmortissement` à une table de 28 comptes RELEVÉE EN BASE après la migration et au texte exporté ;
+`agentComptableAmortissement.test.ts` la copie, avec deux dérives plantées de plus (le sixième chiffre tronqué, la
+forme coupée à six) ; `libelleCompteTenu` nomme aussi un 28 à sept chiffres non terminé par zéro (un 2818300, que
+l'application n'écrit jamais, garde le libellé de sa balance). `dotations.sql` : 32 contrôles sur 32 en production, dont
+deux nouveaux joués à travers la fonction d'écriture — une nature propre au dossier sur le 218311 : la dotation crédite
+le 2818311, et le 281831 tronqué est refusé — ; intervertis, les deux virent au rouge. Pour le cabinet (Q5) : un compte
+de sept chiffres naît désormais d'une nature au sixième chiffre significatif ; si les dossiers restent à six chiffres,
+PC4 pourra refuser une telle nature ou lui faire porter son compte 28.
+
+**3. Les libellés du PCG de 2019 : CONFIRMÉS, corrigés ; le refus du 468, DIT et laissé (Q12).** Relu dans les deux
+versions consolidées (ANC) : 467 « Autres comptes débiteurs ou créditeurs » (2019) → « Divers comptes débiteurs et
+produits à recevoir » (2026) ; 468 « Divers – Charges à payer et produits à recevoir » (4686, 4687) → « Divers comptes
+créditeurs et charges à payer » (sans subdivision) ; 658 « Charges diverses de gestion courante » → « Pénalités et autres
+charges » ; 758 « Produits divers de gestion courante » → « Indemnités et autres produits ». Le CompteLib doit être
+« l'intitulé complet du compte tel qu'il est défini dans la nomenclature » (BOI-CF-IOR-60-40-20, §150) : corrigés dans
+`LIBELLES_COMPTES`, `LIBELLES_DU_PLAN` et le choix du dirigeant (`COMPTES_NOTES_DE_FRAIS`), épinglés par
+`comptes.test.ts` (recopiés de la nomenclature, pas du module), et dans le commentaire de la colonne
+`dossiers.compte_notes_de_frais` (migration `commentaire_compte_notes_de_frais_pcg_2026`). Aucune fonction de la base
+ne portait ces intitulés, aucune ligne non plus. La seconde moitié de Q7 est ainsi faite ; la première (le 467 par
+défaut pour le dirigeant non associé, le 468 permis) reste ouverte. LE REFUS DU 468 : l'art. 1214-46 de 2026 range les
+opérations au solde indifféremment débiteur ou créditeur « sous le compte 467 […] ou le compte 468 » (2019 : le 467
+seul), et le 468 n'est plus un compte de régularisation seulement : c'est le miroir créditeur du 467 que l'application
+accepte. L'accepter sur un mouvement du relevé est exactement Q12 : `refusCompteDeBilan` et `refus_compte_de_bilan` ne
+changent pas, ni leur message, qui le dit encore « compte de régularisation (charges à payer, produits à recevoir…) ».
+
+**4. La consigne de l'assistant nommait « le cabinet JD Consult » pour tous les cabinets : CONFIRMÉ, corrigé.** Elle dit
+désormais « l'assistant comptable interne du cabinet qui suit le dossier » — neutre plutôt que le nom du cabinet, qui
+aurait coûté une lecture de plus et un nom de plus envoyé au modèle. Ce qu'elle disait de la facturation électronique
+(« une exonération en sort pour ses opérations exonérées ») taisait les achats à l'étranger qu'un dossier exonéré
+déclare pourtant par l'e-reporting, et l'autoliquidation (art. 283, 2 du CGI) : alignée sur `lib/statutTva.ts` (e1) —
+la réception pour tous depuis le 1er septembre 2026 ; au 1er septembre 2027 pour une PME, l'émission et l'e-reporting
+des ventes pour les opérations taxables, l'e-reporting des achats à l'étranger pour TOUT assujetti, les données de
+paiement hors option pour les débits ; l'autoliquidation, que l'application ne prépare pas encore. Gardée par
+`agentComptableConsigne.test.ts`, qui confronte les dates et les obligations aux modules, la référence. La même valeur
+vivait ailleurs : quatre écrans client disaient « contacte JD Consult » à un client sans dossier, de n'importe quel
+cabinet — « contacte ton cabinet comptable ». `cabinetEnDur.test.ts` lit tout le code exécuté (`src/` et
+`supabase/functions/`, tests exceptés, 229 fichiers) sans ses commentaires et n'y admet aucun nom de cabinet. Il ne lit
+pas `public/` : le manifeste statique (`public/manifest.webmanifest`, celui de tout cabinet sans logo propre) décrit
+encore l'application comme « Pré-comptabilité JD Consult » — laissé, la marque de l'application étant au cabinet.
+`agent-comptable` est à redéployer (`verify_jwt = false`, `supabase/config.toml`) : sa consigne et la copie de
+`compteAmortissement` ont changé.
+
+**5. La reprise d'une balance ne range que trois comptes de rôle : CONFIRMÉ, non corrigé (PC6), et la carte le DIT.**
+`compteDeLApplication` ne ramène que les 512… et, à des zéros près, le 44566 et le 44571. `compteQueLApplicationEcrit`
+(`lib/aNouveaux.ts`, pur) dit, pour chaque compte ouvert, le numéro sous lequel l'application écrit ce qu'il porte quand
+ce n'est pas le sien : le compte du rôle pour un compte sous la racine d'un rôle (44551, 44562, 44566, 44567, 44571,
+44583, 401, 404, 411, 108, 455, 467, 164, 101, 120, 129, 275, 58 — un 4455100 → 445510, un 164100 → 164000), la forme à
+six chiffres pour un compte de bien ou d'amortissement (2183 → 218300, 28183 → 281830). La carte de la balance reprise
+le dit avant le clic, à côté des comptes rangés ; ce qui part à la base ne change pas (le test qui épingle l'appel est
+inchangé). Les comptes que l'application n'écrit pas d'elle-même (un 1681, un 2611) ne sont pas dits.
+
+**Preuves.** La barrière : `tsc -b`, les Edge Functions à leurs 25 erreurs connues, le lint à ses 63 avertissements, le
+build. Les 22 fichiers de test touchés ou voisins sous les quatre fuseaux (1 057 tests) ; la suite entière sous Paris,
+6 482 tests, dont trois délais dépassés sous la charge (deux fichiers que le correctif ne touche pas), verts rejoués
+seuls. 29 mutations, toutes mordent : la troncature rendue au module, à la copie et à la forme coupée à six ; chacun des
+six intitulés de 2019 remis ; le champ d'une catégorie commune offert dans chacune des trois cartes, et la ligne rendue
+non vérifiée ; la consigne qui nomme un cabinet, oublie les achats à l'étranger ou tait l'autoliquidation ; un écran
+client qui nomme un cabinet ; la reprise qui ne reconnaît plus un rôle, dit un compte rangé, oublie les comptes de bien
+ou raccourcit la racine du 120. Le banc, servi d'une copie hors du dépôt (port 5293, polices ouvertes) : neuf
+exécutions (390, 720, 1 024, 1 280 et 1 440 px, puis les quatre combinaisons extrêmes des volets), 0 débordement ;
+captures relues à 1 440 et 390 px — elles ont montré, repliée en fiche, une cellule fusionnée qui portait encore son
+libellé collé au texte (« Nouveau posteCatégorie… ») : une cellule fusionnée du corps porte un bloc, sans libellé
+(`index.css`, `tbody td[colspan]`), corrigé et rejoué. Les deux essais rendent le texte que la base a reçu, égal au
+fichier sans ses lignes de commentaire. Les trois contrôles de l'export égaux après chaque migration (106 migrations,
+empreinte globale c06035e67b4374900d74eaa999f50d31 ; socle 78 instructions, f01053c781688bbfbee8c70ac43924a6 ;
+inventaire 1 365 objets, 8cb853171952af846feb1856c07ed195). `rls.sql` n'est pas rejoué : aucune policy n'a bougé.

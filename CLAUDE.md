@@ -94,7 +94,9 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   source de vérité, et la procédure qui le rejouerait n'existe pas encore. Après toute migration : y ajouter son fichier
   et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle, inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, un dossier par fonction, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock) par dossier, plafond de coût mensuel par cabinet (alerte et blocage).
+  - `agent-comptable` — assistant IA (Bedrock) par dossier, plafond de coût mensuel par cabinet (alerte et blocage) ;
+    sa consigne ne nomme aucun cabinet et dit de la facturation électronique et de l'autoliquidation ce qu'en dit
+    `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; aucun nom de cabinet dans le code exécuté (`cabinetEnDur.test.ts`).
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs par un modèle ; réservée à un compte RATTACHÉ au cabinet
     et à `receive-email`, qui présente la clé secrète dans l'en-tête `apikey`.
@@ -161,7 +163,7 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle ;
+                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -502,8 +504,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   par un contrôle (`rupturesPisteAudit`, `mouvementsRapprochesSansObjet`, `immobilisationsSansJustificatif`). Il ne
   relâche rien à l'INSERTION : une restauration qui sacrifierait un lien le dit (`LienPerdu.effacable`) →
   « LA FAMILLE `ON DELETE SET NULL` EST CLOSE ».
-- **`dossier_id` NULLABLE** sur `categories` et `natures_immobilisation` (lignes partagées par TOUS les cabinets) : jamais
-  `WHERE dossier_id = ?` seul.
+- **`dossier_id` NULLABLE** sur `categories` et `natures_immobilisation` : une ligne à `dossier_id` nul est COMMUNE À TOUS
+  LES CABINETS (pas de `cabinet_id`) et seul le super-administrateur l'écrit ; pour un autre, la policy écarte la ligne
+  SANS LEVER. Jamais `WHERE dossier_id = ?` seul ; un écran qui en offre l'écriture le dit avant le clic et lit la ligne
+  rendue (`lib/categoriesCommunes.ts`, `supabase/essais/categoriesCommunes.sql`) → « CINQ DÉFAUTS RELEVÉS EN CONCEVANT
+  LE PLAN COMPTABLE PERSONNALISABLE ».
 - **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`, épinglée au schéma) ; une table auto-référencée se
   restaure en deux passes ; le plan free n'a AUCUNE sauvegarde automatique (PLAN_DE_REPRISE.md).
 - **Un type de `types.ts` décrit la table**, colonnes NOT NULL comprises — et les déclencheurs comptent : ceux de
@@ -694,7 +699,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Ouverture d'un exercice** : une balance reprise se lit à sa structure, se contrôle (débit = crédit, en centimes) et
   devient les à-nouveaux du dossier, une seule ouverture par dossier ; ensuite, un exercice n'a d'ouverture que si le
   précédent est validé (`soldes_reportes`), et les écrans le disent → « UNE BALANCE REPRISE DEVIENT LES À-NOUVEAUX »,
-  « LA VALIDATION D'UN EXERCICE ÉCRIT L'OUVERTURE ».
+  « LA VALIDATION D'UN EXERCICE ÉCRIT L'OUVERTURE ». La reprise ne range que la banque, le 44566 et le 44571 : les autres
+  comptes que l'application écrit elle-même s'ouvrent sous le numéro de la balance, et la carte le DIT avant le clic
+  (`compteQueLApplicationEcrit`) ; les ranger est l'étape PC6.
 - **Un contrôle qui part d'un côté d'une relation ne voit pas l'autre** : partir de l'écriture (`rupturesPisteAudit`,
   `ecrituresSansObjet`), du mouvement, du bien… Le contrôle des écritures compare le compte, le montant, la ventilation
   de la TVA et les dates attendues → « Un contrôle qui part d'un côté d'une relation ».
@@ -708,9 +715,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   validation puis celui de la révision, au solde de `solde_du_compte` (jumeau `soldeDuCompteCentimes`) ; une preuve
   RECOPIE l'empreinte de sa source, et une source citée ne se supprime plus (`garder_source_citee`, hypothèse Q8) :
   les écrans qui suppriment devront le dire avant le clic (R3) → « LA BASE DES SOLDES RÉVISÉS ».
-- **Le plan comptable se cite dans sa numérotation du 1er janvier 2026** (règlement ANC n° 2014-03 consolidé : le 108
-  et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une migration déjà
-  appliquée garde l'ancien numéro → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ».
+- **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
+  consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
+  migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
+  (`comptes.test.ts` les épingle, recopiés de la nomenclature), et le refus du 468 sur un mouvement du relevé garde le
+  sens de 2019 jusqu'à la réponse du cabinet à Q12 → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ».
 - **Montant retenu** : le HT pour un assujetti, le TTC pour un exonéré (`lib/montantRetenu.ts`, statut en paramètre
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de
@@ -739,7 +748,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « Le barème kilométrique est saisi ».
 - **Cotisations Urssaf des praticiens conventionnés** : testées contre le moteur de l'Urssaf à l'euro, dans son ordre
   d'opérations ; plafond de la sécurité sociale saisi par année → « L'ESTIMATION DES COTISATIONS URSSAF ».
-- **Dotations** : le cumul s'arrondit, pas l'annuité ; même calcul en base, en entiers.
+- **Dotations** : le cumul s'arrondit, pas l'annuité ; même calcul en base, en entiers. Le compte d'amortissement est 28
+  suivi du compte du bien sans son 2 ni ses zéros de fin, complété à six chiffres : un sixième chiffre significatif se
+  garde (218311 → 2818311, « même ventilation », PCG art. 1121-1) — `compte_amortissement`, `compteAmortissement` et la
+  copie de l'assistant, confrontés à une table relevée en base (`amortissements.test.ts`).
 - **FEC** : article A47 A-1 (virgule décimale, une écriture = une date, numérotation partagée `numeroterFec` /
   `formaterFec`) ; Test Compta Demat a été lu, jamais exécuté ; ce n'est pas le FEC légal du dossier →
   « LE FEC SUIT L'ARTICLE A47 A-1 ».

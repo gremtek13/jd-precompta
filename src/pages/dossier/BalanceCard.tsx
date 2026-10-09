@@ -370,6 +370,18 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
                           + '.'}
                       </li>
                     )}
+                    {/* La reprise ne range que la banque et deux comptes de TVA (lib/aNouveaux.ts) : les autres comptes que
+                        l'application écrit elle-même s'ouvrent sous le numéro de la balance, et ses écritures vont ailleurs.
+                        Dit avant le clic, sans rien changer à ce qui s'écrit. */}
+                    {preparation.nonRanges.length > 0 && (
+                      <li>
+                        {'Repris sous leur numéro, alors que l’application écrit sous un autre ce qu’ils portent : '
+                          + preparation.nonRanges.map((r) => `${r.compteOrigine}${r.libelle ? ` ${r.libelle}` : ''} (l’application : ${r.compte})`).join(', ')
+                          + '. Ses écritures — TVA, tiers, emprunt, dotations, report du résultat — n’iront pas sur ces comptes, '
+                          + 'dont le solde ne s’y soldera donc pas : quand elle écrit le même rôle, la balance et le FEC en portent '
+                          + 'deux comptes.'}
+                      </li>
+                    )}
                     {preparation.soldes > 0 && (
                       <li>{`${pluriel(preparation.soldes, 'compte')} de bilan soldé${preparation.soldes > 1 ? 's' : ''}, sans à-nouveau.`}</li>
                     )}

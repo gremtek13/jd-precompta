@@ -46,6 +46,13 @@
 -- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
 -- `validee` autrement. 30 contrôles sur 30 en production, le texte transmis identique au fichier sans ses
 -- commentaires.
+--
+-- REJOUÉ LE 09/10/2026 après `compte_amortissement_meme_ventilation`, qui garde le sixième chiffre du compte du bien
+-- (218311 → 2818311, et non plus 281831) : 32 contrôles sur 32 en production, dont les deux nouveaux (30 et 31, une
+-- nature propre au dossier sur le 218311, jouée à travers `ecrire_dotation_amortissement`) et les deux comptes ajoutés
+-- au contrôle 29 ; le texte reçu par la base (ligne 0 : 27 568 caractères, empreinte 577a6734ea062f32b0378ca7d38a5bf4)
+-- est ce fichier sans ses lignes de commentaire, caractère pour caractère. Et ils savent échouer : les deux comptes
+-- composés intervertis (le 281831 tronqué pour le 30, le 2818311 pour le 31), les deux virent au rouge.
 create temp table essai_dotation (controle text, observe text, ok boolean) on commit drop;
 
 do $$
@@ -55,9 +62,9 @@ declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
 
-  dossier_client uuid; nature_info uuid; cabinet uuid;
+  dossier_client uuid; nature_info uuid; nature_six uuid; cabinet uuid;
   bien uuid; dossier_jetable uuid;
-  accepte boolean; code_recu text; message text; obs text; ok boolean;
+  accepte boolean; code_recu text; message text; obs text; ok boolean; lignes_ecrites text;
   n int; nb_avant int; nb_apres int; biens_avant int; natures_avant int; dossiers_avant int; ouvertures_avant int;
   annee_courante int := extract(year from (now() at time zone 'Europe/Paris'))::int;
 
@@ -462,14 +469,47 @@ begin
     (dotation_amortissement(12000, 5, '2026-07-01', 2031)::text),
     (dotation_amortissement(12000, 5, '2026-07-01', 2032)::text),
     (compte_amortissement('205000')),
-    (compte_amortissement('218300'))
+    (compte_amortissement('218300')),
+    (compte_amortissement('218310')),
+    (compte_amortissement('218311'))
   ) as t(x);
   insert into essai_dotation values ('29. dotations de référence', obs,
-    obs = '35.39,375.61,0.51,1.04,841.67,1200.00,0.00,280500,281830');
+    obs = '35.39,375.61,0.51,1.04,841.67,1200.00,0.00,280500,281830,281831,2818311');
 
-  -- ══ 30. Rien n'est resté ══════════════════════════════════════════════════════════════════════════
+  -- ══ 30 et 31. Une nature au sixième chiffre significatif (migration compte_amortissement_meme_ventilation) ══════
+  -- Son compte d'amortissement garde ce chiffre — « même ventilation que celle du compte 21 » : la dotation crédite le
+  -- 2818311, et le 281831 tronqué d'avant, qui est celui du 218310, est refusé. Joué À TRAVERS la fonction d'écriture :
+  -- c'est elle qui juge la dotation que l'application compose.
+  for obs in select unnest(array['30. nature 218311 : la dotation crédite le 2818311',
+                                 '31. nature 218311 : la dotation sur le 281831 tronqué est refusée']) loop
+    accepte := false; code_recu := null; message := null; lignes_ecrites := null; ok := false;
+    begin
+      insert into natures_immobilisation (dossier_id, libelle, duree_annees_defaut, compte_immobilisation)
+      values (dossier_test, 'NATURE ESSAI', 3, '218311') returning id into nature_six;
+      insert into immobilisations (dossier_id, nature_id, libelle, valeur, date_acquisition, duree_annees)
+      values (dossier_test, nature_six, 'BIEN ESSAI', 1200, '2025-07-01', 3) returning id into bien;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+      n := ecrire_dotation_amortissement(bien, 2025, jsonb_build_array(
+        jsonb_build_object('compte', '681100', 'sens', 'debit', 'montant', 200),
+        jsonb_build_object('compte', case when obs like '30.%' then '2818311' else '281831' end, 'sens', 'credit', 'montant', 200)));
+      select string_agg(e.compte || ':' || e.sens || ':' || e.montant::text, ',' order by e.compte)
+        into lignes_ecrites from ecritures_brouillon e where e.immobilisation_id = bien;
+      ok := n = 2 and lignes_ecrites = '2818311:credit:200,681100:debit:200';
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    insert into essai_dotation values (obs, coalesce(lignes_ecrites, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+      case when obs like '30.%' then accepte and code_recu = 'P0001' and coalesce(ok, false)
+           else not accepte and code_recu = '22023' and message = 'L''écriture proposée ne correspond pas à la dotation 2025 de ce bien.'
+      end);
+  end loop;
+
+  -- ══ 32. Rien n'est resté ══════════════════════════════════════════════════════════════════════════
   select count(*) into nb_apres from ecritures_brouillon;
-  insert into essai_dotation values ('30. rien n''est resté en base',
+  insert into essai_dotation values ('32. rien n''est resté en base',
     'écritures ' || nb_avant || ' -> ' || nb_apres
       || ', biens ' || biens_avant || ' -> ' || (select count(*) from immobilisations)
       || ', natures ' || natures_avant || ' -> ' || (select count(*) from natures_immobilisation)
@@ -482,8 +522,18 @@ begin
       and not exists (select 1 from natures_immobilisation where compte_immobilisation = '618000')
       and dossiers_avant = (select count(*) from dossiers)
       and ouvertures_avant = (select count(*) from a_nouveaux)
-      and not exists (select 1 from immobilisations where libelle = 'BIEN ESSAI'));
+      and not exists (select 1 from immobilisations where libelle = 'BIEN ESSAI')
+      and not exists (select 1 from natures_immobilisation where libelle = 'NATURE ESSAI'));
 end $$;
 
-select controle, ok, observe from essai_dotation order by
-  (regexp_match(controle, '^(\d+)'))[1]::int, controle;
+-- La ligne 0 dit le texte que la base a reçu — par l'outil MCP, qui ajoute sa signature après lui —, pour le comparer au
+-- fichier sans ses lignes de commentaire (`grep -v '^\s*--'`) par son empreinte.
+select x.controle, x.ok, x.observe from (
+  select controle, ok, observe from essai_dotation
+  union all
+  select '0. information : le texte reçu par la base', true, length(t.recu) || ' caractères, empreinte ' || md5(t.recu)
+  from (select case when position(E'\n\n-- source: POST /mcp' in current_query()) > 0
+                    then left(current_query(), position(E'\n\n-- source: POST /mcp' in current_query()) - 1)
+                    else current_query() end as recu) t
+) x
+order by (regexp_match(x.controle, '^(\d+)'))[1]::int, x.controle;
