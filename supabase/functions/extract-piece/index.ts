@@ -208,8 +208,19 @@ async function citerChamps(texte: string, region: string): Promise<Citation> {
     }
     const brut = reponse.content.find((b: { type: string }) => b.type === "text")
     const json = brut?.text?.match(/\{[\s\S]*\}/)?.[0]
-    if (!json) return { ...vide, erreur: "réponse du modèle illisible", usage }
-    return { ...verifierCitations(JSON.parse(json), texte), erreur: null, usage }
+    // UN JSON ILLISIBLE SE DIT SANS ÊTRE CITÉ. Le message d'erreur de `JSON.parse` reprend un fragment du texte qu'il
+    // n'a pas pu lire (« …"{"tiers": Dupont M"… ») : ici la réponse du modèle, donc le document lui-même. Passé par le
+    // `catch` plus bas, il partait au journal de la fonction — deux fois — et dans la réponse : un fragment de nom de
+    // patient dans les journaux de production, là où l'en-tête promet « des comptes, jamais les valeurs ». Trouvé le
+    // 09/10/2026 par le harnais HTTP des Edge Functions, qui joue la fonction avec un modèle qui répond mal.
+    let citations: unknown = null
+    try {
+      citations = json ? JSON.parse(json) : null
+    } catch {
+      citations = null
+    }
+    if (!citations || typeof citations !== "object") return { ...vide, erreur: "réponse du modèle illisible", usage }
+    return { ...verifierCitations(citations, texte), erreur: null, usage }
   } catch (err) {
     console.error("[extract-piece] citation des champs", err)
     return { ...vide, erreur: err instanceof Error ? err.message : String(err) }

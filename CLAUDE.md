@@ -133,7 +133,8 @@ src/
   pages/dossier/  les onglets d'un dossier et leurs modales. Liste et ordre : lib/ongletsDossier.ts
                   (GROUPES_PARCOURS, DossierTab), source UNIQUE de la barre latérale et de la barre d'onglets.
   test/           fabriques des tests (faux clients, dont `clientRetenu.ts`, le client qui ne rend rien tant qu'on ne
-                  le libère pas, filtres PostgREST, factures fictives, la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
+                  le libère pas, filtres PostgREST, factures fictives, le harnais des Edge Functions (`fonctionsEdge.ts`) et
+                  leurs contrats (`contratsFonctions.ts`), la batterie des encaissements, tirée pour un jour donné et jouée sur une réplique par
                   supabase/essais/batterieEncaissements.mjs). Un tirage « au hasard » se fait par `tirage`
                   (src/test/encaissementsBatterie.ts), exact sur 32 bits, un entier par `entierTire` : le
                   congruentiel écrit en virgule flottante boucle sur 10 466 valeurs ; tirage.test.ts le refuse
@@ -309,7 +310,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   Le secret `AWS_REGION` (`eu-central-1`) se relit par `evaluer-extraction` avec `limite: 0`, sans rien facturer.
 - **Ce que les fonctions ont le droit de faire chez AWS** : `edgeFunctionsIam.test.ts` rend la surface d'actions IAM ; la
   policy elle-même vit chez AWS.
-- **Qui voit quoi** : `rls.sql` (ne couvre ni les Edge Functions en HTTP ni la suppression d'un fichier).
+- **Qui voit quoi** : `rls.sql` pour les tables et le stockage (pas la suppression d'un fichier) ;
+  `edgeFunctionsHttp.test.ts` pour les Edge Functions en HTTP, contre leur source et un monde factice.
 - RLS activée sur toutes les tables. **Les accès clients sont restreints** (dépôt de pièces, pas de montants, catégories,
   packs ni autres onglets) — ne jamais les élargir sans décision explicite.
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
@@ -398,6 +400,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1 en cours → « L'E-REPORTING : LA
   CONCEPTION ».
+- **Défauts connus des Edge Functions** (27, `DEFAUTS_CONNUS`) : vingt corps mal formés qui font lever neuf fonctions
+  ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune) ; deux d'`evaluer-extraction` ;
+  trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
+  (`create-client-access`, `create-team-member`), l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`),
+  `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques le referme).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
@@ -542,6 +549,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`cdarRecu`, dans `plateforme-agreee`), blocs de l'assistant (un garde par
   bloc), et `historiqueDuClient`, seule barrière entre le fil envoyé par le navigateur et le modèle →
   « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ».
+
+- **Chaque Edge Function s'appelle en HTTP dans la suite** (ligne 23, `src/test/fonctionsEdge.ts`) : sa VRAIE source,
+  transpilée, devant un monde factice qui journalise tout (`Deno.serve` capturé, clés fabriquées, base aux filtres et aux
+  clés du schéma exporté, authentification, AWS, Resend, réseau fermé, `verify_jwt` lu dans `config.toml`) ;
+  `contratsFonctions.ts` en joue les contrats (préflight mesuré sur le SDK, refus sans droit et AUCUNE dépense avant, corps
+  mal formés, plafonds, ni secret ni valeur de pièce au journal) ; `edgeFunctionsHttp.test.ts` part de TOUT et compte
+  les défauts connus au nombre près (`DEFAUTS_CONNUS`) → « LES EDGE FUNCTIONS S'APPELLENT EN HTTP ».
 
 ### Scanners de source : la doctrine
 
@@ -813,7 +827,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6185 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6610 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
