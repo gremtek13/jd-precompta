@@ -13647,3 +13647,199 @@ exercice validé ; BW, les redevances de collaboration, relève d'une table des 
 dates d'activité d'un dossier qui cesse en cours d'année (Q6) ; les frais bancaires de la catégorie par défaut, en ligne
 31, hors valeur ajoutée (Q3) ; le millésime 2027 du formulaire ; le plafonnement de la CET (1327-CET, 1,531 % en
 2026-2027).
+
+### 09/10/2026 — LES EDGE FUNCTIONS S'APPELLENT EN HTTP DANS LA SUITE — LIGNE 23
+
+(`src/test/fonctionsEdge.ts`, `src/test/fonctionsEdge.test.ts`, `src/test/contratsFonctions.ts`,
+`src/lib/edgeFunctionsHttp.test.ts` ; `supabase/functions/taux-change-bce/index.ts`,
+`supabase/functions/extract-piece/index.ts`.) **L'obstacle que la ligne nommait.** Une Edge Function était gardée par des
+BLOCS — extraits de sa source, transpilés, exécutés (39 fichiers) — et par neuf scanners qui lisent son texte. Rien ne
+l'APPELAIT : avec une session ou sans, un compte rattaché à rien, un client, un membre d'équipe qui n'est pas assigné au
+dossier, un corps illisible. L'ordre « contrôle de l'appelant, puis dépense » se lisait sur des positions de chaînes, et
+chaque déploiement se vérifiait à la main ; appeler les fonctions DÉPLOYÉES depuis la CI demanderait des secrets et des
+appels facturés. Levé sans le payer : chaque fonction est appelée DANS la suite, depuis sa vraie source, devant une
+authentification et des dépendances factices — sans réseau, sans secret, sans appel facturé.
+
+**LA FORME RETENUE.** La source ENTIÈRE de `supabase/functions/<fonction>/index.ts` est transpilée par le compilateur du
+projet (`ts.transpileModule`, CommonJS) et exécutée par `new Function`, qui reçoit en paramètres `require`, `Deno`,
+`fetch`, `console`, `Date` et `setTimeout` — l'idiome des gardes de copie, appliqué au fichier au lieu d'un bloc. Les
+imports `npm:`/`jsr:` se résolvent vers des faux déclarés au harnais, et un import inconnu LÈVE (une version de SDK
+changée se voit au premier chargement) ; `Deno.serve` capture le gestionnaire (deux appels, ou aucun, lèvent) ;
+`Deno.env.get` rend des clés FABRIQUÉES (`sb_publishable_harnais`, `sb_secret_harnais` : trop courtes pour le motif de
+`clesSupabase.test.ts`, vingt caractères après le préfixe). Le gestionnaire reçoit de vraies `Request` et rend de
+vraies `Response` ; une exception qu'il laisse échapper devient ce que rend `Deno.serve`, un 500 en texte brut sans
+en-tête CORS. **Écartées** : Deno et `supabase functions serve` en CI (un binaire et Docker que la CI n'a pas, des
+imports `npm:`/`jsr:` qui se téléchargent, et la base et l'authentification à monter quand même) ; `vi.mock` (Node ne
+résout pas `npm:@aws-sdk/client-s3@3`, et un chargeur lirait le fichier servi : une source mutée devrait s'écrire sur
+disque) ; étendre les extractions de blocs (ce qui existait : cela ne voit ni le câblage ni l'ordre). La forme retenue
+charge une source MUTÉE comme la vraie, en mémoire, sans que le fichier servi change d'un octet. Un `beforeAll` paie le
+compilateur une fois par fonction, hors du délai de cinq secondes d'un test (un test qui le payait dépassait sept
+secondes sous charge).
+
+**LE MONDE FACTICE**, un objet du test qui JOURNALISE chaque demande. La base : tables en mémoire, filtres APPLIQUÉS par
+`filtresPostgrest.ts` (plus `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`), jointure `!inner` par les clés
+étrangères du schéma exporté, tri (NULLS LAST croissant, FIRST décroissant), tranches, plafond de 1 000 lignes rendu
+sans le dire, `count`, PGRST116 sur `.single()`, PGRST205 sur une table inconnue, 23505 sur la clé primaire et les
+uniques déclarés (tout ou rien), 23503 et cascades lus dans l'export ; un filtre ou une forme non modélisés LÈVENT. La
+RLS des trois tables qu'une fonction lit avec le jeton de l'appelant (`pieces`, `piece_textes_ocr`, `categories`) et
+`admin_du_dossier` tel que la migration de la hiérarchie le définit (super-admin, chef du cabinet du dossier, membre
+de l'équipe assigné au dossier) ;
+un autre `rpc` lève. Le service d'authentification : l'en-tête porteur lu comme GoTrue le lit, les sessions connues, les
+API d'administration réservées à la clé secrète, 422 sur une adresse déjà inscrite. Le stockage ; Textract, S3 et
+Bedrock (région journalisée) ; Resend ; un réseau FERMÉ où seuls les hôtes que le scénario déclare répondent (une
+tentative vers un autre se compte, et lève) ; une horloge qui se décale sans toucher à celle de la suite. La
+passerelle, depuis `config.toml` : `verify_jwt = true` refuse sans « Authorization » (« Missing authorization header »)
+et sur un jeton qui n'est pas une session (« Invalid JWT »), et laisse passer OPTIONS. `/functions/v1/<nom>` mène à la
+fonction chargée dans le même monde, passerelle comprise : `receive-email` et la sonde d'`evaluer-extraction` atteignent
+la VRAIE `extract-piece`. Une dépense se lit au journal : réseau, AWS, modèle, écriture, stockage, comptes, Resend.
+`fonctionsEdge.test.ts` éprouve le harnais lui-même (46 tests : filtres, plafond, clés étrangères, RLS,
+`admin_du_dossier`, pannes, en-tête porteur, Svix, passerelle, réseau fermé, fuites).
+
+**LES CONTRATS** (`contratsFonctions.ts`). Le monde de référence : deux cabinets, trois dossiers, sept personnes — chef,
+comptable assigné, comptable non assigné, chef d'un autre cabinet, client, compte inscrit seul (l'inscription publique
+est ouverte), super-admin. Un scénario envoie UNE requête et attend un statut ; un refus dit par la fonction (les seize
+premiers caractères du message sont écrits dans sa source — jamais « Cannot read properties… » ni « Unexpected
+token… ») ; aucune dépense ; un corps non lu ; ou des dépenses EXACTES, dans l'ordre — le garde symétrique, sans lequel
+une fonction qui refuse tout passerait chaque contrat de refus. Et dans chaque scénario : aucune exception laissée à
+`Deno.serve`, aucun hôte non déclaré, aucune région AWS hors de l'Union, aucun secret dans une réponse ni un journal,
+aucune valeur de pièce dans un journal ni dans une réponse d'erreur (des marqueurs inventés, cherchés par fenêtres de
+huit caractères : V8 ne cite qu'un FRAGMENT du texte qu'il refuse), et `Access-Control-Allow-Origin` sur toute réponse
+d'une fonction que la page appelle. Le préflight se juge sur les en-têtes que le vrai `@supabase/supabase-js` ENVOIE,
+relevés devant un `fetch` d'essai (`apikey`, `authorization`, `content-type`, `x-client-info`) : un en-tête que le SDK
+ajouterait demain entre dans chaque préflight. Les corps mal formés, envoyés par une personne ADMISE : sept formes
+(illisible, `null`, tableau, texte, nombre, `{}`, chaque champ en nombre). Seize fonctions, 348 scénarios :
+`agent-comptable` 29, `banque-connexion` 24, `create-cabinet` 22, `create-client-access` 24, `create-team-member` 26,
+`delete-cabinet` 20, `evaluer-extraction` 20, `extract-piece` 23, `plateforme-agreee` 23, `proposer-categorie` 21,
+`receive-email` 14, `send-email` 22, `superpdp-credentials` 23, `superpdp-emit` 20, `superpdp-sync` 18,
+`taux-change-bce` 19. Ce que chacun garde, au-delà du préflight, des refus sans session et des corps mal formés :
+- `extract-piece` : sans en-tête ni clé, la clé publishable seule ou en porteur, la clé secrète en porteur, un jeton
+  inconnu, un compte inscrit seul → 401, corps NON LU, rien de dépensé (sans en-tête, le service d'authentification pas
+  même interrogé) ; un rattachement illisible → 500, jamais un passage ; un rattachement lu suffit ; les six rattachés
+  admis ; la clé secrète exacte en `apikey` admise sans le service d'authentification, une presque juste refusée ; plus
+  de 10 Mo refusé avant AWS ; une image (Textract puis le modèle), un PDF (S3, Textract asynchrone, retiré de S3), un
+  échec de Textract (fichier temporaire retiré quand même), le modèle en panne (le texte revient : l'étage 2 est
+  best-effort), un JSON illisible du modèle (rien du document au journal).
+- `receive-email` : autre méthode, secret absent, en-têtes de signature absents, autre secret, signature d'un autre
+  corps, horodatage de plus de cinq minutes (rejeu), autre événement, adresse inconnue — rien de lu ni d'écrit ; une
+  pièce jointe lue par la vraie `extract-piece` (clé secrète en `apikey`, rien en porteur) puis posée « à valider » ;
+  `extract-piece` qui refuse ; un doublon ; la détection de doublon en panne (écartée, pas déposée à l'aveugle) ;
+  l'insertion en panne (le fichier déposé est retiré).
+- `agent-comptable` : les quatre hors du dossier, les identifiants AWS absents ; le plafond de BLOCAGE (402, aucun appel
+  au modèle), l'ALERTE (la réponse part, l'alerte avec elle), la consommation d'un autre cabinet ou du mois passé qui ne
+  compte pas, seuils, consommation ou dossiers du cabinet illisibles (503, aucun appel) ; un fil forgé par le navigateur
+  n'arrive au modèle qu'en tours « user »/« assistant » de texte ; les outils du modèle ne font que LIRE, et le seul
+  dossier vérifié (un `dossierId` d'outil n'y change rien) ; un refus du modèle (502).
+- `evaluer-extraction` : sans clé, la clé SECRÈTE en `apikey` (n'ouvre pas le harnais), la fenêtre fermée sur ses deux
+  questions (403, ni client ni lecture), `limite: 0` (gratuite, deux questions), « cles » (quatre « acceptée », la vraie
+  `extract-piece` répond « Fichier vide. », rien de facturé), la fenêtre OUVERTE (l'horloge décalée depuis la date lue
+  dans la source : le modèle est appelé une fois par pièce — c'est bien la fenêtre qui ferme).
+- `create-cabinet`, `delete-cabinet` : super-admin seul (lu à la clé secrète), lecture illisible → refus ; le mot de
+  passe ne revient nulle part ; une adresse déjà inscrite → 409 et le cabinet créé retiré ; un cabinet qui a des
+  dossiers → 409 en français (la clé étrangère de l'export) et il reste.
+- `create-team-member` : le chef rattache à SON cabinet, quoi que le corps désigne ; `create-client-access` :
+  `admin_du_dossier` au jeton de l'appelant (en panne → refus). Pour les deux : un compte existant sans lien → 409, mot
+  de passe intact ; déjà lié → repris ; un mot de passe qui ne se pose pas → 500, personne d'ajouté.
+- `superpdp-credentials`, `superpdp-sync`, `superpdp-emit`, `send-email`, `banque-connexion`, `plateforme-agreee` :
+  `admin_du_dossier` avant toute lecture d'identifiants et tout appel ; le secret s'écrit, ne revient jamais ; un statut
+  illisible ne se dit pas « non configuré » ; une facture non validée jugée AVANT tout appel (422) ; une facture déjà
+  transmise (409) ; actualiser : le jeton, l'historique reporté sur la transmission, rien d'autre que Super PDP ; le
+  retour de banque d'un dossier d'un autre cabinet (404) ; « tester » chez la plateforme du dossier et nulle part
+  ailleurs.
+- `proposer-categorie` : la pièce lue au jeton de l'appelant (RLS) puis `admin_du_dossier` ; une pièce sans texte ou des
+  catégories lues en partie : le modèle n'est pas appelé.
+- `taux-change-bce` : le cours enregistré puis rendu ; une devise non cotée (404), la BCE en panne ou sans cotation
+  (502) : rien d'écrit.
+
+**LE GARDE QUI PART DE TOUT** (`edgeFunctionsHttp.test.ts`). Un contrat par dossier de `supabase/functions/`, aucun
+contrat sans dossier ; plancher de seize fonctions et trois cents scénarios. Les fonctions que la page appelle se LISENT
+dans `src/` — chaque `functions.invoke` (générique multiligne compris) et chaque `functions/v1/<nom>` ; un nom qui ne se
+lit pas est une faute — et ce sont exactement celles qui tiennent un préflight ; les autres sont nommées avec leur
+raison, deux au nombre près (`receive-email`, webhook de serveur à serveur ; `evaluer-extraction`, appelé à la main).
+Chaque contrat couvre ses portes : le préflight (fonction de la page), un refus sans dépense, un chemin admis qui
+dépense, les sept corps mal formés (fonction qui lit du JSON). Un DÉFAUT CONNU est un scénario dont la faute est
+constatée et nommée : il passe tant que le défaut est là, tombe le jour où il disparaît, et la liste se tient au nombre
+près.
+
+**DEUX DÉFAUTS TROUVÉS ET CORRIGÉS — À REDÉPLOYER** (la session : `taux-change-bce` à `verify_jwt: true`,
+`extract-piece` à `verify_jwt: false`, puis `allerretour.py`).
+- **`taux-change-bce` n'avait AUCUN CORS.** Le préflight (OPTIONS, corps vide) recevait le 400 « devise attendue… », sans
+  `Access-Control-Allow-Origin`, et aucune réponse ne le portait. Or `lib/tauxChange.ts` l'appelle par
+  `functions.invoke` : le navigateur abandonnait avant même l'appel, et `tauxBce` rendait `null` — un cours absent du
+  cache ne se trouvait JAMAIS depuis la page, et la pièce partait sans conversion (signalée par `lib/controles.ts`).
+  La page n'a sur ce cache qu'une policy de LECTURE : seule la fonction l'écrit, et il n'a pu se remplir que par un
+  appel hors du navigateur. **Déduit du
+  code, non mesuré en production** (aucun appel permis) : la session peut compter les lignes de `taux_change_bce` et lire
+  les journaux de la fonction. Preuve : sur la source de 6b598ba, seize scénarios en faute (le préflight, et
+  chaque réponse sans l'en-tête). Corrigé : le préflight, les en-têtes CORS sur chaque réponse, et un corps illisible ou
+  `null` lu comme vide (refus en français au lieu d'un 500 anglais).
+- **`extract-piece` citait le document au journal.** Une réponse du modèle que `JSON.parse` refuse passait par le `catch`
+  de `citerChamps` : le message de V8 reprend un FRAGMENT du texte refusé — la réponse du modèle, donc le document —, et
+  il partait au journal deux fois (`console.error`, puis « citation non rendue — … ») et dans la réponse
+  (`_citation_erreur`), là où l'en-tête de la fonction promet « des comptes, jamais les valeurs ». Preuve : sur 6b598ba,
+  un scénario en faute. Corrigé : le JSON se lit dans un `try` à part, et une réponse illisible se dit
+  « réponse du modèle illisible », sans rien citer.
+
+**VINGT-SEPT DÉFAUTS CONNUS, COMPTÉS ET NON CORRIGÉS** (`DEFAUTS_CONNUS`) :
+- `corpsNul` (11) : un corps JSON `null` fait LEVER neuf fonctions (`agent-comptable`, `create-cabinet`,
+  `delete-cabinet`, `create-team-member`, `create-client-access`, `superpdp-credentials`, `superpdp-sync`,
+  `superpdp-emit`, `send-email` : 500 en texte brut, sans CORS) et rend le message anglais du moteur chez deux
+  (`evaluer-extraction`, `proposer-categorie`). `champsDeTravers` (9) : un champ attendu en texte et reçu en nombre fait
+  lever `.trim()`, chez les mêmes neuf. LATENTS : le navigateur n'envoie jamais ces corps ; il faut une session
+  (n'importe laquelle : le corps se lit avant le contrôle du dossier) ou, pour `evaluer-extraction`, la clé publishable ;
+  rien ne part ni ne s'écrit avant. À corriger au prochain déploiement de chacune.
+- `corpsIllisibleMesure` (1) et `jsonIllisibleAuJournalMesure` (1) : `evaluer-extraction` rend le message anglais de
+  `JSON.parse` sur un corps illisible, et journalise celui d'une réponse illisible du modèle — le défaut corrigé dans
+  `extract-piece`, ici sous une fenêtre de mesure fermée ; à corriger à son prochain déploiement.
+- `motDePasseAvantRefus` (2) : `create-client-access` et `create-team-member` CHANGENT le mot de passe d'un compte déjà
+  rattaché, puis refusent l'ajout en 409 (« existe déjà ») : le cabinet croit que rien n'a changé, l'ancien mot de passe
+  ne marche plus. Décision du cabinet.
+- `objetAuJournal` (1) : `receive-email` journalise l'objet et l'expéditeur de chaque e-mail reçu (adresse inconnue, et
+  bilan) ; un objet peut nommer un patient. Décision du cabinet (RGPD.md).
+- `tauxSansControle` (2) : `taux-change-bce` ne contrôle aucun appelant ; la passerelle seule refuse l'appel sans
+  session, et un compte inscrit seul est admis — il ne fait qu'écrire un cours publié par la BCE. Le harnais ne modélise
+  pas le jeton `anon` HISTORIQUE, que la passerelle admet tant que les clés historiques ne sont pas désactivées : il
+  ouvre cette fonction-là, et aucune autre (chacune a son propre contrôle — une session vérifiée, une signature ou une
+  clé). Fermer l'inscription publique et désactiver les clés historiques — deux clics du cabinet déjà demandés — le
+  referme ; un contrôle du rattachement, comme celui d'`extract-piece`, le fermerait aussi hors de la passerelle.
+**Une phrase de ce fichier était fausse** : « `extract-piece` était la SEULE fonction à se contenter d'une session »
+(« ET LA FONCTION DE LECTURE ÉTAIT OUVERTE », 26/09/2026) — `taux-change-bce`, en ligne depuis le 18/09/2026, s'en
+contente aussi.
+
+**OBSERVÉ, NON COMPTÉ** (aucun contrat ne le juge) : `superpdp-emit`, sur « actualiser » une facture jamais transmise,
+demande un jeton OAuth à Super PDP avant de refuser en 400 — une dépense de réseau pour un appelant admis, rien de plus ;
+`superpdp-emit` et `superpdp-sync` lisent les identifiants du dossier sans lire `error` : une panne de la base se dit
+« identifiants absents » (côté fermé, message trompeur).
+
+**LES PREUVES.** Dix défauts PLANTÉS dans la vraie source, en mémoire, joués dans la suite : le contrôle de l'appelant
+d'`extract-piece` court-circuité, son corps lu avant le contrôle, son JSON illisible à nouveau cité ; le refus de
+`create-cabinet` rendu en 200 ; le plafond de blocage de l'assistant oublié ; la fenêtre datée d'`evaluer-extraction`
+oubliée ; une signature fausse acceptée par `receive-email` ; le contrôle d'accès de `create-client-access` demandé à la
+clé de service ; le préflight de `taux-change-bce` oublié ; le secret d'une connexion de plateforme rendu à l'écran.
+Chacun : aucune faute sur la vraie source, au moins une sur la copie. **La campagne**, hors du correctif : 84
+mutations des seize sources, sur des copies en mémoire, chacune jouée contre tous les scénarios de sa fonction —
+83 mordent. **Une survit, équivalente** : `proposer-categorie` lisant la pièce à la clé secrète (la RLS
+contournée) — la fonction vérifie ensuite `admin_du_dossier`, qui refuse les mêmes appelants (404) ; la mutation des
+DEUX barrières, elle, mord (quatre scénarios). Non jouées, parce qu'inobservables ici : la sortie anticipée de
+`egaliteConstante` (une durée ; `extractPieceAppelant.test.ts` la garde), le repli de région (l'environnement d'essai
+pose `AWS_REGION` ; `edgeFunctionsRegions.test.ts`), le filtre des rôles de `agent_conversations` (les lignes « user »
+ne portent pas de jetons).
+
+**LIMITES, DITES.** Le harnais ne prouve pas que les faux se comportent comme les vrais services : chacun reproduit ce
+que la documentation publique décrit et lève sur une forme qu'il ne modélise pas. Ni la vraie passerelle (le
+`verify_jwt` DÉPLOYÉ se vérifie contre `list_edge_functions`, le jeton `anon` historique n'est pas modélisé), ni la
+vraie base (la RLS d'une table que les fonctions lisent à la clé secrète n'entre pas en jeu ; les autres fonctions SQL
+lèvent) : les essais SQL et `allerretour.py` restent la preuve de ce qui est déployé. Le mur de 150 s n'est pas joué.
+
+**MESURES ET BARRIÈRE.** Sous Paris, `edgeFunctionsHttp.test.ts` : 379 tests (348 scénarios, 10 défauts plantés,
+21 gardes) en 11,9 s, le plus long 308 ms ; `fonctionsEdge.test.ts` : 46 tests en 1,3 s ; la campagne, seule, 37 s.
+La suite ENTIÈRE (Paris, deux ouvriers, charge de 18 à 24 sur quatre cœurs) : 6 489 tests dont la campagne
+temporaire, 8 tombés sur le délai de cinq secondes dans quatre fichiers sans rapport (`copiesFacturation`,
+`cdarEncaisseeCopie`, `cdarRecuCopie`, `encaissementsFactures`), verts rejoués seuls (145 sur 145). Les 37 fichiers
+touchés (les deux du harnais, ceux qui lisent `extract-piece` ou `taux-change-bce`, ceux qui balaient
+`supabase/functions/` ou `src/`), 1 039 tests, sous les quatre fuseaux : verts, sauf `copiesFacturation.test.ts`
+tombé sur le délai sous New York et Auckland, vert rejoué seul dans chacun. `tsc -b` 0 ; `tsc -p tsconfig.edge.json`
+les 25 erreurs connues, les mêmes ; lint 0 et ses 63 avertissements, les mêmes ; build 0.
+
+**Vérifié en production après coup (lecture seule, par la session).** Le cache `taux_change_bce` ne porte que 39 lignes,
+écrites le 18/09/2026 (32) et le 30/09/2026 (7) — les deux jours où la fonction a été déployée et vérifiée depuis le
+serveur. C'est cohérent avec un appel qui n'aboutit jamais depuis la page, sans le prouver.

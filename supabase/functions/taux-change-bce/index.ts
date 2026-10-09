@@ -25,6 +25,18 @@ const JOURS_DE_RECUL = 10
 
 const RACINE_API = "https://data-api.ecb.europa.eu/service/data/EXR"
 
+// LE NAVIGATEUR APPELLE CETTE FONCTION (`src/lib/tauxChange.ts`, `functions.invoke`), et d'une autre origine que la
+// sienne : il demande d'abord la permission (le préflight, une requête OPTIONS), puis ne lit une réponse que si elle
+// porte `Access-Control-Allow-Origin`. Jusqu'au 09/10/2026 la fonction ne répondait ni à l'un ni à l'autre — le
+// préflight recevait un 400 nu, et le navigateur abandonnait l'appel avant même de le faire : un cours absent du cache
+// ne se trouvait JAMAIS au dépôt d'une pièce, qui partait sans conversion. Le harnais HTTP des Edge Functions
+// (`src/lib/edgeFunctionsHttp.test.ts`) le garde, avec les en-têtes que le SDK envoie réellement.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
 interface Taux {
   date: string
   devise: string
@@ -84,8 +96,13 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
   try {
-    const { devise, date } = await req.json().catch(() => ({}))
+    // Un corps illisible, ou qui n'est pas un objet (`null`), se lit comme un corps vide : la devise manque, et le refus
+    // le dit en français plutôt que par le message du moteur.
+    const { devise, date } = (await req.json().catch(() => null)) ?? {}
 
     if (typeof devise !== "string" || !/^[A-Z]{3}$/.test(devise)) {
       return json({ erreur: "devise attendue au format ISO 4217, par exemple USD" }, 400)
@@ -150,6 +167,6 @@ Deno.serve(async (req: Request) => {
 function json(corps: unknown, status = 200): Response {
   return new Response(JSON.stringify(corps), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   })
 }
