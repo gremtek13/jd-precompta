@@ -484,6 +484,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   l'écran montre ; un fichier sans ligne est un orphelin → « LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
+- **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
+  supprimée (`.select('id').maybeSingle()` — zéro ligne n'est pas une erreur pour PostgREST) ; ce qui reste se compte et
+  se dit avec sa raison, sans nom de fichier (`lib/bilanSuppression.ts`), sous un verrou relâché après la relecture.
+  `PiecesTab.deleteSelection` et sept écritures unitaires dont `{ error }` n'est pas lu restent à reprendre →
+  « LA SUPPRESSION D'UNE SÉLECTION DE DOCUMENTS ».
 - **Un fichier s'ouvre par `lib/apercu.ts` seulement** : pas de `noopener` (succès et blocage indiscernables), retour de
   `window.open` lu, puis `opener = null` → « UN BOUTON QUI OUVRE UN FICHIER ».
 - Les lectures d'une seule ligne n'ont pas de scanner : les scanners d'erreur les couvrent.
@@ -620,6 +625,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un contrôle qui part d'un côté d'une relation ne voit pas l'autre** : partir de l'écriture (`rupturesPisteAudit`,
   `ecrituresSansObjet`), du mouvement, du bien… Le contrôle des écritures compare le compte, le montant, la ventilation
   de la TVA et les dates attendues → « Un contrôle qui part d'un côté d'une relation ».
+- **Le plan comptable se cite dans sa numérotation du 1er janvier 2026** (règlement ANC n° 2014-03 consolidé : le 108
+  et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une migration déjà
+  appliquée garde l'ancien numéro → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ».
 - **Montant retenu** : le HT pour un assujetti, le TTC pour un exonéré (`lib/montantRetenu.ts`, statut en paramètre
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de
@@ -780,7 +788,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6063 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6078 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

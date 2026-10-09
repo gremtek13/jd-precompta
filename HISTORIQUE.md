@@ -13427,3 +13427,45 @@ blocage de 120 s, `periodeDuTrimestre` à cinq trimestres) ont été rejoués SE
 l'autre était la charge (dix échecs une fois seul, des deux côtés). Durées : inchangées — le test des grands
 montants, joué cinq fois de chaque côté en alternance sous une charge de 31 à 34, de 1,7 à 2,2 s avant et de 1,5 à
 2,2 s après.
+
+### 09/10/2026 — LA SUPPRESSION D'UNE SÉLECTION DE DOCUMENTS PASSAIT UN ÉCHEC SOUS SILENCE
+
+(Relevé par l'architecte en concevant la révision des comptes.)
+`DocumentsTab.deleteSelection` — que deux commentaires et ce fichier
+appelaient déjà `supprimerSelection` — supprimait document par document et, sur un `{ error }`, faisait `continue` :
+ni compte ni raison gardés, la sélection vidée, la liste relue, et le document refusé reparaissait au milieu des
+autres sans un mot, sur un geste que l'opérateur venait de CONFIRMER. **Mesuré par un test d'écran rouge sur le code
+d'avant** (six cas sur vingt et un) : aucun message sur un refus partiel ni total ; une suppression qui ne touche
+AUCUNE ligne (PostgREST la rend sans erreur — la policy a écarté la ligne, ou un autre onglet l'a déjà retirée)
+emportait le FICHIER, dans la sélection comme dans la suppression d'un seul document : la ligne restée désignait
+alors un fichier disparu, le défaut « pire qu'un orphelin » du 20/09/2026 par une porte qu'on n'avait pas regardée ;
+trois clics lançaient trois boucles (six suppressions pour deux documents), aucun verrou ; la confirmation ne
+nommait rien de ce qui part. **Corrigé** : une fonction `supprimerUnDocument` pour les deux gestes, qui LIT la ligne
+supprimée (`.select('id').maybeSingle()`) avant de retirer le fichier ; le bilan (`lib/bilanSuppression.ts`) compte
+ce qui est parti sur ce qui était demandé, dit chaque raison une fois et que le fichier d'un document resté n'a pas
+été touché, ne dit rien quand tout est parti ; un verrou en `useRef` posé avant le `try`, relâché dans le `finally`
+après la relecture ; la confirmation nomme le fichier, le texte lu et les précisions (les deux derniers partent en
+cascade). Quatorze mutations mordent, dont le verrou sous sa forme fautive (test ET pose dans le `try`, prise par le
+cas à trois clics) ; une quinzième survit et est équivalente — la seule pose déplacée dans le `try`, le test restant
+en tête : la pose reste synchrone avant le premier `await`.
+**Les copies cherchées par la forme** (une boucle de suppressions, et toute suppression dont l'échec se tait) :
+`PiecesTab.deleteSelection` dit déjà son bilan (compte et raisons distinctes), mais n'a pas de verrou et retire les
+fichiers d'une pièce sur la seule absence d'erreur — non corrigé ici. Aucune autre suppression en lot dans `src/` ni
+côté client (`ClientUpload` ne supprime rien). Suppressions unitaires dont `{ error }` n'est pas lu, relevées sans y
+toucher : `EstimationTab.supprimerReference` et `supprimerPoste`, `SupplementsTab.supprimerSupplement` et
+`supprimerCompte`, `BanqueTab.retirerRegle`, `EquipePage.toggleAssignation` (et l'écriture de
+`DocumentsTab.changerCategorie`).
+
+### 09/10/2026 — LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION
+
+(09/10/2026). L'écran de la validation d'un exercice citait « le plan
+comptable (art. 941-10) » pour le passage du 108 et du résultat d'une entreprise individuelle au 101. Dans le
+règlement ANC n° 2014-03 consolidé au 1er janvier 2026, la règle est à l'**art. 1211-10** (« Titre XII –
+Fonctionnement des comptes », 10 : Capital et réserves) : « Les apports ou les retraits personnels de l'exploitant et,
+le cas échéant, de sa famille sont enregistrés en cours d'exercice dans le compte 108 « Compte de l'exploitant ». En
+fin d'exercice, le solde de ce compte est viré au compte 101 « Capital ». » Vérifié dans la version consolidée au
+1er janvier 2019 (ANC) : la même phrase y est à l'art. 941-10 (Titre IX, chapitre IV), le compte 101 s'y appelant
+encore « Capital individuel ». Corrigés : le message, son test, les commentaires de `reportDesSoldes.ts`, `comptes.ts`
+et de l'écran. La migration `20261007052231_report_des_soldes.sql` garde « 941-10 » : c'est l'export de ce qui est
+en base. Les autres citations du plan comptable dans `src/` et `supabase/functions/` (art. 1031-3 et 1031-4) sont
+déjà dans la numérotation de 2026, vérifiées au texte.

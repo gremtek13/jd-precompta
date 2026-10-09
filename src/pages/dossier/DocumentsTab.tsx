@@ -13,6 +13,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { chargerDoublonsDeTexte } from '../../lib/doublonsTexte'
 import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
+import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
@@ -61,6 +62,13 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // et rien ne les rattraperait : la détection de doublon porte sur l'empreinte d'un fichier DÉPOSÉ,
   // or ici aucun fichier n'est envoyé, la pièce reprend le chemin de stockage du document.
   const conversionsEnCours = useRef(new Set<string>())
+
+  // Verrou de « Supprimer la sélection ». La sélection n'est vidée qu'à la fin, donc le bouton reste
+  // là pendant toute la boucle : un second clic relançait une seconde boucle sur les MÊMES documents,
+  // dont les suppressions — déjà faites — ne touchaient plus aucune ligne, et dont le compte se serait
+  // ajouté au premier. L'état, lui, ne sert qu'à griser le bouton et à dire où on en est.
+  const suppressionEnCours = useRef(false)
+  const [suppression, setSuppression] = useState<{ fait: number; total: number } | null>(null)
 
   // Même comportement que dans PiecesTab : on ouvre en affichant « Chargement… » plutôt que de rester
   // muet assez longtemps pour qu'on reclique.
@@ -210,19 +218,27 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     if (!resultat.ok) window.alert(resultat.message)
   }
 
+  // Supprime UN document : la ligne d'abord, le fichier ensuite — et seulement si la ligne est bien
+  // partie. Rend la raison d'un échec, ou `null`.
+  //
+  // « Bien partie » se LIT : la suppression rend la ligne supprimée (`.select('id')`), car PostgREST
+  // rend une suppression qui ne touche aucune ligne comme un succès — la policy a écarté la ligne, ou un
+  // autre onglet l'a déjà retirée. Retirer le fichier sur la seule absence d'erreur laissait, dans le
+  // premier cas, une ligne bien visible qui désigne un fichier disparu : pire qu'un orphelin — le
+  // téléchargement casse, et l'empreinte SHA-256 que la piste d'audit donne pour preuve ne vérifie plus
+  // rien. Une seule ligne au plus (la clé primaire), d'où `maybeSingle`.
+  async function supprimerUnDocument(doc: DocumentDivers): Promise<string | null> {
+    const { data, error } = await supabase.from('documents_divers').delete().eq('id', doc.id).select('id').maybeSingle()
+    if (error) return messageErreur(error, 'suppression refusée par la base')
+    if (!data) return AUCUNE_LIGNE_SUPPRIMEE
+    await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
+    return null
+  }
+
   async function supprimer(doc: DocumentDivers) {
     if (!window.confirm(`Supprimer définitivement "${doc.nom_fichier}" ?`)) return
-    // LA LIGNE D'ABORD, LE FICHIER ENSUITE — et seulement si elle est bien partie. Le fichier était
-    // retiré quoi qu'il arrive : une suppression refusée (RLS, réseau) laissait donc une ligne bien
-    // visible qui désigne un fichier disparu. C'est pire qu'un orphelin — le téléchargement casse, et
-    // l'empreinte SHA-256 que la piste d'audit donne pour preuve ne vérifie plus rien. La fonction
-    // jumelle trente lignes plus bas (`supprimerSelection`) teste déjà `deleteError` ; celle-ci, non.
-    const { error: erreurSuppression } = await supabase.from('documents_divers').delete().eq('id', doc.id)
-    if (erreurSuppression) {
-      setError(messageErreur(erreurSuppression, 'La suppression a échoué.'))
-      return
-    }
-    await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
+    const motif = await supprimerUnDocument(doc)
+    setError(motif ? messageBilanSuppression({ demandes: 1, supprimes: 0, motifs: [motif] }) : null)
     load()
   }
 
@@ -243,19 +259,38 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  async function deleteSelection() {
-    if (selected.size === 0) return
-    if (!window.confirm(`Supprimer définitivement ${selected.size} document(s) ? Cette action est irréversible.`)) return
-    for (const id of selected) {
-      const doc = documents.find((d) => d.id === id)
-      const { error: deleteError } = await supabase.from('documents_divers').delete().eq('id', id)
-      if (deleteError) continue
-      if (doc?.storage_path) {
-        await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
+  // Document par document, pas un `.in()` groupé : un refus sur l'un ne doit pas empêcher les autres
+  // de partir, et chaque fichier ne part qu'après SA ligne. Chaque refus est compté avec sa raison et
+  // dit à la fin — jamais sauté en silence : la liste relue faisait reparaître le document refusé au
+  // milieu des autres, sans un mot, sur un geste que l'opérateur venait de confirmer.
+  async function supprimerSelection() {
+    if (suppressionEnCours.current) return
+    // Ce qui est vraiment dans la liste : un identifiant resté sélectionné après une relecture qui ne
+    // le rend plus n'a rien à supprimer, et ne doit pas gonfler le compte annoncé.
+    const cibles = documents.filter((d) => selected.has(d.id))
+    if (cibles.length === 0) return
+    if (!window.confirm(confirmationSuppression(cibles.length))) return
+    // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
+    suppressionEnCours.current = true
+    setSuppression({ fait: 0, total: cibles.length })
+    try {
+      let supprimes = 0
+      const motifs: string[] = []
+      for (const [rang, doc] of cibles.entries()) {
+        const motif = await supprimerUnDocument(doc)
+        if (motif) motifs.push(motif)
+        else supprimes++
+        setSuppression({ fait: rang + 1, total: cibles.length })
       }
+      setError(messageBilanSuppression({ demandes: cibles.length, supprimes, motifs }))
+      setSelected(new Set())
+      // Relu AVANT de relâcher le verrou : l'écran montre ce que la base garde, et un clic de plus
+      // pendant la relecture viserait encore des documents que la liste affichée croit présents.
+      await load()
+    } finally {
+      suppressionEnCours.current = false
+      setSuppression(null)
     }
-    setSelected(new Set())
-    load()
   }
 
   // Bascule vers l'onglet Pièces un document mal classé (une vraie facture passée à tort en document
@@ -373,8 +408,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             </button>
           )}
           {selected.size > 0 && (
-            <button className="btn btn-danger btn-sm" onClick={deleteSelection}>
-              Supprimer la sélection ({selected.size})
+            <button className="btn btn-danger btn-sm" disabled={suppression !== null} onClick={supprimerSelection}>
+              {suppression ? `Suppression… ${suppression.fait}/${suppression.total}` : `Supprimer la sélection (${selected.size})`}
             </button>
           )}
           <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
