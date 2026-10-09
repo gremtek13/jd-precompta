@@ -899,21 +899,26 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
           qu’en administration ; une nature propre à ce dossier peut porter un autre compte.
         </p>
         {natureOuverte === 'natures' && formulaireNature}
-        <div className="table-scroll">
-          <table aria-label="Natures">
-            <thead><tr><th>Nature</th><th>Durée usuelle</th><th>Comptes</th><th></th></tr></thead>
-            <tbody>
-              {natures.map((n) => (
-                <tr key={n.id}>
-                  <td>{n.libelle}</td>
-                  <td>{n.duree_annees_defaut} an{n.duree_annees_defaut > 1 ? 's' : ''}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{compteDe(n)}</td>
-                  <td className="muted">{n.dossier_id ? 'Propre au dossier' : 'Partagée par le cabinet'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* Pendant la première lecture, pas de tableau sans ligne : il se lisait comme un dossier sans aucune nature. */}
+        {loading ? (
+          <p className="muted">Chargement…</p>
+        ) : (
+          <div className="table-scroll">
+            <table aria-label="Natures">
+              <thead><tr><th>Nature</th><th>Durée usuelle</th><th>Comptes</th><th></th></tr></thead>
+              <tbody>
+                {natures.map((n) => (
+                  <tr key={n.id}>
+                    <td>{n.libelle}</td>
+                    <td>{n.duree_annees_defaut} an{n.duree_annees_defaut > 1 ? 's' : ''}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{compteDe(n)}</td>
+                    <td className="muted">{n.dossier_id ? 'Propre au dossier' : 'Partagée par le cabinet'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   )

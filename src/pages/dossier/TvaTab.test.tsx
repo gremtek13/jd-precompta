@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
@@ -31,6 +31,8 @@ const faux = vi.hoisted(() => ({
   miseAJourRefusee: false,
   // Non nul : la base refuse l'appel avec ce message.
   rpcRefuse: null as string | null,
+  // Non nul : toutes les lectures attendent qu'on le libère — c'est ainsi qu'on regarde l'onglet PENDANT sa première lecture.
+  porte: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -62,6 +64,7 @@ vi.mock('../../lib/supabase', async () => {
                 count: lignes.length + (faux.tronquees.has(table) ? 1 : 0),
               }
             }
+            if (faux.porte) return faux.porte.then(() => reponse()).then(suite)
             const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.rpcs.length > 0
             if (!suspendre) return Promise.resolve(reponse()).then(suite)
             return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
@@ -223,6 +226,8 @@ function Hote({
 async function afficher(props: Parameters<typeof Hote>[0] = {}) {
   render(<Hote {...props} />)
   await act(async () => {})
+  // La fin de la première lecture, attendue HORS de l'`act` : tant qu'elle dure, l'onglet ne montre que ses squelettes.
+  await waitFor(() => expect(document.querySelectorAll('.skeleton')).toHaveLength(0))
 }
 
 beforeEach(() => {
@@ -239,6 +244,7 @@ beforeEach(() => {
   faux.relectureSuspendue = null
   faux.miseAJourRefusee = false
   faux.rpcRefuse = null
+  faux.porte = null
 })
 
 afterEach(() => {
@@ -807,5 +813,27 @@ describe('l’onglet TVA', () => {
     await act(async () => { screen.getByRole('button', { name: 'Retirer' }).click() })
     expect(screen.getByText(faux.rpcRefuse)).toBeTruthy()
     confirmer.mockRestore()
+  })
+})
+
+// LES DÉCLARATIONS DÉPOSÉES ATTENDENT LEUR LECTURE : pendant la première, le tableau s'affichait sans ligne — ce qu'il montre
+// d'un dossier qui n'en aurait déposé aucune. Les squelettes de la carte d'au-dessus prennent sa place.
+describe('l’onglet TVA — les déclarations attendent leur lecture', () => {
+  it('ni tableau ni « Aucune déclaration » pendant la première lecture, puis ce qu’elle a lu', async () => {
+    faux.tables.declarations_tva = [declaration()]
+    let liberer = () => {}
+    faux.porte = new Promise<void>((resolve) => { liberer = resolve })
+    render(<Hote />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    const carte = screen.getByRole('heading', { name: 'Déclarations déposées' }).closest('.card') as HTMLElement
+    expect(within(carte).queryAllByRole('table')).toHaveLength(0)
+    expect(within(carte).queryAllByText(/Aucune déclaration enregistrée/)).toHaveLength(0)
+    expect(carte.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
+
+    faux.porte = null
+    await act(async () => { liberer() })
+    await waitFor(() => expect(within(carte).getAllByRole('table')).toHaveLength(1))
+    expect(carte.querySelectorAll('.skeleton')).toHaveLength(0)
   })
 })

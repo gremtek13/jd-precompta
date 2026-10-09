@@ -34,6 +34,17 @@ const faux = vi.hoisted(() => ({
   // gardé à part par `apercu.test.ts`.
   apercu: { ok: true } as { ok: true } | { ok: false; message: string },
   cheminsDemandes: [] as string[],
+  // La lecture de l'historique attend que le test la libère (voir `retenirPacks`) : on regarde l'écran PENDANT elle.
+  portePacks: null as Promise<void> | null,
+  lecturesPacks: 0,
+  generations: 0,
+}))
+
+vi.mock('../../lib/packGenerator', () => ({
+  generatePack: async () => {
+    faux.generations += 1
+    return { nbPieces: 4, totalTtc: 400, storagePathZip: 'd1/p/nouveau.zip', storagePathExcel: 'd1/p/nouveau.xlsx', manquantes: [], sansDate: [] }
+  },
 }))
 
 vi.mock('../../lib/apercu', () => ({
@@ -58,11 +69,17 @@ vi.mock('../../lib/supabase', () => {
         return self
       }
     }
+    // L'enregistrement d'un pack généré : rien d'autre ne s'écrit ici.
+    self.insert = () => Promise.resolve({ error: null })
     self.then = (resolve: (r: Reponse) => void) => {
       if (table === 'packs') {
-        return faux.erreurPacks
+        faux.lecturesPacks += 1
+        // La réponse se compose quand elle PART : une lecture retenue rend l'historique de sa libération.
+        const repondrePacks = () => (faux.erreurPacks
           ? resolve({ data: null, count: null, error: { message: faux.erreurPacks } })
-          : resolve({ data: faux.packs, count: faux.packs.length, error: null })
+          : resolve({ data: faux.packs, count: faux.packs.length, error: null }))
+        if (faux.portePacks) { faux.portePacks.then(repondrePacks); return undefined }
+        return repondrePacks()
       }
       // Les pièces sans date ne dépendent d'aucune période : elles répondent tout de suite, pour
       // que le test n'ait à ordonner QUE les deux lectures qui courent l'une contre l'autre.
@@ -74,7 +91,12 @@ vi.mock('../../lib/supabase', () => {
     }
     return self
   }
-  return { supabase: { from: (table: string) => chaine(table) } }
+  return {
+    supabase: {
+      from: (table: string) => chaine(table),
+      auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
+    },
+  }
 })
 
 /** Fait répondre la lecture d'une période donnée, avec N pièces validées à 100 € chacune. */
@@ -86,12 +108,33 @@ async function repondre(periode: string, nbValidees: number) {
   await act(async () => { attente.repondre({ data, count: nbValidees, error: null }) })
 }
 
+// Retient les lectures suivantes de l'historique jusqu'à ce que le test appelle la fonction rendue.
+function retenirPacks(): () => Promise<void> {
+  let ouvrir = () => {}
+  faux.portePacks = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux.portePacks = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+// Le bloc de l'historique, sous son titre.
+function historique(): string {
+  const titre = screen.getByRole('heading', { name: 'Historique' })
+  let bloc = titre.nextElementSibling
+  while (bloc && !bloc.classList.contains('card')) bloc = bloc.nextElementSibling
+  return bloc?.textContent ?? ''
+}
+
 function changerPeriode(debut: string, fin: string) {
   fireEvent.change(document.querySelector('#debut')!, { target: { value: debut } })
   fireEvent.change(document.querySelector('#fin')!, { target: { value: fin } })
 }
 
 beforeEach(() => {
+  faux.portePacks = null
+  faux.lecturesPacks = 0
+  faux.generations = 0
   faux.enAttente = []
   faux.periodesDemandees = []
   faux.packs = []
@@ -213,5 +256,97 @@ describe('PacksTab — l’historique des packs', () => {
 
     expect(screen.getByText(/Aucun pack généré/)).toBeTruthy()
     expect(screen.queryAllByText(/n'ont pas pu être lus/)).toHaveLength(0)
+  })
+})
+
+// « AUCUN PACK » NE SE DIT QU'UNE FOIS L'HISTORIQUE REVENU, ET L'APERÇU D'UNE AUTRE PÉRIODE NE RESTE PAS SOUS CELLE-CI.
+//
+// Au premier rendu l'historique est vide faute d'avoir été lu : l'écran disait « Aucun pack généré pour l'instant. » d'un
+// dossier dont les packs sont peut-être déjà partis au comptable — et invitait à les régénérer. Et quand les dates
+// changent, l'aperçu de la période d'avant (« 22 pièce(s) validée(s) — 2 200,00 € ») restait sous les nouvelles dates
+// jusqu'au retour de la lecture.
+describe('PacksTab — rien ne s’affirme avant d’avoir été lu', () => {
+  function poserUnPack() {
+    faux.packs = [{
+      id: 'pk1', dossier_id: 'd1', periode_debut: '2026-07-01', periode_fin: '2026-07-31',
+      nb_pieces: 4, total_ttc: 400, storage_path_zip: 'd1/p/pack.zip',
+      storage_path_excel: 'd1/p/recap.xlsx', created_at: '2026-08-01T09:00:00Z',
+    }]
+  }
+
+  it('l’historique dit « Chargement… » tant que sa lecture n’est pas revenue, puis ce qu’il a lu', async () => {
+    poserUnPack()
+    const liberer = retenirPacks()
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+
+    expect(faux.lecturesPacks).toBe(1)
+    expect(historique()).toBe('Chargement…')
+    expect(screen.queryAllByText(/Aucun pack généré/)).toHaveLength(0)
+
+    await liberer()
+    expect(await screen.findByRole('button', { name: 'ZIP' })).toBeTruthy()
+    expect(historique()).not.toMatch(/Chargement/)
+  })
+
+  it('ne dit « aucun pack » d’un dossier sans pack qu’après l’avoir lu', async () => {
+    const liberer = retenirPacks()
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+    expect(screen.queryAllByText(/Aucun pack généré/)).toHaveLength(0)
+
+    await liberer()
+    expect(await screen.findByText(/Aucun pack généré/)).toBeTruthy()
+  })
+
+  it('la relecture qui suit une génération laisse l’historique déjà lu sous les yeux', async () => {
+    // La règle de `ClientUpload` : le chargement ne vaut que pour la PREMIÈRE lecture.
+    poserUnPack()
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+    changerPeriode('2026-07-01', '2026-07-31')
+    await act(async () => {})
+    await repondre('2026-07-01→2026-07-31', 4)
+    await screen.findByRole('button', { name: 'ZIP' })
+
+    const liberer = retenirPacks()
+    await act(async () => { screen.getByRole('button', { name: 'Générer le pack' }).click() })
+
+    expect(faux.generations).toBe(1)
+    expect(faux.lecturesPacks).toBe(2)
+    expect(historique()).not.toMatch(/Chargement/)
+    expect(screen.getByRole('button', { name: 'ZIP' })).toBeTruthy()
+    await liberer()
+  })
+
+  it('l’aperçu d’une autre période s’efface dès que les dates changent', async () => {
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+    changerPeriode('2026-01-01', '2026-12-31')
+    await act(async () => {})
+    await repondre('2026-01-01→2026-12-31', 22)
+    expect(screen.getByText(/22 pièce\(s\) validée\(s\)/)).toBeTruthy()
+
+    // La période se rétrécit ; sa lecture n'a pas encore répondu.
+    changerPeriode('2026-07-01', '2026-07-31')
+    await act(async () => {})
+    expect(screen.queryAllByText(/22 pièce\(s\) validée\(s\)/)).toHaveLength(0)
+    expect((screen.getByRole('button', { name: 'Générer le pack' }) as HTMLButtonElement).disabled).toBe(true)
+
+    await repondre('2026-07-01→2026-07-31', 4)
+    expect(screen.getByText(/4 pièce\(s\) validée\(s\)/)).toBeTruthy()
+  })
+
+  it('le bandeau d’une période lue en partie s’efface avec elle', async () => {
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+    changerPeriode('2026-01-01', '2026-12-31')
+    await act(async () => {})
+    // La période large répond en partie : 3 pièces annoncées, 1 rendue, puis plus rien — `lireTout` redemande la suite.
+    for (const data of [[{ statut: 'validee', montant_ttc: 100 }], []]) {
+      const attente = faux.enAttente.find((a) => a.periode === '2026-01-01→2026-12-31')!
+      faux.enAttente = faux.enAttente.filter((a) => a !== attente)
+      await act(async () => { attente.repondre({ data, count: 3, error: null }) })
+    }
+    expect(screen.getByText(/Les pièces de la période n.ont pas pu être lues en entier/)).toBeTruthy()
+
+    changerPeriode('2026-07-01', '2026-07-31')
+    await act(async () => {})
+    expect(screen.queryAllByText(/Les pièces de la période n.ont pas pu être lues en entier/)).toHaveLength(0)
   })
 })

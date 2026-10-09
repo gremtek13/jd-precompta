@@ -1387,12 +1387,19 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Écarts à vérifier</h3>
+        {/* Ces trois comptes se calculent sur le relevé, les pièces et les cotisations : avant leur lecture, ils disaient
+            « 0 mouvement(s) non rapproché(s) (0,00 €) · 0 pièce(s)… » d'un dossier qui en a peut-être des centaines. Ils
+            suivent la règle du tableau plus bas — `loading` repasse à vrai à chaque relecture. */}
         <p className="muted" style={{ margin: 0 }}>
-          {nonRapprochees.length} mouvement(s) bancaire(s) non rapproché(s) ({formatMoney(totalNonRapproche)})
-          {' · '}
-          {piecesSansMouvement.length} pièce(s) validée(s) sans mouvement bancaire correspondant
-          {' · '}
-          {cotisationsSansMouvement.length} échéance(s) de cotisation sans mouvement bancaire correspondant
+          {loading ? 'Chargement…' : (
+            <>
+              {nonRapprochees.length} mouvement(s) bancaire(s) non rapproché(s) ({formatMoney(totalNonRapproche)})
+              {' · '}
+              {piecesSansMouvement.length} pièce(s) validée(s) sans mouvement bancaire correspondant
+              {' · '}
+              {cotisationsSansMouvement.length} échéance(s) de cotisation sans mouvement bancaire correspondant
+            </>
+          )}
         </p>
         {suggestionsAutomatiques.length > 0 && (
           <button

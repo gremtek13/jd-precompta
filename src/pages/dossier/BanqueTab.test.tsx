@@ -5207,3 +5207,36 @@ describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouveme
     expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
   })
 })
+
+// « ÉCARTS À VÉRIFIER » NE COMPTE QU'UNE FOIS LE RELEVÉ LU. Ses trois comptes se calculent sur le relevé, les pièces et
+// les cotisations : avant leur lecture, la carte disait « 0 mouvement(s) bancaire(s) non rapproché(s) (0,00 €) · 0
+// pièce(s)… » d'un dossier qui en a peut-être des centaines. Elle suit la règle du tableau des mouvements : `loading`
+// repasse à vrai à chaque relecture.
+describe('BanqueTab — les écarts à vérifier attendent le relevé', () => {
+  function carteDesEcarts(): string {
+    const titre = screen.getByRole('heading', { name: 'Écarts à vérifier' })
+    return titre.nextElementSibling?.textContent ?? ''
+  }
+
+  it('dit « Chargement… » tant que le relevé n’est pas revenu, puis les comptes lus', async () => {
+    reinitialiser()
+    faux.retenirLectureLignes = true
+    rendre()
+    await waitFor(() => expect(faux.resoudreLectureLignes).not.toBeNull())
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+
+    expect(carteDesEcarts()).toBe('Chargement…')
+    expect(screen.queryAllByText(/mouvement\(s\) bancaire\(s\) non rapproché\(s\)/)).toHaveLength(0)
+
+    await act(async () => { faux.resoudreLectureLignes?.() })
+    await waitFor(() => expect(carteDesEcarts()).toMatch(/^1 mouvement\(s\) bancaire\(s\) non rapproché\(s\)/))
+  })
+
+  it('un relevé lu en partie laisse les comptes et son bandeau, pas « Chargement… »', async () => {
+    reinitialiser()
+    faux.muet = { lignes_bancaires: 0 }
+    rendre()
+    expect(await screen.findByText(/Les mouvements bancaires n.ont pas pu être lus en entier/)).toBeTruthy()
+    await waitFor(() => expect(carteDesEcarts()).toMatch(/mouvement\(s\) bancaire\(s\) non rapproché\(s\)/))
+  })
+})

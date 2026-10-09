@@ -22,10 +22,11 @@ import { messageErreur } from '../../lib/messageErreur'
 // ratée ne laisse JAMAIS un formulaire vide qu'« Enregistrer » écrirait par-dessus ce qui existe —
 // le formulaire ne s'affiche que sur une lecture réussie.
 
+// Une lecture garde l'exercice pour lequel elle a été faite : voir `lu` plus bas.
 type Lecture =
   | { etat: 'chargement' }
-  | { etat: 'lue'; ligne: VoletSocialPamc | null }
-  | { etat: 'erreur'; message: string }
+  | { etat: 'lue'; annee: number; ligne: VoletSocialPamc | null }
+  | { etat: 'erreur'; annee: number; message: string }
 
 interface Champs {
   profession: ProfessionPamc | ''
@@ -77,7 +78,7 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
   const [lecture, setLecture] = useState<Lecture>({ etat: 'chargement' })
   const [champs, setChamps] = useState<Champs>(champsDe(null))
   const [enregistrement, setEnregistrement] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ annee: number; texte: string } | null>(null)
   // Verrou posé avant tout `await`, relâché dans le `finally` : deux « Enregistrer » rapprochés
   // n'écrivent qu'une fois.
   const enregistrementEnCours = useRef(false)
@@ -89,11 +90,11 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
         .from('volet_social_pamc').select('*').eq('dossier_id', dossierId).eq('annee', annee).maybeSingle()
       if (annule) return
       if (error) {
-        setLecture({ etat: 'erreur', message: messageErreur(error, 'Lecture impossible.') })
+        setLecture({ etat: 'erreur', annee, message: messageErreur(error, 'Lecture impossible.') })
         return
       }
       const ligne = (data as VoletSocialPamc | null) ?? null
-      setLecture({ etat: 'lue', ligne })
+      setLecture({ etat: 'lue', annee, ligne })
       setChamps(champsDe(ligne))
     })()
     return () => { annule = true }
@@ -125,11 +126,18 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
     depassements: nombre(saisis.depassements),
   })
 
-  const enregistre = lecture.etat === 'lue' ? champsDe(lecture.ligne) : null
+  // UN AUTRE EXERCICE EST UNE AUTRE LIGNE. La carte reste montée quand l'exercice change dans l'en-tête : sans ceci elle
+  // montrait sous « Volet social 2026 » les chiffres de 2025 jusqu'au retour de la lecture — et « Enregistrer » les écrivait
+  // sur 2026, par-dessus ce qui y est peut-être enregistré. Une lecture, comme un message, ne vaut que pour l'exercice
+  // pour lequel elle a été faite ; pour un autre, la carte est en chargement.
+  const lu: Lecture = lecture.etat !== 'chargement' && lecture.annee === annee ? lecture : { etat: 'chargement' }
+  const texteMessage = message !== null && message.annee === annee ? message.texte : null
+
+  const enregistre = lu.etat === 'lue' ? champsDe(lu.ligne) : null
   const modifie = enregistre !== null && JSON.stringify(enregistre) !== JSON.stringify(champs)
 
   async function enregistrer() {
-    if (enregistrementEnCours.current || lecture.etat !== 'lue' || invalide) return
+    if (enregistrementEnCours.current || lu.etat !== 'lue' || invalide) return
     enregistrementEnCours.current = true
     setEnregistrement(true)
     setMessage(null)
@@ -149,15 +157,15 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
         .select()
         .single()
       if (error) {
-        setMessage(messageErreur(error, 'L’enregistrement n’a pas abouti.'))
+        setMessage({ annee, texte: messageErreur(error, 'L’enregistrement n’a pas abouti.') })
         return
       }
       const ligne = data as VoletSocialPamc
-      setLecture({ etat: 'lue', ligne })
+      setLecture({ etat: 'lue', annee, ligne })
       setChamps(champsDe(ligne))
-      setMessage('Enregistré.')
+      setMessage({ annee, texte: 'Enregistré.' })
     } catch (err) {
-      setMessage(messageErreur(err, 'L’enregistrement n’a pas abouti.'))
+      setMessage({ annee, texte: messageErreur(err, 'L’enregistrement n’a pas abouti.') })
     } finally {
       enregistrementEnCours.current = false
       setEnregistrement(false)
@@ -182,15 +190,15 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
         l'Assurance maladie.
       </p>
 
-      {lecture.etat === 'chargement' && <p className="muted">Chargement…</p>}
-      {lecture.etat === 'erreur' && (
+      {lu.etat === 'chargement' && <p className="muted">Chargement…</p>}
+      {lu.etat === 'erreur' && (
         <p className="error-text">
-          Les chiffres enregistrés n'ont pas pu être lus ({lecture.message}). La saisie est suspendue
+          Les chiffres enregistrés n'ont pas pu être lus ({lu.message}). La saisie est suspendue
           pour ne pas écraser ce qui existe peut-être : recharger la page.
         </p>
       )}
 
-      {lecture.etat === 'lue' && (
+      {lu.etat === 'lue' && (
         <>
           <div className="field-row">
             <div className="field">
@@ -250,7 +258,7 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
             </button>
             {modifie && !enregistrement && <span className="badge badge-neutral">modifications non enregistrées</span>}
             {invalide && <span className="error-text">Un montant ne peut pas être négatif.</span>}
-            {message && <span className={message === 'Enregistré.' ? 'muted' : 'error-text'}>{message}</span>}
+            {texteMessage && <span className={texteMessage === 'Enregistré.' ? 'muted' : 'error-text'}>{texteMessage}</span>}
           </div>
 
           {blocage ? (

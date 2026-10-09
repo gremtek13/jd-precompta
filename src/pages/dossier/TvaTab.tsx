@@ -942,7 +942,14 @@ export default function TvaTab({
           latéral que rien n'annonce. `table-empilable-en-carte` rend aux fiches le jeu que la carte, sans marge, ne leur donne pas. */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         <h3 style={{ margin: 16 }}>Déclarations déposées</h3>
-        {!loading && declarations.length === 0 ? (
+        {/* Pendant la première lecture, ni « Aucune déclaration » ni un tableau sans ligne — qui se lisait de même : les
+            squelettes de la carte d'au-dessus. */}
+        {loading ? (
+          <div style={{ margin: 16 }}>
+            <div className="skeleton skeleton-ligne" style={{ width: '60%' }} />
+            <div className="skeleton skeleton-ligne" style={{ width: '40%' }} />
+          </div>
+        ) : declarations.length === 0 ? (
           <div className="empty-state">
             {lectures.declarations ? 'Les déclarations déposées n’ont pas pu être lues.' : 'Aucune déclaration enregistrée pour ce dossier.'}
           </div>
