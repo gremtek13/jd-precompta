@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
 import type { Categorie, CotisationDeclaree, ModeComptable, Piece } from '../../lib/types'
@@ -32,6 +32,21 @@ const faux = vi.hoisted(() => ({
   reglements: [] as unknown[],
   // Les tables dont la lecture est REFUSÉE : `lireTout` les rend incomplètes, sans aucune ligne.
   refusees: new Set<string>(),
+  // Les lectures d'une ancienne 2035 demandées — chacune FACTURÉE —, la porte qui retient leur réponse, et l'échec
+  // qu'un test peut leur faire rendre.
+  extractions: 0,
+  porteExtraction: null as Promise<void> | null,
+  erreurExtraction: null as Error | null,
+}))
+
+// Doublée pour ne rien facturer : ce qui se joue ici est le NOMBRE de lectures, pas ce qu'elles lisent.
+vi.mock('../../lib/extraction', () => ({
+  extractPiece: async () => {
+    faux.extractions += 1
+    await faux.porteExtraction
+    if (faux.erreurExtraction) throw faux.erreurExtraction
+    return { lecture_2035: { recettes: 52000, charges_sociales_personnelles: 9000, resultat: null } }
+  },
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -662,5 +677,63 @@ describe('EstimationTab — les mouvements ventilés sur plusieurs comptes', () 
     await rendre()
     expect(valeur('CA encaissé à date')).toBe('900,00 €')
     vi.useRealTimers()
+  })
+})
+
+// « IMPORTER DEPUIS UNE ANCIENNE 2035 » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={lecture2035Loading}` ne
+// prend effet qu'au rendu suivant : deux dépôts du même rendu payaient deux lectures du même formulaire, et la plus lente
+// des deux réécrivait le CA et les cotisations que l'opérateur avait peut-être déjà corrigés. Le cas à TROIS dépôts est le
+// seul à distinguer un verrou posé dans le `try`.
+describe('EstimationTab — le verrou de la lecture d’une ancienne 2035', () => {
+  afterEach(() => {
+    faux.extractions = 0
+    faux.porteExtraction = null
+    faux.erreurExtraction = null
+  })
+  function retenirLaLecture(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteExtraction = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteExtraction = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  const champ = () => document.querySelector('#lecture2035') as HTMLInputElement
+  const formulaire2035 = () => new File(['%PDF'], '2035-2025.pdf', { type: 'application/pdf' })
+
+  it('ne lit le formulaire qu’une fois quand il est déposé deux fois dans le même rendu', async () => {
+    await rendre()
+    const liberer = retenirLaLecture()
+
+    await act(async () => {
+      fireEvent.change(champ(), { target: { files: [formulaire2035()] } })
+      fireEvent.change(champ(), { target: { files: [formulaire2035()] } })
+    })
+
+    expect(faux.extractions).toBe(1)
+    expect(champ().disabled).toBe(true)
+    expect(screen.getByText('Lecture en cours…')).toBeTruthy()
+    await liberer()
+  })
+
+  it('trois dépôts dans le même rendu ne le lisent qu’une fois', async () => {
+    await rendre()
+    const liberer = retenirLaLecture()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.change(champ(), { target: { files: [formulaire2035()] } }) })
+
+    expect(faux.extractions).toBe(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un échec de la lecture, et le dit', async () => {
+    faux.erreurExtraction = new Error('Le service de lecture ne répond pas.')
+    await rendre()
+
+    await act(async () => { fireEvent.change(champ(), { target: { files: [formulaire2035()] } }) })
+    expect(screen.getByText('Le service de lecture ne répond pas.')).toBeTruthy()
+    await act(async () => { fireEvent.change(champ(), { target: { files: [formulaire2035()] } }) })
+
+    expect(faux.extractions).toBe(2)
   })
 })

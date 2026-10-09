@@ -38,11 +38,17 @@ const faux = vi.hoisted(() => ({
   portePacks: null as Promise<void> | null,
   lecturesPacks: 0,
   generations: 0,
+  // La génération attend `porteGeneration` quand le test la pose : la fenêtre pendant laquelle un second clic arrive.
+  porteGeneration: null as Promise<void> | null,
+  // Les lignes `packs` écrites, et le refus que le test peut leur opposer.
+  insertionsPacks: [] as unknown[],
+  erreurInsertion: null as { message: string } | null,
 }))
 
 vi.mock('../../lib/packGenerator', () => ({
   generatePack: async () => {
     faux.generations += 1
+    await faux.porteGeneration
     return { nbPieces: 4, totalTtc: 400, storagePathZip: 'd1/p/nouveau.zip', storagePathExcel: 'd1/p/nouveau.xlsx', manquantes: [], sansDate: [] }
   },
 }))
@@ -70,7 +76,10 @@ vi.mock('../../lib/supabase', () => {
       }
     }
     // L'enregistrement d'un pack généré : rien d'autre ne s'écrit ici.
-    self.insert = () => Promise.resolve({ error: null })
+    self.insert = (ligne: unknown) => {
+      faux.insertionsPacks.push(ligne)
+      return Promise.resolve({ error: faux.erreurInsertion })
+    }
     self.then = (resolve: (r: Reponse) => void) => {
       if (table === 'packs') {
         faux.lecturesPacks += 1
@@ -135,6 +144,9 @@ beforeEach(() => {
   faux.portePacks = null
   faux.lecturesPacks = 0
   faux.generations = 0
+  faux.porteGeneration = null
+  faux.insertionsPacks = []
+  faux.erreurInsertion = null
   faux.enAttente = []
   faux.periodesDemandees = []
   faux.packs = []
@@ -348,5 +360,82 @@ describe('PacksTab — rien ne s’affirme avant d’avoir été lu', () => {
     changerPeriode('2026-07-01', '2026-07-31')
     await act(async () => {})
     expect(screen.queryAllByText(/Les pièces de la période n.ont pas pu être lues en entier/)).toHaveLength(0)
+  })
+})
+
+// « GÉNÉRER LE PACK » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={generating}` ne prend effet qu'au rendu
+// suivant : deux clics du même rendu produisaient deux archives et deux lignes `packs` (n'a d'unique que son identifiant)
+// — deux livrables identiques dans l'historique, dont l'un, envoyé au comptable, ne se distingue plus de l'autre. Le cas à
+// TROIS clics est le seul à distinguer un verrou posé dans le `try`.
+describe('PacksTab — le verrou de la génération d’un pack', () => {
+  function retenirLaGeneration(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteGeneration = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteGeneration = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  // La période lue, quatre pièces validées : « Générer le pack » s'offre.
+  async function pretAGenerer() {
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+    changerPeriode('2026-07-01', '2026-07-31')
+    await act(async () => {})
+    await repondre('2026-07-01→2026-07-31', 4)
+    return screen.getByRole('button', { name: 'Générer le pack' }) as HTMLButtonElement
+  }
+
+  it('ne génère qu’un pack quand le bouton part deux fois dans le même rendu', async () => {
+    const bouton = await pretAGenerer()
+    const liberer = retenirLaGeneration()
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.generations).toBe(1)
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Génération…')
+    await liberer()
+    expect(faux.insertionsPacks).toHaveLength(1)
+  })
+
+  it('trois clics dans le même rendu n’en génèrent qu’un', async () => {
+    const bouton = await pretAGenerer()
+    const liberer = retenirLaGeneration()
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.generations).toBe(1)
+    await liberer()
+    expect(faux.insertionsPacks).toHaveLength(1)
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurInsertion = { message: 'permission denied' }
+    const bouton = await pretAGenerer()
+
+    await act(async () => { bouton.click() })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+
+    expect(faux.generations).toBe(2)
+  })
+
+  // L'ONGLET RESTE OUVERT SUR CE QU'IL ÉCRIT : tant que l'historique n'est pas relu, il ne porte pas le pack qui vient
+  // d'être généré — et l'inviterait à le régénérer. Le verrou ne se relâche qu'après la relecture.
+  it('tient le verrou jusqu’à ce que l’historique soit relu', async () => {
+    const bouton = await pretAGenerer()
+    await screen.findByText(/Aucun pack généré/)
+    const libererLHistorique = retenirPacks()
+
+    await act(async () => { bouton.click() })
+    expect(faux.generations).toBe(1)
+    expect(faux.lecturesPacks).toBe(2)
+
+    await act(async () => { bouton.click() })
+    expect(faux.generations).toBe(1)
+
+    await libererLHistorique()
+    await act(async () => { bouton.click() })
+    expect(faux.generations).toBe(2)
   })
 })

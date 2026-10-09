@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { eclaircir, estCouleurHexValide } from '../lib/colors'
@@ -32,6 +32,11 @@ export default function CabinetBrandingPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Verrou d'exécution de l'enregistrement, en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant, donc deux
+  // soumissions du même rendu envoyaient deux logos au seau — le cabinet n'en désignait qu'un, l'autre restait orphelin —,
+  // ou butaient l'une sur l'autre et disaient l'échec d'un enregistrement réussi. Relâché après la relecture de la charte,
+  // que l'enregistrement attend déjà.
+  const enregistrementEnCours = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [succes, setSucces] = useState(false)
   // Troisième copie du motif d'informationsDossier.ts, et celle qui perd le plus : sans cette
@@ -84,6 +89,10 @@ export default function CabinetBrandingPage() {
       setError('Couleur invalide — choisis-en une avec le sélecteur ci-dessus.')
       return
     }
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
     setSucces(false)
@@ -120,6 +129,7 @@ export default function CabinetBrandingPage() {
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      enregistrementEnCours.current = false
       setSaving(false)
     }
   }

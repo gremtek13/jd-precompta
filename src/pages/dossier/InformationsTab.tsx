@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -59,6 +59,12 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
   const [confirmerSuppression, setConfirmerSuppression] = useState(false)
   const [suppressionEnCours, setSuppressionEnCours] = useState(false)
   const [suppressionErreur, setSuppressionErreur] = useState<string | null>(null)
+  // Les verrous d'exécution de l'export et de la suppression, en `useRef` : les deux états ci-dessus ne prennent effet
+  // qu'au rendu suivant, et deux clics du même rendu passaient. Deux exports font deux archives et deux lignes `packs` ;
+  // deux suppressions courent l'une contre l'autre dans le stockage, et la seconde — qui ne trouve plus les fichiers que la
+  // première vient de retirer — dit qu'ils sont RESTÉS, sur un dossier proprement supprimé.
+  const exportEnVol = useRef(false)
+  const suppressionEnVol = useRef(false)
   // Ce que le nettoyage du stockage n'a pas su faire. Séparé de `suppressionErreur` : le dossier EST
   // supprimé, ce n'est donc pas un échec à réessayer mais un reste à signaler.
   const [resteStockage, setResteStockage] = useState<string | null>(null)
@@ -138,6 +144,10 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
   // les pièces validées ayant une date renseignée (limite déjà connue de generatePack, pas nouvelle
   // ici) — pense à valider les pièces en attente avant de l'utiliser en vue d'une suppression.
   async function exporterAvantSuppression() {
+    // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (exportEnVol.current) return
+    exportEnVol.current = true
     setExportEnCours(true)
     setExportErreur(null)
     try {
@@ -178,11 +188,14 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
     } catch (err) {
       setExportErreur(messageErreur(err, "L'export a échoué."))
     } finally {
+      exportEnVol.current = false
       setExportEnCours(false)
     }
   }
 
   async function confirmerEtSupprimer() {
+    if (suppressionEnVol.current) return
+    suppressionEnVol.current = true
     setSuppressionEnCours(true)
     setSuppressionErreur(null)
     try {
@@ -193,13 +206,14 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       const reste = messageNettoyage(bilan)
       if (reste) {
         setConfirmerSuppression(false)
-        setSuppressionEnCours(false)
         setResteStockage(reste)
         return
       }
       navigate('/dossiers')
     } catch (err) {
       setSuppressionErreur(messageErreur(err, 'La suppression a échoué.'))
+    } finally {
+      suppressionEnVol.current = false
       setSuppressionEnCours(false)
     }
   }

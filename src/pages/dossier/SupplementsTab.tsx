@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
@@ -235,29 +235,40 @@ function SupplementFormModal({ dossierId, supplement, onClose, onSaved }: {
   const [notes, setNotes] = useState(supplement?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Verrou d'exécution en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant, donc `disabled={saving}` laissait
+  // passer deux soumissions rapprochées (deux « Entrée » suffisent), et `supplements` n'a d'unique que son identifiant —
+  // deux prestations à facturer pour une. Posé avant le `try` (dedans, le `return` du deuxième envoi relâcherait celui du
+  // premier par le `finally`) ; relâché sans attendre la relecture : la fenêtre se referme sur un succès.
+  const enregistrementSupplementEnCours = useRef(false)
 
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
+    if (enregistrementSupplementEnCours.current) return
+    enregistrementSupplementEnCours.current = true
     setSaving(true)
     setErreur(null)
-    const payload = {
-      dossier_id: dossierId,
-      type,
-      libelle: libelle.trim(),
-      montant_ht: montantHt.trim() ? parseFloat(montantHt) : null,
-      date_demande: dateDemande,
-      notes: notes.trim() || null,
+    try {
+      const payload = {
+        dossier_id: dossierId,
+        type,
+        libelle: libelle.trim(),
+        montant_ht: montantHt.trim() ? parseFloat(montantHt) : null,
+        date_demande: dateDemande,
+        notes: notes.trim() || null,
+      }
+      const { error } = supplement
+        ? await supabase.from('supplements').update(payload).eq('id', supplement.id)
+        : await supabase.from('supplements').insert(payload)
+      if (error) {
+        setErreur(error.message)
+        return
+      }
+      onSaved()
+      onClose()
+    } finally {
+      enregistrementSupplementEnCours.current = false
+      setSaving(false)
     }
-    const { error } = supplement
-      ? await supabase.from('supplements').update(payload).eq('id', supplement.id)
-      : await supabase.from('supplements').insert(payload)
-    setSaving(false)
-    if (error) {
-      setErreur(error.message)
-      return
-    }
-    onSaved()
-    onClose()
   }
 
   return (
@@ -348,26 +359,37 @@ function CompteFormModal({ dossierId, compte, onClose, onSaved }: {
   const [taux, setTaux] = useState(compte?.taux_interet_annuel != null ? String(compte.taux_interet_annuel) : '')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Même verrou que la prestation, pour la même raison : deux soumissions du même rendu ouvraient deux comptes courants
+  // du même associé (`comptes_courants_associes` n'a d'unique que son identifiant), entre lesquels ses mouvements se
+  // partageraient ensuite. Sous un nom à lui : `verrousExecution.test.ts` apparie pose et relâchement par NOM dans le
+  // fichier, et deux homonymes s'y couvriraient l'un l'autre.
+  const enregistrementCompteEnCours = useRef(false)
 
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
+    if (enregistrementCompteEnCours.current) return
+    enregistrementCompteEnCours.current = true
     setSaving(true)
     setErreur(null)
-    const payload = {
-      dossier_id: dossierId,
-      nom_associe: nom.trim(),
-      taux_interet_annuel: taux.trim() ? parseFloat(taux) : null,
+    try {
+      const payload = {
+        dossier_id: dossierId,
+        nom_associe: nom.trim(),
+        taux_interet_annuel: taux.trim() ? parseFloat(taux) : null,
+      }
+      const { error } = compte
+        ? await supabase.from('comptes_courants_associes').update(payload).eq('id', compte.id)
+        : await supabase.from('comptes_courants_associes').insert(payload)
+      if (error) {
+        setErreur(error.message)
+        return
+      }
+      onSaved()
+      onClose()
+    } finally {
+      enregistrementCompteEnCours.current = false
+      setSaving(false)
     }
-    const { error } = compte
-      ? await supabase.from('comptes_courants_associes').update(payload).eq('id', compte.id)
-      : await supabase.from('comptes_courants_associes').insert(payload)
-    setSaving(false)
-    if (error) {
-      setErreur(error.message)
-      return
-    }
-    onSaved()
-    onClose()
   }
 
   return (
@@ -398,8 +420,9 @@ function CompteFormModal({ dossierId, compte, onClose, onSaved }: {
   )
 }
 
+// `onChanged` relit le compte (le `load` de l'onglet) : l'ajout attend cette relecture avant de relâcher son verrou.
 function MouvementsModal({ compte, mouvements, onClose, onChanged }: {
-  compte: CompteCourantAssocie; mouvements: MouvementCca[]; onClose: () => void; onChanged: () => void
+  compte: CompteCourantAssocie; mouvements: MouvementCca[]; onClose: () => void; onChanged: () => Promise<void>
 }) {
   const [date, setDate] = useState(aujourdHuiSql())
   const [type, setType] = useState<TypeMouvementCca>('apport')
@@ -407,22 +430,33 @@ function MouvementsModal({ compte, mouvements, onClose, onChanged }: {
   const [libelle, setLibelle] = useState('')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Verrou d'exécution en `useRef` : deux soumissions du même rendu ajoutaient deux fois le même mouvement, compté deux
+  // fois dans un solde toujours recalculé depuis l'historique complet (`mouvements_cca` n'a d'unique que son identifiant).
+  // La fenêtre RESTE ouverte sur ce qu'elle écrit : le verrou ne se relâche qu'après la relecture du compte, sans quoi un
+  // nouvel envoi partirait pendant qu'elle montre encore la liste et le solde d'avant.
+  const ajoutEnCours = useRef(false)
 
   async function ajouter(e: FormEvent) {
     e.preventDefault()
+    if (ajoutEnCours.current) return
+    ajoutEnCours.current = true
     setSaving(true)
     setErreur(null)
-    const { error } = await supabase.from('mouvements_cca').insert({
-      compte_id: compte.id, date, type, montant: parseFloat(montant), libelle: libelle.trim() || null,
-    })
-    setSaving(false)
-    if (error) {
-      setErreur(error.message)
-      return
+    try {
+      const { error } = await supabase.from('mouvements_cca').insert({
+        compte_id: compte.id, date, type, montant: parseFloat(montant), libelle: libelle.trim() || null,
+      })
+      if (error) {
+        setErreur(error.message)
+        return
+      }
+      setMontant('')
+      setLibelle('')
+      await onChanged()
+    } finally {
+      ajoutEnCours.current = false
+      setSaving(false)
     }
-    setMontant('')
-    setLibelle('')
-    onChanged()
   }
 
   async function supprimer(m: MouvementCca) {

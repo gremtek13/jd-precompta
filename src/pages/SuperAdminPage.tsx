@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
 import { genererExportCabinet } from '../lib/exportCabinet'
@@ -51,6 +51,12 @@ export default function SuperAdminPage() {
   const [password, setPassword] = useState('')
   const [enregistrement, setEnregistrement] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Verrou d'exécution de la création, en `useRef` : `setEnregistrement(true)` ne prend effet qu'au rendu suivant, donc
+  // deux soumissions du même rendu appelaient deux fois `create-cabinet` — le second crée son cabinet, bute sur l'adresse
+  // que le premier vient d'inscrire, le retire (la compensation de la fonction) et répond une ERREUR sur une création
+  // réussie. La compensation, elle, reste nécessaire : une adresse déjà inscrite ailleurs, ou deux postes qui créent le
+  // même cabinet, passent sans qu'aucun verrou d'écran les voie.
+  const creationEnCours = useRef(false)
 
   const [aSupprimer, setASupprimer] = useState<CabinetApercu | null>(null)
   const [suppressionEnCours, setSuppressionEnCours] = useState(false)
@@ -169,21 +175,29 @@ export default function SuperAdminPage() {
       setErreur('Le mot de passe doit faire au moins 10 caractères.')
       return
     }
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours. Relâché sans attendre la relecture : le formulaire se referme sur un succès.
+    if (creationEnCours.current) return
+    creationEnCours.current = true
     setEnregistrement(true)
     setErreur(null)
-    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-cabinet', {
-      body: { nom: nom.trim(), email: email.trim(), password },
-    })
-    setEnregistrement(false)
-    if (data?.error || invokeError) {
-      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du cabinet."))
-      return
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-cabinet', {
+        body: { nom: nom.trim(), email: email.trim(), password },
+      })
+      if (data?.error || invokeError) {
+        setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du cabinet."))
+        return
+      }
+      setNom('')
+      setEmail('')
+      setPassword('')
+      setAjout(false)
+      load()
+    } finally {
+      creationEnCours.current = false
+      setEnregistrement(false)
     }
-    setNom('')
-    setEmail('')
-    setPassword('')
-    setAjout(false)
-    load()
   }
 
   // Réservée aux cabinets déjà vides (voir delete-cabinet) — la contrainte de clé étrangère fait déjà

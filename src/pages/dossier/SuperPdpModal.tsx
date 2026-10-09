@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireConnexionPlateforme } from '../../lib/receptionPlateforme'
@@ -26,6 +26,10 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
   const [clientSecret, setClientSecret] = useState('')
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  // Verrou d'exécution de la synchronisation, en `useRef` : `setSyncing(true)` ne prend effet qu'au rendu suivant, donc
+  // `disabled={syncing}` laissait passer deux clics du même rendu — deux synchronisations, deux séries d'appels à Super PDP
+  // pour les mêmes factures. Relâché à la réponse : la fenêtre montre ce que la fonction a RENDU, elle ne relit rien.
+  const synchronisationEnCours = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [resultat, setResultat] = useState<ResultatSync | null>(null)
   // LA PLATEFORME DU CLIENT (fenêtre « Plateforme du client », ligne 28.5) reçoit elle aussi les factures du dossier,
@@ -100,20 +104,28 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
   }
 
   async function synchroniser() {
+    // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (synchronisationEnCours.current) return
+    synchronisationEnCours.current = true
     setSyncing(true)
     setError(null)
     setResultat(null)
-    const { data, error: invokeError } = await supabase.functions.invoke<ResultatSync & { error?: string }>('superpdp-sync', {
-      body: { dossierId },
-    })
-    setSyncing(false)
-    if (data?.error || invokeError) {
-      setError(data?.error ?? await extraireErreurFonction(invokeError, 'Échec de la synchronisation.'))
-      return
-    }
-    if (data) {
-      setResultat(data)
-      if (data.importees > 0) onImported()
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<ResultatSync & { error?: string }>('superpdp-sync', {
+        body: { dossierId },
+      })
+      if (data?.error || invokeError) {
+        setError(data?.error ?? await extraireErreurFonction(invokeError, 'Échec de la synchronisation.'))
+        return
+      }
+      if (data) {
+        setResultat(data)
+        if (data.importees > 0) onImported()
+      }
+    } finally {
+      synchronisationEnCours.current = false
+      setSyncing(false)
     }
   }
 

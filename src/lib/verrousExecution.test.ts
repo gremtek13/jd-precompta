@@ -101,6 +101,22 @@ export function verrousEnFaute(fichier: string, source: string): VerrouEnFaute[]
   return fautes
 }
 
+/**
+ * Les verrous déclarés sous le même nom par plus d'un `useRef` d'un même fichier.
+ *
+ * `verrousEnFaute` cherche le relâchement d'un verrou par son NOM, dans tout le fichier : deux fenêtres d'un fichier qui
+ * déclarent chacune leur `enregistrementEnCours` se couvrent l'une l'autre, et le verrou jamais relâché de l'une passe
+ * pour relâché par l'autre. Mesuré le 09/10/2026 par mutation, sur les deux fenêtres de `SupplementsTab` : le
+ * relâchement ôté de l'une laissait ce garde vert. Un nom par verrou et par fichier ôte cette confusion-là ; un verrou
+ * PARTAGÉ par plusieurs fonctions du même composant reste jugé sur l'ensemble de ses relâchements.
+ */
+export function verrousHomonymes(fichier: string, source: string): string[] {
+  const noms = [...new Set([...source.matchAll(/(\w+)\.current = true/g)].map((m) => m[1]))]
+  return noms
+    .filter((nom) => [...source.matchAll(new RegExp(`\\b(?:const|let)\\s+${nom}\\s*=\\s*useRef\\b`, 'g'))].length > 1)
+    .map((nom) => `${fichier} [${nom}]`)
+}
+
 describe('les verrous d’exécution se relâchent dans un finally', () => {
   const sources = sourcesDeProduction('src')
 
@@ -124,6 +140,17 @@ describe('les verrous d’exécution se relâchent dans un finally', () => {
     expect(
       fautes.map((f) => `${f.fichier} [${f.verrou}] — ${f.motif}`).join('\n'),
       'un verrou relâché hors d’un `finally` laisse l’écran figé sans message dès qu’une exception passe à côté',
+    ).toBe('')
+  })
+
+  it('ne laisse pas deux verrous du même nom dans un fichier — l’appariement se fait par NOM', () => {
+    const lues = sources.map((f) => [f, readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8')] as const)
+    // Plancher : des fichiers qui posent des verrous ont bien été lus (41 au 09/10/2026) — sinon « aucun homonyme » se
+    // confondrait avec « rien lu ».
+    expect(lues.filter(([, source]) => /\w+\.current = true/.test(source)).length).toBeGreaterThanOrEqual(30)
+    expect(
+      lues.flatMap(([f, source]) => verrousHomonymes(f, source)).join('\n'),
+      'deux homonymes se couvrent : le verrou jamais relâché de l’un passerait pour relâché par l’autre',
     ).toBe('')
   })
 
@@ -209,5 +236,38 @@ describe('le scanner lui-même — défaut PLANTÉ, pas espéré', () => {
   it('distingue bien les deux issues — sinon il ne prouverait rien', () => {
     // Un scanner qui rendrait TOUT en faute passerait les trois cas ci-dessus sans rien valoir.
     expect(verrousEnFaute('s.tsx', fautif + correct)).toHaveLength(1)
+  })
+
+  // Deux fenêtres d'un même fichier, chacune son verrou du même nom ; la seconde ne relâche jamais le sien.
+  const homonymes = `
+    function PremiereFenetre() {
+      const enCours = useRef(false)
+      async function lancer() {
+        if (enCours.current) return
+        enCours.current = true
+        try {
+          await premierTravail()
+        } finally {
+          enCours.current = false
+        }
+      }
+    }
+    function SecondeFenetre() {
+      const enCours = useRef(false)
+      async function lancer() {
+        if (enCours.current) return
+        enCours.current = true
+        await secondTravail()
+      }
+    }
+  `
+
+  it('voit deux verrous homonymes d’un même fichier, que l’appariement par nom confond', () => {
+    // La limite de l'appariement, montrée plutôt que supposée : le verrou jamais relâché de la seconde fenêtre passe pour
+    // relâché par celui de la première…
+    expect(verrousEnFaute('s.tsx', homonymes)).toEqual([])
+    // … d'où la règle d'un nom par verrou et par fichier, qui le voit — et ne crie pas sur un verrou unique.
+    expect(verrousHomonymes('s.tsx', homonymes)).toEqual(['s.tsx [enCours]'])
+    expect(verrousHomonymes('s.tsx', correct)).toEqual([])
   })
 })

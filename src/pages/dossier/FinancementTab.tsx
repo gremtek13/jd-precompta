@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
@@ -941,6 +941,12 @@ function EmpruntFormModal({ dossierId, emprunt, rapprochements, onClose, onSaved
   const [dureeMois, setDureeMois] = useState(emprunt ? String(emprunt.duree_mois) : '')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Verrou d'exécution en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant, donc `disabled={saving}`
+  // laissait passer deux soumissions rapprochées (deux « Entrée » suffisent), et `emprunts` n'a d'unique que son
+  // identifiant — deux emprunts, deux capitaux restant dus dans le dossier présenté à la banque. Posé avant le `try`
+  // (dedans, le `return` du deuxième envoi relâcherait celui du premier par le `finally`) ; relâché sans attendre la
+  // relecture : la fenêtre se referme sur un succès.
+  const enregistrementEnCours = useRef(false)
 
   const derniereRapprochee = rapprochements.reduce((m, l) => Math.max(m, l.emprunt_echeance ?? 0), 0)
 
@@ -950,27 +956,33 @@ function EmpruntFormModal({ dossierId, emprunt, rapprochements, onClose, onSaved
       setErreur(`L’échéance n° ${derniereRapprochee} de cet emprunt est rapprochée d’un mouvement du relevé : la durée ne peut pas descendre en dessous de ${derniereRapprochee} mois.`)
       return
     }
+    if (enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
     setSaving(true)
     setErreur(null)
-    const payload = {
-      dossier_id: dossierId,
-      nom: nom.trim(),
-      organisme_preteur: organisme.trim() || null,
-      capital_initial: parseFloat(capital),
-      taux_annuel: parseFloat(taux),
-      date_debut: dateDebut,
-      duree_mois: parseInt(dureeMois, 10),
+    try {
+      const payload = {
+        dossier_id: dossierId,
+        nom: nom.trim(),
+        organisme_preteur: organisme.trim() || null,
+        capital_initial: parseFloat(capital),
+        taux_annuel: parseFloat(taux),
+        date_debut: dateDebut,
+        duree_mois: parseInt(dureeMois, 10),
+      }
+      const { error } = emprunt
+        ? await supabase.from('emprunts').update(payload).eq('id', emprunt.id)
+        : await supabase.from('emprunts').insert(payload)
+      if (error) {
+        setErreur(error.message)
+        return
+      }
+      onSaved()
+      onClose()
+    } finally {
+      enregistrementEnCours.current = false
+      setSaving(false)
     }
-    const { error } = emprunt
-      ? await supabase.from('emprunts').update(payload).eq('id', emprunt.id)
-      : await supabase.from('emprunts').insert(payload)
-    setSaving(false)
-    if (error) {
-      setErreur(error.message)
-      return
-    }
-    onSaved()
-    onClose()
   }
 
   return (

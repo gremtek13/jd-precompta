@@ -13,6 +13,10 @@ const faux = vi.hoisted(() => ({
   appels: [] as { nom: string; body: unknown }[],
   lecturesPlateforme: [] as string[],
   plateforme: null as unknown,
+  // La réponse de `superpdp-sync` attend `porteSynchronisation` quand le test la pose — la fenêtre pendant laquelle un
+  // second clic arrive — et porte `refusSynchronisation` quand il y en a un.
+  porteSynchronisation: null as Promise<void> | null,
+  refusSynchronisation: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -20,6 +24,12 @@ vi.mock('../../lib/supabase', () => ({
     functions: {
       invoke: (nom: string, options: { body: unknown }) => {
         faux.appels.push({ nom, body: options.body })
+        if (nom === 'superpdp-sync') {
+          const repondre = () => (faux.refusSynchronisation
+            ? { data: { error: faux.refusSynchronisation }, error: null }
+            : { data: { importees: 0, deja_connues: 2, en_attente_traitement: 0, erreurs: [] }, error: null })
+          return (faux.porteSynchronisation ?? Promise.resolve()).then(repondre)
+        }
         return Promise.resolve({ data: { configured: true, client_id: 'app-cabinet' }, error: null })
       },
     },
@@ -55,6 +65,8 @@ async function ouvrir() {
 beforeEach(() => {
   faux.appels = []
   faux.lecturesPlateforme = []
+  faux.porteSynchronisation = null
+  faux.refusSynchronisation = null
   repondre({ donnees: { connexion: null }, erreur: null, drapeaux: SANS_DRAPEAU })
 })
 
@@ -88,5 +100,59 @@ describe('SuperPdpModal — la plateforme du client reliée au même dossier', (
     expect(screen.getByText('Configuré')).toBeTruthy()
     expect(faux.appels).toEqual([{ nom: 'superpdp-credentials', body: { dossierId: 'd1', action: 'status' } }])
     expect(faux.lecturesPlateforme).toEqual(['d1'])
+  })
+})
+
+// « SYNCHRONISER MAINTENANT » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={syncing}` ne prend effet qu'au rendu
+// suivant : deux clics du même rendu lançaient deux synchronisations — deux séries d'appels à Super PDP pour les mêmes
+// factures, la seconde se heurtant aux pièces que la première vient d'écrire. Le cas à TROIS clics est le seul à
+// distinguer un verrou posé dans le `try`.
+describe('SuperPdpModal — le verrou de la synchronisation', () => {
+  const synchronisations = () => faux.appels.filter((a) => a.nom === 'superpdp-sync')
+  function retenirLaSynchronisation(): () => Promise<void> {
+    let ouvrirPorte = () => {}
+    faux.porteSynchronisation = new Promise<void>((resolve) => { ouvrirPorte = resolve })
+    return async () => {
+      faux.porteSynchronisation = null
+      await act(async () => { ouvrirPorte() })
+    }
+  }
+  async function boutonDeSynchronisation() {
+    await ouvrir()
+    return screen.getByRole('button', { name: 'Synchroniser maintenant' }) as HTMLButtonElement
+  }
+
+  it('ne synchronise qu’une fois quand le bouton part deux fois dans le même rendu', async () => {
+    const bouton = await boutonDeSynchronisation()
+    const liberer = retenirLaSynchronisation()
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(synchronisations()).toHaveLength(1)
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Synchronisation…')
+    await liberer()
+    expect(screen.getByText(/2 déjà connue\(s\)/)).toBeTruthy()
+  })
+
+  it('trois clics dans le même rendu ne synchronisent qu’une fois', async () => {
+    const bouton = await boutonDeSynchronisation()
+    const liberer = retenirLaSynchronisation()
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(synchronisations()).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus, et le dit', async () => {
+    faux.refusSynchronisation = 'Identifiants refusés par Super PDP.'
+    const bouton = await boutonDeSynchronisation()
+
+    await act(async () => { bouton.click() })
+    expect(screen.getByText('Identifiants refusés par Super PDP.')).toBeTruthy()
+    await act(async () => { bouton.click() })
+
+    expect(synchronisations()).toHaveLength(2)
   })
 })

@@ -109,6 +109,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [extracting, setExtracting] = useState(false)
+  // Verrou d'exécution de l'extraction, en `useRef` : `setExtracting(true)` ne prend effet qu'au rendu suivant, donc
+  // `disabled={extracting}` laissait passer deux clics du même rendu — deux lectures FACTURÉES du même fichier (OCR puis
+  // citation), dont la plus lente réécrivait les champs déjà corrigés d'après la première.
+  const extractionEnCours = useRef(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   // Initialisé depuis la pièce (pas null) : sans ça, rouvrir une pièce déjà extraite sans relancer
   // l'extraction écraserait sa confiance enregistrée à la sauvegarde suivante.
@@ -221,6 +225,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   }
 
   async function handleExtract() {
+    // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (extractionEnCours.current) return
+    extractionEnCours.current = true
     setExtracting(true)
     setExtractionError(null)
     setConfiance(null)
@@ -295,6 +303,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     } catch (err) {
       setExtractionError(messageErreur(err, "L'extraction automatique a échoué — remplis le formulaire à la main."))
     } finally {
+      extractionEnCours.current = false
       setExtracting(false)
     }
   }

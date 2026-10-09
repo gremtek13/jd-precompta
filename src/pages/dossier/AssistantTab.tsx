@@ -54,6 +54,10 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
   // réponse. Propre à cette instance, donc au dossier consulté (voir la clé posée par le parent).
   const [alerteCout, setAlerteCout] = useState<{ coutMoisUsd: number; limiteAlerteUsd: number } | null>(null)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
+  // Verrou d'exécution de l'envoi, en `useRef` : `loading`, lu dans la fermeture du rendu, valait `false` pour deux
+  // « Entrée » du même rendu, et la question partait deux fois — deux appels FACTURÉS au modèle, deux réponses comptées
+  // dans le plafond du cabinet. Relâché à la réponse : le fil montre ce qu'elle a rendu, il ne relit rien.
+  const envoiEnCours = useRef(false)
   const zoneRef = useRef<HTMLTextAreaElement>(null)
   const historiqueRef = useRef<HTMLDivElement>(null)
 
@@ -133,16 +137,20 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
   async function envoyer(e: FormEvent) {
     e.preventDefault()
     const texte = input.trim()
-    if (!texte || loading || !conversationId) return
-
-    setInput('')
-    setError(null)
-    const historique = messages.map((m) => ({ role: m.role, texte: m.texte }))
-    setTous((prev) => [...prev, { conversation_id: conversationId, role: 'user', texte, outils_utilises: null, created_at: new Date().toISOString() }])
+    if (!texte || !conversationId) return
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (envoiEnCours.current) return
+    envoiEnCours.current = true
     setLoading(true)
-    enregistrer('user', texte)
 
     try {
+      setInput('')
+      setError(null)
+      const historique = messages.map((m) => ({ role: m.role, texte: m.texte }))
+      setTous((prev) => [...prev, { conversation_id: conversationId, role: 'user', texte, outils_utilises: null, created_at: new Date().toISOString() }])
+      enregistrer('user', texte)
+
       const { data, error: invokeError } = await supabase.functions.invoke<{
         reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }
         alerte_cout?: boolean; cout_mois_usd?: number; limite_alerte_usd?: number; error?: string
@@ -165,6 +173,7 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      envoiEnCours.current = false
       setLoading(false)
       zoneRef.current?.focus()
     }

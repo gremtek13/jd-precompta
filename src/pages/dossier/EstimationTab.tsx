@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
@@ -62,6 +62,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   const [libellePoste, setLibellePoste] = useState('')
   const [montantPoste, setMontantPoste] = useState('')
   const [lecture2035Loading, setLecture2035Loading] = useState(false)
+  // Verrou d'exécution de la lecture d'une ancienne 2035, en `useRef` : `disabled={lecture2035Loading}` ne prend effet
+  // qu'au rendu suivant, et deux dépôts du même rendu payaient deux lectures FACTURÉES du même formulaire — la plus lente
+  // réécrivant le CA et les cotisations déjà corrigés d'après la première.
+  const lecture2035EnCours = useRef(false)
   const [lecture2035Error, setLecture2035Error] = useState<string | null>(null)
   const [lecture2035Diag, setLecture2035Diag] = useState<string[] | undefined>(undefined)
   const [diagResultat, setDiagResultat] = useState<string[] | undefined>(undefined)
@@ -186,6 +190,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   async function importerDepuis2035(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    // Posé avant le `try` : dedans, le `return` du deuxième dépôt sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (lecture2035EnCours.current) return
+    lecture2035EnCours.current = true
     setLecture2035Loading(true)
     setLecture2035Error(null)
     setLecture2035Diag(undefined)
@@ -206,6 +214,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     } catch (err) {
       setLecture2035Error(messageErreur(err, "L'extraction a échoué — saisis les montants à la main."))
     } finally {
+      lecture2035EnCours.current = false
       setLecture2035Loading(false)
       e.target.value = ''
     }

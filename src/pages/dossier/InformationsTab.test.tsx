@@ -30,6 +30,15 @@ const faux = vi.hoisted(() => ({
   // porte le dossier » — et le formulaire, lui, a exactement la même tête que sur un dossier neuf.
   lecture: { informations: null as unknown, erreur: null as string | null },
   enregistrements: [] as unknown[],
+  // Les générations d'archive, les lignes `packs` et les suppressions parties ; chacune attend sa porte quand le test la
+  // pose — la fenêtre pendant laquelle un second clic arrive.
+  generations: 0,
+  porteGeneration: null as Promise<void> | null,
+  insertionsPacks: 0,
+  erreurPack: null as { message: string } | null,
+  suppressions: 0,
+  porteSuppression: null as Promise<void> | null,
+  erreurSuppression: null as Error | null,
 }))
 
 vi.mock('../../lib/informationsDossier', () => ({
@@ -41,7 +50,12 @@ vi.mock('../../lib/informationsDossier', () => ({
 }))
 
 vi.mock('../../lib/suppressionDossier', () => ({
-  supprimerDossierDefinitivement: () => Promise.resolve(faux.bilan),
+  supprimerDossierDefinitivement: async () => {
+    faux.suppressions += 1
+    await faux.porteSuppression
+    if (faux.erreurSuppression) throw faux.erreurSuppression
+    return faux.bilan
+  },
   messageNettoyage: () => faux.message,
 }))
 
@@ -64,10 +78,14 @@ vi.mock('./VehiculesCard', () => ({
 vi.mock('./SauvegardeCard', () => ({ default: () => null }))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
 vi.mock('../../lib/packGenerator', () => ({
-  generatePack: () => Promise.resolve({
-    nbPieces: 4, storagePathZip: 'd1/p/pack.zip', storagePathExcel: 'd1/p/recap.xlsx',
-    totalTtc: 1200, manquantes: [],
-  }),
+  generatePack: async () => {
+    faux.generations += 1
+    await faux.porteGeneration
+    return {
+      nbPieces: 4, storagePathZip: 'd1/p/pack.zip', storagePathExcel: 'd1/p/recap.xlsx',
+      totalTtc: 1200, manquantes: [],
+    }
+  },
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -79,7 +97,11 @@ vi.mock('../../lib/supabase', () => ({
         eq: () => chaine,
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
         update: () => chaine,
-        insert: () => Promise.resolve({ error: null }),
+        // La ligne `packs` de l'export : rien d'autre ne s'insère depuis cet onglet.
+        insert: () => {
+          faux.insertionsPacks += 1
+          return Promise.resolve({ error: faux.erreurPack })
+        },
       })
       return chaine
     },
@@ -135,6 +157,13 @@ beforeEach(() => {
   faux.ouvertureBloquee = false
   faux.lecture = { informations: null, erreur: null }
   faux.enregistrements = []
+  faux.generations = 0
+  faux.porteGeneration = null
+  faux.insertionsPacks = 0
+  faux.erreurPack = null
+  faux.suppressions = 0
+  faux.porteSuppression = null
+  faux.erreurSuppression = null
   window.open = ((url: string) => {
     faux.ouvertures.push(url)
     return faux.ouvertureBloquee ? null : { opener: window as unknown } as Window
@@ -306,5 +335,109 @@ describe('la carte Véhicules reçoit le modèle comptable du dossier', () => {
   it('lui passe celui de l’onglet, dont dépend le compte que son forfait crédite', async () => {
     monter({ mode: 'engagement', compteNotesDeFrais: '467000' })
     expect(await screen.findByText('Véhicules — engagement — 467000')).toBeTruthy()
+  })
+})
+
+// L'EXPORT ET LA SUPPRESSION NE SE PROTÉGEAIENT QUE PAR UN ÉTAT (09/10/2026). `disabled={exportEnCours}` et
+// `enCours={suppressionEnCours}` ne prennent effet qu'au rendu suivant : deux clics du même rendu produisaient deux
+// archives et deux lignes `packs` ; et deux suppressions du même dossier couraient l'une contre l'autre dans le stockage —
+// la seconde, qui ne trouve plus les fichiers que la première vient de retirer, compte `retires < demandes` et
+// affirme qu'ils sont restés (« préviens l'administrateur »), sur un dossier proprement supprimé. Le cas à TROIS clics est
+// le seul à distinguer un verrou posé dans le `try`.
+function retenir(porte: 'porteGeneration' | 'porteSuppression'): () => Promise<void> {
+  let ouvrir = () => {}
+  faux[porte] = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux[porte] = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+describe('le verrou de l’export avant suppression', () => {
+  async function boutonDExport() {
+    monter()
+    await act(async () => {})
+    return screen.getByRole('button', { name: /Exporter avant suppression/ }) as HTMLButtonElement
+  }
+
+  it('ne produit qu’une archive quand le bouton part deux fois dans le même rendu', async () => {
+    const bouton = await boutonDExport()
+    const liberer = retenir('porteGeneration')
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.generations).toBe(1)
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Export…')
+    await liberer()
+    expect(faux.insertionsPacks).toBe(1)
+    expect(faux.ouvertures).toEqual(['https://exemple/pack.zip'])
+  })
+
+  it('trois clics dans le même rendu n’en produisent qu’une', async () => {
+    const bouton = await boutonDExport()
+    const liberer = retenir('porteGeneration')
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.generations).toBe(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurPack = { message: 'permission denied' }
+    const bouton = await boutonDExport()
+
+    await act(async () => { bouton.click() })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+
+    expect(faux.generations).toBe(2)
+  })
+})
+
+describe('le verrou de la suppression définitive', () => {
+  // Le nom tapé comme le fait un opérateur : c'est cette garde-là qui active le bouton (voir `supprimer`, plus haut).
+  async function boutonDeConfirmation() {
+    monter()
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: /Supprimer ce dossier définitivement/ }).click() })
+    await act(async () => { fireEvent.change(screen.getByLabelText(/pour confirmer/), { target: { value: 'Cabinet Martin' } }) })
+    return screen.getByRole('button', { name: /^Supprimer définitivement$/ }) as HTMLButtonElement
+  }
+
+  it('ne supprime qu’une fois quand la confirmation part deux fois dans le même rendu', async () => {
+    const bouton = await boutonDeConfirmation()
+    const liberer = retenir('porteSuppression')
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.suppressions).toBe(1)
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Suppression…')
+    await liberer()
+    expect(faux.navigations).toEqual(['/dossiers'])
+  })
+
+  it('trois clics dans le même rendu ne suppriment qu’une fois', async () => {
+    const bouton = await boutonDeConfirmation()
+    const liberer = retenir('porteSuppression')
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.suppressions).toBe(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus, et le dit', async () => {
+    faux.erreurSuppression = new Error('permission denied')
+    const bouton = await boutonDeConfirmation()
+
+    await act(async () => { bouton.click() })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+
+    expect(faux.suppressions).toBe(2)
+    expect(faux.navigations).toEqual([])
   })
 })

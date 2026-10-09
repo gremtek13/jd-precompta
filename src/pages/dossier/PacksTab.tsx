@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ajouterMois, dernierJourDuMois, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { generatePack } from '../../lib/packGenerator'
@@ -43,6 +43,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   // l'historique déjà lu reste sous les yeux jusqu'à la relecture.
   const [chargementPacks, setChargementPacks] = useState(true)
   const [generating, setGenerating] = useState(false)
+  // Verrou d'exécution en `useRef` : `setGenerating(true)` ne prend effet qu'au rendu suivant, donc `disabled={generating}`
+  // laissait passer deux clics du même rendu — deux archives, deux lignes `packs`, deux livrables identiques dont l'un part
+  // au comptable. Relâché APRÈS la relecture de l'historique : avant, l'écran rendrait le bouton sur une liste qui ne porte
+  // pas encore le pack qu'il vient de générer, et inviterait à le refaire.
+  const generationEnCours = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   async function loadPacks() {
@@ -121,6 +126,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   const apercu = preview !== null && preview.debut === periodeDebut && preview.fin === periodeFin ? preview : null
 
   async function handleGenerate() {
+    // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (generationEnCours.current) return
+    generationEnCours.current = true
     setGenerating(true)
     setError(null)
     try {
@@ -152,10 +161,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         avertissements.push(`${sansDate.length} pièce(s) validée(s) de ce dossier n'ont pas de date : elles ne figurent dans aucun pack, quelle que soit la période — ${sansDate.slice(0, 3).join(', ')}${sansDate.length > 3 ? '…' : ''}. Leur donner une date pour qu'elles y entrent. Voir l'onglet « Pièces sans date ».`)
       }
       if (avertissements.length > 0) setError(`Pack généré, mais : ${avertissements.join(' ')}`)
-      loadPacks()
+      await loadPacks()
     } catch (err) {
       setError(messageErreur(err, 'La génération a échoué.'))
     } finally {
+      generationEnCours.current = false
       setGenerating(false)
     }
   }
