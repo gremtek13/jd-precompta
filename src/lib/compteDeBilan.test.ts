@@ -36,7 +36,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2026-03-12', compte: COMPTE_VIREMENTS_INTERNES,
-    libelle: 'VIR EPARGNE', montant: 2000, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+    libelle: 'VIR EPARGNE', montant: 2000, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
     ...NON_VALIDEE, created_at: '2026-03-12T10:00:00Z',
     ...o,
   }
@@ -358,7 +358,7 @@ describe('les autres classements refusent un mouvement écrit sur un compte de b
     expect(refusVentilation(ecrit, [], [categorie], false)).toBe(attendu)
     expect(refusReglementGroupe(ecrit, [], [], new Map())).toBe(attendu)
     expect(refusEcheanceEmprunt(ecrit)).toBe(attendu)
-    expect(refusRapprochementCotisation(ecrit, { montant_verse: null, montant_appele: 2000, montant_csg_crds: null }, 'tresorerie')).toBe(attendu)
+    expect(refusRapprochementCotisation(ecrit, { montant_verse: null, montant_appele: 2000, montant_csg_crds: null, paiement_personnel_le: null }, 'tresorerie')).toBe(attendu)
   })
 })
 

@@ -37,7 +37,7 @@ describe('refusPaieUneDeclarationTva — un mouvement rapproché d’une déclar
   // payée sur le papier, et le mouvement compterait ailleurs.
   it('affecter, classer en virement personnel, ventiler, régler en groupe, rapprocher d’un emprunt, d’une cotisation, écrire sur un compte de bilan', () => {
     const categorie = { id: 'cat', libelle: 'Frais bancaires', compte_comptable: '627000' }
-    const cotisation = { montant_verse: null, montant_appele: 1200, montant_csg_crds: null }
+    const cotisation = { montant_verse: null, montant_appele: 1200, montant_csg_crds: null, paiement_personnel_le: null }
     for (const [ligne, attendu] of [[mouvement(), PAIEMENT], [mouvement({ montant: 300 }), REMBOURSEMENT]] as const) {
       expect(refusAffectation(ligne, categorie, false, null)).toBe(attendu)
       expect(refusVirementPersonnel(ligne)).toBe(attendu)

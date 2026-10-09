@@ -37,7 +37,7 @@ function rapproche(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-02-06', compte: '512000',
-    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-02-06T10:00:00Z',
+    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-02-06T10:00:00Z',
     ...o,
   }
 }

@@ -63,7 +63,7 @@ function part(o: Partial<VentilationBancaire> = {}): VentilationBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-03-12', compte: '626000',
-    libelle: 'PRLV SEPA OPERATEUR MOBILE', montant: 84, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
+    libelle: 'PRLV SEPA OPERATEUR MOBILE', montant: 84, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
     ...o,
   }
 }

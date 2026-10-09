@@ -84,6 +84,14 @@
 -- reçu par la base est celui de la copie transmise, ses commentaires retirés et la ligne qui dit le texte reçu
 -- ajoutée (71 524 caractères, empreinte 3929d97a…).
 --
+-- REJOUÉ EN PRODUCTION LE 09/10/2026, après la relecture croisée du lot (28.6, R1, 26.6) et la réécriture de la lecture
+-- de la cascade (141, voir plus bas) : 151 contrôles sur 151, et 4/1/1/77/998/3/2/1/43/0/0/0/0 lignes avant comme
+-- après ; texte reçu égal à la copie transmise (73 922 caractères, empreinte 0da2f766…). Sur une réplique dont la
+-- signature est celle de la production, la nouvelle lecture rend la valeur attendue, et sept mutations la font tomber —
+-- une garde nouvelle sans la condition (par ligne, puis par instruction), la condition retirée ou tournée vers une autre
+-- table, une garde désactivée, des lignes de facture dotées d'un `dossier_id`, une garde qui ne couvre plus la
+-- suppression ; l'ancienne lecture n'en voyait aucune.
+--
 -- MIS AU POINT SUR UNE RÉPLIQUE LOCALE, ET MUTÉ AVANT D'ÊTRE CRU. Trente-quatre mutations, chacune jouée dans
 -- la transaction de l'essai puis annulée, toutes mordent :
 --   - le code TEL QU'IL ÉTAIT avant la migration corrective, fonction par fonction : chacun des sept
@@ -104,8 +112,18 @@
 -- Une mutation a d'abord SURVÉCU, et c'est l'essai qu'elle accusait : la « sauvegarde » d'une ligne du cadre 7
 -- posait `updated_at = now()`, or `now()` vaut l'heure du début de la transaction, celle de l'insertion de la
 -- ligne — elle ne changeait rien. Elle décale désormais la date d'une seconde.
--- La lecture de la cascade (141) est TEXTUELLE : elle cherche la condition telle qu'elle est écrite aujourd'hui,
--- et les versions d'avant, qui l'écrivaient avec une variable, la faisaient tomber sans manquer de l'exemption.
+-- La lecture de la cascade (141) part de TOUS les déclencheurs posés avant une suppression, lus du catalogue (22 au
+-- 09/10/2026), et dit de chacun comment il laisse passer la cascade d'un dossier qu'on supprime : `dossier` — sa
+-- fonction porte la condition `not exists (select 1 from public.dossiers where id = old.dossier_id)`, lue blancs
+-- ramenés à un seul et alias de table permis ; `parent:<table>` — sa table n'a pas de `dossier_id` et part avec son
+-- parent par une clé en cascade, que la garde relit (les lignes d'une facture : leur facture déjà partie, plus rien
+-- ne les dit validées) ; `?` sinon. Un déclencheur nouveau, désactivé, ou qui perd sa condition la fait tomber. Elle
+-- partait des fonctions `garder%` qui portaient la condition à la lettre, et neuf déclencheurs sur vingt-deux lui
+-- échappaient sans qu'elle tombe : les quatre de la révision des soldes (trois fonctions) et ceux des encaissements,
+-- de leurs parts par taux, de leurs déclarations et des statuts reçus, qui écrivent la condition avec un alias — et
+-- celui des lignes d'une facture, qui ne l'écrit pas. Elle reste une LECTURE : une suppression ne se joue pas en
+-- production (l'outil la soumet à une confirmation qui n'arrive pas) : celle d'un dossier entier ne se joue que sur
+-- une réplique.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -511,8 +529,9 @@ begin
     -- ══ Ce que le catalogue dit, faute de pouvoir le jouer ═════════════════════════════════════════════════════════
     array['valeur', '140. chaque déclencheur figeant refuse aussi la suppression, et il est actif', 'postgres', $q$select string_agg(c.relname || ':' || ((t.tgtype & 8) <> 0)::text || ':' || t.tgenabled::text, ',' order by c.relname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname in ('ecritures_brouillon_intangibles', 'pieces_figees_par_la_validation', 'lignes_bancaires_figees_par_la_validation', 'ventilations_bancaires_figees_par_la_validation', 'reglements_groupes_figes_par_la_validation', 'immobilisations_figees_par_la_validation', 'vehicules_figes_par_la_validation', 'cotisations_declarees_figees_par_la_validation', 'a_nouveaux_figes_par_la_validation', 'declarations_tva_figees_par_la_validation', 'soldes_reportes_ecrits_par_la_validation')$q$, '',
       'a_nouveaux:true:O,cotisations_declarees:true:O,declarations_tva:true:O,ecritures_brouillon:true:O,immobilisations:true:O,lignes_bancaires:true:O,pieces:true:O,reglements_groupes:true:O,soldes_reportes:true:O,vehicules:true:O,ventilations_bancaires:true:O'],
-    array['valeur', '141. chacun laisse passer la cascade d''un dossier qu''on supprime', 'postgres', $q$select string_agg(p.proname, ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'garder%' and p.prosrc like '%not exists (select 1 from public.dossiers where id = old.dossier_id)%'$q$, '',
-      'garder_a_nouveaux_valides,garder_bien_valide,garder_cotisation_valide,garder_declaration_valide,garder_ecriture_paiement_personnel,garder_ecritures_validees,garder_factures_validees,garder_mouvement_valide,garder_parts_mouvement_valide,garder_piece_validee,garder_soldes_reportes,garder_vehicule_valide'],
+    -- 141 part de TOUS les déclencheurs posés avant une suppression, lus du catalogue (voir l'en-tête).
+    array['valeur', '141. tout déclencheur qui garde une suppression laisse passer la cascade d''un dossier qu''on supprime', 'postgres', $q$select count(*) || ' ' || string_agg(c.relname || '.' || t.tgname || ':' || p.proname || ':' || case when regexp_replace(p.prosrc, '\s+', ' ', 'g') ~ 'not exists \(select 1 from public\.dossiers( [a-z_]+)? where ([a-z_]+\.)?id = old\.dossier_id\)' then 'dossier' when not exists (select 1 from pg_attribute a where a.attrelid = t.tgrelid and a.attname = 'dossier_id' and not a.attisdropped) then 'parent:' || coalesce((select string_agg(k.confrelid::regclass::text, '+' order by k.confrelid::regclass::text collate "C") from pg_constraint k where k.conrelid = t.tgrelid and k.contype = 'f' and k.confdeltype = 'c'), 'aucun') else '?' end || ':' || t.tgenabled::text, ',' order by c.relname collate "C", t.tgname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid where not t.tgisinternal and c.relnamespace = 'public'::regnamespace and (t.tgtype & 2) <> 0 and (t.tgtype & 8) <> 0$q$, '',
+      '22 a_nouveaux.a_nouveaux_figes_par_la_validation:garder_a_nouveaux_valides:dossier:O,cotisations_declarees.cotisations_declarees_figees_par_la_validation:garder_cotisation_valide:dossier:O,declarations_tva.declarations_tva_figees_par_la_validation:garder_declaration_valide:dossier:O,documents_divers.documents_divers_cites_en_revision:garder_source_citee:dossier:O,ecritures_brouillon.ecritures_brouillon_intangibles:garder_ecritures_validees:dossier:O,ecritures_brouillon.ecritures_brouillon_paiement_personnel:garder_ecriture_paiement_personnel:dossier:O,encaissements_factures.encaissements_factures_gardes:garder_encaissement_facture:dossier:O,encaissements_factures_taux.encaissements_factures_taux_gardes:garder_encaissement_facture_taux:dossier:O,facture_lignes.facture_lignes_figees:garder_lignes_facture_validee:parent:factures_emises:O,factures_emises.factures_emises_figees:garder_factures_validees:dossier:O,immobilisations.immobilisations_figees_par_la_validation:garder_bien_valide:dossier:O,lignes_bancaires.lignes_bancaires_figees_par_la_validation:garder_mouvement_valide:dossier:O,pieces.pieces_citees_en_revision:garder_source_citee:dossier:O,pieces.pieces_figees_par_la_validation:garder_piece_validee:dossier:O,reglements_groupes.reglements_groupes_figes_par_la_validation:garder_parts_mouvement_valide:dossier:O,revision_justifications.revision_justifications_gardes:garder_revision_justification:dossier:O,revision_preuves.revision_preuves_gardes:garder_revision_preuve:dossier:O,soldes_reportes.soldes_reportes_ecrits_par_la_validation:garder_soldes_reportes:dossier:O,statuts_factures_recus.statuts_factures_recus_gardes:garder_statut_facture_recu:dossier:O,transmissions_encaissements.transmissions_encaissements_gardees:garder_transmission_encaissement:dossier:O,vehicules.vehicules_figes_par_la_validation:garder_vehicule_valide:dossier:O,ventilations_bancaires.ventilations_bancaires_figees_par_la_validation:garder_parts_mouvement_valide:dossier:O'],
     array['valeur', '142. un exercice validé part avec son dossier', 'postgres', $q$select string_agg(confdeltype::text, ',') from pg_constraint where conrelid = 'public.exercices_valides'::regclass and contype = 'f'$q$, '', 'c'],
     array['valeur', '143. les droits d''exécution (anonyme, connecté)', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || a, 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || a, 'execute'), ',' order by f collate "C") from (values
       ('valider_exercice', '(uuid, integer, jsonb, jsonb, jsonb)'), ('verifier_exercice_valide', '(uuid, integer)'), ('empreinte_exercice', '(uuid, integer, text)'),

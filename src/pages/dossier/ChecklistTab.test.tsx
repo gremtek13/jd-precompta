@@ -521,7 +521,7 @@ describe('ChecklistTab — les dotations aux amortissements', () => {
   function dotation(annee: number, montant: number): EcritureBrouillon[] {
     const base = {
       dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`,
-      libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'b1', vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
+      libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'b1', vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE,
       created_at: '2026-01-02T09:00:00Z',
     }
     return [
@@ -611,7 +611,7 @@ describe('ChecklistTab — les forfaits kilométriques', () => {
   })
   function forfait(annee: number, montant: number, compte = '108000'): EcritureBrouillon[] {
     const base = {
-      dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', declaration_tva_id: null, ...NON_VALIDEE,
+      dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE,
       date: `${annee}-12-31`, libelle: `Indemnités kilométriques ${annee}`, montant, statut: 'proposee' as const,
       created_at: '2026-01-02T09:00:00Z',
     }
@@ -1318,7 +1318,7 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2026-03-10',
       compte: '706000', libelle: 'VIR CPAM', montant: 250, sens: 'credit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ECRITURE_CPAM = [ecritureDe({ id: 'e1' }), ecritureDe({ id: 'e2', compte: '512000', sens: 'debit' })]
@@ -1409,7 +1409,7 @@ describe('ChecklistTab — les virements personnels', () => {
     return {
       id: 'v1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-perso', date: '2026-03-10',
       compte: '108000', libelle: 'VIR PERSO', montant: 500, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ecrit = (compte = '108000') => [ecritureDe({ id: 'v1', compte }), ecritureDe({ id: 'v2', compte: '512000', sens: 'credit' })]
@@ -1466,7 +1466,7 @@ describe('ChecklistTab — les virements personnels', () => {
 describe('ChecklistTab — les échéances de cotisation payées', () => {
   const echeance = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
     id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2026-03-05', montant_appele: 100, montant_verse: null,
-    montant_csg_crds: 9.7, previsionnel: false, created_at: '2026-01-10T09:00:00Z', ...o,
+    montant_csg_crds: 9.7, previsionnel: false, created_at: '2026-01-10T09:00:00Z', paiement_personnel_le: null, ...o,
   })
   const prelevement = (o: Partial<LigneBancaire> = {}) => ligne({
     id: 'l-urssaf', libelle: 'PRLV URSSAF', montant: -100, statut: 'rapprochee', piece_id: null, cotisation_id: 'cot-1', ...o,
@@ -1475,7 +1475,7 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
     return {
       id: 'u1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-urssaf', date: '2026-03-10',
       compte: '646000', libelle: 'PRLV URSSAF', montant: 90.3, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ecrite = [
@@ -1616,7 +1616,7 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     return {
       id: 'e', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-ech-2', date: '2025-03-06',
       compte: '512000', libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-06T09:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-03-06T09:00:00Z', ...o,
     }
   }
   const ecritureDeLEcheance2 = [
@@ -1727,7 +1727,7 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-v', date: '2026-03-10',
       compte: '626000', libelle: 'PRLV OPERATEUR', montant: 84, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ECRITURE = [
@@ -1848,7 +1848,7 @@ describe('ChecklistTab — les virements qui règlent plusieurs pièces', () => 
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'pa', ligne_bancaire_id: null, date: '2026-03-10',
       compte: '606100', libelle: 'ALPHA', montant: 300, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   // Chaque pièce, réglée entière par sa part, porte sa charge à la date du virement et une contrepartie de
@@ -1935,7 +1935,7 @@ describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () 
     return {
       id: 'b1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-b', date: '2026-03-10',
       compte: '580000', libelle: 'VIR VERS LIVRET A', montant: 1000, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
 
@@ -2048,7 +2048,7 @@ describe('ChecklistTab — la TVA liquidée et payée', () => {
     return {
       id: 'lq', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: '2026-03-31',
       compte: '445710', libelle: 'CA3 1er trimestre 2026', montant: 100.40, sens: 'debit', statut: 'proposee',
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: 'decl-t1', ...NON_VALIDEE, created_at: '2026-04-15T10:00:00Z', ...o,
+      immobilisation_id: null, vehicule_id: null, declaration_tva_id: 'decl-t1', cotisation_id: null, ...NON_VALIDEE, created_at: '2026-04-15T10:00:00Z', ...o,
     }
   }
   const LIQUIDATION = [

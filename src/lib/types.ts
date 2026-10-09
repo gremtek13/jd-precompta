@@ -413,8 +413,8 @@ export interface EcritureBrouillon {
   // (ligne 26.6 — voir lib/cotisationPersonnelle.ts) : à la date du paiement, sans pièce, ni mouvement, ni bien, ni
   // véhicule, ni déclaration. Nul sur toute autre écriture — une échéance rapprochée s'écrit par son mouvement. Clé en
   // cascade : supprimer l'échéance emporte son écriture, et la base ne la laisse écrire, modifier ou retirer qu'avec ce
-  // paiement. Une ligne lue de la base le porte toujours ; absent d'un objet construit à la main, il vaut nul.
-  cotisation_id?: string | null
+  // paiement.
+  cotisation_id: string | null
   // Ce que porte une écriture VALIDÉE (ligne 26.6, étape d — voir supabase/essais/validationExercice.sql) :
   // sa date de validation, son journal et son numéro définitif, et les champs du FEC qui se lisaient ailleurs
   // — la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire —, pour que le FEC
@@ -580,9 +580,8 @@ export interface CotisationDeclaree {
   // Le jour où l'exploitant l'a payée DEPUIS SON COMPTE PERSONNEL (ligne 26.6 — voir lib/cotisationPersonnelle.ts) :
   // un apport, écrit face au compte du dirigeant, et la date à laquelle la 2035 la compte. Nul sinon, et toujours nul
   // sur une échéance qu'un mouvement paie. Seule `enregistrer_paiement_personnel_cotisation` le pose, avec son
-  // écriture ; tant qu'il est posé, les montants de l'échéance ne changent plus. Une ligne lue de la base le porte
-  // toujours ; absent d'un objet construit à la main, il vaut nul.
-  paiement_personnel_le?: string | null
+  // écriture ; tant qu'il est posé, les montants de l'échéance ne changent plus.
+  paiement_personnel_le: string | null
 }
 
 // Détail par poste (Achats, Loyer, Assurance...) d'un repère annuel — complète le CA et les

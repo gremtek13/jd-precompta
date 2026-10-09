@@ -507,7 +507,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
   const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
     id: 'c-1', dossier_id: 'd-1', echeance: '2025-03-05',
     montant_appele: 10_000, montant_verse: 10_000, montant_csg_crds: null,
-    previsionnel: false, created_at: '2025-03-05T09:00:00Z', ...o,
+    previsionnel: false, created_at: '2025-03-05T09:00:00Z', paiement_personnel_le: null, ...o,
   })
 
   it('porte quatre cases au 2035-B, à partir des revenus 2025 : DE et DB saisies, DC et DD calculées', () => {

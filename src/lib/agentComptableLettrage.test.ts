@@ -72,7 +72,7 @@ function motsDe(source: string, nom: string): string[] {
 const ecriture = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id'>): EcritureBrouillon => ({
   dossier_id: 'd1', piece_id: 'f', ligne_bancaire_id: null, date: '2026-03-10', compte: COMPTE_FOURNISSEURS, libelle: 'Fournisseur',
   montant: 500, sens: 'credit', statut: 'proposee', created_at: '2026-03-10T09:00:00Z', immobilisation_id: null,
-  vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, ...o,
+  vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, ...o,
 })
 const manuel = (groupe: string, piece_id: string | null, o: Partial<LettrageManuel> = {}): LettrageManuel => ({
   id: `${groupe}-${piece_id ?? 'supprimee'}`, dossier_id: 'd1', groupe, piece_id, compte: COMPTE_FOURNISSEURS,

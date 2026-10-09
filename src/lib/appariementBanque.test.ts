@@ -502,7 +502,7 @@ describe('planRapprochementAutomatique', () => {
 
   describe('cotisations', () => {
     const cot = (o: Partial<CotisationRapprochable>): CotisationRapprochable =>
-      ({ id: 'c1', echeance: '2025-06-05', montant_appele: 38.4, montant_verse: null, ...o })
+      ({ id: 'c1', echeance: '2025-06-05', montant_appele: 38.4, montant_verse: null, paiement_personnel_le: null, ...o })
 
     it('rapproche une échéance quand aucune pièce ne convient', () => {
       const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide)

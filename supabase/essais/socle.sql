@@ -1,7 +1,8 @@
 -- MOITIÉ « BASE » DU CONTRÔLE DU SOCLE — voir `supabase/essais/socle.py` pour le pourquoi.
 --
--- Régénère depuis `pg_catalog` les 77 instructions du socle — les 66 de `1_tables_sans_migration.sql`
--- (les douze tables absentes de l'historique de migrations) et les 11 de
+-- Régénère depuis `pg_catalog` les 78 instructions du socle — les 67 de `1_tables_sans_migration.sql`
+-- (les douze tables absentes de l'historique de migrations, et ce que des migrations leur ont ajouté depuis — l'index
+-- de `ecritures_brouillon.cotisation_id`, posé par `paiement_personnel_des_cotisations`, fait la 67e) et les 11 de
 -- `2_objets_sans_migration.sql` (six colonnes et cinq objets ajoutés hors migration à des tables que
 -- les migrations créent) — et rend leur empreinte agrégée. Égale à celle des fichiers ⇒ la
 -- reconstruction décrit encore la base.

@@ -99,7 +99,7 @@ function echeance(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
   return {
     id: 'e1', dossier_id: 'dossier-de-test', echeance: '2026-01-05', montant_appele: 100,
     montant_verse: null, montant_csg_crds: null, previsionnel: false,
-    created_at: '2026-01-02T09:00:00Z', ...o,
+    created_at: '2026-01-02T09:00:00Z', paiement_personnel_le: null, ...o,
   }
 }
 
