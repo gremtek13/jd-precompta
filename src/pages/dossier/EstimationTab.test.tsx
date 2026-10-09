@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
-import type { Categorie, CotisationDeclaree, ModeComptable, Piece } from '../../lib/types'
+import type {
+  Categorie, CotisationDeclaree, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel,
+} from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 
 // LE CALCUL EST DANS `lib/estimation.ts`, TESTÉ — CE QUI SE JOUE ICI EST LE CÂBLAGE.
@@ -37,6 +39,10 @@ const faux = vi.hoisted(() => ({
   extractions: 0,
   porteExtraction: null as Promise<void> | null,
   erreurExtraction: null as Error | null,
+  // Les repères en base, et le retrait que la base refuse (avec sa raison).
+  references: [] as unknown[],
+  referencesPostes: [] as unknown[],
+  refusRetrait: null as string | null,
 }))
 
 // Doublée pour ne rien facturer : ce qui se joue ici est le NOMBRE de lectures, pas ce qu'elles lisent.
@@ -59,16 +65,20 @@ vi.mock('../../lib/supabase', async () => {
     // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
     // une pièce — l'estimation perdait alors les recettes affectées sans qu'un test tombe.
     const predicats: Predicat[] = []
+    let suppression = false
+    let idVise: unknown = undefined
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
       eq: (colonne: string, valeur: unknown) => {
         if (colonne === 'type_piece' && valeur === 'vente') venteSeulement = true
+        if (colonne === 'id') idVise = valeur
         return c
       },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
-      order: () => c, in: () => c, delete: () => c,
+      order: () => c, in: () => c,
+      delete: () => { suppression = true; return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: (valeur: Record<string, unknown>) => {
         if (table === 'references_postes_annuels') faux.upserts.push(valeur)
@@ -79,6 +89,14 @@ vi.mock('../../lib/supabase', async () => {
         // `pieces` est lu DEUX fois par cet écran : une fois restreint aux ventes
         // (`recettesValidees`), une fois pour toutes les validées (`piecesValidees`). Le faux
         // respecte la distinction, sans quoi le test ne pourrait pas voir l'écran se tromper de jeu.
+        if (suppression) {
+          // Refusé, le retrait n'applique rien : la relecture rend le repère toujours là.
+          if (faux.refusRetrait) return Promise.resolve({ data: null, error: { message: faux.refusRetrait } }).then(suite)
+          const garder = (l: unknown) => (l as { id: unknown }).id !== idVise
+          if (table === 'references_annuelles') faux.references = faux.references.filter(garder)
+          if (table === 'references_postes_annuels') faux.referencesPostes = faux.referencesPostes.filter(garder)
+          return Promise.resolve({ data: null, error: null }).then(suite)
+        }
         if (faux.refusees.has(table)) {
           return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
         }
@@ -89,7 +107,9 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'cotisations_declarees' ? faux.cotisations
           : table === 'lignes_bancaires' ? faux.paiements
           : table === 'ventilations_bancaires' ? faux.ventilations
-          : table === 'reglements_groupes' ? faux.reglements : [], predicats)
+          : table === 'reglements_groupes' ? faux.reglements
+          : table === 'references_annuelles' ? faux.references
+          : table === 'references_postes_annuels' ? faux.referencesPostes : [], predicats)
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -735,5 +755,73 @@ describe('EstimationTab — le verrou de la lecture d’une ancienne 2035', () =
     await act(async () => { fireEvent.change(champ(), { target: { files: [formulaire2035()] } }) })
 
     expect(faux.extractions).toBe(2)
+  })
+})
+
+// UN RETRAIT REFUSÉ SE DIT (09/10/2026, `ecrituresVerifiees.test.ts`). « Retirer » un repère annuel ou un poste jetait le
+// résultat de sa suppression : la relecture remettait la ligne, sans un mot, sur un geste que l'opérateur venait de
+// confirmer. Rouges sur le code d'avant.
+describe('EstimationTab — un retrait refusé se dit', () => {
+  function referenceDeTest(o: Partial<ReferenceAnnuelle> = {}): ReferenceAnnuelle {
+    return {
+      id: 'ref-2024', dossier_id: 'dossier-de-test', annee: 2024, chiffre_affaires: 50000,
+      total_cotisations_sociales: 12000, resultat_net: null, source: 'saisie_manuelle', notes: null,
+      created_at: '2025-01-10T09:00:00Z', ...o,
+    }
+  }
+  function posteDeTest(o: Partial<ReferencePosteAnnuel> = {}): ReferencePosteAnnuel {
+    return {
+      id: 'poste-loyer', dossier_id: 'dossier-de-test', annee: 2024, poste: 'Loyer', montant: 6000,
+      created_at: '2025-01-10T09:00:00Z', ...o,
+    }
+  }
+  beforeEach(() => {
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.muetPieces = null
+    faux.references = [referenceDeTest()]
+    faux.referencesPostes = [posteDeTest()]
+    faux.refusRetrait = null
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    faux.references = []
+    faux.referencesPostes = []
+  })
+
+  function boutonsRetirer() {
+    // Le premier « Retirer » est celui du repère annuel, le second celui du poste : les deux tableaux se suivent.
+    return screen.getAllByRole('button', { name: 'Retirer' })
+  }
+
+  it('un repère annuel dont le retrait est refusé le dit, et reste', async () => {
+    faux.refusRetrait = 'permission denied for table references_annuelles'
+    await rendre()
+    await act(async () => { boutonsRetirer()[0].click() })
+
+    expect(await screen.findByText(
+      'Le repère annuel n’a pas pu être retiré : permission denied for table references_annuelles.',
+    )).toBeTruthy()
+    expect(faux.references).toHaveLength(1)
+  })
+
+  it('un poste dont le retrait est refusé le dit, et reste', async () => {
+    faux.refusRetrait = 'JWT expired'
+    await rendre()
+    await act(async () => { boutonsRetirer()[1].click() })
+
+    expect(await screen.findByText('Le poste n’a pas pu être retiré : JWT expired.')).toBeTruthy()
+    expect(faux.referencesPostes).toHaveLength(1)
+  })
+
+  it('un retrait accepté ne dit rien, et la ligne part', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « dit son refus » serait satisfait par un écran qui crie à chaque retrait.
+    await rendre()
+    await act(async () => { boutonsRetirer()[0].click() })
+
+    expect(await screen.findByText("Aucun repère annuel enregistré pour l'instant.")).toBeTruthy()
+    expect(screen.queryByText(/n’a pas pu être retiré/)).toBeNull()
   })
 })

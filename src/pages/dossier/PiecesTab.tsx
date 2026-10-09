@@ -29,6 +29,7 @@ import { useAuth } from '../../context/AuthContext'
 import { retirerFichiers } from '../../lib/stockage'
 import { fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
+import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -88,6 +89,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // propre jeu de pièces à relire, donc payant deux fois les mêmes appels Textract. Même famille que
   // le double import en masse (141 lignes pour 78 fichiers).
   const relectureEnCours = useRef(false)
+  // Verrou de « Supprimer la sélection » : la sélection n'est vidée qu'à la fin, donc le bouton reste là pendant
+  // toute la boucle, et un second clic relançait une seconde boucle sur les MÊMES pièces. L'état ne sert qu'à
+  // griser le bouton et à dire où on en est.
+  const suppressionEnCours = useRef(false)
+  const [suppression, setSuppression] = useState<{ fait: number; total: number } | null>(null)
   const [recherche, setRecherche] = useState('')
   // Précisions déposées par le client (et notes du cabinet) sur les pièces — voir lib/commentaires.ts.
   const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
@@ -378,11 +384,19 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   async function appliquerSuggestions() {
     if (piecesAvecSuggestion.length === 0) return
     setApplyingSuggestions(true)
-    await Promise.all(
+    // Les résultats sont GARDÉS : jetés, une pièce refusée restait sans catégorie au milieu des autres,
+    // sans un mot, et l'opérateur la croyait servie par le clic qu'il venait de faire.
+    const resultats = await Promise.all(
       piecesAvecSuggestion.map((p) => supabase.from('pieces').update({ categorie_id: suggestionPour(p) }).eq('id', p.id)),
     )
     setApplyingSuggestions(false)
     load()
+    const echecs = resultats.flatMap((r) => (r.error ? [messageErreur(r.error, 'refus de la base')] : []))
+    if (echecs.length > 0) {
+      window.alert(
+        `${echecs.length} pièce(s) sur ${resultats.length} n’ont pas reçu leur catégorie : ${[...new Set(echecs)].join(' ; ')}.`,
+      )
+    }
   }
 
   function toggleSelect(id: string) {
@@ -397,8 +411,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   async function validateSelection() {
     const ids = [...selected].filter((id) => pieces.find((p) => p.id === id)?.montant_ttc != null)
     if (ids.length === 0) return
-    await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
-    setSelected(new Set())
+    const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
+    // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
+    if (error) {
+      window.alert(`La sélection n’a pas pu être validée : ${messageErreur(error, 'refus de la base')}.`)
+    } else {
+      setSelected(new Set())
+    }
     load()
   }
 
@@ -425,10 +444,31 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   //
   // UNE PIÈCE FIGÉE NE SE SUPPRIME PLUS (`garder_piece_validee`) : elle est écartée de la sélection, et la
   // confirmation le dit, plutôt que d'envoyer une suppression que la base refuserait une à une.
+  //
+  // ET ELLE RETIRAIT LES FICHIERS D'UNE PIÈCE QUE LA BASE N'AVAIT PAS SUPPRIMÉE (09/10/2026). PostgREST rend une
+  // suppression qui ne touche aucune ligne comme un succès — la policy a écarté la ligne, ou un autre onglet l'a déjà
+  // retirée — : la ligne restée désignait alors un fichier disparu. Elle prend donc la forme de
+  // `DocumentsTab.supprimerSelection` : la ligne supprimée se LIT avant de retirer ses fichiers, le bilan se compte
+  // (`lib/bilanSuppression.ts`), et un verrou empêche un second clic de relancer la boucle sur les mêmes pièces.
+  async function supprimerUnePiece(piece: Piece): Promise<string | null> {
+    const { data, error } = await supabase.from('pieces').delete().eq('id', piece.id).select('id').maybeSingle()
+    if (error) return messageErreur(error, 'suppression refusée par la base')
+    if (!data) return AUCUNE_PIECE_SUPPRIMEE
+    // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
+    // XML, laissée seule, ne serait plus désignée par rien.
+    const fichiers = fichiersDeLaPiece(piece)
+    if (fichiers.length > 0) await retirerFichiers('pieces', fichiers, 'PiecesTab')
+    return null
+  }
+
   async function deleteSelection() {
-    if (selected.size === 0) return
-    const aSupprimer = [...selected].filter((id) => !figees.has(id))
-    const nbFigees = selected.size - aSupprimer.length
+    if (suppressionEnCours.current) return
+    // Ce qui est vraiment dans la liste : un identifiant resté sélectionné après une relecture qui ne le rend plus n'a
+    // rien à supprimer — et sans sa ligne, ses fichiers ne seraient pas connus.
+    const selection = pieces.filter((p) => selected.has(p.id))
+    if (selection.length === 0) return
+    const aSupprimer = selection.filter((p) => !figees.has(p.id))
+    const nbFigees = selection.length - aSupprimer.length
     const avertissementFigees = nbFigees === 0 ? ''
       : nbFigees === 1 ? '\n\nUne pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste.'
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
@@ -442,31 +482,28 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     if (!window.confirm(
       `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}`,
     )) return
-    let supprimees = 0
-    const echecs: string[] = []
-    for (const id of aSupprimer) {
-      const piece = pieces.find((p) => p.id === id)
-      const { error } = await supabase.from('pieces').delete().eq('id', id)
-      if (error) {
-        echecs.push(messageErreur(error))
-        continue
+    // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
+    suppressionEnCours.current = true
+    setSuppression({ fait: 0, total: aSupprimer.length })
+    try {
+      let supprimees = 0
+      const motifs: string[] = []
+      for (const [rang, piece] of aSupprimer.entries()) {
+        const motif = await supprimerUnePiece(piece)
+        if (motif) motifs.push(motif)
+        else supprimees++
+        setSuppression({ fait: rang + 1, total: aSupprimer.length })
       }
-      // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
-      // XML, laissée seule, ne serait plus désignée par rien.
-      const fichiers = piece ? fichiersDeLaPiece(piece) : []
-      if (fichiers.length > 0) {
-        await retirerFichiers('pieces', fichiers, 'PiecesTab')
-      }
-      supprimees++
-    }
-    setSelected(new Set())
-    load()
-    if (echecs.length > 0) {
-      // La RAISON plutôt qu'une cause devinée : les motifs distincts, sans les répéter autant de
-      // fois qu'il y a de pièces (un refus RLS les frappe toutes de la même façon).
-      window.alert(
-        `${supprimees} pièce(s) supprimée(s). ${echecs.length} n'ont pas pu l'être :\n${[...new Set(echecs)].join('\n')}`,
-      )
+      setSelected(new Set())
+      // Relu AVANT de relâcher le verrou : un clic de plus pendant la relecture viserait encore des pièces que la
+      // liste affichée croit présentes.
+      await load()
+      // La RAISON plutôt qu'une cause devinée, chacune une fois : un refus RLS les frappe toutes de la même façon.
+      const bilan = messageBilanSuppressionPieces({ demandes: aSupprimer.length, supprimes: supprimees, motifs })
+      if (bilan) window.alert(bilan)
+    } finally {
+      suppressionEnCours.current = false
+      setSuppression(null)
     }
   }
 
@@ -654,8 +691,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
               <button className="btn btn-outline btn-sm" onClick={validateSelection}>
                 Valider la sélection ({selected.size})
               </button>
-              <button className="btn btn-danger btn-sm" onClick={deleteSelection}>
-                Supprimer la sélection ({selected.size})
+              <button className="btn btn-danger btn-sm" disabled={suppression !== null} onClick={deleteSelection}>
+                {suppression ? `Suppression… ${suppression.fait}/${suppression.total}` : `Supprimer la sélection (${selected.size})`}
               </button>
             </>
           )}

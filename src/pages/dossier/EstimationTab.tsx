@@ -280,7 +280,9 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
 
   async function supprimerReference(id: string) {
     if (!window.confirm('Retirer ce repère annuel ?')) return
-    await supabase.from('references_annuelles').delete().eq('id', id)
+    // Refusé, le retrait se DIT : la relecture remet le repère dans la liste, et sans un mot on le croirait parti.
+    const { error: erreurRetrait } = await supabase.from('references_annuelles').delete().eq('id', id)
+    setError(erreurRetrait ? `Le repère annuel n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'refus de la base')}.` : null)
     load()
   }
 
@@ -338,7 +340,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
 
   async function supprimerPoste(id: string) {
     if (!window.confirm('Retirer ce poste ?')) return
-    await supabase.from('references_postes_annuels').delete().eq('id', id)
+    const { error: erreurRetrait } = await supabase.from('references_postes_annuels').delete().eq('id', id)
+    setError(erreurRetrait ? `Le poste n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'refus de la base')}.` : null)
     load()
   }
 

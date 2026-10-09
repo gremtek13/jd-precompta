@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
+import { messageErreur } from './messageErreur'
 
 // Le texte lu par l'OCR sur une pièce OU sur un document, conservé et relu.
 //
@@ -41,17 +42,21 @@ export function texteOcrExploitable(texte: string | null | undefined): string | 
   return propre.length > 0 ? propre : null
 }
 
-// Enregistre le texte lu pour une pièce. Ne remonte PAS l'erreur à l'appelant et ne la fait pas
-// échouer : ce texte est un confort de relecture, pas une donnée comptable. Un dépôt qui échouerait
-// parce que l'OCR n'a pas pu être archivé ferait perdre au client un document — une perte sans
-// commune mesure avec le service rendu.
+// Enregistre le texte lu pour une pièce. Ne lève PAS et ne fait pas échouer l'appelant : ce texte est
+// un confort de relecture, pas une donnée comptable. Un dépôt qui échouerait parce que l'OCR n'a pas
+// pu être archivé ferait perdre au client un document — une perte sans commune mesure avec le service
+// rendu.
+//
+// Mais il REND la raison d'un échec (`null` sinon), et un appelant au moins doit la lire : la
+// conversion d'un document en pièce (`DocumentsTab.convertirEnPiece`) supprime le document juste
+// après, ce qui emporte son texte en cascade — le seul exemplaire, si celui-ci n'a pas été écrit.
 export async function enregistrerTexteOcr(
   dossierId: string,
   cible: CibleTexteOcr,
   texte: string | null | undefined,
-): Promise<void> {
+): Promise<string | null> {
   const propre = texteOcrExploitable(texte)
-  if (!propre) return
+  if (!propre) return null
 
   // `upsert` et non `insert` : une pièce relue (voir lib/relectureDocuments.ts) doit REMPLACER son
   // texte, pas en accumuler un second.
@@ -69,7 +74,11 @@ export async function enregistrerTexteOcr(
     )
 
   // Non bloquant, mais journalisé : une écriture best-effort n'est jamais avalée en silence.
-  if (error) console.error('Enregistrement du texte OCR échoué:', error)
+  if (error) {
+    console.error('Enregistrement du texte OCR échoué:', error)
+    return messageErreur(error, 'enregistrement refusé par la base')
+  }
+  return null
 }
 
 // Qui, dans ce dossier, a déjà un texte lu — et si on a pu le savoir.

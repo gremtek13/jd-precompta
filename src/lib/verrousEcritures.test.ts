@@ -98,7 +98,8 @@ const CATEGORIES_AUTOMATIQUES: Record<CategorieAutomatique, { nombre: number; ra
       + 'comme telle : deux envois du même rendu écrivent la même valeur, calculée dans la même fermeture.',
   },
   suppression: {
-    nombre: 21,
+    // 20 depuis que `PiecesTab.deleteSelection` porte son verrou (les écritures du navigateur, 09/10/2026).
+    nombre: 20,
     raison: 'Ne fait que supprimer (ou réécrire par clé) : le second envoi ne trouve plus rien, sans erreur.',
   },
   session: {

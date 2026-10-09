@@ -9,6 +9,10 @@
 // Ni nom de fichier ni identifiant : des comptes et des raisons. Les raisons sont dites UNE fois
 // chacune — un refus de la base (session expirée, droit refusé) frappe tous les documents de la même
 // façon, et le répéter autant de fois qu'il y a de documents noierait le compte.
+//
+// Le même bilan sert la sélection de PIÈCES (`PiecesTab.deleteSelection`, 09/10/2026) : elle disait
+// déjà ses refus, mais retirait les fichiers d'une pièce sur la seule absence d'erreur. Seuls les mots
+// changent — le nom, l'accord, et « ses fichiers » : une facture reçue en XML en a deux.
 
 /**
  * La raison d'un document que la base n'a PAS supprimé sans pour autant lever d'erreur.
@@ -29,8 +33,32 @@ export interface BilanSuppression {
   motifs: readonly string[]
 }
 
-function documents(n: number): string {
-  return n === 1 ? '1 document' : `${n} documents`
+/** La raison d'une PIÈCE que la base n'a pas supprimée sans lever d'erreur (voir ci-dessus). */
+export const AUCUNE_PIECE_SUPPRIMEE =
+  'la base n’a supprimé aucune ligne (pièce déjà retirée ailleurs, ou suppression refusée sans erreur)'
+
+/** Les mots d'un bilan : ce qu'on supprime, son accord, et ce qu'on dit de ses fichiers. */
+interface Mots {
+  /** « Le document » / « La pièce ». */
+  le: string
+  un: string
+  des: string
+  /** Le participe accordé : « supprimé » / « supprimée ». */
+  supprime: string
+  aucun: string
+  /** Ce qu'on dit des fichiers d'UN objet resté, puis de PLUSIEURS. */
+  fichierDeUn: string
+  fichierDePlusieurs: string
+}
+
+const MOTS_DOCUMENT: Mots = {
+  le: 'Le document', un: 'document', des: 'documents', supprime: 'supprimé', aucun: 'Aucun',
+  fichierDeUn: 'son fichier n’a pas été touché', fichierDePlusieurs: 'leur fichier n’a pas été touché',
+}
+
+const MOTS_PIECE: Mots = {
+  le: 'La pièce', un: 'pièce', des: 'pièces', supprime: 'supprimée', aucun: 'Aucune',
+  fichierDeUn: 'aucun de ses fichiers n’a été touché', fichierDePlusieurs: 'aucun de leurs fichiers n’a été touché',
 }
 
 /**
@@ -40,7 +68,7 @@ function documents(n: number): string {
  * Le nombre de documents restés est `demandes − supprimes`, pas le nombre de motifs : c'est le compte
  * de la BASE qui fait foi, et un document resté sans motif enregistré resterait quand même compté.
  */
-export function messageBilanSuppression(bilan: BilanSuppression): string | null {
+function messageBilan(mots: Mots, bilan: BilanSuppression): string | null {
   const restes = bilan.demandes - bilan.supprimes
   if (restes <= 0) return null
   const raisons = [...new Set(bilan.motifs)]
@@ -49,14 +77,28 @@ export function messageBilanSuppression(bilan: BilanSuppression): string | null 
   // effet : le fichier ne part qu'après sa ligne. « Ils sont toujours dans la liste » ne le serait
   // pas d'un document qu'un autre onglet a déjà retiré.
   if (bilan.supprimes === 0) {
-    if (bilan.demandes === 1) return `Le document n’a pas pu être supprimé, et son fichier n’a pas été touché${pourquoi}`
-    return `Aucun des ${bilan.demandes} documents n’a pu être supprimé, et leur fichier n’a pas été touché${pourquoi}`
+    if (bilan.demandes === 1) return `${mots.le} n’a pas pu être ${mots.supprime}, et ${mots.fichierDeUn}${pourquoi}`
+    return `${mots.aucun} des ${bilan.demandes} ${mots.des} n’a pu être ${mots.supprime}, et ${mots.fichierDePlusieurs}${pourquoi}`
   }
-  const partis = bilan.supprimes === 1 ? '1 document supprimé' : `${bilan.supprimes} documents supprimés`
+  const partis = bilan.supprimes === 1 ? `1 ${mots.un} ${mots.supprime}` : `${bilan.supprimes} ${mots.des} ${mots.supprime}s`
   const restesDits = restes === 1
-    ? `1 n’a pas pu l’être, et son fichier n’a pas été touché`
-    : `${restes} n’ont pas pu l’être, et leur fichier n’a pas été touché`
+    ? `1 n’a pas pu l’être, et ${mots.fichierDeUn}`
+    : `${restes} n’ont pas pu l’être, et ${mots.fichierDePlusieurs}`
   return `${partis} sur ${bilan.demandes}. ${restesDits}${pourquoi}`
+}
+
+/** Le bilan d'une suppression de documents (`DocumentsTab`). */
+export function messageBilanSuppression(bilan: BilanSuppression): string | null {
+  return messageBilan(MOTS_DOCUMENT, bilan)
+}
+
+/** Le bilan d'une suppression de pièces (`PiecesTab.deleteSelection`). */
+export function messageBilanSuppressionPieces(bilan: BilanSuppression): string | null {
+  return messageBilan(MOTS_PIECE, bilan)
+}
+
+function documents(n: number): string {
+  return n === 1 ? '1 document' : `${n} documents`
 }
 
 /** La confirmation, qui nomme ce qui part avec les documents (CLAUDE.md : une suppression se confirme). */

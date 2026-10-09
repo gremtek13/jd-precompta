@@ -6,6 +6,7 @@ import PiecesTab from './PiecesTab'
 import type { Piece, PieceCommentaire } from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
+import { AUCUNE_PIECE_SUPPRIMEE } from '../../lib/bilanSuppression'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -34,6 +35,11 @@ const faux = vi.hoisted(() => ({
   erreurPresence: null as string | null,
   // Les fichiers retirés du stockage, appel par appel.
   retraits: [] as string[][],
+  // Les pièces dont la suppression ne touche AUCUNE ligne sans lever d'erreur — ce que rend PostgREST quand la
+  // policy écarte la ligne, ou quand un autre onglet l'a déjà retirée.
+  sansEffet: new Set<string>(),
+  // La base refuse les mises à jour de pièces (validation, catégorie suggérée), avec cette raison.
+  refusMaj: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -50,21 +56,35 @@ vi.mock('../../lib/supabase', async () => {
       // ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent une pièce — le
       // filtre qui cachait les pièces payées par la part d'un virement groupé (ligne 26).
       const predicats: Predicat[] = []
+      // Les lignes que CETTE requête vise par leur identifiant (`.eq('id')` ou `.in('id')`).
+      const idsVises: unknown[] = []
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { operation = 'delete'; return chaine },
         update: (valeur: Record<string, unknown>) => { operation = 'update'; valeurMaj = valeur; return chaine },
         eq: (colonne: string, valeur: unknown) => {
+          if (colonne === 'id') idsVises.push(valeur)
           if (operation === 'delete' && colonne === 'id') faux.suppressions.push(valeur)
           if (operation === 'update' && colonne === 'id') faux.majPieces.push({ id: valeur, valeur: valeurMaj })
           return chaine
         },
+        in: (colonne: string, valeurs: unknown[]) => { if (colonne === 'id') idsVises.push(...valeurs); return chaine },
         is: () => chaine,
         not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        // La suppression d'une pièce rend la ligne supprimée (`.select('id').maybeSingle()`) : ce que la base rend
+        // décide du retrait de ses fichiers. Une ligne que la base écarte sans erreur (`sansEffet`) rend `null`.
+        maybeSingle: () => {
+          if (operation !== 'delete') return Promise.resolve({ data: null, error: null })
+          if (faux.refusSuppression) return Promise.resolve({ data: null, error: { message: faux.refusSuppression } })
+          const lignes = (faux.parTable[table] ?? []) as { id: unknown }[]
+          const visee = lignes.find((l) => idsVises.includes(l.id) && !faux.sansEffet.has(String(l.id)))
+          if (!visee) return Promise.resolve({ data: null, error: null })
+          faux.parTable[table] = lignes.filter((l) => l !== visee)
+          return Promise.resolve({ data: { id: visee.id }, error: null })
+        },
         then: (suite: (r: { data: unknown[]; error: { message: string } | null; count: number }) => unknown) => {
           if (operation === 'delete') {
             const erreur = faux.refusSuppression ? { message: faux.refusSuppression } : null
@@ -72,6 +92,16 @@ vi.mock('../../lib/supabase', async () => {
               faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => !faux.suppressions.includes((l as { id: unknown }).id))
             }
             return Promise.resolve({ data: [], error: erreur, count: 0 }).then(suite)
+          }
+          if (operation === 'update' && faux.refusMaj) {
+            // Refusée, la mise à jour n'applique RIEN : la relecture montre la base telle qu'elle est restée.
+            return Promise.resolve({ data: [], error: { message: faux.refusMaj }, count: 0 }).then(suite)
+          }
+          if (operation === 'update' && idsVises.length > 1) {
+            faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (
+              idsVises.includes((l as { id: unknown }).id) ? { ...(l as object), ...valeurMaj } : l
+            ))
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
           }
           if (operation === 'update') {
             // Le serveur applique vraiment la mise à jour, pour que la relecture qui suit la voie.
@@ -167,6 +197,8 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.avecTexte = new Set()
   faux.erreurPresence = null
   faux.retraits = []
+  faux.sansEffet = new Set()
+  faux.refusMaj = null
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -754,5 +786,140 @@ describe('PiecesTab — une pièce figée par un exercice validé', () => {
     monter('toutes')
     expect(await screen.findByText(/Les écritures validées et les immobilisations du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
     expect(screen.getByText(/Une pièce qu’un exercice validé a figée peut donc paraître modifiable/)).toBeTruthy()
+  })
+})
+
+// UNE ÉCRITURE REFUSÉE SE DIT (09/10/2026, `ecrituresVerifiees.test.ts`). « Valider la sélection » et « Appliquer les
+// suggestions » jetaient le résultat de leur mise à jour : la relecture montrait la pièce inchangée, sans un mot, sur un
+// geste que l'opérateur croyait accompli. Et « Supprimer la sélection » retirait les fichiers d'une pièce sur la seule
+// absence d'erreur — or PostgREST rend une suppression qui ne touche AUCUNE ligne sans erreur. Rouges sur le code d'avant.
+describe('PiecesTab — une écriture refusée se dit', () => {
+  function alertes() {
+    const dites: string[] = []
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { dites.push(String(m ?? '')) })
+    return dites
+  }
+  async function toutSelectionner() {
+    monter('toutes')
+    fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
+  }
+  const deuxPieces = () => [
+    piece({ id: 'p1', tiers: 'ALPHA', storage_path: 'dossier-de-test/alpha.pdf' }),
+    piece({ id: 'p2', tiers: 'BETA', storage_path: 'dossier-de-test/beta.pdf' }),
+  ]
+
+  it('ne retire pas les fichiers d’une pièce que la base n’a pas supprimée, et le dit', async () => {
+    poser([piece({ id: 'p1' })])
+    faux.sansEffet = new Set(['p1'])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Supprimer la sélection/ }).click() })
+
+    expect(dites).toEqual([`La pièce n’a pas pu être supprimée, et aucun de ses fichiers n’a été touché : ${AUCUNE_PIECE_SUPPRIMEE}.`])
+    expect(faux.retraits).toEqual([])
+    expect(screen.getByText('FOURNISSEUR', { selector: 'td' })).toBeTruthy()
+  })
+
+  it('compte ce qui est parti et ce qui est resté, et ne retire que les fichiers des pièces parties', async () => {
+    poser(deuxPieces())
+    faux.sansEffet = new Set(['p2'])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Supprimer la sélection/ }).click() })
+
+    expect(dites).toEqual([`1 pièce supprimée sur 2. 1 n’a pas pu l’être, et aucun de ses fichiers n’a été touché : ${AUCUNE_PIECE_SUPPRIMEE}.`])
+    expect(faux.retraits).toEqual([['dossier-de-test/alpha.pdf']])
+    // Relue : la pièce restée est toujours là, l'autre n'y est plus.
+    expect(screen.getByText('BETA', { selector: 'td' })).toBeTruthy()
+    expect(screen.queryByText('ALPHA', { selector: 'td' })).toBeNull()
+  })
+
+  it('ne parle d’aucun échec quand la base a tout supprimé', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « dit ses échecs » serait satisfait par un écran qui crie à chaque suppression.
+    poser(deuxPieces())
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Supprimer la sélection/ }).click() })
+
+    expect(dites).toEqual([])
+    expect(faux.retraits).toEqual([['dossier-de-test/alpha.pdf'], ['dossier-de-test/beta.pdf']])
+  })
+
+  it('ne supprime chaque pièce qu’une fois quand le bouton est cliqué trois fois de suite', async () => {
+    poser(deuxPieces())
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const dites = alertes()
+    await toutSelectionner()
+    const bouton = screen.getByRole('button', { name: /Supprimer la sélection/ })
+
+    // TROIS clics dans le MÊME `act` : le troisième distingue un verrou posé avant le `try` d'un verrou posé dedans.
+    await act(async () => {
+      bouton.click()
+      bouton.click()
+      bouton.click()
+    })
+
+    expect(faux.suppressions).toEqual(['p1', 'p2'])
+    expect(faux.retraits).toHaveLength(2)
+    expect(dites).toEqual([])
+  })
+
+  it('« Valider la sélection » refusée le dit, et garde la sélection', async () => {
+    poser(deuxPieces())
+    faux.refusMaj = 'permission denied for table pieces'
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Valider la sélection/ }).click() })
+
+    expect(dites).toEqual(['La sélection n’a pas pu être validée : permission denied for table pieces.'])
+    expect(screen.getByRole('button', { name: 'Valider la sélection (2)' })).toBeTruthy()
+  })
+
+  it('« Valider la sélection » acceptée ne dit rien, et vide la sélection', async () => {
+    poser(deuxPieces())
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Valider la sélection/ }).click() })
+
+    expect(dites).toEqual([])
+    expect(screen.queryByRole('button', { name: /Valider la sélection/ })).toBeNull()
+    expect((faux.parTable.pieces as Piece[]).map((p) => p.statut)).toEqual(['validee', 'validee'])
+  })
+
+  const regle = (tiers: string) => ({
+    id: `r-${tiers}`, dossier_id: 'dossier-de-test', tiers_normalise: tiers, categorie_id: 'cat-x', updated_at: '2026-01-01T09:00:00Z',
+  })
+  function sansCategorie() {
+    poser([
+      piece({ id: 'p1', tiers: 'TRANSMEDICAL', statut: 'validee' }),
+      piece({ id: 'p2', tiers: 'BOULANGER', statut: 'validee' }),
+    ])
+    faux.parTable.tiers_categories = [regle('transmedical'), regle('boulanger')]
+  }
+
+  it('« Appliquer les suggestions » refusée le dit, avec sa raison une fois', async () => {
+    sansCategorie()
+    faux.refusMaj = 'JWT expired'
+    const dites = alertes()
+    monter('toutes')
+    // Cherché HORS de l'`act` : le bouton ne paraît qu'une fois la liste lue.
+    const bouton = await screen.findByRole('button', { name: 'Appliquer les suggestions (2)' })
+    await act(async () => { bouton.click() })
+
+    expect(dites).toEqual(['2 pièce(s) sur 2 n’ont pas reçu leur catégorie : JWT expired.'])
+  })
+
+  it('« Appliquer les suggestions » acceptée ne dit rien', async () => {
+    sansCategorie()
+    const dites = alertes()
+    monter('toutes')
+    const bouton = await screen.findByRole('button', { name: 'Appliquer les suggestions (2)' })
+    await act(async () => { bouton.click() })
+
+    expect(dites).toEqual([])
+    expect(faux.majPieces.map((m) => m.valeur)).toEqual([{ categorie_id: 'cat-x' }, { categorie_id: 'cat-x' }])
   })
 })

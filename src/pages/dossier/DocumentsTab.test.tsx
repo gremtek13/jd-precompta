@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DocumentsTab from './DocumentsTab'
 import type { DocumentDivers } from '../../lib/types'
@@ -28,6 +28,10 @@ const faux = vi.hoisted(() => ({
   plafond: null as number | null,
   // Laissée en attente : la fenêtre réelle pendant laquelle le second clic arrive.
   resoudreInsert: null as null | (() => void),
+  // La base refuse le changement de catégorie, ou le rattachement du texte lu à la pièce créée.
+  refusMaj: null as string | null,
+  refusTexte: null as string | null,
+  textesRattaches: 0,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -42,6 +46,7 @@ vi.mock('../../lib/supabase', async () => {
     // Les `.eq` APPLIQUÉS à `documents_divers` : une suppression qui ignorerait son filtre viderait
     // la table entière, et un faux client qui l'accepterait en silence ne le verrait pas.
     const predicats: ReturnType<typeof predicatEq>[] = []
+    let valeurMaj: Partial<DocumentDivers> = {}
     const c: Record<string, unknown> = {}
     // `piece_textes_ocr` est interrogée de DEUX façons : en liste (quels documents ont un texte) et
     // à l'unité (le texte de celui-ci). Rendre la même chose aux deux ferait planter la première sur
@@ -56,6 +61,16 @@ vi.mock('../../lib/supabase', async () => {
         const supprimees = visees.filter((d) => !faux.sansEffet.has(d.id))
         faux.documents = faux.documents.filter((d) => !supprimees.includes(d))
         return Promise.resolve({ data: mode === 'unique' ? (supprimees[0] ?? null) : supprimees, error: null })
+      }
+      if (table === 'documents_divers' && operation === 'update') {
+        // Refusée, la mise à jour n'applique rien : la relecture montre la catégorie d'avant.
+        if (faux.refusMaj) return Promise.resolve({ data: null, error: { message: faux.refusMaj } })
+        faux.documents = faux.documents.map((d) => (filtrer([d], predicats).length > 0 ? { ...d, ...valeurMaj } : d))
+        return Promise.resolve({ data: null, error: null })
+      }
+      if (table === 'piece_textes_ocr' && operation === 'upsert') {
+        faux.textesRattaches++
+        return Promise.resolve({ data: null, error: faux.refusTexte ? { message: faux.refusTexte } : null })
       }
       if (table === 'documents_divers') {
         const lignes = filtrer(faux.documents, predicats)
@@ -91,7 +106,7 @@ vi.mock('../../lib/supabase', async () => {
       eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
       insert: (valeur: Record<string, unknown>) => { operation = 'insert'; faux.inserts.push(valeur); return c },
       delete: () => { operation = 'delete'; return c },
-      update: () => { operation = 'update'; return c },
+      update: (valeur: Partial<DocumentDivers>) => { operation = 'update'; valeurMaj = valeur; return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: () => { operation = 'upsert'; return c },
       single: () => reponse('unique'),
@@ -134,6 +149,9 @@ function reinitialiser() {
   faux.suppressions = 0
   faux.retraits = []
   faux.resoudreInsert = null
+  faux.refusMaj = null
+  faux.refusTexte = null
+  faux.textesRattaches = 0
 }
 
 afterEach(() => { vi.restoreAllMocks() })
@@ -381,5 +399,86 @@ describe('DocumentsTab — « Supprimer » un document', () => {
     expect(await screen.findByText('Aucun document.')).toBeDefined()
     expect(faux.retraits).toEqual([['dossier/facture.pdf']])
     expect(screen.queryByText(/n’a pas pu/)).toBeNull()
+  })
+})
+
+// UNE ÉCRITURE REFUSÉE SE DIT (09/10/2026, `ecrituresVerifiees.test.ts`). Le changement de catégorie jetait le résultat
+// de sa mise à jour : la relecture remettait l'ancienne catégorie, sans un mot. Et « C'est une facture » supprimait le
+// document sur la seule absence d'erreur — zéro ligne supprimée passait pour un succès —, et même quand le texte lu
+// n'avait pas pu être rattaché à la pièce : la suppression l'emportait alors en cascade. Rouges sur le code d'avant.
+describe('DocumentsTab — une écriture refusée se dit', () => {
+  function listeDeCategorie() {
+    return within(screen.getByText('facture.pdf').closest('tr')!).getByRole('combobox')
+  }
+
+  it('un changement de catégorie refusé le dit, et la liste garde la catégorie de la base', async () => {
+    reinitialiser()
+    faux.refusMaj = 'permission denied for table documents_divers'
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    await screen.findByText('facture.pdf')
+
+    await act(async () => { fireEvent.change(listeDeCategorie(), { target: { value: 'attestation' } }) })
+
+    expect(await screen.findByText(
+      'La catégorie du document n’a pas pu être changée : permission denied for table documents_divers.',
+    )).toBeDefined()
+    expect((listeDeCategorie() as HTMLSelectElement).value).toBe('autre')
+  })
+
+  it('un changement de catégorie accepté ne dit rien', async () => {
+    reinitialiser()
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    await screen.findByText('facture.pdf')
+
+    await act(async () => { fireEvent.change(listeDeCategorie(), { target: { value: 'attestation' } }) })
+
+    expect(faux.documents[0].categorie).toBe('attestation')
+    expect(screen.queryByText(/n’a pas pu être changée/)).toBeNull()
+  })
+
+  it('« C’est une facture » dit quand la base n’a retiré aucune ligne du document', async () => {
+    reinitialiser()
+    faux.sansEffet = new Set(['document-a-convertir'])
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    const bouton = await screen.findByRole('button', { name: "C'est une facture" })
+
+    await act(async () => { bouton.click() })
+    await act(async () => { faux.resoudreInsert?.() })
+
+    expect(faux.suppressions).toBe(1)
+    expect(screen.getByText(/le document n'a pas été retiré d'ici/)).toBeDefined()
+    expect(screen.getByText(/la base n’a supprimé aucune ligne/)).toBeDefined()
+  })
+
+  it('« C’est une facture » garde le document quand le texte lu n’a pas pu être rattaché à la pièce', async () => {
+    reinitialiser()
+    faux.refusTexte = 'new row violates row-level security policy'
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    const bouton = await screen.findByRole('button', { name: "C'est une facture" })
+
+    await act(async () => { bouton.click() })
+    await act(async () => { faux.resoudreInsert?.() })
+
+    // Supprimé, le document emporterait son texte en cascade : le seul exemplaire, puisque la pièce n'a pas le sien.
+    expect(faux.textesRattaches).toBe(1)
+    expect(faux.suppressions).toBe(0)
+    expect(screen.getByText(/le texte lu n'a pas pu lui être rattaché \(new row violates row-level security policy\)/)).toBeDefined()
+    expect(screen.getByText('facture.pdf')).toBeDefined()
+  })
+
+  it('« C’est une facture » réussi ne dit rien, et le document part', async () => {
+    // Le garde SYMÉTRIQUE des deux cas ci-dessus.
+    reinitialiser()
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    const bouton = await screen.findByRole('button', { name: "C'est une facture" })
+
+    await act(async () => { bouton.click() })
+    await act(async () => { faux.resoudreInsert?.() })
+
+    expect(faux.textesRattaches).toBe(1)
+    expect(faux.suppressions).toBe(1)
+    expect(await screen.findByText('Aucun document.')).toBeDefined()
+    expect(screen.queryByText(/Justificatifs, mais/)).toBeNull()
   })
 })

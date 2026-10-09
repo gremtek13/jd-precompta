@@ -535,6 +535,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   recharge-t-il derrière ? Presque toujours dans `src/`, presque jamais dans une Edge Function
   (`edgeFunctionsEcritures.test.ts` : quatre portes `.from(`, `.rpc(`, `.auth.`, `.storage.`, résultat pris ou jeté à la
   tête de chaîne).
+- **Une écriture du navigateur lit son erreur et la DIT** (`ecrituresVerifiees.test.ts`, depuis toute la source de
+  `src/`) : tables, tout `.rpc(`, tout `functions.invoke` (argument de type compris), stockage et comptes qui écrivent ;
+  résultat destructuré avec `error`, gardé entier, ou passé à un consommateur nommé — rendu, jeté ou non reconnu est
+  une faute ; un `return` seul en fin de ligne JETTE l'écriture qui suit. Sa porte 2 exige qu'une suppression suivie
+  d'un retrait de fichier lise la ligne supprimée (`.select`) → « LES ÉCRITURES DU NAVIGATEUR LISENT LEUR ERREUR ».
 - **Qui prend `data` prend `error`** : une lecture dont l'échec ressemble à un résultat vide se vérifie comme une
   écriture (`lecturesVerifiees.test.ts`, `edgeFunctionsLectures.test.ts`). Légitime seulement si l'échec tombe du côté
   FERMÉ. **Le vide est une AFFIRMATION** : un état vide ne se dit que d'une liste lue en entier — et revenue : avant sa
@@ -563,9 +568,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
 - **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
   supprimée (`.select('id').maybeSingle()` — zéro ligne n'est pas une erreur pour PostgREST) ; ce qui reste se compte et
-  se dit avec sa raison, sans nom de fichier (`lib/bilanSuppression.ts`), sous un verrou relâché après la relecture.
-  `PiecesTab.deleteSelection` et sept écritures unitaires dont `{ error }` n'est pas lu restent à reprendre →
-  « LA SUPPRESSION D'UNE SÉLECTION DE DOCUMENTS ».
+  se dit avec sa raison, sans nom de fichier (`lib/bilanSuppression.ts`, documents et pièces), sous un verrou relâché
+  après la relecture ; la fiche d'une pièce lit aussi sa ligne supprimée → « LA SUPPRESSION D'UNE SÉLECTION DE
+  DOCUMENTS », « LES ÉCRITURES DU NAVIGATEUR LISENT LEUR ERREUR ».
 - **Un fichier s'ouvre par `lib/apercu.ts` seulement** : pas de `noopener` (succès et blocage indiscernables), retour de
   `window.open` lu, puis `opener = null` → « UN BOUTON QUI OUVRE UN FICHIER ».
 - Les lectures d'une seule ligne n'ont pas de scanner : les scanners d'erreur les couvrent.
@@ -658,12 +663,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 ### Écrans : verrous, courses, signaux
 
 - **Un verrou d'exécution est un `useRef`**, posé AVANT le `try` et relâché dans un `finally` — après la relecture quand
-  l'écran montre ce qui vient d'être écrit. Deux clics se testent dans le MÊME `act`, et il en faut TROIS pour voir un
-  verrou posé dans le `try` (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` ». Ce test part
-  des verrous qui EXISTENT : un gestionnaire sans aucun verrou ne se voit qu'au test d'écran à deux puis trois envois.
-  Restent gardés par un état seul : membre d'équipe, cabinet, emprunt, suppléments et comptes courants, échéance de
-  cotisation, pack, et trois appels facturés ou externes (assistant, extraction, Super PDP) → « NOUVEAU DOSSIER N'AVAIT
-  QU'UN ÉTAT POUR VERROU ».
+  l'écran montre ce qui vient d'être écrit —, sous un nom à lui dans son fichier (l'appariement se fait par nom). Deux
+  clics se testent dans le MÊME `act`, et il en faut TROIS pour voir un verrou posé dans le `try`
+  (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` ». Toute fonction d'écran qui écrit (une porte
+  du client, ou une fonction de `src/lib` qui écrit) passe un verrou, une enveloppe à verrou (`sousVerrou`, `agir`) ou
+  un appelant verrouillé ; sinon une catégorie comptée (mise à jour, suppression, session) ou une exception nommée avec
+  sa raison (`verrousEcritures.test.ts`, qui ne voit ni le placement dans le `try`, ni ce qu'une suppression rejouée
+  affirme) → « N'AVAIT QU'UN ÉTAT POUR VERROU », « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU ».
 - **Une lecture plus lente écrit en dernier** : un effet dont la dépendance change écran ouvert pose son drapeau
   d'annulation après les lectures et avant la première écriture. À chaque navigation ajoutée : ce composant se
   remonte-t-il quand cette dépendance change ? → « UNE LECTURE PLUS LENTE ÉCRIT EN DERNIER ».
@@ -682,6 +688,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dans la même écriture.
 - **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente (`ClientUpload`) : une vérification en
   base ne protège pas des branches parties ensemble.
+  Entre deux lots, rien ne la réserve : le même fichier déposé deux fois, le premier encore en vol, entre deux fois
+  (question au cabinet → « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU »).
 
 ### Comptabilité
 

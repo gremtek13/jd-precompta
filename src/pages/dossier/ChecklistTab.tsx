@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { messageErreur } from '../../lib/messageErreur'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from '../../lib/ecritures'
 import type { ModeleComptable } from '../../lib/engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
@@ -318,7 +319,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
   async function toggleJustificatif(champ: 'justificatif_tickets_restaurant_recu' | 'justificatif_cheques_vacances_recu') {
     if (!info) return
-    await supabase.from('informations_dossier').update({ [champ]: !info[champ] }).eq('id', info.id)
+    const { error: erreurCoche } = await supabase.from('informations_dossier').update({ [champ]: !info[champ] }).eq('id', info.id)
+    // Refusée, la coche se DIT : la relecture la remet comme avant, et sans un mot on croirait le justificatif noté.
+    if (erreurCoche) window.alert(`Ce justificatif n’a pas pu être marqué : ${messageErreur(erreurCoche, 'refus de la base')}.`)
     load()
   }
 

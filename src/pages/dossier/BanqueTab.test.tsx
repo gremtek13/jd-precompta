@@ -86,6 +86,8 @@ const faux = vi.hoisted(() => ({
   connexionBancaire: null as null | { connexion: Record<string, unknown>; recuperation: Record<string, unknown> },
   // Les règles « toujours ignorer » du dossier : elles décident du statut ÉCRIT à l'import d'un mouvement.
   reglesIgnorees: [] as RegleBancaireIgnoree[],
+  // Le retrait d'une règle « toujours ignorer » que la base refuse, avec sa raison.
+  erreurRetraitRegleIgnoree: null as string | null,
   // Les écritures VALIDÉES et les biens que lit `lirePiecesFigees` : ce qu'un exercice validé a figé. Servies à part
   // des écritures que la contrepartie banque relit, sur le filtre que la lecture pose (`statut=validee`).
   ecrituresValidees: [] as { id: string; statut: string; date: string; piece_id: string | null; immobilisation_id: string | null }[],
@@ -228,6 +230,14 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'lignes_bancaires') {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
+        }
+        if (table === 'regles_bancaires_ignorees' && operation === 'delete') {
+          // Refusé, le retrait n'applique rien : la relecture rend la règle toujours là.
+          if (faux.erreurRetraitRegleIgnoree) {
+            return Promise.resolve({ data: null, error: { message: faux.erreurRetraitRegleIgnoree } }).then(suite)
+          }
+          faux.reglesIgnorees = faux.reglesIgnorees.filter((r) => r.id !== idFiltre)
+          return Promise.resolve({ data: null, error: null }).then(suite)
         }
         if (table === 'regles_bancaires_ignorees') {
           return Promise.resolve({ data: faux.reglesIgnorees, error: null, count: faux.reglesIgnorees.length }).then(suite)
@@ -472,6 +482,7 @@ function reinitialiser() {
   faux.reglements = []
   faux.connexionBancaire = null
   faux.reglesIgnorees = []
+  faux.erreurRetraitRegleIgnoree = null
   faux.ecrituresValidees = []
   faux.immobilisations = []
   faux.lettrages = []
@@ -5439,5 +5450,41 @@ describe('BanqueTab — les lots de rapprochement attendent la relecture', () =>
     await waitFor(() => expect(screen.queryByText(/attend la fin de la lecture/)).toBeNull())
     await act(async () => { screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).click() })
     expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' })])
+  })
+})
+
+// UN RETRAIT REFUSÉ SE DIT (09/10/2026, `ecrituresVerifiees.test.ts`). Retirer une règle « toujours ignorer » jetait le
+// résultat de sa suppression : refusée, la règle restait active et continuait d'ignorer les mouvements importés, sans
+// un mot, quand l'opérateur la croyait retirée. Rouge sur le code d'avant.
+describe('BanqueTab — le retrait d’une règle « toujours ignorer »', () => {
+  const regleIgnoree = (motif: string): RegleBancaireIgnoree => ({
+    id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z',
+  })
+
+  it('refusé, il le dit avec la raison de la base, et la règle reste', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [regleIgnoree('assurance fictive')]
+    faux.erreurRetraitRegleIgnoree = 'permission denied for table regles_bancaires_ignorees'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    const bouton = await screen.findByTitle('Retirer cette règle')
+    await act(async () => { bouton.click() })
+
+    expect(alerte).toHaveBeenCalledWith('La règle n’a pas pu être retirée : permission denied for table regles_bancaires_ignorees.')
+    expect(await screen.findByText('assurance fictive')).toBeTruthy()
+  })
+
+  it('accepté, il ne dit rien, et la règle part', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « dit son refus » serait satisfait par un écran qui crie à chaque retrait.
+    reinitialiser()
+    faux.reglesIgnorees = [regleIgnoree('assurance fictive')]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    const bouton = await screen.findByTitle('Retirer cette règle')
+    await act(async () => { bouton.click() })
+
+    await waitFor(() => expect(screen.queryByText('assurance fictive')).toBeNull())
+    expect(alerte).not.toHaveBeenCalled()
+    expect(faux.reglesIgnorees).toEqual([])
   })
 })

@@ -16552,3 +16552,210 @@ dans un dossier qui a un accès client aujourd'hui. Proposition : déplacer ces 
 lit, puis vider et supprimer l'ancien champ — une suppression de colonne, après copie, qui demande votre accord.
 **Ma recommandation** : oui — rien n'est perdu (les notes sont copiées d'abord, et vérifiées), et c'est la seule façon
 qu'elles restent internes.
+
+### 09/10/2026 — LES GESTIONNAIRES D'ÉCRITURE SANS VERROU : DIX-SEPT JUMEAUX DE « NOUVEAU DOSSIER », ET UN GARDE QUI PART DE TOUT
+
+(`src/lib/verrousEcritures.test.ts`, nouveau ; `src/lib/verrousExecution.test.ts` ; `FinancementTab`, `SupplementsTab`,
+`CotisationsTab`, `PacksTab`, `InformationsTab`, `FichePiece`, `SuperPdpModal`, `EstimationTab`, `AssistantTab`,
+`ClientHome`, `EquipePage`, `SuperAdminPage`, `CabinetBrandingPage`, et leurs tests d'écran — trois nouveaux :
+`EquipePage.test.tsx`, `SuperAdminPage.test.tsx`, `CabinetBrandingPage.test.tsx`.) **Le défaut** est celui de « Nouveau
+dossier » (→ « N'AVAIT QU'UN ÉTAT POUR VERROU ») : un gestionnaire qui écrit, gardé par un état seul
+(`disabled={saving}`, `if (loading) return` lu dans la fermeture du rendu), laisse passer deux envois avant le rendu
+suivant. Cette entrée-là en nommait douze (les « onze jumeaux », les suppléments comptant pour trois) ; revérifiés un
+par un sur 7633ded, les douze sont confirmés, et la base a été relue avant d'y croire (index uniques relevés le
+09/10/2026) : `emprunts`, `supplements`, `comptes_courants_associes`, `mouvements_cca`, `cotisations_declarees`,
+`packs`, `documents_divers`, `agent_conversations` n'ont d'unique que leur identifiant. Les deux « messages trompeurs »
+sont lus dans leur fonction : le second `create-team-member` retrouve le compte que le premier vient de créer et répond
+409 (« appartient déjà à un cabinet », ou « n'est rattaché à aucun dossier… » selon l'ordre d'arrivée) ; le second
+`create-cabinet` crée SON cabinet, bute sur l'adresse, le retire (la compensation) et répond 409 — une erreur affichée
+sur une création réussie, et un cabinet fantôme si la compensation échoue.
+
+**LE GARDE PART DE TOUTE FONCTION D'ÉCRAN QUI ÉCRIT** (`verrousEcritures.test.ts`), là où `verrousExecution.test.ts`
+part des verrous qui existent. Il lit chaque fichier de `src/` hors `src/test` par l'analyseur de TypeScript, sans
+programme ni vérificateur de types (mesuré : 26 s pour résoudre les identifiants par le vérificateur, sous la charge ;
+la résolution des portées est faite à la main, et l'analyse entière tourne en six à sept secondes sous la même charge,
+d'où un délai déclaré de 120 s, comme le garde du code mort des Edge Functions).
+- **Ce qui est une écriture.** Une « porte » sur une chaîne qui part du client `supabase` de `lib/supabase` : `.from(t)`
+  suivi de `insert`, `upsert`, `update`, `delete` ; `.storage.from(s)` suivi de `upload`, `update`, `move`, `copy`,
+  `remove` ; `.rpc(f)` ; `.functions.invoke(f)`, avec son `action` quand elle est écrite en clair ; les méthodes de
+  `.auth` qui ouvrent ou ferment une session. ET l'appel d'une fonction de `src/lib` qui écrit, suivi d'appel en appel
+  dans `src/lib` (imports relatifs et fonctions du même module, jusqu'au point fixe) : 39 écrivains, dont
+  `generatePack`, `deposerFichier`, `extractPiece`. Toute méthode du client hors des deux vocabulaires (portes,
+  lectures) est une faute de forme ; une porte hors de toute fonction aussi. Ne sont PAS suivis, et c'est écrit en tête
+  du test : les méthodes d'un objet importé (aucune n'écrit), une fonction passée en valeur à `src/lib`, et `fetch` —
+  deux lectures publiques (`sirene.ts`, `remplir2035.ts`), comptées : un troisième `fetch` est une faute.
+- **Ce qui est un verrou** : dans la fonction, une LECTURE puis une POSE (`= …`, `.add(…)`) du `.current` d'un `useRef`,
+  avant son premier `await` et avant sa première porte. Un `.current` d'autre chose qu'un `useRef` (une prop, un objet,
+  le champ qu'on focalise) n'en est pas un.
+- **Ce qui protège sans verrou propre** : être passée à une « enveloppe » — une fonction à verrou propre qui appelle la
+  fonction reçue, ou la transmet à une autre enveloppe (`sousVerrou` de la Banque et de la connexion bancaire,
+  `agirSurMouvement` qui transmet à `sousVerrou`, `agir` de la transmission) ; être créée ou appelée, dans une fonction,
+  après son verrou (`uploadFile` dans `save`, les sous-dossiers dans l'import) ; et, pour une fonction nommée, n'être
+  référencée QUE depuis de tels endroits — par résolution des portées, positions de type écartées (sans quoi le
+  `typeof finaliser` de `RetourBanque`, dans le type de son `useRef`, passait pour un appel du module). Sinon la
+  fonction est « nue », et le garde dit d'où on l'atteint : un attribut JSX (le geste), une propriété, un effet, le
+  module.
+- **Les natures** : lecture (déclarée), mise à jour (`update`, `upsert` à `onConflict`, ou déclarée), suppression
+  (`delete`, `remove`, ou déclarée), session, création — tout le reste : `insert`, `upsert` sans clé déclarée, `upload`,
+  `rpc`, `invoke`. Neuf portes sont DÉCLARÉES, chacune avec ce qu'elle fait, lu dans sa source (`is_super_admin`,
+  `superpdp-credentials` « status », « save », « remove », `delete-cabinet`, `taux-change-bce`,
+  `lireConnexionPlateforme`, les deux méthodes de session) ; une déclaration que plus rien n'emprunte est une faute.
+- **Les catégories, chacune avec sa raison et son NOMBRE** — décidées sur le texte : « mise à jour » (24),
+  « suppression » (22), « session » (2) ; nommées, fonction par fonction : « doublon refusé par la base » (3 :
+  l'immobilisation d'une pièce, `UNIQUE (piece_id)` et le message du 23505 ; le sous-dossier, `window.prompt` et
+  `UNIQUE (dossier_id, nom)` ; l'affectation d'un membre, `UNIQUE (dossier_id, user_id)` et une relecture), « dépôt
+  parallèle voulu » (1 : `ClientUpload`), « au montage » (1 : la porte générique de `banque-connexion`, que seul
+  `lireStatut` atteint hors de `sousVerrou`). Une création nue hors exception est une faute ; une exception qui ne
+  désigne plus une fonction nue est une raison morte. Les comptes sont EXACTS : un verrou ôté d'une suppression ou d'une
+  mise à jour fait bouger sa catégorie, et le test nomme ce qui a changé.
+- **Le plancher** : plus de 180 fichiers lus, au moins 150 fonctions qui écrivent, 30 écrivains de `src/lib`, des portes
+  de chaque famille, 60 verrous ; et quatre fonctions connues dans leur état (un verrou sur une porte directe, un verrou
+  sur un écrivain de `src/lib`, une enveloppe à deux étages, un appelant verrouillé).
+- **Mesuré** : 200 fichiers, 160 fonctions d'écran qui écrivent (portes : 117 de table, 44 `rpc`, 20 Edge Functions, 11
+  de stockage, 2 de session). Sur 7633ded : 51 sous verrou, 38 protégées, 71 nues dont **17 fautes**. Après correction :
+  68, 39, 53 — zéro faute. Le prototype (au 5498fbd : les fonctions `async` de toute la source, `src/lib` compris, et
+  leurs seules écritures en propre) en comptait 90 sans verrou sur 133 : il ne voyait ni les enveloppes, ni les
+  appelants verrouillés, ni les appels à `src/lib`, et comptait parmi les fautes les écrivains de `src/lib` eux-mêmes —
+  que le garde juge chez l'écran qui les appelle.
+- **CE QU'IL NE VOIT PAS, dit en tête du test** : un verrou posé dans le `try` plutôt qu'avant (le cas à trois envois
+  des tests d'écran), un relâchement hors d'un `finally` (`verrousExecution.test.ts`), le moment du relâchement (après
+  la relecture : les tests d'écran), une branche qui écrit sans passer par le verrou d'une autre branche (il juge des
+  positions, pas des chemins) — et ce qu'une suppression rejouée DIT : la catégorie se décide sur les portes.
+
+**DIX-SEPT GESTIONNAIRES CORRIGÉS**, dans la forme de « Nouveau dossier » (un `useRef` testé puis posé avant le `try`,
+après `preventDefault` pour un formulaire, relâché dans un `finally` ; l'état reste pour l'affichage) : les douze de
+cette entrée ; **quatre que le garde a trouvés** — l'enregistrement de la charte (deux logos envoyés au seau
+`cabinet-logos`, le cabinet n'en désigne qu'un : un orphelin ; ou, sur la même milliseconde, un 409 affiché sur un
+enregistrement réussi), la photo du client sur l'accueil (chaque dépôt partait avec son propre ensemble d'empreintes :
+deux pièces, deux lectures facturées), l'avis de cotisation déposé (deux fichiers, deux documents, deux lectures), la
+lecture d'une ancienne 2035 (deux lectures facturées) — **et un trouvé en lisant**, que le garde range parmi les
+suppressions et ne pouvait pas voir : la suppression définitive d'un dossier. Rejouée pendant la première, la seconde
+inventorie le stockage, ne retire que ce qui reste, compte `retires < demandes` et affirme des fichiers « restés » —
+« préviens l'administrateur » — sur un dossier proprement supprimé. Les vingt-deux autres suppressions ont été relues
+pour la même question : rejouées, elles ne trouvent rien et se taisent — aucune ne tire un échec de ce qu'elle ne trouve
+plus. (Sur `main`, elles sont vingt et une : la suppression d'une sélection de documents, qui dit désormais son bilan,
+porte son verrou depuis la demande de fusion n° 116.) Le verrou se relâche APRÈS la relecture là où l'écran reste ouvert
+sur ce qu'il écrit : le mouvement d'un compte courant (`onChanged` devient `() => Promise<void>`, attendu), l'échéance
+saisie à la main (`await load()`), le pack (`await loadPacks()`), la charte (qui l'attendait déjà) ; ailleurs à la
+réponse — la fenêtre se referme, ou ce qu'elle montre est ce que la fonction a rendu.
+
+**LA COMPENSATION DE `create-cabinet` GARDE SA RAISON D'ÊTRE** une fois le verrou posé, et n'est pas touchée : elle
+existe pour une adresse déjà inscrite ailleurs saisie une seule fois, pour deux postes qui créeraient le même cabinet,
+et pour un échec de `cabinet_admins` — trois cas qu'aucun verrou d'écran ne voit. Le verrou ne retire que le chemin du
+double envoi.
+
+**QUESTION AU CABINET** — le dépôt parallèle de `ClientUpload`. La zone reste ouverte pendant l'analyse, exprès, et
+chaque dépôt est un lot dont les empreintes sont réservées DANS le lot (`hashsDuLot`, neuf à chaque dépôt : « au dépôt
+suivant, la base fait foi »). Mais la base ne voit une pièce qu'après son envoi et sa lecture : le même fichier déposé
+deux fois, le premier encore en vol, passe deux fois — deux pièces, deux lectures facturées ; `pieces` n'a pas d'index
+unique sur l'empreinte. Un verrou d'écran avalerait un second dépôt légitime ; la réponse serait un ensemble
+d'empreintes « en vol » gardé par l'écran (un `useRef`) d'un lot à l'autre, ce qui change la décision écrite (« un Set
+neuf par lot »). Rien n'est changé sans le cabinet ; le garde la range en exception nommée, avec cette raison.
+
+**LES TESTS** : cinquante-quatre tests d'écran — pour chacun des dix-sept, deux envois dans le MÊME `act`, trois envois,
+et un refus qui relâche le verrou ; trois de plus sur la relecture (mouvement, échéance, pack ; la charte l'attend dans
+le même `try`). Les formulaires sont aussi soumis par `fireEvent.submit` — « Entrée », sans passer par le bouton. Les
+réponses sont RETENUES par une porte que le test ouvre (la fenêtre réelle) ; un appel facturé ne part jamais
+(extraction, assistant, Super PDP doublés). **Rouges avant, sur chacun** : trente-sept tests — deux écritures pour deux
+envois, trois pour trois, et les trois tests de relecture ; les refus passaient (rien à relâcher). **Verts après.** Et
+dix-sept tests pour le garde (cinq sur le dépôt, douze sur des défauts plantés), deux pour la règle des homonymes
+(ci-dessous) : soixante-treize en tout.
+
+**MUTATIONS.** (1) **Les tests d'écran** : soixante et onze mutations, chacune appliquée à la source, le fichier de test
+de l'écran rejoué, la source restaurée — verrou ôté, posé dans le `try`, jamais relâché, l'état testé au lieu du verrou
+(dix-sept chacune), et relâché avant la relecture (trois). **Soixante-huit mordent.** « Posé dans le `try` » mord dès
+deux envois sur la plupart : le second, refusé DANS le `try`, sort par le `finally`, relâche le verrou du premier et
+remet l'état à faux — le bouton se rallume pendant que le premier est en vol, et le troisième envoi passe. Trois sont
+équivalentes, toutes « l'état au lieu du verrou », sur les trois `onChange` de sélecteur de fichier (l'avis, l'ancienne
+2035, la photo) : voir la nuance ci-dessous. (2) **Les deux gardes permanents**, sur les mêmes mutations des dix-sept :
+« verrou ôté » et « l'état au lieu du verrou », jugés par `verrousEcritures.test.ts`, mordent trente-quatre fois sur
+trente-quatre — dont les trois que les tests d'écran ne distinguent pas, et la suppression d'un dossier par son compte
+exact (la catégorie « suppression » passe à 23, et le test nomme la fonction) ; « posé dans le `try` » n'est vu par
+aucun des deux (trente-quatre verts), comme leurs en-têtes l'annoncent, et les tests d'écran le voient dix-sept fois sur
+dix-sept. « Jamais relâché », jugé par `verrousExecution.test.ts`, mordait QUINZE fois sur dix-sept : les deux fenêtres
+de `SupplementsTab` (prestation, compte courant) déclaraient chacune un `enregistrementEnCours`, et ce garde, qui
+apparie pose et relâchement par NOM dans tout le fichier, prenait le relâchement de l'une pour celui de l'autre. Les
+deux verrous portent désormais un nom à eux, et `verrousExecution.test.ts` refuse deux `useRef` homonymes posés en
+verrou dans un même fichier (`verrousHomonymes`, avec son plancher : 41 fichiers posent un verrou) — rouge sur l'état
+d'avant le renommage, et ses trois mutations mordent (deux déclarations admises, la déclaration jamais reconnue, plus
+rien de lu). Rejouées après le renommage, les mutations des deux fenêtres mordent toutes : huit sur huit aux tests
+d'écran, et « jamais relâché » à `verrousExecution.test.ts` pour l'une comme pour l'autre. (3) **Le garde lui-même** :
+quinze défauts plantés dans son analyseur (tout `.current` pris pour un verrou, le verrou admis après le premier
+`await`, une lecture seule du verrou admise, aucune enveloppe reconnue, les écrivains de `src/lib` non suivis, une
+position de type comptée pour une référence, une création nue admise, une méthode inconnue du client prise pour une
+lecture, `fetch` jamais compté, un `upsert` sans clé pris pour une mise à jour, un effet pris pour un geste, plus rien
+de lu, une exception plantée, une porte déclarée plantée, une catégorie comptée de travers) : **quinze mordent.**
+
+**ET UNE NUANCE MESURÉE, qui borne ce que ces tests prouvent** : pour un `onChange` de champ (les trois sélecteurs de
+fichier), React REND l'état après chaque événement `change` (`finishEventHandler` restaure l'état des champs contrôlés
+et vide le travail synchrone) : un état testé dans le gestionnaire (`if (uploading) return`) y arrête déjà le second
+événement, même dans le même `act` — la mutation « l'état au lieu du verrou » y est équivalente pour le test d'écran, et
+c'est `verrousEcritures.test.ts`, qui exige un `useRef`, qui la voit. Le défaut tenait à ce que ces gestionnaires ne
+testaient RIEN : `disabled` ne retient pas un événement envoyé par programme. Pour un humain, l'exposition est nulle (le
+champ est grisé dès le premier choix) ; comme pour « Nouveau dossier », le test prouve le contrat, pas une exposition
+mesurée dans un navigateur.
+
+**BARRIÈRE** (dans le worktree sur 7633ded, sous une charge de 8 à 21 sur quatre cœurs, dix agents en même temps) :
+`tsc -b` 0 ; `tsc -p tsconfig.edge.json` 25 erreurs, les connues ; lint 63 avertissements, les mêmes qu'à 7633ded
+(comparés fichier, règle et message, sans les numéros de ligne) ; build 0. Les vingt-neuf fichiers de test touchés, ou
+qui nomment un module touché, sous Paris, UTC, New York et Auckland : 822 sur 822 chaque fois. La suite entière sous
+Paris : 222 fichiers, 6 123 tests (6 050 + 73), dont deux « Test timed out in 5000ms » hors du correctif — deux gardes
+de copie qui transpilent du code (`encaissementsFactures.test.ts`, `cdarRecuCopie.test.ts`) — ; rejoués seuls, le
+premier passe, le second dépasse encore ses 5 s à une charge de 18 à 20 — et autant sur l'arbre de 7633ded SANS le
+correctif, joué dans la même minute (deux tests au-delà de 7 s) : la charge, pas le correctif, qui ne touche aucun des
+fichiers qu'il lit ; rejoué seul à une charge de 12, il passe (7 sur 7). Le correctif posé sur d435637 (la catégorie
+« suppression » à 21) : les mêmes fichiers plus `tirage.test.ts`, 836 sur 836. Banc des débordements (sur un port
+propre, 5361, le port du banc servant déjà le worktree d'un autre agent) : 0 sur les 76 visites à 1 440 et 1 280 px
+(panneau de droite ouvert), 1 024, 390 et 720 px. Le premier passage ne valait rien et a été jeté : dans un worktree,
+`node_modules` est fait de liens vers le dépôt principal, et Vite REFUSAIT les polices (« outside of Vite serving allow
+list ») — le banc mesurait des textes en police de repli. La copie du serveur ajoute ce `node_modules` à la liste
+servie, en lecture : polices refusées, 0.
+
+### 09/10/2026 — LES ÉCRITURES DU NAVIGATEUR LISENT LEUR ERREUR, ET UN GARDE PART DE TOUTE LA SOURCE
+
+(`src/lib/ecrituresVerifiees.test.ts` ; correctifs dans `PiecesTab`, `DocumentsTab`, `FichePiece`, `EstimationTab`,
+`SupplementsTab`, `BanqueTab`, `ChecklistTab`, `CotisationsTab`, `EquipePage` ; `lib/bilanSuppression.ts`,
+`lib/texteOcr.ts`.) La règle « une écriture est vérifiée, `{ error }` lu » avait deux gardes voisins — les lectures du
+navigateur (`lecturesVerifiees`) et les écritures des Edge Functions (`edgeFunctionsEcritures`) — et aucun pour les
+écritures du navigateur : on s'en remettait à « quelque chose recharge derrière ». Or un rechargement après un refus ne
+dit rien, il remet la ligne comme avant, sur un geste que l'opérateur vient de faire, souvent de confirmer.
+**Le garde part de toute la source de `src/`** (hors tests) et lit l'expression, jamais la ligne. Comptent comme
+écritures : une chaîne `.from(…)` portant `insert`, `upsert`, `update` ou `delete` ; TOUT `.rpc(` et TOUT
+`functions.invoke` (la source ne dit pas si une fonction écrit, et la liste tenue à la main serait une liste
+d'inclusion ; une fonction qui lit doit de toute façon lire son erreur) ; le stockage qui écrit, ses lectures nommées,
+une méthode inconnue en faute ; les comptes, la lecture de la session nommée. Un `insert`/`upsert`/`update` hors d'une
+chaîne `.from(` est une faute ; un `.delete(x)` à argument est celui d'un `Set`. Est « lu » : le résultat destructuré
+avec `error` (branche de ternaire, rang d'un `Promise.all`, paramètre d'un `.then`, `(await …).error`), gardé entier,
+ou passé à un consommateur NOMMÉ (`memoriser`, deux écritures). Rendu à l'appelant, jeté ou non reconnu : faute. Une
+exception (raison et nombre) : `est_super_admin` dans `AuthContext`, une lecture de rôle fermée que
+`lecturesVerifiees` dispense déjà. Planchers par porte (tables > 100, fonctions SQL > 35, Edge Functions > 15,
+stockage > 8, comptes ≥ 2) et un décompte brut des `functions.invoke` confronté aux sites, fichier par fichier.
+**Porte 2** : une suppression suivie, dans son bloc, d'un retrait de fichier (`retirerFichiers` ou
+`storage….remove`) doit lire sa ligne supprimée (`.select`) — c'est le seul effet que la source permet de juger ;
+pour un compte ou un message de succès, ce sont les tests d'écran.
+**Mesuré** : treize écritures jetaient leur résultat, dans neuf gestes. Les sept relevées par l'entrée précédente —
+retirer un repère annuel ou un poste (Estimation), un supplément ou un compte courant (Suppléments), une règle « toujours
+ignorer » (Banque), l'assignation d'un dossier à un comptable (Équipe, insertion et retrait : QUI VOIT QUOI), la
+catégorie d'un document — et six inconnues : cocher un justificatif (Checklist), attacher et détacher l'avis d'une
+échéance (Cotisations), valider une sélection de pièces, appliquer les catégories suggérées (un `Promise.all` jeté).
+**Deux pièges du garde lui-même, trouvés en l'écrivant** : remonter les blancs fait lire `if (x) return` puis
+l'écriture de la ligne suivante comme `return await …`, une écriture RENDUE — or l'insertion automatique du
+point-virgule rend `undefined` et JETTE l'écriture ; sept des treize fautes se cachaient là. Et l'argument de type de
+`supabase.functions.invoke<{ … }>(` faisait manquer dix-sept appels sur vingt à l'ancre `invoke\s*\(` : c'est le
+plancher par porte qui l'a montré. **`edgeFunctionsEcritures.test.ts` porte le même angle mort du `return`** (sa
+fonction `resultatPris`) ; aucune faute vivante derrière aujourd'hui, non corrigé ici.
+**Corrigé** : chaque écriture lit son erreur et la dit (`messageErreur`), puis relit ; la validation refusée garde la
+sélection. `PiecesTab.deleteSelection` prend la forme de `DocumentsTab.supprimerSelection` : ligne lue avant les
+fichiers, bilan par `messageBilanSuppressionPieces` (même module, mots accordés, « aucun de ses fichiers » — une
+facture reçue en XML en a deux), verrou `useRef` relâché après la relecture, cibles prises dans la liste lue.
+`FichePiece.handleDelete` avait le même défaut (fichiers retirés sur zéro ligne supprimée), corrigé de même.
+`DocumentsTab.convertirEnPiece` dit le cas zéro ligne, et ne supprime plus le document quand le texte lu n'a pas pu
+être rattaché à la pièce : `enregistrerTexteOcr` rend désormais la raison de son échec (sans lever), car la suppression
+qui suivait emportait le texte en cascade — le seul exemplaire.
+**Preuves** : 22 tests d'écran rouges sur les écrans d'avant (modules et tests gardés), les gardes symétriques verts ;
+deux portes du garde rouges sur la même source. Quarante-sept mutations : vingt-cinq sur les correctifs, vingt-deux sur
+le garde ; toutes mordent sauf une, équivalente — relâcher le verrou de `PiecesTab.deleteSelection` avant la relecture :
+la sélection est vidée juste avant, le bouton disparaît, aucun second geste ne peut viser les mêmes pièces (le verrou
+tenu pendant la relecture reste une seconde ceinture, comme dans `DocumentsTab`). Une première survivante sur le garde
+(toute flèche acceptée) a révélé un trou du jeu d'essai — aucune flèche passée à un autre appel qu'un `.map` — comblé,
+la mutation mord depuis.

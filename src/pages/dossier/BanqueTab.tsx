@@ -882,7 +882,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   }
 
   async function retirerRegle(id: string) {
-    await supabase.from('regles_bancaires_ignorees').delete().eq('id', id)
+    const { error: erreurRetrait } = await supabase.from('regles_bancaires_ignorees').delete().eq('id', id)
+    // Refusé, le retrait se DIT : la règle resterait active, et continuerait d'ignorer les prochains mouvements
+    // importés que l'opérateur croit désormais à traiter.
+    if (erreurRetrait) window.alert(`La règle n’a pas pu être retirée : ${messageErreur(erreurRetrait, 'refus de la base')}.`)
     load()
   }
 
