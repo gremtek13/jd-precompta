@@ -196,6 +196,9 @@ export function obligationEncaissee(
 // Un montant de la base, déjà au centime — un encaissement (sa contrainte), un mouvement (numeric(12,2)) — en centimes.
 const centimes = (euros: number) => Math.round(euros * 100)
 
+// ── DÉBUT COPIE centimesExacts ───────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc sera recopié AU CARACTÈRE PRÈS, avec celui de cdarEncaissee.ts qui le lit, dans les Edge Functions qui
+// déposeront le statut « Encaissée » (étapes d6 et d8). cdarEncaisseeCopie.test.ts l'extrait d'ici.
 /**
  * Un nombre en centimes, s'il s'écrit exactement au centime ; null sinon. La base juge `x = round(x, 2)` sur le nombre
  * que le navigateur lui envoie, écrit comme JSON.stringify l'écrit — c'est-à-dire comme String l'écrit : plus de deux
@@ -209,6 +212,7 @@ export function centimesExacts(euros: number): number | null {
   const valeur = Number(m[2]) * 100 + Number((m[3] ?? '').padEnd(2, '0'))
   return m[1] === '-' ? -valeur : valeur
 }
+// ── FIN COPIE centimesExacts ─────────────────────────────────────────────────────────────────────────────────────────
 
 // ── Le TTC par taux, et ce qu'il en reste à encaisser ───────────────────────────────────────────────────────────────
 
