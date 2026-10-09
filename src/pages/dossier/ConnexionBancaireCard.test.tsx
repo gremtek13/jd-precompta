@@ -136,19 +136,24 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function monter(o: { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null; frontiere?: string | null } = {}) {
+type Montage = { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null; lectureEnCours?: boolean; frontiere?: string | null }
+
+function monter(o: Montage = {}) {
   const onImported = vi.fn()
-  render(
+  const carte = (m: Montage) => (
     <ConnexionBancaireCard
       dossierId="dossier-de-test"
-      lignes={o.lignes ?? []}
-      regles={o.regles ?? []}
-      suspension={o.suspension ?? null}
-      frontiere={o.frontiere ?? null}
+      lignes={m.lignes ?? []}
+      regles={m.regles ?? []}
+      suspension={m.suspension ?? null}
+      lectureEnCours={m.lectureEnCours ?? false}
+      frontiere={m.frontiere ?? null}
       onImported={onImported}
-    />,
+    />
   )
-  return { onImported }
+  const { rerender } = render(carte(o))
+  // Ce que l'onglet passe une fois sa lecture revenue : la carte reste montée, ses propriétés changent.
+  return { onImported, relire: (m: Montage) => rerender(carte(m)) }
 }
 
 const actions = () => faux.invocations.map((c) => c.action)
@@ -637,6 +642,29 @@ describe('récupérer, puis importer', () => {
     await recupererAvec(recuperation())
     expect(screen.getByText(/Import suspendu : une lecture de l'onglet est incomplète \(la lecture du relevé a été interrompue\)/)).toBeTruthy()
     expect(bouton('Importer les 1 mouvement(s)').disabled).toBe(true)
+  })
+
+  // LA SŒUR DE LA LECTURE TRONQUÉE : la lecture de l'onglet PAS ENCORE REVENUE. La carte lit sa connexion à part, et vite ;
+  // pendant que l'onglet lit encore le relevé, `lignes` est vide — un aperçu récupéré là s'importait contre rien : le
+  // mouvement déjà importé d'un fichier une seconde fois, et sans la règle qui l'ignore.
+  it('pendant la lecture de l’onglet, l’import attend, le dit, et part une fois le relevé revenu — sans ce qui y est déjà', async () => {
+    etat.connexion = connexion()
+    const deja = mouvement({ id_externe: 'eb:r:1', date: '2026-09-10', montant: -42.5 })
+    const nouveau = mouvement({ id_externe: 'eb:r:2', date: '2026-09-12', libelle: 'PRLV ASSURANCE FICTIVE', montant: -18 })
+    const { relire } = monter({ lectureEnCours: true })
+    await recupererAvec(recuperation({ mouvements: [deja, nouveau] }))
+    expect(screen.getByText(/Le relevé du dossier est en cours de lecture : l'import attend la fin de la lecture/)).toBeTruthy()
+    const importer = bouton('Importer les 2 mouvement(s)')
+    expect(importer.disabled).toBe(true)
+    await act(async () => { importer.click() })
+    expect(faux.upserts).toEqual([])
+
+    // Le relevé revient : le mouvement importé d'un fichier y est, et une règle ignore l'assurance.
+    relire({ lignes: [ligne({ date: '2026-09-10', montant: -42.5 })], regles: [regle('assurance')] })
+    expect(screen.queryByText(/en cours de lecture/)).toBeNull()
+    await act(async () => { bouton('Importer les 1 mouvement(s)').click() })
+    expect(faux.upserts).toHaveLength(1)
+    expect(faux.upserts[0].lot).toEqual([expect.objectContaining({ id_externe: 'eb:r:2', statut: 'ignoree' })])
   })
 
   it('une lecture complète n’est pas suspendue — le garde symétrique', async () => {

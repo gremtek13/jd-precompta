@@ -472,9 +472,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `lecturesPaginees.test.ts`, `lecturesSignalees.test.ts` (le drapeau `complete` lu dans le bloc de la déclaration ou
   le rappel), `edgeFunctionsPaginees.test.ts` et `triTotal` le gardent → « Et la TABLE se pagine aussi »,
   « ET TOUS CES GARDES RÉPONDENT ».
-- **Une lecture partielle se SIGNALE et ne COMMANDE aucune écriture** : `BandeauLecturePartielle` dit sa conséquence
-  propre (avec son `accord`) ; le geste qui écrirait depuis la liste tronquée se suspend et le dit →
-  « ET UNE LECTURE PARTIELLE COMMANDAIT ENCORE DES ÉCRITURES ».
+- **Une lecture partielle se SIGNALE et ne COMMANDE aucune écriture — une lecture PAS ENCORE REVENUE non plus** :
+  `BandeauLecturePartielle` dit sa conséquence propre (avec son `accord`) ; le geste qui écrirait depuis la liste
+  tronquée, ou depuis la liste pendant sa lecture (la première comme une relecture), se suspend et le dit. Le second
+  garde de `ecransAvantLecture.test.tsx` tente chaque geste de chaque écran, aucune réponse revenue : une écriture qui
+  part sans liste se nomme avec sa raison → « ET UNE LECTURE PARTIELLE COMMANDAIT ENCORE DES ÉCRITURES »,
+  « UNE ÉCRITURE COMMANDÉE PAR UNE LISTE PAS ENCORE REVENUE ».
 - **Stockage** : tout retrait passe par `lib/stockage.ts::retirerFichiers` (journalise, ne lève jamais) ; plus aucun
   `.catch(() => {})` (`retraitsStockage.test.ts`) ; `list()` se pagine ; la suppression d'un dossier rend un bilan que
   l'écran montre ; un fichier sans ligne est un orphelin → « LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE ».
@@ -772,7 +775,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5991 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6046 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
