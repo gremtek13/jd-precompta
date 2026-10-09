@@ -951,6 +951,9 @@ Vitest, 6868 tests, posés à côté de leur module ; `tsc -b` les type-vérifie
   `Partial<T> => T`, sans `as`.
 - **Un module de calcul n'importe jamais `supabase.ts`** (il lève sans variables d'environnement) ; un module couplé se
   teste en simulant le client — même pour une fonction pure du même module ; vérifier sans `.env`.
+- **Un calcul lourd se paie dans un `beforeAll`, jamais en relevant le délai d'un test** : les gardes de copie compilent
+  leurs blocs en UN programme par fichier (`src/test/compilationSeparee.ts`, chaque source un module à elle, confronté
+  au programme par source) → « LES GARDES DE COPIE COMPILAIENT DANS CHAQUE TEST ».
 - **Le fuseau est porté par les scripts npm** (`fuseau.test.ts` le vérifie) ; `test:fuseaux` rejoue Paris, UTC, New York
   et Auckland.
 - **Une mutation qui ne mord pas accuse d'abord la mutation, puis le jeu d'essai** ; une suite rouge AVANT la mutation
