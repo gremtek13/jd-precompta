@@ -1,5 +1,5 @@
-import { act, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SupplementsTab from './SupplementsTab'
 import type { CompteCourantAssocie, MouvementCca } from '../../lib/cca'
 
@@ -23,6 +23,16 @@ const faux = vi.hoisted(() => ({
   erreurSuppression: null as { message: string } | null,
   suppressions: 0,
   rechargements: 0,
+  // Les créations parties, dans l'ordre : UNE entrée = UNE ligne en base, que rien ne dédoublonne (`supplements`,
+  // `comptes_courants_associes` et `mouvements_cca` n'ont d'unique que leur identifiant, relevé en base le 09/10/2026).
+  creations: [] as { table: string; ligne: unknown }[],
+  // La réponse d'une création attend que le test la libère : c'est la fenêtre réelle pendant laquelle un second envoi
+  // arrive. La résoudre aussitôt supprimerait la fenêtre que le verrou ferme.
+  porteCreation: null as Promise<void> | null,
+  erreurCreation: null as { message: string } | null,
+  // Les lectures aussi, à la demande : la relecture qui suit une création, pendant laquelle l'écran montre encore
+  // la liste d'avant.
+  porteLecture: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -30,6 +40,7 @@ vi.mock('../../lib/supabase', () => ({
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       let suppression = false
+      let creation = false
       Object.assign(chaine, {
         select: () => chaine,
         eq: () => (suppression ? Promise.resolve({ error: faux.erreurSuppression }) : chaine),
@@ -37,13 +48,20 @@ vi.mock('../../lib/supabase', () => ({
         order: () => chaine,
         range: () => chaine,
         delete: () => { suppression = true; faux.suppressions += 1; return chaine },
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        insert: (ligne: unknown) => { creation = true; faux.creations.push({ table, ligne }); return chaine },
+        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count?: number }) => unknown) => {
+          if (creation) {
+            // Composée quand elle PART : une création retenue puis libérée répond selon l'état du moment de sa libération.
+            const repondre = () => ({ data: null, error: faux.erreurCreation })
+            return (faux.porteCreation ? faux.porteCreation.then(repondre) : Promise.resolve(repondre())).then(suite)
+          }
           if (table === 'comptes_courants_associes') faux.rechargements += 1
           const lignes =
             table === 'comptes_courants_associes' ? faux.comptes
             : table === 'mouvements_cca' ? faux.mouvements
             : []
-          return Promise.resolve({ data: lignes, error: null, count: lignes.length }).then(suite)
+          return (faux.porteLecture ?? Promise.resolve())
+            .then(() => ({ data: lignes, error: null, count: lignes.length })).then(suite)
         },
       })
       return chaine
@@ -88,7 +106,18 @@ beforeEach(() => {
   faux.erreurSuppression = null
   faux.suppressions = 0
   faux.rechargements = 0
+  faux.creations = []
+  faux.porteCreation = null
+  faux.erreurCreation = null
+  faux.porteLecture = null
   window.confirm = () => true
+})
+
+// Une porte ou un refus laissés par un test qui échoue ne doivent pas faire échouer les suivants.
+afterEach(() => {
+  faux.porteCreation = null
+  faux.porteLecture = null
+  faux.erreurCreation = null
 })
 
 describe('mouvement de compte courant : une suppression refusée se dit', () => {
@@ -131,5 +160,159 @@ describe('mouvement de compte courant : une suppression refusée se dit', () => 
     await ouvrirLesMouvements()
     await supprimerLaLigne()
     expect(faux.suppressions).toBe(0)
+  })
+})
+
+// TROIS FORMULAIRES QUI NE SE PROTÉGEAIENT QUE PAR UN ÉTAT CRÉAIENT DEUX LIGNES (09/10/2026).
+//
+// « Nouvelle prestation », « Nouveau compte courant » et l'ajout d'un mouvement n'avaient pour garde que
+// `disabled={saving}` : `setSaving(true)` ne prend effet qu'au rendu SUIVANT, donc deux soumissions rapprochées (deux
+// « Entrée », un double clic) entraient toutes deux dans le gestionnaire, qui ne testait rien. Aucune de ces trois tables
+// n'a d'unique que son identifiant : deux prestations à facturer, deux comptes courants du même associé, ou un apport
+// compté deux fois dans un solde que le cabinet recalcule depuis l'historique et présente à la banque.
+// Le verrou est un `useRef` posé avant le `try` : il faut TROIS envois pour distinguer un verrou posé dedans, dont le
+// `return` du deuxième sortirait par le `finally` et relâcherait le verrou du premier.
+
+// Retient la réponse des créations (ou des lectures) suivantes jusqu'à ce que le test appelle la fonction rendue.
+function retenir(porte: 'porteCreation' | 'porteLecture'): () => Promise<void> {
+  let ouvrir = () => {}
+  faux[porte] = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux[porte] = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+const creationsDe = (table: string) => faux.creations.filter((c) => c.table === table)
+
+async function monterLOnglet() {
+  render(<SupplementsTab dossierId="d1" />)
+  await act(async () => {})
+}
+
+// Les champs requis sont remplis : jsdom bloque la soumission d'un formulaire tant qu'un champ requis est vide, et le clic
+// n'atteindrait jamais le gestionnaire.
+async function ouvrirUneNouvellePrestation() {
+  await monterLOnglet()
+  await act(async () => { screen.getByRole('button', { name: '+ Nouvelle prestation' }).click() })
+  await act(async () => { fireEvent.change(screen.getByLabelText('Libellé'), { target: { value: 'Création de SASU' } }) })
+  const bouton = screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
+  return { bouton, formulaire: bouton.closest('form')! }
+}
+
+async function ouvrirUnNouveauCompte() {
+  await monterLOnglet()
+  await act(async () => { screen.getByRole('button', { name: '+ Nouveau compte' }).click() })
+  await act(async () => { fireEvent.change(screen.getByLabelText("Nom de l'associé"), { target: { value: 'DURAND' } }) })
+  const bouton = screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
+  return { bouton, formulaire: bouton.closest('form')! }
+}
+
+async function saisirUnMouvement() {
+  await ouvrirLesMouvements()
+  const montant = screen.getByLabelText('Montant (€)')
+  await act(async () => { fireEvent.change(montant, { target: { value: '250' } }) })
+  const bouton = screen.getByRole('button', { name: 'Ajouter' }) as HTMLButtonElement
+  return { bouton, formulaire: bouton.closest('form')!, montant }
+}
+
+describe.each([
+  { quoi: 'une prestation ponctuelle', table: 'supplements', ouvrir: ouvrirUneNouvellePrestation, champ: 'Libellé' },
+  { quoi: 'un compte courant d’associé', table: 'comptes_courants_associes', ouvrir: ouvrirUnNouveauCompte, champ: "Nom de l'associé" },
+])('le verrou de création — $quoi', ({ table, ouvrir, champ }) => {
+  it('ne crée qu’une ligne quand le formulaire est soumis deux fois dans le même rendu', async () => {
+    const { bouton } = await ouvrir()
+    const liberer = retenir('porteCreation')
+
+    // LES DEUX CLICS DANS LE MÊME `act` : deux `act` successifs rendraient le composant entre les deux, et le second
+    // tomberait sur un bouton déjà grisé — le test resterait vert avec le défaut réinstallé (CLAUDE.md).
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(creationsDe(table)).toHaveLength(1)
+    // L'état, lui, reste pour l'AFFICHAGE : le bouton se grise et le dit pendant que la création est en vol.
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Enregistrement…')
+    await liberer()
+    // Une seule création, et la fenêtre se referme sur elle.
+    expect(screen.queryByLabelText(champ)).toBeNull()
+  })
+
+  it('trois soumissions du formulaire — « Entrée » dans un champ — n’en créent qu’une', async () => {
+    const { formulaire } = await ouvrir()
+    const liberer = retenir('porteCreation')
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.submit(formulaire) })
+
+    expect(creationsDe(table)).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurCreation = { message: 'permission denied' }
+    const { bouton } = await ouvrir()
+    const liberer = retenir('porteCreation')
+
+    await act(async () => { bouton.click() })
+    await liberer()
+
+    // Le refus est dit, et le formulaire reste ouvert avec ce qui a été saisi.
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    expect(screen.getByLabelText(champ)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(creationsDe(table)).toHaveLength(2)
+  })
+})
+
+describe('le verrou d’un mouvement de compte courant — la fenêtre reste ouverte sur ce qu’elle écrit', () => {
+  it('n’ajoute qu’un mouvement quand « Ajouter » part deux fois dans le même rendu', async () => {
+    const { bouton } = await saisirUnMouvement()
+    const liberer = retenir('porteCreation')
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(creationsDe('mouvements_cca')).toHaveLength(1)
+    expect(creationsDe('mouvements_cca')[0].ligne).toMatchObject({ montant: 250, type: 'apport' })
+    await liberer()
+  })
+
+  it('trois soumissions du formulaire n’en ajoutent qu’un', async () => {
+    const { formulaire } = await saisirUnMouvement()
+    const liberer = retenir('porteCreation')
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.submit(formulaire) })
+
+    expect(creationsDe('mouvements_cca')).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurCreation = { message: 'permission denied' }
+    const { formulaire } = await saisirUnMouvement()
+
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    await act(async () => { fireEvent.submit(formulaire) })
+
+    expect(creationsDe('mouvements_cca')).toHaveLength(2)
+  })
+
+  // LE VERROU SE RELÂCHE APRÈS LA RELECTURE : la fenêtre reste ouverte, et tant que le compte n'est pas relu elle montre
+  // la liste et le solde d'AVANT l'ajout. Relâché plus tôt, un second envoi partirait sur un solde qui ne compte pas
+  // encore le premier.
+  it('tient le verrou jusqu’à ce que le compte soit relu', async () => {
+    const { formulaire, montant } = await saisirUnMouvement()
+    const libererLaRelecture = retenir('porteLecture')
+
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(creationsDe('mouvements_cca')).toHaveLength(1)
+
+    // Pendant la relecture : un nouveau montant, soumis par le formulaire lui-même (le bouton grisé n'y est pour rien).
+    await act(async () => { fireEvent.change(montant, { target: { value: '40' } }) })
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(creationsDe('mouvements_cca')).toHaveLength(1)
+
+    await libererLaRelecture()
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(creationsDe('mouvements_cca')).toHaveLength(2)
   })
 })

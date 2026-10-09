@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientHome from './ClientHome'
+import type { ResultatDepot } from '../lib/depot'
 
 // L'ÉCRAN OÙ LA BONNE NOUVELLE FABRIQUÉE COÛTAIT LE PLUS CHER, et le premier écran CLIENT à
 // recevoir un test de rendu.
@@ -18,6 +19,21 @@ import ClientHome from './ClientHome'
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   refusees: new Set<string>(),
+  // Les dépôts partis par la prise de photo — chacun un envoi, une lecture FACTURÉE, une pièce —, la porte qui retient
+  // leur réponse, et ce qu'ils rendent.
+  depots: 0,
+  porteDepot: null as Promise<void> | null,
+  resultatDepot: { statut: 'ok', cible: { type: 'piece', id: 'p-nouvelle' } } as ResultatDepot,
+}))
+
+// Le pipeline du dépôt (empreinte, envoi, lecture, insertion) est gardé par ses propres tests : on compte ici ce que
+// l'écran lui DEMANDE.
+vi.mock('../lib/depot', () => ({
+  deposerFichier: async () => {
+    faux.depots += 1
+    await faux.porteDepot
+    return faux.resultatDepot
+  },
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -135,5 +151,70 @@ describe('ClientHome — au 1er janvier, l’exercice révolu reste réclamé', 
 
     await screen.findByText('Relevés bancaires 2026')
     expect(screen.queryAllByText(/déjà bouclée/)).toHaveLength(0)
+  })
+})
+
+// « PRENDRE UNE PHOTO » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={capturing}` ne prend effet qu'au rendu
+// suivant, et chaque dépôt partait avec son propre ensemble d'empreintes (`new Set()`) : deux envois du même rendu
+// passaient tous deux la vérification en base, et le même reçu entrait deux fois — deux pièces, et deux lectures
+// FACTURÉES. `pieces` n'a pas d'index unique sur l'empreinte (voir lib/depot.ts). Le cas à TROIS envois est le seul à
+// distinguer un verrou posé dans le `try`.
+describe('ClientHome — le verrou de la prise de photo', () => {
+  beforeEach(() => {
+    poser()
+    faux.depots = 0
+    faux.porteDepot = null
+    faux.resultatDepot = { statut: 'ok', cible: { type: 'piece', id: 'p-nouvelle' } }
+  })
+  afterEach(() => { faux.porteDepot = null })
+
+  function retenirLeDepot(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteDepot = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteDepot = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  const champ = () => document.querySelector('input[type=file][accept="image/*"]') as HTMLInputElement
+  const photo = () => new File(['jpeg'], 'recu.jpg', { type: 'image/jpeg' })
+
+  it('ne dépose qu’une fois quand la photo arrive deux fois dans le même rendu', async () => {
+    monter()
+    await screen.findByText('Prendre une photo')
+    const liberer = retenirLeDepot()
+
+    await act(async () => {
+      fireEvent.change(champ(), { target: { files: [photo()] } })
+      fireEvent.change(champ(), { target: { files: [photo()] } })
+    })
+
+    expect(faux.depots).toBe(1)
+    expect(champ().disabled).toBe(true)
+    expect(screen.getByText('Analyse en cours…')).toBeTruthy()
+    await liberer()
+  })
+
+  it('trois envois dans le même rendu ne déposent qu’une fois', async () => {
+    monter()
+    await screen.findByText('Prendre une photo')
+    const liberer = retenirLeDepot()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.change(champ(), { target: { files: [photo()] } }) })
+
+    expect(faux.depots).toBe(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un dépôt refusé, et le dit', async () => {
+    faux.resultatDepot = { statut: 'erreur', message: 'envoi refusé' }
+    monter()
+    await screen.findByText('Prendre une photo')
+
+    await act(async () => { fireEvent.change(champ(), { target: { files: [photo()] } }) })
+    expect(screen.getByText('recu.jpg : envoi refusé.')).toBeTruthy()
+    await act(async () => { fireEvent.change(champ(), { target: { files: [photo()] } }) })
+
+    expect(faux.depots).toBe(2)
   })
 })

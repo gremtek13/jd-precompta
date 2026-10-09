@@ -42,6 +42,12 @@ const faux = vi.hoisted(() => ({
   erreurSuppression: null as { message: string; code: string } | null,
   // Les lectures attendent que le test les libère (voir `retenir`) : on regarde l'écran PENDANT elles.
   porte: null as Promise<void> | null,
+  // Les créations parties, dans l'ordre : UNE entrée = UN emprunt en base, que rien ne dédoublonne (`emprunts` n'a
+  // d'unique que son identifiant, relevé en base le 09/10/2026). Leur réponse attend `porteCreation` quand le test la
+  // pose : c'est la fenêtre pendant laquelle un second envoi arrive.
+  creations: [] as { table: string; ligne: unknown }[],
+  porteCreation: null as Promise<void> | null,
+  erreurCreation: null as { message: string } | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -59,6 +65,7 @@ vi.mock('../../lib/supabase', async () => {
       select: () => c, eq: () => c, order: () => c,
       delete: () => { operation = 'delete'; faux.suppressions.push({ table }); return c },
       update: (valeur: Record<string, unknown>) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
+      insert: (ligne: unknown) => { operation = 'insert'; faux.creations.push({ table, ligne }); return c },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
@@ -70,6 +77,11 @@ vi.mock('../../lib/supabase', async () => {
           return Promise.resolve({ data: null, error: faux.erreurSuppression }).then(suite)
         }
         if (operation === 'update') return Promise.resolve({ data: null, error: null }).then(suite)
+        if (operation === 'insert') {
+          // Composée quand elle PART : une création retenue puis libérée répond selon l'état du moment de sa libération.
+          const repondre = () => ({ data: null, error: faux.erreurCreation })
+          return (faux.porteCreation ? faux.porteCreation.then(repondre) : Promise.resolve(repondre())).then(suite)
+        }
         // Une lecture retenue rend l'état de la base à sa libération, comme un serveur lent.
         return (faux.porte ?? Promise.resolve()).then(() => lire()).then(suite)
       },
@@ -174,6 +186,9 @@ afterEach(() => {
   faux.misesAJour = []
   faux.erreurSuppression = null
   faux.porte = null
+  faux.creations = []
+  faux.porteCreation = null
+  faux.erreurCreation = null
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -1383,5 +1398,78 @@ describe('FinancementTab — rien ne se chiffre avant la lecture', () => {
     expect(tuile('Mensualités en cours (total)')).toMatch(/€$/)
     expect(tuile('Mensualités en cours (total)')).not.toMatch(/^0,00/)
     expect(generer().every((b) => !b.disabled)).toBe(true)
+  })
+})
+
+// « NOUVEL EMPRUNT » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={saving}` ne prend effet qu'au rendu suivant :
+// deux soumissions du même rendu (deux « Entrée », un double clic) créaient deux emprunts, que la base ne dédoublonne pas —
+// deux échéanciers, deux capitaux restant dus dans le dossier qu'on présente à la banque, et une échéance du relevé qui ne
+// peut se rapprocher que de l'un des deux. Le cas à TROIS envois est le seul à distinguer un verrou posé dans le `try`.
+describe('FinancementTab — le verrou de création d’un emprunt', () => {
+  function retenirLaCreation(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteCreation = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteCreation = null
+      await act(async () => { ouvrir() })
+    }
+  }
+
+  // Les champs requis sont remplis : jsdom bloque la soumission d'un formulaire dont un champ requis est vide.
+  async function ouvrirUnNouvelEmprunt() {
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.ecritures = []
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    await act(async () => { (await screen.findByRole('button', { name: '+ Nouvel emprunt' })).click() })
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Prêt véhicule' } })
+      fireEvent.change(screen.getByLabelText('Capital initial (€)'), { target: { value: '15000' } })
+      fireEvent.change(screen.getByLabelText('Taux annuel (%)'), { target: { value: '4.2' } })
+      fireEvent.change(screen.getByLabelText('Durée (mois)'), { target: { value: '48' } })
+    })
+    const bouton = screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
+    return { bouton, formulaire: bouton.closest('form')! }
+  }
+
+  it('ne crée qu’un emprunt quand le formulaire est soumis deux fois dans le même rendu', async () => {
+    const { bouton } = await ouvrirUnNouvelEmprunt()
+    const liberer = retenirLaCreation()
+
+    // LES DEUX CLICS DANS LE MÊME `act` : séparés, le second tomberait sur un bouton déjà grisé et le test resterait vert
+    // avec le défaut réinstallé.
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.creations).toHaveLength(1)
+    expect(faux.creations[0]).toMatchObject({ table: 'emprunts', ligne: { nom: 'Prêt véhicule', capital_initial: 15000, duree_mois: 48 } })
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Enregistrement…')
+    await liberer()
+    expect(screen.queryByRole('heading', { name: 'Nouvel emprunt' })).toBeNull()
+  })
+
+  it('trois soumissions du formulaire — « Entrée » dans un champ — n’en créent qu’un', async () => {
+    const { formulaire } = await ouvrirUnNouvelEmprunt()
+    const liberer = retenirLaCreation()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.submit(formulaire) })
+
+    expect(faux.creations).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurCreation = { message: 'permission denied' }
+    const { bouton } = await ouvrirUnNouvelEmprunt()
+    const liberer = retenirLaCreation()
+
+    await act(async () => { bouton.click() })
+    await liberer()
+
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Nouvel emprunt' })).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.creations).toHaveLength(2)
   })
 })

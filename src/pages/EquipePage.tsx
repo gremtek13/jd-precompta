@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { extraireErreurFonction } from '../lib/invokeErreur'
@@ -32,6 +32,10 @@ export default function EquipePage() {
   const [role, setRole] = useState<RoleCabinetAdmin>('comptable')
   const [enregistrement, setEnregistrement] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Verrou d'exécution de l'ajout, en `useRef` : `setEnregistrement(true)` ne prend effet qu'au rendu suivant, donc
+  // `disabled={enregistrement}` laissait passer deux soumissions rapprochées. Le second `create-team-member` trouve le
+  // compte que le premier vient de créer et répond une ERREUR sur un membre bien ajouté (même défaut qu'`AccesTab`).
+  const ajoutEnCours = useRef(false)
 
   const [gestionDossiersDe, setGestionDossiersDe] = useState<CabinetAdmin | null>(null)
 
@@ -73,21 +77,29 @@ export default function EquipePage() {
       setErreur('Le mot de passe doit faire au moins 10 caractères.')
       return
     }
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours. Relâché sans attendre la relecture : le formulaire se referme sur un succès.
+    if (ajoutEnCours.current) return
+    ajoutEnCours.current = true
     setEnregistrement(true)
     setErreur(null)
-    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-team-member', {
-      body: { email: email.trim(), password, role },
-    })
-    setEnregistrement(false)
-    if (data?.error || invokeError) {
-      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du compte."))
-      return
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-team-member', {
+        body: { email: email.trim(), password, role },
+      })
+      if (data?.error || invokeError) {
+        setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du compte."))
+        return
+      }
+      setEmail('')
+      setPassword('')
+      setRole('comptable')
+      setAjout(false)
+      load()
+    } finally {
+      ajoutEnCours.current = false
+      setEnregistrement(false)
     }
-    setEmail('')
-    setPassword('')
-    setRole('comptable')
-    setAjout(false)
-    load()
   }
 
   async function changerRole(m: CabinetAdmin, nouveauRole: RoleCabinetAdmin) {

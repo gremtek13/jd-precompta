@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -56,6 +56,10 @@ export default function ClientHome() {
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [onboardingVu, setOnboardingVu] = useState(true)
   const [capturing, setCapturing] = useState(false)
+  // Verrou d'exécution de la prise de photo, en `useRef` : `disabled={capturing}` ne prend effet qu'au rendu suivant, et
+  // chaque dépôt part avec son propre ensemble d'empreintes — deux envois du même rendu passaient tous deux la
+  // vérification en base, et le même reçu entrait deux fois (deux pièces, deux lectures facturées).
+  const captureEnCours = useRef(false)
   // Exercices que le cabinet a marqués clos : c'est ce qui arrête la réclamation de l'exercice
   // précédent. Une lecture refusée laisse la liste VIDE, donc on continue de réclamer — jamais
   // l'inverse, qui fabriquerait la bonne nouvelle que ce calcul existe pour empêcher.
@@ -124,24 +128,33 @@ export default function ClientHome() {
   // voie tout de suite que sa photo est bien arrivée et où elle a été rangée.
   async function handleCapture(fileList: FileList | null) {
     if (!fileList || fileList.length === 0 || !dossierId) return
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (captureEnCours.current) return
+    captureEnCours.current = true
     const file = fileList[0]
     setCapturing(true)
     setCaptureError(null)
-    // Un seul fichier par prise de photo : rien à dédoublonner au sein du lot, la base suffit.
-    const resultat = await deposerFichier(dossierId, file, new Set())
-    setCapturing(false)
-    if (resultat.statut === 'erreur') {
-      setCaptureError(`${file.name} : ${resultat.message}.`)
-      return
+    try {
+      // Un seul fichier par prise de photo : rien à dédoublonner au sein du lot ; deux envois du même rendu, c'est le
+      // verrou qui les arrête, la base ne le pouvant pas.
+      const resultat = await deposerFichier(dossierId, file, new Set())
+      if (resultat.statut === 'erreur') {
+        setCaptureError(`${file.name} : ${resultat.message}.`)
+        return
+      }
+      if (resultat.statut === 'doublon') {
+        setCaptureError(`${file.name} : déjà déposé, pas réenvoyé.`)
+        return
+      }
+      // On emporte la ligne qui vient d'être créée : « Mes pièces » ouvre alors la zone de précision
+      // sur ce dépôt-là. C'est le seul moment où le client sait encore pourquoi il a photographié ce
+      // reçu — deux mois plus tard, personne au cabinet ne pourra le reconstituer.
+      navigate('/mes-pieces', { state: { preciser: resultat.cible } })
+    } finally {
+      captureEnCours.current = false
+      setCapturing(false)
     }
-    if (resultat.statut === 'doublon') {
-      setCaptureError(`${file.name} : déjà déposé, pas réenvoyé.`)
-      return
-    }
-    // On emporte la ligne qui vient d'être créée : « Mes pièces » ouvre alors la zone de précision
-    // sur ce dépôt-là. C'est le seul moment où le client sait encore pourquoi il a photographié ce
-    // reçu — deux mois plus tard, personne au cabinet ne pourra le reconstituer.
-    navigate('/mes-pieces', { state: { preciser: resultat.cible } })
   }
 
   if (!dossierId) {

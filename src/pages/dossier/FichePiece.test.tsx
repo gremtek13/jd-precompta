@@ -34,6 +34,11 @@ const faux = vi.hoisted(() => ({
   cheminsSignes: [] as string[],
   urlSignee: false,
   retraits: [] as string[][],
+  // Les lectures automatiques demandées — chacune FACTURÉE (OCR puis citation) —, la porte qui retient leur réponse, et
+  // l'échec qu'un test peut leur faire rendre.
+  extractions: 0,
+  porteExtraction: null as Promise<void> | null,
+  erreurExtraction: null as Error | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -100,7 +105,12 @@ vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: nu
 vi.mock('../../lib/extraction', () => ({
   hashFichier: () => Promise.resolve('empreinte-de-test'),
   fichierDejaPresent: () => Promise.resolve(false),
-  extractPiece: () => Promise.resolve({}),
+  extractPiece: async () => {
+    faux.extractions += 1
+    await faux.porteExtraction
+    if (faux.erreurExtraction) throw faux.erreurExtraction
+    return {}
+  },
 }))
 
 function monter() {
@@ -136,6 +146,9 @@ beforeEach(() => {
   // jsdom n'implémente pas `createObjectURL`, que l'aperçu appelle dès qu'un fichier est choisi.
   URL.createObjectURL = () => 'blob:apercu'
   URL.revokeObjectURL = () => {}
+  faux.extractions = 0
+  faux.porteExtraction = null
+  faux.erreurExtraction = null
 })
 
 describe('FichePiece — le verrou d’enregistrement d’une pièce', () => {
@@ -187,6 +200,58 @@ describe('FichePiece — le verrou d’enregistrement d’une pièce', () => {
     const brouillon = screen.getByRole('button', { name: 'Enregistrer brouillon' })
     await act(async () => { brouillon.click(); brouillon.click(); brouillon.click() })
     expect(faux.inserts).toHaveLength(1)
+  })
+})
+
+// « EXTRAIRE AUTOMATIQUEMENT » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `disabled={extracting}` ne prend effet qu'au
+// rendu suivant : deux clics du même rendu payaient deux lectures du même fichier — OCR puis citation par le modèle,
+// chacune FACTURÉE —, et la plus lente des deux réécrivait les champs que l'opérateur avait peut-être déjà corrigés
+// d'après la première. Le cas à TROIS clics est le seul à distinguer un verrou posé dans le `try`.
+describe('FichePiece — le verrou de l’extraction automatique', () => {
+  function retenirLExtraction(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteExtraction = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteExtraction = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  function boutonDExtraction() {
+    monter()
+    return screen.getByRole('button', { name: '✨ Extraire automatiquement' }) as HTMLButtonElement
+  }
+
+  it('ne lit le fichier qu’une fois quand le bouton part deux fois dans le même rendu', async () => {
+    const bouton = boutonDExtraction()
+    const liberer = retenirLExtraction()
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.extractions).toBe(1)
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Extraction…')
+    await liberer()
+  })
+
+  it('trois clics dans le même rendu ne le lisent qu’une fois', async () => {
+    const bouton = boutonDExtraction()
+    const liberer = retenirLExtraction()
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.extractions).toBe(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un échec de la lecture, et le dit', async () => {
+    faux.erreurExtraction = new Error('Le service de lecture ne répond pas.')
+    const bouton = boutonDExtraction()
+
+    await act(async () => { bouton.click() })
+    expect(screen.getByText('Le service de lecture ne répond pas.')).toBeTruthy()
+    await act(async () => { bouton.click() })
+
+    expect(faux.extractions).toBe(2)
   })
 })
 

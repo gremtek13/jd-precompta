@@ -62,7 +62,14 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
   const [previsionnel, setPrevisionnel] = useState(false)
+  // Verrou d'exécution de l'échéance saisie à la main, en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant,
+  // donc `disabled={saving}` laissait passer deux soumissions rapprochées (deux « Entrée » suffisent), et
+  // `cotisations_declarees` n'a d'unique que son identifiant — une cotisation comptée deux fois en case BK de la 2035.
+  const saisieEnCours = useRef(false)
   const [uploading, setUploading] = useState(false)
+  // Celui du dépôt d'un avis : deux dépôts du même rendu envoyaient deux fichiers, créaient deux documents et payaient
+  // deux lectures de l'avis — la vérification de l'empreinte en base ne voit pas un dépôt parti en même temps.
+  const depotEnCours = useRef(false)
   // Distinct de "uploading" : celui-ci ne bloque plus rien (dépôt d'un autre fichier, navigation...),
   // juste un indicateur pendant que Textract analyse le document en arrière-plan.
   const [analyseEnCours, setAnalyseEnCours] = useState(false)
@@ -123,6 +130,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
     e.preventDefault()
     // Seconde ceinture : le bouton est grisé sur une échéance d'un exercice figé, et la raison déjà dite au-dessus.
     if (refusAjout) return
+    // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (saisieEnCours.current) return
+    saisieEnCours.current = true
     setSaving(true)
     setError(null)
     try {
@@ -140,10 +151,13 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
       setMontantVerse('')
       setMontantCsgCrds('')
       setPrevisionnel(false)
-      load()
+      // L'onglet reste ouvert sur ce qu'il écrit : le verrou attend la relecture, sans quoi un nouvel envoi partirait
+      // pendant que la liste ne porte pas encore l'échéance qui vient d'être écrite.
+      await load()
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      saisieEnCours.current = false
       setSaving(false)
     }
   }
@@ -228,6 +242,8 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (depotEnCours.current) return
+    depotEnCours.current = true
     setUploading(true)
     setError(null)
     setEcheancesProposees([])
@@ -265,6 +281,9 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      // Relâché à la fin de l'ENVOI, pas de la lecture en arrière-plan : déposer un autre avis pendant qu'elle tourne
+      // reste permis (voir `analyseEnCours`), et le même fichier, déjà en base, serait reconnu par son empreinte.
+      depotEnCours.current = false
       setUploading(false)
       e.target.value = ''
     }

@@ -26,6 +26,10 @@ const faux = vi.hoisted(() => ({
   muetApres: null as number | null,
   inserts: [] as Record<string, unknown>[],
   appels: [] as { nom: string; body: Record<string, unknown> }[],
+  // La réponse de l'assistant attend `porteAssistant` quand le test la pose — la fenêtre pendant laquelle un second
+  // envoi arrive — et porte `refusAssistant` quand il y en a un (le blocage par le plafond du cabinet, par exemple).
+  porteAssistant: null as Promise<void> | null,
+  refusAssistant: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -55,6 +59,8 @@ vi.mock('../../lib/supabase', () => ({
     functions: {
       invoke: async (nom: string, { body }: { body: Record<string, unknown> }) => {
         faux.appels.push({ nom, body })
+        await faux.porteAssistant
+        if (faux.refusAssistant) return { data: { error: faux.refusAssistant }, error: null }
         return { data: { reponse: 'Réponse de l’assistant', outils_utilises: ['lister_pieces'], usage: { tokens_entree: 10, tokens_sortie: 5 } }, error: null }
       },
     },
@@ -96,6 +102,8 @@ beforeEach(() => {
   faux.muetApres = null
   faux.inserts = []
   faux.appels = []
+  faux.porteAssistant = null
+  faux.refusAssistant = null
 })
 
 describe('Assistant — dans le panneau de droite', () => {
@@ -184,5 +192,69 @@ describe('Assistant — dans le panneau de droite', () => {
     render(<Page dossierId="dA" dossierNom="Dossier A" />)
     await act(async () => { fireEvent.click(boutonEntete()) })
     expect(await within(volet()).findByText(/L’historique des échanges n'a pas pu être lu en entier/)).toBeTruthy()
+  })
+})
+
+// L'ENVOI D'UNE QUESTION NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026). `if (… loading …) return` lisait `loading` dans la
+// fermeture du rendu : deux « Entrée » du même rendu le voyaient tous deux à `false`, et la question partait deux fois —
+// deux appels au modèle FACTURÉS, deux lignes « user » et deux réponses comptées dans le plafond du cabinet. Le cas à TROIS
+// envois est le seul à distinguer un verrou posé dans le `try`.
+describe('Assistant — le verrou de l’envoi d’une question', () => {
+  const versLAssistant = () => faux.appels.filter((a) => a.nom === 'agent-comptable')
+  function retenirLaReponse(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteAssistant = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteAssistant = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  async function zoneDeSaisie() {
+    render(<Page dossierId="dA" dossierNom="Dossier A" />)
+    await act(async () => { fireEvent.click(boutonEntete()) })
+    await within(volet()).findByText('Question du dossier A')
+    const zone = within(volet()).getByRole('textbox', { name: 'Question' })
+    fireEvent.change(zone, { target: { value: 'Et la TVA ?' } })
+    return zone
+  }
+
+  it('ne pose la question qu’une fois quand « Entrée » part deux fois dans le même rendu', async () => {
+    const zone = await zoneDeSaisie()
+    const liberer = retenirLaReponse()
+
+    await act(async () => {
+      fireEvent.keyDown(zone, { key: 'Enter' })
+      fireEvent.keyDown(zone, { key: 'Enter' })
+    })
+
+    expect(versLAssistant()).toHaveLength(1)
+    expect(faux.inserts.filter((i) => i.role === 'user')).toHaveLength(1)
+    expect((zone as HTMLTextAreaElement).disabled).toBe(true)
+    await liberer()
+    expect(within(volet()).getAllByText('Réponse de l’assistant')).toHaveLength(1)
+    expect(faux.inserts.filter((i) => i.role === 'assistant')).toHaveLength(1)
+  })
+
+  it('trois soumissions du même rendu ne la posent qu’une fois', async () => {
+    const zone = await zoneDeSaisie()
+    const formulaire = zone.closest('form')!
+    const liberer = retenirLaReponse()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.submit(formulaire) })
+
+    expect(versLAssistant()).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus, et le dit', async () => {
+    faux.refusAssistant = 'Plafond de l’assistant atteint pour ce mois.'
+    const zone = await zoneDeSaisie()
+
+    await act(async () => { fireEvent.keyDown(zone, { key: 'Enter' }) })
+    expect(within(volet()).getByText('Plafond de l’assistant atteint pour ce mois.')).toBeTruthy()
+    fireEvent.change(zone, { target: { value: 'Et maintenant ?' } })
+    await act(async () => { fireEvent.keyDown(zone, { key: 'Enter' }) })
+
+    expect(versLAssistant()).toHaveLength(2)
   })
 })

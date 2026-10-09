@@ -34,6 +34,16 @@ const faux = vi.hoisted(() => ({
   relacherRpc: null as (() => void) | null,
   // Ce que « lit » la fausse extraction d'un avis d'appel : son échéancier.
   echeancesLues: [] as { date: string; montant: number; previsionnel: boolean }[],
+  // La réponse d'une insertion attend `porteInsertion` quand le test la pose (la fenêtre pendant laquelle un second
+  // envoi arrive), et rend `erreurInsertion`.
+  porteInsertion: null as Promise<void> | null,
+  erreurInsertion: null as { message: string } | null,
+  // Les fichiers envoyés au stockage, et les lectures d'avis demandées : un double dépôt en ferait deux de chaque, la
+  // seconde lecture FACTURÉE.
+  envois: [] as string[],
+  porteEnvoi: null as Promise<void> | null,
+  erreurEnvoi: null as { message: string } | null,
+  extractions: 0,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -98,7 +108,12 @@ vi.mock('../../lib/supabase', async () => {
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
-          then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+          then: (suite: (r: { data: unknown[]; error: { message: string } | null; count: number }) => unknown) => {
+            if (operation === 'insert') {
+              // Composée quand elle PART : une insertion retenue puis libérée répond selon l'état de sa libération.
+              const repondre = () => ({ data: [], error: faux.erreurInsertion, count: 0 })
+              return (faux.porteInsertion ? faux.porteInsertion.then(repondre) : Promise.resolve(repondre())).then(suite)
+            }
             if (operation !== 'select') return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
             const source: readonly unknown[] =
               table === 'cotisations_declarees' ? faux.cotisations
@@ -114,14 +129,24 @@ vi.mock('../../lib/supabase', async () => {
         })
         return c
       },
-      storage: { from: () => ({ upload: () => Promise.resolve({ error: null }) }) },
+      storage: {
+        from: () => ({
+          upload: (chemin: string) => {
+            faux.envois.push(chemin)
+            return (faux.porteEnvoi ?? Promise.resolve()).then(() => ({ error: faux.erreurEnvoi }))
+          },
+        }),
+      },
     },
   }
 })
 
 // Doublés pour ne rien facturer : ce test porte sur l'écran, jamais sur l'OCR.
 vi.mock('../../lib/extraction', () => ({
-  extractPiece: () => Promise.resolve({ lecture_cotisation: { echeances: faux.echeancesLues } }),
+  extractPiece: () => {
+    faux.extractions += 1
+    return Promise.resolve({ lecture_cotisation: { echeances: faux.echeancesLues } })
+  },
   fichierDejaPresent: () => Promise.resolve(false),
   hashFichier: () => Promise.resolve('empreinte-de-test'),
 }))
@@ -176,10 +201,19 @@ beforeEach(() => {
   faux.retenirRpc = false
   faux.relacherRpc = null
   faux.echeancesLues = []
+  faux.porteInsertion = null
+  faux.erreurInsertion = null
+  faux.envois = []
+  faux.porteEnvoi = null
+  faux.erreurEnvoi = null
+  faux.extractions = 0
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  // Une porte laissée par un test qui échoue ne doit pas faire échouer les suivants.
+  faux.porteInsertion = null
+  faux.porteEnvoi = null
 })
 
 async function cliquerRetirer() {
@@ -784,5 +818,149 @@ describe('CotisationsTab — ce qu’un exercice validé a figé', () => {
     expect(bouton.hasAttribute('disabled')).toBe(true)
     await act(async () => { bouton.click() })
     expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(0)
+  })
+})
+
+// L'ÉCHÉANCE SAISIE À LA MAIN ET L'AVIS DÉPOSÉ NE SE PROTÉGEAIENT QUE PAR UN ÉTAT (09/10/2026). `disabled={saving}` et
+// `disabled={uploading}` ne prennent effet qu'au rendu suivant : deux soumissions du même rendu écrivaient deux échéances —
+// `cotisations_declarees` n'a d'unique que son identifiant, et une cotisation comptée deux fois l'est en case BK de la
+// 2035 — et deux dépôts du même avis envoyaient deux fichiers, deux documents, et payaient deux lectures. Le cas à TROIS
+// envois est le seul à distinguer un verrou posé dans le `try`.
+describe('CotisationsTab — le verrou d’une échéance saisie à la main', () => {
+  const insertionsDEcheance = () => faux.insertions.filter((i) => i.table === 'cotisations_declarees')
+  function retenirLInsertion(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteInsertion = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteInsertion = null
+      await act(async () => { ouvrir() })
+    }
+  }
+  // Les champs requis sont remplis : jsdom bloque la soumission d'un formulaire dont un champ requis est vide.
+  async function remplir(echeance: string) {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: echeance } })
+      fireEvent.change(screen.getByLabelText('Montant appelé'), { target: { value: '420' } })
+    })
+  }
+  async function saisirUneEcheance(echeance = '2026-06-05') {
+    await screen.findByText(/Ajouter une échéance/)
+    await remplir(echeance)
+    const bouton = screen.getByRole('button', { name: 'Ajouter' }) as HTMLButtonElement
+    return { bouton, formulaire: bouton.closest('form')! }
+  }
+
+  it('n’écrit qu’une échéance quand le formulaire est soumis deux fois dans le même rendu', async () => {
+    monter()
+    const { bouton } = await saisirUneEcheance()
+    const liberer = retenirLInsertion()
+
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(insertionsDEcheance()).toHaveLength(1)
+    expect(insertionsDEcheance()[0].valeur).toMatchObject({ echeance: '2026-06-05', montant_appele: 420 })
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Enregistrement…')
+    await liberer()
+  })
+
+  it('trois soumissions du formulaire — « Entrée » dans un champ — n’en écrivent qu’une', async () => {
+    monter()
+    const { formulaire } = await saisirUneEcheance()
+    const liberer = retenirLInsertion()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.submit(formulaire) })
+
+    expect(insertionsDEcheance()).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurInsertion = { message: 'permission denied' }
+    monter()
+    const { formulaire } = await saisirUneEcheance()
+
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    await act(async () => { fireEvent.submit(formulaire) })
+
+    expect(insertionsDEcheance()).toHaveLength(2)
+  })
+
+  // L'ONGLET RESTE OUVERT SUR CE QU'IL ÉCRIT : tant que les échéances ne sont pas relues, la liste ne porte pas celle qui
+  // vient d'être écrite. Le verrou ne se relâche qu'après la relecture.
+  it('tient le verrou jusqu’à ce que les échéances soient relues', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-0', echeance: '2026-01-05' })]
+    monter()
+    const { formulaire } = await saisirUneEcheance()
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(insertionsDEcheance()).toHaveLength(1)
+
+    // Pendant la relecture : une autre échéance, soumise par le formulaire lui-même (le bouton grisé n'y est pour rien).
+    await remplir('2026-07-05')
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(insertionsDEcheance()).toHaveLength(1)
+
+    await act(async () => { faux.retenue = null; faux.relacher!() })
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Ajouter' }) as HTMLButtonElement).disabled).toBe(false))
+    await act(async () => { fireEvent.submit(formulaire) })
+    expect(insertionsDEcheance()).toHaveLength(2)
+  })
+})
+
+describe('CotisationsTab — le verrou du dépôt d’un avis d’appel', () => {
+  const champDeDepot = () => document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+  const avis = () => new File(['%PDF'], 'avis-urssaf.pdf', { type: 'application/pdf' })
+  function retenirLEnvoi(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteEnvoi = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteEnvoi = null
+      await act(async () => { ouvrir() })
+    }
+  }
+
+  it('n’envoie qu’un fichier quand l’avis est déposé deux fois dans le même rendu', async () => {
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    const liberer = retenirLEnvoi()
+
+    await act(async () => {
+      fireEvent.change(champDeDepot(), { target: { files: [avis()] } })
+      fireEvent.change(champDeDepot(), { target: { files: [avis()] } })
+    })
+    expect(faux.envois).toHaveLength(1)
+    await liberer()
+
+    // Un seul document, et une seule lecture de l'avis — celle-là FACTURÉE.
+    await waitFor(() => expect(faux.extractions).toBe(1))
+    expect(faux.insertions.filter((i) => i.table === 'documents_divers')).toHaveLength(1)
+  })
+
+  it('trois dépôts dans le même rendu n’en envoient qu’un', async () => {
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    const liberer = retenirLEnvoi()
+
+    await act(async () => { for (let i = 0; i < 3; i++) fireEvent.change(champDeDepot(), { target: { files: [avis()] } }) })
+
+    expect(faux.envois).toHaveLength(1)
+    await liberer()
+  })
+
+  it('relâche le verrou sur un envoi refusé, pour laisser déposer de nouveau', async () => {
+    faux.erreurEnvoi = { message: 'stockage indisponible' }
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [avis()] } }) })
+    expect(screen.getByText(/stockage indisponible/)).toBeTruthy()
+    faux.erreurEnvoi = null
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [avis()] } }) })
+
+    expect(faux.envois).toHaveLength(2)
+    await waitFor(() => expect(faux.extractions).toBe(1))
   })
 })
