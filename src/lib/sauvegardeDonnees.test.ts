@@ -603,6 +603,87 @@ describe('restauration', () => {
   })
 })
 
+// LES ANCIENNES COLONNES DES NOTES INTERNES (espace client, étape P0, 09/10/2026). Une sauvegarde faite avant la migration
+// porte les notes du cabinet sur ses pièces et ses documents, que le client lit ; la restauration ne les y réécrit plus,
+// elle les range dans `notes_internes` — et la vérification les y attend.
+describe('restauration d’une sauvegarde aux anciennes notes', () => {
+  function baseVide() {
+    base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [] }
+  }
+  // Une sauvegarde d'avant la migration : pas de table `notes_internes`, les notes sur les lignes.
+  function ancienneSauvegarde(o: { noteDossier?: string | null; notesInternes?: Record<string, unknown>[] } = {}) {
+    return {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET, notes: o.noteDossier ?? null }],
+        pieces: [
+          { id: 'p1', dossier_id: DOSSIER, notes: 'Vu avec le client.' },
+          { id: 'p2', dossier_id: DOSSIER, notes: ' \n\t' },
+          { id: 'p3', dossier_id: DOSSIER, notes: null },
+        ],
+        documents_divers: [{ id: 'doc1', dossier_id: DOSSIER, notes: 'Reclassé depuis les pièces.' }],
+        ...(o.notesInternes ? { notes_internes: o.notesInternes } : {}),
+      } as Record<string, Ligne[]>,
+    }
+  }
+
+  it('les range dans les notes internes, n’écrit plus les anciennes colonnes, et le prouve en relisant', async () => {
+    baseVide()
+    const sauvegarde = ancienneSauvegarde()
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    for (const table of ['dossiers', 'pieces', 'documents_divers']) {
+      for (const ligne of base.tables[table]) expect(ligne, table).not.toHaveProperty('notes')
+    }
+    // Le texte tel qu'écrit ; une note blanche n'en est pas une (la règle de la recopie en base).
+    expect(base.tables.notes_internes).toEqual([
+      { dossier_id: DOSSIER, piece_id: 'p1', texte: 'Vu avec le client.' },
+      { dossier_id: DOSSIER, document_id: 'doc1', texte: 'Reclassé depuis les pièces.' },
+    ])
+    expect(resultat.lignesParTable.notes_internes).toBe(2)
+    // Après ses cibles.
+    const tables = ecritures.map((e) => e.table)
+    expect(tables.indexOf('pieces')).toBeLessThan(tables.indexOf('notes_internes'))
+    expect(tables.indexOf('documents_divers')).toBeLessThan(tables.indexOf('notes_internes'))
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+    // La sauvegarde reçue n'a pas été modifiée.
+    expect(sauvegarde.contenu.pieces[0].notes).toBe('Vu avec le client.')
+  })
+
+  it('une note interne déjà dans la sauvegarde fait foi : l’ancienne colonne de sa cible est ignorée', async () => {
+    baseVide()
+    const sauvegarde = ancienneSauvegarde({
+      notesInternes: [{ id: 'n1', dossier_id: DOSSIER, piece_id: 'p1', document_id: null, texte: '' }],
+    })
+    await restaurerSauvegarde(sauvegarde)
+    // Effacée après la recopie, elle reste effacée : l'ancienne colonne, plus tenue à jour, ne la ressuscite pas.
+    expect(base.tables.notes_internes).toEqual([
+      { id: 'n1', dossier_id: DOSSIER, piece_id: 'p1', document_id: null, texte: '' },
+      { dossier_id: DOSSIER, document_id: 'doc1', texte: 'Reclassé depuis les pièces.' },
+    ])
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('voit une note recopiée qui manque après la restauration', async () => {
+    baseVide()
+    const sauvegarde = ancienneSauvegarde()
+    await restaurerSauvegarde(sauvegarde)
+    base.tables.notes_internes = base.tables.notes_internes.filter((n) => n.piece_id !== 'p1')
+    expect(await verifierRestauration(sauvegarde)).toEqual([
+      { table: 'notes_internes', motif: 'ligne_absente', identite: 'piece:p1' },
+    ])
+  })
+
+  it('refuse, avant d’écrire, une note de dossier qu’elle ne pourrait garder nulle part', async () => {
+    baseVide()
+    await expect(restaurerSauvegarde(ancienneSauvegarde({ noteDossier: 'Client exigeant.' })))
+      .rejects.toThrow('La fiche du dossier « d1 » porte une note (dossiers.notes) que l\'application ne garde plus nulle part : la restaurer la perdrait.')
+    expect(ecritures).toEqual([])
+    // Une note de dossier blanche n'en est pas une.
+    await restaurerSauvegarde(ancienneSauvegarde({ noteDossier: '  ' }))
+    expect(base.tables.dossiers).toHaveLength(1)
+  })
+})
+
 function manifesteVide() {
   return {
     version: VERSION_SAUVEGARDE,

@@ -16946,3 +16946,114 @@ test (`bilan.test.ts`, `BilanTab.test.tsx`, `CotisationsTab.ecritures.test.tsx` 
 `paiement_personnel_le` devenus obligatoires dans les types, absents des jeux d'essai), donc `npm run build` échouait
 quand `vite build` passait. Elles sont corrigées à l'intégration, dans les commits qui ont rendu ces champs
 obligatoires.
+
+### 09/10/2026 — LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT — ESPACE CLIENT, ÉTAPE P0
+
+(Migration `notes_internes_du_cabinet`, version 20261009185236, texte de 6 204 caractères, empreinte
+`f26b7801da2d62fdf2bfab7b5291f66b` — `supabase/schema/20261009185236_notes_internes_du_cabinet.sql` ; l'essai
+`supabase/essais/notesInternes.sql` ; `rls.sql` et `restauration.sql` (en-tête, plan) ; `src/lib/notesInternes.ts` et son
+test ; le scanner `src/lib/notesInternesEcritures.test.ts` ; `FichePiece.tsx`, `receptionPlateforme.ts`,
+`plateformeClient.ts`, `sauvegarde.ts`, `sauvegardeDonnees.ts`, `types.ts` et leurs tests ; `restaurationEssai.test.ts` ;
+deux passages de RGPD.md et `supabase/schema/README.md`.) Le préalable de l'espace client (« L'ESPACE CLIENT DEVIENT LE
+LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §1.2, §3.6) : la restriction du client était une règle d'ÉCRAN, et les
+« Notes internes » de la fiche d'une pièce vivaient dans une table que le client du dossier lit. Sources : règlement (UE)
+2016/679, art. 5 § 1 f) et art. 32 § 1 b) ; la règle du projet, « un texte du cabinet seul ne se range jamais dans une
+table que le client lit ».
+
+**QUI LISAIT ET QUI ÉCRIVAIT, MESURÉ LE 09/10/2026** (catalogue, policies et comptes ; aucun texte de note lu).
+`pieces.notes` : 11 pièces annotées (10 dans `test`, 1 dans un bac à sable), aucune dans un dossier qui a un accès
+client — LATENT ; écrite par la fiche d'une pièce (trois écritures : création, modification, pièce figée) et par l'import
+de la plateforme du client (ses remarques) ; lue par la fiche seule ; LISIBLE par le client (`pieces_select` admet
+`memberships`, et l'écran lit `select('*')`) ; le client PEUT l'écrire à l'insertion d'une pièce (la policy d'insertion
+ne borne pas la colonne) — aucun de ses écrans ne le fait, et ce n'est pas une note du client : elle n'a donc rien à lui
+rendre. `documents_divers.notes` : 7 documents de `test`, la trace d'un reclassement fait hors de l'application le
+17/09/2026 ; aucun code ne la lit ni ne l'écrit ; même lecture client. `dossiers.notes` : aucune ligne, aucun code. Aucune
+Edge Function ne lit ni n'écrit ces trois colonnes (`receive-email` et `superpdp-sync` insèrent leurs pièces et documents
+sans elles — ne pas réenquêter). Deux fonctions SQL nomment `notes` : `enregistrer_facture` (la note d'une FACTURE, une
+autre colonne) et `garder_piece_validee`, qui la range parmi ce qui reste libre sur une pièce validée (`to_jsonb(new) -
+array['notes', …]` : retirer une clé absente est sans effet).
+
+**LA TABLE.** `notes_internes` : une note par pièce OU par document (`num_nonnulls = 1`), au plus une par cible
+(uniques TOTALES : l'écran écrit par un upsert sur sa cible), son `dossier_id` porté en propre comme `piece_textes_ocr`,
+`texte not null`, `created_at`, et `updated_at` posée par la BASE à chaque modification (`horodater_note_interne`, droit
+d'exécution retiré à tous). Une policy, `for all to authenticated`, `admin_du_dossier(dossier_id)` ET la cible du dossier
+annoncé — sans quoi le `dossier_id` porté en propre ouvrait une porte : la note d'une pièce d'un autre dossier, lisible
+ici, et sa place prise là-bas par la contrainte unique. Aucune branche pour un accès client, pas même sur son dossier.
+Effacée à l'écran, une note reste une ligne au texte vide, JAMAIS retirée par l'application : avec la date de la base,
+c'est ce qui distinguera, avant de supprimer les anciennes colonnes, une note reprise dans la nouvelle table d'une note
+écrite APRÈS la recopie dans l'ancienne colonne par un onglet resté sur l'application d'avant. La recopie : le texte tel
+qu'écrit, une note blanche (`btrim(notes, E' \t\n\r') = ''`) n'en étant pas une, `where not exists` (rejouable sans
+doublon) ; 18 lignes en production (11 + 7), aucune note de dossier. Les anciennes colonnes ne sont ni vidées ni
+retirées (EC-Q7).
+
+**LES ÉCRANS.** La fiche d'une pièce lit sa note À PART (`lireNoteInterne`, une ligne au plus, qui ne lève jamais) ;
+tant qu'elle n'est pas lue, le champ est grisé (« Lecture de la note… ») et VIDE, et l'enregistrement de la pièce n'y
+touche pas ; illisible, elle n'est pas offerte — sa raison est dite, avec « Relire la note » — : un champ vide faute
+d'avoir lu effacerait la note au premier « Enregistrer » ; une pièce en création n'a pas de note, comme elle n'a pas de
+fil. Modifiée, la note part AVANT la pièce, sous le même verrou : refusée, rien d'autre n'est écrit, la fiche reste
+ouverte, l'erreur est dite. La lecture est gardée AVEC la pièce pour laquelle elle a été faite : la fiche est clée par
+pièce dans PiecesTab, mais le composant ne le suppose pas — une réponse tardive pour une pièce quittée ne s'offre pas et
+ne s'écrirait pas sur la suivante (le premier tour de mutations l'a montré : retirer le drapeau d'annulation ne faisait
+rien virer au rouge, l'unique appelant remontant la fiche). Une pièce figée n'écrit plus que sa note (une autre table,
+que la validation ne fige pas) et son sous-dossier. L'import par la plateforme du client écrit ses remarques dans la
+note de la pièce qu'il vient de créer : une note refusée retire la pièce (la ligne d'abord, ses fichiers seulement si la
+base l'a RENDUE retirée) et la facture revient à la recherche suivante ; si la pièce ne peut pas être retirée, elle reste
+importée comme les autres (empreinte retenue, texte lu écrit) et l'issue dit ses remarques une dernière fois, avec la
+raison (`noteNonGardee`).
+
+**LE SCANNER** (`notesInternesEcritures.test.ts`), trois règles qui ne se recouvrent pas : E, aucune écriture (`insert`,
+`update`, `upsert`) des trois tables ne porte la clé `notes` — il lit l'ARBRE SYNTAXIQUE et suit l'objet écrit à travers
+les variables (à leur portée), les déversements, les conditions, `.map`, les fonctions du fichier et celles qu'il IMPORTE
+d'un autre module du dépôt (ré-exportations comprises), un paramètre se lisant dans l'argument de l'appel qui y a mené,
+ou dans tous les appels de sa fonction ; ce qu'il ne sait pas suivre (table innommable, clé calculée, méthode, écriture
+hors d'une chaîne `.from()`) est une faute, sauf exception avec sa raison et son nombre — une seule, la restauration (2) ;
+K, la clé `notes` n'apparaît que dans six fichiers, au nombre près, pour la note d'une AUTRE table ; L, aucune lecture
+`.notes` hors de cinq fichiers, et aucun `select` des trois tables ne la nomme. Plancher : 234 sources dont les Edge
+Functions, 120 écritures, 29 sur les trois tables, chacune des trois vue. Le premier jet ne suivait pas les imports et
+demandait quatre exceptions (les montants d'une pièce déposée, `montantsPourPiece`) : suivre les modules les a toutes
+rendues lisibles, et a fait voir trois écritures de `dossiers` par un assistant à paramètre (statut de TVA, modèle
+comptable, régime de TVA).
+
+**LA SAUVEGARDE.** `notes_internes` entre au plan (relations, ordre après les pièces et les documents, chemin direct ;
+`restauration.sql` au même plan, 59 tables). Une sauvegarde d'hier porte encore les anciennes colonnes : la restauration
+ne les écrit plus (`sansAnciennesNotes`, pure), range leurs notes dans `notes_internes` quand leur cible n'en a pas déjà
+une (celle de la sauvegarde fait foi : une note effacée ne ressuscite pas), refuse une note de DOSSIER plutôt que de la
+perdre, et la vérification attend les notes recopiées à leur CIBLE (`identiteRestauree` : une note recopiée n'a
+d'identifiant qu'une fois écrite).
+
+**LES PREUVES.** En production : l'essai `notesInternes.sql` par impersonation de six profils (anonyme, compte rattaché à
+rien, client du dossier, chef, membre affecté, membre d'un autre dossier), 29 verdicts verts dont cinq mutations qui
+mordent ; chaque note ancienne comparée à sa ligne par ÉGALITÉ, jamais lue ; rien de resté en base ; aucun `delete` ; le
+texte reçu est le fichier sans ses lignes de commentaire, saut de ligne final compris (26 536 caractères, empreinte
+`a56968364213ab2324d43eb594623dbf`). `rls.sql` rejoué entier : 22 lignes de verdict (59 tables, dont 51 portant un
+`dossier_id`), 0 en faute, 14 mutations sur 14 (texte reçu : 31 822 caractères, `c3609cc06322574b712a3c17e4d640fe`,
+la copie adaptée comme les précédentes, ses bordures de commentaire en plus ramenées à dix traits). L'export : 107
+migrations, dérive `e9e16b845c6df56ff99a92e58f273bd0` ; socle inchangé ; inventaire 1 384 objets
+(`38d9b783f9be2beec306d6b721781b11`, +19). Sur une réplique partielle locale : sept mutations de la migration (une
+branche client, la cible du dossier, l'horodatage, l'unicité, une policy publique, la cible unique, la recopie sans
+garde), toutes vues par l'essai ; la suppression éprouvée profil par profil. Dans le code : rouge avant (le scanner, joué
+sur 82a3c80, nomme les quatre écritures et les trois lectures de l'ancienne colonne ; les nouveaux tests de la fiche,
+de l'import, de ses phrases et de la restauration : 22 rouges), vert après ; 41 mutations de la logique, des écrans et
+du scanner, toutes tuées — dont la réponse tardive d'une pièce quittée, qui survivait au premier tour. Barrière :
+`tsc -b` (deux erreurs DÉJÀ présentes à 82a3c80, dans `bilan.test.ts` et `BilanTab.test.tsx`, qui font aussi échouer
+`npm run build` ; `vite build` passe), Edge Functions 25 erreurs connues, lint 63 avertissements, les fichiers touchés
+sous les quatre fuseaux, la suite entière sous Paris (7 178 tests, un seul rouge : le drapeau `demonte` d'AccesTab,
+connu et corrigé ailleurs) ; le banc des débordements : 0 aux neuf passes.
+
+**CE QUI RESTE.** La suppression des trois colonnes attend EC-Q7 : migration écrite, gardée (une note qui manquerait à
+`notes_internes` la bloque, les tables verrouillées avant la garde), rejouable, éprouvée sur la réplique (huit
+scénarios, six mutations de la garde qui mordent) — à coller par le cabinet, avec sa ligne d'historique. Avec elle :
+`identiteFacturesRecues.sql`, `revisionSoldes.sql` (contrôle 142) et `validationExercice.sql` (contrôle 59) écrivent
+encore `pieces.notes` ; `inventaire.py` ne sait pas lire un `drop column` ; le socle porte `documents_divers.notes` ;
+`types.ts` décrit encore les trois colonnes. D'ici là le client lit la copie figée, et la fenêtre de transition est
+nommée : jusqu'au déploiement du front, l'écran d'avant écrit encore l'ancienne colonne — ce qu'il y écrirait se voit
+par la garde (requête de lecture fournie au rapport, des comptes seulement).
+
+**L'INTÉGRATION.** Le correctif, écrit sur la conception de l'espace client (82a3c80), s'est rejoué le 09/10/2026
+au-dessus des verrous jumeaux, des écritures du navigateur lues et des phases C de 28.6 et de 26.6. Deux conflits,
+tous deux d'addition : les imports de `FichePiece.tsx` (le bilan d'une suppression et la marque de la pièce jumelle d'un
+côté, la note interne de l'autre) et les fabriques de son test (la porte des lectures automatiques d'un côté, la note
+de l'autre) — les deux côtés gardés. Le reste s'est fusionné seul, et la fiche relue à la main : la note part avant la
+pièce sous `enregistrementEnCours`, la pièce figée n'écrit que sa note et son sous-dossier, la suppression lit sa ligne
+supprimée avant de retirer les fichiers. Les deux erreurs de `tsc -b` et le rouge d'`AccesTab` relevés à la base ne s'y
+reproduisent plus : ils sont corrigés dans leurs propres commits.

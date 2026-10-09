@@ -112,6 +112,15 @@ describe('compteDesIssues et phraseDeLIssue', () => {
       'La plateforme refuse l’accès.',
     ])
   })
+
+  it('des remarques que la note interne n’a pas gardées se disent une dernière fois, comme telles (espace client, P0)', () => {
+    const issue: IssueImport = {
+      statut: 'importee', flux, pieceId: 'p3', avertissements: ['Total TTC absent'], noteNonGardee: 'connexion perdue',
+    }
+    expect(phraseDeLIssue(issue)).toBe('importée — à vérifier : Total TTC absent Ces remarques ne sont PAS dans sa note '
+      + 'interne (connexion perdue) : reportez-les dans sa fiche avant de la valider.')
+    expect(compteDesIssues([issue])).toMatchObject({ importee: 1 })
+  })
 })
 
 describe('le plan et le bilan en phrases accordées', () => {

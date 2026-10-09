@@ -4,11 +4,13 @@ import {
   comptesRequis,
   estLignePartagee,
   identiteLigne,
+  identiteRestauree,
   liensPerdus,
   parentsHorsPlan,
   planExportDossier,
   planReinsertion,
   referencesExternes,
+  sansAnciennesNotes,
   tablesSansChemin,
   violationsOrdre,
   ORDRE_RESTAURATION,
@@ -303,6 +305,9 @@ export async function restaurerSauvegarde(
   for (const table of plan.tablesIgnorees) {
     refus.push(`La table « ${table} » est dans la sauvegarde mais pas dans l'ordre de restauration : elle ne serait écrite nulle part.`)
   }
+  // Une note des anciennes colonnes que `notes_internes` ne peut pas recevoir (celle d'un dossier) : la restauration ne
+  // l'écrit plus nulle part, donc elle la perdrait — elle se refuse (voir `sansAnciennesNotes`).
+  refus.push(...sansAnciennesNotes(contenu).refus)
 
   // Le refus qui compte le plus. Un lien perdu sur une colonne nullable peut être « corrigé » en y
   // mettant NULL, et la restauration aboutit — en ayant défait le rapprochement bancaire ou orphelin
@@ -401,10 +406,13 @@ export async function verifierRestauration(
   const relu = await exporterDossier(sauvegarde.manifeste.dossierId)
   const ecarts: EcartRestauration[] = []
   const auto = planReinsertion(sauvegarde.contenu).secondePasse
+  // Ce que la restauration a ÉCRIT, et non la sauvegarde telle quelle : les notes des anciennes colonnes sont passées
+  // dans `notes_internes` (voir `sansAnciennesNotes`), et s'y attendent — une note recopiée se reconnaît à sa cible.
+  const ecrit = sansAnciennesNotes(sauvegarde.contenu).contenu
 
-  for (const table of Object.keys(sauvegarde.contenu)) {
-    const attendues = new Map(sauvegarde.contenu[table].map((l) => [identiteLigne(table, l), l]))
-    const trouvees = new Map((relu.contenu[table] ?? []).map((l) => [identiteLigne(table, l), l]))
+  for (const table of Object.keys(ecrit)) {
+    const attendues = new Map(ecrit[table].map((l) => [identiteRestauree(table, l), l]))
+    const trouvees = new Map((relu.contenu[table] ?? []).map((l) => [identiteRestauree(table, l), l]))
 
     for (const identite of attendues.keys()) {
       if (!trouvees.has(identite)) ecarts.push({ table, motif: 'ligne_absente', identite })
@@ -414,7 +422,7 @@ export async function verifierRestauration(
     }
     for (const passe of auto.filter((p) => p.table === table)) {
       for (const { id, valeur } of passe.valeurs) {
-        const ligne = trouvees.get(identiteLigne(table, { id }))
+        const ligne = trouvees.get(identiteRestauree(table, { id }))
         if (ligne && ligne[passe.colonne] !== valeur) {
           ecarts.push({ table, motif: 'lien_non_repose', identite: id })
         }

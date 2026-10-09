@@ -38,6 +38,10 @@ const etat = {
   cacheTauxRefuse: false,
   uploadRefuse: new Set<string>(),
   insertErreur: null as { code: string; message: string } | null,
+  /** La note interne d'une pièce refusée par la base (espace client, P0). */
+  noteRefusee: null as { code: string; message: string } | null,
+  /** Ce que rend le retrait d'une pièce dont la note n'a pas pu s'écrire : la ligne, aucune ligne, ou une erreur. */
+  retraitPiece: 'retiree' as 'retiree' | 'aucune' | 'erreur',
   tauxBce: { taux: 1.1698, date_du_taux: '2026-09-15' } as Record<string, unknown> | null,
   /** Ce que rend `superpdp-credentials` : la configuration, ou un refus. */
   superPdp: { data: { configured: false }, error: null } as { data: unknown; error: unknown },
@@ -48,6 +52,10 @@ const journal = {
   retraits: [] as string[][],
   inserts: [] as Record<string, unknown>[],
   textes: [] as Record<string, unknown>[],
+  /** Les notes internes écrites (`notes_internes`), avec la cible de leur upsert. */
+  notes: [] as { ligne: Record<string, unknown>; options: unknown }[],
+  /** Les pièces retirées (leur identifiant). */
+  retraitsPieces: [] as unknown[],
   /** Les cours demandés à la BCE : la devise et la DATE. */
   bce: [] as Record<string, unknown>[],
 }
@@ -122,10 +130,26 @@ vi.mock('./supabase', async () => {
             },
           }),
         }),
-        upsert: async (ligne: Record<string, unknown>) => {
+        upsert: async (ligne: Record<string, unknown>, options?: unknown) => {
+          if (table === 'notes_internes') {
+            journal.notes.push({ ligne, options })
+            return { error: etat.noteRefusee }
+          }
           journal.textes.push(ligne)
           return { error: null }
         },
+        delete: () => ({
+          eq: (colonne: string, valeur: unknown) => ({
+            select: () => ({
+              maybeSingle: async () => {
+                if (table !== 'pieces' || colonne !== 'id') throw new Error(`retrait inattendu : ${table}.${colonne}`)
+                journal.retraitsPieces.push(valeur)
+                if (etat.retraitPiece === 'erreur') return { data: null, error: { message: 'connexion perdue' } }
+                return { data: etat.retraitPiece === 'retiree' ? { id: valeur } : null, error: null }
+              },
+            }),
+          }),
+        }),
       }),
       storage: {
         from: () => ({
@@ -233,6 +257,8 @@ beforeEach(() => {
   etat.cacheTauxRefuse = false
   etat.uploadRefuse = new Set()
   etat.insertErreur = null
+  etat.noteRefusee = null
+  etat.retraitPiece = 'retiree'
   etat.tauxBce = { taux: 1.1698, date_du_taux: '2026-09-15' }
   facturX.reponse = null
   facturX.appels = 0
@@ -241,6 +267,8 @@ beforeEach(() => {
   journal.retraits = []
   journal.inserts = []
   journal.textes = []
+  journal.notes = []
+  journal.retraitsPieces = []
   journal.bce = []
   etat.superPdp = { data: { configured: false }, error: null }
 })
@@ -491,10 +519,12 @@ describe('importerFlux', () => {
       storage_path: journal.uploads[0].chemin, storage_hash: hash, nom_fichier: 'FA-42.xml', lisible_path: journal.uploads[1].chemin,
       flux_hote: HOTE, flux_id: f.id, type_piece: 'achat', statut: 'a_valider', date_piece: '2026-09-15', tiers: 'Fournitures Martin',
       montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
-      confiance: 'haute', notes: null,
+      confiance: 'haute',
       // Un achat ne garde aucune identité : son vendeur est un tiers (ligne 28.6).
       identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     }])
+    // Sans remarque, aucune note interne : rien à dire au cabinet, et la pièce ne porte plus l'ancienne colonne.
+    expect(journal.notes).toEqual([])
     expect(contexte.hashsConnus.has(hash)).toBe(true)
     expect(journal.textes).toHaveLength(1)
     expect(journal.textes[0]).toMatchObject({ dossier_id: 'd1', piece_id: 'piece-1' })
@@ -562,12 +592,19 @@ describe('importerFlux', () => {
       statut: 'importee',
       avertissements: ['La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.'],
     })
-    expect(journal.inserts[0]).toMatchObject({
-      confiance: 'moyenne',
-      // Dit aussi là où on valide la pièce : la fenêtre de l'import se referme, la fiche reste.
-      notes: 'Reçue de la plateforme du client — à vérifier :\n'
-        + '- La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.',
-    })
+    expect(journal.inserts[0]).toMatchObject({ confiance: 'moyenne' })
+    // Dit aussi là où on valide la pièce : la fenêtre de l'import se referme, la fiche reste. Dans la note interne de la
+    // pièce, que le client ne lit pas — jamais sur la pièce, qu'il lit (espace client, P0).
+    expect(journal.inserts[0]).not.toHaveProperty('notes')
+    expect(journal.notes).toEqual([{
+      ligne: {
+        dossier_id: 'd1', piece_id: 'piece-1',
+        texte: 'Reçue de la plateforme du client — à vérifier :\n'
+          + '- La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.',
+      },
+      options: { onConflict: 'piece_id' },
+    }])
+    expect(journal.retraitsPieces).toEqual([])
   })
 
   it('un fichier déjà au dossier est un doublon : rien n’est déposé', async () => {
@@ -605,11 +642,51 @@ describe('importerFlux', () => {
     expect(journal.inserts[0]).toMatchObject({ lisible_path: null, confiance: 'haute' })
   })
 
-  it('les remarques de l’import se rangent une par ligne dans les notes de la pièce, dans l’ordre où elles sont dites', async () => {
+  it('les remarques de l’import se rangent une par ligne dans la note interne de la pièce, dans l’ordre où elles sont dites', async () => {
     await importerFlux(ctx(), deposer(flux(), xml(cii({ acheteur: '' })), null))
-    expect(journal.inserts[0].notes).toBe('Reçue de la plateforme du client — à vérifier :\n'
+    expect(journal.notes).toHaveLength(1)
+    expect(journal.notes[0].ligne.texte).toBe('Reçue de la plateforme du client — à vérifier :\n'
       + '- La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.\n'
       + '- Sans version lisible : La plateforme ne rend pas de version lisible de cette facture.')
+  })
+
+  it('une note interne refusée retire la pièce et ses fichiers : la facture revient à la recherche suivante', async () => {
+    etat.noteRefusee = { code: '42501', message: 'permission denied for table notes_internes' }
+    const contexte = ctx()
+    const issue = await importerFlux(contexte, deposer(flux(), xml(cii({ acheteur: '' }))))
+    expect(issue).toMatchObject({
+      statut: 'echec', definitif: false,
+      message: 'Ses remarques n’ont pas pu être gardées dans sa note interne (permission denied for table notes_internes) : '
+        + 'elle n’est pas importée.',
+    })
+    // La ligne d'abord, puis ses deux fichiers ; ni empreinte retenue, ni texte lu écrit pour une pièce qui n'est plus.
+    expect(journal.retraitsPieces).toEqual(['piece-1'])
+    expect(journal.retraits).toEqual([[journal.uploads[0].chemin, journal.uploads[1].chemin]])
+    expect(contexte.hashsConnus.size).toBe(0)
+    expect(journal.textes).toEqual([])
+    // À reprendre : le point de reprise s'arrête avant elle.
+    expect(estTermine(issue)).toBe(false)
+  })
+
+  it('une pièce qui n’a pas pu être retirée reste, et l’issue dit ses remarques une dernière fois avec la raison', async () => {
+    for (const retrait of ['aucune', 'erreur'] as const) {
+      etat.noteRefusee = { code: '08006', message: 'connexion perdue' }
+      etat.retraitPiece = retrait
+      journal.retraits = []
+      journal.textes = []
+      const contexte = ctx()
+      const issue = await importerFlux(contexte, deposer(flux(), xml(cii({ acheteur: '' }))))
+      expect(issue, retrait).toMatchObject({
+        statut: 'importee', noteNonGardee: 'connexion perdue',
+        avertissements: ['La facture ne dit pas le SIREN de son acheteur : rien ne vérifie qu’elle est adressée à ce dossier.'],
+      })
+      // Ses fichiers restent : la pièce, toujours au dossier, pointe dessus.
+      expect(journal.retraits, retrait).toEqual([])
+      // Elle est au dossier : son empreinte est connue, et son texte lu s'écrit comme pour toute pièce importée.
+      expect(contexte.hashsConnus.size, retrait).toBe(1)
+      expect(journal.textes, retrait).toHaveLength(1)
+      expect(estTermine(issue)).toBe(true)
+    }
   })
 
   it('une version lisible indisponible pour l’instant fait attendre la facture, et rien n’est déposé', async () => {
@@ -665,9 +742,12 @@ describe('importerFlux', () => {
     })
     expect(journal.inserts[0]).toMatchObject({
       montant_ht: null, montant_tva: null, montant_ttc: null, devise: 'EUR', date_piece: null, tiers: null, confiance: 'basse',
-      notes: 'Reçue de la plateforme du client — à vérifier :\n- Facture illisible : Ce PDF ne porte pas de facture structurée '
-        + '(aucune pièce jointe « factur-x.xml »). Ses montants sont à saisir.',
     })
+    expect(journal.notes.map((n) => n.ligne)).toEqual([{
+      dossier_id: 'd1', piece_id: 'piece-1',
+      texte: 'Reçue de la plateforme du client — à vérifier :\n- Facture illisible : Ce PDF ne porte pas de facture structurée '
+        + '(aucune pièce jointe « factur-x.xml »). Ses montants sont à saisir.',
+    }])
     // Aucun texte lu : la pièce n'en a pas, et « Proposer une catégorie » n'a rien à citer.
     expect(journal.textes).toEqual([])
 

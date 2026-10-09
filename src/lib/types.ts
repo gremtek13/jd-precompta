@@ -21,6 +21,9 @@ export interface Dossier {
   siret: string | null
   contact_nom: string | null
   contact_email: string | null
+  // ANCIENNE COLONNE, que le client du dossier lit : aucune ligne ne l'a jamais remplie, aucun code ne la lit ni ne
+  // l'écrit (`notesInternesEcritures.test.ts`). Gardée ici parce qu'un type décrit la table ; sa suppression attend
+  // la réponse du cabinet à EC-Q7 (espace client, étape P0).
   notes: string | null
   archive: boolean
   created_at: string
@@ -334,6 +337,9 @@ export interface Piece {
   sous_dossier_id: string | null
   type_piece: TypePiece
   statut: Statut
+  // ANCIENNE COLONNE des notes internes, que le client du dossier LIT : recopiée le 09/10/2026 dans `notes_internes`
+  // (voir `NoteInterne`), elle n'est plus ni lue ni écrite (`notesInternesEcritures.test.ts`) — périmée dès qu'une
+  // note est reprise. Gardée ici parce qu'un type décrit la table ; sa suppression attend la réponse du cabinet à EC-Q7.
   notes: string | null
   // Score de confiance de l'extraction automatique (haute/moyenne/basse), null pour une pièce jamais
   // passée par extractPiece() (saisie 100% manuelle, ou créée avant l'ajout de ce champ).
@@ -682,8 +688,24 @@ export interface DocumentDivers {
   // Rattaché à une échéance de cotisations_declarees une fois pointé depuis l'onglet Cotisations —
   // reste dans cette table (pas déplacé) pour que le rattachement soit réversible.
   attached_to_cotisation_id: string | null
+  // ANCIENNE COLONNE, que le client du dossier lit : ses notes sont recopiées dans `notes_internes` (voir
+  // `NoteInterne`) ; plus aucun code ne la lit ni ne l'écrit. Sa suppression attend la réponse du cabinet à EC-Q7.
   notes: string | null
   created_at: string
+}
+
+// La note interne du cabinet sur une pièce ou un document (migration notes_internes_du_cabinet, espace client P0) :
+// dans une table que le cabinet du dossier SEUL lit et écrit — aucune branche pour un accès client, pas même sur son
+// propre dossier. Exactement une cible (contrainte en base), une note au plus par cible. Effacée à l'écran, elle reste
+// une ligne au texte vide : l'écran ne la retire jamais. `updated_at` est posée par la base à chaque modification.
+export interface NoteInterne {
+  id: string
+  dossier_id: string
+  piece_id: string | null
+  document_id: string | null
+  texte: string
+  created_at: string
+  updated_at: string
 }
 
 // Un commentaire porté sur une pièce ou un document déposé — voir lib/commentaires.ts pour ce qui le

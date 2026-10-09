@@ -129,17 +129,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     }
 
     it('deux tables échangées dans l’ordre', () => {
-      const ecarts = remplacer("(56,'revision_justifications'),(57,'revision_preuves')", "(56,'revision_preuves'),(57,'revision_justifications')")
-      expect(ecarts.join('\n')).toContain('premier écart au rang 56')
+      const ecarts = remplacer("(57,'revision_justifications'),(58,'revision_preuves')", "(57,'revision_preuves'),(58,'revision_justifications')")
+      expect(ecarts.join('\n')).toContain('premier écart au rang 57')
     })
 
     it('une table oubliée dans l’ordre', () => {
-      const ecarts = remplacer(",(57,'revision_preuves'),(58,'exercices_valides')", ",(57,'exercices_valides')")
+      const ecarts = remplacer(",(58,'revision_preuves'),(59,'exercices_valides')", ",(58,'exercices_valides')")
       expect(ecarts.join('\n')).toContain('manquantes : revision_preuves')
     })
 
     it('un rang sauté', () => {
-      expect(remplacer("(58,'exercices_valides')", "(59,'exercices_valides')")).toContain('_ordre : le rang 59 est à la place 58')
+      expect(remplacer("(59,'exercices_valides')", "(60,'exercices_valides')")).toContain('_ordre : le rang 60 est à la place 59')
     })
 
     it('un chemin oublié, ou faux', () => {

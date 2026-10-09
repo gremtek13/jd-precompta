@@ -1,15 +1,21 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   comptesRequis,
   estLignePartagee,
+  identiteRestauree,
+  noteBlanche,
   parentsHorsPlan,
   liensPerdus,
   ordreSuppression,
   planExportDossier,
   planReinsertion,
   referencesExternes,
+  sansAnciennesNotes,
   tablesSansChemin,
   violationsOrdre,
+  ANCIENNES_COLONNES_DES_NOTES,
   CHEMINS_DOSSIER,
   LIENS_GARDES,
   ORDRE_RESTAURATION,
@@ -748,5 +754,93 @@ describe('tables pointées mais absentes du plan', () => {
     // ici aussi ferait deux alertes rouges pour un seul défaut, et on apprendrait à en ignorer une.
     expect(parentsHorsPlan(['pieces'], { pieces: { acces: 'direct' } })).toEqual([])
     expect(tablesSansChemin(['pieces'], { pieces: { acces: 'direct' } })).toEqual([])
+  })
+})
+
+// LES ANCIENNES COLONNES DES NOTES INTERNES (espace client, étape P0, 09/10/2026) : une sauvegarde d'hier les porte, la
+// restauration ne les réécrit plus — elle range leurs notes dans `notes_internes`, comme la migration l'a fait.
+describe('les anciennes colonnes des notes internes', () => {
+  const MIGRATION = readFileSync(resolve(process.cwd(), 'supabase/schema/20261009185236_notes_internes_du_cabinet.sql'), 'utf8')
+
+  it('une note blanche n’en est pas une : la même règle que la recopie en base', () => {
+    // Relue dans la migration appliquée : `btrim` n'ôte que l'espace, la tabulation et les deux fins de ligne.
+    expect(MIGRATION.split("btrim(p.notes, E' \\t\\n\\r') <> ''").length).toBe(2)
+    expect(MIGRATION.split("btrim(d.notes, E' \\t\\n\\r') <> ''").length).toBe(2)
+    for (const blanche of ['', ' ', '\t', '\n', '\r', ' \r\n\t ']) expect(noteBlanche(blanche), JSON.stringify(blanche)).toBe(true)
+    // Ce que `btrim` garde : l'espace insécable, la tabulation verticale, le saut de page, et tout texte.
+    for (const note of ['a', ' a ', ' ', '\u000b', '\f', ' ', '-']) expect(noteBlanche(note), JSON.stringify(note)).toBe(false)
+  })
+
+  it('retire la colonne des trois tables, et d’elles seules', () => {
+    expect(ANCIENNES_COLONNES_DES_NOTES).toEqual(['pieces', 'documents_divers', 'dossiers'])
+    const { contenu } = sansAnciennesNotes({
+      dossiers: [{ id: 'd1', notes: null }],
+      pieces: [{ id: 'p1', dossier_id: 'd1', notes: null }],
+      documents_divers: [{ id: 'doc1', dossier_id: 'd1', notes: '' }],
+      // Les notes d'autres tables sont celles de l'application : elles restent.
+      factures_emises: [{ id: 'f1', dossier_id: 'd1', notes: 'Note de l’avoir' }],
+      supplements: [{ id: 's1', dossier_id: 'd1', notes: 'Prime' }],
+      informations_dossier: [{ dossier_id: 'd1', notes: 'Saisie du client' }],
+    })
+    for (const table of ANCIENNES_COLONNES_DES_NOTES) expect(contenu[table][0], table).not.toHaveProperty('notes')
+    expect(contenu.factures_emises[0].notes).toBe('Note de l’avoir')
+    expect(contenu.supplements[0].notes).toBe('Prime')
+    expect(contenu.informations_dossier[0].notes).toBe('Saisie du client')
+    expect(contenu.notes_internes).toBeUndefined()
+  })
+
+  it('range une note non blanche dans les notes internes, si sa cible n’en a pas déjà une', () => {
+    const sauvegarde = {
+      pieces: [
+        { id: 'p1', dossier_id: 'd1', notes: 'À relancer.' },
+        { id: 'p2', dossier_id: 'd1', notes: 'Ancienne, remplacée.' },
+        { id: 'p3', dossier_id: 'd1', notes: '\n' },
+      ],
+      documents_divers: [{ id: 'doc1', dossier_id: 'd1', notes: ' Reclassé ' }],
+      notes_internes: [{ id: 'n2', dossier_id: 'd1', piece_id: 'p2', document_id: null, texte: 'La note qui fait foi.' }],
+    }
+    const avant = JSON.stringify(sauvegarde)
+    const { contenu, notesRecopiees, refus } = sansAnciennesNotes(sauvegarde)
+    expect(contenu.notes_internes).toEqual([
+      { id: 'n2', dossier_id: 'd1', piece_id: 'p2', document_id: null, texte: 'La note qui fait foi.' },
+      { dossier_id: 'd1', piece_id: 'p1', texte: 'À relancer.' },
+      // Le texte tel qu'écrit, blancs compris, comme la recopie en base.
+      { dossier_id: 'd1', document_id: 'doc1', texte: ' Reclassé ' },
+    ])
+    expect(notesRecopiees).toBe(2)
+    expect(refus).toEqual([])
+    // Pure : la sauvegarde reçue n'a pas bougé (`liensPerdus` et la vérification la relisent telle quelle).
+    expect(JSON.stringify(sauvegarde)).toBe(avant)
+  })
+
+  it('une note de dossier n’a nulle part où aller : la restauration la refuse plutôt que de la perdre', () => {
+    expect(sansAnciennesNotes({ dossiers: [{ id: 'd1', notes: 'Client exigeant.' }] }).refus).toEqual([
+      'La fiche du dossier « d1 » porte une note (dossiers.notes) que l\'application ne garde plus nulle part : la restaurer la perdrait.',
+    ])
+    expect(sansAnciennesNotes({ dossiers: [{ id: 'd1', notes: ' \t' }] }).refus).toEqual([])
+  })
+
+  it('le plan de réinsertion écrit la sauvegarde sans les anciennes colonnes, ses notes après leurs cibles', () => {
+    const plan = planReinsertion({
+      dossiers: [{ id: 'd1', notes: null }],
+      pieces: [{ id: 'p1', dossier_id: 'd1', notes: 'À relancer.' }],
+      documents_divers: [{ id: 'doc1', dossier_id: 'd1', notes: 'Reclassé' }],
+    })
+    expect(plan.etapes.map((e) => e.table)).toEqual(['dossiers', 'documents_divers', 'pieces', 'notes_internes'])
+    for (const etape of plan.etapes.filter((e) => e.table !== 'notes_internes')) {
+      for (const ligne of etape.lignes) expect(ligne, etape.table).not.toHaveProperty('notes')
+    }
+    expect(plan.etapes.at(-1)!.lignes).toEqual([
+      { dossier_id: 'd1', piece_id: 'p1', texte: 'À relancer.' },
+      { dossier_id: 'd1', document_id: 'doc1', texte: 'Reclassé' },
+    ])
+  })
+
+  it('une note interne se vérifie à sa cible, toute autre ligne à sa clé primaire', () => {
+    expect(identiteRestauree('notes_internes', { id: 'n1', piece_id: 'p1', document_id: null })).toBe('piece:p1')
+    expect(identiteRestauree('notes_internes', { piece_id: null, document_id: 'doc1' })).toBe('document:doc1')
+    expect(identiteRestauree('pieces', { id: 'p1', notes: 'x' })).toBe('p1')
+    expect(identiteRestauree('facture_numerotation', { dossier_id: 'd1', annee: 2026, type: 'facture' }))
+      .toBe('d1\u00002026\u0000facture')
   })
 })

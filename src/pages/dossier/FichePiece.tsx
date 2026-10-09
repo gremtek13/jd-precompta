@@ -19,6 +19,7 @@ import { libelleIssue, type PropositionCategorie } from '../../lib/categorisatio
 import { proposerCategorie } from '../../lib/propositionCategorie'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
+import { enregistrerNoteInterne, lireNoteInterne, noteModifiee, type LectureNoteInterne } from '../../lib/notesInternes'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -108,7 +109,17 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const [dateTaux, setDateTaux] = useState<string | null>(null)
   const [conversionEnCours, setConversionEnCours] = useState(false)
   const [conversionErreur, setConversionErreur] = useState<string | null>(null)
-  const [notes, setNotes] = useState(piece?.notes ?? '')
+  // LA NOTE INTERNE, lue à part : elle vit dans `notes_internes`, que le client ne lit pas (espace client, étape P0),
+  // et non plus sur la pièce. Tant qu'elle n'est pas lue (`null`), ou si elle ne l'a pas été, le champ n'est pas
+  // offert et l'enregistrement de la pièce ne la touche pas : un champ vide faute d'avoir lu effacerait la note au
+  // premier enregistrement. Une pièce en cours de création n'a pas encore de note, comme elle n'a pas de fil.
+  // La lecture est gardée AVEC la pièce pour laquelle elle a été faite : la fiche est clée par pièce (voir PiecesTab),
+  // mais si elle passait un jour d'une pièce à l'autre sans se remonter, la note de l'une ne s'offrirait pas pour
+  // l'autre — et ne s'y écrirait pas.
+  const pieceId = piece?.id ?? null
+  const [noteLue, setNoteLue] = useState<{ pour: string; lecture: LectureNoteInterne } | null>(null)
+  const lectureNote = noteLue !== null && noteLue.pour === pieceId ? noteLue.lecture : null
+  const [notes, setNotes] = useState('')
   const [commentaires, setCommentaires] = useState(commentairesInitiaux)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -150,10 +161,36 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     || devise !== (piece?.devise ?? DEVISE_PIVOT)
     || montantDevise !== (piece?.montant_devise ?? null)
     || tauxChange !== (piece?.taux_change ?? null)
-    || notes !== (piece?.notes ?? '')
+    || noteModifiee(lectureNote, notes)
   useEffect(() => { onModifiee?.(modifiee) }, [modifiee, onModifiee])
   // Démontée — remplacée, fermée —, elle n'a plus rien à protéger.
   useEffect(() => () => onModifiee?.(false), [onModifiee])
+
+  // La note de CETTE pièce, lue à l'ouverture. Une réponse qui arrive pour une pièce déjà quittée est sans effet : le
+  // drapeau d'annulation l'écarte, et ni la lecture ni le texte du champ ne passent à la pièce suivante.
+  const [lecturesDeLaNote, setLecturesDeLaNote] = useState(0)
+  useEffect(() => {
+    if (!pieceId) return
+    let annule = false
+    lireNoteInterne({ type: 'piece', id: pieceId }).then((lecture) => {
+      if (annule) return
+      setNoteLue({ pour: pieceId, lecture })
+      if (lecture.etat === 'lue') setNotes(lecture.texte)
+    })
+    return () => { annule = true }
+  }, [pieceId, lecturesDeLaNote])
+  function relireLaNote() {
+    setNoteLue(null)
+    setLecturesDeLaNote((n) => n + 1)
+  }
+
+  // Écrit la note si elle a changé — et seulement si elle a été LUE : elle part avant la pièce, de sorte qu'un refus
+  // n'a rien écrit d'autre, et que la pièce enregistrée ensuite ne la réécrit pas.
+  async function enregistrerLaNote() {
+    if (!piece || !noteModifiee(lectureNote, notes)) return
+    await enregistrerNoteInterne(dossierId, { type: 'piece', id: piece.id }, notes)
+    setNoteLue({ pour: piece.id, lecture: { etat: 'lue', texte: notes } })
+  }
 
   // Aperçu : le fichier fraîchement choisi se prévisualise localement (pas besoin de l'uploader
   // d'abord) ; le fichier déjà en storage passe par une URL signée temporaire, le bucket n'étant pas
@@ -393,6 +430,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       if (!piece && !file) {
         throw new Error('Merci de déposer un fichier.')
       }
+      await enregistrerLaNote()
       // Uniquement quand un nouveau fichier est choisi (pas en simple modification d'une pièce
       // existante sans redéposer) — même détection que l'import en masse et les autres dépôts à
       // l'unité (Documents, Cotisations).
@@ -423,7 +461,6 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         montant_devise: devise === DEVISE_PIVOT ? null : montantDevise,
         taux_change: devise === DEVISE_PIVOT ? null : tauxChange,
         conversion_source: devise === DEVISE_PIVOT || tauxChange == null ? null : conversionSource ?? 'bce',
-        notes: notes || null,
         statut,
         confiance,
       }
@@ -482,17 +519,19 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
-  // Une pièce FIGÉE n'enregistre que ce qui reste libre — ses notes et son sous-dossier —, rien d'autre : la base
-  // refuserait le reste (`garder_piece_validee`), et renvoyer tous les champs tels quels ne ferait que prendre ce
-  // risque pour rien. Même verrou que l'enregistrement ordinaire, posé avant le `try` pour la même raison.
+  // Une pièce FIGÉE n'enregistre que ce qui reste libre — sa note interne (une autre table, que la validation ne fige
+  // pas) et son sous-dossier —, rien d'autre : la base refuserait le reste (`garder_piece_validee`), et renvoyer tous
+  // les champs tels quels ne ferait que prendre ce risque pour rien. Même verrou que l'enregistrement ordinaire, posé
+  // avant le `try` pour la même raison.
   async function enregistrerCeQuiResteLibre() {
     if (!piece || enregistrementEnCours.current) return
     enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
     try {
+      await enregistrerLaNote()
       const { error } = await supabase.from('pieces')
-        .update({ notes: notes || null, sous_dossier_id: sousDossierId || null })
+        .update({ sous_dossier_id: sousDossierId || null })
         .eq('id', piece.id)
       if (error) throw error
       onModifiee?.(false)
@@ -850,13 +889,35 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </p>
           )}
 
-          <div className="field">
-            <label htmlFor="notes">Notes internes</label>
-            <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-            <p className="muted" style={{ fontSize: '0.78rem', margin: '4px 0 0' }}>
-              Pour le cabinet seul. Les précisions échangées avec le client sont plus bas.
-            </p>
-          </div>
+          {/* Une pièce pas encore enregistrée n'a rien à quoi rattacher sa note : le champ paraît une fois la pièce
+              créée, comme le fil plus bas. Lue en échec, la note n'est pas offerte à la saisie (voir `lectureNote`). */}
+          {piece && (
+            <div className="field">
+              <label htmlFor="notes">Notes internes</label>
+              {lectureNote?.etat === 'illisible' ? (
+                <div>
+                  <p className="error-text" style={{ margin: 0 }}>
+                    La note interne n’a pas pu être lue ({lectureNote.message}) : elle ne s’affiche pas, et
+                    l’enregistrement de la pièce n’y touche pas.
+                  </p>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={relireLaNote}>Relire la note</button>
+                </div>
+              ) : (
+                <textarea
+                  id="notes"
+                  rows={2}
+                  value={lectureNote === null ? '' : notes}
+                  disabled={lectureNote === null}
+                  aria-busy={lectureNote === null}
+                  placeholder={lectureNote === null ? 'Lecture de la note…' : undefined}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              )}
+              <p className="muted" style={{ fontSize: '0.78rem', margin: '4px 0 0' }}>
+                Pour le cabinet seul : le client ne la lit pas. Les précisions échangées avec lui sont plus bas.
+              </p>
+            </div>
+          )}
 
           {/* Le fil client/cabinet, à côté du document plutôt que dans un onglet à part : c'est
               en regardant la facture qu'on a besoin de savoir ce que le client en a dit. Une

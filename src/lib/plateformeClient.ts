@@ -120,7 +120,12 @@ export function compteDesIssues(issues: IssueImport[]): Record<IssueImport['stat
 export function phraseDeLIssue(issue: IssueImport): string {
   switch (issue.statut) {
     case 'importee':
-      return `importée — à vérifier : ${issue.avertissements.join(' ')}`
+      // Les remarques que la note interne de la pièce n'a pas pu garder : dites ici pour la dernière fois, et dites
+      // comme telles — la fiche de la pièce ne les montrera pas.
+      return issue.noteNonGardee
+        ? `importée — à vérifier : ${issue.avertissements.join(' ')} Ces remarques ne sont PAS dans sa note interne `
+          + `(${issue.noteNonGardee}) : reportez-les dans sa fiche avant de la valider.`
+        : `importée — à vérifier : ${issue.avertissements.join(' ')}`
     case 'deja_importee':
       return 'déjà dans le dossier.'
     case 'doublon':

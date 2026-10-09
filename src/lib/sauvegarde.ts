@@ -79,6 +79,9 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'memberships', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'mouvements_cca', parent: 'comptes_courants_associes', colonne: 'compte_id', aLaSuppression: 'cascade' },
   { enfant: 'natures_immobilisation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'notes_internes', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
+  { enfant: 'notes_internes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'notes_internes', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'packs', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'piece_commentaires', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'cascade' },
   { enfant: 'piece_commentaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -231,6 +234,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'lettrages_manuels',
   'piece_commentaires',
   'piece_textes_ocr',
+  'notes_internes',
   'ecritures_brouillon',
   'revision_justifications',
   'revision_preuves',
@@ -576,6 +580,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   lettrages_manuels: { acces: 'direct' },
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
+  notes_internes: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },
   piece_textes_ocr: { acces: 'direct' },
@@ -859,6 +864,80 @@ export function referencesExternes(contenu: Contenu): ReferenceExterne[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Les anciennes colonnes des notes internes (espace client, étape P0).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+// `pieces.notes` et `documents_divers.notes` portaient les notes internes du cabinet dans des tables que le client du
+// dossier LIT. Depuis le 09/10/2026 elles vivent dans `notes_internes`, que le cabinet seul lit (migration
+// notes_internes_du_cabinet) ; `dossiers.notes`, qu'aucune ligne n'a jamais remplie, attend avec elles sa suppression
+// (question EC-Q7 au cabinet). Plus aucun code ne les écrit, la restauration non plus : elle retire la clé de chaque
+// ligne. Une sauvegarde d'hier la porte encore, et la réécrire rendrait au client ce qu'on vient de lui retirer — ou
+// échouerait sur une colonne supprimée.
+//
+// Une note qu'aucune ligne de `notes_internes` ne porte dans la sauvegarde — toutes, pour une sauvegarde faite avant la
+// migration, qui n'a pas cette table — y passe, comme la migration les a recopiées : le texte tel qu'écrit, une note
+// blanche n'en étant pas une. Une cible qui a déjà sa ligne la garde : c'est elle qui fait foi, l'ancienne colonne
+// n'étant plus tenue à jour (une note effacée y reste une ligne au texte vide, jamais retirée — elle ne ressuscite donc
+// pas ici). Une note de DOSSIER n'a nulle part où aller : la restauration se refuse plutôt que de la perdre sans le dire.
+export const ANCIENNES_COLONNES_DES_NOTES = ['pieces', 'documents_divers', 'dossiers'] as const
+
+/** Une note blanche n'en est pas une : la règle de la recopie, `btrim(notes, E' \t\n\r') <> ''` en base. */
+export function noteBlanche(texte: string): boolean {
+  return /^[ \t\n\r]*$/.test(texte)
+}
+
+export interface ContenuSansAnciennesNotes {
+  /** La sauvegarde à écrire : sans les anciennes colonnes, ses notes dans `notes_internes`. */
+  contenu: Contenu
+  /** Les notes des anciennes colonnes passées dans `notes_internes`. */
+  notesRecopiees: number
+  /** Ce que la restauration perdrait : elle se refuse. */
+  refus: string[]
+}
+
+// Pure, comme le reste de ce fichier : la sauvegarde reçue n'est jamais modifiée — `liensPerdus` et la vérification
+// doivent encore pouvoir la lire telle qu'elle est.
+export function sansAnciennesNotes(contenu: Contenu): ContenuSansAnciennesNotes {
+  const sortie: Contenu = { ...contenu }
+  const refus: string[] = []
+  const deja = new Set((contenu.notes_internes ?? []).flatMap((n) =>
+    [n.piece_id != null ? `piece:${String(n.piece_id)}` : null, n.document_id != null ? `document:${String(n.document_id)}` : null]
+      .filter((c): c is string => c !== null)))
+  const recopiees: Record<string, unknown>[] = []
+  for (const table of ANCIENNES_COLONNES_DES_NOTES) {
+    const lignes = contenu[table]
+    if (!lignes) continue
+    sortie[table] = lignes.map((ligne) => {
+      if (!('notes' in ligne)) return ligne
+      const { notes, ...reste } = ligne
+      if (typeof notes !== 'string' || noteBlanche(notes)) return reste
+      if (table === 'dossiers') {
+        refus.push(`La fiche du dossier « ${String(ligne.id)} » porte une note (dossiers.notes) que l'application ne garde `
+          + 'plus nulle part : la restaurer la perdrait.')
+        return reste
+      }
+      const cible = table === 'pieces' ? 'piece' : 'document'
+      if (!deja.has(`${cible}:${String(ligne.id)}`)) {
+        recopiees.push({ dossier_id: ligne.dossier_id, [cible === 'piece' ? 'piece_id' : 'document_id']: ligne.id, texte: notes })
+      }
+      return reste
+    })
+  }
+  if (recopiees.length > 0) sortie.notes_internes = [...(contenu.notes_internes ?? []), ...recopiees]
+  return { contenu: sortie, notesRecopiees: recopiees.length, refus }
+}
+
+/**
+ * L'identité d'une ligne pour la vérification d'une restauration : sa clé primaire, sauf pour une note interne, qui se
+ * reconnaît à sa CIBLE — une note recopiée d'une ancienne colonne n'a d'identifiant qu'une fois écrite (la base le
+ * tire), et une cible n'a qu'une note (contraintes uniques de la migration).
+ */
+export function identiteRestauree(table: string, ligne: Record<string, unknown>): string {
+  if (table !== 'notes_internes') return identiteLigne(table, ligne)
+  return ligne.piece_id != null ? `piece:${String(ligne.piece_id)}` : `document:${String(ligne.document_id)}`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Le plan de réinsertion : dans quel ordre écrire, et ce qu'il faut repasser ensuite.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -899,10 +978,14 @@ export interface PlanReinsertion {
 //
 // D'où la règle : la colonne part à NULL pour tout le monde, puis on la repose. Le résultat ne dépend
 // alors plus d'aucune taille de lot.
+//
+// Et ce qui s'écrit est la sauvegarde SANS les anciennes colonnes des notes internes, ses notes dans `notes_internes`
+// (voir `sansAnciennesNotes`) : la restauration n'écrit pas ce que plus aucun code n'écrit.
 export function planReinsertion(
-  contenu: Contenu,
+  sauvegarde: Contenu,
   ordre: readonly string[] = ORDRE_RESTAURATION,
 ): PlanReinsertion {
+  const contenu = sansAnciennesNotes(sauvegarde).contenu
   const etapes: EtapeReinsertion[] = []
   const secondePasse: SecondePasse[] = []
 

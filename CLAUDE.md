@@ -163,7 +163,7 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes ;
+                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -329,8 +329,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   fonction qui le vérifie), jamais par l'écran seul ; le client y écrit par les mêmes fonctions que le cabinet, et une
   policy qui lui ouvre une lecture se présente au cabinet avant d'être appliquée. Conçu, rien n'est construit.
   **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
-  de son relevé, les catégories et les notes internes des pièces (P0) ; un texte du cabinet seul ne se range jamais dans
-  une table que le client lit → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ».
+  de son relevé et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit →
+  « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes du cabinet** vivent
+  dans `notes_internes` (P0, 09/10/2026 ; `admin_du_dossier`, aucune branche client), lues à part par la fiche d'une
+  pièce, écrites avant elle ; `pieces.notes`, `documents_divers.notes` et `dossiers.notes` ne se lisent ni ne s'écrivent
+  plus (`notesInternesEcritures.test.ts`) et attendent leur suppression (EC-Q7) : d'ici là le client lit leur copie
+  figée → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -355,8 +359,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
-  texte), validation ; texte OCR conservé et relu (pièces et documents) ; fil de précisions client ↔ cabinet ;
-  proposition de catégorie (26/09/2026).
+  texte), validation ; texte OCR conservé et relu (pièces et documents) ; fil de précisions client ↔ cabinet ; notes
+  internes du cabinet dans leur propre table, hors de portée du client (09/10/2026) ; proposition de catégorie
+  (26/09/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -455,7 +460,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
   titulaire, import par le serveur sur un lot signé, pièce déposée à côté du mouvement) ; onze étapes P0 à P10, sept
-  questions au cabinet → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ».
+  questions au cabinet → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION » ; P0, les notes
+  internes hors de portée du client, en base et à l'écran le 09/10/2026 — reste la suppression des anciennes colonnes,
+  écrite et éprouvée sur une réplique, qui attend EC-Q7 (avec elle : trois essais, `types.ts`, `inventaire.py` et le
+  socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
