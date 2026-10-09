@@ -239,6 +239,14 @@ vi.mock('./dossier/CotisationsTab', () => doubleTva('Cotisations'))
 // La Balance des comptes porte, en engagement, les comptes de tiers à une date (lib/lettrage.ts) : doublée pour
 // montrer le modèle qu'elle REÇOIT — elle ne lit pas le statut TVA, que le double affiche sans conséquence.
 vi.mock('./dossier/StatistiquesTab', () => doubleTva('Balance des comptes'))
+// Le Bilan (lib/bilan.ts) reçoit le modèle ENTIER : le compte du dirigeant décide de la forme de l'entreprise, donc de ses
+// capitaux propres — un modèle venu d'un autre dossier rangerait le compte de l'exploitant d'une entreprise individuelle
+// parmi les comptes à classer d'une société.
+vi.mock('./dossier/BilanTab', () => ({
+  default: function DoubleBilan({ modele }: { modele: { mode: string; compteNotesDeFrais: string } }) {
+    return <p>{`Bilan — modèle ${modele.mode} — dirigeant ${modele.compteNotesDeFrais}`}</p>
+  },
+}))
 // Banque refuse, avant le clic, d'affecter une recette sans facture à un dossier assujetti (sa TVA ne
 // se lit pas sur un relevé) : un statut qui ne lui parviendrait pas laisserait passer l'affectation, que
 // seule la base refuserait alors.
@@ -675,6 +683,16 @@ describe('Page d’un dossier — le modèle comptable', () => {
       expect(screen.getByText(`${libelle} — modèle engagement`)).toBeTruthy()
     },
   )
+
+  it('l’onglet Bilan reçoit le modèle entier du dossier affiché, sous le sélecteur d’exercice', async () => {
+    await afficher('/dossiers/d1/bilan')
+    expect(screen.getByText('Bilan — modèle tresorerie — dirigeant 455000')).toBeTruthy()
+    expect(screen.getByRole('tablist', { name: 'Exercice' })).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/bilan')
+    expect(screen.getByText('Bilan — modèle engagement — dirigeant 108000')).toBeTruthy()
+  })
 
   it('l’onglet Clôture reçoit le modèle entier, et mène à l’écran où lever un préalable', async () => {
     await afficher('/dossiers/d1/cloture')

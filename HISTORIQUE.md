@@ -15464,3 +15464,159 @@ Q10 oui
 Q11 oui
 Q12 oui
 ```
+
+### 09/10/2026 — LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A — LIGNE 33, PREMIÈRE BRIQUE
+
+(`src/lib/bilan.ts` et `bilan.test.ts`, `src/pages/dossier/BilanTab.tsx` et `BilanTab.test.tsx`,
+`src/components/DossierParcours.test.tsx`, nouveaux ; `src/lib/ongletsDossier.ts`, `src/pages/DossierDetail.tsx`, leurs
+tests ; `src/components/icons.tsx` ; `src/pages/ecransAvantLecture.test.tsx` ; `outils/captures/debordements.mjs` et
+`vitrine.mjs`. Aucune migration, rien d'écrit en base.) **Pourquoi.** L'application
+n'avait aucun bilan — la 2035 est une déclaration de résultat —, et sans bilan il n'y a ni liasse d'une société ou d'un
+BIC, ni approbation des comptes, ni dépôt (lignes 37, 45, 46). L'engagement (31), le lettrage (32) et le report des
+soldes (34) l'ont rendu possible.
+
+**La mesure** (09/10/2026, des comptes et des formes seulement). Quatre dossiers en base, tous tenus en TRÉSORERIE, aucun
+en engagement ; le dossier `test` n'a aucune écriture au brouillon, un bac à sable en a trois (606 et 625, sans
+contrepartie) ; ni à-nouveau, ni solde reporté, ni exercice validé. `dossiers` n'a pas de forme juridique : la
+distinction entre une entreprise individuelle et une société se DÉDUIT du compte du dirigeant (`exploitantIndividuel`,
+trésorerie ou 108 : individuelle), comme le report des soldes le fait déjà. Le bilan est donc LATENT : ses preuves sont
+les tests, les mutations et le banc.
+
+**Ce qu'un bilan peut déjà affirmer.** En engagement : les immobilisations brutes (registre, nature du bien) et leurs
+amortissements écrits (281…), les créances clients et les dettes fournisseurs (401, 404, 411) avec leur détail par tiers
+(le compte auxiliaire du FEC), la TVA (445…), le compte du dirigeant (455, 467 ou 108), l'emprunt (164), la banque (512),
+les comptes de bilan choisis (580, 275, ligne 26.7), le résultat des classes 6 et 7, et l'ouverture — reprise ou soldes
+reportés. En trésorerie (un BNC) : un BNC à la déclaration contrôlée n'établit pas de bilan — il tient un livre-journal
+et un registre des immobilisations (CGI, art. 99) —, et son brouillon n'a ni créance client ni dette fournisseur ; ses
+comptes de bilan (immobilisations, banque, emprunt, TVA, compte de l'exploitant) se rangent pourtant comme un bilan
+simplifié, et c'est un contrôle de clôture utile — décidé ainsi, avec l'avis à l'écran, et posé en question au cabinet.
+
+**Les sources** (téléchargées chacune dans son dossier, lues comme données) : [1] le formulaire 2033-A-SD 2026 (cerfa
+n° 15948*08) et [2] sa notice 2033-NOT-SD 2026 (impots.gouv.fr) ; [3] le PCG, règlement ANC n° 2014-03 consolidé au
+1er janvier 2026 (anc.gouv.fr) — art. 112-2 (aucune compensation), 811-3 et 811-5, 821-1 (modèle de base), 822-1 (modèle
+abrégé), 1121-1 (plan de comptes), 1211-10 et 1211-12 (le 108 et le 12 versés au 101 de l'exploitant), 1214-40 (le
+fournisseur débiteur viré au 4097), 1214-47 (les comptes d'attente reclassés en fin d'exercice), 1214-48 (le 486
+contre-passé à l'ouverture), 1215-51 (les banques ne se compensent pas) ; [4] le code de commerce, art. L123-12, L123-13,
+L123-19, L123-25 (Légifrance, lu par recherche, la page refusant l'accès direct) ; [5] BOI-ANNX-000411-20170705 (le report
+à nouveau ne se sert pas pour un exploitant individuel ; un capital individuel négatif reste au passif) ; [6] le CGI,
+art. 99, lu par le BOFiP (bofip.impots.gouv.fr/bofip/1027-PGP : le livre-journal et le registre des immobilisations
+d'un BNC à la déclaration contrôlée). Les articles du PCG se citent dans leur numérotation de 2026 (→ « LE PLAN
+COMPTABLE A CHANGÉ DE NUMÉROTATION ») : chacun de ceux que citent cette entrée et le module a été relu dans la version
+au 1er janvier 2026. **Et le formulaire 2026 a changé** : « Subventions d'investissement » (137) entre aux capitaux
+propres, les dettes se découpent en dettes fiscales et sociales (172, dont TVA 169), comptes courants d'associés (173)
+et autres dettes (175), et la colonne « net » de l'actif n'a plus de case.
+
+**La conception.** Format : les rubriques et les cases du 2033-A-SD 2026, qui suit le modèle abrégé du PCG et servira la
+liasse (ligne 37). Le bilan se calcule depuis les SOLDES de l'exercice — son ouverture (`ouvertureDeLExercice`) et ses
+écritures —, les mêmes que la Balance des comptes de l'exercice, en centimes entiers ligne à ligne. Le passage des
+comptes (`regleDuCompte`) se lit au préfixe le plus long (quatre chiffres : 4091 avant 409) et, quand il le faut, au SENS
+du solde : banque créditrice en emprunts et dettes assimilées (156), fournisseur débiteur en autres créances (072),
+client créditeur en autres dettes (175), compte courant d'associé débiteur en autres créances et au renvoi 199, TVA
+créditrice en dettes fiscales et au renvoi 169, TVA débitrice en autres créances — jamais nette ; les amortissements et
+dépréciations (28, 29, 39, 49, 59) dans la colonne 2 de la rubrique du compte qu'ils corrigent ; le 404 en fournisseurs
+(166), titre du compte 40, faute de ligne « dettes sur immobilisations » ; le 580 débiteur en disponibilités, et dit.
+**Le sens se juge tiers par tiers** pour 401, 404 et 411 : le solde de chaque compte auxiliaire se lit depuis la reprise
+jusqu'à la clôture — sur la seule année, une facture de l'an dernier réglée cette année laisserait son client créditeur
+de son règlement, la facture étant dans l'ouverture, sans détail — et doit retrouver le solde de l'exercice ; sinon le
+compte se présente en entier, et le bilan le dit. **Les capitaux propres suivent la forme** : pour une entreprise
+individuelle, 101, 108 et 12 font le capital individuel (case 120 : « le compte de l'exploitant tient lieu de compte
+capital ») ; une société garde le résultat d'un exercice précédent à part, « en attente d'affectation », hors case, plutôt
+que de deviner l'affectation. **Rien ne se range au jugé** : un compte qu'aucune rubrique ne nomme (104, 201, 35, 476,
+481, 169…) est « à classer », présenté du côté de son solde pour que les totaux restent justes ; un solde de l'autre sens
+qu'aucune rubrique d'en face n'attend (une caisse créditrice, un amortissement débiteur) reste dans sa rubrique, en
+négatif, et se dit. **L'équilibre se juge au centime**, et l'écart se décompose : des écritures ou une ouverture qui ne
+s'équilibrent pas, ou un compte hors des classes 1 à 7 qui porte un solde. **Ce qui manque se dit** : un compte
+d'inventaire (stocks, 408, 418, charges à payer, produits à recevoir, 486, 487, provisions, dépréciations) qui garde à la
+clôture le solde de l'ouverture sans mouvement ; et, à l'écran, les écritures d'inventaire, l'impôt sur les sociétés et
+l'affectation qui ne s'écrivent pas encore. **Un bilan faux ne s'établit pas** : un exercice dont l'ouverture attend la
+validation du précédent (il s'équilibrerait, toute écriture étant en partie double, et chaque ligne serait fausse), ou
+antérieur à la reprise.
+
+**L'écran** : l'onglet Bilan, sous Comptabilité, après la Balance des comptes (`TABS_VALIDES`, `TABS_AVEC_EXERCICE`,
+`GROUPES_PARCOURS`) ; il lit le brouillon, les catégories, le seul tiers des pièces (`select('id, tiers')`), les
+à-nouveaux et les soldes reportés par `lireTout`, dit « Chargement… » avant, ne montre AUCUN chiffre sur une lecture
+partielle (un bandeau par table), suit l'exercice de l'en-tête et demande un exercice sur « toutes ». Il montre le titre
+(« provisoire » tant que l'exercice n'est pas clos), l'avis du BNC en trésorerie, la forme et l'ouverture, le badge
+d'équilibre, les points nommés, l'actif (brut, amortissements, net) et le passif aux rubriques non vides avec leurs
+cases, les sous-totaux et totaux, les renvois 169 et 199, le détail par compte et par tiers, et ce que le bilan ne
+contient pas encore. Rien n'est écrit, aucun bouton n'agit, sauf celui qui mène à Clôture.
+
+**Les preuves.** `bilan.test.ts` confronte le module à des bilans CALCULÉS À LA MAIN, le calcul en commentaire compte
+par compte, les montants attendus écrits en centimes : une société en engagement (clients, TVA, banque, capital,
+bénéfice), un emprunt et un véhicule amorti avec une perte, une banque créditrice avec un client créditeur et un
+fournisseur débiteur (rien ne se compense, le détail par tiers de chaque côté), un BNC repris d'un autre logiciel dont
+le compte de l'exploitant et le résultat précédent font un capital individuel négatif, une société dont le résultat 2025
+attend son affectation, un client lu sur toute sa vie depuis la reprise (une écriture antérieure à la reprise et une
+postérieure à la clôture n'y entrent pas ; un report qui ne retrouverait pas le détail le fait présenter en entier), un
+écart qui se décompose (une écriture déséquilibrée, un compte hors classes, un compte à classer de chaque côté), des
+soldes de l'autre sens, la TVA brute et les renvois 169 et 199, un compte d'inventaire repris sans mouvement — et la
+charge constatée d'avance contre-passée puis reconstituée, qui ne l'est pas —, les centimes arrondis ligne à ligne (1,15
+contre 0,58 et 0,57), l'ordre des tiers, les deux bilans qui ne s'établissent pas ; puis quatre-vingt-neuf cas de
+passage aux rubriques — un compte, un sens, une forme d'entreprise —, recopiés des libellés du formulaire et du PCG, et
+les rubriques et leurs cases dans l'ordre du formulaire. `BilanTab.test.tsx` monte l'écran sous un faux client qui
+APPLIQUE les filtres (`eq`, `or`, tranches) : rien avant la lecture, rien d'un autre dossier (ses écritures et sa
+catégorie), la catégorie du cabinet, la seule colonne `tiers` des pièces, aucun chiffre sur une lecture partielle de
+chacune des cinq tables, l'exercice de l'en-tête suivi sans relire, « toutes » qui demande un exercice, l'exercice
+provisoire, l'attente qui mène à Clôture, l'avis du BNC, les comptes à classer de chaque côté, l'écart en rouge.
+`DossierDetail.test.tsx` vérifie que la page passe le modèle ENTIER du dossier affiché, sous le sélecteur d'exercice ;
+`ongletsDossier.test.ts`, la place dans la navigation ; `ecransAvantLecture` monte l'écran dans les deux modèles.
+**Quatre-vingt-seize mutations, quatre-vingt-quinze mordent** — 56 sur le module, 33 sur l'écran, 3 sur la page, 2 sur
+la navigation, 2 sur l'icône de la barre d'onglets —, aucune par un délai. La première passe du module en laissait
+quatre en vie : une accusait un test absent, écrit depuis (un compte d'inventaire mouvementé qui revient au solde de
+l'ouverture) ; deux accusaient du code redondant, retiré (un filtre des parts nulles, que leur signe range déjà ; une
+comparaison à l'ouverture qu'impliquait l'absence de mouvement) ; **la dernière est équivalente** : la date de clôture
+sur une ligne de la reprise, que l'invariant de la base rend toujours vraie (une reprise n'a qu'une date, et un exercice
+antérieur à elle ne se calcule pas). **Le banc** : six visites du Bilan (le BNC repris, la société en engagement dont
+2026 attend la validation de 2025 et son bilan 2025, l'exercice ouvert par report, celui qui attend, le détail déplié),
+aux neuf exécutions (390, 720, 1 024, 1 280, 1 440 px, puis les quatre combinaisons extrêmes des volets) : 0
+débordement, 0 mot coupé, 82 visites propres à chaque fois ; neuf vues photographiées et relues, Manrope chargée (les
+passages à 390 et 720 px ont précédé le retrait, dans le module, d'une condition toujours vraie : rien de ce qui
+s'affiche n'en dépend). **La barrière**, rejouée après la correction ci-dessous (règles communes v4, après un
+redémarrage de la machine ; quatre cœurs partagés par neuf agents, charge de 11 à 24) : `tsc -b` sans erreur,
+`tsc -p tsconfig.edge.json` aux 25 erreurs connues (les mêmes, ligne à ligne), `npm run lint` aux 63 avertissements connus
+(aucun nouveau), `npm run build` vert ; les dix fichiers de test du bilan, de la barre d'onglets et des écrans qui
+lisent la navigation (358 tests) verts sous Paris, UTC, New York et Auckland, sans délai ; la suite entière sous Paris
+(`--maxWorkers=2`) : 6 134 tests verts sur 6 137, trois délais dépassés dans les deux copies lourdes de la facturation
+électronique, qui ne lisent rien du bilan (`cdarEncaisseeCopie`, verte rejouée seule ; `cdarRecuCopie`, encore en délai
+rejouée seule sous une charge de 16 à 18, puis verte seule à 10). Au premier passage, avant la correction, la même suite
+avait rendu 6 110 verts sur 6 118, huit délais dans cinq fichiers lourds, tous verts rejoués seuls. Le correctif
+s'applique à sa base comme à `origin/main` (bc7142a) : l'entrée du garde des écrans, replacée dans l'ordre alphabétique
+de sa liste, ne touche plus la ligne que `main` a changée ; sur cet arbre, les tests du bilan et de la barre d'onglets,
+et le garde des écrans de `main` — ses deux parties et ses planchers compris —, passent (307 tests), `tsc -b` sans
+erreur.
+
+**Et le contrôle sur `main` a trouvé un défaut que rien d'autre ne voyait.** Le correctif appliqué à `origin/main`
+(bc7142a), le garde des écrans que `main` a reçu entre-temps — sa seconde partie tente chaque geste de chaque écran,
+aucune réponse revenue (ad03a7e) — a fait lever la page du dossier : le groupe « Comptabilité » de la barre d'onglets
+(`DossierParcours`), déroulé, habille chaque écran de son icône (`ICONES_PARCOURS`), et le Bilan n'en avait pas ; React
+levait sur un composant `undefined`, et le dossier entier tombait. C'est la navigation du bas sur téléphone et celle du
+haut quand la barre latérale est réduite : le premier toucher de « Compta » l'aurait montré au cabinet. Rien ne le
+voyait : la table était typée `Record<string, …>` (le compilateur ignorait qu'une clé manquait), aucun test ne déroulait
+ces menus, la barre latérale ne met pas d'icône aux écrans, le banc ne clique pas les groupes ; `main` sans le correctif
+passe le même garde. Corrigé : l'icône du Bilan (une feuille partagée en deux colonnes, l'actif et le passif), la table
+FERMÉE sur `DossierTab` — un écran ajouté sans la sienne ne compile plus (TS2741, vérifié en retirant l'entrée) — et
+`DossierParcours.test.tsx`, qui déroule chaque groupe et ouvre chacun de ses dix-sept écrans (deux mutations, deux
+mordent) ; le menu déroulé photographié sur téléphone et sur ordinateur barre réduite, en clair et en sombre, sans
+erreur de page.
+
+**Ce qui reste, dit plutôt que promis** — le découpage vers la 2033 : (2) sans migration, la colonne de l'exercice
+précédent (PCG, art. 811-3 : « chacun des postes […] comporte l'indication du montant relatif à l'exercice précédent »)
+et l'ouverture confrontée au bilan qui la précède (art. 112-2), les dotations que le registre attend et que le brouillon
+n'a pas, les renvois 182 et 184 (immobilisations acquises et cédées, depuis le registre) et 195 (dettes à plus d'un an,
+depuis l'échéancier des emprunts), et le badge « provisoire » jusqu'à la VALIDATION de l'exercice — il ne dépend
+aujourd'hui que de la date de clôture, la carte du bas disant seule qu'un exercice clos et non validé reste le bilan du
+brouillon ; (3) la forme juridique du dossier et l'affectation du résultat d'une société, par une fonction SQL qui
+vérifie l'écriture — une migration ; (4) les écritures d'inventaire (ligne 35) et l'impôt sur les sociétés ; (5) les
+stocks (ligne 36) ; (6) le compte de résultat 2033-B, au modèle de la refonte ANC n° 2022-06 ; (7) la liasse 2033
+(ligne 37) : 2033-A et B remplis, 2033-C depuis le registre, D, E, F et G ; puis l'annexe (40), l'approbation (45) et le
+dépôt (46). Neuf questions attendent le cabinet (format, BNC en trésorerie, 404, acomptes, virements internes, forme
+juridique, affectation, comptes à classer, et la reprise ci-dessous), aucune ne bloquant cette brique.
+
+**Trouvé en passant, hors du bilan : la reprise d'une balance.** `compteDeLApplication` (`lib/aNouveaux.ts`) ramène la
+banque (512…) et la TVA à leurs comptes de l'application, mais tout autre numéro garde celui du fichier : l'emprunt
+repris reste au « 164 » (ou au numéro long du logiciel d'origine) et le compte de l'exploitant au « 108 », quand
+l'application écrit ses échéances au 164000 et ses virements personnels au 108000. Le même emprunt se partage alors entre
+deux comptes dans la Balance, le FEC et le détail du bilan — qui range bien les deux dans la même rubrique, mais dirait
+« solde inhabituel » d'un 164000 devenu débiteur à force d'échéances remboursées. Question 9 au cabinet : les ramener
+aux comptes de l'application dans une brique de la reprise (164… vers 164000, 108… vers 108000, les tiers vers 401000
+et 411000 avec leur auxiliaire).

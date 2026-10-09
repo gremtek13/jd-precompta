@@ -290,6 +290,18 @@ const VUES = [
   { nom: 'mobile-report-balance', chemin: '#/dossiers/d9/statistiques', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2026', vers: 'soldes reportés de l’exercice 2025', enTete: true },
   { nom: 'pc-report-attente', chemin: '#/dossiers/d10/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'pas encore d’ouverture' },
   { nom: 'pc-report-attente-balance', chemin: '#/dossiers/d10/statistiques', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2026', vers: 'pas encore d’ouverture', enTete: true },
+  // LE BILAN (ligne 33, lib/bilan.ts) : celui du cabinet infirmier, BNC en trésorerie repris d'un autre logiciel — l'avis qu'un
+  // BNC n'établit pas de bilan, l'actif et le passif aux rubriques du 2033-A —, puis son détail déplié ; celui de la société en
+  // engagement pour 2025 ; celui de la kinésithérapeute, ouvert par ses soldes reportés ; et l'ostéopathe, qui attend.
+  { nom: 'pc-bilan-clair', chemin: '#/dossiers/d1/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026' },
+  { nom: 'pc-bilan-sombre', chemin: '#/dossiers/d1/bilan', l: 1440, h: 900, theme: 'dark', reduite: false, exercice: '2026' },
+  { nom: 'pc-bilan-passif', chemin: '#/dossiers/d1/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', vers: 'Passif', enTete: true },
+  { nom: 'pc-bilan-assistant', chemin: '#/dossiers/d1/bilan', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2026', vers: 'Passif', enTete: true },
+  { nom: 'pc-bilan-detail', chemin: '#/dossiers/d1/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', deplier: 'Détail par compte', vers: 'Détail par compte', enTete: true },
+  { nom: 'mobile-bilan-clair', chemin: '#/dossiers/d1/bilan', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2026', vers: 'Actif', enTete: true },
+  { nom: 'pc-bilan-engagement', chemin: '#/dossiers/d8/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
+  { nom: 'pc-bilan-report', chemin: '#/dossiers/d9/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026' },
+  { nom: 'pc-bilan-attente', chemin: '#/dossiers/d10/bilan', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026' },
   // LE STATUT DE TVA DU DOSSIER (ligne 28.5, étape a) : la carte de l'onglet TVA et ce que le dossier doit à la facturation
   // électronique — le cabinet infirmier exonéré (art. 261, 4, 1°), Marc Petit en franchise en base, un dossier dont le
   // statut est à préciser, la carte d'un redevable qu'on change —, et le badge de l'en-tête.

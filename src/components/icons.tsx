@@ -2,6 +2,7 @@
 // parcours et du menu — rendu identique sur toutes les plateformes et dans les deux thèmes, contrairement
 // à un emoji dont l'apparence dépend du système d'exploitation.
 import type { ReactElement, ReactNode, SVGProps } from 'react'
+import type { DossierTab } from '../lib/ongletsDossier'
 
 type IconProps = SVGProps<SVGSVGElement>
 export type IconComponent = (p: IconProps) => ReactElement
@@ -105,6 +106,14 @@ export const IconFactures = (p: IconProps) => base(<>
 export const IconStatistiques = (p: IconProps) => base(<>
   <path d="M4 20V13M11 20V8M18 20V4" />
   <path d="M2.5 20h19" />
+</>, p)
+
+// Bilan — une feuille partagée en deux colonnes, l'actif et le passif, sous un même en-tête : distincte du livre
+// ouvert des Écritures et des barres de la Balance des comptes, qui la précède dans le menu.
+export const IconBilan = (p: IconProps) => base(<>
+  <rect x="3.5" y="4" width="17" height="16" rx="1.5" />
+  <path d="M3.5 8.5h17M12 8.5V20" />
+  <path d="M6.5 12h3M6.5 15.5h3M14.5 12h3M14.5 15.5h3" />
 </>, p)
 
 // Financement — fronton de banque (colonnes + toit triangulaire), convention la plus reconnue pour
@@ -268,7 +277,11 @@ export const IconInstaller = (p: IconProps) => base(<>
   <path d="M12 7.5v5M9.5 10.5l2.5 2.5 2.5-2.5" />
 </>, p)
 
-export const ICONES_PARCOURS: Record<string, IconComponent> = {
+// Une icône par écran du dossier, sur la liste FERMÉE de ses écrans : la barre d'onglets (DossierParcours) habille de
+// la sienne chaque écran d'un groupe qu'elle déroule, et un écran sans icône y faisait lever React à l'ouverture du
+// groupe — le dossier entier tombait. Le Bilan, ajouté sans la sienne le 09/10/2026, l'a montré. Un écran ajouté à
+// `DossierTab` sans icône ne compile plus.
+export const ICONES_PARCOURS: Record<DossierTab, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,
   pieces: IconPieces,
@@ -276,6 +289,7 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   banque: IconBanque,
   ecritures: IconEcritures,
   statistiques: IconStatistiques,
+  bilan: IconBilan,
   tva: IconTva,
   immobilisations: IconImmobilisations,
   cotisations: IconCotisations,

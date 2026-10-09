@@ -44,13 +44,14 @@ import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
 const ONGLETS = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'tva', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 // Les onglets qu'un dossier tenu en ENGAGEMENT (d8) rend autrement : le réglage du modèle et le
 // brouillon en 401/411, la Clôture sans 2035, les factures sans règlement de la Checklist et de Banque,
-// le chiffre d'affaires facturé de l'Estimation, et les comptes de tiers de la Balance des comptes.
-const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation', 'statistiques']
+// le chiffre d'affaires facturé de l'Estimation, les comptes de tiers de la Balance des comptes, et le Bilan d'une
+// société, dont l'exercice en cours attend la validation du précédent.
+const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation', 'statistiques', 'bilan']
 // Les fenêtres de facturation (formulaire, aperçu, transmission) sont SUPERPOSÉES : leur voile est un `div` en
 // `position: fixed`, posé par un style en ligne, et leur carte son seul enfant. Aucune classe ne les désigne — celle de la
 // plateforme du client en porte une, `.plateforme-client` —, mais sur l'onglet Factures aucun autre élément n'est ainsi posé.
@@ -213,6 +214,19 @@ const VISITES = [
   { dossier: 'd9', onglet: 'statistiques', nom: 'report/balance', apres: exercice('2026') },
   { dossier: 'd10', onglet: 'ecritures', nom: 'report/en-attente', apres: exercice('2026') },
   { dossier: 'd10', onglet: 'statistiques', nom: 'report/en-attente-balance', apres: exercice('2026') },
+  // LE BILAN (ligne 33, lib/bilan.ts) : celui de la société en engagement pour 2025, son premier exercice — l'écran de studio
+  // et sa dette au 404000 —, celui de la kinésithérapeute pour 2026, ouvert par ses soldes reportés, l'exercice de l'ostéopathe
+  // qui attend la validation de 2025, et le détail par compte du cabinet infirmier, déplié — ses listes, ses libellés longs.
+  { dossier: 'd8', onglet: 'bilan', nom: 'bilan/engagement-2025', apres: exercice('2025') },
+  { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
+  { dossier: 'd10', onglet: 'bilan', nom: 'bilan/en-attente', apres: exercice('2026') },
+  {
+    dossier: 'd1', onglet: 'bilan', nom: 'bilan/détail',
+    apres: async (page) => {
+      await exercice('2026')(page)
+      await page.getByText('Détail par compte').click()
+    },
+  },
   // Le LETTRAGE FAIT À LA MAIN dans les comptes de tiers de la société en engagement : la barre qui lettre ensemble
   // n'apparaît qu'une pièce cochée — seule, elle demande la suivante ; à deux, elle dit le reste et offre le bouton.
   // L'exercice en cours se rechoisit : les visites de la validation ont laissé 2025 dans l'en-tête.

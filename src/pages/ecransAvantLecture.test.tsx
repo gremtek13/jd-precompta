@@ -26,6 +26,7 @@ import AccesTab from './dossier/AccesTab'
 import AssistantTab from './dossier/AssistantTab'
 import BalanceCard from './dossier/BalanceCard'
 import BanqueTab from './dossier/BanqueTab'
+import BilanTab from './dossier/BilanTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import ClotureTab from './dossier/ClotureTab'
 import ConnexionBancaireCard from './dossier/ConnexionBancaireCard'
@@ -198,6 +199,12 @@ const ECRANS: Ecran[] = [
   { nom: 'AssistantTab', fichier: 'pages/dossier/AssistantTab.tsx', rendre: () => <Dossier1><AssistantTab dossierId="d1" dossierNom="Dossier fictif" onFermer={rien} /></Dossier1> },
   { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" /></Dossier1> },
   { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} /></Dossier1> },
+  { nom: 'BilanTab (trésorerie)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
+    <Dossier1><BilanTab dossierId="d1" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+  ) },
+  { nom: 'BilanTab (engagement)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
+    <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000' }} onNavigate={rien} /></Dossier1>
+  ) },
   { nom: 'ChecklistTab', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
     <Dossier1><ChecklistTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },

@@ -16,6 +16,7 @@ export type DossierTab =
   | 'banque'
   | 'ecritures'
   | 'statistiques'
+  | 'bilan'
   | 'tva'
   | 'immobilisations'
   | 'cotisations'
@@ -77,6 +78,8 @@ export const GROUPES_PARCOURS: GroupeParcours[] = [
     enfants: [
       { id: 'ecritures', label: 'Écritures' },
       { id: 'statistiques', label: 'Balance des comptes' },
+      // Le bilan de l'exercice (lib/bilan.ts), juste après la balance dont il range les soldes.
+      { id: 'bilan', label: 'Bilan' },
       { id: 'tva', label: 'TVA' },
       { id: 'immobilisations', label: 'Immobilisations' },
       { id: 'cotisations', label: 'Cotisations' },
