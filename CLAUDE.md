@@ -171,7 +171,9 @@ outils/cotisations/  oracle.mjs : les cas de référence des cotisations Urssaf,
                   simulateurs de l'Urssaf (installé à la demande, jamais en dépendance).
 outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*.xml, fictives) par le schéma CII
                   D16B et le Schematron EN 16931 (instruments hors du dépôt, versions vérifiées) ; écrit
-                  exemples/valides.json, que factureCii.test.ts confronte aux exemples figés.
+                  exemples/valides.json, que factureCii.test.ts confronte aux exemples figés. cdar/valider.mjs : de
+                  même pour les messages du statut « Encaissée » (cdar/exemples/*.xml) et le schéma CDAR D22B de
+                  l'UN/CEFACT, que cdarEncaissee.test.ts confronte.
 ```
 
 ## Conventions de développement
@@ -374,7 +376,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
-  et à l'écran le 09/10/2026 (la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du 08/10/2026), l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
+  et à l'écran le 09/10/2026 (la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du
+  08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix à trancher par un premier
+  essai réel) ; l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -720,6 +724,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   écriture directe de `transmissions_encaissements` dans `src/` hors de la restauration, et nomme les Edge Functions
   qui l'écriront (aucune avant d6) → « LA DÉCLARATION HORS APPLICATION », « L'ÉCRAN DE LA DÉCLARATION HORS
   APPLICATION ».
+- **Le message du statut « Encaissée »** (`lib/cdarEncaissee.ts`, ligne 28.5 d5) : le CDAR D22B de l'UN/CEFACT (les
+  chemins de l'annexe 2 v2.3 sont ceux de ce schéma) ; un statut par encaissement, une caractéristique MEN par taux, la
+  contre-passation négative et son motif ; MDT-74 s'écrit `false` (l'annexe écrit « False », que le schéma refuse),
+  MDT-100 au format 204. Ce que l'annexe ne dit pas du message d'un FOURNISSEUR est un paramètre sans valeur par défaut
+  (`ChoixCdar` : profil, parties, porteur de la date d'encaissement, fuseau) ; MDT-95 vient de l'appelant. Un montant se
+  lit par `centimesExacts`, jamais par `decimal` (refus à tort dès 2²⁷ €). Le module ne juge ni si ni où le statut se
+  déclare ; son bloc se recopie derrière ceux de la facture électronique (`cdarEncaisseeCopie.test.ts`), ses exemples
+  passent par `outils/facturation/cdar/` → « LE MESSAGE DU STATUT « ENCAISSÉE » ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -735,7 +747,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5702 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5775 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

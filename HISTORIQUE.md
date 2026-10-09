@@ -10988,3 +10988,165 @@ volets) : 0 débordement, 0 mot coupé, 76 visites propres à chaque fois. Captu
 l'application, ou déposée par le client lui-même : son statut reste dû mais ne se déclare pas d'ici, et la pastille se
 tait — un « dépôt hors application » qui nommerait la plateforme la rendrait déclarable (question posée au cabinet le
 09/10/2026) ; le refus de l'acheteur sur la plateforme du client reste à lire (d7).
+
+### 09/10/2026 — LE MESSAGE DU STATUT « ENCAISSÉE » — LIGNE 28.5, ÉTAPE (D), CINQUIÈME TEMPS (D5)
+
+(`src/lib/cdarEncaissee.ts`, `cdarEncaissee.test.ts`, `cdarEncaisseeCopie.test.ts`, `src/test/cdarEncaissee.ts` ;
+`outils/facturation/cdar/valider.mjs`, ses trois exemples et `valides.json` ; des bornes de copie, commentaires
+seulement, autour de `centimesExacts` dans `encaissementsFactures.ts`.) Le message qu'une API déposera, en d6 et d8,
+pour déclarer un encaissement — ou sa contre-passation — sur la plateforme qui a reçu la facture : la syntaxe CDAR de
+l'UN/CEFACT (CrossDomainAcknowledgementAndResponse). Ni migration, ni Edge Function, ni écran, ni réseau ; rien n'a été
+appelé, ni Super PDP ni aucune plateforme. Sources relues le 09/10/2026 : les spécifications externes de la DGFiP v3.2
+— le dossier général, l'annexe 2 v2.3 relue cellule par cellule dans son classeur (onglets « CDV FE - CI ARM » et
+« Statuts »), l'annexe 7 v1.9 (onglet « Règles de gestion ») — ; la documentation publique de Sovos (« Lifecycle and use
+cases », France, 31/08/2026) ; la politique de propriété intellectuelle de l'UN/CEFACT. Les normes AFNOR XP Z12-012 et
+XP Z12-013 ne l'ont été sous aucune forme ; de pyfrctc, seuls des noms et l'empreinte de quatre XSD.
+
+**LA VERSION : D22B.** La DGFiP ne nomme pas celle du CDAR (« UN/CEFACT SCRDM CI Cross Domain Application Response
+message », dossier général, § 3.6.4, note 102), et son archive v3.2 ne porte aucun XSD de cycle de vie ; elle retient
+D22B pour le CII (§ 3.6.3, note 100). D22B tient : des 311 chemins de l'onglet « CDV FE - CI ARM », 310 existent dans
+le schéma CDAR D22B, et le seul absent, MDT-111-1 (`SpecifiedDocumentStatus/ConditionCode/@listName`), est informatif —
+`DocumentStatusCodeType` n'y porte que `listID` et `listAgencyID`. Le contrôle qui l'a établi (un script hors du dépôt
+qui suit chaque chemin dans les types du schéma) a été éprouvé par deux chemins faux.
+
+**LE TABLEAU DU § 2.2 DE LA NOTE DE CONCEPTION, VÉRIFIÉ — CE QU'IL FALLAIT CORRIGER.**
+1. **MDT-74** : l'annexe écrit « False » (« Valeur = 'False' », et P1.14 ; P1.13 écrit de même « True ») ; le schéma
+   type `udt:Indicator` en `xsd:boolean`, dont les seules formes sont `true`, `false`, `1` et `0`. « False » est
+   refusé — l'instrument le prouve, c'est l'un de ses trois documents faux. Le message écrit `false`.
+2. **MDT-100** : le chemin finit en `qdt:DateTimeString` (et non `udt:`, coquille que l'annexe a corrigée en v2.2), et
+   son format (MDT-100-1) est 204, quatorze caractères — pas 102. La date d'émission s'y met à minuit, la forme que
+   G1.114 donne à la valeur par défaut de la plateforme de l'administration (« MDT-100 : 19000101000000 »). La donnée
+   est « O » à l'annexe, mais G7.31 l'exige pour un cycle de vie sur une facture.
+3. **MDG-16, le créateur** : G6.26 admet, pour une facture entre entreprises, le SIREN (0002) OU le matricule d'une
+   plateforme (0238) ; pour une facture à un organisme public, le SIRET (0009), ou un identifiant de structure pour un
+   fournisseur qui n'en a pas. « Le vendeur (SE), SIREN schéma 0002 » n'en est qu'une forme.
+4. **Les règles citées** : MDT-3 relève de S1.06 seule (G7.14 est la règle de MDT-97, qui porte le même URN) ; MDT-215
+   de G7.07 — le journal des versions de l'annexe 2 dit G7.04 la remplacer, mais G7.04 n'existe pas dans l'annexe 7
+   v1.9, et la colonne des règles de la v2.3 cite G7.07 ; MDT-126 relève de G7.29 et G7.25, et c'est P1.17 (portée par
+   MDT-215) qui y exige le motif d'un décaissement ; MDT-87 cite aussi G1.104, G7.33 et G7.34, qui visent un flux ou une
+   transmission, et G1.114.
+Ce qui tient : MDT-4 et MDT-5 (requis, 50 et 150 caractères), MDT-8, MDG-9 (G7.47 : « WK : Plateforme agréée ou
+solution compatible » ; G7.54 : un matricule 0238 de quatre chiffres), MDG-23 (G7.32 : MDT-56, 57 et 59), MDT-78, 87, 91
+(380, G7.15 et G1.01), 95, 97, 105 et 106 (212, « Encaissée » : onglet « Statuts », objet « facture (Flux 2) » ; G7.44),
+129 et 130 (G7.17 : un seul SIREN), 124-2, MDG-43 (G7.12 « MEN : Montant encaissé (TTC) », P1.15, P1.18, G7.45), G7.49
+(aucune pièce jointe — le schéma D22B, lui, en admet : `AttachmentBinaryObject` 0..n). Le tableau omettait MDT-110 et
+MDT-219, les deux candidates de la date d'encaissement. Une cardinalité, enfin, sans effet : l'annexe donne
+`ExchangedDocumentContext` en 1..1 au CDAR, le schéma D22B en 0..1 ; le message le porte toujours.
+
+**LES QUATRE CHOIX, ET UNE CINQUIÈME DONNÉE.** Ce que l'annexe ne peut pas dire d'un message de FOURNISSEUR — elle
+décrit celui de la plateforme vers celle de l'administration — est un paramètre explicite, `ChoixCdar`, sans valeur par
+défaut : le compilateur refuse un choix omis (six `@ts-expect-error`), et à l'exécution un choix absent est refusé,
+jamais remplacé.
+1. Le profil (MDT-3) : `urn.cpro.gouv.fr:1p0:CDV:einvoicingF2` (S1.06), ou `urn:cpro.gouv.fr:1p0:CDV:invoice` (Sovos).
+   MDT-97 ne le suit pas : G7.14 le rattache à l'objet du message, et c'est la seule source qui en parle.
+2. Les parties (MDG-9, MDG-16, MDG-23) : un SIREN, un SIRET ou un matricule de plateforme ; SE, WK ou DFH ; la raison
+   sociale exigée hors plateforme (G7.46). `partieVendeur` désigne le vendeur figé sur la facture, par son SIREN ou son
+   SIRET, au choix de l'appelant. Une plateforme réelle se désigne par son matricule à quatre chiffres : l'application
+   ne le connaît pas encore.
+3. La date d'encaissement : en MDT-110 (la date du détail de statut, format 204, à minuit), en MDT-219 (une date dans
+   chaque caractéristique, format 102), ou dans les deux. MDT-78, l'horodatage du statut, reste celui du message : la
+   doctrine fait courir de lui le délai de vingt-quatre heures (BOI-TVA-DECLA-20-30-60, §160).
+4. Le fuseau des instants (Paris ou UTC) : le format 204 ne porte pas de décalage. Une date civile — de la facture, de
+   l'encaissement — ne change jamais de fuseau ; elle n'en a pas.
+La cinquième : MDT-95, la réception de la facture par la plateforme, est requise, et son sens pour un message de
+fournisseur n'est pas public ; c'est une donnée de l'appelant (`receptionFacture`). Aucune source publique ne dit non
+plus le fuseau : toutes les sources de la DGFiP ont été cherchées, aucune n'en parle.
+
+**LES REFUS, UNE FAUTE PAR REFUS, DANS L'ORDRE DE L'ÉCRAN** (`refusMessageEncaissee`) : l'encaissement (retiré, d'une
+autre facture) ; la facture (non validée ou sans numéro, numéro hors G1.05, avoir, date qui n'en est pas une) ; le SIREN
+tiré du SIRET figé (G7.17) ; le montant (hors centime, nul, signe que le registre contredit) et le motif (absent sur
+une contre-passation, plus de 2 000 caractères, présent sur un encaissement) ; la date d'encaissement (pas une date,
+pas encore arrivée à Paris quand le message part) ; la répartition (absente, taux non admis par G1.24, hors de la
+facture, répété, part hors centime, nulle, de signe contraire, somme qui ne fait pas le montant) ; le message
+(identifiant, instants, réception après le message ou avant l'émission) ; les choix (profil, porteur, fuseau, chaque
+partie, au moins un destinataire). Les listes sont celles du dossier : le module filtre lui-même les parts et les lignes
+de SON encaissement et de SA facture. Réutilisés, jamais réécrits : `TAUX_ADMIS`, `sirenValide`, `siretValide`,
+`sirenDe`, `numeroAdmis`, `decimal` (pour les taux) et `centimesExacts`. `ttcParTaux` ne sert pas : le message déclare
+ce que le registre a enregistré, et les plafonds par taux, la base les a jugés sous verrou. Le module ne juge ni SI le
+statut se déclare (`obligationEncaissee`), ni OÙ (`plateformeDeLaDeclaration`), ni ce que la base refuserait
+(`refusDeclaration`).
+
+**UN MONTANT NE SE LIT PAS PAR `decimal`.** Le premier jet écrivait les montants par `decimal(x, 2)`, la fonction du
+générateur de la facture électronique ; mesuré sur 2,1 millions de montants au centime tirés par décade : aucun refus
+à tort sous 10⁸ €, puis environ un sur dix à partir de 2²⁷ ≈ 134 millions d'euros (le plus petit : 134 228 634,83 €) —
+sa tolérance fixe (10⁻⁶) cède devant l'erreur de x × 100. Le montant se lit par `centimesExacts` (le texte du nombre,
+la règle de d2) et s'écrit tel que le registre l'a rendu, qui est la forme de G7.07. Sans conséquence pour le CII, où
+`decimal` ne lit que des prix et des quantités.
+
+**L'ÉCHAPPEMENT, ET UN PIÈGE DE L'OUTIL D'ÉCRITURE.** `factureCii.ts` a son échappement, privé à son bloc : l'exporter
+changerait un bloc que deux fonctions déployées recopient. Le module a donc le sien, au caractère près le même (ligne
+confrontée), éprouvé aux bornes de XML 1.0 (U+D7FF, U+E000, U+FFFD, U+10000, U+10FFFF gardés ; U+0000, U+001F,
+U+FFFE, U+FFFF et un substitut isolé retirés). L'outil d'écriture de la session avait décodé ses échappements
+`\uXXXX` en caractères littéraux, dont un caractère invisible de la zone privée — équivalent à l'exécution, illisible
+à la relecture ; rétablis par un script qui produit la barre oblique inverse par `chr(92)`, et un balayage des
+fichiers touchés n'en trouve plus aucun. La règle de CLAUDE.md sur les Edge Functions (« l'outil décode les \uXXXX »)
+vaut aussi pour les sources du dépôt.
+
+**L'INSTRUMENT : LE SCHÉMA CDAR D22B DE L'UN/CEFACT.** Publication : « XML Schemas version 22B » de la CEE-ONU
+(`XMLSchemas-D22B_0.zip`, ECE/TRADE, publié le 27/06/2024, mis à jour le 09/01/2025, 1,54 Mo) — lu dans la copie de
+l'Internet Archive du 01/10/2025, le site de la CEE-ONU répondant 403 (Cloudflare) à cet environnement, et l'archive
+n'ayant pas gardé le ZIP. Licence : la politique de propriété intellectuelle de l'UN/CEFACT
+(ECE/TRADE/C/CEFACT/2010/20/Rev.2, du 02/12/2011, lue sur le système de documents de l'ONU) veut des spécifications
+qu'on met en œuvre « without fees or restrictions » (§ 1) ; les participants renoncent à opposer leurs droits
+essentiels (§ 12) ; aucune clause sur une IA ; les fichiers ne portent aucune mention. Rien n'entre dans le dépôt : le
+schéma s'exécute comme un instrument. Version et empreintes : faute du ZIP, les quatre fichiers (le message, RABIE,
+QDT, UDT) viennent du jar `com.helger.cii:ph-cii-d22b` 4.1.3 (Apache 2.0, Maven Central), dont l'empreinte SHA-1
+(`5cada07d…`) est celle que Maven Central publie ; leurs quatre empreintes SHA-256 sont celles des fichiers que
+redistribue, indépendamment, le dépôt public akretion/pyfrctc — deux redistributions, deux écosystèmes, mêmes octets.
+L'outil (`outils/facturation/cdar/valider.mjs`, sur le modèle de `valider.mjs`) vérifie les deux empreintes, extrait les
+fichiers par jszip, s'éprouve sur trois documents faux (un élément hors schéma ; un montant à virgule ; le « False » de
+MDT-74), puis juge les exemples par xmllint et écrit `valides.json`. Éprouvé hors du dépôt, sur une copie : un jar d'un
+octet de plus, un XSD altéré d'une espace dans un jar dont on fait accepter l'empreinte, un exemple sans son profil
+(aucun manifeste écrit), un xmllint qui répond toujours « valide » — chaque fois il s'arrête, code 1 ; sans argument,
+code 2. Les trois exemples — un encaissement à un taux ; un partiel de 500,00 € sur quatre taux, 0 % compris ; sa
+contre-passation, motif à échapper — couvrent ensemble les deux profils, les trois porteurs de la date, les deux
+fuseaux, un vendeur par son SIREN et par son SIRET, une plateforme émettrice, deux destinataires. Aucun Schematron : la
+DGFiP n'en publie pas pour le cycle de vie ; celui que porte pyfrctc n'a pas été lu.
+
+**LA COPIE À VENIR (d6, d8).** Le module est un bloc `── DÉBUT/FIN COPIE cdarEncaissee` qui se recopie après les trois
+blocs que portent déjà `plateforme-agreee` et `superpdp-emit` et après le bloc `centimesExacts` : il ne nomme hors de
+lui que six exports du bloc `factureCii` et `centimesExacts`, rien du DOM ni de Node, et déclare ses propres types.
+`cdarEncaisseeCopie.test.ts` le compile et l'exécute seul derrière eux (aucun diagnostic ; une épreuve par export, sur
+les exemples et un cas par refus, contre les modules de src/lib), confronte ses noms à ceux des deux fonctions (aucune
+collision) et mord sur cinq défauts plantés (un nom emprunté, un nom en double, une collision avec `dateDeParis`, une
+dérive d'un code, des bornes absentes ou doublées).
+
+**ÉPROUVÉ.** 73 tests (61 du module, 12 du garde de copie) : chaque donnée du message lue à son chemin de l'annexe,
+la règle citée ; chaque choix et chacune de ses options ; chaque refus seul, puis tous ensemble dans leur ordre ;
+l'heure d'été et ses deux bascules, minuit, le passage de l'an, l'an 1000 ; les montants de G7.07, le plus grand du
+registre et un centime ; l'échappement aux bornes de XML 1.0 ; les exemples figés et leurs empreintes. La suite passe de
+5 663 à 5 736 tests sur la copie de l'agent (0de37db), et de 5 702 à 5 775 une fois intégrée par-dessus l'écran de d4
+(#109) — verte sous les quatre fuseaux de `test:fuseaux` ; `tsc -b` et le build à 0 ; 63 avertissements de lint, les
+mêmes. À l'intégration, la session a rejoué l'instrument : l'autocontrôle refuse ses trois documents faux, les trois
+exemples respectent le schéma, `valides.json` est réécrit à l'identique. **Cent quarante-neuf mutations du module** (un harnais hors du dépôt, CI=1
+pour qu'aucun instantané ne se réécrive, l'original remis et vérifié par son empreinte) : 143 mordaient au premier
+passage. Quatre survivantes accusaient le jeu d'essai — une date entourée d'autre chose (les ancres de l'expression),
+un montant que `decimal` refuserait (134 228 634,83 €), et deux gardes des instants qu'aucun essai ne départageait : un
+instant que Paris sait écrire et UTC non, vers l'an 1000, quand Paris vivait à l'heure moyenne de son méridien
+(+0 h 09 min 21 s) — et mordent depuis leurs essais. Deux sont équivalentes : le signe jugé `<= 0` au lieu de `< 0`
+(zéro est refusé par la branche d'avant), et le taux écrit par String au lieu de `decimal(·, 2)` (les quinze taux admis,
+seuls à passer les refus, s'écrivent de même — un test l'épingle). Deux défauts du premier jet trouvés en écrivant les
+essais, avant toute mutation : un choix absent (un JSON incomplet) faisait LEVER le module au lieu de le refuser, et
+`decimal` refusait les grands montants.
+
+**CE QUE d6 ET d8 DEVRONT SAVOIR.** Recopier, après le bloc `factureCii`, le bloc `centimesExacts` puis le bloc
+`cdarEncaissee`, au caractère près (bordures répétées par `bordures.py` avant toute transcription), et étendre le garde
+aux copies elles-mêmes : `src/test/cdarEncaissee.ts` porte les exemples et un cas par refus,
+`cdarEncaisseeCopie.test.ts` les épreuves. Lire en base l'encaissement et ses parts, la facture (`id`, `statut`,
+`type`, `numero`, `date_emission`, `emetteur_siret`) et ses lignes (`facture_id`, `taux_tva`) : les types du module
+sont leurs colonnes, une ligne s'y passe telle quelle. `identifiant` : celui de la déclaration réservée avant
+l'envoi — un UUID, que MDT-4 admet et que `trackingId` (64 caractères) reprend. `maintenant` : l'instant de
+l'envoi. `receptionFacture` : l'instant de la transmission acceptée de la facture (proposé : son `cree_le`,
+quelques secondes avant le dépôt). Le module ne juge ni SI ni OÙ : la réservation de la déclaration (canal
+`plateforme` ou `superpdp`, que la garde de d4 connaît déjà) reste à écrire en base. Le XML part encodé en UTF-8,
+son empreinte SHA-256 en `sha256`, `flowSyntax` à `CDAR` (l'OpenAPI publique de banqup, conception § 2.4 ;
+`plateforme-agreee` ne connaît aujourd'hui que les syntaxes d'une facture). Aucun montant, numéro ni nom dans les
+journaux. Deno a Intl et ses fuseaux.
+
+**CE QUI ATTEND LE CABINET.** (1) Les quatre choix, et le sens de MDT-95 : le premier essai réel les tranchera — le bac
+à sable de Super PDP (Q6), puis la plateforme d'un client ; d6 ne se déploie pas avant. (2) Le matricule à quatre
+chiffres d'une plateforme (0238) n'est gardé nulle part : s'il faut désigner la plateforme comme émettrice ou
+destinataire, d'où le tenir (une colonne de la connexion, ou la liste publique des plateformes immatriculées) ? (3)
+L'instrument vient d'une redistribution : qui a l'archive de la CEE-ONU sous la main (`XMLSchemas-D22B_0.zip`, depuis
+un navigateur) peut en confronter les quatre fichiers aux empreintes de `valider.mjs`, la seule confrontation qui
+reste. (4) Toujours en attente depuis d4 : la date d'une contre-passation.

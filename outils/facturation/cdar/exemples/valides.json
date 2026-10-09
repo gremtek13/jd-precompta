@@ -1,0 +1,27 @@
+{
+  "schema": {
+    "publication": "UN/CEFACT, XML Schemas version 22B",
+    "jar": {
+      "artefact": "com.helger.cii:ph-cii-d22b",
+      "version": "4.1.3",
+      "sha1": "5cada07dfabd43691403fac563e41929d4e1c6d8"
+    },
+    "xsd": {
+      "CrossDomainAcknowledgementAndResponse_100pD22B.xsd": "cacdfe3cfe0e105f9f53d8392ccc36d0a322dd2eed270a569b725f23b16b85a1",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd": "35fb52e4ce999bebe065291a000456bd1e916994639e8ddddfda20790e3ba3c1",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd": "055355fac00e61a9475a154c8f1361bee517049aaff6adecdcc966d0baaf33f4",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd": "1953681991569751c95fbc34a39c8aea5a5a0e9c82234185ad30df902958b4c9"
+    }
+  },
+  "fichiers": {
+    "contre-passation.xml": {
+      "sha256": "0d672acf9a2e193cdacd143b49f9898d10fa3e21533f6424a90973788508976c"
+    },
+    "encaissement-plusieurs-taux.xml": {
+      "sha256": "c68267ec289b72317179b9491bb32efe76106098d12dc376df37b37ffbe1f986"
+    },
+    "encaissement-un-taux.xml": {
+      "sha256": "663554f7e97d603cc2c1d10c9e98746a2a67344336661ac16824303a6f06989c"
+    }
+  }
+}
