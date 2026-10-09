@@ -30,6 +30,8 @@ import { retirerFichiers } from '../../lib/stockage'
 import { fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
+import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
+import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -123,6 +125,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // à part : lue en partie, la liste ne cache aucune pièce, mais une pièce figée peut paraître modifiable.
   const [figees, setFigees] = useState<Map<string, number>>(new Map())
   const [figeesIncompletes, setFigeesIncompletes] = useState<string | null>(null)
+  // LA VENTE QUI REVIENT (ligne 28.6, lib/ventesJumelles.ts) : les factures émises validées du dossier et leurs
+  // transmissions, pour marquer la pièce qui EST une facture émise, et celles qui la comptent deux fois. Nulle avant sa
+  // première lecture : aucune marque ne se pose sur une liste pas encore revenue.
+  const [ventesEmises, setVentesEmises] = useState<LectureVentesEmises | null>(null)
 
   async function load() {
     setLoading(true)
@@ -205,6 +211,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     const lectureFigees = await lirePiecesFigees(dossierId)
     setFigees(lectureFigees.figees)
     setFigeesIncompletes(lectureFigees.motif)
+    setVentesEmises(await lireVentesEmises(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
@@ -261,6 +268,15 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   )
   const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces).map((piece) => piece.id))
 
+  // LA PIÈCE JUMELLE ET LA VENTE COMPTÉE DEUX FOIS (ligne 28.6), sur le dossier entier comme la Checklist, qui y envoie
+  // l'opérateur : « Comptée deux fois » se corrige ici, en ne gardant qu'une pièce. Muettes sur une lecture partielle des
+  // pièces, des factures émises ou de leurs transmissions — une facture non lue ferait passer une pièce dont les preuves
+  // se contredisent pour la jumelle d'une autre, et une pièce non lue tairait le double —, le bandeau disant pourquoi.
+  const jumelles = ventesEmises && ventesEmises.motif === null && lectureIncomplete === null
+    ? jumellesDuDossier(ventesEmises.factures, ventesEmises.transmissions, pieces)
+    : null
+  const marqueParPiece = jumelles && ventesEmises ? marquesDesPieces(ventesEmises.factures, jumelles) : new Map<string, MarqueDeLaPiece>()
+
   const moisSuspectParPiece = new Map<string, string>()
   for (const trouve of moisEnDoubleSurAbonnement(pieces)) {
     for (const piece of trouve.pieces) {
@@ -281,7 +297,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     // Même rang que la TVA impossible, et pour la même raison : ce n'est pas un pronostic mais une
     // impossibilité démontrée — un abonnement mensuel ne facture pas deux fois le même mois en
     // laissant le mois d'à côté vide.
-    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) || doublonParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
+    // Une vente comptée deux fois aussi : c'est démontré, par les preuves du pont.
+    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) || doublonParPiece.has(p.id)
+      || marqueParPiece.get(p.id)?.genre === 'double' ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
   const trie = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => prioriteDe(a) - prioriteDe(b))
     : filteredBase
@@ -297,12 +315,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   const filDeLaPiece = (id: string) => commentairesParPiece.get(`piece:${id}`) ?? []
 
   // Le texte des précisions entre dans la recherche : c'est souvent le seul endroit où figure ce
-  // qu'était vraiment l'achat, quand ni le nom du fichier ni le tiers lu par l'OCR ne le disent.
+  // qu'était vraiment l'achat, quand ni le nom du fichier ni le tiers lu par l'OCR ne le disent. Et le numéro de la
+  // facture émise qu'une pièce porte, que sa pastille affiche : « F2026-0007 », lu dans le détail de la Checklist,
+  // retrouve ses pièces.
   const filtered = trie.filter((p) =>
     correspondALaRecherche(
       [p.nom_fichier, p.tiers, categorieLabel(p.categorie_id), p.type_piece, p.date_piece,
        p.date_piece ? formatDate(p.date_piece) : null, p.montant_ttc,
-       ...filDeLaPiece(p.id).map((c) => c.texte)],
+       ...filDeLaPiece(p.id).map((c) => c.texte), ...(marqueParPiece.get(p.id)?.numeros ?? [])],
       recherche,
     ),
   )
@@ -585,7 +605,15 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
         motif={lectureIncomplete}
         consequence={
           'La liste ci-dessous n’est donc pas complète, et les contrôles posés dessus (doublon de ' +
-          'contenu, mois en double) se taisent sur ce qu’ils n’ont pas vu.'
+          'contenu, mois en double, vente comptée deux fois) se taisent sur ce qu’ils n’ont pas vu.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les factures émises du dossier et leurs transmissions"
+        motif={ventesEmises?.motif ?? null}
+        consequence={
+          'Les ventes revenues de la plateforme ne sont donc pas reconnues : aucune pièce n’est marquée comme la facture ' +
+          'émise qu’elle porte, ni comme une vente comptée deux fois. La Checklist se tait aussi. Recharge la page.'
         }
       />
       <BandeauLecturePartielle
@@ -858,6 +886,18 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
                             </span>
                           </div>
                         )}
+                        {/* La facture émise que la pièce porte (ligne 28.6) : sa preuve en infobulle, et le reste dans sa fiche. */}
+                        {marqueParPiece.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span
+                              className={`badge ${PASTILLE_DE_LA_MARQUE[marqueParPiece.get(p.id)!.genre]}`}
+                              style={{ fontSize: '0.7rem' }}
+                              title={marqueParPiece.get(p.id)!.explication}
+                            >
+                              {marqueParPiece.get(p.id)!.libelle}
+                            </span>
+                          </div>
+                        )}
                         {doublonParPiece.has(p.id) && (
                           <div style={{ marginTop: 4 }}>
                             <span
@@ -948,6 +988,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
             onModifiee={noterModification}
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
             figeePar={figees.has(editing.id) ? `L'exercice ${figees.get(editing.id)} est validé` : null}
+            venteEmise={(() => {
+              const marque = marqueParPiece.get(editing.id)
+              return marque ? {
+                ...marque,
+                autres: marque.autresPieces.map((id) => pieces.find((x) => x.id === id)?.nom_fichier ?? id),
+              } : null
+            })()}
             onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
             onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
           />

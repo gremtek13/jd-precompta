@@ -757,6 +757,13 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   margin: 0 0 12px; padding: 8px 12px; font-size: 0.85rem; line-height: 1.45; color: var(--color-text-light);
   border-left: 3px solid var(--color-border); background: var(--color-bg); border-radius: var(--radius-xs);
 }
+/* La facture émise que la pièce porte (ligne 28.6) : sa pastille, ce qu'elle veut dire, les autres pièces de la même
+   vente. Le même encadré que la pièce figée — une information sur la pièce, avant ses champs ; la gravité est à la pastille. */
+.fiche-piece-vente {
+  margin: 0 0 12px; padding: 8px 12px; font-size: 0.85rem; line-height: 1.45; color: var(--color-text-light);
+  border-left: 3px solid var(--color-border); background: var(--color-bg); border-radius: var(--radius-xs);
+}
+.fiche-piece-vente p { margin: 6px 0 0; }
 /* Une facture reçue de la plateforme du client : à la place du fichier à remplacer et de la lecture automatique, qui
    n'ont pas lieu d'être sur l'original transmis. */
 .fiche-piece-plateforme { margin: 0 0 12px; font-size: 0.85rem; line-height: 1.45; overflow-wrap: anywhere; }

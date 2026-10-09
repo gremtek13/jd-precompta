@@ -18,6 +18,7 @@ import { ouvrirJustificatif } from '../../lib/depot'
 import { libelleIssue, type PropositionCategorie } from '../../lib/categorisationIa'
 import { proposerCategorie } from '../../lib/propositionCategorie'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
+import { PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -76,9 +77,12 @@ interface Props {
   // sous-dossier, et ne se supprime plus (`garder_piece_validee`) : la fiche le dit et n'offre que ces deux champs,
   // au lieu de laisser la base refuser un enregistrement que tout l'écran proposait.
   figeePar?: string | null
+  // LA FACTURE ÉMISE QUE CETTE PIÈCE PORTE (ligne 28.6, lib/ventesJumelles.ts) : sa marque, et le nom des autres pièces
+  // qui portent la même facture. L'écran appelant ne la donne que sur des listes lues en entier ; rien, sinon.
+  venteEmise?: (Pick<MarqueDeLaPiece, 'genre' | 'libelle' | 'explication'> & { autres: string[] }) | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, venteEmise = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
@@ -624,6 +628,21 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               sous-dossier restent modifiables, et une précision du client s’ajoute toujours. Une erreur trouvée après la
               validation se corrige sur l’exercice suivant.
             </p>
+          )}
+          {venteEmise && (
+            <div className="fiche-piece-vente">
+              <span className={`badge ${PASTILLE_DE_LA_MARQUE[venteEmise.genre]}`}>{venteEmise.libelle}</span>
+              <p>{venteEmise.explication}</p>
+              {venteEmise.autres.length > 0 && (
+                <p>
+                  {venteEmise.autres.length === 1 ? 'L’autre pièce qui la porte : ' : 'Les autres pièces qui la portent : '}
+                  {venteEmise.autres.map((nom, i) => (
+                    <span key={`${i}-${nom}`}>{i > 0 && ', '}<span className="nom-fichier">« {nom} »</span></span>
+                  ))}
+                  .
+                </p>
+              )}
+            </div>
           )}
           {(previewUrl || previewError) && (
             <div className="field fiche-piece-apercu">

@@ -43,7 +43,8 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatNot } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
+  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures'])
   return {
   supabase: {
     from: (table: string) => {
@@ -66,6 +67,10 @@ vi.mock('../../lib/supabase', async () => {
           if (colonne === 'id') idsVises.push(valeur)
           if (operation === 'delete' && colonne === 'id') faux.suppressions.push(valeur)
           if (operation === 'update' && colonne === 'id') faux.majPieces.push({ id: valeur, valeur: valeurMaj })
+          // Les lectures du pont de la ligne 28.6 APPLIQUENT leurs filtres : les factures émises lues sont celles du dossier,
+          // VALIDÉES, et les transmissions celles du dossier. Les autres tables ne les appliquent pas : leurs jeux d'essai,
+          // plus anciens, ne portent pas toutes les colonnes filtrées.
+          if (operation === 'select' && TABLES_FILTREES.has(table)) predicats.push(predicatEq(colonne, valeur))
           return chaine
         },
         in: (colonne: string, valeurs: unknown[]) => { if (colonne === 'id') idsVises.push(...valeurs); return chaine },
@@ -921,5 +926,177 @@ describe('PiecesTab — une écriture refusée se dit', () => {
 
     expect(dites).toEqual([])
     expect(faux.majPieces.map((m) => m.valeur)).toEqual([{ categorie_id: 'cat-x' }, { categorie_id: 'cat-x' }])
+  })
+})
+
+// LA PIÈCE JUMELLE SE VOIT (ligne 28.6, phase C) : ce que le pont (lib/ventesJumelles.ts, qui en porte les cas un par un)
+// ne voit pas — que l'onglet LISE les factures émises validées du dossier et leurs transmissions, marque la ligne et la
+// fiche, le dise sur les deux piles, se TAISE sur une lecture partielle de l'une des trois tables, et que la recherche
+// trouve le numéro de la facture. Les deux lectures du pont APPLIQUENT leurs filtres (dossier, statut). Données FICTIVES.
+describe('PiecesTab — la pièce jumelle d’une facture émise', () => {
+  const D = 'dossier-de-test'
+  const facture = (o: Record<string, unknown> = {}) => ({
+    id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: null, ...o,
+  })
+  const IDENTITE: Partial<Piece> = {
+    identite_numero: 'F2026-0007', identite_siren_vendeur: '123456789', identite_date: '2026-03-14', identite_nature: 'facture',
+  }
+  const vente = (o: Partial<Piece> = {}) => piece({ type_piece: 'vente', source: 'plateforme', tiers: 'CLIENT FICTIF', ...o })
+  function poserVentes(pieces: Piece[], factures: unknown[], transmissions: unknown[] = []) {
+    poser(pieces)
+    faux.parTable.factures_emises = factures
+    faux.parTable.transmissions_factures = transmissions
+  }
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const ligne = (tiers: string) => screen.getByText(tiers, { selector: 'td' }).closest('tr')!
+
+  it('par le flux de sa transmission : « Facture émise F2026-0007 », la preuve en infobulle', async () => {
+    poserVentes(
+      [vente({ id: 'p-flux', flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' }), piece({ id: 'p-achat', tiers: 'FOURNISSEUR' })],
+      [facture()],
+      [{ id: 't1', dossier_id: D, facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-1' }],
+    )
+    monter('toutes')
+    const pastille = await screen.findByText('Facture émise F2026-0007')
+    expect(pastille.className).toBe('badge badge-neutral')
+    expect(pastille.getAttribute('title')).toContain('reconnue par le flux de sa transmission.')
+    expect(within(ligne('CLIENT FICTIF')).getByText('Facture émise F2026-0007')).toBe(pastille)
+    expect(within(ligne('FOURNISSEUR')).queryByText(/Facture émise/)).toBeNull()
+  })
+
+  it('par l’identifiant de Super PDP, et par son identité — jamais d’une facture en brouillon ou d’un autre dossier', async () => {
+    poserVentes(
+      [
+        vente({ id: 'p-superpdp', source: 'superpdp', superpdp_invoice_id: 4242 }),
+        vente({ id: 'p-identite', tiers: 'AUTRE CLIENT', ...IDENTITE, identite_numero: 'F2026-0008' }),
+        vente({ id: 'p-brouillon', tiers: 'CLIENT DU BROUILLON', superpdp_invoice_id: 7 }),
+        vente({ id: 'p-ailleurs', tiers: 'CLIENT D’AILLEURS', superpdp_invoice_id: 8 }),
+      ],
+      [
+        facture({ superpdp_invoice_id: 4242 }),
+        facture({ id: 'f2', numero: 'F2026-0008' }),
+        facture({ id: 'f-brouillon', statut: 'brouillon', numero: 'F2026-0099', superpdp_invoice_id: 7 }),
+        facture({ id: 'f-ailleurs', dossier_id: 'autre-dossier', numero: 'F2026-0100', superpdp_invoice_id: 8 }),
+      ],
+    )
+    monter('toutes')
+    expect((await screen.findByText('Facture émise F2026-0007')).getAttribute('title'))
+      .toContain('reconnue par l’identifiant de Super PDP.')
+    expect(within(ligne('AUTRE CLIENT')).getByText('Facture émise F2026-0008').getAttribute('title'))
+      .toContain('reconnue par son numéro, son vendeur et son année.')
+    expect(within(ligne('CLIENT DU BROUILLON')).queryByText(/Facture émise/)).toBeNull()
+    expect(within(ligne('CLIENT D’AILLEURS')).queryByText(/Facture émise/)).toBeNull()
+  })
+
+  it('« Comptée deux fois » sur les deux piles, en tête des pièces à valider, et la fiche nomme l’autre pièce', async () => {
+    poserVentes(
+      [
+        piece({ id: 'p-achat', tiers: 'FOURNISSEUR', confiance: 'basse' }),
+        vente({ id: 'p-recue', ...IDENTITE, nom_fichier: 'facture-0007.xml' }),
+        vente({ id: 'p-sync', tiers: 'CLIENT SYNCHRONISE', source: 'superpdp', statut: 'validee', superpdp_invoice_id: 4242, nom_fichier: 'super-pdp-0007.txt' }),
+      ],
+      [facture({ superpdp_invoice_id: 4242 })],
+    )
+    monter('toutes')
+    await screen.findByText('FOURNISSEUR')
+    const pastilles = screen.getAllByText('Comptée deux fois')
+    expect(pastilles).toHaveLength(2)
+    expect(pastilles.every((p) => p.className === 'badge badge-danger')).toBe(true)
+    expect(within(ligne('CLIENT SYNCHRONISE')).getByText('Comptée deux fois').getAttribute('title'))
+      .toContain('La facture F2026-0007 émise dans l’application est portée par 2 pièces')
+    expect(screen.queryByText(/Facture émise F2026-0007/)).toBeNull()
+
+    // Démontrée, la vente en double passe avant une confiance basse parmi les pièces à valider.
+    await act(async () => { screen.getByRole('button', { name: 'À valider' }).click() })
+    const lignes = screen.getAllByRole('row').slice(1).map((r) => r.textContent ?? '')
+    expect(lignes[0]).toContain('CLIENT FICTIF')
+    expect(lignes[1]).toContain('FOURNISSEUR')
+
+    await ouvrir('CLIENT FICTIF')
+    expect(within(volet()).getByText('Comptée deux fois').className).toBe('badge badge-danger')
+    expect(within(volet()).getByText(/^La facture F2026-0007 émise dans l’application est portée par 2 pièces, dont celle-ci/))
+      .toBeTruthy()
+    expect(within(volet()).getByText(/L’autre pièce qui la porte/).textContent)
+      .toBe('L’autre pièce qui la porte : « super-pdp-0007.txt ».')
+  })
+
+  it('la fiche d’une pièce dont les preuves se contredisent dit ce qu’elle désigne', async () => {
+    poserVentes(
+      [
+        vente({ id: 'p-deux', ...IDENTITE, identite_numero: 'F2026-0008', superpdp_invoice_id: 4242 }),
+        vente({ id: 'p-nature', tiers: 'CLIENT DE L’AVOIR', ...IDENTITE, identite_numero: 'A2026-0001' }),
+      ],
+      [facture({ superpdp_invoice_id: 4242 }), facture({ id: 'f2', numero: 'F2026-0008' }), facture({ id: 'a1', type: 'avoir', numero: 'A2026-0001' })],
+    )
+    monter('toutes')
+    const pastille = await screen.findByText('À vérifier : désigne F2026-0007 et F2026-0008')
+    expect(pastille.className).toBe('badge badge-warning')
+    expect(within(ligne('CLIENT DE L’AVOIR')).getByText('À vérifier : porte le numéro de l’avoir A2026-0001')).toBeTruthy()
+
+    await ouvrir('CLIENT FICTIF')
+    expect(within(volet()).getByText('À vérifier : désigne F2026-0007 et F2026-0008').className).toBe('badge badge-warning')
+    expect(within(volet()).getByText(/^Ses preuves la rattachent à F2026-0007 et F2026-0008 à la fois : elle n’est tenue pour la pièce d’aucune facture émise\./))
+      .toBeTruthy()
+    expect(within(volet()).queryByText(/qui la porte/)).toBeNull()
+  })
+
+  it('la recherche trouve une pièce par le numéro de sa facture émise, sans toucher au compte des pièces', async () => {
+    poserVentes(
+      [vente({ id: 'p-sync', superpdp_invoice_id: 4242 }), vente({ id: 'p-autre', tiers: 'AUTRE CLIENT' })],
+      [facture({ superpdp_invoice_id: 4242 })],
+    )
+    monter('toutes')
+    await screen.findByText('AUTRE CLIENT')
+    fireEvent.change(screen.getByLabelText(/^Rechercher un fichier/), { target: { value: 'f2026-0007' } })
+    expect(screen.getByText('CLIENT FICTIF', { selector: 'td' })).toBeTruthy()
+    expect(screen.queryByText('AUTRE CLIENT', { selector: 'td' })).toBeNull()
+    expect(screen.getByText(/1 sur 2/)).toBeTruthy()
+  })
+
+  describe('rien sur une lecture partielle, et l’écran dit pourquoi', () => {
+    const jeu = () => poserVentes(
+      [vente({ id: 'p-sync', superpdp_invoice_id: 4242 }), vente({ id: 'p-recue', tiers: 'AUTRE CLIENT', ...IDENTITE })],
+      [facture({ superpdp_invoice_id: 4242 }), facture({ id: 'f2', numero: 'F2026-0008' })],
+      [{ id: 't1', dossier_id: D, facture_id: 'f2', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-9' }],
+    )
+
+    it('lues en entier, les deux pièces de F2026-0007 la comptent deux fois (le garde des cas qui suivent)', async () => {
+      jeu()
+      monter('toutes')
+      expect(await screen.findAllByText('Comptée deux fois')).toHaveLength(2)
+      expect(screen.queryByText(/Les factures émises du dossier et leurs transmissions/)).toBeNull()
+    })
+
+    it('les factures émises lues en partie', async () => {
+      jeu()
+      faux.muetApres = { factures_emises: 1 }
+      monter('toutes')
+      expect(await screen.findByText(/^Les factures émises du dossier et leurs transmissions n'ont pas pu être lues en entier \(1 ligne\(s\) lue\(s\) sur 2 annoncée\(s\)\)\. Les ventes revenues de la plateforme ne sont donc pas reconnues/))
+        .toBeTruthy()
+      expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()
+    })
+
+    it('les transmissions lues en partie', async () => {
+      jeu()
+      faux.muetApres = { transmissions_factures: 0 }
+      monter('toutes')
+      expect(await screen.findByText(/^Les factures émises du dossier et leurs transmissions n'ont pas pu être lues en entier/)).toBeTruthy()
+      expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()
+    })
+
+    it('les pièces lues en partie : la seule pièce lue ne se dit pas jumelle, et le bandeau des pièces le dit', async () => {
+      jeu()
+      faux.muetApres = { pieces: 1 }
+      monter('toutes')
+      expect(await screen.findByText(/contrôles posés dessus \(doublon de contenu, mois en double, vente comptée deux fois\) se taisent/))
+        .toBeTruthy()
+      expect(screen.getByText('CLIENT FICTIF', { selector: 'td' })).toBeTruthy()
+      expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()
+    })
   })
 })

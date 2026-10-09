@@ -385,8 +385,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   application et la contre-passation, en base et à l'écran (d4, 08 et 09/10/2026) ; le cycle de vie des factures
   émises lu sur la plateforme du client — relevé sur un clic, dernier statut sur chaque facture, refus de l'acheteur dit
   avant tout geste (d7, 09/10/2026) ; la vente qui revient de la plateforme du client ou de Super PDP
-  reconnue comme la jumelle de sa facture émise, et la vente portée par plusieurs pièces dite par la Checklist (ligne
-  28.6, 09/10/2026).
+  reconnue comme la jumelle de sa facture émise, et la vente portée par plusieurs pièces dite par la Checklist, marquée
+  dans Justificatifs et sa fiche, dite au bilan d'un import et dans « Encaissements » (ligne 28.6, 09/10/2026).
 - **Bilan** (ligne 33, première brique, 09/10/2026) : l'onglet Bilan range les soldes de l'exercice dans les
   rubriques et les cases du 2033-A-SD 2026, en centimes, sans rien écrire ; un BNC en trésorerie y voit ses comptes de
   bilan, avec l'avis qu'il n'en établit pas (CGI, art. 99).
@@ -443,9 +443,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
   (`create-client-access`, `create-team-member`), l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`),
   `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques le referme).
-- **Une vente entrée deux fois** (ligne 28.6) : le pont et la Checklist en ligne le 09/10/2026 ; restent la jumelle
-  marquée dans les Justificatifs et leur fiche (phase C), et le PDF d'une facture émise, que rien ne relie encore à elle
-  (Q1 au cabinet).
+- **Une vente entrée deux fois** (ligne 28.6) : le pont, la Checklist et l'écran (phase C) en ligne le 09/10/2026 ;
+  reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1 au cabinet, une migration).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
@@ -922,9 +921,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **La pièce jumelle d'une facture émise** (`lib/ventesJumelles.ts`, ligne 28.6) : une facture émise ne compte nulle
   part, sa vente entre par la pièce qui revient de la plateforme ou de Super PDP, marquée, jamais refusée. Le lien se
   DÉDUIT (flux de la transmission, identifiant Super PDP, ou identité G1.42 gardée à l'import, `identite_*` immuables),
-  jamais d'un montant, d'une date ni d'un nom ; deux preuves contraires ne font pas de jumelle. La Checklist dit la
-  vente portée par plusieurs pièces et la pièce incohérente, muettes sur une lecture partielle ; la validation refuse
-  la première (`ventes-en-double`) → « UNE VENTE PEUT ENTRER DEUX FOIS ».
+  jamais d'un montant, d'une date ni d'un nom ; deux preuves contraires ne font pas de jumelle.
+  La Checklist dit la vente portée par plusieurs pièces et la pièce incohérente, muettes sur une lecture partielle ; la
+  validation refuse la première (`ventes-en-double`). Justificatifs marque la pièce (« Facture émise F… », « Comptée
+  deux fois », « À vérifier »), sa fiche le dit, sa recherche trouve le numéro ; le bilan d'un import et
+  « Encaissements » distinguent la jumelle d'une autre pièce : tout par `marquesDesPieces`, `jumellesImportees`,
+  `piecesJumelles`, et la lecture par `lib/ventesJumellesLecture.ts`, muette sur une lecture partielle →
+  « UNE VENTE PEUT ENTRER DEUX FOIS », « LA PIÈCE JUMELLE SE VOIT ».
 - **Connexion bancaire** : sans nouvel accord, une banque ne rend que les 90 derniers jours ; le refus 422 se dit en
   français, avec le renouvellement → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 

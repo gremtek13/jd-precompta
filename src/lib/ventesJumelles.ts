@@ -189,8 +189,9 @@ export function ventesEnDouble(factures: readonly FacturePourJumelle[], jumelles
 }
 
 // ── Ce que la Checklist en dit ─────────────────────────────────────────────────────────────────────────────────────
-// L'onglet Justificatifs ne marque pas encore une jumelle : le détail NOMME donc chaque pièce, que sa recherche
-// retrouve — un point qui annonce un nombre sans que sa cible puisse le montrer cesse d'être cru.
+// Le détail NOMME chaque pièce, et l'onglet Justificatifs la marque (`marquesDesPieces`) : sa recherche la retrouve
+// par son nom comme par le numéro de la facture — un point qui annonce un nombre sans que sa cible puisse le montrer
+// cesse d'être cru.
 
 const AU_PLUS = 3
 
@@ -233,4 +234,159 @@ export function detailJumellesIncoherentes(
   }).join(' ')
   return `${liste}${etLeReste(incoherentes.length)} Aucune n’est tenue pour la pièce de sa facture : vérifiez-les sur la `
     + 'plateforme avant de les valider.'
+}
+
+// ── Ce que l'onglet Justificatifs en montre (phase C de la ligne 28.6) ─────────────────────────────────────────────────
+// La pièce elle-même porte sa marque, sur sa ligne et dans sa fiche : c'est là qu'on la valide, et une vente comptée deux
+// fois se corrige en n'en gardant qu'une. Tout se déduit de `jumellesDuDossier` : une marque ne dit rien que le pont ne
+// sache — et l'écran ne l'appelle que sur des listes LUES EN ENTIER, une facture non lue faisant passer une pièce
+// contradictoire pour une jumelle.
+
+/** Ce qu'une pièce est pour le pont : la jumelle d'une facture, l'une des pièces d'une vente comptée plusieurs fois, ou
+ * une pièce dont les preuves se contredisent. */
+export type GenreMarque = 'jumelle' | 'double' | 'incoherente'
+
+export interface MarqueDeLaPiece {
+  genre: GenreMarque
+  /** Le texte de la pastille : « Facture émise F2026-0007 », « Comptée deux fois », « À vérifier : … ». */
+  libelle: string
+  /** Ce qu'elle veut dire, preuves comprises : l'infobulle de la ligne, le texte de la fiche. */
+  explication: string
+  /** Les numéros des factures émises qu'elle désigne : la recherche de l'onglet les trouve. */
+  numeros: string[]
+  /** Les autres pièces qui portent la même facture, dans l'ordre des pièces données ; vide hors d'une vente en double. */
+  autresPieces: string[]
+}
+
+/** La pastille de chaque genre : le neutre pour une jumelle (rien n'est faux), le danger pour une vente comptée deux fois
+ * (une erreur de la Checklist), l'attention pour une pièce à vérifier (une attention de la Checklist). */
+export const PASTILLE_DE_LA_MARQUE: Record<GenreMarque, string> = {
+  jumelle: 'badge-neutral',
+  double: 'badge-danger',
+  incoherente: 'badge-warning',
+}
+
+const PREUVE_DITE: Record<PreuveJumelle, string> = {
+  flux: 'par le flux de sa transmission',
+  superpdp: 'par l’identifiant de Super PDP',
+  identite: 'par son numéro, son vendeur et son année',
+}
+
+const enumerer = (mots: readonly string[]) =>
+  (mots.length <= 1 ? mots.join('') : `${mots.slice(0, -1).join(', ')} et ${mots[mots.length - 1]}`)
+
+const fois = (n: number) => (n === 2 ? 'deux' : n === 3 ? 'trois' : String(n))
+
+const A_VERIFIER = 'elle n’est tenue pour la pièce d’aucune facture émise. Vérifiez-la sur la plateforme avant de la valider.'
+
+/**
+ * La marque de chaque pièce que le pont reconnaît, ou dont les preuves se contredisent ; une pièce sans marque n'est pas
+ * dans la table. `factures` : celles qu'on a données au pont, pour leurs numéros et leur nature.
+ */
+export function marquesDesPieces(
+  factures: readonly Pick<FactureEmise, 'id' | 'numero' | 'type'>[],
+  jumelles: JumellesDuDossier,
+): Map<string, MarqueDeLaPiece> {
+  const facture = (id: string) => factures.find((f) => f.id === id)
+  // Une facture validée porte toujours son numéro (la base le donne à la validation) : l'absence ne se verrait que sur
+  // des données lues de travers, et se dit sans rien inventer.
+  const nom = (id: string) => facture(id)?.numero ?? '(sans numéro)'
+  const numeros = (ids: readonly string[]) =>
+    ids.flatMap((id) => { const n = facture(id)?.numero; return n == null ? [] : [n] })
+
+  const marques = new Map<string, MarqueDeLaPiece>()
+  for (const [pieceId, j] of jumelles.parPiece) {
+    const reconnue = `reconnue ${enumerer(j.preuves.map((p) => PREUVE_DITE[p]))}`
+    const portees = jumelles.parFacture.get(j.factureId) ?? []
+    if (portees.length > 1) {
+      marques.set(pieceId, {
+        genre: 'double',
+        libelle: `Comptée ${fois(portees.length)} fois`,
+        explication: `La facture ${nom(j.factureId)} émise dans l’application est portée par ${portees.length} pièces, dont `
+          + `celle-ci, ${reconnue}. Validées, elles la comptent ${fois(portees.length)} fois dans la 2035, la CA3 et les `
+          + 'écritures : gardez une seule pièce par facture — celle reçue de la plateforme du client porte l’original.',
+        numeros: numeros([j.factureId]),
+        autresPieces: portees.filter((x) => x.pieceId !== pieceId).map((x) => x.pieceId),
+      })
+    } else {
+      marques.set(pieceId, {
+        genre: 'jumelle',
+        libelle: `Facture émise ${nom(j.factureId)}`,
+        explication: `Cette pièce est la facture ${nom(j.factureId)} émise dans l’application, revenue comme pièce — `
+          + `${reconnue}. C’est la même vente : elle ne se compte qu’une fois.`,
+        numeros: numeros([j.factureId]),
+        autresPieces: [],
+      })
+    }
+  }
+  for (const i of jumelles.incoherentes) {
+    if (i.motif === 'plusieurs_factures') {
+      marques.set(i.pieceId, {
+        genre: 'incoherente',
+        libelle: `À vérifier : désigne ${enumerer(i.factureIds.map(nom))}`,
+        explication: `Ses preuves la rattachent à ${enumerer(i.factureIds.map(nom))} à la fois : ${A_VERIFIER}`,
+        numeros: numeros(i.factureIds),
+        autresPieces: [],
+      })
+      continue
+    }
+    // L'original dit l'autre nature que celle de la facture que son numéro désigne.
+    const avoir = facture(i.factureId)?.type === 'avoir'
+    marques.set(i.pieceId, {
+      genre: 'incoherente',
+      libelle: `À vérifier : porte le numéro ${avoir ? 'de l’avoir' : 'de la facture'} ${nom(i.factureId)}`,
+      explication: `Son original dit ${avoir ? 'une facture' : 'un avoir'}, et ${nom(i.factureId)} est `
+        + `${avoir ? 'un avoir émis' : 'une facture émise'} dans l’application : ${A_VERIFIER}`,
+      numeros: numeros([i.factureId]),
+      autresPieces: [],
+    })
+  }
+  return marques
+}
+
+// ── Ce que le bilan d'un import en dit ────────────────────────────────────────────────────────────────────────────────
+
+export interface JumellesImportees {
+  /** Les pièces importées que le pont reconnaît comme la jumelle d'une facture émise. */
+  reconnues: number
+  /** Parmi elles, celles dont la facture est portée par une autre pièce aussi : la vente compte deux fois. */
+  dejaPortees: number
+  /** Les pièces importées dont les preuves se contredisent. */
+  incoherentes: number
+}
+
+/** Ce que le pont dit des pièces qu'un import vient de créer, jugé sur TOUTES les pièces du dossier. */
+export function jumellesImportees(pieceIds: readonly string[], jumelles: JumellesDuDossier): JumellesImportees {
+  const importees = new Set(pieceIds)
+  let reconnues = 0
+  let dejaPortees = 0
+  for (const id of importees) {
+    const j = jumelles.parPiece.get(id)
+    if (!j) continue
+    reconnues++
+    if ((jumelles.parFacture.get(j.factureId) ?? []).length > 1) dejaPortees++
+  }
+  const incoherentes = jumelles.incoherentes.filter((i) => importees.has(i.pieceId)).length
+  return { reconnues, dejaPortees, incoherentes }
+}
+
+/** Les phrases du bilan : rien quand aucune pièce importée n'a affaire à une facture émise. */
+export function phrasesJumellesImportees(j: JumellesImportees): string[] {
+  const phrases: string[] = []
+  if (j.reconnues > 0) {
+    const reconnues = j.reconnues === 1
+      ? '1 vente reconnue comme une facture émise de l’application'
+      : `${j.reconnues} ventes reconnues comme des factures émises de l’application`
+    phrases.push(j.dejaPortees === 0
+      ? `${reconnues} : Justificatifs ${j.reconnues > 1 ? 'les' : 'la'} marque.`
+      : `${reconnues}, dont ${j.dejaPortees} déjà portée${j.dejaPortees > 1 ? 's' : ''} par une autre pièce : ne validez `
+        + 'qu’une pièce par facture ; la Checklist le signale.')
+  }
+  if (j.incoherentes > 0) {
+    phrases.push(j.incoherentes === 1
+      ? '1 pièce dont les preuves contredisent une facture émise : à vérifier sur la plateforme avant de la valider.'
+      : `${j.incoherentes} pièces dont les preuves contredisent une facture émise : à vérifier sur la plateforme avant de `
+        + 'les valider.')
+  }
+  return phrases
 }

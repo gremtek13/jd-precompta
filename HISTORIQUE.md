@@ -16759,3 +16759,76 @@ la sélection est vidée juste avant, le bouton disparaît, aucun second geste n
 tenu pendant la relecture reste une seconde ceinture, comme dans `DocumentsTab`). Une première survivante sur le garde
 (toute flèche acceptée) a révélé un trou du jeu d'essai — aucune flèche passée à un autre appel qu'un `.map` — comblé,
 la mutation mord depuis.
+
+### 09/10/2026 — LA PIÈCE JUMELLE SE VOIT : JUSTIFICATIFS, SA FICHE, LE BILAN D'UN IMPORT ET « ENCAISSEMENTS » — LIGNE 28.6, PHASE C
+
+(`src/lib/ventesJumelles.ts` — `marquesDesPieces`, `PASTILLE_DE_LA_MARQUE`, `jumellesImportees`,
+`phrasesJumellesImportees` — et son test ; `src/lib/ventesJumellesLecture.ts`, nouveau, et son test ; `PiecesTab.tsx`,
+`FichePiece.tsx`, `PlateformeClientModal.tsx`, `EncaissementsFactureModal.tsx` et les tests des trois écrans ; une règle
+de `src/index.css` (`.fiche-piece-vente`) ; au banc, deux pièces de `fauxSupabase.ts`, une visite de `debordements.mjs`,
+deux vues de `vitrine.mjs`. Aucune migration, aucune Edge Function, rien à déployer.) Ce que la note de la phase C
+(`d/vente_double/phase_c_vente_double.md`) laissait : la Checklist NOMMAIT les pièces d'une vente comptée deux fois, mais
+l'onglet où elles se corrigent ne les désignait pas, ni le bilan de l'import qui venait de les créer, ni la fenêtre
+« Encaissements », qui disait seulement « Ce mouvement paie déjà : X ».
+
+**TOUT PART DU PONT, RIEN NE LE RECOPIE.** Une pièce reçoit une MARQUE de `marquesDesPieces`, déduite de
+`jumellesDuDossier` : « Facture émise F2026-0007 » (pastille neutre : rien n'est faux), « Comptée deux fois » (danger :
+l'erreur de la Checklist, et le compte dit — « trois fois », puis en chiffres), « À vérifier : désigne F… et F… » ou
+« À vérifier : porte le numéro de l'avoir A… / de la facture F… » (attention : l'attention de la Checklist). L'explication
+dit la preuve — « par le flux de sa transmission », « par l'identifiant de Super PDP », « par son numéro, son vendeur et
+son année », toutes dans l'ordre du pont — ; elle est l'infobulle de la ligne et le texte de la fiche, qui nomme aussi
+les autres pièces de la vente (`.nom-fichier`). Le numéro des factures désignées rejoint ce que la recherche lit : le
+« F2026-0007 » du détail de la Checklist retrouve ses pièces ; une facture sans numéro n'en donne aucun et se dit
+« (sans numéro) ». Une vente en double passe en tête des pièces à valider, au rang des impossibilités démontrées.
+
+**MUETTE SUR UNE LECTURE PARTIELLE, ET ELLE LE DIT.** Les lectures du pont sont celles de la Checklist et de Clôture,
+chaîne pour chaîne, réunies dans `lib/ventesJumellesLecture.ts` (`lireVentesEmises`, `lireJumellesDuDossier`), comme
+`lirePiecesFigees` : factures émises VALIDÉES du dossier et transmissions par `lireTout`, et pour le bilan d'un import
+les pièces du dossier entier. Les factures ou les transmissions lues en partie : aucune marque, et un bandeau propre
+(« les ventes revenues de la plateforme ne sont donc pas reconnues… ») ; les pièces lues en partie : aucune marque non
+plus, et le bandeau des pièces nomme désormais ce contrôle parmi ceux qui se taisent. Avant la première lecture, aucune
+marque : rien n'est affirmé. Aucun geste nouveau : les deux gardes de `ecransAvantLecture.test.tsx` n'ont rien à
+recenser de plus.
+
+**LE BILAN D'UN IMPORT** (`PlateformeClientModal`) : quand l'import a créé au moins une pièce, la fenêtre relit sous son
+verrou les trois tables du dossier entier, et dit, des seules pièces créées, « N vente(s) reconnue(s) comme une facture
+émise de l'application : Justificatifs la/les marque », ou « …, dont M déjà portée(s) par une autre pièce : ne validez
+qu'une pièce par facture ; la Checklist le signale ». Rien n'est refusé ni retiré (la jumelle entre, marquée). Rien
+d'importé, rien n'est relu.
+
+**« ENCAISSEMENTS »** : le mouvement proposé qui paie la jumelle de la facture (`piecesJumelles`, d2) le dit — « c'est la
+même vente » — ; celui qui paie une autre pièce dit qu'elle n'est reliée à rien, et que si c'est le PDF de la vente,
+elle compte deux fois. Un virement groupé qui paie les deux dit les deux (« aussi »). Les refus n'en dépendent pas.
+
+**TROIS ÉCARTS À LA NOTE.** (1) Le bilan dit aussi la pièce importée dont les preuves se contredisent : sans cela, elle
+n'était dite que par la Checklist. (2) Une lecture partielle au bilan ne se tait pas tout à fait : une phrase dit que
+les ventes reconnues n'ont pas pu être comptées et pourquoi, sans aucun nombre (CLAUDE.md : une lecture partielle se
+signale). (3) « Encaissements » dit « une autre pièce » et non « une autre pièce de vente » : la sélection des pièces de
+la fenêtre ne lit pas leur sens, et l'élargir aurait touché la ligne que l'agent de d7 modifie ; la phrase ne dit que ce
+qui est su.
+
+**LES PREUVES.** 35 tests (10 du module, 4 de la lecture, 9 de Justificatifs et de la fiche, 8 du bilan, 4 des
+encaissements), sous des faux clients qui appliquent les filtres (dossier, statut ; ceux de PiecesTab pour les deux
+tables du pont seulement, ses jeux d'essai anciens ne portant pas toutes les colonnes filtrées). ROUGES AVANT : les trois
+écrans ramenés à fb42326, tests nouveaux gardés, 18 échecs — tous les cas positifs ; les trois qui passaient sont les
+gardes du silence (« aucune vente reconnue », « rien d'importé, rien de relu », « sans pièce payée »). MUTATIONS : 59 —
+module 28, lecture 6, Justificatifs 11, fiche 4, bilan 5, encaissements 5 — ; 58 mordent, nommément, jamais par un délai.
+Une est équivalente et le reste : retirer le filtre du dossier sur la lecture des PIÈCES du bilan (une pièce d'un autre
+dossier ne peut être la jumelle d'aucune facture lue, que le pont refuse d'un autre dossier) ; le filtre reste, la
+lecture d'un chef de cabinet couvrirait sinon toutes les pièces de son cabinet. BANC : deux pièces de vente de
+F2026-0013 au faux Supabase (Super PDP sous 4242, et la plateforme du client par l'identité), une visite
+`jumelle/fiche` (qui ferme d'abord la fiche de la visite d'avant, encore ouverte sur téléphone), deux vues de
+`vitrine.mjs` regardées : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 pixels, volet fermé à 1 440 et 1 280, et aux
+combinaisons extrêmes des volets (1 280 volet ouvert, le volet puis la barre au plus large ; 1 440 les deux ; 1 280
+volet fermé, la barre au plus large) ; les polices servies (un worktree dont `node_modules` est fait de liens se sert par une
+configuration de session qui ajoute la cible des liens à `server.fs.allow` : aucun « outside of Vite serving allow list »
+au journal, « Manrope chargée » sur chaque vue). BARRIÈRE : `npx tsc -b` 0 ; `npx tsc -p tsconfig.edge.json` les 25
+erreurs connues ; `npm run lint` 63 avertissements, mêmes fichiers, mêmes nombres ; `npm run build` 0 ;
+les onze fichiers de test du correctif et des modules qu'il touche (754 tests) sous les quatre fuseaux, verts ; la
+suite ENTIÈRE sous Paris (231 fichiers, 6 450 tests, `--maxWorkers=2`) : deux échecs, tous deux un délai dépassé de
+`cdarEncaisseeCopie.test.ts` et `cdarRecuCopie.test.ts` (gardes de copie des Edge Functions, que le correctif ne touche
+pas) sous une charge de 13 à 14 sur quatre cœurs ; rejoués seuls, le premier passe, le second dépasse encore de 48 à
+640 ms, sans autre erreur que le délai. Aucun délai relevé.
+
+**CE QUI RESTE.** Q1 (désigner le PDF d'une facture émise, une migration) ; d9, la confrontation des 212 déclarés à la
+recette que la CA3 compte par la jumelle.

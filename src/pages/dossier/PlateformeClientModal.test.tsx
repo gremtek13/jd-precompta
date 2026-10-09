@@ -27,23 +27,37 @@ const m = vi.hoisted(() => ({
   releverStatutsDesFactures: vi.fn(),
 }))
 vi.mock('../../lib/receptionPlateforme', () => m)
-// Le bilan d'un relevé lit en base le numéro des factures qu'il a touchées (ReleveStatuts.tsx) : les filtres s'appliquent.
-const base = vi.hoisted(() => ({ factures: [] as Record<string, unknown>[], lectures: [] as string[] }))
+// Le bilan d'un relevé lit en base le numéro des factures qu'il a touchées (ReleveStatuts.tsx), et le bilan d'un import
+// relit les factures émises, leurs transmissions et les pièces du dossier (ligne 28.6) : les filtres s'appliquent, seules
+// les colonnes demandées reviennent, et une table peut se taire au-delà d'un rang en annonçant son vrai total.
+const base = vi.hoisted(() => ({
+  factures: [] as Record<string, unknown>[],
+  transmissions: [] as Record<string, unknown>[],
+  pieces: [] as Record<string, unknown>[],
+  muetApres: {} as Record<string, number>,
+  lectures: [] as string[],
+}))
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
+  const tables: Record<string, () => Record<string, unknown>[]> = {
+    factures_emises: () => base.factures, transmissions_factures: () => base.transmissions, pieces: () => base.pieces,
+  }
   return {
     supabase: {
       from: (table: string) => {
-        if (table !== 'factures_emises') throw new Error(`Table non attendue dans ce test : ${table}`)
+        if (!(table in tables)) throw new Error(`Table non attendue dans ce test : ${table}`)
         const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+        let colonnes: string[] = []
         const q: Record<string, unknown> = {
-          select: (colonnes: string) => { base.lectures.push(colonnes); return q },
+          select: (liste: string) => { base.lectures.push(liste); colonnes = liste.split(',').map((x) => x.trim()); return q },
           eq: (c: string, v: unknown) => { predicats.push(predicatEq(c, v)); return q },
           in: (c: string, v: unknown[]) => { predicats.push(predicatIn(c, v)); return q },
           order: () => q,
           range: (debut: number, fin: number) => {
-            const toutes = filtrer(base.factures, predicats)
-            return Promise.resolve({ data: toutes.slice(debut, fin + 1), error: null, count: toutes.length })
+            const toutes = filtrer(tables[table](), predicats)
+            const rendu = toutes.slice(debut, Math.min(fin + 1, base.muetApres[table] ?? Infinity))
+              .map((l) => Object.fromEntries(colonnes.map((k) => [k, l[k]])))
+            return Promise.resolve({ data: rendu, error: null, count: toutes.length })
           },
         }
         return q
@@ -94,6 +108,11 @@ const ouvrir = (siret: string | null = '12345678200010') =>
 
 beforeEach(() => {
   numero = 0
+  base.factures = []
+  base.transmissions = []
+  base.pieces = []
+  base.muetApres = {}
+  base.lectures = []
   for (const f of Object.values(m)) f.mockReset()
   m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion() }))
   m.lireSynchronisationSuperPdp.mockResolvedValue({ configuree: false, erreur: null })
@@ -344,6 +363,106 @@ describe('chercher puis importer', () => {
     expect(onImported).toHaveBeenCalledTimes(1)
     // La connexion se relit : son point de reprise a bougé.
     expect(m.lireConnexionPlateforme).toHaveBeenCalledTimes(2)
+  })
+
+  // LA VENTE QUI REVIENT (ligne 28.6, phase C) : le bilan relit le dossier ENTIER et dit les ventes reconnues comme une
+  // facture émise de l'application, et celles qu'une autre pièce portait déjà. Données FICTIVES.
+  describe('les ventes reconnues comme une facture émise', () => {
+    const facture = (o: Record<string, unknown> = {}) => ({
+      id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
+      emetteur_siret: '12345678200010', superpdp_invoice_id: 4242, ...o,
+    })
+    const piece = (o: Record<string, unknown> = {}) => ({
+      id: 'p1', dossier_id: 'd1', flux_hote: null, flux_id: null, superpdp_invoice_id: null, identite_numero: null,
+      identite_siren_vendeur: null, identite_date: null, identite_nature: null, ...o,
+    })
+    async function importer(pieceIds: string[]) {
+      const fl = pieceIds.map(() => flux({ sens: 'vente' }))
+      await chercher(liste({ flux: fl }), plan({ aImporter: fl }))
+      m.recevoirFactures.mockResolvedValue(bilan({
+        issues: fl.map((f, i) => ({ statut: 'importee' as const, flux: f, pieceId: pieceIds[i], avertissements: [] })),
+      }))
+      base.lectures = []
+      await act(async () => { screen.getByText(fl.length === 1 ? 'Importer la facture' : `Importer les ${fl.length} factures`).click() })
+    }
+
+    it('deux ventes reconnues, dont une qu’une pièce déjà au dossier portait : le bilan le dit, et renvoie à la Checklist', async () => {
+      base.factures = [
+        facture(),
+        facture({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: null }),
+        // Ni un brouillon, ni la facture d'un autre dossier : leurs pièces ne se reconnaissent pas.
+        facture({ id: 'f-brouillon', statut: 'brouillon', numero: null, superpdp_invoice_id: 7 }),
+        facture({ id: 'f-ailleurs', dossier_id: 'autre', superpdp_invoice_id: 8 }),
+      ]
+      base.transmissions = [{ id: 't1', dossier_id: 'd1', facture_id: 'f2', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-9' }]
+      base.pieces = [
+        piece({ id: 'p-deja', superpdp_invoice_id: 4242 }),
+        piece({ id: 'p1', identite_numero: 'F2026-0007', identite_siren_vendeur: '123456782', identite_date: '2026-03-14', identite_nature: 'facture' }),
+        piece({ id: 'p2', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9' }),
+        piece({ id: 'p3', superpdp_invoice_id: 7 }),
+        piece({ id: 'p4', superpdp_invoice_id: 8 }),
+      ]
+      await importer(['p1', 'p2', 'p3', 'p4'])
+      expect(screen.getByText('4 factures importées, « à valider » dans Justificatifs.')).toBeTruthy()
+      expect(screen.getByText('2 ventes reconnues comme des factures émises de l’application, dont 1 déjà portée par une '
+        + 'autre pièce : ne validez qu’une pièce par facture ; la Checklist le signale.')).toBeTruthy()
+      // Les trois lectures du pont, une fois chacune, et rien d'autre.
+      expect([...base.lectures].sort()).toEqual([
+        'id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature',
+        'id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id',
+        'id, facture_id, canal, hote, flux_id',
+      ])
+      expect(onImported).toHaveBeenCalledTimes(1)
+    })
+
+    it('une seule vente, que rien d’autre ne porte : Justificatifs la marque', async () => {
+      base.factures = [facture()]
+      base.pieces = [piece({ superpdp_invoice_id: 4242 })]
+      await importer(['p1'])
+      expect(screen.getByText('1 vente reconnue comme une facture émise de l’application : Justificatifs la marque.')).toBeTruthy()
+    })
+
+    it('une pièce importée dont les preuves se contredisent : à vérifier', async () => {
+      base.factures = [facture(), facture({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: null })]
+      base.pieces = [piece({
+        superpdp_invoice_id: 4242, identite_numero: 'F2026-0008', identite_siren_vendeur: '123456782', identite_date: '2026-03-14',
+      })]
+      await importer(['p1'])
+      expect(screen.getByText('1 pièce dont les preuves contredisent une facture émise : à vérifier sur la plateforme avant '
+        + 'de la valider.')).toBeTruthy()
+      expect(screen.queryByText(/vente reconnue/)).toBeNull()
+    })
+
+    it('aucune vente reconnue : le bilan n’en dit rien', async () => {
+      base.factures = [facture()]
+      base.pieces = [piece()]
+      await importer(['p1'])
+      expect(screen.getByText('1 facture importée, « à valider » dans Justificatifs.')).toBeTruthy()
+      expect(screen.queryByText(/reconnue|contredisent/)).toBeNull()
+    })
+
+    for (const table of ['factures_emises', 'transmissions_factures', 'pieces']) {
+      it(`${table} lue(s) en partie : rien n’est compté, et le bilan dit pourquoi`, async () => {
+        base.factures = [facture()]
+        base.transmissions = [{ id: 't1', dossier_id: 'd1', facture_id: 'f1', canal: 'superpdp', hote: 'api.superpdp.tech', flux_id: '4242' }]
+        base.pieces = [piece({ id: 'p-deja', superpdp_invoice_id: 4242 }), piece({ superpdp_invoice_id: 4242 })]
+        base.muetApres = { [table]: 0 }
+        await importer(['p1'])
+        expect(screen.getByText(/^Les ventes revenues comme une facture émise de l’application n’ont pas pu être reconnues \(0 ligne\(s\) lue\(s\) sur \d annoncée\(s\)\) : rien n’en est dit ici\./))
+          .toBeTruthy()
+        expect(screen.queryByText(/vente(s)? reconnue/)).toBeNull()
+      })
+    }
+
+    it('rien d’importé : rien n’est relu', async () => {
+      base.factures = [facture()]
+      const a = flux()
+      await chercher(liste({ flux: [a] }), plan({ aImporter: [a] }))
+      m.recevoirFactures.mockResolvedValue(bilan({ issues: [{ statut: 'doublon', flux: a }] }))
+      base.lectures = []
+      await act(async () => { screen.getByText('Importer la facture').click() })
+      expect(base.lectures).toEqual([])
+    })
   })
 
   it('rien d’importé : la liste des pièces ne se recharge pas', async () => {
