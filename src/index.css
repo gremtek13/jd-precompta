@@ -1628,6 +1628,9 @@ a.nav-menu-item { text-decoration: none; }
   .sidebar nav a.active { background: none; color: var(--color-primary); }
   .sidebar nav a.active svg { background: var(--tint-primary-strong); border-radius: 10px; padding: 3px 9px; box-sizing: content-box; }
   .sidebar nav.app-nav-en-dossier { display: none; }
+  /* À l'accueil du client, ses tuiles font office de navigation : la barre du bas les doublerait. Cachée ICI seulement :
+     sur ordinateur, la même navigation reste dans la barre latérale (voir Layout). */
+  .sidebar nav.app-nav-accueil-client { display: none; }
 
   .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
 

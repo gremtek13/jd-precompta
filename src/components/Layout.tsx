@@ -115,11 +115,13 @@ function Coque() {
   // comptables et clients à la fois, puisque les deux passent par ce même Layout. branding reste null
   // (repli sur le logo/couleur JD Precompta par défaut) pour un cabinet qui n'a rien configuré.
   const branding = useCabinetBranding()
-  // Sur l'accueil client, les grosses tuiles (Mes pièces / Mes informations / Prendre une photo)
-  // font déjà office de navigation — les mêmes liens en rangée d'onglets au-dessus (repliés en barre
-  // horizontale sur mobile, juste sous la salutation) sont redondants et encombrent l'écran. Masqués
-  // uniquement là ; toujours visibles depuis les autres écrans client pour revenir ou changer d'onglet.
-  const masquerNavClient = role === 'client' && pathname === '/accueil'
+  // Sur l'accueil du client, les grosses tuiles (Prendre une photo, Mes pièces, Mes informations, Ma simulation)
+  // font déjà office de navigation : sur téléphone, la barre du bas les doublerait et encombrerait l'écran, et
+  // index.css la cache (`app-nav-accueil-client`, sous la requête qui fait de la barre latérale une barre du haut).
+  // Sur ordinateur la barre latérale est une colonne de la coque : sans les entrées du client, elle s'y affichait
+  // vide. D'où une classe et non un rendu conditionnel — la même `<nav>` reste dans le DOM (une seule, voir
+  // CLAUDE.md), et c'est la largeur qui décide de ce qu'elle montre.
+  const accueilClient = role === 'client' && pathname === '/accueil'
 
   // À l'intérieur d'un dossier, DossierParcours affiche déjà sa propre barre d'onglets fixée en bas
   // sur mobile (voir index.css) — garder aussi celle-ci en bas empilerait deux barres fixes l'une sur
@@ -257,57 +259,55 @@ function Coque() {
           </button>
         )}
 
-        {!masquerNavClient && (
-          <nav className={dansUnDossier ? 'app-nav-en-dossier' : undefined}>
-            {role === 'cabinet' && (
-              // `end` : dans un dossier, c'est le dossier qui est mis en avant dans la barre, pas le
-              // tableau de bord qui y mène.
-              <NavLink to="/dossiers" end title="Tableau de bord" className={({ isActive }) => (isActive ? 'active' : '')}>
-                <IconDossiers width={18} height={18} />
-                <span className="nav-label-full">Tableau de bord</span>
-                <span className="nav-label-court">Dossiers</span>
+        <nav className={dansUnDossier ? 'app-nav-en-dossier' : accueilClient ? 'app-nav-accueil-client' : undefined}>
+          {role === 'cabinet' && (
+            // `end` : dans un dossier, c'est le dossier qui est mis en avant dans la barre, pas le
+            // tableau de bord qui y mène.
+            <NavLink to="/dossiers" end title="Tableau de bord" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <IconDossiers width={18} height={18} />
+              <span className="nav-label-full">Tableau de bord</span>
+              <span className="nav-label-court">Dossiers</span>
+            </NavLink>
+          )}
+          {role === 'cabinet' && estChef && (
+            <NavLink to="/equipe" title="Équipe" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <IconEquipe width={18} height={18} />
+              <span className="nav-label-full">Équipe</span>
+              <span className="nav-label-court">Équipe</span>
+            </NavLink>
+          )}
+          {role === 'cabinet' && isSuperAdmin && (
+            <NavLink to="/comptes-master" title="Comptes master" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <IconComptesMaster width={18} height={18} />
+              <span className="nav-label-full">Comptes master</span>
+              <span className="nav-label-court">Comptes</span>
+            </NavLink>
+          )}
+          {role === 'client' && (
+            <>
+              <NavLink to="/accueil" title="Accueil" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <IconAccueil width={18} height={18} />
+                <span className="nav-label-full">Accueil</span>
+                <span className="nav-label-court">Accueil</span>
               </NavLink>
-            )}
-            {role === 'cabinet' && estChef && (
-              <NavLink to="/equipe" title="Équipe" className={({ isActive }) => (isActive ? 'active' : '')}>
-                <IconEquipe width={18} height={18} />
-                <span className="nav-label-full">Équipe</span>
-                <span className="nav-label-court">Équipe</span>
+              <NavLink to="/mes-pieces" title="Mes pièces" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <IconPieces width={18} height={18} />
+                <span className="nav-label-full">Mes pièces</span>
+                <span className="nav-label-court">Pièces</span>
               </NavLink>
-            )}
-            {role === 'cabinet' && isSuperAdmin && (
-              <NavLink to="/comptes-master" title="Comptes master" className={({ isActive }) => (isActive ? 'active' : '')}>
-                <IconComptesMaster width={18} height={18} />
-                <span className="nav-label-full">Comptes master</span>
-                <span className="nav-label-court">Comptes</span>
+              <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <IconInformations width={18} height={18} />
+                <span className="nav-label-full">Mes informations</span>
+                <span className="nav-label-court">Infos</span>
               </NavLink>
-            )}
-            {role === 'client' && (
-              <>
-                <NavLink to="/accueil" title="Accueil" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  <IconAccueil width={18} height={18} />
-                  <span className="nav-label-full">Accueil</span>
-                  <span className="nav-label-court">Accueil</span>
-                </NavLink>
-                <NavLink to="/mes-pieces" title="Mes pièces" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  <IconPieces width={18} height={18} />
-                  <span className="nav-label-full">Mes pièces</span>
-                  <span className="nav-label-court">Pièces</span>
-                </NavLink>
-                <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  <IconInformations width={18} height={18} />
-                  <span className="nav-label-full">Mes informations</span>
-                  <span className="nav-label-court">Infos</span>
-                </NavLink>
-                <NavLink to="/ma-simulation" title="Ma simulation" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  <IconEstimation width={18} height={18} />
-                  <span className="nav-label-full">Ma simulation</span>
-                  <span className="nav-label-court">Simu</span>
-                </NavLink>
-              </>
-            )}
-          </nav>
-        )}
+              <NavLink to="/ma-simulation" title="Ma simulation" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <IconEstimation width={18} height={18} />
+                <span className="nav-label-full">Ma simulation</span>
+                <span className="nav-label-court">Simu</span>
+              </NavLink>
+            </>
+          )}
+        </nav>
 
         {role === 'cabinet' && (
           <BarreDossiers

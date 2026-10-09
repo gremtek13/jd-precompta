@@ -22,6 +22,19 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   const [error, setError] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
   const [copie, setCopie] = useState(false)
+  const [copieRefusee, setCopieRefusee] = useState(false)
+  // Le « Copié ✓ » s'efface au bout de deux secondes. Son minuteur part avec l'écran : laissé derrière lui, il rappelait
+  // un écran démonté, et dans la suite de tests un environnement déjà détruit (une erreur non gérée, au hasard de la
+  // charge). `demonte` couvre la copie encore en vol au démontage, qui armerait sinon un minuteur que plus rien n'annule.
+  const minuteurCopie = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const demonte = useRef(false)
+  useEffect(() => {
+    demonte.current = false
+    return () => {
+      demonte.current = true
+      if (minuteurCopie.current !== null) clearTimeout(minuteurCopie.current)
+    }
+  }, [])
   const [relanceDe, setRelanceDe] = useState<MembershipRow | null>(null)
   // « Aucun accès client pour ce dossier » est une AFFIRMATION, pas un écran vide : une lecture
   // refusée rendait la même liste vide, et le cabinet en concluait qu'il ne restait aucun accès.
@@ -116,9 +129,19 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
 
   async function copierAdresse() {
     if (!adresseCollecte) return
-    await navigator.clipboard.writeText(adresseCollecte)
+    try {
+      await navigator.clipboard.writeText(adresseCollecte)
+    } catch {
+      // Le navigateur refuse le presse-papiers (permission, page non sécurisée) : sans ce `catch`, le clic ne faisait
+      // rien et l'échec partait en erreur non gérée. L'adresse reste affichée, à copier à la main.
+      if (!demonte.current) setCopieRefusee(true)
+      return
+    }
+    if (demonte.current) return
+    setCopieRefusee(false)
     setCopie(true)
-    setTimeout(() => setCopie(false), 2000)
+    if (minuteurCopie.current !== null) clearTimeout(minuteurCopie.current)
+    minuteurCopie.current = setTimeout(() => setCopie(false), 2000)
   }
 
   return (
@@ -138,6 +161,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
             <button type="button" className="btn btn-outline btn-sm" onClick={copierAdresse}>
               {copie ? 'Copié ✓' : 'Copier'}
             </button>
+            {copieRefusee && <span className="muted" role="status">Le navigateur a refusé la copie : sélectionne l'adresse pour la copier.</span>}
           </div>
         ) : (
           <p className="muted">Adresse en cours de génération — recharge la page si elle n'apparaît pas.</p>

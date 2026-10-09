@@ -14485,3 +14485,25 @@ session — tant que celle-ci vit, ce que la session gardée dans le navigateur 
 chaque réglage qui le fait marcher (adresses, SMTP et sa clé à recréer, débit, longueur, durée du lien) et porte le texte
 du modèle d'e-mail, que rien d'autre ne garde ; il ajoute à l'inscription publique sa nouvelle conséquence. Le registre
 (RGPD.md) a croisé la ligne de la révision des comptes, posée le même jour : les deux lignes sont gardées.
+
+### 09/10/2026 — LA NAVIGATION DU CLIENT PARAÎT À SON ACCUEIL, SUR ORDINATEUR
+
+(`Layout.tsx`, `index.css`, `Layout.test.tsx`, vues `*-client-*` du banc de captures.) La coque retirait la `<nav>` du DOM à
+l'accueil du client — pensé pour le téléphone, où ses tuiles tiennent lieu de navigation —, et sur ordinateur la colonne de
+gauche s'y affichait sans une entrée (« pourquoi il n'y a pas d'onglet sur le panneau de gauche ? », cabinet, 09/10/2026). La
+même `<nav>` est désormais toujours rendue ; à l'accueil elle porte `app-nav-accueil-client`, que index.css cache dans le seul
+bloc `@media (max-width: 720px)`, celui où `.sidebar nav` devient la barre du bas : aucune lecture de la largeur en JavaScript,
+mêmes quatre entrées. jsdom n'évalue pas les requêtes de largeur : le test lit la feuille (12 mutations sur 13 mordent, la
+dernière est équivalente) et Chromium est mesuré par le banc — la capture du téléphone est identique pixel pour pixel, celle de
+l'ordinateur ne change que dans la zone de la navigation.
+
+### 09/10/2026 — LE MINUTEUR DE « COPIER » SURVIVAIT À L'ÉCRAN, ET UN PRESSE-PAPIERS REFUSÉ NE DISAIT RIEN
+
+(`AccesTab.tsx`, `AccesTab.test.tsx`.) « Copier » l'adresse de collecte armait un minuteur de deux secondes pour effacer
+« Copié ✓ », que rien n'annulait. La suite démonte chaque écran à la fin de son test, et le second garde
+d'`ecransAvantLecture.test.tsx` clique ce geste : sous la charge, le rappel tombait sur un environnement déjà détruit —
+une erreur non gérée, qui a fait finir une passe de la suite entière en code 1 (vue le 09/10/2026, rejouée seule trois
+fois propre). Le minuteur vit désormais dans un `useRef`, annulé au démontage et avant d'en armer un autre ; une copie
+revenue après le démontage n'en arme aucun ; un presse-papiers refusé (permission, page non sécurisée) se dit à côté du
+bouton, au lieu de partir en rejet non géré sans rien dire. Rouge avant : quatre des cinq tests nouveaux ; six mutations
+sur six mordent — la sixième, le minuteur précédent laissé armé, a demandé le test de deux copies rapprochées.

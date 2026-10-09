@@ -1,4 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from './Layout'
@@ -56,12 +59,13 @@ vi.mock('../lib/supabase', () => ({
 
 // Monter un `AuthProvider` complet ferait dépendre ce test d'une session Supabase ; la charte et le
 // thème, eux, touchent au navigateur (`matchMedia` n'existe pas sous jsdom).
-// Le chef de cabinet par défaut ; un comptable dans le test qui vérifie à qui l'apparence est réservée.
-const compte = vi.hoisted(() => ({ estChef: true }))
+// Le chef de cabinet par défaut ; un comptable dans le test qui vérifie à qui l'apparence est réservée, un client dans ceux
+// de sa navigation.
+const compte = vi.hoisted(() => ({ estChef: true, role: 'cabinet' as 'cabinet' | 'client' }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     session: { user: { email: 'chef@cabinet-de-test.fr' } },
-    role: 'cabinet',
+    role: compte.role,
     isSuperAdmin: false,
     estChef: compte.estChef,
     mesSocietes: [],
@@ -101,6 +105,9 @@ async function afficher(chemin: string) {
                 refermerait pas disparaîtrait quand même, pour une raison qui n'est pas la bonne. */}
             <Route path="/apparence" element={<p>Écran de l'apparence</p>} />
             <Route path="/essai-volet" element={<EcranAvecVolet />} />
+            {/* L'accueil du client et l'un de ses autres écrans : sa navigation se lit sur les deux. */}
+            <Route path="/accueil" element={<p>Écran de l’accueil</p>} />
+            <Route path="/mes-pieces" element={<p>Écran des pièces du client</p>} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -110,6 +117,7 @@ async function afficher(chemin: string) {
 
 beforeEach(() => {
   localStorage.clear()
+  compte.role = 'cabinet'
   charte.valeur = null
   faux.dossiers = [
     { id: 'd1', nom: 'Cabinet Hélène' },
@@ -242,6 +250,113 @@ describe('Barre latérale — réduite à ses icônes', () => {
     await afficher('/dossiers')
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher un dossier' }))
     expect(document.activeElement).toBe(screen.getByLabelText('Rechercher un dossier'))
+  })
+})
+
+// LA NAVIGATION DU CLIENT PARAÎT TOUJOURS DANS LA BARRE LATÉRALE, L'ACCUEIL COMPRIS (09/10/2026). La coque la retirait du DOM à
+// l'accueil — ses grosses tuiles y font office de navigation, et sur téléphone la barre du bas les aurait doublées — : sur
+// ordinateur, la colonne de gauche s'y affichait alors SANS entrée, et le cabinet s'en est étonné (« pourquoi il n'y a pas
+// d'onglet sur le panneau de gauche ? »). C'est la LARGEUR qui décide, pas le rendu : la même `<nav>` reste dans le DOM
+// (une seule dans `.sidebar`), et index.css la cache sous la requête qui fait de la barre latérale une barre du haut.
+// jsdom n'évalue aucune requête de largeur : le test lit donc la feuille, et c'est le banc de captures
+// (`pc-client-accueil`, `mobile-client-accueil`) qui montre ce que le navigateur en fait.
+describe('Barre latérale — la navigation du client', () => {
+  beforeEach(() => { compte.role = 'client' })
+
+  const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8')
+  // Les mêmes quatre entrées que sur ses autres écrans : cette correction n'ouvre rien de plus au client.
+  const ENTREES = [
+    ['Accueil', '/accueil'], ['Mes pièces', '/mes-pieces'], ['Mes informations', '/mes-informations'], ['Ma simulation', '/ma-simulation'],
+  ]
+  const barre = () => document.querySelector('.sidebar') as HTMLElement
+  const entreesDe = () => within(within(barre()).getByRole('navigation')).getAllByRole('link')
+    .map((lien) => [lien.getAttribute('title'), lien.getAttribute('href')])
+
+  // Les corps des blocs `@media (max-width: 720px)` — la requête où `.sidebar nav` devient la barre du bas —, et la
+  // feuille privée d'eux. Les commentaires partent d'abord : une accolade y trouverait de quoi décaler le décompte.
+  function blocsTelephone(feuille: string): { corps: string[]; reste: string } {
+    const css = feuille.replace(/\/\*[\s\S]*?\*\//g, '')
+    const ouverture = '@media (max-width: 720px) {'
+    const corps: string[] = []
+    let reste = ''
+    let curseur = 0
+    for (let debut = css.indexOf(ouverture); debut !== -1; debut = css.indexOf(ouverture, curseur)) {
+      reste += css.slice(curseur, debut)
+      let profondeur = 1
+      let i = debut + ouverture.length
+      while (profondeur > 0) {
+        if (i >= css.length) throw new Error('bloc @media non refermé')
+        if (css[i] === '{') profondeur++
+        else if (css[i] === '}') profondeur--
+        i++
+      }
+      corps.push(css.slice(debut + ouverture.length, i - 1))
+      curseur = i
+    }
+    return { corps, reste: reste + css.slice(curseur) }
+  }
+
+  it('garde à l’accueil ses quatre entrées dans la barre latérale, comme sur ses autres écrans', async () => {
+    await afficher('/accueil')
+    expect(entreesDe()).toEqual(ENTREES)
+    cleanup()
+    await afficher('/mes-pieces')
+    expect(entreesDe()).toEqual(ENTREES)
+  })
+
+  it('désigne l’accueil comme l’écran affiché', async () => {
+    await afficher('/accueil')
+    const accueil = within(barre()).getAllByRole('link').find((lien) => lien.getAttribute('title') === 'Accueil')!
+    expect(accueil.getAttribute('aria-current')).toBe('page')
+  })
+
+  it('n’a qu’une `<nav>` dans la barre, et c’est celle que le téléphone cache à l’accueil seulement', async () => {
+    await afficher('/accueil')
+    expect(barre().querySelectorAll('nav')).toHaveLength(1)
+    expect(barre().querySelector('nav')!.className).toBe('app-nav-accueil-client')
+    cleanup()
+    await afficher('/mes-pieces')
+    expect(barre().querySelectorAll('nav')).toHaveLength(1)
+    expect(barre().querySelector('nav')!.className).toBe('')
+  })
+
+  it('ne change rien à la navigation du cabinet, ni à celle de son dossier', async () => {
+    compte.role = 'cabinet'
+    await afficher('/dossiers')
+    expect(barre().querySelector('nav')!.className).toBe('')
+    cleanup()
+    await afficher('/dossiers/d1/pieces')
+    expect(barre().querySelector('nav')!.className).toBe('app-nav-en-dossier')
+    cleanup()
+    // La classe est celle du CLIENT : à la même adresse, un compte du cabinet n'en reçoit pas.
+    await afficher('/accueil')
+    expect(barre().querySelector('nav')!.className).toBe('')
+  })
+
+  // La règle qui cache la barre à l'accueil : dans le bloc où elle devient la barre du bas, et NULLE PART AILLEURS — hors de
+  // ce bloc, elle la cacherait aussi sur ordinateur, le défaut d'origine.
+  it('index.css ne cache cette navigation que sous la requête du téléphone', () => {
+    const { corps, reste } = blocsTelephone(CSS)
+    const regle = '.sidebar nav.app-nav-accueil-client { display: none; }'
+    const bloc = corps.find((c) => c.includes(regle))
+    expect(bloc, 'règle absente du bloc téléphone').toBeDefined()
+    // Ce bloc est bien celui où la navigation se fixe en bas de l'écran, et celui qui cache déjà la barre d'un dossier.
+    expect(bloc).toMatch(/\.sidebar nav \{\s*position: fixed;/)
+    expect(bloc).toContain('.sidebar nav.app-nav-en-dossier { display: none; }')
+    expect(reste, 'la règle vaut aussi sur ordinateur').not.toContain('app-nav-accueil-client')
+  })
+
+  it('l’extraction des blocs du téléphone voit une règle posée dehors, et celle qui est dedans', () => {
+    // Une accolade dans un commentaire — ici une fermante, dans le bloc — ne ferme rien.
+    const dedans = '.a { color: red; }\n@media (max-width: 720px) {\n  /* une } trompeuse */\n  .b { color: blue; }\n  @container x (max-width: 5px) { .c { color: green; } }\n}\n/* une { trompeuse */\n.d { color: pink; }'
+    const { corps, reste } = blocsTelephone(dedans)
+    expect(corps).toHaveLength(1)
+    expect(corps[0]).toContain('.b { color: blue; }')
+    expect(corps[0]).toContain('.c { color: green; }')
+    expect(reste).toContain('.a { color: red; }')
+    expect(reste).toContain('.d { color: pink; }')
+    expect(reste).not.toContain('.b')
+    expect(() => blocsTelephone('@media (max-width: 720px) { .a { color: red; }')).toThrow('non refermé')
   })
 })
 

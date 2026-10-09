@@ -36,10 +36,14 @@ import { describe, expect, it } from 'vitest'
  * annulé » s'écrivent pareil et ne se relâchent jamais. Une entrée ici se lit donc comme une
  * affirmation sur ce que le ref SIGNIFIE, pas comme une dispense.
  *
- * Vide à ce jour, et c'est un résultat : les quatorze `*.current = true` de `src` sont tous des
- * verrous d'exécution au sens strict.
+ * Une seule à ce jour (09/10/2026) ; les autres `*.current = true` de `src` sont tous des verrous
+ * d'exécution au sens strict.
  */
-const EXCEPTIONS: Record<string, string> = {}
+const EXCEPTIONS: Record<string, string> = {
+  // Posé au démontage, levé au montage (le mode strict de React monte deux fois) : une copie revenue après la fermeture
+  // de l'onglet n'arme plus le minuteur du « Copié ✓ ». Rien ne l'attend ni ne le prend avant un travail.
+  'src/pages/dossier/AccesTab.tsx [demonte]': '« l’écran est démonté » : ce n’est pas un verrou d’exécution',
+}
 
 function sourcesDeProduction(dossier: string, trouvees: string[] = []): string[] {
   for (const entree of readdirSync(new URL(`../../${dossier}/`, import.meta.url), { withFileTypes: true })) {

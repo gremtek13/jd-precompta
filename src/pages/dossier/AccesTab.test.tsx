@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 
 // L'ÉCRAN QUI DIT QUI PEUT ENTRER DANS UN DOSSIER, et il se trompait dans les deux sens.
@@ -268,5 +268,85 @@ describe('AccesTab — le verrou de création d’un accès client', () => {
 
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     expect(faux.appels).toHaveLength(2)
+  })
+})
+
+// « Copier » l'adresse de collecte affiche « Copié ✓ » deux secondes. Le minuteur ne partait pas avec l'écran : la
+// suite démonte chaque écran à la fin de son test, et un rappel resté en vol tombait, sous la charge, sur un
+// environnement déjà détruit — une erreur non gérée qui faisait échouer la suite au hasard. Et un presse-papiers
+// refusé partait lui aussi en erreur non gérée, le clic ne disant rien.
+describe('AccesTab — « Copier » l’adresse de collecte', () => {
+  let ecrire: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    ecrire = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: ecrire } })
+    // Seuls les minuteurs sont simulés : la lecture du faux client passe par des promesses, que rien ne retient.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('le minuteur du « Copié ✓ » part avec l’écran', async () => {
+    const { unmount } = monter()
+    await act(async () => { screen.getByRole('button', { name: 'Copier' }).click() })
+
+    expect(ecrire).toHaveBeenCalledWith('abc123@precompta.jdarnis.fr')
+    expect(screen.getByRole('button', { name: 'Copié ✓' })).toBeTruthy()
+    // Le garde voit bien le minuteur armé : sans cette ligne, « zéro après le démontage » passerait aussi pour un écran
+    // qui n'en arme aucun.
+    expect(vi.getTimerCount()).toBe(1)
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('le « Copié ✓ » s’efface au bout de deux secondes', async () => {
+    monter()
+    await act(async () => { screen.getByRole('button', { name: 'Copier' }).click() })
+    expect(screen.getByRole('button', { name: 'Copié ✓' })).toBeTruthy()
+
+    await act(async () => { vi.advanceTimersByTime(1999) })
+    expect(screen.getByRole('button', { name: 'Copié ✓' })).toBeTruthy()
+    await act(async () => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('button', { name: 'Copier' })).toBeTruthy()
+  })
+
+  it('deux copies rapprochées ne laissent qu’un minuteur, qui part avec l’écran', async () => {
+    const { unmount } = monter()
+    await act(async () => { screen.getByRole('button', { name: 'Copier' }).click() })
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    await act(async () => { screen.getByRole('button', { name: 'Copié ✓' }).click() })
+    // Le premier minuteur, laissé armé, effacerait le « Copié ✓ » du second une seconde trop tôt, et survivrait au
+    // démontage : seul le dernier est gardé.
+    expect(vi.getTimerCount()).toBe(1)
+    await act(async () => { vi.advanceTimersByTime(1500) })
+    expect(screen.getByRole('button', { name: 'Copié ✓' })).toBeTruthy()
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('une copie revenue après le démontage n’arme aucun minuteur', async () => {
+    let liberer = () => {}
+    ecrire.mockImplementation(() => new Promise<void>((resolve) => { liberer = resolve }))
+    const { unmount } = monter()
+    await act(async () => { screen.getByRole('button', { name: 'Copier' }).click() })
+
+    unmount()
+    await act(async () => { liberer() })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('un presse-papiers refusé se dit, sans « Copié ✓ » ni minuteur', async () => {
+    ecrire.mockRejectedValue(new DOMException('Refusé', 'NotAllowedError'))
+    monter()
+    await act(async () => { screen.getByRole('button', { name: 'Copier' }).click() })
+
+    expect(screen.getByText(/Le navigateur a refusé la copie/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Copié ✓' })).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
