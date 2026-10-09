@@ -12,6 +12,7 @@ import BanqueTab from './dossier/BanqueTab'
 import AccesTab from './dossier/AccesTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import StatistiquesTab from './dossier/StatistiquesTab'
+import BilanTab from './dossier/BilanTab'
 import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
@@ -40,13 +41,13 @@ import { messageErreur } from '../lib/messageErreur'
 // navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
 // d'URL (une valeur absente ou invalide retombe sur "checklist").
 const TABS_VALIDES: DossierTab[] = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'tva', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 
 // Onglets où l'exercice sélectionné a un effet réel (voir AnneeContext) — le sélecteur d'exercice de
 // l'en-tête ne s'affiche que là, pas sur des écrans (Informations, Packs...) où il ne changerait rien.
-const TABS_AVEC_EXERCICE: DossierTab[] = ['pieces', 'banque', 'ecritures', 'statistiques', 'cloture']
+const TABS_AVEC_EXERCICE: DossierTab[] = ['pieces', 'banque', 'ecritures', 'statistiques', 'bilan', 'cloture']
 
 // Exercice le plus pertinent à afficher par défaut à l'ouverture du dossier — jamais "toutes" sur un
 // dossier qui a déjà de l'historique : mélanger plusieurs exercices dans un total (Clôture, en
@@ -355,6 +356,7 @@ export default function DossierDetail() {
               />
             )}
             {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modeComptable={modele.mode} />}
+            {tab === 'bilan' && modele && <BilanTab dossierId={id} modele={modele} onNavigate={allerA} />}
             {tab === 'tva' && dossier && (
               <TvaTab
                 dossierId={id}

@@ -378,6 +378,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   avant tout geste (d7, 09/10/2026) ; la vente qui revient de la plateforme du client ou de Super PDP
   reconnue comme la jumelle de sa facture émise, et la vente portée par plusieurs pièces dite par la Checklist (ligne
   28.6, 09/10/2026).
+- **Bilan** (ligne 33, première brique, 09/10/2026) : l'onglet Bilan range les soldes de l'exercice dans les
+  rubriques et les cases du 2033-A-SD 2026, en centimes, sans rien écrire ; un BNC en trésorerie y voit ses comptes de
+  bilan, avec l'avis qu'il n'en établit pas (CGI, art. 99).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -439,6 +442,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
   révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2 (le module) et R3
   (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS ».
+- **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
+  juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
+  questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
 - **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
   lu par la base, figé à la première écriture ; étapes PC1 à PC9, douze questions au cabinet → « LE PLAN COMPTABLE
   PERSONNALISABLE : LA CONCEPTION ».
@@ -692,6 +698,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un contrôle qui part d'un côté d'une relation ne voit pas l'autre** : partir de l'écriture (`rupturesPisteAudit`,
   `ecrituresSansObjet`), du mouvement, du bien… Le contrôle des écritures compare le compte, le montant, la ventilation
   de la TVA et les dates attendues → « Un contrôle qui part d'un côté d'une relation ».
+- **Le bilan se lit depuis les soldes** (`lib/bilan.ts`) : l'ouverture et les écritures de l'exercice ; rubriques du
+  2033-A-SD (PCG, art. 822-1) ; aucune compensation (art. 112-2), le sens jugé compte par compte et tiers par tiers ;
+  un compte qu'aucune rubrique ne nomme est « à classer », jamais rangé au jugé ; l'écart se juge au centime et se
+  décompose → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
 - **La révision des soldes** (ligne 41, R1) : une DÉCISION par solde d'un compte de bilan à la fin d'un exercice
   (justifié, accepté sur motif, anomalie), immuable : elle se REMPLACE (chaîne `remplace_id`) et, permanente, se REPREND
   l'exercice suivant. Seule `justifier_solde` l'écrit — treize refus dans un ordre fixé, sous le verrou de la
@@ -963,8 +973,9 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
   migration dans l'éditeur SQL de Supabase, dans une transaction, avec la ligne d'historique que l'outil aurait posée
   (`supabase_migrations.schema_migrations` : version, nom, texte) ; puis la session vérifie l'empreinte de l'historique
   (fins de ligne `\r\n` ramenées à `\n`) et rejoue les trois contrôles de l'export.
-- Tout nouvel onglet de dossier rejoint `TABS_VALIDES` (`DossierDetail.tsx`) et `GROUPES_PARCOURS`
-  (`lib/ongletsDossier.ts`).
+- Tout nouvel onglet de dossier rejoint `TABS_VALIDES` (`DossierDetail.tsx`), `GROUPES_PARCOURS`
+  (`lib/ongletsDossier.ts`) et `ICONES_PARCOURS` (`components/icons.tsx`, fermée sur `DossierTab` : sans son icône, il ne
+  compile pas) ; `DossierParcours.test.tsx` déroule chaque groupe et ouvre chaque écran.
 - Jamais d'action réseau externe automatique ou silencieuse : toujours un clic explicite.
 - Jamais de modification en place d'une facture validée : un avoir, puis une nouvelle facture.
 - Facturation électronique : relire les pièges déjà rencontrés avant de les redécouvrir ; les journaux de production font

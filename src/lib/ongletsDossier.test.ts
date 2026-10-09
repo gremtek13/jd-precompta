@@ -7,6 +7,10 @@ describe('libelleDeLOnglet — un écran nommé comme la navigation le nomme', (
     expect(libelleDeLOnglet('banque')).toBe('Banque')
     expect(libelleDeLOnglet('pieces')).toBe('Justificatifs')
     expect(libelleDeLOnglet('informations')).toBe('Informations du dossier')
+    // Le bilan (ligne 33) est dans la navigation, sous Comptabilité, juste après la balance dont il range les soldes.
+    expect(libelleDeLOnglet('bilan')).toBe('Bilan')
+    const comptabilite = GROUPES_PARCOURS.find((g) => g.id === 'comptabilite')!.enfants!.map((e) => e.id)
+    expect(comptabilite.indexOf('bilan')).toBe(comptabilite.indexOf('statistiques') + 1)
   })
 
   it('nomme chaque écran de la navigation, et jamais par son identifiant', () => {
