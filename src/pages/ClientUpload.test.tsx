@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientUpload from './ClientUpload'
@@ -14,10 +14,20 @@ import type { DocumentDivers, Piece, PieceCommentaire } from '../lib/types'
 //  3. une lecture refusée n'affirme pas « aucun dépôt » : le client croirait ses envois perdus ;
 //  4. les fichiers d'un même lot partagent UN registre d'empreintes, qui seul empêche deux copies
 //     d'un même fichier, parties en parallèle, de passer toutes deux le contrôle anti-doublon ;
-//  5. la zone de précision s'ouvre sur un dépôt unique, jamais au hasard dans un lot.
+//  5. la zone de précision s'ouvre sur un dépôt unique, jamais au hasard dans un lot ;
+//  6. tant que les lectures ne sont pas revenues, l'écran dit « Chargement… » : il ne réclame rien (les listes sont vides
+//     faute d'avoir été lues, pas faute d'envois) et ne dit pas « aucun dépôt » ; la relecture qui suit un dépôt, elle,
+//     laisse sous les yeux du client la liste déjà lue.
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   refusees: new Set<string>(),
+  // Tables dont la réponse attend que le test la libère (voir `retenir`) : c'est ainsi qu'on regarde l'écran PENDANT une
+  // lecture, au lieu de parier sur la vitesse du faux client.
+  retenues: new Map<string, Promise<void>>(),
+  // Les tables demandées par l'écran, puis celles dont la réponse lui est parvenue, dans l'ordre : le test sait où en est
+  // la lecture sans deviner combien de temps elle prend.
+  demandees: [] as string[],
+  livrees: [] as string[],
   deposer: vi.fn(),
 }))
 
@@ -33,11 +43,19 @@ vi.mock('../lib/supabase', () => ({
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
-          if (faux.refusees.has(table)) {
-            return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
+          faux.demandees.push(table)
+          // La réponse se compose au moment où elle PART, pas à celui de la demande : une lecture retenue rend l'état de
+          // la base à sa libération, comme le ferait un serveur lent.
+          const repondre = () => {
+            if (faux.refusees.has(table)) {
+              return { data: null, error: { message: 'permission denied' }, count: null }
+            }
+            const toutes = faux.parTable[table] ?? []
+            return { data: toutes.slice(debut, fin + 1), error: null, count: toutes.length }
           }
-          const toutes = faux.parTable[table] ?? []
-          return Promise.resolve({ data: toutes.slice(debut, fin + 1), error: null, count: toutes.length }).then(suite)
+          const retenue = faux.retenues.get(table)
+          return (retenue ? retenue.then(repondre) : Promise.resolve(repondre()))
+            .then((reponse) => { faux.livrees.push(table); return suite(reponse) })
         },
       })
       return chaine
@@ -95,12 +113,44 @@ function poser(o: {
     exercices_clotures: o.clotures ?? [],
   }
   faux.refusees = new Set()
+  faux.retenues = new Map()
+  faux.demandees = []
+  faux.livrees = []
   faux.deposer.mockReset()
 }
 
-async function monter() {
+// Retient la réponse de ces tables jusqu'à ce que le test appelle la fonction rendue. Les lectures déjà parties attendent
+// alors la libération, et la base qu'elles rendent est celle de CE moment-là.
+function retenir(...tables: string[]): () => void {
+  let ouvrir = () => {}
+  const porte = new Promise<void>((resolve) => { ouvrir = resolve })
+  for (const table of tables) faux.retenues.set(table, porte)
+  return () => {
+    for (const table of tables) faux.retenues.delete(table)
+    ouvrir()
+  }
+}
+
+// Un tour d'horloge DANS l'`act` : tout ce que l'écran avait à faire des réponses déjà livrées est rendu avant qu'on le regarde.
+// Sans lui, une assertion d'absence passerait aussi sur un écran qui s'apprêtait à se tromper.
+function laisserPasserUnTour() {
+  return act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+}
+
+// L'écran tel qu'il est au premier rendu : les titres sont là, les lectures n'ont pas encore répondu. Pour le regarder
+// PENDANT qu'elles sont retenues (voir `retenir`).
+async function monterSansAttendre() {
   const rendu = render(<MemoryRouter><ClientUpload /></MemoryRouter>)
   await screen.findByRole('heading', { name: 'Mes dépôts' })
+  return rendu
+}
+
+async function monter() {
+  const rendu = await monterSansAttendre()
+  // Tant que les lectures ne sont pas revenues l'écran dit « Chargement… » : on attend la fin de cette parole, et non la
+  // vitesse du faux client. C'est elle qui décidait si un test lisait, juste après `monter()`, l'état lu ou un état encore
+  // vide — et les tests qui lisent « ce qu'il reste à envoyer » ou les dépôts n'ont ainsi plus à l'attendre un à un.
+  await waitFor(() => expect(screen.queryAllByText('Chargement…')).toHaveLength(0))
   return rendu
 }
 
@@ -161,9 +211,64 @@ describe('ClientUpload — au passage d’une année', () => {
     poser({ clotures: [{ annee: 2026 }] })
     await monter()
 
-    // Garde symétrique d'abord : sans elle, « 2026 a disparu » serait satisfait par un écran vide.
-    screen.getByText('Relevés bancaires 2027')
+    // On attend l'état LU (2027 réclamé) avant de vérifier l'absence de 2026 : vérifiée plus tôt, elle échouait au moindre
+    // retard de la lecture des clôtures, et sur un écran qui n'a encore rien lu elle serait vraie sans rien prouver.
+    await screen.findByText('Relevés bancaires 2027')
     expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+  })
+})
+
+describe('ClientUpload — tant que les lectures ne sont pas revenues', () => {
+  // Le 5 janvier, 2026 est un exercice révolu que le cabinet n'a pas (encore) clôturé : c'est lui qu'un écran qui n'a rien
+  // lu réclame, avec les douze mois « manquants », puisque aucun relevé n'a été lu non plus.
+  beforeEach(() => { vi.setSystemTime(new Date('2027-01-05T10:00:00Z')) })
+
+  const TOUTES_LES_TABLES = [
+    'pieces', 'documents_divers', 'lignes_bancaires', 'cotisations_declarees', 'piece_commentaires', 'exercices_clotures',
+  ]
+
+  it('ne réclame rien et ne dit pas « aucun dépôt » avant d’avoir lu quoi que ce soit', async () => {
+    poser()
+    const liberer = retenir(...TOUTES_LES_TABLES)
+    await monterSansAttendre()
+
+    // Les listes sont vides faute de lecture, pas faute d'envois : ni la demande d'un relevé, ni « aucun dépôt ».
+    expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+    expect(screen.queryAllByText("Aucun dépôt pour l'instant.")).toHaveLength(0)
+    // Les deux blocs le disent, au lieu de rester vides sans explication.
+    expect(screen.getAllByText('Chargement…')).toHaveLength(2)
+
+    await act(async () => { liberer() })
+
+    // Garde symétrique : l'état lu paraît juste après. Sans elle, l'absence ci-dessus se satisferait d'un écran qui ne
+    // montrerait jamais rien.
+    await screen.findByText("Aucun dépôt pour l'instant.")
+    expect(detailDe('Relevés bancaires 2026')).toMatch(/^Mois manquants : janvier, février, mars/)
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
+  })
+
+  it('attend aussi la dernière lecture : des clôtures en retard ne font pas réclamer un exercice déjà clos', async () => {
+    // Le défaut tel que la CI l'a montré : tout est revenu SAUF les clôtures. L'écran réclamait 2026, que le cabinet a clos.
+    poser({ clotures: [{ annee: 2026 }] })
+    const liberer = retenir('exercices_clotures')
+    await monterSansAttendre()
+
+    await waitFor(() => expect(faux.livrees).toEqual(expect.arrayContaining([
+      'pieces', 'documents_divers', 'lignes_bancaires', 'cotisations_declarees', 'piece_commentaires',
+    ])))
+    expect(faux.livrees).not.toContain('exercices_clotures')
+    await laisserPasserUnTour()
+
+    expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+    expect(screen.queryAllByText("Aucun dépôt pour l'instant.")).toHaveLength(0)
+    expect(screen.getAllByText('Chargement…')).toHaveLength(2)
+
+    await act(async () => { liberer() })
+
+    await screen.findByText('Relevés bancaires 2027')
+    expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+    screen.getByText("Aucun dépôt pour l'instant.")
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
   })
 })
 
@@ -231,6 +336,28 @@ describe('ClientUpload — déposer', () => {
     // Et un registre NEUF au lot suivant : au dépôt d'après, la base fait foi.
     await deposer(container, ['c.jpg'])
     expect(faux.deposer.mock.calls[2][2]).not.toBe(appels[0][2])
+  })
+
+  it('laisse sous les yeux du client la liste déjà lue pendant la relecture qui suit le dépôt', async () => {
+    // L'état de chargement ne vaut que pour la PREMIÈRE lecture : `load()` repart après chaque dépôt, et un écran qui
+    // retomberait alors sur « Chargement… » ferait disparaître la liste au moment même où le client vérifie son envoi.
+    poser({ pieces: [piece({ id: 'ancienne', nom_fichier: 'facture-edf.pdf' })] })
+    faux.deposer.mockImplementation(depotReussi('nouvelle'))
+    const { container } = await monter()
+    screen.getByText('facture-edf.pdf')
+
+    const liberer = retenir('pieces')
+    await deposer(container, ['photo.jpg'])
+    // La relecture est partie (deux demandes de `pieces` en tout) et ne rendra rien avant que le test le décide.
+    await waitFor(() => expect(faux.demandees.filter((table) => table === 'pieces')).toHaveLength(2))
+    await laisserPasserUnTour()
+
+    screen.getByText('facture-edf.pdf')
+    expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
+
+    await act(async () => { liberer() })
+    await screen.findByText('photo.jpg')
+    screen.getByText('facture-edf.pdf')
   })
 
   it('dit un doublon en nommant le fichier', async () => {

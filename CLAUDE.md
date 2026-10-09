@@ -450,7 +450,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   tête de chaîne).
 - **Qui prend `data` prend `error`** : une lecture dont l'échec ressemble à un résultat vide se vérifie comme une
   écriture (`lecturesVerifiees.test.ts`, `edgeFunctionsLectures.test.ts`). Légitime seulement si l'échec tombe du côté
-  FERMÉ. **Le vide est une AFFIRMATION** : un état vide ne se dit que d'une liste lue en entier.
+  FERMÉ. **Le vide est une AFFIRMATION** : un état vide ne se dit que d'une liste lue en entier — et revenue : avant sa
+  première lecture, l'écran dit « Chargement… » (`ClientUpload`, `ClientHome`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU ».
 - **Lecture → formulaire → écriture de tous les champs** : une lecture ratée n'offre AUCUN formulaire, sinon le premier
   « Enregistrer » écrase → « ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE ».
 - **PostgREST plafonne les lignes rendues sans le dire** : toute lecture de collection passe par `lireTout` (tranches,
