@@ -18,6 +18,7 @@ import {
   type FactureLue,
 } from './factureElectronique'
 import { xmlDuFacturX } from './factureX'
+import type { CodeStatutRecu, EcartStatutRecu } from './cdarRecu'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT, CÔTÉ APPLICATION (ligne 28.5 de la feuille de route,
 // étape b). La fonction serveur `plateforme-agreee` parle à la plateforme et REND ce qu'elle lit — la liste des
@@ -83,6 +84,10 @@ export interface ConnexionPlateformeVue {
   portee: string | null
   recherche_depuis: string | null
   derniere_recuperation: string | null
+  /** Le point de reprise du relevé des statuts des factures émises (étape d7). */
+  cycle_vie_depuis: string | null
+  /** L'instant du dernier relevé allé au bout : tout ce que la plateforme rendait alors a été lu. */
+  cycle_vie_lu_le: string | null
   created_at: string
   version: string
 }
@@ -169,6 +174,54 @@ export const testerConnexionPlateforme = (dossierId: string) =>
 
 export const listerFlux = (dossierId: string) =>
   appelerPlateforme<ListeFlux>({ action: 'lister', dossierId }, 'Les factures de la plateforme n’ont pas pu être listées.')
+
+// ── Le relevé des statuts des factures émises (ligne 28.5, étape d7) ──────────────────────────────────────────────
+// La fonction lit, sur le clic, les statuts du cycle de vie des factures ÉMISES — un refus (210), un rejet (213), un
+// litige, un paiement… — sur la plateforme du client, les rattache à une facture validée du dossier et les ÉCRIT elle-même
+// (`statuts_factures_recus`), une fois par flux, puis avance son point de reprise : contrairement à la réception, rien
+// n'est à importer par l'écran. Elle rend ce que chaque statut est devenu ; l'écran relit ensuite la table.
+
+/** Ce que l'écran dit d'un message qui porte sur un autre statut (un 601), quand il concerne le dossier. */
+export interface DetailStatutLu {
+  reference: string
+  date_objet: string | null
+  motifs: string | null
+  commentaire: string | null
+}
+
+/** Ce qu'un statut de la plateforme est devenu au relevé. */
+export type IssueStatutLu =
+  | { flux: string; issue: 'garde'; facture_id: string; code: CodeStatutRecu; avertissements: string[] }
+  | { flux: string; issue: 'deja_lu' }
+  | {
+    flux: string; issue: 'ecarte'; ecart: EcartStatutRecu | 'introuvable' | 'trop_lourd' | 'refuse'; raison: string
+    code: string | null; detail: DetailStatutLu | null
+  }
+  /** Un échec passager : le point de reprise s'arrête avant, et le relevé suivant le reprendra. */
+  | { flux: string; issue: 'echec'; raison: string; statut_http: number | null }
+
+export interface ReleveStatuts {
+  hote: string
+  version: string
+  /** D'où le relevé est parti : le point de reprise lu, ou rien quand il a relu depuis le début. */
+  depuis: string | null
+  issues: IssueStatutLu[]
+  ecartes: FluxEcartes
+  en_attente: number
+  en_erreur: number
+  /** Les statuts prêts que le relevé n'a pas lus — le temps ou le nombre —, que le suivant lira. */
+  reportes: number
+  complete: boolean
+  motif: string | null
+  cycle_vie_depuis: string | null
+  cycle_vie_lu_le: string | null
+  /** Pourquoi le point de reprise n'a pas été enregistré : le relevé suivant relira ces statuts, et les reconnaîtra. */
+  erreur_reprise: string | null
+}
+
+export const releverStatutsDesFactures = (dossierId: string, depuisLeDebut: boolean) =>
+  appelerPlateforme<ReleveStatuts>(
+    { action: 'relever', dossierId, depuisLeDebut }, 'Les statuts de la plateforme n’ont pas pu être lus.')
 
 export const repartirDuDebut = (dossierId: string, version: string) =>
   appelerPlateforme<{ recherche_depuis: null }>(

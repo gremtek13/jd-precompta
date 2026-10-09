@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { CODES_STATUT_RECU } from './cdarRecu'
 import {
-  DELAI_AVANT_ABANDON_MS, ETATS_ACTIFS, ETATS_TRANSMISSION, STATUTS_ANNULATION_SUPERPDP, abandonnable, estActive,
-  libelleCanal, libelleCourtCanal, transmissionCourante, transmissionsDe,
+  DELAI_AVANT_ABANDON_MS, ETATS_ACTIFS, ETATS_TRANSMISSION, STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP,
+  abandonnable, annuleeSurSaPlateforme, estActive, libelleCanal, libelleCourtCanal, transmissionCourante, transmissionsDe,
 } from './transmissionsFactures'
 import type { EtatTransmission, TransmissionFacture } from './types'
 
@@ -94,5 +95,19 @@ describe('l’avoir interne d’une facture rejetée ou refusée', () => {
   it('une transmission rejetée dit qu’elle ne repart pas, et pourquoi', () => {
     expect(ETATS_TRANSMISSION.rejete.explication).toMatch(/Elle ne repart pas : elle s’annule par un avoir interne, qui ne se transmet pas/)
     expect(ETATS_TRANSMISSION.rejete.explication).toContain('§ 3.6.4')
+  })
+})
+
+describe('une facture refusée ou rejetée sur sa plateforme (étape d7)', () => {
+  it('210 et 213 l’annulent, pour SA facture seulement ; aucun autre statut du tableau 8', () => {
+    expect(annuleeSurSaPlateforme([{ facture_id: 'f1', code: '210' }], 'f1')).toBe(true)
+    expect(annuleeSurSaPlateforme([{ facture_id: 'f1', code: '213' }], 'f1')).toBe(true)
+    expect(annuleeSurSaPlateforme([{ facture_id: 'f2', code: '210' }], 'f1')).toBe(false)
+    expect(annuleeSurSaPlateforme([], 'f1')).toBe(false)
+    const autres = CODES_STATUT_RECU.filter((c) => !STATUTS_ANNULATION_PLATEFORME.includes(c))
+    expect(autres).toHaveLength(12)
+    expect(annuleeSurSaPlateforme(autres.map((code) => ({ facture_id: 'f1', code })), 'f1')).toBe(false)
+    // Un refus parmi d'autres statuts suffit, où qu'il soit dans la liste.
+    expect(annuleeSurSaPlateforme([...autres.map((code) => ({ facture_id: 'f1', code })), { facture_id: 'f1', code: '213' }], 'f1')).toBe(true)
   })
 })

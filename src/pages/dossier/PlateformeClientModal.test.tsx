@@ -37,7 +37,8 @@ function connexion(o: Partial<ConnexionPlateformeVue> = {}): ConnexionPlateforme
   return {
     nom: 'Plateforme fictive', url_flux: 'https://pa.exemple.fr/afnor', url_jeton: 'https://pa.exemple.fr/jeton',
     hote: 'pa.exemple.fr', client_id: 'cabinet-42', organisation_id: null, portee: null, recherche_depuis: null,
-    derniere_recuperation: null, created_at: '2026-10-07T09:00:00.000Z', version: 'v1', ...o,
+    derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null, created_at: '2026-10-07T09:00:00.000Z',
+    version: 'v1', ...o,
   }
 }
 let numero = 0

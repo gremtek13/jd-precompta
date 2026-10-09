@@ -40,7 +40,8 @@ const SANS_DRAPEAU: DrapeauxPlateforme = {
 const connexion: ConnexionPlateformeVue = {
   nom: 'Plateforme Alpha', url_flux: 'https://pa.exemple.fr/afnor', url_jeton: 'https://pa.exemple.fr/jeton',
   hote: 'pa.exemple.fr', client_id: 'cabinet', organisation_id: null, portee: null, recherche_depuis: null,
-  derniere_recuperation: null, created_at: '2026-10-01T10:00:00.000Z', version: 'v1',
+  derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null, created_at: '2026-10-01T10:00:00.000Z',
+  version: 'v1',
 }
 
 function repondre(reponse: ReponsePlateforme<{ connexion: ConnexionPlateformeVue | null }>) {

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossDomainAcknowledgementAndResponse xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100" xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn.cpro.gouv.fr:1p0:CDV:einvoicingF2</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+  <rsm:ExchangedDocument>
+    <ram:ID>LITIGE-2027-000044</ram:ID>
+    <ram:IssueDateTime>
+      <udt:DateTimeString format="204">20271006161000</udt:DateTimeString>
+    </ram:IssueDateTime>
+    <ram:SenderTradeParty>
+      <ram:GlobalID schemeID="0238">9992</ram:GlobalID>
+      <ram:RoleCode>WK</ram:RoleCode>
+    </ram:SenderTradeParty>
+    <ram:IssuerTradeParty>
+      <ram:GlobalID schemeID="0002">987654324</ram:GlobalID>
+      <ram:Name>Client Démo Industries</ram:Name>
+      <ram:RoleCode>BY</ram:RoleCode>
+    </ram:IssuerTradeParty>
+    <ram:RecipientTradeParty>
+      <ram:GlobalID schemeID="0002">123456782</ram:GlobalID>
+      <ram:Name>Atelier Démo Conseil</ram:Name>
+      <ram:RoleCode>SE</ram:RoleCode>
+    </ram:RecipientTradeParty>
+  </rsm:ExchangedDocument>
+  <rsm:AcknowledgementDocument>
+    <ram:IssueDateTime>
+      <udt:DateTimeString format="204">20271006161000</udt:DateTimeString>
+    </ram:IssueDateTime>
+    <ram:ReferenceReferencedDocument>
+      <ram:IssuerAssignedID>F2027-0044</ram:IssuerAssignedID>
+      <ram:TypeCode>380</ram:TypeCode>
+      <ram:ReferenceTypeCode>urn.cpro.gouv.fr:1p0:CDV:einvoicingF2</ram:ReferenceTypeCode>
+      <ram:FormattedIssueDateTime>
+        <qdt:DateTimeString format="204">20271005000000</qdt:DateTimeString>
+      </ram:FormattedIssueDateTime>
+      <ram:ProcessConditionCode>207</ram:ProcessConditionCode>
+      <ram:ProcessCondition>En litige</ram:ProcessCondition>
+      <ram:IssuerTradeParty>
+        <ram:GlobalID schemeID="0002">123456782</ram:GlobalID>
+      </ram:IssuerTradeParty>
+      <ram:SpecifiedDocumentStatus>
+        <ram:ReasonCode>QTE_ERR</ram:ReasonCode>
+        <ram:Reason>Quantité facturée incorrecte</ram:Reason>
+        <ram:SequenceNumeric>1</ram:SequenceNumeric>
+        <ram:IncludedNote>
+          <ram:Content><![CDATA[Deux journées facturées, une seule réalisée <selon le planning>.]]></ram:Content>
+        </ram:IncludedNote>
+      </ram:SpecifiedDocumentStatus>
+    </ram:ReferenceReferencedDocument>
+  </rsm:AcknowledgementDocument>
+</rsm:CrossDomainAcknowledgementAndResponse>

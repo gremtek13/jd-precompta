@@ -107,7 +107,8 @@ vi.mock('../../lib/supabase', () => {
 const CONNEXION = {
   nom: 'Plateforme Démo', url_flux: 'https://flux.plateforme-demo.fr', url_jeton: 'https://flux.plateforme-demo.fr/jeton',
   hote: 'flux.plateforme-demo.fr', client_id: 'cabinet', organisation_id: null, portee: null, recherche_depuis: null,
-  derniere_recuperation: null, created_at: '2026-10-01T08:00:00+00:00', version: 'v1',
+  derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null, created_at: '2026-10-01T08:00:00+00:00',
+  version: 'v1',
 }
 
 function transmission(o: Partial<TransmissionFacture> = {}): TransmissionFacture {

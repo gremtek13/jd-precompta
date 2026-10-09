@@ -151,7 +151,7 @@ vi.mock('./factureX', () => ({
 
 const {
   appelerPlateforme, cleFlux, estTermine, importerFlux, lireFluxImportes, lireSynchronisationSuperPdp, nomDuFichier,
-  notesDImport, planReception, pointDeReprise, preparerReception, recevoirFactures,
+  notesDImport, planReception, pointDeReprise, preparerReception, recevoirFactures, releverStatutsDesFactures,
 } = await import('./receptionPlateforme')
 
 // ── Les factures fictives ────────────────────────────────────────────────────────────────────────────────────────
@@ -316,6 +316,17 @@ describe('appelerPlateforme', () => {
     const r = await appelerPlateforme({ action: 'telecharger', flowId: 'inconnu', document: 'original' }, 'repli')
     expect(r.erreur).toBe('Cette facture n’existe plus chez la plateforme.')
     expect(r.drapeaux).toEqual({ definitif: true, raison: 'introuvable', perimee: false, acces_refuse: false, identifiants_refuses: false })
+  })
+})
+
+describe('releverStatutsDesFactures (étape d7)', () => {
+  it('demande le relevé du dossier, depuis le point de reprise ou depuis le début, et rend ce que la fonction rend', async () => {
+    expect((await releverStatutsDesFactures('d1', false)).erreur).toBeNull()
+    await releverStatutsDesFactures('d1', true)
+    expect(journal.appels).toEqual([
+      { action: 'relever', dossierId: 'd1', depuisLeDebut: false },
+      { action: 'relever', dossierId: 'd1', depuisLeDebut: true },
+    ])
   })
 })
 

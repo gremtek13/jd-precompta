@@ -1,4 +1,5 @@
-import type { EtatTransmission, TransmissionFacture } from './types'
+import type { CodeStatutRecu } from './cdarRecu'
+import type { EtatTransmission, StatutFactureRecu, TransmissionFacture } from './types'
 
 // LES TRANSMISSIONS D'UNE FACTURE, TELLES QUE L'ÉCRAN LES DIT (ligne 28.5, étape c4 ; table `transmissions_factures`).
 // Une facture validée part par la plateforme agréée du client (plateforme-agreee, « déposer ») ou par Super PDP
@@ -15,6 +16,22 @@ export const ETATS_ACTIFS: readonly EtatTransmission[] = ['envoi', 'depose', 'ac
 // Les statuts d'une facture, dans l'historique de Super PDP, qui l'annulent par un avoir interne : 210 « Refusée » par
 // l'acheteur, 213 « Rejetée » par une plateforme (DGFiP, § 3.6.4). Les mêmes que la base lit.
 export const STATUTS_ANNULATION_SUPERPDP: readonly string[] = ['fr:210', 'fr:213']
+
+// Les mêmes, lus sur la plateforme du client (`statuts_factures_recus`, étape d7) : la base les lit aux quatre endroits
+// où un refus de Super PDP fait refuser — l'encaissement, la déclaration hors application et sa garde, la transmission
+// de la facture et celle de l'avoir qui l'annule (migration cycle_de_vie_des_factures_emises).
+export const STATUTS_ANNULATION_PLATEFORME: readonly CodeStatutRecu[] = ['210', '213']
+
+/** Un statut lu sur la plateforme du client, tel que les refus le lisent. */
+export type StatutPlateformeLu = Pick<StatutFactureRecu, 'facture_id' | 'code'>
+
+/**
+ * La facture a-t-elle été refusée (210) ou rejetée (213) sur sa plateforme ? Les statuts sont ceux du DOSSIER, lus en
+ * entier : le filtre sur la facture se fait ici, comme la base le fait.
+ */
+export function annuleeSurSaPlateforme(statuts: readonly StatutPlateformeLu[], factureId: string): boolean {
+  return statuts.some((s) => s.facture_id === factureId && STATUTS_ANNULATION_PLATEFORME.includes(s.code))
+}
 
 // La référence que l'écran cite, et que la base suit.
 export const REGLE_AVOIR_INTERNE = 'spécifications externes de la DGFiP, § 3.6.4'

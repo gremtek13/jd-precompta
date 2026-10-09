@@ -11,7 +11,7 @@ import {
   resteAEncaisser,
   type ContexteFacture, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type EvenementSuperpdpLu,
   type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue, type ResteDuTaux, type SaisieEncaissement,
-  type TransmissionLue, type TransmissionPourDeclaration,
+  type StatutPlateformeLu, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
 import { lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche } from '../../lib/encaissementsAffichage'
 import { paiementsDesPieces, type LignePayante, type PartReglee } from '../../lib/rattachement'
@@ -56,6 +56,12 @@ type MouvementEcran = MouvementPropose & LignePayante
 type ReglementEcran = PartReglee & { id: string }
 type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier'>
 type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le'>
+
+// Les statuts lus sur la plateforme du client (étape d7) : aucun tant que rien ne les relève — le bouton qui les lit et
+// leur lecture ici viennent avec l'écran de l'étape d7. Passés à `refusDeLaFacture` et `refusDeclaration`, qui les
+// exigent sans valeur par défaut. La base les lit déjà : un refus relevé d'ailleurs entre-temps se dirait au clic, par
+// son message.
+const AUCUN_STATUT_LU: readonly StatutPlateformeLu[] = []
 
 interface Lu {
   // La facture et ses avoirs : un avoir réduit ce que le client doit encore, à l'écran seulement.
@@ -204,7 +210,7 @@ function contexteDe(dossierId: string, factureId: string, lu: Lu): ContexteFactu
   if (!facture) return null
   return {
     dossierId, facture, lignes: lu.lignes, transmissions: lu.transmissions, evenementsSuperpdp: lu.evenements,
-    encaissements: lu.encaissements, parts: lu.parts,
+    statutsRecus: AUCUN_STATUT_LU, encaissements: lu.encaissements, parts: lu.parts,
   }
 }
 
@@ -619,7 +625,7 @@ function Contenu({
       return <div>{lignes}</div>
     }
     const refusDecl = offerte
-      ? refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, null)
+      ? refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, null)
       : null
     if (!offerte) lignes.push(<div key="hors">Ne se déclare pas d’ici : voir le statut « Encaissée » ci-dessus.</div>)
     else if (refusDecl == null) {
@@ -705,7 +711,7 @@ function Contenu({
                   // « Déclaré sur la plateforme » : un encaissement ou une contre-passation qui compte, pas encore déclaré,
                   // que la base inscrirait, sous une obligation due ou facultative.
                   const declarable = offerte && e.retire_le == null && !declares.has(e.id)
-                    && refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, null) == null
+                    && refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, null) == null
                   // « Contre-passer » : un encaissement déclaré, à la place de « Retirer ». Tout ce qui précède la date se
                   // juge sans elle : un premier refus « date à renseigner » dit que rien d'autre ne s'y oppose.
                   const refusCp = refusDuRetrait?.cle === 'declare'
@@ -923,7 +929,7 @@ function EtapeDeclaration({ dossierId, lu, facture, encaissement: e, etape, setE
 }) {
   const contrePassation = e.annule_id != null
   const hote = plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements)
-  const refus = refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, noteEnvoyee(etape.note))
+  const refus = refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, noteEnvoyee(etape.note))
   // Un refus de l'ACHETEUR fait sur la plateforme du client est invisible d'ici (l'application ne lit pas encore le cycle
   // de vie des factures émises sur cette plateforme, étape d7) ; celui que Super PDP rend, la base et le module le
   // connaissent. Une contre-passation suit l'encaissement qu'elle annule, la facture eût-elle été refusée depuis.

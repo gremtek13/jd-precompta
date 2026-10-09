@@ -105,8 +105,9 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   - `banque-connexion` — la connexion bancaire d'un dossier (Enable Banking, bac à sable) ; REND les mouvements, l'écran
     importe.
   - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de flux que publient les plateformes ; REND les
-    factures, l'écran importe ; DÉPOSE une facture émise et suit son accusé ; le secret de la connexion ne revient
-    jamais au navigateur.
+    factures, l'écran importe ; DÉPOSE une facture émise et suit son accusé ; RELÈVE les statuts du cycle de vie des
+    factures émises et les écrit elle-même (`statuts_factures_recus`) ; le secret de la connexion ne revient jamais au
+    navigateur.
   - `taux-change-bce` — le cours BCE d'une devise à une date.
 
 ## Stack technique
@@ -154,8 +155,8 @@ supabase/
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
-                    abandonTransmission, encaissementsFactures, transmissionsEncaissements ; validationExercice,
-                    liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
+                    abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus ;
+                    validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
   config.toml     le réglage verify_jwt de chaque Edge Function, et rien d'autre.
@@ -379,7 +380,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
   et à l'écran le 09/10/2026 (la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du
   08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix à trancher par un premier
-  essai réel) ; l'essai réel sur le bac à sable de Super PDP — et (e) l'e-reporting.
+  essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base et dans
+  `plateforme-agreee` le 09/10/2026 (l'écran à venir) ; l'essai réel sur le bac à sable de Super PDP — et (e)
+  l'e-reporting.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 
 ## Feuille de route — page Notion à tenir à jour
@@ -509,7 +512,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   Textract se pagine par `NextToken` (boucle sur un fournisseur de pages, testée).
 - **Le compilateur des Edge Functions** (`tsconfig.edge.json`, `edgeFunctionsCodeMort.test.ts`) ne garantit que le CODE
   MORT ; le typage complet rend des erreurs connues (SDK non installés).
-- **Copies gardées** : montants, dates, classification, orientation, statut de TVA, blocs de l'assistant (un garde par
+- **Copies gardées** : montants, dates, classification, orientation, statut de TVA, la lecture d'un statut reçu
+  (`cdarRecu`, dans `plateforme-agreee`), blocs de l'assistant (un garde par
   bloc), et `historiqueDuClient`, seule barrière entre le fil envoyé par le navigateur et le modèle →
   « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ».
 
@@ -723,7 +727,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   les déclarations du dossier par `lireTout` — lues en partie, il n'offre AUCUN geste — ; dit de chaque encaissement
   où il est déclaré, ou où et avant quand le déclarer, ou pourquoi pas d'ici ; « Déclaré sur la plateforme »
   (obligation due ou facultative) dit ce qu'il faut saisir champ par champ, de vérifier que l'acheteur n'a pas refusé
-  la facture sur la plateforme du client (invisible jusqu'à d7), et confirme en nommant ce qui est déclaré ;
+  la facture sur la plateforme du client (lue depuis d7 : l'écran de la phase C dira ce qui est su), et confirme en nommant ce qui est déclaré ;
   « Contre-passer » remplace « Retirer » sur un déclaré, date jamais proposée. L'onglet Factures porte une SECONDE
   pastille, « À déclarer » / « Déclaration en retard », pour une obligation DUE et sur ce qui se déclare d'ici
   seulement (`pastilleDeclaration`), muette sur toute lecture incomplète. `encaissementsEcritures.test.ts` refuse toute
@@ -738,6 +742,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   lit par `centimesExacts`, jamais par `decimal` (refus à tort dès 2²⁷ €). Le module ne juge ni si ni où le statut se
   déclare ; son bloc se recopie derrière ceux de la facture électronique (`cdarEncaisseeCopie.test.ts`), ses exemples
   passent par `outils/facturation/cdar/` → « LE MESSAGE DU STATUT « ENCAISSÉE » ».
+- **Le cycle de vie des factures émises** (`statuts_factures_recus`, ligne 28.5 d7) : les statuts que la plateforme du
+  client rend au vendeur (`CustomerInvoiceLC` entrants, CDAR) se relèvent sur un clic (`plateforme-agreee`, action
+  `relever`), se lisent par `lib/cdarRecu.ts` sans jamais deviner (copie gardée par `cdarRecuCopie.test.ts`), se
+  rattachent à une facture VALIDÉE du dossier par l'identité de G1.42 — numéro, année, SIREN FIGÉ à la validation — et
+  s'écrivent une fois par flux, par la fonction seule ; ce qui ne se rattache à rien ne se garde pas, il se dit, et
+  jamais avec ce que porte le message d'une autre entreprise. Un 210 ou un 213 lu a les conséquences d'un refus chez
+  Super PDP, aux quatre endroits où la règle vit (refus 5, refus 6 et sa garde, transmission de la facture et de son
+  avoir), sous les mêmes mots ; pour une écriture d'hier, seul le statut lu avant elle compte. Point de reprise à part
+  (`cycle_vie_depuis`), règle de la réception (`repriseDesStatuts` confrontée à `pointDeReprise`). Le 601 se lit et se
+  dit ; son effet appartient à d6 → « LE CYCLE DE VIE DES FACTURES ÉMISES ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -753,7 +767,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 5838 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 5991 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

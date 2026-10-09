@@ -156,6 +156,13 @@ MONDE.evenements.forEach((ev, i) => {
   corps.push('  insert into facture_superpdp_events (dossier_id, facture_id, superpdp_event_id, status_code, status_text, occurred_at) '
     + `values (d, v, ${-(i + 1)}, ${lit(ev.code)}, 'essai', now());`)
 })
+// Les statuts lus sur la plateforme du client (étape d7), APRÈS les transmissions : la garde d'une transmission refuse
+// la facture qu'un 210 ou un 213 lu avant elle annule.
+MONDE.statutsRecus.forEach((s, i) => {
+  corps.push(`  select f.id, f.dossier_id into v, d from factures_emises f where f.id = (select id from ids where nom = ${lit(s.facture)});`)
+  corps.push('  insert into statuts_factures_recus (dossier_id, facture_id, hote, flux_id, code) '
+    + `values (d, v, 'pa.exemple.fr', ${lit(`cycle-${i + 1}`)}, ${lit(s.code)});`)
+})
 corps.push('end $$;')
 sql.push(...corps)
 

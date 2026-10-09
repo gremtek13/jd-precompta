@@ -4,7 +4,7 @@ import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { ajouterMois, anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import type { PaiementsDesPieces } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
-import { STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
+import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
 import type {
   EncaissementFacture, EncaissementFactureTaux, EtatTransmission, FactureEmise, FactureLigne, FactureSuperpdpEvent,
   LigneBancaire, MoyenEncaissement, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
@@ -26,7 +26,10 @@ import type {
 //   - les encaissements que la pièce jumelle et le relevé permettent de proposer (`propositionsEncaissement`) ;
 //   - depuis l'étape d4, ce qui est déclaré (`encaissementsDeclares`), où le statut se déclare
 //     (`plateformeDeLaDeclaration`), ce que la déclaration hors application et la contre-passation refuseraient
-//     (`refusDeclaration`, `refusContrePassation`) et ce que la contre-passation écrira (`contrePassationDe`).
+//     (`refusDeclaration`, `refusContrePassation`) et ce que la contre-passation écrira (`contrePassationDe`) ;
+//   - depuis l'étape d7 (migration cycle_de_vie_des_factures_emises), qu'un refus (210) ou un rejet (213) LU SUR LA
+//     PLATEFORME DU CLIENT (`statuts_factures_recus`) fait refuser l'encaissement et la déclaration comme un refus de
+//     Super PDP, sous les mêmes mots.
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -49,6 +52,7 @@ export type LigneDeFacture = Pick<FactureLigne, 'facture_id' | 'ordre' | 'design
 
 export type TransmissionLue = Pick<TransmissionFacture, 'facture_id' | 'etat' | 'hote' | 'flux_id'>
 export type EvenementSuperpdpLu = Pick<FactureSuperpdpEvent, 'facture_id' | 'status_code'>
+export type { StatutPlateformeLu }
 export type EncaissementLu = Pick<EncaissementFacture,
   'id' | 'dossier_id' | 'facture_id' | 'montant' | 'ligne_bancaire_id' | 'annule_id' | 'retire_le'>
 export type PartLue = Pick<EncaissementFactureTaux, 'encaissement_id' | 'taux' | 'montant'>
@@ -66,6 +70,8 @@ export interface ContexteFacture {
   lignes: readonly LigneDeFacture[]
   transmissions: readonly TransmissionLue[]
   evenementsSuperpdp: readonly EvenementSuperpdpLu[]
+  /** Les statuts lus sur la plateforme du client (étape d7) : un 210 ou un 213 refuse tout encaissement. */
+  statutsRecus: readonly StatutPlateformeLu[]
   encaissements: readonly EncaissementLu[]
   parts: readonly PartLue[]
 }
@@ -442,9 +448,10 @@ function annuleParUneContrePassation(e: Pick<EncaissementLu, 'id'>, encaissement
 
 /**
  * Ce qui, de la facture seule, refuse tout encaissement — les refus 2 à 6 de la base, dans son ordre : une facture d'un
- * autre dossier, un brouillon, un avoir, une facture rejetée par une plateforme ou rejetée ou refusée chez Super PDP
- * (elle s'annule par un avoir interne), une facture dont l'en-tête ne se retrouve pas dans ses lignes. Null quand elle
- * peut en recevoir. L'accès au dossier (refus 1), seule la base le juge : l'écran n'existe que pour qui lit le dossier.
+ * autre dossier, un brouillon, un avoir, une facture rejetée par une plateforme, rejetée ou refusée chez Super PDP ou
+ * sur la plateforme du client (elle s'annule par un avoir interne), une facture dont l'en-tête ne se retrouve pas dans
+ * ses lignes. Null quand elle peut en recevoir. L'accès au dossier (refus 1), seule la base le juge : l'écran n'existe
+ * que pour qui lit le dossier.
  */
 export function refusDeLaFacture(c: ContexteFacture): RefusEncaissement<CleRefusEnregistrement> | null {
   const f = c.facture
@@ -452,7 +459,8 @@ export function refusDeLaFacture(c: ContexteFacture): RefusEncaissement<CleRefus
   if (f.statut !== 'validee') return refus('brouillon')
   if (f.type !== 'facture') return refus('avoir')
   if (c.transmissions.some((t) => t.facture_id === f.id && t.etat === 'rejete')
-    || c.evenementsSuperpdp.some((e) => e.facture_id === f.id && STATUTS_ANNULATION_SUPERPDP.includes(e.status_code))) {
+    || c.evenementsSuperpdp.some((e) => e.facture_id === f.id && STATUTS_ANNULATION_SUPERPDP.includes(e.status_code))
+    || annuleeSurSaPlateforme(c.statutsRecus, f.id)) {
     return refus('rejetee')
   }
   const m = montantsDuDocument(f, c.lignes.filter((l) => l.facture_id === f.id), null)
@@ -714,7 +722,8 @@ const caracteres = (texte: string) => [...texte].length
  * Ce que `declarer_encaissement_hors_application` refuserait : le PREMIER refus, dans l'ordre de la base et sous son
  * message, ou null quand elle inscrirait la déclaration. Les listes sont celles du DOSSIER — le module filtre lui-même
  * sur l'encaissement et sa facture. L'accès au dossier (refus 1), seule la base le juge. L'obligation de déclarer ne
- * se juge pas ici : `obligationEncaissee` la dit, et l'écran n'offre pas de déclarer ce qui est sans objet.
+ * se juge pas ici : `obligationEncaissee` la dit, et l'écran n'offre pas de déclarer ce qui est sans objet. Un refus
+ * (210) ou un rejet (213) lu sur la plateforme du client (`statutsRecus`, étape d7) refuse comme un refus de Super PDP.
  */
 export function refusDeclaration(
   dossierId: string,
@@ -723,6 +732,7 @@ export function refusDeclaration(
   declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
   transmissions: readonly TransmissionPourDeclaration[],
   evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+  statutsRecus: readonly StatutPlateformeLu[],
   note: string | null,
 ): RefusEncaissement<CleRefusDeclaration> | null {
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
@@ -735,7 +745,8 @@ export function refusDeclaration(
     if (!declares.has(e.annule_id)) return refusD('contre_passation_non_declaree')
   } else {
     if (transmissions.some((t) => t.facture_id === e.facture_id && t.etat === 'rejete')
-      || evenementsSuperpdp.some((ev) => ev.facture_id === e.facture_id && STATUTS_ANNULATION_SUPERPDP.includes(ev.status_code))) {
+      || evenementsSuperpdp.some((ev) => ev.facture_id === e.facture_id && STATUTS_ANNULATION_SUPERPDP.includes(ev.status_code))
+      || annuleeSurSaPlateforme(statutsRecus, e.facture_id)) {
       return refusD('facture_rejetee')
     }
     if (plateformeAcceptee(e.facture_id, transmissions, evenementsSuperpdp) == null) return refusD('sans_transmission_acceptee')
