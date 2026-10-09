@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
-import { anneeDe, formatDate, formatMoney, slugify } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
-import type { CotisationDeclaree, DocumentDivers, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
+import type { ANouveau, CotisationDeclaree, DocumentDivers, EcritureBrouillon, LigneBancaire } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -15,8 +15,15 @@ import { messageErreur } from '../../lib/messageErreur'
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
 import {
-  avertissementRetraitEcheance, cotisationsAEcrire, ecritureDeLaCotisation, rapprochementsCotisationRefuses,
+  avertissementRetraitEcheance, cotisationsAEcrire, ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses,
+  refusMontantsDuPaiementPersonnel,
 } from '../../lib/cotisationRapprochee'
+import {
+  argumentsDeLaDeclaration, avertissementRetraitPaiementPersonnel, avertissementSuppressionEcheancePayee,
+  paiementsPersonnelsAReprendre, refusPaiementPersonnel, refusRetraitPaiementPersonnel, RETRAIT_EXPORTE,
+} from '../../lib/cotisationPersonnelle'
+import type { ModeleComptable } from '../../lib/engagement'
+import PaiementPersonnelModal from './PaiementPersonnelModal'
 import { ouvrirApercu } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
@@ -33,10 +40,18 @@ import { dateFigee } from '../../lib/validationExercice'
 // décide de la CSG-CRDS : au 108000 en trésorerie, au 646000 avec le reste en engagement.
 //
 // UN EXERCICE VALIDÉ FIGE SES ÉCHÉANCES (ligne 26.6, étape d) : une échéance compte à la date du mouvement qui la paie,
-// sinon à son échéance, et c'est cette date qui dit si elle appartient à un exercice validé. Figée, elle ne change plus,
+// sinon à celle de son paiement depuis le compte personnel, sinon à son échéance, et c'est cette date qui dit si elle
+// appartient à un exercice validé. Figée, elle ne change plus,
 // ne se supprime plus et ne s'écrit plus ; et une échéance ne s'ajoute plus dans un exercice validé — les refus de la
 // base (`garder_cotisation_valide`). L'écran le dit avant le clic, avec ses mots.
-export default function CotisationsTab({ dossierId, modeComptable }: { dossierId: string; modeComptable: ModeComptable }) {
+//
+// UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL DE L'EXPLOITANT (ligne 26.6, phase C ; lib/cotisationPersonnelle.ts) : la
+// colonne « Paiement » offre de la déclarer sur une échéance que rien ne paie, dans une fenêtre où la date n'est jamais
+// proposée, et la dit ensuite payée, avec l'état de son écriture. Le modèle comptable ENTIER entre ici : en engagement,
+// l'écriture se passe face au compte choisi pour le dirigeant (455, 108 ou 467). Son retrait attend sa fonction en base
+// (`RETRAIT_EXPORTE`).
+export default function CotisationsTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
+  const modeComptable = modele.mode
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Les mouvements rapprochés d'une échéance, et les écritures sans pièce du dossier : ce qui dit quelle
   // échéance est payée, et si son paiement est écrit. Chacune son drapeau : leurs conséquences diffèrent.
@@ -80,10 +95,18 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
   const { frontiere, anneesValidees } = useExercicesValides()
+  // L'ouverture d'un dossier repris (la plus ancienne date de ses à-nouveaux) : un paiement d'avant est dans les comptes
+  // repris, et la base le refuse. `undefined` tant qu'elle n'a pas été lue EN ENTIER : le geste n'est pas offert.
+  const [ouverture, setOuverture] = useState<string | null | undefined>(undefined)
+  const [ouvertureIncomplete, setOuvertureIncomplete] = useState<string | null>(null)
+  // L'échéance dont la fenêtre « Payée depuis le compte personnel » est ouverte : son IDENTIFIANT, relu dans la liste à
+  // chaque rendu — une relecture qui la change ou la retire change ce que la fenêtre dit.
+  const [paiementPersonnelDe, setPaiementPersonnelDe] = useState<string | null>(null)
+  const [erreurPaiementPersonnel, setErreurPaiementPersonnel] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const [lectureCotisations, lectureDocuments, lecturePaiements, lectureEcritures] = await Promise.all([
+    const [lectureCotisations, lectureDocuments, lecturePaiements, lectureEcritures, lectureOuverture] = await Promise.all([
       // Tri TOTAL : `echeance` n'est pas unique, donc `id` départage — sans lui, deux tranches
       // se recouvrent ou sautent des lignes, et rien ne le signale.
       lireTout<CotisationDeclaree>((debut, fin) =>
@@ -109,6 +132,11 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           .eq('dossier_id', dossierId).is('piece_id', null)
           .order('id').range(debut, fin),
       ),
+      // L'ouverture du dossier : la date de ses à-nouveaux, la plus ancienne en tête.
+      lireTout<Pick<ANouveau, 'id' | 'date'>>((debut, fin) =>
+        supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      ),
     ])
     setCotisations(lectureCotisations.lignes)
     setCotisationsIncompletes(lectureCotisations.complete ? null : lectureCotisations.motif)
@@ -117,6 +145,8 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
     setPaiementsIncomplets(lecturePaiements.complete ? null : lecturePaiements.motif)
     setEcritures(lectureEcritures.lignes)
     setEcrituresIncompletes(lectureEcritures.complete ? null : lectureEcritures.motif)
+    setOuverture(lectureOuverture.complete ? (lectureOuverture.lignes[0]?.date ?? null) : undefined)
+    setOuvertureIncomplete(lectureOuverture.complete ? null : lectureOuverture.motif)
     setLectureIncomplete(
       [lectureCotisations, lectureDocuments, lecturePaiements]
         .find((l) => !l.complete)?.motif ?? null,
@@ -176,7 +206,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
       setError(`${figee} : cette échéance ne se supprime plus.`)
       return
     }
-    const message = avertissementRetraitEcheance(paiementDe.get(c.id) ?? null, paiementsIncomplets === null)
+    // Payée depuis le compte personnel, elle emporte son paiement et son écriture (la clé est en cascade) : la
+    // confirmation le nomme.
+    const message = [avertissementRetraitEcheance(paiementDe.get(c.id) ?? null, paiementsIncomplets === null), avertissementSuppressionEcheancePayee(c)]
+      .filter((m) => m !== null).join(' ')
     if (!window.confirm(`Retirer cette échéance ?\n\n${message}`)) return
     ecritureEnCours.current = true
     setEnCours(true)
@@ -214,6 +247,58 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           + `${echecs.length} n’ont pas pu l’être : ${echecs[0]}`,
         )
       }
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // DÉCLARER UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL : la base vérifie l'écriture composée par le module et l'écrit
+  // avec la date du paiement, d'un seul tenant. Sous le verrou des écritures du relevé : ces gestes écrivent le même
+  // brouillon, et « Écrire les N » ou « Retirer » partis pendant celui-ci liraient une échéance qui change sous eux. Le
+  // verrou se relâche APRÈS la relecture : relâché avant, la ligne offrirait encore de déclarer l'échéance déjà payée.
+  async function declarerPaiementPersonnel(c: CotisationDeclaree, date: string) {
+    if (ecritureEnCours.current) return
+    // Seconde ceinture : le bouton est grisé sur un refus, et la raison dite au-dessus — la base reste juge.
+    if (ecritureSuspendue || ouverture === undefined || loading) return
+    if (refusPaiementPersonnel(c, date, contextePaiementPersonnel(c))) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    setErreurPaiementPersonnel(null)
+    try {
+      const { error: erreurDeclaration } = await supabase.rpc(
+        'enregistrer_paiement_personnel_cotisation', argumentsDeLaDeclaration(dossierId, c, date, modele),
+      )
+      if (erreurDeclaration) {
+        setErreurPaiementPersonnel(`Le paiement n’a pas pu être déclaré : ${messageErreur(erreurDeclaration, 'raison inconnue')}`)
+      } else {
+        setPaiementPersonnelDe(null)
+      }
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // LE RETRAIT D'UN PAIEMENT PERSONNEL — offert seulement quand sa fonction est en base (`RETRAIT_EXPORTE`) : il défait
+  // le paiement et son écriture ensemble, et l'échéance compte de nouveau à son échéance. Même verrou, même relecture.
+  async function retirerPaiementPersonnel(c: CotisationDeclaree) {
+    if (!RETRAIT_EXPORTE || ecritureEnCours.current) return
+    const refus = refusRetraitPaiementPersonnel(c, anneesValidees)
+    if (refus) {
+      setError(refus.message)
+      return
+    }
+    if (!window.confirm(`Retirer ce paiement ?\n\n${avertissementRetraitPaiementPersonnel(c, modele)}`)) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const { error: erreurRetrait } = await supabase.rpc('retirer_paiement_personnel_cotisation', {
+        p_dossier_id: dossierId, p_cotisation_id: c.id,
+      })
+      if (erreurRetrait) setError(`Le paiement n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
       await load()
     } finally {
       ecritureEnCours.current = false
@@ -312,6 +397,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
     creationEnCours.current = true
     setCreantEcheances(true)
     setError(null)
+    // L'insertion, puis les mises à jour une à une : un échec au milieu laisse en base ce qui est déjà écrit. Sans relecture,
+    // la liste d'avant ne le porte pas, et un second clic RÉINSÉRERAIT les échéances créées — sans unicité (dossier,
+    // échéance) en base, la cotisation compterait deux fois dans la 2035.
+    let ecrit = false
     try {
       // Seules les échéances d'un exercice ouvert : une seule date figée ferait refuser toute l'insertion, qui est d'un
       // seul tenant — et une prévisionnelle figée ne se corrige plus.
@@ -327,11 +416,15 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
         .filter((x): x is { e: { date: string; montant: number; previsionnel: boolean }; existante: CotisationDeclaree } =>
           !!x.existante?.previsionnel && !x.e.previsionnel,
         )
-      const aMettreAJour = aConfirmer.filter((x) => !figeeDe(x.existante))
+      // Payée depuis le compte personnel, ses montants ne changent plus tant que le paiement tient (la base le refuse) :
+      // écartée, et dite à part.
+      const payeesPersonnellement = aConfirmer.filter((x) => !figeeDe(x.existante) && x.existante.paiement_personnel_le)
+      const aMettreAJour = aConfirmer.filter((x) => !figeeDe(x.existante) && !x.existante.paiement_personnel_le)
 
       if (aInserer.length > 0) {
         const { error: insertError } = await supabase.from('cotisations_declarees').insert(aInserer)
         if (insertError) throw insertError
+        ecrit = true
       }
       for (const { e, existante } of aMettreAJour) {
         const { error: updateError } = await supabase
@@ -339,22 +432,28 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           .update({ montant_appele: e.montant, previsionnel: false })
           .eq('id', existante.id)
         if (updateError) throw updateError
+        ecrit = true
       }
 
-      const figees = echeancesProposees.length - proposeesOuvertes.length + aConfirmer.length - aMettreAJour.length
+      const figees = echeancesProposees.length - proposeesOuvertes.length + aConfirmer.length - aMettreAJour.length - payeesPersonnellement.length
       const ignorees = proposeesOuvertes.length - aInserer.length - aConfirmer.length
       setEcheancesProposees([])
       load()
-      if (ignorees > 0 || figees > 0) {
+      if (ignorees > 0 || figees > 0 || payeesPersonnellement.length > 0) {
         window.alert(
           `${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte`
           + (ignorees > 0 ? `, ${ignorees} déjà à jour (ignorée(s))` : '')
           + (figees > 0 ? `, ${figees} d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus` : '')
+          + (payeesPersonnellement.length > 0
+            ? `, ${payeesPersonnellement.length} payée(s) depuis le compte personnel (ignorée(s)) : ses montants ne changent plus tant que ce paiement tient`
+            : '')
           + '.',
         )
       }
     } catch (err) {
       setError(messageErreur(err))
+      // Un échec PARTIEL : la liste se relit avant tout second geste, sous le verrou — relâché après elle.
+      if (ecrit) await load()
     } finally {
       creationEnCours.current = false
       setCreantEcheances(false)
@@ -377,9 +476,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   // Le mouvement qui paie chaque échéance — un au plus (contrainte `lignes_bancaires_cotisation_unique`).
   const paiementDe = new Map(paiements.flatMap((l) => (l.cotisation_id ? [[l.cotisation_id, l] as const] : [])))
   // L'exercice validé qui fige une échéance, dit avec les mots de la base : sa date est celle du mouvement qui la paie,
-  // sinon son échéance (`garder_cotisation_valide`). Sur un relevé lu en partie, un paiement non lu fait juger
-  // l'échéance à sa date à elle : la base reste juge, et son refus se dit.
-  const figeeDe = (c: CotisationDeclaree) => dateFigee(paiementDe.get(c.id)?.date ?? c.echeance, anneesValidees)
+  // sinon celle de son paiement depuis le compte personnel, sinon son échéance (`garder_cotisation_valide`). Sur un relevé
+  // lu en partie, un paiement non lu fait juger l'échéance à sa date à elle : la base reste juge, et son refus se dit.
+  const figeeDe = (c: CotisationDeclaree) =>
+    dateFigee(paiementDe.get(c.id)?.date ?? c.paiement_personnel_le ?? c.echeance, anneesValidees)
   // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne « Paiement » dit pourtant
   // ce qu'il en est de CHAQUE échéance, figée comprise (`idsSansEcritureJuste`) : une échéance figée sans écriture
   // manque au FEC de son exercice, et le dire vaut mieux que de le taire — sans la compter dans un geste refusé.
@@ -395,15 +495,35 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
     ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
     : null
   const proposeesOuvertes = echeancesProposees.filter((e) => !dateFigee(e.date, anneesValidees))
+  const prevuePayeePersonnellement = (date: string) =>
+    cotisations.some((c) => c.echeance === date && c.previsionnel && !!c.paiement_personnel_le)
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : une échéance dont le paiement ou
   // l'écriture n'a pas été lu paraîtrait à écrire, ou écrite ; et un échéancier lu à moitié en cacherait.
   const ecritureSuspendue = cotisationsIncompletes ?? paiementsIncomplets ?? ecrituresIncompletes
 
+  // LES PAIEMENTS DEPUIS LE COMPTE PERSONNEL. Ce que l'écran sait du dossier pour juger une déclaration, lu en entier.
+  const contextePaiementPersonnel = (c: CotisationDeclaree) => ({
+    modele, mouvement: paiementDe.get(c.id) ?? null, anneesValidees, ouverture: ouverture ?? null, aujourdHui: aujourdHuiAParis(),
+  })
+  // Le geste n'est offert que sur ce que tout l'onglet a lu : une échéance que rien ne paie, ni mouvement ni compte
+  // personnel, qui n'est pas figée — sur une lecture partielle, un paiement non lu la ferait paraître impayée.
+  const declarationOfferte = (c: CotisationDeclaree) =>
+    !ecritureSuspendue && ouverture !== undefined && !paiementDe.has(c.id) && !c.paiement_personnel_le && !figeeDe(c)
+  // L'état de leur écriture : à reprendre (absente, différente, ou qui ne peut pas s'écrire), hors exercice figé ; et,
+  // pour dire ce qu'il en est d'une échéance figée, le même contrôle sans la frontière.
+  const aReprendre = new Map(paiementsPersonnelsAReprendre(ecritures, cotisations, modele, frontiere).map((p) => [p.cotisation.id, p.raison]))
+  const aReprendreSansFrontiere = new Set(paiementsPersonnelsAReprendre(ecritures, cotisations, modele, null).map((p) => p.cotisation.id))
+  const cotisationsEcrites = new Set(ecritures.flatMap((e) => (e.cotisation_id ? [e.cotisation_id] : [])))
+  const echeanceDeLaFenetre = paiementPersonnelDe === null ? null : cotisations.find((c) => c.id === paiementPersonnelDe) ?? null
+
   // Le versé d'une échéance : le montant saisi, sinon celui du mouvement rapproché qui la paie, quand ce
   // rapprochement s'écrit. Une échéance prélevée sans versement saisi n'est plus « à verser » — le relevé
   // fait foi, comme dans la 2035 et l'échéancier des dettes de Financement.
+  // Payée depuis le compte personnel, l'échéance est versée : son montant (`montantDeLEcheance`) — sauf si ses montants ne
+  // peuvent pas s'écrire, ce que la colonne « Paiement » dit.
   function verseDe(c: CotisationDeclaree): number | null {
     if (c.montant_verse != null) return c.montant_verse
+    if (c.paiement_personnel_le) return refusMontantsDuPaiementPersonnel(c, modeComptable) ? null : montantDeLEcheance(c)
     const paiement = paiementDe.get(c.id)
     return paiement && !refuses.has(c.id) ? -paiement.montant : null
   }
@@ -420,6 +540,7 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
       [c.echeance, formatDate(c.echeance), c.montant_appele, c.montant_verse, c.montant_csg_crds,
         c.previsionnel ? 'prévisionnel' : null,
         paiementDe.has(c.id) ? formatDate(paiementDe.get(c.id)!.date) : null,
+        c.paiement_personnel_le ? formatDate(c.paiement_personnel_le) : null,
         documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier],
       recherche,
     ),
@@ -446,6 +567,12 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
         accord="lues"
         motif={ecrituresIncompletes}
         consequence="Une échéance payée peut paraître sans écriture alors qu’elle en a une : leur écriture est suspendue."
+      />
+      <BandeauLecturePartielle
+        quoi="L’ouverture du dossier"
+        accord="lue"
+        motif={ouvertureIncomplete}
+        consequence="Une échéance payée depuis le compte personnel ne se déclare pas : un paiement d’avant l’ouverture, dans les comptes repris, ne serait pas dit avant le clic."
       />
       <BrouillonBanner />
 
@@ -529,7 +656,15 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                     <td>
                       {dateFigee(e.date, anneesValidees)
                         ? <span className="muted" title={`${dateFigee(e.date, anneesValidees)} : une échéance ne s’y ajoute plus.`}>Exercice validé</span>
-                        : e.previsionnel
+                        : !e.previsionnel && prevuePayeePersonnellement(e.date)
+                          // La prévisionnelle qu'il confirmerait est payée depuis le compte personnel : la base refuse d'en
+                          // changer les montants tant que ce paiement tient. Dit avant le clic ; le clic l'écarte.
+                          ? (
+                            <span className="muted" title="Ses montants ne changent plus tant que ce paiement tient : elle ne sera pas mise à jour.">
+                              Payée depuis le compte personnel
+                            </span>
+                          )
+                          : e.previsionnel
                           ? <span className="badge badge-warning">Prévisionnel</span>
                           : <span className="badge badge-ok">Définitif</span>}
                     </td>
@@ -704,16 +839,59 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                             ? '—'
                             : c.montant_verse != null
                               ? formatMoney(verse)
-                              // Le montant du mouvement qui la paie, faute de versement saisi : dit d'où il vient.
-                              : <>{formatMoney(verse)} <span className="muted">(relevé)</span></>}
+                              // Le montant du mouvement qui la paie, ou de l'échéance payée depuis le compte personnel, faute
+                              // de versement saisi : dit d'où il vient.
+                              : <>{formatMoney(verse)} <span className="muted">{c.paiement_personnel_le ? '(compte personnel)' : '(relevé)'}</span></>}
                         </div>
                       </td>
                       <td data-libelle="dont CSG-CRDS">{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
                       <td data-libelle="CSG déductible">{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
                       <td data-libelle="Paiement">
-                        {/* Sur une lecture partielle du relevé, on ne sait pas : on ne dit rien plutôt que
-                            d'annoncer « — » sur une échéance dont le paiement n'a pas été lu. */}
-                        {paiementsIncomplets || !paiement
+                        {/* Payée depuis le compte personnel : un fait de la ligne elle-même, dit même sur un relevé lu en
+                            partie ; l'état de son écriture, seulement sur un brouillon lu en entier. */}
+                        {c.paiement_personnel_le ? (
+                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                            <span>Payée depuis le compte personnel le {formatDate(c.paiement_personnel_le)}</span>
+                            {ecrituresIncompletes
+                              ? null
+                              : figee
+                                // Figée : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
+                                ? aReprendreSansFrontiere.has(c.id)
+                                  ? (
+                                    <span className="muted" title={`${figee} : aucune écriture ne s’y passe plus.`}>
+                                      {cotisationsEcrites.has(c.id) ? 'Écriture différente' : 'Sans écriture'}
+                                    </span>
+                                  )
+                                  : <span className="badge badge-ok">Écrite</span>
+                                : aReprendre.has(c.id)
+                                  ? <span className="badge badge-warning" title={aReprendre.get(c.id)}>À reprendre</span>
+                                  : <span className="badge badge-ok">Écrite</span>}
+                            {!ecrituresIncompletes && !figee && aReprendre.has(c.id) && (
+                              <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{aReprendre.get(c.id)}</span>
+                            )}
+                            {RETRAIT_EXPORTE && (() => {
+                              const refusRetrait = refusRetraitPaiementPersonnel(c, anneesValidees)
+                              return refusRetrait
+                                ? <span className="muted" title={refusRetrait.message}>Ne se retire plus</span>
+                                : (
+                                  <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirerPaiementPersonnel(c)}>
+                                    Retirer ce paiement
+                                  </button>
+                                )
+                            })()}
+                          </span>
+                        ) : declarationOfferte(c) ? (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            disabled={enCours}
+                            onClick={() => { setErreurPaiementPersonnel(null); setPaiementPersonnelDe(c.id) }}
+                          >
+                            Payée depuis le compte personnel…
+                          </button>
+                        ) : paiementsIncomplets || !paiement
+                          /* Sur une lecture partielle du relevé, on ne sait pas : on ne dit rien plutôt que
+                             d'annoncer « — » sur une échéance dont le paiement n'a pas été lu. */
                           ? <span className="muted">—</span>
                           : (
                             <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -778,6 +956,28 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           </div>
         )}
       </div>
+
+      {/* Hors de la carte du tableau, dont l'enveloppe est un conteneur de requêtes : voir PaiementPersonnelModal. */}
+      {echeanceDeLaFenetre && (
+        <PaiementPersonnelModal
+          key={echeanceDeLaFenetre.id}
+          cotisation={echeanceDeLaFenetre}
+          contexte={{ modele, mouvement: paiementDe.get(echeanceDeLaFenetre.id) ?? null, anneesValidees, ouverture: ouverture ?? null }}
+          enCours={enCours}
+          attente={
+            loading
+              ? 'Les échéances du dossier sont en cours de lecture : la déclaration attend leur retour.'
+              : ecritureSuspendue
+                ? `Suspendu : la lecture est partielle (${ecritureSuspendue}). Recharge la page.`
+                : ouverture === undefined
+                  ? 'Suspendu : l’ouverture du dossier n’a pas pu être lue en entier. Recharge la page.'
+                  : null
+          }
+          erreur={erreurPaiementPersonnel}
+          onDeclarer={(date) => declarerPaiementPersonnel(echeanceDeLaFenetre, date)}
+          onFermer={() => setPaiementPersonnelDe(null)}
+        />
+      )}
     </>
   )
 }

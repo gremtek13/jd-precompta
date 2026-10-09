@@ -199,6 +199,16 @@ const VISITES = [
     },
   },
   { dossier: 'd9', onglet: 'cotisations', nom: 'figé/cotisations' },
+  // L'ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL (ligne 26.6, phase C) : la fenêtre de l'appel d'octobre, une date saisie —
+  // la phrase de confirmation, la plus longue, qui nomme l'échéance, les comptes et l'exercice. Mesurée contre sa carte.
+  {
+    dossier: 'd1', onglet: 'cotisations', nom: 'cotisations/compte-personnel', fenetre: 'div[role="dialog"]',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Payée depuis le compte personnel…' }).first().click()
+      await page.getByLabel('Date du paiement').fill('2026-10-06')
+      await page.getByRole('button', { name: 'Déclarer le paiement' }).waitFor({ timeout: 10000 })
+    },
+  },
   { dossier: 'd9', onglet: 'virements', nom: 'figé/virements' },
   // Le REPORT DES SOLDES (ligne 34) : l'ouverture que la validation de l'ostéopathe écrira, ses soldes dépliés dans la
   // carte ; puis l'exercice 2026 de la kinésithérapeute, ouvert par ses soldes reportés, et celui de l'ostéopathe, qui

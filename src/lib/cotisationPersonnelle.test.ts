@@ -4,7 +4,7 @@ import { COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
 import {
   argumentsDeLaDeclaration, avertissementRetraitPaiementPersonnel, avertissementSuppressionEcheancePayee,
   confirmationPaiementPersonnel, ecritureDuPaiementPersonnel, libelleDuPaiementPersonnel, paiementsPersonnelsAReprendre,
-  RAISON_ECRITURE_A_REPRENDRE, REFUS_PAIEMENT_PERSONNEL, REFUS_RETRAIT_PAIEMENT_PERSONNEL, refusPaiementPersonnel,
+  RAISON_ECRITURE_A_REPRENDRE, REFUS_PAIEMENT_PERSONNEL, RETRAIT_EXPORTE, REFUS_RETRAIT_PAIEMENT_PERSONNEL, refusPaiementPersonnel,
   refusRetraitPaiementPersonnel, type ContextePaiementPersonnel,
 } from './cotisationPersonnelle'
 import { remplirModele } from './encaissementsFactures'
@@ -26,9 +26,9 @@ const ESSAI = readFileSync(new URL('../../supabase/essais/cotisationPersonnelle.
 const ESSAI_RETRAIT = readFileSync(new URL('../../supabase/essais/retraitPaiementPersonnel.sql', import.meta.url), 'utf8')
 
 // LA MIGRATION DU RETRAIT SE COLLE PAR LE CABINET : tant que son fichier n'est pas dans supabase/schema, ses refus ne se
-// confrontent qu'à son essai. Le jour où il y arrive, le test qui lit l'export vire au rouge et demande de passer ceci à
-// `true` — la confrontation au texte de la fonction s'ouvre alors, dans le même test.
-const RETRAIT_EXPORTE = false
+// confrontent qu'à son essai. Le jour où il y arrive, le test qui lit l'export vire au rouge et demande de passer
+// `RETRAIT_EXPORTE` à `true` dans le module — la confrontation au texte de la fonction s'ouvre alors, dans le même test, et
+// avec elle le bouton « Retirer ce paiement » de l'onglet Cotisations : un seul drapeau pour les deux.
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
@@ -479,7 +479,16 @@ describe('confirmationPaiementPersonnel — nomme ce qui s’écrit', () => {
     expect(texte).toContain(`Déclarer l'échéance du 05/03/2026 (${formatMoney(1000)}) payée depuis le compte personnel de l'exploitant, le 10/03/2026.`)
     expect(texte).toContain(`Le brouillon reçoit ${formatMoney(700)} au débit du 646000, face au 108000, à cette date.`)
     expect(texte).toContain("L'échéance compte ce jour-là dans la 2035 de 2026.")
-    expect(texte).toContain('Ce paiement se retire tant que son exercice n’est pas validé.')
+    // Ce qui défera le paiement : la confirmation ne promet pas un retrait que la base n'offre pas encore.
+    expect(texte).toContain(RETRAIT_EXPORTE
+      ? 'Ce paiement se retire tant que son exercice n’est pas validé.'
+      : 'Ce paiement ne se retire pas seul : il part avec son échéance, quand on la retire, tant que son exercice n’est pas validé.')
+  })
+
+  it('la raison d’une écriture à reprendre ne conseille pas un retrait que la base n’offre pas encore', () => {
+    expect(RAISON_ECRITURE_A_REPRENDRE).toBe(RETRAIT_EXPORTE
+      ? "Son écriture manque ou ne suit plus l'échéance : retire le paiement, puis déclare-le de nouveau."
+      : "Son écriture manque ou ne suit plus l'échéance : retire l'échéance, qui emporte son paiement, puis saisis-la et déclare son paiement de nouveau.")
   })
 
   it('un remboursement se dit remboursement, au crédit du 646000', () => {

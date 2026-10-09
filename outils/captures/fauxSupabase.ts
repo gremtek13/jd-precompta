@@ -189,7 +189,7 @@ function mouvementEmprunt(id: string, date: string, libelle: string, montant: nu
 // L'écriture d'un mouvement AFFECTÉ à une catégorie sans justificatif (lib/affectationBanque.ts) : le
 // compte de la catégorie face à la banque, sans pièce, telle que `affecter_mouvement_bancaire` l'écrit.
 // Sans elle, la Checklist du banc dirait ces mouvements « à réaffecter ».
-function ecritureReleve(id: string, mouvement: string, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number): Ligne {
+function ecritureReleve(id: string, mouvement: string | null, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number): Ligne {
   return {
     id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: mouvement, date, compte, libelle, sens, montant,
     statut: 'proposee', created_at: MAINTENANT,
@@ -452,11 +452,13 @@ const ENGAGEMENT_D8 = {
 // prélevé et écrit — la cotisation au 646000, sa CSG-CRDS au 108000 ; l'échéance de septembre de la caisse
 // de retraite, rapprochée avant que le rapprochement écrive, donc sans écriture (« Écrire les 1 » dans
 // Cotisations, un point de la Checklist) ; un remboursement rapproché à tort d'un appel, qui ne s'écrit pas
-// (la pastille « Ne s'écrit pas » dans Banque) ; et l'appel d'octobre, que rien ne paie encore.
-function echeanceCotisation(id: string, echeance: string, appele: number, csg: number | null): Ligne {
+// (la pastille « Ne s'écrit pas » dans Banque) ; l'appel d'octobre, que rien ne paie encore (le geste « Payée depuis le
+// compte personnel… ») ; et celui de juillet, payé depuis le compte personnel de l'infirmière et écrit — la cotisation hors
+// CSG-CRDS au 646000, face au 108000 (lib/cotisationPersonnelle.ts, ligne 26.6, phase C).
+function echeanceCotisation(id: string, echeance: string, appele: number, csg: number | null, paiementPersonnel: string | null = null): Ligne {
   return {
     id, dossier_id: 'd1', echeance, montant_appele: appele, montant_verse: null, montant_csg_crds: csg,
-    previsionnel: false, created_at: MAINTENANT,
+    previsionnel: false, created_at: MAINTENANT, paiement_personnel_le: paiementPersonnel,
   }
 }
 
@@ -466,6 +468,7 @@ const COTISATIONS_D1 = {
     echeanceCotisation('cs2', '2026-09-05', 310, null),
     echeanceCotisation('cs3', '2026-09-20', 180, null),
     echeanceCotisation('cs4', '2026-10-05', 520, 48.5),
+    echeanceCotisation('cs5', '2026-07-05', 520, 48.5, '2026-07-08'),
   ],
   lignes: [
     { ...ligne('l21', '2026-08-05', 'PRLV URSSAF COTISATIONS AOUT', -520, 'rapprochee', null), cotisation_id: 'cs1' },
@@ -476,6 +479,8 @@ const COTISATIONS_D1 = {
     ecritureReleve('r28', 'l21', '2026-08-05', '646000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 471.5),
     ecritureReleve('r29', 'l21', '2026-08-05', '108000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 48.5),
     ecritureReleve('r30', 'l21', '2026-08-05', '512000', 'PRLV URSSAF COTISATIONS AOUT', 'credit', 520),
+    { ...ecritureReleve('r31', null, '2026-07-08', '646000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'debit', 471.5), cotisation_id: 'cs5' },
+    { ...ecritureReleve('r32', null, '2026-07-08', '108000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'credit', 471.5), cotisation_id: 'cs5' },
   ],
 }
 

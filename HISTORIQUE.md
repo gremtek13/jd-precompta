@@ -16832,3 +16832,69 @@ pas) sous une charge de 13 à 14 sur quatre cœurs ; rejoués seuls, le premier 
 
 **CE QUI RESTE.** Q1 (désigner le PDF d'une facture émise, une migration) ; d9, la confrontation des 212 déclarés à la
 recette que la CA3 compte par la jumelle.
+
+### 09/10/2026 — LA PHASE C : L'ÉCRAN DU PAIEMENT PERSONNEL — LIGNE 26.6
+
+(`src/pages/dossier/CotisationsTab.tsx`, `PaiementPersonnelModal.tsx` (nouveau), `src/pages/DossierDetail.tsx`,
+`src/lib/cotisationPersonnelle.ts` ; tests : `CotisationsTabPaiementPersonnel.test.tsx`,
+`CotisationsTabRetraitPaiement.test.tsx` (nouveaux), `src/test/cotisationsPaiementPersonnel.ts` (le faux client qu'ils
+partagent), `cotisationPersonnelle.test.ts`, `CotisationsTab.test.tsx`, `DossierDetail.test.tsx`,
+`ecransAvantLecture.test.tsx` ; le banc : `outils/captures/fauxSupabase.ts`, `debordements.mjs`.)
+
+**LE GESTE.** La colonne « Paiement » de l'onglet Cotisations offre « Payée depuis le compte personnel… » sur une échéance
+que rien ne paie — ni mouvement, ni compte personnel —, qui n'est pas figée, et seulement sur ce que l'onglet a lu EN
+ENTIER : les échéances, le relevé, le brouillon et, nouvelle lecture, l'ouverture du dossier (la plus ancienne date des
+à-nouveaux, par `lireTout`, triée par date puis identifiant) ; lue en partie, un bandeau le dit. La fenêtre est rendue
+hors de la carte du tableau (l'enveloppe `.tableau-adaptable` est un conteneur de requêtes, un `position: fixed` s'y
+rapporterait) ; la date est VIDE et ne se propose jamais ; le refus vient de `refusPaiementPersonnel`, en direct, sous
+les mots de la base (« La date du paiement depuis le compte personnel est à renseigner. » tant qu'elle est vide), et
+grise le bouton ; sinon la phrase de `confirmationPaiementPersonnel` nomme l'échéance, la date, les comptes et
+l'exercice. « Déclarer le paiement » appelle `enregistrer_paiement_personnel_cotisation` avec
+`argumentsDeLaDeclaration`, sous le verrou `ecritureEnCours` de l'onglet — celui de « Écrire les N » et de « Retirer » :
+ces gestes écrivent le même brouillon —, posé avant le `try`, relâché après la relecture ; le refus de la base se dit
+dans la fenêtre, qui reste ouverte. Une relecture qui court (une échéance saisie à côté) suspend la déclaration, et la
+fenêtre le dit. L'onglet reçoit désormais le modèle comptable ENTIER (`modele`, plus `modeComptable`) : en engagement
+l'écriture se passe face au compte choisi pour le dirigeant.
+
+**L'ÉCHÉANCE PAYÉE.** « Payée depuis le compte personnel le JJ/MM/AAAA », puis l'état de son écriture
+(`paiementsPersonnelsAReprendre`) : « Écrite », ou « À reprendre » avec sa raison en titre et en clair ; figée, dit sans
+badge ; rien sur un brouillon lu en partie. `figeeDe` date l'échéance par son mouvement, sinon son paiement personnel,
+sinon son échéance — comme `garder_cotisation_valide` depuis la migration du 09/10 ; `verseDe` la dit versée
+(`montantDeLEcheance`, « (compte personnel) ») sauf si ses montants ne peuvent pas s'écrire ; la recherche trouve la date
+du paiement ; la confirmation de la suppression ajoute `avertissementSuppressionEcheancePayee`.
+
+**LE RETRAIT, PRÉPARÉ, FERMÉ.** `retirer_paiement_personnel_cotisation` n'est pas en base (la migration se colle). Le
+drapeau `RETRAIT_EXPORTE` passe du test du module AU MODULE (`lib/cotisationPersonnelle.ts`, faux) : le test l'importe
+(l'export et le drapeau doivent dire la même chose), l'onglet aussi — sans lui, aucun bouton « Retirer ce paiement ».
+Les mots du module suivent le même drapeau : tant qu'il est faux, la confirmation ne promet plus « Ce paiement se
+retire… » mais « Ce paiement ne se retire pas seul : il part avec son échéance, quand on la retire, tant que son exercice
+n'est pas validé. », et la raison d'une écriture à reprendre conseille de retirer l'échéance, puis de la ressaisir. Le
+geste est écrit (refus `refusRetraitPaiementPersonnel` avant le clic, raison en titre ; confirmation
+`avertissementRetraitPaiementPersonnel` ; même verrou, relecture) et joué par `CotisationsTabRetraitPaiement.test.tsx`,
+module simulé drapeau levé. **L'OUVRIR** : coller la migration, ajouter son fichier à `supabase/schema` — le test du
+module vire alors au rouge —, passer `RETRAIT_EXPORTE` à `true` : la confrontation au texte de la fonction, le bouton et
+les mots s'ouvrent ensemble.
+
+**LA RELECTURE CROISÉE DU LOT (constats A, B, C de l'architecte).** (A) et (B), la date qui fige : une échéance de
+décembre payée de la poche en janvier, décembre validé, n'est plus dite « Figée » (« Retirer » offert, rien à verser) ;
+une de janvier payée d'avance en décembre l'est. (C) L'échéancier lu sur un avis insère, puis met à jour une à une : un
+refus au milieu laissait l'insertion en base et la liste d'avant à l'écran, et un second clic réinsérait l'échéance
+(aucune unicité (dossier, échéance) en base : comptée deux fois en 2035). Une prévisionnelle payée depuis le compte
+personnel est écartée de la mise à jour — dite dans le tableau de l'avis avant le clic, et dans l'alerte après — et un
+échec après une écriture relit la liste avant de relâcher le verrou.
+
+**ÉPROUVÉ.** Les 24 tests du nouvel écran et les 5 du retrait préparé, rouges contre l'écran de fb42326 (rendu à la seule
+signature près), verts ensuite ; trente-sept mutations de l'écran, de la fenêtre et du module, et une de la page du
+dossier (le modèle tronqué à son mode), mordent toutes après un témoin vert, chaque fichier remis et comparé à sa copie
+— une survivait au premier passage (l'ordre de lecture des à-nouveaux : le jeu d'essai rangeait les identifiants comme les
+dates), mord depuis. La barrière : `tsc -b` vert ; `tsc -p tsconfig.edge.json` aux vingt-cinq erreurs connues ; lint,
+soixante-trois avertissements, les mêmes ; build vert ; les six fichiers touchés sous Paris, UTC, New York et Auckland ;
+la suite entière sous Paris. Le banc des débordements, sur un port à part, avec une visite de plus (la fenêtre, date
+saisie) et une échéance payée depuis le compte personnel au cabinet infirmier.
+
+**CE QUI RESTE.** Ouvrir le retrait (ci-dessus) ; le préalable `paiements-personnels-a-reprendre`
+(`prealablesValidation.ts`) conseille encore « retirer le paiement » ; `CotisationDeclaree.paiement_personnel_le` et
+`EcritureBrouillon.cotisation_id` restent optionnels ici (un autre agent les rend obligatoires ; les fabriques de ce
+correctif les portent déjà) ; Banque pourrait griser, dans le choix à la main, une échéance payée depuis le compte
+personnel (la base et `refusRapprochementCotisation` la refusent déjà) ; la Balance des comptes, en engagement, range son
+crédit parmi les « Écritures sans pièce » du compte du dirigeant.

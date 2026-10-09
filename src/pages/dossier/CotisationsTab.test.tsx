@@ -183,7 +183,7 @@ const ecritureJuste = (id = 'l-1', montant = 420, date = '2026-03-06') => [
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 const monter = (mode: ModeComptable = 'tresorerie', valides: readonly number[] = []) => render(
-  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modeComptable={mode} /></AvecExercicesValides>,
+  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={{ mode, compteNotesDeFrais: '455000' }} /></AvecExercicesValides>,
 )
 
 beforeEach(() => {

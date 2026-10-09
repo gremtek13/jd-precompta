@@ -39,6 +39,13 @@ import { compteDuDirigeant } from './virementPersonnel'
 // au texte de la migration et aux messages que l'essai a lus en base). Le RETRAIT (`retirer_paiement_personnel_cotisation`)
 // suit la même règle.
 
+// LE RETRAIT EST-IL EN BASE ? `retirer_paiement_personnel_cotisation` vit dans une migration que le cabinet colle (sa
+// fonction supprime des lignes du brouillon). Tant qu'elle n'y est pas, l'appeler finirait en erreur : l'onglet
+// Cotisations n'offre pas le bouton « Retirer ce paiement », et ce que le module dit du retrait ne le promet pas. Le jour où
+// l'export la porte (supabase/schema), cotisationPersonnelle.test.ts vire au rouge tant que ceci reste `false` : le
+// passer à `true` ouvre d'un même geste la confrontation de ses refus au texte de la fonction, le bouton, et ces mots.
+export const RETRAIT_EXPORTE: boolean = false
+
 // Les refus de `enregistrer_paiement_personnel_cotisation`, dans l'ordre de la fonction : chaque « % » reçoit la valeur
 // que la base y met (`remplirModele`). Les quatre refus des montants sont ceux de lib/cotisationRapprochee.ts, à leur rang.
 export const REFUS_PAIEMENT_PERSONNEL = [
@@ -151,6 +158,12 @@ export function argumentsDeLaDeclaration(
   }
 }
 
+// Ce qui défera le paiement : son retrait, quand sa fonction est en base ; d'ici là, la suppression de l'échéance, qui
+// l'emporte avec son écriture (la clé est en cascade) — et l'une comme l'autre, tant que l'exercice n'est pas validé.
+const QUI_DEFAIT_LE_PAIEMENT = RETRAIT_EXPORTE
+  ? 'Ce paiement se retire tant que son exercice n’est pas validé.'
+  : 'Ce paiement ne se retire pas seul : il part avec son échéance, quand on la retire, tant que son exercice n’est pas validé.'
+
 // LA CONFIRMATION NOMME CE QUI S'ÉCRIT : l'échéance, la date, ce que reçoit le brouillon, l'exercice où elle comptera — la
 // 2035 de cette année en trésorerie ; en engagement la 2035 n'est pas produite, et la confirmation ne la promet pas —, et
 // ce qui le défera.
@@ -168,7 +181,7 @@ export function confirmationPaiementPersonnel(
     ? 'Faite toute de CSG-CRDS, elle ne laisse rien à écrire au brouillon.'
     : `Le brouillon reçoit ${formatMoney(lignes[0].montant)} au ${lignes[0].sens === 'debit' ? 'débit' : 'crédit'} du ${lignes[0].compte}, face au ${lignes[1].compte}, à cette date.`
   const ou = modele.mode === 'tresorerie' ? `dans la 2035 de ${date.slice(0, 4)}` : `dans l'exercice ${date.slice(0, 4)}`
-  return `${quoi} ${ecriture} L'échéance compte ce jour-là ${ou}. Ce paiement se retire tant que son exercice n’est pas validé.`
+  return `${quoi} ${ecriture} L'échéance compte ce jour-là ${ou}. ${QUI_DEFAIT_LE_PAIEMENT}`
 }
 
 // LES PAIEMENTS PERSONNELS DONT L'ÉCRITURE EST À REPRENDRE : absente, ou qui n'est plus celle que le paiement produirait —
@@ -176,7 +189,8 @@ export function confirmationPaiementPersonnel(
 // le paiement tient, et ne laisse écrire, modifier ou retirer l'écriture qu'avec lui : ce contrôle est DÉFENSIF. Il voit
 // ce qui viendrait d'une sauvegarde restaurée, de la porte de restauration du super-administrateur, ou d'un modèle
 // comptable changé sur un brouillon vide (une échéance toute de CSG-CRDS n'a rien écrit en trésorerie, et en attend une
-// écriture en engagement). Le geste est de retirer le paiement, puis de le déclarer de nouveau.
+// écriture en engagement). Le geste est de retirer le paiement, puis de le déclarer de nouveau — tant que le retrait
+// n'est pas en base (`RETRAIT_EXPORTE`), de retirer l'échéance, qui l'emporte.
 //
 // Rien d'un exercice figé par la validation : son écriture ne se reprend plus. Sans valeur par défaut, comme les autres
 // contrôles du brouillon. `ecritures` : tout le brouillon du dossier, lu en entier.
@@ -185,8 +199,9 @@ export interface PaiementPersonnelAReprendre {
   raison: string
 }
 
-export const RAISON_ECRITURE_A_REPRENDRE =
-  "Son écriture manque ou ne suit plus l'échéance : retire le paiement, puis déclare-le de nouveau."
+export const RAISON_ECRITURE_A_REPRENDRE = RETRAIT_EXPORTE
+  ? "Son écriture manque ou ne suit plus l'échéance : retire le paiement, puis déclare-le de nouveau."
+  : "Son écriture manque ou ne suit plus l'échéance : retire l'échéance, qui emporte son paiement, puis saisis-la et déclare son paiement de nouveau."
 
 export function paiementsPersonnelsAReprendre(
   ecritures: readonly EcritureBrouillon[],
