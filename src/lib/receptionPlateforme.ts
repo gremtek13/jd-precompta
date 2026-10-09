@@ -18,7 +18,9 @@ import {
   type FactureLue,
 } from './factureElectronique'
 import { xmlDuFacturX } from './factureX'
+import { numeroAdmis } from './factureCii'
 import type { CodeStatutRecu, EcartStatutRecu } from './cdarRecu'
+import type { Piece } from './types'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT, CÔTÉ APPLICATION (ligne 28.5 de la feuille de route,
 // étape b). La fonction serveur `plateforme-agreee` parle à la plateforme et REND ce qu'elle lit — la liste des
@@ -399,6 +401,31 @@ export function notesDImport(avertissements: string[]): string | null {
   return `Reçue de la plateforme du client — à vérifier :\n${avertissements.map((a) => `- ${a}`).join('\n')}`
 }
 
+export type IdentiteDeLaPiece = Pick<Piece, 'identite_numero' | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature'>
+
+const SANS_IDENTITE: IdentiteDeLaPiece = {
+  identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+}
+
+/**
+ * L'IDENTITÉ D'UNE VENTE REÇUE, telle que son original la dit (ligne 28.6) : son numéro, le SIREN de son vendeur, sa date
+ * d'émission et sa nature — avec l'année, l'identité qu'une facture a pour l'administration (règle G1.42). Gardée sur la
+ * pièce, c'est elle qui relie la vente qui revient de la plateforme à la facture que l'application a émise, quand la
+ * plateforme ne la rend pas sous le flux du dépôt, ou que le client l'a déposée lui-même (lib/ventesJumelles.ts).
+ * Rien pour un ACHAT : son vendeur est un tiers, et rien ne demande d'en garder le SIREN. Rien sans un numéro que la
+ * règle G1.05 admet : un autre numéro n'est celui d'aucune facture émise par l'application, et la lecture a pu le couper
+ * (255 caractères). Ce que l'original ne dit pas reste nul, jamais deviné.
+ */
+export function identiteDeLaVente(facture: FactureLue | null, sens: SensFlux): IdentiteDeLaPiece {
+  if (sens !== 'vente' || facture === null || facture.numero === null || !numeroAdmis(facture.numero)) return SANS_IDENTITE
+  return {
+    identite_numero: facture.numero,
+    identite_siren_vendeur: facture.vendeur.siren,
+    identite_date: facture.date,
+    identite_nature: facture.nature,
+  }
+}
+
 const SANS_MONTANTS = (devise: string | null): MontantsPourPiece => ({
   montant_ht: null, montant_tva: null, montant_ttc: null,
   devise: devise ?? 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
@@ -512,6 +539,7 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
     ...montants,
     confiance: facture === null ? 'basse' : douteuse ? 'moyenne' : confianceDeLaFacture(facture),
     notes: notesDImport(avertissements),
+    ...identiteDeLaVente(facture, confirme.sens),
   }).select('id').single()
   if (error || !data) {
     // Rien ne pointe sur les fichiers déposés : ils repartent, sinon ils resteraient orphelins jusqu'à la suppression du

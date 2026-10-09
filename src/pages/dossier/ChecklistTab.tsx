@@ -28,6 +28,10 @@ import type {
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
+import {
+  detailJumellesIncoherentes, detailVentesEnDouble, jumellesDuDossier, ventesEnDouble,
+  type FacturePourJumelle, type TransmissionPourJumelle,
+} from '../../lib/ventesJumelles'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from '../../lib/reglementGroupe'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
@@ -123,6 +127,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // déclaration manque. Lues en partie, ce dernier se tait : une déclaration non lue ferait réclamer sa période.
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [declarationsPartielles, setDeclarationsPartielles] = useState(false)
+  // Les factures émises VALIDÉES et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : la vente qui revient de la
+  // plateforme du client ou de Super PDP se reconnaît par elles, et deux pièces qui portent la même facture la comptent
+  // deux fois. Lues en partie, ou les pièces lues en partie, les deux points qui en dépendent se TAISENT : une facture non
+  // lue ferait passer pour la jumelle d'une autre une pièce dont les preuves se contredisent.
+  const [facturesEmises, setFacturesEmises] = useState<FacturePourJumelle[]>([])
+  const [transmissions, setTransmissions] = useState<TransmissionPourJumelle[]>([])
+  const [jumellesPartielles, setJumellesPartielles] = useState(false)
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -164,6 +175,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
       lectureVehicules,
       lectureLettrages,
       lectureDeclarations,
+      lectureFacturesEmises,
+      lectureTransmissions,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -236,6 +249,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
       ),
+      lireTout<FacturePourJumelle>((debut, fin) =>
+        supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
+      lireTout<TransmissionPourJumelle & { id: string }>((debut, fin) =>
+        supabase.from('transmissions_factures').select('id, facture_id, canal, hote, flux_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -261,8 +282,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
         lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
-        lectureVehicules, lectureLettrages, lectureDeclarations,
+        lectureVehicules, lectureLettrages, lectureDeclarations, lectureFacturesEmises, lectureTransmissions,
       ].find((l) => !l.complete)?.motif ?? null,
+    )
+    setFacturesEmises(lectureFacturesEmises.lignes)
+    setTransmissions(lectureTransmissions.lignes)
+    setJumellesPartielles(
+      [lectureValidees, lectureAValider, lectureFacturesEmises, lectureTransmissions].some((l) => !l.complete),
     )
     setDeclarationsTva(lectureDeclarations.lignes)
     setDeclarationsPartielles(!lectureDeclarations.complete)
@@ -452,6 +478,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Une date fausse se corrige d'autant mieux qu'on la voit AVANT la validation ; après, plus
   // personne ne regarde la pièce.
   const moisEnDouble = moisEnDoubleSurAbonnement([...piecesValidees, ...piecesAValider])
+  // LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6, lib/ventesJumelles.ts), sur les deux piles comme les doublons
+  // de texte : un doublon est un fait, et il se corrige mieux avant la validation. Muets sur une lecture partielle.
+  const jumelles = jumellesPartielles ? null : jumellesDuDossier(facturesEmises, transmissions, toutesPieces)
+  const enDouble = jumelles ? ventesEnDouble(facturesEmises, jumelles) : []
+  const jumellesIncoherentes = jumelles?.incoherentes ?? []
   // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
   // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
@@ -593,6 +624,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     // aucune ligne à montrer. Un point qui annonce « 1 » et renvoie vers un écran vide est pire
     // qu'un point absent : l'opérateur cherche, ne trouve pas, et cesse de croire le suivant.
     { id: 'doublon-texte', label: 'document(s) déposé(s) plusieurs fois sous des fichiers différents', action: 'Voir les doublons', nb: doublonsTexte.length, cible: doublonsTexte.some((d) => d.pieceIds.length > 0) ? 'pieces' : 'documents', severite: 'erreur' },
+    // LA MÊME FACTURE ÉMISE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6) : revenue de la plateforme du client ET de Super PDP,
+    // chacune la compte dans la 2035, la CA3 et le brouillon. Le point du dessus ne la voit pas : les deux pièces n'ont ni
+    // le même fichier ni le même texte. Le PDF de la même vente déposé à la main ne se reconnaît pas ici — rien ne le relie
+    // à sa facture sans rapprocher un montant, une date et un client.
+    { id: 'ventes-en-double', label: 'vente(s) portée(s) par plusieurs pièces — la même facture émise comptée plusieurs fois', action: 'Voir ces pièces', nb: enDouble.length, cible: 'pieces', severite: 'erreur', detail: detailVentesEnDouble(enDouble, facturesEmises, toutesPieces) },
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.
@@ -673,6 +709,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     // d'une période déjà déposée (lignes 5B et 2C) n'est pas modélisée : l'écart y resterait
     // signalé en erreur même une fois régularisé.
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },
+    // Une pièce reçue que ses preuves rattachent à deux factures émises, ou dont l'identité dit une autre nature que la
+    // facture qu'elle désigne : elle n'est la jumelle d'aucune, donc d'aucun des deux contrôles du dessus (ligne 28.6).
+    { id: 'jumelles-incoherentes', label: 'pièce(s) reçue(s) dont les preuves contredisent une facture émise', action: 'Vérifier ces pièces', nb: jumellesIncoherentes.length, cible: 'pieces', severite: 'attention', detail: detailJumellesIncoherentes(jumellesIncoherentes, facturesEmises, toutesPieces) },
     // Un statut à préciser n'est pas une erreur : le dossier retient ses pièces TVA comprise, comme avant que le
     // statut existe. Mais la mention de ses factures et ce qu'il doit à la facturation électronique en dépendent
     // (lib/statutTva.ts), et c'est un réglage à faire une fois — d'où le bloc « Paramétrage ».

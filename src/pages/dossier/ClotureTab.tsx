@@ -29,6 +29,7 @@ import type { DossierTab } from '../../lib/ongletsDossier'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
+import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
 import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
@@ -132,6 +133,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const [exercicesValides, setExercicesValides] = useState<ExerciceValide[]>([])
   const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[] | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[] | null>(null)
+  // Les factures émises validées et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : la validation refuse une
+  // vente que plusieurs pièces portent. Lues en partie, elles suspendent la validation, pas la 2035, qui ne les lit pas.
+  const [facturesEmises, setFacturesEmises] = useState<FacturePourJumelle[]>([])
+  const [transmissions, setTransmissions] = useState<TransmissionPourJumelle[]>([])
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -178,6 +183,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
+      lectureFacturesEmises, lectureTransmissions,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -273,6 +279,16 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         supabase.from('soldes_reportes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
       ),
+      // Les factures émises validées et leurs transmissions : la vente qui revient de la plateforme du client ou de Super
+      // PDP se reconnaît par elles (ligne 28.6). Le drapeau de la validation.
+      lireTout<FacturePourJumelle>((debut, fin) =>
+        supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
+      lireTout<TransmissionPourJumelle & { id: string }>((debut, fin) =>
+        supabase.from('transmissions_factures').select('id, facture_id, canal, hote, flux_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -284,7 +300,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
     setExercicesValides(lectureValides.lignes)
-    setValidationIncomplete([lectureAValider, lectureValides, lectureReportes].find((l) => !l.complete)?.motif ?? null)
+    setFacturesEmises(lectureFacturesEmises.lignes)
+    setTransmissions(lectureTransmissions.lignes)
+    setValidationIncomplete(
+      [lectureAValider, lectureValides, lectureReportes, lectureFacturesEmises, lectureTransmissions].find((l) => !l.complete)?.motif ?? null,
+    )
     setANouveaux(lectureOuverture.lignes)
     setSoldesReportes(lectureReportes.lignes)
     setReportesIncomplets(lectureReportes.motif)
@@ -549,7 +569,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       annee, anneeCourante, modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
-      periodiciteTva, relevesIncoherents, doublonsTexte,
+      periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })

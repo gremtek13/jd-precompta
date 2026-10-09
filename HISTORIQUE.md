@@ -13940,3 +13940,138 @@ les quatre fuseaux : 194 sur 194 à chacun. La suite entière sous Paris : 6 189
 fichiers (la charge de la machine : 11 à 16) ; `cdarEncaisseeCopie.test.ts` rejoué seul est vert, `cdarRecuCopie.test.ts` mord
 encore sur le délai (6,1 s seul) — et le même test, sur un arbre pur de `d435637` sans le correctif, sous la même charge, tombe
 de la même façon (5,5 s) : aucun des deux ne lit un des sept fichiers.
+
+### 09/10/2026 — UNE VENTE PEUT ENTRER DEUX FOIS : LE PONT ENTRE LA FACTURE ÉMISE ET SA PIÈCE JUMELLE — LIGNE 28.6
+
+(Migration `identite_des_factures_recues`, version 20261009074808, texte de 5 474 caractères, empreinte
+`8712ee7a274cbc7d4155bff170e6770c` — `supabase/schema/20261009074808_identite_des_factures_recues.sql` ; l'essai
+`supabase/essais/identiteFacturesRecues.sql` ; `src/lib/ventesJumelles.ts` et son test ; `identiteDeLaVente` dans
+`receptionPlateforme.ts` ; `piecesJumelles` de `encaissementsFactures.ts` ; deux points de `ChecklistTab.tsx` ; le
+préalable `ventes-en-double` de `prealablesValidation.ts`, que `ClotureTab.tsx` nourrit ; la sélection des pièces de
+`EncaissementsFactureModal.tsx` ; `types.ts`, 23 fabriques de `Piece` et la ligne de `RGPD.md`. Aucune Edge Function
+touchée, rien à déployer.) La ligne de la feuille de route, ouverte le 08/10/2026 en concevant le statut « Encaissée » :
+une facture émise par l'application et partie par Super PDP ou par la plateforme du client revient comme pièce de vente
+quand on importe les factures de la plateforme ; rien ne la reliait à sa facture ; si la même vente avait aussi été
+déposée en PDF, elle comptait deux fois dans la 2035 et la CA3, et rien ne le disait. Sources : les spécifications
+externes de la DGFiP v3.2 (dossier général § 3.6.7 note 109 ; annexe 7 v1.9, règles G1.05 et G1.42 ; annexe 1, les
+chemins de BT-1, BT-2, BT-3, BT-30 et BT-31). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées. Rien
+n'a été appelé, ni Super PDP ni aucune plateforme.
+
+**LA MESURE (note de l'étape 0, comptes seulement, production du 09/10/2026).** 6 factures émises, toutes validées,
+dans un seul bac à sable ; aucune ne porte d'identifiant Super PDP ; aucune transmission, aucun statut lu, aucun
+encaissement, aucune connexion à une plateforme. 6 pièces de vente, dont 4 venues de `superpdp-sync` (aucune validée,
+aucune ne nomme une facture émise) et 2 déposées dans `test`, qui n'a pas de facture émise. Le défaut est LATENT. Ce que
+le code dit : **une facture émise ne compte NULLE PART** — ni la 2035, ni la CA3, ni les écritures et le FEC, ni la
+balance, l'estimation, la situation intermédiaire, le rapprochement ni l'assistant ne lisent `factures_emises` (décision
+du 28/09/2026 : les ventes n'entrent que par leurs justificatifs). Une pièce de vente VALIDÉE compte partout. Une vente
+compte donc DEUX FOIS quand deux pièces validées portent la même facture (la jumelle et le PDF ; ou deux jumelles par
+Super PDP et par la plateforme du client quand celle-ci est Super PDP, le double import dit et non empêché depuis le
+07/10/2026), et PAS DU TOUT quand ni jumelle ni PDF n'existent. Aucun contrôle ne voyait le double compte : fichier et
+texte diffèrent par nature (un XML, un résumé texte, un PDF) ; `piecesMontantIntrouvableEnBanque` compare à tous les
+mouvements, rapprochés compris ; le rapprochement montre « plusieurs pièces possibles », puis plus rien.
+
+**LA DÉCISION : LA JUMELLE ENTRE, MARQUÉE ; JAMAIS REFUSÉE.** La refuser ferait compter la vente zéro fois sauf PDF
+déposé — la doublure même qu'on combat ; elle est le meilleur justificatif (l'original légal, structuré, aux montants
+exacts) ; elle arrive « à valider » ; marquer se défait, refuser non ; et la décision du 07/10/2026 dit le double import
+sans l'empêcher. La question « la facture émise devient-elle la source de la recette ? » ne bloque pas : le pont dit
+QUELLE pièce est la facture, il sert dans les deux réponses.
+
+**LE PONT SE DÉDUIT, IL NE SE STOCKE PAS** (`lib/ventesJumelles.ts`), comme le lettrage, de faits qui ne changent pas,
+chacun une identité, jamais un montant, une date ni un nom : le FLUX (la pièce porte `flux_hote/flux_id` d'une
+transmission de la facture — si la plateforme liste la facture déposée sous l'identifiant que le dépôt a rendu, ce
+qu'aucune plateforme réelle n'a encore montré) ; SUPER PDP (l'identifiant que l'envoi a écrit sur la facture, ou celui
+que sa transmission `superpdp` garde quand cette écriture a échoué — un cas que `piecesJumelles` ne lisait pas ; le flux
+d'une transmission par la plateforme n'en est pas un) ; l'IDENTITÉ G1.42 (numéro, SIREN du vendeur, année de la date
+d'émission) égale à ce que la facture VALIDÉE a FIGÉ — son numéro, `sirenDe(emetteur_siret)`, jamais le SIREN du dossier
+d'aujourd'hui, l'année de sa date —, et la nature (380/381) qui ne contredit pas son type. Un lien déduit ne vieillit
+pas : une transmission enregistrée après l'import, une facture validée après, le font paraître sans rien réécrire.
+Seule une facture validée a une jumelle ; jamais une facture d'un autre dossier. DEUX PREUVES CONTRAIRES NE FONT PAS DE
+JUMELLE : une pièce rattachée à deux factures, ou dont l'identité désigne une facture d'une autre nature, est dite à part
+(`incoherentes`), comme d7 écarte un statut incohérent. Le numéro se compare tel quel (ni casse ni espaces), l'année
+seule de la date compte, deux SIREN absents ne sont pas le même vendeur.
+
+**LA BASE : L'IDENTITÉ SE GARDE SUR LA PIÈCE.** Le seul fait que l'import est seul à connaître — l'original est jeté
+après lecture. Quatre colonnes de `pieces` (`identite_numero`, `identite_siren_vendeur`, `identite_date`,
+`identite_nature`), cinq contraintes (complétude : rien sans le numéro ; numéro de 1 à 255 caractères sans blanc aux
+bords, la borne du lecteur ; SIREN de neuf chiffres ; nature `facture` ou `avoir` ; provenance : `source` `plateforme`
+ou `superpdp` seulement — le dépôt du client, que sa policy restreint à `upload`, ne peut pas se dire jumelle), et une
+garde (`garder_identite_piece`, déclencheur `before update of` les quatre colonnes, aux droits de l'appelant,
+`search_path` fixé, exécution retirée à `public`, `anon`, `authenticated`) : l'identité est ce que l'original DIT, elle ne
+se corrige pas — la date, le tiers et les montants restent ceux que le cabinet arbitre ; réécrite à l'identique, elle
+passe. Aucune policy touchée. Une restauration l'écrit à l'INSERTION (`ecrireParLots`), que la garde ne voit pas.
+L'application n'écrit l'identité que pour une VENTE (un achat : le SIREN d'un tiers, que rien ne demande de garder) et
+qu'avec un numéro que G1.05 admet (`numeroAdmis`, 35 caractères) : un autre n'est celui d'aucune facture de
+l'application, et la lecture a pu le couper. Ce que l'original ne dit pas reste nul.
+
+**L'ÉPREUVE.** Sur une réplique Postgres 16 dont `signature.sql` disait les neuf familles égales à la production, avant
+et après la migration (colonnes 571, contraintes 388, déclencheurs 26, fonctions 87, policies 97 après) : l'essai
+(37 contrôles), ce qui ne se joue pas en production (R1 un membre du cabinet non super-administrateur importe et ne
+modifie pas ; R2 la suppression d'une pièce qui porte une identité ; R3 la cascade d'un dossier ; R4 une restauration
+datée), et 46 mutations de la migration (colonnes, complétude, numéro, SIREN, nature, provenance, garde, déclencheur,
+droits), qui mordent toutes. `receptionPlateforme.sql` rejoué sur la réplique migrée : 40 sur 40. En production :
+`list_migrations` sans migration plus récente que la base, `apply_migration` sans confirmation demandée, l'historique
+égal au fichier (5 474 caractères, `8712ee7a…`) ; l'essai 37 sur 37, rien laissé (77 pièces avant et après), texte
+transmis de 23 782 caractères, empreinte `59a9460c0a26de757d52268b4fb95d3d` ; `rls.sql` ENTIER : 22 lignes, 56 tables
+(48 à `dossier_id`), 3 buckets, 0 en faute, 14 mutations sur 14, texte reçu inchangé (32 144 caractères,
+`95048df511611d0bd486747149697640`) ; l'export : 102 migrations, empreinte globale `1a894129f7d6a85b4d2d35d2dc0e387a` des
+deux côtés, socle inchangé (77, `5114d8a3…`), inventaire 1 288 objets (+11), `d2884eda…` des deux côtés ; advisors
+inchangés (la garde, aux droits de l'appelant, n'y paraît pas). Non rejoués en production : `reglementGroupe.sql` et
+`validationExercice.sql` (leur jeu de départ n'existe qu'en production, et aucune de leurs fonctions ne nomme
+`identite_*` ; la garde d'une pièce validée compare la ligne entière, identité comprise, qui ne change pas). Deux
+migrations d'autres chantiers sont venues APRÈS celle-ci le même jour (`paiement_personnel_des_cotisations`, qui ne
+nomme pas `pieces`, et `revision_des_soldes`, qui pose une troisième garde sur `pieces`, `pieces_citees_en_revision`) :
+le contrôle 34 de l'essai épinglait TOUTES les gardes de la table et serait tombé ; il ne juge plus que les deux qu'il
+nomme, et l'essai, rejoué en production après elles, rend 37 sur 37, rien laissé, texte transmis de 24 109 caractères,
+empreinte `9700ce2526372c01b3cda6e6f43e08b6`. Les policies de `pieces` n'ont pas bougé (`4 95217063…`).
+
+**LE CODE.** `identiteDeLaVente` (receptionPlateforme.ts) et son écriture par `importerFlux` ; `ventesJumelles.ts`
+(`jumellesDuDossier`, `jumellesDeLaFacture`, `ventesEnDouble`, les détails de la Checklist) ; `piecesJumelles` (d2) lit
+le pont — la jumelle reconnue par sa seule identité propose son paiement comme jumelle ; la Checklist lit les factures
+émises validées et les transmissions du dossier par `lireTout`, et dit, sur les DEUX piles comme les doublons de texte,
+« vente(s) portée(s) par plusieurs pièces » (erreur) et « pièce(s) reçue(s) dont les preuves contredisent une facture
+émise » (attention), chacun nommant ses pièces — l'onglet Justificatifs ne marque pas encore une jumelle —, et se TAIT
+sur une lecture partielle des factures, des transmissions ou de l'une des deux piles, le bandeau disant pourquoi.
+**ET LA VALIDATION D'UN EXERCICE LA REFUSE** : la barrière l'a rappelé — `prealablesValidation.test.ts` exige que chaque
+point en ERREUR de la Checklist soit repris par la validation ou écarté avec sa raison (« un défaut que l'application
+signale en erreur ne se fige pas »). Aucune raison de l'écarter : en trésorerie, la jumelle restée sans paiement serait
+refusée par ses écritures, mais en engagement chacune s'écrit à sa date, équilibrée, et rien d'autre ne la voit. Le
+préalable bloquant `ventes-en-double` compte, sur les deux piles, les ventes dont une pièce est de l'exercice ; Clôture
+lit pour lui les factures émises validées et leurs transmissions, au drapeau de la validation (pas à celui de la 2035,
+qui ne les lit pas).
+
+**LES PREUVES.** 52 tests : 29 du pont, 23 de l'import, des propositions, de la Checklist et de la validation — dont la
+CONFRONTATION de l'identité que l'import écrit aux cinq contraintes relues dans le texte de la migration (le lecteur
+ramène les blancs à un seul et les ôte aux bords ; un SIRET déclaré comme SIREN ne dit pas de SIREN). Le faux client de
+la Checklist sait désormais tronquer UNE pile de pièces (`pieces:validee`, `pieces:a_valider`). Soixante-huit mutations
+du code — le pont (25), l'identité lue à l'import (9), les propositions (2), la Checklist (19), le préalable et Clôture
+(9), et quatre sélections que seul le compilateur juge, le faux client ne projetant pas les colonnes (`tsc -b`, une
+erreur chacune) : soixante-six mordent, nommément sur les tests du domaine, jamais par un délai dépassé. Deux sont
+équivalentes et le restent : retirer la garde `!parId.has(t.facture_id)` des transmissions (`noter` refuse déjà toute
+facture non donnée), et le filtre `statut = 'validee'` de la lecture de la Checklist (le pont ne garde que les validées,
+ce que la mutation du brouillon prouve ; le filtre n'épargne que la lecture des brouillons). Les angles morts vus en
+écrivant la campagne ont reçu leur test avant qu'elle tourne (l'ordre des factures d'une pièce incohérente, une facture
+d'un autre dossier de nature contraire, deux SIREN absents, une seule pile lue en partie, la gravité et la cible des deux
+points) ; une mutation a survécu à la campagne — le numéro gardé en capitales — et mord depuis le test de la casse. Node
+22 exécute le module des encaissements et le pont types effacés, comme `batterieEncaissements.mjs` le fait.
+La barrière, allégée (règles communes v4 de la session) : `npx tsc -b` 0 ; `npx tsc -p tsconfig.edge.json` les 25
+erreurs connues, au caractère près celles de d7, aucune de code mort ; `npm run lint` 63 avertissements, les mêmes,
+fichier par fichier, qu'une copie propre de la base ; `npm run build` 0 ; les 37 fichiers de test du correctif et de
+ses modules (1 755 tests) sous les quatre fuseaux, et la suite ENTIÈRE sous Paris (219 fichiers, 6 043 tests,
+`--maxWorkers=2`) : aucun échec qui ne soit un délai dépassé sous une charge de 12 à 24, et chaque fichier tombé —
+le test du seuil de `encaissementsFactures`, un lot de `BanqueTab`, les deux gardes de copie CDAR, que le correctif
+ne touche pas — passe rejoué seul (`--no-file-parallelism`). Aucun délai relevé. Un premier passage complet, sous
+une charge de 35 à 42, avait fait voir le seul échec qui ne fût pas un délai : celui du préalable manquant.
+
+**CE QUI RESTE.** La phase C (`d/vente_double/phase_c_vente_double.md`) : la jumelle marquée dans les Justificatifs et
+leur fiche, le bilan d'un import, la fenêtre « Encaissements » qui distingue la jumelle d'une autre pièce de vente. Le
+contrôle face à la CA3 (d9) : la correspondance facture par facture entre les 212 déclarés et la recette que la CA3
+compte par la jumelle. À vérifier sur la première plateforme réelle : que la facture déposée revienne sous le flux du
+dépôt (sinon, l'identité suffit). Questions au cabinet : Q1, DÉSIGNER le PDF d'une facture émise (recommandé ; seule voie
+exacte, une migration) ; Q2, la facture émise comme source de la recette (pas maintenant) ; Q3, l'identité d'un ACHAT
+(pas maintenant).
+
+**À NE PAS RÉENQUÊTER.** Le PDF de la même vente ne se relie à sa facture par AUCUNE des trois clés : c'est voulu, le pont
+s'interdit le rapprochement d'un montant, d'une date ou d'un client, et la lecture du texte d'une pièce pour décider.
+Tant qu'il ne se désigne pas, aucun point « facture transmise sans jumelle » : il pousserait à importer des jumelles
+dans un dossier qui a déposé ses PDF. `superpdp-sync` ne garde pas d'identité, et n'en a pas besoin : l'identifiant de
+Super PDP suffit à ses pièces.

@@ -111,6 +111,7 @@ function piece(id: string, date: string, tiers: string, ttc: number, tva: number
     montant_ttc: ttc, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
     categorie_id: categorie, sous_dossier_id: null, type_piece: 'achat', statut, notes: null, confiance: 'haute',
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
   }
 }
 
@@ -218,6 +219,7 @@ function pieceTva(id: string, date: string, tiers: string, ht: number, tva: numb
     devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null,
     sous_dossier_id: null, type_piece: type, statut: 'validee', notes: null, confiance: 'haute',
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
   }
 }
 

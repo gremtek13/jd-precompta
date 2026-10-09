@@ -4,12 +4,13 @@ import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
   ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, LigneBancaire, NatureImmobilisation,
-  PeriodiciteTva, Piece, ReglementGroupe, StatutTva, VehiculeDossier, VentilationBancaire,
+  PeriodiciteTva, Piece, ReglementGroupe, StatutTva, TransmissionFacture, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 import type { DossierTab } from '../../components/DossierParcours'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import type { FacturePourJumelle } from '../../lib/ventesJumelles'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -38,7 +39,8 @@ vi.mock('../../lib/supabase', async () => {
   // Les tables dont le faux APPLIQUE les filtres : les natures du cabinet n'appartiennent à aucun dossier,
   // et une lecture qui ne demanderait que celles du dossier les perdrait toutes — avec elles le compte 28
   // de chaque dotation, qui paraîtrait alors à réécrire.
-  const filtrees = new Set(['natures_immobilisation'])
+  // Et les factures émises et leurs transmissions (ligne 28.6) : la lecture ne demande que les validées du dossier.
+  const filtrees = new Set(['natures_immobilisation', 'factures_emises', 'transmissions_factures'])
   return {
     supabase: {
       from: (table: string) => {
@@ -71,7 +73,8 @@ vi.mock('../../lib/supabase', async () => {
             return Promise.resolve({
               data: toutes.slice(debut, debut + (fin - debut + 1)),
               error: null,
-              count: faux.tronquees.has(table) ? toutes.length + 5 : toutes.length,
+              // `pieces:validee` ou `pieces:a_valider` : une seule des deux piles lue en partie.
+              count: faux.tronquees.has(table) || faux.tronquees.has(cle) ? toutes.length + 5 : toutes.length,
             }).then(suite)
           },
         })
@@ -99,6 +102,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     montant_ttc: null, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
     statut: 'a_valider', notes: null, confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     created_at: '2026-09-16T09:00:00Z', updated_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
@@ -145,6 +149,8 @@ function poser(pieces: {
   vehicules?: unknown[]
   lettrages?: unknown[]
   declarations?: DeclarationTva[]
+  factures?: FacturePourJumelle[]
+  transmissions?: TransmissionLue[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -156,6 +162,7 @@ function poser(pieces: {
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
     ventilations_bancaires: pieces.ventilations ?? [], reglements_groupes: pieces.reglements ?? [],
     vehicules: pieces.vehicules ?? [], lettrages_manuels: pieces.lettrages ?? [],
+    factures_emises: pieces.factures ?? [], transmissions_factures: pieces.transmissions ?? [],
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
@@ -2253,5 +2260,110 @@ describe('ChecklistTab — les échéances fiscales', () => {
     expect(vues).toHaveLength(7)
     expect(vues.some((v) => /2035/.test(v.libelle))).toBe(false)
     expect(vues.some((v) => /CVAE 2026 \(1329-DEF\)/.test(v.libelle))).toBe(true)
+  })
+})
+
+// ── LIGNE 28.6 : LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES ────────────────────────────────────────────────────────────
+// Ce que le module (lib/ventesJumelles.ts) ne peut pas voir : que l'écran LISE les factures émises et leurs
+// transmissions, compte les deux piles, NOMME les pièces que l'onglet Justificatifs ne marque pas encore, et se taise
+// sur une lecture partielle.
+
+function factureEmise(o: Partial<FacturePourJumelle> = {}): FacturePourJumelle {
+  return {
+    id: 'f1', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: 4242, ...o,
+  }
+}
+
+// Les colonnes que la Checklist lit, et le dossier, que sa lecture filtre (le faux client applique le filtre).
+type TransmissionLue = Pick<TransmissionFacture, 'id' | 'dossier_id' | 'facture_id' | 'canal' | 'hote' | 'flux_id'>
+
+function transmissionFacture(o: Partial<TransmissionLue> = {}): TransmissionLue {
+  return { id: 't1', dossier_id: 'dossier-de-test', facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-9', ...o }
+}
+
+describe('ChecklistTab — la même vente portée par plusieurs pièces (ligne 28.6)', () => {
+  const POINT = /portée\(s\) par plusieurs pièces/
+  const INCOHERENTES = /dont les preuves contredisent une facture émise/
+  // Reçue de la plateforme du client, encore à valider, reconnue par l'identité que son original dit.
+  const recue = piece({
+    id: 'recue', source: 'plateforme', flux_hote: 'pa.exemple.fr', flux_id: 'flux-1', type_piece: 'vente',
+    nom_fichier: 'facture-0007.xml', identite_numero: 'F2026-0007', identite_siren_vendeur: '123456789',
+    identite_date: '2026-03-14', identite_nature: 'facture',
+  })
+  // Synchronisée de Super PDP, validée, reconnue par l'identifiant que l'envoi a écrit sur la facture.
+  const synchronisee = piece({
+    id: 'spdp', source: 'superpdp', superpdp_invoice_id: 4242, type_piece: 'vente', statut: 'validee',
+    nom_fichier: 'Facture Super PDP F2026-0007.txt',
+  })
+
+  it('la jumelle reçue de la plateforme et celle de Super PDP : sur les deux piles, la facture et ses pièces nommées', async () => {
+    poser({ aValider: [recue], validees: [synchronisee], factures: [factureEmise()] })
+    const onglets: DossierTab[] = []
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', (tab) => { onglets.push(tab) })
+
+    const ligne = await screen.findByText(POINT)
+    expect(ligne.textContent).toMatch(/^1 /)
+    // Les validées d'abord, puis celles à valider : l'ordre des deux piles de l'écran.
+    expect(screen.getByText(/F2026-0007 : « Facture Super PDP F2026-0007\.txt », « facture-0007\.xml »\./)).toBeDefined()
+    // Une erreur, comme un doublon de texte : la vente compte deux fois dans la 2035 et la CA3.
+    expect(ligne.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-manque')
+    screen.getByRole('button', { name: 'Voir ces pièces' }).click()
+    expect(onglets).toEqual(['pieces'])
+  })
+
+  it('la jumelle reconnue par le flux de sa transmission : les transmissions sont lues', async () => {
+    const parLeFlux = piece({
+      id: 'flux', source: 'plateforme', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9', type_piece: 'vente', nom_fichier: 'flux-9.xml',
+    })
+    poser({ aValider: [parLeFlux], validees: [synchronisee], factures: [factureEmise()], transmissions: [transmissionFacture()] })
+    monter()
+
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^1 /)
+    expect(screen.getByText(/F2026-0007 : « Facture Super PDP F2026-0007\.txt », « flux-9\.xml »\./)).toBeDefined()
+  })
+
+  it('se tait quand une seule pièce porte chaque facture', async () => {
+    poser({ aValider: [recue], validees: [synchronisee], factures: [factureEmise({ superpdp_invoice_id: 9999 })] })
+    monter()
+
+    // L'ancre : la pièce validée n'a pas de catégorie, ce point-là paraît forcément.
+    await screen.findByText(/sans catégorie/)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  it('se tait sur une lecture partielle des factures, des transmissions ou des pièces — le bandeau dit pourquoi', async () => {
+    for (const table of ['factures_emises', 'transmissions_factures', 'pieces', 'pieces:validee', 'pieces:a_valider']) {
+      poser({ aValider: [recue], validees: [synchronisee], factures: [factureEmise()], tronquees: [table] })
+      const { unmount } = monter()
+
+      await screen.findByText(/sans catégorie/)
+      expect(screen.queryByText(POINT), table).toBeNull()
+      expect(screen.getAllByText(/n’ont pas pu être lues en entier|n'ont pas pu être lues en entier/).length, table).toBeGreaterThan(0)
+      unmount()
+    }
+  })
+
+  it('une pièce que ses preuves rattachent à deux factures : le point d’attention, qui dit ce qu’elle désigne', async () => {
+    const contradictoire = piece({
+      id: 'x', source: 'plateforme', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9', type_piece: 'vente', nom_fichier: 'contradictoire.xml',
+      identite_numero: 'F2026-0008', identite_siren_vendeur: '123456789', identite_date: '2026-05-02', identite_nature: 'facture',
+    })
+    poser({
+      aValider: [contradictoire], validees: [synchronisee],
+      factures: [factureEmise({ superpdp_invoice_id: null }), factureEmise({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: null })],
+      transmissions: [transmissionFacture()],
+    })
+    const onglets: DossierTab[] = []
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', (tab) => { onglets.push(tab) })
+
+    const point = await screen.findByText(INCOHERENTES)
+    expect(point.textContent).toMatch(/^1 /)
+    // Une attention : rien ne compte deux fois, mais la pièce n'est la jumelle de rien tant qu'on ne l'a pas vérifiée.
+    expect(point.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-attention')
+    point.closest('.check-ligne')!.querySelector('button')!.click()
+    expect(onglets).toEqual(['pieces'])
+    expect(screen.getByText(/« contradictoire\.xml » désigne F2026-0007 et F2026-0008\./)).toBeDefined()
+    expect(screen.queryByText(POINT)).toBeNull()
   })
 })

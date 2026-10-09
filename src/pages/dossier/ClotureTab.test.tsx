@@ -1657,6 +1657,11 @@ describe('ClotureTab — valider l’exercice', () => {
     dossier_id: 'dossier-de-test', annee: 2025, valide_le: '2026-01-15T10:00:00Z', valide_par: 'chef', mode_comptable: 'tresorerie',
     nb_lignes: 2, nb_ecritures: 1, total_debit: 120, total_credit: 120, empreinte_precedente: null, empreinte: 'a'.repeat(64),
   }
+  // Une facture émise validée, envoyée par Super PDP (ligne 28.6) : sa vente revient comme pièce.
+  const FACTURE_EMISE = {
+    id: 'f1', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-06-01',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: 4242,
+  }
   const INSTANTANE = {
     version: 1, annee: 2025, cases: { BA: 999 }, formulaire: { BA: 999 }, totalRecettes: 0, totalDepenses: 999, resultat: -999,
     postes: [{ poste: 'Achats', nature: 'depense', montant: 999, nbPieces: 1, nbMouvements: 0 }],
@@ -2030,6 +2035,9 @@ describe('ClotureTab — valider l’exercice', () => {
   it.each([
     ['exercices_valides', [{ ...VALIDE, annee: 2023 }]],
     ['ecritures_brouillon', null],
+    // Les factures émises et leurs transmissions (ligne 28.6) : la 2035 ne les lit pas, la validation si.
+    ['factures_emises', [FACTURE_EMISE]],
+    ['transmissions_factures', [{ id: 't1', dossier_id: 'dossier-de-test', facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-1' }]],
     ['natures_immobilisation', [{ id: 'n1', dossier_id: null, libelle: 'Matériel', duree_annees_defaut: 5, ordre: 1, compte_immobilisation: '218300' }]],
     ['emprunts', [{
       id: 'emp-x', dossier_id: 'dossier-de-test', nom: 'Prêt', organisme_preteur: 'Banque', capital_initial: 1000, taux_annuel: 1,
@@ -2043,6 +2051,34 @@ describe('ClotureTab — valider l’exercice', () => {
     const c = await carte()
     c.getByText(/La lecture du dossier est restée partielle/)
     expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // LA MÊME VENTE PORTÉE PAR DEUX PIÈCES DE L'EXERCICE (ligne 28.6) : la facture émise revenue de Super PDP et de la
+  // plateforme du client. La validation la refuse, et mène aux Justificatifs où l'une se retire.
+  it('refuse de figer une vente que deux pièces portent, et mène aux Justificatifs', async () => {
+    poserTenu()
+    const vente = { ...PIECE_EUR, type_piece: 'vente', categorie_id: null, tiers: 'CLIENT', date_piece: '2025-06-01' }
+    faux.parTable.pieces = [PIECE_EUR, { ...vente, id: 'v1', superpdp_invoice_id: 4242 }, { ...vente, id: 'v2', flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' }]
+    faux.parTable.factures_emises = [FACTURE_EMISE]
+    faux.parTable.transmissions_factures = [{ id: 't1', dossier_id: 'dossier-de-test', facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-1' }]
+    const onNavigate = monterAvec()
+    const c = await carte()
+    const ligne = c.getByText(/vente\(s\) portée\(s\) par plusieurs pièces/).closest('li') as HTMLElement
+    expect(ligne.textContent).toMatch(/^1 /)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Justificatifs' })) })
+    expect(onNavigate).toHaveBeenCalledWith('pieces')
+  })
+
+  // Le garde symétrique : une facture que sa seule jumelle porte ne réclame rien.
+  it('se tait quand une seule pièce porte la facture', async () => {
+    poserTenu()
+    faux.parTable.factures_emises = [FACTURE_EMISE]
+    faux.parTable.pieces = [{ ...PIECE_EUR, superpdp_invoice_id: 4242 }]
+    monterAvec()
+    const c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    expect(c.queryByText(/portée\(s\) par plusieurs pièces/)).toBeNull()
   })
 
   // Les deux contrôles de la Checklist que la validation lit en plus : illisibles, ils ne se taisent pas.

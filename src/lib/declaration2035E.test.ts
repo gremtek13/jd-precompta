@@ -277,6 +277,7 @@ describe('de bout en bout depuis les pièces', () => {
     date_piece: '2025-03-10', tiers: null, montant_ht: null, montant_tva: null, montant_ttc: null, devise: 'EUR', montant_devise: null,
     taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut: 'validee',
     notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     created_at: '2025-03-10T09:00:00Z', updated_at: '2025-03-10T09:00:00Z', ...o,
   })
   const categories = [
