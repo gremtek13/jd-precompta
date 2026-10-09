@@ -327,6 +327,16 @@ const VUES = [
   { nom: 'pc-refusee-transmettre', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0009', 'Transmettre'] },
   { nom: 'pc-declarer-statuts-lus', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0008', 'Encaissements'], apres: '^Déclaré sur la plateforme$', rang: 'last', vers: 'Statuts lus sur flux.plateforme-beta.example le' },
   { nom: 'pc-relire-statuts', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relire les statuts depuis le début$', accepter: true, vers: 'Statuts lus sur flux.plateforme-alpha.example' },
+  // La coque du CLIENT (09/10/2026), rendue par `client: true` (le compte du cabinet infirmier, rattaché par une adhésion : voir
+  // `banc-client` dans fauxSupabase.ts). Sa navigation paraît dans la barre latérale sur ordinateur, à l'accueil comme sur ses
+  // autres écrans, déployée ou réduite à ses icônes ; sur téléphone elle reste cachée à l'accueil, où ses tuiles en tiennent
+  // lieu, et paraît en barre du bas sur « Mes pièces ».
+  { nom: 'pc-client-accueil', chemin: '#/accueil', l: 1440, h: 900, theme: 'light', reduite: false, client: true },
+  { nom: 'pc-client-accueil-reduite', chemin: '#/accueil', l: 1440, h: 900, theme: 'light', reduite: true, client: true },
+  { nom: 'pc-client-accueil-1024', chemin: '#/accueil', l: 1024, h: 768, theme: 'light', reduite: false, client: true },
+  { nom: 'pc-client-pieces', chemin: '#/mes-pieces', l: 1440, h: 900, theme: 'light', reduite: false, client: true },
+  { nom: 'mobile-client-accueil', chemin: '#/accueil', l: 390, h: 844, theme: 'light', reduite: false, client: true },
+  { nom: 'mobile-client-pieces', chemin: '#/mes-pieces', l: 390, h: 844, theme: 'light', reduite: false, client: true },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -334,12 +344,13 @@ for (const v of VUES) {
   const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h }, userAgent: CHROME })
   // Les largeurs choisies des deux volets (lib/largeurVolets.ts), quand la vue les montre : retenues comme le
   // navigateur les retient.
-  await contexte.addInitScript(({ theme, reduite, largeurs }) => {
+  await contexte.addInitScript(({ theme, reduite, largeurs, client }) => {
     localStorage.setItem('jd-precompta-theme', theme)
+    if (client) localStorage.setItem('banc-client', '1')
     localStorage.setItem('jd-precompta-barre-reduite', reduite ? '1' : '0')
     if (largeurs?.barre) localStorage.setItem('jd-precompta-largeur-barre', String(largeurs.barre))
     if (largeurs?.panneau) localStorage.setItem('jd-precompta-largeur-panneau', String(largeurs.panneau))
-  }, { theme: v.theme, reduite: v.reduite, largeurs: v.largeurs ?? null })
+  }, { theme: v.theme, reduite: v.reduite, largeurs: v.largeurs ?? null, client: v.client ?? false })
   const externes = []
   await contexte.route(/^https?:\/\//, (route) => {
     const url = route.request().url()

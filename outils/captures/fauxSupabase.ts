@@ -44,6 +44,12 @@ const MAINTENANT = '2026-09-25T08:00:00Z'
 // qui a son logo — celui des deux qui n'était pas installable. La valeur est l'adresse du logo.
 const LOGO_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-logo')
 
+// Le banc se joue aussi EN CLIENT (la coque d'un client, son accueil) : une clé du stockage local, posée avant le chargement
+// comme celle du logo, retire le compte de l'équipe du cabinet et rattache le même identifiant au cabinet infirmier par une
+// adhésion. Le rôle se lit alors comme en production (AuthContext : `cabinet_admins`, sinon `memberships`) — pas par un
+// drapeau que l'application ignorerait.
+const CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client') === '1'
+
 const dossiers: Ligne[] = [
   ['d1', 'Cabinet infirmier Moreau', '12345678900012', '86.90D', 'Activités des infirmiers et des sages-femmes'],
   ['d2', 'Sophie Lambert', null, null, null],
@@ -1025,7 +1031,8 @@ const TABLES: Record<string, Ligne[]> = {
     message(3, 'user', 'Il reste une pièce sans catégorie ?'),
     message(4, 'assistant', 'Oui, une seule : LogiSoins, 29,00 € le 18/08/2026. C’est un abonnement de logiciel : une catégorie « Logiciels et abonnements » conviendrait.', ['lister_pieces']),
   ],
-  cabinet_admins: [{ user_id: 'u1', cabinet_id: 'cab1', role: 'comptable_en_chef' }],
+  cabinet_admins: CLIENT_DU_BANC ? [] : [{ user_id: 'u1', cabinet_id: 'cab1', role: 'comptable_en_chef' }],
+  memberships: CLIENT_DU_BANC ? [{ user_id: 'u1', dossier_id: 'd1' }] : [],
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
@@ -1403,7 +1410,7 @@ function requete(table: string) {
   return chaine
 }
 
-const session = { user: { id: 'u1', email: 'cabinet@exemple.fr' }, access_token: 'faux' }
+const session = { user: { id: 'u1', email: CLIENT_DU_BANC ? 'client@exemple.fr' : 'cabinet@exemple.fr' }, access_token: 'faux' }
 
 export const supabase = {
   auth: {
