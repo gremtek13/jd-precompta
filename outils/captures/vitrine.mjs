@@ -49,6 +49,9 @@ const VUES = [
   { nom: 'pc-fiche-1280', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'pc-fiche-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'mobile-fiche-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  // La vente comptée deux fois (ligne 28.6) : les deux pastilles dans la liste, et la fiche de l'une, qui nomme l'autre.
+  { nom: 'pc-jumelle-fiche', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Résidence Les Cèdres SAS' },
+  { nom: 'mobile-jumelle-fiche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Résidence Les Cèdres SAS' },
   // « Proposer une catégorie » : la fiche de la seule pièce sans catégorie (LogiSoins, ouverte par sa DATE : la cellule du fournisseur porte aussi le lien « texte lu », que le clic déplierait), le bouton, puis
   // la proposition et son extrait — long, pour éprouver le passage à la ligne dans le volet.
   { nom: 'pc-proposer-bouton', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: '18/08/2026' },

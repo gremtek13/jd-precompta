@@ -6,7 +6,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
   ETATS_DECLARANTS, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts, contrePassationDe, echeanceDeDeclaration,
-  encaissementsDeclares, obligationEncaissee, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
+  encaissementsDeclares, obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
   refusContrePassation, refusDeLaFacture, refusDeclaration, refusEnregistrement, refusRetrait, repartitionProposee,
   resteAEncaisser,
   type ContexteFacture, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type EvenementSuperpdpLu,
@@ -616,6 +616,12 @@ function Contenu({
     const p = lu.pieces.find((x) => x.id === id)
     return p ? (p.tiers ?? p.nom_fichier) : 'une pièce'
   }
+  // LA JUMELLE OU UNE AUTRE PIÈCE (ligne 28.6, lib/ventesJumelles.ts) : un mouvement qui paie la pièce jumelle de cette
+  // facture paie la même vente — c'est attendu ; un mouvement qui paie une autre pièce, que rien ne relie à la facture,
+  // paie peut-être le PDF de la même vente, qui la compterait deux fois. Le pont le dit ; les refus n'en dépendent pas.
+  const idsJumelles = new Set(piecesJumelles(contexte, lu.pieces).map((p) => p.id))
+  const payeesJumelles = choisie ? choisie.piecesPayees.filter((id) => idsJumelles.has(id)) : []
+  const payeesAutres = choisie ? choisie.piecesPayees.filter((id) => !idsJumelles.has(id)) : []
 
   // Où et comment le statut se déclare, ou pourquoi rien ne se déclare d'ici.
   const commentSeDeclare = !offerte
@@ -894,8 +900,15 @@ function Contenu({
                 {choisie.source === 'jumelle' ? 'Paiement de la pièce jumelle — la même vente, reçue comme pièce. ' : 'Crédit du relevé. '}
                 {choisie.explication}
                 {choisie.clientCite ? ' Le libellé du mouvement cite le client.' : ''}
-                {choisie.piecesPayees.length > 0
-                  ? ` Ce mouvement paie déjà : ${choisie.piecesPayees.map(nomPiece).join(', ')}.`
+                {payeesJumelles.length > 0
+                  ? ` Ce mouvement paie la pièce jumelle de cette facture (${payeesJumelles.map(nomPiece).join(', ')}) : `
+                    + 'c’est la même vente.'
+                  : ''}
+                {payeesAutres.length > 0
+                  ? ` Ce mouvement paie ${payeesJumelles.length > 0 ? 'aussi' : 'déjà'} `
+                    + `${payeesAutres.length > 1 ? 'd’autres pièces' : 'une autre pièce'}, que rien ne relie à cette facture `
+                    + `(${payeesAutres.map(nomPiece).join(', ')}) : si c’est le PDF de cette vente, elle compte deux fois — `
+                    + 'ne gardez qu’une pièce par facture.'
                   : ''}
               </p>
             ) : (

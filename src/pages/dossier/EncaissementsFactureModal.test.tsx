@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
 import type {
-  EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, StatutFactureRecu, StatutTva,
-  TransmissionEncaissement, TransmissionFacture,
+  EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
+  StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
 
 // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étapes d3 et d4). Ce que ces cas gardent, et qu'aucun
@@ -171,13 +171,21 @@ const part = (o: Partial<EncaissementFactureTaux> = {}): EncaissementFactureTaux
   encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 600, ...o,
 })
 
+// Une pièce du dossier, telle que la fenêtre la lit : ce que le pont de la ligne 28.6 reconnaît, son tiers et son fichier.
+type PieceEssai = Pick<Piece, 'id' | 'dossier_id' | 'flux_hote' | 'flux_id' | 'superpdp_invoice_id' | 'identite_numero'
+  | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature' | 'tiers' | 'nom_fichier'>
+const pieceEssai = (o: Partial<PieceEssai> = {}): PieceEssai => ({
+  id: 'p1', dossier_id: 'd1', flux_hote: null, flux_id: null, superpdp_invoice_id: null, identite_numero: null,
+  identite_siren_vendeur: null, identite_date: null, identite_nature: null, tiers: null, nom_fichier: 'piece.pdf', ...o,
+})
+
 const onUpdated = vi.fn()
 
 function monter(o: {
   facture?: FactureEmise; factures?: FactureEmise[]; mouvements?: LigneBancaire[]; encaissements?: EncaissementFacture[]
   parts?: EncaissementFactureTaux[]; statutTva?: StatutTva | null; transmissions?: TransmissionFacture[]
   evenements?: FactureSuperpdpEvent[]; declarations?: TransmissionEncaissement[]; statuts?: StatutFactureRecu[]
-  connexion?: unknown
+  connexion?: unknown; pieces?: PieceEssai[]; reglements?: ReglementGroupe[]
 } = {}) {
   const f = o.facture ?? FACTURE
   // Des copies en objets nus : le faux client les modifie comme la base, et le jeu d'essai reste intact.
@@ -191,8 +199,8 @@ function monter(o: {
     encaissements_factures: nues(o.encaissements ?? []),
     encaissements_factures_taux: nues(o.parts ?? []),
     lignes_bancaires: nues(o.mouvements ?? [mouvement()]),
-    reglements_groupes: [],
-    pieces: [],
+    reglements_groupes: nues(o.reglements ?? []),
+    pieces: nues(o.pieces ?? []),
     statuts_factures_recus: nues(o.statuts ?? []),
   }
   faux.connexion = o.connexion === undefined ? null : o.connexion
@@ -370,6 +378,67 @@ describe('EncaissementsFactureModal — les propositions', () => {
     monter({ mouvements: [mouvement({ montant: 42 })] })
     await bouton()
     screen.getByText(/Aucun mouvement ne se propose/)
+  })
+})
+
+// LA JUMELLE OU UNE AUTRE PIÈCE (ligne 28.6, phase C) : un mouvement qui paie la pièce jumelle de la facture paie la même
+// vente ; un mouvement qui paie une autre pièce, que rien ne relie à la facture, paie peut-être son PDF. Le pont
+// (lib/ventesJumelles.ts) en décide ; la fenêtre le dit, et n'en refuse rien de plus. Données FICTIVES.
+describe('EncaissementsFactureModal — la pièce que le mouvement paie déjà', () => {
+  const AVEC_SUPERPDP = facture({ superpdp_invoice_id: 4242 })
+  const jumelle = pieceEssai({ id: 'p-jumelle', superpdp_invoice_id: 4242, tiers: 'CLIENT FICTIF SAS', nom_fichier: 'super-pdp-0042.txt' })
+  const pdf = pieceEssai({ id: 'p-pdf', tiers: 'CLIENT PDF', nom_fichier: 'vente-0042.pdf' })
+  const proposition = () => screen.getByText(/^(Paiement de la pièce jumelle|Crédit du relevé)/)
+  async function choisir() {
+    await bouton()
+    fireEvent.change(champ('Mouvement du relevé (facultatif)'), { target: { value: 'm1' } })
+  }
+
+  it('la pièce jumelle : la même vente, attendu', async () => {
+    monter({
+      facture: AVEC_SUPERPDP, pieces: [jumelle, pdf],
+      mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p-jumelle' })],
+    })
+    await choisir()
+    expect(proposition().textContent).toBe('Paiement de la pièce jumelle — la même vente, reçue comme pièce. Le crédit fait '
+      + 'exactement ce qui reste à encaisser. Le libellé du mouvement cite le client. Ce mouvement paie la pièce jumelle de '
+      + 'cette facture (CLIENT FICTIF SAS) : c’est la même vente.')
+    // Rien n'est refusé de plus : l'enregistrement reste ouvert au moyen près.
+    screen.getByText('Le moyen de paiement est inconnu.')
+  })
+
+  it('une autre pièce, que rien ne relie à la facture : peut-être son PDF, qui la compterait deux fois', async () => {
+    monter({ facture: AVEC_SUPERPDP, pieces: [jumelle, pdf], mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p-pdf' })] })
+    await choisir()
+    expect(proposition().textContent).toBe('Crédit du relevé. Le crédit fait exactement ce qui reste à encaisser. Le libellé '
+      + 'du mouvement cite le client. Ce mouvement paie déjà une autre pièce, que rien ne relie à cette facture (CLIENT PDF) : '
+      + 'si c’est le PDF de cette vente, elle compte deux fois — ne gardez qu’une pièce par facture.')
+    expect(screen.queryByText(/paie la pièce jumelle/)).toBeNull()
+    screen.getByText('Le moyen de paiement est inconnu.')
+  })
+
+  it('un virement groupé qui paie la jumelle et deux autres pièces : les deux se disent, chacune à sa place', async () => {
+    const autre = pieceEssai({ id: 'p-autre', tiers: null, nom_fichier: 'autre-vente.pdf' })
+    monter({
+      facture: AVEC_SUPERPDP, pieces: [jumelle, pdf, autre],
+      mouvements: [mouvement({ statut: 'rapprochee', reglement_groupe: true, montant: 1555.5 })],
+      reglements: [
+        { id: 'r1', dossier_id: 'd1', ligne_bancaire_id: 'm1', piece_id: 'p-jumelle', montant: 1355.5, created_at: '2027-10-16T08:00:00Z' },
+        { id: 'r2', dossier_id: 'd1', ligne_bancaire_id: 'm1', piece_id: 'p-pdf', montant: 100, created_at: '2027-10-16T08:00:00Z' },
+        { id: 'r3', dossier_id: 'd1', ligne_bancaire_id: 'm1', piece_id: 'p-autre', montant: 100, created_at: '2027-10-16T08:00:00Z' },
+      ],
+    })
+    await choisir()
+    expect(proposition().textContent).toContain('Ce mouvement paie la pièce jumelle de cette facture (CLIENT FICTIF SAS) : '
+      + 'c’est la même vente. Ce mouvement paie aussi d’autres pièces, que rien ne relie à cette facture (autre-vente.pdf, '
+      + 'CLIENT PDF) : si c’est le PDF de cette vente, elle compte deux fois — ne gardez qu’une pièce par facture.')
+  })
+
+  it('sans pièce payée, rien de plus n’est dit', async () => {
+    monter({ facture: AVEC_SUPERPDP, pieces: [jumelle, pdf] })
+    await choisir()
+    expect(proposition().textContent).toBe('Crédit du relevé. Le crédit fait exactement ce qui reste à encaisser. Le libellé '
+      + 'du mouvement cite le client.')
   })
 })
 

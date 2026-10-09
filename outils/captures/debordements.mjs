@@ -269,6 +269,17 @@ const VISITES = [
     dossier: 'd1', onglet: 'pieces', nom: 'plateforme/fiche',
     apres: (page) => page.getByRole('cell', { name: 'Laboratoire Biosanté Provence' }).first().click(),
   },
+  // LA VENTE COMPTÉE DEUX FOIS (ligne 28.6) : la fiche d'une pièce jumelle de F2026-0013 que porte aussi une autre pièce —
+  // sa pastille, ce qu'elle veut dire, et le nom de fichier long de l'autre pièce. La fiche de la visite d'avant est encore
+  // ouverte (même route), et sur téléphone elle couvre la liste : on la ferme d'abord.
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'jumelle/fiche',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('cell', { name: 'Résidence Les Cèdres SAS' }).first().click()
+    },
+  },
   // LES FACTURES ÉMISES (ligne 28.5, étape c4) : le tableau de l'onglet est mesuré par la visite ordinaire, mais ce que
   // l'étape a ajouté ne paraît qu'à un clic, dans une fenêtre. Chacune est SUPERPOSÉE : elle se mesure contre sa propre carte
   // (`fenetre`), pas contre le panneau central. Les quatre visites du cabinet infirmier restent sur la MÊME route, que la page ne recharge pas :

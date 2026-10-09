@@ -152,6 +152,19 @@ const pieces: Ligne[] = [
     flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-15', lisible_path: 'd1/plateforme/fx-15.pdf',
     notes: 'Reçue de la plateforme du client — à vérifier :\n- Le SIREN du destinataire n’est pas écrit sur la facture.',
   },
+  // LA VENTE QUI REVIENT DEUX FOIS (ligne 28.6) : la facture F2026-0013 (`f13`), partie par Super PDP sous 4242, revenue
+  // par la synchronisation Super PDP ET par la plateforme du client, dont l'original dit son numéro, son vendeur et son
+  // année. Les deux lignes portent « Comptée deux fois », et la fiche de l'une nomme l'autre.
+  {
+    ...piece('p16', '2026-09-18', 'Résidence Les Cèdres SAS', 480, 80, null, 'a_valider'),
+    type_piece: 'vente', source: 'superpdp', superpdp_invoice_id: 4242, nom_fichier: 'SUPERPDP-4242-F2026-0013.txt',
+  },
+  {
+    ...piece('p17', '2026-09-18', 'Résidence Les Cèdres (plateforme)', 480, 80, null, 'a_valider'),
+    type_piece: 'vente', source: 'plateforme', storage_path: 'd1/plateforme/fx-17.xml', nom_fichier: 'F2026-0013-RESIDENCE-LES-CEDRES.xml',
+    flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-17',
+    identite_numero: 'F2026-0013', identite_siren_vendeur: '123456789', identite_date: '2026-09-18', identite_nature: 'facture',
+  },
 ]
 
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {

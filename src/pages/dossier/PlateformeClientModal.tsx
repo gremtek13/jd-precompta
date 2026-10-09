@@ -34,6 +34,8 @@ import {
   titreDuPlan,
 } from '../../lib/plateformeClient'
 import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
+import { jumellesImportees, phrasesJumellesImportees } from '../../lib/ventesJumelles'
+import { lireJumellesDuDossier } from '../../lib/ventesJumellesLecture'
 import BilanReleveStatuts from './BilanReleveStatuts'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
@@ -77,6 +79,9 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
   const [hashsConnus, setHashsConnus] = useState<Set<string> | null>(null)
   const [progression, setProgression] = useState<[number, number] | null>(null)
   const [bilan, setBilan] = useState<BilanReception | null>(null)
+  // Ce que le pont de la ligne 28.6 dit des pièces que l'import vient de créer (lib/ventesJumelles.ts) : les phrases, ou
+  // pourquoi il ne peut rien en dire. Posé avec le bilan, effacé avec lui.
+  const [ventesDuBilan, setVentesDuBilan] = useState<{ phrases: string[]; motif: string | null } | null>(null)
   // Le bilan d'un relevé des statuts des factures émises relu depuis le début (étape d7).
   const [releve, setReleve] = useState<ResultatReleve | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -196,9 +201,21 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
         { dossierId, userId, version: liste.version, hote: liste.hote, sirenDossier, hashsConnus },
         liste, plan, (faites, total) => setProgression([faites, total]),
       )
+      // LA VENTE QUI REVIENT (ligne 28.6) : une facture que l'application a émise revient ici comme pièce de vente. Rien
+      // n'est refusé ni retiré à l'import — la jumelle entre, marquée —, mais le bilan le dit, et dit la vente déjà
+      // portée par une autre pièce. Relu sur le dossier ENTIER, ou rien : une liste partielle tairait un double.
+      const importees = resultat.issues.flatMap((i) => (i.statut === 'importee' ? [i.pieceId] : []))
+      let ventes: { phrases: string[]; motif: string | null } | null = null
+      if (importees.length > 0) {
+        const lecture = await lireJumellesDuDossier(dossierId)
+        ventes = lecture.jumelles
+          ? { phrases: phrasesJumellesImportees(jumellesImportees(importees, lecture.jumelles)), motif: null }
+          : { phrases: [], motif: lecture.motif }
+      }
       setBilan(resultat)
+      setVentesDuBilan(ventes)
       oublierLaRecherche()
-      if (resultat.issues.some((i) => i.statut === 'importee')) onImported()
+      if (importees.length > 0) onImported()
     } finally {
       setProgression(null)
     }
@@ -474,7 +491,14 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
             <h3>Import terminé</h3>
             <ul className="plateforme-liste">
               {phrasesDuBilan(compte).map((p) => <li key={p}>{p}</li>)}
+              {ventesDuBilan?.phrases.map((p) => <li key={p}>{p}</li>)}
             </ul>
+            {ventesDuBilan?.motif && (
+              <p className="muted">
+                Les ventes revenues comme une facture émise de l’application n’ont pas pu être reconnues
+                ({ventesDuBilan.motif}) : rien n’en est dit ici. La Checklist le dira, sur une lecture complète.
+              </p>
+            )}
             {aSignaler.length > 0 && (
               <ul className="plateforme-liste plateforme-a-signaler">
                 {aSignaler.map((i) => <li key={i.flux.id}>{nomDuFlux(i.flux)} : {phraseDeLIssue(i)}</li>)}
