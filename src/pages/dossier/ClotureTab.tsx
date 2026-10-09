@@ -44,6 +44,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
+import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
 import VoletSocialCard from './VoletSocialCard'
 import Annexe2035ECard from './Annexe2035ECard'
 import ConcordanceCard from './ConcordanceCard'
@@ -75,7 +76,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const modeComptable = modele.mode
   // Seul le chef du cabinet valide un exercice (décision du 04/10/2026) — la base le refuse aux autres, et la
   // carte ne leur propose pas le geste.
-  const { estChef } = useAuth()
+  // `isSuperAdmin` : une catégorie commune à tous les cabinets ne se règle que par lui (lib/categoriesCommunes.ts).
+  const { estChef, isSuperAdmin } = useAuth()
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   // Non nul quand l'une des QUATRE collections dont dépend la déclaration n'a pas pu être lue en
@@ -374,9 +376,20 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     const repli = suggestion && categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.poste2035 : undefined
     const valeur = (postesEdit[categorieId] ?? repli ?? '').trim()
     if (!valeur) return
-    const { error: saveError } = await supabase.from('categories').update({ poste_2035: valeur }).eq('id', categorieId)
+    // Seconde ceinture : le champ d'une catégorie commune n'est pas rendu à qui ne peut pas la régler.
+    if (categorie && !categorieReglableIci(categorie, isSuperAdmin)) {
+      setError(categorieCommuneNonReglable('poste'))
+      return
+    }
+    // Lue avec la ligne modifiée : une policy qui écarte la ligne ne lève rien, et PostgREST rend un succès sur zéro ligne.
+    const { data: modifiee, error: saveError } = await supabase.from('categories').update({ poste_2035: valeur }).eq('id', categorieId)
+      .select('id').maybeSingle()
     if (saveError) {
-      setError(saveError.message)
+      setError(messageErreur(saveError, 'Le poste n’a pas pu être enregistré.'))
+      return
+    }
+    if (!modifiee) {
+      setError(CATEGORIE_NON_MODIFIEE)
       return
     }
     load()
@@ -733,20 +746,28 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             {categoriesSansPoste.map((c) => (
               <tr key={c.id}>
                 <td data-libelle="Catégorie">{c.libelle}</td>
-                <td data-libelle="Poste 2035" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
-                    placeholder="ex. Achats, Loyers, Recettes..."
-                    value={posteAffiche(c)}
-                    onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                  />
-                  {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
-                    <span className="badge badge-neutral">suggestion</span>
-                  )}
-                </td>
-                <td className="td-boutons">
-                  <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
-                </td>
+                {categorieReglableIci(c, isSuperAdmin) ? (
+                  <>
+                    <td data-libelle="Poste 2035" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
+                        placeholder="ex. Achats, Loyers, Recettes..."
+                        value={posteAffiche(c)}
+                        onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                      />
+                      {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                        <span className="badge badge-neutral">suggestion</span>
+                      )}
+                    </td>
+                    <td className="td-boutons">
+                      <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
+                    </td>
+                  </>
+                ) : (
+                  // Commune à tous les cabinets : la base n'en laisserait rien écrire, et le clic se perdait sans un mot. Une cellule
+                  // fusionnée, sans libellé : repliée en fiche, elle porte un bloc (index.css, `tbody td[colspan]`).
+                  <td colSpan={2} className="muted">{categorieCommuneNonReglable('poste')}</td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1031,24 +1052,32 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     <tr key={c.id}>
                       <td data-libelle="Catégorie">{c.libelle}</td>
                       <td data-libelle="Poste actuel">{c.poste_2035}</td>
-                      <td data-libelle="Nouveau poste">
-                        <input
-                          list="postes-du-formulaire"
-                          aria-label={`Nouveau poste de la catégorie ${c.libelle}`}
-                          placeholder="ex. Achats, Loyers et charges locatives…"
-                          value={postesEdit[c.id] ?? ''}
-                          onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                        />
-                      </td>
-                      <td>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          disabled={!(postesEdit[c.id] ?? '').trim()}
-                          onClick={() => savePoste(c.id, false)}
-                        >
-                          Enregistrer
-                        </button>
-                      </td>
+                      {categorieReglableIci(c, isSuperAdmin) ? (
+                        <>
+                          <td data-libelle="Nouveau poste">
+                            <input
+                              list="postes-du-formulaire"
+                              aria-label={`Nouveau poste de la catégorie ${c.libelle}`}
+                              placeholder="ex. Achats, Loyers et charges locatives…"
+                              value={postesEdit[c.id] ?? ''}
+                              onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              disabled={!(postesEdit[c.id] ?? '').trim()}
+                              onClick={() => savePoste(c.id, false)}
+                            >
+                              Enregistrer
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        // Le refus de la validation renvoie ici : sans cette phrase, il restait sans issue et sans raison. Une cellule
+                        // fusionnée, sans libellé : repliée en fiche, elle porte un bloc (index.css, `tbody td[colspan]`).
+                        <td colSpan={2} className="muted">{categorieCommuneNonReglable('poste')}</td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

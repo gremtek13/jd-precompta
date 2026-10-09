@@ -132,7 +132,7 @@ export default function ClientSimulation() {
   }, [dossierId])
 
   if (!dossierId) {
-    return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte JD Consult.</p>
+    return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
   }
   if (loading) return <p className="muted">Chargement…</p>
 

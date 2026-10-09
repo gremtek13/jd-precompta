@@ -675,10 +675,21 @@ describe('ImmobilisationsTab — natures et comptes', () => {
     const natures = within(await screen.findByRole('table', { name: 'Natures' }))
     const info = within(natures.getByText('Matériel informatique').closest('tr')!)
     info.getByText('218300 → 281830')
-    info.getByText('Partagée par le cabinet')
+    info.getByText('Commune à tous les cabinets')
     const propre = within(natures.getByText('Fauteuil de soins').closest('tr')!)
     propre.getByText('215400 → 281540')
     propre.getByText('Propre au dossier')
+  })
+
+  // Le sixième chiffre d'un compte se garde dans son compte d'amortissement (« même ventilation », PCG art. 1121-1) : il
+  // était tronqué, et le tableau montrait 281831 pour 218311 comme pour 218310.
+  it('montre le compte d’amortissement d’une nature au sixième chiffre significatif', async () => {
+    poser([])
+    faux.natures = [...faux.natures, { ...NATURE_PROPRE, id: 'n-six', libelle: 'Ordinateurs portables', compte_immobilisation: '218311' }]
+    monter()
+
+    const natures = within(await screen.findByRole('table', { name: 'Natures' }))
+    within(natures.getByText('Ordinateurs portables').closest('tr')!).getByText('218311 → 2818311')
   })
 
   it('refuse un compte qui n’est pas d’immobilisation, puis ajoute la nature au dossier', async () => {

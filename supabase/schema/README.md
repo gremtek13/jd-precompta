@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 104 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 106 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,10 +84,11 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 09/10/2026** : 104 fichiers, 104 migrations, empreinte globale
-`3be31fb094fbe11f71ec0e2b6145566e` des deux côtés, aucune divergence — rejoué à l'intégration des
-trois migrations du jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`,
-`revision_des_soldes`, la dernière), toutes trois dans l'export.
+**Vérifié par empreinte le 09/10/2026** : 106 fichiers, 106 migrations, empreinte globale
+`c06035e67b4374900d74eaa999f50d31` des deux côtés, aucune divergence — rejoué à l'intégration des
+cinq migrations du jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`,
+`revision_des_soldes`, `compte_amortissement_meme_ventilation`, `commentaire_compte_notes_de_frais_pcg_2026`, la
+dernière), toutes cinq dans l'export.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

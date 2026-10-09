@@ -260,8 +260,9 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     }
   }
 
-  // Une nature PROPRE au dossier, avec son compte : les natures partagées par le cabinet portent le leur, et
-  // seul un super-administrateur les modifie (policy de `natures_immobilisation`).
+  // Une nature PROPRE au dossier, avec son compte : les natures communes portent le leur, et seul un
+  // super-administrateur les modifie (policy de `natures_immobilisation`) — elles n'appartiennent à aucun cabinet, la
+  // table n'ayant pas de `cabinet_id`, et valent pour les dossiers de tous les cabinets.
   async function ajouterNature(e: FormEvent) {
     e.preventDefault()
     if (natureEnCours.current) return
@@ -895,8 +896,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         </div>
         <p className="muted">
           La nature d’un bien donne sa durée usuelle et son compte d’immobilisation ; la dotation crédite le compte
-          d’amortissement qui s’en déduit (2183 → 28183). Les natures partagées par le cabinet ne se modifient
-          qu’en administration ; une nature propre à ce dossier peut porter un autre compte.
+          d’amortissement qui s’en déduit (2183 → 28183). Les natures communes à tous les cabinets ne se modifient
+          que par l’administrateur de l’application ; une nature propre à ce dossier peut porter un autre compte.
         </p>
         {natureOuverte === 'natures' && formulaireNature}
         {/* Pendant la première lecture, pas de tableau sans ligne : il se lisait comme un dossier sans aucune nature. */}
@@ -912,7 +913,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                     <td>{n.libelle}</td>
                     <td>{n.duree_annees_defaut} an{n.duree_annees_defaut > 1 ? 's' : ''}</td>
                     <td style={{ fontVariantNumeric: 'tabular-nums' }}>{compteDe(n)}</td>
-                    <td className="muted">{n.dossier_id ? 'Propre au dossier' : 'Partagée par le cabinet'}</td>
+                    <td className="muted">{n.dossier_id ? 'Propre au dossier' : 'Commune à tous les cabinets'}</td>
                   </tr>
                 ))}
               </tbody>

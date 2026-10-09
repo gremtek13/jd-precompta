@@ -632,7 +632,7 @@ export type ArticleExoneration = 'cgi_261_4_1' | 'cgi_261_4_4_a' | 'cgi_261_4_4_
 
 export type ModeComptable = 'tresorerie' | 'engagement'
 // 455 : compte courant d'un dirigeant associé d'une société ; 108 : compte de l'exploitant d'une
-// entreprise individuelle ; 467 : autres comptes débiteurs ou créditeurs. Voir lib/engagement.ts.
+// entreprise individuelle ; 467 : divers comptes débiteurs et produits à recevoir. Voir lib/engagement.ts.
 export type CompteNotesDeFrais = '455000' | '108000' | '467000'
 
 export interface DeclarationTva {

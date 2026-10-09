@@ -231,6 +231,29 @@ describe('BalanceCard — en faire les à-nouveaux du dossier', () => {
     expect(await screen.findByText(/Ouverture enregistrée/)).toBeTruthy()
   })
 
+  // La reprise ne range que la banque et deux comptes de TVA (lib/aNouveaux.ts) : un 164 ou un 108 de la balance s'ouvre
+  // sous ce numéro, quand les échéances et le report écrivent au 164000 et au 108000. L'écran le dit avant le clic ; ce
+  // qui part à la base, lui, ne change pas (le test précédent l'épingle).
+  it('dit les comptes repris sous leur numéro alors que l’application écrit sous un autre', async () => {
+    await monter()
+    await deposer(fichier(octetsUtf8(AVANT_CLOTURE)))
+
+    const phrase = screen.getByText(/^Repris sous leur numéro, alors que l’application écrit sous un autre ce qu’ils portent : /)
+    expect(phrase.textContent).toContain('164 Emprunts (l’application : 164000)')
+    expect(phrase.textContent).toContain('108 Compte de l’exploitant (l’application : 108000)')
+    expect(phrase.textContent).toContain('28183 Amortissements (l’application : 281830)')
+    expect(phrase.textContent).toContain('2183 Matériel informatique (l’application : 218300)')
+    expect(phrase.textContent).not.toContain('51210000')
+    expect(phrase.textContent).toMatch(/quand elle écrit le même rôle, la balance et le FEC en portent deux comptes\.$/)
+  })
+
+  it('se tait sur une balance tenue sur les comptes de l’application', async () => {
+    await monter()
+    await deposer(fichier(octetsUtf8(EQUILIBREE)))
+    await screen.findByText('Ouvrir le dossier avec ces soldes')
+    expect(screen.queryByText(/^Repris sous leur numéro/)).toBeNull()
+  })
+
   it('refuse, en le disant, une balance dont la classe 8 n’est pas soldée', async () => {
     const avecCloture = [
       'Compte;Libelle;Debit;Credit',

@@ -36,6 +36,11 @@ const faux = vi.hoisted(() => ({
   annexes: [] as ({ valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null)[],
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
+  // Ce que l'écran croit de qui regarde (`useAuth().isSuperAdmin`), et ce qu'en sait la BASE : la policy d'écriture
+  // d'une catégorie commune (`dossier_id` nul) ne laisse passer que le super-administrateur, et écarte la ligne sans
+  // lever pour tout autre (supabase/essais/categoriesCommunes.sql).
+  superAdmin: true,
+  superAdminEnBase: true,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -59,9 +64,13 @@ vi.mock('../../lib/supabase', async () => {
         // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
         // une pièce — la 2035 perdait alors les recettes affectées sans qu'un test tombe.
         const predicats: Predicat[] = []
+        // Une mise à jour, et la ligne qu'elle vise : lue avec sa ligne (`.select('id').maybeSingle()`), la base rend la
+        // ligne modifiée, ou rien — sans erreur — quand la policy l'écarte.
+        let miseAJour = false
+        let idVise: unknown = undefined
         Object.assign(chaine, {
           select: () => chaine,
-          update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); return chaine },
+          update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); miseAJour = true; return chaine },
           // Le cadrage par dossier n'est appliqué qu'aux natures, les seules lignes du jeu d'essai qui le
           // renseignent : une lecture des seules natures du dossier perdrait celles du cabinet, et avec elles le
           // véhicule du registre — le faux doit pouvoir le voir.
@@ -72,13 +81,22 @@ vi.mock('../../lib/supabase', async () => {
             if (table === 'natures_immobilisation' || (['pieces', 'lignes_bancaires'].includes(table) && colonne === 'statut')) {
               predicats.push(predicatEq(colonne, valeur))
             }
+            if (colonne === 'id') idVise = valeur
             return chaine
           },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
           order: () => chaine,
           range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-          maybeSingle: () => Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null }),
+          maybeSingle: () => {
+            if (miseAJour) {
+              const visee = (faux.parTable[table] ?? []).find((l) => (l as { id?: unknown }).id === idVise) as
+                { id: unknown; dossier_id?: unknown } | undefined
+              const laisse = visee != null && (table !== 'categories' || visee.dossier_id != null || faux.superAdminEnBase)
+              return Promise.resolve({ data: laisse ? { id: visee.id } : null, error: null })
+            }
+            return Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null })
+          },
           then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
             const toutes = filtrer(faux.parTable[table] ?? [], predicats)
             const muet = faux.muetApresParTable[table]
@@ -101,7 +119,7 @@ vi.mock('../../lib/supabase', async () => {
 // qu'une dépendance navigateur doit vivre à part. La doublure est honnête : elle ne dessine rien et
 // RETIENT les cases reçues — c'est ce que l'écran envoie au formulaire qui est en cause, pas le
 // dessin, que `gabarit2035.test.ts` éprouve sur le vrai PDF.
-vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef }) }))
+vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef, isSuperAdmin: faux.superAdmin }) }))
 
 const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000' } as const
 const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000' } as const
@@ -158,6 +176,8 @@ function poser(
 ) {
   faux.muetApresParTable = muet
   faux.misesAJour = []
+  faux.superAdmin = true
+  faux.superAdminEnBase = true
   faux.parTable = {
     categories: [CATEGORIE],
     pieces: [PIECE],
@@ -583,6 +603,66 @@ describe('ClotureTab — un poste qu’aucune case ne porte', () => {
     await screen.findByText(/Exercice 2025/)
     expect(screen.queryByLabelText('Nouveau poste de la catégorie Achats')).toBeNull()
     expect(screen.queryByText(/qu'aucune case du formulaire ne porte/)).toBeNull()
+  })
+})
+
+// LE POSTE D'UNE CATÉGORIE COMMUNE À TOUS LES CABINETS (`dossier_id` nul) ne se règle que par le super-administrateur : sa
+// policy écarte la ligne pour tout autre, sans lever, et « Enregistrer » se perdait sans un mot — éprouvé en base par
+// supabase/essais/categoriesCommunes.sql. Les deux cartes le disent avant le clic, et vérifient après le clic la ligne
+// que la base a rendue. CATEGORIE, la catégorie du jeu, est commune.
+describe('ClotureTab — le poste d’une catégorie commune à tous les cabinets', () => {
+  const PHRASE = 'Catégorie commune à tous les cabinets : seul l’administrateur de l’application en règle le poste.'
+
+  it('« Postes manquants » ne l’offre pas à qui n’est pas super-administrateur, et dit pourquoi', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    faux.superAdmin = false
+    faux.superAdminEnBase = false
+    monter()
+    const carte = within((await screen.findByText('Postes manquants')).closest('.card') as HTMLElement)
+    carte.getByText(PHRASE)
+    expect(carte.queryByPlaceholderText(/ex\. Achats/)).toBeNull()
+    expect(carte.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+  })
+
+  it('« Postes sans case » ne l’offre pas non plus, et la validation renvoie à une carte qui dit pourquoi', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: 'eau_gaz_electricite' }]
+    faux.superAdmin = false
+    faux.superAdminEnBase = false
+    monter()
+    const titre = await screen.findByRole('heading', { name: 'Postes sans case du formulaire (1)' })
+    const carte = within(titre.closest('.card') as HTMLElement)
+    carte.getByText(PHRASE)
+    expect(carte.queryByLabelText('Nouveau poste de la catégorie Achats')).toBeNull()
+    expect(carte.queryByRole('button', { name: 'Enregistrer' })).toBeNull()
+  })
+
+  // Le garde symétrique : une catégorie du dossier se règle toujours, même par qui n'est pas super-administrateur.
+  it('une catégorie du dossier se règle toujours', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, dossier_id: 'dossier-de-test', poste_2035: null }]
+    faux.superAdmin = false
+    faux.superAdminEnBase = false
+    monter()
+    const carte = within((await screen.findByText('Postes manquants')).closest('.card') as HTMLElement)
+    fireEvent.change(carte.getByPlaceholderText(/ex\. Achats/), { target: { value: 'Achats' } })
+    await act(async () => { carte.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { poste_2035: 'Achats' } }])
+    expect(screen.queryByText(/Rien n’a été enregistré/)).toBeNull()
+  })
+
+  // L'écran croit encore au droit — perdu en cours de session — : la base écarte la ligne sans lever, et l'écran le dit.
+  it('dit qu’une écriture dont la base ne rend aucune ligne n’a rien enregistré', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    faux.superAdminEnBase = false
+    monter()
+    const carte = within((await screen.findByText('Postes manquants')).closest('.card') as HTMLElement)
+    fireEvent.change(carte.getByPlaceholderText(/ex\. Achats/), { target: { value: 'Achats' } })
+    await act(async () => { carte.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toHaveLength(1)
+    expect(await screen.findByText(/Rien n’a été enregistré : la base n’a modifié aucune catégorie/)).toBeTruthy()
   })
 })
 

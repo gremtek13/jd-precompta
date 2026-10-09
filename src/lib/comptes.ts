@@ -89,6 +89,11 @@ export const COMPTE_RESULTAT_PERTE = '129000'
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
 // aurait porté deux noms selon l'écran — un même CompteNum ne doit avoir qu'un CompteLib.
+//
+// Le CompteLib d'un compte du plan est « l'intitulé complet du compte tel qu'il est défini dans la nomenclature »
+// (BOI-CF-IOR-60-40-20, §150 ; LPF, art. A47 A-1) : celle du plan comptable général consolidé au 1er janvier 2026
+// (règlement ANC n° 2014-03, art. 1121-1). Le 467, le 658 et le 758 y ont changé d'intitulé depuis 2019, le 468 aussi
+// (`LIBELLES_DU_PLAN`) : `comptes.test.ts` les épingle, recopiés de la nomenclature.
 export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_BANQUE]: 'Banque',
   [COMPTE_TVA_DEDUCTIBLE]: 'TVA déductible',
@@ -99,7 +104,7 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_CLIENTS]: 'Clients',
   [COMPTE_COURANT_ASSOCIE]: 'Associés — comptes courants',
   [COMPTE_EXPLOITANT]: "Compte de l'exploitant",
-  [COMPTE_AUTRES_DEBITEURS_CREDITEURS]: 'Autres comptes débiteurs ou créditeurs',
+  [COMPTE_AUTRES_DEBITEURS_CREDITEURS]: 'Divers comptes débiteurs et produits à recevoir',
   [COMPTE_EMPRUNT]: 'Emprunts auprès des établissements de crédit',
   [COMPTE_INTERETS_EMPRUNT]: 'Intérêts des emprunts et dettes',
   [COMPTE_ASSURANCE_EMPRUNT]: 'Assurance des emprunts',
@@ -111,15 +116,15 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_TVA_A_DECAISSER]: 'TVA à décaisser',
   [COMPTE_CREDIT_TVA_A_REPORTER]: 'Crédit de TVA à reporter',
   [COMPTE_REMBOURSEMENT_TVA_DEMANDE]: "Remboursement de taxes sur le chiffre d'affaires demandé",
-  [COMPTE_ARRONDIS_CHARGE]: 'Charges diverses de gestion courante',
-  [COMPTE_ARRONDIS_PRODUIT]: 'Produits divers de gestion courante',
+  [COMPTE_ARRONDIS_CHARGE]: 'Pénalités et autres charges',
+  [COMPTE_ARRONDIS_PRODUIT]: 'Indemnités et autres produits',
 }
 
 // LES COMPTES D'AMORTISSEMENT que les dotations créditent : 28 suivi du compte d'immobilisation du bien
-// sans son 2 (2183 → 28183), celui que porte sa nature. Ils ne sont pas fixes — une nature propre à un
-// dossier peut porter n'importe quel compte de classe 20 ou 21 —, d'où une table pour ceux du plan
-// comptable que les natures du cabinet désignent, et un libellé générique pour les autres. Sans lui, la
-// balance les afficherait « — » et le FEC les nommerait par leur numéro.
+// sans son 2 (2183 → 28183), celui que porte sa nature (`compteAmortissement`, lib/amortissements.ts). Ils ne
+// sont pas fixes — une nature propre à un dossier peut porter n'importe quel compte de classe 20 ou 21 —, d'où
+// une table pour ceux du plan comptable que les natures communes désignent, et un libellé générique pour les
+// autres. Sans lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro.
 const LIBELLES_AMORTISSEMENTS: Readonly<Record<string, string>> = {
   '280500': 'Amortissements des concessions, brevets, licences, logiciels',
   '281540': 'Amortissements du matériel industriel',
@@ -132,7 +137,7 @@ const LIBELLES_AMORTISSEMENTS: Readonly<Record<string, string>> = {
 
 // LES COMPTES D'IMMOBILISATION que l'écriture d'acquisition débite : celui que porte la nature du bien,
 // classe 20 ou 21 sur six chiffres. Même raison que pour les comptes 28 : une table pour ceux que les
-// natures du cabinet désignent, un libellé générique pour les autres.
+// natures communes désignent, un libellé générique pour les autres.
 const LIBELLES_IMMOBILISATIONS: Readonly<Record<string, string>> = {
   '205000': 'Concessions et droits similaires, brevets, licences, logiciels',
   '215400': 'Matériel industriel',
@@ -148,9 +153,14 @@ const LIBELLES_IMMOBILISATIONS: Readonly<Record<string, string>> = {
 // des comptes, le FEC et ses à-nouveaux : un même CompteNum ne porte qu'un CompteLib dans tout le fichier,
 // et un compte 2… ou 28… ouvert par la balance reprise doit s'appeler comme celui que l'acquisition débite
 // ou que la dotation crédite.
+// Un compte 28 que l'application peut écrire : six chiffres, ou sept dont le dernier n'est pas un zéro — celui d'une
+// nature dont le sixième chiffre est significatif (218311 → 2818311). Un 2818300 n'en est pas un : l'application
+// écrirait 281830, et le libellé que lui donne une balance reprise reste le sien.
+const COMPTE_AMORTISSEMENT_ECRIT = /^28(\d{4}|\d{4}[1-9])$/
+
 export function libelleCompteTenu(compte: string): string | null {
   if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
-  if (/^28\d{4}$/.test(compte)) {
+  if (COMPTE_AMORTISSEMENT_ECRIT.test(compte)) {
     return LIBELLES_AMORTISSEMENTS[compte]
       ?? (compte.startsWith('280') ? 'Amortissements des immobilisations incorporelles' : 'Amortissements des immobilisations corporelles')
   }
@@ -240,8 +250,8 @@ const LIBELLES_DU_PLAN: Readonly<Record<string, string>> = {
   '462': "Créances sur cessions d'immobilisations",
   '464': 'Dettes sur acquisitions de valeurs mobilières de placement',
   '465': 'Créances sur cessions de valeurs mobilières de placement',
-  '467': 'Autres comptes débiteurs ou créditeurs',
-  '468': 'Divers — charges à payer et produits à recevoir',
+  '467': 'Divers comptes débiteurs et produits à recevoir',
+  '468': 'Divers comptes créditeurs et charges à payer',
   '47': "Comptes transitoires ou d'attente",
   '48': 'Comptes de régularisation',
   '49': 'Dépréciations des comptes de tiers',

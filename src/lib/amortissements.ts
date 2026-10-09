@@ -95,10 +95,15 @@ export function planAmortissement(bien: BienAmortissable): AnnuiteAmortissement[
   return plan
 }
 
-// Le compte d'amortissement d'un compte d'immobilisation : 28 suivi du compte sans son 2, sur six chiffres
-// (218300 → 281830, 205000 → 280500) — `compte_amortissement` en base.
+// LE COMPTE D'AMORTISSEMENT D'UN COMPTE D'IMMOBILISATION : 28 suivi du compte sans son 2, « même ventilation que
+// celle du compte 20 » ou « du compte 21 » (PCG, art. 1121-1, comptes 280 et 281), sans ses zéros de fin, qui ne font
+// que regrouper (art. 1131-2), puis complété à six chiffres comme tous les comptes de l'application : 218300 → 281830,
+// 205000 → 280500. Un sixième chiffre significatif se GARDE, et le compte en prend un septième : 218311 → 2818311. Il
+// était tronqué (`28` et les chiffres 2 à 5), et 218310 comme 218311 rendaient 281831 : deux comptes de biens amortis
+// sur un seul. Le même calcul que `compte_amortissement` en base, qui vérifie la dotation : amortissements.test.ts le
+// confronte à une table relevée en base.
 export function compteAmortissement(compteImmobilisation: string): string {
-  return `28${compteImmobilisation.slice(1, 5)}`
+  return `28${compteImmobilisation.slice(1)}`.replace(/0+$/, '').padEnd(6, '0')
 }
 
 /** Le 31 décembre d'un exercice : la date de sa dotation. */
