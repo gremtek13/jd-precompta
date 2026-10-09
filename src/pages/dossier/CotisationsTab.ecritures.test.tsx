@@ -79,7 +79,7 @@ function avis(o: Partial<DocumentDivers> = {}): DocumentDivers {
 }
 
 const monter = () => render(
-  <AvecExercicesValides annees={[]}><CotisationsTab dossierId="dossier-de-test" modeComptable="tresorerie" /></AvecExercicesValides>,
+  <AvecExercicesValides annees={[]}><CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: '108000' }} /></AvecExercicesValides>,
 )
 
 beforeEach(() => {

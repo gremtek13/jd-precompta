@@ -362,9 +362,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
   une catégorie, règles d'affectation en lot, virement personnel (108), échéance d'emprunt (164, 661, 616), ventilation,
   règlement de plusieurs pièces par un virement (ligne 26), taux de TVA d'une recette sans facture, échéance de
-  cotisation (646, CSG-CRDS au 108), l'échéance payée depuis le compte personnel (09/10/2026, en base ; l'écran à venir)
-  — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de
-  la nature, 445620, 404), forfait kilométrique (625110), note de frais face au 108 en trésorerie ; la 2035 comparée aux
+  cotisation (646, CSG-CRDS au 108), l'échéance payée depuis le compte personnel (09/10/2026, en base et à l'écran ; le
+  retrait à coller) — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de la nature,
+  445620, 404), forfait kilométrique (625110), note de frais face au 108 en trésorerie ; la 2035 comparée aux
   écritures ; la validation d'un exercice, qui le fige en base.
 - **Comptabilité d'engagement**, étape 1 (ligne 31, 28/09/2026) ; lettrage déduit du rapprochement (05/10) et fait à la
   main (06/10, ligne 32) ; mouvement vers un compte de bilan (ligne 26.7) ; TVA liquidée, payée et remboursée (ligne
@@ -417,8 +417,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   décalés.
 - **FEC** : restent les vingt-deux champs d'un BNC en trésorerie et les montants en devise (réponse de
   l'expert-comptable du cabinet attendue).
-- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'écran de l'échéance payée depuis le compte
-  personnel et la migration de son retrait, à coller par le cabinet ; l'opération découverte après coup, conçue,
+- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; le retrait d'un paiement personnel : la
+  migration à coller par le cabinet, puis `RETRAIT_EXPORTE` à `true` ; l'opération découverte après coup, conçue,
   questions au cabinet (B1 à B13). Aucun exercice n'est encore validé en base.
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu avec l'espace
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
@@ -706,7 +706,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une échéance de cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10) : face au compte du
   dirigeant (en trésorerie, la cotisation hors CSG-CRDS au 646000 face au 108000), datée du paiement que le cabinet
   saisit, jamais proposé, par `enregistrer_paiement_personnel_cotisation` ; un mouvement OU le compte personnel, jamais
-  les deux (la fonction et deux déclencheurs) → « UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL S'ÉCRIT ». L'opération
+  les deux (la fonction et deux déclencheurs) → « UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL S'ÉCRIT ». À l'écran
+  (phase C) : la colonne « Paiement » de Cotisations offre le geste sur une échéance que rien ne paie, sur des listes
+  lues en entier (ouverture comprise) ; la fenêtre ne propose jamais la date, dit le refus du module avant le clic et la
+  confirmation qui nomme les comptes et l'exercice, sous le verrou du brouillon relâché après la relecture. Le retrait
+  n'est offert que si sa fonction est en base : `RETRAIT_EXPORTE` (lib/cotisationPersonnelle.ts), un seul drapeau pour
+  le test du module, le bouton et les mots du module → « LA PHASE C : L'ÉCRAN DU PAIEMENT PERSONNEL ». L'opération
   découverte après la validation de son exercice est conçue, pas modélisée → « L'OPÉRATION DÉCOUVERTE APRÈS COUP ».
 - **Les écritures d'inventaire** suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS S'ÉCRIVENT »,
   « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN TRÉSORERIE » ;

@@ -233,9 +233,17 @@ vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
 vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
 // Cotisations écrit une échéance payée dans le modèle du dossier (lib/cotisationRapprochee.ts) : sa
-// CSG-CRDS au 108000 en trésorerie, au 646000 avec le reste en engagement. Doublé pour montrer le modèle
-// qu'il REÇOIT — il ne lit pas le statut TVA, que le double affiche sans conséquence.
-vi.mock('./dossier/CotisationsTab', () => doubleTva('Cotisations'))
+// CSG-CRDS au 108000 en trésorerie, au 646000 avec le reste en engagement. Et une échéance payée depuis le compte
+// PERSONNEL s'écrit face au compte du dirigeant (lib/cotisationPersonnelle.ts) : l'onglet reçoit le modèle ENTIER.
+// Doublé pour montrer ce qu'il REÇOIT.
+vi.mock('./dossier/CotisationsTab', () => ({
+  default: ({ modele }: { modele: { mode: string; compteNotesDeFrais: string } }) => (
+    <>
+      <p>Cotisations — modèle {modele.mode}</p>
+      <p>Cotisations — dirigeant {modele.compteNotesDeFrais}</p>
+    </>
+  ),
+}))
 // La Balance des comptes porte, en engagement, les comptes de tiers à une date (lib/lettrage.ts) : doublée pour
 // montrer le modèle qu'elle REÇOIT — elle ne lit pas le statut TVA, que le double affiche sans conséquence.
 vi.mock('./dossier/StatistiquesTab', () => doubleTva('Balance des comptes'))
@@ -692,6 +700,15 @@ describe('Page d’un dossier — le modèle comptable', () => {
 
     await afficher('/dossiers/d2/bilan')
     expect(screen.getByText('Bilan — modèle engagement — dirigeant 108000')).toBeTruthy()
+  })
+
+  it('l’onglet Cotisations reçoit le modèle entier : le compte du dirigeant compris', async () => {
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText('Cotisations — dirigeant 455000')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/cotisations')
+    expect(screen.getByText('Cotisations — dirigeant 108000')).toBeTruthy()
   })
 
   it('l’onglet Clôture reçoit le modèle entier, et mène à l’écran où lever un préalable', async () => {
