@@ -2,6 +2,8 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
 import type { EnteteDeclaration, FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
+import { planDeRemplissage2035E } from './gabarit2035E'
+import type { EnteteAnnexe2035E } from './gabarit2035E'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
@@ -18,10 +20,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 // au lieu d'écraser celui avec lequel les déclarations passées ont été produites.
 export const MODELE_2035 = '/formulaires/2035-sd-2026.pdf'
 
-// Seules les deux premières pages portent les cases qu'on sait remplir (2035-A puis 2035-B). Les
-// suivantes (annexe sociétés, capital, filiales) ne sont pas alimentées par ce moteur ; les lire
+// Les deux premières pages portent la 2035-A et la 2035-B ; la troisième, l'annexe 2035-E, ne se lit que quand elle est
+// due. Les deux dernières (2035-F et 2035-G, capital et filiales d'une société) ne sont pas alimentées ; les lire
 // coûterait du temps pour rien.
 const PAGES_LUES = 2
+const PAGE_2035E = 3
 
 // pdf.js type le contenu d'une page comme une union « fragment de texte | balise de structure ».
 // Seuls les fragments portent une position ; les balises n'ont pas de `str`, d'où le tri avant usage.
@@ -66,11 +69,22 @@ export interface Remplissage2035 {
   // formulaire. Vide en temps normal ; non vide, c'est que le millésime du modèle a changé et que le
   // repérage doit être revu. Jamais silencieux : un montant absent d'une déclaration ne se voit pas.
   codesSansAncrage: string[]
+  // De même pour les lignes de l'annexe 2035-E, à part : leurs codes ne disent pas d'eux-mêmes de quelle page ils sont.
+  codesSansAncrage2035E: string[]
+}
+
+// L'annexe 2035-E à porter sur la page 3 : ses lignes à l'euro (`calculer2035E(...).lignes`) et son en-tête.
+export interface Annexe2035EARemplir {
+  valeurs: ReadonlyMap<string, number>
+  entete: EnteteAnnexe2035E
 }
 
 export async function remplir2035(
   valeurs: Map<string, number>,
   entete: EnteteDeclaration,
+  // L'annexe quand elle est due, sinon null : sa page reste alors vierge. Sans valeur par défaut — un appelant qui
+  // l'oublierait déposerait une liasse sans son annexe, et ce n'est pas à la compilation de le lui taire.
+  annexe2035E: Annexe2035EARemplir | null,
 ): Promise<Remplissage2035> {
   const reponse = await fetch(MODELE_2035)
   if (!reponse.ok) throw new Error(`Formulaire 2035 introuvable (${reponse.status})`)
@@ -83,6 +97,17 @@ export async function remplir2035(
   for (let n = 1; n <= Math.min(PAGES_LUES, doc.numPages); n++) pages.push(await lirePage(doc, n))
 
   const { inscriptions, codesSansAncrage } = planDeRemplissage(ancragesDesCases(pages), valeurs, entete, pages)
+
+  // La page 3 se repère SEULE, avec ses propres codes : lue avec les deux premières, son « BK » (les effectifs) se
+  // confondrait avec celui de la ligne 25 (gabarit2035E.ts).
+  // Un modèle sans troisième page se lit comme une page vide : aucune ancre, et chaque ligne non nulle est dite.
+  let codesSansAncrage2035E: string[] = []
+  if (annexe2035E) {
+    const page3 = doc.numPages >= PAGE_2035E ? await lirePage(doc, PAGE_2035E) : { fragments: [], filets: [] }
+    const plan = planDeRemplissage2035E(page3, PAGE_2035E, annexe2035E.valeurs, annexe2035E.entete)
+    inscriptions.push(...plan.inscriptions)
+    codesSansAncrage2035E = plan.codesSansAncrage
+  }
 
   // pdf-lib n'est chargé qu'ici : c'est 300 Ko dont l'écran n'a besoin qu'au clic sur « remplir ».
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
@@ -108,5 +133,5 @@ export async function remplir2035(
     })
   }
 
-  return { pdf: await pdf.save(), codesSansAncrage }
+  return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E }
 }

@@ -209,6 +209,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
   1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Ne
   JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
+  Sous un `node_modules` fait de liens (worktree d'agent), Vite refuse les polices et le banc mesure la police de
+  repli sans échouer : `server.fs.allow` doit nommer le `node_modules` réel. Un montant affiché ne se coupe pas en fin
+  de ligne (`formatMoney`, ou des espaces fines insécables) ; `formaterMontant`, fait pour le PDF, sépare les milliers
+  par des espaces ordinaires → « UN MONTANT SE COUPAIT EN FIN DE LIGNE ».
 - **Ce qui s'imprime n'a aucune mise en page en ligne** (l'aperçu d'une facture) : un style en ligne l'emporte sur
   `@media print`, et la facture sortait avec ses boutons, en double, tronquée. Le bloc du téléphone (`max-width: 720px`)
   vaut aussi à l'impression (A4 ≈ 718 px) ; une impression se mesure sur un vrai PDF → « ET LA FACTURE IMPRIMÉE PORTAIT
@@ -339,7 +343,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   26.8) ; report des soldes à la validation (ligne 34, 07/10/2026).
 - **Déclarations** : 2035 remplie (cadre 8 et report vers la 2042, 26/09/2026), comptant chaque pièce à la date de son
   paiement (28/09) ; volet social des praticiens conventionnés et estimation Urssaf (28/09) ; CA3 préparée case par case
-  (28/09) ; FEC (article A47 A-1) et piste d'audit (CSV) ; à-nouveaux depuis une balance reprise (26/09).
+  (28/09) ; FEC (article A47 A-1) et piste d'audit (CSV) ; à-nouveaux depuis une balance reprise (26/09) ; l'annexe 2035-E
+  (valeur ajoutée, CVAE) en page 3 de la liasse, et le calendrier de la CFE, de la CVAE et de la liasse dans la
+  Checklist (ligne 48, 09/10/2026).
 - **Facturation** : factures à numérotation légale, avoirs, envoi par e-mail ; Super PDP (réception, émission) ; statut de
   TVA du dossier (28.5 a), réception par la plateforme du client (28.5 b), mentions de la facture et avoir d'un seul
   tenant, générateur CII jugé par le validateur officiel, facture validée figée en base et numérotation fermée (28.5 c,
@@ -366,6 +372,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
   de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
   confirmer sur une première déclaration réelle.
+- **CFE et CVAE** (ligne 48) : restent la saisie par exercice de la part déductible des loyers, du cadre des
+  mono-établissements et de l'effectif (une table à créer), celle de BW, les dates d'activité d'un dossier qui cesse en
+  cours d'année, le millésime 2027, le plafonnement de la CET — onze questions au cabinet du 09/10/2026 →
+  « L'ANNEXE 2035-E SE TIRE DE LA 2035 DÉPOSÉE ».
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
 - **Comptabilité d'engagement** (ligne 31) : restent les écarts de change et les frais bancaires (le rapprochement règle
@@ -568,6 +578,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **`parseDate`** lit les douze mois français, ignore le jour de la semaine, relit sur le calendrier civil ; `toIsoDate`
   garantit quatre chiffres et refuse le futur (un jour de marge) → « Le dernier recours de `parseDate` »,
   « UNE CONTRAINTE JUSTIFIÉE PAR UN APPELANT ».
+- **Le calendrier fiscal** (`lib/echeancesFiscales.ts`) se lit À PARIS, compte les jours ouvrés sur les onze jours
+  fériés (Pâques calculée) et reporte la CFE au premier jour ouvré, comme la DGFiP ; chaque échéance dit sa condition.
 - **Un test de date choisit son fuseau** (`process.env.TZ` est relu à chaque opération) ; `npm run test:fuseaux` ;
   `vi.useFakeTimers({ toFake: ['Date'] })` seulement (sinon `findByText` expire).
 
@@ -644,6 +656,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   la CSG-CRDS passe entière au 108 en trésorerie, 6,8 points en BV, rien en ligne 25 ; le cadre 8 (revenu brut social,
   DC/DD) vaut depuis les revenus 2025, sans l'abattement de 26 % → « Sur la 2035-A, une case », « Le cadre 8 du 2035-B »,
   « ET LA MÊME QUESTION POSÉE AUX COTISATIONS ».
+- **L'annexe 2035-E se tire de la 2035 déposée** (`lib/declaration2035E.ts`) : ses lignes viennent des cases À L'EURO,
+  le seuil de 152 500 € se juge AU CENTIME ; sans saisie, les loyers ne se déduisent pas et l'écran dit leur montant ;
+  ni le cadre des mono-établissements ni BW ne se remplissent à la place du cabinet ; lecture partielle, rien ne se
+  juge ; « non due » vaut pour une année entière ; la page 3 se repère SEULE (`ancragesDesCodes` : « BK » y est
+  l'effectif).
 - **PDF de la 2035** : sans champ de formulaire (coordonnées tirées du texte, `gabarit2035.ts`) ;
   `Intl.NumberFormat('fr-FR')` casse pdf-lib (U+202F) ; pdf.js vide le tampon qu'on lui passe (`slice(0)`).
 - **Barème kilométrique** : saisi par millésime, jamais emprunté à une autre année (2026 reprend la table de 2025) ;
@@ -796,7 +813,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6122 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6185 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

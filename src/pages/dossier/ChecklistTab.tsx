@@ -16,7 +16,8 @@ import { forfaitsDuCadre7, forfaitsEnDefaut } from '../../lib/forfaitKilometriqu
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnRetard } from '../../lib/liquidationTva'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
+import { ajouterJours, anneeDe, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
+import { prochainesEcheances } from '../../lib/echeancesFiscales'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
@@ -311,6 +312,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Même instant pour les deux (voir anneeEtMoisEcoules) : « N mois écoulés » ne désigne des mois que
   // rapporté à SON année, et ces trois écrans doivent dire la même chose au même moment.
   const { annee: anneeCourante, moisEcoules } = anneeEtMoisEcoules()
+
+  // LE CALENDRIER DE LA CFE, DE LA CVAE ET DE LA LIASSE (lib/echeancesFiscales.ts), les douze prochains mois, lu à Paris
+  // comme l'administration date ses échéances. Chaque échéance DIT à qui elle s'adresse : la Checklist ne sait ni la CFE
+  // de l'an dernier, ni la CVAE, ni si un établissement a été créé, et elle ne les devine pas. La 2035 n'est pas la
+  // liasse d'un dossier tenu en engagement : son échéance n'y figure pas, celles de la CFE et de la CVAE si.
+  const aujourdHuiFiscal = aujourdHuiAParis()
+  const calendrierFiscal = prochainesEcheances(aujourdHuiFiscal)
+    .filter((e) => modele.mode !== 'engagement' || e.impot !== 'Liasse')
+  const imminente = (date: string) => date <= ajouterJours(aujourdHuiFiscal, 30)
 
   // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec les deux écrans client :
   // elle était écrite trois fois et avait déjà divergé deux fois. Ce qui reste ici est ce qui diffère
@@ -993,6 +1003,25 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
         <Widget className="span-5" titre="Paramétrage à compléter" sousTitre="Configuration à finir une fois, indépendante du client">
           {listePoints(pointsParametrage, 'Rien à compléter — statut de TVA, comptes et postes 2035 sont renseignés.')}
+        </Widget>
+
+        {/* Des dates, pas des anomalies : aucun bouton, et la pastille ne dit que l'imminence — trente jours ou moins. */}
+        <Widget
+          className="span-12"
+          titre="Échéances fiscales"
+          sousTitre="CFE, CVAE et liasse, les douze prochains mois — chacune dit à qui elle s’adresse"
+        >
+          <div>
+            {calendrierFiscal.map((e) => (
+              <div key={e.id} className="check-ligne">
+                <span className={`check-dot ${imminente(e.date) ? 'check-attention' : ''}`} aria-label={imminente(e.date) ? 'Dans les trente jours' : 'À venir'} />
+                <div className="check-ligne-corps">
+                  <div className="check-ligne-libelle">{formatDate(e.date)} — {e.libelle}</div>
+                  <div className="check-ligne-detail">{e.condition}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </Widget>
       </div>
     </>
