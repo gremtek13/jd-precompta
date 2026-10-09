@@ -85,10 +85,9 @@ from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
 **Vérifié par empreinte le 09/10/2026** : 104 fichiers, 104 migrations, empreinte globale
-`3be31fb094fbe11f71ec0e2b6145566e` des deux côtés, aucune divergence — rejoué après
-`revision_des_soldes`, la dernière migration. Deux de ces fichiers, `identite_des_factures_recues` et
-`paiement_personnel_des_cotisations`, appliqués le même jour par d'autres étapes, arrivent par leurs
-propres demandes de fusion : l'empreinte a été prise avec eux, recopiés de l'historique.
+`3be31fb094fbe11f71ec0e2b6145566e` des deux côtés, aucune divergence — rejoué à l'intégration des
+trois migrations du jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`,
+`revision_des_soldes`, la dernière), toutes trois dans l'export.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -120,11 +119,10 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (77 instructions, empreinte `5114d8a30b093fe29bb20e075d6cb1dd` le
-  09/10/2026, rejoué après `revision_des_soldes`, qui n'y touche pas ; la base en rend alors 78,
-  `f01053c781688bbfbee8c70ac43924a6`, l'écart étant les trois objets que
-  `paiement_personnel_des_cotisations` ajoute à `cotisations_declarees` et `ecritures_brouillon`,
-  deux tables du socle, que le socle doit porter), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (78 instructions, empreinte `f01053c781688bbfbee8c70ac43924a6` des
+  deux côtés le 09/10/2026, rejoué à l'intégration des trois migrations du jour ; les trois objets que
+  `paiement_personnel_des_cotisations` ajoute à `cotisations_declarees` et `ecritures_brouillon`, deux
+  tables du socle, y sont), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
   Une contrainte ou un index qu'une MIGRATION crée sur une colonne du complément n'en fait pas partie :
   il est dans l'export, au fichier de sa migration, et la génération l'écarte en cherchant son nom dans
@@ -132,10 +130,8 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 365 objets en base, empreinte `8cb853171952af846feb1856c07ed195` le 09/10/2026, rejoué après
-  `revision_des_soldes` ; l'export en reconstruit 1 363 tant que le socle ne porte pas les deux colonnes
-  que `paiement_personnel_des_cotisations` ajoute à deux de ses tables — elles ajoutées, les deux
-  empreintes sont égales). C'est le seul qui voie un
+  (1 365 objets, empreinte `8cb853171952af846feb1856c07ed195` des deux côtés le 09/10/2026, rejoué à
+  l'intégration des trois migrations du jour). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent. Un déclencheur de CONTRAINTE (`create constraint trigger`) y compte deux fois, comme
