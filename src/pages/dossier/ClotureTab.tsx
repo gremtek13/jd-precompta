@@ -15,6 +15,7 @@ import { POSTES_PROPOSABLES, type DoublonFraisVehicule, type IncoherenceCase, ty
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
+import { SAISIES_2035E_ABSENTES, calculer2035E, forfaitKilometriqueDesPostes, type Annexe2035E } from '../../lib/declaration2035E'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
@@ -43,6 +44,7 @@ import { useAuth } from '../../context/AuthContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import VoletSocialCard from './VoletSocialCard'
+import Annexe2035ECard from './Annexe2035ECard'
 import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 
@@ -138,7 +140,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Identité portée en en-tête du formulaire. Le SIRET s'écrit chiffre par chiffre dans sa grille,
   // et seulement si le formulaire la livre entière (voir grilleDeSaisie) : une grille mal alignée
   // décalerait tout le numéro d'un cran, ce qui est pire qu'une grille vide.
-  const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null; siret: string | null } | null>(null)
+  // L'adresse ne sert qu'à l'annexe 2035-E, qui demande l'adresse professionnelle — celle que portent les factures.
+  const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null; siret: string | null; adresse: string | null } | null>(null)
   const [genere, setGenere] = useState<number | null>(null)
   // Exercices déjà marqués clôturés (table exercices_clotures), lus par `lireAnneesCloturees` —
   // seule copie de cette lecture depuis le 22/09/2026, pour que les trois écrans qui s'en servent
@@ -210,7 +213,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           .eq('dossier_id', dossierId)
           .order('id').range(debut, fin),
       ),
-      supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
+      supabase.from('dossiers').select('nom, libelle_naf, siret, adresse').eq('id', dossierId).maybeSingle(),
       // Par `lireAnneesCloturees`, qui REND son erreur — plutôt qu'une lecture nue de plus. Les
       // trois écrans qui lisent cette table doivent en tirer la même chose au même moment.
       lireAnneesCloturees(dossierId),
@@ -563,20 +566,30 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const generationEnCours = useRef(false)
 
   // `instantane` : la 2035 d'un exercice VALIDÉ, remplie telle qu'elle a été validée — ses cases à l'euro et son
-  // déclarant — plutôt que recalculée.
-  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null = null) {
+  // déclarant — plutôt que recalculée. `annexe` : la 2035-E de l'exercice, portée en page 3 quand elle est due — celle
+  // que l'écran montre, tirée des mêmes cases.
+  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null, annexe: Annexe2035E) {
     if (generationEnCours.current || lectureIncomplete) return
     generationEnCours.current = true
     setError(null)
     try {
+      const declarant = instantane ? instantane.entete : entete
       // Arrondi à l'euro AVANT le dessin : le formulaire dit « ne pas porter les centimes », et les
       // totaux sont recalculés depuis les cases arrondies pour que la colonne s'additionne.
-      const { pdf, codesSansAncrage } = await remplir2035(
+      const { pdf, codesSansAncrage, codesSansAncrage2035E } = await remplir2035(
         instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(valeurs, annee),
-        instantane ? instantane.entete : entete,
+        declarant,
+        // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas.
+        annexe.obligatoire
+          ? { valeurs: annexe.lignes, entete: { nom: declarant.nom, siret: declarant.siret, adresse: dossier?.adresse ?? null, annee } }
+          : null,
       )
-      if (codesSansAncrage.length > 0) {
-        setError(`Cases non placées sur le formulaire : ${codesSansAncrage.join(', ')} — leur montant manque sur le PDF.`)
+      const manquantes = [
+        ...codesSansAncrage,
+        ...codesSansAncrage2035E.map((code) => `${code} (2035-E)`),
+      ]
+      if (manquantes.length > 0) {
+        setError(`Cases non placées sur le formulaire : ${manquantes.join(', ')} — leur montant manque sur le PDF.`)
       }
       const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
       const lien = document.createElement('a')
@@ -1360,6 +1373,17 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           // s'affiche pas : montrer le calcul d'aujourd'hui à sa place laisserait signer autre chose que ce qui a été
           // validé.
           const instantane = validation.valide ? lireInstantane2035(validation.valide.declaration) : null
+          // L'ANNEXE 2035-E DE L'EXERCICE, tirée de la 2035 telle qu'elle est montrée : celle que la base garde pour un
+          // exercice validé — ses cases et ses postes —, sinon celle du calcul. Les saisies du cabinet n'ont pas de table :
+          // l'annexe dit ce qu'elle suppose (Annexe2035ECard).
+          const postes = instantane ? instantane.postes : [...f.declaration.recettes, ...f.declaration.depenses]
+          const annexe = calculer2035E({
+            annee,
+            cases: instantane ? casesDeLInstantane(instantane.cases) : f.valeurs,
+            formulaire: instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(f.valeurs, annee),
+            forfaitKilometrique: forfaitKilometriqueDesPostes(postes),
+            saisies: SAISIES_2035E_ABSENTES,
+          })
           return (
             <Fragment key={annee}>
               {validation.valide && !instantane ? (
@@ -1380,7 +1404,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     ? { le: validation.valide.valide_le, casesDifferentes: casesQuiDifferent(instantane, f.valeurs) }
                     : undefined}
                   genere={genere === annee}
-                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane)}
+                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe)}
+                  annexe2035E={annexe}
+                  lectureAnnexe={instantane ? null : lectureIncomplete}
                   blocage={lectureIncomplete}
                   cloture={cloturesConnues.has(annee)}
                   onCloturer={() => handleCloturer(annee)}
@@ -1427,7 +1453,9 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, blocage, cloture, onCloturer }: {
+function FormulaireAnnuel({
+  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, cloture, onCloturer,
+}: {
   dossierId: string
   annee: number
   valeurs: Map<string, number>
@@ -1437,6 +1465,11 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, gene
   validee?: { le: string; casesDifferentes: string[] }
   genere: boolean
   onTelecharger: () => void
+  // L'annexe 2035-E de l'exercice (lib/declaration2035E.ts) : due ou non, le formulaire la porte quand elle l'est.
+  annexe2035E: Annexe2035E
+  // Non nul quand l'annexe se calcule depuis une lecture partielle : son obligation ne se juge pas (Annexe2035ECard). Nul
+  // pour un exercice validé, dont l'annexe se tire de la 2035 que la base garde.
+  lectureAnnexe: string | null
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
   // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
   blocage: string | null
@@ -1462,7 +1495,9 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, gene
         <div>
           <strong>Exercice {annee}</strong>
           <span className="muted" style={{ marginLeft: 10, fontSize: '0.9em' }}>
-            2035-A-SD et 2035-B-SD — à relire case par case avant dépôt
+            {lectureAnnexe !== null
+              ? '2035-A-SD et 2035-B-SD, la 2035-E-SD restant à juger'
+              : annexe2035E.obligatoire ? '2035-A-SD, 2035-B-SD et 2035-E-SD' : '2035-A-SD et 2035-B-SD'} — à relire case par case avant dépôt
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
@@ -1520,6 +1555,7 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, gene
         </tbody>
       </table>
       </div>
+      <Annexe2035ECard annexe={annexe2035E} lectureIncomplete={lectureAnnexe} />
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} formulaire={formulaire} />}
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && (
         <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage} />

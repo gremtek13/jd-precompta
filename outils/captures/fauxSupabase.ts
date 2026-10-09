@@ -656,7 +656,9 @@ const SOURCES_D10: SourcesDeValidation = {
   pieces: [pieceDe('d10', 'o1', '2025-03-01', 'Cabinet Partagé Saint-Roch', 450, 'c6')],
   lignes: [
     mouvementDe('d10', 'q1', '2025-03-03', 'PRLV CABINET PARTAGE SAINT ROCH', -450, 'rapprochee', { piece_id: 'o1' }),
-    mouvementDe('d10', 'q2', '2025-05-15', 'VIR PATIENTS MAI', 2300, 'rapprochee', { categorie_id: 'c9' }),
+    // 168 300 € d'honoraires en 2025 (ligne 48) : au-delà de 152 500 €, sa Clôture montre l'annexe 2035-E DUE — son tableau,
+    // ses libellés de trois lignes, ce qu'elle suppose —, que le banc mesure sur les visites de 2025 de ce dossier.
+    mouvementDe('d10', 'q2', '2025-05-15', 'VIR PATIENTS MAI', 168300, 'rapprochee', { categorie_id: 'c9' }),
     // 2026 a commencé : ses comptes de bilan partent de zéro tant que 2025 n'est pas validé, et ses écrans le disent.
     mouvementDe('d10', 'q3', '2026-01-20', 'VIR PATIENTS JANVIER', 1800, 'rapprochee', { categorie_id: 'c9' }),
   ],

@@ -55,17 +55,21 @@ const CODES_CONNUS = new Set(CASES_2035.map((c) => c.code))
 // Un code de case tel qu'imprimé : exactement deux majuscules. Le formulaire contient beaucoup
 // d'autres fragments de deux lettres (« Si », « N° »…) ; ne retenir que les codes du tableau évite de
 // prendre un mot pour une case.
-function estCodeDeCase(texte: string): boolean {
-  return CODES_CONNUS.has(texte.trim())
+export function ancragesDesCases(pages: PageFormulaire[]): Map<string, Ancrage> {
+  return ancragesDesCodes(pages, CODES_CONNUS)
 }
 
-export function ancragesDesCases(pages: PageFormulaire[]): Map<string, Ancrage> {
+// La même géométrie pour un AUTRE jeu de codes : celui d'une annexe (2035-E). Le jeu est propre à chaque page lue,
+// parce que deux pages réemploient un même code pour deux cases différentes — « BK » est la ligne 25 de la 2035-A et
+// les effectifs au sens de la CVAE sur la 2035-E. Lus ensemble, le premier trouvé l'emporterait, et un montant
+// partirait dans la case de l'autre formulaire.
+export function ancragesDesCodes(pages: PageFormulaire[], codes: ReadonlySet<string>): Map<string, Ancrage> {
   const ancrages = new Map<string, Ancrage>()
 
   pages.forEach((page, index) => {
     for (const fragment of page.fragments) {
       const code = fragment.texte.trim()
-      if (!estCodeDeCase(code)) continue
+      if (!codes.has(code)) continue
 
       // Milieu de la hauteur du code : c'est ce qui décide quels filets appartiennent à sa ligne.
       // Prendre la ligne de base ferait rater un filet qui s'arrête pile dessus.

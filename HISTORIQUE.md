@@ -13551,3 +13551,99 @@ transmission et les encaissements de la facture refusée, « Relire les statuts 
 
 **CE QUI RESTE.** Le premier relevé réel (Q6) ; la
 pastille qui montre le refus plutôt que le dernier statut, à confirmer par le cabinet.
+
+### 09/10/2026 — L'ANNEXE 2035-E SE TIRE DE LA 2035 DÉPOSÉE (ligne 48, CFE et CVAE)
+
+**Le droit, lu aux sources publiques.** La CVAE vise toute activité dans le champ de la CFE dont le chiffre d'affaires
+hors taxes dépasse 152 500 € (CGI, art. 1586 ter ; BOI-CVAE-CHAMP-10-20 § 1) ; pour un BNC en trésorerie, ce chiffre
+d'affaires est le montant hors taxes des honoraires encaissés, net des rétrocessions — les redevances de collaboration
+VERSÉES en sont, elles seules (renvoi (9) de la notice 2035-NOT-SD 2026 ; BOI-CVAE-BASE-20-10 § 70-80) — plus les gains
+divers ; la période de référence est l'année civile (BOI-CVAE-CHAMP-10-20 § 60). Au-delà de 152 500 €, l'annexe 2035-E
+se remplit (notice 2035-NOT-SD 2026, p. 11-12) ; son cadre des mono-établissements, coché, dispense de la 1330-CVAE
+(BOI-CVAE-DECLA-10 § 20 ; notice 1330-CVAE 2026). La valeur ajoutée d'un BNC : le chiffre d'affaires moins les achats,
+stocks, travaux, fournitures et services extérieurs, loyers et locations — SAUF ceux d'un bien corporel loué plus de six
+mois, en crédit-bail ou en location-gérance —, transports et déplacements (moins les frais forfaitaires, renvoi (3) de
+l'annexe), frais divers de gestion ; ni TVA déductible ni TVA reversée (BOI-CVAE-BASE-20-20 § 180-213 et 280-310) ;
+plafonnée à 80 % du chiffre d'affaires, 85 % au-delà de 7,6 M€ (§ 350-370) ; négative, elle se déclare zéro (notice
+1330-CVAE, A2). La CVAE n'est payée qu'au-delà de 500 000 € (taux nul en dessous ; 2026 et 2027 : au plus 0,28 %,
+dégrèvement de 188 € sous 2 M€, franchise de 63 € ; suppression au 1er janvier 2030 — BOI-CVAE-LIQ-10 § 30, 60, 170, 180
+; BOI-CVAE § 30 ; loi n° 2025-127, art. 62 ; la loi n° 2026-103 de finances pour 2026 n'y a rien changé selon la
+brochure pratique Impôts locaux 2026, publiée le 31/08/2026). Acomptes les 15 juin et 15 septembre si la CVAE de l'année
+d'avant dépasse 1 500 € ; 1329-DEF et 1330-CVAE au deuxième jour ouvré suivant le 1er mai — le 5 mai 2026 —, quinze
+jours de plus en ligne (BOI-CVAE-DECLA-20 § 20-70 ; brochure p. 14). La CFE : avis en ligne seulement, solde au 15
+décembre, acompte au 15 juin si la CFE de l'année d'avant atteint 3 000 € (sans mensualisation, souscrite avant le 30
+juin), paiement dématérialisé (BOI-IF-CFE-40-10) ; rien l'année de la création, base réduite de moitié la suivante,
+1447-C avant le 31 décembre, 1447-M au deuxième jour ouvré suivant le 1er mai (brochure p. 118, 124 et 152 ;
+BOI-IF-CFE-30) ; cotisation minimum par tranche de chiffre d'affaires, rien sous 5 000 € (art. 1647 D ; brochure p.
+163-164) ; exonérations : sages-femmes et gardes-malades de plein droit, CFE et CVAE (art. 1460 ; brochure p. 114 et
+178), médecins et auxiliaires médicaux en zone rurale sur délibération, 2 à 5 ans (art. 1464 D ; sans effet sur la CVAE
+depuis 2024). La CET se déduit en ligne 12 de la 2035-A (JY), l'année de son paiement. **Légifrance est resté
+inaccessible depuis l'environnement** (défi Cloudflare, HTTP 403) : les articles du CGI sont lus à travers le BOFiP et
+les notices qui les citent. **La recherche d'impots.gouv.fr ne répond pas hors navigateur** : les fiches de formulaires
+se trouvent par `sitemap.xml`.
+
+**À qui.** Tout dossier BNC en trésorerie dont le chiffre d'affaires dépasse 152 500 € — des praticiens de santé du
+cabinet, à vérifier dossier par dossier : rien à payer sous 500 000 €, mais l'annexe à déposer. Mesuré le 09/10/2026 sur
+`test` (infirmier, NAF 86.90D, fictif, trésorerie, sans adresse) : 137 crédits bancaires en 2025, 262 753,80 € au total,
+aucun classé, et une seule recette validée (364,75 €) — sa 2035 de 2025 calculée aujourd'hui est loin du seuil ; si ces
+crédits sont des recettes, il le franchira, et l'en-tête de sa page 3 restera sans adresse tant qu'Informations n'en
+porte pas.
+
+**Ce qui est fait.** `lib/declaration2035E.ts` calcule l'annexe depuis les cases de la 2035 telles que le formulaire les
+porte à l'euro (EF = AD − BW, EG = AF, EJ = BA, EL = BH, EO = BJ − forfait kilométrique, EP = BM ; EH = EQ = 0, la
+comptabilité de l'application étant hors taxes) et juge le seuil au centime ; sans saisie (`SAISIES_2035E_ABSENTES`),
+les loyers et locations ne se déduisent pas — le cas du bail professionnel, l'hypothèse qui ne minore jamais la valeur
+ajoutée — et la carte le dit avec leur montant. Une 2035 VALIDÉE donne son annexe depuis son instantané (cases, postes),
+pas depuis un calcul d'aujourd'hui. La page 3 de la liasse officielle (empreinte identique à `2035-sd_5384.pdf`
+d'impots.gouv.fr) se repère SEULE, par `ancragesDesCodes` : lue avec les deux premières, son « BK » (l'effectif) se
+confondait avec la ligne 25. `remplir2035` reçoit l'annexe quand elle est due et la porte en page 3 — montants, SIRET,
+nom, adresse découpée à sa forme (« 75011 Paris » en dernière ligne d'une adresse de plusieurs lignes ; une adresse
+d'une seule ligne ne se découpe jamais), année ; jamais le cadre des mono-établissements. Sur une lecture partielle
+d'une des entrées de la 2035, la carte ne dit l'annexe ni due ni non due (une recette non lue la ferait taire, une
+redevance non lue l'imposerait) ; un exercice validé se juge sur son instantané, entier par construction. **BW n'est
+jamais rempli** : c'est une case « dont » que le moteur de la 2035 laisse au cabinet (`saisieCabinet`) ; pour un
+praticien collaborateur, EF comprend donc encore ses redevances versées et l'annexe peut se dire due à tort — la carte
+le dit, tant que BW vaut zéro (question Q11). « Non due » se dit d'une année civile entière, la période de référence
+d'un BNC (BOI-CVAE-CHAMP-10-20 § 60) ; une période plus courte se rapporte à douze mois (§ 80 à 100, écrits pour des
+exercices) et l'année de la création n'est pas imposée (§ 70) : la carte rappelle le cas d'une activité cessée en cours
+d'année (question Q6). Rendu vérifié sur un vrai PDF (pdf.js dans Chromium). `lib/echeancesFiscales.ts` et un volet
+« Échéances fiscales » de la Checklist : les douze prochains mois, lus à Paris, chaque échéance avec sa condition (la
+Checklist ne sait ni la CFE de l'an dernier ni la CVAE) ; jours ouvrés sur les onze jours fériés, Pâques calculée ;
+acompte et solde de CFE reportés au premier jour ouvré, comme la DGFiP l'a fait (17 juin 2024, 16 décembre 2024, 16 juin
+2025 : ses actualités, dont le plan du site d'impots.gouv.fr porte les dates) ; la liasse 2035 absente d'un dossier en
+engagement.
+
+**Éprouvé.** Cas calculés à la main depuis la notice (une infirmière à 179 200 € de chiffre d'affaires, plafonnée ; un
+collaborateur que ses redevances ramènent sous le seuil ; un seuil à 152 500 € pile et au centime ; un plafond à l'euro
+inférieur ; 85 % à 7,6 M€ + 1), dates confrontées aux publications de la DGFiP. Soixante-quatre tests nouveaux — 29 du
+moteur, 11 du gabarit sur la vraie page 3, 14 du calendrier, 8 d'écran à Clôture, 2 à la Checklist ; la suite en compte
+6 055 sur la base de la consigne (c79e899 et d7). Cinquante-neuf mutations rejouées sur l'état final : cinquante-huit
+mordent, chacune par le test attendu, aucune par un délai dépassé ; une est équivalente — ajouter AJ aux codes que le
+gabarit repère ne change rien, le plan ne parcourant que les dix-huit lignes (celle qui lui ferait parcourir les valeurs
+reçues mord). Trois survivantes du premier passage avaient appris quelque chose : un test « à l'euro » dont les centimes
+s'arrondissaient pareil des deux côtés, une adresse d'une ligne jamais essayée, un cadre jamais nourri de ce qu'il
+recevrait. Le banc des débordements mesure la carte de l'annexe DUE sur l'ostéopathe du banc, porté à 168 300 €
+d'honoraires 2025 : 0 aux neuf largeurs et combinaisons, polices servies.
+
+**LE BANC D'UN WORKTREE MESURAIT LA POLICE DE REPLI.** Sous un `node_modules` fait de liens vers celui du dépôt
+principal (la règle des agents du 09/10/2026), Vite résout chaque lien vers sa cible, hors de la racine qu'il sert, et
+refuse les fichiers des polices (« outside of Vite serving allow list », une ligne par fichier dans son journal) :
+l'application s'affiche alors dans la police de repli du navigateur, et le banc mesure d'autres largeurs de texte que
+celles du site — sans échouer. Mesuré ici avec une configuration temporaire qui ajoute le `node_modules` réel à
+`server.fs.allow` (zéro refus au journal de Vite) ; un banc joué dans un worktree aux liens sans elle mesure la police
+de repli.
+
+**UN MONTANT SE COUPAIT EN FIN DE LIGNE SANS QUE LE BANC LE VOIE.** Photographiée avec ses polices, la carte montrait
+« 168 300 » au bout d'une ligne et « € » sur la suivante — dans la colonne des montants à 1 440 pixels, et dans le texte
+sur téléphone. `formaterMontant` (fait pour le PDF, que pdf-lib n'écrit qu'en WinAnsi) sépare les milliers par des
+espaces ordinaires, et le banc admet une coupure à une espace ordinaire : trois morceaux, aucune faute. La carte et les
+conditions du calendrier écrivent désormais leurs montants comme `formatMoney` — espaces fines insécables entre les
+milliers, insécable avant l'euro — et les tests l'exigent au caractère près. Le même motif (`${formaterMontant(n)} €`)
+vit encore dans VoletSocialCard et dans le report vers la 2042 de Clôture : hors de cette ligne, non corrigé.
+
+**Reste, avec les questions au cabinet.** La saisie par exercice (part déductible des loyers, mono-établissement,
+effectif) demande une table — décrite, non créée — et, avant elle, de dire si l'annexe entre dans l'instantané d'un
+exercice validé ; BW, les redevances de collaboration, relève d'une table des saisies de la 2035 elle-même (Q11) ; les
+dates d'activité d'un dossier qui cesse en cours d'année (Q6) ; les frais bancaires de la catégorie par défaut, en ligne
+31, hors valeur ajoutée (Q3) ; le millésime 2027 du formulaire ; le plafonnement de la CET (1327-CET, 1,531 % en
+2026-2027).

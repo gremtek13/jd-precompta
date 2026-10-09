@@ -32,6 +32,8 @@ const faux = vi.hoisted(() => ({
   // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait, et le déclarant.
   remplies: [] as Map<string, number>[],
   entetes: [] as unknown[],
+  // Et l'annexe 2035-E portée en page 3, ou null quand elle n'est pas due.
+  annexes: [] as ({ valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null)[],
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
 }))
@@ -105,10 +107,15 @@ const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000' } as const
 const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000' } as const
 
 vi.mock('../../lib/remplir2035', () => ({
-  remplir2035: (valeurs: Map<string, number>, entete: unknown) => {
+  remplir2035: (
+    valeurs: Map<string, number>,
+    entete: unknown,
+    annexe: { valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null,
+  ) => {
     faux.remplies.push(valeurs)
     faux.entetes.push(entete)
-    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: [] })
+    faux.annexes.push(annexe)
+    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: [], codesSansAncrage2035E: [] })
   },
 }))
 
@@ -883,6 +890,125 @@ describe('ClotureTab — le statut TVA du dossier décide du montant déclaré',
 
 // EN ENGAGEMENT (BIC, IS), la 2035 n'a pas d'objet : elle déclare des bénéfices non commerciaux, tenus
 // en trésorerie. L'écran le dit, et ne garde que la clôture de l'exercice, qui ne dépend pas d'elle.
+// L'ANNEXE 2035-E SOUS LA 2035 (ligne 48). Le calcul est éprouvé à part (declaration2035E.test.ts) ; ce qui se joue ici est
+// le CÂBLAGE : que l'écran DISE si l'annexe est due, sur le chiffre d'affaires de l'exercice affiché, et que « Remplir le
+// formulaire officiel » la porte quand elle l'est — avec les lignes que l'écran montre — et jamais quand elle ne l'est pas.
+describe('ClotureTab — l’annexe 2035-E', () => {
+  const RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 2,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const recette = (montant: number) => ({
+    ...PIECE, id: 'p-recette', type_piece: 'vente', date_piece: '2025-05-02', montant_ttc: montant, tiers: 'CPAM', categorie_id: 'cat-recettes',
+  })
+  const telecharger = async () => {
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+    vi.restoreAllMocks()
+  }
+
+  it('dit l’annexe non due sous 152 500 €, et ne la remplit pas', async () => {
+    // 152 500 € de recettes pile : « supérieur à 152 500 € » est strict.
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.pieces = [PIECE, recette(152_500)]
+    faux.annexes = []
+    monter(2025, false)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    const carte = within(titre.parentElement!)
+    carte.getByText('non due')
+    carte.getByText(/Chiffre d’affaires au sens de la CVAE : 152\s500,00\s€/)
+    carte.getByText(/Il ne dépasse pas 152\s500\s€ hors taxes : l’annexe 2035-E n’est pas à remplir/)
+    // « Non due » vaut pour une année entière : une activité cessée en cours d'année se juge peut-être sur douze mois.
+    carte.getByText(/À revoir pour une activité cessée en cours d’année/)
+    screen.getByText(/^2035-A-SD et 2035-B-SD — à relire/)
+    await telecharger()
+    expect(faux.annexes).toEqual([null])
+  })
+
+  it('la dit due au-delà, la montre ligne par ligne, et la porte sur le formulaire', async () => {
+    // Exonéré : 160 000 € de recettes, 120 € d'achats (TTC), 600 € de cotisations, qui n'entrent pas dans la valeur
+    // ajoutée. EF = 160 000 ; EJ = 120 ; EI = 160 000 ; EW = 120 ; EX = 159 880 ; AJ = 160 000 ; plafond = 80 % =
+    // 128 000 ; JU = 128 000.
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.pieces = [PIECE, recette(160_000)]
+    faux.parTable.dossiers = [{ nom: 'Dossier de test', libelle_naf: 'Infirmier', siret: '12345678901234', adresse: '12 rue des Lilas\n75011 Paris' }]
+    faux.annexes = []
+    monter(2025, false)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    const carte = within(titre.parentElement!)
+    carte.getByText('à déposer avec la 2035')
+    screen.getByText(/^2035-A-SD, 2035-B-SD et 2035-E-SD — à relire/)
+    const montant = (code: string) => within(carte.getByText(code).closest('tr')!).getAllByRole('cell').at(-1)!.textContent
+    // Un montant ne se coupe pas : espace fine insécable entre les milliers, insécable avant l'euro.
+    expect(montant('EF')).toBe('160\u202f000\u00a0€')
+    expect(montant('EJ')).toBe('120\u00a0€')
+    expect(montant('EX')).toBe('159\u202f880\u00a0€')
+    expect(montant('JU')).toBe('128\u202f000\u00a0€')
+    carte.getByText(/Valeur ajoutée plafonnée : 159\s880\s€ dépassent 128\s000\s€/)
+    carte.getByText(/Aucune CVAE à payer : sous 500\s000\s€/)
+    carte.getByText(/porter AJ = 160\s000\s€, BK = l’effectif salarié, la période du 01\/01\/2025 au 31\/12\/2025/)
+    // BW, case « dont » que l'application ne remplit pas : un collaborateur aurait un chiffre d'affaires moindre.
+    carte.getByText(/Aucune redevance de collaboration versée en BW : l’application ne remplit pas cette case/)
+
+    await telecharger()
+    expect(faux.annexes).toHaveLength(1)
+    const annexe = faux.annexes[0]!
+    expect([annexe.valeurs.get('EF'), annexe.valeurs.get('EJ'), annexe.valeurs.get('EW'), annexe.valeurs.get('JU')])
+      .toEqual([160_000, 120, 120, 128_000])
+    expect(annexe.entete).toEqual({ nom: 'Dossier de test', siret: '12345678901234', adresse: '12 rue des Lilas\n75011 Paris', annee: 2025 })
+  })
+
+  it('dit les loyers qu’elle ne déduit pas, à leur montant', async () => {
+    poser()
+    const LOYER = { ...CATEGORIE, id: 'cat-loyer', code: 'loyer', libelle: 'Loyer', compte_comptable: '613200', poste_2035: 'Loyers et charges locatives' }
+    faux.parTable.categories = [CATEGORIE, RECETTES, LOYER]
+    faux.parTable.pieces = [PIECE, recette(160_000), { ...PIECE, id: 'p-loyer', montant_ttc: 9_600, categorie_id: 'cat-loyer' }]
+    monter(2025, false)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    within(titre.parentElement!).getByText(/Loyers et locations non déduits : 9\s600\s€ \(BF \+ BG − BW\)/)
+  })
+
+  // SUR UNE LECTURE PARTIELLE, L'OBLIGATION NE SE JUGE PAS : « non due » est une affirmation comme une autre.
+  it('ne la dit pas non due quand les pièces sont lues en partie', async () => {
+    // 160 000 € de recettes au dossier, mais le serveur cesse de rendre les pièces après la première : la recette n'est
+    // pas lue, et le calcul tomberait à 0 € de chiffre d'affaires — « non due », sur une annexe due.
+    poser({ pieces: 1 })
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.pieces = [PIECE, recette(160_000)]
+    monter(2025, false)
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    const carte = within(titre.parentElement!)
+    carte.getByText('obligation non jugée')
+    carte.getByText(/ne se calcule pas sur une partie du dossier/)
+    expect(carte.queryByText('non due')).toBeNull()
+    expect(carte.queryByText(/n’est pas à remplir/)).toBeNull()
+    expect(carte.queryByText(/Chiffre d’affaires au sens de la CVAE/)).toBeNull()
+    screen.getByText(/^2035-A-SD et 2035-B-SD, la 2035-E-SD restant à juger — à relire/)
+  })
+
+  it('ne la dit pas due non plus', async () => {
+    // L'autre sens : la recette est lue, l'achat ne l'est pas. Une redevance de collaboration non lue ferait de même
+    // passer au-dessus du seuil une annexe qui ne l'est pas.
+    poser({ pieces: 1 })
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.pieces = [recette(160_000), PIECE]
+    monter(2025, false)
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    const carte = within(titre.parentElement!)
+    carte.getByText('obligation non jugée')
+    expect(carte.queryByText('à déposer avec la 2035')).toBeNull()
+    expect(carte.queryByRole('table')).toBeNull()
+    expect(screen.queryByText(/2035-E-SD — à relire/)).toBeNull()
+  })
+})
+
 describe('ClotureTab — un dossier tenu en engagement', () => {
   function monterEngagement() {
     return render(
@@ -1704,6 +1830,78 @@ describe('ClotureTab — valider l’exercice', () => {
     screen.getByText(/Validé le 15\/01\/2026 — 1 écriture\(s\), 2 ligne\(s\)/)
     screen.getByText(/premier exercice validé du dossier/)
     expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+  })
+
+  it('tire l’annexe 2035-E d’un exercice validé de la 2035 validée, pas d’un calcul d’aujourd’hui', async () => {
+    // L'instantané porte 170 000,40 € de recettes (170 000 à l'euro), 3 000 € en BJ dont 2 000 € de forfait kilométrique.
+    // EF = 170 000 ; EO = 3 000 − 2 000 = 1 000 ; le déclarant est celui de la 2035 validée, l'adresse celle du dossier.
+    poserTenu()
+    faux.annexes = []
+    faux.parTable.dossiers = [{ nom: 'Dossier de test', libelle_naf: 'Infirmier', siret: '12345678901234', adresse: '12 rue des Lilas\n75011 Paris' }]
+    faux.parTable.exercices_valides = [{
+      ...VALIDE,
+      declaration: {
+        ...INSTANTANE,
+        cases: { AA: 170_000.4, AD: 170_000.4, BJ: 3_000 },
+        formulaire: { AA: 170_000, AD: 170_000, BJ: 3_000 },
+        postes: [
+          { poste: 'Recettes', nature: 'recette', montant: 170_000.4, nbPieces: 1, nbMouvements: 0 },
+          { poste: 'Indemnités kilométriques', nature: 'depense', montant: 2_000, nbPieces: 0, nbMouvements: 0 },
+          { poste: 'Frais de déplacement', nature: 'depense', montant: 1_000, nbPieces: 1, nbMouvements: 0 },
+        ],
+      },
+    }]
+    monterAvec()
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    within(titre.parentElement!).getByText('à déposer avec la 2035')
+    within(titre.parentElement!).getByText(/Forfait kilométrique retiré de EO : 2\s000\s€/)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Remplir le formulaire officiel/ })) })
+    const annexe = faux.annexes.at(-1)!
+    expect([annexe.valeurs.get('EF'), annexe.valeurs.get('EO')]).toEqual([170_000, 1_000])
+    expect(annexe.entete).toEqual({ nom: 'Nom validé', siret: '98765432109876', adresse: '12 rue des Lilas\n75011 Paris', annee: 2025 })
+  })
+
+  it('juge l’annexe d’un exercice validé sur la 2035 validée, même quand les pièces d’aujourd’hui sont lues en partie', async () => {
+    // La 2035 que la base garde est entière : une lecture partielle d'aujourd'hui ne rend pas son annexe incertaine. Le
+    // remplissage reste suspendu (il lit aussi ce qu'aujourd'hui n'a pas lu en entier), l'obligation se dit.
+    poserTenu()
+    faux.parTable.pieces = [PIECE_EUR, { ...PIECE_EUR, id: 'p-non-lue' }]
+    faux.muetApresParTable = { pieces: 1 }
+    faux.parTable.exercices_valides = [{
+      ...VALIDE,
+      declaration: {
+        ...INSTANTANE,
+        cases: { AA: 170_000.4, AD: 170_000.4 },
+        formulaire: { AA: 170_000, AD: 170_000 },
+        postes: [{ poste: 'Recettes', nature: 'recette', montant: 170_000.4, nbPieces: 1, nbMouvements: 0 }],
+      },
+    }]
+    monterAvec()
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    within(titre.parentElement!).getByText('à déposer avec la 2035')
+    expect(within(titre.parentElement!).queryByText('obligation non jugée')).toBeNull()
+    expect(screen.getByRole('button', { name: /Remplir le formulaire officiel/ }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('ne dit pas les redevances de collaboration absentes quand la 2035 validée en porte', async () => {
+    // AD 172 000,40 €, BG 2 000 € dont BW 2 000 € : EF = 170 000, l'annexe est due, et elle a retranché les redevances.
+    poserTenu()
+    faux.parTable.exercices_valides = [{
+      ...VALIDE,
+      declaration: {
+        ...INSTANTANE,
+        cases: { AA: 172_000.4, AD: 172_000.4, BG: 2_000, BW: 2_000 },
+        formulaire: { AA: 172_000, AD: 172_000, BG: 2_000, BW: 2_000 },
+        postes: [{ poste: 'Recettes', nature: 'recette', montant: 172_000.4, nbPieces: 1, nbMouvements: 0 }],
+      },
+    }]
+    monterAvec()
+    const titre = await screen.findByText('Annexe 2035-E — valeur ajoutée (CVAE)')
+    const carte = within(titre.parentElement!)
+    carte.getByText('à déposer avec la 2035')
+    expect(within(carte.getByText('EF').closest('tr')!).getAllByRole('cell').at(-1)!.textContent).toBe('170\u202f000\u00a0€')
+    expect(carte.queryByText(/Aucune redevance de collaboration/)).toBeNull()
   })
 
   it('ne montre pas une 2035 validée illisible à la place de la validée', async () => {

@@ -2213,3 +2213,45 @@ describe('ChecklistTab — le statut de TVA à préciser', () => {
     }
   })
 })
+
+// LE CALENDRIER FISCAL (ligne 48) : des dates que la Checklist ne tire pas du dossier, chacune avec la condition qui dit à
+// qui elle s'adresse. Les dates sont éprouvées à part (echeancesFiscales.test.ts) ; ce qui se joue ici est le CÂBLAGE —
+// l'horloge lue au rendu, les douze mois à venir, l'imminence à la pastille, et la liasse 2035 absente d'un dossier en
+// engagement, qui ne la dépose pas.
+describe('ChecklistTab — les échéances fiscales', () => {
+  const ANCRE = ligne({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null })
+  // Un INSTANT, midi UTC : le 1er décembre 2026 à Paris sous les quatre fuseaux de `test:fuseaux` — le calendrier se lit
+  // à Paris, et un « 10 h » local serait déjà le 30 novembre à Paris vu d'Auckland.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-12-01T12:00:00Z')) })
+  afterEach(() => { vi.useRealTimers() })
+
+  const widget = async () => (await screen.findByText('Échéances fiscales')).closest('section')!
+  const lignes = (section: Element) => [...section.querySelectorAll('.check-ligne')].map((l) => ({
+    libelle: l.querySelector('.check-ligne-libelle')!.textContent ?? '',
+    condition: l.querySelector('.check-ligne-detail')!.textContent ?? '',
+    imminente: l.querySelector('.check-dot')!.classList.contains('check-attention'),
+  }))
+
+  it('dit les échéances des douze prochains mois, la plus proche d’abord, chacune avec sa condition', async () => {
+    poser({ lignes: [ANCRE] })
+    monter()
+    const vues = lignes(await widget())
+    expect(vues.map((v) => v.libelle.slice(0, 10))).toEqual([
+      '15/12/2026', '31/12/2026', '04/05/2027', '04/05/2027', '19/05/2027', '15/06/2027', '15/06/2027', '15/09/2027',
+    ])
+    expect(vues[0].libelle).toBe('15/12/2026 — CFE 2026 : avis dans l’espace professionnel, paiement en ligne ou par prélèvement')
+    expect(vues[4].libelle).toBe('19/05/2027 — Déclaration 2035 des revenus 2026, avec son annexe 2035-E si elle est due')
+    expect(vues[4].condition).toMatch(/chiffre d’affaires hors taxes de 2026 dépasse 152\u202f500\u00a0€/)
+    // Le solde de CFE (dans quatorze jours) et la déclaration initiale (dans trente) sont imminents ; mai 2027 ne l'est pas.
+    expect(vues.map((v) => v.imminente)).toEqual([true, true, false, false, false, false, false, false])
+  })
+
+  it('ne dit pas la liasse 2035 d’un dossier tenu en engagement, mais garde la CFE et la CVAE', async () => {
+    poser({ lignes: [ANCRE] })
+    monter(false, ENGAGEMENT)
+    const vues = lignes(await widget())
+    expect(vues).toHaveLength(7)
+    expect(vues.some((v) => /2035/.test(v.libelle))).toBe(false)
+    expect(vues.some((v) => /CVAE 2026 \(1329-DEF\)/.test(v.libelle))).toBe(true)
+  })
+})
