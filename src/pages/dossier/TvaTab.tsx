@@ -485,7 +485,7 @@ export default function TvaTab({
       {remboursementSousLeSeuil(periode.fin, remboursementDemande) && (
         <p className="muted" style={{ color: 'var(--color-danger)' }}>
           Un remboursement de crédit n’est accordé qu’à partir de {formatMoney(seuilRemboursement(periode.fin))}
-          {periode.fin.slice(5) === '12-31' ? ' au titre du 31 décembre' : ' en cours d’année (150 € au titre du 31 décembre)'} :
+          {periode.fin.slice(5) === '12-31' ? ' au titre du 31 décembre' : ' en cours d’année (150\u00a0€ au titre du 31 décembre)'} :
           l’administration peut refuser celui-ci, qui reste alors à reporter.
         </p>
       )}
@@ -873,7 +873,7 @@ export default function TvaTab({
                 <li>Le coefficient de déduction d’une activité en partie exonérée.</li>
                 <li>
                   Les exclusions du droit à déduction : véhicule de tourisme et son entretien, part du carburant
-                  qui n’est pas déductible, cadeaux au-delà de 73 € TTC, logement.
+                  qui n’est pas déductible, cadeaux au-delà de 73&nbsp;€ TTC, logement.
                 </li>
                 <li>Les taux particuliers : 2,1 %, la Corse (le 10 % d’un dossier corse est porté ici en 9B).</li>
                 <li>Le formulaire 3519 qui accompagne une demande de remboursement (ligne 26) : il se dépose à part.</li>

@@ -804,6 +804,42 @@ describe('ClotureTab — le revenu brut social du cadre 8', () => {
     expect(report.queryAllByText(/5QE|DSDG/)).toHaveLength(0)
   })
 
+  // UN MONTANT NE SE COUPE PAS EN FIN DE LIGNE. `formaterMontant`, fait pour le PDF de la 2035 (pdf-lib n'écrit que du WinAnsi),
+  // sépare les milliers par des espaces ORDINAIRES : « 4 279 » restait au bout d'une ligne et « € » passait à la suivante. Le report
+  // écrit comme `formatMoney` — espace fine insécable entre les milliers, insécable avant l'euro —, mais à l'euro, comme le
+  // formulaire. `getByText` ramène toute espace, insécable comprise, à une espace ordinaire : seul `textContent` voit la différence.
+  it('écrit les montants du report avec des espaces insécables, pour qu’aucun ne se coupe en fin de ligne', async () => {
+    poserUnBenefice()
+    monter()
+
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    const [benefice, revenuBrutSocial] = within(titre.parentElement!).getAllByRole('listitem').map((li) => li.textContent)
+    expect(benefice).toBe('Bénéfice de 4\u202f279\u00a0€ : case 5QC de la déclaration 2042-C-PRO (5RC pour le second déclarant).')
+    expect(revenuBrutSocial).toMatch(/^Revenu brut social de 4\u202f879\u00a0€ \(case DD\) : rubrique DSDE du volet social \(DSDF pour le second déclarant\)\./)
+  })
+
+  it('sépare chaque millier par une insécable, pas le premier seulement', async () => {
+    // Deux séparateurs : 1 234 567 € de recettes, 121 € d'achats et 600 € de cotisations au formulaire, donc 1 233 846 € de bénéfice.
+    poser()
+    faux.parTable.categories = [CATEGORIE, CATEGORIE_RECETTES]
+    faux.parTable.pieces = [{ ...PIECE, montant_ttc: 120.6 }, { ...RECETTE, montant_ttc: 1_234_567.4 }]
+    monter()
+
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    const [benefice] = within(titre.parentElement!).getAllByRole('listitem').map((li) => li.textContent)
+    expect(benefice).toMatch(/^Bénéfice de 1\u202f233\u202f846\u00a0€ : case 5QC/)
+  })
+
+  it('écrit de même un déficit et un revenu brut social négatif, sans milliers à séparer', async () => {
+    poser()
+    monter()
+
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    const [deficit, revenuBrutSocial] = within(titre.parentElement!).getAllByRole('listitem').map((li) => li.textContent)
+    expect(deficit).toBe('Déficit de 720\u00a0€ : case 5QE de la déclaration 2042-C-PRO (5RE pour le second déclarant).')
+    expect(revenuBrutSocial).toMatch(/^Revenu brut social négatif de 120\u00a0€ \(case DC\) : rubrique DSDG/)
+  })
+
   it('dit un revenu brut social négatif en DC, et le déficit en 5QE', async () => {
     // Le jeu par défaut n'a pas de recette : 720 de charges, dont 600 de cotisations. Déficit fiscal
     // 720, revenu brut social −120 — les cotisations reviennent dans l'assiette sociale.

@@ -59,7 +59,10 @@ function montant(texte: string): number | null | 'invalide' {
   return Number.isFinite(n) && n >= 0 ? n : 'invalide'
 }
 
-const euros = (n: number) => `${formaterMontant(Math.round(n))} €`
+// Un montant ne se coupe pas en fin de ligne : `formaterMontant` est fait pour le PDF (pdf-lib n'écrit que du WinAnsi) et sépare
+// tout par des espaces ordinaires — « 60 000 » restait au bout d'une ligne et « € » passait à la suivante. À l'écran, comme
+// `formatMoney` mais à l'euro : espaces fines insécables entre les milliers, insécable avant l'euro.
+const euros = (n: number) => `${formaterMontant(Math.round(n)).replace(/ /g, '\u202f')}\u00a0€`
 
 const ABATTEMENT: Record<ReturnType<typeof natureAbattement>, string> = {
   taux: "l'abattement de 26 %",

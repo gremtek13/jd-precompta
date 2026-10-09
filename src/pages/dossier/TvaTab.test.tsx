@@ -415,6 +415,27 @@ describe('l’onglet TVA', () => {
     expect(faux.rpcs).toEqual([])
   })
 
+  // UN MONTANT NE SE COUPE PAS EN FIN DE LIGNE : les deux montants que les phrases de l'onglet écrivent elles-mêmes (les 150 € du
+  // seuil au 31 décembre, les 73 € TTC des cadeaux) portent une insécable avant l'euro, comme ceux que `formatMoney` met en forme.
+  // `getByText` ramène l'insécable à une espace ordinaire : seul `textContent` voit la différence.
+  it('écrit avec une insécable avant l’euro les 150 € du seuil de remboursement en cours d’année', async () => {
+    faux.tables.pieces = [...faux.tables.pieces, piece({
+      id: 'gros-achat', type_piece: 'achat', tiers: 'Matériel', date_piece: '2027-03-02', montant_ht: 5000, montant_tva: 1000, montant_ttc: 6000,
+    })]
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, paiement('gros-achat', -6000, '2027-03-08')]
+    await afficher()
+    fireEvent.change(screen.getByLabelText('Remboursement demandé (ligne 26)'), { target: { value: '300' } })
+    expect(screen.getByText(/n’est accordé qu’à partir de/).textContent).toBe(
+      'Un remboursement de crédit n’est accordé qu’à partir de 760,00\u00a0€ en cours d’année (150\u00a0€ au titre du 31 décembre) : '
+      + 'l’administration peut refuser celui-ci, qui reste alors à reporter.',
+    )
+  })
+
+  it('écrit avec une insécable avant l’euro les 73 € TTC des cadeaux, parmi ce que le calcul ne fait pas', async () => {
+    await afficher()
+    expect(screen.getByText(/cadeaux au-delà de/).textContent).toMatch(/cadeaux au-delà de 73\u00a0€ TTC, logement\.\s*$/)
+  })
+
   // Ce qu'il gardait d'une saisie ne la suit pas quand la période cesse d'être en crédit : le champ disparaît, et un
   // remboursement que l'écran ne montre plus ne doit pas faire refuser l'enregistrement.
   it('oublie le remboursement saisi quand la période cesse d’être en crédit', async () => {
