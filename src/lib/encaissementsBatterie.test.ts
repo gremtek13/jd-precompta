@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { refusEnregistrement, REFUS_ENREGISTREMENT, type CleRefusEnregistrement } from './encaissementsFactures'
-import { AUJOURD_HUI_RELEVE, MONDE, batterie, entreeDuCas } from '../test/encaissementsBatterie'
+import { refusEnregistrement, REFUS_ENREGISTREMENT } from './encaissementsFactures'
+import {
+  AUJOURD_HUI_RELEVE, GRAINE_DE_LA_BATTERIE, MONDE, SAISIES_DE_LA_BATTERIE, batterie, entreeDuCas, reponsesDuModule,
+} from '../test/encaissementsBatterie'
 
 // LE MODULE ET LA BASE, SUR LES MÊMES SAISIES (ligne 28.5, étape d2). La batterie de src/test/encaissementsBatterie.ts —
 // un monde fictif et 4 000 saisies tirées au hasard, dont quelques centaines visent la frontière du seuil des frais — a
@@ -13,18 +15,16 @@ import { AUJOURD_HUI_RELEVE, MONDE, batterie, entreeDuCas } from '../test/encais
 // batterie ne devienne pas muette sur un refus qu'un changement de tirage aurait cessé d'atteindre.
 //
 // Si le module change ce qu'il dit, ce test tombe ; si la fonction de la base change, la confrontation au texte de la
-// migration (encaissementsFactures.test.ts) tombe, et la batterie se rejoue sur une réplique (HISTORIQUE.md, « LE MODULE
-// DES ENCAISSEMENTS ») avant que l'empreinte ne se remplace.
+// migration (encaissementsFactures.test.ts) tombe. Dans les deux cas la batterie se REJOUE sur une réplique, par
+// supabase/essais/batterieEncaissements.mjs (étape d4) : le script lit le jour de la base, tire la batterie pour ce jour,
+// la fait juger et la confronte au module ; sans écart, AUJOURD_HUI_RELEVE et l'empreinte ci-dessous se remplacent
+// ENSEMBLE par ce qu'il rend. Rejouée le 09/10/2026 sur la réplique de l'étape d4, la migration
+// transmissions_des_encaissements posée : aucun écart sur 4 000 — l'empreinte figée reste celle du 08/10/2026.
 
-const NOMBRE = 4000
-const GRAINE = 20261008
 const EMPREINTE_DE_LA_BASE = 'e061f97c366878a0d4b1c0e61118fbb8'
 
-// Le code de chaque refus, dans la famille que la base lui donne.
-const CODES: Partial<Record<CleRefusEnregistrement, string>> = { acces: '42501', facture_introuvable: 'P0002' }
-
 describe('la batterie jouée par la base', () => {
-  const cas = batterie(NOMBRE, GRAINE)
+  const cas = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, AUJOURD_HUI_RELEVE)
   const reponses = cas.map((c) => {
     const e = entreeDuCas(MONDE, c)
     return refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE)
@@ -37,8 +37,8 @@ describe('la batterie jouée par la base', () => {
   })
 
   it('le module rend, saisie par saisie, ce que la base a rendu', () => {
-    const sorties = reponses.map((r) => (r ? `${CODES[r.cle] ?? '22023'} ${r.message}` : 'ok'))
-    expect(sorties).toHaveLength(NOMBRE)
+    const sorties = reponsesDuModule(cas, AUJOURD_HUI_RELEVE)
+    expect(sorties).toHaveLength(SAISIES_DE_LA_BATTERIE)
     expect(createHash('md5').update(sorties.join('\n')).digest('hex')).toBe(EMPREINTE_DE_LA_BASE)
   })
 
@@ -46,5 +46,15 @@ describe('la batterie jouée par la base', () => {
     const atteints = new Set(reponses.map((r) => r?.cle ?? 'ok'))
     for (const { cle } of REFUS_ENREGISTREMENT) if (cle !== 'acces') expect(atteints.has(cle), cle).toBe(true)
     expect(atteints.has('ok')).toBe(true)
+  })
+
+  // Ce que le script de rejeu suppose : tirée pour un autre jour, la batterie est la même, à ses dates près — le jour du
+  // relevé, son lendemain et le 1er janvier qui suit glissent avec lui, les autres restent.
+  it('se tire pour le jour où la base la juge, et ne change que de dates', () => {
+    const dates = new Set(cas.map((c) => c.date))
+    for (const d of ['2026-10-08', '2026-10-09', '2027-01-01']) expect(dates.has(d), d).toBe(true)
+    const glissees: Record<string, string> = { '2026-10-08': '2027-03-15', '2026-10-09': '2027-03-16', '2027-01-01': '2028-01-01' }
+    const autre = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, '2027-03-15')
+    expect(autre).toEqual(cas.map((c) => ({ ...c, date: c.date == null ? null : (glissees[c.date] ?? c.date) })))
   })
 })

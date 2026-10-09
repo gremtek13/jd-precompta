@@ -996,3 +996,29 @@ export interface EncaissementFactureTaux {
   taux: number
   montant: number
 }
+
+// Une déclaration du statut « Encaissée » d'un encaissement, ou de sa contre-passation (`transmissions_encaissements`,
+// ligne 28.5, étape d4). `manuel` : saisie sur la plateforme par le cabinet ou le client, que l'application garde —
+// ni flux ni fichier, née déposée ; `plateforme` et `superpdp` : par une API (étapes d6 et d8). Une seule ACTIVE par
+// encaissement (envoi, depose, accepte), et c'est elle qui le dit déclaré. Le cabinet la lit ; seule
+// `declarer_encaissement_hors_application` l'écrit depuis le navigateur. Le client n'en voit rien.
+export type CanalDeclaration = 'manuel' | 'plateforme' | 'superpdp'
+export interface TransmissionEncaissement {
+  id: string
+  dossier_id: string
+  encaissement_id: string
+  facture_id: string
+  canal: CanalDeclaration
+  // La plateforme qui a reçu la facture, et donc reçoit son statut « Encaissée ».
+  hote: string
+  // Ce qu'une API a rendu et déposé ; nuls pour une déclaration faite à la main.
+  flux_id: string | null
+  sha256: string | null
+  etat: EtatTransmission
+  detail: string | null
+  // Ce que le cabinet a précisé en la déclarant (qui l'a saisie, quand, sous quelle référence) ; elle ne change plus.
+  note: string | null
+  cree_par: string | null
+  cree_le: string
+  maj_le: string
+}

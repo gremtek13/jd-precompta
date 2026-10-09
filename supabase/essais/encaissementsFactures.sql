@@ -1,7 +1,8 @@
 -- LES ENCAISSEMENTS D'UNE FACTURE ÉMISE, ÉPROUVÉS EN BASE — à rejouer par `execute_sql` après toute migration qui
 -- touche `encaissements_factures`, `encaissements_factures_taux`, leurs déclencheurs ou leurs policies, ou les fonctions
 -- `enregistrer_encaissement`, `retirer_encaissement`, `montants_par_taux_facture`, `centimes_ligne_facture` et
--- `encaissement_declare` (ligne 28.5, étape d1 ; migration `encaissements_des_factures`).
+-- `encaissement_declare` (ligne 28.5, étape d1 ; migration `encaissements_des_factures` — et, pour
+-- `encaissement_declare`, la migration `transmissions_des_encaissements` de l'étape d4, qui lui donne son vrai corps).
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   - QUI LIT ET QUI ÉCRIT : un encaissement EXISTE, et l'anonyme, un compte rattaché à rien et le client ne le voient
@@ -15,7 +16,7 @@
 --   - CE QU'ELLE ACCEPTE : le solde exact de chaque taux après un encaissement partiel, et plus un centime ; un
 --     mouvement que des frais ont rogné sous le seuil ; un mouvement qu'un encaissement retiré ou annulé a libéré ;
 --   - LE RETRAIT : un encaissement retiré cesse de compter, ne se retire pas deux fois, et ne se retire pas tant
---     qu'une annulation vivante le vise ;
+--     qu'une annulation vivante le vise ; DÉCLARÉ (étape d4), il ne se retire ni par la fonction ni en direct ;
 --   - CE QUE LA TABLE ET SES DÉCLENCHEURS REFUSENT SEULS, à une écriture directe : chaque contrainte par son nom, chaque
 --     règle du déclencheur par son message, l'unicité de l'annulation vivante, l'immuabilité, la répartition ;
 --   - CE QUE LE CATALOGUE DIT, faute de pouvoir le jouer ici : les policies, les clés et leur action à la suppression,
@@ -24,8 +25,9 @@
 --
 -- CE QUI NE SE JOUE PAS ICI, ET SE JOUE SUR UNE RÉPLIQUE LOCALE DU SCHÉMA (HISTORIQUE.md, entrée de l'étape d1) : une
 -- suppression (refusée en direct, permise par la cascade d'un dossier), deux sessions qui enregistrent en même temps
--- sur la même facture, un membre du cabinet qui n'est pas super-administrateur (aucun n'existe sur ce projet), et un
--- encaissement déclaré (aucune déclaration n'existe avant l'étape d4 : `encaissement_declare` y est remplacée).
+-- sur la même facture, et un membre du cabinet qui n'est pas super-administrateur (aucun n'existe sur ce projet).
+-- Un encaissement DÉCLARÉ se joue ici depuis l'étape d4 (contrôles 47b et 47c) ; les déclarations elles-mêmes, dans
+-- transmissionsEncaissements.sql.
 --
 -- QUI REFUSE L'ÉCRITURE DIRECTE, ET POURQUOI CE N'EST PAS TOUJOURS LA RLS : le déclencheur lit la facture avec les
 -- droits de l'appelant et passe AVANT la RLS ; qui ne voit pas la facture est refusé par lui (23514), sans apprendre si
@@ -41,6 +43,10 @@
 -- sur 107 en production, le texte transmis identique à ce fichier (la ligne 0 en rend l'empreinte), rien laissé en
 -- base. Sur la réplique : les mêmes 107, ce qui ne se joue pas ici (13 contrôles), deux sessions concurrentes, et
 -- cent trois mutations de la migration, dont cent mordent — les trois survivantes sont équivalentes.
+--
+-- REJOUÉ LE 08/10/2026, après la migration `transmissions_des_encaissements` (version 20261008221156), qui donne son
+-- corps à `encaissement_declare` : 109 contrôles sur 109 en production (47b et 47c ajoutés, le contrôle 99 reformulé),
+-- le texte transmis identique à ce fichier, rien laissé en base ; les mêmes 109 sur la réplique.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -516,6 +522,36 @@ begin
       'ok', fixture is null and code_recu = '22023'
         and message_recu = 'Cet encaissement est annulé par une contre-passation : retirez d''abord celle-ci.' and detail = 'true,true');
 
+    -- 47b et 47c. DÉCLARÉ, un encaissement ne se retire plus, ni par la fonction ni en direct : il se contre-passe
+    -- (étape d4). La facture acceptée par la plateforme du client, l'encaissement déclaré à la main.
+    for obs in select unnest(array['47b. un encaissement déclaré : la fonction refuse de le retirer',
+                                   '47c. un encaissement déclaré : le retrait direct est refusé']) loop
+      accepte := false; code_recu := null; message_recu := null;
+      begin
+        insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id)
+          values (dossier_f, fm, 'plateforme', 'pa.exemple.fr', repeat('ab', 32), 'accepte', 'flux-1');
+        insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+          values (dossier_f, fm, jour, 5, 'virement') returning id into ident;
+        insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat)
+          values (dossier_f, ident, fm, 'manuel', 'pa.exemple.fr', 'depose');
+        if obs like '47b.%' then
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+          perform retirer_encaissement(dossier_f, ident);
+        else
+          set local role service_role;
+          update encaissements_factures set retire_le = now() where id = ident;
+        end if;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', obs, 'observe', coalesce(code_recu, '?') || ' ' || coalesce(message_recu, ''),
+        'ok', not accepte and code_recu = case when obs like '47b.%' then '22023' else '23514' end
+          and message_recu = 'Un encaissement déclaré ne se retire pas : il se contre-passe, et l''annulation se déclare à son tour.');
+    end loop;
+
     -- ══ 48 à 71. Ce que la table et son déclencheur refusent seuls, à une écriture directe ══════════
     insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
       values (dossier_f, fm, jour, 10, 'virement') returning id into ident;
@@ -731,7 +767,7 @@ begin
     'observe', obs, 'ok', obs = 'CREATE UNIQUE INDEX encaissements_factures_une_annulation ON public.encaissements_factures USING btree (annule_id) WHERE (retire_le IS NULL)');
 
   select encaissement_declare(gen_random_uuid())::text into obs;
-  verdicts := verdicts || jsonb_build_object('controle', '99. aucune déclaration avant l''étape d4 : rien n''est déclaré',
+  verdicts := verdicts || jsonb_build_object('controle', '99. un encaissement qu''aucune déclaration ne vise n''est pas déclaré',
     'observe', obs, 'ok', obs = 'false');
 
   -- 100. Le calcul de la base est celui de l'application : des lignes relevées avec montantsDuDocument (factureCii.ts) —

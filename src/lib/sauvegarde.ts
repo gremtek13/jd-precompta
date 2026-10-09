@@ -106,6 +106,9 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'tiers_categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'tiers_categories_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'tiers_categories_cabinet', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
+  { enfant: 'transmissions_encaissements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'transmissions_encaissements', parent: 'encaissements_factures', colonne: 'encaissement_id', aLaSuppression: 'bloque' },
+  { enfant: 'transmissions_encaissements', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
   { enfant: 'transmissions_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'transmissions_factures', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'vehicules', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -133,6 +136,12 @@ export const RELATIONS: readonly Relation[] = [
 // `encaissements_factures_taux` suit `facture_lignes` pour une raison que le graphe ne dit pas : son déclencheur
 // refuse une part dont le taux n'est pas celui d'une ligne de la facture, et il le lit dans `facture_lignes`, sans
 // clé étrangère. `sauvegarde.test.ts` garde aussi cet ordre-là.
+//
+// `transmissions_encaissements` suit `transmissions_factures` et `facture_superpdp_events` pour la même raison (étape
+// d4) : sa garde refuse une déclaration qui n'est pas faite sur la plateforme qui a reçu la facture, ou d'une facture
+// que cette plateforme n'a pas acceptée — et elle le lit dans ces deux tables, sans clé étrangère. Les déclarations,
+// elles, se réinsèrent dans n'importe quel ordre : celle d'une contre-passation ne lit pas celle de l'encaissement
+// qu'elle annule. `sauvegarde.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -183,6 +192,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'reglements_groupes',
   'encaissements_factures',
   'encaissements_factures_taux',
+  'transmissions_encaissements',
   'lettrages_manuels',
   'piece_commentaires',
   'piece_textes_ocr',
@@ -531,6 +541,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   superpdp_credentials: { acces: 'direct' },
   supplements: { acces: 'direct' },
   tiers_categories: { acces: 'direct' },
+  transmissions_encaissements: { acces: 'direct' },
   transmissions_factures: { acces: 'direct' },
   vehicules: { acces: 'direct' },
   ventilations_bancaires: { acces: 'direct' },

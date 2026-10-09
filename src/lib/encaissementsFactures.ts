@@ -6,8 +6,8 @@ import type { PaiementsDesPieces } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
 import type {
-  EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, FactureSuperpdpEvent, LigneBancaire,
-  MoyenEncaissement, Piece, StatutTva, TransmissionFacture,
+  EncaissementFacture, EncaissementFactureTaux, EtatTransmission, FactureEmise, FactureLigne, FactureSuperpdpEvent,
+  LigneBancaire, MoyenEncaissement, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from './types'
 
 // LES ENCAISSEMENTS D'UNE FACTURE ÉMISE, TELS QUE L'ÉCRAN LES DIT (ligne 28.5, étape d2). Un module PUR : il ne lit rien
@@ -15,13 +15,18 @@ import type {
 // à Paris.
 //
 // Le registre vit en base depuis l'étape d1 (migration encaissements_des_factures) : seule `enregistrer_encaissement`
-// l'écrit, et `retirer_encaissement` le retire. Ce module dit AVANT le clic :
+// l'écrit, et `retirer_encaissement` le retire ; depuis l'étape d4 (migration transmissions_des_encaissements),
+// `declarer_encaissement_hors_application` garde ses déclarations et `annuler_encaissement` contre-passe un
+// encaissement déclaré. Ce module dit AVANT le clic :
 //   - l'OBLIGATION de déclarer le statut « Encaissée » (212) d'une facture, et pourquoi (`obligationEncaissee`) ;
 //   - ce que la base REFUSERAIT, dans son ordre et sous ses mots (`refusEnregistrement`, `refusRetrait`) ;
 //   - le TTC par taux que la facture a transmis, et ce qu'il en reste à encaisser (`resteAEncaisser`) ;
 //   - la répartition par taux proposée pour un encaissement (`repartitionProposee`) ;
 //   - l'échéance de sa déclaration (`echeanceDeDeclaration`) ;
-//   - les encaissements que la pièce jumelle et le relevé permettent de proposer (`propositionsEncaissement`).
+//   - les encaissements que la pièce jumelle et le relevé permettent de proposer (`propositionsEncaissement`) ;
+//   - depuis l'étape d4, ce qui est déclaré (`encaissementsDeclares`), où le statut se déclare
+//     (`plateformeDeLaDeclaration`), ce que la déclaration hors application et la contre-passation refuseraient
+//     (`refusDeclaration`, `refusContrePassation`) et ce que la contre-passation écrira (`contrePassationDe`).
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -569,8 +574,8 @@ function refusR(cle: CleRefusRetrait): RefusEncaissement<CleRefusRetrait> {
 /**
  * Ce que `retirer_encaissement` refuserait, dans son ordre : un encaissement d'un autre dossier, déjà retiré, déclaré
  * (il se contre-passe), ou visé par une contre-passation vivante (elle se retire d'abord). `declares` : les
- * encaissements dont une déclaration est active ou faite — vide tant que les déclarations n'existent pas (étape d4),
- * et passé quand même, sans valeur par défaut : l'écran qui l'oublierait laisserait retirer un encaissement déclaré.
+ * encaissements qu'une déclaration active vise (`encaissementsDeclares`, étape d4) — passé sans valeur par défaut :
+ * l'écran qui l'oublierait laisserait retirer un encaissement déclaré.
  */
 export function refusRetrait(
   dossierId: string,
@@ -584,6 +589,223 @@ export function refusRetrait(
   if (declares.has(e.id)) return refusR('declare')
   if (annuleParUneContrePassation(e, encaissements)) return refusR('annule')
   return null
+}
+
+// ── Les déclarations, et la contre-passation d'un encaissement déclaré (étape d4) ────────────────────────────────────
+//
+// Le statut « Encaissée » se déclare par la plateforme qui a reçu la facture (BOI-TVA-DECLA-20-30-60, §120). D'abord
+// HORS APPLICATION (décision du cabinet du 08/10/2026, Q2) : le cabinet ou le client le saisit sur la plateforme, et
+// `declarer_encaissement_hors_application` garde ce qui a été déclaré (canal `manuel`). Un encaissement déclaré ne se
+// retire plus : il se CONTRE-PASSE (`annuler_encaissement`) — un « décaissement », de montant négatif, qui porte « un
+// motif d'annulation » (annexe 7 des spécifications externes, règles P1.15 et P1.17) —, et la contre-passation se
+// déclare à son tour, sur la même plateforme. Migration transmissions_des_encaissements.
+
+/** Une déclaration, telle que l'écran la lit (`transmissions_encaissements`). */
+export type DeclarationLue = Pick<TransmissionEncaissement,
+  'id' | 'dossier_id' | 'encaissement_id' | 'facture_id' | 'canal' | 'hote' | 'etat'>
+
+/** Une transmission de la facture, telle que la déclaration la lit : son canal, son hôte, son état. */
+export type TransmissionPourDeclaration = Pick<TransmissionFacture, 'facture_id' | 'canal' | 'hote' | 'etat'>
+
+// Les états d'une déclaration qui la font COMPTER : partie sans issue connue (elle a peut-être atteint la plateforme),
+// déposée, acceptée. Échouée ou rejetée, elle n'a rien fait compter. Ceux d'`encaissement_declare` et de l'index « une
+// seule déclaration active par encaissement », qu'encaissementsFactures.test.ts confronte au texte de la migration.
+export const ETATS_DECLARANTS: readonly EtatTransmission[] = ['envoi', 'depose', 'accepte']
+
+/** Les encaissements DÉCLARÉS : ceux qu'une déclaration active vise — ce que `refusRetrait` attend. */
+export function encaissementsDeclares(declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[]): Set<string> {
+  return new Set(declarations.filter((d) => ETATS_DECLARANTS.includes(d.etat)).map((d) => d.encaissement_id))
+}
+
+// Le statut 200 « Déposée » de l'historique de Super PDP : le premier statut obligatoire d'une facture, que
+// l'administration reçoit avant tout 212. Une facture déposée chez Super PDP qui le porte reçoit son statut « Encaissée »
+// sans attendre la réception par la plateforme de l'acheteur (202), qui est facultative et peut ne jamais venir
+// (spécifications externes, § 3.6.4, tableau 8).
+export const STATUT_DEPOSEE_SUPERPDP = 'fr:200'
+
+/**
+ * La plateforme sur laquelle se déclare le statut « Encaissée » d'un encaissement de cette facture : celle qui l'a
+ * ACCEPTÉE — l'hôte de sa transmission acceptée, ou Super PDP quand la facture y est déposée et que son historique porte
+ * le statut 200. Elle peut ne plus être la plateforme du dossier : c'est bien là que le statut se déclare. Null
+ * sinon — jamais transmise par l'application, partie sans issue connue, déposée sans accusé, échouée : la base refuse
+ * alors la déclaration (refus 7). Une facture n'a qu'une transmission active, et une transmission acceptée le reste :
+ * il n'y en a jamais deux.
+ */
+export function plateformeAcceptee(
+  factureId: string,
+  transmissions: readonly TransmissionPourDeclaration[],
+  evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+): string | null {
+  const deposee = evenementsSuperpdp.some((e) => e.facture_id === factureId && e.status_code === STATUT_DEPOSEE_SUPERPDP)
+  const acceptee = transmissions.find((t) => t.facture_id === factureId
+    && (t.etat === 'accepte' || (t.canal === 'superpdp' && t.etat === 'depose' && deposee)))
+  return acceptee?.hote ?? null
+}
+
+// Les refus de `declarer_encaissement_hors_application` et d'`annuler_encaissement`, DANS LEUR ORDRE ET SOUS LEURS MOTS
+// (migration transmissions_des_encaissements) : l'écran les dit avant le clic. encaissementsFactures.test.ts les
+// confronte au texte des fonctions, et aux messages que la base a rendus en production (transmissionsEncaissements.sql).
+export const REFUS_DECLARATION = [
+  { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
+  { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
+  { cle: 'retire', modele: "Cet encaissement est retiré : il n'a jamais été déclaré, et ne se déclare plus." },
+  { cle: 'deja_declare', modele: "Cet encaissement est déjà déclaré : une déclaration ne se fait qu'une fois." },
+  {
+    cle: 'contre_passation_non_declaree',
+    modele: "L'encaissement que cette contre-passation annule n'est pas déclaré : elle ne se déclare pas.",
+  },
+  {
+    cle: 'facture_rejetee',
+    modele: "Cette facture a été rejetée ou refusée : elle s'annule par un avoir interne, et aucun statut « Encaissée » ne la suit.",
+  },
+  {
+    cle: 'sans_transmission_acceptee',
+    modele: "Aucune transmission de cette facture par l'application n'a été acceptée par une plateforme : son statut « Encaissée » ne se déclare d'ici qu'après.",
+  },
+  { cle: 'note_trop_longue', modele: 'La note de la déclaration dépasse 2 000 caractères.' },
+] as const
+
+export type CleRefusDeclaration = (typeof REFUS_DECLARATION)[number]['cle']
+
+export const REFUS_CONTRE_PASSATION = [
+  { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
+  { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
+  { cle: 'contre_passation', modele: "Une annulation ne se contre-passe pas : l'encaissement qu'elle annulait se saisit de nouveau." },
+  { cle: 'retire', modele: "Un encaissement retiré ne s'annule pas : il n'a jamais été déclaré." },
+  { cle: 'non_declare', modele: "Cet encaissement n'est pas déclaré : il se retire, sans contre-passation." },
+  {
+    cle: 'issue_inconnue',
+    modele: "La déclaration de cet encaissement a une issue inconnue : il ne s'annule pas tant qu'elle n'est pas tranchée.",
+  },
+  { cle: 'deja_contre_passe', modele: 'Cet encaissement est déjà annulé par une contre-passation.' },
+  { cle: 'date_absente', modele: 'La date de la contre-passation est à renseigner.' },
+  { cle: 'date_avant_encaissement', modele: "Une contre-passation ne se date pas avant l'encaissement qu'elle annule, du %." },
+  { cle: 'date_future', modele: "Une contre-passation ne se date pas dans l'avenir : nous sommes le %." },
+  { cle: 'motif_absent', modele: 'Le motif de la contre-passation est à renseigner.' },
+  { cle: 'motif_trop_long', modele: 'Le motif de la contre-passation dépasse 2 000 caractères.' },
+] as const
+
+export type CleRefusContrePassation = (typeof REFUS_CONTRE_PASSATION)[number]['cle']
+
+function refusD(cle: CleRefusDeclaration): RefusEncaissement<CleRefusDeclaration> {
+  const { modele } = REFUS_DECLARATION.find((r) => r.cle === cle) as (typeof REFUS_DECLARATION)[number]
+  return { cle, message: modele }
+}
+
+function refusC(cle: CleRefusContrePassation, ...valeurs: string[]): RefusEncaissement<CleRefusContrePassation> {
+  const { modele } = REFUS_CONTRE_PASSATION.find((r) => r.cle === cle) as (typeof REFUS_CONTRE_PASSATION)[number]
+  return { cle, message: remplirModele(modele, valeurs) }
+}
+
+// Une note, un motif : 2 000 caractères au plus — la longueur du commentaire du statut (MDT-126).
+export const LONGUEUR_MAX_TEXTE = 2000
+
+// Ce que la base appelle vide et long. `btrim` sans second argument n'ôte que des ESPACES (U+0020) — une tabulation, un
+// saut de ligne restent, et un motif fait d'un saut de ligne est un motif pour elle. `length` compte des CARACTÈRES ;
+// String.length compte des unités UTF-16, et un caractère hors du plan de base (un emoji) en vaut deux.
+const videPourLaBase = (texte: string) => /^ *$/.test(texte)
+const caracteres = (texte: string) => [...texte].length
+
+/**
+ * Ce que `declarer_encaissement_hors_application` refuserait : le PREMIER refus, dans l'ordre de la base et sous son
+ * message, ou null quand elle inscrirait la déclaration. Les listes sont celles du DOSSIER — le module filtre lui-même
+ * sur l'encaissement et sa facture. L'accès au dossier (refus 1), seule la base le juge. L'obligation de déclarer ne
+ * se juge pas ici : `obligationEncaissee` la dit, et l'écran n'offre pas de déclarer ce qui est sans objet.
+ */
+export function refusDeclaration(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementLu[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  transmissions: readonly TransmissionPourDeclaration[],
+  evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+  note: string | null,
+): RefusEncaissement<CleRefusDeclaration> | null {
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  if (!e) return refusD('encaissement_introuvable')
+  if (!compte(e)) return refusD('retire')
+  const declares = encaissementsDeclares(declarations)
+  if (declares.has(e.id)) return refusD('deja_declare')
+  if (e.annule_id != null) {
+    // Une contre-passation suit l'encaissement qu'elle annule, là où il a été déclaré.
+    if (!declares.has(e.annule_id)) return refusD('contre_passation_non_declaree')
+  } else {
+    if (transmissions.some((t) => t.facture_id === e.facture_id && t.etat === 'rejete')
+      || evenementsSuperpdp.some((ev) => ev.facture_id === e.facture_id && STATUTS_ANNULATION_SUPERPDP.includes(ev.status_code))) {
+      return refusD('facture_rejetee')
+    }
+    if (plateformeAcceptee(e.facture_id, transmissions, evenementsSuperpdp) == null) return refusD('sans_transmission_acceptee')
+  }
+  if (note != null && !videPourLaBase(note) && caracteres(note) > LONGUEUR_MAX_TEXTE) return refusD('note_trop_longue')
+  return null
+}
+
+/**
+ * La plateforme où la déclaration se fait — ce que l'écran dit (« saisissez le statut sur … ») et ce que la base
+ * inscrira : pour un encaissement, celle qui a accepté sa facture ; pour une contre-passation, celle où l'encaissement
+ * qu'elle annule a été déclaré. Null quand il n'y en a pas.
+ */
+export function plateformeDeLaDeclaration(
+  encaissement: Pick<EncaissementLu, 'facture_id' | 'annule_id'>,
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat' | 'hote'>[],
+  transmissions: readonly TransmissionPourDeclaration[],
+  evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+): string | null {
+  if (encaissement.annule_id != null) {
+    const annulee = declarations.find((d) => d.encaissement_id === encaissement.annule_id && ETATS_DECLARANTS.includes(d.etat))
+    return annulee?.hote ?? null
+  }
+  return plateformeAcceptee(encaissement.facture_id, transmissions, evenementsSuperpdp)
+}
+
+/** Un encaissement, tel que la contre-passation le lit : sa date compte. */
+export type EncaissementPourContrePassation = EncaissementLu & Pick<EncaissementFacture, 'date_encaissement'>
+
+/**
+ * Ce que `annuler_encaissement` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message, ou null.
+ * `date` : celle du DÉCAISSEMENT — le jour où l'encaissement est défait (le chèque revenu impayé, la somme rendue), ou,
+ * pour une déclaration faite par erreur, celui où elle est corrigée ; jamais avant l'encaissement, jamais dans l'avenir
+ * (décision à confirmer par le cabinet : HISTORIQUE.md, étape d4). `aujourdHui` : le jour À PARIS, celui que la base lit.
+ */
+export function refusContrePassation(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  date: string | null,
+  motif: string | null,
+  aujourdHui: string,
+): RefusEncaissement<CleRefusContrePassation> | null {
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  if (!e) return refusC('encaissement_introuvable')
+  if (e.annule_id != null) return refusC('contre_passation')
+  if (!compte(e)) return refusC('retire')
+  const declaration = declarations.find((d) => d.encaissement_id === e.id && ETATS_DECLARANTS.includes(d.etat))
+  if (!declaration) return refusC('non_declare')
+  if (declaration.etat === 'envoi') return refusC('issue_inconnue')
+  if (annuleParUneContrePassation(e, encaissements)) return refusC('deja_contre_passe')
+  if (date == null || !dateCivile(date)) return refusC('date_absente')
+  if (date < e.date_encaissement) return refusC('date_avant_encaissement', formatDate(e.date_encaissement))
+  if (date > aujourdHui) return refusC('date_future', formatDate(aujourdHui))
+  if (motif == null || videPourLaBase(motif)) return refusC('motif_absent')
+  if (caracteres(motif) > LONGUEUR_MAX_TEXTE) return refusC('motif_trop_long')
+  return null
+}
+
+/**
+ * Ce que la contre-passation d'un encaissement écrira — ce que la confirmation nomme : le montant et chaque part par
+ * taux, opposés, en centimes ; le moyen de paiement est le sien.
+ */
+export function contrePassationDe(
+  encaissement: Pick<EncaissementLu, 'id' | 'montant'>,
+  parts: readonly PartLue[],
+): { montantCentimes: number; parts: PartProposee[] } {
+  return {
+    montantCentimes: -centimes(encaissement.montant),
+    parts: parts.filter((p) => p.encaissement_id === encaissement.id)
+      .map((p) => ({ taux: p.taux, centimes: -centimes(p.montant) }))
+      .sort((a, b) => b.taux - a.taux),
+  }
 }
 
 // ── L'échéance de la déclaration ─────────────────────────────────────────────────────────────────────────────────────

@@ -10751,3 +10751,142 @@ production depuis le 08/10/2026 au soir (migration `transmissions_des_encaisseme
 § 4.2, que l'écran ne dit pas encore), le retard dit sur la pastille ; d'ici là, l'ensemble des déclarés est vide et la
 base refuse d'elle-même le retrait d'un encaissement déclaré. La règle « un refus 210 sur la plateforme du client est
 invisible » (d7).
+
+### 08/10/2026 — LA DÉCLARATION HORS APPLICATION ET LA CONTRE-PASSATION — LIGNE 28.5, ÉTAPE (D), QUATRIÈME TEMPS (D4)
+
+(Migration `transmissions_des_encaissements`, version 20261008221156, empreinte `9d45c37259765753cf3152ef55456a29` ;
+`supabase/essais/transmissionsEncaissements.sql` ; `encaissementsFactures.sql` rejoué ; `signature.sql` et
+`batterieEncaissements.mjs` ; `types.ts`, `sauvegarde.ts`, `lib/encaissementsFactures.ts` et leurs tests.) Décision du
+cabinet du 08/10/2026 (Q2) : la déclaration HORS APPLICATION vient avant tout envoi par API — le cabinet ou le client
+saisit le statut « Encaissée » (212) sur la plateforme, l'application garde ce qui a été déclaré. Données mesurées ce
+jour-là (comptes seulement) : aucune transmission de facture, aucun événement de Super PDP, aucune facture partie par
+l'ancien chemin de Super PDP, aucun encaissement : tout ce qui suit est latent.
+
+**POURQUOI LA DÉCLARATION SE GARDE.** La plateforme de l'administration ne dédoublonne pas les statuts (spécifications
+externes de la DGFiP v3.2, § 3.6.7, note 109) : un encaissement déclaré deux fois est compté deux fois, la TVA avec
+lui. `transmissions_encaissements` garde chaque déclaration — canal (`manuel` aujourd'hui ; `plateforme` et `superpdp`
+écrits dans les contraintes et la garde pour d6 et d8, sans réécriture), hôte, flux et empreinte de ce qu'une API
+déposera, état, détail, une note facultative (qui l'a saisie, quand, sous quelle référence), auteur, dates. Une seule
+déclaration ACTIVE (partie sans issue connue, déposée, acceptée) par encaissement, tous canaux confondus (index unique
+partiel) ; `encaissement_declare` reçoit son vrai corps — une déclaration active —, que le déclencheur des encaissements
+et `retirer_encaissement` lisaient depuis d1 : un encaissement déclaré ne se retire plus, ni par la fonction ni en
+direct. À la main, une déclaration naît déposée, sans flux ni fichier, et ne connaît ni l'envoi sans issue ni l'échec,
+qui sont ceux d'une API. Elle ne se supprime pas (sauf avec son dossier) ; l'encaissement et la facture qu'elle vise
+sont sans action à la suppression : ce qui a été dit à l'administration ne s'efface pas sous elle. Le cabinet la lit
+(`admin_du_dossier`, `to authenticated`), le super-administrateur en insère pour restaurer, rien d'autre ; le client
+n'en voit rien.
+
+**OÙ SE DÉCLARE LE STATUT.** « Par l'intermédiaire de la plateforme agréée choisie pour son émission »
+(BOI-TVA-DECLA-20-30-60, §120) : celle qui a REÇU la facture. Pour un encaissement, la base exige une facture ACCEPTÉE
+par cette plateforme — une transmission acceptée, ou, chez Super PDP, déposée avec le statut 200 « Déposée » dans son
+historique : la réception par la plateforme de l'acheteur (202) est facultative et peut ne jamais venir (§ 3.6.4,
+tableau 8) — et ni rejetée ni refusée (une transmission rejetée, les statuts 210 et 213 de Super PDP : elle s'annule
+alors par un avoir interne). La fonction inscrit l'hôte de cette transmission, qui peut ne plus être la plateforme du
+dossier : c'est bien là que le statut se déclare. Une contre-passation, elle, se déclare là où l'encaissement qu'elle
+annule a été déclaré, la facture eût-elle été refusée depuis. Une facture que l'APPLICATION n'a pas transmise ne se
+déclare pas d'ici : l'application ne sait pas quelle plateforme l'a reçue — y compris une facture que le client aurait
+déposée lui-même (proposé au cabinet : un « dépôt hors application » qui nommerait la plateforme) et une facture partie
+par l'ancien chemin de Super PDP (aucune en production ; ce que la note en disait — un `fr:212` déjà lu qui bloque —
+n'est pas écrit).
+
+**LA CONTRE-PASSATION ET SA DATE.** Un encaissement déclaré ne se modifie ni ne se retire : `annuler_encaissement`
+écrit un encaissement de montant opposé, réparti comme lui par taux, de même moyen, qui porte son motif (annexe 7 des
+spécifications externes : un montant négatif est « un décaissement », qui porte « un motif d'annulation », règles P1.15
+et P1.17) ; il se déclare à son tour, puis le bon encaissement s'enregistre (l'annulation libère le reste de la facture
+et le mouvement). SA DATE, point NON VÉRIFIÉ de la note, est TRANCHÉE ainsi, à confirmer par le cabinet : celle du
+décaissement — le jour où l'encaissement est défait (le chèque revenu impayé, la somme rendue) ou, pour une
+déclaration faite par erreur, le jour où elle est corrigée ; jamais avant l'encaissement, jamais dans l'avenir (le jour
+à Paris). Le statut porte « la date d'encaissement effectif » (CGI, ann. II, art. 242 nonies P, I, 3°), un montant
+négatif y est un décaissement, et la TVA d'un encaissement qui ne s'est pas réalisé se régularise « sur sa plus
+prochaine déclaration de chiffre d'affaires » (BOI-TVA-BASE-20-20, §40) : la correction vit dans la période où elle
+survient. Aucune source publique ne dit expressément la date qu'attend la plateforme de l'administration sur un 212
+négatif. `abandonner_transmission_encaissement` n'est pas écrite : une déclaration à la main ne reste jamais « envoi » ;
+elle viendra avec les canaux par API (d6, d8).
+
+**LES REFUS, DANS L'ORDRE QUE LE MODULE ET L'ÉCRAN REPRENNENT.** `declarer_encaissement_hors_application` (verrou de
+la facture, puis de l'encaissement) : 1. l'accès au dossier annoncé (42501) ; 2. l'encaissement, dans ce dossier
+(P0002) ; 3. retiré ; 4. déjà déclaré ; 5. une contre-passation dont l'encaissement n'est pas déclaré ; 6. pour un
+encaissement, une facture rejetée ou refusée ; 7. aucune transmission acceptée par une plateforme ; 8. une note de plus
+de 2 000 caractères (des espaces seuls ne sont pas une note) — 3 à 8 en 22023. `annuler_encaissement` : 1. l'accès ;
+2. l'encaissement ; 3. une contre-passation (elle ne s'annule pas : on ressaisit l'encaissement) ; 4. retiré ; 5. rien
+ne l'a déclaré (il se retire) ; 6. sa déclaration a une issue inconnue ; 7. déjà annulé par une contre-passation
+vivante ; 8. la date absente ; 9. avant l'encaissement ; 10. dans l'avenir ; 11. le motif absent ; 12. plus de
+2 000 caractères. La garde, à toute écriture directe (23514) : un encaissement de sa facture et de son dossier ; actif,
+pas retiré, sur la plateforme d'une transmission que la plateforme a reçue (par une API, par son canal) ; pour un
+encaissement, ni rejetée ni refusée, puis acceptée ; ensuite rien ne change sauf l'état vers l'avant, le flux une fois
+et le détail. Pour une déclaration d'HIER — une restauration rejoue l'historique avec ses dates —, elle ne compte que
+ce qui était connu avant elle (le rejet, le refus, le statut 200, par leur date d'enregistrement) : une facture refusée
+après coup n'efface pas ce qui avait été déclaré. Elle verrouille l'encaissement en partage avant de le lire : un
+retrait en cours et une déclaration se suivent, même écrite par une Edge Function sans passer par la fonction.
+
+**ÉCARTS AVEC LA NOTE, ET POURQUOI.** L'empreinte d'une déclaration à la main est nulle, non celle d'une « forme
+canonique » : rien n'a été déposé, et une empreinte de nos propres données ne prouverait rien de ce qui a été saisi
+sur la plateforme ; la ligne, elle, est immuable. Une note facultative s'ajoute. Pour le canal `manuel`, « le même
+canal » n'a pas de sens : la règle devient « l'hôte d'une transmission de la facture », par n'importe quel canal. Les
+fonctions prennent le dossier annoncé d'abord, et `annuler_encaissement` sa date. Le refus « issue inconnue » et la
+règle de restauration n'étaient pas dans la note. L'ancien chemin de Super PDP et la facture déposée par le client ne
+se déclarent pas (ci-dessus).
+
+**ÉPROUVÉ.** Sur une réplique locale (PostgreSQL 16) dont les neuf familles d'objets (`signature.sql`, désormais dans
+le dépôt) ont, après la migration, l'empreinte de la production : l'essai (128 contrôles), ce que la production ne peut
+pas jouer (neuf contrôles : aucune suppression directe, ni du rôle des Edge Functions ni du propriétaire ; la
+suppression du dossier emporte déclarations, encaissements, contre-passations, parts ; l'encaissement et la facture
+d'une déclaration ne se suppriment pas en direct ; un membre du cabinet non super-administrateur déclare et
+contre-passe dans son dossier, n'insère pas en direct, ne voit rien ailleurs ; la restauration dans l'ordre passe, une
+déclaration réinsérée avant la transmission de sa facture est refusée), et six scénarios de deux sessions — deux
+déclarations du même encaissement, deux contre-passations, un retrait et une déclaration dans les deux sens, par les
+fonctions et en écritures directes : chaque fois la seconde voit la première. Cent trente-sept mutations de la
+migration, cent trente-trois mordent ; les quatre survivantes sont équivalentes : le droit d'exécution du cabinet que
+les droits par défaut donnent déjà ; le verrou de la facture retiré à la déclaration et à la contre-passation, celui de
+l'encaissement suffisant (les deux verrous retirés ensemble, la mutation mord) ; la relecture de l'encaissement sous
+verrou retirée à la contre-passation, celui de la facture suffisant. En production : l'essai, 128 contrôles sur 128,
+le texte reçu identique au fichier (81 538 caractères, `3938487e…`), rien laissé ; `encaissementsFactures.sql`, 109 sur
+109 (47b et 47c : un encaissement déclaré ne se retire ni par la fonction ni en direct), `4b0bf6ab…` ; `rls.sql` en
+entier, 22 lignes de verdict (55 tables, dont 47 portant un `dossier_id`, et 3 buckets), 0 en faute, 14 mutations sur
+14 qui mordent, le texte reçu celui du passage précédent ; l'export : 100 migrations, `c5db5b7e…` des deux côtés, le
+socle inchangé (77, `5114d8a3…`), l'inventaire à 1 241 objets (`cec17397…`, 39 de plus). Advisors : 12 fonctions
+`SECURITY DEFINER` exécutables par un compte connecté, les deux nouvelles avec leur propre contrôle ; deux index encore
+inutilisés sur la table vide. Les essais de production ont tourné après minuit à Paris : leurs messages disent « nous
+sommes le 09/10/2026 », le jour que la base lit.
+
+**LE MODULE (phase B).** `lib/encaissementsFactures.ts` apprend les déclarés (`encaissementsDeclares`, que
+`refusRetrait` attendait vide depuis d2), la plateforme où se déclare un statut (`plateformeAcceptee`,
+`plateformeDeLaDeclaration`), les refus des deux fonctions dans leur ordre et sous leurs mots (`refusDeclaration`,
+`refusContrePassation`, l'accès laissé à la base), mesurés comme la base mesure (`btrim` n'ôte que des espaces,
+`length` compte des caractères, pas des unités UTF-16), et ce que la contre-passation écrira (`contrePassationDe`).
+Confrontés au texte des fonctions (messages, ordre, valeurs des « % », états déclarants, statuts, longueurs) et aux
+messages que la base a rendus en production (l'essai, tuple par tuple : une recherche qui courait au-delà du tuple de
+son contrôle rendait en silence le message d'un autre). `types.ts` décrit la table ; `sauvegarde.ts` la restaure après
+`transmissions_factures`, `facture_superpdp_events` et `encaissements_factures`, que sa garde lit sans clé étrangère.
+Cinquante et une mutations du module et de la sauvegarde, toutes mordent (deux survivaient d'abord : le refus d'une
+autre facture et l'ordre « contre-passation avant retiré » ; deux contrôles les attrapent). L'écran viendra après d3.
+
+**LA BATTERIE DE d2, ET CE QUI ENTRE DANS LE DÉPÔT.** Rejouée sur la réplique d4, la batterie rendait 184 écarts sur
+4 000 : exactement les saisies datées du lendemain et du 1er janvier, qu'elle visait par des dates FIGÉES — la base
+lisait le 09/10/2026 à Paris, et le 09/10 n'était plus l'avenir. Jugées avec ce jour par le module, les 4 000 réponses
+étaient les mêmes (`430ee45c…`) : la migration ne change rien à ce que la batterie couvre (`enregistrer_encaissement`
+ne lit pas les déclarations), mais une batterie à dates figées ne se rejouait plus après le 08/10/2026. Elle se tire
+désormais pour un jour donné (le lendemain et le 1er janvier qui suit glissent avec lui ; pour le 08/10/2026, les mêmes
+saisies, la même empreinte `e061f97c…` ; un contrôle exige qu'un autre jour ne change que les dates, et ses cinq
+mutations mordent — deux que l'empreinte seule ne voyait pas : un surlendemain, un 1er janvier plus lointain, tous deux
+« dans l'avenir » sous le même message), et `supabase/essais/batterieEncaissements.mjs` la rejoue : il lit le jour de
+la base, tire la batterie pour ce jour, construit le monde et juge chaque saisie dans une transaction annulée, confronte
+au module (Node 22 exécute le TypeScript du dépôt, un crochet ajoutant l'extension `.ts`). Le 09/10/2026 sur la
+réplique d4 : aucun écart sur 4 000 (`c32be31d…`) ; contre une base où un message est réécrit, 212 écarts et le code 1.
+`signature.sql` dit si une réplique EST la production.
+
+**LA RÉPLIQUE : LE PROCÉDÉ, ET POURQUOI IL RESTE HORS DU DÉPÔT.** Montée à l'étape d1 et reprise depuis : les rôles et
+le schéma `auth` que Supabase fournit (`auth.uid()` lu dans les réclamations du jeton) ; les tables, colonnes seules,
+relevées au catalogue de production ; puis les clés, les contraintes, les index, les clés étrangères, les déclencheurs,
+les policies et les droits des fonctions, relevés au catalogue par `execute_sql` (trois caractères de remplacement pour
+qu'aucun échappement ne se glisse dans la transcription) ; les fonctions tirées de l'export (la dernière définition,
+migrations puis socle) ; semés, un cabinet, deux dossiers, le chef (super-administrateur), le client, un membre du
+cabinet qui ne l'est pas et une facture validée ; enfin `signature.sql` des deux côtés. Il ne rejoue pas l'export :
+il recopie un catalogue, quelque 90 Ko passés par l'outil MCP. Le faire entrer dans le dépôt ouvrirait, en passant, le
+chantier que PLAN_DE_REPRISE.md (§4) diffère par décision du cabinet (25/09/2026) — rejouer l'export dans une base
+vide —, qui donnerait la même réplique depuis le seul dépôt ; proposé au cabinet comme ligne de la feuille de route,
+puisque chaque étape en base (d1, d2, d4) en a besoin.
+
+**CE QUI ATTEND LE CABINET.** La date d'une contre-passation (ci-dessus) ; la facture déposée par le client lui-même
+(un « dépôt hors application ») ; l'ancien chemin de Super PDP ; si la note d'une déclaration lui sert ; la ligne de la
+feuille de route « monter une réplique depuis le dépôt ».

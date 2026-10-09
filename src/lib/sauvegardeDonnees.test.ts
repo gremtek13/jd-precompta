@@ -463,6 +463,36 @@ describe('restauration', () => {
     expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 
+  it('écrit les déclarations après la transmission de leur facture, l’historique de Super PDP et les encaissements', async () => {
+    // La garde des déclarations lit la transmission de la facture et l'historique de Super PDP sans clé étrangère
+    // (étape d4) : la restauration les écrit avant, et les déclarations d'un encaissement et de sa contre-passation
+    // en une seule écriture, quel que soit leur ordre dans la sauvegarde.
+    base.tables.factures_emises = [{ id: 'f1', dossier_id: DOSSIER, numero: 1, facture_origine_id: null }]
+    base.tables.transmissions_factures = [{ id: 't1', dossier_id: DOSSIER, facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', etat: 'accepte' }]
+    base.tables.facture_superpdp_events = [{ id: 'v1', dossier_id: DOSSIER, facture_id: 'f1', status_code: 'fr:200' }]
+    base.tables.encaissements_factures = [
+      { id: 'e2', dossier_id: DOSSIER, facture_id: 'f1', montant: -50, annule_id: 'e1', motif: 'chèque impayé' },
+      { id: 'e1', dossier_id: DOSSIER, facture_id: 'f1', montant: 50, annule_id: null, motif: null },
+    ]
+    base.tables.transmissions_encaissements = [
+      { id: 'd2', dossier_id: DOSSIER, encaissement_id: 'e2', facture_id: 'f1', canal: 'manuel', hote: 'pa.exemple.fr', etat: 'depose' },
+      { id: 'd1', dossier_id: DOSSIER, encaissement_id: 'e1', facture_id: 'f1', canal: 'manuel', hote: 'pa.exemple.fr', etat: 'depose' },
+    ]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    expect(sauvegarde.contenu.transmissions_encaissements).toHaveLength(2)
+    baseVide()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    const tables = ecritures.map((e) => e.table)
+    for (const lue of ['transmissions_factures', 'facture_superpdp_events', 'encaissements_factures']) {
+      expect(tables.indexOf(lue), lue).toBeGreaterThanOrEqual(0)
+      expect(tables.indexOf(lue), lue).toBeLessThan(tables.indexOf('transmissions_encaissements'))
+    }
+    expect(ecritures.filter((e) => e.table === 'transmissions_encaissements').map((e) => e.nb)).toEqual([2])
+    expect(resultat.lignesParTable.transmissions_encaissements).toBe(2)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
   it('écrit les parents avant leurs enfants', async () => {
     base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
     base.tables.lignes_bancaires = [{ id: 'l1', dossier_id: DOSSIER, piece_id: 'p1' }]
