@@ -15,6 +15,7 @@ import type {
   LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
 import { demandeDeValidation } from './validationExercice'
+import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
@@ -29,6 +30,7 @@ const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   storage_hash: null, date_piece: '2025-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null, montant_ttc: 120,
   devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: 'c-achats',
   sous_dossier_id: null, type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+  identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
   created_at: '2025-03-10T09:00:00Z', updated_at: '2025-03-10T09:00:00Z', ...o,
 })
 
@@ -94,6 +96,12 @@ const vehicule = (id: string, annee: number, km: number): VehiculeDossier => ({
   created_at: '2025-01-01T00:00:00Z', updated_at: '2025-01-01T00:00:00Z',
 })
 
+// Une facture émise validée (ligne 28.6) : sa vente revient comme pièce de la plateforme du client ou de Super PDP.
+const factureEmise = (o: Partial<FacturePourJumelle> = {}): FacturePourJumelle => ({
+  id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-06-01',
+  emetteur_siret: '12345678900012', superpdp_invoice_id: 4242, ...o,
+})
+
 const P1 = piece('p1')
 const L1 = ligne('l1', { piece_id: 'p1' })
 const E1 = ecriture('e1')
@@ -108,7 +116,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
-    doublonsTexte: [], ...o,
+    doublonsTexte: [], facturesEmises: [], transmissions: [], ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements)
@@ -555,6 +563,15 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       piecesAValider: [piece('d1', { statut: 'a_valider', date_piece: D(a, '06-01') }), piece('d2', { statut: 'a_valider', date_piece: D(a, '06-01') })],
       doublonsTexte: [{ empreinte: 'e', pieceIds: ['d1', 'd2'], documentIds: [] }],
     })],
+    // La facture émise revenue de Super PDP ET de la plateforme du client (ligne 28.6) : deux pièces, une vente.
+    ['ventes-en-double', (a) => ({
+      piecesAValider: [
+        piece('v1', { statut: 'a_valider', type_piece: 'vente', source: 'superpdp', date_piece: D(a, '06-01'), superpdp_invoice_id: 4242 }),
+        piece('v2', { statut: 'a_valider', type_piece: 'vente', source: 'plateforme', date_piece: D(a, '06-01'), flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' }),
+      ],
+      facturesEmises: [factureEmise({ date_emission: D(a, '06-01') })],
+      transmissions: [{ facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-1' }],
+    })],
     ['desynchronisees', (a) => ({
       piecesValidees: [P1, piece('p2', { date_piece: D(a, '05-02'), montant_ttc: 60 })],
       lignes: [L1, ligne('l2', { piece_id: 'p2', date: D(a, '05-04'), montant: -60 })],
@@ -637,6 +654,21 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       expect(ids(donnees({ ...defaut(2026), anneesValidees: [2024] }))).not.toContain(id)
     })
   }
+
+  // LA VENTE COMPTÉE DEUX FOIS (ligne 28.6) : en engagement aussi, où chaque pièce s'écrit à sa date, équilibrée — rien
+  // d'autre ne la refuserait. Une facture que sa seule jumelle porte ne bloque rien.
+  it('« ventes-en-double » : deux pièces validées pour une facture bloquent, en engagement comme en trésorerie ; une seule, rien', () => {
+    const jumelle = (id: string, o: Partial<Piece> = {}) =>
+      piece(id, { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242, ...o })
+    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000' }, { mode: 'engagement', compteNotesDeFrais: '455000' }] as const) {
+      const deux = prealable(donnees({ modele, piecesValidees: [P1, jumelle('v1'), jumelle('v2')], facturesEmises: [factureEmise()] }), 'ventes-en-double')
+      expect(deux, modele.mode).toMatchObject({ nb: 1, bloquant: true, cible: 'pieces' })
+      expect(ids(donnees({ modele, piecesValidees: [P1, jumelle('v1')], facturesEmises: [factureEmise()] })), modele.mode).not.toContain('ventes-en-double')
+    }
+    // Un brouillon n'a pas de jumelle : deux pièces qui porteraient son identifiant ne sont pas « la même vente ».
+    expect(ids(donnees({ piecesValidees: [P1, jumelle('v1'), jumelle('v2')], facturesEmises: [factureEmise({ statut: 'brouillon' })] })))
+      .not.toContain('ventes-en-double')
+  })
 
   // L'écart se juge sur le TOTAL payé de la pièce : réglée par un acompte puis par la part d'un virement groupé, elle
   // n'a rien à reprendre — le contrôle d'avant comparait chaque mouvement à la pièce, et refusait cette validation.

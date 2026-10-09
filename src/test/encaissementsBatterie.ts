@@ -160,8 +160,9 @@ export function lecturesDuMonde(m: Monde): {
   statutsRecus: ContexteFacture['statutsRecus']
 } {
   const factures = new Map(m.factures.map((f) => [f.id, {
-    id: f.id, dossier_id: DOSSIERS[f.dossier], statut: f.statut, type: f.type, date_emission: f.date,
-    montant_ht: f.entete.ht, montant_tva: f.entete.tva, montant_ttc: f.entete.ttc, superpdp_invoice_id: null, tiers_nom: 'Essai',
+    id: f.id, dossier_id: DOSSIERS[f.dossier], statut: f.statut, type: f.type, numero: null, date_emission: f.date,
+    emetteur_siret: null, montant_ht: f.entete.ht, montant_tva: f.entete.tva, montant_ttc: f.entete.ttc, superpdp_invoice_id: null,
+    tiers_nom: 'Essai',
   } satisfies FacturePourEncaissement]))
   const dossierDe = (factureId: string) => (factures.get(factureId) as FacturePourEncaissement).dossier_id
   return {
@@ -175,7 +176,9 @@ export function lecturesDuMonde(m: Monde): {
     })),
     parts: m.encaissements.flatMap((e) => e.parts.map((p) => ({ encaissement_id: e.id, taux: p.taux, montant: p.montant }))),
     mouvements: m.mouvements.map((x) => ({ id: x.id, dossier_id: DOSSIERS[x.dossier], date: '2026-09-20', montant: x.montant })),
-    transmissions: m.transmissions.map((t) => ({ facture_id: t.facture, etat: t.etat, hote: 'pa.exemple.fr', flux_id: 'flux-1' })),
+    transmissions: m.transmissions.map((t) => ({
+      facture_id: t.facture, canal: 'plateforme' as const, etat: t.etat, hote: 'pa.exemple.fr', flux_id: 'flux-1',
+    })),
     evenements: m.evenements.map((e) => ({ facture_id: e.facture, status_code: e.code })),
     statutsRecus: m.statutsRecus.map((s) => ({ facture_id: s.facture, code: s.code })),
   }

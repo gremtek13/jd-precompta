@@ -26,6 +26,7 @@ import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGro
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
+import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -115,6 +116,11 @@ export interface DonneesDeValidation {
   // Nuls quand on n'a pas pu les lire : ils ne se taisent pas, ils deviennent un préalable.
   relevesIncoherents: readonly ControleReleveBancaire[] | null
   doublonsTexte: readonly DoublonDeTexte[] | null
+  // Les factures émises VALIDÉES du dossier et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : une vente que
+  // plusieurs pièces portent compte deux fois dans la 2035, la CA3 et les écritures. Lues en partie, elles suspendent la
+  // validation comme les autres collections (`lectureIncomplete`).
+  facturesEmises: readonly FacturePourJumelle[]
+  transmissions: readonly TransmissionPourJumelle[]
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -433,6 +439,19 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       message: "pièce(s) déposée(s) plusieurs fois sous des fichiers différents : retirer le doublon.",
     })
   }
+  // LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6) : sur les deux piles, comme la Checklist ; de l'exercice
+  // quand l'une de ses pièces l'est. En trésorerie, la pièce restée sans paiement serait aussi refusée par ses écritures ;
+  // en engagement, chacune s'écrit à sa date, équilibrée, et rien d'autre ne la voit.
+  const piecesDesDeuxPiles = new Map([...d.piecesValidees, ...d.piecesAValider].map((p) => [p.id, p]))
+  bloque({
+    id: 'ventes-en-double', cible: 'pieces',
+    nb: ventesEnDouble(d.facturesEmises, jumellesDuDossier(d.facturesEmises, d.transmissions, [...piecesDesDeuxPiles.values()]))
+      .filter((v) => v.pieceIds.some((id) => {
+        const p = piecesDesDeuxPiles.get(id)
+        return !!p && (dansLExercice(p.date_piece) || pieceDeLExercice(p))
+      })).length,
+    message: "vente(s) portée(s) par plusieurs pièces — la même facture émise comptée plusieurs fois : n'en garder qu'une.",
+  })
   if (d.relevesIncoherents === null) {
     prealables.push({
       id: 'releves-inconnus', nb: null, cible: 'banque', bloquant: true,

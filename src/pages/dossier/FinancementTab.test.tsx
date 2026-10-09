@@ -105,6 +105,7 @@ function recette(o: Partial<Piece> = {}): Piece {
     conversion_source: null, categorie_id: 'cat-recettes', sous_dossier_id: null,
     type_piece: 'vente', statut: 'validee', notes: null, confiance: null,
     superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, created_at: '2026-05-10T09:00:00Z', updated_at: '2026-05-10T09:00:00Z',
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     ...o,
   }
 }

@@ -350,6 +350,15 @@ export interface Piece {
   // La version lisible (PDF) d'une facture reçue en XML, telle que la plateforme la rend. L'original reste dans
   // storage_path : c'est lui que l'empreinte prouve. Nulle quand l'original se lit déjà.
   lisible_path: string | null
+  // L'IDENTITÉ de la facture électronique reçue, telle que son original structuré la dit, lue à l'import : son numéro
+  // (BT-1), le SIREN de son vendeur, sa date d'émission (BT-2) et la nature que dit son type (BT-3). Le numéro, le SIREN
+  // et l'année sont l'identité d'une facture pour l'administration (règle G1.42) : c'est elle qui relie une vente reçue à
+  // la facture que l'application a émise (lib/ventesJumelles.ts). Nulle pour une pièce déposée ; le numéro seul peut
+  // être connu. Ce que l'original dit ne se modifie pas (migration identite_des_factures_recues).
+  identite_numero: string | null
+  identite_siren_vendeur: string | null
+  identite_date: string | null
+  identite_nature: 'facture' | 'avoir' | null
   created_at: string
   updated_at: string
 }

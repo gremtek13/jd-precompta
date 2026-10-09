@@ -157,7 +157,8 @@ supabase/
                     reglesAffectation, virementPersonnel, echeanceEmprunt, ventilation, connexionBancaire,
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
-                    abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus ;
+                    abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
+                    identiteFacturesRecues ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -360,7 +361,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   (d2), et l'écran : pastille de l'onglet Factures et fenêtre « Encaissements » (d3, 08/10/2026) ; la déclaration hors
   application et la contre-passation, en base et à l'écran (d4, 08 et 09/10/2026) ; le cycle de vie des factures
   émises lu sur la plateforme du client — relevé sur un clic, dernier statut sur chaque facture, refus de l'acheteur dit
-  avant tout geste (d7, 09/10/2026).
+  avant tout geste (d7, 09/10/2026) ; la vente qui revient de la plateforme du client ou de Super PDP
+  reconnue comme la jumelle de sa facture émise, et la vente portée par plusieurs pièces dite par la Checklist (ligne
+  28.6, 09/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -407,6 +410,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
   (`create-client-access`, `create-team-member`), l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`),
   `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques le referme).
+- **Une vente entrée deux fois** (ligne 28.6) : le pont et la Checklist en ligne le 09/10/2026 ; restent la jumelle
+  marquée dans les Justificatifs et leur fiche (phase C), et le PDF d'une facture émise, que rien ne relie encore à elle
+  (Q1 au cabinet).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
@@ -824,6 +830,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Réception par la plateforme du client** : la facture doit désigner le dossier (SIREN) ; un flux n'entre qu'une fois
   par dossier ; le point de reprise ne recule jamais et garde une heure de marge ; une page pleine dans le désordre
   arrête la lecture → « LA RÉCEPTION PAR LA PLATEFORME DU CLIENT ».
+- **La pièce jumelle d'une facture émise** (`lib/ventesJumelles.ts`, ligne 28.6) : une facture émise ne compte nulle
+  part, sa vente entre par la pièce qui revient de la plateforme ou de Super PDP, marquée, jamais refusée. Le lien se
+  DÉDUIT (flux de la transmission, identifiant Super PDP, ou identité G1.42 gardée à l'import, `identite_*` immuables),
+  jamais d'un montant, d'une date ni d'un nom ; deux preuves contraires ne font pas de jumelle. La Checklist dit la
+  vente portée par plusieurs pièces et la pièce incohérente, muettes sur une lecture partielle ; la validation refuse
+  la première (`ventes-en-double`) → « UNE VENTE PEUT ENTRER DEUX FOIS ».
 - **Connexion bancaire** : sans nouvel accord, une banque ne rend que les 90 derniers jours ; le refus 422 se dit en
   français, avec le renouvellement → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 

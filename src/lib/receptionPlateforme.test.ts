@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 // L'import lit le XML des factures avec l'analyseur du navigateur (`DOMParser`) : ces tests tournent dans jsdom.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FluxVu, ListeFlux } from './receptionPlateforme'
 
@@ -150,9 +152,10 @@ vi.mock('./factureX', () => ({
 }))
 
 const {
-  appelerPlateforme, cleFlux, estTermine, importerFlux, lireFluxImportes, lireSynchronisationSuperPdp, nomDuFichier,
-  notesDImport, planReception, pointDeReprise, preparerReception, recevoirFactures, releverStatutsDesFactures,
+  appelerPlateforme, cleFlux, estTermine, identiteDeLaVente, importerFlux, lireFluxImportes, lireSynchronisationSuperPdp,
+  nomDuFichier, notesDImport, planReception, pointDeReprise, preparerReception, recevoirFactures, releverStatutsDesFactures,
 } = await import('./receptionPlateforme')
+const { lireFactureXml } = await import('./factureElectronique')
 
 // ── Les factures fictives ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -392,6 +395,84 @@ describe('lireFluxImportes et preparerReception', () => {
   })
 })
 
+// ── L'identité d'une vente reçue (ligne 28.6) ───────────────────────────────────────────────────────────────────────
+
+describe('identiteDeLaVente — ce que la pièce garde de l’original', () => {
+  const lue = (o: Parameters<typeof cii>[0] = {}) => {
+    const r = lireFactureXml(cii(o))
+    if ('refus' in r) throw new Error(r.refus)
+    return r.facture
+  }
+  const SANS = { identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null }
+
+  it('une vente : son numéro, le SIREN de son vendeur, sa date d’émission, sa nature', () => {
+    expect(identiteDeLaVente(lue({ numero: 'F2026-0007' }), 'vente')).toEqual({
+      identite_numero: 'F2026-0007', identite_siren_vendeur: '123456782', identite_date: '2026-09-15', identite_nature: 'facture',
+    })
+    expect(identiteDeLaVente(lue({ numero: 'A2026-0001', type: '381' }), 'vente')).toMatchObject({ identite_nature: 'avoir' })
+    // Un type inconnu ne dit pas de nature : elle reste nulle.
+    expect(identiteDeLaVente(lue({ numero: 'F2026-0007', type: '999' }), 'vente')).toMatchObject({
+      identite_numero: 'F2026-0007', identite_nature: null,
+    })
+  })
+
+  it('un achat ne garde rien : son vendeur est un tiers', () => {
+    expect(identiteDeLaVente(lue({ numero: 'F2026-0007' }), 'achat')).toEqual(SANS)
+  })
+
+  it('le numéro suit la règle G1.05 : 35 caractères gardés, 36 non, ni un caractère qu’elle refuse', () => {
+    expect(identiteDeLaVente(lue({ numero: 'F'.repeat(35) }), 'vente').identite_numero).toBe('F'.repeat(35))
+    expect(identiteDeLaVente(lue({ numero: 'F'.repeat(36) }), 'vente')).toEqual(SANS)
+    expect(identiteDeLaVente(lue({ numero: 'F#42' }), 'vente')).toEqual(SANS)
+    expect(identiteDeLaVente(lue({ numero: 'FA 2026/7_B+1' }), 'vente').identite_numero).toBe('FA 2026/7_B+1')
+    // Tel que l'original l'écrit, casse comprise : le pont le compare tel quel au numéro de la facture émise.
+    expect(identiteDeLaVente(lue({ numero: 'fa-2026-0007b' }), 'vente').identite_numero).toBe('fa-2026-0007b')
+  })
+
+  it('sans facture lue, ou sans numéro, rien', () => {
+    expect(identiteDeLaVente(null, 'vente')).toEqual(SANS)
+    expect(identiteDeLaVente(lue({ numero: '' }), 'vente')).toEqual(SANS)
+  })
+
+  // Ce que l'import écrit, la base doit l'accepter : sinon la vente n'entre pas du tout. Les contraintes sont relues dans
+  // le texte de la migration (l'essai identiteFacturesRecues.sql les relit au catalogue), puis chaque identité que l'import
+  // peut produire leur est confrontée — la règle G1.05 de l'application est plus étroite que la borne de la base.
+  it('chaque identité que l’import écrit passe les contraintes de la base, relues dans la migration', () => {
+    // Depuis la racine du dépôt, d'où la suite se lance : sous jsdom, import.meta.url n'est pas une adresse de fichier.
+    const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261009074808_identite_des_factures_recues.sql'), 'utf8')
+    expect(migration).toContain('check (identite_numero is not null or (identite_siren_vendeur is null and identite_date is null and identite_nature is null))')
+    expect(migration).toContain('check (length(identite_numero) between 1 and 255 and identite_numero = btrim(identite_numero))')
+    expect(migration).toContain("check (identite_siren_vendeur ~ '^[0-9]{9}$')")
+    expect(migration).toContain("check (identite_nature in ('facture', 'avoir'))")
+    expect(migration).toContain("check (identite_numero is null or source in ('plateforme', 'superpdp'))")
+
+    const identites = [
+      { numero: 'F'.repeat(35) }, { numero: 'A2026-0001', type: '381' }, { numero: 'FA 2026/7_B+1', type: '999' },
+      { numero: 'F2026-0007', vendeur: ' 123 456 782 ' }, { numero: 'F2026-0007', vendeur: '12345678200017' },
+      { numero: 'F2026-0007', vendeur: '' }, { numero: ' F2026-0007' }, { numero: 'F2026  0007' }, { numero: 'F'.repeat(36) },
+    ].map((o) => identiteDeLaVente(lue(o), 'vente'))
+    // Le lecteur ramène les blancs à un seul et les ôte aux bords (BT-1 tel que lu) ; un SIRET déclaré comme SIREN ne
+    // dit pas de SIREN.
+    expect(identites.map((i) => [i.identite_numero, i.identite_siren_vendeur])).toEqual([
+      ['F'.repeat(35), '123456782'], ['A2026-0001', '123456782'], ['FA 2026/7_B+1', '123456782'],
+      ['F2026-0007', '123456782'], ['F2026-0007', null], ['F2026-0007', null], ['F2026-0007', '123456782'],
+      ['F2026 0007', '123456782'], [null, null],
+    ])
+    for (const i of identites) {
+      if (i.identite_numero === null) {
+        expect(i).toEqual(SANS)
+        continue
+      }
+      expect(i.identite_numero.length).toBeGreaterThanOrEqual(1)
+      expect(i.identite_numero.length).toBeLessThanOrEqual(255)
+      expect(i.identite_numero).toBe(i.identite_numero.replace(/^\s+|\s+$/g, ''))
+      if (i.identite_siren_vendeur !== null) expect(i.identite_siren_vendeur).toMatch(/^[0-9]{9}$/)
+      if (i.identite_nature !== null) expect(['facture', 'avoir']).toContain(i.identite_nature)
+      if (i.identite_date !== null) expect(i.identite_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+  })
+})
+
 // ── L'import d'une facture ───────────────────────────────────────────────────────────────────────────────────────
 
 describe('importerFlux', () => {
@@ -411,6 +492,8 @@ describe('importerFlux', () => {
       flux_hote: HOTE, flux_id: f.id, type_piece: 'achat', statut: 'a_valider', date_piece: '2026-09-15', tiers: 'Fournitures Martin',
       montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
       confiance: 'haute', notes: null,
+      // Un achat ne garde aucune identité : son vendeur est un tiers (ligne 28.6).
+      identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     }])
     expect(contexte.hashsConnus.has(hash)).toBe(true)
     expect(journal.textes).toHaveLength(1)
@@ -430,6 +513,32 @@ describe('importerFlux', () => {
   it('une vente a l’acheteur pour tiers, et le dossier pour vendeur', async () => {
     await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' })))
     expect(journal.inserts[0]).toMatchObject({ type_piece: 'vente', tiers: 'Cabinet des Lilas', confiance: 'haute' })
+  })
+
+  it('une vente garde l’identité que son original dit : numéro, SIREN du vendeur, date, nature (ligne 28.6)', async () => {
+    await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' }), xml(cii({ numero: 'F2026-0007' }))))
+    expect(journal.inserts[0]).toMatchObject({
+      type_piece: 'vente', identite_numero: 'F2026-0007', identite_siren_vendeur: '123456782', identite_date: '2026-09-15',
+      identite_nature: 'facture',
+    })
+    await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' }), xml(cii({ numero: 'A2026-0001', type: '381' }))))
+    expect(journal.inserts[1]).toMatchObject({ identite_numero: 'A2026-0001', identite_nature: 'avoir', montant_ttc: -120 })
+  })
+
+  it('un original qui ne dit pas le SIREN de son vendeur garde son numéro sans SIREN : rien n’est deviné', async () => {
+    await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' }), xml(cii({ numero: 'F2026-0007', vendeur: '' }))))
+    expect(journal.inserts[0]).toMatchObject({
+      type_piece: 'vente', confiance: 'moyenne',
+      identite_numero: 'F2026-0007', identite_siren_vendeur: null, identite_date: '2026-09-15', identite_nature: 'facture',
+    })
+  })
+
+  it('une vente dont le numéro sort de la règle G1.05, ou illisible, ne garde aucune identité', async () => {
+    const sans = { identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null }
+    await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' }), xml(cii({ numero: 'F#42' }))))
+    expect(journal.inserts[0]).toMatchObject({ type_piece: 'vente', ...sans })
+    await importerFlux(ctx({ sirenDossier: '123456782' }), deposer(flux({ sens: 'vente' }), xml('<facture>pas une norme</facture>')))
+    expect(journal.inserts[1]).toMatchObject({ type_piece: 'vente', confiance: 'basse', ...sans })
   })
 
   it('le sens se relit dans la réponse au téléchargement, pas dans la liste', async () => {

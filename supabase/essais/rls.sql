@@ -110,6 +110,14 @@
 -- précédents, caractère pour caractère (32 144 caractères, empreinte 95048df511611d0bd486747149697640) :
 -- seul cet en-tête a changé depuis. La table nouvelle est vide en production : ce que ses policies et sa
 -- garde refusent sur une ligne qui EXISTE est éprouvé par `statutsFacturesRecus.sql`.
+--
+-- 09/10/2026 — PASSAGE COMPLET après `identite_des_factures_recues`, qui ajoute à `pieces` quatre colonnes,
+-- cinq contraintes et une garde, sans toucher à aucune policy : 22 lignes de verdict (56 tables du
+-- schéma, dont 48 portant un `dossier_id`, + 3 buckets, 3 profils), 0 en faute, et 14 mutations sur 14
+-- qui mordent (M2 : exactement 3). Le texte reçu est celui des trois passages précédents, caractère pour
+-- caractère (32 144 caractères, empreinte 95048df511611d0bd486747149697640). Ce que la garde et les
+-- contraintes refusent, et que le client ne peut pas écrire d'identité, est éprouvé par
+-- `identiteFacturesRecues.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

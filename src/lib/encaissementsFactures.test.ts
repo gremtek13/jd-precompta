@@ -43,7 +43,8 @@ const LIGNES: LigneDeFacture[] = [
 
 function facture(o: Partial<FacturePourEncaissement> = {}): FacturePourEncaissement {
   return {
-    id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', date_emission: '2027-10-01',
+    id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2027-0042', date_emission: '2027-10-01',
+    emetteur_siret: '12345678200010',
     montant_ht: 1150, montant_tva: 205.5, montant_ttc: 1355.5, superpdp_invoice_id: null, tiers_nom: 'Client Fictif SAS',
     ...o,
   }
@@ -466,7 +467,7 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
     attendreLeMessageDeLEssai('6', refus(contexte({ facture: facture({ dossier_id: 'd2' }) }), saisie())?.message)
     attendreLeMessageDeLEssai('8', refus(contexte({ facture: facture({ statut: 'brouillon' }) }), saisie())?.message)
     attendreLeMessageDeLEssai('9', refus(contexte({ facture: facture({ type: 'avoir' }) }), saisie())?.message)
-    const rejet = { facture_id: 'f1', etat: 'rejete' as const, hote: 'pa.exemple.fr', flux_id: 'flux-1' }
+    const rejet = { facture_id: 'f1', canal: 'plateforme' as const, etat: 'rejete' as const, hote: 'pa.exemple.fr', flux_id: 'flux-1' }
     attendreLeMessageDeLEssai('10', refus(contexte({ transmissions: [rejet] }), saisie())?.message)
     attendreLeMessageDeLEssai('11', refus(contexte({ evenementsSuperpdp: [{ facture_id: 'f1', status_code: 'fr:210' }] }), saisie())?.message)
     attendreLeMessageDeLEssai('12', refus(contexte({ evenementsSuperpdp: [{ facture_id: 'f1', status_code: 'fr:213' }] }), saisie())?.message)
@@ -480,9 +481,9 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
 
   it('une transmission ou un événement d’une autre facture, un autre état ou un autre statut ne refusent rien', () => {
     for (const etat of ['envoi', 'echec', 'depose', 'accepte'] as const) {
-      expect(refus(contexte({ transmissions: [{ facture_id: 'f1', etat, hote: 'h', flux_id: null }] }), saisie())).toBeNull()
+      expect(refus(contexte({ transmissions: [{ facture_id: 'f1', canal: 'plateforme', etat, hote: 'h', flux_id: null }] }), saisie())).toBeNull()
     }
-    expect(refus(contexte({ transmissions: [{ facture_id: 'f2', etat: 'rejete', hote: 'h', flux_id: null }] }), saisie())).toBeNull()
+    expect(refus(contexte({ transmissions: [{ facture_id: 'f2', canal: 'plateforme', etat: 'rejete', hote: 'h', flux_id: null }] }), saisie())).toBeNull()
     for (const status_code of ['fr:200', 'fr:205', 'fr:212', 'fr:501', 'api:rejected']) {
       expect(refus(contexte({ evenementsSuperpdp: [{ facture_id: 'f1', status_code }] }), saisie()), status_code).toBeNull()
     }
@@ -712,7 +713,7 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
     let c = contexte({
       facture: { ...juste, dossier_id: 'd2', statut: 'brouillon', type: 'avoir', montant_tva: 208 },
       lignes,
-      transmissions: [{ facture_id: 'f1', etat: 'rejete', hote: 'h', flux_id: 'x' }],
+      transmissions: [{ facture_id: 'f1', canal: 'plateforme', etat: 'rejete', hote: 'h', flux_id: 'x' }],
     })
     let s = saisie({ date: null, montant: null, moyen: null, ligneBancaireId: 'inconnu', repartition: [] })
     const etapes: [string, () => void][] = [
@@ -1473,8 +1474,11 @@ describe('echeanceDeDeclaration — le 10 du mois suivant au réel, le 25 du moi
 // ── La pièce jumelle et les propositions ──────────────────────────────────────────────────────────────────────────
 
 describe('piecesJumelles — la même vente, entrée aussi comme pièce', () => {
-  const T = { facture_id: 'f1', etat: 'accepte' as const, hote: 'pa.exemple.fr', flux_id: 'flux-9' }
-  const piece = (o: Partial<PieceLue>): PieceLue => ({ id: 'p', dossier_id: D, flux_hote: null, flux_id: null, superpdp_invoice_id: null, ...o })
+  const T = { facture_id: 'f1', canal: 'plateforme' as const, etat: 'accepte' as const, hote: 'pa.exemple.fr', flux_id: 'flux-9' }
+  const piece = (o: Partial<PieceLue>): PieceLue => ({
+    id: 'p', dossier_id: D, flux_hote: null, flux_id: null, superpdp_invoice_id: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, ...o,
+  })
 
   it('par le flux qui a transmis la facture, ou par l’identifiant de Super PDP', () => {
     const pieces = [
@@ -1499,11 +1503,36 @@ describe('piecesJumelles — la même vente, entrée aussi comme pièce', () => 
     expect(piecesJumelles(contexte({ transmissions: [{ ...T, facture_id: 'f2' }] }), [piece({ id: 'flux', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9' })]))
       .toEqual([])
   })
+
+  // Ce que le pont de la ligne 28.6 apporte aux propositions (lib/ventesJumelles.ts, qui en porte les cas un par un).
+  const IDENTITE = {
+    identite_numero: 'F2027-0042', identite_siren_vendeur: '123456782', identite_date: '2027-10-01', identite_nature: 'facture' as const,
+  }
+
+  it('par l’identifiant que la transmission Super PDP a gardé, quand l’écriture sur la facture a échoué', () => {
+    const spdp = { facture_id: 'f1', canal: 'superpdp' as const, etat: 'depose' as const, hote: 'api.superpdp.tech', flux_id: '4242' }
+    expect(piecesJumelles(contexte({ transmissions: [spdp] }), [piece({ id: 'spdp', superpdp_invoice_id: 4242 })]).map((p) => p.id))
+      .toEqual(['spdp'])
+  })
+
+  it('par l’identité que son original dit : le numéro, le SIREN figé, l’année — une autre année est une autre facture', () => {
+    expect(piecesJumelles(contexte(), [piece({ id: 'recue', ...IDENTITE })]).map((p) => p.id)).toEqual(['recue'])
+    expect(piecesJumelles(contexte(), [piece({ id: 'recue', ...IDENTITE, identite_date: '2026-10-01' })])).toEqual([])
+    expect(piecesJumelles(contexte(), [piece({ id: 'recue', ...IDENTITE, identite_siren_vendeur: '987654321' })])).toEqual([])
+  })
+
+  it('une pièce dont l’identité contredit la facture n’est la jumelle de rien, même portée par son flux', () => {
+    const contraire = piece({ id: 'x', ...IDENTITE, identite_nature: 'avoir', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9' })
+    expect(piecesJumelles(contexte({ transmissions: [T] }), [contraire])).toEqual([])
+  })
 })
 
 describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien ne s’écrit seul', () => {
-  const T = { facture_id: 'f1', etat: 'accepte' as const, hote: 'pa.exemple.fr', flux_id: 'flux-9' }
-  const JUMELLE: PieceLue = { id: 'pj', dossier_id: D, flux_hote: 'pa.exemple.fr', flux_id: 'flux-9', superpdp_invoice_id: null }
+  const T = { facture_id: 'f1', canal: 'plateforme' as const, etat: 'accepte' as const, hote: 'pa.exemple.fr', flux_id: 'flux-9' }
+  const JUMELLE: PieceLue = {
+    id: 'pj', dossier_id: D, flux_hote: 'pa.exemple.fr', flux_id: 'flux-9', superpdp_invoice_id: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+  }
   const RESTES = [{ taux: 20, centimes: 120000 }, { taux: 5.5, centimes: 10550 }, { taux: 0, centimes: 5000 }]
   const ligne = (o: Partial<LignePayante>): LignePayante => ({
     id: 'm1', piece_id: 'pj', date: '2027-10-15', montant: 1355.5, statut: 'rapprochee', reglement_groupe: false, ...o,
@@ -1511,6 +1540,15 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   const proposer = (
     mouvements: MouvementPropose[], lignes: LignePayante[], o: Partial<ContexteFacture> = {}, reglements: PartReglee[] = [],
   ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI)
+
+  it('la jumelle reconnue par son identité seule propose son paiement comme jumelle, pas comme un crédit du relevé', () => {
+    const parIdentite: PieceLue = {
+      ...JUMELLE, flux_hote: null, flux_id: null,
+      identite_numero: 'F2027-0042', identite_siren_vendeur: '123456782', identite_date: '2027-10-01', identite_nature: 'facture',
+    }
+    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI)
+    expect(p.map((x) => [x.source, x.ligneBancaireId, x.piecesPayees])).toEqual([['jumelle', 'm1', ['pj']]])
+  })
 
   it('le paiement de la pièce jumelle qui solde la facture : le reste de chaque taux', () => {
     const p = proposer([mouvement()], [ligne({})])

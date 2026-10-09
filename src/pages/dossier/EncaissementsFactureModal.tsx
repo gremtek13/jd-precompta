@@ -142,7 +142,7 @@ async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: 
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
     lireTout<PieceEcran>((debut, fin) =>
-      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, tiers, nom_fichier', { count: 'exact' })
+      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, tiers, nom_fichier', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
     // Les déclarations du DOSSIER, échouées et rejetées comprises : le module décide lui-même de ce qui compte.

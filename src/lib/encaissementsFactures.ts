@@ -5,9 +5,10 @@ import { ajouterMois, anneeDe, dernierJourDuMois, formatDate, formatMoney, moisD
 import type { PaiementsDesPieces } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
+import { jumellesDeLaFacture, type PiecePourJumelle } from './ventesJumelles'
 import type {
   EncaissementFacture, EncaissementFactureTaux, EtatTransmission, FactureEmise, FactureLigne, FactureSuperpdpEvent,
-  LigneBancaire, MoyenEncaissement, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
+  LigneBancaire, MoyenEncaissement, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from './types'
 
 // LES ENCAISSEMENTS D'UNE FACTURE ÉMISE, TELS QUE L'ÉCRAN LES DIT (ligne 28.5, étape d2). Un module PUR : il ne lit rien
@@ -42,15 +43,17 @@ import type {
 
 // ── Ce que l'écran lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
-/** La facture, telle que les refus, le reste et les propositions la lisent. */
+/** La facture, telle que les refus, le reste et les propositions la lisent — son numéro et son émetteur figé pour
+ * reconnaître sa pièce jumelle par son identité (lib/ventesJumelles.ts). */
 export type FacturePourEncaissement = Pick<FactureEmise,
-  'id' | 'dossier_id' | 'statut' | 'type' | 'date_emission' | 'montant_ht' | 'montant_tva' | 'montant_ttc'
-  | 'superpdp_invoice_id' | 'tiers_nom'>
+  'id' | 'dossier_id' | 'statut' | 'type' | 'numero' | 'date_emission' | 'emetteur_siret' | 'montant_ht' | 'montant_tva'
+  | 'montant_ttc' | 'superpdp_invoice_id' | 'tiers_nom'>
 
 /** Une ligne de facture : son `facture_id` la rattache, et le module ne garde que celles de SA facture. */
 export type LigneDeFacture = Pick<FactureLigne, 'facture_id' | 'ordre' | 'designation' | 'quantite' | 'prix_unitaire_ht' | 'taux_tva'>
 
-export type TransmissionLue = Pick<TransmissionFacture, 'facture_id' | 'etat' | 'hote' | 'flux_id'>
+/** Une transmission de la facture : son canal dit si son flux est l'identifiant de Super PDP (lib/ventesJumelles.ts). */
+export type TransmissionLue = Pick<TransmissionFacture, 'facture_id' | 'canal' | 'etat' | 'hote' | 'flux_id'>
 export type EvenementSuperpdpLu = Pick<FactureSuperpdpEvent, 'facture_id' | 'status_code'>
 export type { StatutPlateformeLu }
 export type EncaissementLu = Pick<EncaissementFacture,
@@ -878,19 +881,18 @@ export function echeanceDeDeclaration(dateEncaissement: string, statutTva: Statu
 
 // ── Les propositions ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type PieceLue = Pick<Piece, 'id' | 'dossier_id' | 'flux_hote' | 'flux_id' | 'superpdp_invoice_id'>
+export type PieceLue = PiecePourJumelle
 
 /**
- * La PIÈCE JUMELLE : la même vente, entrée aussi comme pièce du dossier — réimportée depuis la plateforme du client, par
- * le flux qui l'a transmise (`flux_hote`, `flux_id` de la transmission), ou par l'ancienne synchronisation de Super PDP
- * (`superpdp_invoice_id`). Rien d'autre ne relie une facture émise à une pièce : ni un nom, ni un montant.
+ * La PIÈCE JUMELLE : la même vente, revenue comme pièce du dossier de la plateforme du client ou de Super PDP. Le pont
+ * de la ligne 28.6 la reconnaît (lib/ventesJumelles.ts) : par le flux qui l'a transmise, par l'identifiant de Super PDP
+ * — celui de la facture, ou celui que sa transmission a gardé —, ou par l'identité que son original dit (numéro, SIREN
+ * figé, année : règle G1.42). Rien d'autre ne relie une facture émise à une pièce : ni un nom, ni un montant. Une pièce
+ * dont les preuves se contredisent n'est la jumelle de rien.
  */
 export function piecesJumelles(c: Pick<ContexteFacture, 'facture' | 'transmissions'>, pieces: readonly PieceLue[]): PieceLue[] {
-  const f = c.facture
-  const flux = c.transmissions.filter((t) => t.facture_id === f.id && t.flux_id != null)
-  return pieces.filter((p) => p.dossier_id === f.dossier_id && (
-    (f.superpdp_invoice_id != null && p.superpdp_invoice_id === f.superpdp_invoice_id)
-    || flux.some((t) => p.flux_hote === t.hote && p.flux_id === t.flux_id)))
+  const jumelles = new Set(jumellesDeLaFacture(c.facture, c.transmissions, pieces).map((j) => j.pieceId))
+  return pieces.filter((p) => jumelles.has(p.id))
 }
 
 /** Un mouvement du relevé, tel que les propositions le lisent : son libellé, et ce que le cabinet en a dit. */

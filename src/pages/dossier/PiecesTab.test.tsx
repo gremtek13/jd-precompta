@@ -153,6 +153,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     // `superpdp_invoice_id`. Aucune n'était visible en relisant.
     uploaded_by: null, source: 'upload', conversion_source: null,
     notes: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, updated_at: '2026-09-16T09:00:00Z',
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
     created_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
