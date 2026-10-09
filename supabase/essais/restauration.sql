@@ -52,6 +52,11 @@
 -- la révision — une chaîne de trois sur 2024 et 2025, une reprise, quatre preuves — par les fonctions
 -- de la base : 58 tables recréées, 53 restaurées et IDENTIQUES à la source (20 lignes), les décisions en
 -- quatre vagues, 0 écart, aucun arrêt.
+--
+-- 09/10/2026, espace client P0 : `notes_internes` entre au plan (59 tables), après les pièces et les documents
+-- qu'elle annote. Le script n'a PAS été rejoué depuis — aucune réplique complète n'était montée ; ce que la
+-- restauration fait des anciennes colonnes des notes (`sansAnciennesNotes`, en TypeScript) n'est pas de son ressort :
+-- il recopie des lignes, il ne les transforme pas.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -73,8 +78,8 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (36,'facture_superpdp_events'),(37,'statuts_factures_recus'),(38,'transmissions_factures'),(39,'mouvements_cca'),(40,'pieces'),
  (41,'supplements'),(42,'regles_affectation_bancaire'),(43,'tiers_categories'),(44,'tiers_categories_cabinet'),(45,'immobilisations'),
  (46,'lignes_bancaires'),(47,'ventilations_bancaires'),(48,'reglements_groupes'),(49,'encaissements_factures'),(50,'encaissements_factures_taux'),
- (51,'transmissions_encaissements'),(52,'lettrages_manuels'),(53,'piece_commentaires'),(54,'piece_textes_ocr'),(55,'ecritures_brouillon'),
- (56,'revision_justifications'),(57,'revision_preuves'),(58,'exercices_valides');
+ (51,'transmissions_encaissements'),(52,'lettrages_manuels'),(53,'piece_commentaires'),(54,'piece_textes_ocr'),(55,'notes_internes'),
+ (56,'ecritures_brouillon'),(57,'revision_justifications'),(58,'revision_preuves'),(59,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -87,7 +92,8 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('facture_lignes','par_parent','factures_emises','facture_id'),('facture_numerotation','direct',null,null),('facture_superpdp_events','direct',null,null),
  ('factures_emises','direct',null,null),('immobilisations','direct',null,null),('informations_dossier','direct',null,null),
  ('lettrages_manuels','direct',null,null),('lignes_bancaires','direct',null,null),('memberships','direct',null,null),
- ('mouvements_cca','par_parent','comptes_courants_associes','compte_id'),('natures_immobilisation','partage',null,null),('packs','direct',null,null),
+ ('mouvements_cca','par_parent','comptes_courants_associes','compte_id'),('natures_immobilisation','partage',null,null),('notes_internes','direct',null,null),
+ ('packs','direct',null,null),
  ('piece_commentaires','direct',null,null),('piece_textes_ocr','direct',null,null),('pieces','direct',null,null),
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),

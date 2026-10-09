@@ -39,6 +39,17 @@ const faux = vi.hoisted(() => ({
   extractions: 0,
   porteExtraction: null as Promise<void> | null,
   erreurExtraction: null as Error | null,
+  // LA NOTE INTERNE (`notes_internes`, espace client P0) : ce que rend sa lecture — `null` la laisse EN ATTENTE —, les
+  // lectures demandées, les écritures envoyées et la réponse de chacune.
+  noteLue: { data: null, error: null } as null | { data: unknown; error: unknown },
+  resoudreNote: null as null | ((v: { data: unknown; error: unknown }) => void),
+  // Toutes les lectures restées en attente, dans l'ordre : pour rendre une réponse APRÈS celle d'une lecture suivante.
+  lecturesEnAttente: [] as ((v: { data: unknown; error: unknown }) => void)[],
+  lecturesNote: [] as unknown[][],
+  notesEcrites: [] as { ligne: unknown; options: unknown }[],
+  reponseNoteEcrite: { error: null } as { error: unknown },
+  // L'ordre des écritures, toutes tables confondues : la note part AVANT la pièce.
+  ordre: [] as string[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -52,6 +63,7 @@ vi.mock('../../lib/supabase', () => ({
           },
           update: (ligne: unknown) => {
             faux.updates.push(ligne)
+            faux.ordre.push('pieces.update')
             return { eq: () => Promise.resolve({ error: null }) }
           },
           // La suppression rend la ligne supprimée (`.select('id').maybeSingle()`) : c'est elle qui autorise le retrait
@@ -62,6 +74,27 @@ vi.mock('../../lib/supabase', () => ({
               return { select: () => ({ maybeSingle: () => Promise.resolve({ data: { id }, error: null }) }) }
             },
           }),
+        }
+      }
+      if (table === 'notes_internes') {
+        return {
+          select: (colonnes: string) => ({
+            eq: (colonne: string, valeur: unknown) => ({
+              maybeSingle: () => {
+                faux.lecturesNote.push([colonnes, colonne, valeur])
+                if (faux.noteLue) return Promise.resolve(faux.noteLue)
+                return new Promise((resolve) => {
+                  faux.resoudreNote = resolve
+                  faux.lecturesEnAttente.push(resolve)
+                })
+              },
+            }),
+          }),
+          upsert: (ligne: unknown, options: unknown) => {
+            faux.notesEcrites.push({ ligne, options })
+            faux.ordre.push('notes_internes.upsert')
+            return Promise.resolve(faux.reponseNoteEcrite)
+          },
         }
       }
       // Volontairement bruyant : une table inattendue doit nommer ce que le test n'avait pas prévu,
@@ -151,6 +184,13 @@ beforeEach(() => {
   faux.extractions = 0
   faux.porteExtraction = null
   faux.erreurExtraction = null
+  faux.noteLue = { data: null, error: null }
+  faux.resoudreNote = null
+  faux.lecturesEnAttente = []
+  faux.lecturesNote = []
+  faux.notesEcrites = []
+  faux.reponseNoteEcrite = { error: null }
+  faux.ordre = []
 })
 
 describe('FichePiece — le verrou d’enregistrement d’une pièce', () => {
@@ -616,8 +656,10 @@ describe('FichePiece — une pièce figée par un exercice validé', () => {
   }
   const champ = (id: string) => document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`#${id}`)!
 
-  it('le dit, grise ce que la base refuserait, et laisse libres les notes et le sous-dossier', () => {
+  it('le dit, grise ce que la base refuserait, et laisse libres les notes et le sous-dossier', async () => {
     monterFigee()
+    // La note se lit à part (sa table, que la validation ne fige pas) : le champ s'ouvre une fois lue.
+    await act(async () => {})
     expect(screen.getByText(/L'exercice 2025 est validé : cette pièce justifie une écriture validée\. Sa date, son tiers, son type, sa catégorie, ses montants et son fichier ne changent plus/)).toBeTruthy()
     for (const id of ['file', 'date', 'type', 'tiers', 'categorie', 'ht', 'tva', 'ttc']) expect(champ(id).disabled, id).toBe(true)
     for (const id of ['notes', 'sousDossier']) expect(champ(id).disabled, id).toBe(false)
@@ -629,21 +671,30 @@ describe('FichePiece — une pièce figée par un exercice validé', () => {
     expect(boutonProposer()).toBeNull()
   })
 
-  it('« Enregistrer » n’envoie que les notes et le sous-dossier, puis ferme la fiche', async () => {
+  it('« Enregistrer » n’envoie que la note interne et le sous-dossier, puis ferme la fiche', async () => {
     const { fermee, enregistree } = monterFigee()
+    await act(async () => {})
     fireEvent.change(champ('notes'), { target: { value: 'Repas avec un confrère' } })
     fireEvent.change(champ('sousDossier'), { target: { value: 'sd-1' } })
     await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
-    expect(faux.updates).toEqual([{ notes: 'Repas avec un confrère', sous_dossier_id: 'sd-1' }])
+    // La note dans sa table, que le client ne lit pas ; la pièce ne porte plus que son sous-dossier.
+    expect(faux.notesEcrites).toEqual([{
+      ligne: { dossier_id: 'd1', piece_id: 'piece-1', texte: 'Repas avec un confrère' }, options: { onConflict: 'piece_id' },
+    }])
+    expect(faux.updates).toEqual([{ sous_dossier_id: 'sd-1' }])
+    expect(faux.ordre).toEqual(['notes_internes.upsert', 'pieces.update'])
     expect(enregistree).toHaveBeenCalledTimes(1)
     expect(fermee).toHaveBeenCalledTimes(1)
   })
 
   it('trois envois rapprochés n’enregistrent qu’une fois', async () => {
     monterFigee()
+    await act(async () => {})
+    fireEvent.change(champ('notes'), { target: { value: 'Repas' } })
     const bouton = screen.getByRole('button', { name: 'Enregistrer' })
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
     expect(faux.updates).toHaveLength(1)
+    expect(faux.notesEcrites).toHaveLength(1)
   })
 
   it('une pièce en devise figée ne se reconvertit plus — non figée, si', () => {
@@ -663,5 +714,194 @@ describe('FichePiece — une pièce figée par un exercice validé', () => {
     expect(screen.getByRole('button', { name: /Supprimer/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Valider' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Enregistrer brouillon' })).toBeTruthy()
+  })
+})
+
+// LA NOTE INTERNE, HORS DE PORTÉE DU CLIENT (espace client, étape P0, 09/10/2026). Elle ne vit plus sur la pièce, que le
+// client du dossier lit, mais dans `notes_internes`, que le cabinet seul lit : la fiche la lit à part, ne l'offre qu'une
+// fois LUE (un champ vide faute d'avoir lu l'effacerait au premier enregistrement), l'écrit AVANT la pièce et seulement
+// si elle a changé, et ne pose plus jamais la colonne de la pièce.
+describe('FichePiece — la note interne, hors de portée du client', () => {
+  function monterNote(o: { piece?: Partial<Piece> | null } = {}) {
+    faux.updates = []
+    faux.inserts = []
+    const modifiee = vi.fn()
+    const fermee = vi.fn()
+    const enregistree = vi.fn()
+    render(
+      <FichePiece
+        dossierId="d1"
+        categories={CATEGORIES}
+        sousDossiers={[]}
+        tiersCategories={[]}
+        tiersCategoriesCabinet={[]}
+        tiersConnus={[]}
+        piece={o.piece === null ? null : pieceDeTest({ statut: 'a_valider', ...o.piece })}
+        commentaires={[]}
+        onClose={fermee}
+        onSaved={enregistree}
+        onCommentaireAjoute={() => {}}
+        onCommentaireSupprime={() => {}}
+        onModifiee={modifiee}
+      />,
+    )
+    return { modifiee, fermee, enregistree }
+  }
+  const champNote = () => document.querySelector<HTMLTextAreaElement>('#notes')
+  const enregistrer = () => screen.getByRole('button', { name: 'Enregistrer brouillon' })
+
+  it('lit la note de CETTE pièce dans sa table, et l’offre une fois lue', async () => {
+    faux.noteLue = null
+    monterNote()
+    expect(faux.lecturesNote).toEqual([['texte', 'piece_id', 'piece-1']])
+    // Pas encore lue : le champ n'est pas offert, et le dit.
+    expect(champNote()!.disabled).toBe(true)
+    expect(champNote()!.placeholder).toBe('Lecture de la note…')
+    await act(async () => { faux.resoudreNote!({ data: { texte: 'Vu avec le client le 3 mars.' }, error: null }) })
+    expect(champNote()!.disabled).toBe(false)
+    expect(champNote()!.value).toBe('Vu avec le client le 3 mars.')
+    expect(screen.getByText(/Pour le cabinet seul : le client ne la lit pas\./)).toBeTruthy()
+  })
+
+  it('n’affiche plus l’ancienne colonne de la pièce, même remplie', async () => {
+    monterNote({ piece: { notes: 'ANCIENNE NOTE RESTÉE SUR LA PIÈCE' } })
+    await act(async () => {})
+    expect(champNote()!.value).toBe('')
+    expect(screen.queryByDisplayValue('ANCIENNE NOTE RESTÉE SUR LA PIÈCE')).toBeNull()
+  })
+
+  it('pas encore lue, l’enregistrement de la pièce n’y touche pas', async () => {
+    faux.noteLue = null
+    const { fermee } = monterNote()
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([])
+    expect(faux.updates).toHaveLength(1)
+    expect(faux.updates[0]).not.toHaveProperty('notes')
+    expect(fermee).toHaveBeenCalledTimes(1)
+  })
+
+  it('illisible, elle dit pourquoi, ne s’offre pas, se relit sur un clic, et l’enregistrement n’y touche pas', async () => {
+    faux.noteLue = { data: null, error: { message: 'permission denied for table notes_internes', code: '42501' } }
+    monterNote()
+    await act(async () => {})
+    expect(champNote()).toBeNull()
+    expect(screen.getByText(/La note interne n’a pas pu être lue \(permission denied for table notes_internes\)/)).toBeTruthy()
+    faux.noteLue = { data: { texte: 'Relue.' }, error: null }
+    await act(async () => { screen.getByRole('button', { name: 'Relire la note' }).click() })
+    expect(faux.lecturesNote).toHaveLength(2)
+    expect(champNote()!.value).toBe('Relue.')
+  })
+
+  it('illisible, l’enregistrement de la pièce part sans elle', async () => {
+    faux.noteLue = { data: null, error: { message: 'permission denied for table notes_internes', code: '42501' } }
+    const { fermee } = monterNote()
+    await act(async () => {})
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([])
+    expect(faux.updates).toHaveLength(1)
+    expect(faux.updates[0]).not.toHaveProperty('notes')
+    expect(fermee).toHaveBeenCalledTimes(1)
+  })
+
+  it('modifiée, elle part AVANT la pièce, dans sa table, et la pièce ne porte plus la colonne', async () => {
+    faux.noteLue = { data: { texte: 'Avant.' }, error: null }
+    const { modifiee } = monterNote()
+    await act(async () => {})
+    expect(modifiee).toHaveBeenLastCalledWith(false)
+    fireEvent.change(champNote()!, { target: { value: 'Après.' } })
+    // La garde de sortie la compte comme une saisie à ne pas perdre.
+    expect(modifiee).toHaveBeenLastCalledWith(true)
+    await act(async () => { enregistrer().click() })
+    expect(faux.ordre).toEqual(['notes_internes.upsert', 'pieces.update'])
+    expect(faux.notesEcrites).toEqual([{ ligne: { dossier_id: 'd1', piece_id: 'piece-1', texte: 'Après.' }, options: { onConflict: 'piece_id' } }])
+    expect(faux.updates[0]).not.toHaveProperty('notes')
+  })
+
+  it('inchangée, elle ne s’écrit pas ; effacée, elle s’écrit vide — jamais retirée', async () => {
+    faux.noteLue = { data: { texte: 'À effacer.' }, error: null }
+    monterNote()
+    await act(async () => {})
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([])
+    cleanup()
+
+    monterNote()
+    await act(async () => {})
+    fireEvent.change(champNote()!, { target: { value: '' } })
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([{ ligne: { dossier_id: 'd1', piece_id: 'piece-1', texte: '' }, options: { onConflict: 'piece_id' } }])
+  })
+
+  it('refusée, elle dit la raison, la pièce n’est pas écrite, la fiche reste ouverte et le verrou se relâche', async () => {
+    faux.noteLue = { data: { texte: '' }, error: null }
+    faux.reponseNoteEcrite = { error: { message: 'new row violates row-level security policy for table "notes_internes"', code: '42501' } }
+    const { fermee, enregistree } = monterNote()
+    await act(async () => {})
+    fireEvent.change(champNote()!, { target: { value: 'Une note.' } })
+    await act(async () => { enregistrer().click() })
+    expect(screen.getByText(/new row violates row-level security policy for table "notes_internes"/)).toBeTruthy()
+    expect(faux.updates).toEqual([])
+    expect(fermee).not.toHaveBeenCalled()
+    expect(enregistree).not.toHaveBeenCalled()
+    // La saisie reste, et un nouvel essai repart.
+    expect(champNote()!.value).toBe('Une note.')
+    faux.reponseNoteEcrite = { error: null }
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toHaveLength(2)
+    expect(faux.updates).toHaveLength(1)
+  })
+
+  it('une pièce en cours de création n’a pas encore de note : rien n’est lu ni offert', async () => {
+    monterNote({ piece: null })
+    await act(async () => {})
+    expect(faux.lecturesNote).toEqual([])
+    expect(champNote()).toBeNull()
+  })
+
+  // La fiche est clée par pièce dans PiecesTab ; le composant, lui, ne le suppose pas : passée d'une pièce à l'autre
+  // sans se remonter, la réponse tardive de la pièce quittée ne déplace rien — ni la lecture, ni le texte du champ.
+  it('une réponse pour une pièce déjà quittée ne déplace rien, quel que soit l’ordre des réponses', async () => {
+    const props = {
+      dossierId: 'd1', categories: CATEGORIES, sousDossiers: [], tiersCategories: [], tiersCategoriesCabinet: [], tiersConnus: [],
+      commentaires: [], onClose: () => {}, onSaved: () => {}, onCommentaireAjoute: () => {}, onCommentaireSupprime: () => {},
+    }
+    faux.noteLue = null
+    const { rerender } = render(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-A', statut: 'a_valider' })} />)
+    rerender(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-B', statut: 'a_valider' })} />)
+    expect(faux.lecturesNote).toEqual([['texte', 'piece_id', 'piece-A'], ['texte', 'piece_id', 'piece-B']])
+    const [repondreA, repondreB] = faux.lecturesEnAttente
+    // B répond d'abord, puis A, en retard.
+    await act(async () => { repondreB({ data: { texte: 'Note de B' }, error: null }) })
+    await act(async () => { repondreA({ data: { texte: 'Note de A' }, error: null }) })
+    expect(champNote()!.value).toBe('Note de B')
+    expect(champNote()!.disabled).toBe(false)
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([])
+
+    cleanup()
+    faux.lecturesEnAttente = []
+    const second = render(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-A', statut: 'a_valider' })} />)
+    second.rerender(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-B', statut: 'a_valider' })} />)
+    const [tardiveA, lectureB] = faux.lecturesEnAttente
+    // A répond pendant que B se lit encore : rien ne s'offre, et la note de A ne s'affiche pas sous B.
+    await act(async () => { tardiveA({ data: { texte: 'Note de A' }, error: null }) })
+    expect(champNote()!.disabled).toBe(true)
+    expect(champNote()!.value).toBe('')
+    await act(async () => { lectureB({ data: { texte: 'Note de B' }, error: null }) })
+    expect(champNote()!.value).toBe('Note de B')
+
+    cleanup()
+    faux.lecturesEnAttente = []
+    // A est lue, puis la fiche passe à B : tant que B se lit, la note de A ne s'offre pas — ni ne s'écrirait sur B.
+    const troisieme = render(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-A', statut: 'a_valider' })} />)
+    await act(async () => { faux.lecturesEnAttente[0]({ data: { texte: 'Note de A' }, error: null }) })
+    expect(champNote()!.value).toBe('Note de A')
+    troisieme.rerender(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-B', statut: 'a_valider' })} />)
+    expect(champNote()!.disabled).toBe(true)
+    expect(champNote()!.value).toBe('')
+    await act(async () => { enregistrer().click() })
+    expect(faux.notesEcrites).toEqual([])
+    await act(async () => { faux.lecturesEnAttente[1]({ data: { texte: 'Note de B' }, error: null }) })
+    expect(champNote()!.value).toBe('Note de B')
   })
 })

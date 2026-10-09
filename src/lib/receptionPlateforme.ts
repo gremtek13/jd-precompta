@@ -6,6 +6,7 @@ import { slugify } from './format'
 import { hashFichier } from './extraction'
 import { chargerHashsExistants } from './importFichiers'
 import { enregistrerTexteOcr } from './texteOcr'
+import { enregistrerNoteInterne } from './notesInternes'
 import { montantsPourPiece, type MontantsPourPiece } from './tauxChange'
 import { retirerFichiers } from './stockage'
 import {
@@ -310,7 +311,12 @@ export async function preparerReception(
 // ── L'import d'une facture ───────────────────────────────────────────────────────────────────────────────────────
 
 export type IssueImport =
-  | { statut: 'importee'; flux: FluxVu; pieceId: string; avertissements: string[] }
+  /**
+   * `noteNonGardee` : les remarques n'ont pas pu être écrites dans la note interne de la pièce, ET la pièce n'a pas pu
+   * être retirée pour revenir à la recherche suivante — le cas rare où l'import dit les remarques une dernière fois, et
+   * pourquoi elles ne sont pas sur la pièce. Absent quand tout s'est écrit.
+   */
+  | { statut: 'importee'; flux: FluxVu; pieceId: string; avertissements: string[]; noteNonGardee?: string }
   | { statut: 'deja_importee'; flux: FluxVu }
   /** Le même fichier est déjà au dossier (déposé à la main). */
   | { statut: 'doublon'; flux: FluxVu }
@@ -393,8 +399,9 @@ function texteUtf8(octets: Uint8Array): { xml: string } | { refus: string } {
 }
 
 /**
- * Ce que l'import a remarqué sur une facture, laissé dans les notes internes de sa pièce : c'est dans sa fiche qu'on la
- * valide, bien après que la fenêtre de l'import s'est refermée — une remarque dite une fois puis jetée ne contrôle rien.
+ * Ce que l'import a remarqué sur une facture, laissé dans la note interne de sa pièce (`notes_internes`, que le client
+ * ne lit pas) : c'est dans sa fiche qu'on la valide, bien après que la fenêtre de l'import s'est refermée — une
+ * remarque dite une fois puis jetée ne contrôle rien.
  */
 export function notesDImport(avertissements: string[]): string | null {
   if (avertissements.length === 0) return null
@@ -538,20 +545,48 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
     tiers: facture ? tiersDeLaFacture(facture, confirme.sens) : null,
     ...montants,
     confiance: facture === null ? 'basse' : douteuse ? 'moyenne' : confianceDeLaFacture(facture),
-    notes: notesDImport(avertissements),
     ...identiteDeLaVente(facture, confirme.sens),
   }).select('id').single()
+  const fichiers = cheminLisible ? [chemin, cheminLisible] : [chemin]
   if (error || !data) {
     // Rien ne pointe sur les fichiers déposés : ils repartent, sinon ils resteraient orphelins jusqu'à la suppression du
     // dossier entier.
-    await retirerFichiers('pieces', cheminLisible ? [chemin, cheminLisible] : [chemin], 'receptionPlateforme')
+    await retirerFichiers('pieces', fichiers, 'receptionPlateforme')
     const code = (error as { code?: unknown } | null)?.code
     if (code === '23505' && /pieces_flux_unique/.test(messageErreur(error, ''))) return { statut: 'deja_importee', flux }
     return { statut: 'echec', flux, definitif: false, message: messageErreur(error, 'La pièce n’a pas pu être enregistrée.') }
   }
+  const pieceId = data.id as string
+
+  // Les remarques, dans la note interne de la pièce — une autre table que la pièce, que le client ne lit pas : deux
+  // écritures, là où la colonne n'en demandait qu'une. Une pièce sans ses remarques serait validée sans le contrôle
+  // qu'elles portent ; comme tout échec après le dépôt, celui-ci retire ce qui a été déposé, et la facture revient à la
+  // recherche suivante. La ligne d'abord, les fichiers seulement si la base l'a RENDUE retirée (une suppression qui ne
+  // touche rien n'est pas une erreur pour elle) ; sinon la pièce reste au dossier, importée comme les autres (son
+  // empreinte retenue, son texte lu écrit), et l'issue dit ses remarques une dernière fois.
+  let noteNonGardee: string | null = null
+  const note = notesDImport(avertissements)
+  if (note) {
+    try {
+      await enregistrerNoteInterne(ctx.dossierId, { type: 'piece', id: pieceId }, note)
+    } catch (e) {
+      const raison = messageErreur(e, 'La note interne n’a pas pu être enregistrée.')
+      const { data: retiree, error: erreurRetrait } = await supabase.from('pieces').delete().eq('id', pieceId).select('id').maybeSingle()
+      if (!erreurRetrait && retiree) {
+        await retirerFichiers('pieces', fichiers, 'receptionPlateforme')
+        return {
+          statut: 'echec', flux, definitif: false,
+          message: `Ses remarques n’ont pas pu être gardées dans sa note interne (${raison}) : elle n’est pas importée.`,
+        }
+      }
+      noteNonGardee = raison
+    }
+  }
   ctx.hashsConnus.add(hash)
-  if (facture) await enregistrerTexteOcr(ctx.dossierId, { type: 'piece', id: data.id as string }, texteDeLaFacture(facture, confirme.sens))
-  return { statut: 'importee', flux, pieceId: data.id as string, avertissements }
+  if (facture) await enregistrerTexteOcr(ctx.dossierId, { type: 'piece', id: pieceId }, texteDeLaFacture(facture, confirme.sens))
+  return noteNonGardee === null
+    ? { statut: 'importee', flux, pieceId, avertissements }
+    : { statut: 'importee', flux, pieceId, avertissements, noteNonGardee }
 }
 
 // ── Le point de reprise ──────────────────────────────────────────────────────────────────────────────────────────

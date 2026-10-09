@@ -128,6 +128,16 @@
 -- 95048df511611d0bd486747149697640) : seul cet en-tête a changé depuis. Les deux tables nouvelles sont
 -- vides en production : ce que leurs policies et leurs gardes refusent sur une ligne qui EXISTE est
 -- éprouvé par `revisionSoldes.sql`.
+--
+-- 09/10/2026 — PASSAGE COMPLET après `notes_internes_du_cabinet` (espace client, étape P0), qui crée
+-- `notes_internes` et sa policy unique (`for all to authenticated`, `admin_du_dossier` et la cible du
+-- dossier annoncé, aucune branche client) : 22 lignes de verdict (59 tables du schéma, dont 51 portant
+-- un `dossier_id`, + 3 buckets, 3 profils), 0 en faute, et 14 mutations sur 14 qui mordent. Le texte
+-- reçu est la copie adaptée de ce passage, caractère pour caractère (31 822 caractères, empreinte
+-- c3609cc06322574b712a3c17e4d640fe) : adaptée comme les précédentes, ses bordures de commentaire en
+-- plus ramenées à dix traits — rien de ce qui s'exécute ne change, l'empreinte si. La table nouvelle
+-- porte les notes recopiées : ce que sa policy refuse et accepte sur une ligne qui EXISTE, profil par
+-- profil, est éprouvé par `notesInternes.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
