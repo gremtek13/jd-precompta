@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import * as module from './cdarRecu'
 import type { FacturePourStatutRecu, StatutRecuLu } from './cdarRecu'
+import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
 import { ECHOS_RECUS, EXEMPLES_RECUS, SIREN_ACHETEUR_RECU, SIREN_VENDEUR_RECU, echoRecu, factureRecue, messageRecu } from '../test/cdarRecu'
 import { tirage } from '../test/encaissementsBatterie'
 
@@ -45,29 +46,26 @@ type Copie = typeof module
 
 /** Le bloc SEUL, avec le `sirenDe` de la fonction, transpilé et exécuté : tout autre nom emprunté lèverait. */
 function executer(bloc: string): Copie {
-  const js = ts.transpileModule(`${sirenDeDeLaFonction()}\n${bloc}`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText
-  const exports: Record<string, unknown> = {}
-  new Function('exports', js)(exports)
-  return exports as unknown as Copie
+  return executerModule<Copie>(`${sirenDeDeLaFonction()}\n${bloc}`)
 }
 
-/** Les diagnostics du bloc compilé seul, `sirenDe` déclaré : un nom emprunté hors de lui s'y voit, même jamais exécuté. */
-function diagnostics(bloc: string): string[] {
-  const fichier = '/copies/cdarRecu.ts'
-  const code = `declare function sirenDe(siret: string | null | undefined): string | null\n${bloc}`
-  const options: ts.CompilerOptions = {
+/**
+ * Les diagnostics de chaque bloc compilé seul, `sirenDe` déclaré : un nom emprunté hors de lui s'y voit, même jamais
+ * exécuté. Un seul programme pour tous (`compilationSeparee.ts`), bâti dans le `beforeAll` du garde qui les lit.
+ */
+function diagnostics<Cle extends string>(blocs: Record<Cle, string>): Record<Cle, string[]> {
+  const declare = (bloc: string) => `declare function sirenDe(siret: string | null | undefined): string | null\n${bloc}`
+  const sources = Object.fromEntries(Object.entries<string>(blocs).map(([cle, bloc]) => [cle, declare(bloc)]))
+  return diagnosticsSepares(sources as Record<Cle, string>, {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, strict: true, noEmit: true, noUnusedLocals: true,
     noUnusedParameters: true, lib: ['lib.es2022.d.ts'], types: [],
-  }
-  const hote = ts.createCompilerHost(options)
-  const lire = hote.getSourceFile.bind(hote)
-  hote.getSourceFile = (nom, version, ...reste) => (nom === fichier ? ts.createSourceFile(nom, code, version) : lire(nom, version, ...reste))
-  const existe = hote.fileExists.bind(hote)
-  hote.fileExists = (nom) => nom === fichier || existe(nom)
-  return ts.getPreEmitDiagnostics(ts.createProgram([fichier], options, hote))
-    .map((d) => `${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`)
+  })
+}
+
+// Le bloc fidèle, et le même qui emprunte un nom hors de `sirenDe` : le garde doit voir l'emprunt.
+const COMPILES = {
+  origine: ORIGINE,
+  emprunte: ORIGINE.replace('sirenDe(facture.emetteur_siret)', 'sirenDeLaFacture(facture.emetteur_siret)'),
 }
 
 // ── Les épreuves ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -136,6 +134,14 @@ function rattachements(m: Copie, lus: readonly StatutRecuLu[]) {
 const LUS: StatutRecuLu[] = [...EXEMPLES_RECUS, ...ECHOS_RECUS].map((e) => e.lu)
 
 describe('la copie de cdarRecu dans plateforme-agreee', () => {
+  // La compilation se paye UNE fois par fichier, ici : elle relit et vérifie la bibliothèque standard, et refaite dans
+  // chaque test elle approchait les 5 s de Vitest sous la charge de la barrière. Son délai est déclaré pour elle seule,
+  // comme celui du garde du code mort des Edge Functions ; celui des tests ne change pas.
+  let compiles: Record<keyof typeof COMPILES, string[]>
+  beforeAll(() => {
+    compiles = diagnostics(COMPILES)
+  }, 60_000)
+
   it('est au caractère près le bloc de src/lib/cdarRecu.ts', () => {
     expect(COPIE).toBe(ORIGINE)
     // Le bloc commence à sa borne et finit à la sienne : rien de ce que le module importe n'y entre.
@@ -145,10 +151,9 @@ describe('la copie de cdarRecu dans plateforme-agreee', () => {
 
   it('suit la copie du générateur, dont elle emprunte `sirenDe` — et rien d’autre', () => {
     expect(SOURCE.indexOf(DEBUT)).toBeGreaterThan(SOURCE.indexOf('// ── FIN COPIE factureCii '))
-    expect(diagnostics(ORIGINE)).toEqual([])
+    expect(compiles.origine).toEqual([])
     // Le garde voit un emprunt : sans `sirenDe` déclaré, la compilation tombe.
-    expect(diagnostics(ORIGINE.replace('sirenDe(facture.emetteur_siret)', 'sirenDeLaFacture(facture.emetteur_siret)')).join('\n'))
-      .toMatch(/sirenDeLaFacture/)
+    expect(compiles.emprunte.join('\n')).toMatch(/sirenDeLaFacture/)
   })
 
   it('exécutée seule, lit les exemples comme le module, champ par champ', () => {

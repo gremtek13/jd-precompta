@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { CAS_DE_REFUS_CDAR, donneesCdar, EXEMPLES_CDAR } from '../test/cdarEncaissee'
+import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
 import * as cdar from './cdarEncaissee'
 import type { FuseauCdar } from './cdarEncaissee'
 import * as encaissements from './encaissementsFactures'
@@ -54,19 +55,15 @@ const membreDroit = (source: string, type: string) => new RegExp(`^(?:export )?t
 // les déclare ainsi, copiesFacturation.test.ts le garde).
 const DECLARATIONS = ['StatutTva', 'ArticleExoneration', 'NatureOperation'].map((t) => `type ${t} = ${membreDroit(TYPES, t)}`).join('\n')
 
-/** Les diagnostics d'une compilation des blocs seuls : un nom emprunté hors d'eux ou déclaré deux fois s'y voit. */
-function diagnostics(code: string): string[] {
-  const fichier = '/copies/blocs.ts'
-  const options: ts.CompilerOptions = {
+/**
+ * Les diagnostics de chaque compilation des blocs seuls : un nom emprunté hors d'eux ou déclaré deux fois s'y voit. Un
+ * seul programme pour toutes (`compilationSeparee.ts`), bâti dans le `beforeAll` qui suit.
+ */
+function diagnostics<Cle extends string>(codes: Record<Cle, string>): Record<Cle, string[]> {
+  return diagnosticsSepares(codes, {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, strict: true, noEmit: true,
     lib: ['lib.es2022.d.ts'], types: [],
-  }
-  const hote = ts.createCompilerHost(options)
-  const lire = hote.getSourceFile.bind(hote)
-  hote.getSourceFile = (nom, version, ...reste) => (nom === fichier ? ts.createSourceFile(nom, code, version) : lire(nom, version, ...reste))
-  const existe = hote.fileExists.bind(hote)
-  hote.fileExists = (nom) => nom === fichier || existe(nom)
-  return ts.getPreEmitDiagnostics(ts.createProgram([fichier], options, hote)).map((d) => `${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`)
+  })
 }
 
 type Execute = typeof cdar & { centimesExacts: typeof encaissements.centimesExacts }
@@ -74,12 +71,7 @@ const ORIGINAUX: Execute = { ...cdar, centimesExacts: encaissements.centimesExac
 
 /** Les blocs SEULS, transpilés et exécutés : tout nom qu'ils emprunteraient au reste d'un fichier lèverait. */
 function executer(blocs: string[]): Execute {
-  const js = ts.transpileModule(blocs.join('\n'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText
-  const exports: Record<string, unknown> = {}
-  new Function('exports', js)(exports)
-  return exports as unknown as Execute
+  return executerModule<Execute>(blocs.join('\n'))
 }
 
 const DONNEES = [...EXEMPLES_CDAR.map((e) => e.donnees), ...CAS_DE_REFUS_CDAR.map(([, o]) => donneesCdar(o))]
@@ -146,9 +138,32 @@ function collisions(bloc: string, source: string): string[] {
   return [...nomsDePremierNiveau(bloc)].filter((n) => deja.has(n)).sort()
 }
 
+// Les compilations des deux groupes d'épreuves : les cinq blocs fidèles dans l'ordre d'une fonction, puis le bloc du
+// message remplacé par une copie fidèle ou par un défaut planté.
+const avecCdar = (cdarModifie: string) => [DECLARATIONS, ...ORDRE.slice(0, -1).map((n) => ORIGINE[n]), cdarModifie].join('\n')
+// Un bloc qui emprunte un nom hors de lui (formatDate de format.ts).
+const EMPRUNTE = ORIGINE.cdarEncaissee.replace('const date102Cdar = (iso: string) => iso.replace(/-/g, \'\')',
+  'const date102Cdar = (iso: string) => formatDate(iso)')
+// Un nom privé qui reprendrait celui d'un bloc déjà porté (echapper).
+const DOUBLON = ORIGINE.cdarEncaissee.replace(/\bechapperCdar\b/g, 'echapper')
+const COMPILES = {
+  ordre: [DECLARATIONS, ...ORDRE.map((n) => ORIGINE[n])].join('\n'),
+  fidele: avecCdar(ORIGINE.cdarEncaissee),
+  emprunte: avecCdar(EMPRUNTE),
+  doublon: avecCdar(DOUBLON),
+}
+
+// La compilation se paye UNE fois par fichier, ici : elle relit et vérifie la bibliothèque standard, et refaite dans
+// chaque test elle approchait les 5 s de Vitest sous la charge de la barrière. Son délai est déclaré pour elle seule,
+// comme celui du garde du code mort des Edge Functions ; celui des tests ne change pas.
+let compiles: Record<keyof typeof COMPILES, string[]>
+beforeAll(() => {
+  compiles = diagnostics(COMPILES)
+}, 60_000)
+
 describe('le bloc du message se recopie tel quel', () => {
   it('compilés seuls, dans l’ordre d’une fonction, les cinq blocs ne rendent aucun diagnostic', () => {
-    expect(diagnostics([DECLARATIONS, ...ORDRE.map((n) => ORIGINE[n])].join('\n'))).toEqual([])
+    expect(compiles.ordre).toEqual([])
   })
 
   it('exécutés seuls, ils rendent ce que rendent les modules', () => {
@@ -173,22 +188,17 @@ describe('le bloc du message se recopie tel quel', () => {
 
 // ── Le garde mord : des défauts plantés dans une copie qui, sans eux, passe ────────────────────────────────────────
 describe('le garde mord sur un défaut planté', () => {
-  const blocs = (cdarModifie: string) => [DECLARATIONS, ...ORDRE.slice(0, -1).map((n) => ORIGINE[n]), cdarModifie].join('\n')
-
   it('la copie fidèle, elle, passe', () => {
-    expect(diagnostics(blocs(ORIGINE.cdarEncaissee))).toEqual([])
+    expect(compiles.fidele).toEqual([])
   })
 
   it('un bloc qui emprunte un nom hors de lui (formatDate de format.ts)', () => {
-    const emprunte = ORIGINE.cdarEncaissee.replace('const date102Cdar = (iso: string) => iso.replace(/-/g, \'\')',
-      'const date102Cdar = (iso: string) => formatDate(iso)')
-    expect(emprunte).not.toBe(ORIGINE.cdarEncaissee)
-    expect(diagnostics(blocs(emprunte)).join(' ')).toContain('formatDate')
+    expect(EMPRUNTE).not.toBe(ORIGINE.cdarEncaissee)
+    expect(compiles.emprunte.join(' ')).toContain('formatDate')
   })
 
   it('un nom privé qui reprendrait celui d’un bloc déjà porté (echapper)', () => {
-    const doublon = ORIGINE.cdarEncaissee.replace(/\bechapperCdar\b/g, 'echapper')
-    expect(diagnostics(blocs(doublon)).join(' ')).toMatch(/Duplicate function implementation|Duplicate identifier/)
+    expect(compiles.doublon.join(' ')).toMatch(/Duplicate function implementation|Duplicate identifier/)
   })
 
   it('un nom qui heurterait la fonction (dateDeParis de plateforme-agreee)', () => {

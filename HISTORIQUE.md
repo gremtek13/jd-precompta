@@ -16898,3 +16898,51 @@ saisie) et une échéance payée depuis le compte personnel au cabinet infirmier
 correctif les portent déjà) ; Banque pourrait griser, dans le choix à la main, une échéance payée depuis le compte
 personnel (la base et `refusRapprochementCotisation` la refusent déjà) ; la Balance des comptes, en engagement, range son
 crédit parmi les « Écritures sans pièce » du compte du dirigeant.
+
+### 09/10/2026 — LE SCANNER DES ÉCRITURES DES EDGE FUNCTIONS LISAIT `return` COMME SON FRÈRE AVANT LUI, ET LES GARDES DE COPIE COMPILAIENT DANS CHAQUE TEST
+
+(`edgeFunctionsEcritures.test.ts`, `cdarRecuCopie.test.ts`, `cdarEncaisseeCopie.test.ts`, `copiesFacturation.test.ts`,
+`src/test/compilationSeparee.ts` et son test.) Deux corrections de l'outillage des tests ; aucune source de production
+touchée.
+
+**Le `return` seul en fin de ligne.** `ecrituresVerifiees.test.ts` venait de fermer, côté navigateur, la lecture qui
+cachait sept fautes sur treize : remonter les blancs devant une écriture fait lire `if (!x) return` suivi, ligne
+suivante, de `await admin.from(…).insert(…)` comme une écriture RENDUE, alors que l'insertion automatique du
+point-virgule fait `return;` et que l'écriture n'est jamais exécutée. `edgeFunctionsEcritures.test.ts` avait la même
+lecture dans `resultatPris` ; elle est fermée de la même façon : `return` ou `yield` ne prend le résultat que si aucun
+retour à la ligne ne le sépare de la tête de l'expression (la porte du `Promise.all` jeté passe par la même fonction).
+Défauts plantés : l'écriture qui suit un `return` seul, par chacune des quatre portes et par un `Promise.all` ; et ses
+voisins qui rendent bien l'écriture (même ligne, parenthèse ouverte). Rouges avec l'ancienne lecture (deux tests),
+verts après ; la vraie source des Edge Functions reste à zéro faute — aucune ne s'y cachait. Quatre mutations sur
+quatre mordent, dont une (négation retirée) que la vraie source attrape seule : elle porte des `return await admin…`
+sur une ligne. Un `return await` coupé APRÈS `await` serait tenu pour jeté (côté signalé) ; le frère du navigateur a la
+même règle. 21 → 23 tests.
+
+**Les gardes de copie.** Les trois compilaient leurs blocs dans un programme TypeScript neuf par appel — huit
+programmes, chacun relisant, liant et vérifiant la bibliothèque standard (0,5 à 2 s l'un) — et transpilaient plusieurs
+fois les mêmes blocs ; sous la charge, un test passait les 5 s de Vitest et la barrière le rejouait. Désormais
+`src/test/compilationSeparee.ts` compile toutes les sources d'un fichier en UN programme, dans un `beforeAll` au délai
+déclaré (60 s, comme le garde du code mort) ; aucun délai de test n'est relevé. Ce que le partage ne devait pas changer
+est tenu, pas espéré : chaque source doit être un MODULE (sinon elle partagerait la portée globale des autres — refusée,
+jamais compilée avec elles), reçoit ses diagnostics plus ceux qui ne sont à aucune source (options, global,
+bibliothèque), et deux clés au même texte partagent un fichier. `compilationSeparee.test.ts` confronte ce chemin à
+l'ancien (un programme par source) source par source, sur une source saine et quatre défauts (nom emprunté, doublon,
+nom inutilisé, syntaxe), et sans bibliothèque pour les diagnostics globaux ; cinq mutations du module mordent. La
+transpilation se fait une fois par texte, le module est rebâti à chaque appel (aucun test ne reçoit l'état d'un autre,
+gardé par un test).
+
+Mêmes tests et mêmes assertions, test par test : 7/35, 12/83, 21/425 (compte de `expect.getState().assertionCalls`
+avant et après). Durée de chaque fichier, crochets compris, seul (trois essais, charge 7 à 10) : `cdarRecuCopie` 4,3 à
+4,9 s → 3,4 à 3,8 s ; `cdarEncaisseeCopie` 4,6 à 4,9 s → 2,9 à 3,2 s ; `copiesFacturation` 3,0 à 3,3 s → 1,7 à 1,9 s.
+Dans la suite entière (`--maxWorkers=2`, charge 10) : 7,4 → 6,1 s, 6,5 → 4,2 s, 4,0 → 2,7 s ; le test le plus long des
+trois passe de 3,5 s à 2,3 s, et ce n'est plus une compilation : c'est la lecture des 4 000 messages abîmés de
+`cdarRecuCopie`, le travail même du garde. Les neuf mutations que ces gardes attrapaient (trois par fichier : un
+caractère de la copie, une faute que seul le compilateur voit — variable inutilisée, faute de type, nom emprunté —,
+une collision de noms, un type déclaré autrement que `types.ts`, l'arrondi asymétrique) mordent avant et après, sur les
+mêmes tests.
+
+Relevé en passant, hors de ce travail : à la base `b93a8f8`, `npx tsc -b` rendait trois erreurs dans des fabriques de
+test (`bilan.test.ts`, `BilanTab.test.tsx`, `CotisationsTab.ecritures.test.tsx` : `cotisation_id` et
+`paiement_personnel_le` devenus obligatoires dans les types, absents des jeux d'essai), donc `npm run build` échouait
+quand `vite build` passait. Elles sont corrigées à l'intégration, dans les commits qui ont rendu ces champs
+obligatoires.

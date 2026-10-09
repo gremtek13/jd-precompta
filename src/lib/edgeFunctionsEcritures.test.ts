@@ -51,6 +51,12 @@ import { describe, expect, it } from 'vitest'
 // pas une prise mais la mutation ci-dessus — la prochaine écriture écrite dans le formatage normal
 // du dépôt serait passée sans un mot.
 //
+// ET LE 09/10/2026, LE MÊME RETOUR À LA LIGNE, PAR L'AUTRE BOUT : `ecrituresVerifiees.test.ts`, son
+// frère côté navigateur, a trouvé sept fautes sur treize cachées derrière un `return` seul en fin de
+// ligne — l'insertion automatique du point-virgule le termine, et l'écriture de la ligne suivante
+// n'est jamais exécutée, quand remonter les blancs la lisait comme RENDUE. Celui-ci avait la même
+// lecture ; elle est fermée de la même façon (`resultatPris`). Aucune Edge Function ne s'y cachait.
+//
 // Ce que ce test garde : qu'aucune écriture d'Edge Function ne reparte sans que son résultat soit
 // pris. Ce qu'il ne garde PAS, annoncé plutôt que laissé deviner : ce qu'on FAIT de l'erreur.
 // Journaliser, remonter à l'appelant ou compenser est un arbitrage par site.
@@ -179,6 +185,13 @@ function teteDeChaine(code: string, depart: number): number {
  * Tout le reste — début d'instruction, `{`, `}`, `;`, la parenthèse d'un `if (…)` — est un résultat
  * jeté. Une forme non prévue tombe donc du côté SIGNALÉ, jamais du côté silencieux : c'est la règle
  * de `recherchesEtTotaux`, sans laquelle « zéro faute » et « aveugle » redeviennent indiscernables.
+ *
+ * `return` ou `yield` ne PREND le résultat que sur la même ligne. Remonter les blancs fait lire
+ * `if (!x) return` suivi, à la ligne d'après, de `await admin.from(…).insert(…)` comme une écriture
+ * RENDUE, alors que l'insertion automatique du point-virgule fait `return;` : la fonction rend
+ * `undefined`, et l'écriture n'est jamais exécutée. C'est le piège que `ecrituresVerifiees.test.ts`
+ * a payé côté navigateur (sept fautes sur treize se cachaient derrière), fermé ici de la même façon :
+ * un retour à la ligne entre le mot et la tête de l'expression la tient pour jetée.
  */
 function resultatPris(code: string, depart: number): boolean {
   const i = caractereAmont(code, depart)
@@ -187,7 +200,8 @@ function resultatPris(code: string, depart: number): boolean {
   if (c === '=') return true
   if (c === '>' && code[i - 1] === '=') return true
   if (c === '(' || c === '[' || c === ',' || c === '?' || c === ':') return true
-  return /\b(return|yield)$/.test(code.slice(0, i + 1))
+  if (/\b(return|yield)$/.test(code.slice(0, i + 1))) return !code.slice(i + 1, depart).includes('\n')
+  return false
 }
 
 /**
@@ -377,6 +391,27 @@ describe('le scanner lui-même — défauts PLANTÉS, pas espérés', () => {
     const { error } = await deps.admin.from("emails_envoyes").insert({ resend_id: id })
     if (error) console.error(error.message)
   `
+  // LE PIÈGE DE L'INSERTION AUTOMATIQUE DU POINT-VIRGULE : `return` seul en fin de ligne fait
+  // `return;`, et l'écriture de la ligne suivante n'est jamais exécutée — par aucune des portes.
+  const retourSeul = `
+    if (!dossier) return
+    await admin.from("emails_envoyes").insert({ resend_id: id })
+  `
+  const retourSeulParPorte = [
+    'if (!x) return\n    await admin.rpc("enregistrer_facture", {})\n',
+    'if (!x) return\n    await admin.auth.admin.updateUserById(userId, { password })\n',
+    'if (!x) return\n    await supabase.storage.from("pieces").remove([path])\n',
+    'if (!x) return\n    await Promise.all([admin.from("a").insert({}), admin.from("b").insert({})])\n',
+  ]
+  // Et ses voisins, qui RENDENT bien l'écriture : sur la même ligne, ou ouverte par une parenthèse.
+  const rendueSurLaLigne = `
+    return await admin.from("emails_envoyes").insert({ resend_id: id })
+  `
+  const rendueParParenthese = `
+    return (
+      await admin.from("emails_envoyes").insert({ resend_id: id })
+    )
+  `
   // Le constructeur de requête d'agent-comptable : la tête est affectée, la suite est awaitée
   // ailleurs et lue là-bas.
   const constructeur = `
@@ -458,6 +493,20 @@ describe('le scanner lui-même — défauts PLANTÉS, pas espérés', () => {
     expect(ecrituresNonVerifiees('synthetique', clientParProprieteCorrect)).toEqual([])
   })
 
+  it('attrape l’écriture qui suit un `return` seul en fin de ligne, par chacune des portes', () => {
+    // Le défaut que `ecrituresVerifiees.test.ts` a fermé côté navigateur le 09/10/2026 : remonter les
+    // blancs lisait `return await admin…`, une écriture rendue, là où le moteur lit `return;`.
+    expect(ecrituresNonVerifiees('synthetique', retourSeul)).toHaveLength(1)
+    for (const source of retourSeulParPorte) {
+      expect(ecrituresNonVerifiees('synthetique', source), source).toHaveLength(source.includes('Promise') ? 2 : 1)
+    }
+  })
+
+  it('laisse passer une écriture rendue sur la même ligne, ou ouverte par une parenthèse', () => {
+    expect(ecrituresNonVerifiees('synthetique', rendueSurLaLigne)).toEqual([])
+    expect(ecrituresNonVerifiees('synthetique', rendueParParenthese)).toEqual([])
+  })
+
   it('ne voit rien dans une ligne entièrement en commentaire', () => {
     // Ce fichier CITE ses défauts : sans ce filtrage, son propre en-tête le ferait échouer.
     expect(ecrituresNonVerifiees('synthetique', '    // await admin.from("x").insert({})\n')).toEqual([])
@@ -469,8 +518,9 @@ describe('le scanner lui-même — défauts PLANTÉS, pas espérés', () => {
     // Les quatre portes et les cinq formes ensemble : le compte exact, pas une de plus ni une de
     // moins.
     const tout = fautif + parRpc + parAuth + parStorage + multiLigne + promesseFlottante
-      + parVoid + parThen + promiseAllJete + clientParPropriete + correct + multiLigneCorrect
+      + parVoid + parThen + promiseAllJete + clientParPropriete + retourSeul + correct + multiLigneCorrect
       + promiseAllLie + lecture + affectee + ternaire + constructeur + clientParProprieteCorrect
-    expect(ecrituresNonVerifiees('s', tout)).toHaveLength(11)
+      + rendueSurLaLigne + rendueParParenthese
+    expect(ecrituresNonVerifiees('s', tout)).toHaveLength(12)
   })
 })

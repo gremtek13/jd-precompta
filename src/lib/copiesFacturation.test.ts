@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
 import { CAS_DE_REFUS, donnees, EXEMPLES } from '../test/facturesCii'
 import * as cii from './factureCii'
 import type { DossierCii, FactureCii, FactureEnBase, LigneCii } from './factureCii'
@@ -96,30 +97,37 @@ const ORIGINAUX = { ...montants, ...statut, ...cii } as Execute
 
 /** Les blocs SEULS, transpilés et exécutés : tout nom qu'ils emprunteraient au reste d'un fichier lèverait. */
 function executer(blocs: string[]): Execute {
-  const js = ts.transpileModule(blocs.join('\n'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  }).outputText
-  const exports: Record<string, unknown> = {}
-  new Function('exports', js)(exports)
-  return exports as unknown as Execute
+  return executerModule<Execute>(blocs.join('\n'))
 }
 
-/** Les diagnostics d'une compilation des blocs seuls : un nom emprunté hors d'eux s'y voit, même jamais exécuté. */
-function diagnostics(code: string): string[] {
-  const fichier = '/copies/blocs.ts'
-  const options: ts.CompilerOptions = {
+/**
+ * Les diagnostics de chaque compilation des blocs seuls : un nom emprunté hors d'eux s'y voit, même jamais exécuté. Un
+ * seul programme pour toutes (`compilationSeparee.ts`), bâti dans le `beforeAll` qui suit.
+ */
+function diagnostics<Cle extends string>(codes: Record<Cle, string>): Record<Cle, string[]> {
+  return diagnosticsSepares(codes, {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, strict: true, noEmit: true,
     lib: ['lib.es2022.d.ts'], types: [],
-  }
-  const hote = ts.createCompilerHost(options)
-  const lire = hote.getSourceFile.bind(hote)
-  hote.getSourceFile = (nom, version, ...reste) => (nom === fichier ? ts.createSourceFile(nom, code, version) : lire(nom, version, ...reste))
-  const existe = hote.fileExists.bind(hote)
-  hote.fileExists = (nom) => nom === fichier || existe(nom)
-  return ts.getPreEmitDiagnostics(ts.createProgram([fichier], options, hote)).map((d) => `${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`)
+  })
 }
 
 const DECLARATIONS = ['StatutTva', 'ArticleExoneration', 'NatureOperation'].map((t) => `type ${t} = ${membreDroit(TYPES, t)}`).join('\n')
+
+// Les compilations du fichier : les trois blocs de src/lib, puis le même ensemble dont le générateur emprunte un nom
+// hors de lui — le défaut planté du dernier garde.
+const EMPRUNTE = ORIGINE.factureCii.replace("PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'", "PROFIL_EN16931 = formatDate('urn:cen.eu:en16931:2017')")
+const COMPILES = {
+  blocs: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii].join('\n'),
+  emprunte: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, EMPRUNTE].join('\n'),
+}
+
+// La compilation se paye UNE fois par fichier, ici : elle relit et vérifie la bibliothèque standard, et refaite dans
+// chaque test elle approchait les 5 s de Vitest sous la charge de la barrière. Son délai est déclaré pour elle seule,
+// comme celui du garde du code mort des Edge Functions ; celui des tests ne change pas.
+let compiles: Record<keyof typeof COMPILES, string[]>
+beforeAll(() => {
+  compiles = diagnostics(COMPILES)
+}, 60_000)
 
 // ── Les épreuves : une par export des blocs, sur des entrées qui couvrent ses branches ────────────────────────────
 const LIGNES: [number, number, number][] = [
@@ -272,7 +280,7 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
 
 describe('les blocs de src/lib', () => {
   it('se compilent seuls, avec les trois types déclarés comme types.ts les déclare', () => {
-    expect(diagnostics([DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii].join('\n'))).toEqual([])
+    expect(compiles.blocs).toEqual([])
   })
 
   it('exécutés seuls, rendent ce que rendent les modules', () => {
@@ -350,8 +358,7 @@ describe('le garde mord sur un défaut planté', () => {
   })
 
   it('un bloc qui emprunte un nom hors de lui', () => {
-    const emprunte = ORIGINE.factureCii.replace("PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'", "PROFIL_EN16931 = formatDate('urn:cen.eu:en16931:2017')")
-    expect(emprunte).not.toBe(ORIGINE.factureCii)
-    expect(diagnostics([DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, emprunte].join('\n')).join(' ')).toContain('formatDate')
+    expect(EMPRUNTE).not.toBe(ORIGINE.factureCii)
+    expect(compiles.emprunte.join(' ')).toContain('formatDate')
   })
 })
