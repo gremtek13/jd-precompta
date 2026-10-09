@@ -16,7 +16,16 @@ import DossiersList from './DossiersList'
 // les formes fautives (`X.reduce`, `X.filter(…).length`, `total={X.length}`) ; il ne peut rien dire
 // d'un `valeur={filtered.length - nbAvecAlerte}`, où `filtered.length` est par ailleurs parfaitement
 // légitime. Seul le rendu le montre : on tape, et le tableau de bord ne bouge pas.
-const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]>, signaux: 0 }))
+const faux = vi.hoisted(() => ({
+  parTable: {} as Record<string, unknown[]>,
+  signaux: 0,
+  // Les lignes envoyées à `insert`, dans l'ordre : UNE entrée = UN dossier créé en base, que rien ne dédoublonne.
+  creations: [] as unknown[],
+  // La réponse de la création attend que le test la libère (voir `retenirLaCreation`) : c'est la fenêtre réelle pendant laquelle
+  // une seconde soumission arrive. La résoudre aussitôt supprimerait la fenêtre que le verrou ferme.
+  porteCreation: null as Promise<void> | null,
+  erreurCreation: null as { message: string } | null,
+}))
 
 // La barre latérale tient sa propre liste des dossiers (voir lib/listeDossiers.ts) ; ce qui compte
 // ici est que la création la PRÉVIENNE — on compte les signaux au lieu de monter la barre.
@@ -30,15 +39,22 @@ vi.mock('../lib/supabase', () => ({
       // lecture INCOMPLÈTE et l'écran afficherait son bandeau au lieu de ses tuiles.
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
+      // Vrai pour une CRÉATION : sa réponse est celle de l'écriture, pas une tranche de la table.
+      let creation = false
       Object.assign(chaine, {
         select: () => chaine,
         eq: () => chaine,
         gte: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        // La création d'un dossier : seule son erreur est lue, et elle vaut null.
-        insert: () => chaine,
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        // La création d'un dossier : seule son erreur est lue, et elle vaut null sauf si le test en pose une.
+        insert: (ligne: unknown) => { creation = true; faux.creations.push(ligne); return chaine },
+        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count?: number }) => unknown) => {
+          if (creation) {
+            // Composée quand elle PART : une création retenue puis libérée répond selon l'état du moment de sa libération.
+            const repondre = () => ({ data: null, error: faux.erreurCreation })
+            return (faux.porteCreation ? faux.porteCreation.then(repondre) : Promise.resolve(repondre())).then(suite)
+          }
           const toutes = faux.parTable[table] ?? []
           return Promise.resolve({
             data: toutes.slice(debut, fin + 1), error: null, count: toutes.length,
@@ -246,5 +262,126 @@ describe('DossiersList — le formulaire de création et la barre latérale', ()
 
     expect(faux.signaux).toBe(1)
     expect(screen.queryByLabelText('Nom du client')).toBeNull()
+  })
+})
+
+// UN FORMULAIRE QUI NE SE PROTÈGE QUE PAR UN ÉTAT CRÉE DEUX DOSSIERS.
+//
+// « Nouveau dossier » n'avait pour garde que `disabled={saving}` sur son bouton : `setSaving(true)` ne prend effet qu'au rendu
+// SUIVANT, donc deux soumissions rapprochées (deux « Entrée », un double clic) entraient toutes deux dans le gestionnaire, qui ne
+// testait rien, et chacune écrivait sa ligne. La base ne rattrape pas le doublon : `dossiers` n'a d'unique que le code e-mail que
+// ses déclencheurs fabriquent pour chaque ligne — ni le nom ni le SIRET. Deux dossiers identiques, donc, dont le second est à
+// repérer puis à supprimer.
+//
+// Ce que `verrousExecution.test.ts` ne pouvait pas voir : il part des verrous qui EXISTENT (`x.current = true`) pour vérifier qu'ils
+// se relâchent dans un `finally` ; un gestionnaire sans aucun verrou ne lui présente rien à examiner. Seul le test d'écran le montre,
+// et le cas à TROIS envois est le seul à distinguer un verrou posé avant le `try` d'un verrou posé dedans.
+describe('DossiersList — le verrou de création d’un dossier', () => {
+  beforeEach(() => {
+    faux.parTable = { dossiers: [dossier('alpha', 'Alpha Santé')] }
+    faux.signaux = 0
+    faux.creations = []
+    faux.porteCreation = null
+    faux.erreurCreation = null
+  })
+  // Une porte ou un refus laissés par un test qui échoue ne doivent pas faire échouer les suivants.
+  afterEach(() => {
+    faux.porteCreation = null
+    faux.erreurCreation = null
+  })
+
+  // Retient la réponse des créations suivantes jusqu'à ce que le test appelle la fonction rendue.
+  function retenirLaCreation(): () => Promise<void> {
+    let ouvrir = () => {}
+    faux.porteCreation = new Promise<void>((resolve) => { ouvrir = resolve })
+    return async () => {
+      faux.porteCreation = null
+      await act(async () => { ouvrir() })
+    }
+  }
+
+  // Le formulaire s'ouvre par l'URL, comme depuis la barre latérale, et le nom est saisi : le champ est `required`, et jsdom bloque
+  // la soumission d'un formulaire tant qu'un champ requis est vide — sans ça le clic n'atteindrait jamais le gestionnaire.
+  async function monterFormulaireRempli() {
+    await act(async () => {
+      render(<MemoryRouter initialEntries={['/dossiers?nouveau=1']}><DossiersList /></MemoryRouter>)
+    })
+    const champ = screen.getByLabelText('Nom du client')
+    await act(async () => { fireEvent.change(champ, { target: { value: 'Cabinet Martin' } }) })
+    return { bouton: screen.getByRole('button', { name: 'Créer' }) as HTMLButtonElement, formulaire: champ.closest('form')! }
+  }
+
+  it('ne crée qu’un dossier quand le formulaire est soumis deux fois dans le même rendu', async () => {
+    const { bouton } = await monterFormulaireRempli()
+    const liberer = retenirLaCreation()
+
+    // LES DEUX SOUMISSIONS DANS LE MÊME `act`. Deux `click` successifs ouvrent chacun leur `act`, qui rend le composant en sortant :
+    // le second tomberait sur un bouton déjà grisé, et le test resterait VERT avec le défaut réinstallé (CLAUDE.md).
+    await act(async () => { bouton.click(); bouton.click() })
+
+    expect(faux.creations).toHaveLength(1)
+    expect(faux.creations[0]).toMatchObject({ nom: 'Cabinet Martin' })
+    // L'état, lui, reste pour l'AFFICHAGE : le bouton se grise et le dit pendant que la création est en vol.
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.textContent).toBe('Création…')
+
+    await liberer()
+    // Une seule création : la barre latérale n'est prévenue qu'une fois, et le formulaire se referme.
+    expect(faux.signaux).toBe(1)
+    expect(screen.queryByLabelText('Nom du client')).toBeNull()
+  })
+
+  // IL FAUT TROIS ENVOIS pour distinguer un verrou posé avant le `try` d'un verrou posé dedans : si le test du verrou vivait DANS le
+  // `try`, le `return` du deuxième envoi sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours, et le
+  // troisième repartirait pour une seconde création (CLAUDE.md, motif déjà vu sur FactureAvoirModal et consorts).
+  it('un troisième envoi ne déclenche pas de seconde création', async () => {
+    const { bouton } = await monterFormulaireRempli()
+    const liberer = retenirLaCreation()
+
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.creations).toHaveLength(1)
+    await liberer()
+    expect(faux.signaux).toBe(1)
+  })
+
+  it('trois soumissions du formulaire lui-même — « Entrée » dans un champ — n’en créent qu’une, et restent annulées', async () => {
+    // L'événement de soumission arrive aussi sans clic sur le bouton (« Entrée » dans un champ, `requestSubmit()`) : le garde vit dans
+    // le gestionnaire du formulaire, pas dans un `onClick`, et ne dépend pas de l'attribut `disabled` du bouton.
+    const { formulaire } = await monterFormulaireRempli()
+    const liberer = retenirLaCreation()
+
+    // `fireEvent` rend false quand le gestionnaire a annulé l'événement.
+    const annulees: boolean[] = []
+    await act(async () => {
+      for (let i = 0; i < 3; i++) annulees.push(!fireEvent.submit(formulaire))
+    })
+
+    expect(faux.creations).toHaveLength(1)
+    // Même ignorée, une soumission reste ANNULÉE : le test du verrou passe après `preventDefault`, sinon le navigateur soumettrait
+    // lui-même le formulaire (GET sur la page, rechargement de l'application).
+    expect(annulees).toEqual([true, true, true])
+    await liberer()
+    expect(faux.signaux).toBe(1)
+  })
+
+  // Le garde symétrique : sans lui, « un seul envoi » serait satisfait par un verrou qui ne se relâche jamais.
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    faux.erreurCreation = { message: 'permission denied' }
+    const { bouton } = await monterFormulaireRempli()
+    const liberer = retenirLaCreation()
+
+    await act(async () => { bouton.click() })
+    expect(faux.creations).toHaveLength(1)
+    await liberer()
+
+    // Le refus est dit ; le formulaire reste ouvert avec ce qui a été saisi, et la barre n'est pas prévenue d'un dossier qui n'existe pas.
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+    expect((screen.getByLabelText('Nom du client') as HTMLInputElement).value).toBe('Cabinet Martin')
+    expect(faux.signaux).toBe(0)
+
+    // Le verrou est relâché : un nouvel essai part.
+    await act(async () => { screen.getByRole('button', { name: 'Créer' }).click() })
+    expect(faux.creations).toHaveLength(2)
   })
 })

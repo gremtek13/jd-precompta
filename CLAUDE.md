@@ -567,7 +567,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - **Un verrou d'exécution est un `useRef`**, posé AVANT le `try` et relâché dans un `finally` — après la relecture quand
   l'écran montre ce qui vient d'être écrit. Deux clics se testent dans le MÊME `act`, et il en faut TROIS pour voir un
-  verrou posé dans le `try` (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` ».
+  verrou posé dans le `try` (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` ». Ce test part
+  des verrous qui EXISTENT : un gestionnaire sans aucun verrou ne se voit qu'au test d'écran à deux puis trois envois.
+  Restent gardés par un état seul : membre d'équipe, cabinet, emprunt, suppléments et comptes courants, échéance de
+  cotisation, pack, et trois appels facturés ou externes (assistant, extraction, Super PDP) → « NOUVEAU DOSSIER N'AVAIT
+  QU'UN ÉTAT POUR VERROU ».
 - **Une lecture plus lente écrit en dernier** : un effet dont la dépendance change écran ouvert pose son drapeau
   d'annulation après les lectures et avant la première écriture. À chaque navigation ajoutée : ce composant se
   remonte-t-il quand cette dépendance change ? → « UNE LECTURE PLUS LENTE ÉCRIT EN DERNIER ».
@@ -775,7 +779,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6046 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6050 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

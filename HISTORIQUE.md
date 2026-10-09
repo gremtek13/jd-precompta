@@ -13314,3 +13314,55 @@ lots écrivent sous un verrou relâché après la relecture qu'ils déclenchent,
 échéances de cotisation, les dotations, l'affectation). **Trouvé en passant, non corrigé** : le formulaire « Nouveau
 dossier » (`DossiersList`) n'a qu'un état `saving` pour verrou — deux « Entrée » rapprochées créeraient deux dossiers
 (famille « Un verrou d'exécution est un `useRef` »).
+
+### 09/10/2026 — « NOUVEAU DOSSIER » N'AVAIT QU'UN ÉTAT POUR VERROU — DEUX SOUMISSIONS DU MÊME RENDU CRÉAIENT DEUX DOSSIERS
+
+(`src/pages/DossiersList.tsx`, `src/pages/DossiersList.test.tsx`.) **Le défaut**, relevé par un autre agent puis vérifié avant
+d'être cru. `NewDossierModal.handleSubmit` ne se gardait que par `disabled={saving}` sur son bouton : `setSaving(true)` ne
+prend effet qu'au rendu SUIVANT, et le gestionnaire ne testait rien. Deux soumissions avant ce rendu écrivaient chacune
+leur ligne, et la base ne rattrape pas le doublon : `dossiers` n'a d'unique que `code_email`, que le déclencheur fabrique
+pour chaque ligne — ni le nom ni le SIRET. Deux dossiers de même nom, dont le second est à repérer puis à supprimer.
+
+**Pourquoi `verrousExecution.test.ts` ne l'a pas vu.** Il part des verrous qui EXISTENT (`x.current = true`) pour vérifier
+qu'ils se relâchent dans un `finally`, et le dit en tête : la pose AVANT le `try` n'est gardée « qu'écran par écran », par le
+cas à trois envois de chaque test de modale. Un gestionnaire sans aucun verrou ne lui présente rien à examiner, et le test
+d'écran de `DossiersList` n'avait que le chemin heureux de la création. Un scanner qui partirait de TOUT (chaque fonction
+asynchrone d'écran qui écrit, sans `useRef` avant son premier `await`) en compte 90 sur 133 au 5498fbd (écritures directes
+seulement), dont la plupart n'ont
+pas besoin de verrou (mise à jour ou upsert idempotent, suppression, écriture déjà sous `sousVerrou` ou `agir`) : il lui
+faudrait une liste d'exceptions avec raison et nombre — une décision d'architecture, non prise ici.
+
+**Le correctif.** La forme d'`AccesTab` : `useRef` testé puis posé AVANT le `try`, relâché dans le `finally` avec
+`setSaving(false)` ; l'état reste pour l'affichage (bouton grisé, « Création… »). Le verrou n'attend PAS la relecture de la
+liste, contrairement aux modales qui restent ouvertes sur ce qu'elles écrivent (`EncaissementsFactureModal`) : le formulaire
+se referme sur un succès, et la liste relue (`onCreated`) est celle du tableau de bord derrière lui. L'y attendre aurait
+laissé le formulaire sur « Création… » pendant les cinq lectures du cabinet.
+
+**Les tests.** Le faux client compte les créations, retient leur réponse (la fenêtre réelle) et sait répondre un refus.
+Quatre tests : deux clics dans le MÊME `act` → une création, le bouton grisé sur « Création… », une seule alerte à la barre
+latérale ; trois clics → une ; trois événements `submit` (sans passer par le bouton) → une, et les trois ANNULÉS ; un refus
+de la base relâche le verrou (garde symétrique). **Rouge avant** : 2 créations pour 2 clics, 3 pour 3 clics, 3 pour 3
+`submit` ; les neuf autres tests du fichier verts. **Vert après** : 12 sur 12. **Huit mutations, toutes mordent** : le test
+du verrou ôté, trois tests ; test et pose DANS le `try`, trois tests — les deux à trois envois par le comptage, celui à deux
+clics par son seul affichage (le `return` du deuxième envoi sort par le `finally`, qui dégrise le bouton) ; jamais relâché,
+le test du refus et le scanner ; relâché en clair après l'`await`, le scanner seul ; `setSaving(true)` ôté, l'affichage ;
+`setSaving(false)` ôté, le test du refus ; l'état testé au lieu du verrou (`if (saving) return`, le « correctif » naturel),
+trois tests ; le test du verrou posé AVANT `preventDefault`, l'assertion d'annulation seule (`[true, false, false]` : une
+soumission ignorée ne serait plus annulée, et le navigateur soumettrait lui-même le formulaire).
+
+**Limite dite.** Le test prouve le contrat : deux soumissions avant le rendu suivant n'écrivent qu'une ligne. L'exposition
+d'un vrai navigateur est plus étroite — React rend l'état d'un événement discret avant l'événement suivant, donc
+`disabled` ferme l'essentiel de la fenêtre — et n'a pas été mesurée.
+
+**Trouvé en passant, non corrigé** : les mêmes gestionnaires, gardés par un état seul, aucun `useRef` (au 5498fbd). Doublon
+que la base ne rattrape pas : `FinancementTab` (emprunt), `SupplementsTab` (supplément, compte courant d'associé, et
+`ajouter` un mouvement — le formulaire y reste ouvert), `CotisationsTab.handleSubmit` (échéance), `PacksTab.handleGenerate` et
+`InformationsTab.exporterAvantSuppression` (deux archives, deux lignes `packs`). Doublon que la base refuse, avec un message
+trompeur sur une création réussie : `EquipePage.ajouterMembre`, `SuperAdminPage.creerCabinet` (qui compense en retirant le
+cabinet en trop, au mieux). Appel facturé ou externe : `AssistantTab.envoyer` (`loading` lu dans la fermeture du rendu),
+`FichePiece.handleExtract` (OCR puis citation), `SuperPdpModal.synchroniser`.
+
+**Écarté, à ne pas réenquêter.** `PiecesTab.createSousDossier` (le `window.prompt` bloque ; `UNIQUE (dossier_id, nom)`),
+`ImmobilisationsTab.enregistrer` (`UNIQUE (piece_id)`, message dédié au code 23505), `BanqueTab` et `ConnexionBancaireCard`
+(tout passe par `sousVerrou`), `TransmissionFactureModal` (`agir`), `RetourBanque` (la promesse est gardée dans un ref), les
+mises à jour et upserts à clé naturelle, et les suppressions : idempotents.
