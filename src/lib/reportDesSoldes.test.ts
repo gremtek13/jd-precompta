@@ -13,6 +13,7 @@ import {
 } from './reportDesSoldes'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
+import { tirage } from '../test/encaissementsBatterie'
 import { derniereDefinitionSql } from '../test/schema'
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
@@ -466,14 +467,9 @@ describe('les littéraux sont ceux de la base', () => {
 // comptes, mêmes sens, mêmes montants, mêmes libellés. Un report qui déplacerait un compte, ou renommerait un libellé, le
 // referait à chaque exercice.
 describe('sur des exercices tirés au hasard', () => {
-  // Générateur pseudo-aléatoire déterministe : un échec se rejoue à l'identique.
-  function tirage(graine: number) {
-    let x = graine
-    return () => {
-      x = (x * 1103515245 + 12345) % 2147483648
-      return x / 2147483648
-    }
-  }
+  // Les exercices sortent de `tirage` (src/test/encaissementsBatterie.ts) : déterministe, un échec se rejoue à
+  // l'identique, et exact sur 32 bits. Le congruentiel en virgule flottante qui les tirait avant le 09/10/2026 bouclait
+  // sur 10 466 valeurs, et ses trois graines tombaient dans la même suite : 501 exercices distincts sur 600.
   const COMPTES: [string, string][] = [
     ['512000', 'Banque'], ['101000', 'Capital individuel'], ['108000', "Compte de l'exploitant"], ['120000', 'Résultat'],
     ['129000', 'Perte'], ['164000', 'Emprunts'], ['218300', 'Matériel de bureau'], ['281830', 'Amortissements'],

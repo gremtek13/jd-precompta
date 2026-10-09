@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   horsTaxeEtTva, horsTaxeSigne, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxPrisEnCharge, tauxRequis, tvaIncluse,
 } from './tvaDuReleve'
+import { entierTire, tirage } from '../test/encaissementsBatterie'
 
 // LA TABLE DE LA BASE : `public.tva_incluse` interrogée le 01/10/2026 sur ces montants et ces taux. C'est
 // elle qui vérifie l'écriture composée par l'application, donc c'est contre elle — et non contre une
@@ -60,11 +61,13 @@ describe('tvaIncluse — la TVA d’un montant TTC, au centime, comme la base', 
     }
   })
 
+  // Les montants sortent de `tirage` (src/test/encaissementsBatterie.ts). Le congruentiel en virgule flottante qui les
+  // tirait avant le 09/10/2026 bouclait sur 10 466 valeurs presque toutes paires : 6 440 montants distincts sur 20 000,
+  // et six seulement tombaient sur un demi-centime exact à 20 % — la borne que l'arrondi décide. Ils sont 3 324.
   it('et sur de grands montants, jusqu’à dix millions d’euros', () => {
-    let graine = 1234567
-    const hasard = () => (graine = (graine * 1103515245 + 12345) % 2147483648)
+    const hasard = tirage(1234567)
     for (let i = 0; i < 20000; i++) {
-      const c = (hasard() * 512 + hasard()) % 1_000_000_000
+      const c = entierTire(hasard, 1_000_000_000)
       for (const taux of [20, 10, 5.5, 8.5]) {
         expect(Math.round(tvaIncluse(c / 100, taux) * 100)).toBe(Number(reference(BigInt(c), taux)))
       }

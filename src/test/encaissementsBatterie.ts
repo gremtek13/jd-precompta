@@ -198,7 +198,9 @@ export function entreeDuCas(m: Monde, cas: CasDeBatterie): { contexte: ContexteF
 // Un tirage déterministe sur 32 bits (« mulberry32 ») : la même graine rend toujours la même suite. Ses opérations sont
 // EXACTES (Math.imul, décalages) — un générateur congruentiel écrit `(x × 1103515245 + 12345) % 2³¹` en virgule
 // flottante passe 2⁵³ à la multiplication, perd ses derniers chiffres et retombe vite dans un cycle : la première
-// batterie, tirée ainsi, ne comptait que 1 210 saisies distinctes sur 4 000.
+// batterie, tirée ainsi, ne comptait que 1 210 saisies distinctes sur 4 000. C'est le générateur de TOUT test qui tire
+// ses cas au hasard (tirage.test.ts refuse l'autre forme partout dans le dépôt) : il rend un flottant de [0, 1) ;
+// `entierTire` en fait un entier.
 export function tirage(graine: number): () => number {
   let a = graine | 0
   return () => {
@@ -209,9 +211,18 @@ export function tirage(graine: number): () => number {
   }
 }
 
+/** Un entier de [0, n) tiré par `suivant` (un `tirage`), `n` entier positif. Chaque entier de la plage peut sortir tant
+ * que `n` ne dépasse pas 2³², le nombre de valeurs d'un tirage ; au-delà, la plage est parcourue à pas de n / 2³² — ce
+ * que fait la batterie, qui tire un montant jusqu'à 10¹⁵ centimes pour passer un plafond, pas pour en toucher chaque
+ * centime. Sans plafond donc, puisque la batterie dont la base a jugé l'empreinte le tire ainsi. */
+export function entierTire(suivant: () => number, n: number): number {
+  if (!Number.isInteger(n) || n < 1) throw new RangeError(`entierTire : ${n} n'est pas un entier positif`)
+  return Math.floor(suivant() * n)
+}
+
 function generateur(graine: number) {
   const suivant = tirage(graine)
-  const entier = (n: number) => Math.floor(suivant() * n)
+  const entier = (n: number) => entierTire(suivant, n)
   const parmi = <T>(liste: readonly T[]): T => liste[entier(liste.length)]
   // Un choix pondéré : [poids, valeur] ; les poids n'ont pas à faire 1.
   const pondere = <T>(choix: readonly [number, () => T][]): T => {
