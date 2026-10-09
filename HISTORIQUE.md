@@ -11284,3 +11284,137 @@ partielle ne commande aucune écriture » : pendant la PREMIÈRE lecture, la lis
 `lectureIncomplete` / `suspension` ne couvrent que tronqués, pas absents ; `CotisationsTab` : « Créer les N échéances »
 d'un appel déposé dédoublonne contre `cotisations`. La fenêtre est courte (le temps de la première lecture, quand le geste
 demande un fichier et un clic), mais le doublon s'écrit en base. À balayer comme famille, avec son garde.
+
+### 09/10/2026 — LE CYCLE DE VIE DES FACTURES ÉMISES, LU SUR LA PLATEFORME DU CLIENT — LIGNE 28.5, ÉTAPE (D), SEPTIÈME TEMPS (D7), PHASES A ET B
+
+(Migration `cycle_de_vie_des_factures_emises`, version 20261009034144, texte de 30 816 caractères, empreinte
+`f7e4ae3f265c24127efe467261b0edc8` — `supabase/schema/20261009034144_cycle_de_vie_des_factures_emises.sql` ; l'essai
+`supabase/essais/statutsFacturesRecus.sql` ; `src/lib/cdarRecu.ts`, `cdarRecu.test.ts`, `cdarRecuCopie.test.ts`,
+`src/test/cdarRecu.ts`, six messages FICTIFS dans `outils/facturation/cdar/recus/` jugés par `valider.mjs` ; les refus
+étendus de `encaissementsFactures.ts`, `transmissionsFactures.ts`, `encaissementsAffichage.ts` ; `types.ts`,
+`sauvegarde.ts`, `receptionPlateforme.ts` ; l'action `relever` de `plateforme-agreee`, NON DÉPLOYÉE ;
+`plateformeAgreeeStatuts.test.ts` ; la batterie des encaissements étendue.) La décision du cabinet du 08/10/2026 (Q7) :
+lire le cycle de vie des factures émises sur la plateforme du client AVANT d'ouvrir l'envoi du statut « Encaissée » par
+API — sans lui, un 212 peut suivre une facture que l'acheteur a refusée. Données mesurées en production le 09/10/2026,
+comptes seulement : 6 factures validées, aucune transmission, aucune connexion à une plateforme, aucun encaissement,
+aucune déclaration. Tout ce qui suit est LATENT. Rien n'a été appelé, ni Super PDP ni aucune plateforme. Sources : les
+spécifications externes de la DGFiP v3.2 (dossier général § 3.6.4 tableau 8, § 3.6.7 note 109, § 3.6.8 tableau 10 ;
+annexe 2 v2.3, onglets « CDV FE - CI ARM » et « Statuts » ; annexe 7 v1.9, règles G1.01, G1.05, G1.42, G1.114, G7.08,
+G7.14, G7.15, G7.17, G7.23, G7.31, G7.44, P1.14) ; la description OpenAPI publique du connecteur « afnor » de banqup,
+v1.15.0 (`Flow`, `flowType`, `SearchFlowFilters`, `docType`). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni
+lues ni citées.
+
+**CE QUE L'APPLICATION LIT, ET À QUOI ÇA SERT (la note).** Une facture émise reçoit, sur la plateforme qui l'a acceptée,
+les statuts du tableau 8 ; banqup type ces messages `CustomerInvoiceLC` (« a lifecycle (CDAR) related to a customer
+invoice »), et la recherche filtre ce type et le sens `In`. Tous les statuts d'une facture (200 à 213) se GARDENT et se
+diront ; seuls 210 « Refusée » et 213 « Rejetée » ont un effet en base — « le fournisseur doit procéder à une
+annulation comptable (avoir interne) » (§ 3.6.4). 211 n'est jamais un encaissement : un encaissement reste une
+affirmation du vendeur (d1). Un 212 reçu en écho est gardé, sans effet : il ne dit pas QUEL encaissement du registre il
+déclare. Le 601 (tableau 10) porte sur un MESSAGE, désigné par son identifiant (MDT-4, G7.23), pas sur une facture : il
+se lit et se dit, sans rien écrire ; son effet — passer une déclaration à `rejete` — appartient à d6, qui saura ce qu'il
+dépose. Un code hors du tableau 8 pour une facture n'est pas lu (« statut inconnu »).
+
+**LE RATTACHEMENT : L'IDENTITÉ DE G1.42.** Une facture, pour l'administration, c'est son numéro, l'année de sa date
+d'émission et le SIREN de son fournisseur (G1.42, § 3.6.7 note 109). Un message se rattache quand il porte sur une
+facture (MDT-97, ou MDT-91 un type de G1.01), dit un code du tableau 8, désigne le vendeur par UN SIREN de schéma 0002
+(G7.17), que la facture VALIDÉE du dossier qui porte son numéro (MDT-87, lu comme un `xsd:token`) a FIGÉ ce SIREN à sa
+validation (`emetteur_siret`, jamais le SIREN du dossier d'aujourd'hui), a cette année (MDT-100, quand il est là) et ce
+type (380 ou 381). Ce qui ne se rattache pas ne se garde pas, et se dit avec sa raison : `illisible`, `ambigu` (P1.14 :
+un seul objet), `autre_objet`, `statut_inconnu`, `autre_vendeur` (sans jamais dire le numéro ni le SIREN d'une autre
+entreprise), `facture_inconnue`, `incoherent`. G1.114 — les valeurs par défaut de la plateforme de l'administration —
+tombe de lui-même dans ces cas.
+
+**LA LECTURE (`src/lib/cdarRecu.ts`), SANS JAMAIS DEVINER.** Un analyseur XML à lui — une Edge Function n'a pas
+`DOMParser` —, strict (déclaration UTF-8, aucune DTD ni déclaration `<!…`, une racine, entités prédéfinies ou
+numériques, préfixes déclarés, profondeur, nombre d'éléments et longueur bornés), qui résout les espaces de noms : un
+message aux préfixes inhabituels se lit de même. Une donnée DÉCISIVE (objet, code, numéro, SIREN, année, type) mal
+formée rend le message illisible ; une donnée INFORMATIVE (horodatage MDT-78, rôle MDT-40, identifiant MDT-4, motifs
+MDT-113/114, commentaire MDT-125 à 127, montants MDG-43) mal formée s'écarte seule, et l'avertissement le dit — un refus
+dont l'horodatage est faux reste un refus. L'horodatage se garde TEL QU'ÉCRIT (format 204, son fuseau n'est pas dit) ;
+MDT-100 se lit dans l'espace `qdt` comme dans `udt` (celui d'avant l'annexe 2 v2.2). Six messages fictifs (210, 213,
+601, 205 aux préfixes inhabituels, 207, 211) passent le schéma CDAR D22B (`valider.mjs`, `recus/valides.json`), et les
+trois messages de d5 se relisent en échos. **UN PIÈGE DE L'OUTIL D'ÉCRITURE, LE MÊME QU'EN D5** : la classe des
+caractères que XML admet et la marque d'ordre d'octets avaient été écrites en caractères LITTÉRAUX (U+D7FF, U+E000,
+U+FFFD, U+FEFF), dont deux invisibles ; la fonction les aurait portés, et leur transcription vers l'outil de déploiement
+les aurait perdus. Ils sont redevenus des échappements (`\uD7FF`, `\uE000`, `\uFFFD`, `\uFEFF`), que l'outil et
+`allerretour.py` décodent ; les caractères de commande s'écrivent `\p{Cc}`, qui ne fait pas crier `no-control-regex`
+(égalité avec les deux plages vérifiée sur tous les points de code).
+
+**LA BASE.** Une table nouvelle, `statuts_factures_recus`, plutôt que l'extension d'une table existante :
+`facture_superpdp_events` porte les événements de l'API PROPRE de Super PDP, `transmissions_factures` un envoi, `pieces`
+une pièce. Un flux n'entre qu'une fois par dossier (contrainte TOTALE `statuts_factures_recus_un_flux` : dossier, hôte,
+flux) ; un statut ne se modifie ni ne se supprime, sauf avec son dossier, et désigne une facture VALIDÉE de son dossier
+(la garde `garder_statut_facture_recu`, aux droits de l'appelant, AVANT la RLS : qui ne voit pas la facture est refusé
+sans apprendre si elle existe) ; le cabinet la LIT (`admin_du_dossier`, `to authenticated`), le super-administrateur y
+insère pour restaurer, la fonction l'écrit à la clé secrète ; le client n'en voit rien. Le point de reprise des statuts
+vit À PART sur la connexion (`cycle_vie_depuis`, et `cycle_vie_lu_le`, l'instant du dernier relevé allé au bout) : celui
+des factures avancerait au-delà de ce que l'autre n'a pas lu. **UN REFUS LU A LES CONSÉQUENCES D'UN REFUS CHEZ SUPER
+PDP, aux quatre endroits où la règle vit, chacun dans son ordre et sous ses mots d'hier** : le refus 5 de
+`enregistrer_encaissement`, le refus 6 de `declarer_encaissement_hors_application`, la garde des déclarations
+(`garder_transmission_encaissement`, où une déclaration d'hier ne compte que le refus lu AVANT elle, `lu_le`), et
+`garder_transmission_facture` — une facture refusée ne part pas (le cas nouveau : une facture que le client a déposée
+lui-même, refusée, que l'application voudrait transmettre ; message nouveau), ni l'avoir qui l'annule (« Cette opération
+ne doit pas générer de flux », § 3.6.4) ; seul compte, pour une transmission, le statut lu avant elle. La contre-passation
+et le retrait restent possibles. Le texte ne porte aucune instruction de suppression : `apply_migration` l'a pris sans
+confirmation.
+
+**L'ÉPREUVE.** Sur une réplique locale dont `signature.sql` a montré les neuf familles égales à la production : la
+migration, l'essai (les mêmes contrôles), ce que la production ne peut pas jouer (`R1` à `R7b` : les suppressions
+directes refusées, la cascade du dossier, la facture d'un statut qui ne se supprime pas seule, un membre du cabinet NON
+super-administrateur — son dossier seul, aucune écriture, et le refus qui le refuse —, la restauration dans l'ordre de
+`sauvegarde.ts`, et une déclaration réinsérée après la lecture du refus, refusée), et **quatre-vingt-deux mutations de
+la migration, qui mordent toutes** (deux, d'abord écrites sur un texte ambigu, rejouées). En production : la migration
+par `apply_migration`, l'empreinte de l'historique égale à celle du fichier, puis l'essai — **61 contrôles sur 61**, les
+factures d'essai rendues, rien laissé, le texte reçu de 43 644 caractères (empreinte `1b8aed0d…`) égal au fichier ;
+`transmissionsEncaissements.sql` (128 sur 128) et `encaissementsFactures.sql` (109 sur 109) rejoués, textes reçus égaux
+aux fichiers ; `transmissionsFactures.sql` (43 sur 43) ; `rls.sql` EN ENTIER (22 lignes de verdict, 56 tables dont 48
+portant un `dossier_id`, 3 buckets, 0 en faute, 14 mutations sur 14 qui mordent, texte reçu inchangé) ; les trois
+contrôles de l'export (101 migrations, empreinte globale `7d7c31bf…` des deux côtés ; socle 77 instructions inchangé ;
+inventaire 1 277 objets) ; les advisors inchangés.
+
+**LE MODULE.** `annuleeSurSaPlateforme` et `STATUTS_ANNULATION_PLATEFORME` (`transmissionsFactures.ts`) ;
+`refusDeLaFacture` (refus 5) et `refusDeclaration` (refus 6) prennent les statuts lus, paramètre OBLIGATOIRE ;
+`pastilleDeclaration` aussi — une facture refusée sur sa plateforme ne s'allume plus « À déclarer ». Confrontés : les
+codes `s.code in ('210', '213')` aux quatre endroits de la migration (deux dans la garde des transmissions), la clause
+nouvelle dans le MÊME `if` que celle de Super PDP, juste avant son `raise` d'hier ; les messages rendus en production
+(contrôles 21 à 31 de l'essai) ; et la batterie des encaissements, étendue d'une facture refusée (F14) et de statuts
+lus : 4 000 saisies jouées sur la réplique migrée, aucun écart entre la base et le module (empreinte `336f1f2c…`).
+`types.ts` (`StatutFactureRecu`), `sauvegarde.ts` (deux relations ; la table restaurée APRÈS les factures et AVANT les
+transmissions et les déclarations, que ses gardes jugent ; accès direct par le dossier) et leurs tests suivent ;
+`encaissementsEcritures.test.ts` refuse toute écriture de la table dans `src/` hors de la restauration, et n'admet
+qu'une insertion, par `plateforme-agreee`.
+
+**LA FONCTION (`plateforme-agreee`, action `relever`, NON DÉPLOYÉE).** Sur un clic : la recherche page à page
+(`flowType: ["CustomerInvoiceLC"], flowDirection: ["In"]`, cent par page, la pagination de la réception, devenue un
+paramètre — `rechercherFlux` prend sa `LectureDesFlux`, et ses mots pour les factures n'ont pas changé d'une lettre) ;
+les flux déjà gardés reconnus avant tout téléchargement (une économie : la base reconnaît de toute façon un flux, 23505)
+; l'original de chaque statut prêt (un million d'octets au plus, XML, UTF-8 strict), lu par la COPIE de cdarRecu
+(gardée par `cdarRecuCopie.test.ts` : identité au caractère près, compilation seule avec le seul `sirenDe` emprunté,
+exécution contre le module sur les exemples, 4 000 messages abîmés et une grille de rattachements) ; la facture
+cherchée par son numéro dans le dossier vérifié ; une écriture par flux, le dossier, l'hôte et le lecteur posés par
+l'appelant APRÈS la ligne. Le point de reprise suit la règle de la réception — `repriseDesStatuts` rend ce que rend
+`pointDeReprise` sur 5 000 listes tirées au sort — puis `curseurRetenu` (une heure de marge, jamais en arrière, sauf
+« depuis le début », qui fait repartir de rien comme `repartir`) ; il s'écrit sur la configuration lue. Les échecs
+passagers (téléchargement, base, temps, nombre) le retiennent ; un accès refusé arrête le relevé ; les statuts en
+attente ne retiennent rien. Budgets sous le mur de 150 s : recherche à 40 s, aucun téléchargement après 95 s, cinquante
+au plus. Le journal : une ligne de nombres et de codes HTTP. Le bilan rendu à l'écran dit chaque statut : gardé, déjà
+lu, écarté avec sa raison (et, pour un 601 du dossier, ce qu'il porte), en échec. Testée contre une base en mémoire et
+une plateforme jouée par un faux `fetch`, par le vrai client HTTP de la fonction.
+
+**LES MUTATIONS DU CODE : 78, DONT 77 MORDENT.** Onze du module, trente-deux de la lecture, trente-cinq de la fonction,
+chacune jouée contre les tests de son domaine, la suite verte avant. Le premier passage en laissait onze en vie (et une,
+écrite sur un texte introuvable, à rejouer). Dix ont reçu leur test, et mordent : un indicateur MDT-74 écrit « 1 », la
+longueur du numéro à 200 et 201 caractères, un 29 février séculaire, une date d'objet du même an mais d'un autre mois,
+un caractère de commande C1 dans un motif, un rôle de quatre lettres, une déclaration d'entité sans DOCTYPE, les
+colonnes lues de la connexion, le compte des flux que la recherche écarte, une facture cherchée pour un code hors du
+tableau 8. La onzième est équivalente : `resoudre` refuse un espace de noms vide pour un préfixe, que la déclaration a
+déjà refusé — la branche ne s'atteint pas.
+
+**CE QUI RESTE NON VÉRIFIÉ, ET LES RISQUES.** Qu'une plateforme réelle rende les statuts de l'acheteur en
+`CustomerInvoiceLC` entrants, de syntaxe CDAR, et que leur « Original » soit le CDAR reçu (Q6 : le premier relevé réel
+le dira ; s'il écarte tout, rien n'est écrit, et « depuis le début » relira) ; qu'un 601 soit relayé au vendeur ; qu'un
+212 saisi à la main revienne en écho. Un refus lu pendant la transaction même qui réserve une transmission ne la
+retient pas (`garder_transmission_facture` compare `lu_le` à `cree_le`, comme le rejet le faisait déjà) : la fenêtre est
+de quelques millisecondes, et la fenêtre de transmission de la phase C le dira avant le clic. Deux relevés concurrents peuvent faire reculer le point de reprise d'un cran (la règle de
+`retenir`) : ils ne font que relire. Un statut écrit d'une facture d'un dossier repart avec la sauvegarde ; un statut
+écarté ne se garde nulle part, l'écran seul le dit.

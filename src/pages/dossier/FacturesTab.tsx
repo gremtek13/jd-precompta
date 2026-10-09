@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
 import type {
-  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
+  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue, StatutPlateformeLu,
 } from '../../lib/encaissementsFactures'
 import { pastilleDeclaration, pastilleEncaissement } from '../../lib/encaissementsAffichage'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -36,6 +36,10 @@ interface Props {
   tvaSurDebits: boolean
   onAdresseUpdated: (adresse: string) => void
 }
+
+// Les statuts lus sur la plateforme du client (étape d7) : aucun tant que rien ne les relève — leur lecture ici vient
+// avec l'écran de l'étape d7. `pastilleDeclaration` les exige sans valeur par défaut ; la base les lit déjà.
+const AUCUN_STATUT_LU: readonly StatutPlateformeLu[] = []
 
 // Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
 // en place (Super PDP, voir SuperPdpModal). Une facture validée peut être transmise par une plateforme
@@ -319,8 +323,8 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                               incomplète. */}
                           {encaissementsIncomplets == null && declarationsIncompletes == null && transmissionsIncompletes == null && (() => {
                             const pastille = pastilleDeclaration(
-                              dossierId, f, lignesFactures, encaissements, declarations, transmissions, evenementsSuperpdp, statutTva,
-                              aujourdHui,
+                              dossierId, f, lignesFactures, encaissements, declarations, transmissions, evenementsSuperpdp,
+                              AUCUN_STATUT_LU, statutTva, aujourdHui,
                             )
                             return pastille ? <span className={`badge badge-une-ligne ${pastille.classe}`}>{pastille.libelle}</span> : null
                           })()}

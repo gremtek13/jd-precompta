@@ -4,12 +4,14 @@ import {
   type MouvementLu, type PartLue, type PartSaisie, type SaisieEncaissement,
 } from '../lib/encaissementsFactures'
 import { TAUX_ADMIS } from '../lib/factureCii'
+import type { CodeStatutRecu } from '../lib/cdarRecu'
 import { ajouterJours, anneeDe } from '../lib/format'
 import { calculerTotaux } from '../lib/montantsFacture'
 import type { EtatTransmission } from '../lib/types'
 
-// LA BATTERIE DES REFUS D'`enregistrer_encaissement` (ligne 28.5, étape d2) : un monde FICTIF — deux dossiers, treize
-// factures, dix mouvements, des encaissements vivants, retirés, annulés et en excès — et des saisies tirées au hasard
+// LA BATTERIE DES REFUS D'`enregistrer_encaissement` (ligne 28.5, étape d2) : un monde FICTIF — deux dossiers, quatorze
+// factures, dix mouvements, des encaissements vivants, retirés, annulés et en excès, et depuis l'étape d7 des statuts lus
+// sur la plateforme du client — et des saisies tirées au hasard
 // par un générateur déterministe. encaissementsBatterie.test.ts passe chaque saisie au module ; la base, elle, les a
 // jugées une à une sur une réplique locale du schéma de production (les neuf familles d'objets à l'empreinte de la
 // production, le 08/10/2026), et le test confronte les deux par l'empreinte de leurs réponses. Les noms (`F1`,
@@ -22,7 +24,7 @@ import type { EtatTransmission } from '../lib/types'
 
 /** Le jour où la base a jugé la batterie dont encaissementsBatterie.test.ts fige l'empreinte : elle lit sa date à Paris,
  * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. */
-export const AUJOURD_HUI_RELEVE = '2026-10-08'
+export const AUJOURD_HUI_RELEVE = '2026-10-09'
 
 /** Le nombre de saisies de la batterie, et la graine de son tirage. */
 export const SAISIES_DE_LA_BATTERIE = 4000
@@ -72,6 +74,8 @@ export interface Monde {
   encaissements: EncaissementDuMonde[]
   transmissions: { facture: string; etat: EtatTransmission }[]
   evenements: { facture: string; code: string }[]
+  /** Les statuts lus sur la plateforme du client (`statuts_factures_recus`, étape d7). */
+  statutsRecus: { facture: string; code: CodeStatutRecu }[]
 }
 
 function facture(
@@ -103,6 +107,8 @@ export const MONDE: Monde = {
     // Plus qu'encaissée (une restauration écrit sans les plafonds) : en tout pour F12, à un taux seulement pour F13.
     facture('F12', [{ quantite: 1, prix: 100, taux: 20 }]),
     facture('F13', [{ quantite: 1, prix: 100, taux: 20 }, { quantite: 1, prix: 100, taux: 0 }]),
+    // Refusée par l'acheteur, ce que seule sa plateforme a dit (étape d7) : un statut 210 lu, rien d'autre.
+    facture('F14', [{ quantite: 1, prix: 250, taux: 20 }]),
   ],
   mouvements: [
     { id: 'M1355', dossier: 'A', montant: 1355.5 }, { id: 'M100', dossier: 'A', montant: 100 },
@@ -127,6 +133,8 @@ export const MONDE: Monde = {
     { facture: 'F7', etat: 'rejete' }, { facture: 'F1', etat: 'accepte' }, { facture: 'F10', etat: 'echec' }, { facture: 'F11', etat: 'rejete' },
   ],
   evenements: [{ facture: 'F8', code: 'fr:210' }, { facture: 'F1', code: 'fr:205' }],
+  // Un litige (207) et un paiement transmis (211) ne refusent rien ; un refus (210) lu seul, si.
+  statutsRecus: [{ facture: 'F1', code: '207' }, { facture: 'F1', code: '211' }, { facture: 'F14', code: '210' }],
 }
 
 export interface CasDeBatterie {
@@ -149,6 +157,7 @@ export function lecturesDuMonde(m: Monde): {
   mouvements: MouvementLu[]
   transmissions: ContexteFacture['transmissions']
   evenements: ContexteFacture['evenementsSuperpdp']
+  statutsRecus: ContexteFacture['statutsRecus']
 } {
   const factures = new Map(m.factures.map((f) => [f.id, {
     id: f.id, dossier_id: DOSSIERS[f.dossier], statut: f.statut, type: f.type, date_emission: f.date,
@@ -168,6 +177,7 @@ export function lecturesDuMonde(m: Monde): {
     mouvements: m.mouvements.map((x) => ({ id: x.id, dossier_id: DOSSIERS[x.dossier], date: '2026-09-20', montant: x.montant })),
     transmissions: m.transmissions.map((t) => ({ facture_id: t.facture, etat: t.etat, hote: 'pa.exemple.fr', flux_id: 'flux-1' })),
     evenements: m.evenements.map((e) => ({ facture_id: e.facture, status_code: e.code })),
+    statutsRecus: m.statutsRecus.map((s) => ({ facture_id: s.facture, code: s.code })),
   }
 }
 
@@ -177,7 +187,8 @@ export function entreeDuCas(m: Monde, cas: CasDeBatterie): { contexte: ContexteF
   return {
     contexte: {
       dossierId: DOSSIERS[cas.dossier], facture: l.factures.get(cas.facture) as FacturePourEncaissement, lignes: l.lignes,
-      transmissions: l.transmissions, evenementsSuperpdp: l.evenements, encaissements: l.encaissements, parts: l.parts,
+      transmissions: l.transmissions, evenementsSuperpdp: l.evenements, statutsRecus: l.statutsRecus,
+      encaissements: l.encaissements, parts: l.parts,
     },
     saisie: { date: cas.date, montant: cas.montant, moyen: cas.moyen, ligneBancaireId: cas.ligne, repartition: cas.repartition },
     mouvements: l.mouvements,
@@ -229,12 +240,13 @@ export function batterie(nombre: number, graine: number, aujourdHui: string): Ca
     const factureId = g.pondere<string>([
       [30, () => 'F1'], [12, () => 'F2'], [25, () => 'F10'], [6, () => 'F3'], [5, () => 'F4'], [4, () => 'F5'],
       [4, () => 'F6'], [4, () => 'F7'], [4, () => 'F8'], [6, () => 'F9'], [3, () => 'F11'], [4, () => 'F12'], [5, () => 'F13'],
+      [4, () => 'F14'],
     ])
     const dossier: NomDossier = factureId === 'F9' ? g.pondere<NomDossier>([[4, () => 'B'], [1, () => 'A']]) : g.pondere<NomDossier>([[24, () => 'A'], [1, () => 'B']])
     const f = l.factures.get(factureId) as FacturePourEncaissement
     const contexte: ContexteFacture = {
       dossierId: DOSSIERS[dossier], facture: f, lignes: l.lignes, transmissions: l.transmissions,
-      evenementsSuperpdp: l.evenements, encaissements: l.encaissements, parts: l.parts,
+      evenementsSuperpdp: l.evenements, statutsRecus: l.statutsRecus, encaissements: l.encaissements, parts: l.parts,
     }
     const reste = resteAEncaisser(contexte)
     const taux = tauxDe(factureId)

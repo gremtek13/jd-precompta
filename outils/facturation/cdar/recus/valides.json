@@ -1,0 +1,36 @@
+{
+  "schema": {
+    "publication": "UN/CEFACT, XML Schemas version 22B",
+    "jar": {
+      "artefact": "com.helger.cii:ph-cii-d22b",
+      "version": "4.1.3",
+      "sha1": "5cada07dfabd43691403fac563e41929d4e1c6d8"
+    },
+    "xsd": {
+      "CrossDomainAcknowledgementAndResponse_100pD22B.xsd": "cacdfe3cfe0e105f9f53d8392ccc36d0a322dd2eed270a569b725f23b16b85a1",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd": "35fb52e4ce999bebe065291a000456bd1e916994639e8ddddfda20790e3ba3c1",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd": "055355fac00e61a9475a154c8f1361bee517049aaff6adecdcc966d0baaf33f4",
+      "CrossDomainAcknowledgementAndResponse_100pD22B_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd": "1953681991569751c95fbc34a39c8aea5a5a0e9c82234185ad30df902958b4c9"
+    }
+  },
+  "fichiers": {
+    "approuvee-205-autres-prefixes.xml": {
+      "sha256": "786516793e8276d6b1a09b2a6a946d35e383c063d3558d90971055e86c836660"
+    },
+    "litige-207.xml": {
+      "sha256": "7025e1339975aa077921606eb23222df873a0d0eda37e254ddc3a94c455c129d"
+    },
+    "paiement-211.xml": {
+      "sha256": "bce55c1b962564d261b46ec74c577a99dd2c936b934ee72a917d243e85a51b1c"
+    },
+    "refus-210.xml": {
+      "sha256": "d67ecc03eb0f1e715f4e86294a115d24284928e5f6b8d779dc6cba6ed2fd73b4"
+    },
+    "rejet-213.xml": {
+      "sha256": "e22327bce7b9657a92795bbe367063e966caccdd824ce2a64bcff71a7008eed7"
+    },
+    "rejet-601.xml": {
+      "sha256": "137ccee834ece7bf3d4fa10a8ba53769e732c6d70d9b80055a5fb2ccc719b9a8"
+    }
+  }
+}

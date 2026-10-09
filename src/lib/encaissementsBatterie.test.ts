@@ -19,9 +19,12 @@ import {
 // supabase/essais/batterieEncaissements.mjs (étape d4) : le script lit le jour de la base, tire la batterie pour ce jour,
 // la fait juger et la confronte au module ; sans écart, AUJOURD_HUI_RELEVE et l'empreinte ci-dessous se remplacent
 // ENSEMBLE par ce qu'il rend. Rejouée le 09/10/2026 sur la réplique de l'étape d4, la migration
-// transmissions_des_encaissements posée : aucun écart sur 4 000 — l'empreinte figée reste celle du 08/10/2026.
+// transmissions_des_encaissements posée : aucun écart sur 4 000 — l'empreinte figée restait celle du 08/10/2026. Puis,
+// le même jour, sur la réplique de l'étape d7, la migration cycle_de_vie_des_factures_emises posée et le monde augmenté
+// d'une facture que seule sa plateforme dit refusée (F14, un statut 210 lu) et de deux statuts qui ne refusent rien (207
+// et 211) : aucun écart sur 4 000, et l'empreinte et le jour du relevé remplacés ensemble.
 
-const EMPREINTE_DE_LA_BASE = 'e061f97c366878a0d4b1c0e61118fbb8'
+const EMPREINTE_DE_LA_BASE = '336f1f2c8a2440bb9b88cff06f72c2ed'
 
 describe('la batterie jouée par la base', () => {
   const cas = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, AUJOURD_HUI_RELEVE)
@@ -30,10 +33,10 @@ describe('la batterie jouée par la base', () => {
     return refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE)
   })
 
-  // Quatre saisies se répètent, des tirages dégénérés (sans date, sans montant…) ; un tirage qui boucle n'en rendait que
+  // Deux saisies se répètent, des tirages dégénérés (sans date, sans montant…) ; un tirage qui boucle n'en rendait que
   // 1 210 distinctes, et la batterie ne jouait plus que le quart de ce qu'elle annonçait.
-  it('tire 3 996 saisies distinctes sur 4 000', () => {
-    expect(new Set(cas.map((c) => JSON.stringify(c))).size).toBe(3996)
+  it('tire 3 998 saisies distinctes sur 4 000', () => {
+    expect(new Set(cas.map((c) => JSON.stringify(c))).size).toBe(3998)
   })
 
   it('le module rend, saisie par saisie, ce que la base a rendu', () => {
@@ -52,8 +55,8 @@ describe('la batterie jouée par la base', () => {
   // relevé, son lendemain et le 1er janvier qui suit glissent avec lui, les autres restent.
   it('se tire pour le jour où la base la juge, et ne change que de dates', () => {
     const dates = new Set(cas.map((c) => c.date))
-    for (const d of ['2026-10-08', '2026-10-09', '2027-01-01']) expect(dates.has(d), d).toBe(true)
-    const glissees: Record<string, string> = { '2026-10-08': '2027-03-15', '2026-10-09': '2027-03-16', '2027-01-01': '2028-01-01' }
+    for (const d of ['2026-10-09', '2026-10-10', '2027-01-01']) expect(dates.has(d), d).toBe(true)
+    const glissees: Record<string, string> = { '2026-10-09': '2027-03-15', '2026-10-10': '2027-03-16', '2027-01-01': '2028-01-01' }
     const autre = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, '2027-03-15')
     expect(autre).toEqual(cas.map((c) => ({ ...c, date: c.date == null ? null : (glissees[c.date] ?? c.date) })))
   })

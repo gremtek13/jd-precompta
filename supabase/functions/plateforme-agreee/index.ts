@@ -13,7 +13,7 @@
 // policy : refus total côté navigateur, voir supabase/essais/receptionPlateforme.sql). Le secret ne quitte jamais
 // le serveur : il ouvre toutes les factures de l'entreprise, reçues comme émises.
 //
-// Dix actions, toutes demandées par un membre du cabinet qui a accès au dossier — `admin_du_dossier`, vérifié
+// Onze actions, toutes demandées par un membre du cabinet qui a accès au dossier — `admin_du_dossier`, vérifié
 // AVANT toute lecture de la connexion et tout appel à la plateforme :
 //   - statut       la connexion du dossier, SANS appel extérieur : c'est le seul appel que l'écran fait en s'ouvrant ;
 //   - enregistrer  les adresses, l'identifiant, le secret, l'organisation et la portée — vérifiés ici, pas seulement
@@ -32,7 +32,10 @@
 //                  tout appel, l'écrit en CII par le générateur que src/lib fait juger au validateur officiel de la norme,
 //                  réserve sa transmission (une seule active par facture) et la dépose ;
 //   - suivre       relit chez la plateforme l'accusé d'un dépôt — ou le retrouve par son identifiant de suivi quand la
-//                  réponse au dépôt s'est perdue — et l'enregistre.
+//                  réponse au dépôt s'est perdue — et l'enregistre ;
+//   - relever      lit les statuts du cycle de vie des factures ÉMISES (un refus, un rejet, un litige, un paiement…),
+//                  les rattache à une facture validée du dossier et les écrit, une fois par flux (bloc CYCLE DE VIE) :
+//                  un refus lu fait refuser, en base, l'encaissement, la déclaration et la transmission de la facture.
 //
 // UNE connexion par dossier (la clé primaire de la table est le dossier) : un dossier est UNE entreprise, qui a UNE
 // plateforme de réception.
@@ -66,11 +69,21 @@ const MAX_JSON_OCTETS = 2 * 1024 * 1024
 // Le plafond de la lecture d'une pièce (`extract-piece`) : une facture plus lourde se récupère sur la plateforme.
 const MAX_FICHIER_OCTETS = 10 * 1024 * 1024
 const MAX_REDIRECTIONS = 3
+// Le relevé des statuts du cycle de vie (bloc CYCLE DE VIE) fait tout dans l'appel, sous le même mur : la recherche
+// s'arrête à 40 s, aucun téléchargement ne commence après 95 s — chacun dure 25 s au plus —, et cinquante statuts au plus
+// se lisent par appel. Au-delà, le relevé le dit, et le suivant continue. Un statut tient en quelques kilo-octets : un
+// million d'octets est le plafond de son analyseur (cdarRecu).
+const BUDGET_RECHERCHE_STATUTS_MS = 40_000
+const BUDGET_TELECHARGEMENTS_STATUTS_MS = 95_000
+const MAX_STATUTS = 50
+const MAX_STATUT_OCTETS = 1_000_000
 
-const ACTIONS = ["statut", "enregistrer", "retirer", "tester", "lister", "telecharger", "retenir", "repartir", "deposer", "suivre"]
+const ACTIONS = [
+  "statut", "enregistrer", "retirer", "tester", "lister", "telecharger", "retenir", "repartir", "deposer", "suivre", "relever",
+]
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
-  "recherche_depuis, derniere_recuperation, created_at, updated_at"
+  "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
 // Une facture à transmettre, telle que le générateur la lit, avec l'émetteur qu'elle a figé et la facture qu'un avoir
 // corrige.
 const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emission, date_echeance, tiers_nom, tiers_adresse, " +
@@ -199,6 +212,9 @@ interface ConnexionLue {
   portee: string | null
   recherche_depuis: string | null
   derniere_recuperation: string | null
+  // Le point de reprise des statuts du cycle de vie, et l'instant du dernier relevé allé au bout (bloc CYCLE DE VIE).
+  cycle_vie_depuis: string | null
+  cycle_vie_lu_le: string | null
   created_at: string
   updated_at: string
 }
@@ -258,7 +274,7 @@ function saisieDeConnexion(
   }
 
   // Une autre plateforme, une autre identité ou une autre entreprise : la recherche ne reprend pas où l'ancienne
-  // s'était arrêtée — ses flux ne sont pas les mêmes.
+  // s'était arrêtée — ses flux ne sont pas les mêmes —, ni celle des statuts.
   const reinitialiser = existante === null || existante.url_flux !== flux.url || existante.client_id !== clientId ||
     (existante.organisation_id ?? null) !== organisation
   return {
@@ -289,6 +305,8 @@ function vuePublique(c: ConnexionLue | null) {
     portee: c.portee,
     recherche_depuis: c.recherche_depuis,
     derniere_recuperation: c.derniere_recuperation,
+    cycle_vie_depuis: c.cycle_vie_depuis,
+    cycle_vie_lu_le: c.cycle_vie_lu_le,
     created_at: c.created_at,
     version: c.updated_at,
   }
@@ -473,6 +491,10 @@ function fluxDeLaListe(brut: unknown): { flux: FluxVu } | { ecarte: Ecart; misAJ
 // l'ordre croissant de leur date : un flux non lu pourrait alors être plus ancien. Cet ordre, la pagination par la date
 // le SUPPOSE sans qu'aucune documentation publique l'écrive en toutes lettres : le code le vérifie, et une page pleine
 // dans le désordre ne fait pas repartir de la date — elle arrête la lecture en le disant.
+//
+// CE QU'ELLE LIT D'UN FLUX EST UN PARAMÈTRE (`LectureDesFlux`) : les factures de la réception (`LECTURE_FACTURES`), ou
+// les statuts de leur cycle de vie (`LECTURE_STATUTS`, bloc CYCLE DE VIE). La pagination, les bornes et le point de
+// reprise sont les mêmes ; seuls changent le flux lu et les mots qui disent l'arrêt.
 interface PageFlux {
   results?: unknown
   nextCursor?: unknown
@@ -491,8 +513,8 @@ interface Ecartes {
   doublons: number
 }
 
-interface Recherche {
-  flux: FluxVu[]
+interface Recherche<F = FluxVu> {
+  flux: F[]
   ecartes: Ecartes
   pages: number
   complete: boolean
@@ -500,12 +522,37 @@ interface Recherche {
   jusqua: string | null
 }
 
-async function rechercherFlux(
+interface LectureDesFlux<F> {
+  lire: (brut: unknown) => { flux: F } | { ecarte: Ecart; misAJour: number | null }
+  /** Ce que la recherche rend, au pluriel : « factures », « statuts ». */
+  objets: string
+  /** Ce que l'écran fait quand la recherche a atteint son plafond de flux. */
+  apresPlafond: string
+  /** Ce que l'écran fait pour lire la suite. */
+  relance: string
+}
+
+const LECTURE_FACTURES: LectureDesFlux<FluxVu> = {
+  lire: fluxDeLaListe,
+  objets: "factures",
+  apresPlafond: "importez celles-ci, puis relancez la récupération pour la suite",
+  relance: "relancez la récupération",
+}
+
+// Une page que la plateforme refuse : la recherche s'arrête, et l'appelant dit le refus en français (bloc ERREURS).
+class ErreurDePage extends Error {
+  constructor(readonly reponse: ReponseJson) {
+    super(`la plateforme a répondu ${reponse.statut}`)
+  }
+}
+
+async function rechercherFlux<F extends { id: string; mis_a_jour: string }>(
   page: (demande: DemandeDePage) => Promise<PageFlux>,
   depuis: string | null,
   bornes: { taillePage: number; maxFlux: number; maxPages: number; echeance: number; maintenant: () => number },
-): Promise<Recherche> {
-  const flux: FluxVu[] = []
+  lecture: LectureDesFlux<F>,
+): Promise<Recherche<F>> {
+  const flux: F[] = []
   const ecartes: Ecartes = { autre_flux: 0, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 }
   const vus = new Set<string>()
   const curseursServis = new Set<string>()
@@ -513,7 +560,7 @@ async function rechercherFlux(
   let ordonne = true
   let demande: DemandeDePage = { updatedAfter: depuis, cursor: null }
 
-  const fin = (pages: number, complete: boolean, motif: string | null): Recherche => {
+  const fin = (pages: number, complete: boolean, motif: string | null): Recherche<F> => {
     let jusqua: string | null = null
     if (instants.length > 0) {
       const dernier = Math.max(...instants)
@@ -529,14 +576,14 @@ async function rechercherFlux(
 
   for (let n = 0; n < bornes.maxPages; n++) {
     if (n > 0 && bornes.maintenant() > bornes.echeance) {
-      return fin(n, false, "la plateforme met trop de temps à rendre ses pages : relancez la récupération")
+      return fin(n, false, `la plateforme met trop de temps à rendre ses pages : ${lecture.relance}`)
     }
     const reponse = await page(demande)
     const resultats = reponse !== null && typeof reponse === "object" ? reponse.results : undefined
     if (!Array.isArray(resultats)) return fin(n + 1, false, "la plateforme a rendu une page illisible")
     const instantsPage: number[] = []
     for (const brut of resultats) {
-      const lu = fluxDeLaListe(brut)
+      const lu = lecture.lire(brut)
       const instant = "flux" in lu ? instantMs(lu.flux.mis_a_jour) : lu.misAJour
       if (instant !== null) {
         if (instants.length > 0 && instant < instants[instants.length - 1]) ordonne = false
@@ -557,8 +604,7 @@ async function rechercherFlux(
     const suite = typeof reponse.nextCursor === "string" && reponse.nextCursor !== "" ? reponse.nextCursor : null
     if (suite === null && resultats.length < bornes.taillePage) return fin(n + 1, true, null)
     if (flux.length >= bornes.maxFlux) {
-      return fin(n + 1, false, `plus de ${bornes.maxFlux} factures à la fois : importez celles-ci, puis relancez la ` +
-        "récupération pour la suite")
+      return fin(n + 1, false, `plus de ${bornes.maxFlux} ${lecture.objets} à la fois : ${lecture.apresPlafond}`)
     }
     if (suite !== null) {
       if (curseursServis.has(suite)) return fin(n + 1, false, "la plateforme a renvoyé deux fois la même page")
@@ -579,12 +625,12 @@ async function rechercherFlux(
     // Repartir de la date sauterait, chez une plateforme qui rend ses flux dans le désordre, ceux qu'elle n'a pas encore
     // rendus et qui sont plus anciens que la reprise — en silence, et pour toujours si elle rend toujours les mêmes.
     if (!ordonne) {
-      return fin(n + 1, false, "la plateforme ne rend pas ses factures dans l'ordre de leur date : la recherche ne peut " +
-        "pas aller plus loin sans risquer d'en sauter")
+      return fin(n + 1, false, `la plateforme ne rend pas ses ${lecture.objets} dans l'ordre de leur date : la recherche ` +
+        "ne peut pas aller plus loin sans risquer d'en sauter")
     }
     demande = { updatedAfter: isoMs(reprise), cursor: null }
   }
-  return fin(bornes.maxPages, false, `plus de ${bornes.maxPages} pages : relancez la récupération pour la suite`)
+  return fin(bornes.maxPages, false, `plus de ${bornes.maxPages} pages : ${lecture.relance} pour la suite`)
 }
 // ── FIN RECHERCHE ───────────────────────────────────────────────────────────────────────────────────
 
@@ -1087,6 +1133,312 @@ function suiteDuSuivi(t: Pick<TransmissionLue, "etat" | "flux_id" | "detail" | "
   return { maj: null, message: "La plateforme ne connaît pas encore ce dépôt : réessayez dans quelques minutes." }
 }
 // ── FIN DEPOT ───────────────────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT CYCLE DE VIE ──────────────────────────────────────────────────────────────────────────────
+// LES STATUTS DU CYCLE DE VIE DES FACTURES ÉMISES (ligne 28.5, étape d7). L'acheteur refuse une facture (210), une
+// plateforme la rejette (213), l'acheteur l'approuve, la conteste, dit l'avoir payée (spécifications externes de la
+// DGFiP v3.2, § 3.6.4, tableau 8) : ces statuts arrivent au vendeur par la plateforme qui a reçu sa facture, en flux
+// `CustomerInvoiceLC` — « a lifecycle (CDAR) related to a customer invoice » —, entrants, de syntaxe CDAR (description
+// OpenAPI publique du connecteur « afnor » de banqup, v1.15.0). Sur un clic, la fonction les cherche page à page (bloc
+// RECHERCHE), télécharge l'original de chacun, le lit par la copie de cdarRecu, le rattache à une facture validée du
+// dossier par l'identité que l'administration donne à une facture — son numéro, l'année de son émission, le SIREN de son
+// fournisseur (annexe 7 v1.9, règle G1.42) — et l'écrit UNE fois : un flux n'entre qu'une fois par dossier
+// (`statuts_factures_recus_un_flux`). Ce qui ne se rattache à rien ne s'écrit pas : il se dit, flux par flux, avec sa
+// raison — et jamais avec ce que porte le message d'une autre entreprise.
+//
+// LE POINT DE REPRISE (`cycle_vie_depuis`) suit la règle de la réception (`pointDeReprise`, src/lib/receptionPlateforme.ts,
+// à laquelle plateformeAgreeeStatuts.test.ts confronte `repriseDesStatuts`) : il n'avance que sur ce qui est traité pour
+// de bon — gardé, déjà lu, écarté —, jamais au-delà de ce que la recherche rend possible ; un échec passager (un
+// téléchargement, la base, le temps, le nombre) le retient avant le premier statut qui n'a pas été traité ; un statut que
+// la plateforme n'a pas fini de traiter ne retient rien, sa date de mise à jour changera. La fonction le borne ensuite
+// comme celui des factures (bloc CURSEUR).
+const TYPE_CYCLE_DE_VIE = "CustomerInvoiceLC"
+
+interface FluxDeStatut {
+  id: string
+  recu_le: string | null
+  mis_a_jour: string
+  etat: "pret" | "en_attente" | "en_erreur"
+}
+
+/**
+ * Un flux de la liste lu comme un statut du cycle de vie d'une facture émise, ou l'écart qui le fait passer : un autre
+ * type de flux, ou un statut que le vendeur a lui-même émis (`autre_flux`) ; un identifiant ou une date illisible ; une
+ * autre syntaxe que CDAR (`format`) ; un statut de traitement inconnu.
+ */
+function fluxDeCycleDeVie(brut: unknown): { flux: FluxDeStatut } | { ecarte: Ecart; misAJour: number | null } {
+  const f = (brut !== null && typeof brut === "object" ? brut : {}) as Record<string, unknown>
+  const misAJour = instantMs(f.updatedAt)
+  if (f.flowType !== TYPE_CYCLE_DE_VIE || f.flowDirection !== "In") return { ecarte: "autre_flux", misAJour }
+  const id = typeof f.flowId === "string" && /^[!-~]{1,200}$/.test(f.flowId) ? f.flowId : null
+  if (id === null || misAJour === null) return { ecarte: "illisible", misAJour }
+  if (f.flowSyntax !== "CDAR") return { ecarte: "format", misAJour }
+  const accuse = f.acknowledgement !== null && typeof f.acknowledgement === "object"
+    ? (f.acknowledgement as { status?: unknown }).status : undefined
+  const etat = accuse === "Ok" ? "pret" : accuse === "Pending" ? "en_attente" : accuse === "Error" ? "en_erreur" : null
+  if (etat === null) return { ecarte: "statut_inconnu", misAJour }
+  const recu = instantMs(f.submittedAt)
+  return { flux: { id, recu_le: recu === null ? null : isoMs(recu), mis_a_jour: isoMs(misAJour), etat } }
+}
+
+const LECTURE_STATUTS: LectureDesFlux<FluxDeStatut> = {
+  lire: fluxDeCycleDeVie,
+  objets: "statuts",
+  apresPlafond: "relancez la lecture pour la suite",
+  relance: "relancez la lecture",
+}
+
+/** Ce que le relevé demande à la plateforme : la recherche des statuts entrants, page à page, et l'original de chacun. */
+function plateformeDuReleve(
+  plateforme: {
+    appelJson: (methode: "GET" | "POST", chemin: string, corps?: unknown) => Promise<ReponseJson>
+    fichier: (chemin: string) => Promise<ReponseFichier>
+  },
+  taillePage: number,
+): { page: (demande: DemandeDePage) => Promise<PageFlux>; telecharger: (fluxId: string) => Promise<ReponseFichier> } {
+  return {
+    page: async (demande) => {
+      const corps = {
+        where: {
+          flowType: [TYPE_CYCLE_DE_VIE],
+          flowDirection: ["In"],
+          ...(demande.updatedAfter ? { updatedAfter: demande.updatedAfter } : {}),
+        },
+        limit: taillePage,
+        ...(demande.cursor ? { cursor: demande.cursor } : {}),
+      }
+      const r = await plateforme.appelJson("POST", "/v1/flows/search", corps)
+      if (r.statut < 200 || r.statut >= 300 || r.redirection) throw new ErreurDePage(r)
+      return (r.donnees ?? {}) as PageFlux
+    },
+    telecharger: (fluxId) => plateforme.fichier(`/v1/flows/${encodeURIComponent(fluxId)}?docType=Original`),
+  }
+}
+
+/** Un statut lu, tel qu'il s'écrit dans `statuts_factures_recus` : le dossier, l'hôte et le lecteur, l'appelant les pose. */
+interface LigneStatut {
+  facture_id: string
+  flux_id: string
+  code: string
+  message_id: string | null
+  emis_le: string | null
+  createur_role: string | null
+  date_statut: string | null
+  motifs: string | null
+  commentaire: string | null
+  montants: MontantRecu[]
+}
+
+/** Ce que l'écran dit d'un message qui porte sur un autre statut (un 601), quand il concerne le dossier. */
+interface DetailStatut {
+  reference: string
+  date_objet: string | null
+  motifs: string | null
+  commentaire: string | null
+}
+
+// Pourquoi un statut ne se garde pas : ce que dit le rattachement (cdarRecu), ou ce qu'a dit la plateforme ou la base.
+type EcartReleve = EcartStatutRecu | "introuvable" | "trop_lourd" | "refuse"
+
+type IssueStatut =
+  | { flux: string; issue: "garde"; facture_id: string; code: string; avertissements: string[] }
+  | { flux: string; issue: "deja_lu" }
+  | { flux: string; issue: "ecarte"; ecart: EcartReleve; raison: string; code: string | null; detail: DetailStatut | null }
+  | { flux: string; issue: "echec"; raison: string; statut_http: number | null }
+
+interface DependancesReleve {
+  page: (demande: DemandeDePage) => Promise<PageFlux>
+  telecharger: (fluxId: string) => Promise<ReponseFichier>
+  /** Les flux déjà gardés parmi ceux-là ; null quand on ne le sait pas — chacun se lit alors, et la base reconnaît les siens. */
+  dejaLus: (fluxIds: string[]) => Promise<Set<string> | null>
+  /** La facture du dossier qui porte ce numéro, ou null. */
+  factureDuNumero: (numero: string) => Promise<{ facture: FacturePourStatutRecu | null } | { erreur: string }>
+  /** « deja » : la base a reconnu le flux (23505) ; `refus` : elle refuse le statut (23514), avec ses mots. */
+  ecrire: (ligne: LigneStatut) => Promise<"ecrit" | "deja" | { refus: string } | { erreur: string }>
+  maintenant: () => number
+}
+
+interface BornesReleve {
+  taillePage: number
+  maxFlux: number
+  maxPages: number
+  echeanceRecherche: number
+  echeanceTelechargements: number
+  maxTelechargements: number
+  maxOctets: number
+}
+
+interface Releve {
+  issues: IssueStatut[]
+  ecartes: Ecartes
+  en_attente: number
+  en_erreur: number
+  /** Les statuts prêts que le relevé n'a pas lus — le temps ou le nombre —, que le suivant lira. */
+  reportes: number
+  pages: number
+  complete: boolean
+  motif: string | null
+  jusqua: string | null
+}
+
+/**
+ * Un statut prêt : téléchargé, lu, rattaché, écrit. `interrompre` quand la plateforme refuse l'accès : les suivants le
+ * seraient aussi.
+ */
+async function traiterStatut(
+  deps: DependancesReleve, fluxId: string, sirenDuDossier: string | null, maxOctets: number,
+): Promise<{ issue: IssueStatut; interrompre: boolean }> {
+  const ecarte = (ecart: EcartReleve, raison: string, code: string | null = null, detail: DetailStatut | null = null) =>
+    ({ issue: { flux: fluxId, issue: "ecarte" as const, ecart, raison, code, detail }, interrompre: false })
+  const echec = (raison: string, statutHttp: number | null, interrompre = false) =>
+    ({ issue: { flux: fluxId, issue: "echec" as const, raison, statut_http: statutHttp }, interrompre })
+
+  const t = await deps.telecharger(fluxId)
+  if (t.redirectionRefusee) return echec("La plateforme renvoie ce statut vers une adresse que la fonction ne suit pas.", t.statut)
+  if (t.tropLourd || (t.octets !== null && t.octets.length > maxOctets)) {
+    return ecarte("trop_lourd", "Le message est trop lourd pour un statut : il n'est pas lu.")
+  }
+  if (t.octets === null) {
+    if (t.statut === 404) return ecarte("introuvable", "La plateforme ne rend plus ce message.")
+    const e = erreurPlateforme("téléchargement d'un statut", { statut: t.statut, donnees: null, redirection: false })
+    return echec(e.message, t.statut, e.acces)
+  }
+  if (natureFichier(t.octets) !== "xml") return ecarte("illisible", "Le message n'est pas un XML : ce n'est pas un statut qu'on sait lire.")
+  let xml: string
+  try {
+    xml = new TextDecoder("utf-8", { fatal: true }).decode(t.octets)
+  } catch {
+    return ecarte("illisible", "Le message n'est pas écrit en UTF-8.")
+  }
+  const lecture = lireStatutRecu(xml)
+  if ("refus" in lecture) return ecarte(lecture.refus, lecture.raison)
+  const lu = lecture.lu
+  let facture: FacturePourStatutRecu | null = null
+  if (lu.objet === "facture" && (CODES_STATUT_RECU as readonly string[]).includes(lu.code) && lu.siren !== null) {
+    const trouvee = await deps.factureDuNumero(lu.reference)
+    if ("erreur" in trouvee) return echec(`La facture que ce statut désigne n'a pas pu être cherchée (${trouvee.erreur}).`, null)
+    facture = trouvee.facture
+  }
+  const rattachement = rattacherStatutRecu(lu, facture, sirenDuDossier)
+  if ("ecart" in rattachement) {
+    // Un message sur un autre statut (le 601) ne désigne aucune facture : l'écran en dit ce qu'il porte quand il
+    // concerne le dossier — jamais ce que porte le message d'une autre entreprise.
+    const duDossier = lu.objet === "statut" && lu.siren !== null && lu.siren === sirenDuDossier
+    const detail = duDossier
+      ? { reference: lu.reference, date_objet: lu.dateObjet, motifs: lu.motifs, commentaire: lu.commentaire }
+      : null
+    return ecarte(rattachement.ecart, rattachement.raison, lu.code, detail)
+  }
+  const ecrit = await deps.ecrire({
+    facture_id: rattachement.factureId, flux_id: fluxId, code: lu.code, message_id: lu.messageId, emis_le: lu.emisLe,
+    createur_role: lu.createurRole, date_statut: lu.dateStatut, motifs: lu.motifs, commentaire: lu.commentaire,
+    montants: lu.montants,
+  })
+  if (ecrit === "ecrit") {
+    return {
+      issue: { flux: fluxId, issue: "garde", facture_id: rattachement.factureId, code: lu.code, avertissements: lu.avertissements },
+      interrompre: false,
+    }
+  }
+  if (ecrit === "deja") return { issue: { flux: fluxId, issue: "deja_lu" }, interrompre: false }
+  if ("refus" in ecrit) return ecarte("refuse", ecrit.refus, lu.code)
+  return echec(`Le statut n'a pas pu être enregistré (${ecrit.erreur}).`, null)
+}
+
+/**
+ * Le point de reprise que le relevé rend possible : celui de la recherche quand tout est traité ; sinon, la plus grande
+ * date de la liste STRICTEMENT antérieure au premier statut resté à faire, jamais au-delà de celui de la recherche ; nul
+ * — le point actuel reste — quand aucune ne l'est. La règle de `pointDeReprise` (src/lib/receptionPlateforme.ts).
+ */
+function repriseDesStatuts(
+  recherche: { flux: { mis_a_jour: string }[]; jusqua: string | null }, restes: { mis_a_jour: string }[],
+): string | null {
+  const plafond = recherche.jusqua
+  if (plafond === null) return null
+  if (restes.length === 0) return plafond
+  const premiere = restes.reduce((min, f) => (f.mis_a_jour < min ? f.mis_a_jour : min), restes[0].mis_a_jour)
+  let point: string | null = null
+  for (const f of recherche.flux) {
+    if (f.mis_a_jour < premiere && f.mis_a_jour <= plafond && (point === null || f.mis_a_jour > point)) point = f.mis_a_jour
+  }
+  return point
+}
+
+/**
+ * Le relevé : la recherche des statuts depuis `depuis`, puis chaque statut prêt, dans l'ordre de sa date de mise à jour,
+ * tant que le temps et le nombre le permettent. Rend ce que chacun est devenu, et le point de reprise que le relevé rend
+ * possible (`jusqua`), que l'appelant borne et enregistre.
+ */
+async function releverStatuts(
+  deps: DependancesReleve, depuis: string | null, sirenDuDossier: string | null, bornes: BornesReleve,
+): Promise<Releve> {
+  const recherche = await rechercherFlux(deps.page, depuis, {
+    taillePage: bornes.taillePage, maxFlux: bornes.maxFlux, maxPages: bornes.maxPages, echeance: bornes.echeanceRecherche,
+    maintenant: deps.maintenant,
+  }, LECTURE_STATUTS)
+  const prets = recherche.flux.filter((f) => f.etat === "pret")
+    .sort((a, b) => (a.mis_a_jour < b.mis_a_jour ? -1 : a.mis_a_jour > b.mis_a_jour ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const connus = prets.length > 0 ? await deps.dejaLus(prets.map((f) => f.id)) : null
+  const issues: IssueStatut[] = []
+  const restes: FluxDeStatut[] = []
+  let arret: string | null = null
+  let telecharges = 0
+  let reportes = 0
+  for (const flux of prets) {
+    if (connus?.has(flux.id)) {
+      issues.push({ flux: flux.id, issue: "deja_lu" })
+      continue
+    }
+    if (arret === null && telecharges >= bornes.maxTelechargements) {
+      arret = `plus de ${bornes.maxTelechargements} statuts à lire à la fois : relancez la lecture pour la suite`
+    }
+    if (arret === null && deps.maintenant() > bornes.echeanceTelechargements) {
+      arret = "le temps d'un appel est écoulé : relancez la lecture pour la suite"
+    }
+    if (arret !== null) {
+      restes.push(flux)
+      reportes++
+      continue
+    }
+    telecharges++
+    const { issue, interrompre } = await traiterStatut(deps, flux.id, sirenDuDossier, bornes.maxOctets)
+    issues.push(issue)
+    if (issue.issue === "echec") {
+      restes.push(flux)
+      if (interrompre) arret = issue.raison
+    }
+  }
+  return {
+    issues,
+    ecartes: recherche.ecartes,
+    en_attente: recherche.flux.filter((f) => f.etat === "en_attente").length,
+    en_erreur: recherche.flux.filter((f) => f.etat === "en_erreur").length,
+    reportes,
+    pages: recherche.pages,
+    complete: recherche.complete && restes.length === 0,
+    motif: arret ?? recherche.motif
+      ?? (restes.length > 0 ? "des statuts n'ont pas pu être lus : relancez la lecture pour les reprendre" : null),
+    jusqua: repriseDesStatuts(recherche, restes),
+  }
+}
+
+/** Ce que le journal dit d'un relevé : des nombres, et les codes HTTP des téléchargements qui ont échoué. */
+function compteDuReleve(r: Releve) {
+  const de = (issue: IssueStatut["issue"]) => r.issues.filter((i) => i.issue === issue).length
+  const codes = [...new Set(r.issues.flatMap((i) => (i.issue === "echec" && i.statut_http !== null ? [i.statut_http] : [])))]
+    .sort((a, b) => a - b)
+  return {
+    pages: r.pages,
+    gardes: de("garde"),
+    dejaLus: de("deja_lu"),
+    ecartes: de("ecarte") + Object.values(r.ecartes).reduce((a, b) => a + b, 0),
+    echecs: de("echec"),
+    enAttente: r.en_attente,
+    reportes: r.reportes,
+    codes: codes.length > 0 ? codes.join(",") : "aucun",
+  }
+}
+// ── FIN CYCLE DE VIE ────────────────────────────────────────────────────────────────────────────────
 
 // Les trois types que les blocs du générateur nomment, déclarés comme src/lib/types.ts les déclare
 // (copiesFacturation.test.ts le vérifie).
@@ -1917,11 +2269,615 @@ export function donneesDeLaFacture(
 }
 // ── FIN COPIE factureCii ─────────────────────────────────────────────────────────────────────────────────────────────
 
-class ErreurDePage extends Error {
-  constructor(readonly reponse: ReponseJson) {
-    super(`la plateforme a répondu ${reponse.statut}`)
+// ── DÉBUT COPIE cdarRecu ─────────────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans plateforme-agreee, après le bloc factureCii, dont il emprunte `sirenDe`, et
+// rien d'autre. Ses noms portent la marque « Recu » : la fonction a ses `el`, `NS`, `echapper`, et recevra à l'étape d6
+// le bloc cdarEncaissee. cdarRecuCopie.test.ts compare la copie à ce bloc, la compile et l'exécute seule.
+
+// Les statuts d'une FACTURE (dossier général, § 3.6.4, tableau 8) : 200, 210, 212 et 213 obligatoires, les autres
+// facultatifs. Un autre code, pour une facture, n'est pas lu : aucune source publique ne le définit.
+export const CODES_STATUT_RECU = [
+  '200', '201', '202', '203', '204', '205', '206', '207', '208', '209', '210', '211', '212', '213',
+] as const
+export type CodeStatutRecu = (typeof CODES_STATUT_RECU)[number]
+
+// Sur quoi porte un message : une facture, un statut (le « CDV de CDV », dont le 601), un flux, ou autre chose (données
+// réglementaires, e-reporting, annuaire).
+export type ObjetStatutRecu = 'facture' | 'statut' | 'flux' | 'autre'
+
+// MDT-97, le code type de référence (G7.14), et l'objet qu'il désigne.
+const REFERENCES_STATUT_RECU: Record<string, ObjetStatutRecu> = {
+  'urn.cpro.gouv.fr:1p0:CDV:einvoicingF2': 'facture',
+  'urn.cpro.gouv.fr:1p0:CDV:messageCDV': 'statut',
+  'urn.cpro.gouv.fr:1p0:CDV:flux': 'flux',
+  'urn.cpro.gouv.fr:1p0:CDV:einvoicingF1': 'autre',
+  'urn.cpro.gouv.fr:1p0:CDV:ereportingF10': 'autre',
+  'urn.cpro.gouv.fr:1p0:CDV:annuaire': 'autre',
+}
+
+// MDT-91, le code type de l'objet (G7.15) : 303 un flux, 304 une transmission ou des données réglementaires, 305 un
+// statut, 306 l'annuaire ; pour une facture, le type de la facture (G1.01).
+export const TYPES_FACTURE_STATUT_RECU = [
+  '380', '389', '393', '501', '386', '500', '384', '471', '472', '473', '261', '381', '396', '502', '503',
+] as const
+const TYPES_OBJET_STATUT_RECU: Record<string, ObjetStatutRecu> = { 303: 'flux', 304: 'autre', 305: 'statut', 306: 'autre' }
+
+// Les deux seuls types que l'application émet : une facture commerciale (380), un avoir (381).
+const TYPE_EMIS_STATUT_RECU = { facture: '380', avoir: '381' } as const
+
+// Les espaces de noms du message (annexe 2 ; schéma CDAR D22B).
+const NS_RSM_RECU = 'urn:un:unece:uncefact:data:standard:CrossDomainAcknowledgementAndResponse:100'
+const NS_RAM_RECU = 'urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100'
+const NS_UDT_RECU = 'urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100'
+const NS_QDT_RECU = 'urn:un:unece:uncefact:data:standard:QualifiedDataType:100'
+const NS_XML_RECU = 'http://www.w3.org/XML/1998/namespace'
+
+// Ce que l'analyseur accepte au plus : un statut tient en quelques kilo-octets.
+const MAX_CARACTERES_RECU = 1_000_000
+const MAX_PROFONDEUR_RECU = 64
+const MAX_ELEMENTS_RECU = 20_000
+// Les longueurs que la base garde (migration cycle_de_vie_des_factures_emises).
+export const LONGUEUR_MAX_TEXTE_RECU = 2000
+const LONGUEUR_MAX_IDENTIFIANT_RECU = 200
+
+// ── L'analyseur ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface ElementRecu {
+  /** L'espace de noms résolu ; vide quand l'élément n'en a pas. */
+  ns: string
+  nom: string
+  attributs: { ns: string; nom: string; valeur: string }[]
+  enfants: ElementRecu[]
+  /** Les données textuelles DIRECTES de l'élément, sections CDATA comprises, entités décodées. */
+  texte: string
+}
+
+export type AnalyseXmlRecu = { racine: ElementRecu } | { refus: string }
+
+const NOM_XML_RECU = /[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?/y
+const BLANCS_RECU = /[ \t\n]*/y
+// Un caractère que XML 1.0 n'admet pas (§ 2.2), une fois les fins de ligne ramenées à « \n » (§ 2.11).
+const INTERDIT_RECU = /[^\t\n -\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u
+const DECLARATION_RECU =
+  /^<\?xml[ \t\n]+version[ \t\n]*=[ \t\n]*(["'])1\.[0-9]+\1(?:[ \t\n]+encoding[ \t\n]*=[ \t\n]*(["'])([A-Za-z][A-Za-z0-9._-]*)\2)?(?:[ \t\n]+standalone[ \t\n]*=[ \t\n]*(["'])(?:yes|no)\4)?[ \t\n]*\?>/
+
+function caractereAdmisRecu(code: number): boolean {
+  return code === 0x9 || code === 0xa || code === 0xd || (code >= 0x20 && code <= 0xd7ff)
+    || (code >= 0xe000 && code <= 0xfffd) || (code >= 0x10000 && code <= 0x10ffff)
+}
+
+const ENTITES_RECU: Record<string, string> = { lt: '<', gt: '>', amp: '&', apos: "'", quot: '"' }
+
+/** Les références d'entités d'un texte décodées : les cinq prédéfinies et les références numériques, rien d'autre. */
+function decoderEntitesRecu(texte: string): string | null {
+  if (!texte.includes('&')) return texte
+  let sortie = ''
+  let i = 0
+  for (;;) {
+    const amp = texte.indexOf('&', i)
+    if (amp < 0) return sortie + texte.slice(i)
+    sortie += texte.slice(i, amp)
+    const fin = texte.indexOf(';', amp + 1)
+    if (fin < 0) return null
+    const nom = texte.slice(amp + 1, fin)
+    if (Object.hasOwn(ENTITES_RECU, nom)) sortie += ENTITES_RECU[nom]
+    else {
+      const m = /^#(?:x([0-9A-Fa-f]{1,6})|([0-9]{1,7}))$/.exec(nom)
+      if (!m) return null
+      const code = m[1] !== undefined ? parseInt(m[1], 16) : parseInt(m[2], 10)
+      if (!caractereAdmisRecu(code)) return null
+      sortie += String.fromCodePoint(code)
+    }
+    i = fin + 1
   }
 }
+
+/**
+ * Un document XML analysé, ou la raison de son refus. Strict : déclaration en tête et en UTF-8 seulement, aucune DTD ni
+ * déclaration (`<!…`), une seule racine, des balises appariées, des attributs uniques, des entités prédéfinies ou
+ * numériques, des préfixes déclarés. La profondeur, le nombre d'éléments et la longueur sont bornés.
+ */
+export function analyserXmlRecu(source: string): AnalyseXmlRecu {
+  if (source.length > MAX_CARACTERES_RECU) return { refus: 'le message dépasse la taille d’un statut' }
+  let s = source.replace(/\r\n?/g, '\n')
+  if (s.startsWith('\uFEFF')) s = s.slice(1)
+  if (INTERDIT_RECU.test(s)) return { refus: 'le message porte un caractère que XML n’admet pas' }
+  let i = 0
+  if (s.startsWith('<?xml') && /[ \t\n?]/.test(s[5] ?? '')) {
+    const m = DECLARATION_RECU.exec(s)
+    if (!m) return { refus: 'la déclaration XML est illisible' }
+    if (m[3] !== undefined && m[3].toLowerCase() !== 'utf-8') return { refus: `le message est encodé en ${m[3]}, et seul l’UTF-8 se lit` }
+    i = m[0].length
+  }
+  const pile: { el: ElementRecu; qualifie: string; portee: Map<string, string> }[] = []
+  let racine: ElementRecu | null = null
+  let elements = 0
+  const lireNom = (position: number): string | null => {
+    NOM_XML_RECU.lastIndex = position
+    return NOM_XML_RECU.exec(s)?.[0] ?? null
+  }
+  const sauterBlancs = (position: number): number => {
+    BLANCS_RECU.lastIndex = position
+    BLANCS_RECU.exec(s)
+    return BLANCS_RECU.lastIndex
+  }
+  while (i < s.length) {
+    if (s.startsWith('<!--', i)) {
+      const fin = s.indexOf('-->', i + 4)
+      if (fin < 0 || s.slice(i + 4, fin).includes('--') || s[fin - 1] === '-') return { refus: 'un commentaire est mal formé' }
+      i = fin + 3
+      continue
+    }
+    if (s.startsWith('<![CDATA[', i)) {
+      const fin = s.indexOf(']]>', i + 9)
+      if (fin < 0 || pile.length === 0) return { refus: 'une section CDATA est mal placée' }
+      pile[pile.length - 1].el.texte += s.slice(i + 9, fin)
+      i = fin + 3
+      continue
+    }
+    if (s.startsWith('<!', i)) return { refus: 'le message déclare une DTD ou une entité, qu’aucun statut n’emploie' }
+    if (s.startsWith('<?', i)) {
+      const fin = s.indexOf('?>', i + 2)
+      const cible = lireNom(i + 2)
+      if (fin < 0 || cible === null || cible.toLowerCase() === 'xml') return { refus: 'une instruction de traitement est mal formée' }
+      i = fin + 2
+      continue
+    }
+    if (s.startsWith('</', i)) {
+      const nom = lireNom(i + 2)
+      const apres = nom === null ? -1 : sauterBlancs(i + 2 + nom.length)
+      if (nom === null || s[apres] !== '>' || pile.length === 0 || pile[pile.length - 1].qualifie !== nom) {
+        return { refus: 'une balise fermante ne ferme pas la balise ouverte' }
+      }
+      pile.pop()
+      i = apres + 1
+      continue
+    }
+    if (s[i] === '<') {
+      if (racine !== null && pile.length === 0) return { refus: 'le message a plusieurs racines' }
+      if (pile.length >= MAX_PROFONDEUR_RECU || ++elements > MAX_ELEMENTS_RECU) return { refus: 'le message est trop profond ou trop long' }
+      const qualifie = lireNom(i + 1)
+      if (qualifie === null) return { refus: 'un nom de balise est illisible' }
+      let p = i + 1 + qualifie.length
+      const bruts: { qualifie: string; valeur: string }[] = []
+      let fermee = false
+      for (;;) {
+        const apres = sauterBlancs(p)
+        if (s.startsWith('/>', apres)) { fermee = true; p = apres + 2; break }
+        if (s[apres] === '>') { p = apres + 1; break }
+        if (apres === p) return { refus: 'les attributs d’une balise sont mal séparés' }
+        const nom = lireNom(apres)
+        if (nom === null) return { refus: 'un attribut est illisible' }
+        const egal = sauterBlancs(apres + nom.length)
+        if (s[egal] !== '=') return { refus: 'un attribut n’a pas de valeur' }
+        const ouverture = sauterBlancs(egal + 1)
+        const guillemet = s[ouverture]
+        if (guillemet !== '"' && guillemet !== "'") return { refus: 'une valeur d’attribut n’est pas entre guillemets' }
+        const fin = s.indexOf(guillemet, ouverture + 1)
+        if (fin < 0) return { refus: 'une valeur d’attribut n’est pas refermée' }
+        const brute = s.slice(ouverture + 1, fin)
+        const valeur = brute.includes('<') ? null : decoderEntitesRecu(brute)
+        if (valeur === null) return { refus: 'une valeur d’attribut est mal formée' }
+        if (bruts.some((a) => a.qualifie === nom)) return { refus: 'un attribut est répété' }
+        // La normalisation d'une valeur d'attribut (§ 3.3.3) : chaque blanc devient une espace.
+        bruts.push({ qualifie: nom, valeur: valeur.replace(/[\t\n]/g, ' ') })
+        p = fin + 1
+      }
+      const parent = pile.length > 0 ? pile[pile.length - 1].portee : new Map<string, string>([['xml', NS_XML_RECU]])
+      let portee = parent
+      for (const a of bruts) {
+        if (a.qualifie !== 'xmlns' && !a.qualifie.startsWith('xmlns:')) continue
+        if (portee === parent) portee = new Map(parent)
+        const prefixe = a.qualifie === 'xmlns' ? '' : a.qualifie.slice(6)
+        // Namespaces in XML 1.0, § 3 : « xmlns » ne se déclare pas, « xml » n'a qu'un espace et nul autre ne le prend,
+        // un préfixe ne se « dé-déclare » pas ; l'espace par défaut, lui, peut revenir à aucun.
+        if (prefixe === 'xmlns' || (prefixe !== '' && a.valeur === '') || (prefixe === 'xml') !== (a.valeur === NS_XML_RECU)) {
+          return { refus: 'un espace de noms est mal déclaré' }
+        }
+        portee.set(prefixe, a.valeur)
+      }
+      const resoudre = (nomQualifie: string, defaut: boolean): { ns: string; nom: string } | null => {
+        const deux = nomQualifie.indexOf(':')
+        if (deux < 0) return { ns: defaut ? (portee.get('') ?? '') : '', nom: nomQualifie }
+        const ns = portee.get(nomQualifie.slice(0, deux))
+        return ns === undefined || ns === '' ? null : { ns, nom: nomQualifie.slice(deux + 1) }
+      }
+      const nomResolu = resoudre(qualifie, true)
+      if (nomResolu === null || qualifie.startsWith('xmlns:') || qualifie.startsWith('xml:')) return { refus: 'une balise emploie un préfixe non déclaré' }
+      const attributs: ElementRecu['attributs'] = []
+      for (const a of bruts) {
+        if (a.qualifie === 'xmlns' || a.qualifie.startsWith('xmlns:')) continue
+        const r = resoudre(a.qualifie, false)
+        if (r === null) return { refus: 'un attribut emploie un préfixe non déclaré' }
+        if (attributs.some((x) => x.ns === r.ns && x.nom === r.nom)) return { refus: 'un attribut est répété' }
+        attributs.push({ ...r, valeur: a.valeur })
+      }
+      const el: ElementRecu = { ...nomResolu, attributs, enfants: [], texte: '' }
+      if (pile.length > 0) pile[pile.length - 1].el.enfants.push(el)
+      else racine = el
+      if (!fermee) pile.push({ el, qualifie, portee })
+      i = p
+      continue
+    }
+    const suivant = s.indexOf('<', i)
+    const fin = suivant < 0 ? s.length : suivant
+    const texte = s.slice(i, fin)
+    if (pile.length === 0) {
+      if (!/^[ \t\n]*$/.test(texte)) return { refus: 'du texte se trouve hors de la racine' }
+    } else {
+      const decode = texte.includes(']]>') ? null : decoderEntitesRecu(texte)
+      if (decode === null) return { refus: 'un texte porte une entité inconnue ou mal formée' }
+      pile[pile.length - 1].el.texte += decode
+    }
+    i = fin
+  }
+  if (racine === null || pile.length > 0) return { refus: 'le message est incomplet' }
+  return { racine }
+}
+
+// ── La lecture du message ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Un montant d'une caractéristique (MDG-43), tel qu'écrit : jamais converti. */
+export interface MontantRecu {
+  /** MDT-207 : MEN encaissé, MPA payé, RAP reste à payer… (G7.12). */
+  code: string | null
+  /** MDT-215, la forme de G7.07 : le point décimal, 19 chiffres et 6 décimales au plus. */
+  montant: string
+  /** MDT-216. */
+  devise: string | null
+  /** MDT-224. */
+  taux: string | null
+  /** MDT-219, AAAA-MM-JJ. */
+  date: string | null
+}
+
+export interface StatutRecuLu {
+  objet: ObjetStatutRecu
+  /** MDT-105. */
+  code: string
+  /** MDT-87 : le numéro de la facture, l'identifiant du message rejeté ou du flux (G7.23). */
+  reference: string
+  /** MDT-91. */
+  typeObjet: string | null
+  /** MDT-129 de schéma 0002 : le SIREN du vendeur (G7.17). */
+  siren: string | null
+  /** MDT-100, AAAA-MM-JJ : la date d'émission de la facture (G7.31). */
+  dateObjet: string | null
+  /** MDT-4. */
+  messageId: string | null
+  /** MDT-78, l'horodatage du statut, TEL QU'ÉCRIT (AAAAMMJJHHMMSS) : son fuseau n'est pas dit. */
+  emisLe: string | null
+  /** MDT-40 : qui a créé le message (BY l'acheteur, SE le vendeur, WK une plateforme, DFH l'administration…). */
+  createurRole: string | null
+  /** MDT-110, AAAA-MM-JJ. */
+  dateStatut: string | null
+  /** MDT-113 et MDT-114, « code : libellé ; … ». */
+  motifs: string | null
+  /** MDT-125, MDT-126 et MDT-127. */
+  commentaire: string | null
+  montants: MontantRecu[]
+  /** Les données informatives écartées, et pourquoi. */
+  avertissements: string[]
+}
+
+export type LectureStatutRecu = { lu: StatutRecuLu } | { refus: 'illisible' | 'ambigu'; raison: string }
+
+const jetonRecu = (texte: string) => texte.replace(/[ \t\n]+/g, ' ').trim()
+// Les caractères de commande (Unicode Cc : de U+0000 à U+001F et de U+007F à U+009F), invisibles à l'écran.
+const uneLigneRecu = (texte: string) => texte.replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim()
+const caracteresRecu = (texte: string) => [...texte].length
+
+function enfantsRecu(el: ElementRecu, ns: string, nom: string): ElementRecu[] {
+  return el.enfants.filter((e) => e.ns === ns && e.nom === nom)
+}
+
+/** Le texte d'un élément à contenu simple ; null quand il porte des éléments. */
+function texteSimpleRecu(el: ElementRecu): string | null {
+  return el.enfants.length > 0 ? null : el.texte
+}
+
+function attributRecu(el: ElementRecu, nom: string): string | null {
+  return el.attributs.find((a) => a.ns === '' && a.nom === nom)?.valeur ?? null
+}
+
+/** Une date civile AAAAMMJJ qui existe, rendue AAAA-MM-JJ. */
+function dateCivileRecu(chiffres: string): string | null {
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(chiffres)
+  if (!m) return null
+  const [annee, mois, jour] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const bissextile = (annee % 4 === 0 && annee % 100 !== 0) || annee % 400 === 0
+  const jours = [31, bissextile ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return jour >= 1 && jour <= (jours[mois - 1] ?? 0) ? `${m[1]}-${m[2]}-${m[3]}` : null
+}
+
+/**
+ * La date d'un élément date-heure (`…/DateTimeString`, espace de noms udt ou qdt) selon son format : 204
+ * (AAAAMMJJHHMMSS, G7.06) ou 102 (AAAAMMJJ). `absente` quand il n'y en a pas ; `faute` quand elle est mal formée.
+ */
+function dateDeRecu(conteneur: ElementRecu | undefined, espaces: readonly string[]): { date: string | null; horodatage: string | null } | 'absente' | 'faute' {
+  if (conteneur === undefined) return 'absente'
+  const chaines = conteneur.enfants.filter((e) => espaces.includes(e.ns) && e.nom === 'DateTimeString')
+  if (chaines.length !== 1 || conteneur.enfants.length !== 1) return 'faute'
+  const texte = texteSimpleRecu(chaines[0])
+  const format = attributRecu(chaines[0], 'format')
+  if (texte === null || format === null) return 'faute'
+  const valeur = jetonRecu(texte)
+  const formatJeton = jetonRecu(format)
+  if (formatJeton === '102') {
+    const date = dateCivileRecu(valeur)
+    return date === null ? 'faute' : { date, horodatage: null }
+  }
+  if (formatJeton === '204') {
+    const m = /^(\d{8})(\d{2})(\d{2})(\d{2})$/.exec(valeur)
+    const date = m ? dateCivileRecu(m[1]) : null
+    if (!m || date === null || Number(m[2]) > 23 || Number(m[3]) > 59 || Number(m[4]) > 59) return 'faute'
+    return { date, horodatage: valeur }
+  }
+  return 'faute'
+}
+
+/** Un texte informatif, sur une ligne, borné aux 2 000 caractères que la base garde. */
+function borneRecu(morceaux: string[], separateur: string, quoi: string, avertissements: string[]): string | null {
+  const texte = morceaux.filter((m) => m !== '').join(separateur)
+  if (texte === '') return null
+  if (caracteresRecu(texte) <= LONGUEUR_MAX_TEXTE_RECU) return texte
+  avertissements.push(`${quoi} dépasse ${LONGUEUR_MAX_TEXTE_RECU} caractères : il est coupé.`)
+  return `${[...texte].slice(0, LONGUEUR_MAX_TEXTE_RECU - 1).join('')}…`
+}
+
+const MONTANT_G707_RECU = /^-?(\d+)(?:\.(\d{1,6}))?$/
+
+/**
+ * Ce que porte un message de cycle de vie reçu, ou pourquoi il ne se lit pas. Un seul document de réponse (MDB-03),
+ * une seule référence (MDG-32), un seul code (MDT-105), un seul numéro (MDT-87), un seul SIREN de schéma 0002 (G7.17) :
+ * le message porte sur UN objet (P1.14), et plusieurs valeurs le rendent ambigu.
+ */
+export function lireStatutRecu(xml: string): LectureStatutRecu {
+  const analyse = analyserXmlRecu(xml)
+  if ('refus' in analyse) return { refus: 'illisible', raison: `Le message n’est pas un XML lisible : ${analyse.refus}.` }
+  const racine = analyse.racine
+  if (racine.ns !== NS_RSM_RECU || racine.nom !== 'CrossDomainAcknowledgementAndResponse') {
+    return { refus: 'illisible', raison: 'Le message n’est pas un cycle de vie CDAR (CrossDomainAcknowledgementAndResponse).' }
+  }
+  const illisible = (raison: string): LectureStatutRecu => ({ refus: 'illisible', raison })
+  const ambigu = (raison: string): LectureStatutRecu => ({ refus: 'ambigu', raison })
+  const avertissements: string[] = []
+
+  const reponses = enfantsRecu(racine, NS_RSM_RECU, 'AcknowledgementDocument')
+  if (reponses.length === 0) return illisible('Le message n’a pas de document de réponse (MDB-03).')
+  if (reponses.length > 1) return ambigu('Le message porte plusieurs documents de réponse : il devrait porter sur un seul objet (P1.14).')
+  const reponse = reponses[0]
+  const indicateurs = enfantsRecu(reponse, NS_RAM_RECU, 'MultipleReferencesIndicator')
+  if (indicateurs.length > 1) return ambigu('Le message répète l’indicateur de références multiples (MDT-74).')
+  if (indicateurs.length === 1) {
+    const valeurs = enfantsRecu(indicateurs[0], NS_UDT_RECU, 'Indicator').map(texteSimpleRecu)
+    const valeur = valeurs.length === 1 && valeurs[0] !== null ? jetonRecu(valeurs[0]) : null
+    if (valeur === 'true' || valeur === '1') return ambigu('Le message se dit relatif à plusieurs objets (MDT-74) : P1.14 n’en admet qu’un.')
+    if (valeur !== 'false' && valeur !== '0') return illisible('L’indicateur de références multiples (MDT-74) est illisible.')
+  }
+  const references = enfantsRecu(reponse, NS_RAM_RECU, 'ReferenceReferencedDocument')
+  if (references.length === 0) return illisible('Le message ne désigne aucun objet (MDG-32).')
+  if (references.length > 1) return ambigu('Le message désigne plusieurs objets (MDG-32).')
+  const ref = references[0]
+
+  // Les données décisives.
+  const unique = (ns: string, nom: string, mdt: string): { valeur: string | null } | LectureStatutRecu => {
+    const trouves = enfantsRecu(ref, ns, nom)
+    if (trouves.length > 1) return ambigu(`Le message porte plusieurs ${mdt}.`)
+    if (trouves.length === 0) return { valeur: null }
+    const texte = texteSimpleRecu(trouves[0])
+    if (texte === null) return illisible(`${mdt} n’est pas une valeur simple.`)
+    return { valeur: jetonRecu(texte) }
+  }
+  const codeLu = unique(NS_RAM_RECU, 'ProcessConditionCode', 'codes de statut (MDT-105)')
+  if (!('valeur' in codeLu)) return codeLu
+  if (codeLu.valeur === null || !/^\d{3}$/.test(codeLu.valeur)) return illisible('Le code du statut (MDT-105) manque ou n’a pas trois chiffres.')
+  const referenceLue = unique(NS_RAM_RECU, 'IssuerAssignedID', 'identifiants d’objet (MDT-87)')
+  if (!('valeur' in referenceLue)) return referenceLue
+  if (referenceLue.valeur === null || referenceLue.valeur === '' || caracteresRecu(referenceLue.valeur) > LONGUEUR_MAX_IDENTIFIANT_RECU
+    || /\p{Cc}/u.test(referenceLue.valeur)) {
+    return illisible('L’identifiant de l’objet (MDT-87) manque ou est illisible.')
+  }
+  const typeLu = unique(NS_RAM_RECU, 'TypeCode', 'codes type d’objet (MDT-91)')
+  if (!('valeur' in typeLu)) return typeLu
+  if (typeLu.valeur !== null && !/^\d{3}$/.test(typeLu.valeur)) return illisible('Le code type de l’objet (MDT-91) n’a pas trois chiffres.')
+  const urnLue = unique(NS_RAM_RECU, 'ReferenceTypeCode', 'codes type de référence (MDT-97)')
+  if (!('valeur' in urnLue)) return urnLue
+
+  // L'objet : par MDT-97, par MDT-91 ; s'ils se contredisent, le message est ambigu.
+  const parUrn = urnLue.valeur === null ? null : (Object.hasOwn(REFERENCES_STATUT_RECU, urnLue.valeur) ? REFERENCES_STATUT_RECU[urnLue.valeur] : 'inconnu')
+  const parType = typeLu.valeur === null ? null
+    : (TYPES_FACTURE_STATUT_RECU as readonly string[]).includes(typeLu.valeur) ? 'facture'
+    : Object.hasOwn(TYPES_OBJET_STATUT_RECU, typeLu.valeur) ? TYPES_OBJET_STATUT_RECU[typeLu.valeur] : 'inconnu'
+  if (parUrn === null && parType === null) return illisible('Le message ne dit pas sur quoi il porte (MDT-91, MDT-97).')
+  const connus = [parUrn, parType].filter((o): o is ObjetStatutRecu => o !== null && o !== 'inconnu')
+  if (connus.length === 2 && connus[0] !== connus[1]) return ambigu('Le type de l’objet (MDT-91) et le type de référence (MDT-97) se contredisent.')
+  const objet: ObjetStatutRecu = connus[0] ?? 'autre'
+
+  // Le vendeur : MDT-129 de schéma 0002, un seul (G7.17).
+  const emetteurs = enfantsRecu(ref, NS_RAM_RECU, 'IssuerTradeParty')
+  if (emetteurs.length > 1) return ambigu('Le message désigne plusieurs émetteurs de l’objet (MDG-40).')
+  const sirens = new Set<string>()
+  for (const id of emetteurs.length === 1 ? enfantsRecu(emetteurs[0], NS_RAM_RECU, 'GlobalID') : []) {
+    const schema = attributRecu(id, 'schemeID')
+    const texte = texteSimpleRecu(id)
+    if (schema === null || jetonRecu(schema) !== '0002') continue
+    if (texte === null) return illisible('Le SIREN du vendeur (MDT-129) n’est pas une valeur simple.')
+    sirens.add(jetonRecu(texte))
+  }
+  if (sirens.size > 1) return ambigu('Le message désigne plusieurs SIREN de vendeur (MDT-129) : G7.17 n’en admet qu’un.')
+  const siren = sirens.size === 1 ? [...sirens][0] : null
+  if (siren !== null && !/^\d{9}$/.test(siren)) return illisible('Le SIREN du vendeur (MDT-129) n’a pas neuf chiffres.')
+
+  // La date de l'objet (MDT-100) : son année désigne la facture (G1.42).
+  const dates = enfantsRecu(ref, NS_RAM_RECU, 'FormattedIssueDateTime')
+  if (dates.length > 1) return ambigu('Le message porte plusieurs dates d’objet (MDT-100).')
+  const dateObjet = dateDeRecu(dates[0], [NS_QDT_RECU, NS_UDT_RECU])
+  if (dateObjet === 'faute') return illisible('La date de l’objet (MDT-100) est illisible.')
+
+  // Les données informatives.
+  const document = enfantsRecu(racine, NS_RSM_RECU, 'ExchangedDocument')
+  let messageId: string | null = null
+  let createurRole: string | null = null
+  if (document.length === 1) {
+    const ids = enfantsRecu(document[0], NS_RAM_RECU, 'ID').map(texteSimpleRecu)
+    const id = ids.length === 1 && ids[0] !== null ? jetonRecu(ids[0]) : null
+    if (id !== null && id !== '' && caracteresRecu(id) <= LONGUEUR_MAX_IDENTIFIANT_RECU && !/\p{Cc}/u.test(id)) messageId = id
+    else if (ids.length > 0) avertissements.push('L’identifiant du message (MDT-4) est illisible : il est écarté.')
+    const createurs = enfantsRecu(document[0], NS_RAM_RECU, 'IssuerTradeParty')
+    const roles = createurs.length === 1 ? enfantsRecu(createurs[0], NS_RAM_RECU, 'RoleCode').map(texteSimpleRecu) : []
+    const role = roles.length === 1 && roles[0] !== null ? jetonRecu(roles[0]) : null
+    if (role !== null && /^[A-Z0-9]{1,3}$/.test(role)) createurRole = role
+    else if (roles.length > 0 || createurs.length > 1) avertissements.push('Le rôle du créateur du message (MDT-40) est illisible : il est écarté.')
+  } else if (document.length > 1) avertissements.push('Le message répète son document d’échange : son identifiant et son créateur sont écartés.')
+
+  const horodatages = enfantsRecu(reponse, NS_RAM_RECU, 'IssueDateTime')
+  const horodatage = horodatages.length === 1 ? dateDeRecu(horodatages[0], [NS_UDT_RECU]) : horodatages.length === 0 ? 'absente' : 'faute'
+  let emisLe: string | null = null
+  if (horodatage !== 'absente') {
+    if (horodatage !== 'faute' && horodatage.horodatage !== null) emisLe = horodatage.horodatage
+    else avertissements.push('L’horodatage du statut (MDT-78) est illisible : il est écarté.')
+  }
+
+  const motifs: string[] = []
+  const commentaires: string[] = []
+  const montants: MontantRecu[] = []
+  const datesStatut = new Set<string>()
+  for (const detail of enfantsRecu(ref, NS_RAM_RECU, 'SpecifiedDocumentStatus')) {
+    const codes = enfantsRecu(detail, NS_RAM_RECU, 'ReasonCode').map(texteSimpleRecu)
+    const code = codes.length === 1 && codes[0] !== null ? jetonRecu(codes[0]) : null
+    const codeAdmis = code !== null && /^[A-Za-z0-9_.-]{1,50}$/.test(code) ? code : null
+    if (codes.length > 0 && codeAdmis === null) avertissements.push('Un code de motif (MDT-113) est illisible : il est écarté.')
+    const libelles = enfantsRecu(detail, NS_RAM_RECU, 'Reason').map((e) => uneLigneRecu(texteSimpleRecu(e) ?? '')).filter((t) => t !== '')
+    if (codeAdmis !== null || libelles.length > 0) motifs.push([codeAdmis, libelles.join(' ')].filter((x) => x !== null && x !== '').join(' : '))
+    for (const note of enfantsRecu(detail, NS_RAM_RECU, 'IncludedNote')) {
+      const regle = enfantsRecu(note, NS_RAM_RECU, 'ContentCode').map((e) => uneLigneRecu(texteSimpleRecu(e) ?? '')).filter((t) => t !== '')
+      const contenu = enfantsRecu(note, NS_RAM_RECU, 'Content').map((e) => uneLigneRecu(texteSimpleRecu(e) ?? '')).filter((t) => t !== '')
+      const sujet = enfantsRecu(note, NS_RAM_RECU, 'SubjectCode').map((e) => uneLigneRecu(texteSimpleRecu(e) ?? '')).filter((t) => t !== '')
+      const morceau = [regle.length > 0 ? `[${regle.join(', ')}]` : '', contenu.join(' '), sujet.length > 0 ? `(${sujet.join(', ')})` : '']
+        .filter((x) => x !== '').join(' ')
+      if (morceau !== '') commentaires.push(morceau)
+    }
+    const dateDetail = dateDeRecu(enfantsRecu(detail, NS_RAM_RECU, 'ReferenceDateTime')[0], [NS_UDT_RECU])
+    if (dateDetail === 'faute' || enfantsRecu(detail, NS_RAM_RECU, 'ReferenceDateTime').length > 1) {
+      avertissements.push('Une date de statut (MDT-110) est illisible : elle est écartée.')
+    } else if (dateDetail !== 'absente' && dateDetail.date !== null) datesStatut.add(dateDetail.date)
+    for (const c of enfantsRecu(detail, NS_RAM_RECU, 'SpecifiedDocumentCharacteristic')) {
+      const valeurs = enfantsRecu(c, NS_RAM_RECU, 'ValueAmount')
+      if (valeurs.length === 0) continue
+      const brut = valeurs.length === 1 ? texteSimpleRecu(valeurs[0]) : null
+      const montant = brut === null ? null : jetonRecu(brut)
+      const m = montant === null ? null : MONTANT_G707_RECU.exec(montant)
+      if (montant === null || m === null || m[1].length + (m[2]?.length ?? 0) > 19) {
+        avertissements.push('Un montant (MDT-215) est illisible : il est écarté.')
+        continue
+      }
+      const devise = attributRecu(valeurs[0], 'currencyID')
+      const types = enfantsRecu(c, NS_RAM_RECU, 'TypeCode').map(texteSimpleRecu)
+      const type = types.length === 1 && types[0] !== null ? jetonRecu(types[0]) : null
+      const tauxBruts = enfantsRecu(c, NS_RAM_RECU, 'ValuePercent').map(texteSimpleRecu)
+      const taux = tauxBruts.length === 1 && tauxBruts[0] !== null ? jetonRecu(tauxBruts[0]) : null
+      const dateMontant = dateDeRecu(enfantsRecu(c, NS_RAM_RECU, 'ValueDateTime')[0], [NS_UDT_RECU])
+      montants.push({
+        code: type !== null && /^[A-Z]{3}$/.test(type) ? type : null,
+        montant,
+        devise: devise !== null && /^[A-Z]{3}$/.test(jetonRecu(devise)) ? jetonRecu(devise) : null,
+        taux: taux !== null && /^-?\d+(?:\.\d+)?$/.test(taux) ? taux : null,
+        date: dateMontant !== 'absente' && dateMontant !== 'faute' ? dateMontant.date : null,
+      })
+    }
+  }
+  if (datesStatut.size > 1) avertissements.push('Les dates de statut (MDT-110) se contredisent : elles sont écartées.')
+
+  return {
+    lu: {
+      objet,
+      code: codeLu.valeur,
+      reference: referenceLue.valeur,
+      typeObjet: typeLu.valeur,
+      siren,
+      dateObjet: dateObjet === 'absente' ? null : dateObjet.date,
+      messageId,
+      emisLe,
+      createurRole,
+      dateStatut: datesStatut.size === 1 ? [...datesStatut][0] : null,
+      motifs: borneRecu(motifs, ' ; ', 'Le motif', avertissements),
+      commentaire: borneRecu(commentaires, ' — ', 'Le commentaire', avertissements),
+      montants,
+      avertissements,
+    },
+  }
+}
+
+// ── Le rattachement à une facture du dossier ─────────────────────────────────────────────────────────────────────────
+
+/** La facture du dossier qui porte le numéro du message, telle que le rattachement la lit (colonnes de `factures_emises`). */
+export interface FacturePourStatutRecu {
+  id: string
+  numero: string | null
+  statut: 'brouillon' | 'validee'
+  type: 'facture' | 'avoir'
+  date_emission: string
+  emetteur_siret: string | null
+}
+
+// Pourquoi un message ne se rattache pas : il ne se garde pas, il se dit.
+export type EcartStatutRecu =
+  | 'illisible' | 'ambigu' | 'autre_objet' | 'statut_inconnu' | 'autre_vendeur' | 'facture_inconnue' | 'incoherent'
+
+export type RattachementRecu = { factureId: string } | { ecart: EcartStatutRecu; raison: string }
+
+/**
+ * Le rattachement d'un message lu à une facture du dossier. L'identité d'une facture pour l'administration est son
+ * numéro, l'année de sa date d'émission et le SIREN de son fournisseur (G1.42) : le message se rattache quand il porte
+ * sur une facture (MDT-97, MDT-91), dit un statut du tableau 8, désigne le vendeur par son SIREN (G7.17), et que
+ * `facture` — la facture VALIDÉE du dossier qui porte son numéro MDT-87, cherchée par l'appelant, ou null — a FIGÉ ce
+ * SIREN à sa validation, a cette année d'émission (MDT-100, quand il est là) et ce type (MDT-91, quand il est là).
+ * `sirenDuDossier` ne sert qu'à dire si un message sans facture est celui d'une autre entreprise.
+ */
+export function rattacherStatutRecu(
+  lu: StatutRecuLu,
+  facture: FacturePourStatutRecu | null,
+  sirenDuDossier: string | null,
+): RattachementRecu {
+  if (lu.objet !== 'facture') {
+    return {
+      ecart: 'autre_objet',
+      raison: lu.objet === 'statut'
+        ? `Un statut ${lu.code} porte sur un autre statut (un cycle de vie rejeté) : il ne désigne pas une facture.`
+        : `Un statut ${lu.code} porte sur un ${lu.objet === 'flux' ? 'flux' : 'objet'} qui n’est pas une facture.`,
+    }
+  }
+  if (!(CODES_STATUT_RECU as readonly string[]).includes(lu.code)) {
+    return { ecart: 'statut_inconnu', raison: `Le statut ${lu.code} n’est pas un statut de facture que les spécifications de la DGFiP définissent.` }
+  }
+  if (lu.siren === null) {
+    return { ecart: 'illisible', raison: 'Le message ne désigne pas le vendeur par son SIREN (règle G7.17).' }
+  }
+  if (facture === null || facture.statut !== 'validee' || facture.numero !== lu.reference) {
+    // Sans SIREN au dossier, rien ne dit que le message vise une autre entreprise : il se dit sans facture.
+    return sirenDuDossier !== null && lu.siren !== sirenDuDossier
+      ? { ecart: 'autre_vendeur', raison: 'Le message concerne la facture d’une autre entreprise que le dossier.' }
+      : { ecart: 'facture_inconnue', raison: `Aucune facture validée du dossier ne porte le numéro ${lu.reference}.` }
+  }
+  const sirenFige = sirenDe(facture.emetteur_siret)
+  if (sirenFige === null) {
+    return { ecart: 'incoherent', raison: `La facture ${facture.numero} ne porte pas le SIREN qu’elle aurait transmis.` }
+  }
+  if (sirenFige !== lu.siren) {
+    return lu.siren === sirenDuDossier
+      ? { ecart: 'incoherent', raison: `La facture ${facture.numero} a été émise sous un autre SIREN que celui que le message désigne.` }
+      : { ecart: 'autre_vendeur', raison: 'Le message concerne la facture d’une autre entreprise que le dossier.' }
+  }
+  if (lu.dateObjet !== null && lu.dateObjet.slice(0, 4) !== facture.date_emission.slice(0, 4)) {
+    return { ecart: 'incoherent', raison: `Le message désigne une facture ${lu.reference} de ${lu.dateObjet.slice(0, 4)} : celle du dossier est de ${facture.date_emission.slice(0, 4)}.` }
+  }
+  if (lu.typeObjet !== null && lu.typeObjet !== TYPE_EMIS_STATUT_RECU[facture.type]) {
+    return { ecart: 'incoherent', raison: `Le message désigne un document de type ${lu.typeObjet} : ${facture.numero} est ${facture.type === 'facture' ? 'une facture (380)' : 'un avoir (381)'}.` }
+  }
+  return { factureId: facture.id }
+}
+// ── FIN COPIE cdarRecu ───────────────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
 // Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
@@ -2024,7 +2980,9 @@ Deno.serve(async (req: Request) => {
         .update({
           ...saisie.valeurs,
           updated_at: new Date().toISOString(),
-          ...(saisie.reinitialiser ? { recherche_depuis: null, derniere_recuperation: null } : {}),
+          ...(saisie.reinitialiser
+            ? { recherche_depuis: null, derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null }
+            : {}),
         })
         .eq("dossier_id", dossierId).select(COLONNES).maybeSingle()
       if (error) return json({ error: `La connexion n'a pas pu être enregistrée (${error.message}).` }, 500)
@@ -2041,7 +2999,7 @@ Deno.serve(async (req: Request) => {
     return json({ connexion: vuePublique((data ?? null) as ConnexionLue | null) })
   }
 
-  // Les sept dernières actions supposent une connexion.
+  // Les huit dernières actions supposent une connexion.
   if (!connexion) return json({ error: "Aucune plateforme n'est configurée pour ce dossier." }, 409)
   const hote = new URL(connexion.url_flux).hostname
   // Une configuration modifiée entre la liste et l'import désigne peut-être une autre plateforme ou une autre
@@ -2272,7 +3230,7 @@ Deno.serve(async (req: Request) => {
       }, depuis === null ? null : isoMs(depuis), {
         taillePage: TAILLE_PAGE, maxFlux: MAX_FLUX, maxPages: MAX_PAGES, echeance: debut + BUDGET_RECHERCHE_MS,
         maintenant: () => Date.now(),
-      })
+      }, LECTURE_FACTURES)
     } catch (e) {
       if (e instanceof ErreurDePage) {
         const erreur = erreurPlateforme("recherche des flux", e.reponse)
@@ -2294,6 +3252,101 @@ Deno.serve(async (req: Request) => {
       complete: recherche.complete,
       motif: recherche.motif,
       jusqua: recherche.jusqua,
+    })
+  }
+
+  if (action === "relever") {
+    // Relire depuis le début : le point de reprise des statuts repart de rien, comme « repartir » pour les factures — un
+    // statut déjà gardé est reconnu à son flux et ne s'écrit pas deux fois.
+    const depuisLeDebut = payload.depuisLeDebut === true
+    // Le SIREN du dossier ne sert qu'à dire qu'un statut concerne une autre entreprise : le rattachement compare celui que
+    // chaque facture a FIGÉ à sa validation.
+    const { data: dossierLu, error: erreurDossier } = await admin.from("dossiers")
+      .select("siret").eq("id", dossierId).maybeSingle()
+    if (erreurDossier || !dossierLu) {
+      return json({ error: `Le dossier n'a pas pu être lu (${erreurDossier?.message ?? "dossier introuvable"}).` }, 503)
+    }
+    const actuel = depuisLeDebut ? null : connexion.cycle_vie_depuis
+    const depuis = instantMs(actuel)
+    let releve: Releve
+    try {
+      releve = await releverStatuts({
+        ...plateformeDuReleve(plateforme, TAILLE_PAGE),
+        // Une économie, jamais une garantie : un flux qu'on ne sait pas déjà lu se lit, et la base le reconnaît (23505).
+        dejaLus: async (fluxIds) => {
+          const { data: lus, error, count } = await admin.from("statuts_factures_recus")
+            .select("flux_id", { count: "exact" }).eq("dossier_id", dossierId).eq("hote", hote).in("flux_id", fluxIds)
+          if (error || !lus || count !== lus.length) return null
+          return new Set((lus as { flux_id: string }[]).map((l) => l.flux_id))
+        },
+        factureDuNumero: async (numero) => {
+          const { data: trouvee, error } = await admin.from("factures_emises")
+            .select("id, numero, statut, type, date_emission, emetteur_siret")
+            .eq("dossier_id", dossierId).eq("numero", numero).maybeSingle()
+          if (error) return { erreur: error.message }
+          return { facture: (trouvee ?? null) as FacturePourStatutRecu | null }
+        },
+        ecrire: async (ligne) => {
+          const { error } = await admin.from("statuts_factures_recus")
+            .insert({ ...ligne, dossier_id: dossierId, hote, lu_par: utilisateur })
+          if (!error) return "ecrit"
+          if (error.code === "23505") return "deja"
+          if (error.code === "23514") return { refus: error.message }
+          return { erreur: error.message }
+        },
+        maintenant: () => Date.now(),
+      }, depuis === null ? null : isoMs(depuis), sirenDe(dossierLu.siret), {
+        taillePage: TAILLE_PAGE, maxFlux: MAX_FLUX, maxPages: MAX_PAGES, echeanceRecherche: debut + BUDGET_RECHERCHE_STATUTS_MS,
+        echeanceTelechargements: debut + BUDGET_TELECHARGEMENTS_STATUTS_MS, maxTelechargements: MAX_STATUTS,
+        maxOctets: MAX_STATUT_OCTETS,
+      })
+    } catch (e) {
+      if (e instanceof ErreurDePage) {
+        const erreur = erreurPlateforme("recherche des statuts", e.reponse)
+        console.error(`[plateforme-agreee] relever : la plateforme a répondu ${e.reponse.statut}`)
+        return json({ error: erreur.message, acces_refuse: erreur.acces }, erreur.statut)
+      }
+      console.error(`[plateforme-agreee] relever : lecture interrompue (${(e as { name?: unknown })?.name ?? "?"})`)
+      return json({ error: "La lecture des statuts s'est interrompue : réessayez." }, 500)
+    }
+
+    // Le point de reprise, borné comme celui des factures, sur la configuration lue ; les statuts gardés le restent, que
+    // l'enregistrement du point réussisse ou non — le relevé suivant les reconnaîtra.
+    const retenu = curseurRetenu(actuel, releve.jusqua, Date.now())
+    let reprise = { depuis: connexion.cycle_vie_depuis, luLe: connexion.cycle_vie_lu_le, erreur: null as string | null }
+    if ("refus" in retenu) {
+      reprise = { ...reprise, erreur: retenu.refus }
+    } else {
+      const luLe = releve.complete ? new Date().toISOString() : null
+      const { data: ecrite, error } = await admin.from("connexions_plateformes")
+        .update({ cycle_vie_depuis: retenu.curseur, ...(luLe ? { cycle_vie_lu_le: luLe } : {}) })
+        .eq("dossier_id", dossierId).eq("updated_at", connexion.updated_at).select("dossier_id").maybeSingle()
+      if (error) {
+        reprise = { ...reprise, erreur: `Le point de reprise des statuts n'a pas pu être enregistré (${error.message}) : la lecture suivante relira ces statuts, et les reconnaîtra.` }
+      } else if (!ecrite) {
+        reprise = { ...reprise, erreur: "La connexion à la plateforme a changé entre-temps : le point de reprise des statuts n'est pas enregistré." }
+      } else {
+        reprise = { depuis: retenu.curseur, luLe: luLe ?? reprise.luLe, erreur: null }
+      }
+    }
+    const compte = compteDuReleve(releve)
+    console.log(`[plateforme-agreee] relever : ${compte.pages} page(s), ${compte.gardes} gardé(s), ${compte.dejaLus} déjà ` +
+      `lu(s), ${compte.ecartes} écarté(s), ${compte.echecs} en échec (${compte.codes}), ${compte.enAttente} en attente, ` +
+      `${compte.reportes} reporté(s), ${releve.complete ? "complet" : "incomplet"}`)
+    return json({
+      hote,
+      version: connexion.updated_at,
+      depuis: actuel,
+      issues: releve.issues,
+      ecartes: releve.ecartes,
+      en_attente: releve.en_attente,
+      en_erreur: releve.en_erreur,
+      reportes: releve.reportes,
+      complete: releve.complete,
+      motif: releve.motif,
+      cycle_vie_depuis: reprise.depuis,
+      cycle_vie_lu_le: reprise.luLe,
+      erreur_reprise: reprise.erreur,
     })
   }
 

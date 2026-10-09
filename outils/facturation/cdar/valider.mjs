@@ -1,7 +1,9 @@
-// Fait passer les messages du statut « Encaissée » d'exemple (outils/facturation/cdar/exemples/*.xml) au schéma XSD du
-// message CrossDomainAcknowledgementAndResponse (CDAR) de l'UN/CEFACT, version D22B, et écrit la liste des fichiers
-// validés avec leur empreinte (exemples/valides.json). cdarEncaissee.test.ts refuse un exemple dont l'empreinte n'y
-// figure pas : un exemple qui change repasse ici avant de partir.
+// Fait passer les messages du statut « Encaissée » d'exemple (outils/facturation/cdar/exemples/*.xml) — et, depuis
+// l'étape d7, les messages de cycle de vie REÇUS d'exemple (outils/facturation/cdar/recus/*.xml : un refus, un rejet,
+// un 601, un litige…) — au schéma XSD du message CrossDomainAcknowledgementAndResponse (CDAR) de l'UN/CEFACT, version
+// D22B, et écrit, dossier par dossier, la liste des fichiers validés avec leur empreinte (valides.json).
+// cdarEncaissee.test.ts et cdarRecu.test.ts refusent un exemple dont l'empreinte n'y figure pas : un exemple qui change
+// repasse ici avant de partir.
 //
 //   curl -sSLo <cache>/ph-cii-d22b-4.1.3.jar \
 //     https://repo1.maven.org/maven2/com/helger/cii/ph-cii-d22b/4.1.3/ph-cii-d22b-4.1.3.jar
@@ -48,7 +50,7 @@ const XSD = {
     '1953681991569751c95fbc34a39c8aea5a5a0e9c82234185ad30df902958b4c9',
 }
 const EXEMPLES = fileURLToPath(new URL('./exemples/', import.meta.url))
-const MANIFESTE = join(EXEMPLES, 'valides.json')
+const RECUS = fileURLToPath(new URL('./recus/', import.meta.url))
 
 function arret(message) {
   console.error(`✗ ${message}`)
@@ -83,11 +85,11 @@ function schema(fichier) {
   return { valide: r.status === 0, message: (r.stderr || r.stdout || '').trim() }
 }
 
-const fichiers = readdirSync(EXEMPLES).filter((f) => f.endsWith('.xml')).sort()
-if (fichiers.length === 0) arret(`Aucun exemple dans ${EXEMPLES}.`)
+const xmlDe = (dossier) => readdirSync(dossier).filter((f) => f.endsWith('.xml')).sort()
+for (const dossier of [EXEMPLES, RECUS]) if (xmlDe(dossier).length === 0) arret(`Aucun exemple dans ${dossier}.`)
 
 // L'outil s'éprouve sur trois documents faux, tirés du premier exemple.
-const premier = readFileSync(join(EXEMPLES, fichiers[0]), 'utf8')
+const premier = readFileSync(join(EXEMPLES, xmlDe(EXEMPLES)[0]), 'utf8')
 const faux = {
   'un élément que le schéma ne connaît pas': premier.replace('<ram:TypeCode>', '<ram:Inconnu>1</ram:Inconnu><ram:TypeCode>'),
   'un montant à virgule': premier.replace(/(<ram:ValueAmount currencyID="EUR">)([^<]*)(<\/ram:ValueAmount>)/,
@@ -102,20 +104,27 @@ for (const [quoi, document] of Object.entries(faux)) {
 }
 console.log(`Autocontrôle : ${Object.keys(faux).join(', ')} sont bien refusés.`)
 
+// Chaque dossier est jugé en entier avant qu'aucune liste ne s'écrive : un exemple refusé n'en laisse écrire aucune.
 let echecs = 0
-const manifeste = { schema: { publication: 'UN/CEFACT, XML Schemas version 22B', jar: JAR, xsd: XSD }, fichiers: {} }
-for (const f of fichiers) {
-  const chemin = join(EXEMPLES, f)
-  const s = schema(chemin)
-  console.log(`${s.valide ? '✓' : '✗'} ${f} : ${s.valide ? 'schéma respecté' : 'schéma NON respecté'}`)
-  if (!s.valide) {
-    console.log(`    ${s.message.split('\n').join('\n    ')}`)
-    echecs++
+const manifestes = []
+for (const dossier of [EXEMPLES, RECUS]) {
+  const manifeste = { schema: { publication: 'UN/CEFACT, XML Schemas version 22B', jar: JAR, xsd: XSD }, fichiers: {} }
+  for (const f of xmlDe(dossier)) {
+    const chemin = join(dossier, f)
+    const s = schema(chemin)
+    console.log(`${s.valide ? '✓' : '✗'} ${f} : ${s.valide ? 'schéma respecté' : 'schéma NON respecté'}`)
+    if (!s.valide) {
+      console.log(`    ${s.message.split('\n').join('\n    ')}`)
+      echecs++
+    }
+    manifeste.fichiers[f] = { sha256: createHash('sha256').update(readFileSync(chemin)).digest('hex') }
   }
-  manifeste.fichiers[f] = { sha256: createHash('sha256').update(readFileSync(chemin)).digest('hex') }
+  manifestes.push({ chemin: join(dossier, 'valides.json'), manifeste })
 }
 rmSync(travail, { recursive: true, force: true })
 
-if (echecs > 0) arret(`${echecs} exemple(s) refusé(s) : la liste des fichiers validés n’est pas écrite.`)
-writeFileSync(MANIFESTE, `${JSON.stringify(manifeste, null, 2)}\n`)
-console.log(`${fichiers.length} exemple(s) valide(s) : ${MANIFESTE} écrit.`)
+if (echecs > 0) arret(`${echecs} exemple(s) refusé(s) : aucune liste de fichiers validés n’est écrite.`)
+for (const { chemin, manifeste } of manifestes) {
+  writeFileSync(chemin, `${JSON.stringify(manifeste, null, 2)}\n`)
+  console.log(`${Object.keys(manifeste.fichiers).length} exemple(s) valide(s) : ${chemin} écrit.`)
+}

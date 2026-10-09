@@ -102,6 +102,14 @@
 -- empreinte 95048df511611d0bd486747149697640) : seul cet en-tête a changé depuis. La table nouvelle est
 -- vide en production : ce que ses policies et son déclencheur refusent sur une ligne qui EXISTE est
 -- éprouvé par `transmissionsEncaissements.sql`.
+--
+-- 09/10/2026 — PASSAGE COMPLET après `cycle_de_vie_des_factures_emises`, qui crée `statuts_factures_recus`
+-- et ses deux policies (lecture sous `admin_du_dossier`, insertion de restauration réservée au
+-- super-admin) : 22 lignes de verdict (56 tables du schéma, dont 48 portant un `dossier_id`, + 3 buckets,
+-- 3 profils), 0 en faute, et 14 mutations sur 14 qui mordent. Le texte reçu est celui des deux passages
+-- précédents, caractère pour caractère (32 144 caractères, empreinte 95048df511611d0bd486747149697640) :
+-- seul cet en-tête a changé depuis. La table nouvelle est vide en production : ce que ses policies et sa
+-- garde refusent sur une ligne qui EXISTE est éprouvé par `statutsFacturesRecus.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

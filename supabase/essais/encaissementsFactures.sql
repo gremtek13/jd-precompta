@@ -47,6 +47,11 @@
 -- REJOUÉ LE 08/10/2026, après la migration `transmissions_des_encaissements` (version 20261008221156), qui donne son
 -- corps à `encaissement_declare` : 109 contrôles sur 109 en production (47b et 47c ajoutés, le contrôle 99 reformulé),
 -- le texte transmis identique à ce fichier, rien laissé en base ; les mêmes 109 sur la réplique.
+--
+-- REJOUÉ LE 09/10/2026, après la migration `cycle_de_vie_des_factures_emises` (version 20261009034144), qui élargit le
+-- refus 5 de `enregistrer_encaissement` à un refus lu sur la plateforme du client : 109 contrôles sur 109 en
+-- production, le texte transmis identique à ce fichier, ce paragraphe retiré (67 530 caractères, empreinte
+-- 4b0bf6ab65c73927f5e6340be4891023), rien laissé en base.
 do $$
 declare
   inconnu uuid := gen_random_uuid();

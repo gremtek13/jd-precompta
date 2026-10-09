@@ -127,6 +127,21 @@ describe('ordre de restauration', () => {
       .toEqual(['dossiers:cascade', 'encaissements_factures:bloque', 'factures_emises:bloque'])
   })
 
+  it('écrit les statuts lus sur la plateforme du client avant les transmissions et les déclarations que leurs gardes refusent', () => {
+    // Deux dépendances qu'aucune clé étrangère ne porte (étape d7) : les gardes de `transmissions_factures` et de
+    // `transmissions_encaissements` lisent les statuts 210 et 213 de `statuts_factures_recus`. Réinsérés après elles, les
+    // statuts ne seraient jugés par personne ; réinsérés avant, ils laissent passer ce qui les précédait (la règle de
+    // date, `lu_le`) et refusent ce qui n'aurait pas pu naître après eux.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('statuts_factures_recus')).toBeGreaterThan(rang('factures_emises'))
+    for (const gardee of ['transmissions_factures', 'transmissions_encaissements']) {
+      expect(rang('statuts_factures_recus'), gardee).toBeLessThan(rang(gardee))
+    }
+    // Le dossier l'emporte ; une facture validée ne le fait pas disparaître sous elle.
+    expect(RELATIONS.filter((r) => r.enfant === 'statuts_factures_recus').map((r) => `${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual(['dossiers:cascade', 'factures_emises:bloque'])
+  })
+
   it('rend l’ordre de suppression exactement inverse', () => {
     const suppression = ordreSuppression()
     expect(suppression[0]).toBe(ORDRE_RESTAURATION[ORDRE_RESTAURATION.length - 1])

@@ -2,7 +2,7 @@ import {
   echeanceDeDeclaration, obligationEncaissee, refusDeclaration, resteAEncaisser,
   type DeclarationLue, type EncaissementPourContrePassation, type EncaissementLu, type EvenementSuperpdpLu,
   type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture, type PartLue, type PartProposee,
-  type TransmissionPourDeclaration,
+  type StatutPlateformeLu, type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { formatMoney } from './format'
 import type { StatutTva } from './types'
@@ -57,7 +57,8 @@ export function pastilleEncaissement(
  * Rien quand l'obligation n'est pas due : facultative, rien n'est en retard ni exigé, et la fenêtre dit ce qui se
  * déclare ; sans objet, à préciser ou refusée, rien ne se déclare d'ici. Un encaissement compte « à déclarer » quand la
  * base inscrirait sa déclaration (`refusDeclaration` sans refus), et seulement alors. Pas quand la facture a été rejetée
- * ou refusée : aucun statut ne la suit, elle s'annule par un avoir interne. Pas non plus quand aucune plateforme ne l'a
+ * ou refusée, chez Super PDP comme sur la plateforme du client (`statutsRecus`, étape d7) : aucun statut ne la suit, elle
+ * s'annule par un avoir interne. Pas non plus quand aucune plateforme ne l'a
  * acceptée par l'application — jamais transmise d'ici, déposée sans accusé, ou déposée par le client lui-même : une
  * déclaration faite ailleurs ne s'inscrirait pas ici, et « Déclaration en retard » s'y allumerait sans que rien d'ici
  * puisse l'éteindre. Le statut y reste dû : la fenêtre le dit, avec son échéance, et pourquoi il ne se déclare pas d'ici.
@@ -73,13 +74,14 @@ export function pastilleDeclaration(
   declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
   transmissions: readonly TransmissionPourDeclaration[],
   evenementsSuperpdp: readonly EvenementSuperpdpLu[],
+  statutsRecus: readonly StatutPlateformeLu[],
   statutTva: StatutTva | null,
   aujourdHui: string,
 ): PastilleEncaissement | null {
   // Un brouillon, un avoir : `obligationEncaissee` les dit sans objet, et rien ne se déclare.
   if (obligationEncaissee(facture, lignes, statutTva).etat !== 'due') return null
   const aDeclarer = encaissements.filter((e) => e.facture_id === facture.id
-    && refusDeclaration(dossierId, e.id, encaissements, declarations, transmissions, evenementsSuperpdp, null) == null)
+    && refusDeclaration(dossierId, e.id, encaissements, declarations, transmissions, evenementsSuperpdp, statutsRecus, null) == null)
   if (aDeclarer.length === 0) return null
   const enRetard = aDeclarer.some((e) => {
     const echeance = echeanceDeDeclaration(e.date_encaissement, statutTva)

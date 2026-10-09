@@ -22,6 +22,12 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // la base (migration transmissions_des_encaissements) : aujourd'hui aucune ne l'écrit, et le jour où l'une le fera, elle
 // s'inscrira ici, nommément.
 //
+// LES STATUTS LUS SUR LA PLATEFORME DU CLIENT NON PLUS (ligne 28.5, étape d7) : `statuts_factures_recus` garde ce que la
+// plateforme a dit d'une facture émise, et un refus qu'on y lit fait refuser, en base, l'encaissement, la déclaration et
+// la transmission de la facture. Une ligne écrite d'ailleurs ferait refuser à tort — ou, effacée, laisserait passer ce
+// que la plateforme a refusé. Seule plateforme-agreee l'écrit, à la clé secrète, quand elle relève le cycle de vie, et
+// par une insertion seulement ; dans `src/`, rien, sauf la restauration (la policy le lui permet, à elle seule).
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -29,9 +35,13 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 
 export const TABLES_DU_REGISTRE = ['encaissements_factures', 'encaissements_factures_taux'] as const
 export const TABLES_DES_DECLARATIONS = ['transmissions_encaissements'] as const
+export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
 
 // Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
 const FONCTIONS_QUI_DECLARENT: readonly string[] = []
+
+// Celles qui écrivent les statuts lus, nommément : le relevé de plateforme-agreee (étape d7).
+const FONCTIONS_QUI_RELEVENT: readonly string[] = ['supabase/functions/plateforme-agreee/index.ts']
 
 /**
  * Les fichiers qui écrivent dans une table qu'ils ne nomment pas en clair, avec la raison et le NOMBRE de ces écritures.
@@ -176,6 +186,17 @@ export function ecrituresDesDeclarations(
   )
 }
 
+/** Les statuts lus, dans `src/` : la porte de la restauration exceptée, rien ne les écrit. */
+export function ecrituresDesStatutsLus(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(
+    sources.filter((s) => s.chemin.startsWith('src/')), TABLES_DES_STATUTS_LUS, exceptions,
+    'seule plateforme-agreee les écrit, quand elle relève le cycle de vie',
+  )
+}
+
 describe('le registre des encaissements ne s’écrit que par ses deux fonctions', () => {
   const sources = sourcesDeProduction()
   const sites = sources.flatMap(sitesFrom)
@@ -222,6 +243,29 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(ORDRE_RESTAURATION).toContain('transmissions_encaissements')
     const secondes = [...TABLES_AUTO_REFERENCEES, ...TABLES_AUTO_REFERENCEES_PAR_VAGUES].map((t) => t.table)
     for (const t of TABLES_DES_DECLARATIONS) expect(secondes).not.toContain(t)
+  })
+
+  it('aucune écriture directe des statuts lus dans src/, hors de la restauration (étape d7)', () => {
+    expect(ecrituresDesStatutsLus(sources)).toEqual([])
+  })
+
+  it('seule plateforme-agreee écrit les statuts lus, et par une insertion seulement (étape d7)', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    const ecritures = fonctions.flatMap(sitesFrom)
+      .filter((s) => s.ecriture != null && (s.tables == null || s.tables.some((t) => (TABLES_DES_STATUTS_LUS as readonly string[]).includes(t))))
+    expect([...new Set(ecritures.map((s) => s.chemin))]).toEqual(FONCTIONS_QUI_RELEVENT)
+    expect(ecritures.map((s) => s.ecriture)).toEqual(['insert'])
+    // Et la fonction les LIT aussi (ce qui est déjà gardé ne se télécharge pas) : le scanner les voit passer.
+    expect(fonctions.flatMap(sitesFrom).some((s) => s.tables?.includes('statuts_factures_recus') && s.ecriture == null)).toBe(true)
+  })
+
+  it('la restauration rejoue les statuts lus par l’insertion, avant les transmissions et les déclarations que leurs gardes jugent', () => {
+    expect(ORDRE_RESTAURATION).toContain('statuts_factures_recus')
+    const secondes = [...TABLES_AUTO_REFERENCEES, ...TABLES_AUTO_REFERENCEES_PAR_VAGUES].map((t) => t.table)
+    for (const t of TABLES_DES_STATUTS_LUS) expect(secondes).not.toContain(t)
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('statuts_factures_recus')).toBeLessThan(rang('transmissions_factures'))
+    expect(rang('statuts_factures_recus')).toBeLessThan(rang('transmissions_encaissements'))
   })
 
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
@@ -299,6 +343,19 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(jugerD(`await admin.from('transmissions_encaissements').insert(x)`, 'supabase/functions/f/index.ts')).toEqual([])
     // Le registre, lui, ne prend pas la déclaration pour une de ses tables.
     expect(juger(`await supabase.from('transmissions_encaissements').insert(x)`)).toEqual([])
+  })
+
+  it('attrape une écriture directe des statuts lus dans src/ ; ne voit pas l’Edge Function', () => {
+    const jugerS = (texte: string, chemin = 'src/faux.ts') => ecrituresDesStatutsLus([{ chemin, texte }], {})
+    expect(jugerS(`
+      await supabase
+        .from('statuts_factures_recus')
+        .insert({ facture_id: id, code: '210' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur statuts_factures_recus : seule plateforme-agreee les écrit, quand elle relève le cycle de vie'])
+    expect(jugerS(`await supabase.from('statuts_factures_recus').delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerS(`const T = 'statuts_factures_recus'\nawait supabase.from(T).update({ code: '212' })`)).toHaveLength(1)
+    expect(jugerS(`await supabase.from('statuts_factures_recus').select('*', { count: 'exact' })`)).toEqual([])
+    expect(jugerS(`await admin.from('statuts_factures_recus').insert(x)`, 'supabase/functions/f/index.ts')).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {

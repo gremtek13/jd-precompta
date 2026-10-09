@@ -4,7 +4,7 @@ import {
 } from './encaissementsAffichage'
 import type {
   DeclarationLue, EncaissementLu, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
-  TransmissionPourDeclaration,
+  StatutPlateformeLu, TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import type { FactureEmise } from './types'
 import { facture as factureCii } from '../test/facturesCii'
@@ -101,11 +101,11 @@ describe('pastilleDeclaration', () => {
   })
   const juger = (o: {
     facture?: FactureEmise; encaissements?: EncaissementPourContrePassation[]; declarations?: DeclarationLue[]
-    transmissions?: TransmissionPourDeclaration[]; evenements?: EvenementSuperpdpLu[]; statut?: 'redevable' | 'franchise'
-    aujourdHui?: string
+    transmissions?: TransmissionPourDeclaration[]; evenements?: EvenementSuperpdpLu[]; statutsRecus?: StatutPlateformeLu[]
+    statut?: 'redevable' | 'franchise'; aujourdHui?: string
   } = {}) => pastilleDeclaration(
     'd1', o.facture ?? DUE, LIGNES, o.encaissements ?? [enc()], o.declarations ?? [], o.transmissions ?? [ACCEPTEE], o.evenements ?? [],
-    o.statut ?? 'redevable', o.aujourdHui ?? '2027-11-02',
+    o.statutsRecus ?? [], o.statut ?? 'redevable', o.aujourdHui ?? '2027-11-02',
   )
   const A_DECLARER = { libelle: 'À déclarer', classe: 'badge-warning' }
   const EN_RETARD = { libelle: 'Déclaration en retard', classe: 'badge-danger' }
@@ -165,6 +165,17 @@ describe('pastilleDeclaration', () => {
     expect(juger({ transmissions: [superpdp], evenements: [{ facture_id: 'f2', status_code: 'fr:210' }] })).toEqual(A_DECLARER)
   })
 
+  it('rien quand la facture a été refusée (210) ou rejetée (213) sur la plateforme du client — même en retard (étape d7)', () => {
+    expect(juger({ statutsRecus: [{ facture_id: 'f1', code: '210' }] })).toBeNull()
+    expect(juger({ statutsRecus: [{ facture_id: 'f1', code: '213' }], aujourdHui: '2028-01-01' })).toBeNull()
+    // Un litige, une approbation, un paiement transmis, un écho de l'encaissement : la facture vit, le statut reste dû.
+    for (const code of ['205', '206', '207', '211', '212'] as const) {
+      expect(juger({ statutsRecus: [{ facture_id: 'f1', code }] }), code).toEqual(A_DECLARER)
+    }
+    // Le refus d'une autre facture ne dit rien de celle-ci.
+    expect(juger({ statutsRecus: [{ facture_id: 'f2', code: '210' }] })).toEqual(A_DECLARER)
+  })
+
   it('rien quand l’obligation n’est pas due : facultative, sans objet, à préciser, refusée ; ni sur un brouillon ou un avoir', () => {
     expect(juger({ facture: { ...DUE, date_emission: '2027-08-31' }, aujourdHui: '2028-01-01' })).toBeNull()
     expect(juger({ facture: { ...DUE, type_client: 'non_assujetti' } })).toBeNull()
@@ -172,7 +183,7 @@ describe('pastilleDeclaration', () => {
     expect(juger({ facture: { ...DUE, nature_operation: 'mixte' } })).toBeNull()
     expect(juger({ facture: { ...DUE, statut: 'brouillon' } })).toBeNull()
     expect(juger({ facture: { ...DUE, type: 'avoir' } })).toBeNull()
-    expect(pastilleDeclaration('d1', DUE, LIGNES, [enc()], [], [ACCEPTEE], [], null, '2027-11-02')).toBeNull()
+    expect(pastilleDeclaration('d1', DUE, LIGNES, [enc()], [], [ACCEPTEE], [], [], null, '2027-11-02')).toBeNull()
   })
 })
 

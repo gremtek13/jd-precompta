@@ -21,6 +21,8 @@ import { DELAI_AVANT_ABANDON_MS } from './transmissionsFactures'
 //   - ERREURS     ce que dit une plateforme qui refuse, sans écho de sa réponse ;
 //   - DEPOT       le dépôt d'une facture émise — son corps multipart, son empreinte — et ce que disent la réponse et
 //                 l'accusé de la plateforme, jusqu'à la transmission qu'on en tient.
+// Le bloc CYCLE DE VIE (étape d7) — le relevé des statuts des factures émises — se teste dans
+// plateformeAgreeeStatuts.test.ts, et la copie de cdarRecu dans cdarRecuCopie.test.ts.
 // Puis le CÂBLAGE du gestionnaire, qui ne s'exécute pas ici : l'ordre des contrôles se lit sur la source.
 
 const SOURCE = readFileSync(new URL('../../supabase/functions/plateforme-agreee/index.ts', import.meta.url), 'utf8')
@@ -151,9 +153,13 @@ describe('plateforme-agreee — où la fonction accepte d’envoyer un secret', 
 interface Lue {
   dossier_id: string; nom: string; url_flux: string; url_jeton: string; client_id: string; client_secret: string
   organisation_id: string | null; portee: string | null; recherche_depuis: string | null
-  derniere_recuperation: string | null; created_at: string; updated_at: string
+  derniere_recuperation: string | null; cycle_vie_depuis: string | null; cycle_vie_lu_le: string | null
+  created_at: string; updated_at: string
 }
-type Saisie = { valeurs: Omit<Lue, 'dossier_id' | 'recherche_depuis' | 'derniere_recuperation' | 'created_at' | 'updated_at'>; reinitialiser: boolean } | { refus: string }
+type Saisie = {
+  valeurs: Omit<Lue, 'dossier_id' | 'recherche_depuis' | 'derniere_recuperation' | 'cycle_vie_depuis' | 'cycle_vie_lu_le' | 'created_at' | 'updated_at'>
+  reinitialiser: boolean
+} | { refus: string }
 const C = executer<{
   saisieDeConnexion: (payload: Record<string, unknown>, existante: Lue | null) => Saisie
   vuePublique: (c: Lue | null) => Record<string, unknown> | null
@@ -180,6 +186,8 @@ const EXISTANTE: Lue = {
   portee: null,
   recherche_depuis: '2026-10-01T08:00:00.000+00:00',
   derniere_recuperation: '2026-10-01T08:20:00.000+00:00',
+  cycle_vie_depuis: '2026-10-02T07:00:00.000+00:00',
+  cycle_vie_lu_le: '2026-10-02T08:05:00.000+00:00',
   created_at: '2026-09-30T10:00:00+00:00',
   updated_at: '2026-09-30T10:00:00.123456+00:00',
 }
@@ -239,11 +247,22 @@ describe('plateforme-agreee — ce que le cabinet enregistre', () => {
     }
   })
 
+  it('la fonction lit en base chaque champ de la connexion qu’elle déclare — le relevé des statuts compris', () => {
+    const declares = [...bloc('CONNEXION').slice(bloc('CONNEXION').indexOf('interface ConnexionLue {'), bloc('CONNEXION').indexOf('interface ValeursConnexion'))
+      .matchAll(/^ {2}(\w+): /gm)].map((m) => m[1])
+    const lues = (/const COLONNES = "([^"]*)" \+\n {2}"([^"]*)"/.exec(SOURCE) as RegExpExecArray).slice(1).join('').split(', ')
+    expect(lues.sort()).toEqual([...declares].sort())
+    expect(lues).toContain('cycle_vie_depuis')
+    expect(lues).toContain('cycle_vie_lu_le')
+  })
+
   it('ce que voit l’écran : jamais le secret, l’hôte des flux, et la version de la configuration lue', () => {
     const vue = C.vuePublique(EXISTANTE)!
     expect(JSON.stringify(vue)).not.toContain('secret-enregistre')
     expect(vue).not.toHaveProperty('client_secret')
     expect(vue).toMatchObject({ hote: 'api.superpdp.tech', version: EXISTANTE.updated_at, client_id: 'identifiant-fictif' })
+    // Le relevé des statuts (étape d7) : d'où il repartira, et quand le dernier est allé au bout.
+    expect(vue).toMatchObject({ cycle_vie_depuis: EXISTANTE.cycle_vie_depuis, cycle_vie_lu_le: EXISTANTE.cycle_vie_lu_le })
     expect(C.vuePublique(null)).toBeNull()
   })
 })
@@ -421,13 +440,15 @@ interface Recherche {
   jusqua: string | null
 }
 interface Demande { updatedAfter: string | null; cursor: string | null }
-const { rechercherFlux } = executer<{
-  rechercherFlux: (
-    page: (demande: Demande) => Promise<unknown>,
-    depuis: string | null,
-    bornes: { taillePage: number; maxFlux: number; maxPages: number; echeance: number; maintenant: () => number },
-  ) => Promise<Recherche>
-}>(bloc('FLUX') + bloc('RECHERCHE'), ['rechercherFlux'])
+type Bornes = { taillePage: number; maxFlux: number; maxPages: number; echeance: number; maintenant: () => number }
+interface Lecture { lire: (brut: unknown) => unknown; objets: string; apresPlafond: string; relance: string }
+const RE = executer<{
+  rechercherFlux: (page: (demande: Demande) => Promise<unknown>, depuis: string | null, bornes: Bornes, lecture: Lecture) => Promise<Recherche>
+  LECTURE_FACTURES: Lecture
+}>(bloc('FLUX') + bloc('RECHERCHE'), ['rechercherFlux', 'LECTURE_FACTURES'])
+// La recherche de la réception : celle des factures, que le gestionnaire passe à « lister ».
+const rechercherFlux = (page: (demande: Demande) => Promise<unknown>, depuis: string | null, bornes: Bornes) =>
+  RE.rechercherFlux(page, depuis, bornes, RE.LECTURE_FACTURES)
 
 const BORNES = { taillePage: 3, maxFlux: 100, maxPages: 20, echeance: Number.POSITIVE_INFINITY, maintenant: () => 0 }
 const T = (minute: number) => `2026-10-01T08:${String(minute).padStart(2, '0')}:00.000Z`
@@ -610,6 +631,23 @@ describe('plateforme-agreee — la recherche page à page', () => {
     const longue = await rechercherFlux(sansFin, null, { ...BORNES, maxPages: 4 })
     expect(longue).toMatchObject({ complete: false, pages: 4 })
     expect(longue.motif).toMatch(/plus de 4 pages/)
+  })
+
+  it('les mots d’un arrêt sont ceux de la réception, à la lettre : la recherche n’a changé que de paramètre (étape d7)', async () => {
+    const plafond = await rechercherFlux(plateforme([{ results: [facture('a', 1), facture('b', 2), facture('c', 3)], nextCursor: 'k1' }]).page,
+      null, { ...BORNES, maxFlux: 3 })
+    expect(plafond.motif).toBe('plus de 3 factures à la fois : importez celles-ci, puis relancez la récupération pour la suite')
+    const desordre = await rechercherFlux(plateforme([{ results: [facture('a', 5), facture('b', 2), facture('c', 9)] }]).page, null, BORNES)
+    expect(desordre.motif).toBe("la plateforme ne rend pas ses factures dans l'ordre de leur date : la recherche ne peut pas aller plus loin sans risquer d'en sauter")
+    const lente = await rechercherFlux(plateforme([{ results: [facture('a', 1)], nextCursor: 'k1' }]).page, null,
+      { ...BORNES, echeance: 100, maintenant: () => 101 })
+    expect(lente.motif).toBe('la plateforme met trop de temps à rendre ses pages : relancez la récupération')
+    let n = 0
+    const sansFin = async () => ({ results: [facture(`f${n}`, n % 60)], nextCursor: `k${++n}` })
+    expect((await rechercherFlux(sansFin, null, { ...BORNES, maxPages: 2 })).motif).toBe('plus de 2 pages : relancez la récupération pour la suite')
+    // La lecture des factures est celle du bloc FLUX, et le gestionnaire la passe à « lister ».
+    expect(RE.LECTURE_FACTURES.lire(flux({ flowId: 'x' }))).toEqual(F.fluxDeLaListe(flux({ flowId: 'x' })))
+    expect(brancheDe('lister')).toContain('}, LECTURE_FACTURES)')
   })
 
   it('une page refusée LÈVE : c’est au gestionnaire de dire pourquoi', async () => {
@@ -1316,17 +1354,21 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     expect(anciennement).toBeLessThan(branche.indexOf('const plateforme = ouvrirPlateforme()'))
   })
 
-  it('la fonction n’écrit que sa connexion et des transmissions : jamais une facture', () => {
+  it('la fonction n’écrit que sa connexion, des transmissions et des statuts lus — ceux-ci par une insertion : jamais une facture', () => {
     let n = 0
+    const statuts: string[] = []
     for (const ecriture of ['.update(', '.insert(', '.upsert(', '.delete(']) {
       for (let i = GESTIONNAIRE.indexOf(ecriture); i > -1; i = GESTIONNAIRE.indexOf(ecriture, i + 1)) {
         const avant = GESTIONNAIRE.slice(0, i)
         const table = /\.from\("(\w+)"\)/.exec(avant.slice(avant.lastIndexOf('.from("')))?.[1]
-        expect(['connexions_plateformes', 'transmissions_factures'], `${ecriture} sur ${table}`).toContain(table)
+        expect(['connexions_plateformes', 'transmissions_factures', 'statuts_factures_recus'], `${ecriture} sur ${table}`).toContain(table)
+        if (table === 'statuts_factures_recus') statuts.push(ecriture)
         n++
       }
     }
-    expect(n).toBeGreaterThanOrEqual(7)
+    expect(n).toBeGreaterThanOrEqual(9)
+    // Un statut lu ne se modifie ni ne se supprime (la base le refuse aussi) : la fonction ne fait que l'insérer.
+    expect(statuts).toEqual(['.insert('])
   })
 
   it('« suivre » relit la transmission dans le dossier vérifié, refuse un autre canal ou une autre plateforme, et ne réécrit que l’état lu', () => {
@@ -1347,7 +1389,9 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
   })
 
   it('une autre plateforme, une autre identité ou une autre entreprise remet la recherche au début', () => {
-    expect(brancheDe('enregistrer')).toContain('...(saisie.reinitialiser ? { recherche_depuis: null, derniere_recuperation: null } : {})')
+    expect(brancheDe('enregistrer')).toContain('...(saisie.reinitialiser\n'
+      + '            ? { recherche_depuis: null, derniere_recuperation: null, cycle_vie_depuis: null, cycle_vie_lu_le: null }\n'
+      + '            : {}),')
   })
 
   it('ce que la facture EST se relit chez la plateforme avant de télécharger le document', () => {
@@ -1414,7 +1458,7 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     for (const j of journaux) {
       const inserees = expressionsInserees(j).map((e) => e.replace(/\b\w+(\.\w+)*\.length\b/g, ''))
       for (const expression of inserees) {
-        expect(expression, j).toMatch(/^\s*(action|[\w.]*statut|[\w.]*etat|document|recherche\.pages|\(e as \{ name\?: unknown \}\)\?\.name \?\? "\?"|Object\.values\(recherche\.ecartes\)\.reduce\(\(a, b\) => a \+ b, 0\)|recherche\.complete \? "complet" : "incomplet")?\s*$/)
+        expect(expression, j).toMatch(/^\s*(action|[\w.]*statut|[\w.]*etat|document|recherche\.pages|\(e as \{ name\?: unknown \}\)\?\.name \?\? "\?"|Object\.values\(recherche\.ecartes\)\.reduce\(\(a, b\) => a \+ b, 0\)|recherche\.complete \? "complet" : "incomplet"|compte\.(?:pages|gardes|dejaLus|ecartes|echecs|codes|enAttente|reportes)|releve\.complete \? "complet" : "incomplet")?\s*$/)
       }
       const horsTexte = j.slice(j.indexOf('(') + 1, -1).replace(/`(?:\\.|\$\{[^}]*(?:\{[^}]*\}[^}]*)*\}|[^`\\])*`|"(?:\\.|[^"\\])*"/g, '')
       expect(horsTexte.replace(/[\s+]/g, ''), j).toBe('')

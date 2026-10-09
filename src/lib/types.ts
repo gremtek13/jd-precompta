@@ -1,3 +1,5 @@
+import type { CodeStatutRecu, MontantRecu } from './cdarRecu'
+
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
 // D'où vient une pièce : un dépôt (cabinet ou client), un e-mail reçu, l'ancienne synchronisation de Super PDP,
@@ -1021,4 +1023,34 @@ export interface TransmissionEncaissement {
   cree_par: string | null
   cree_le: string
   maj_le: string
+}
+
+// Un statut du cycle de vie d'une facture émise, lu sur la plateforme du client (`statuts_factures_recus`, ligne 28.5,
+// étape d7) et rattaché à une facture validée du dossier : son code (tableau 8 des spécifications externes de la DGFiP)
+// et ce que le message dit, l'hôte et le flux qui l'ont porté, qui l'a lu et quand. Un 210 ou un 213 fait refuser
+// l'encaissement, la déclaration et la transmission de la facture. Le cabinet le lit ; seule plateforme-agreee l'écrit,
+// une fois par flux ; rien ne s'y modifie. Le client n'en voit rien.
+export interface StatutFactureRecu {
+  id: string
+  dossier_id: string
+  facture_id: string
+  // La plateforme qui l'a rendu, et l'identifiant de son flux : un flux n'entre qu'une fois par dossier.
+  hote: string
+  flux_id: string
+  code: CodeStatutRecu
+  // MDT-4, l'identifiant du message ; nul quand il n'en porte pas de lisible.
+  message_id: string | null
+  // MDT-78, l'horodatage du statut TEL QU'ÉCRIT (AAAAMMJJHHMMSS) : son fuseau n'est pas dit.
+  emis_le: string | null
+  // MDT-40 : qui a créé le message — BY l'acheteur, SE le vendeur, WK une plateforme, DFH l'administration…
+  createur_role: string | null
+  // MDT-110, la date du statut, civile (AAAA-MM-JJ).
+  date_statut: string | null
+  // MDT-113 et MDT-114 ; MDT-125 à MDT-127 — 2 000 caractères au plus chacun.
+  motifs: string | null
+  commentaire: string | null
+  // MDG-43, les montants tels qu'écrits : une liste vide quand le message n'en porte pas.
+  montants: MontantRecu[]
+  lu_par: string | null
+  lu_le: string
 }

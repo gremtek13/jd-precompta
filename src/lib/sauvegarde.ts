@@ -99,6 +99,8 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'regles_bancaires_ignorees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'soldes_reportes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'sous_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'statuts_factures_recus', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'statuts_factures_recus', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
   { enfant: 'superpdp_credentials', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'supplements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'supplements', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'met_a_null' },
@@ -142,6 +144,12 @@ export const RELATIONS: readonly Relation[] = [
 // que cette plateforme n'a pas acceptée — et elle le lit dans ces deux tables, sans clé étrangère. Les déclarations,
 // elles, se réinsèrent dans n'importe quel ordre : celle d'une contre-passation ne lit pas celle de l'encaissement
 // qu'elle annule. `sauvegarde.test.ts` garde cet ordre.
+//
+// `statuts_factures_recus` précède `transmissions_factures` et `transmissions_encaissements` (étape d7) : leurs gardes
+// refusent la transmission d'une facture refusée ou rejetée sur sa plateforme, celle de l'avoir qui l'annule et la
+// déclaration de son encaissement — et le lisent là, sans clé étrangère. Elles ne comptent qu'un statut lu AVANT la
+// ligne qu'elles gardent (`lu_le`, que la restauration rejoue) : réinsérés d'abord, les statuts laissent passer tout ce
+// qui les précédait, et refusent ce qui n'aurait pas pu naître après eux. `sauvegarde.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -179,6 +187,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'emails_envoyes',
   'facture_lignes',
   'facture_superpdp_events',
+  'statuts_factures_recus',
   'transmissions_factures',
   'mouvements_cca',
   'pieces',
@@ -538,6 +547,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   regles_bancaires_ignorees: { acces: 'direct' },
   soldes_reportes: { acces: 'direct' },
   sous_dossiers: { acces: 'direct' },
+  statuts_factures_recus: { acces: 'direct' },
   superpdp_credentials: { acces: 'direct' },
   supplements: { acces: 'direct' },
   tiers_categories: { acces: 'direct' },

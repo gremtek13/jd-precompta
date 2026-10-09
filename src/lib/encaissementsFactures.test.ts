@@ -10,13 +10,14 @@ import {
   repartitionProposee, resteAEncaisser, tauxCommeLaBase, ttcParTaux,
   type CleRefusContrePassation, type ContexteFacture, type DeclarationLue, type EcheanceDeclaration, type EncaissementLu,
   type EncaissementPourContrePassation, type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture,
-  type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type TransmissionPourDeclaration,
+  type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type StatutPlateformeLu,
+  type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { formatMoney } from './format'
 import { paiementsDesPieces, type LignePayante, type PartReglee } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
-import { STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
+import { STATUTS_ANNULATION_PLATEFORME, STATUTS_ANNULATION_SUPERPDP } from './transmissionsFactures'
 import type { MoyenEncaissement, StatutTva } from './types'
 import { tirage } from '../test/encaissementsBatterie'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -50,7 +51,8 @@ function facture(o: Partial<FacturePourEncaissement> = {}): FacturePourEncaissem
 
 function contexte(o: Partial<ContexteFacture> = {}): ContexteFacture {
   return {
-    dossierId: D, facture: facture(), lignes: LIGNES, transmissions: [], evenementsSuperpdp: [], encaissements: [], parts: [],
+    dossierId: D, facture: facture(), lignes: LIGNES, transmissions: [], evenementsSuperpdp: [], statutsRecus: [], encaissements: [],
+    parts: [],
     ...o,
   }
 }
@@ -936,9 +938,10 @@ describe('refusDeclaration — les refus de declarer_encaissement_hors_applicati
   const ACCEPTEE = [transmission()]
   const refusD = (o: {
     encaissements?: EncaissementLu[]; declarations?: DeclarationLue[]; transmissions?: TransmissionPourDeclaration[];
-    evenements?: { facture_id: string; status_code: string }[]; note?: string | null; id?: string; dossier?: string
+    evenements?: { facture_id: string; status_code: string }[]; statutsRecus?: StatutPlateformeLu[]; note?: string | null;
+    id?: string; dossier?: string
   } = {}) => refusDeclaration(o.dossier ?? D, o.id ?? 'e1', o.encaissements ?? [e1], o.declarations ?? [], o.transmissions ?? ACCEPTEE,
-    o.evenements ?? [], o.note === undefined ? null : o.note)
+    o.evenements ?? [], o.statutsRecus ?? [], o.note === undefined ? null : o.note)
 
   it('accepte un encaissement vivant, jamais déclaré, d’une facture acceptée', () => {
     expect(refusD()).toBeNull()
@@ -1112,6 +1115,137 @@ describe('contrePassationDe — ce que la contre-passation écrira', () => {
     })
     // Un montant que la virgule flottante écrit juste en dessous du centime se compte au centime.
     expect(contrePassationDe(encaissement({ montant: 4.35 }), [part({ montant: 4.35 })]).montantCentimes).toBe(-435)
+  })
+})
+
+// ── Les statuts lus sur la plateforme du client (étape d7) ──────────────────────────────────────────────────────────
+
+// L'essai de l'étape d7, joué en production : ce que la base a accepté et refusé, avec ses messages.
+const ESSAI_D7 = readFileSync(new URL('../../supabase/essais/statutsFacturesRecus.sql', import.meta.url), 'utf8')
+
+// La migration de l'étape d7, trouvée par ce qu'elle crée.
+const MIGRATION_D7 = fichiersDuSchema().find((f) => f.texte.includes('create table public.statuts_factures_recus ('))?.texte ?? ''
+
+// Le tuple d'un contrôle de l'essai d7, de « ('25. » au tuple suivant ou à la fin de sa liste, sans ses lignes de
+// commentaire : ce que le contrôle attend se cherche DANS son tuple, jamais dans celui d'un autre.
+function tupleDeLEssaiD7(numero: string): string {
+  const debut = ESSAI_D7.indexOf(`('${numero}. `)
+  expect(debut, `contrôle ${numero} de l’essai d7`).toBeGreaterThanOrEqual(0)
+  expect(ESSAI_D7.indexOf(`('${numero}. `, debut + 1), `contrôle ${numero} unique dans l’essai d7`).toBe(-1)
+  const fins = [ESSAI_D7.indexOf("\n        ('", debut + 1), ESSAI_D7.indexOf('\n      ) t(', debut)].filter((i) => i > 0)
+  return ESSAI_D7.slice(debut, Math.min(...fins)).split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
+}
+
+// Ce qu'un contrôle de l'essai d7 attend de la base : un refus (son message, la dernière chaîne du tuple ; un motif LIKE
+// finit par « % »), ou rien (« null, null ») pour un appel qu'elle accepte.
+function attenduDeLEssaiD7(numero: string): string | null {
+  const tuple = tupleDeLEssaiD7(numero)
+  if (/null, null\),?\s*$/.test(tuple)) return null
+  const m = /'(?:22023|23514)', '((?:[^']|'')*)'\),?\s*$/.exec(tuple)
+  expect(m, `ce qu’attend le contrôle ${numero} de l’essai d7`).not.toBeNull()
+  return (m as RegExpExecArray)[1].replace(/''/g, "'")
+}
+
+function attendreCeQuAttendLEssaiD7(numero: string, recu: string | undefined) {
+  const attendu = attenduDeLEssaiD7(numero)
+  if (attendu == null) expect(recu, `${numero} : accepté par la base`).toBeUndefined()
+  else if (attendu.endsWith('%')) expect(recu?.startsWith(attendu.slice(0, -1)), `${numero} : ${recu}`).toBe(true)
+  else expect(recu, numero).toBe(attendu)
+}
+
+describe('les statuts lus sur la plateforme du client (étape d7), tels que la base les lit', () => {
+  // Les codes d'un `s.code in (…)`, un tableau par occurrence, dans l'ordre du texte.
+  const codesLus = (sql: string) => [...sql.matchAll(/s\.code in \(([^)]*)\)/g)]
+    .map((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]))
+
+  it('les statuts qui annulent sont ceux que la base lit, aux quatre endroits où la règle vit', () => {
+    expect(MIGRATION_D7).not.toBe('')
+    const endroits: [string, number][] = [
+      ['enregistrer_encaissement', 1], ['declarer_encaissement_hors_application', 1],
+      ['garder_transmission_encaissement', 1], ['garder_transmission_facture', 2],
+    ]
+    for (const [nom, combien] of endroits) {
+      const sql = derniereDefinitionSql(nom)
+      expect(MIGRATION_D7, nom).toContain(sql)
+      expect(codesLus(sql), nom).toEqual(Array.from({ length: combien }, () => [...STATUTS_ANNULATION_PLATEFORME]))
+      expect(sql, nom).toContain('from public.statuts_factures_recus s')
+    }
+    // Les mêmes que chez Super PDP, sans leur préfixe : un refus est un refus, d'où qu'il vienne.
+    expect(STATUTS_ANNULATION_SUPERPDP.map((c) => c.replace(/^fr:/, ''))).toEqual([...STATUTS_ANNULATION_PLATEFORME])
+  })
+
+  it('le refus 5 de l’enregistrement et le refus 6 de la déclaration s’élargissent sans changer de place ni de mots', () => {
+    // Le statut lu s'ajoute à la condition de Super PDP, dans le même `if` : le message qui suit est celui d'hier.
+    const enregistrer = derniereDefinitionSql('enregistrer_encaissement')
+    const declarer = derniereDefinitionSql('declarer_encaissement_hors_application')
+    for (const [sql, message] of [
+      [enregistrer, (REFUS_ENREGISTREMENT.find((r) => r.cle === 'rejetee') as { modele: string }).modele],
+      [declarer, (REFUS_DECLARATION.find((r) => r.cle === 'facture_rejetee') as { modele: string }).modele],
+    ] as const) {
+      const lu = sql.indexOf("s.code in ('210', '213')")
+      const superpdp = sql.lastIndexOf("e.status_code in ('fr:210', 'fr:213')", lu)
+      const refusSql = sql.indexOf('raise exception', lu)
+      expect(superpdp).toBeGreaterThan(0)
+      expect(sql.slice(superpdp, lu)).not.toContain('raise exception')
+      expect(sql.slice(refusSql).startsWith(`raise exception '${message.replace(/'/g, "''")}'`)).toBe(true)
+    }
+  })
+
+  it('une déclaration d’hier ne compte que le refus lu avant elle ; une transmission, que celui lu avant son départ', () => {
+    const garde = derniereDefinitionSql('garder_transmission_encaissement')
+    expect(garde).toContain("s.code in ('210', '213')\n                         and s.lu_le <= v_connu_le")
+    expect(garde).toContain("v_connu_le := case when new.cree_le = now() then 'infinity'::timestamptz else new.cree_le end;")
+    const facture = derniereDefinitionSql('garder_transmission_facture')
+    expect(facture.match(/s\.lu_le <= new\.cree_le/g)).toHaveLength(2)
+    // Les deux nouvelles conditions ne valent qu'à l'insertion : le suivi d'une transmission déposée n'est pas un envoi.
+    expect(facture.lastIndexOf('statuts_factures_recus')).toBeLessThan(facture.indexOf('    return new;\n  end if;'))
+  })
+})
+
+describe('refusDeLaFacture et refusDeclaration — un refus lu sur la plateforme du client (étape d7)', () => {
+  const e1 = encaissement()
+  const ACCEPTEE = [transmission()]
+  const refusD = (statutsRecus: StatutPlateformeLu[], o: { declarations?: DeclarationLue[]; id?: string; encaissements?: EncaissementLu[] } = {}) =>
+    refusDeclaration(D, o.id ?? 'e1', o.encaissements ?? [e1], o.declarations ?? [], ACCEPTEE, [], statutsRecus, null)
+  const refusE = (statutsRecus: StatutPlateformeLu[]) => refus(contexte({ statutsRecus }), saisie())
+
+  it('l’enregistrement : refusé sous 210 et 213, avec les messages que la base a rendus (contrôles 21 et 22)', () => {
+    attendreCeQuAttendLEssaiD7('21', refusE([{ facture_id: 'f1', code: '210' }])?.message)
+    attendreCeQuAttendLEssaiD7('22', refusE([{ facture_id: 'f1', code: '213' }])?.message)
+    expect(refusDeLaFacture(contexte({ statutsRecus: [{ facture_id: 'f1', code: '213' }] }))?.cle).toBe('rejetee')
+  })
+
+  it('l’enregistrement : accepté sous un litige, une approbation, un paiement transmis, un écho, ou le refus d’une autre facture (23, 24)', () => {
+    attendreCeQuAttendLEssaiD7('23', refusE([
+      { facture_id: 'f1', code: '207' }, { facture_id: 'f1', code: '205' }, { facture_id: 'f1', code: '211' }, { facture_id: 'f1', code: '212' },
+    ])?.message)
+    attendreCeQuAttendLEssaiD7('24', refusE([{ facture_id: 'f2', code: '210' }])?.message)
+    for (const code of ['200', '201', '202', '203', '204', '206', '208', '209'] as const) {
+      expect(refusE([{ facture_id: 'f1', code }]), code).toBeNull()
+    }
+  })
+
+  it('la déclaration : refusée sous 210 et 213 ; « déjà déclaré » passe avant ; acceptée sinon (contrôles 25 à 29)', () => {
+    attendreCeQuAttendLEssaiD7('25', refusD([{ facture_id: 'f1', code: '210' }])?.message)
+    attendreCeQuAttendLEssaiD7('26', refusD([{ facture_id: 'f1', code: '213' }])?.message)
+    attendreCeQuAttendLEssaiD7('27', refusD([{ facture_id: 'f1', code: '210' }], { declarations: [declaration()] })?.message)
+    attendreCeQuAttendLEssaiD7('28', refusD([{ facture_id: 'f1', code: '207' }])?.message)
+    attendreCeQuAttendLEssaiD7('28b', refusD([{ facture_id: 'f2', code: '210' }])?.message)
+    // La contre-passation d'un encaissement déclaré se déclare encore, la facture refusée depuis.
+    const annulation = encaissement({ id: 'a1', montant: -100, annule_id: 'e1' })
+    attendreCeQuAttendLEssaiD7('29', refusD([{ facture_id: 'f1', code: '210' }],
+      { id: 'a1', encaissements: [e1, annulation], declarations: [declaration()] })?.message)
+    expect(refusD([{ facture_id: 'f1', code: '210' }])?.cle).toBe('facture_rejetee')
+  })
+
+  it('la contre-passation et le retrait restent possibles, la facture refusée depuis (contrôles 30 et 31)', () => {
+    // La base les accepte : la migration ne redéfinit ni l'une ni l'autre fonction, et l'essai l'a vérifié en production.
+    expect(attenduDeLEssaiD7('30')).toBeNull()
+    expect(attenduDeLEssaiD7('31')).toBeNull()
+    expect(MIGRATION_D7).not.toMatch(/function public\.(annuler|retirer)_encaissement\(/)
+    // Le module non plus : ni `refusContrePassation` ni `refusRetrait` ne lisent un statut.
+    expect(refusContrePassation(D, 'e1', [aContrePasser()], [declaration()], '2027-10-20', 'Facture refusée', AUJOURD_HUI)).toBeNull()
+    expect(refusRetrait(D, 'e1', [e1], new Set())).toBeNull()
   })
 })
 

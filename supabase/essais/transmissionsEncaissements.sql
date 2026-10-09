@@ -41,6 +41,11 @@
 -- base. Sur la réplique : les mêmes 128, ce qui ne se joue pas ici (neuf contrôles, R1 à R7b), six scénarios de deux
 -- sessions concurrentes, et cent trente-sept mutations de la migration, dont cent trente-trois mordent — les quatre
 -- survivantes sont équivalentes (HISTORIQUE.md, entrée de l'étape d4).
+--
+-- REJOUÉ LE 09/10/2026, après la migration `cycle_de_vie_des_factures_emises` (version 20261009034144), qui élargit le
+-- refus 6 de `declarer_encaissement_hors_application` et la garde des déclarations à un refus lu sur la plateforme du
+-- client : 128 contrôles sur 128 en production, le texte transmis identique à ce fichier, ce paragraphe retiré
+-- (81 538 caractères, empreinte 3938487ebf356d3a822d97cab57674d2), rien laissé en base.
 do $$
 declare
   inconnu uuid := gen_random_uuid();

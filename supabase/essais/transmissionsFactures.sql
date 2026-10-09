@@ -36,6 +36,9 @@
 -- verdict, qui n'attendait d'abord que le refus de la RLS. Aucune campagne de mutations sur une réplique pour cet essai.
 -- Puis, le même jour, 43 sur 43 après la migration `avoir_interne_d_une_facture_rejetee`, dont viennent les contrôles
 -- 38 à 42 (« rien n'est resté », d'abord le 38e, est devenu le 43e).
+-- Rejoué le 09/10/2026 après la migration `cycle_de_vie_des_factures_emises`, qui redéfinit `garder_transmission_facture`
+-- (un refus lu sur la plateforme du client) : 43 sur 43 en production. Ce que la clause nouvelle refuse est éprouvé par
+-- `statutsFacturesRecus.sql` (contrôles 35 à 41).
 --
 -- L'AVOIR D'ESSAI se crée par `enregistrer_facture`, sous le chef du cabinet, dans la sous-transaction du contrôle :
 -- son numéro de la série « A » est consommé puis rendu par l'annulation, et rien ne reste.
