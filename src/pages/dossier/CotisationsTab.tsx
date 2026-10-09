@@ -281,8 +281,12 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   // compterait double dans la 2035 (case BK). La création se suspend donc, comme l'import d'un relevé.
   // Et le verrou est un `useRef` : `creantEcheances`, un état, laissait passer deux clics du même
   // rendu, qui créaient chacun tout l'échéancier.
+  //
+  // UNE LISTE PAS ENCORE REVENUE NE COMMANDE PAS D'ÉCRITURE NON PLUS : pendant la lecture (`loading`, à la première comme
+  // à chaque relecture), `cotisations` est vide ou d'avant la dernière écriture — toutes les échéances proposées
+  // paraîtraient nouvelles. La création attend la fin de la lecture, et le dit.
   async function creerEcheancesProposees() {
-    if (proposeesOuvertes.length === 0 || cotisationsIncompletes !== null || creationEnCours.current) return
+    if (proposeesOuvertes.length === 0 || cotisationsIncompletes !== null || loading || creationEnCours.current) return
     creationEnCours.current = true
     setCreantEcheances(true)
     setError(null)
@@ -515,7 +519,7 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <button
               className="btn btn-primary btn-sm"
-              disabled={creantEcheances || cotisationsIncompletes !== null || proposeesOuvertes.length === 0}
+              disabled={creantEcheances || cotisationsIncompletes !== null || loading || proposeesOuvertes.length === 0}
               onClick={creerEcheancesProposees}
             >
               {creantEcheances ? 'Création…' : `Créer ces ${proposeesOuvertes.length} échéance(s)`}
@@ -527,6 +531,12 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
               {echeancesProposees.length - proposeesOuvertes.length === 1
                 ? '1 échéance est datée d’un exercice validé : elle ne s’y ajoute plus, et ne sera pas créée.'
                 : `${echeancesProposees.length - proposeesOuvertes.length} échéances sont datées d’un exercice validé : elles ne s’y ajoutent plus, et ne seront pas créées.`}
+            </p>
+          )}
+          {loading && (
+            <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+              Les échéances du dossier sont en cours de lecture : la création attend la fin de la lecture, pour ne pas
+              créer deux fois une échéance déjà enregistrée.
             </p>
           )}
           {cotisationsIncompletes && (

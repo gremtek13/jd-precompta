@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { ReactNode } from 'react'
@@ -74,12 +74,19 @@ import VoletSocialCard from './dossier/VoletSocialCard'
 //
 // Ce que ce garde ne voit pas, et que les tests de chaque écran gardent : un état lu en partie (une table revenue, l'autre
 // non), une relecture, un changement d'exercice ou de période écran ouvert (VoletSocialCard, PacksTab).
+//
+// Et sa sœur, plus bas (« aucun geste n'écrit avant que ses listes soient lues ») : les mêmes écrans, aucune réponse
+// revenue, chaque geste offert tenté — une écriture qui part alors part sans rien avoir lu.
 
 vi.mock('../lib/supabase', async () => ({ supabase: (await import('../test/clientRetenu')).supabase }))
 // pdf.js touche au navigateur dès l'import (`DOMMatrix`) : les deux modules qui le chargent sont doublés, comme dans les
-// tests de la Banque et de la Clôture. Aucun n'est atteint au montage.
+// tests de la Banque et de la Clôture. Aucun n'est atteint au montage ; la lecture d'un relevé PDF l'est par le second
+// garde, qui donne un fichier à chaque champ : elle rend deux opérations fictives, de quoi offrir l'import.
 vi.mock('../lib/pdfText', () => ({
-  extractPdfLignes: () => { throw new Error('la lecture d’un relevé ne doit pas être atteinte par ce garde') },
+  extractPdfLignes: async () => [
+    { texte: '01/09/2026 PRLV FICTIF -12,50', xFin: 0 },
+    { texte: '02/09/2026 VIR FICTIF 100,00', xFin: 0 },
+  ],
 }))
 vi.mock('../lib/remplir2035', () => ({
   remplir2035: () => { throw new Error('la génération de la 2035 ne doit pas être atteinte par ce garde') },
@@ -197,7 +204,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
-    <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} frontiere={null} onImported={rien} /></Dossier1>
+    <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
   ) },
   { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modeComptable="tresorerie" /></Dossier1> },
   { nom: 'DocumentsTab', fichier: 'pages/dossier/DocumentsTab.tsx', rendre: () => <Dossier1><DocumentsTab dossierId="d1" /></Dossier1> },
@@ -447,4 +454,229 @@ describe('aucun écran n’affirme le vide avant d’avoir lu', () => {
       expect(attendEncore(), 'encore en attente après des lectures refusées').toBe(false)
     })
   }
+})
+
+// UNE LISTE PAS ENCORE REVENUE NE COMMANDE AUCUNE ÉCRITURE (CLAUDE.md, « Lectures et écritures »). La sœur de la lecture
+// partielle : pendant la première lecture d'un écran, ses listes sont vides FAUTE D'AVOIR ÉTÉ LUES, et un geste qui écrit
+// en s'appuyant sur elles — un dédoublonnage, une règle appliquée — écrit un doublon en base. L'import d'un relevé
+// (Banque) et la création d'un échéancier (Cotisations) le faisaient.
+//
+// Chaque écran est monté sous le faux client, AUCUNE réponse ne revient — ni celles du montage, ni celles qu'un geste
+// demande —, puis chaque geste offert est tenté, en profondeur : un fichier donné à chaque champ, chaque liste
+// déroulante changée, chaque case cochée, chaque formulaire rempli et soumis, chaque bouton cliqué, et ce que chacun fait
+// paraître aussitôt. Une écriture qui PART alors part sans rien avoir lu : elle doit figurer ci-dessous, avec la raison
+// pour laquelle elle ne dépend d'aucune liste. Une écriture qu'un geste fait après sa PROPRE lecture (l'empreinte d'un
+// fichier avant son dépôt) ne part pas ici — et c'est juste : sa lecture se fait au moment du clic.
+//
+// Ce que ce garde ne voit pas, et que les tests des écrans gardent : un geste qui n'est offert qu'à partir d'une ligne
+// lue ou d'une réponse d'un service (la carte de connexion bancaire, l'échéancier lu sur un avis d'appel), un geste qui
+// lit lui-même puis s'appuie AUSSI sur une liste du montage, et la fenêtre d'une relecture.
+const ECRITURES_SANS_LISTE: { ecran: string; geste: string; ecritures: string[]; raison: string }[] = [
+  { ecran: 'DossiersList', geste: 'form « Nom du client', ecritures: ['dossiers insert'], raison: 'un dossier neuf, saisi en entier ; rien ne se dédoublonne' },
+  { ecran: 'SuperAdminPage', geste: 'form « Nom du cabinet', ecritures: ['fonction:create-cabinet'], raison: 'un cabinet neuf, saisi en entier' },
+  { ecran: 'EquipePage', geste: 'form « Email', ecritures: ['fonction:create-team-member'], raison: 'la fonction reprend un compte existant' },
+  {
+    ecran: 'AccesTab', geste: 'form « Email du client', ecritures: ['fonction:create-client-access'],
+    raison: 'la fonction reprend un compte existant, et la base refuse un second accès (unique (user_id, dossier_id))',
+  },
+  {
+    ecran: 'CotisationsTab', geste: 'form « Échéance', ecritures: ['cotisations_declarees insert'],
+    raison: 'une échéance saisie à la main ne se dédoublonne pas : seul l’exercice validé la refuse, et il vient de la page du dossier',
+  },
+  { ecran: 'FinancementTab', geste: 'form « Nom', ecritures: ['emprunts insert'], raison: 'un emprunt neuf, saisi en entier' },
+  { ecran: 'ImmobilisationsTab', geste: 'form « Ajouter une nature', ecritures: ['natures_immobilisation insert'], raison: 'une nature neuve, saisie en entier' },
+  { ecran: 'PiecesTab', geste: 'button « + Sous-dossier', ecritures: ['sous_dossiers insert'], raison: 'un sous-dossier neuf, nommé à l’invite' },
+  { ecran: 'SupplementsTab', geste: 'form « Type', ecritures: ['supplements insert'], raison: 'une prestation neuve, saisie en entier' },
+  { ecran: 'SupplementsTab', geste: 'form « Nom de l\'associé', ecritures: ['comptes_courants_associes insert'], raison: 'un compte courant neuf, saisi en entier' },
+  { ecran: 'TvaTab', geste: 'select « Trimestrielle', ecritures: ['dossiers update'], raison: 'la seule périodicité choisie, une propriété du dossier reçue de la page' },
+  { ecran: 'TvaTab', geste: 'select « À l’encaissement', ecritures: ['dossiers update'], raison: 'la seule exigibilité choisie, une propriété du dossier reçue de la page' },
+  {
+    ecran: 'TvaTab', geste: 'button « Enregistrer', ecritures: ['dossiers update'],
+    raison: 'le statut de TVA saisi dans sa carte (StatutTvaCard), une propriété du dossier reçue de la page',
+  },
+  { ecran: 'VehiculesCard', geste: 'button « + Ajouter un véhicule', ecritures: ['vehicules insert'], raison: 'une ligne vierge de l’exercice affiché ; un dossier a autant de véhicules qu’il veut' },
+]
+
+// Les écritures du MONTAGE, avant toute lecture : la page de retour de la banque finalise l'accord que l'adresse désigne.
+const ECRITURES_AU_MONTAGE: Record<string, { ecritures: string[]; raison: string }> = {
+  RetourBanque: {
+    ecritures: ['fonction:banque-connexion (finaliser)'],
+    raison: 'l’accord que désignent le code et l’état de l’adresse, rendus par la banque ; aucune liste n’y entre',
+  },
+}
+
+// Les gestes qui LÈVENT sous jsdom, avec leur raison : ce qu'ils auraient fait après n'est pas vu.
+const GESTES_QUI_LEVENT: Record<string, { geste: string; raison: string }> = {
+  FichePiece: {
+    geste: 'input[.pdf,.jpg,.jpeg,.png]',
+    raison: 'remplacer le fichier d’une pièce lit le PDF fictif par pdf.js, que jsdom ne porte pas ; le fichier ne part qu’à « Enregistrer »',
+  },
+}
+
+// Mesurés le 09/10/2026 : 126 gestes tentés sur tous les écrans, et 26 écrans qui en offrent avant leurs lectures. Un peu
+// de marge : un bouton retiré ne doit pas faire tomber le garde ; une exploration qui s'arrête au premier geste, si.
+const PLANCHER_GESTES = 120
+const PLANCHER_ECRANS = 24
+
+// Les actions des Edge Functions qui LISENT : l'état d'une connexion, demandé à l'ouverture d'une carte. Le faux client
+// note toute fonction appelée ; celles-ci n'écrivent rien.
+const LECTURES_PAR_FONCTION = new Set([
+  'fonction:banque-connexion (statut)', 'fonction:plateforme-agreee (statut)', 'fonction:superpdp-credentials (status)',
+])
+
+// Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
+const REFERMER = /^(Annuler|Fermer.*|×|Réduire.*)$/
+
+function nomDuGeste(el: Element): string {
+  const texte = (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60)
+  const accepte = el.getAttribute('accept')
+  return `${el.tagName.toLowerCase()}${accepte ? `[${accepte}]` : ''} « ${texte} »`
+}
+
+function fichierPour(champ: HTMLInputElement): File {
+  const accepte = (champ.getAttribute('accept') ?? '').toLowerCase()
+  if (accepte.includes('csv')) {
+    return new File(['Date;Libellé;Montant\n01/09/2026;PRLV FICTIF;-12,50\n02/09/2026;VIR FICTIF;100,00\n'], 'releve.csv', { type: 'text/csv' })
+  }
+  if (accepte.includes('json')) return new File(['{}'], 'sauvegarde.json', { type: 'application/json' })
+  return new File(['%PDF-1.4 fictif'], 'document.pdf', { type: 'application/pdf' })
+}
+
+function remplirLesChamps() {
+  for (const champ of document.querySelectorAll<HTMLInputElement>('input')) {
+    if (champ.disabled || champ.value || ['file', 'checkbox', 'radio', 'hidden', 'color'].includes(champ.type)) continue
+    const valeur = { number: '100', date: '2026-09-15', email: 'contact@exemple-fictif.fr', month: '2026-09' }[champ.type] ?? 'Valeur fictive'
+    fireEvent.change(champ, { target: { value: valeur } })
+  }
+  for (const zone of document.querySelectorAll<HTMLTextAreaElement>('textarea')) {
+    if (!zone.disabled && !zone.value) fireEvent.change(zone, { target: { value: 'Texte fictif' } })
+  }
+}
+
+// Les gestes offerts, dans l'ordre où un opérateur les ferait : un fichier, un formulaire, un bouton, une case, un choix —
+// et ce qui referme en dernier. Les choix après les boutons : changer d'abord la colonne d'un aperçu de relevé le rendait
+// illisible, et l'import n'avait plus rien à écrire.
+function gestesOfferts(): Element[] {
+  const boutons = [...document.querySelectorAll('button:not([disabled])')]
+  return [
+    ...document.querySelectorAll('input[type="file"]:not([disabled])'),
+    ...document.querySelectorAll('form'),
+    ...boutons.filter((b) => !REFERMER.test((b.textContent ?? '').trim())),
+    ...document.querySelectorAll('input[type="checkbox"]:not([disabled])'),
+    ...document.querySelectorAll('select:not([disabled])'),
+    ...boutons.filter((b) => REFERMER.test((b.textContent ?? '').trim())),
+  ]
+}
+
+// En PROFONDEUR : ce que le dernier geste a fait paraître passe avant le reste — l'aperçu d'un fichier et son bouton
+// d'import, avant l'onglet voisin qui le ferait disparaître.
+function prochainGeste(tentes: WeakSet<Element>, avant: ReadonlySet<Element>): Element | null {
+  const offerts = gestesOfferts().filter((el) => !tentes.has(el))
+  return offerts.find((el) => !avant.has(el)) ?? offerts[0] ?? null
+}
+
+async function tenter(el: Element) {
+  if (el instanceof HTMLInputElement && el.type === 'file') fireEvent.change(el, { target: { files: [fichierPour(el)] } })
+  else if (el instanceof HTMLSelectElement) {
+    const choix = [...el.options].find((o) => o.value && !o.disabled && o.value !== el.value)
+    if (choix) fireEvent.change(el, { target: { value: choix.value } })
+  } else if (el instanceof HTMLFormElement) fireEvent.submit(el)
+  else fireEvent.click(el)
+  // Ce que le geste fait paraître (un aperçu lu dans le fichier, un formulaire) paraît avant le geste suivant.
+  await laisserPasser(4)
+}
+
+// Les écritures parties pendant que rien n'était lu, geste par geste : `geste → écriture, écriture`.
+async function ecrituresAvantLecture(ecran: Ecran): Promise<{ montage: string[]; gestes: string[]; leves: string[]; tentes: number; vus: Set<string> }> {
+  reinitialiser('retenir')
+  etat.lignesUniques = { dossiers: dossier() }
+  const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+  render(<>{ecran.rendre()}</>)
+  await laisserPasser()
+  const ecritures = (depuis: number) => etat.ecritures.slice(depuis).filter((e) => !LECTURES_PAR_FONCTION.has(e))
+  const montage = ecritures(0)
+  const gestes: string[] = []
+  const leves: string[] = []
+  const tentes = new WeakSet<Element>()
+  // Tous les boutons parus, grisés compris : c'est par eux que le plancher sait jusqu'où l'exploration est allée.
+  const vus = new Set<string>()
+  let nombre = 0
+  // Un plafond : un écran qui ferait paraître sans fin de nouveaux gestes ne bloque pas la suite, il échoue.
+  // Un même geste, rendu de nouveau (une liste qui se redessine), n'est tenté que trois fois.
+  const parNom = new Map<string, number>()
+  let presents: ReadonlySet<Element> = new Set(gestesOfferts())
+  for (let el = prochainGeste(tentes, presents); el && nombre < 200; el = prochainGeste(tentes, presents)) {
+    presents = new Set(gestesOfferts())
+    tentes.add(el)
+    const nom = nomDuGeste(el)
+    const fois = (parNom.get(nom) ?? 0) + 1
+    parNom.set(nom, fois)
+    if (fois > 3) continue
+    nombre++
+    remplirLesChamps()
+    const avant = etat.ecritures.length
+    try {
+      await tenter(el)
+    } catch (e) {
+      // Un geste qui lève sous jsdom (un fichier fictif qu'une bibliothèque ne sait pas lire) : nommé, jamais sauté.
+      leves.push(`${nom} → ${String(e).slice(0, 60)}`)
+    }
+    for (const b of document.querySelectorAll('button')) vus.add(nomDuGeste(b))
+    const parties = ecritures(avant)
+    if (parties.length > 0) gestes.push(`${nom} → ${parties.join(', ')}`)
+  }
+  journal.mockRestore()
+  expect(nombre, 'un écran qui fait paraître sans fin de nouveaux gestes').toBeLessThan(200)
+  return { montage, gestes, leves, tentes: nombre, vus }
+}
+
+describe('aucun geste n’écrit avant que ses listes soient lues', () => {
+  beforeAll(() => {
+    // Les invites répondent oui, le motif d'une règle est fourni : sans quoi le geste s'arrêterait avant d'écrire.
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    vi.spyOn(window, 'prompt').mockImplementation(() => 'motif fictif')
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    vi.spyOn(window, 'open').mockImplementation(() => null)
+    // jsdom n'a pas de presse-papiers, que « Copier » (l'adresse de dépôt d'AccesTab) atteint.
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } })
+  })
+  afterAll(() => { vi.restoreAllMocks() })
+
+  const bilan = { tentes: 0, ecransTentes: 0, vusDeLaBanque: new Set<string>() }
+
+  it('chaque écriture admise désigne un écran monté ici', () => {
+    const noms = new Set(ECRANS.map((e) => e.nom))
+    expect(ECRITURES_SANS_LISTE.filter((x) => !noms.has(x.ecran))).toEqual([])
+  })
+
+  for (const ecran of ECRANS) {
+    it(`${ecran.nom} : rien ne s’écrit avant les lectures, sauf ce qui ne dépend d’aucune liste`, async () => {
+      const { montage, gestes, leves, tentes, vus } = await ecrituresAvantLecture(ecran)
+      bilan.tentes += tentes
+      if (tentes > 0) bilan.ecransTentes++
+      if (ecran.nom === 'BanqueTab') bilan.vusDeLaBanque = vus
+      expect(montage, `une écriture au montage, avant toute lecture${ECRITURES_AU_MONTAGE[ecran.nom] ? ` (${ECRITURES_AU_MONTAGE[ecran.nom].raison})` : ''}`)
+        .toEqual(ECRITURES_AU_MONTAGE[ecran.nom]?.ecritures ?? [])
+      const leve = GESTES_QUI_LEVENT[ecran.nom]
+      expect(leves.map((l) => l.split(' «')[0]), leve ? leve.raison : 'un geste qui lève n’a rien prouvé').toEqual(leve ? [leve.geste] : [])
+      const admises = ECRITURES_SANS_LISTE.filter((x) => x.ecran === ecran.nom)
+      // Chaque écriture partie est admise, et chaque admise est vue UNE fois : une phrase qui ne correspond plus à rien
+      // dit que l'écran a changé, et un geste nouveau qui écrit sans lire se nomme ici.
+      const nonAdmises = gestes.filter((g) => !admises.some((a) => g.startsWith(a.geste) && g.endsWith(`→ ${a.ecritures.join(', ')}`)))
+      // En une chaîne : le message d'échec nomme alors le geste et ce qu'il a écrit, au lieu d'un « Array(1) ».
+      expect(nonAdmises.join('\n'), 'une écriture partie avant toute lecture').toBe('')
+      for (const a of admises) {
+        expect(gestes.filter((g) => g.startsWith(a.geste)), `${a.geste} (${a.raison})`).toHaveLength(1)
+      }
+    })
+  }
+
+  // PLANCHER : un garde qui ne tenterait rien serait aveugle, pas rassurant. Beaucoup d'écrans n'offrent RIEN avant leurs
+  // lectures (un squelette, « Chargement… ») : c'est leur protection, et le plancher se compte sur l'ensemble. Et il doit
+  // atteindre le geste qui écrivait un doublon : l'aperçu d'un relevé CSV, et son bouton d'import, grisé.
+  it('le garde a tenté assez de gestes, et atteint l’import d’un relevé', () => {
+    expect(bilan.tentes).toBeGreaterThanOrEqual(PLANCHER_GESTES)
+    expect(bilan.ecransTentes).toBeGreaterThanOrEqual(PLANCHER_ECRANS)
+    expect([...bilan.vusDeLaBanque].some((n) => /^button « Importer 2 ligne\(s\)/.test(n))).toBe(true)
+  })
 })

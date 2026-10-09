@@ -71,7 +71,7 @@ const lireStatut = (dossierId: string) =>
 const lectureDe = (r: Reponse<StatutConnexion>): Lecture =>
   r.erreur !== null ? { etat: 'erreur', message: r.erreur } : { etat: 'lue', statut: r.donnees }
 
-export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspension, frontiere, onImported }: {
+export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspension, lectureEnCours, frontiere, onImported }: {
   dossierId: string
   // Le relevé du dossier : la période proposée en part, et ce qui y est déjà ne se réimporte pas.
   lignes: LigneBancaire[]
@@ -81,6 +81,11 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   // d'un fichier — un mouvement déjà dans un relevé importé ne se reconnaîtrait plus, et une règle non
   // lue laisserait « à traiter » ce qu'elle couvre.
   suspension: string | null
+  // Vrai tant que l'onglet lit le relevé et les règles — la première lecture comme chaque relecture : ils sont alors vides
+  // ou d'avant la dernière écriture. La carte lit sa connexion à part, et plus vite : sans ce drapeau, un aperçu récupéré
+  // avant la fin de la lecture s'importait contre un relevé vide — chaque mouvement déjà importé d'un fichier, une seconde
+  // fois, et sans la règle qui l'ignore.
+  lectureEnCours: boolean
   // La frontière de validation (lib/validationExercice.ts) : un mouvement daté au plus tard ce jour-là ne s'importe
   // plus — la base refuserait le lot entier. `planImport` l'écarte, et l'aperçu le dit.
   frontiere: string | null
@@ -202,7 +207,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   })
 
   const importer = () => sousVerrou(async () => {
-    if (!recuperation || !recuperation.complete || suspension !== null) return
+    if (!recuperation || !recuperation.complete || suspension !== null || lectureEnCours) return
     const aImporter = planImport(recuperation.mouvements, lignes, frontiere).aImporter
     if (aImporter.length === 0) return
     if (recuperation.environnement === 'SANDBOX' && !window.confirm(
@@ -518,6 +523,12 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   partiel ferait repartir la prochaine récupération après des mouvements jamais lus.
                 </p>
               )}
+              {lectureEnCours && (
+                <p className="muted">
+                  Le relevé du dossier est en cours de lecture : l'import attend la fin de la lecture, pour ne pas importer
+                  deux fois un mouvement déjà au relevé, ni passer à côté d'une règle « toujours ignorer ».
+                </p>
+              )}
               {suspension !== null && (
                 <p className="error-text">
                   Import suspendu : une lecture de l'onglet est incomplète ({suspension}). Un mouvement déjà dans le relevé ne se
@@ -548,7 +559,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   type="button"
                   className="btn btn-primary btn-sm"
                   style={{ marginTop: 8 }}
-                  disabled={bloque || !recuperation.complete || suspension !== null}
+                  disabled={bloque || !recuperation.complete || suspension !== null || lectureEnCours}
                   onClick={importer}
                 >
                   Importer les {plan.aImporter.length} mouvement(s)

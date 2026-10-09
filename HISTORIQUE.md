@@ -13231,3 +13231,86 @@ La base des soldes révisés, le module des preuves, puis l'écran « Révision 
 et repris l'année suivante. Les cycles, la revue analytique, le verrou de la validation, le dossier permanent, les
 documents du cabinet et la finalisation suivent.
 **Recommandation : oui.** (§6)
+
+### 09/10/2026 — UNE ÉCRITURE COMMANDÉE PAR UNE LISTE PAS ENCORE REVENUE — L'IMPORT D'UN RELEVÉ, L'ÉCHÉANCIER D'UN AVIS D'APPEL, LES LOTS DE RAPPROCHEMENT
+
+(`src/pages/dossier/BanqueTab.tsx`, `ConnexionBancaireCard.tsx`, `CotisationsTab.tsx` et leurs tests ;
+`src/test/clientRetenu.ts` ; `src/pages/ecransAvantLecture.test.tsx`, second garde.) **Le défaut.** La sœur de « une
+lecture partielle ne commande aucune écriture », laissée en fin de « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT D'AVOIR LU » :
+pendant la lecture d'un écran, ses listes sont vides (la première lecture) ou d'avant la dernière écriture (une
+relecture), et la suspension existante ne couvrait qu'une liste lue TRONQUÉE. Les gestes qui s'y appuyaient pour écrire,
+sans contrainte de la base pour les rattraper : l'import d'un relevé CSV ou PDF dédoublonne contre `lignes` (date,
+libellé, montant) et applique `regles` (`statutPourLibelle`) — aucune unicité sur ces colonnes ; l'import de la
+connexion bancaire dédoublonne contre les mouvements importés d'un FICHIER (`planImport`, date et montant) et applique
+les mêmes règles — `lignes_bancaires_id_externe_unique` n'arrête que le même mouvement de la banque, pas celui d'un
+fichier ; « Créer ces N échéance(s) » d'un avis d'appel dédoublonne contre `cotisations` — `cotisations_declarees` n'a
+aucune unicité sur (dossier, échéance), et une échéance en double compte deux fois en BK. La carte de connexion est la
+plus exposée : elle lit sa connexion à part, par une fonction, plus vite que l'onglet ne lit son relevé paginé. Et,
+trouvés en mesurant la RELECTURE : « Tout rapprocher automatiquement » et « Valider et rapprocher » restaient offerts
+pendant la relecture qui suit un import ou le retrait d'une règle, sur le plan d'AVANT — un mouvement tout juste
+importé, jumeau de celui que le plan rapproche, n'y était pas encore, et la pièce y paraissait seule candidate : le lot
+écrivait un rapprochement (et une validation) que le plan relu refuse comme ambigu. Aucun mouvement bancaire ne se
+retire d'un écran.
+
+**La mesure.** Une sonde (hors du dépôt) a monté les 43 montages du premier garde sous `clientRetenu`, les lectures du
+montage retenues, puis tenté chaque geste offert (fichiers, formulaires, boutons, cases, listes déroulantes). 26 écrans
+offrent un geste avant leurs lectures ; les autres n'ont qu'un squelette ou « Chargement… ». Ce qui écrit alors : des
+créations saisies en entier (un dossier, un cabinet, un membre, un accès client, une échéance à la main, un emprunt, une
+nature, un sous-dossier, une prestation, un compte courant, un véhicule), le régime et le statut de TVA (propriétés du
+dossier reçues de la page), et la finalisation d'un accord bancaire (`RetourBanque`, au montage, d'après l'adresse) —
+aucune ne dépend d'une liste lue. Les dépôts de fichiers (`deposerFichier`, `importFichiers`, l'appel de cotisation)
+lisent l'empreinte AU CLIC ; l'import par la plateforme agréée lit ses flux au clic et `pieces_flux_unique` refuse le
+doublon ; Super PDP dédoublonne côté serveur ; une facture se numérote par `enregistrer_facture`, un encaissement par
+`enregistrer_encaissement` ; l'ouverture (`BalanceCard`) attendait déjà `ouvertureChargee` ; un accès client se heurte à
+`unique (user_id, dossier_id)`. Les gestes portés par une ligne (rapprocher, affecter, retirer…) n'existent qu'une fois
+la liste lue. L'affectation en lot des règles, pendant une relecture, n'écrit que des mouvements que la base revérifie
+« à traiter » (`affecter_mouvements_bancaires`) et dont aucun justificatif n'a changé : pas fautive.
+
+**Le correctif.** Le geste attend la fin de la lecture, et le dit, à la place du bouton qu'il grise : « Le relevé du
+dossier est en cours de lecture : l'import attend la fin de la lecture, pour ne pas importer deux fois un mouvement déjà
+au relevé, ni passer à côté d'une règle « toujours ignorer ». » (les deux imports de fichier et la carte) ; « Les
+échéances du dossier sont en cours de lecture : la création attend la fin de la lecture, pour ne pas créer deux fois une
+échéance déjà enregistrée. » ; et pour les deux lots, une phrase chacun. Le drapeau est le `loading` déjà en place, qui
+repasse à vrai à CHAQUE relecture : la première lecture et la relecture sont la même faute. `ImportCsv` et
+`ConnexionBancaireCard` reçoivent `lectureEnCours`, à côté de la suspension d'une lecture tronquée, inchangée ; chaque
+gestionnaire garde sa seconde ceinture. Les phrases évitent « rien » et « aucun » : le premier garde les lirait comme
+une affirmation du vide (il l'a fait, sur la première rédaction).
+
+**Les gardes.** Un test par chemin, la lecture retenue, le geste tenté (rien ne part, la phrase est dite, le bouton
+grisé), puis la lecture revenue (seul le nouveau part, au statut que la règle décide) : CSV, PDF, connexion bancaire et
+les deux lots dans `BanqueTab.test.tsx`, la carte seule dans `ConnexionBancaireCard.test.tsx`, l'échéancier dans
+`CotisationsTab.test.tsx` ; la relecture pour le CSV, l'échéancier et les lots. Dix tests d'écran : sur l'ancien code,
+neuf tombent — le dixième est le garde symétrique des lots (relecture revenue sans jumeau, le lot repart), qui passe sur
+les deux ; leurs seules lignes d'écriture gardées (sans la phrase ni le bouton grisé), ils tombent sur le DOUBLON parti (« expected
+[ { table: 'lignes_bancaires', … } ] to deeply equal [] », « expected [ { statut: 'validee' } ] to deeply equal [] »).
+**Un second garde transversal**, dans `ecransAvantLecture.test.tsx` : les mêmes montages, AUCUNE réponse revenue — ni du
+montage, ni des gestes —, chaque geste offert tenté en profondeur (ce qu'un geste fait paraître passe avant le reste :
+l'aperçu d'un fichier et son bouton d'import avant l'onglet voisin qui le ferait disparaître ; les listes déroulantes
+après les boutons — changée d'abord, la colonne d'un aperçu le rendait illisible, et le garde passait sur l'ancien
+code). Toute écriture partie figure dans `ECRITURES_SANS_LISTE` (quatorze, chacune avec sa raison, vue exactement une
+fois), `ECRITURES_AU_MONTAGE` (RetourBanque) ou `GESTES_QUI_LEVENT` (le fichier d'une pièce, que pdf.js ne lit pas sous
+jsdom) ; les actions d'Edge Function qui lisent (`statut`, `status`) sont nommées ; plancher de 120 gestes et 24 écrans
+(126 et 26 mesurés), et l'aperçu d'un relevé CSV doit être atteint. `clientRetenu` compte désormais les écritures
+parties, et l'action d'une Edge Function. Sur l'ancien code, le garde tombe sur la Banque (« button « Importer 2
+ligne(s) » → lignes_bancaires insert »). Ce qu'il ne voit pas, et que les tests des écrans gardent : un geste offert
+seulement depuis une ligne lue ou une réponse d'un service (la carte de connexion, l'échéancier d'un avis, les lots), un
+geste qui lit lui-même puis s'appuie AUSSI sur une liste du montage, et la fenêtre d'une relecture.
+
+**Éprouvé.** Vingt-quatre mutations des correctifs : dix-huit mordent (le drapeau retiré à l'un ou l'autre import, aux
+lots ; « première lecture seulement » — `loading && lignes.length === 0` — aux imports, aux lots, à l'échéancier ; chaque
+bouton dégrisé ; chaque phrase retirée) ; six sont équivalentes, et ce sont les six secondes ceintures des gestionnaires
+(deux imports de fichier, la carte, l'échéancier, les deux lots) : le bouton grisé ne déclenche pas son gestionnaire, et
+l'état qu'il lit est celui du dernier rendu. « Première lecture seulement » a d'abord survécu sur l'échéancier : le test
+de la relecture partait d'un dossier sans échéance, où la relecture se confond avec la première lecture — le jeu d'essai
+porte depuis une échéance hors de l'avis. Six défauts plantés dans le second garde (une écriture admise retirée ou
+inventée, un faux client qui ne compte rien, une exploration arrêtée au premier geste, l'écriture du montage oubliée,
+toute fonction tenue pour une lecture) : tous mordent. La suite passe de 5 838 à 5 893 tests (de 5 991 à 6 046 sur la tête de `main`, qui porte d7). Sous une charge de 13 à
+30 (neuf agents sur quatre cœurs), les tests qui compilent une copie (`cdarEncaisseeCopie`, `copiesFacturation`,
+`encaissementsFactures`) et quelques tests d'écran ont dépassé leur délai pendant la suite entière : chacun, rejoué seul
+dans son fuseau, passe ; aucun délai n'a été relevé.
+
+**Écarté, à ne pas réenquêter.** Les fenêtres de relecture des autres écrans n'ont pas été balayées une à une : leurs
+lots écrivent sous un verrou relâché après la relecture qu'ils déclenchent, ou par une fonction qui revérifie (les
+échéances de cotisation, les dotations, l'affectation). **Trouvé en passant, non corrigé** : le formulaire « Nouveau
+dossier » (`DossiersList`) n'a qu'un état `saving` pour verrou — deux « Entrée » rapprochées créeraient deux dossiers
+(famille « Un verrou d'exécution est un `useRef` »).

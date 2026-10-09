@@ -5240,3 +5240,203 @@ describe('BanqueTab — les écarts à vérifier attendent le relevé', () => {
     await waitFor(() => expect(carteDesEcarts()).toMatch(/mouvement\(s\) bancaire\(s\) non rapproché\(s\)/))
   })
 })
+
+// LA SŒUR DE « UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE » : UNE LECTURE PAS ENCORE REVENUE. Pendant la lecture de
+// l'onglet, le relevé et les règles « toujours ignorer » sont vides : un fichier importé là se dédoublonnait contre rien —
+// chaque mouvement déjà au relevé une seconde fois, et sans la règle qui l'ignore —, et aucun écran ne retire un mouvement
+// bancaire. La suspension de la lecture tronquée ne couvrait que le relevé lu EN PARTIE. Chaque chemin d'import se tente
+// donc la lecture retenue (rien ne part, et l'écran dit pourquoi), puis la lecture revenue (seul le nouveau part, ignoré).
+describe('BanqueTab — l’import attend la fin de la lecture du relevé', () => {
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+  const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+  const attente = /Le relevé du dossier est en cours de lecture : l'import attend la fin de la lecture/
+
+  beforeEach(() => {
+    reinitialiser()
+    // Au relevé : le prélèvement du 02/06/2025 (`ligneDeTest`), déjà importé d'un fichier. Une règle ignore l'assurance.
+    faux.reglesIgnorees = [regle('assurance fictive')]
+    faux.retenirLectureLignes = true
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+  })
+
+  async function revenir() {
+    await act(async () => { faux.resoudreLectureLignes!() })
+    await waitFor(() => expect(screen.queryAllByText(attente)).toEqual([]))
+  }
+
+  it('un fichier CSV', async () => {
+    rendre()
+    const fichier = new File(
+      ['Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n10/06/2025;PRLV SEPA ASSURANCE FICTIVE;-50,00\n'],
+      'releve.csv', { type: 'text/csv' },
+    )
+    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement
+    expect(screen.getByText(attente)).toBeTruthy()
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(lot()).toEqual([])
+
+    await revenir()
+    await act(async () => { (screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement).click() })
+    expect(lot()).toHaveLength(1)
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'PRLV SEPA ASSURANCE FICTIVE', statut: 'ignoree' })])
+  })
+
+  // Et la RELECTURE qui suit un import : le relevé lu d'avant ne porte pas encore ce qui vient d'être écrit — le même
+  // fichier déposé de nouveau s'y importerait une seconde fois. L'import attend aussi cette lecture-là.
+  it('un fichier CSV déposé de nouveau pendant la relecture qui suit son import', async () => {
+    faux.retenirLectureLignes = false
+    rendre()
+    const csv = 'Date;Libellé;Montant\n10/06/2025;PRLV SEPA ASSURANCE FICTIVE;-50,00\n'
+    const deposer = async () => {
+      const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+      await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve.csv', { type: 'text/csv' })] } }) })
+      return await screen.findByRole('button', { name: /Importer 1 ligne\(s\)/ }) as HTMLButtonElement
+    }
+    const premier = await deposer()
+    await waitFor(() => expect(premier.disabled).toBe(false))
+    // Le serveur écrit le mouvement ; la relecture qui suit est retenue.
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'importee', date: '2025-06-10', libelle: 'PRLV SEPA ASSURANCE FICTIVE', montant: -50 })]
+    faux.retenirLectureLignes = true
+    await act(async () => { premier.click() })
+    expect(lot()).toHaveLength(1)
+
+    const second = await deposer()
+    expect(screen.getByText(attente)).toBeTruthy()
+    expect(second.disabled).toBe(true)
+    await act(async () => { second.click() })
+    expect(lot()).toHaveLength(1)
+
+    await revenir()
+    await act(async () => { (screen.getByRole('button', { name: /Importer 1 ligne\(s\)/ }) as HTMLButtonElement).click() })
+    expect(lot()).toHaveLength(1)
+    expect(screen.getByText('Ce relevé semble déjà importé (mêmes date, libellé et montant).')).toBeTruthy()
+  })
+
+  it('un relevé PDF', async () => {
+    faux.lignesPdf = [
+      { texte: '02/06/2025 PRLV SEPA FOURNISSEUR -100,00', xFin: 0 },
+      { texte: '10/06/2025 PRLV SEPA ASSURANCE FICTIVE -50,00', xFin: 0 },
+    ]
+    rendre()
+    const pdf = await screen.findByRole('button', { name: 'PDF' })
+    await act(async () => { pdf.click() })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'releve.pdf', { type: 'application/pdf' })] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement
+    expect(screen.getByText(attente)).toBeTruthy()
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(lot()).toEqual([])
+
+    await revenir()
+    await act(async () => { (screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement).click() })
+    expect(lot()).toHaveLength(1)
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'PRLV SEPA ASSURANCE FICTIVE', statut: 'ignoree' })])
+  })
+
+  it('la connexion bancaire, qui lit sa connexion à part et plus vite', async () => {
+    faux.connexionBancaire = {
+      connexion: {
+        banque_nom: 'Mock ASPSP', banque_pays: 'FI', type_acces: 'personal', environnement: 'SANDBOX', etat: 'active',
+        valide_jusqu_au: '2099-01-01T00:00:00+00:00', derniere_recuperation: null, created_at: '2025-06-01T08:00:00+00:00',
+        compte_empreinte: 'emp-courant',
+        comptes: [{ empreinte: 'emp-courant', nom: 'Compte courant', devise: 'EUR', iban_fin: '0042', mouvements_lisibles: true }],
+      },
+      recuperation: {
+        du: '2025-06-01', au: '2025-06-30', complete: true, motif: null, banque_nom: 'Mock ASPSP', environnement: 'SANDBOX',
+        compte: { nom: 'Compte courant', iban_fin: '0042' }, avertissement: null,
+        ecartes: { non_comptabilises: 0, autre_devise: 0, hors_periode: 0, illisibles: 0, doublons: 0 },
+        mouvements: [
+          { id_externe: 'eb:r:fichier', date: '2025-06-02', libelle: 'PRLV SEPA FOURNISSEUR — FICTIF SA', montant: -100 },
+          { id_externe: 'eb:r:assurance', date: '2025-06-10', libelle: 'PRLV SEPA ASSURANCE FICTIVE', montant: -50 },
+        ],
+      },
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    // Cherché HORS de l'`act` : la carte paraît après sa propre lecture (CLAUDE.md, « Tests »).
+    const recuperer = await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    await act(async () => { recuperer.click() })
+    // Contre un relevé pas encore lu, les deux paraissent à importer : le bouton les compte, mais ne part pas.
+    const bouton = await screen.findByRole('button', { name: 'Importer les 2 mouvement(s)' }) as HTMLButtonElement
+    // Dit deux fois, et c'est juste : par l'aperçu de la banque, et par l'import d'un fichier juste en dessous.
+    expect(screen.getAllByText(attente)).toHaveLength(2)
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.upserts.filter((u) => u.table === 'lignes_bancaires')).toEqual([])
+
+    await revenir()
+    await act(async () => { screen.getByRole('button', { name: 'Importer les 1 mouvement(s)' }).click() })
+    const importe = faux.upserts.filter((u) => u.table === 'lignes_bancaires')
+    expect(importe).toHaveLength(1)
+    expect(importe[0].valeur).toEqual([expect.objectContaining({ id_externe: 'eb:r:assurance', statut: 'ignoree' })])
+  })
+})
+
+// LES DEUX LOTS DE RAPPROCHEMENT, PENDANT UNE RELECTURE. À la première lecture ils n'existent pas (leurs listes sont
+// vides) ; à une relecture — ici celle qui suit le retrait d'une règle « toujours ignorer » —, ils restaient offerts sur
+// le plan d'avant, où la pièce paraît seule candidate alors qu'un jumeau du mouvement vient d'entrer au relevé. Ils
+// attendent la fin de la lecture, le disent, puis le plan relu tranche : deux mouvements, plus de certitude.
+describe('BanqueTab — les lots de rapprochement attendent la relecture', () => {
+  const regle: RegleBancaireIgnoree = { id: 'r-loyer', dossier_id: 'dossier-de-test', motif: 'loyer fictif', created_at: '2025-06-01T09:00:00Z' }
+  const jumeau = () => ligneDeTest({ id: 'ligne-2', libelle: 'PRLV SEPA FOURNISSEUR BIS' })
+
+  async function relireAvecUnJumeau() {
+    // Le jumeau entre au relevé (importé d'un autre écran) ; la relecture qui suit le retrait de la règle est retenue.
+    faux.lignes = [...faux.lignes, jumeau()]
+    faux.retenirLectureLignes = true
+    await act(async () => { screen.getByTitle('Retirer cette règle').click() })
+  }
+
+  it('« Tout rapprocher automatiquement »', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [regle]
+    rendre()
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }) as HTMLButtonElement
+    await relireAvecUnJumeau()
+    expect(bouton.disabled).toBe(true)
+    expect(screen.getByText(/le rapprochement automatique attend la fin de la lecture/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.updatesLignes).toEqual([])
+
+    await act(async () => { faux.resoudreLectureLignes!() })
+    await screen.findByText(/plusieurs pièces ou échéances possibles/)
+    expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('« Valider et rapprocher »', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [regle]
+    faux.pieces = [pieceDeTest({ id: 'piece-1', statut: 'a_valider' })]
+    rendre()
+    const bouton = await screen.findByRole('button', { name: 'Valider et rapprocher cette pièce' }) as HTMLButtonElement
+    await relireAvecUnJumeau()
+    expect(bouton.disabled).toBe(true)
+    expect(screen.getByText(/la validation en lot attend la fin de la lecture/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.updatesPieces).toEqual([])
+    expect(faux.updatesLignes).toEqual([])
+
+    await act(async () => { faux.resoudreLectureLignes!() })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Valider et rapprocher cette pièce' })).toBeNull())
+    expect(faux.updatesPieces).toEqual([])
+  })
+
+  // Le garde symétrique : la relecture revenue, sans jumeau, le lot repart.
+  it('la relecture revenue sans jumeau, « Tout rapprocher » repart', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [regle]
+    rendre()
+    await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    faux.retenirLectureLignes = true
+    await act(async () => { screen.getByTitle('Retirer cette règle').click() })
+    await act(async () => { faux.resoudreLectureLignes!() })
+    await waitFor(() => expect(screen.queryByText(/attend la fin de la lecture/)).toBeNull())
+    await act(async () => { screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).click() })
+    expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' })])
+  })
+})

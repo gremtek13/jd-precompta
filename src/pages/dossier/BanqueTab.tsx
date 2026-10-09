@@ -987,6 +987,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes ?? reglementsIncomplets
     ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null)
   const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets
+  // ET UNE LECTURE PAS ENCORE REVENUE NON PLUS. Pendant une relecture — celle qui suit l'import d'un relevé, le retrait
+  // d'une règle —, les deux lots restent à l'écran sur le plan d'AVANT : un mouvement tout juste importé, jumeau de
+  // celui que le plan rapproche, n'y est pas encore, et la pièce y paraît seule candidate. Ils attendent la fin de la
+  // lecture (`loading`, qui repasse à vrai à chaque relecture). À la première, ils n'existent pas : leurs listes sont vides.
+  const lotsEnAttenteDeLecture = loading
 
   // LES AFFECTATIONS QUE LES RÈGLES PROPOSENT (lib/reglesAffectation.ts). Un mouvement qui a peut-être
   // son justificatif — une pièce ou une échéance du même montant, une pièce du même tiers — en est
@@ -1069,7 +1074,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Sous le verrou partagé (voir `sousVerrou`) : un double clic enverrait sinon deux fois les mêmes
   // écritures de contrepartie (voir ImportDossierModal, même correctif).
   async function validerEtRapprocherLot() {
-    if (certainsAValider.length === 0 || lotCertainSuspendu) return
+    if (certainsAValider.length === 0 || lotCertainSuspendu || lotsEnAttenteDeLecture) return
     await sousVerrou(setRapprochementAuto, async () => {
       const echecs: string[] = []
       for (const a of certainsAValider) {
@@ -1117,7 +1122,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // alors que le test existait déjà — une promesse qu'on ne peut pas vérifier en la lisant.
   async function rapprocherTout() {
     const maj = planAuto.retenus
-    if (maj.length === 0 || lotAutomatiqueSuspendu) return
+    if (maj.length === 0 || lotAutomatiqueSuspendu || lotsEnAttenteDeLecture) return
     await sousVerrou(setRapprochementAuto, async () => {
       // Une échéance de cotisation passe par la base, qui écrit son écriture avec le rapprochement ; une
       // pièce, par une mise à jour suivie de sa contrepartie, comme à la main.
@@ -1316,11 +1321,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         }
       />
 
+      {/* `lectureEnCours` : pendant la lecture de l'onglet — la première comme chaque relecture —, `lignes` et `regles` sont
+          vides ou d'avant la dernière écriture. Un import y dédoublonnerait contre rien : la sœur de la lecture tronquée. */}
       <ConnexionBancaireCard
         dossierId={dossierId}
         lignes={lignes}
         regles={regles}
         suspension={lignesIncompletes ?? referencesIncompletes}
+        lectureEnCours={loading}
         frontiere={frontiere}
         onImported={load}
       />
@@ -1331,6 +1339,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         regles={regles}
         lignesExistantes={lignes}
         lectureIncomplete={lignesIncompletes ?? referencesIncompletes}
+        lectureEnCours={loading}
         frontiere={frontiere}
       />
 
@@ -1406,11 +1415,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             type="button"
             className="btn btn-primary btn-sm"
             style={{ marginTop: 10 }}
-            disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotAutomatiqueSuspendu !== null}
+            disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotAutomatiqueSuspendu !== null || lotsEnAttenteDeLecture}
             onClick={rapprocherTout}
           >
             {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
           </button>
+        )}
+        {suggestionsAutomatiques.length > 0 && lotsEnAttenteDeLecture && (
+          <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            Le relevé du dossier est en cours de lecture : le rapprochement automatique attend la fin de la lecture. Un
+            mouvement qui paraît n'avoir qu'une pièce possible peut en avoir une seconde tout juste importée.
+          </p>
         )}
         {suggestionsAutomatiques.length > 0 && lotAutomatiqueSuspendu && (
           <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -1483,12 +1498,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null}
+              disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null || lotsEnAttenteDeLecture}
               onClick={validerEtRapprocherLot}
             >
               {rapprochementAuto ? 'Traitement…' : certainsAValider.length === 1 ? 'Valider et rapprocher cette pièce' : `Valider et rapprocher les ${certainsAValider.length}`}
             </button>
           </div>
+          {lotsEnAttenteDeLecture && (
+            <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+              Le relevé du dossier est en cours de lecture : la validation en lot attend la fin de la lecture. « Un seul
+              rapprochement possible » ne se juge que sur tout le relevé, mouvements tout juste importés compris.
+            </p>
+          )}
           {lotCertainSuspendu && (
             <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
               Validation en lot suspendue : une lecture est incomplète ({lotCertainSuspendu}). « Un seul
@@ -1954,12 +1975,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 // mouvement bancaire. L'import se refuse donc, comme `chargerHashsExistants` lève plutôt que de
 // laisser passer un fichier « pas encore importé » sur une liste d'empreintes incomplète.
 //
+// `lectureEnCours` : ce que l'import ne voit PAS ENCORE. Pendant la lecture de l'onglet, le relevé et les règles sont vides
+// (la première) ou d'avant la dernière écriture (une relecture) : tout le fichier paraîtrait nouveau. L'import attend la
+// fin de la lecture, et le dit.
+//
 // `frontiere` : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Il est
 // écarté et compté, comme un doublon, et l'alerte de fin d'import le dit : un relevé qui en porte, c'est un exercice
 // validé auquel il manque des mouvements, et rien ne peut plus les y ajouter.
-function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete, frontiere }: {
+function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete, lectureEnCours, frontiere }: {
   dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[]
-  lectureIncomplete: string | null; frontiere: string | null
+  lectureIncomplete: string | null; lectureEnCours: boolean; frontiere: string | null
 }) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
@@ -2103,7 +2128,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function handleImportPdfRows() {
     if (!pdfRows || pdfRows.length === 0 || importEnCours.current) return
-    if (lectureIncomplete) return
+    if (lectureIncomplete || lectureEnCours) return
     importEnCours.current = true
     setImporting(true)
     setError(null)
@@ -2174,7 +2199,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   async function handleImport() {
     if (!rows || importEnCours.current) return
-    if (lectureIncomplete) return
+    if (lectureIncomplete || lectureEnCours) return
     importEnCours.current = true
     setImporting(true)
     setError(null)
@@ -2282,6 +2307,12 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   return (
     <div className="card" style={{ marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>Importer un relevé bancaire</h3>
+      {lectureEnCours && (
+        <p className="muted">
+          Le relevé du dossier est en cours de lecture : l'import attend la fin de la lecture, pour ne pas importer deux
+          fois un mouvement déjà au relevé, ni passer à côté d'une règle « toujours ignorer ».
+        </p>
+      )}
       {lectureIncomplete && (
         <p className="error-text">
           Import suspendu : une lecture est incomplète ({lectureIncomplete}). Le dédoublonnage ne
@@ -2395,7 +2426,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null}>
+          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null || lectureEnCours}>
             {importing ? 'Import…' : `Importer ${dataRows.length} ligne(s)`}
           </button>
         </>
@@ -2486,7 +2517,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               <button
                 className="btn btn-primary"
                 onClick={handleImportPdfRows}
-                disabled={importing || lectureIncomplete !== null || pdfRows.filter((r) => !r.estSolde).length === 0}
+                disabled={importing || lectureIncomplete !== null || lectureEnCours || pdfRows.filter((r) => !r.estSolde).length === 0}
               >
                 {importing ? 'Import…' : `Importer ${pdfRows.filter((r) => !r.estSolde).length} ligne(s)`}
               </button>

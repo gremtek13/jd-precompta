@@ -554,6 +554,58 @@ describe('CotisationsTab — créer l’échéancier lu sur un avis d’appel', 
     expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(0)
   })
 
+  // LA SŒUR DE LA LECTURE TRONQUÉE : LA LECTURE PAS ENCORE REVENUE. Pendant la lecture de l'onglet, `cotisations` est
+  // vide : toutes les échéances lues sur l'avis paraissaient nouvelles, et celle du 05/03, déjà en base, l'était une
+  // seconde fois. La création attend la fin de la lecture, le dit, puis ne crée que celle qui manque.
+  it('attend la fin de la lecture des échéances, le dit, puis ne crée que celle qui manque', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-1', echeance: '2026-03-05' })]
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    const bouton = await deposerAvis()
+
+    expect(screen.getByText(/Les échéances du dossier sont en cours de lecture : la création attend la fin de la lecture/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(0)
+
+    await act(async () => { faux.retenue = null; faux.relacher!() })
+    await waitFor(() => expect(screen.queryByText(/en cours de lecture/)).toBeNull())
+    await act(async () => { screen.getByRole('button', { name: /Créer ces 2 échéance\(s\)/ }).click() })
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toEqual([
+      { table: 'cotisations_declarees', valeur: [expect.objectContaining({ echeance: '2026-04-05' })] },
+    ])
+  })
+
+  // Et la RELECTURE : l'échéance du 05/04 saisie à la main pendant que l'échéancier attend, la liste lue d'avant ne la
+  // porte pas encore — la créer depuis l'avis en ferait un doublon. La création attend aussi la relecture.
+  it('attend aussi la relecture qui suit une échéance saisie à la main', async () => {
+    // Une échéance déjà au dossier, hors de l'avis : la liste lue n'est pas vide — la relecture ne se confond pas avec la
+    // première lecture.
+    faux.cotisations = [cotisation({ id: 'cot-0', echeance: '2026-01-05' })]
+    const bouton = await deposerAvis()
+    await waitFor(() => expect(bouton.hasAttribute('disabled')).toBe(false))
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: '2026-04-05' } })
+      fireEvent.change(screen.getByLabelText('Montant appelé'), { target: { value: '420' } })
+    })
+    // Le serveur l'a écrite ; sa relecture est retenue.
+    faux.cotisations = [...faux.cotisations, cotisation({ id: 'cot-2', echeance: '2026-04-05' })]
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    await act(async () => { screen.getByRole('button', { name: 'Ajouter' }).click() })
+
+    const creer = screen.getByRole('button', { name: /Créer ces 2 échéance\(s\)/ })
+    expect(creer.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Les échéances du dossier sont en cours de lecture/)).toBeTruthy()
+    await act(async () => { creer.click() })
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(1)
+
+    await act(async () => { faux.retenue = null; faux.relacher!() })
+    await waitFor(() => expect(screen.queryByText(/en cours de lecture/)).toBeNull())
+    await act(async () => { screen.getByRole('button', { name: /Créer ces 2 échéance\(s\)/ }).click() })
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees').at(-1)).toEqual(
+      { table: 'cotisations_declarees', valeur: [expect.objectContaining({ echeance: '2026-03-05' })] },
+    )
+  })
+
   it('crée, sur une lecture complète, la seule échéance qui manque', async () => {
     // Le garde symétrique : sans lui, « la création se suspend » serait satisfait par un bouton qui
     // ne crée JAMAIS.
