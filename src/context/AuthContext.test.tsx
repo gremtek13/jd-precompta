@@ -123,6 +123,7 @@ beforeEach(() => {
   montages.n = 0
   rendus.length = 0
   affichages.length = 0
+  localStorage.clear()
 })
 
 async function monterEtSaisir() {
@@ -255,5 +256,136 @@ describe('AuthProvider — aucun rendu entre deux lectures', () => {
     expect(screen.getByText('Chargement…')).toBeTruthy()
     await evenement('INITIAL_SESSION', session('u1', 'membre@cabinet.fr'))
     expect(await screen.findByLabelText('Saisie en cours')).toBeTruthy()
+  })
+})
+
+// « MOT DE PASSE OUBLIÉ » : la session qu'un lien de récupération ouvre doit être reconnue DANS le rendu où elle arrive
+// — App.tsx montre alors l'écran du nouveau mot de passe avant tout autre. Deux sources : le jeton de l'adresse du
+// chargement (main.tsx), comparé à celui de la première session connue, et l'événement `PASSWORD_RECOVERY`, que le
+// client émet après coup et aux autres onglets. Le drapeau survit dans le navigateur, pour CE compte seulement.
+describe('AuthProvider — la session d’un lien « Mot de passe oublié »', () => {
+  const CLE = 'jd-precompta-recuperation'
+  const sessionDe = (id: string, email: string, jeton: string) => ({ access_token: jeton, user: { id, email } })
+  // Ce que chaque rendu commis a montré : « compte:oui|non ».
+  const vus: string[] = []
+
+  function Sonde() {
+    const { recuperation, avisDuLien, terminerRecuperation, oublierAvisDuLien, loading, session: s } = useAuth()
+    useEffect(() => { vus.push(`${s?.user.email ?? 'personne'}:${recuperation ? 'oui' : 'non'}`) })
+    return (
+      <>
+        <p>Récupération : {recuperation ? 'oui' : 'non'}</p>
+        <p>Avis : {avisDuLien ?? 'aucun'}</p>
+        <p>Chargement : {loading ? 'oui' : 'non'}</p>
+        <button onClick={terminerRecuperation}>Terminer</button>
+        <button onClick={oublierAvisDuLien}>Oublier</button>
+      </>
+    )
+  }
+
+  const lien = (jeton: string) => ({ nature: 'recuperation' as const, jeton })
+
+  beforeEach(() => { vus.length = 0 })
+
+  it('la session ouverte avec le jeton du lien est reconnue dans le rendu même où elle arrive, sans attendre l’événement', async () => {
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien')
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Récupération : oui')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBe('u1')
+    // Jamais un rendu avec la session et sans la récupération : l'application n'a pas pu passer avant l'écran.
+    expect(vus).not.toContain('membre@cabinet.fr:non')
+  })
+
+  it('l’événement PASSWORD_RECOVERY suffit aussi — un autre onglet, ou un jeton déjà renouvelé', async () => {
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-renouvele')
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Chargement : non')).toBeTruthy()
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    // Une session ouverte, même avec un autre jeton : le lien n'a rien à dire.
+    expect(screen.getByText('Avis : aucun')).toBeTruthy()
+    await evenement('PASSWORD_RECOVERY', sessionDe('u1', 'membre@cabinet.fr', 'jeton-renouvele'))
+    expect(screen.getByText('Récupération : oui')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBe('u1')
+  })
+
+  it('le mot de passe choisi, plus rien n’est dû — et la même session revue au retour sur l’onglet ne le redemande pas', async () => {
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien')
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Récupération : oui')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Terminer' }))
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBeNull()
+    // Le retour sur l'onglet émet « SIGNED_IN » avec la session gardée — le MÊME jeton, dans l'heure : le lien est jugé.
+    await evenement('SIGNED_IN', sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien'))
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+  })
+
+  it('un mot de passe changé dans un autre onglet (USER_UPDATED) clôt la récupération ici aussi', async () => {
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien')
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Récupération : oui')).toBeTruthy()
+    await evenement('USER_UPDATED', sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien'))
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBeNull()
+  })
+
+  it('une déconnexion clôt la récupération', async () => {
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-du-lien')
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Récupération : oui')).toBeTruthy()
+    await evenement('SIGNED_OUT', null)
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBeNull()
+    // Le lien a ouvert une session : se déconnecter ne le fait pas passer pour un lien sans effet.
+    expect(screen.getByText('Avis : aucun')).toBeTruthy()
+  })
+
+  it('un rechargement retrouve la récupération : le drapeau survit, pour ce compte et une fois la session connue', async () => {
+    localStorage.setItem(CLE, 'u1')
+    const reponseSession = retenue()
+    faux.sessionRetenue = reponseSession.promesse
+    faux.sessionInitiale = sessionDe('u1', 'membre@cabinet.fr', 'jeton-quelconque')
+    render(<AuthProvider><Sonde /></AuthProvider>)
+    await act(async () => {})
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    await act(async () => { reponseSession.relacher() })
+    expect(await screen.findByText('Récupération : oui')).toBeTruthy()
+  })
+
+  it('le drapeau d’un AUTRE compte ne vaut rien pour celui-ci', async () => {
+    localStorage.setItem(CLE, 'u2')
+    render(<AuthProvider><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Chargement : non')).toBeTruthy()
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+  })
+
+  it('une session absente efface le drapeau : il ne ressurgit pas à la connexion suivante par mot de passe', async () => {
+    localStorage.setItem(CLE, 'u1')
+    faux.sessionInitiale = null
+    render(<AuthProvider><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Chargement : non')).toBeTruthy()
+    expect(localStorage.getItem(CLE)).toBeNull()
+    await evenement('SIGNED_IN', session('u1', 'membre@cabinet.fr'))
+    expect(await screen.findByText('Chargement : non')).toBeTruthy()
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+  })
+
+  it('un lien dont le jeton n’a ouvert aucune session se dit, jusqu’à la connexion suivante', async () => {
+    faux.sessionInitiale = null
+    render(<AuthProvider retourDuLien={lien('jeton-du-lien')}><Sonde /></AuthProvider>)
+    expect(await screen.findByText(
+      "Avis : Ce lien n'a pas pu ouvrir de session : il a peut-être expiré, ou le service n'a pas répondu.",
+    )).toBeTruthy()
+    expect(screen.getByText('Récupération : non')).toBeTruthy()
+    await evenement('SIGNED_IN', session('u1', 'membre@cabinet.fr'))
+    expect(screen.getByText('Avis : aucun')).toBeTruthy()
+  })
+
+  it('un lien refusé se dit dès le chargement, et se congédie', async () => {
+    faux.sessionInitiale = null
+    render(<AuthProvider retourDuLien={{ nature: 'refus', code: 'otp_expired' }}><Sonde /></AuthProvider>)
+    expect(await screen.findByText('Avis : Ce lien ne peut plus servir : il a expiré, ou il a déjà été utilisé.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Oublier' }))
+    expect(screen.getByText('Avis : aucun')).toBeTruthy()
   })
 })

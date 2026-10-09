@@ -46,8 +46,10 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   dans les policies RLS, les fonctions SQL et les Edge Functions Deno.
 - **Trois profils d'accès** : cabinet (chef de cabinet, ou membre d'équipe assigné à des dossiers) ; client (un compte
   Supabase ordinaire créé par `create-client-access`, ouvert par e-mail et mot de passe — `signInWithPassword` dans
-  `Login.tsx` est le seul chemin de connexion —, restreint à ses dossiers par `memberships`) ; super-admin
-  (`SuperAdminPage`). **Aucun écran ne s'affiche sans session** (`App.tsx`) : il n'existe aucun chemin anonyme.
+  `Login.tsx` est le seul chemin de connexion par mot de passe ; l'autre est le lien « Mot de passe oublié », dont la
+  session passe par `NouveauMotDePasse` avant tout autre écran —, restreint à ses dossiers par `memberships`) ;
+  super-admin (`SuperAdminPage`). **Aucun écran ne s'affiche sans session** (`App.tsx`) : il n'existe aucun chemin
+  anonyme.
 - **Routage** : `HashRouter` (react-router-dom 7), pour GitHub Pages sans réécriture serveur. L'onglet d'un dossier fait
   partie de l'URL (`/dossiers/:id/:tab`).
 - **Coque d'ordinateur en trois volets** (25/09/2026) : la barre latérale (`Layout.tsx`, `BarreDossiers.tsx` : « Nouveau
@@ -288,7 +290,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 
 - **Supabase** (MCP `Supabase`) — base, auth, stockage, Edge Functions du projet `mztayrhfgtsfjqighlue`.
 - **Resend** (MCP `Resend`) — `send-email` et `receive-email`, domaine `precompta.jdarnis.fr` vérifié dans les deux sens ;
-  `RESEND_API_KEY` en secret Supabase. Un seul webhook : `email.received` → `receive-email`.
+  `RESEND_API_KEY` en secret Supabase. Un seul webhook : `email.received` → `receive-email`. Depuis le 09/10/2026, aussi
+  le SMTP du service d'authentification de Supabase (le lien « Mot de passe oublié »), réglé au tableau de bord avec sa
+  propre clé d'envoi, et non dans le dépôt ; ce lien reste lisible dans le journal des envois de Resend tant qu'il vaut.
 - **Super PDP** (`api.superpdp.tech`) — plateforme agréée partenaire : réception des factures fournisseurs et émission
   des factures de vente. Une application OAuth par entreprise, donc des identifiants par dossier (`superpdp_credentials`).
   **Cet environnement ne peut pas atteindre `api.superpdp.tech`** : tout diagnostic passe par les journaux de production
@@ -321,6 +325,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
+- **Mot de passe oublié** (`lib/recuperationMotDePasse.ts`, `pages/NouveauMotDePasse.tsx`) : flux IMPLICITE de Supabase,
+  gardé — le PKCE lierait le lien au navigateur qui l'a demandé, et sur iPhone l'application installée n'est pas
+  Safari ; `redirectTo` toujours passé, `https://compta.jdarnis.fr/`, sans « # » (le service ajoute le sien) ;
+  `main.tsx` lit l'adresse AVANT le premier rendu ; la session se reconnaît au jeton du lien, jugé une fois, ou à
+  `PASSWORD_RECOVERY`, et le compte en attente survit au rechargement (`localStorage`, effacé par toute absence de
+  session) ; le message de la demande est NEUTRE ; un fragment qui commence par « / » est une route, jamais un retour ;
+  un code d'erreur ne s'affiche que s'il en a la forme, une description jamais → « MOT DE PASSE OUBLIÉ ».
 - **Variables d'environnement** : PLAN_DE_REPRISE.md (fin du §3) les nomme toutes, `variablesEnvironnement.test.ts` les
   compare au code ; leurs valeurs ne se vérifient qu'à la main.
 - Les données sont fictives aujourd'hui, et traitées dès maintenant comme identifiantes : aucun service tiers hors de
@@ -330,7 +341,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
-  dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`).
+  dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
+  nouveau mot de passe avant tout autre écran, 09/10/2026).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -399,6 +411,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT (seul le titulaire
   du compte donne l'accord) ; la récupération automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
+- **Mot de passe oublié** : le premier essai réel du cabinet (iPhone) ; au tableau de bord, la longueur minimale à 10,
+  le modèle d'e-mail en français et l'inscription publique à fermer ; la réinitialisation depuis l'onglet Accès (un lien
+  envoyé au client, ou un mot de passe posé par le cabinet) attend sa décision.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
@@ -862,7 +877,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6801 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6857 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

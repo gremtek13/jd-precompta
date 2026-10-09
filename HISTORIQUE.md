@@ -14405,3 +14405,83 @@ les paiements depuis le compte personnel, en régularisation datée du lendemain
 rectificative préparée, notée déposée par le cabinet, et la validation de N+1 qui l'attend ; (3) le FEC à vingt-deux
 champs ; (4) l'engagement (122-6, et 93 A) et un relevé entier découvert après, après les réponses du cabinet. Les
 questions (B1 à B13) et mes recommandations sont dans `questions_cabinet.md`.
+
+### 09/10/2026 — « MOT DE PASSE OUBLIÉ » : LE LIEN, SON RETOUR, ET LE NOUVEAU MOT DE PASSE AVANT TOUT AUTRE ÉCRAN
+
+(`src/lib/recuperationMotDePasse.ts`, `src/pages/Login.tsx`, `src/pages/NouveauMotDePasse.tsx`, `src/context/AuthContext.tsx`,
+`src/App.tsx`, `src/main.tsx`, leurs tests, `RGPD.md`.) **La demande**, du cabinet, en direct : il ne se rappelait plus le
+mot de passe d'un compte client et ne pouvait pas le refaire — l'écran de connexion n'offrait que `signInWithPassword`, et
+`create-client-access` refuse (409) de reposer le mot de passe d'un compte resté dans Auth sans rattachement au cabinet.
+
+**Ce que fait le client Supabase au chargement, lu dans le code installé** (supabase-js et auth-js 2.112.4), pas dans une
+documentation. Le flux par défaut est `implicit` (`DEFAULT_AUTH_OPTIONS`), et `lib/supabase.ts` ne le change pas. Le
+constructeur lance `_initialize` sans verrou (le verrou n'existe plus que sur option) : `parseParametersFromURL` lit le
+fragment puis les paramètres de l'adresse ; un `access_token` ou une erreur en font un retour ; `_getSessionFromURL`
+vérifie le jeton auprès du service (`_getUser`), enregistre la session, puis seulement vide le fragment
+(`window.location.hash = ''`) et émet `PASSWORD_RECOVERY` dans un `setTimeout`, à ceux qui écoutent DÉJÀ (et aux autres
+onglets, par le BroadcastChannel). Une erreur dans l'adresse ne vide rien, n'ouvre rien, et saute même `_recoverAndRefresh`.
+Le service (supabase/auth, lu sur GitHub) : `AsRedirectURL` renvoie vers `redirect_to + "#" + jetons` (avec `type` et
+`sb`) ; `prepErrorRedirectURL` met `error`, `error_code`, `error_description` dans le FRAGMENT en flux implicite ; un lien
+expiré ou déjà servi rend `otp_expired` ; `IsRedirectURLValid` accepte l'hôte de la Site URL, puis le motif de la liste
+(fragment ôté), et retombe sinon sur la Site URL — qui valait `http://localhost:3000` avant ce jour : un lien envoyé hier
+aurait mené là.
+
+**Les choix.** Le flux reste implicite : le PKCE garde son vérificateur dans le navigateur qui a fait la demande, et sur un
+iPhone la demande part de l'application installée quand le lien s'ouvre dans Safari. `redirectTo` est passé à chaque
+demande, `https://compta.jdarnis.fr/` (le domaine de `public/CNAME`, confronté par le test), sans « # » : le service
+ajoute le sien, et un second rendrait les jetons illisibles. `main.tsx` lit l'adresse AVANT le premier rendu — un seul
+script, sans `await` de niveau module (vérifié sur le paquet construit, par un analyseur éprouvé sur un cas planté), alors
+que le vidage du fragment attend un aller-retour réseau. La session du lien se reconnaît à son JETON, comparé à celui de la
+première session connue (jugé une fois, puis oublié : sans quoi le « SIGNED_IN » d'un retour sur l'onglet, même jeton dans
+l'heure, ramènerait l'écran), ou à `PASSWORD_RECOVERY` (un autre onglet, un jeton déjà renouvelé). Le compte en attente est
+gardé dans `localStorage` : Safari recharge les onglets laissés en arrière-plan, et la session, elle, survit ; toute absence
+de session l'efface, pour qu'il ne ressurgisse pas à une connexion par mot de passe. `USER_UPDATED` (le mot de passe changé
+ici ou ailleurs) le clôt. Le portier (`App.tsx`) montre `NouveauMotDePasse` avant le chargement des rôles et avant toute
+route ; une fois la session connue, il ôte de l'adresse un fragment d'authentification resté (erreur, jeton non vérifié).
+Un fragment qui commence par « / » est une route : le retour de la banque (`#/retour-banque?state=…&error=…`), lu comme un
+fragment de paramètres, aurait passé pour un lien refusé. Un code d'erreur ne s'affiche que s'il a la forme d'un code, la
+description jamais (une adresse se fabrique, précédent de RetourBanque). Le message d'une demande acceptée est le même
+qu'un compte existe ou non — le service répond de même et n'envoie rien sans compte (documentation de Supabase,
+« Resetting a password »). Le débit propre à un compte (une demande par minute, 429) n'existe que si le compte existe :
+c'est le service qui le rend, à quiconque l'appelle ; l'écran le dit sans nommer personne.
+
+**Écarté.** Une Edge Function à nous (`auth.admin.generateLink` puis Resend) au lieu du SMTP personnalisé : un point d'entrée
+public sans session, à protéger soi-même contre l'abus, l'énumération (y compris par le temps de réponse) et le débit, avec
+la clé de service — ce que le service fait déjà. Le SMTP de Resend (réglé au tableau de bord par le cabinet le 09/10/2026)
+suffit ; seuls le modèle d'e-mail et les réglages vivent hors du dépôt. Changer `flowType` : rien ne l'exige.
+
+**Le contrat avec la bibliothèque, éprouvé et non seulement lu** (`recuperationMotDePasseClient.test.ts`, 2 tests) : le VRAI
+client installé, réglages par défaut, devant un faux service qui retient sa réponse. Construit, il laisse le fragment intact
+(ce que main.tsx lit) ; il ne le vide qu'après l'aller-retour ; la session ouverte porte le jeton même du lien ;
+`PASSWORD_RECOVERY` arrive à qui écoute ; un lien refusé n'ouvre rien, n'appelle rien et laisse le fragment. Tous les autres
+tests doublent le client : une mise à jour de supabase-js qui changerait l'un de ces points ne se verrait que là. Il vire
+au rouge en flux PKCE et sans `detectSessionInUrl`.
+
+**Les tests** (56 nouveaux) : le module (18 : les adresses que le service fabrique, les routes, le code recopié ou non,
+les refus et les erreurs sur les VRAIES classes d'erreur d'auth-js, la longueur confrontée aux trois fonctions qui créent
+des comptes, l'adresse de retour à `public/CNAME`) ; le contrat (2) ; `Login` (10 : adresse de retour, message neutre
+recopié de la consigne et sans l'adresse, deux puis trois envois du même geste, débit, erreur du service et exception,
+adresse vide, retour à la connexion, avis d'un lien refusé) ; `NouveauMotDePasse` (10) ; `AuthContext` (10 : jeton,
+événement, jeton jugé une fois, USER_UPDATED, déconnexion, rechargement, drapeau d'un autre compte, session absente, lien
+sans session, lien refusé) ; `App` (6, de bout en bout : la vraie adresse lue comme main.tsx la lit, le vrai AuthProvider,
+l'écran AVANT tout écran de l'application puis l'application ; le lien expiré, déconnecté puis connecté). **Rouge avant**,
+joué sur les sources du 65b86fa avec les tests du correctif (puis tout remis, vérifié octet par octet) : le module, le
+contrat, `NouveauMotDePasse` et `App` ne se chargent pas (modules absents) ; `Login`, 9 tests sur 10 (le dixième est la
+connexion inchangée) ; `AuthContext`, 9 des 10 nouveaux (le dixième, « le drapeau d'un autre compte ne vaut rien », passe sur
+un contexte qui ignore la récupération : il garde contre une détection trop large, et sa mutation mord). **Quarante et une
+mutations, toutes mordent** (message neutre, verrous, détection, deux saisies, longueur, erreur lue, adresse de retour,
+avis, nettoyage de l'adresse, et les deux du contrat). Banc à part, hors dépôt (le banc des captures a toujours une
+session) : huit vues à six largeurs, de 320 à 1 440 pixels, 0 faute, Manrope chargée.
+
+**Reste.** Le premier essai réel est celui du cabinet. Au tableau de bord : la longueur minimale à 10 (le service en accepte
+moins à qui l'appelle directement), le modèle d'e-mail en français, l'inscription publique à fermer (avec un SMTP qui livre
+partout, elle fait partir des confirmations vers n'importe quelle adresse). La réinitialisation depuis l'onglet Accès
+attend la décision du cabinet. L'adresse portant les jetons reste dans l'historique du navigateur (le client vide le
+fragment par une navigation, pas par un remplacement) : rouverte dans l'heure sur le même appareil, elle rouvrirait la
+session — tant que celle-ci vit, ce que la session gardée dans le navigateur donne déjà ; une déconnexion la ferme.
+
+**À l'intégration.** PLAN_DE_REPRISE.md disait, au point 6 de son §3, que l'application n'envoyait aucun lien par e-mail,
+« donc l'URL du site et les adresses de redirection n'y jouent aucun rôle » : faux depuis ce lien. Le point nomme désormais
+chaque réglage qui le fait marcher (adresses, SMTP et sa clé à recréer, débit, longueur, durée du lien) et porte le texte
+du modèle d'e-mail, que rien d'autre ne garde ; il ajoute à l'inscription publique sa nouvelle conséquence. Le registre
+(RGPD.md) a croisé la ligne de la révision des comptes, posée le même jour : les deux lignes sont gardées.
