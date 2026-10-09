@@ -11,9 +11,16 @@ import {
   resteAEncaisser,
   type ContexteFacture, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type EvenementSuperpdpLu,
   type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue, type ResteDuTaux, type SaisieEncaissement,
-  type StatutPlateformeLu, type TransmissionLue, type TransmissionPourDeclaration,
+  type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
 import { lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche } from '../../lib/encaissementsAffichage'
+import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
+import {
+  COLONNES_STATUT_LU, CONSEQUENCE_ANNULATION, auteurDuStatut, classeStatutLu, estUneAnnulation, horodatageTelQuEcrit,
+  libelleStatutLu, montantsTelsQuEcrits, statutsDeLaFacture, verificationAvantDeclaration, type StatutLu,
+} from '../../lib/statutsLus'
+import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
+import BilanReleveStatuts from './BilanReleveStatuts'
 import { paiementsDesPieces, type LignePayante, type PartReglee } from '../../lib/rattachement'
 import type {
   EncaissementFacture, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
@@ -57,12 +64,6 @@ type ReglementEcran = PartReglee & { id: string }
 type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier'>
 type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le'>
 
-// Les statuts lus sur la plateforme du client (étape d7) : aucun tant que rien ne les relève — le bouton qui les lit et
-// leur lecture ici viennent avec l'écran de l'étape d7. Passés à `refusDeLaFacture` et `refusDeclaration`, qui les
-// exigent sans valeur par défaut. La base les lit déjà : un refus relevé d'ailleurs entre-temps se dirait au clic, par
-// son message.
-const AUCUN_STATUT_LU: readonly StatutPlateformeLu[] = []
-
 interface Lu {
   // La facture et ses avoirs : un avoir réduit ce que le client doit encore, à l'écran seulement.
   factures: FactureEmise[]
@@ -77,6 +78,9 @@ interface Lu {
   // Les déclarations du DOSSIER (étape d4) : l'ensemble des déclarés décide du retrait, de la déclaration et de la
   // contre-passation.
   declarations: DeclarationEcran[]
+  // Les statuts de LA facture lus sur la plateforme du client (étape d7) : un refus ou un rejet fait refuser
+  // l'encaissement et sa déclaration, comme la base.
+  statuts: StatutLu[]
 }
 
 interface Manque {
@@ -92,10 +96,13 @@ const CONSEQUENCE = 'Rien n’est proposé : un reste ou une proposition bâtis 
 const CONSEQUENCE_DECLARATIONS = 'Rien n’est proposé — ni enregistrer, ni retirer, ni déclarer, ni contre-passer : un '
   + 'encaissement déclaré qu’on ne verrait pas se retirerait, ou se déclarerait une seconde fois, et l’administration le '
   + 'compterait deux fois. Rouvre cette fenêtre.'
+// Et celle des statuts lus sur la plateforme du client, qui disent un refus de l'acheteur.
+const CONSEQUENCE_STATUTS = 'Rien n’est proposé — ni enregistrer, ni déclarer : un refus de l’acheteur qu’on ne verrait '
+  + 'pas laisserait proposer l’encaissement ou la déclaration d’une facture refusée. Rouvre cette fenêtre.'
 
 async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: Lu; manques: Manque[] }> {
   const [
-    factures, lignes, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces, declarations,
+    factures, lignes, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces, declarations, statuts,
   ] = await Promise.all([
     lireTout<FactureEmise>((debut, fin) =>
       supabase.from('factures_emises').select('*', { count: 'exact' })
@@ -144,6 +151,11 @@ async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: 
         .select('id, dossier_id, encaissement_id, facture_id, canal, hote, etat, note, cree_le', { count: 'exact' })
         .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
     ),
+    // Les statuts de la facture, tri TOTAL : un relevé en écrit plusieurs dans la même milliseconde.
+    lireTout<StatutLu>((debut, fin) =>
+      supabase.from('statuts_factures_recus').select(COLONNES_STATUT_LU, { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('facture_id', factureId).order('lu_le').order('id').range(debut, fin),
+    ),
   ])
   const manques: Manque[] = []
   // Chaque drapeau lu nommément : un drapeau jeté laisserait le bandeau éteint sur une lecture tronquée.
@@ -160,11 +172,12 @@ async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: 
   noter('Les règlements groupés', 'lus', reglements.complete, reglements.motif)
   noter('Les pièces du dossier', 'lues', pieces.complete, pieces.motif)
   noter('Les déclarations des encaissements', 'lues', declarations.complete, declarations.motif, CONSEQUENCE_DECLARATIONS)
+  noter('Les statuts lus sur la plateforme du client', 'lus', statuts.complete, statuts.motif, CONSEQUENCE_STATUTS)
   return {
     lu: {
       factures: factures.lignes, lignes: lignes.lignes, transmissions: transmissions.lignes, evenements: evenements.lignes,
       encaissements: encaissements.lignes, parts: parts.lignes, mouvements: mouvements.lignes, reglements: reglements.lignes,
-      pieces: pieces.lignes, declarations: declarations.lignes,
+      pieces: pieces.lignes, declarations: declarations.lignes, statuts: statuts.lignes,
     },
     manques,
   }
@@ -210,7 +223,7 @@ function contexteDe(dossierId: string, factureId: string, lu: Lu): ContexteFactu
   if (!facture) return null
   return {
     dossierId, facture, lignes: lu.lignes, transmissions: lu.transmissions, evenementsSuperpdp: lu.evenements,
-    statutsRecus: AUCUN_STATUT_LU, encaissements: lu.encaissements, parts: lu.parts,
+    statutsRecus: lu.statuts, encaissements: lu.encaissements, parts: lu.parts,
   }
 }
 
@@ -286,6 +299,11 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
   const [enCours, setEnCours] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  // La connexion à la plateforme du client, lue en base (aucun appel à la plateforme) : elle dit si les statuts ont été
+  // relevés jusqu'au bout, et quand. `undefined` tant qu'elle n'est pas lue, ou quand sa lecture a échoué.
+  const [connexion, setConnexion] = useState<ConnexionPlateformeVue | null | undefined>(undefined)
+  const [connexionErreur, setConnexionErreur] = useState<string | null>(null)
+  const [resultatReleve, setResultatReleve] = useState<ResultatReleve | null>(null)
 
   // `vider` : le formulaire repart de ce qui vient d'être lu — à l'ouverture, et après un geste réussi, quand le reste
   // et les propositions ont changé. Après un refus de la base, la saisie reste, pour qu'on la corrige.
@@ -307,10 +325,21 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
       setLu(etat.lu)
       if (etat.formulaire !== undefined) setFormulaire(etat.formulaire)
     })
+    lireConnexionPlateforme(dossierId).then((r) => {
+      if (fermee) return
+      setConnexion(r.erreur === null ? r.donnees.connexion : undefined)
+      setConnexionErreur(r.erreur)
+    })
     return () => { fermee = true }
   }, [dossierId, factureOuverte.id])
 
-  // UN SEUL VERROU pour les quatre gestes de la fenêtre, posé avant le `try` et relâché dans le `finally`, APRÈS la
+  async function lireConnexion() {
+    const r = await lireConnexionPlateforme(dossierId)
+    setConnexion(r.erreur === null ? r.donnees.connexion : undefined)
+    setConnexionErreur(r.erreur)
+  }
+
+  // UN SEUL VERROU pour les cinq gestes de la fenêtre — le relevé des statuts compris —, posé avant le `try` et relâché dans le `finally`, APRÈS la
   // relecture : un clic pendant qu'elle court repartirait d'un état qu'on n'a pas encore vu. Deux clics sur
   // « Enregistrer » enregistreraient deux fois le même argent — la base le plafonne, pas un paiement partiel répété.
   const verrou = useRef(false)
@@ -464,6 +493,30 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
     }
   }
 
+  // LE RELEVÉ DES STATUTS, AU MOMENT DE DÉCLARER (étape d7) : sur un clic, sous le verrou de la fenêtre — une déclaration
+  // inscrite pendant qu'il court se jugerait sur des statuts qu'on n'a pas encore relus. La fenêtre relit sa facture, ses
+  // statuts et la connexion avant de relâcher, et l'onglet relit les siens.
+  async function releverStatuts() {
+    if (verrou.current) return
+    verrou.current = true
+    setEnCours('relever')
+    setErreur(null)
+    setMessage(null)
+    setResultatReleve(null)
+    try {
+      const r = await releverEtNommer(dossierId, false)
+      if (r.erreur !== null) setErreur(r.erreur)
+      else setResultatReleve(r.resultat)
+      await Promise.all([lire(false), lireConnexion()])
+      onUpdated()
+    } catch (err) {
+      setErreur(messageErreur(err, 'Les statuts de la plateforme n’ont pas pu être lus.'))
+    } finally {
+      setEnCours(null)
+      verrou.current = false
+    }
+  }
+
   return (
     <div style={overlayStyle}>
       <div className="card" style={{ width: 'min(820px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -488,9 +541,11 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
             dossierId={dossierId} contexte={contexte} lu={lu} statutTva={statutTva} aujourdHui={aujourdHui}
             formulaire={formulaire} setFormulaire={setFormulaire} etape={etape} setEtape={setEtape} enCours={enCours}
             onEnregistrer={enregistrer} onRetirer={retirer} onDeclarer={declarer} onContrePasser={contrePasser}
+            connexion={connexion} connexionErreur={connexionErreur} onRelever={releverStatuts}
           />
         )}
 
+        {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} />}
         {message && <p className="muted" role="status">{message}</p>}
         {erreur && <p className="error-text">{erreur}</p>}
 
@@ -504,7 +559,7 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
 
 function Contenu({
   dossierId, contexte, lu, statutTva, aujourdHui, formulaire, setFormulaire, etape, setEtape, enCours, onEnregistrer,
-  onRetirer, onDeclarer, onContrePasser,
+  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever,
 }: {
   dossierId: string
   contexte: ContexteFacture
@@ -520,8 +575,12 @@ function Contenu({
   onRetirer: (e: EncaissementEcran) => void
   onDeclarer: () => void
   onContrePasser: () => void
+  connexion: ConnexionPlateformeVue | null | undefined
+  connexionErreur: string | null
+  onRelever: () => void
 }) {
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
+  const statuts = statutsDeLaFacture(lu.statuts, facture.id)
   const obligation = obligationEncaissee(facture, lu.lignes, statutTva)
   const reste = resteAEncaisser(contexte)
   const surLaFacture = refusDeLaFacture(contexte)
@@ -625,7 +684,7 @@ function Contenu({
       return <div>{lignes}</div>
     }
     const refusDecl = offerte
-      ? refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, null)
+      ? refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, null)
       : null
     if (!offerte) lignes.push(<div key="hors">Ne se déclare pas d’ici : voir le statut « Encaissée » ci-dessus.</div>)
     else if (refusDecl == null) {
@@ -659,6 +718,15 @@ function Contenu({
         <p style={{ margin: 0 }}>{obligation.raison}</p>
         <p className="muted" style={{ margin: '4px 0 0' }}>{commentSeDeclare}</p>
       </div>
+
+      {statuts.length > 0 && (
+        <div className="field">
+          <label>Statuts lus sur la plateforme du client</label>
+          <ul className="statuts-lus">
+            {statuts.map((s) => <StatutDeLaFacture key={s.id} statut={s} />)}
+          </ul>
+        </div>
+      )}
 
       <div className="field">
         <label>Reste à encaisser : {formatMoney(reste.resteCentimes / 100)}</label>
@@ -711,7 +779,7 @@ function Contenu({
                   // « Déclaré sur la plateforme » : un encaissement ou une contre-passation qui compte, pas encore déclaré,
                   // que la base inscrirait, sous une obligation due ou facultative.
                   const declarable = offerte && e.retire_le == null && !declares.has(e.id)
-                    && refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, null) == null
+                    && refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, null) == null
                   // « Contre-passer » : un encaissement déclaré, à la place de « Retirer ». Tout ce qui précède la date se
                   // juge sans elle : un premier refus « date à renseigner » dit que rien d'autre ne s'y oppose.
                   const refusCp = refusDuRetrait?.cle === 'declare'
@@ -780,7 +848,8 @@ function Contenu({
         <div ref={refEtape}>
           <EtapeDeclaration
             dossierId={dossierId} lu={lu} facture={facture} encaissement={enEtape} etape={etape} setEtape={setEtape}
-            enCours={enCours} onDeclarer={onDeclarer}
+            enCours={enCours} onDeclarer={onDeclarer} connexion={connexion} connexionErreur={connexionErreur}
+            onRelever={onRelever}
           />
         </div>
       )}
@@ -913,11 +982,36 @@ function Contenu({
   )
 }
 
+// UN STATUT LU SUR LA PLATEFORME DU CLIENT : son libellé de la DGFiP, sa date — civile, ou l'horodatage tel qu'écrit, son
+// fuseau n'étant pas dit —, qui l'a posé, ses motifs, son commentaire et ses montants tels qu'écrits ; un refus ou un
+// rejet porte sa conséquence. Un 211 n'est jamais un encaissement : c'est l'acheteur qui dit avoir payé.
+function StatutDeLaFacture({ statut: s }: { statut: StatutLu }) {
+  const annulation = estUneAnnulation(s.code)
+  const auteur = auteurDuStatut(s.createur_role)
+  const quand = s.date_statut ? `du ${formatDate(s.date_statut)}` : s.emis_le ? `horodaté le ${horodatageTelQuEcrit(s.emis_le)}` : null
+  const montants = montantsTelsQuEcrits(s.montants)
+  return (
+    <li className={annulation ? 'releve-annulation' : undefined}>
+      <span className={`badge ${classeStatutLu(s.code)}`}>{libelleStatutLu(s.code)}</span>
+      {quand && <> {quand}</>}
+      {auteur && <>, posé par {auteur}</>}
+      {annulation && <> — {CONSEQUENCE_ANNULATION}.</>}
+      {s.code === '211' && <> — l’acheteur dit avoir payé ; ce n’est pas un encaissement, qui s’enregistre ici.</>}
+      {s.motifs && <div>Motifs : {s.motifs}</div>}
+      {s.commentaire && <div>Commentaire : {s.commentaire}</div>}
+      {montants && <div>Montants, tels qu’écrits : {montants}</div>}
+      <div className="releve-avertissement">Lu sur {s.hote} le {formatDate(s.lu_le)}</div>
+    </li>
+  )
+}
+
 // « DÉCLARÉ SUR LA PLATEFORME » : ce qu'il faut saisir sur la plateforme, champ par champ (le numéro de la facture, la
 // date de paiement, le montant encaissé TTC en euros et sa répartition par taux — fiche officielle du statut ; pour une
 // contre-passation, des montants négatifs et le motif d'annulation en commentaire, règles P1.15 et P1.17 de l'annexe 7
 // des spécifications externes), une note facultative, et les refus de la base avant le clic.
-function EtapeDeclaration({ dossierId, lu, facture, encaissement: e, etape, setEtape, enCours, onDeclarer }: {
+function EtapeDeclaration({
+  dossierId, lu, facture, encaissement: e, etape, setEtape, enCours, onDeclarer, connexion, connexionErreur, onRelever,
+}: {
   dossierId: string
   lu: Lu
   facture: FactureEmise
@@ -926,15 +1020,22 @@ function EtapeDeclaration({ dossierId, lu, facture, encaissement: e, etape, setE
   setEtape: (e: Etape | null) => void
   enCours: string | null
   onDeclarer: () => void
+  connexion: ConnexionPlateformeVue | null | undefined
+  connexionErreur: string | null
+  onRelever: () => void
 }) {
   const contrePassation = e.annule_id != null
   const hote = plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements)
-  const refus = refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, AUCUN_STATUT_LU, noteEnvoyee(etape.note))
-  // Un refus de l'ACHETEUR fait sur la plateforme du client est invisible d'ici (l'application ne lit pas encore le cycle
-  // de vie des factures émises sur cette plateforme, étape d7) ; celui que Super PDP rend, la base et le module le
-  // connaissent. Une contre-passation suit l'encaissement qu'elle annule, la facture eût-elle été refusée depuis.
+  const refus = refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, noteEnvoyee(etape.note))
+  // Un refus de l'ACHETEUR fait sur la plateforme du client ne se connaît qu'une fois ses statuts relevés (étape d7) :
+  // la fenêtre dit ce qu'elle en SAIT — lus jusqu'au bout et quand, ou pas encore — et offre de les relever. Celui que
+  // Super PDP rend, la base et le module le connaissent. Une contre-passation suit l'encaissement qu'elle annule, la
+  // facture eût-elle été refusée depuis.
   const surPlateformeDuClient = !contrePassation && hote != null && lu.transmissions.some((t) =>
     t.facture_id === facture.id && t.hote === hote && t.canal === 'plateforme' && t.etat === 'accepte')
+  const verification = surPlateformeDuClient && hote != null
+    ? verificationAvantDeclaration(hote, statutsDeLaFacture(lu.statuts, facture.id), connexion, connexionErreur, formatDate)
+    : null
   const champs: { champ: string; valeur: string }[] = [
     { champ: 'Plateforme', valeur: hote ?? '—' },
     { champ: 'Numéro de la facture', valeur: facture.numero ?? '—' },
@@ -957,11 +1058,16 @@ function EtapeDeclaration({ dossierId, lu, facture, encaissement: e, etape, setE
         {contrePassation && ' Une contre-passation est un décaissement : ses montants se saisissent en négatif, et son motif '
           + 'd’annulation en commentaire du statut.'}
       </p>
-      {surPlateformeDuClient && (
-        <p className="verification-declaration">
-          Vérifiez d’abord sur {hote} que l’acheteur n’a pas refusé la facture : l’application ne lit pas encore les refus
-          faits sur la plateforme du client. Refusée, aucun statut « Encaissée » ne la suit : elle s’annule par un avoir interne.
-        </p>
+      {/* Un refus lu n'a rien à vérifier : la déclaration est refusée, et le refus de la base le dit sous le tableau. */}
+      {verification && verification.etat !== 'refusee' && (
+        <div className="verification-declaration">
+          <p>{verification.texte}</p>
+          {verification.relevable && (
+            <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={onRelever}>
+              {enCours === 'relever' ? 'Lecture des statuts…' : 'Lire les statuts de la plateforme'}
+            </button>
+          )}
+        </div>
       )}
       <div className="table-scroll tableau-adaptable">
         <table className="table-empilable-etroite">

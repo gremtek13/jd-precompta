@@ -13469,3 +13469,85 @@ encore « Capital individuel ». Corrigés : le message, son test, les commentai
 et de l'écran. La migration `20261007052231_report_des_soldes.sql` garde « 941-10 » : c'est l'export de ce qui est
 en base. Les autres citations du plan comptable dans `src/` et `supabase/functions/` (art. 1031-3 et 1031-4) sont
 déjà dans la numérotation de 2026, vérifiées au texte.
+
+### 09/10/2026 — L'ÉCRAN DU CYCLE DE VIE DES FACTURES ÉMISES — LIGNE 28.5, ÉTAPE (D), SEPTIÈME TEMPS (D7), PHASE C
+
+(`src/lib/statutsLus.ts` et `statutsLus.test.ts`, `src/lib/releveStatuts.ts` et `releveStatuts.test.ts`,
+`src/pages/dossier/BilanReleveStatuts.tsx` ; `FacturesTab`, `EncaissementsFactureModal`, `TransmissionFactureModal`,
+`PlateformeClientModal` et leurs tests ; `ecransAvantLecture.test.tsx` ; `index.css` ; le banc `outils/captures/`.) La
+phase C de d7, telle que l'architecte l'a décrite (`phase_c_d7.md`) : tout ce que l'écran lit et juge existait déjà — la
+table `statuts_factures_recus`, l'action `relever` de `plateforme-agreee` (déployée après la fusion de d7), les refus étendus du
+module des encaissements et de celui des transmissions. Aucune migration, aucune fonction touchée. Données fictives ;
+rien n'a été appelé, ni plateforme ni base.
+
+**CE QUI SE LIT, ET OÙ.** Les statuts se lisent par `lireTout`, tri total (`lu_le`, puis l'identifiant) : ceux du dossier
+dans l'onglet Factures, ceux de LA facture (dossier et facture) dans la fenêtre des encaissements et dans celle de la
+transmission. Lus en partie, ils ne commandent rien : l'onglet tait la pastille du cycle de vie, la pastille « À
+déclarer » et l'« Avoir interne », et le dit par un bandeau ; la fenêtre des encaissements n'offre aucun geste ; celle de
+la transmission ne propose aucun envoi. La table ne s'écrit pas d'ici (`encaissementsEcritures.test.ts` le garde
+toujours) ; le client n'en voit rien — aucun de ces écrans n'est le sien. Les deux constantes provisoires `AUCUN_STATUT_LU`
+ont disparu : les trois appels de `refusDeclaration`, le contexte de `refusDeLaFacture` et `pastilleDeclaration`
+reçoivent la liste lue. Un 210 ou un 213 lu éteint alors de lui-même « À déclarer » et « Déclaration en retard », refuse
+l'enregistrement d'un encaissement (refus 5) et sa déclaration (refus 6), sous les mots de la base ; la contre-passation
+et le retrait restent offerts.
+
+**LE RELEVÉ, SUR UN CLIC.** « Lire les statuts de la plateforme » vit dans l'onglet Factures, sur la rangée qui nomme la
+plateforme du client et dit quand ses statuts ont été lus jusqu'au bout — la connexion est lue en base (action
+`statut`), rien ne part chez la plateforme à l'ouverture —, et dans l'étape « Déclaré sur la plateforme » d'un
+encaissement. « Relire les statuts depuis le début » vit dans la fenêtre de la plateforme du client, à côté de
+« Reprendre du début », derrière une confirmation qui nomme ce qu'elle fait. Chacun est sous le verrou de SON écran —
+celui de tous ses gestes dans les deux fenêtres —, posé avant le `try` et relâché dans le `finally` après la relecture
+(les statuts, les factures, la connexion ; l'onglet prévenu par la fenêtre). L'appel et la lecture des numéros des
+factures touchées sont dans `lib/releveStatuts.ts` (la fonction rend des identifiants ; lus dans le dossier seulement,
+en partie ils se disent) ; un refus rend la phrase de la fonction, complétée de ce qu'il faut faire quand la plateforme
+refuse l'identifiant ou l'accès du cabinet. Le bilan (`BilanReleveStatuts`, mots dans `bilanDuReleve`) dit les statuts
+gardés, facture par facture, sous le libellé de la DGFiP — un refus en tête, dans la teinte du danger, avec sa
+conséquence (« elle s'annule par un avoir interne, qui ne se transmet pas, puis une nouvelle facture ») et ses données
+écartées en petit —, les déjà lus comptés, les écartés avec leur raison telle que la fonction l'écrit (et, pour un 601
+du dossier, le message rejeté, sa date, ses motifs), les échecs que le relevé suivant reprendra, les statuts en attente,
+en erreur, reportés, les messages écartés de la liste, un relevé incomplet et un point de reprise non enregistré.
+
+**LA PASTILLE ET L'AVOIR INTERNE.** Sur chaque facture validée qui a des statuts lus : « Cycle de vie · <libellé> », le
+DERNIER statut — le plus récent lu, puis le plus tard horodaté tel qu'écrit, puis l'identifiant —, SAUF quand un refus
+ou un rejet existe : c'est lui qu'elle montre, quoi qu'il soit venu après (un « Encaissée » lu après un refus ne rend
+pas la facture encaissable). Un écart de la note de l'architecte, qui disait « le dernier » : à confirmer par le cabinet.
+Les libellés et la couleur sont ceux de `superpdpStatuts.ts` (`fr:${code}`), une seule table, confrontée code par code
+au tableau 8 par le test. Une facture refusée ou rejetée propose « Avoir interne » à la place d'« Avoir » ; la fenêtre de
+transmission de l'avoir, déjà, ne propose rien.
+
+**LA PHRASE « VÉRIFIEZ D'ABORD… » EST DEVENUE CE QUI EST SU** (`verificationAvantDeclaration`) : un refus lu, rien —
+le refus 6 le dit ; le dernier relevé de CETTE plateforme allé au bout et aucun refus, « Statuts lus sur <hôte> le
+<date> : aucun refus de l'acheteur. Un refus posé depuis n'est connu qu'en relisant les statuts. » et le bouton ; sinon
+« Les statuts de <hôte> n'ont pas encore été lus : lisez-les avant de déclarer… », avec le bouton quand la plateforme
+reliée est celle qui a accepté la facture, et la raison quand elle ne l'est pas (aucune, illisible, une autre). La
+fenêtre montre aussi « Statuts lus sur la plateforme du client » : chaque statut, le refus en tête — libellé, date du
+statut ou horodatage tel qu'écrit (« heure de la plateforme », jamais converti), auteur (l'acheteur, le vendeur, une
+plateforme, l'administration), motifs, commentaire, montants tels qu'écrits ; un 211 dit que l'acheteur dit avoir payé,
+et que ce n'est pas un encaissement.
+
+**LA TRANSMISSION D'UNE FACTURE REFUSÉE SUR SA PLATEFORME** — le cas nouveau de la note : déposée par le client lui-même,
+elle n'a aucune transmission ici, rien ne retenait l'envoi, et la base aurait refusé la réservation (23514) que la
+fonction rend en 500. La fenêtre lit ses statuts et le dit avant le clic, sans rien offrir ; et le compte qui dit un
+avoir interne compte désormais aussi les 210 et 213 lus de la facture d'origine.
+
+**LE GARDE DES ÉCRANS AVANT LECTURE.** `BilanReleveStatuts.tsx` importe un module qui lit (par un type) : il est déclaré
+dans `SANS_LECTURE_AU_MONTAGE`, avec sa raison — il reçoit le relevé que l'écran a lancé. Les trois écrans touchés
+restent montés par le garde, et verts : avant toute réponse, ils ne disent rien des statuts.
+
+**LES TESTS ET LES MUTATIONS.** 44 tests nouveaux (16 du module des mots, 4 du relevé, 8 de l’onglet, 8 de la fenêtre des
+encaissements, 5 de la transmission, 3 de la plateforme), les trois qui gardaient l'ancienne phrase réécrits. Les faux
+clients appliquent les filtres (dossier, facture, `.in`) ; chaque relevé est éprouvé à trois clics dans le même `act`
+pour un seul appel, le verrou tenu pendant une relecture retenue, l'erreur dite et le verrou relâché. **46 mutations,
+toutes mordent** — 44 au premier passage ; deux vivaient : la lecture des statuts de la fenêtre sans filtre de facture
+(le filtrage côté écran la rendait invisible : un test borne désormais la lecture, qu'un statut d'une autre facture
+rendrait incomplète) et le verrou de la fenêtre relâché avant la relecture (le faux client retenait aussi la lecture des
+numéros, qui précède : elle ne l'est plus).
+
+**LE BANC.** Une troisième facture de l'atelier (F2026-0009, déposée par le client, refusée par l'acheteur), cinq statuts
+lus, la réponse d'un relevé et la connexion qui avance ; quatre visites de `debordements.mjs` (le bilan dans l'onglet, la
+transmission et les encaissements de la facture refusée, « Relire les statuts depuis le début ») et neuf vues de
+`vitrine.mjs` (deux options : `ligne`, le bouton d'une ligne de tableau ; `accepter`, une confirmation acceptée ;
+`rang: 'last'`). Neuf exécutions, 0 débordement, sortie 0, 80 visites chacune.
+
+**CE QUI RESTE.** Le premier relevé réel (Q6) ; la
+pastille qui montre le refus plutôt que le dernier statut, à confirmer par le cabinet.

@@ -33,6 +33,8 @@ import {
   saisieComplete,
   titreDuPlan,
 } from '../../lib/plateformeClient'
+import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
+import BilanReleveStatuts from './BilanReleveStatuts'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
 // cabinet relie ici le dossier à la plateforme que son client a choisie — l'accès « client credentials » que le client
@@ -75,6 +77,8 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
   const [hashsConnus, setHashsConnus] = useState<Set<string> | null>(null)
   const [progression, setProgression] = useState<[number, number] | null>(null)
   const [bilan, setBilan] = useState<BilanReception | null>(null)
+  // Le bilan d'un relevé des statuts des factures émises relu depuis le début (étape d7).
+  const [releve, setReleve] = useState<ResultatReleve | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [occupe, setOccupe] = useState(false)
@@ -107,6 +111,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
     setOccupe(true)
     setErreur(null)
     setMessage(null)
+    setReleve(null)
     try {
       await action()
     } finally {
@@ -213,6 +218,25 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
       oublierLaRecherche()
       setBilan(null)
       setMessage('La prochaine recherche repartira du début.')
+      await charger()
+    })
+  }
+
+  // RELIRE LES STATUTS DEPUIS LE DÉBUT (étape d7) : le relevé des statuts des factures émises repart du premier, comme
+  // « Reprendre du début » pour les factures — après une correction de l'application, ou quand un statut a été écarté à
+  // tort. Sous le verrou de la fenêtre, et la connexion relue avant de le relâcher : elle dit quand les statuts ont été
+  // lus jusqu'au bout. La confirmation nomme ce qu'il fait.
+  const relireLesStatuts = () => {
+    if (!connexion || actionEnCours.current) return
+    if (!window.confirm(
+      `Relire depuis le début les statuts des factures émises sur ${connexion.nom} ? L’application relit tous les statuts `
+      + 'depuis le premier ; ceux déjà gardés sont reconnus et ne s’écrivent pas deux fois. Utile après une correction de '
+      + 'l’application, ou quand un statut a été écarté à tort.',
+    )) return
+    void sousVerrou(async () => {
+      const r = await releverEtNommer(dossierId, true)
+      if (r.erreur !== null) setErreur(r.erreur)
+      else setReleve(r.resultat)
       await charger()
     })
   }
@@ -369,6 +393,12 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
               </dd>
               <dt>Dernière récupération</dt>
               <dd>{connexion.derniere_recuperation ? formatDate(connexion.derniere_recuperation) : 'jamais'}</dd>
+              <dt>Statuts des factures émises</dt>
+              <dd>
+                {connexion.cycle_vie_lu_le
+                  ? `lus jusqu’au bout le ${formatDate(connexion.cycle_vie_lu_le)} — l’onglet Factures les relève`
+                  : 'pas encore lus jusqu’au bout — l’onglet Factures les relève'}
+              </dd>
             </dl>
 
             <div className="plateforme-actions">
@@ -386,6 +416,9 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
                   Reprendre du début
                 </button>
               )}
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={relireLesStatuts}>
+                Relire les statuts depuis le début
+              </button>
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={retirer}>
                 Retirer
               </button>
@@ -461,6 +494,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           </div>
         )}
 
+        {releve && <BilanReleveStatuts resultat={releve} />}
         {message && <p className="muted">{message}</p>}
         {erreur && <p className="error-text">{erreur}</p>}
 

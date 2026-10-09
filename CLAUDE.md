@@ -348,7 +348,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   d'une issue inconnue, statut de Super PDP reporté, avoir interne d'une facture rejetée, numéro de TVA d'un dossier en
   franchise ou exonéré (28.5 c3 à c5, 08/10/2026) ; les encaissements d'une facture émise — registre en base (d1), module
   (d2), et l'écran : pastille de l'onglet Factures et fenêtre « Encaissements » (d3, 08/10/2026) ; la déclaration hors
-  application et la contre-passation, en base et à l'écran (d4, 08 et 09/10/2026).
+  application et la contre-passation, en base et à l'écran (d4, 08 et 09/10/2026) ; le cycle de vie des factures
+  émises lu sur la plateforme du client — relevé sur un clic, dernier statut sur chaque facture, refus de l'acheteur dit
+  avant tout geste (d7, 09/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -381,8 +383,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
   et à l'écran le 09/10/2026 (la date d'une contre-passation à confirmer par le cabinet) (décisions du cabinet du
   08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix à trancher par un premier
-  essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base et dans
-  `plateforme-agreee` le 09/10/2026 (l'écran à venir) ; l'essai réel sur le bac à sable de Super PDP — et (e)
+  essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base, dans
+  `plateforme-agreee` et à l'écran le 09/10/2026 (le premier relevé réel reste à faire) ; l'essai réel sur le bac à sable de Super PDP — et (e)
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1 en cours → « L'E-REPORTING : LA
   CONCEPTION ».
@@ -748,7 +750,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   les déclarations du dossier par `lireTout` — lues en partie, il n'offre AUCUN geste — ; dit de chaque encaissement
   où il est déclaré, ou où et avant quand le déclarer, ou pourquoi pas d'ici ; « Déclaré sur la plateforme »
   (obligation due ou facultative) dit ce qu'il faut saisir champ par champ, de vérifier que l'acheteur n'a pas refusé
-  la facture sur la plateforme du client (lue depuis d7 : l'écran de la phase C dira ce qui est su), et confirme en nommant ce qui est déclaré ;
+  la facture sur la plateforme du client (depuis d7, ce qui est SU : statuts lus jusqu'au bout et quand, ou pas encore, avec le bouton qui les relève), et confirme en nommant ce qui est déclaré ;
   « Contre-passer » remplace « Retirer » sur un déclaré, date jamais proposée. L'onglet Factures porte une SECONDE
   pastille, « À déclarer » / « Déclaration en retard », pour une obligation DUE et sur ce qui se déclare d'ici
   seulement (`pastilleDeclaration`), muette sur toute lecture incomplète. `encaissementsEcritures.test.ts` refuse toute
@@ -772,7 +774,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   Super PDP, aux quatre endroits où la règle vit (refus 5, refus 6 et sa garde, transmission de la facture et de son
   avoir), sous les mêmes mots ; pour une écriture d'hier, seul le statut lu avant elle compte. Point de reprise à part
   (`cycle_vie_depuis`), règle de la réception (`repriseDesStatuts` confrontée à `pointDeReprise`). Le 601 se lit et se
-  dit ; son effet appartient à d6 → « LE CYCLE DE VIE DES FACTURES ÉMISES ».
+  dit ; son effet appartient à d6. L'écran (phase C) : la table se LIT par `lireTout` (l'onglet Factures : le dossier ;
+  les fenêtres des encaissements et de la transmission : la facture), lue en partie elle ne commande rien ; « Lire les
+  statuts de la plateforme » et « Relire les statuts depuis le début » (confirmé) relèvent SUR UN CLIC, sous le verrou
+  de l'écran relâché après la relecture, et disent leur bilan (`lib/statutsLus.ts`, `lib/releveStatuts.ts`) ; la
+  pastille « Cycle de vie · … » montre le dernier statut sous le libellé de la DGFiP — le refus s'il y en a un — et un
+  210 ou un 213 fait proposer l'« Avoir interne » ; la transmission refuse avant le clic une facture refusée sur sa
+  plateforme → « LE CYCLE DE VIE DES FACTURES ÉMISES », « L'ÉCRAN DU CYCLE DE VIE DES FACTURES ÉMISES ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -788,7 +796,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6078 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 6122 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

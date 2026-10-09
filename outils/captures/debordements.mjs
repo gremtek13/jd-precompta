@@ -358,6 +358,45 @@ const VISITES = [
       await page.getByRole('button', { name: attendu, exact: true }).waitFor({ timeout: 10000 })
     },
   })),
+  // LE CYCLE DE VIE DES FACTURES ÉMISES (ligne 28.5, étape d7, phase C). L'onglet après « Lire les statuts de la
+  // plateforme » : la rangée qui nomme la plateforme, le bilan du relevé — un refus en tête, ses données écartées, un 601
+  // et son détail long, un échec —, et les pastilles « Cycle de vie · … » des factures. Puis F2026-0009, refusée par
+  // l'acheteur : sa transmission refusée avant le clic, et ses encaissements (ses statuts, le refus en tête). Enfin la
+  // fenêtre de la plateforme du cabinet infirmier après « Relire les statuts depuis le début », dont la confirmation est
+  // acceptée comme on l'accepterait à la main.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/statuts-relevés',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Lire les statuts de la plateforme', exact: true }).click()
+      await page.getByRole('heading', { name: /^Statuts lus sur / }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/refusée-transmettre', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0009', 'Transmettre').click()
+      await page.getByText(/^Refusée sur la plateforme du client/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/refusée-encaissements', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0009', 'Encaissements').click()
+      await page.getByText('Statuts lus sur la plateforme du client', { exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'plateforme/relire-statuts', fenetre: '.plateforme-client',
+    apres: async (page) => {
+      page.once('dialog', (d) => d.accept())
+      await page.getByRole('button', { name: 'Plateforme du client', exact: true }).click()
+      await page.getByRole('button', { name: 'Relire les statuts depuis le début', exact: true }).click()
+      await page.getByRole('heading', { name: /^Statuts lus sur / }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.

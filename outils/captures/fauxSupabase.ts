@@ -31,8 +31,8 @@ import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
-  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, TransmissionEncaissement, TransmissionFacture, VehiculeDossier,
-  VentilationBancaire,
+  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, StatutFactureRecu, TransmissionEncaissement, TransmissionFacture,
+  VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
 
 type Ligne = Record<string, unknown>
@@ -923,6 +923,90 @@ const DECLARATIONS_ENCAISSEMENTS_D7: TransmissionEncaissement[] = [
   declarationDuBanc({ id: 'te5', encaissement_id: 'enc5', note: 'Saisi par le client lui-même', cree_le: '2026-10-02T08:30:00Z', maj_le: '2026-10-02T08:30:00Z' }),
 ]
 
+// ── LE CYCLE DE VIE DES FACTURES ÉMISES, LU SUR LA PLATEFORME DE L'ATELIER (ligne 28.5, étape d7) ─────────────────
+//
+// Une troisième facture de l'atelier, F2026-0009 : une formation que le CLIENT a déposée lui-même sur sa plateforme — aucune
+// transmission ici —, prise en charge puis REFUSÉE par l'acheteur (210), motif et commentaire longs. L'onglet la montre
+// « Cycle de vie · Refusée » et propose l'« Avoir interne » ; sa fenêtre de transmission dit qu'elle ne part pas ; celle de
+// ses encaissements montre ses statuts, le refus en tête, et refuse l'enregistrement. F2026-0008, acceptée, a reçu trois
+// statuts qui n'annulent rien — reçue par la plateforme, approuvée, paiement transmis avec ses montants tels qu'écrits — :
+// sa déclaration dit « Statuts lus sur … le … : aucun refus de l'acheteur ». Tous FICTIFS.
+const LIGNES_F9: LigneSaisie[] = [
+  { designation: 'Atelier de prise en main de la plateforme agréée — une demi-journée', quantite: 1, prix_unitaire_ht: 480, taux_tva: 20 },
+]
+const FACTURE_F9: FactureEmise = {
+  ...FACTURE_F8,
+  id: 'f9', numero: 'F2026-0009', date_emission: '2026-09-29', date_echeance: '2026-10-29',
+  ...calculerTotaux(LIGNES_F9),
+  created_at: '2026-09-29T09:00:00Z', validated_at: '2026-09-29T09:05:00Z', date_prestation: '2026-09-26',
+}
+const LIGNES_DE_F9: FactureLigne[] = lignesDeFacture('f9', LIGNES_F9)
+
+const statutDuBanc = (o: Partial<StatutFactureRecu> & Pick<StatutFactureRecu, 'id' | 'facture_id' | 'code'>): StatutFactureRecu => ({
+  dossier_id: 'd7', hote: 'flux.plateforme-beta.example', flux_id: `lc-${o.id}`, message_id: `MSG-${o.id}`, emis_le: null,
+  createur_role: 'BY', date_statut: null, motifs: null, commentaire: null, montants: [], lu_par: 'u1',
+  lu_le: '2026-10-08T07:44:00.000Z', ...o,
+})
+const STATUTS_D7: StatutFactureRecu[] = [
+  statutDuBanc({ id: 's81', facture_id: 'f8', code: '202', createur_role: 'WK', emis_le: '20260924093000', date_statut: '2026-09-24' }),
+  statutDuBanc({ id: 's82', facture_id: 'f8', code: '205', emis_le: '20260925101500', date_statut: '2026-09-25' }),
+  statutDuBanc({
+    id: 's83', facture_id: 'f8', code: '211', emis_le: '20260928160000', date_statut: '2026-09-28',
+    montants: [{ code: 'MPA', montant: '900.00', devise: 'EUR', taux: '20.00', date: '2026-09-28' }],
+  }),
+  statutDuBanc({ id: 's91', facture_id: 'f9', code: '204', createur_role: 'WK', emis_le: '20260929120000', date_statut: '2026-09-29' }),
+  statutDuBanc({
+    id: 's92', facture_id: 'f9', code: '210', emis_le: '20261002083000', date_statut: '2026-10-02',
+    motifs: 'REF_PRESTATION : prestation non conforme à la commande ; REF_QUANTITE : nombre de participants contesté',
+    commentaire: 'La demi-journée prévue au bon de commande BC-2026-0412 portait sur huit participants, la facture en compte douze.',
+  }),
+]
+
+// Ce qu'un relevé rend au banc (« Lire les statuts de la plateforme », et « Relire les statuts depuis le début » du cabinet
+// infirmier) : un refus gardé, avec une donnée écartée, un statut qui n'annule rien, des déjà lus, un statut d'une autre
+// entreprise, le rejet d'un statut par la plateforme de l'administration (601) avec ce qu'il porte, un échec passager, un
+// statut en attente et deux messages qui ne sont pas des statuts de facture. Allé au bout, il avance la connexion comme la
+// fonction l'écrit en base : la relecture qui suit dit le même instant que le bilan.
+function releveDuBanc(corps: Ligne) {
+  const connexion = corps.dossierId === 'd1' ? CONNEXION_PLATEFORME_D1 : CONNEXION_PLATEFORME_D7
+  const d7 = corps.dossierId === 'd7'
+  const depuis = corps.depuisLeDebut === true ? null : connexion.cycle_vie_depuis
+  connexion.cycle_vie_depuis = '2026-10-09T06:00:00.000Z'
+  connexion.cycle_vie_lu_le = '2026-10-09T07:00:00.000Z'
+  return {
+    hote: connexion.hote, version: connexion.version, depuis,
+    issues: [
+      ...(d7
+        ? [
+          { flux: 'lc-s92', issue: 'garde', facture_id: 'f9', code: '210', avertissements: ['L’horodatage du statut n’est pas une date AAAAMMJJHHMMSS lisible : il est écarté.'] },
+          { flux: 'lc-s83', issue: 'garde', facture_id: 'f8', code: '211', avertissements: [] },
+        ]
+        : []),
+      { flux: 'lc-s81', issue: 'deja_lu' },
+      { flux: 'lc-s82', issue: 'deja_lu' },
+      {
+        flux: 'lc-autre', issue: 'ecarte', ecart: 'autre_vendeur', code: '210', detail: null,
+        raison: 'Le statut désigne une facture d’une autre entreprise que le dossier : il n’est pas gardé.',
+      },
+      {
+        flux: 'lc-601', issue: 'ecarte', ecart: 'autre_objet', code: '601',
+        raison: 'Le message porte sur un autre statut (un statut rejeté), pas sur une facture : il n’est pas gardé.',
+        detail: {
+          reference: 'MSG-2026-0930-STATUT-ENCAISSEE-0004417', date_objet: '2026-09-30',
+          motifs: 'REJ_SEMAN : montant encaissé supérieur au montant de la facture', commentaire: null,
+        },
+      },
+      {
+        flux: 'lc-echec', issue: 'echec', statut_http: 504,
+        raison: 'La plateforme n’a pas répondu à temps (téléchargement d’un statut). Réessayez dans un instant.',
+      },
+    ],
+    ecartes: { autre_flux: 2, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 },
+    en_attente: 1, en_erreur: 0, reportes: 0, complete: true, motif: null,
+    cycle_vie_depuis: '2026-10-09T06:00:00.000Z', cycle_vie_lu_le: '2026-10-09T07:00:00.000Z', erreur_reprise: null,
+  }
+}
+
 const TABLES: Record<string, Ligne[]> = {
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
@@ -1152,8 +1236,10 @@ const TABLES: Record<string, Ligne[]> = {
   // `FACTURES_D1`), puis celle, jamais transmise, de l'atelier de conseil (`FACTURES_D7`, sans transmission ni événement) :
   // typées sur l'application, rendues au faux client en lignes nues.
   // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
-  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8].map((f) => ({ ...f })),
-  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8].map((l) => ({ ...l })),
+  // Puis F2026-0009, refusée par l'acheteur sur la plateforme du client, et les statuts lus de l'atelier (étape d7).
+  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9].map((f) => ({ ...f })),
+  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9].map((l) => ({ ...l })),
+  statuts_factures_recus: STATUTS_D7.map((s) => ({ ...s })),
   transmissions_factures: [...TRANSMISSIONS_D1, ...TRANSMISSIONS_D7].map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
   encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8].map((e) => ({ ...e })),
@@ -1186,6 +1272,8 @@ const CONNEXION_PLATEFORME_D1 = {
   url_jeton: 'https://flux.plateforme-alpha.example/oauth2/token', hote: 'flux.plateforme-alpha.example',
   client_id: 'cabinet-jd-consult', organisation_id: 'org-cabinet-infirmier-moreau', portee: null,
   recherche_depuis: '2026-09-30T08:00:00.000Z', derniere_recuperation: '2026-09-30T08:05:00.000Z',
+  // Ses statuts n'ont jamais été relevés : l'onglet Factures le dit, et « Relire les statuts depuis le début » est le geste.
+  cycle_vie_depuis: null as string | null, cycle_vie_lu_le: null as string | null,
   created_at: '2026-09-15T09:00:00.000Z', version: 'v-banc-1',
 }
 
@@ -1197,6 +1285,8 @@ const CONNEXION_PLATEFORME_D7 = {
   nom: 'Plateforme Bêta', url_flux: 'https://flux.plateforme-beta.example/afnor',
   url_jeton: 'https://flux.plateforme-beta.example/oauth2/token', hote: 'flux.plateforme-beta.example',
   organisation_id: 'org-atelier-bernard-conseil', version: 'v-banc-2',
+  // Ses statuts ont été relevés jusqu'au bout la veille (étape d7) : la déclaration de F2026-0008 le dit.
+  cycle_vie_depuis: '2026-10-08T06:45:00.000Z', cycle_vie_lu_le: '2026-10-08T07:45:00.000Z',
 }
 
 function fluxDuBanc(id: string, sens: 'achat' | 'vente', syntaxe: string, nom: string | null, etat: string) {
@@ -1210,6 +1300,8 @@ function plateformeAgreee(corps: Ligne): { data: unknown; error: unknown } {
       return { data: { connexion: d1 ? CONNEXION_PLATEFORME_D1 : corps.dossierId === 'd7' ? CONNEXION_PLATEFORME_D7 : null }, error: null }
     case 'tester':
       return { data: { ok: true }, error: null }
+    case 'relever':
+      return { data: releveDuBanc(corps), error: null }
     case 'lister':
       return {
         data: {

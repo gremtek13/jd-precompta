@@ -313,6 +313,20 @@ const VUES = [
   { nom: 'mobile-plateforme-recherche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Chercher les nouvelles factures$' },
   { nom: 'mobile-plateforme-relier', chemin: '#/dossiers/d2/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relier la plateforme du client$' },
   { nom: 'mobile-plateforme-fiche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Laboratoire Biosanté Provence' },
+  // Le cycle de vie des factures émises (ligne 28.5, étape d7) : l'onglet Factures de l'atelier après « Lire les statuts de
+  // la plateforme » — le bilan, les pastilles « Cycle de vie · … », l'« Avoir interne » de F2026-0009 refusée —, ses
+  // encaissements (ses statuts, le refus en tête, l'enregistrement refusé), la déclaration d'un chèque de F2026-0008 (« Statuts
+  // lus sur … : aucun refus de l'acheteur », et ses trois statuts), puis « Relire les statuts depuis le début » du cabinet
+  // infirmier, confirmation acceptée.
+  { nom: 'pc-factures-statuts', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Lire les statuts de la plateforme' },
+  { nom: 'pc-factures-statuts-sombre', chemin: '#/dossiers/d7/factures', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Lire les statuts de la plateforme' },
+  { nom: 'mobile-factures-statuts', chemin: '#/dossiers/d7/factures', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Lire les statuts de la plateforme' },
+  { nom: 'pc-factures-pastilles', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'F2026-0009' },
+  { nom: 'pc-refusee-encaissements', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0009', 'Encaissements'] },
+  { nom: 'mobile-refusee-encaissements', chemin: '#/dossiers/d7/factures', l: 390, h: 844, theme: 'light', reduite: false, ligne: ['F2026-0009', 'Encaissements'] },
+  { nom: 'pc-refusee-transmettre', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0009', 'Transmettre'] },
+  { nom: 'pc-declarer-statuts-lus', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0008', 'Encaissements'], apres: '^Déclaré sur la plateforme$', rang: 'last', vers: 'Statuts lus sur flux.plateforme-beta.example le' },
+  { nom: 'pc-relire-statuts', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relire les statuts depuis le début$', accepter: true, vers: 'Statuts lus sur flux.plateforme-alpha.example' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -363,9 +377,17 @@ for (const v of VUES) {
     await page.getByRole('checkbox', { name: new RegExp(libelle) }).first().check()
     await page.waitForTimeout(400)
   }
-  // Un bouton du contenu qui vient de s'ouvrir (la fiche, le panneau), désigné par une partie de son nom.
+  // Un bouton d'une ligne de tableau, la ligne désignée par un texte qu'elle porte (le numéro d'une facture).
+  if (v.ligne) {
+    await page.locator('tr', { hasText: v.ligne[0] }).getByRole('button', { name: v.ligne[1], exact: true }).click()
+    await page.waitForTimeout(900)
+  }
+  // Une confirmation du navigateur (« Relire depuis le début ? ») acceptée, comme on l'accepterait à la main.
+  if (v.accepter) page.once('dialog', (d) => d.accept())
+  // Un bouton du contenu qui vient de s'ouvrir (la fiche, le panneau), désigné par une partie de son nom — le premier, ou
+  // le dernier quand la vue le dit (`rang`).
   if (v.apres) {
-    await page.getByRole('button', { name: new RegExp(v.apres) }).first().click()
+    await page.getByRole('button', { name: new RegExp(v.apres) })[v.rang === 'last' ? 'last' : 'first']().click()
     await page.waitForTimeout(600)
   }
   // Un bloc replié (`<details>`), déplié par le texte de son résumé.

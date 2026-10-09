@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlateformeClientModal from './PlateformeClientModal'
 import type {
-  BilanReception, ConnexionPlateformeVue, DrapeauxPlateforme, FluxVu, ListeFlux, PlanReception,
+  BilanReception, ConnexionPlateformeVue, DrapeauxPlateforme, FluxVu, ListeFlux, PlanReception, ReleveStatuts,
 } from '../../lib/receptionPlateforme'
 
 // LA FENÊTRE « PLATEFORME DU CLIENT » (onglet Pièces, ligne 28.5, étape b). Ce qu'aucun test de `src/lib` ne voit :
@@ -24,8 +24,33 @@ const m = vi.hoisted(() => ({
   recevoirFactures: vi.fn(),
   repartirDuDebut: vi.fn(),
   retirerConnexionPlateforme: vi.fn(),
+  releverStatutsDesFactures: vi.fn(),
 }))
 vi.mock('../../lib/receptionPlateforme', () => m)
+// Le bilan d'un relevé lit en base le numéro des factures qu'il a touchées (ReleveStatuts.tsx) : les filtres s'appliquent.
+const base = vi.hoisted(() => ({ factures: [] as Record<string, unknown>[], lectures: [] as string[] }))
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
+  return {
+    supabase: {
+      from: (table: string) => {
+        if (table !== 'factures_emises') throw new Error(`Table non attendue dans ce test : ${table}`)
+        const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+        const q: Record<string, unknown> = {
+          select: (colonnes: string) => { base.lectures.push(colonnes); return q },
+          eq: (c: string, v: unknown) => { predicats.push(predicatEq(c, v)); return q },
+          in: (c: string, v: unknown[]) => { predicats.push(predicatIn(c, v)); return q },
+          order: () => q,
+          range: (debut: number, fin: number) => {
+            const toutes = filtrer(base.factures, predicats)
+            return Promise.resolve({ data: toutes.slice(debut, fin + 1), error: null, count: toutes.length })
+          },
+        }
+        return q
+      },
+    },
+  }
+})
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'utilisateur-1' } } }) }))
 
 const SANS: DrapeauxPlateforme = { definitif: false, raison: null, perimee: false, acces_refuse: false, identifiants_refuses: false }
@@ -396,5 +421,84 @@ describe('reprendre du début et retirer', () => {
     await cliquer('Retirer')
     expect(screen.getByText('Accès refusé à ce dossier.')).toBeTruthy()
     expect(screen.getByText('Chercher les nouvelles factures')).toBeTruthy()
+  })
+})
+
+// « RELIRE LES STATUTS DEPUIS LE DÉBUT » (ligne 28.5, étape d7) : le relevé des statuts des factures émises repart du
+// premier. Un geste, confirmé en nommant ce qu'il fait, sous le verrou de la fenêtre ; son bilan se dit, et la connexion
+// se relit avant de relâcher — elle dit quand les statuts ont été lus jusqu'au bout.
+describe('relire les statuts depuis le début', () => {
+  function releve(o: Partial<ReleveStatuts> = {}): ReleveStatuts {
+    return {
+      hote: 'pa.exemple.fr', version: 'v1', depuis: null, issues: [], en_attente: 0, en_erreur: 0, reportes: 0, complete: true,
+      ecartes: { autre_flux: 0, illisible: 0, format: 0, statut_inconnu: 0, doublons: 0 }, motif: null,
+      cycle_vie_depuis: '2026-10-09T08:00:00.000Z', cycle_vie_lu_le: '2026-10-09T09:00:00.000Z', erreur_reprise: null, ...o,
+    }
+  }
+  beforeEach(() => {
+    base.factures = [
+      { id: 'f1', dossier_id: 'd1', numero: 'F2026-0007' },
+      // Le même identifiant dans un autre dossier ne se lit pas : la lecture est filtrée sur le dossier.
+      { id: 'f2', dossier_id: 'autre', numero: 'F2026-9999' },
+    ]
+    base.lectures = []
+  })
+
+  it('le résumé dit si les statuts ont été lus ; la confirmation nomme le geste ; refusée, rien ne part', async () => {
+    ouvrir()
+    expect(await screen.findByText('pas encore lus jusqu’au bout — l’onglet Factures les relève')).toBeTruthy()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await cliquer('Relire les statuts depuis le début')
+    expect(confirmation.mock.calls[0][0]).toBe(
+      'Relire depuis le début les statuts des factures émises sur Plateforme fictive ? L’application relit tous les statuts '
+      + 'depuis le premier ; ceux déjà gardés sont reconnus et ne s’écrivent pas deux fois. Utile après une correction de '
+      + 'l’application, ou quand un statut a été écarté à tort.',
+    )
+    expect(m.releverStatutsDesFactures).not.toHaveBeenCalled()
+  })
+
+  it('confirmé : un seul relevé depuis le début pour trois clics, son bilan, et la connexion relue', async () => {
+    let resoudre: (v: unknown) => void = () => {}
+    m.releverStatutsDesFactures.mockReturnValue(new Promise((r) => { resoudre = r }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ouvrir()
+    const bouton = await screen.findByText('Relire les statuts depuis le début')
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(m.releverStatutsDesFactures).toHaveBeenCalledTimes(1)
+    expect(m.releverStatutsDesFactures).toHaveBeenCalledWith('d1', true)
+    // Le verrou de la fenêtre : les autres gestes attendent.
+    expect((screen.getByText('Chercher les nouvelles factures') as HTMLButtonElement).disabled).toBe(true)
+
+    m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion({ cycle_vie_lu_le: '2026-10-09T09:00:00.000Z' }) }))
+    await act(async () => {
+      resoudre(ok(releve({
+        depuis: null,
+        issues: [
+          { flux: 'L1', issue: 'garde', facture_id: 'f1', code: '213', avertissements: [] },
+          { flux: 'L2', issue: 'garde', facture_id: 'f2', code: '205', avertissements: [] },
+          { flux: 'L3', issue: 'deja_lu' },
+        ],
+      })))
+    })
+    expect(m.lireConnexionPlateforme).toHaveBeenCalledTimes(2)
+    screen.getByRole('heading', { name: /^Statuts lus sur pa\.exemple\.fr le \d\d\/10\/2026$/ })
+    expect((screen.getByText('F2026-0007').closest('li') as HTMLElement).textContent).toMatch(/^F2026-0007 : Rejetée — elle s’annule par un avoir interne/)
+    // Le numéro d'une facture d'un autre dossier ne se lit pas : le bilan ne le nomme pas.
+    screen.getByText('Une facture du dossier (numéro non lu)')
+    expect(screen.queryByText('F2026-9999')).toBeNull()
+    expect(base.lectures).toEqual(['id, numero'])
+    screen.getByText('1 statut déjà lu : reconnu, il ne s’écrit pas deux fois.')
+    expect(await screen.findByText(/^lus jusqu’au bout le \d\d\/10\/2026 — l’onglet Factures les relève$/)).toBeTruthy()
+    expect((screen.getByText('Chercher les nouvelles factures') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('un relevé refusé se dit, et la fenêtre se libère', async () => {
+    m.releverStatutsDesFactures.mockResolvedValue(refus('La plateforme refuse l’accès (recherche des statuts, 403).', { acces_refuse: true }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ouvrir()
+    await cliquer('Relire les statuts depuis le début')
+    expect(await screen.findByText(/^La plateforme refuse l’accès \(recherche des statuts, 403\)\. Demandez au client/)).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: /^Statuts lus/ })).toBeNull()
+    expect((screen.getByText('Relire les statuts depuis le début') as HTMLButtonElement).disabled).toBe(false)
   })
 })

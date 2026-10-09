@@ -22,9 +22,16 @@ const faux = vi.hoisted(() => ({
   evenements: [] as unknown[],
   connexion: null as unknown,
   lecturesConnexion: 0,
-  // Pour un avoir : les rejets de la facture qu'il corrige, et ses refus chez Super PDP (210, 213).
+  // Pour un avoir : les rejets de la facture qu'il corrige, ses refus chez Super PDP (210, 213), et ceux lus sur la
+  // plateforme du client (210, 213, étape d7).
   rejetsOrigine: 0,
   refusOrigine: 0,
+  refusLusOrigine: 0,
+  // Les statuts lus sur la plateforme du client (étape d7), filtrés comme la base ; une lecture qui s'arrête avant le
+  // compte annoncé est incomplète.
+  statuts: [] as Record<string, unknown>[],
+  statutsMuetsApres: null as number | null,
+  filtresStatuts: [] as string[],
   // Ces deux comptes peuvent rester EN ATTENTE : tant qu'on ne sait pas si l'avoir est interne, rien n'est proposé.
   retenirOrigine: false,
   libererOrigine: [] as (() => void)[],
@@ -34,7 +41,8 @@ const faux = vi.hoisted(() => ({
   resoudre: null as null | ((v: unknown) => void),
 }))
 
-vi.mock('../../lib/supabase', () => {
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
   const compteDeLOrigine = (reponse: unknown) => (faux.retenirOrigine
     ? new Promise((resolve) => { faux.libererOrigine.push(() => resolve(reponse)) })
     : Promise.resolve(reponse))
@@ -51,6 +59,29 @@ vi.mock('../../lib/supabase', () => {
           return q
         }
         if (table === 'factures_emises') return requete(() => ({ data: faux.origine, error: null }), 'maybeSingle')
+        if (table === 'statuts_factures_recus') {
+          let compte = false
+          let plage: [number, number] = [0, Number.MAX_SAFE_INTEGER]
+          const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+          const q: Record<string, unknown> = {
+            select: (_: string, options?: { head?: boolean }) => { compte = options?.head === true; return q },
+            eq: (colonne: string, valeur: unknown) => { faux.filtresStatuts.push(`${colonne}=${String(valeur)}`); predicats.push(predicatEq(colonne, valeur)); return q },
+            order: () => q,
+            // Le compte des refus lus de la facture qu'un avoir corrige.
+            in: (colonne: string, valeurs: unknown[]) => {
+              faux.filtresStatuts.push(`${colonne} in ${valeurs.join(',')}`)
+              return compteDeLOrigine({ data: null, error: null, count: faux.refusLusOrigine })
+            },
+            range: (debut: number, fin: number) => {
+              plage = [debut, fin]
+              if (compte) throw new Error('compte des statuts avec range')
+              const toutes = filtrer(faux.statuts, predicats)
+              const borne = Math.min(plage[1] + 1, faux.statutsMuetsApres ?? Infinity)
+              return Promise.resolve({ data: toutes.slice(plage[0], borne), error: null, count: toutes.length })
+            },
+          }
+          return q
+        }
         if (table === 'facture_superpdp_events') {
           const q: Record<string, unknown> = {
             select: () => q, eq: () => q,
@@ -125,7 +156,8 @@ const FACTURE: FactureEmise = factureCii([ligne()])
 function monter(o: {
   facture?: FactureEmise; lignes?: unknown[]; origine?: unknown; connexion?: unknown; superpdp?: boolean
   transmissions?: TransmissionFacture[]; refusTransmissions?: string; rejetsOrigine?: number; refusOrigine?: number
-  statutTva?: StatutTva; numeroTvaAttribue?: boolean; retenirOrigine?: boolean
+  statutTva?: StatutTva; numeroTvaAttribue?: boolean; retenirOrigine?: boolean; refusLusOrigine?: number
+  statuts?: Record<string, unknown>[]; statutsMuetsApres?: number
 } = {}) {
   faux.lignes = o.lignes ?? [ligne()]
   faux.origine = o.origine ?? null
@@ -139,6 +171,10 @@ function monter(o: {
   faux.lecturesConnexion = 0
   faux.rejetsOrigine = o.rejetsOrigine ?? 0
   faux.refusOrigine = o.refusOrigine ?? 0
+  faux.refusLusOrigine = o.refusLusOrigine ?? 0
+  faux.statuts = o.statuts ?? []
+  faux.statutsMuetsApres = o.statutsMuetsApres ?? null
+  faux.filtresStatuts = []
   faux.retenirOrigine = o.retenirOrigine ?? false
   faux.libererOrigine = []
   faux.superpdp = o.superpdp ?? false
@@ -410,10 +446,10 @@ describe('TransmissionFactureModal — l’avoir interne d’une facture rejeté
 
   it('tant qu’on ne sait pas si la facture corrigée a été rejetée ou refusée, rien n’est proposé', async () => {
     monter({ facture: avoir, lignes: credit, origine: ORIGINE, superpdp: true, retenirOrigine: true })
-    // Tout le reste est lu — ses transmissions, ses lignes, les plateformes reliées — ; les deux comptes attendent.
+    // Tout le reste est lu — ses transmissions, ses lignes, les plateformes reliées — ; les trois comptes attendent.
     await vi.waitFor(() => expect(faux.lecturesConnexion).toBe(1))
     await act(async () => {})
-    expect(faux.libererOrigine).toHaveLength(2)
+    expect(faux.libererOrigine).toHaveLength(3)
     expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
     await act(async () => { for (const liberer of faux.libererOrigine) liberer() })
     expect(await deposer()).toBeTruthy()
@@ -436,5 +472,55 @@ describe('TransmissionFactureModal — l’avoir interne d’une facture rejeté
     await act(async () => { screen.getByRole('button', { name: 'Actualiser le statut Super PDP' }).click() })
     await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
     expect(await screen.findByText(/Refusée par le client : elle s’annule par un avoir interne/)).toBeTruthy()
+  })
+})
+
+// UNE FACTURE REFUSÉE OU REJETÉE SUR LA PLATEFORME DU CLIENT (ligne 28.5, étape d7) : peut-être déposée par le client
+// lui-même, elle n'a aucune transmission ici — rien d'autre ne retiendrait l'envoi, et la base refuserait la réservation
+// (23514), que la fonction rendrait en erreur 500. La fenêtre lit ses statuts et le dit AVANT le clic.
+describe('TransmissionFactureModal — les statuts lus sur la plateforme du client', () => {
+  const statut = (o: Record<string, unknown> = {}) => ({
+    id: 's1', dossier_id: 'd1', facture_id: 'f1', code: '210', hote: 'flux.plateforme-demo.fr', emis_le: '20261005101500',
+    lu_le: '2026-10-08T09:00:00+00:00', ...o,
+  })
+
+  it('refusée (210) : elle ne part pas, et la fenêtre dit pourquoi, sous les libellés de la DGFiP', async () => {
+    monter({ statuts: [statut()], superpdp: true })
+    expect(await screen.findByText(
+      'Refusée sur la plateforme du client (flux.plateforme-demo.fr) : elle ne part pas — elle s’annule par un avoir interne, '
+      + 'qui ne se transmet pas, puis une nouvelle facture (spécifications externes de la DGFiP, § 3.6.4).',
+    )).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    // Filtrée sur le dossier ET la facture.
+    expect(faux.filtresStatuts).toEqual(['dossier_id=d1', 'facture_id=f1'])
+  })
+
+  it('rejetée (213) : de même', async () => {
+    monter({ statuts: [statut({ code: '213' })] })
+    expect(await screen.findByText(/^Rejetée sur la plateforme du client/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('le refus d’une AUTRE facture ne la retient pas, ni un statut qui n’annule pas', async () => {
+    monter({ statuts: [statut({ facture_id: 'f-autre' }), statut({ id: 's2', code: '207' })] })
+    expect(await deposer()).toBeTruthy()
+    expect(screen.queryByText(/sur la plateforme du client \(/)).toBeNull()
+  })
+
+  it('des statuts lus en partie : on ne sait pas si l’acheteur l’a refusée, rien n’est proposé', async () => {
+    monter({ statuts: [statut({ code: '205' }), statut({ id: 's2', code: '210' })], statutsMuetsApres: 1, superpdp: true })
+    expect(await screen.findByText(/On ne sait donc pas si l’acheteur l’a refusée : rien n’est proposé/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+  })
+
+  it('l’avoir d’une facture refusée sur la plateforme du client est interne : il ne se propose pas', async () => {
+    const credit = [ligne({ designation: 'Mission de conseil', quantite: -1, prix_unitaire_ht: 100 })]
+    const avoir = factureCii(credit, { id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-10-02', date_echeance: null })
+    monter({ facture: avoir, lignes: credit, origine: { numero: 'F2026-0001', date_emission: '2026-09-15' }, refusLusOrigine: 1, superpdp: true })
+    expect(await screen.findByText(/Cet avoir annule une facture rejetée ou refusée : c’est un avoir interne/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Déposer sur|Envoyer par/ })).toBeNull()
+    // Le compte porte sur la facture corrigée, et sur les deux codes qui l'annulent.
+    expect(faux.filtresStatuts).toContain('facture_id=f1')
+    expect(faux.filtresStatuts).toContain('code in 210,213')
   })
 })

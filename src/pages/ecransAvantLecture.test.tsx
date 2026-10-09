@@ -297,6 +297,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/FicheMouvement.tsx': 'reçoit le relevé de BanqueTab ; n’ouvre un justificatif que sur un clic',
   'components/EnvoyerEmailModal.tsx': 'n’appelle la fonction d’envoi que sur un clic',
   'components/FilCommentaires.tsx': 'reçoit le fil de l’écran qui l’ouvre ; n’écrit qu’à l’envoi',
+  'pages/dossier/BilanReleveStatuts.tsx': 'reçoit le relevé des statuts que l’écran qui l’offre a lancé sur un clic (FacturesTab, EncaissementsFactureModal, PlateformeClientModal, montés ici)',
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
 }
 
