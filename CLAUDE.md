@@ -260,7 +260,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   (3bis, 4bis, douze mutations), que les devis rejoignent dès leur migration (P5 ; témoin : la table `devis` ; avant,
   une ligne « EN ATTENTE ») —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la
   banque se juge entier depuis le 10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en
-  production). Le fichier
+  production), celui des ventes depuis le même jour (les deux migrations de P2 en base : 35 lignes, 0 en faute,
+  31 mutations sur 31 en production ; les devis EN ATTENTE). Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
@@ -342,7 +343,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
   `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` sont le prédicat des étapes
   suivantes ; depuis P7 (10/10/2026), « Banque » ouvre en base les deux registres de la banque du client et le contrôle
-  de solde des relevés, et à l'écran « Ma simulation » ; « Ventes » n'ouvre encore rien. L'onglet Accès dit ce que la
+  de solde des relevés, et à l'écran « Ma simulation » ; depuis P2 (10/10/2026), « Ventes » ouvre en base la lecture
+  des neuf tables des ventes de son dossier et leurs gestes par les fonctions du cabinet (`gere_les_ventes`), sans écran
+  encore — désigner le mouvement d'un encaissement demande aussi « Banque ». L'onglet Accès dit ce que la
   base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
   drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -392,8 +395,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 ## Fonctionnalités déjà implémentées
 
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
-  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture
-  du relevé et « Ma simulation » depuis P7, 10/10/2026) ; client
+  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture du
+  relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2,
+  10/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -519,19 +523,21 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   écrite et éprouvée sur une réplique, qui attend EC-Q7 (avec elle : trois essais, `types.ts`, `inventaire.py` et le
   socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT » ; P1, les droits d'un accès, en base, dans
   l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1 prise comme hypothèse ;
-  l'invariant 3 bis de `rls.sql` attend P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  l'invariant 3 bis de `rls.sql` se juge depuis P7 et P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
   P7, la banque du client en base (décision du cabinet du 10/10/2026 : les deux migrations, EC-Q1, les relevés déposés
   en fichier lisibles par tout accès) : FAITE le 10/10/2026 — `banque_du_client` (deux registres écrits par trois
   fonctions, la couverture du relevé), la bascule `COUVERTURE_EXPORTEE` en ligne, puis le resserrement
   `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au droit « Banque ») ; ses écrans viendront avec
   P8 et P9 → « LA BANQUE DU CLIENT EN BASE », « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE », « LA BANQUE DU
   CLIENT : LE RESSERREMENT APPLIQUÉ ».
-  P2, les ventes du client en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à
-  coller) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière deux drapeaux
-  (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; acceptées par le cabinet le 10/10/2026, à condition
-  que les notes d'une facture disent avant l'application que le client « Ventes » les lit : fait le même jour, avec les
-  trois autres textes libres des ventes et la phrase des cases dans ses quatre états (étape A) ; A et B s'exportent
-  ensemble, les deux drapeaux passent ensemble → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT ». P5,
+  P2, les ventes du client en base (décision du cabinet du 10/10/2026, à la condition des libellés, remplie avant —
+  étape A) : FAITE le 10/10/2026 — `ventes_du_client` par `apply_migration` (neuf lectures au droit « Ventes », les
+  fonctions des encaissements et l'abandon à `gere_les_ventes`, `valide_par`, `cree_par`), puis
+  `ventes_du_client_facturation` collée par le cabinet (`enregistrer_facture` au même droit,
+  `supprimer_brouillon_facture`), et la bascule (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) :
+  l'onglet Accès dit ce que « Ventes » ouvre, l'onglet Factures supprime un brouillon par la fonction ; ses écrans
+  viendront avec P3 et P4 → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT », « LES VENTES DU CLIENT,
+  APPLIQUÉES : LA BASCULE ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -572,14 +578,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 29 fonctions au 10/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 30 fonctions au 10/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
   `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
   `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition`,
-  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision` et `revoir_cycle` écrivent, chacune avec son propre
-  contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet
-  du dossier — `est_chef_du_cabinet` — pour revoir) ; `client_du_dossier`,
+  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle` et `supprimer_brouillon_facture`
+  écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour
+  conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des
+  ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon) ; `client_du_dossier`,
   `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
   (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
   plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
@@ -1125,12 +1132,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « UNE VENTE PEUT ENTRER DEUX FOIS », « LA PIÈCE JUMELLE SE VOIT ».
 - **Connexion bancaire** : sans nouvel accord, une banque ne rend que les 90 derniers jours ; le refus 422 se dit en
   français, avec le renouvellement → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
-- **Les ventes du client** (P2, préparée le 10/10/2026) : le module d2 dit le refus neuf d'`enregistrer_encaissement` —
+- **Les ventes du client** (P2, en base le 10/10/2026) : le module d2 dit le refus neuf d'`enregistrer_encaissement` —
   un mouvement ne se désigne qu'avec « Banque », au rang 2 — par `gereLaBanque`, obligatoire ; la batterie a une passe du
   client (au seul droit « Ventes »). Les six essais des ventes exigent un client d'essai SANS « Ventes » (sinon
   ESSAI_IMPOSSIBLE : ses refus y deviendraient des acceptations légitimes) et attendent le catalogue de l'état où la base
-  se trouve, témoin `factures_emises.valide_par` ; `ventesClient.sql` se dit impossible avant les deux migrations →
-  « LES VENTES DU CLIENT, EN BASE ».
+  se trouve, témoin `factures_emises.valide_par` ; `ventesClient.sql` se dit impossible avant les deux migrations, et
+  se joue en production depuis (90 verdicts) ; un brouillon se supprime par `supprimer_brouillon_facture`, pour le
+  cabinet comme pour le client « Ventes » — l'ancien chemin, direct, reste codé et éprouvé drapeau forcé
+  (`FacturesTabSuppressionBrouillon.test.tsx`) → « LES VENTES DU CLIENT, EN BASE ».
 - **Les devis** (P5, préparée le 10/10/2026, `lib/devis.ts`) : une série par dossier et par année (`D2026-0001`), prise
   à l'émission sous le verrou de la série, reprise du plus haut numéro émis, émise par le cabinet ou par le client ; un
   devis émis est figé par sa garde (seule la réponse s'écrit, une fois ; une acceptation après la validité se
@@ -1154,6 +1163,11 @@ Vitest, 8231 tests, posés à côté de leur module ; `tsc -b` les type-vérifie
 - **Un faux client APPLIQUE les filtres** qui décident de ce que l'écran voit (`src/test/filtresPostgrest.ts`, qui lève
   sur une forme inconnue), annonce un `count`, et se charge DANS la fabrique de `vi.mock`. Les jeux d'essai sont typés
   `Partial<T> => T`, sans `as`.
+- **Un drapeau d'export levé garde son état d'avant éprouvé tant que son code existe** : un fichier le FORCE par
+  `vi.mock` (`espaceClientAvantCouverture.test.tsx`), ou joue ses deux états par un accesseur
+  (`get DRAPEAU() { return faux.drapeau }`, lu à chaque accès : `FacturesTabSuppressionBrouillon.test.tsx`). Une
+  constante calculée au chargement d'un module (`CE_QUE_DISENT_LES_CASES`) ne suit pas l'accesseur : elle se teste par
+  sa fonction, état par état.
 - **Un module de calcul n'importe jamais `supabase.ts`** (il lève sans variables d'environnement) ; un module couplé se
   teste en simulant le client — même pour une fonction pure du même module ; vérifier sans `.env`.
 - **Un calcul lourd se paie dans un `beforeAll`, jamais en relevant le délai d'un test** : les gardes de copie compilent
@@ -1200,7 +1214,7 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
 - Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** toutes
-  ses mutations qui mordent — dix-neuf depuis P7, douze de plus avec P2) ; la CI n'a pas accès à la base.
+  ses mutations qui mordent — trente et une depuis P2 : dix-neuf avec P7, douze de plus avec les ventes) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

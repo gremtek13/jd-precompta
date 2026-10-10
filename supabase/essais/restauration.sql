@@ -107,6 +107,15 @@
 -- revue d'un autre cycle, une d'un autre exercice, trois notes du journal : 68 tables recréées, 62 restaurées et
 -- IDENTIQUES à la source (12 lignes), les conclusions en trois vagues, 0 écart, aucun arrêt, les deux contrôles du
 -- catalogue des rôles justes. Planté — les revues avant leurs conclusions —, le script s'arrête sur la clé.
+--
+-- 10/10/2026, espace client, étape P2 (`ventes_du_client` et `ventes_du_client_facturation`, en production) : aucune
+-- table de plus, deux colonnes — `factures_emises.valide_par` et `transmissions_factures.cree_par`, sans clé vers
+-- `auth.users`, donc aucun prérequis de compte de plus — ; le plan ne change pas, la sauvegarde recopiant des lignes
+-- entières. Rejoué sur une copie de la réplique de l'étape, égale à la production à 116 migrations (signature.sql, neuf
+-- familles), le dossier `test` semé, sa facture validée portant un `valide_par` et sa transmission un `cree_par` (posés
+-- sur la copie, les gardes écartées le temps de semer) : 68 tables recréées, 119 clés recopiées, 62 restaurées et
+-- IDENTIQUES à la source (18 lignes), 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles justes. L'une ou
+-- l'autre colonne effacée dans le schéma d'essai avant le verdict, sa table seule vire à l'ÉCART : la comparaison les voit.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés

@@ -5,9 +5,11 @@ import { CE_QUE_DISENT_LES_CASES, ceQueDisentLesCases } from '../../lib/droitsAc
 
 // L'ONGLET ACCÈS, LES DEUX ÉTAPES DE L'ESPACE CLIENT EN BASE (P7, la banque, et P2, les ventes : drapeaux levés). La
 // phrase sous « Accès actuels » dit ce que la base ouvre à la SESSION du client, écran ou non (lib/droitsAcces.ts,
-// `ceQueDisentLesCases`). Drapeaux baissés, AccesTab.test.tsx garde la phrase de l'état réel ; ici, que l'onglet suit les
-// DEUX drapeaux — le contrôle croisé de P2 et P7 (10/10/2026) avait trouvé une phrase qui n'en lisait qu'un, et qui
-// aurait dit « cocher une case ne change pas ce que le client voit ou fait » le jour où ses ventes lui sont ouvertes.
+// `ceQueDisentLesCases`). AccesTab.test.tsx garde la phrase de l'état réel ; ici, que l'onglet suit les DEUX drapeaux —
+// le contrôle croisé de P2 et P7 (10/10/2026) avait trouvé une phrase qui n'en lisait qu'un, et qui aurait dit « cocher
+// une case ne change pas ce que le client voit ou fait » le jour où ses ventes lui sont ouvertes. Les deux drapeaux sont
+// levés pour de bon depuis le 10/10/2026 (les migrations des ventes appliquées, l'export les porte) : forcés ici, ils
+// valent l'état réel, et le fichier garde son sens si l'un d'eux redescendait.
 vi.mock('../../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/couvertureReleve')>(),
   COUVERTURE_EXPORTEE: true,

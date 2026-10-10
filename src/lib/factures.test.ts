@@ -312,7 +312,8 @@ describe('creerAvoir', () => {
 })
 
 // LA SUPPRESSION D'UN BROUILLON PAR LA BASE (espace client, étape P2) : `supprimer_brouillon_facture` vit dans une
-// migration que le cabinet colle, et l'onglet Factures ne l'appelle que lorsque l'export la porte.
+// migration que le cabinet a collée le 10/10/2026, et l'onglet Factures ne l'appelle que lorsque l'export la porte —
+// c'est le cas depuis.
 describe('supprimerBrouillon', () => {
   it('appelle la fonction avec le dossier annoncé puis la facture, et rend ce qu’elle a supprimé', async () => {
     rpc.data = 'b1'

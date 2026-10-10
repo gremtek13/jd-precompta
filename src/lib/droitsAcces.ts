@@ -10,8 +10,8 @@
 //
 // UN SEUL ÉCRAN DU CLIENT S'EN SERT, ET SEULEMENT DERRIÈRE UN DRAPEAU : « Ma simulation » suit la case « Banque » dès que la
 // couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`). Le reste — ses écrans « Ventes » et « Banque » —
-// arrivera avec les étapes P2 à P9, chacune présentée au cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet
-// Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
+// arrivera avec les étapes P3 à P9 (P2 n'a ouvert que la base), chacune présentée au cabinet avant d'ouvrir quoi que ce
+// soit. Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
 //
 // LA BASE, ELLE, N'ATTEND PAS LES ÉCRANS : une policy ou une fonction ouverte à un droit vaut dès sa migration, pour la
 // session du client, qu'un écran la montre ou non (étapes P2 et P7). Ce qu'une case change se dit donc de ce que la base

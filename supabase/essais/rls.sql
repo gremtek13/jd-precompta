@@ -258,6 +258,19 @@
 -- client, que l'invariant 3 lui refuse. Ce que leurs policies, leurs gardes et leurs fonctions refusent et acceptent,
 -- profil par profil, est éprouvé par `revisionCycles.sql`. Le passage de P7, ci-dessus, en production à 114 migrations,
 -- compte ces trois tables parmi les 68 du schéma.
+--
+-- 10/10/2026 — PASSAGE COMPLET après `ventes_du_client` puis `ventes_du_client_facturation` (espace client, étape P2 ;
+-- la seconde collée par le cabinet), qui ajoutent neuf policies de lecture au droit « Ventes » et aucune table. EN
+-- PRODUCTION, à 116 migrations : 35 lignes de verdict (68 tables du schéma, dont 59 portant un `dossier_id`, + 3 buckets,
+-- 4 profils), 0 en faute — le bloc des ventes JOUÉ : 3bis sans le droit et avec lui (contrôle positif, 9 tables sur 9,
+-- sur le jeu d'essai qu'il construit dans le dossier du client et annule), le catalogue juste, jamais une relance de
+-- pièces, 4bis sur douze écritures directes ; les devis EN ATTENTE, leurs migrations n'étant pas en base —, et 31
+-- mutations sur 31 qui mordent (M2 : exactement 4). Le texte reçu est la copie adaptée de la tête 0a711c7, TOUTES ses
+-- lignes de commentaire retirées, et donc aucune bordure à recopier (57 889 caractères, empreinte
+-- d661fbbd0ee793ab9646200d67f97509, rendue par la base). Jouées d'abord sur une réplique dont `signature.sql` égalait la
+-- production, la copie et ce fichier rendent les mêmes verdicts, à l'octet. Aucun accès de la production ne porte
+-- « Ventes » : ce que les fonctions des ventes refusent et acceptent, profil par profil, est éprouvé par
+-- `ventesClient.sql`, joué en production le même jour.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
