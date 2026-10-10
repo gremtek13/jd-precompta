@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
 import type { Categorie, Piece, TiersCategorie } from '../../lib/types'
+import type { DonneesHorsDeFrance } from './FicheHorsDeFrance'
+
+// La fiche « hors de France » d'un dossier qui n'en a aucune, lue en entier : ce fichier ne la regarde pas
+// (FicheHorsDeFrance.test.tsx le fait), il lui faut seulement de quoi monter la fiche de la pièce.
+const HORS_DE_FRANCE: DonneesHorsDeFrance = {
+  lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+}
 
 // Le verrou d'exécution de l'enregistrement d'une pièce (CLAUDE.md, « un verrou d'exécution est un
 // `useRef`, jamais un état React »). C'est le dernier des quatre verrous corrigés le 20/09/2026 à
@@ -97,6 +104,10 @@ vi.mock('../../lib/supabase', () => ({
           },
         }
       }
+      // Le texte lu d'une pièce d'achat, que la fiche « hors de France » lit pour ses signaux : aucun ici.
+      if (table === 'piece_textes_ocr') {
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }
+      }
       // Volontairement bruyant : une table inattendue doit nommer ce que le test n'avait pas prévu,
       // plutôt que de rendre un objet vide et de faire échouer l'écran loin de la cause.
       throw new Error(`Table non attendue dans ce test : ${table}`)
@@ -155,6 +166,7 @@ function monter() {
   render(
     <FichePiece
       dossierId="d1"
+      horsDeFrance={HORS_DE_FRANCE}
       categories={[]}
       sousDossiers={[]}
       tiersCategories={[]}
@@ -324,6 +336,7 @@ function monterSurPieceExistante() {
   render(
     <FichePiece
       dossierId="d1"
+      horsDeFrance={HORS_DE_FRANCE}
       categories={[]}
       sousDossiers={[]}
       tiersCategories={[]}
@@ -383,6 +396,7 @@ function monterAvec(piece: Piece) {
   render(
     <FichePiece
       dossierId="d1"
+      horsDeFrance={HORS_DE_FRANCE}
       categories={[]}
       sousDossiers={[]}
       tiersCategories={[]}
@@ -470,6 +484,7 @@ function monterPourProposer(o: { piece?: Partial<Piece>; regles?: TiersCategorie
   render(
     <FichePiece
       dossierId="d1"
+      horsDeFrance={HORS_DE_FRANCE}
       categories={CATEGORIES}
       sousDossiers={[]}
       tiersCategories={o.regles ?? []}
@@ -638,6 +653,7 @@ describe('FichePiece — une pièce figée par un exercice validé', () => {
     render(
       <FichePiece
         dossierId="d1"
+        horsDeFrance={HORS_DE_FRANCE}
         categories={CATEGORIES}
         sousDossiers={SOUS_DOSSIERS}
         tiersCategories={[]}
@@ -731,6 +747,7 @@ describe('FichePiece — la note interne, hors de portée du client', () => {
     render(
       <FichePiece
         dossierId="d1"
+        horsDeFrance={HORS_DE_FRANCE}
         categories={CATEGORIES}
         sousDossiers={[]}
         tiersCategories={[]}
@@ -863,7 +880,7 @@ describe('FichePiece — la note interne, hors de portée du client', () => {
   it('une réponse pour une pièce déjà quittée ne déplace rien, quel que soit l’ordre des réponses', async () => {
     const props = {
       dossierId: 'd1', categories: CATEGORIES, sousDossiers: [], tiersCategories: [], tiersCategoriesCabinet: [], tiersConnus: [],
-      commentaires: [], onClose: () => {}, onSaved: () => {}, onCommentaireAjoute: () => {}, onCommentaireSupprime: () => {},
+      horsDeFrance: HORS_DE_FRANCE, commentaires: [], onClose: () => {}, onSaved: () => {}, onCommentaireAjoute: () => {}, onCommentaireSupprime: () => {},
     }
     faux.noteLue = null
     const { rerender } = render(<FichePiece {...props} piece={pieceDeTest({ id: 'piece-A', statut: 'a_valider' })} />)
@@ -903,5 +920,80 @@ describe('FichePiece — la note interne, hors de portée du client', () => {
     expect(faux.notesEcrites).toEqual([])
     await act(async () => { faux.lecturesEnAttente[1]({ data: { texte: 'Note de B' }, error: null }) })
     expect(champNote()!.value).toBe('Note de B')
+  })
+})
+
+// LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » DANS LA FICHE DE LA PIÈCE (ligne 28.5, e-reporting, étape e3). La
+// section a ses propres tests (FicheHorsDeFrance.test.tsx) ; ici, ce que la fiche de la pièce en fait : la confirmation
+// de la suppression NOMME la fiche que la cascade emporte, une saisie du type ou des montants suspend la fiche (la base
+// la compare à la pièce enregistrée), et une saisie de fiche en cours garde le volet comme le reste.
+describe('FichePiece — la fiche « hors de France » de la pièce', () => {
+  const AVEC_FICHE: DonneesHorsDeFrance = {
+    ...HORS_DE_FRANCE,
+    lecture: {
+      fiches: [
+        {
+          id: 'f1', dossier_id: 'd1', piece_id: 'piece-1', remplace_id: null, numero: 'INV-2026-0042', date_facture: '2026-03-01',
+          type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE',
+          schema_identifiant: '0223', identifiant: 'IE1234567WA', nature: 'services', autoliquidation: true, date_operation: null,
+          periode_debut: null, periode_fin: null, cree_par: null, cree_le: '2026-03-11T08:00:00Z', retire_le: null, retire_par: null,
+        },
+      ],
+      taux: [{ fiche_id: 'f1', dossier_id: 'd1', code_tva: 'AE', taux: 0, base: 120, tva: 0, motif_code: null, motif_texte: null }],
+      motif: null,
+    },
+  }
+
+  function monterAvecFiche(horsDeFrance: DonneesHorsDeFrance, onModifiee?: (m: boolean) => void) {
+    faux.suppressions = []
+    render(
+      <FichePiece
+        dossierId="d1" horsDeFrance={horsDeFrance} categories={[]} sousDossiers={[]} tiersCategories={[]}
+        tiersCategoriesCabinet={[]} tiersConnus={[]} piece={pieceDeTest({ statut: 'a_valider' })} commentaires={[]}
+        onClose={() => {}} onSaved={() => {}} onCommentaireAjoute={() => {}} onCommentaireSupprime={() => {}} onModifiee={onModifiee}
+      />,
+    )
+  }
+
+  async function messageDeSuppression(horsDeFrance: DonneesHorsDeFrance): Promise<string> {
+    monterAvecFiche(horsDeFrance)
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+    await act(async () => { screen.getByRole('button', { name: 'Supprimer' }).click() })
+    vi.restoreAllMocks()
+    cleanup()
+    return message
+  }
+
+  it('la confirmation de la suppression nomme la fiche emportée, ou dit qu’elle ne la sait pas', async () => {
+    expect(await messageDeSuppression(AVEC_FICHE)).toContain(
+      'Sa fiche « fournisseur établi hors de France » — la facture n° INV-2026-0042 du 01/03/2026 (Irlande) — est supprimée avec elle.',
+    )
+    expect(await messageDeSuppression({ ...HORS_DE_FRANCE, lecture: null })).toContain('n’ont pas pu être lues en entier')
+    expect(await messageDeSuppression(HORS_DE_FRANCE)).not.toContain('fournisseur établi hors de France')
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('suspend la fiche tant que le type ou les montants de la pièce portent une saisie', async () => {
+    monterAvecFiche(HORS_DE_FRANCE)
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: 'Saisir la fiche' })).toBeTruthy()
+    fireEvent.change(document.querySelector('#ttc')!, { target: { value: '130' } })
+    expect(screen.getByText(/Enregistrez d’abord la pièce/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Saisir la fiche' })).toBeNull()
+    fireEvent.change(document.querySelector('#ttc')!, { target: { value: '120' } })
+    expect(screen.getByRole('button', { name: 'Saisir la fiche' })).toBeTruthy()
+  })
+
+  it('une saisie de fiche en cours garde le volet, et ne le garde plus une fois abandonnée', async () => {
+    const modifiee = vi.fn()
+    monterAvecFiche(HORS_DE_FRANCE, modifiee)
+    await act(async () => {})
+    await act(async () => { screen.getByRole('button', { name: 'Saisir la fiche' }).click() })
+    expect(modifiee).toHaveBeenLastCalledWith(false)
+    fireEvent.change(screen.getByLabelText('Numéro de la facture'), { target: { value: 'INV-1' } })
+    expect(modifiee).toHaveBeenLastCalledWith(true)
+    await act(async () => { screen.getByRole('button', { name: 'Abandonner la saisie' }).click() })
+    expect(modifiee).toHaveBeenLastCalledWith(false)
   })
 })

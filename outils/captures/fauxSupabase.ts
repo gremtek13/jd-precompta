@@ -167,6 +167,37 @@ const pieces: Ligne[] = [
   },
 ]
 
+// DEUX ACHATS À DES FOURNISSEURS ÉTABLIS HORS DE FRANCE (ligne 28.5, e-reporting, étape e3), fictifs comme le reste : un
+// abonnement payé en dollars à un éditeur établi en Irlande, sans TVA, dont la fiche « hors de France » a deux versions
+// (`FICHES_HORS_DE_FRANCE`) ; et une prestation d'un studio établi au Portugal, sans fiche encore, dont le texte lu porte
+// un numéro de TVA, un numéro de facture et la mention d'autoliquidation — de quoi faire paraître les signaux, puis les
+// propositions de la saisie.
+pieces.push(
+  {
+    ...piece('p18', '2026-09-20', 'Nuage Logiciel Ltd', 100, 0, 'c8', 'a_valider'),
+    devise: 'USD', montant_devise: 108, taux_change: 0.925926, conversion_source: 'bce',
+  },
+  piece('p19', '2026-09-24', 'Studio Lumière Lisboa', 250, 0, 'c7', 'a_valider'),
+)
+
+function ficheHorsDeFrance(id: string, remplace: string | null, creeLe: string, o: Ligne = {}): Ligne {
+  return {
+    id, dossier_id: 'd1', piece_id: 'p18', remplace_id: remplace, numero: 'NL-2026-0917', date_facture: '2026-09-20',
+    type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'USD', pays: 'IE',
+    schema_identifiant: '0223', identifiant: 'IE1234567WA', nature: 'services', autoliquidation: true, date_operation: null,
+    periode_debut: null, periode_fin: null, cree_par: 'u1', cree_le: creeLe, retire_le: null, retire_par: null, ...o,
+  }
+}
+
+const FICHES_HORS_DE_FRANCE: Ligne[] = [
+  ficheHorsDeFrance('hdf1', null, '2026-09-21T09:00:00Z', { nature: 'mixte' }),
+  ficheHorsDeFrance('hdf2', 'hdf1', '2026-09-22T09:00:00Z', { periode_debut: '2026-09-01', periode_fin: '2026-09-30' }),
+]
+const TAUX_HORS_DE_FRANCE: Ligne[] = [
+  { fiche_id: 'hdf1', dossier_id: 'd1', code_tva: 'AE', taux: 0, base: 108, tva: 0, motif_code: null, motif_texte: null },
+  { fiche_id: 'hdf2', dossier_id: 'd1', code_tva: 'AE', taux: 0, base: 108, tva: 0, motif_code: null, motif_texte: null },
+]
+
 // Les notes internes du cabinet (espace client, P0) : celle que l'import par la plateforme a laissée sur la facture reçue
 // (p15). La fiche d'une pièce la lit dans cette table, que le client ne lit pas.
 const NOTES_INTERNES: Ligne[] = [
@@ -1237,7 +1268,14 @@ const TABLES: Record<string, Ligne[]> = {
   piece_textes_ocr: [{
     id: 't8', dossier_id: 'd1', piece_id: 'p8', document_id: null,
     texte: 'LOGISOINS SAS\nFacture n° 2026-0818\nAbonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission\nTotal TTC 29,00 €',
+  }, {
+    // Le texte « lu » de la prestation du studio établi au Portugal (p19) : signaux et propositions de sa fiche.
+    id: 't19', dossier_id: 'd1', piece_id: 'p19', document_id: null,
+    texte: 'STUDIO LUMIÈRE LISBOA LDA\nVAT PT 123 456 789\nInvoice number: FT-2026/118\nReportage photographique — septembre 2026\n'
+      + 'VAT reverse charge — Article 196 of Directive 2006/112/EC\nTotal EUR 250.00',
   }],
+  pieces_hors_de_france: FICHES_HORS_DE_FRANCE,
+  pieces_hors_de_france_taux: TAUX_HORS_DE_FRANCE,
   // Le volet social de l'exercice que Clôture affiche, déjà saisi : c'est ce qui fait paraître les
   // rubriques et l'estimation des cotisations dans les captures, au lieu d'un formulaire vide.
   volet_social_pamc: [{

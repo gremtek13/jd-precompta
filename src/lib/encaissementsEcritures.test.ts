@@ -51,8 +51,8 @@ export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
 export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuves'] as const
 export const TABLES_DES_FICHES_HORS_DE_FRANCE = ['pieces_hors_de_france', 'pieces_hors_de_france_taux'] as const
 
-// Les écrans qui appelleront les deux fonctions de la fiche, nommément : aucun avant l'étape e3.
-const ECRANS_DE_LA_FICHE: readonly string[] = []
+// Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
+const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']
 
 // Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
 const FONCTIONS_QUI_DECLARENT: readonly string[] = []

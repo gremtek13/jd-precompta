@@ -20,6 +20,8 @@ import { proposerCategorie } from '../../lib/propositionCategorie'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { enregistrerNoteInterne, lireNoteInterne, noteModifiee, type LectureNoteInterne } from '../../lib/notesInternes'
+import { ficheEmporteeParLaSuppression } from '../../lib/propositionsHorsDeFrance'
+import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './FicheHorsDeFrance'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -85,9 +87,13 @@ interface Props {
   // LA FACTURE ÉMISE QUE CETTE PIÈCE PORTE (ligne 28.6, lib/ventesJumelles.ts) : sa marque, et le nom des autres pièces
   // qui portent la même facture. L'écran appelant ne la donne que sur des listes lues en entier ; rien, sinon.
   venteEmise?: (Pick<MarqueDeLaPiece, 'genre' | 'libelle' | 'explication'> & { autres: string[] }) | null
+  // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » (ligne 28.5, e-reporting, étape e3) : les fiches du dossier lues par
+  // l'écran appelant, de quoi les relire, le gel de la pièce et les pièces du dossier. Obligatoire : la confirmation de
+  // la suppression nomme la fiche qu'elle emporte (la clé est en cascade), et un appelant qui l'oublierait la tairait.
+  horsDeFrance: DonneesHorsDeFrance
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance }: Props) {
   const fige = piece !== null && figeePar !== null
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
@@ -147,6 +153,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const [proposition, setProposition] = useState<{ pourType: TypePiece; resultat: PropositionCategorie } | null>(null)
   const [proposant, setProposant] = useState(false)
   const [erreurProposition, setErreurProposition] = useState<string | null>(null)
+  // Une saisie de la fiche « hors de France » en cours, non enregistrée : la garde du volet la protège comme le reste.
+  const [ficheHorsDeFranceModifiee, setFicheHorsDeFranceModifiee] = useState(false)
 
   // Une saisie NON ENREGISTRÉE : tout champ qui s'écarte de la pièce telle qu'ouverte, un fichier
   // choisi, une extraction qui a rempli le formulaire. Dans une fenêtre modale la question ne se
@@ -166,7 +174,18 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     || montantDevise !== (piece?.montant_devise ?? null)
     || tauxChange !== (piece?.taux_change ?? null)
     || noteModifiee(lectureNote, notes)
+    || ficheHorsDeFranceModifiee
   useEffect(() => { onModifiee?.(modifiee) }, [modifiee, onModifiee])
+  // Ce que la base compare à la fiche « hors de France » : le type, la TVA, le TTC, la devise et le montant dans la devise
+  // ENREGISTRÉS. Tant qu'un de ces champs porte une saisie, la fiche ne s'enregistre pas : elle serait jugée sur autre
+  // chose que ce que l'écran montre.
+  const pieceModifieePourLaFiche = piece !== null && (
+    typePiece !== piece.type_piece
+    || montantTva !== (piece.montant_tva?.toString() ?? '')
+    || montantTtc !== (piece.montant_ttc?.toString() ?? '')
+    || devise !== piece.devise
+    || montantDevise !== piece.montant_devise
+  )
   // Démontée — remplacée, fermée —, elle n'a plus rien à protéger.
   useEffect(() => () => onModifiee?.(false), [onModifiee])
 
@@ -563,8 +582,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       setError(citeePar)
       return
     }
+    // La fiche « hors de France » part avec la pièce (clé en cascade), toutes versions comprises : la confirmation la nomme.
+    const ficheEmportee = ficheEmporteeParLaSuppression(piece.id, horsDeFrance.lecture)
     if (!window.confirm(
-      `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`,
+      `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`
+      + (ficheEmportee ? `\n\n${ficheEmportee}` : ''),
     )) return
     setDeleting(true)
     setError(null)
@@ -898,6 +920,17 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               <strong>TVA impossible :</strong> {LIBELLE_MOTIF_TVA[motifTvaSaisie]}. Ces montants
               ne peuvent pas être ceux du document — la TVA lue part telle quelle en déduction.
             </p>
+          )}
+
+          {piece && (
+            <FicheHorsDeFrance
+              dossierId={dossierId}
+              piece={piece}
+              pieceModifiee={pieceModifieePourLaFiche}
+              donnees={horsDeFrance}
+              sansTexteLu={sansTexteLu}
+              onModifiee={setFicheHorsDeFranceModifiee}
+            />
           )}
 
           {/* Une pièce pas encore enregistrée n'a rien à quoi rattacher sa note : le champ paraît une fois la pièce

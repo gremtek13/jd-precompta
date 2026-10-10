@@ -2042,6 +2042,49 @@ a.nav-menu-item { text-decoration: none; }
 .proposition-categorie > p { flex: 1 1 240px; margin: 0; overflow-wrap: anywhere; }
 .proposition-categorie-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* La fiche « fournisseur établi hors de France » d'une pièce d'achat (e-reporting, FicheHorsDeFrance) : un encadré dans la
+   fiche de la pièce, comme la proposition de catégorie. La version enregistrée en deux colonnes (libellé, valeur) qui
+   passent à la ligne ; les rangées de boutons et de champs passent à la ligne, jamais ne débordent ; un extrait du document
+   ou un identifiant long se coupe plutôt que de sortir du volet. */
+.fiche-hdf {
+  margin: 0 0 14px; padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: 0.84rem; line-height: 1.45;
+}
+.fiche-hdf > h3 { margin: 0 0 6px; font-size: 0.9rem; }
+.fiche-hdf p { margin: 6px 0 0; overflow-wrap: break-word; }
+.fiche-hdf .field { margin-bottom: 10px; min-width: 0; }
+/* Un nom de pays long (« Géorgie du Sud-et-les Îles Sandwich du Sud ») donnait à la liste sa largeur propre, plus large que
+   le volet à 1 024 pixels : un champ ne dépasse jamais sa case. */
+.fiche-hdf .field input, .fiche-hdf .field select { min-width: 0; max-width: 100%; }
+.fiche-hdf-signaux { margin: 6px 0 0; padding-left: 18px; overflow-wrap: break-word; }
+.fiche-hdf-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 6px 0 0; }
+.fiche-hdf-detail dt { color: var(--color-text-light); font-weight: 600; }
+.fiche-hdf-detail dd { margin: 0; min-width: 0; overflow-wrap: break-word; }
+.fiche-hdf-versions { margin-top: 6px; }
+.fiche-hdf-versions summary { cursor: pointer; color: var(--color-text-light); }
+.fiche-hdf-versions ul { margin: 6px 0 0; padding-left: 18px; overflow-wrap: break-word; }
+.fiche-hdf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.fiche-hdf-refus {
+  padding: 6px 10px; border-left: 3px solid var(--color-warning); border-radius: var(--radius-xs);
+  background: var(--color-warning-light); color: var(--color-text);
+}
+.fiche-hdf-saisie { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border); }
+.fiche-hdf-propositions { margin: 0 0 12px; }
+.fiche-hdf-propositions ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.fiche-hdf-propositions li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.fiche-hdf-propositions li > span { flex: 1 1 220px; min-width: 0; overflow-wrap: break-word; }
+.fiche-hdf-extrait { font-style: italic; }
+.fiche-hdf-aide { margin: -4px 0 10px; font-size: 0.8rem; }
+.fiche-hdf-sous-titre { font-weight: 600; }
+.fiche-hdf-ligne { padding: 6px 0; border-bottom: 1px dashed var(--color-border); }
+.fiche-hdf-ligne > .btn { margin-bottom: 4px; }
+@media (max-width: 720px) {
+  .fiche-hdf-detail { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .fiche-hdf-detail dd { margin-bottom: 6px; }
+}
+
 /* Ce que le statut de TVA d'un dossier lui fait devoir à la facturation électronique (onglet TVA, StatutTvaCard) :
    une pastille d'état, puis le libellé et son détail. La pastille garde sa largeur, le texte passe à la ligne sous
    le libellé plutôt que de la pousser hors de la carte — le volet de droite rétrécit le panneau central. Sur

@@ -399,7 +399,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
   texte), validation ; texte OCR conservé et relu (pièces et documents) ; fil de précisions client ↔ cabinet ; notes
   internes du cabinet dans leur propre table, hors de portée du client (09/10/2026) ; proposition de catégorie
-  (26/09/2026).
+  (26/09/2026) ; la fiche « fournisseur établi hors de France » d'un achat : voir, saisir une version, retirer, avec ses
+  propositions (e-reporting, e3, 10/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -480,8 +481,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
   09/10/2026 (`lib/periodesEreporting.ts`) ; e2, la fiche d'un achat hors de France, en base le 10/10/2026 (Q3, Q7 et le
-  point 15 pris comme hypothèses) ; e3, son écran, à venir → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
-  L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE ».
+  point 15 pris comme hypothèses) ; e3, son écran, le 10/10/2026 (hypothèses Q3, Q7 et point 15 d'e2 inchangées, dites
+  dans la saisie) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE »,
+  « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN ».
 - **Défauts connus des Edge Functions** (19, `DEFAUTS_CONNUS`) : quatorze corps mal formés qui font lever six fonctions
   ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
   depuis le 09/10/2026, `create-client-access` et `create-team-member` depuis le 10/10/2026) ; deux
@@ -1050,6 +1052,18 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dans l'Union sans autoliquidation est à trancher) ; ni la France, ni Monaco, ni l'outre-mer. Le test du module rejoue
   l'essai étape par étape ; la restauration la réinsère par vagues, avant le brouillon → « LA FICHE D'UN ACHAT HORS DE
   FRANCE, EN BASE ».
+- **La fiche d'un achat hors de France, à l'écran** (e3, `pages/dossier/FicheHorsDeFrance.tsx`, dans la fiche d'une
+  pièce) : les fiches et leur ventilation lues par l'onglet Pièces (`lib/piecesHorsDeFranceLecture.ts`, `lireTout`),
+  relues seules après une écriture ; rien de montré ni d'offert sur une lecture absente ou partielle, sur un gel lu en
+  partie, ni tant que le type ou les montants de la pièce portent une saisie (la base compare à la pièce ENREGISTRÉE) ;
+  les refus des deux fonctions dits avant le clic par `lib/piecesHorsDeFrance.ts`, ceux de la pièce avant même la
+  saisie ; le type se lit au signe, le schéma au pays ; la version courante est rejugée contre la pièce d'aujourd'hui ;
+  une saisie s'ouvre sur la version courante, qu'une version enregistrée depuis fait relire ; écriture par les deux
+  fonctions seules sous un verrou relâché après la relecture. Les propositions sont pures
+  (`lib/propositionsHorsDeFrance.ts` : numéros de TVA de l'Union aux structures de VIES, mention d'autoliquidation,
+  numéro de facture, fiche la plus récente d'un même fournisseur), chacune avec sa source et son extrait, jamais
+  appliquée seule. La suppression d'une pièce (FichePiece) ou d'une sélection (PiecesTab) NOMME la fiche que la cascade
+  emporte, ou dit qu'elle ne la sait pas → « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.

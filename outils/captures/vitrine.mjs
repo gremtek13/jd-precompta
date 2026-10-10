@@ -52,6 +52,16 @@ const VUES = [
   // La vente comptée deux fois (ligne 28.6) : les deux pastilles dans la liste, et la fiche de l'une, qui nomme l'autre.
   { nom: 'pc-jumelle-fiche', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Résidence Les Cèdres SAS' },
   { nom: 'mobile-jumelle-fiche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Résidence Les Cèdres SAS' },
+  // La fiche « fournisseur établi hors de France » d'un achat (ligne 28.5, e-reporting, étape e3) : celle de l'abonnement
+  // payé en dollars, enregistrée en deux versions ; puis la saisie de celle d'un studio établi au Portugal, ses propositions
+  // lues dans le texte du document et le refus dit avant le clic.
+  { nom: 'pc-hdf-fiche', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Nuage Logiciel Ltd', vers: 'Versions précédentes (1)' },
+  { nom: 'pc-hdf-fiche-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'Nuage Logiciel Ltd', vers: 'Versions précédentes (1)' },
+  { nom: 'mobile-hdf-fiche', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Nuage Logiciel Ltd', vers: 'Fournisseur établi hors de France', enTete: true },
+  { nom: 'pc-hdf-signaux', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Studio Lumière Lisboa', vers: 'Saisir la fiche' },
+  { nom: 'pc-hdf-saisie', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Studio Lumière Lisboa', apres: '^Saisir la fiche$', vers: 'Fournisseur établi hors de France', enTete: true },
+  { nom: 'pc-hdf-saisie-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'Studio Lumière Lisboa', apres: '^Saisir la fiche$', vers: 'Pays du fournisseur', enTete: true },
+  { nom: 'mobile-hdf-saisie', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Studio Lumière Lisboa', apres: '^Saisir la fiche$', vers: 'Propositions', enTete: true },
   // « Proposer une catégorie » : la fiche de la seule pièce sans catégorie (LogiSoins, ouverte par sa DATE : la cellule du fournisseur porte aussi le lien « texte lu », que le clic déplierait), le bouton, puis
   // la proposition et son extrait — long, pour éprouver le passage à la ligne dans le volet.
   { nom: 'pc-proposer-bouton', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: '18/08/2026' },

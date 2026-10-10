@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AUCUNE_PIECE_SUPPRIMEE } from '../../lib/bilanSuppression'
 import type { Piece } from '../../lib/types'
+import type { DonneesHorsDeFrance } from './FicheHorsDeFrance'
+
+const HORS_DE_FRANCE: DonneesHorsDeFrance = {
+  lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+}
 
 // « SUPPRIMER » UNE PIÈCE DEPUIS SA FICHE RETIRAIT SES FICHIERS SUR LA SEULE ABSENCE D'ERREUR (09/10/2026,
 // `ecrituresVerifiees.test.ts`). Or PostgREST rend une suppression qui ne touche AUCUNE ligne sans erreur — la policy a
@@ -20,6 +25,10 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
+      // Le texte lu d'une pièce d'achat, que la fiche « hors de France » lit pour ses signaux : aucun ici.
+      if (table === 'piece_textes_ocr') {
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }
+      }
       if (table !== 'pieces') throw new Error(`Table non attendue dans ce test : ${table}`)
       return {
         delete: () => ({
@@ -79,7 +88,7 @@ async function supprimer(rendu: typeof faux.rendu) {
   render(
     <FichePiece
       dossierId="d1" categories={[]} sousDossiers={[]} tiersCategories={[]} tiersCategoriesCabinet={[]} tiersConnus={[]}
-      piece={pieceDeTest()} commentaires={[]} onClose={() => {}} onSaved={surEnregistree}
+      piece={pieceDeTest()} commentaires={[]} onClose={() => {}} onSaved={surEnregistree} horsDeFrance={HORS_DE_FRANCE}
       onCommentaireAjoute={() => {}} onCommentaireSupprime={() => {}}
     />,
   )
