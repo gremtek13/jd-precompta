@@ -466,8 +466,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
-  révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2 (le module) et R3
-  (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS ».
+  révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2, le module, le 10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3
+  (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -767,7 +767,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   l'exercice suivant. Seule `justifier_solde` l'écrit — treize refus dans un ordre fixé, sous le verrou de la
   validation puis celui de la révision, au solde de `solde_du_compte` (jumeau `soldeDuCompteCentimes`) ; une preuve
   RECOPIE l'empreinte de sa source, et une source citée ne se supprime plus (`garder_source_citee`, hypothèse Q8) :
-  les écrans qui suppriment devront le dire avant le clic (R3) → « LA BASE DES SOLDES RÉVISÉS ».
+  les écrans qui suppriment devront le
+  dire avant le clic (R3, par `refusDuRetraitDUneSource` ; « transformer en pièce » avant de créer la pièce) → « LA BASE DES SOLDES RÉVISÉS ».
+- **Le module de la révision** (ligne 41, R2 ; `lib/revision.ts`, `revisionCycles.ts`, `revisionPreuves.ts`, purs) :
+  l'état d'un solde se DÉDUIT de la chaîne de ses décisions, du solde du jour et des empreintes relues, jamais stocké —
+  une anomalie dont le solde a changé se revoit aussi ; chaque compte de bilan reçoit une preuve PROPOSÉE, qui dit ce
+  qu'elle établit et n'établit pas et ne recopie aucun texte saisi ; plusieurs relevés au 31 décembre ne s'additionnent
+  jamais (un relevé ne dit pas son compte) ; les refus de `justifier_solde` et de `garder_source_citee` se disent avant
+  le clic, confrontés au texte des fonctions et rejoués sur l'essai de R1 (`revisionEssai.test.ts`) ; tout compte des
+  classes 1 à 7 et tout contrôle de la Checklist et des préalables a son cycle, ou le test refuse, et seuls les comptes
+  de BILAN et les contrôles qui ont quelque chose à dire ouvrent un cycle → « LE MODULE DE LA RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -966,7 +975,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7455 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7749 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
