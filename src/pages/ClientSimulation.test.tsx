@@ -71,14 +71,22 @@ vi.mock('../lib/supabase', async () => {
         })
         return chaine
       },
+      // Les cases de l'appelant vues par la base (espace client, étape P7) : la case « Banque », comme la doublure du
+      // contexte — ce fichier vaut drapeau levé comme baissé (`COUVERTURE_EXPORTEE`). Ce qui distingue les deux états :
+      // espaceClientAvantCouverture.test.tsx et ClientSimulation.banque.test.tsx.
+      rpc: (nom: string) => Promise.resolve(nom === 'droits_sur_le_dossier'
+        ? { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
+        : { data: null, error: { message: `fonction inattendue : ${nom}` } }),
     },
   }
 })
 
 // Même doublure que les autres écrans client : un `AuthProvider` complet ferait dépendre le test
 // d'une session Supabase.
+// La case « Banque » sur le dossier (espace client, étape P7) : la simulation la demande dès que la couverture du relevé
+// est en base, et ce fichier garde ses CALCULS, pas sa fermeture.
 vi.mock('../context/AuthContext', () => ({
-  useAuth: () => ({ dossierActifId: 'dossier-de-test' }),
+  useAuth: () => ({ dossierActifId: 'dossier-de-test', droitsParDossier: { 'dossier-de-test': { ventes: false, banque: true } } }),
 }))
 
 // Typés sans `as` : le compilateur confronte chaque champ à la table.

@@ -17681,3 +17681,135 @@ tiennent la pièce, le dossier, la chaîne et le gel, les contraintes les format
 l'unicité d'une facture. La liste ISO 3166 du module et de la fonction vieillira : une mise à jour passe par les deux,
 et le test le dira. Restent ouverts les points NON VÉRIFIÉS 2 (le décret) et 5 (AE ou O hors de l'Union), et les
 questions Q3, Q7 et le point 15, pris comme hypothèses.
+
+### 10/10/2026 — LA BANQUE DU CLIENT EN BASE — ESPACE CLIENT, ÉTAPE P7 (PRÉPARÉE ET ÉPROUVÉE, NON APPLIQUÉE)
+
+(Deux migrations présentées au cabinet, NON appliquées : `banque_du_client` (23 338 caractères, empreinte du fichier
+`43acdab78bd45c77872a10de646bfd9e`) et `lectures_bancaires_au_droit_banque` (3 399 caractères,
+`26919b01787e7ce2cec59b165ebdbc71`), chacune avec sa version « à coller » et sa ligne d'historique, et leurs deux retours
+arrière ; l'essai neuf `supabase/essais/banqueClient.sql` ; `rls.sql` (la section P7, son en-tête) ; `ventilation.sql`
+et `reglementGroupe.sql` (un contrôle chacun) ; `src/lib/couvertureReleve.ts` et son test ; `src/lib/droitsAcces.ts` et
+son test ; l'Accueil, « Mes pièces » et « Ma simulation » du client et leurs tests, quatre fichiers de test au drapeau
+forcé, une doublure (`src/test/couvertureDuReleve.ts`) ; trois gardes (`ecransAvantLecture`, `ecrituresVerifiees`,
+`verrousEcritures`) ; `types.ts` ; RGPD.md. Et deux correctifs d'APPLICATION, à poser le jour de chaque migration.) La
+septième étape de l'espace client (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §1.2,
+§3.3, §3.6, §6.1, §7 ; EC-Q1, EC-Q5 et EC-Q6 sans réponse, leurs recommandations prises comme hypothèses : « Ma
+simulation » suit la case « Banque » ; le solde se LIT au relevé, mis à jour sur un clic — sans Edge Function ici ; un
+compte par dossier). Sources : règlement (UE) 2016/679, art. 5 § 1 c), 25 § 2 et 32 § 1 b) ; code monétaire et
+financier, art. L133-41 (le consentement du titulaire, [S8] de la conception) ; documentation de PostgreSQL, « Row
+Security Policies » (une ligne que la policy refuse en lecture n'est pas rendue, sans erreur) et « Writing SECURITY
+DEFINER Functions Safely ».
+
+**CE QUE LA BASE RENDAIT AU CLIENT, MESURÉ LE 10/10/2026** (production, en lecture ; aucun texte lu). Trois policies
+ouvrent la banque à TOUT accès client : « membres peuvent lire leurs lignes bancaires » (`lignes_bancaires`, SELECT,
+`{public}`), `ventilations_bancaires_lecture_client` et `reglements_groupes_lecture_client` (SELECT, `authenticated`),
+toutes sur `exists (memberships …)`. Le contrôle de solde (`controles_releves_bancaires`) n'a que la policy du cabinet.
+« Pas de montants » était une règle d'ÉCRAN : par l'API, le client lit chaque mouvement — date, libellés, montant,
+catégorie, compte, découpage d'une échéance — sans qu'aucun écran le lui montre, sauf « Ma simulation ». L'Accueil et
+« Mes pièces » lisaient TOUS les mouvements pour une seule chose : les MOIS couverts (`moisManquantsDe`). Un compte
+client, deux accès sur deux dossiers de test, aucune case cochée ; l'un des deux dossiers porte 330 mouvements.
+
+**L'ORDRE EST LA RÈGLE.** Une lecture que la RLS refuse rend ZÉRO ligne, sans erreur : resserrer les mouvements d'abord,
+c'est faire réclamer au client, par l'Accueil et « Mes pièces » d'avant, tous les mois de l'année. D'où deux migrations
+et une bascule entre elles. **La première AJOUTE, sans rien retirer** : `justificatifs_proposes` (une pièce proposée
+pour un mouvement ; elle se RETIRE — `retire_le`, `retire_par` —, jamais ne s'efface) et `precisions_mouvements` (le fil
+d'un mouvement ; un texte ne se modifie pas, le cabinet seul en supprime un hors sujet), lus par le cabinet et par la
+case « Banque » (`gere_la_banque`), écrits par TROIS fonctions seules — `proposer_justificatif`, `retirer_proposition`,
+`ecrire_precision_mouvement` —, le dossier annoncé en premier paramètre (patron d4 et R1), l'origine (client ou cabinet)
+déduite de l'appelant, les refus dans un ordre écrit au-dessus de chacune (42501 aux mêmes mots pour un accès refusé et
+un dossier inexistant, 22023 pour le reste, l'auteur d'un retrait en 42501), sous le verrou partagé de la validation
+(un mouvement d'un exercice figé ne reçoit plus de proposition) ; leurs gardes refusent une ligne qui ne porte pas sur
+son dossier, une proposition qui change autrement qu'en se retirant une fois, et toute suppression qui n'est pas une
+cascade ; la lecture du contrôle de solde par la case ; et `couverture_du_releve`, les mois où le relevé porte un
+mouvement, pour TOUT accès du dossier. **La seconde RESSERRE** les trois lectures au droit (`client_du_dossier(…,
+'banque')`), celle des mouvements passant de `public` à `authenticated` (son prédicat appelle une fonction que
+l'anonyme n'exécute pas). Écartés : la proposition rangée dans `piece_commentaires` (une parole n'est pas un lien, et
+elle aurait ouvert un fil au client sans la case) ; l'écriture DIRECTE par le cabinet (deux chemins vers la même ligne) ;
+une couverture rendue en lignes (PostgREST plafonne les lignes sans le dire, pas une valeur : d'où un `date[]`) ; un
+mois tronqué sur le `date` (la variante à fuseau de `date_trunc`, celui de la session : tronqué sur un `timestamp` sans
+fuseau) ; resserrer et ajouter d'un seul tenant (l'écran d'avant aurait réclamé tous les mois).
+
+**L'APPLICATION, DERRIÈRE UN DRAPEAU** (`COUVERTURE_EXPORTEE`, comme `RETRAIT_EXPORTE`). Baissé — tant que l'export ne
+porte pas la fonction —, rien ne change. Levé, l'Accueil et « Mes pièces » lisent la couverture (`lireLaCouverture` :
+un refus ou une réponse illisible se SIGNALENT, comme une liste lue en partie, jamais un relevé vide) ; « Ma
+simulation » se tait sans la case, en disant pourquoi et quoi faire, et ne demande rien à la base ; avec la case lue à
+la connexion, elle redemande la case à la BASE dans la même vague de lectures (`droits_sur_le_dossier`) — une
+application installée reste ouverte des jours, et une case retirée entre-temps ferait calculer, sur un relevé que la
+RLS rend vide, un chiffre plausible et faux ; un refus ou une réponse d'une autre forme FERMENT. Les phrases de l'onglet
+Accès suivent le drapeau (`lib/droitsAcces.ts`), mêmes mots qu'avant tant qu'il est baissé. `couvertureReleve.test.ts`
+vire au rouge le jour où l'export porte la fonction et que le drapeau reste baissé.
+
+**LA BASCULE, SIMULÉE AVANT D'EXISTER.** Le fichier de la migration posé dans l'export, le drapeau levé, la suite
+ENTIÈRE : 35 tests rouges sur 7 459, en quatre familles, toutes trouvées avant le jour. (1) `ecransAvantLecture`, trois
+écrans : `.rpc(…).then(lecture)` sur la doublure qui retient — dont le `then` ne rend rien — rendait `undefined`. **UN
+CONSTRUCTEUR DE REQUÊTE N'EST PAS UNE PROMESSE** : `.then(f)` rend ce que SON `then` rend ; les deux lectures passent la
+requête à un module qui l'ATTEND (`await`), et une requête qui lève tombe du côté signalé ou fermé. (2)
+`ecrituresVerifiees` et `verrousEcritures` comptent tout `.rpc(` comme une écriture possible — rouges dans les DEUX
+états, gardes de source : deux consommateurs nommés, deux portes déclarées « lecture », chacun avec sa raison et son
+nombre. (3) Les doublures des trois écrans ne savaient répondre qu'à un état : elles rendent désormais la couverture
+déduite des MÊMES mouvements, refusée, retenue et notée avec eux, et la case « Banque » ; ce qui distingue les deux
+états vit dans des fichiers au drapeau FORCÉ (un baissé, trois levés), qui survivent à la bascule. (4) Le plan de
+sauvegarde doit porter les deux registres le jour où l'export les porte — préparé en correctif d'application, avec
+`restauration.sql` et les ancres des défauts plantés de `restaurationEssai.test.ts`, qui visent la fin de l'ordre.
+Rejoué, l'état simulé : toute la suite verte, sauf ces deux ancres, puis, corrigées, les huit fichiers de la sauvegarde
+et du drapeau.
+
+**LA RÉPLIQUE.** Copie à froid d'une grappe d'agent, ses neuf familles (`signature.sql`) égales à la production,
+109 migrations — la 109e collée le matin même, absente de l'export. **LA PRODUCTION A BOUGÉ PENDANT L'ÉTAPE** : une
+110e, `pieces_hors_de_france` (étape e2 de l'e-reporting), sans objet commun avec P7 ; son fichier, à l'empreinte de
+l'historique, posé sur la réplique : neuf familles égales de nouveau, et `banqueClient.sql` et `rls.sql` rejoués à 110
+rendent les mêmes verdicts. **PIÈGE : LA GRAPPE ÉTAIT EN SQL_ASCII**, la
+production en UTF8 : `length()` y compte des octets (deux mille « é » y valent quatre mille), et `signature.sql` ne
+voit pas l'encodage. Recopiée en UTF8 (`pg_dump -E UTF8`, base `template0`) ; une contrainte réécrite par la
+restauration (`pieces_identite_numero`, un AND aplati), remise du texte de sa migration ; neuf familles égales de
+nouveau. Semée de données fictives à la forme de la production.
+
+**LES PREUVES, TOUTES SUR LA RÉPLIQUE.** `banqueClient.sql` (sept profils, chaque refus exigé par son code ET sa raison,
+aucune écriture directe, rien de resté ; aucun mot de suppression, même dans un texte attendu — la commande d'une policy
+s'y lit par ses trois premières lettres —, puisqu'il se joue en production par l'outil d'exécution) : 86 verdicts, 0 en
+faute après les deux migrations ; exactement trois en faute après la première seule (les contrôles du resserrement) ;
+ESSAI_IMPOSSIBLE sans elles. `rls.sql` : la section P7 tire
+le domaine « Banque » du CATALOGUE (les policies de lecture qui portent la case) et le confronte aux six tables
+attendues ; 3bis (sans la case, aucune ligne — et avec la case « Ventes » seule non plus), son contrôle POSITIF 3bis+,
+4bis (avec la case, aucune écriture directe), M3bis-a, M3bis-b (« banque » remplacé par « membre »), M4bis. Si le
+correctif est fusionné avant les migrations, tout rejeu de `rls.sql` aurait montré la ligne du domaine en faute — or une
+faute y désigne une policy à reprendre : tant que la première migration n'est pas en base, une ligne « en attente » le
+DIT, sans faute ; entre les deux, la ligne du domaine EST en faute (le resserrement manque). Avant : 25 lignes, 0 en
+faute, 16 mutations sur 16 ; après la première : 1 en faute ; après les deux : 28 lignes (63 tables à 110 migrations,
+55 portant un `dossier_id`), 0 en faute, 19 sur 19. Quarante-sept mutations des migrations (policies, contrôles d'accès, ordre des
+refus, exercice figé, doublon actif, origine, auteur du retrait, blancs, longueur, couverture sans contrôle, au jour, au
+droit « Banque » ou à l'anonyme, gardes neutralisées, unicité, contraintes, RLS absente, volatilité, `security
+invoker`) : toutes mordent. `connexionBancaire.sql` 22 sur 22 avant et après ; `ventilation.sql` et
+`reglementGroupe.sql`, verts avant, perdent APRÈS le resserrement leur contrôle « le client lit ses parts » (0 des
+siennes) : adaptés — la case posée le temps de leur sous-transaction —, verts avant ET après. Dix-huit autres essais :
+sorties identiques avant et après. Restauration (`restauration.sql`, plan étendu à 61 tables) sur le dossier du client
+semé PAR LES FONCTIONS de deux propositions — une retirée par le cabinet — et de deux précisions : 56 tables
+IDENTIQUES, aucun arrêt. Les trois contrôles de l'export, joués sur la réplique munie d'un historique fait des mêmes
+textes : inventaire égal avant (1 392 objets), après la première (1 442) et après les deux ; socle égal avant et après
+la première (78, `f01053c7…`), et **APRÈS LA SECONDE, LE SOCLE DÉRIVE** — il rend toutes les policies de
+`lignes_bancaires` depuis le catalogue (`91ae95ec…` contre `f01053c7…`) : régénérée, la policy des mouvements le
+ramène à l'égalité (correctif d'application de la seconde ; elle référence désormais `client_du_dossier`, d'où un rejeu
+du socle après l'étape P1). Les versions « à coller » passent sur une réplique munie d'un historique, et rendent les
+empreintes des fichiers. **PIÈGE** : collées dans la MÊME seconde, la seconde bute sur la clé de l'historique (version à
+la seconde) et s'annule entière — sans dommage. Les deux retours arrière, joués : après celui du resserrement, neuf
+familles égales à l'état « première migration seule » ; après celui de la première (DESTRUCTIF, écrit pour être connu,
+jamais appliqué sans accord), égales à l'état d'avant l'étape.
+
+**DANS LE CODE** : `tsc -b`, le lint (63 avertissements, inchangé) et le build verts ; les 25 erreurs connues du
+compilateur des Edge Functions, aucune touchée ; 34 tests de plus (7 462 sur ef86290 : la suite entière verte sous
+Paris), les seize fichiers touchés verts sous Paris, UTC, New York et Auckland. Dix-huit mutations du code (module,
+écrans, onglet Accès, gardes, doublure ; quatre jouées drapeau levé, parce que leur code ne sert qu'après la bascule) :
+toutes mordent. Le banc, sur un port à part (le banc partagé vise un port qu'un autre agent peut servir) : 0 débordement
+à 1440, 1280, 1024, 720 et 390 pixels ; la vitrine du client sans erreur, et, la bascule simulée (le faux Supabase du
+banc répond aux deux fonctions — correctif d'application), l'Accueil rend les mêmes chiffres tirés de la couverture et
+« Ma simulation » se tait en disant pourquoi. Les débordements des écrans du client ne se mesurent pas : le banc ne les
+visite que pour les photographier.
+
+**CE QUI RESTE.** Le oui ou le non du cabinet à chaque migration ; EC-Q1 ; les relevés déposés EN FICHIER restent
+lisibles par tout accès du dossier (la case porte sur les mouvements que l'application tient) : à trancher. Le jour de
+la première : le fichier d'export, `application_m1.patch` (le drapeau, le plan de sauvegarde, `restauration.sql`, deux
+ancres), les advisors (quatre fonctions de plus, trois qui écrivent chacune avec son contrôle). Le jour de la seconde :
+son fichier d'export, `application_m2.patch` (le socle), `rls.sql` et `banqueClient.sql` rejoués en production. P9
+(« Ma banque ») : l'écran qui proposera et précisera — et, avec lui, les confirmations de suppression d'une pièce ou
+d'un mouvement devront NOMMER les propositions et les précisions qui partent en cascade. L'entrée « Ma simulation » de
+la navigation du client reste visible sans la case (`Layout.tsx`, hors de l'étape) : l'écran dit pourquoi il se tait.

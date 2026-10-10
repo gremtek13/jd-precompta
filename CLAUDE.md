@@ -334,6 +334,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
   `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` seront le prédicat des étapes
   suivantes ; ils n'ouvrent encore RIEN, et l'onglet le dit → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  **La banque sous la case « Banque »** (P7, préparée le 10/10/2026, non appliquée) : un ordre, et il est la règle —
+  d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule de
+  l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un écran
+  d'avant croirait le relevé vide → « LA BANQUE DU CLIENT EN BASE ».
   **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
   de son relevé et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit →
   « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes du cabinet** vivent
@@ -479,6 +483,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT » ; P1, les droits d'un accès, en base, dans
   l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1 prise comme hypothèse ;
   l'invariant 3 bis de `rls.sql` attend P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  P7, la banque du client en base, préparée et éprouvée sur une réplique le 10/10/2026, NON APPLIQUÉE : deux migrations
+  présentées au cabinet — `banque_du_client` (deux registres écrits par trois fonctions, la couverture du relevé), puis,
+  la bascule `COUVERTURE_EXPORTEE` en ligne, `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au
+  droit « Banque ») ; « Ma simulation » suit la case (EC-Q1 prise comme hypothèse) → « LA BANQUE DU CLIENT EN BASE ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
@@ -551,6 +559,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `dossiers` remplissent `cabinet_id` et `code_email` seulement s'ils sont nuls.
 - **`pack_pieces` a été supprimée** (jamais écrite) : la composition d'un pack n'est pas modélisée. Avant de supprimer
   une table jugée morte, réunir les six preuves (voir les règles en fin de fichier).
+- **Un drapeau qui attend une migration se bascule d'abord en SIMULATION** (le fichier posé dans l'export, le drapeau
+  levé, la suite ENTIÈRE) : ce que la bascule demandera — gardes de source, doublures, plan de sauvegarde, ancres des
+  défauts plantés — se voit avant elle, et se prépare en correctif d'application ; une réplique se monte en UTF8 (en
+  SQL_ASCII, `length()` compte des octets, et `signature.sql` ne voit pas l'encodage) → « LA BANQUE DU CLIENT EN BASE ».
 
 ### Lectures et écritures Supabase
 
@@ -715,6 +727,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   base ne protège pas des branches parties ensemble.
   Entre deux lots, rien ne la réserve : le même fichier déposé deux fois, le premier encore en vol, entre deux fois
   (question au cabinet → « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU »).
+- **Un constructeur de requête n'est pas une promesse** : `.then(f)` sur lui rend ce que SON `then` rend — rien, pour
+  la doublure qui retient (`clientRetenu`). Un module qui reçoit une requête l'ATTEND (`await`), et une requête qui lève
+  tombe du côté signalé (`lireLaCouverture`, `lireLeDroitBanque`) → « LA BANQUE DU CLIENT EN BASE ».
 
 ### Comptabilité
 

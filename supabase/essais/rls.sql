@@ -16,9 +16,15 @@
 --   3. Un client ne voit, dans chaque table portant un `dossier_id`, que des lignes de SES dossiers.
 --   3ter. Le même, quand ses accès portent les deux droits (« Ventes » et « Banque », espace client P1) — et il voit
 --      bien ses pièces : un profil devenu aveugle passerait la boucle à vide.
+--   3bis (Banque). Sans la case « Banque » (espace client P7), un accès ne voit AUCUNE ligne des tables de la banque —
+--      lues au catalogue : celles qu'une policy ouvre au droit —, pas même de son dossier ; avec elle, toutes celles de
+--      ses dossiers (le contrôle POSITIF : sans lui, une table devenue illisible à tous passerait 3bis). Section P7 ;
+--      tant que ses migrations ne sont pas en base, une ligne « en attente » le dit, sans être en faute.
 --   4. Un client ne peut pas écrire ce qui appartient au cabinet.
 --   4ter. Ses accès portant les deux droits, il n'écrit directement ni une facture ni un mouvement du relevé (42501) :
 --      les étapes suivantes ouvriront des LECTURES à ces droits, jamais une écriture directe.
+--   4bis (Banque). Avec la case « Banque », il n'écrit directement dans aucune des tables de la banque (42501 à
+--      l'insertion, aucune ligne touchée à la mise à jour) : il propose, précise et retire par les fonctions. Section P7.
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -172,6 +178,20 @@
 -- (39 000 caractères, empreinte b2ffbdc886c10091a6b3c81f6c8db862, rendue par la base), sur la production à 110
 -- migrations : 24 lignes de verdict (61 tables du schéma, dont 53 portant un `dossier_id`, 4 profils, et les
 -- contrôles du stockage), 0 en faute, et 16 mutations sur 16 qui mordent.
+--
+-- 10/10/2026 — PRÉPARÉ POUR L'ÉTAPE P7, JOUÉ SUR LA RÉPLIQUE SEULEMENT (migrations `banque_du_client` et
+-- `lectures_bancaires_au_droit_banque`, présentées au cabinet, non appliquées) : le domaine « Banque » — tiré du
+-- catalogue, les tables dont une policy de lecture porte `client_du_dossier(…, 'banque')` ou `gere_la_banque`, et
+-- confronté aux six attendues — reçoit 3bis (sans la case, aucune ligne de ces tables, même de son dossier), son contrôle
+-- positif 3bis+ (avec elle, toutes celles de ses dossiers), 4bis (avec elle, aucune écriture directe : proposer et
+-- préciser passent par les fonctions) et les mutations M3bis-a, M3bis-b et M4bis. Réplique de l'étape (neuf familles
+-- égales à la production à 110 migrations, `pieces_hors_de_france` comprise, en UTF8), une ligne d'essai dans chacune des
+-- six tables : AVANT les migrations, 25 lignes de verdict, 0 en faute — dont « en attente », qui dit l'étape absente sans
+-- être une faute —, et 16 mutations sur 16 ; après la PREMIÈRE seule, la ligne du domaine EN FAUTE (trois tables sur six
+-- portent la case : le resserrement manque) ; après les DEUX, 28 lignes de verdict (63 tables du schéma, dont 55 portant
+-- un `dossier_id`, + 3 buckets, 4 profils), 0 en faute, et 19 mutations sur 19 — les mêmes verdicts qu'à 109 migrations.
+-- En production, le passage se fait après la seconde migration. Ce que les fonctions refusent et acceptent, profil par
+-- profil, est éprouvé par `banqueClient.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -801,6 +821,210 @@ begin
      and polcmd = 'd'
      and pg_get_expr(polqual, polrelid) like '%admin\_du\_dossier%';
   insert into rls_mutation values ('MS5 — S5 posé sur une policy inexistante', '0 trouvée', n || ' trouvée(s)', n = 0);
+end $$;
+
+-- ═══ P7 — La banque du client : 3bis, son contrôle positif, 4bis, et leurs mutations ═══════════════
+--
+-- Les tables de la banque sont celles qu'une policy de lecture ouvre au droit « Banque » (`client_du_dossier(…,
+-- 'banque')` ou `gere_la_banque`), LUES AU CATALOGUE : une table qu'une migration future y ajoutera est attrapée sans
+-- qu'on pense à l'inscrire ici. Les six de l'étape P7 doivent en être — sans quoi les deux migrations de P7 ne sont pas
+-- (toutes) en base, et la section le dit au lieu de lever.
+--
+-- Tout se joue dans UNE sous-transaction annulée : chaque table de la banque reçoit une ligne d'essai dans un dossier du
+-- client et une dans un autre dossier (3bis ne prouve rien sur une table vide), les droits du client sont posés puis
+-- retirés, et une policy est réécrite le temps d'une mutation. Les verdicts voyagent dans des variables, comme ceux de
+-- 3ter. Aucune suppression.
+--
+--   3bis   sans la case « Banque » — et AVEC la case « Ventes », qui n'ouvre rien ici —, le client ne voit aucune ligne ;
+--   3bis+  avec la case « Banque », il voit TOUTES les lignes de ses dossiers, table par table (le contrôle positif) ;
+--   4bis   avec la case, il n'écrit directement dans aucune des six : l'insertion refusée en 42501, la mise à jour sans
+--          ligne touchée ;
+--   M3bis-a  le contrôle positif joué SANS la case : il doit tomber ;
+--   M3bis-b  le prédicat de chaque policy de la banque où « banque » devient « membre » (la mutation de la conception,
+--            §3.7) : 3bis doit voir des lignes ;
+--   M4bis  les écritures de 4bis tentées par le chef : elles doivent passer — sinon le refus de 4bis ne dirait rien du
+--          client, seulement de lignes que personne ne pourrait écrire.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  autre_dossier     uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  banque_attendues text[] := array['controles_releves_bancaires', 'justificatifs_proposes', 'lignes_bancaires',
+                                   'precisions_mouvements', 'reglements_groupes', 'ventilations_bancaires'];
+  banque_lues text[];
+  mvt_client uuid; mvt_client_2 uuid; mvt_autre uuid; piece_client uuid; piece_autre uuid;
+  t record; p record; n bigint; ses bigint; hors bigint; touchees int; motif text;
+  verdicts jsonb := '[]'::jsonb;  -- {controle, cible, observe, ok}
+  mutations jsonb := '[]'::jsonb; -- {mutation, attendu, observe, mord}
+  en_faute int; obs text;
+  -- Les écritures directes de 4bis et M4bis : une ligne VALIDE par table, pour que seul le droit puisse la refuser.
+  ecritures text[];
+begin
+  select coalesce(array_agg(distinct p2.tablename::text order by p2.tablename::text), '{}') into banque_lues
+    from pg_policies p2
+   where p2.schemaname = 'public' and p2.cmd in ('SELECT', 'ALL') and 'authenticated' = any (p2.roles)
+     and (p2.qual like '%client_du_dossier(dossier_id, ''banque''%' or p2.qual like '%gere_la_banque(dossier_id)%');
+  if to_regclass('public.justificatifs_proposes') is null then
+    -- L'étape P7 n'est pas en base (sa première migration crée cette table) : 3bis, 3bis+ et 4bis l'attendent, et la
+    -- ligne le DIT sans être en faute — ce fichier se rejoue entre-temps après d'autres migrations, et une faute y désigne
+    -- une policy à reprendre. Dès que la table existe, le domaine doit être complet : entre les deux migrations, la ligne
+    -- du domaine est en faute, et c'est le resserrement qui manque.
+    insert into rls_verdict values ('3bis. (Banque) en attente : les migrations de l''étape P7 ne sont pas en base',
+      'le domaine (catalogue)', array_to_string(banque_lues, ', '), true);
+    return;
+  end if;
+  insert into rls_verdict values ('3bis. (Banque) les tables de la banque se lisent au droit « Banque »', 'le domaine (catalogue)',
+    array_to_string(banque_lues, ', '), banque_attendues <@ banque_lues);
+  if not (banque_attendues <@ banque_lues) then
+    -- Les migrations de P7 ne sont pas (toutes) en base : rien de ce qui suit n'a de sens, et la ligne ci-dessus le dit.
+    return;
+  end if;
+
+  begin
+    -- ── Le jeu ──
+    insert into lignes_bancaires (dossier_id, date, libelle, montant) values (dossier_du_client, '2026-01-15', 'essai rls banque', -12.34)
+      returning id into mvt_client;
+    insert into lignes_bancaires (dossier_id, date, libelle, montant) values (dossier_du_client, '2026-01-16', 'essai rls banque 2', -5.67)
+      returning id into mvt_client_2;
+    insert into lignes_bancaires (dossier_id, date, libelle, montant) values (autre_dossier, '2026-01-15', 'essai rls banque', -12.34)
+      returning id into mvt_autre;
+    insert into pieces (dossier_id, storage_path, nom_fichier) values (dossier_du_client, dossier_du_client || '/essai-rls-banque.pdf', 'essai-rls-banque.pdf')
+      returning id into piece_client;
+    insert into pieces (dossier_id, storage_path, nom_fichier) values (autre_dossier, autre_dossier || '/essai-rls-banque.pdf', 'essai-rls-banque.pdf')
+      returning id into piece_autre;
+    insert into ventilations_bancaires (dossier_id, ligne_bancaire_id, part_personnelle, montant) values
+      (dossier_du_client, mvt_client, true, -12.34), (autre_dossier, mvt_autre, true, -12.34);
+    insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values
+      (dossier_du_client, mvt_client, piece_client, -12.34), (autre_dossier, mvt_autre, piece_autre, -12.34);
+    insert into controles_releves_bancaires (dossier_id, source_fichier, solde_initial, solde_final, somme_mouvements, ecart, coherent) values
+      (dossier_du_client, 'essai-rls-banque.csv', 0, -12.34, -12.34, 0, true), (autre_dossier, 'essai-rls-banque.csv', 0, -12.34, -12.34, 0, true);
+    insert into justificatifs_proposes (dossier_id, ligne_bancaire_id, piece_id, auteur_id, origine) values
+      (dossier_du_client, mvt_client, piece_client, client, 'client'), (autre_dossier, mvt_autre, piece_autre, chef, 'cabinet');
+    insert into precisions_mouvements (dossier_id, ligne_bancaire_id, auteur_id, origine, texte) values
+      (dossier_du_client, mvt_client, client, 'client', 'essai rls banque'), (autre_dossier, mvt_autre, chef, 'cabinet', 'essai rls banque');
+
+    -- ── 3bis : la case « Ventes » sans la case « Banque » ──
+    update memberships set droit_ventes = true, droit_banque = false where user_id = client;
+    for t in select unnest(banque_lues) as nom loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := 0; end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', '3bis. (Banque) sans la case « Banque », le client ne voit aucune ligne',
+        'cible', t.nom, 'observe', n::text || ' vue(s)', 'ok', n = 0);
+    end loop;
+
+    -- ── 3bis+ : avec la case « Banque », toutes les lignes de ses dossiers ──
+    update memberships set droit_banque = true where user_id = client;
+    for t in select unnest(banque_lues) as nom loop
+      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)',
+        t.nom, client) into ses;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := -1; end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', '3bis+. (Banque) avec la case « Banque », le client voit toutes les lignes de ses dossiers',
+        'cible', t.nom, 'observe', n::text || ' vue(s) sur ' || ses::text, 'ok', ses > 0 and n = ses);
+    end loop;
+
+    -- ── 4bis : avec la case, aucune écriture directe ──
+    ecritures := array[
+      format('insert into lignes_bancaires (dossier_id, date, libelle, montant) values (%L, %L, %L, -1)', dossier_du_client, '2026-01-17', 'essai 4bis'),
+      format('insert into ventilations_bancaires (dossier_id, ligne_bancaire_id, part_personnelle, montant) values (%L, %L, true, -5.67)', dossier_du_client, mvt_client_2),
+      format('insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values (%L, %L, %L, -5.67)', dossier_du_client, mvt_client_2, piece_client),
+      format('insert into controles_releves_bancaires (dossier_id, source_fichier, solde_initial, solde_final, somme_mouvements, ecart, coherent) values (%L, %L, 0, 1, 1, 0, true)', dossier_du_client, 'essai-4bis.csv'),
+      format('insert into justificatifs_proposes (dossier_id, ligne_bancaire_id, piece_id, auteur_id, origine) values (%L, %L, %L, %L, %L)', dossier_du_client, mvt_client_2, piece_client, client, 'client'),
+      format('insert into precisions_mouvements (dossier_id, ligne_bancaire_id, auteur_id, origine, texte) values (%L, %L, %L, %L, %L)', dossier_du_client, mvt_client_2, client, 'client', 'essai 4bis')];
+    for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
+      motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+        execute t.sql;
+        motif := 'ACCEPTÉ';
+        raise exception 'ANNULATION_ESSAI_4BIS';
+      exception when others then
+        if motif is null then motif := sqlstate; end if;
+      end;
+      reset role;
+      touchees := 0;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+        execute format('update public.%I set dossier_id = dossier_id where dossier_id = %L', t.nom, dossier_du_client);
+        get diagnostics touchees = row_count;
+        raise exception 'ANNULATION_ESSAI_4BIS';
+      exception when others then null;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', '4bis. (Banque) avec la case « Banque », le client n''écrit directement nulle part',
+        'cible', t.nom || ' (insert, update)', 'observe', 'insert : ' || motif || ', update : ' || touchees || ' ligne(s)',
+        'ok', motif = '42501' and touchees = 0);
+    end loop;
+
+    -- ── M3bis-a : le contrôle positif joué sans la case ──
+    update memberships set droit_banque = false where user_id = client;
+    en_faute := 0;
+    for t in select unnest(banque_lues) as nom loop
+      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)',
+        t.nom, client) into ses;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := -1; end;
+      reset role;
+      if not (ses > 0 and n = ses) then en_faute := en_faute + 1; end if;
+    end loop;
+    mutations := mutations || jsonb_build_object('mutation', 'M3bis-a — le contrôle positif de 3bis joué sans la case « Banque »',
+      'attendu', 'les ' || cardinality(banque_lues) || ' tables en faute', 'observe', en_faute || ' tables', 'mord', en_faute = cardinality(banque_lues));
+
+    -- ── M3bis-b : « banque » devient « membre » dans chaque policy de la banque ──
+    for p in select p2.policyname, p2.tablename, p2.qual from pg_policies p2
+              where p2.schemaname = 'public' and p2.tablename = any (banque_lues) and p2.cmd in ('SELECT', 'ALL')
+                and (p2.qual like '%client_du_dossier(dossier_id, ''banque''%' or p2.qual like '%gere_la_banque(dossier_id)%') loop
+      execute format('alter policy %I on public.%I using (%s)', p.policyname, p.tablename,
+        replace(replace(p.qual, '''banque''', '''membre'''), 'gere_la_banque(dossier_id)',
+                '(admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, ''membre''))'));
+    end loop;
+    en_faute := 0;
+    for t in select unnest(banque_lues) as nom loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := 0; end;
+      reset role;
+      if n > 0 then en_faute := en_faute + 1; end if;
+    end loop;
+    mutations := mutations || jsonb_build_object('mutation', 'M3bis-b — « banque » remplacé par « membre » dans les policies de la banque',
+      'attendu', 'les ' || cardinality(banque_lues) || ' tables en faute', 'observe', en_faute || ' tables', 'mord', en_faute = cardinality(banque_lues));
+
+    -- ── M4bis : les écritures de 4bis tentées par le chef ──
+    obs := ''; en_faute := 0;
+    for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
+      motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+        execute t.sql;
+        motif := 'ACCEPTÉ';
+        raise exception 'ANNULATION_ESSAI_4BIS';
+      exception when others then
+        if motif is null then motif := sqlstate; end if;
+      end;
+      reset role;
+      if motif <> 'ACCEPTÉ' then en_faute := en_faute + 1; obs := obs || t.nom || ' ' || motif || ' '; end if;
+    end loop;
+    mutations := mutations || jsonb_build_object('mutation', 'M4bis — les écritures de 4bis sous le chef',
+      'attendu', 'ACCEPTÉ ' || cardinality(ecritures) || ' fois', 'observe', case when en_faute = 0 then 'ACCEPTÉ ' || cardinality(ecritures) || ' fois' else obs end,
+      'mord', en_faute = 0);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null;
+  end;
+  reset role;
+  insert into rls_verdict
+    select v.controle, v.cible, v.observe, v.ok from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation
+    select m.mutation, m.attendu, m.observe, m.mord from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :

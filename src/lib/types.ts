@@ -723,6 +723,37 @@ export interface PieceCommentaire {
   created_at: string
 }
 
+// La pièce proposée comme justificatif d'un mouvement du relevé (espace client, étape P7, migration banque_du_client) —
+// par le cabinet ou par un accès qui porte la case « Banque », et par `proposer_justificatif` seule. Elle n'écrit rien
+// dans le relevé : le rapprochement reste au cabinet. Elle ne se modifie ni ne se supprime : elle se RETIRE
+// (`retirer_proposition`), une fois, `retire_le` et `retire_par` ensemble ; elle part avec sa pièce, son mouvement ou
+// son dossier. Une seule proposition active d'une pièce pour un mouvement. L'origine est déduite de l'appelant.
+export interface JustificatifPropose {
+  id: string
+  dossier_id: string
+  ligne_bancaire_id: string
+  piece_id: string
+  // Un repère d'audit sans clé étrangère : retirer le compte d'une personne partie n'efface pas qui a proposé.
+  auteur_id: string
+  origine: 'client' | 'cabinet'
+  created_at: string
+  retire_le: string | null
+  retire_par: string | null
+}
+
+// Une précision sur un mouvement du relevé — la question du cabinet, la réponse d'un accès qui porte la case « Banque »
+// (espace client, étape P7) —, écrite par `ecrire_precision_mouvement` seule. Elle ne se modifie pas ; le cabinet seul
+// retire un message hors sujet. Le texte, tel qu'écrit, tient en 2 000 caractères et n'est pas fait que de blancs.
+export interface PrecisionMouvement {
+  id: string
+  dossier_id: string
+  ligne_bancaire_id: string
+  auteur_id: string
+  origine: 'client' | 'cabinet'
+  texte: string
+  created_at: string
+}
+
 export type VehiculeType = 'aucun' | 'personnel_ik' | 'societe'
 
 // Un véhicule du cadre 7 du 2035-B (« Barèmes kilométriques »), pour un exercice donné. Le

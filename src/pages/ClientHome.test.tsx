@@ -63,6 +63,14 @@ vi.mock('../lib/supabase', () => ({
       })
       return chaine
     },
+    // La couverture du relevé (espace client, étape P7) : déduite des mêmes mouvements, refusée avec eux — ce fichier vaut
+    // drapeau levé comme baissé (`COUVERTURE_EXPORTEE`, voir src/test/couvertureDuReleve.ts).
+    rpc: async (nom: string) => {
+      const { couvertureDe } = await import('../test/couvertureDuReleve')
+      if (nom !== 'couverture_du_releve') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
+      if (faux.refusees.has('lignes_bancaires')) return { data: null, error: { message: 'permission denied' } }
+      return { data: couvertureDe(faux.parTable.lignes_bancaires ?? []), error: null }
+    },
   },
 }))
 

@@ -13,6 +13,10 @@ import type {
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
+import { droitsSur } from '../lib/droitsAcces'
+import {
+  COUVERTURE_EXPORTEE, SIMULATION_BANQUE_INVERIFIABLE, SIMULATION_SANS_BANQUE, lireLeDroitBanque, simulationOuverte,
+} from '../lib/couvertureReleve'
 
 // Vue client, lecture seule, de l'estimation indicative que le cabinet tient dans EstimationTab —
 // mêmes chiffres, mêmes règles de calcul (lib/estimation.ts, un seul endroit si elles changent), mais
@@ -20,9 +24,21 @@ import { messageErreur } from '../lib/messageErreur'
 // des outils de travail du cabinet, pas quelque chose à manipuler depuis le téléphone d'un client. Le
 // client voit où il en est, il ne modifie rien ici — cohérent avec le reste de l'app côté client
 // (dépôt de pièces mis à part, rien ne s'écrit sans un clic explicite du cabinet).
+//
+// SOUS LA CASE « BANQUE » (espace client, étape P7 ; hypothèse EC-Q1). La simulation se calcule SUR LA BANQUE — le chiffre
+// d'affaires encaissé, les cotisations prélevées —, et la base ne rend plus les mouvements qu'à un accès qui porte la
+// case. Une lecture que la RLS refuse rend ZÉRO ligne, sans erreur : sans la case, l'écran calculerait une simulation
+// plausible et basse. Dès que la couverture du relevé est en base (`COUVERTURE_EXPORTEE`), il se TAIT donc, en le
+// disant, et ne lit rien. La case se lit deux fois : à la connexion (AuthContext), pour ne rien demander sans elle ; puis
+// à la base, dans la même vague de lectures (`droits_sur_le_dossier`), parce qu'une application installée reste ouverte
+// des jours et qu'une case retirée entre-temps ne se verrait qu'à la connexion suivante.
 export default function ClientSimulation() {
-  const { dossierActifId } = useAuth()
+  const { dossierActifId, droitsParDossier } = useAuth()
   const dossierId = dossierActifId
+  // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
+  const ouverte = simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
+  // Non nul quand la BASE dit que la case manque, ou qu'elle n'a pas pu le dire : la simulation se tait, avec sa raison.
+  const [fermee, setFermee] = useState<string | null>(null)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   // À part : « aucun repère » ne se dit que d'une liste lue en entier. Vide faute de lecture, elle ne
@@ -55,11 +71,12 @@ export default function ClientSimulation() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!dossierId) return
+    // Sans la case « Banque », rien n'est demandé à la base : l'écran le dit (plus bas).
+    if (!dossierId || !ouverte) return
     async function load() {
       const [
         lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements,
-        lectureCategories, lectureVentilations, lectureReglements,
+        lectureCategories, lectureVentilations, lectureReglements, droitDeLaBase,
       ] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -100,7 +117,18 @@ export default function ClientSimulation() {
           supabase.from('reglements_groupes').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
         ),
+        // La case « Banque » vue par la BASE, dans la même vague que les lectures qu'elle autorise.
+        COUVERTURE_EXPORTEE
+          ? lireLeDroitBanque(supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }))
+          : Promise.resolve({ banque: true, motif: null }),
       ])
+      if (!droitDeLaBase.banque) {
+        // Ce qui a été lu n'est pas montré : sans la case, la base a pu rendre un relevé vide sans le dire.
+        setFermee(droitDeLaBase.motif ? SIMULATION_BANQUE_INVERIFIABLE : SIMULATION_SANS_BANQUE)
+        setLoading(false)
+        return
+      }
+      setFermee(null)
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
       setMouvementsRapproches(lecturePaiements.lignes)
@@ -129,10 +157,20 @@ export default function ClientSimulation() {
       setLoading(false)
     }
     load()
-  }, [dossierId])
+  }, [dossierId, ouverte])
 
   if (!dossierId) {
     return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
+  }
+  // Fermée par la case lue à la connexion (rien n'a été demandé), ou par la base au moment de la lecture.
+  const raisonDeSeTaire = !ouverte ? SIMULATION_SANS_BANQUE : fermee
+  if (raisonDeSeTaire) {
+    return (
+      <>
+        <div className="topbar"><h1>Ma simulation</h1></div>
+        <div className="card"><p style={{ margin: 0 }}>{raisonDeSeTaire}</p></div>
+      </>
+    )
   }
   if (loading) return <p className="muted">Chargement…</p>
 
