@@ -163,7 +163,8 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes ;
+                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes,
+                    droitsAcces ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -249,9 +250,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Un prédicat de policy ne doit JAMAIS pouvoir être vrai sans session** : une policy sans `to` vise `public`, donc
   `anon` (`dossier_id is null or …` fuyait). Les policies anciennes portent `{public}` sans faille, le prédicat fermant ;
   toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
-- **Les policies se REJOUENT** (`supabase/essais/rls.sql`) : trois profils, boucle sur `pg_class` (une table ajoutée sans
-  policy est attrapée), écritures d'essai annulées par sous-transaction, refus exigé en 42501 nommément, quatorze
-  mutations qui doivent virer au rouge. Le fichier se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
+- **Les policies se REJOUENT** (`supabase/essais/rls.sql`) : quatre profils (le quatrième, depuis P1 : le client dont les
+  accès portent les deux droits), boucle sur `pg_class` (une table ajoutée sans policy est attrapée), écritures d'essai
+  annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge. Le fichier
+  se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
   P0001, donc on exige la RAISON → « CE QUI CONTOURNE LA RLS ».
@@ -327,7 +329,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   du cabinet du 09/10/2026, « remplacer MEG ») : les devis, les factures et leur facture électronique, la vue de la
   banque — chacun pour un accès qui en porte le DROIT, posé par le cabinet, tenu en base (policy `to authenticated`,
   fonction qui le vérifie), jamais par l'écran seul ; le client y écrit par les mêmes fonctions que le cabinet, et une
-  policy qui lui ouvre une lecture se présente au cabinet avant d'être appliquée. Conçu, rien n'est construit.
+  policy qui lui ouvre une lecture se présente au cabinet avant d'être appliquée. **Les droits sont en base depuis P1**
+  (09/10/2026) : `memberships.droit_ventes` et `droit_banque`, faux par défaut, cochés par le cabinet dans l'onglet Accès
+  par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
+  `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` seront le prédicat des étapes
+  suivantes ; ils n'ouvrent encore RIEN, et l'onglet le dit → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
   **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
   de son relevé et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit →
   « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes du cabinet** vivent
@@ -352,7 +358,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 
 ## Fonctionnalités déjà implémentées
 
-- **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients ; client
+- **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
+  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext`, pas encore honorés) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026).
@@ -464,7 +471,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   questions au cabinet → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION » ; P0, les notes
   internes hors de portée du client, en base et à l'écran le 09/10/2026 — reste la suppression des anciennes colonnes,
   écrite et éprouvée sur une réplique, qui attend EC-Q7 (avec elle : trois essais, `types.ts`, `inventaire.py` et le
-  socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT ».
+  socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT » ; P1, les droits d'un accès, en base, dans
+  l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1 prise comme hypothèse ;
+  l'invariant 3 bis de `rls.sql` attend P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
@@ -499,12 +508,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 14 fonctions au 09/10/2026) : vérifiés bénins par
-  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`, `retirer_encaissement`,
-  `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde` et
-  `enregistrer_paiement_personnel_cotisation` écrivent, chacune avec son propre contrôle d'accès ; plus
-  aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une
-  NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
+- `anon_/authenticated_security_definer_function_executable` (5 et 19 fonctions au 09/10/2026) : vérifiés bénins par
+  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
+  `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
+  `enregistrer_paiement_personnel_cotisation` et `changer_droits_acces` écrivent, chacune avec son propre contrôle
+  d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
+  de l'appelant (`droitsAcces.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
+  Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -673,7 +683,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un verrou d'exécution est un `useRef`**, posé AVANT le `try` et relâché dans un `finally` — après la relecture quand
   l'écran montre ce qui vient d'être écrit —, sous un nom à lui dans son fichier (l'appariement se fait par nom). Deux
   clics se testent dans le MÊME `act`, et il en faut TROIS pour voir un verrou posé dans le `try`
-  (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` ». Toute fonction d'écran qui écrit (une porte
+  (`verrousExecution.test.ts`) → « Un verrou d'exécution est un `useRef` » ; une case à cocher contrôlée, grisée pendant
+  l'écriture, arrête déjà le second clic (React la rend avant la fin de l'événement) : son verrou ne se voit qu'aux
+  mutations d'ordre deux → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ». Toute fonction d'écran qui écrit (une porte
   du client, ou une fonction de `src/lib` qui écrit) passe un verrou, une enveloppe à verrou (`sousVerrou`, `agir`) ou
   un appelant verrouillé ; sinon une catégorie comptée (mise à jour, suppression, session) ou une exception nommée avec
   sa raison (`verrousEcritures.test.ts`, qui ne voit ni le placement dans le `try`, ni ce qu'une suppression rejouée
@@ -947,7 +959,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7386 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7428 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
@@ -1004,7 +1016,7 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
 - Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et**
-  quatorze mutations qui mordent) ; la CI n'a pas accès à la base.
+  seize mutations qui mordent) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

@@ -21,8 +21,14 @@ const base = {
   // Faire échouer UNE table et pas toutes : une erreur globale n'atteint jamais la lecture des
   // tables, la première requête sur `dossiers` s'arrêtant avant.
   erreurParTable: {} as Record<string, Error>,
+  // Les valeurs par défaut que la BASE donne aux colonnes qu'une insertion ne nomme pas (une sauvegarde d'avant une
+  // migration qui ajoute des colonnes ne les porte pas) : sans elles, le faux client ne pourrait pas dire ce qu'une
+  // telle ligne devient une fois écrite.
+  defauts: {} as Record<string, Ligne>,
 }
 const journal: { table: string; filtres: string[]; tri: string[] }[] = []
+// Les lignes telles que la restauration les ENVOIE, avant que la base y mette ses valeurs par défaut.
+const envoyees: Record<string, Ligne[]> = {}
 // Les écritures, à part : le contrôle qui compte sur un refus est « RIEN n'a été écrit », et un
 // journal de lectures ne peut pas le dire.
 const ecritures: { table: string; action: 'insert' | 'update'; nb: number }[] = []
@@ -98,7 +104,8 @@ function ecrivain(table: string) {
       const erreur = base.erreurParTable[table] ?? base.erreur
       if (erreur) return Promise.resolve({ error: erreur })
       ecritures.push({ table, action: 'insert', nb: lignes.length })
-      base.tables[table] = [...(base.tables[table] ?? []), ...lignes.map((l) => ({ ...l }))]
+      envoyees[table] = [...(envoyees[table] ?? []), ...lignes.map((l) => ({ ...l }))]
+      base.tables[table] = [...(base.tables[table] ?? []), ...lignes.map((l) => ({ ...(base.defauts[table] ?? {}), ...l }))]
       return Promise.resolve({ error: null })
     },
     update: (patch: Ligne) => ({
@@ -131,8 +138,10 @@ beforeEach(() => {
   base.sansCompte = new Set()
   base.erreur = null
   base.erreurParTable = {}
+  base.defauts = {}
   journal.length = 0
   ecritures.length = 0
+  for (const table of Object.keys(envoyees)) delete envoyees[table]
 })
 
 describe('export d’un dossier', () => {
@@ -681,6 +690,49 @@ describe('restauration d’une sauvegarde aux anciennes notes', () => {
     // Une note de dossier blanche n'en est pas une.
     await restaurerSauvegarde(ancienneSauvegarde({ noteDossier: '  ' }))
     expect(base.tables.dossiers).toHaveLength(1)
+  })
+})
+
+// LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1, 09/10/2026). Une sauvegarde faite avant la migration
+// `droits_des_acces_clients` porte des accès sans leurs deux colonnes : la restauration les écrit tels quels, sans inventer
+// de droit — la base leur donne sa valeur par défaut, faux (essai droitsAcces.sql, contrôle 1) — et la relecture ne les
+// compte pas comme un écart. Une sauvegarde d'après garde les droits qu'elle porte : l'insertion est réservée au cabinet
+// du dossier (`memberships_write`), le client ne s'y donne rien.
+describe('restauration des accès clients et de leurs droits', () => {
+  const accesDHier = { id: 'm1', user_id: 'u-client', dossier_id: DOSSIER, role: 'client', email: 'client@exemple.fr', created_at: '2026-09-01T08:00:00Z' }
+  function sauvegardeDAcces(acces: Ligne[]) {
+    return {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: { dossiers: [{ id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET }], memberships: acces } as Record<string, Ligne[]>,
+    }
+  }
+
+  beforeEach(() => {
+    base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [] }
+    // La valeur par défaut que la migration pose : faux.
+    base.defauts = { memberships: { droit_ventes: false, droit_banque: false } }
+  })
+
+  it('une sauvegarde d’hier écrit ses accès sans inventer de droit : la base leur donne « faux », et la relecture n’y voit aucun écart', async () => {
+    const sauvegarde = sauvegardeDAcces([{ ...accesDHier }])
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(resultat.lignesParTable.memberships).toBe(1)
+    expect(envoyees.memberships).toEqual([accesDHier])
+    expect(base.tables.memberships).toEqual([{ ...accesDHier, droit_ventes: false, droit_banque: false }])
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('une sauvegarde d’aujourd’hui garde les droits qu’elle porte', async () => {
+    const sauvegarde = sauvegardeDAcces([
+      { ...accesDHier, droit_ventes: true, droit_banque: false },
+      { ...accesDHier, id: 'm2', user_id: 'u-secretariat', email: null, droit_ventes: false, droit_banque: true },
+    ])
+    await restaurerSauvegarde(sauvegarde)
+    expect(base.tables.memberships.map((m) => [m.id, m.droit_ventes, m.droit_banque])).toEqual([
+      ['m1', true, false],
+      ['m2', false, true],
+    ])
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 })
 

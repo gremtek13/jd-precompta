@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
 import { AUCUN_RETOUR, AVIS_LIEN_SANS_SESSION, avisDuRefus, type RetourDuLien } from '../lib/recuperationMotDePasse'
+import { droitsParDossier, type DroitsAcces } from '../lib/droitsAcces'
 
 type Role = 'cabinet' | 'client' | null
 
@@ -48,6 +49,12 @@ interface AuthState {
   // silencieusement toute société au-delà de la première.
   dossierActifId: string | null
   setDossierActifId: (id: string) => void
+  // Les droits de chaque accès du client, par dossier — « Ventes » et « Banque » (espace client, étape P1, voir
+  // lib/droitsAcces.ts) —, lus avec ses accès, dans la même requête et au même moment : au changement d'IDENTIFIANT
+  // seulement. Un dossier absent n'a aucun droit (`droitsSur`). Aucun écran ne s'en sert encore : ils sont là pour les
+  // étapes qui ouvriront « Mes ventes » et « Ma banque », et la base les tient de toute façon. Vide pour un compte du
+  // cabinet, dont les droits sont ceux du cabinet (`admin_du_dossier`), pas ceux d'un accès.
+  droitsParDossier: Readonly<Record<string, DroitsAcces>>
   // Vrai si l'utilisateur supervise tous les cabinets (voir la page Comptes master) plutôt qu'un seul —
   // résolu via l'appel RPC is_super_admin() : la table super_admins elle-même est verrouillée (RLS sans
   // aucune policy), impossible à lire directement depuis le navigateur, même pour soi-même.
@@ -83,6 +90,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
   const [dossierIds, setDossierIds] = useState<string[]>([])
   const [mesSocietes, setMesSocietes] = useState<SocieteClient[]>([])
   const [dossierActifId, setDossierActifIdState] = useState<string | null>(null)
+  const [droitsDuClient, setDroitsDuClient] = useState<Readonly<Record<string, DroitsAcces>>>({})
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [estChef, setEstChef] = useState(false)
   const [monCabinetId, setMonCabinetId] = useState<string | null>(null)
@@ -181,6 +189,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
         setDossierIds([])
         setMesSocietes([])
         setDossierActifIdState(null)
+        setDroitsDuClient({})
         setIsSuperAdmin(false)
         setEstChef(false)
         setMonCabinetId(null)
@@ -203,6 +212,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
         setDossierIds([])
         setMesSocietes([])
         setDossierActifIdState(null)
+        setDroitsDuClient({})
         setIsSuperAdmin(!!estSuperAdmin)
         setEstChef(!!estSuperAdmin || adminRow.role === 'comptable_en_chef')
         setMonCabinetId(adminRow.cabinet_id)
@@ -210,9 +220,11 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
         return
       }
 
+      // Les droits viennent avec les accès, dans la même lecture : une seconde requête pourrait revenir d'un autre état de
+      // la base que la première. Lue en échec, la liste est vide, et avec elle les droits — l'échec tombe du côté fermé.
       const { data: memberships } = await supabase
         .from('memberships')
-        .select('dossier_id')
+        .select('dossier_id, droit_ventes, droit_banque')
         .eq('user_id', userId)
 
       if (cancelled) return
@@ -245,6 +257,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
       setDossierIds(ids)
       setMesSocietes(societes)
       setDossierActifIdState(dossierActif)
+      setDroitsDuClient(droitsParDossier(memberships ?? []))
       setIsSuperAdmin(false)
       setEstChef(false)
       setMonCabinetId(cabinetId)
@@ -283,8 +296,8 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
   return (
     <AuthContext.Provider
       value={{
-        session, role, dossierIds, mesSocietes, dossierActifId, setDossierActifId, isSuperAdmin, estChef, monCabinetId, loading, signOut,
-        recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien: () => setAvisDuLien(null),
+        session, role, dossierIds, mesSocietes, dossierActifId, setDossierActifId, droitsParDossier: droitsDuClient, isSuperAdmin, estChef,
+        monCabinetId, loading, signOut, recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien: () => setAvisDuLien(null),
       }}
     >
       {children}
