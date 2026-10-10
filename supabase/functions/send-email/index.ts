@@ -12,6 +12,12 @@
 //
 // Chaque envoi est journalisé (table emails_envoyes) : un cabinet doit toujours pouvoir retrouver qui
 // a reçu quoi et quand, jamais un envoi "silencieux" qu'on ne peut plus vérifier après coup.
+//
+// Qui peut quoi (`QUI_PEUT_QUOI`, espace client, étape P3) : la facture, le cabinet du dossier et le client dont
+// l'accès porte la case « Ventes » ; la relance de pièces, le cabinet seul. Les droits se lisent avec le jeton de
+// l'appelant (bloc droitsDeLAppelant) avant toute autre lecture ; un client ne dépasse pas trente e-mails par dossier
+// et par jour de Paris (`PLAFOND_CLIENT_PAR_JOUR`), comptés dans le journal avant l'envoi — le domaine d'envoi est
+// celui du cabinet.
 
 import { Resend } from "npm:resend@6"
 import { createClient } from "npm:@supabase/supabase-js@2"
@@ -31,6 +37,48 @@ function json(body: unknown, status = 200) {
 
 const DOMAINE_ENVOI = "precompta.jdarnis.fr"
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
+// QUI PEUT QUOI (conception de l'espace client, §3.5) : le droit que chaque modèle exige — « ventes », le cabinet du
+// dossier ou un accès client qui porte la case « Ventes » ; « cabinet », le cabinet seul : la relance de pièces est
+// celle que le cabinet adresse à son client. Un changement de décision est une ligne ; le modèle « devis » viendra avec
+// l'étape P6.
+const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
+  facture: "ventes",
+  relance_pieces: "cabinet",
+}
+
+// LE PLAFOND D'UN ACCÈS CLIENT (conception de l'espace client, §3.5 et §10) : un compte client qui enverrait en masse
+// le ferait sous le domaine du cabinet. Trente e-mails par dossier et par jour de Paris, comptés dans le journal AVANT
+// l'envoi. Le journal nomme le compte qui a envoyé (`envoye_par`), pas s'il était client ou cabinet : TOUS les e-mails
+// du dossier ce jour-là comptent, ceux du cabinet compris — le côté fermé. Le cabinet, lui, n'est pas plafonné. Le
+// plafond se LIT, il ne se réserve pas : deux envois partis ensemble le lisent avant que l'un ou l'autre ne soit
+// journalisé, et peuvent le dépasser d'autant (une réservation tout ou rien demanderait une fonction SQL).
+const PLAFOND_CLIENT_PAR_JOUR = 30
+
+// ── DÉBUT JOUR DE PARIS ──────────────────────────────────────────────────────────────────────────────────────────────
+// Le jour de Paris qui contient l'instant `ms`, en instants : de son minuit à celui du lendemain (23 ou 25 heures aux
+// changements d'heure). La fonction tourne en UTC ; compté en UTC, le plafond repartirait à 1 h ou 2 h du matin.
+// Minuit tombe à Paris la veille à 22 h ou 23 h UTC, et l'heure change à 1 h UTC : l'avance de Paris lue à minuit UTC
+// d'un jour est donc celle de son minuit. `plafondEmails.test.ts` confronte ce bloc à `dateAParis` (src/lib/format.ts).
+function jourDeParis(ms: number): { debut: string; fin: string } {
+  const parties = (instant: number) => Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(instant)).map((p) => [p.type, Number(p.value)]))
+  const ici = parties(ms)
+  const minuit = (jour: number) => {
+    const t = Date.UTC(ici.year, ici.month - 1, jour)
+    const p = parties(t)
+    return t - (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - t)
+  }
+  return { debut: new Date(minuit(ici.day)).toISOString(), fin: new Date(minuit(ici.day + 1)).toISOString() }
+}
+// ── FIN JOUR DE PARIS ────────────────────────────────────────────────────────────────────────────────────────────────
 
 interface FactureRow {
   id: string; numero: string | null; date_emission: string; date_echeance: string | null
@@ -122,6 +170,50 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE droitsDeLAppelant ────────────────────────────────────────────────────────────────────────────────────
+// Ce que l'appelant peut faire sur ce dossier (espace client, étape P3). Ses droits se lisent par
+// `droits_sur_le_dossier` (migration `droits_des_acces_clients`, étape P1) avec SON jeton — sous la clé de service,
+// `auth.uid()` serait nul —, avant toute lecture d'un secret et tout appel extérieur. Seul `true` accorde : une erreur,
+// une exception, ou une réponse sans ses quatre cases booléennes rendent `illisible`, le côté fermé ; une case de plus
+// (un domaine neuf, que la fonction SQL ajoute sans changer de signature) ne ferme rien. Le droit qu'une action exige
+// est une DONNÉE de chaque fonction, sa table « qui peut quoi » : « cabinet » (`admin_du_dossier`), ou « ventes »
+// (`gere_les_ventes` : le cabinet, ou un accès client qui porte la case « Ventes ») ; une action hors de la table n'est
+// permise à personne. Copié à l'identique dans plateforme-agreee, superpdp-emit, superpdp-credentials et send-email :
+// `droitsDeLAppelantCopie.test.ts` exécute chaque copie contre sa propre grille.
+type DroitExige = "cabinet" | "ventes"
+interface Droits { cabinet: boolean; membre: boolean; ventes: boolean; banque: boolean }
+
+async function droitsDeLAppelant(
+  appelant: { rpc: (nom: string, args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }> },
+  dossierId: string,
+): Promise<{ droits: Droits } | { illisible: string }> {
+  let lu: unknown
+  try {
+    const reponse = await appelant.rpc("droits_sur_le_dossier", { p_dossier_id: dossierId })
+    if (reponse.error != null) {
+      const message = (reponse.error as { message?: unknown }).message
+      return { illisible: typeof message === "string" && message !== "" ? message : "erreur de la base" }
+    }
+    lu = reponse.data
+  } catch {
+    return { illisible: "la base n'a pas répondu" }
+  }
+  if (lu === null || typeof lu !== "object" || Array.isArray(lu)) return { illisible: "réponse d'une autre forme" }
+  const cases = lu as Record<string, unknown>
+  if (!["cabinet", "membre", "ventes", "banque"].every((c) => typeof cases[c] === "boolean")) {
+    return { illisible: "réponse d'une autre forme" }
+  }
+  const { cabinet, membre, ventes, banque } = cases as unknown as Droits
+  return { droits: { cabinet, membre, ventes, banque } }
+}
+
+/** L'appelant porte-t-il le droit que la table exige pour cette action ? */
+function actionPermise(table: Readonly<Record<string, DroitExige>>, action: string, droits: Droits): boolean {
+  const exige = Object.prototype.hasOwnProperty.call(table, action) ? table[action] : null
+  return exige === "cabinet" ? droits.cabinet : exige === "ventes" ? droits.ventes : false
+}
+// ── FIN COPIE droitsDeLAppelant ──────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -153,16 +245,30 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, cleSecrete)
 
-  let payload: { dossierId?: string; type?: "facture" | "relance_pieces"; destinataire?: string; message?: string; factureId?: string }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
-  const dossierId = payload.dossierId?.trim()
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et `Deno.serve` rendait alors un 500 en
+  // texte brut, sans en-tête CORS, que la page ne pouvait pas lire ; un champ reçu en nombre faisait lever `.trim()`
+  // (défauts connus des Edge Functions, corrigés ici comme dans create-cabinet). Absent ou nul, un champ tombe sur le
+  // refus « requis » qui suit.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  const payload = corps as Record<string, unknown>
+  for (const champ of ["dossierId", "type", "destinataire", "message", "factureId"]) {
+    if (!texteOuAbsent(payload[champ])) {
+      return json({ error: `Corps de requête invalide : « ${champ} » doit être un texte.` }, 400)
+    }
+  }
+  const texte = (champ: string) => (payload[champ] as string | null | undefined)?.trim()
+  const dossierId = texte("dossierId")
   const type = payload.type
-  const destinataire = payload.destinataire?.trim()
-  const messagePerso = payload.message?.trim() || null
+  const destinataire = texte("destinataire")
+  const messagePerso = texte("message") || null
   if (!dossierId || (type !== "facture" && type !== "relance_pieces") || !destinataire) {
     return json({ error: "dossierId, type ('facture' ou 'relance_pieces') et destinataire sont requis." }, 400)
   }
@@ -170,9 +276,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Adresse e-mail du destinataire invalide." }, 400)
   }
 
-  // Même vérification que les autres fonctions de ce dossier (voir agent-comptable, superpdp-emit).
-  const { data: aAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
-  if (!aAcces) {
+  // Les droits de l'appelant, avec SON jeton, avant toute autre lecture. Sans le droit que le modèle exige, la réponse
+  // d'avant l'espace client, mot pour mot : elle ne dit pas si le dossier existe.
+  const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)
+  if ("illisible" in lus) {
+    return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${lus.illisible}).` }, 503)
+  }
+  if (!actionPermise(QUI_PEUT_QUOI, type, lus.droits)) {
     return json({ error: "Dossier introuvable." }, 404)
   }
 
@@ -188,7 +298,7 @@ Deno.serve(async (req: Request) => {
   let nomExpediteur = dossierRow.nom
 
   if (type === "facture") {
-    factureId = payload.factureId?.trim() ?? null
+    factureId = texte("factureId") ?? null
     if (!factureId) {
       return json({ error: "factureId est requis pour le modèle 'facture'." }, 400)
     }
@@ -223,6 +333,28 @@ Deno.serve(async (req: Request) => {
     const construit = construireEmailRelance(dossierRow.nom, messagePerso)
     objet = construit.objet
     html = construit.html
+  }
+
+  // Le plafond d'un accès client, compté juste avant l'envoi : le dernier contrôle, une fois tout le reste jugé. Un
+  // compte illisible refuse — l'e-mail parti ne se rattrape pas.
+  if (!lus.droits.cabinet) {
+    const jour = jourDeParis(Date.now())
+    const { count: envoyes, error: erreurCompte } = await admin.from("emails_envoyes")
+      .select("id", { count: "exact", head: true })
+      .eq("dossier_id", dossierId).gte("created_at", jour.debut).lt("created_at", jour.fin)
+    if (erreurCompte || typeof envoyes !== "number") {
+      const raison = erreurCompte?.message ?? "aucun compte rendu"
+      return json({
+        error: `Les e-mails envoyés aujourd'hui pour ce dossier n'ont pas pu être comptés (${raison}) : ` +
+          "l'e-mail n'est pas parti. Réessaie dans un instant.",
+      }, 503)
+    }
+    if (envoyes >= PLAFOND_CLIENT_PAR_JOUR) {
+      return json({
+        error: `Ce dossier a déjà envoyé ${PLAFOND_CLIENT_PAR_JOUR} e-mails aujourd'hui, le plafond d'un accès ` +
+          "client : celui-ci n'est pas parti. Il pourra partir demain, ou ton cabinet peut l'envoyer.",
+      }, 429)
+    }
   }
 
   const resend = new Resend(resendApiKey)

@@ -1,6 +1,9 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import { refusDuMotDePasse } from '../lib/recuperationMotDePasse'
+import { SIRET_VENDEUR_RECU, messageRecu } from './cdarRecu'
+import { facture as factureEnBase, ligne as ligneDeFacture } from './facturesCii'
+import { QUI_PEUT_QUOI_ATTENDU, type DroitExigeAttendu } from './quiPeutQuoi'
 import { REGLE_DU_PROJET_RELEVEE, type RaisonDuService, type RegleDuService } from './regleDuService'
 import {
   CLE_PUBLIABLE, CLE_SECRETE, HOTE_PROJET, ID, PERSONNES, URL_PROJET, chargerFonction, decrire, depensesDe, fuitesDans, identifiantGenere,
@@ -72,14 +75,14 @@ export interface ContratFonction {
 
 export const DEFAUTS_CONNUS = {
   corpsNul: {
-    nombre: 7,
+    nombre: 4,
     raison: 'un corps JSON `null` fait lever la fonction (500 en texte brut, sans en-tête CORS) ou rend le message ' +
       'anglais du moteur — LATENT : le navigateur n’envoie jamais ce corps ; il faut une session (n’importe laquelle, le ' +
       'corps se lisant avant le contrôle du dossier) ou, pour evaluer-extraction, la seule clé publishable. Rien ne part ' +
       'ni ne s’écrit avant. À corriger au prochain déploiement de chaque fonction.',
   },
   champsDeTravers: {
-    nombre: 5,
+    nombre: 2,
     raison: 'un champ attendu en texte et reçu en nombre fait lever `.trim()` (500 en texte brut, sans en-tête CORS) — ' +
       'LATENT, même portée que `corpsNul`.',
   },
@@ -1441,6 +1444,134 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
   ],
 }
 
+// ── LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT (espace client, étape P3) ──────────────────────────────────────────
+// La case « Ventes » d'un accès (`memberships.droit_ventes`, étape P1) ouvre au client les actions que la table « qui
+// peut quoi » de chaque fonction lui réserve (`QUI_PEUT_QUOI`, conception §3.5, hypothèse EC-Q4). Le monde la lit comme
+// la base, par `droits_sur_le_dossier` (`fonctionsEdge.ts`, confronté au texte de la migration P1). Pour chaque fonction
+// et chaque action : le chef admis, comme avant ; le client « Ventes » admis là où la table le dit, refusé ailleurs ; le
+// client sans la case (aucune, ou « Banque » seule), le client d'un AUTRE dossier qui y porte « Ventes », le compte
+// rattaché à rien : refusés sous les mots d'avant l'espace client, avant toute lecture — donc de tout secret —, tout
+// appel extérieur et toute dépense. Chaque monde porte ses secrets : un refus qui les lirait ou les rendrait se verrait.
+
+
+/** L'accès du client (étape P1) : sa case « Ventes », sa case « Banque », et le dossier où il les porte. */
+function accesDuClient(droits: { ventes?: boolean; banque?: boolean; dossier?: string } = {}): (m: Monde) => void {
+  return (m) => {
+    const acces = lignes(m, 'memberships').find((a) => a.user_id === PERSONNES.client.id)
+    if (!acces) throw new Error('le monde de référence a perdu l’accès du client')
+    Object.assign(acces, { droit_ventes: droits.ventes ?? false, droit_banque: droits.banque ?? false })
+    if (droits.dossier) acces.dossier_id = droits.dossier
+  }
+}
+
+interface Profil { nom: string; personne: Personne; droits: (m: Monde) => void }
+const LE_CHEF: Profil = { nom: 'le chef', personne: 'chef', droits: () => {} }
+const CLIENT_VENTES: Profil = { nom: 'client « Ventes »', personne: 'client', droits: accesDuClient({ ventes: true }) }
+const SANS_LA_VENTE: readonly Profil[] = [
+  { nom: 'client du dossier sans droit', personne: 'client', droits: accesDuClient() },
+  { nom: 'client du dossier au seul droit « Banque »', personne: 'client', droits: accesDuClient({ banque: true }) },
+  {
+    nom: 'client d’un autre dossier, qui y porte « Ventes »', personne: 'client',
+    droits: accesDuClient({ ventes: true, banque: true, dossier: ID.dossierVoisin }),
+  },
+  { nom: 'compte rattaché à rien', personne: 'inscrit', droits: () => {} },
+]
+
+/** Le refus de l'accès : les mots d'avant l'espace client, et rien de demandé à la base que les droits, au jeton reçu. */
+function refusDeLAcces(r: Resultat, monde: Monde): string[] {
+  const fautes: string[] = []
+  if (corpsDe(r).error !== 'Dossier introuvable.') fautes.push(`pas le refus d’avant l’espace client : ${r.texte.slice(0, 120)}`)
+  for (const e of monde.journal) {
+    if (e.genre === 'lecture') fautes.push(`lu avant le refus : ${decrire(e)}`)
+    if (e.genre === 'rpc' && (e.nom !== 'droits_sur_le_dossier' || e.role !== 'authentifie')) fautes.push(`demandé avant le refus : ${decrire(e)}`)
+  }
+  if (!monde.journal.some((e) => e.genre === 'rpc' && e.nom === 'droits_sur_le_dossier')) fautes.push('refusé sans avoir lu les droits')
+  return fautes
+}
+
+/** La porte s'est ouverte : la réponse n'est pas le refus de l'accès, et les droits se sont lus au jeton de l'appelant. */
+function porteOuverte(r: Resultat, monde: Monde): string[] {
+  const fautes: string[] = []
+  if (corpsDe(r).error === 'Dossier introuvable.') fautes.push('la porte est restée fermée')
+  if (!monde.journal.some((e) => e.genre === 'rpc' && e.nom === 'droits_sur_le_dossier' && e.role === 'authentifie')) {
+    fautes.push('les droits ne se sont pas lus avec le jeton de l’appelant')
+  }
+  return fautes
+}
+
+interface ActionDeLaVente {
+  /** Le corps qu'envoie l'écran pour cette action. */
+  corps: unknown
+  /** Le monde où elle se joue, secrets compris. */
+  preparer: (m: Monde) => void
+  /** Ce que reçoit une personne admise dans ce monde. */
+  admis: Pick<Attendu, 'statut' | 'refusEnFrancais' | 'aucuneDepense' | 'depenses' | 'verifier'>
+}
+
+/**
+ * Pour chaque action de la table : le chef admis ; le client « Ventes » admis ou refusé selon elle ; les quatre profils
+ * sans la vente refusés. Une action de la table sans monde à jouer (ou l'inverse) lève : la matrice part de la table.
+ */
+function matriceDesDroits(
+  table: Readonly<Record<string, DroitExigeAttendu>>, actions: Readonly<Record<string, ActionDeLaVente>>,
+): Scenario[] {
+  if (Object.keys(table).sort().join() !== Object.keys(actions).sort().join()) {
+    throw new Error(`la matrice ne couvre pas la table : ${Object.keys(table).join(', ')}`)
+  }
+  return Object.entries(table).flatMap(([action, droit]) => {
+    const a = actions[action]
+    const scenario = (profil: Profil, admis: boolean): Scenario => ({
+      nom: admis
+        ? `${action} — ${profil.nom} : admis`
+        : `${action} — ${profil.nom} : refusé (404) avant toute lecture, tout secret et toute dépense`,
+      preparer: (m) => { a.preparer(m); profil.droits(m) },
+      requete: (s) => requeteDe(s, { personne: profil.personne, corps: a.corps }),
+      attendu: admis
+        ? { ...a.admis, verifier: (r, m, c) => [...porteOuverte(r, m), ...(a.admis.verifier?.(r, m, c) ?? [])] }
+        : { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+    })
+    return [scenario(LE_CHEF, true), scenario(CLIENT_VENTES, droit === 'ventes'), ...SANS_LA_VENTE.map((p) => scenario(p, false))]
+  })
+}
+
+/** Les droits illisibles (une base en panne) : 503 qui le dit, et rien de lu ni de dépensé — jamais un accord. */
+function droitsEnPanne(corps: unknown, preparer: (m: Monde) => void): Scenario {
+  return {
+    nom: 'le contrôle des droits en panne : 503 qui le dit, rien de lu',
+    preparer: (m) => { preparer(m); m.pannes.push({ rpc: 'droits_sur_le_dossier', erreur: { message: 'délai dépassé' } }) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+    attendu: {
+      statut: 503, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r, m) => [...jamais(m, 'lecture', 'une lecture'), ...(/vérifié/.test(String(corpsDe(r).error)) ? [] : [r.texte])],
+    },
+  }
+}
+
+/** Une facture VALIDÉE du dossier, émetteur figé et une ligne, et le statut de TVA de son dossier : de quoi la transmettre. */
+const FACTURE = 'fa000000-0000-4000-8000-00000000000a'
+function factureValidee(m: Monde, valeurs: Record<string, unknown> = {}) {
+  m.base.factures_emises = [{ ...factureEnBase([ligneDeFacture()], { id: FACTURE, dossier_id: D }), ...valeurs }]
+  m.base.facture_lignes = [{ id: identifiantGenere(), facture_id: FACTURE, ...ligneDeFacture() }]
+  const dossier = lignes(m, 'dossiers').find((d) => d.id === D)
+  if (!dossier) throw new Error('le monde de référence a perdu son dossier')
+  Object.assign(dossier, { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false })
+}
+
+/** Ce que la base remplit à la réservation d'une transmission (valeurs par défaut de `transmissions_factures`). */
+function transmissionsReservables(m: Monde) {
+  m.defauts.transmissions_factures = () => ({
+    etat: 'envoi', flux_id: null, detail: null, cree_le: new Date().toISOString(), maj_le: new Date().toISOString(),
+  })
+}
+
+/** La transmission réservée porte le compte qui l'a demandée (`cree_par`, étape P2) — et une seule. */
+const reserveePar = (personne: Personne) => (_r: Resultat, m: Monde) => {
+  const reservees = lignes(m, 'transmissions_factures')
+  return reservees.length === 1 && reservees[0].cree_par === PERSONNES[personne].id
+    ? []
+    : [`transmission réservée par ${JSON.stringify(reservees.map((t) => t.cree_par))}, attendu ${personne}`]
+}
+
 // ── SUPERPDP-CREDENTIALS, SUPERPDP-SYNC, SUPERPDP-EMIT ───────────────────────────────────────────────────────────────
 
 const SECRET_SUPERPDP = 'secret-superpdp-du-harnais'
@@ -1483,14 +1614,36 @@ function superPdp(m: Monde) {
   }
 }
 
+const SECRET_SAISI = 'secret-saisi-du-harnais'
+
 const SUPERPDP_CREDENTIALS: ContratFonction = {
   slug: 'superpdp-credentials',
   navigateur: true,
-  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant ; le secret s’écrit, il ne se relit jamais',
+  porte: 'une session, puis `droits_sur_le_dossier` avec le jeton de l’appelant et la table « qui peut quoi » (le cabinet, ' +
+    'et le client « Ventes » sous l’hypothèse EC-Q4) ; le secret s’écrit, il ne se relit jamais',
   scenarios: [
     preflight(),
     ...sansSession('superpdp-credentials', { dossierId: D, action: 'status' }),
     ...refus(HORS_DU_DOSSIER, 404, { dossierId: D, action: 'status' }, { preparer: identifiantsSuperPdp }),
+    ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['superpdp-credentials'], {
+      status: {
+        corps: { dossierId: D, action: 'status' }, preparer: identifiantsSuperPdp,
+        admis: { statut: 200, aucuneDepense: true, verifier: (r) => (corpsDe(r).configured === true ? [] : [r.texte]) },
+      },
+      save: {
+        corps: { dossierId: D, action: 'save', client_id: 'client-nouveau', client_secret: SECRET_SAISI },
+        preparer: (m) => { identifiantsSuperPdp(m); m.secrets.push(SECRET_SAISI) },
+        admis: {
+          statut: 200, depenses: ['écriture upsert superpdp_credentials'],
+          verifier: (_r, m) => (lignes(m, 'superpdp_credentials')[0]?.client_secret === SECRET_SAISI ? [] : ['secret non enregistré']),
+        },
+      },
+      remove: {
+        corps: { dossierId: D, action: 'remove' }, preparer: identifiantsSuperPdp,
+        admis: { statut: 200, depenses: ['écriture delete superpdp_credentials'] },
+      },
+    }),
+    droitsEnPanne({ dossierId: D, action: 'status' }, identifiantsSuperPdp),
     ...ADMIS_DU_DOSSIER.map((personne): Scenario => ({
       nom: `${personne} : le statut dit l’identifiant, jamais le secret`,
       preparer: identifiantsSuperPdp,
@@ -1525,7 +1678,17 @@ const SUPERPDP_CREDENTIALS: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D, action: 'lire_le_secret' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'action'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    {
+      nom: 'un nom d’action que tout objet hérite : 400, aucun droit lu',
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D, action: 'toString' } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => jamais(m, 'rpc', 'des droits lus') },
+    },
+    {
+      nom: 'un secret reçu en nombre : 400, rien d’écrit',
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D, action: 'save', client_id: 'client-nouveau', client_secret: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    ...corpsMalFormes('chef', ['dossierId', 'action']),
   ],
 }
 
@@ -1537,6 +1700,14 @@ const SUPERPDP_SYNC: ContratFonction = {
     preflight(),
     ...sansSession('superpdp-sync', { dossierId: D }),
     ...refus(HORS_DU_DOSSIER, 404, { dossierId: D }, { preparer: (m) => { identifiantsSuperPdp(m); superPdp(m) } }),
+    // La réception des factures d'ACHAT reste au cabinet (conception de l'espace client, §3.5 et §5.5) : la case
+    // « Ventes » ne l'ouvre pas — la fonction, que l'étape P3 ne touche pas, garde `admin_du_dossier`.
+    {
+      nom: 'client « Ventes » : refusé (404), la réception reste au cabinet — rien de lu ni d’appelé',
+      preparer: (m) => { identifiantsSuperPdp(m); superPdp(m); accesDuClient({ ventes: true, banque: true })(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: { dossierId: D } }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => jamais(m, 'lecture', 'une lecture') },
+    },
     {
       nom: 'sans identifiants : 400, rien d’appelé',
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D } }),
@@ -1571,20 +1742,79 @@ const SUPERPDP_SYNC: ContratFonction = {
   ],
 }
 
-const FACTURE = 'fa000000-0000-4000-8000-00000000000a'
 function facture(m: Monde, valeurs: Record<string, unknown>) {
   m.base.factures_emises = [{ id: FACTURE, dossier_id: D, numero: 'F-2026-1', statut: 'brouillon', type: 'facture', tiers_nom: 'Client fictif', superpdp_invoice_id: null, ...valeurs }]
 }
 const EMISSION = (action: string) => ({ dossierId: D, factureId: FACTURE, action })
 
+/** Une facture transmise par Super PDP (numéro 42) et sa transmission déposée : de quoi l'actualiser. */
+function factureTransmise(m: Monde) {
+  identifiantsSuperPdp(m); superPdp(m); facture(m, { statut: 'validee', superpdp_invoice_id: 42 })
+  m.base.transmissions_factures = [{ id: identifiantGenere(), dossier_id: D, facture_id: FACTURE, canal: 'superpdp', hote: 'api.superpdp.tech', flux_id: '42', etat: 'depose' }]
+}
+
+/** Super PDP qui accepte une facture : son validateur la juge valide, l'envoi rend un numéro, l'historique la dit déposée. */
+function superPdpQuiRecoit(m: Monde) {
+  identifiantsSuperPdp(m)
+  superPdp(m)
+  const suite = m.hotes['api.superpdp.tech']
+  m.hotes['api.superpdp.tech'] = async (requete) => {
+    const chemin = new URL(requete.url).pathname
+    if (requete.method === 'POST' && chemin === '/v1.beta/validation_reports') return Response.json({ data: [{ is_valid: true, subreports: [] }] })
+    const porteur = requete.headers.get('Authorization') === 'Bearer jeton-superpdp-du-harnais'
+    if (porteur && requete.method === 'POST' && chemin === '/v1.beta/invoices') return Response.json({ id: 43 }, { status: 201 })
+    if (porteur && chemin === '/v1.beta/invoices/43') {
+      return Response.json({ id: 43, events: [{ id: 1, status_code: 'fr:200', status_text: 'Déposée', created_at: '2026-10-10T08:00:00Z' }] })
+    }
+    return suite(requete)
+  }
+}
+
 const SUPERPDP_EMIT: ContratFonction = {
   slug: 'superpdp-emit',
   navigateur: true,
-  porte: 'la passerelle (verify_jwt), une session, puis `admin_du_dossier` avec le jeton de l’appelant ; la facture se relit et se juge avant tout appel à Super PDP',
+  porte: 'la passerelle (verify_jwt), une session, puis `droits_sur_le_dossier` avec le jeton de l’appelant et la table « qui ' +
+    'peut quoi » (le cabinet et le client « Ventes ») ; la facture se relit et se juge avant tout appel à Super PDP',
   scenarios: [
     preflight(),
     ...sansSession('superpdp-emit', EMISSION('envoyer')),
     ...refus(HORS_DU_DOSSIER, 404, EMISSION('envoyer'), { preparer: (m) => { identifiantsSuperPdp(m); superPdp(m); facture(m, {}) } }),
+    ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['superpdp-emit'], {
+      // Une facture encore brouillon : la porte passée, elle se juge et se refuse avant tout appel à Super PDP.
+      envoyer: {
+        corps: EMISSION('envoyer'), preparer: (m) => { identifiantsSuperPdp(m); superPdp(m); facture(m, {}) },
+        admis: { statut: 422, refusEnFrancais: true, aucuneDepense: true },
+      },
+      actualiser: {
+        corps: EMISSION('actualiser'), preparer: factureTransmise,
+        admis: {
+          statut: 200,
+          depenses: [
+            'réseau POST api.superpdp.tech/oauth2/token', 'réseau GET api.superpdp.tech/v1.beta/invoices/42',
+            'écriture upsert facture_superpdp_events', 'écriture update factures_emises', 'écriture update transmissions_factures',
+          ],
+        },
+      },
+    }),
+    {
+      nom: 'client « Ventes » : sa facture part, et la transmission réservée porte son compte (cree_par)',
+      preparer: (m) => { superPdpQuiRecoit(m); factureValidee(m); transmissionsReservables(m); accesDuClient({ ventes: true })(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: EMISSION('envoyer') }),
+      attendu: {
+        statut: 200,
+        verifier: (r, m) => [
+          ...reserveePar('client')(r, m),
+          ...(corpsDe(r).superpdp_invoice_id === 43 && lignes(m, 'transmissions_factures')[0]?.etat === 'depose' ? [] : [r.texte]),
+        ],
+      },
+    },
+    {
+      nom: 'le chef : sa facture part, et la transmission réservée porte son compte (cree_par)',
+      preparer: (m) => { superPdpQuiRecoit(m); factureValidee(m); transmissionsReservables(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: EMISSION('envoyer') }),
+      attendu: { statut: 200, verifier: reserveePar('chef') },
+    },
+    droitsEnPanne(EMISSION('envoyer'), (m) => { identifiantsSuperPdp(m); superPdp(m); facture(m, {}) }),
     {
       nom: 'sans identifiants : 400, rien d’appelé',
       preparer: (m) => { facture(m, {}) },
@@ -1619,19 +1849,45 @@ const SUPERPDP_EMIT: ContratFonction = {
         verifier: (r, m) => (corpsDe(r).dernier_statut === 'fr:202' && lignes(m, 'transmissions_factures')[0]?.etat === 'accepte' ? [] : [r.texte]),
       },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'factureId', 'action'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    {
+      nom: 'une facture désignée par un nombre : 400, rien de lu',
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...EMISSION('envoyer'), factureId: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => jamais(m, 'lecture', 'une lecture') },
+    },
+    ...corpsMalFormes('chef', ['dossierId', 'factureId', 'action']),
   ],
 }
 
 // ── SEND-EMAIL ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const RELANCE = { dossierId: D, type: 'relance_pieces', destinataire: 'client@exemple.invalid' }
+const ENVOI_FACTURE = { ...RELANCE, type: 'facture', factureId: FACTURE }
 const resendQuiEnvoie = (m: Monde) => { m.resend.envoyer = () => ({ data: { id: 'courriel-envoye' }, error: null }) }
+
+/**
+ * Le plafond d'un accès client (trente e-mails par dossier et par jour de PARIS) : l'horloge de la fonction posée à
+ * `maintenant`, et `nombre` e-mails déjà journalisés à l'instant `envoyes`, dans `dossier`.
+ */
+function dejaEnvoyes(nombre: number, envoyes: string, maintenant: string, dossier: string = D) {
+  return (m: Monde) => {
+    m.decalageHorloge = Date.parse(maintenant) - Date.now()
+    m.base.emails_envoyes = Array.from({ length: nombre }, (_, i) => ({
+      id: identifiantGenere(), dossier_id: dossier, type: i % 2 === 0 ? 'facture' : 'relance_pieces', destinataire: 'acheteur@exemple.invalid',
+      objet: 'Envoi fictif', facture_id: null, resend_id: null, envoye_par: PERSONNES.chef.id, created_at: envoyes,
+    }))
+  }
+}
+
+/** Une facture validée du dossier, et Resend qui l'envoie. */
+const factureAEnvoyer = (m: Monde) => { resendQuiEnvoie(m); factureValidee(m) }
+const ENVOI_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes', 'écriture update factures_emises']
 
 const SEND_EMAIL: ContratFonction = {
   slug: 'send-email',
   navigateur: true,
-  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant, avant tout envoi par Resend',
+  porte: 'une session, puis `droits_sur_le_dossier` avec le jeton de l’appelant et la table « qui peut quoi » (la facture : ' +
+    'le cabinet et le client « Ventes », plafonné à trente par dossier et par jour de Paris ; la relance : le cabinet), ' +
+    'avant tout envoi par Resend',
   scenarios: [
     preflight(),
     ...sansSession('send-email', RELANCE),
@@ -1665,7 +1921,76 @@ const SEND_EMAIL: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, destinataire: 'pas une adresse' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['send-email'], {
+      facture: { corps: ENVOI_FACTURE, preparer: factureAEnvoyer, admis: { statut: 200, depenses: ENVOI_JOURNALISE } },
+      relance_pieces: { corps: RELANCE, preparer: resendQuiEnvoie, admis: { statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'] } },
+    }),
+    droitsEnPanne(RELANCE, resendQuiEnvoie),
+    // LE PLAFOND D'UN ACCÈS CLIENT : le 30e e-mail du jour part, le 31e est refusé AVANT Resend ; le cabinet n'est pas
+    // plafonné ; le jour est celui de PARIS, pas d'UTC ; les e-mails d'un autre dossier ne comptent pas.
+    {
+      nom: 'client « Ventes » : le 30e e-mail du jour part, et il est journalisé à son nom',
+      preparer: (m) => { factureAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(29, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: {
+        statut: 200, depenses: ENVOI_JOURNALISE,
+        verifier: (_r, m) => (lignes(m, 'emails_envoyes').filter((e) => e.envoye_par === PERSONNES.client.id).length === 1 ? [] : ['envoi non journalisé']),
+      },
+    },
+    {
+      nom: 'client « Ventes » : le 31e e-mail du jour est refusé (429) avant Resend, rien d’envoyé ni d’écrit',
+      preparer: (m) => { factureAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(30, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 429, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'le cabinet n’est pas plafonné : trente e-mails déjà partis, le sien part, sans même les compter',
+      preparer: (m) => { factureAEnvoyer(m); dejaEnvoyes(30, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+      attendu: {
+        statut: 200, depenses: ENVOI_JOURNALISE,
+        verifier: (_r, m) => (m.journal.some((e) => e.genre === 'lecture' && e.table === 'emails_envoyes') ? ['le journal des envois a été compté pour le cabinet'] : []),
+      },
+    },
+    {
+      nom: 'le jour de Paris : trente e-mails partis avant minuit à Paris ne comptent plus après, même le même jour UTC',
+      // 22 h 30 UTC le 10 : 0 h 30 le 11 à Paris. Les trente sont partis à 21 h 30 UTC, 23 h 30 la veille à Paris.
+      preparer: (m) => { factureAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(30, '2026-10-10T21:30:00.000Z', '2026-10-10T22:30:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 200, depenses: ENVOI_JOURNALISE },
+    },
+    {
+      nom: 'le jour de Paris : trente e-mails partis après minuit à Paris comptent, même la veille en UTC',
+      // 0 h 30 UTC le 11 : 2 h 30 à Paris. Les trente sont partis à 22 h 30 UTC le 10, 0 h 30 le 11 à Paris.
+      preparer: (m) => { factureAEnvoyer(m); accesDuClient({ ventes: true })(m); dejaEnvoyes(30, '2026-10-10T22:30:00.000Z', '2026-10-11T00:30:00.000Z')(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 429, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'les e-mails d’un autre dossier ne comptent pas dans le plafond de celui-ci',
+      preparer: (m) => {
+        factureAEnvoyer(m); accesDuClient({ ventes: true })(m)
+        dejaEnvoyes(30, '2026-10-10T07:00:00.000Z', '2026-10-10T10:00:00.000Z', ID.dossierVoisin)(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 200, depenses: ENVOI_JOURNALISE },
+    },
+    {
+      nom: 'le compte du jour illisible : 503 qui le dit, rien d’envoyé',
+      preparer: (m) => {
+        factureAEnvoyer(m); accesDuClient({ ventes: true })(m)
+        m.pannes.push({ table: 'emails_envoyes', operation: 'select', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true },
+    },
+    {
+      nom: 'un message personnel reçu en nombre : 400, rien d’envoyé',
+      preparer: resendQuiEnvoie,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, message: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire']),
   ],
 }
 
@@ -1765,24 +2090,184 @@ function connexionPlateforme(m: Monde) {
     if (requete.headers.get('Authorization') !== 'Bearer jeton-plateforme') return Response.json({ errorCode: 'MISSING_TOKEN' }, { status: 401 })
     if (chemin === '/afnor/v1/healthcheck') return Response.json({ status: 'UP' })
     if (chemin === '/afnor/v1/flows/search') return Response.json({ results: [] })
+    // Un dépôt de facture : la plateforme le reçoit et rend l'identifiant de son flux.
+    if (requete.method === 'POST' && chemin === '/afnor/v1/flows') return Response.json({ flowId: 'flux-du-harnais-1' }, { status: 201 })
     return Response.json({}, { status: 404 })
   }
 }
 const STATUT_PLATEFORME = { action: 'statut', dossierId: D }
+const VERSION_PLATEFORME = '2026-10-01T08:00:00Z'
+const SECRET_RESSAISI = 'secret-ressaisi-du-harnais'
+const ENREGISTREMENT = {
+  action: 'enregistrer', dossierId: D, nom: 'Plateforme fictive', url_flux: `https://${HOTE_PLATEFORME}/afnor`,
+  url_jeton: `https://${HOTE_PLATEFORME}/oauth/token`, client_id: 'client-plateforme', client_secret: SECRET_RESSAISI,
+}
+
+/**
+ * Le relevé d'un refus (210) de l'acheteur sur la plateforme du client : un flux de cycle de vie, son message CDAR, et
+ * la facture validée qu'il désigne — numéro, année, SIREN figés (statuts reçus d'exemple, `src/test/cdarRecu.ts`). Les
+ * dates de l'exemple sont de 2027 : l'horloge de la fonction est posée deux jours après le refus.
+ */
+function refusALire(m: Monde) {
+  connexionPlateforme(m)
+  m.decalageHorloge = Date.parse('2027-10-10T12:00:00Z') - Date.now()
+  const dossier = lignes(m, 'dossiers').find((d) => d.id === D)
+  if (!dossier) throw new Error('le monde de référence a perdu son dossier')
+  dossier.siret = SIRET_VENDEUR_RECU
+  m.base.factures_emises = [{
+    id: FACTURE, dossier_id: D, numero: 'F2027-0042', statut: 'validee', type: 'facture', date_emission: '2027-10-01',
+    emetteur_siret: SIRET_VENDEUR_RECU, superpdp_invoice_id: null,
+  }]
+  const plateforme = m.hotes[HOTE_PLATEFORME]
+  m.hotes[HOTE_PLATEFORME] = async (requete) => {
+    const adresse = new URL(requete.url)
+    const porteur = requete.headers.get('Authorization') === 'Bearer jeton-plateforme'
+    if (porteur && adresse.pathname === '/afnor/v1/flows/search') {
+      const demande = (await requete.json()) as { where?: { flowType?: string[] } }
+      if (!demande.where?.flowType?.includes('CustomerInvoiceLC')) return Response.json({ results: [] })
+      return Response.json({
+        results: [{
+          flowId: 'statut-210', flowType: 'CustomerInvoiceLC', flowDirection: 'In', flowSyntax: 'CDAR',
+          acknowledgement: { status: 'Ok' }, submittedAt: '2027-10-08T14:30:00.000Z', updatedAt: '2027-10-08T14:31:00.000Z',
+        }],
+      })
+    }
+    if (porteur && adresse.pathname === '/afnor/v1/flows/statut-210' && adresse.searchParams.get('docType') === 'Original') {
+      return new Response(messageRecu('refus-210.xml'), { headers: { 'Content-Type': 'application/xml' } })
+    }
+    return plateforme(requete)
+  }
+}
+
+/** Le statut lu s'écrit une fois, rattaché à la facture, et porte le compte qui l'a relevé (`lu_par`). */
+const luPar = (personne: Personne) => (_r: Resultat, m: Monde) => {
+  const lus = lignes(m, 'statuts_factures_recus')
+  return lus.length === 1 && lus[0].lu_par === PERSONNES[personne].id && lus[0].code === '210' && lus[0].facture_id === FACTURE
+    ? []
+    : [`statuts lus : ${JSON.stringify(lus.map((l) => ({ code: l.code, lu_par: l.lu_par })))}`]
+}
 
 const PLATEFORME_AGREEE: ContratFonction = {
   slug: 'plateforme-agreee',
   navigateur: true,
-  porte: 'la passerelle (verify_jwt), une session, puis `admin_du_dossier` avec le jeton de l’appelant, avant toute lecture de la connexion et tout appel à la plateforme',
+  porte: 'la passerelle (verify_jwt), une session, puis `droits_sur_le_dossier` avec le jeton de l’appelant et la table « qui ' +
+    'peut quoi » (le cabinet ; le client « Ventes » hors de la réception des achats, EC-Q4 en hypothèse), avant toute ' +
+    'lecture de la connexion et tout appel à la plateforme',
   scenarios: [
     preflight(),
     ...sansSession('plateforme-agreee', STATUT_PLATEFORME),
     ...refus(HORS_DU_DOSSIER, 404, STATUT_PLATEFORME, { preparer: connexionPlateforme }),
+    droitsEnPanne(STATUT_PLATEFORME, connexionPlateforme),
+    ...matriceDesDroits(QUI_PEUT_QUOI_ATTENDU['plateforme-agreee'], {
+      statut: {
+        corps: STATUT_PLATEFORME, preparer: connexionPlateforme,
+        admis: {
+          statut: 200, aucuneDepense: true,
+          verifier: (r) => ((corpsDe(r).connexion as Record<string, unknown> | null)?.client_id === 'client-plateforme' ? [] : [r.texte]),
+        },
+      },
+      enregistrer: {
+        corps: ENREGISTREMENT, preparer: (m) => { connexionPlateforme(m); m.secrets.push(SECRET_RESSAISI) },
+        admis: { statut: 200, depenses: ['écriture update connexions_plateformes'] },
+      },
+      retirer: {
+        corps: { action: 'retirer', dossierId: D }, preparer: connexionPlateforme,
+        admis: { statut: 200, depenses: ['écriture delete connexions_plateformes'] },
+      },
+      tester: {
+        corps: { action: 'tester', dossierId: D }, preparer: connexionPlateforme,
+        admis: {
+          statut: 200,
+          depenses: [
+            `réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau GET ${HOTE_PLATEFORME}/afnor/v1/healthcheck`,
+            `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`,
+          ],
+        },
+      },
+      lister: {
+        corps: { action: 'lister', dossierId: D }, preparer: connexionPlateforme,
+        admis: { statut: 200, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`] },
+      },
+      // Un flux que la plateforme ne connaît plus : la porte passée, la fonction le lui demande, et le dit.
+      telecharger: {
+        corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: 'flux-disparu', document: 'original' },
+        preparer: connexionPlateforme,
+        admis: {
+          statut: 404, refusEnFrancais: true,
+          depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau GET ${HOTE_PLATEFORME}/afnor/v1/flows/flux-disparu`],
+        },
+      },
+      retenir: {
+        corps: { action: 'retenir', dossierId: D, version: VERSION_PLATEFORME, jusqua: '2026-10-01T00:00:00.000Z' },
+        preparer: connexionPlateforme,
+        admis: { statut: 200, depenses: ['écriture update connexions_plateformes'] },
+      },
+      repartir: {
+        corps: { action: 'repartir', dossierId: D, version: VERSION_PLATEFORME }, preparer: connexionPlateforme,
+        admis: { statut: 200, depenses: ['écriture update connexions_plateformes'] },
+      },
+      // Une facture encore brouillon : la porte passée, elle se juge et se refuse avant tout appel à la plateforme.
+      deposer: {
+        corps: { action: 'deposer', dossierId: D, version: VERSION_PLATEFORME, factureId: FACTURE },
+        preparer: (m) => { connexionPlateforme(m); facture(m, {}) },
+        admis: { statut: 422, refusEnFrancais: true, aucuneDepense: true },
+      },
+      // Une transmission que le dossier n'a pas : la porte passée, la fonction le dit, sans rien appeler.
+      suivre: {
+        corps: { action: 'suivre', dossierId: D, transmissionId: 'fb000000-0000-4000-8000-00000000000b' }, preparer: connexionPlateforme,
+        admis: { statut: 404, refusEnFrancais: true, aucuneDepense: true },
+      },
+      relever: {
+        corps: { action: 'relever', dossierId: D }, preparer: connexionPlateforme,
+        admis: {
+          statut: 200,
+          depenses: [
+            `réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`,
+            'écriture update connexions_plateformes',
+          ],
+        },
+      },
+    }),
     {
-      nom: 'le contrôle d’accès en panne : 503 qui le dit, rien de lu',
-      preparer: (m) => { connexionPlateforme(m); m.pannes.push({ rpc: 'admin_du_dossier', erreur: { message: 'délai dépassé' } }) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: STATUT_PLATEFORME }),
-      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: (_r, m) => jamais(m, 'lecture', 'une lecture') },
+      nom: 'client « Ventes » : sa facture se dépose, et la transmission réservée porte son compte (cree_par)',
+      preparer: (m) => { connexionPlateforme(m); factureValidee(m); transmissionsReservables(m); accesDuClient({ ventes: true })(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: { action: 'deposer', dossierId: D, version: VERSION_PLATEFORME, factureId: FACTURE } }),
+      attendu: {
+        statut: 200,
+        verifier: (r, m) => [
+          ...reserveePar('client')(r, m),
+          ...((corpsDe(r).transmission as Record<string, unknown> | undefined)?.etat === 'depose' ? [] : [r.texte]),
+        ],
+      },
+    },
+    {
+      nom: 'le chef : sa facture se dépose, et la transmission réservée porte son compte (cree_par)',
+      preparer: (m) => { connexionPlateforme(m); factureValidee(m); transmissionsReservables(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { action: 'deposer', dossierId: D, version: VERSION_PLATEFORME, factureId: FACTURE } }),
+      attendu: { statut: 200, verifier: reserveePar('chef') },
+    },
+    {
+      nom: 'client « Ventes » : le refus de l’acheteur se relève, et le statut lu porte son compte (lu_par)',
+      preparer: (m) => { refusALire(m); accesDuClient({ ventes: true })(m) },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: { action: 'relever', dossierId: D } }),
+      attendu: { statut: 200, verifier: luPar('client') },
+    },
+    {
+      nom: 'le chef : le refus de l’acheteur se relève, et le statut lu porte son compte (lu_par)',
+      preparer: refusALire,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { action: 'relever', dossierId: D } }),
+      attendu: { statut: 200, verifier: luPar('chef') },
+    },
+    {
+      nom: 'client « Ventes » : une adresse changée sans ressaisir le secret est refusée — le secret ne part pas ailleurs',
+      preparer: (m) => { connexionPlateforme(m); accesDuClient({ ventes: true })(m); m.hotes['ailleurs.exemple.fr'] = async () => Response.json({}) },
+      requete: (s) => requeteDe(s, {
+        personne: 'client', corps: { ...ENREGISTREMENT, url_jeton: 'https://ailleurs.exemple.fr/token', client_secret: '' },
+      }),
+      attendu: {
+        statut: 400, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (_r, m) => (lignes(m, 'connexions_plateformes')[0]?.url_jeton === `https://${HOTE_PLATEFORME}/oauth/token` ? [] : ['adresse changée']),
+      },
     },
     ...ADMIS_DU_DOSSIER.map((personne): Scenario => ({
       nom: `${personne} : le statut de la connexion, jamais son secret`,

@@ -590,9 +590,9 @@ export function factureCii(d: DonneesCii): ResultatCii {
       el('ram:ID', f.numero as string),
       el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
       dateCii('ram:IssueDateTime', f.date_emission),
-      // Seules les mentions légales partent avec la facture (BT-22). Les notes sont INTERNES : l'écran le dit en les
-      // saisissant — « n'apparaissent pas sur la facture », et le motif d'un avoir, « note interne » —, l'aperçu ne les
-      // imprime pas, et ce que le cabinet y écrit pour lui-même n'a rien à faire chez le client.
+      // Seules les mentions légales partent avec la facture (BT-22). Les notes n'y figurent pas, ni le motif d'un avoir
+      // rangé avec elles : l'écran le dit en les saisissant, l'aperçu ne les imprime pas, l'acheteur n'en reçoit rien.
+      // Elles ne sont pas internes pour autant : le client qui porte la case « Ventes » les lit (`ventes_du_client`).
       f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [

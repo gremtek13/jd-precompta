@@ -8,6 +8,7 @@ import {
 } from './droitsAcces'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
+import { QUI_PEUT_QUOI_ATTENDU } from '../test/quiPeutQuoi'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1). Ce qui se garde ici : qu'un droit ne s'accorde jamais par défaut,
@@ -195,6 +196,22 @@ const GESTES_AVEC_BANQUE: Record<string, readonly string[]> = {
   'de proposer ou de retirer une pièce comme justificatif d’un mouvement': ['proposer_justificatif', 'retirer_proposition'],
   'd’écrire des précisions sur un mouvement': ['ecrire_precision_mouvement'],
 }
+// Ce que « Ventes » ouvre dans les quatre fonctions de la vente (P3) : chaque geste nommé, et les actions qui le font. La
+// table attendue est confrontée au texte des fonctions par droitsDeLAppelantCopie.test.ts.
+type FonctionDeLaVente = keyof typeof QUI_PEUT_QUOI_ATTENDU
+const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente, string])[]> = {
+  'relier lui-même sa plateforme agréée et Super PDP et voir leur état': [
+    ['plateforme-agreee', 'statut'], ['plateforme-agreee', 'enregistrer'], ['plateforme-agreee', 'tester'],
+    ['plateforme-agreee', 'retirer'], ['superpdp-credentials', 'status'], ['superpdp-credentials', 'save'],
+    ['superpdp-credentials', 'remove'],
+  ],
+  'y transmettre une facture et en suivre la transmission': [
+    ['plateforme-agreee', 'deposer'], ['plateforme-agreee', 'suivre'], ['superpdp-emit', 'envoyer'],
+    ['superpdp-emit', 'actualiser'],
+  ],
+  'relever les statuts de sa plateforme': [['plateforme-agreee', 'relever']],
+  'envoyer une facture par e-mail, trente par dossier et par jour au plus': [['send-email', 'facture']],
+}
 
 describe('ce que disent les cases, dans les quatre états des deux étapes', () => {
   const PREFIXE = '« Ventes » (devis, factures, facture électronique) et « Banque » (comptes, mouvements, connexion bancaire) : '
@@ -236,6 +253,7 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
       expect(suite).toContain('« Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes')
       for (const lu of Object.keys(LU_AVEC_VENTES)) expect(suite).toContain(lu)
       for (const geste of Object.keys(GESTES_AVEC_VENTES)) expect(suite).toContain(geste)
+      for (const geste of Object.keys(GESTES_DES_FONCTIONS)) expect(suite).toContain(geste)
       // Ce que le cabinet y écrit est lu aussi : les libellés de ces champs le disent (plus bas).
       expect(suite).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
       // Désigner le mouvement qui prouve un encaissement demande AUSSI « Banque » — seul effet de cette case sans P7.
@@ -245,7 +263,7 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
           + 'du relevé qui prouve un encaissement.')
       expect(suite).not.toMatch(/ne change pas/)
     } else {
-      expect(suite).not.toMatch(/encaissement|notes|factures/)
+      expect(suite).not.toMatch(/encaissement|notes|factures|plateforme|Super PDP|e-mail/)
       expect(suite).toContain('Cocher « Ventes » ne change pas encore ce que le client voit ou fait.')
     }
   })
@@ -256,6 +274,31 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
 
   it('ce que l’onglet affiche est la phrase de l’état des deux drapeaux', () => {
     expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES))
+  })
+})
+
+describe('ce que « Ventes » ouvre dans les fonctions de la vente (P3), confronté à leur table', () => {
+  const nommees = Object.values(GESTES_DES_FONCTIONS).flat()
+
+  it('chaque action que la phrase nomme, la table l’ouvre à « Ventes »', () => {
+    for (const [fonction, action] of nommees) {
+      expect((QUI_PEUT_QUOI_ATTENDU[fonction] as Record<string, string>)[action], `${fonction} › ${action}`).toBe('ventes')
+    }
+  })
+
+  it('chaque action que la table ouvre à « Ventes », la phrase la nomme, et aucune du cabinet seul', () => {
+    for (const [fonction, table] of Object.entries(QUI_PEUT_QUOI_ATTENDU)) {
+      for (const [action, droit] of Object.entries(table)) {
+        const nommee = nommees.some(([f, a]) => f === fonction && a === action)
+        expect(nommee, `${fonction} › ${action}`).toBe(droit === 'ventes')
+      }
+    }
+  })
+
+  it('le plafond que la phrase dit est celui de send-email', () => {
+    const source = readFileSync(resolve(process.cwd(), 'supabase/functions/send-email/index.ts'), 'utf8')
+    expect(source.match(/const PLAFOND_CLIENT_PAR_JOUR = (\d+)\n/)?.[1]).toBe('30')
+    expect(ceQueDisentLesCases(false, true)).toContain('trente par dossier et par jour au plus')
   })
 })
 

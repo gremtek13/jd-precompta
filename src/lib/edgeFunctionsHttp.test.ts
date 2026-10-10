@@ -290,6 +290,58 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['    client_id: c.client_id,\n    organisation_id: c.organisation_id,', '    client_id: c.client_secret,\n    organisation_id: c.organisation_id,']],
     scenario: 'chef : le statut de la connexion, jamais son secret',
   },
+  // LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT (espace client, étape P3) : une régression de chaque sorte — le
+  // contrôle retiré, une lecture avant lui, une action du cabinet ouverte au client, une base en panne prise pour un
+  // accord, l'auteur d'une transmission oublié, le plafond d'e-mails relâché d'un cran ou compté sur le jour UTC.
+  {
+    slug: 'superpdp-credentials', quoi: 'le contrôle des droits retiré',
+    remplacements: [['  if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) {', '  if (false) {']],
+    scenario: 'status — client du dossier sans droit : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  {
+    slug: 'plateforme-agreee', quoi: 'la connexion (son secret) lue avant les droits',
+    remplacements: [[
+      '  const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)\n',
+      '  await admin.from("connexions_plateformes").select(COLONNES).eq("dossier_id", dossierId).maybeSingle()\n  const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)\n',
+    ]],
+    scenario: 'statut — compte rattaché à rien : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  {
+    slug: 'plateforme-agreee', quoi: 'la réception des achats ouverte au client « Ventes »',
+    remplacements: [['  lister: "cabinet",', '  lister: "ventes",']],
+    scenario: 'lister — client « Ventes » : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  {
+    slug: 'superpdp-credentials', quoi: 'une base en panne prise pour un accord',
+    remplacements: [[
+      '      return { illisible: typeof message === "string" && message !== "" ? message : "erreur de la base" }',
+      '      return { droits: { cabinet: true, membre: true, ventes: true, banque: true } }',
+    ]],
+    scenario: 'le contrôle des droits en panne : 503 qui le dit, rien de lu',
+  },
+  {
+    slug: 'superpdp-emit', quoi: 'l’auteur de la transmission oublié',
+    remplacements: [['        cree_par: callerData.user.id,\n', '']],
+    scenario: 'client « Ventes » : sa facture part, et la transmission réservée porte son compte (cree_par)',
+  },
+  {
+    slug: 'send-email', quoi: 'la relance de pièces ouverte au client',
+    remplacements: [['  relance_pieces: "cabinet",', '  relance_pieces: "ventes",']],
+    scenario: 'relance_pieces — client « Ventes » : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  {
+    slug: 'send-email', quoi: 'le plafond relâché à trente et un',
+    remplacements: [['const PLAFOND_CLIENT_PAR_JOUR = 30', 'const PLAFOND_CLIENT_PAR_JOUR = 31']],
+    scenario: 'client « Ventes » : le 31e e-mail du jour est refusé (429) avant Resend, rien d’envoyé ni d’écrit',
+  },
+  {
+    slug: 'send-email', quoi: 'le jour du plafond compté en UTC',
+    remplacements: [[
+      '    const jour = jourDeParis(Date.now())\n',
+      '    const utc = new Date(Date.now()).toISOString().split("T")[0]\n    const jour = { debut: `${utc}T00:00:00.000Z`, fin: `${utc}T23:59:59.999Z` }\n',
+    ]],
+    scenario: 'le jour de Paris : trente e-mails partis avant minuit à Paris ne comptent plus après, même le même jour UTC',
+  },
 ]
 
 describe.each(DEFAUTS_PLANTES.map((d) => [`${d.slug} : ${d.quoi}`, d] as const))('défaut planté — %s', (_nom, defaut) => {

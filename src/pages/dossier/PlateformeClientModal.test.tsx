@@ -225,7 +225,7 @@ describe('relier la plateforme', () => {
     ouvrir()
     fireEvent.click(await screen.findByText('Modifier'))
     expect((screen.getByLabelText('Secret (client_secret)') as HTMLInputElement).value).toBe('')
-    expect(screen.getByText('Laissé vide, le secret enregistré est gardé : il ne s’affiche jamais.')).toBeTruthy()
+    expect(screen.getByText('Laissé vide, le secret enregistré est gardé tant que les deux adresses restent les mêmes : il ne s’affiche jamais. Une adresse changée le fait ressaisir.')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Nom de la plateforme'), { target: { value: 'Plateforme renommée' } })
     await act(async () => { (screen.getByText('Enregistrer') as HTMLButtonElement).click() })
     expect(m.enregistrerConnexionPlateforme).toHaveBeenCalledWith('d1', expect.objectContaining({

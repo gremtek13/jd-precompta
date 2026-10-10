@@ -582,7 +582,8 @@ describe('plateforme-agreee — le câblage de « relever »', () => {
   }
 
   it('est une action de la fonction, sur clic, qui ne demande pas la version de la connexion', () => {
-    expect(SOURCE).toMatch(/const ACTIONS = \[\n {2}"statut", [^\]]*"suivre", "relever",\n\]/)
+    // Une ligne de la table « qui peut quoi » (étape P3) : le cabinet, et le client qui porte la case « Ventes ».
+    expect(SOURCE).toMatch(/\n {2}relever: "ventes",\n\}\nconst ACTIONS = Object\.keys\(QUI_PEUT_QUOI\)\n/)
     expect(GESTIONNAIRE).toContain('const versionPerimee = (action === "telecharger" || action === "retenir" || action === "repartir" || action === "deposer") &&')
     // La plateforme s'ouvre une fois, après le contrôle d'accès et la lecture de la connexion — le tronc commun.
     expect(GESTIONNAIRE.indexOf('if (action === "relever") {')).toBeGreaterThan(GESTIONNAIRE.indexOf('const acces = await plateforme.jeton()\n  if ("refus" in acces) return refusDuJeton(acces)\n\n  if (action === "tester")'))

@@ -19412,3 +19412,106 @@ pour courante la première non remplacée, dit le refus 10, et la conclusion ne 
 pas la courante « selon la base » d'une chaîne illisible : à l'architecte d'en décider, si cela doit se pouvoir. Puis
 R5 (la revue analytique), R6 (les préalables, Q1), R9 (figer le dossier de travail) ; les réponses du cabinet à Q2, Q5,
 Q6, Q7 et Q11.
+
+### 10/10/2026 — LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT — ESPACE CLIENT, ÉTAPE P3
+
+(Quatre Edge Functions modifiées : `plateforme-agreee`, `superpdp-emit`, `superpdp-credentials`, `send-email` ; aucune
+migration. Le bloc neuf `droitsDeLAppelant`, copié à l'identique dans les quatre ; le bloc `JOUR DE PARIS` de
+`send-email` ; le commentaire du générateur CII (bloc `factureCii`, trois copies, dont `src/lib/factureCii.ts`) ; le
+commentaire `verify_jwt` de `plateforme-agreee` dans `supabase/config.toml`, la valeur inchangée. Tests :
+`src/lib/droitsDeLAppelantCopie.test.ts` et `src/lib/plafondEmails.test.ts` (neufs), `src/test/quiPeutQuoi.ts` (neuf, la
+table attendue), `src/test/fonctionsEdge.ts` et son test (le faux `droits_sur_le_dossier`), `src/test/contratsFonctions.ts`,
+`edgeFunctionsHttp.test.ts` (huit défauts plantés de plus), `edgeFunctionsLectures.test.ts` (deux exceptions recomptées,
+une retirée), `plateformeAgreee.test.ts`, `plateformeAgreeeStatuts.test.ts`, `superpdpEmit.test.ts`.) La quatrième étape
+de l'espace client (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §3.5, §5.1 à §5.4, §9,
+ligne P3) : ce que la case « Ventes » ouvre dans les Edge Functions, P2 l'ayant ouvert en base (« LES VENTES DU CLIENT,
+EN BASE »). Hypothèse : EC-Q4 (« le client relie aussi sa plateforme »), recommandée, pas tranchée. Sources : la
+migration P1 (`droits_sur_le_dossier`), la migration P2 (`garder_transmission_facture` : `cree_par` refusé changé à la
+mise à jour) ; RFC 6749 §2.3.1 et §4.4 (le secret part à l'adresse des jetons) et RFC 6750 (le jeton, à celle des flux).
+
+**L'ÉTAT AVANT, LU DANS LE CODE.** Les quatre fonctions appelaient `admin_du_dossier` avec le jeton de l'appelant :
+super-administrateur, chef du cabinet du dossier, comptable assigné. AUCUN client ne passait nulle part. `plateforme-agreee`
+lisait l'erreur du contrôle (503) ; les trois autres l'ignoraient, et une base en panne y répondait « Dossier
+introuvable. ». `relever` écrivait déjà `lu_par` = l'appelant. Défauts connus : un corps `null` et un champ reçu en nombre
+faisaient lever `superpdp-credentials`, `superpdp-emit` et `send-email` (500 en texte brut) ; `plateforme-agreee` n'en avait
+pas.
+
+**LE CONTRÔLE.** `droitsDeLAppelant(supabaseAsCaller, dossierId)` appelle `droits_sur_le_dossier` avec le jeton de
+l'appelant, après la session et la lecture du corps, AVANT toute autre lecture (donc de tout secret) et tout appel
+extérieur ; seul `true` accorde ; une erreur, une exception ou une réponse sans ses quatre cases booléennes rendent
+`illisible` — 503 « L'accès à ce dossier n'a pas pu être vérifié (…) » dans les quatre (les trois qui disaient « Dossier
+introuvable. » sur une panne mentaient : ne rien savoir n'est pas « introuvable ») ; une case de PLUS ne ferme rien (P1 :
+« un domaine de plus soit une clé de plus »). Puis `actionPermise(QUI_PEUT_QUOI, action, droits)` : la table de chaque
+fonction, une DONNÉE — « ventes » (`gere_les_ventes`) ou « cabinet » (`admin_du_dossier`) — ; une clé héritée
+(`toString`, `__proto__`) ne demande rien et ne permet rien. Sans le droit, la réponse d'avant, mot pour mot : 404
+« Dossier introuvable. ». Une action inconnue se refuse en 400 AVANT les droits (pour `superpdp-credentials`, elle venait
+après : un non-membre reçoit désormais 400 au lieu de 404 sur une action qui n'existe pas — rien du dossier ne s'y dit).
+Les tables : `plateforme-agreee` — `statut`, `enregistrer`, `retirer`, `tester` (EC-Q4), `deposer`, `suivre`, `relever` :
+« ventes » ; `lister`, `telecharger`, `retenir`, `repartir` (la réception des achats) : « cabinet » ; ses `ACTIONS` se
+tirent de la table. `superpdp-credentials` — `status`, `save`, `remove` (EC-Q4) : « ventes ». `superpdp-emit` —
+`envoyer`, `actualiser` : « ventes ». `send-email` — `facture` : « ventes » ; `relance_pieces` : « cabinet ».
+`superpdp-sync`, qui n'est pas touchée, refuse le client « Ventes » (404, rien de lu) : prouvé par un contrat.
+
+**QUI A FAIT QUOI.** `cree_par` = l'appelant à la RÉSERVATION d'une transmission (`deposer`, `envoyer`) : la garde de P2
+refuse qu'il change ensuite, même posé sur un nul. `lu_par` = l'appelant à chaque statut relevé (déjà là, prouvé).
+
+**LE PLAFOND D'E-MAILS.** Pour un appelant qui n'est pas du cabinet (`droits.cabinet` faux) : trente par dossier et par
+jour de PARIS (`PLAFOND_CLIENT_PAR_JOUR`), comptés dans `emails_envoyes` (`count: exact, head: true`, à la clé de service :
+compté sous le jeton du client, un refus de la RLS rendrait zéro, le côté OUVERT) juste avant Resend ; un compte illisible
+refuse (503) ; le 31e, 429. Le journal nomme le compte (`envoye_par`) mais pas sa qualité (client ou cabinet), et la
+déduire des accès d'aujourd'hui oublierait un accès retiré le jour même : TOUS les e-mails du dossier comptent, ceux du
+cabinet compris (le côté fermé). Le cabinet n'est ni plafonné ni compté. Le jour : deux INSTANTS, minuit de Paris et celui
+du lendemain (bloc `JOUR DE PARIS`, 23 ou 25 heures aux changements d'heure), confrontés à `dateAParis` sur chaque jour
+de 2026. **LIMITE** : le plafond se LIT, il ne se réserve pas — des envois PARALLÈLES du même client le lisent tous avant
+d'être journalisés et le dépassent d'autant ; une réservation tout ou rien demanderait une fonction SQL (P6 touche déjà
+`emails_envoyes`).
+
+**UN ÉCART À LA CONSIGNE, MOTIVÉ.** EC-Q4 ouvre `enregistrer` au client. Or un secret laissé vide garde l'enregistré, et
+l'adresse des jetons, comme celle des flux, se change librement : un accès « Ventes » (une secrétaire de l'entreprise)
+pouvait envoyer le secret saisi par le cabinet — ou le jeton qu'il obtient — à un hôte à lui, et lire sur la plateforme
+toutes les factures de l'entreprise, achats compris, que « Ventes » n'ouvre pas. `saisieDeConnexion` refuse désormais de
+garder le secret quand l'une des deux adresses change : « Une adresse change : ressaisissez le secret… » ; pour le cabinet
+aussi (un comptable assigné avait la même porte). Retenu à l'intégration (la session) : l'écart ferme une sortie du
+secret que l'hypothèse EC-Q4 ouvrait, et ne coûte qu'une ressaisie.
+
+**LES DÉFAUTS CONNUS DE CES FONCTIONS**, corrigés comme `create-cabinet` (23.5) : un objet JSON exigé, chaque champ texte
+ou absent, 400 en français. `DEFAUTS_CONNUS` : `corpsNul` 7 → 4, `champsDeTravers` 5 → 2 (17 → 11 en tout). Et le
+commentaire du générateur CII ne dit plus les notes « INTERNES » : elles ne figurent pas sur la facture, le client
+« Ventes » les lit.
+
+**LES PREUVES.** Le monde factice répond à `droits_sur_le_dossier` depuis deux DONNÉES (`CASES_DES_DROITS`,
+`DROITS_DU_DOSSIER`), confrontées au texte de la dernière définition de `droits_sur_le_dossier`, `gere_les_ventes`,
+`gere_la_banque` et `client_du_dossier` dans l'export (la confrontation mord : une case échangée, un terme ajouté, une
+condition retirée). Les contrats : pour chaque fonction et chaque action, le chef admis ; le client « Ventes » admis ou
+refusé selon la table ; le client sans la case, au seul « Banque », d'un autre dossier où il porte « Ventes », le compte
+rattaché à rien : refusés, AUCUNE lecture (donc aucun secret), aucune dépense, la seule demande à la base étant les droits
+sous le jeton reçu ; un dépôt et un envoi complets (le client et le chef) dont la transmission porte `cree_par` ; un relevé
+complet d'un refus 210 dont le statut porte `lu_par` ; le plafond (le 30e passe, le 31e refusé avant Resend, le cabinet
+non compté, les deux sens de la frontière de minuit à Paris, un autre dossier hors du compte, un compte illisible) ; les
+droits en panne dans les quatre. La copie gardée : les quatre blocs identiques, compilés seuls et stricts, exécutés contre
+une grille de 453 réponses (32 accords, 421 illisibles) et 480 jugements de table ; la table de chaque source égale à
+la table attendue (`src/test/quiPeutQuoi.ts`). QUARANTE-CINQ MUTATIONS CIBLÉES, toutes vues (le contrôle retiré ; une
+lecture de secret ou un appel extérieur avant lui ; une action du cabinet ouverte au client ; une action de la vente
+fermée ; une panne prise pour un accord ; les droits lus sous la clé de service ; le 503 oublié ; `cree_par` et `lu_par`
+oubliés ; plafond à 31 ; jour UTC ; cabinet plafonné ; tous les dossiers comptés ; compte en erreur pris pour zéro ;
+plafond désarmé ; secret gardé sur une adresse changée ; les défauts 23.5 rouverts) ; huit d'entre elles restent en
+défauts plantés.
+
+**CE QUI RESTE.** Le redéploiement des quatre fonctions par la session (`verify_jwt` : `plateforme-agreee` et
+`superpdp-emit` à `true`, `superpdp-credentials` et `send-email` à `false`), versions en place comparées, aller-retour,
+bordures recopiées. EC-Q4 à trancher. Questions au cabinet : le plafond compte-t-il
+les e-mails du cabinet, et doit-il devenir tout ou rien ; le message personnel d'un e-mail n'a pas de longueur bornée ;
+« le cabinet voit qui a relié » (EC-Q4) n'est vrai que de la création d'une connexion (`created_by`), pas de sa
+modification, et pas du tout de Super PDP (aucune colonne d'auteur).
+
+**COMPLÉTÉ À L'INTÉGRATION (la session, 10/10/2026).** Deux textes d'écran que l'étape rendait incomplets, corrigés
+avant le déploiement des fonctions plutôt qu'avec P4 : la case « Ventes » se coche dès aujourd'hui, et l'onglet Accès dit
+ce qu'elle ouvre à la SESSION du client, écran ou non. (1) La phrase des cases (`ceQueDisentLesCases`, ventes ouvertes)
+dit aussi ce que « Ventes » ouvre dans les fonctions : relier lui-même sa plateforme agréée et Super PDP et voir leur
+état, y transmettre une facture et en suivre la transmission, relever les statuts de sa plateforme, envoyer une facture
+par e-mail, trente par dossier et par jour au plus. `droitsAcces.test.ts` nomme les actions de chaque geste et les
+confronte, dans les deux sens, à la table attendue (`src/test/quiPeutQuoi.ts`, elle-même confrontée aux sources) : une
+action ouverte à « Ventes » que la phrase tait, ou une action du cabinet qu'elle nomme, fait tomber le test ; le
+plafond dit est relu dans `send-email`. Deux mutations mordent (un geste retiré de la phrase, le plafond à 31). (2)
+`PlateformeClientModal` : « Laissé vide, le secret enregistré est gardé tant que les deux adresses restent les mêmes :
+il ne s'affiche jamais. Une adresse changée le fait ressaisir. »
