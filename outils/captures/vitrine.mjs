@@ -364,6 +364,9 @@ const VUES = [
   { nom: 'pc-client-pieces', chemin: '#/mes-pieces', l: 1440, h: 900, theme: 'light', reduite: false, client: true },
   { nom: 'mobile-client-accueil', chemin: '#/accueil', l: 390, h: 844, theme: 'light', reduite: false, client: true },
   { nom: 'mobile-client-pieces', chemin: '#/mes-pieces', l: 390, h: 844, theme: 'light', reduite: false, client: true },
+  // « Ma simulation » d'un accès sans la case « Banque » (espace client, étape P7) : elle se tait, et dit pourquoi.
+  { nom: 'pc-client-simulation', chemin: '#/ma-simulation', l: 1440, h: 900, theme: 'light', reduite: false, client: true },
+  { nom: 'mobile-client-simulation', chemin: '#/ma-simulation', l: 390, h: 844, theme: 'light', reduite: false, client: true },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

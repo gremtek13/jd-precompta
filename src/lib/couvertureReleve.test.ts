@@ -128,10 +128,10 @@ describe('« Ma simulation » sous la case « Banque »', () => {
 })
 
 describe('le drapeau dit ce que porte l’export', () => {
-  // LA MIGRATION `banque_du_client` S'APPLIQUE APRÈS PRÉSENTATION AU CABINET : tant que son fichier n'est pas dans
-  // supabase/schema, la couverture n'est pas lue et rien ne change pour le client. Le jour où il y arrive, ce test vire au
-  // rouge et demande de passer `COUVERTURE_EXPORTEE` à vrai — les deux écrans passent alors à la couverture, la simulation
-  // à la case « Banque », et ce test confronte la fonction exportée à ce que les écrans lui envoient et en attendent.
+  // LA MIGRATION `banque_du_client` EST APPLIQUÉE DEPUIS LE 10/10/2026, et son fichier est dans supabase/schema : le
+  // drapeau est levé, les deux écrans lisent la couverture, la simulation suit la case « Banque ». Ce test confronte
+  // la fonction exportée à ce que les écrans lui envoient et en attendent, et vire au rouge si le drapeau et l'export
+  // se contredisent — un drapeau rebaissé, ou un export qui perdrait la fonction.
   it('l’export porte couverture_du_releve si et seulement si COUVERTURE_EXPORTEE le dit — et alors, sa forme est celle qu’on lit', () => {
     const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.couverture_du_releve\(/.test(f.texte))
     expect(exportee, 'COUVERTURE_EXPORTEE ne dit plus ce que porte l’export').toBe(COUVERTURE_EXPORTEE)

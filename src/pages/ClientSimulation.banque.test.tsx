@@ -8,7 +8,7 @@ import type { Piece } from '../lib/types'
 // relevé en base —, la simulation se calcule sur la banque, que la base ne rend plus qu'à la case : sans elle, l'écran se
 // TAIT en le disant et ne demande rien ; avec elle, il demande aussi la case à la BASE, dans la même vague de lectures,
 // et c'est la base qui décide (une case retirée depuis la connexion ferait calculer sur un relevé rendu vide, sans
-// erreur). Drapeau baissé, ClientSimulation.test.tsx garde que rien ne change.
+// erreur). Drapeau baissé, espaceClientAvantCouverture.test.tsx garde que rien ne changerait.
 vi.mock('../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/couvertureReleve')>(),
   COUVERTURE_EXPORTEE: true,

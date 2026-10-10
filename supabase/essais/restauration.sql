@@ -78,6 +78,15 @@
 -- (23503), la même ligne acceptée une fois le rôle inscrit. Plantés — le catalogue absent de la base d'arrivée, puis le
 -- plan avant son dossier —, le script s'arrête sur la clé du plan. Ce que la garde exige à la restauration (le
 -- super-administrateur, un dossier encore sans écriture) n'est pas de son ressort : `planComptable.sql`.
+--
+-- 10/10/2026, espace client P7 : `justificatifs_proposes` et `precisions_mouvements` entrent au plan (63 tables), après
+-- les mouvements et les pièces qu'elles désignent, avant `exercices_valides` — la migration `banque_du_client`,
+-- appliquée en production le même jour. Rejoué sur la réplique de l'étape (signature.sql : les neuf familles égales à
+-- la production, hors des objets de `plan_comptable_des_dossiers`, chantier PC1, dont les tables n'entrent pas au plan
+-- de cette version), sur le dossier du client, semé PAR LES FONCTIONS de deux propositions du client — dont une
+-- retirée par le cabinet — et de deux précisions (client, cabinet) : 63 tables recréées, 58 restaurées et IDENTIQUES
+-- à la source (43 lignes, dont les quatre de l'étape), 0 écart, aucun arrêt. Plantées — une proposition, puis une
+-- précision, avant les mouvements —, le script s'arrête sur leur clé.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -101,7 +110,7 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (46,'tiers_categories_cabinet'),(47,'immobilisations'),(48,'lignes_bancaires'),(49,'ventilations_bancaires'),(50,'reglements_groupes'),
  (51,'encaissements_factures'),(52,'encaissements_factures_taux'),(53,'transmissions_encaissements'),(54,'lettrages_manuels'),(55,'piece_commentaires'),
  (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
- (61,'revision_justifications'),(62,'revision_preuves'),(63,'exercices_valides');
+ (61,'revision_justifications'),(62,'revision_preuves'),(63,'justificatifs_proposes'),(64,'precisions_mouvements'),(65,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -113,12 +122,14 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('encaissements_factures_taux','direct',null,null),('exercices_clotures','direct',null,null),('exercices_valides','direct',null,null),
  ('facture_lignes','par_parent','factures_emises','facture_id'),('facture_numerotation','direct',null,null),('facture_superpdp_events','direct',null,null),
  ('factures_emises','direct',null,null),('immobilisations','direct',null,null),('informations_dossier','direct',null,null),
+ ('justificatifs_proposes','direct',null,null),
  ('lettrages_manuels','direct',null,null),('lignes_bancaires','direct',null,null),('memberships','direct',null,null),
  ('mouvements_cca','par_parent','comptes_courants_associes','compte_id'),('natures_immobilisation','partage',null,null),('notes_internes','direct',null,null),
  ('packs','direct',null,null),
  ('piece_commentaires','direct',null,null),('piece_textes_ocr','direct',null,null),('pieces','direct',null,null),
  ('pieces_hors_de_france','direct',null,null),('pieces_hors_de_france_taux','direct',null,null),
  ('plan_comptable_dossier','direct',null,null),
+ ('precisions_mouvements','direct',null,null),
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),
  ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('roles_comptables','global',null,null),

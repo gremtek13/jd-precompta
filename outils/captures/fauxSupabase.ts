@@ -1482,6 +1482,28 @@ function requete(table: string) {
 
 const session = { user: { id: 'u1', email: CLIENT_DU_BANC ? 'client@exemple.fr' : 'cabinet@exemple.fr' }, access_token: 'faux' }
 
+// `couverture_du_releve` : les mois (au premier jour) où le relevé du dossier porte un mouvement ;
+// `droits_sur_le_dossier` : comme en base, le cabinet gère les ventes et la banque ; un client, selon les cases de son
+// accès (`memberships`).
+function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown; error: null } {
+  if (nom === 'couverture_du_releve') {
+    const mois = new Set((TABLES.lignes_bancaires ?? []).filter((l) => l.dossier_id === dossierId)
+      .map((l) => String(l.date).slice(0, 7) + '-01'))
+    return { data: [...mois].sort(), error: null }
+  }
+  if (nom === 'droits_sur_le_dossier') {
+    const acces = (TABLES.memberships ?? []).find((m) => m.dossier_id === dossierId && m.user_id === session.user.id)
+    const droits = {
+      cabinet: !CLIENT_DU_BANC,
+      membre: acces !== undefined,
+      ventes: !CLIENT_DU_BANC || acces?.droit_ventes === true,
+      banque: !CLIENT_DU_BANC || acces?.droit_banque === true,
+    }
+    return { data: droits, error: null }
+  }
+  return { data: nom === 'verifier_exercice_valide', error: null }
+}
+
 export const supabase = {
   auth: {
     getSession: () => Promise.resolve({ data: { session }, error: null }),
@@ -1491,8 +1513,9 @@ export const supabase = {
     // « Envoyer un lien de réinitialisation » (onglet Accès) : la demande est acceptée, et rien ne part vers personne.
     resetPasswordForEmail: () => Promise.resolve({ data: {}, error: null }),
   },
-  // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; tout autre appel, faux.
-  rpc: (nom: string) => Promise.resolve({ data: nom === 'verifier_exercice_valide', error: null }),
+  // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; la couverture du relevé et les droits de
+  // l'appelant (espace client, étape P7), comme leurs fonctions en base ; tout autre appel, faux.
+  rpc: (nom: string, args?: { p_dossier_id?: string }) => Promise.resolve(rpcDuBanc(nom, args?.p_dossier_id)),
   from: (table: string) => requete(table),
   storage: {
     from: () => ({

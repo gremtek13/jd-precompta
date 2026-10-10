@@ -255,7 +255,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   accès portent les deux droits), boucle sur `pg_class` (une table ajoutée sans policy est attrapée), écritures d'essai
   annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge ; depuis
   P7 et P2, deux blocs de plus — « La banque du client » (3bis, 4bis, trois mutations) et « Les ventes du client »
-  (3bis, 4bis, douze mutations) —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent. Le fichier
+  (3bis, 4bis, douze mutations) —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; entre les
+  deux migrations de P7 (depuis le 10/10/2026), le 3 bis de la banque est EN FAUTE, et c'est attendu. Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
@@ -335,12 +336,14 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   policy qui lui ouvre une lecture se présente au cabinet avant d'être appliquée. **Les droits sont en base depuis P1**
   (09/10/2026) : `memberships.droit_ventes` et `droit_banque`, faux par défaut, cochés par le cabinet dans l'onglet Accès
   par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
-  `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` seront le prédicat des étapes
-  suivantes ; ils n'ouvrent encore RIEN, et l'onglet le dit → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
-  **La banque sous la case « Banque »** (P7, préparée le 10/10/2026, non appliquée) : un ordre, et il est la règle —
-  d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule de
-  l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un écran
-  d'avant croirait le relevé vide → « LA BANQUE DU CLIENT EN BASE ».
+  `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` sont le prédicat des étapes
+  suivantes ; depuis P7 (10/10/2026), « Banque » ouvre en base les deux registres de la banque du client et le contrôle
+  de solde des relevés, et à l'écran « Ma simulation », ce que l'onglet dit ; « Ventes » n'ouvre encore rien →
+  « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  **La banque sous la case « Banque »** (P7 ; l'ajout appliqué le 10/10/2026, le resserrement à suivre) : un ordre, et
+  il est la règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la
+  bascule de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur,
+  et un écran d'avant croirait le relevé vide → « LA BANQUE DU CLIENT EN BASE ».
   **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
   de son relevé et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit →
   « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes du cabinet** vivent
@@ -371,7 +374,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 ## Fonctionnalités déjà implémentées
 
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
-  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext`, pas encore honorés) ; client
+  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre « Ma
+  simulation » depuis P7, 10/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet
@@ -488,10 +492,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT » ; P1, les droits d'un accès, en base, dans
   l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1 prise comme hypothèse ;
   l'invariant 3 bis de `rls.sql` attend P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
-  P7, la banque du client en base, préparée et éprouvée sur une réplique le 10/10/2026, NON APPLIQUÉE : deux migrations
-  présentées au cabinet — `banque_du_client` (deux registres écrits par trois fonctions, la couverture du relevé), puis,
-  la bascule `COUVERTURE_EXPORTEE` en ligne, `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au
-  droit « Banque ») ; « Ma simulation » suit la case (EC-Q1 prise comme hypothèse) → « LA BANQUE DU CLIENT EN BASE ».
+  P7, la banque du client en base (décision du cabinet du 10/10/2026 : les deux migrations, EC-Q1, les relevés déposés
+  en fichier lisibles par tout accès) : `banque_du_client` APPLIQUÉE le 10/10/2026 (deux registres écrits par trois
+  fonctions, la couverture du relevé), `COUVERTURE_EXPORTEE` levé avec elle, « Ma simulation » sous la case ; reste
+  `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au droit « Banque »), qui part APRÈS la mise en
+  ligne de la bascule → « LA BANQUE DU CLIENT EN BASE », « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE ».
   P2, les ventes du client en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à
   coller) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière deux drapeaux
   (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; avant l'application, le libellé « Notes internes »
@@ -532,12 +537,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 22 fonctions au 10/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 26 fonctions au 10/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
-  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`, `enregistrer_fiche_hors_de_france` et
-  `retirer_fiche_hors_de_france` écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
-  de l'appelant (`droitsAcces.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
+  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
+  `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition` et
+  `ecrire_precision_mouvement` écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`,
+  `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
+  (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
+  plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
   Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
@@ -1045,7 +1053,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7839 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7938 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

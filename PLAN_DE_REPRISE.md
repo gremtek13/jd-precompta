@@ -317,6 +317,12 @@ le plan d'un dossier (juste après son dossier) sont entrés à l'ordre — 61 t
 de l'étape, le dossier `test` semé des 26 rôles décalés puis de deux écritures : 57 tables restaurées, 57 identiques,
 0 écart ; un rôle inconnu de la base d'arrivée est refusé par la clé.
 
+Le même jour (espace client, étape P7, migration `banque_du_client` appliquée en production), les propositions de
+justificatif et les précisions sur un mouvement sont entrées au plan — 65 tables avec celles de PC1. Sur la réplique de l'étape (sans PC1), le dossier
+du client semé par les fonctions de la base (deux propositions, dont une retirée, et deux précisions) : 58 tables
+restaurées, 58 identiques, 0 écart ; une proposition ou une précision réinsérée avant les mouvements arrête l'essai sur
+sa clé.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 

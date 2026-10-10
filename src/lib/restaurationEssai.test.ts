@@ -148,7 +148,11 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     })
 
     it('une table oubliée dans l’ordre', () => {
-      const ecarts = remplacer(`,(${preuves},'revision_preuves'),(${valides},'exercices_valides')`, `,(${preuves},'exercices_valides')`)
+      // Le bloc entier se réécrit depuis le code, sans la table et aux rangs continus : seule son absence se voit, où que
+      // passent les lignes (la banque du client, P7, a glissé deux tables entre elle et `exercices_valides`).
+      const sansLaTable = ORDRE_RESTAURATION.filter((t) => t !== 'revision_preuves').map((t, i) => `(${i + 1},'${t}')`)
+      const ecarts = remplacer(bloc(texteDeLEssai, '_ordre'),
+        `insert into essai_restauration._ordre (rang, table_nom) values ${sansLaTable.join(',')}`)
       expect(ecarts.join('\n')).toContain('manquantes : revision_preuves')
     })
 

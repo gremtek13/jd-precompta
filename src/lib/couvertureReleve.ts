@@ -11,15 +11,17 @@
 // montant, ni libellé, pour tout accès au dossier. Et « Ma simulation », qui se calcule SUR la banque, se tait sans la
 // case — en le disant —, au lieu de calculer sur un relevé que la base ne lui rend plus.
 //
-// LA FONCTION EST-ELLE EN BASE ? `COUVERTURE_EXPORTEE` le dit, comme `RETRAIT_EXPORTE` dans cotisationPersonnelle.ts.
-// Tant qu'il est faux, rien ne change pour le client : les deux écrans lisent les mouvements comme avant, et la
-// simulation s'affiche pour tout accès. Le jour où l'export porte `couverture_du_releve` (supabase/schema),
-// couvertureReleve.test.ts vire au rouge tant que ceci reste faux : le passer à vrai bascule d'un même geste les deux
-// écrans sur la couverture, la simulation sous la case « Banque », et les phrases de l'onglet Accès (lib/droitsAcces.ts).
-// La migration du resserrement ne s'applique qu'APRÈS la mise en ligne de cette bascule.
+// LA FONCTION EST-ELLE EN BASE ? Oui : `couverture_du_releve` vit dans la migration `banque_du_client`, appliquée le
+// 10/10/2026, que l'export porte depuis (supabase/schema/20261010095439_banque_du_client.sql). `COUVERTURE_EXPORTEE`
+// reste, comme `RETRAIT_EXPORTE` dans cotisationPersonnelle.ts : couvertureReleve.test.ts le confronte à l'export, et
+// il ne vaut vrai que si le fichier porte la fonction. Levé, il met d'un même geste les deux écrans sur la couverture,
+// la simulation sous la case « Banque » et les phrases de l'onglet Accès (lib/droitsAcces.ts). Baissé, les écrans
+// liraient les mouvements comme avant P7, et la simulation s'ouvrirait à tout accès : ce chemin, tant qu'il existe,
+// espaceClientAvantCouverture.test.tsx le garde. La migration du resserrement ne s'applique qu'APRÈS la mise en ligne
+// de la bascule.
 //
-// Le jour de la bascule, l'export reçoit aussi les deux registres de la migration `banque_du_client` : le plan de
-// sauvegarde doit les porter dans le même geste (sauvegardeTables.test.ts et sauvegardeRelations.test.ts l'exigent).
+// Les deux registres de `banque_du_client` sont au plan de sauvegarde depuis la même bascule (sauvegardeTables.test.ts
+// et sauvegardeRelations.test.ts l'exigent dès que l'export les porte).
 //
 // Module PUR : il n'importe pas `supabase.ts` (lib/droitsAcces.ts, que lit l'onglet Accès, en lit le drapeau). Les
 // écrans appellent la base et passent la REQUÊTE telle quelle à `lireLaCouverture` ou `lireLeDroitBanque`, qui l'attendent
@@ -34,7 +36,7 @@ export interface ReponseDeLaBase {
   error: unknown
 }
 
-export const COUVERTURE_EXPORTEE: boolean = false
+export const COUVERTURE_EXPORTEE: boolean = true
 
 /** Un mois couvert par le relevé, sous la forme qu'attend `moisManquantsDe` : son premier jour, `AAAA-MM-01`. */
 export interface MoisCouvert {
