@@ -125,7 +125,7 @@ describe('ordre de restauration', () => {
     expect([...enDeuxPasses, ...parVagues].sort()).toEqual(auto)
     expect(parVagues).toEqual([
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
-      'pieces_hors_de_france.remplace_id',
+      'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id',
     ])
   })
 
@@ -157,13 +157,34 @@ describe('ordre de restauration', () => {
       expect(rang(lue), lue).toBeLessThan(rang('revision_preuves'))
     }
     expect(violationsOrdre(ORDRE_RESTAURATION, LIENS_GARDES)).toEqual([])
-    expect(RELATIONS.filter((r) => r.enfant.startsWith('revision_')).map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+    expect(RELATIONS.filter((r) => r.enfant === 'revision_justifications' || r.enfant === 'revision_preuves')
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
       .toEqual([
         'revision_justifications.dossier_id>dossiers:cascade',
         'revision_justifications.remplace_id>revision_justifications:bloque',
         'revision_justifications.reprise_de>revision_justifications:bloque',
         'revision_preuves.dossier_id>dossiers:cascade',
         'revision_preuves.justification_id>revision_justifications:cascade',
+      ])
+  })
+
+  it('écrit les cycles de la révision après ses soldes, et la revue après la conclusion qu’elle revoit (étape R4)', () => {
+    // Trois tables qui ne lisent rien qu'une validation fige : elles suivent les décisions, avant `exercices_valides`.
+    // La revue pointe sa conclusion par une clé sans action ; la conclusion pointe celle qu'elle remplace (par vagues).
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    for (const t of ['revision_conclusions', 'revision_notes', 'revision_revues']) {
+      expect(rang(t), t).toBeGreaterThan(rang('revision_preuves'))
+      expect(rang(t), t).toBeLessThan(rang('exercices_valides'))
+    }
+    expect(rang('revision_conclusions')).toBeLessThan(rang('revision_revues'))
+    expect(RELATIONS.filter((r) => ['revision_conclusions', 'revision_notes', 'revision_revues'].includes(r.enfant))
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'revision_conclusions.dossier_id>dossiers:cascade',
+        'revision_conclusions.remplace_id>revision_conclusions:bloque',
+        'revision_notes.dossier_id>dossiers:cascade',
+        'revision_revues.conclusion_id>revision_conclusions:bloque',
+        'revision_revues.dossier_id>dossiers:cascade',
       ])
   })
 
@@ -698,6 +719,27 @@ describe('plan de réinsertion', () => {
     // Par une seule colonne, la reprise partirait avec la première vague, avant sa cible.
     expect(vaguesParLien([reprise, troisieme, premiere, seconde, autre], 'remplace_id').map((v) => v.map((l) => l.id)))
       .toEqual([['j4', 'j1', 'j5'], ['j2'], ['j3']])
+  })
+
+  it('écrit chaque conclusion d’un cycle après celle qu’elle remplace, et sa revue après elle (étape R4)', () => {
+    // Une conclusion en remplace une du même cycle et du même exercice : immuable, elle ne part pas à NULL, et sa garde lit
+    // la conclusion remplacée — un maillon par vague. Sa revue suit la table des conclusions, que la clé lui fait lire.
+    const troisieme = { id: 'k3', dossier_id: 'd1', remplace_id: 'k2' }
+    const premiere = { id: 'k1', dossier_id: 'd1', remplace_id: null }
+    const seconde = { id: 'k2', dossier_id: 'd1', remplace_id: 'k1' }
+    const autre = { id: 'l1', dossier_id: 'd1', remplace_id: null }
+    const revues = [{ id: 'v1', dossier_id: 'd1', conclusion_id: 'k1' }, { id: 'v3', dossier_id: 'd1', conclusion_id: 'k3' }]
+    const plan = planReinsertion({ revision_revues: revues, revision_conclusions: [troisieme, premiere, seconde, autre] })
+    expect(plan.etapes.map((e) => `${e.table}:${e.lignes.map((l) => l.id).join(',')}`)).toEqual([
+      'revision_conclusions:k1,l1', 'revision_conclusions:k2', 'revision_conclusions:k3', 'revision_revues:v1,v3',
+    ])
+    expect(plan.secondePasse).toEqual([])
+    // Une conclusion qui en remplace une absente de la sauvegarde, une revue d'une conclusion absente : des liens perdus.
+    expect(liensPerdus({ dossiers: [{ id: 'd1' }], revision_conclusions: [seconde], revision_revues: [{ id: 'v9', dossier_id: 'd1', conclusion_id: 'k9' }] }))
+      .toEqual([
+        { table: 'revision_conclusions', colonne: 'remplace_id', parent: 'revision_conclusions', valeur: 'k1', effacable: false },
+        { table: 'revision_revues', colonne: 'conclusion_id', parent: 'revision_conclusions', valeur: 'k9', effacable: false },
+      ])
   })
 
   it('écrit chaque version d’une fiche « hors de France » après celle qu’elle remplace, et sa ventilation ensuite', () => {

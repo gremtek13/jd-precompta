@@ -164,8 +164,8 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes,
-                    droitsAcces, piecesHorsDeFrance, planComptable ;
+                    identiteFacturesRecues, revisionSoldes, revisionCycles, cotisationPersonnelle, categoriesCommunes,
+                    notesInternes, droitsAcces, piecesHorsDeFrance, planComptable ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -501,8 +501,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
   révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2, le module, le
   10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3, l'onglet Révision, le
-  10/10/2026 (les préalables de la validation n'y sont pas encore) ; R4, les cycles, en cours ; R6 attend Q1 → « LA BASE
-  DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION ».
+  10/10/2026 (les préalables de la validation n'y sont pas encore) ; R4, les cycles — le programme de travail PROPOSÉ,
+  la conclusion, le journal, la revue du chef —, en base et en module le 10/10/2026 (Q2, Q7 et Q11 prises comme
+  hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes ; l'écran, sa phase C, à venir) ; R6 attend Q1 → « LA BASE DES
+  SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -565,12 +567,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 26 fonctions au 10/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 29 fonctions au 10/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
   `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
-  `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition` et
-  `ecrire_precision_mouvement` écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`,
+  `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition`,
+  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision` et `revoir_cycle` écrivent, chacune avec son propre
+  contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet
+  du dossier — `est_chef_du_cabinet` — pour revoir) ; `client_du_dossier`,
   `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
   (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
   plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
@@ -724,6 +728,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - Une phrase qui annonce un test nomme son fichier, et le test existe → « UNE PHRASE QUI ANNONÇAIT SON PROPRE TEST ».
 - **Chercher toutes les copies avant de corriger la première** — les jumeaux assumés (`depot.ts` côté client,
   `importFichiers.ts` côté cabinet), Edge Functions comprises : chercher la VALEUR, pas le nom de la fonction.
+- **Le nom `notes` est réservé** dans les sources de production : `notesInternesEcritures.test.ts` (règles K et L) compte
+  toute clé `notes` et toute lecture `.notes` ; une autre table nomme autrement ses notes (`journal`, R4).
 
 ### Dates et fuseaux
 
@@ -861,6 +867,19 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   pas, la justification permanente de N−1 (elle remplit, n'écrit pas) et l'historique, empreintes relues ; chaque bouton
   passe `refusDeJustifierSolde` et se grise sous le refus dit ; `justifier_solde` seule écrit, sous un verrou `useRef`
   relâché après la relecture, relue aussi sur refus → « L'ÉCRAN DE LA RÉVISION ».
+- **Les cycles de la révision** (ligne 41, R4) : on révise par COMPTE (R1) et par CYCLE pour le travail et la revue
+  (NP 2300, A8 et A9 ; norme de management de la qualité, § 29, § 30 et A30-1). Par cycle et par exercice, une
+  CONCLUSION immuable — « révisé » ou « anomalie », le programme de travail tel qu'il a été exécuté (`travaux`, jsonb,
+  64 Kio), les points à suivre l'exercice suivant — qui se REMPLACE (chaîne `remplace_id`, une première par cycle) ; un
+  JOURNAL qui ne fait que s'allonger (échange avec la direction, consultation, travail) ; une REVUE par conclusion,
+  « approuvé » ou « à reprendre » motivé, par le chef du cabinet seul (hypothèse Q2 ; il peut revoir ce qu'il a préparé,
+  la trace le dit). `conclure_cycle`, `noter_revision` et `revoir_cycle` les écrivent seules, sous le verrou de la
+  validation puis celui de la révision ; aucune policy d'écriture hors de la restauration, le client n'y voit rien. Le
+  programme PROPOSÉ vit dans le code (`PROGRAMME_DES_CYCLES`, codes stables) ; l'ÉTAT d'un cycle se DÉDUIT
+  (`cyclesDeLExercice` : non commencé, en cours, révisé, anomalie, à reprendre, revu, revue périmée…), jamais stocké ;
+  le cycle « ensemble » porte la synthèse et ne se dit révisé que quand les autres le sont. `lib/revisionRevue.ts` redit
+  les refus avant le clic, confronté au texte exporté des fonctions et rejoué sur l'essai → « LES CYCLES DE LA
+  RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
