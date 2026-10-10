@@ -3,8 +3,8 @@ import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from './ecritures'
 import type { ANouveau, CotisationDeclaree, EcritureBrouillon, LigneBancaire } from '../lib/types'
 
 // LE FAUX CLIENT DE L'ONGLET COTISATIONS POUR LE PAIEMENT DEPUIS LE COMPTE PERSONNEL (ligne 26.6, phase C), partagé par
-// les deux fichiers qui le montent : CotisationsTabPaiementPersonnel.test.tsx (le module tel qu'il est) et
-// CotisationsTabRetraitPaiement.test.tsx (le drapeau du retrait levé — un module simulé l'est pour tout un fichier).
+// les deux fichiers qui le montent : CotisationsTabPaiementPersonnel.test.tsx (le paiement) et
+// CotisationsTabRetraitPaiement.test.tsx (son retrait, depuis que sa fonction est en base et dans l'export).
 // Chaque fichier le charge DANS la fabrique de son `vi.mock` et l'importe aussi : un seul état par fichier.
 //
 // Les filtres qui décident de ce que l'écran voit sont APPLIQUÉS (filtresPostgrest.ts), l'ordre aussi — l'ouverture est

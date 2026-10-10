@@ -374,8 +374,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
   une catégorie, règles d'affectation en lot, virement personnel (108), échéance d'emprunt (164, 661, 616), ventilation,
   règlement de plusieurs pièces par un virement (ligne 26), taux de TVA d'une recette sans facture, échéance de
-  cotisation (646, CSG-CRDS au 108), l'échéance payée depuis le compte personnel (09/10/2026, en base et à l'écran ; le
-  retrait à coller) — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de la nature,
+  cotisation (646, CSG-CRDS au 108), l'échéance payée depuis le compte personnel (09/10/2026, en base et à l'écran ; son
+  retrait le 10/10/2026) — ; dotations aux amortissements (prorata temporis), acquisition des biens (compte de la nature,
   445620, 404), forfait kilométrique (625110), note de frais face au 108 en trésorerie ; la 2035 comparée aux
   écritures ; la validation d'un exercice, qui le fige en base.
 - **Comptabilité d'engagement**, étape 1 (ligne 31, 28/09/2026) ; lettrage déduit du rapprochement (05/10) et fait à la
@@ -429,8 +429,7 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   décalés.
 - **FEC** : restent les vingt-deux champs d'un BNC en trésorerie et les montants en devise (réponse de
   l'expert-comptable du cabinet attendue).
-- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; le retrait d'un paiement personnel : la
-  migration à coller par le cabinet, puis `RETRAIT_EXPORTE` à `true` ; l'opération découverte après coup, conçue,
+- **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue,
   questions au cabinet (B1 à B13). Aucun exercice n'est encore validé en base.
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu avec l'espace
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
@@ -508,11 +507,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 19 fonctions au 09/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 20 fonctions au 10/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
-  `enregistrer_paiement_personnel_cotisation` et `changer_droits_acces` écrivent, chacune avec son propre contrôle
-  d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
+  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation` et `changer_droits_acces`
+  écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
   de l'appelant (`droitsAcces.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
   Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -730,9 +729,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   les deux (la fonction et deux déclencheurs) → « UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL S'ÉCRIT ». À l'écran
   (phase C) : la colonne « Paiement » de Cotisations offre le geste sur une échéance que rien ne paie, sur des listes
   lues en entier (ouverture comprise) ; la fenêtre ne propose jamais la date, dit le refus du module avant le clic et la
-  confirmation qui nomme les comptes et l'exercice, sous le verrou du brouillon relâché après la relecture. Le retrait
-  n'est offert que si sa fonction est en base : `RETRAIT_EXPORTE` (lib/cotisationPersonnelle.ts), un seul drapeau pour
-  le test du module, le bouton et les mots du module → « LA PHASE C : L'ÉCRAN DU PAIEMENT PERSONNEL ». L'opération
+  confirmation qui nomme les comptes et l'exercice, sous le verrou du brouillon relâché après la relecture. « Retirer ce
+  paiement » (`retirer_paiement_personnel_cotisation`, en base et dans l'export depuis le 10/10/2026 ; `RETRAIT_EXPORTE`
+  tenu égal à l'export par le test du module) : refusé avant le clic sur un paiement ou une échéance d'un exercice
+  validé ; sa confirmation nomme les lignes du brouillon TELLES QU'ELLES SONT — c'est le geste d'une écriture « À
+  reprendre » —, sans les détailler sur un brouillon lu en partie → « LA PHASE C : L'ÉCRAN DU PAIEMENT PERSONNEL »,
+  « LE RETRAIT D'UN PAIEMENT PERSONNEL, EXPORTÉ ET OFFERT ». L'opération
   découverte après la validation de son exercice est conçue, pas modélisée → « L'OPÉRATION DÉCOUVERTE APRÈS COUP ».
 - **Les écritures d'inventaire** suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS S'ÉCRIVENT »,
   « L'ACQUISITION D'UN BIEN S'ÉCRIT », « LE FORFAIT KILOMÉTRIQUE S'ÉCRIT », « UNE NOTE DE FRAIS EN TRÉSORERIE » ;
@@ -959,7 +961,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7428 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7435 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

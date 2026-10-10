@@ -39,12 +39,14 @@ import { compteDuDirigeant } from './virementPersonnel'
 // au texte de la migration et aux messages que l'essai a lus en base). Le RETRAIT (`retirer_paiement_personnel_cotisation`)
 // suit la même règle.
 
-// LE RETRAIT EST-IL EN BASE ? `retirer_paiement_personnel_cotisation` vit dans une migration que le cabinet colle (sa
-// fonction supprime des lignes du brouillon). Tant qu'elle n'y est pas, l'appeler finirait en erreur : l'onglet
-// Cotisations n'offre pas le bouton « Retirer ce paiement », et ce que le module dit du retrait ne le promet pas. Le jour où
-// l'export la porte (supabase/schema), cotisationPersonnelle.test.ts vire au rouge tant que ceci reste `false` : le
-// passer à `true` ouvre d'un même geste la confrontation de ses refus au texte de la fonction, le bouton, et ces mots.
-export const RETRAIT_EXPORTE: boolean = false
+// LE RETRAIT EST-IL EN BASE ? `retirer_paiement_personnel_cotisation` vit dans une migration à part, que le cabinet a
+// collée le 10/10/2026 (sa fonction supprime des lignes du brouillon) et que l'export porte depuis
+// (supabase/schema/20261010071154_retrait_du_paiement_personnel.sql). Le drapeau reste, parce qu'il est ce que
+// cotisationPersonnelle.test.ts confronte à l'export : il ne dit `true` que si le fichier porte la fonction — le jour où il
+// la perdrait, le test vire au rouge plutôt que de laisser l'onglet offrir un bouton qui finirait en erreur. Il ouvre
+// d'un même geste la confrontation de ses refus au texte de la fonction, le bouton « Retirer ce paiement » de l'onglet
+// Cotisations, et les mots qui promettent le retrait.
+export const RETRAIT_EXPORTE: boolean = true
 
 // Les refus de `enregistrer_paiement_personnel_cotisation`, dans l'ordre de la fonction : chaque « % » reçoit la valeur
 // que la base y met (`remplirModele`). Les quatre refus des montants sont ceux de lib/cotisationRapprochee.ts, à leur rang.
@@ -264,16 +266,34 @@ export function refusRetraitPaiementPersonnel(
   return null
 }
 
-// LA CONFIRMATION DU RETRAIT NOMME CE QU'ON PERD : le paiement, son écriture, et la date à laquelle l'échéance comptera
-// désormais — son échéance, une supposition, tant qu'aucun paiement ne la date.
+// LA CONFIRMATION DU RETRAIT NOMME CE QU'ON PERD : le paiement, les lignes du brouillon qui le désignent, et la date à
+// laquelle l'échéance comptera désormais — son échéance, une supposition, tant qu'aucun paiement ne la date.
+//
+// Les lignes TELLES QU'ELLES SONT, pas celles que le paiement produirait : la fonction retire toutes celles qui portent
+// l'échéance (`cotisation_id`), et c'est justement quand elles ne la suivent plus (« À reprendre ») que le retrait est le
+// geste conseillé — l'écriture qu'il « devrait » avoir y serait un mensonge, ou une écriture absente annoncée retirée.
+// `ecritures` : le brouillon sans pièce du dossier lu EN ENTIER, ou `null` sur une lecture partielle — ce qu'on n'a pas vu
+// ne se détaille pas, et la phrase dit seulement ce que la fonction fait. Sans valeur par défaut.
 export function avertissementRetraitPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  cotisation: Pick<CotisationDeclaree, 'id' | 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'paiement_personnel_le'>,
   modele: ModeleComptable,
+  ecritures: readonly EcritureBrouillon[] | null,
 ): string {
-  const lignes = ecritureDuPaiementPersonnel(cotisation, modele)
-  const ecriture = lignes.length === 0
-    ? 'Il n’avait rien écrit au brouillon.'
-    : `Son écriture (${formatMoney(lignes[0].montant)} au ${lignes[0].compte}, face au ${lignes[1].compte}) est retirée du brouillon.`
+  const ecriture = ((): string => {
+    if (ecritures === null) {
+      return 'Ses lignes au brouillon sont retirées avec lui ; le brouillon n’a été lu qu’en partie, elles ne sont pas détaillées ici.'
+    }
+    const presentes = ecritures.filter((e) => e.cotisation_id === cotisation.id)
+    if (presentes.length === 0) return 'Il n’a aucune ligne au brouillon : rien n’en est retiré.'
+    const lignes = ecritureDuPaiementPersonnel(cotisation, modele)
+    if (cotisation.paiement_personnel_le && ecritureConforme(presentes, lignes, cotisation.paiement_personnel_le)) {
+      return `Son écriture (${formatMoney(lignes[0].montant)} au ${lignes[0].compte}, face au ${lignes[1].compte}) est retirée du brouillon.`
+    }
+    const comptes = [...new Set(presentes.map((e) => e.compte))].sort().join(', ')
+    return presentes.length === 1
+      ? `Sa ligne au brouillon (${comptes}), qui ne suit plus l’échéance, est retirée.`
+      : `Ses ${presentes.length} lignes au brouillon (${comptes}), qui ne suivent plus l’échéance, sont retirées.`
+  })()
   return `Le paiement du ${formatDate(cotisation.paiement_personnel_le ?? null)} depuis le compte personnel est retiré. ${ecriture} `
     + `L’échéance compte de nouveau à son échéance, le ${formatDate(cotisation.echeance)}, tant qu’aucun paiement ne la date.`
 }

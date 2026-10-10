@@ -12,8 +12,8 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 // colonne « Paiement » offre le geste sur la seule échéance que rien ne paie, que la fenêtre ne propose jamais la date et
 // dit le refus avant le clic, que l'appel part UNE fois sous le verrou du brouillon, relâché après la relecture, et que le
 // reste de l'onglet — le figé, le versé, la mise à jour par un avis, la suppression, la recherche — sait qu'une échéance
-// se paie aussi ainsi. Et que le retrait n'est pas offert tant que sa fonction n'est pas en base (`RETRAIT_EXPORTE` ; le
-// geste préparé pour ce jour-là : CotisationsTabRetraitPaiement.test.tsx).
+// se paie aussi ainsi. Le retrait du paiement, offert depuis que sa fonction est en base (`RETRAIT_EXPORTE`), a son
+// propre fichier : CotisationsTabRetraitPaiement.test.tsx.
 vi.mock('../../lib/supabase', async () => ({ supabase: (await import('../../test/cotisationsPaiementPersonnel')).supabaseFaux() }))
 vi.mock('../../lib/extraction', async () => (await import('../../test/cotisationsPaiementPersonnel')).extractionFausse())
 
@@ -292,7 +292,7 @@ describe('CotisationsTab — l’échéance payée depuis le compte personnel', 
     expect(screen.getByText('Payée depuis le compte personnel le 10/03/2026').closest('tr')!.textContent).toContain('Écrite')
     const badge = screen.getByText('À reprendre')
     expect(badge.getAttribute('title')).toBe(
-      "Son écriture manque ou ne suit plus l'échéance : retire l'échéance, qui emporte son paiement, puis saisis-la et déclare son paiement de nouveau.",
+      "Son écriture manque ou ne suit plus l'échéance : retire le paiement, puis déclare-le de nouveau.",
     )
     expect(badge.closest('tr')!.textContent).toContain('05/04/2026')
     expect(screen.queryByRole('button', { name: GESTE })).toBeNull()
@@ -310,13 +310,18 @@ describe('CotisationsTab — l’échéance payée depuis le compte personnel', 
     expect(screen.queryByText('Écrite')).toBeNull()
   })
 
-  it('n’offre pas de retirer le paiement tant que sa fonction n’est pas en base', async () => {
-    faux.cotisations = [cotisation({ paiement_personnel_le: '2026-03-10' })]
+  // La raison d'une écriture à reprendre conseille de retirer le paiement : le geste est là, sur la même ligne.
+  it('offre de retirer le paiement, écrit ou à reprendre, depuis que sa fonction est en base', async () => {
+    faux.cotisations = [
+      cotisation({ id: 'cot-1', paiement_personnel_le: '2026-03-10' }),
+      cotisation({ id: 'cot-2', echeance: '2026-04-05', paiement_personnel_le: '2026-04-10' }),
+    ]
     faux.ecritures = ecritureJuste()
     monter()
 
     await screen.findByText('Écrite')
-    expect(screen.queryByRole('button', { name: 'Retirer ce paiement' })).toBeNull()
+    expect(within(screen.getByText('Écrite').closest('tr')!).getByRole('button', { name: 'Retirer ce paiement' })).toBeTruthy()
+    expect(within(screen.getByText('À reprendre').closest('tr')!).getByRole('button', { name: 'Retirer ce paiement' })).toBeTruthy()
   })
 
   it('se fige à la date de son paiement, pas à son échéance', async () => {

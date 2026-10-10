@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 108 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 109 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,9 +84,13 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 09/10/2026** : 108 fichiers, 108 migrations, empreinte globale
-`a1a29e2f0b4c5bdef3edbdec4044b0cb` des deux côtés, aucune divergence — rejoué après
-`droits_des_acces_clients` (espace client, étape P1 ; 9 081 caractères, empreinte `301dc1bc6629996749d8da55f3614a52`,
+**Vérifié par empreinte le 10/10/2026** : 109 fichiers, 109 migrations, empreinte globale
+`bca0367fd76a0f479274a8abddf7d2c9` des deux côtés, aucune divergence — rejoué après
+`retrait_du_paiement_personnel` (ligne 26.6), la dernière, collée par le cabinet dans l'éditeur SQL (elle supprime des
+lignes dans le corps de sa fonction) : son texte enregistré porte des fins de ligne `\r\n`, et le fichier, tiré de la
+base par la requête ci-dessus, en est la conversion en `\n` (4 126 caractères, empreinte
+`87853d28976cd18fc204efb4bd159f04` avec le saut de ligne final). Le 09/10/2026 : 108, `a1a29e2f0b4c5bdef3edbdec4044b0cb`,
+après `droits_des_acces_clients` (espace client, étape P1 ; 9 081 caractères, empreinte `301dc1bc6629996749d8da55f3614a52`,
 le fichier égal au texte enregistré), la dernière, qui suit `notes_internes_du_cabinet` (P0) et les cinq migrations du
 jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`, `revision_des_soldes`,
 `compte_amortissement_meme_ventilation`, `commentaire_compte_notes_de_frais_pcg_2026`) ; toutes dans l'export.
@@ -123,7 +127,8 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (78 instructions, empreinte `f01053c781688bbfbee8c70ac43924a6` des
   deux côtés le 09/10/2026, rejoué à l'intégration des trois migrations du jour, puis inchangé après
-  `notes_internes_du_cabinet` et `droits_des_acces_clients`, qui ne touchent aucune table du socle ; les trois objets que
+  `notes_internes_du_cabinet`, `droits_des_acces_clients` et, le 10/10/2026, `retrait_du_paiement_personnel`, qui ne
+  touchent aucune table du socle ; les trois objets que
   `paiement_personnel_des_cotisations` ajoute à `cotisations_declarees` et `ecritures_brouillon`, deux
   tables du socle, y sont), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
@@ -133,8 +138,9 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 391 objets, empreinte `b5d9acea7c5f15f895e417764e9f3466` des deux côtés le 09/10/2026, rejoué après
-  `droits_des_acces_clients`, qui en ajoute 7 : les deux colonnes des droits de `memberships` et cinq fonctions ;
+  (1 392 objets, empreinte `a81a947319e4f30b6e1525bdf3ce45d7` des deux côtés le 10/10/2026, rejoué après
+  `retrait_du_paiement_personnel`, qui en ajoute un : sa fonction ; 1 391 avant, après `droits_des_acces_clients`,
+  qui en ajoutait 7 : les deux colonnes des droits de `memberships` et cinq fonctions ;
   1 384 avant, après `notes_internes_du_cabinet`, qui en ajoutait 19 : sept colonnes, sept contraintes, un index, un
   déclencheur, une policy, une fonction et la RLS de sa table). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
