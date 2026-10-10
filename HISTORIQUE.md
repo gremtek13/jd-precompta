@@ -18925,3 +18925,139 @@ sur sept points. Le correctif s'applique à 4957030 seule (18 tests verts) comme
 supprime en commençant. Une erreur APRÈS la recopie des données, hors du bloc de la restauration (qui la rattrape en
 ARRET), le laisserait garni des lignes de la réplique jusqu'au passage suivant : c'est une réplique, et le script ne se
 joue nulle part ailleurs.
+
+### 10/10/2026 — LE CONTENU DES DÉCLARATIONS D'E-REPORTING — LIGNE 28.5, ÉTAPE (E), QUATRIÈME TEMPS (E4)
+
+(`src/lib/ereporting.ts` et son test, nouveaux.) Le quatrième temps de l'e-reporting (« L'E-REPORTING : LA CONCEPTION »,
+§ 2.3, § 4.2, § 4.3, § 4.5, § 4.6 et § 6.1) : ce que contient chaque déclaration d'une période, pour un dossier, ses
+états et ses refus — ce que la déclaration hors application (e5) et le fichier (e6) diront avant le clic. Un module
+PUR : aucune migration, aucun écran, aucune Edge Function, aucun appel réseau ; e1, e2 et e3 n'ont pas été touchés.
+Rien n'existe en base pour l'exercer (aucune fiche, aucun encaissement, aucune facture à un particulier du
+1er septembre 2027 ou après) : tout ce qui suit est LATENT.
+
+**SOURCES** (relues le 10/10/2026, hors réseau, dans les documents publics que la conception avait téléchargés, traités
+comme des données ; l'onglet « Flux 10 » de l'annexe 6 extrait par la bibliothèque standard, Python en `-I`) : les
+spécifications externes de la DGFiP v3.2 — dossier général, § 3.7.3 à § 3.7.10 (notes 118, 119, 121, 122, 125, 127 à
+132 ; tableau 13) ; annexe 6 v1.10, onglet « Flux 10 » (blocs 10.1 à 10.4) ; annexe 7 v1.9 (G1.02, G1.07, G1.09,
+G1.14, G1.24, G1.36, G1.42, G1.53, G1.67, G1.68, G2.19, G2.31, G2.33, G6.08, G6.23 à G6.29, G7.07, G7.43, G7.52, G8.01,
+G8.05) — ; BOI-TVA-DECLA-20-30-50-10, -20 et -30, BOI-TVA-DECLA-20-30-60 (tous du 30/09/2026) ; la fiche « Données de
+transaction à transmettre » d'impots.gouv.fr (août 2026). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues
+ni citées. La note 125 décide d'un choix : « Le fait générateur de la transmission des données de transaction est la
+date de réalisation de l'opération, et celui de la transmission des données de paiement est la date d'encaissement ».
+
+**CE QUE LE MODULE DIT.** Trois fonctions, une par déclaration, chacune avec ses seules sources lues par `lireTout` —
+écarté : une fonction unique, qui forcerait à tout lire pour une déclaration. Une période porte jusqu'à trois
+déclarations qui ne se mêlent pas (un rôle de déclarant par fichier, G7.52 ; des transactions OU des paiements, G6.29).
+- `declarationDesAchats` (bloc 10.1, rôle acheteur) : la fiche COURANTE et non retirée de chaque pièce, rangée par sa
+  date, la facture du 1er septembre 2027 ou après, REJUGÉE contre la pièce d'aujourd'hui par `refusFicheHorsDeFrance`
+  (le gel mis à part, comme l'écran d'e3 : la base ne revoit pas une fiche quand sa pièce change) ; chaque achat porte
+  ce que TG-8 demande (numéro, date, type 380/381, facture d'origine d'un avoir, devise, pays, schéma et identifiant,
+  nature et cadre B1/S1/M1 de G1.02, autoliquidation, livraison ou période, ventilation par code et taux dans la devise
+  de la facture, HT, TVA en euros — nulle tant que Q7 met de côté un achat taxé) ; le dossier en acheteur, son SIREN et
+  son numéro de TVA (G2.33), exigé d'un franchisé ou d'un exonéré qui n'a pas coché sa case (Q3). Une pièce d'achat ou
+  une note de frais SANS fiche que les signaux d'e3 désignent (`signauxHorsDeFrance` : une autre devise, un numéro de
+  TVA de l'Union ou une mention d'autoliquidation lus dans le texte stocké, un fournisseur déjà décrit), datée de la
+  période ou sans date, ATTEND : jamais « rien à déclarer » tant qu'elle attend ; portant une TVA, elle est « mise de
+  côté, à trancher » (Q7).
+- `declarationDesVentes` (bloc 10.3, rôle vendeur) : les factures et avoirs VALIDÉS adressés à un particulier, agrégés
+  par jour, catégorie (TLB1 des biens, TPS1 des services, G1.68), option pour les débits (TT-80, sur des services
+  seulement, G1.67) et taux, depuis `montantsDuDocument` — la ventilation même que la facture électronique et le statut
+  « Encaissée » emploient —, un avoir en moins. Seules les factures émises entrent : jamais la pièce qui revient de la
+  plateforme, ni la recette du relevé (conception, § 4.5, 5).
+- `declarationDesPaiements` (bloc 10.4, rôle vendeur) : les encaissements du registre de d1 sur ces factures, agrégés
+  par jour et par taux, NETS — un retiré ne compte pas, une contre-passation compte en moins ; la facture décide de
+  l'obligation, l'encaissement de la période (e1, `dansLObligation`) ; ni une livraison de biens, ni l'option pour les
+  débits (note 119 ; BOI-TVA-DECLA-20-30-60, § 30).
+- La période et l'échéance viennent d'e1 : la fréquence par `obligationsEreporting`, les bornes par `periodeDe` ; le
+  rien-à-déclarer par `transmissionAttendue` (« à confirmer » pour des paiements).
+
+**LES ÉTATS ET LES REFUS.** Quatre états : rien à déclarer, à déclarer, incomplète faute d'une donnée, hors du champ du
+dossier (une période finie avant le 1er septembre 2027 ; des paiements sur option pour les débits). Vingt-deux refus,
+chacun par sa raison, dans un ordre fixé (`REFUS_EREPORTING`) : le statut à préciser ; des paiements sur les débits —
+e1 ne leur donne aucune fréquence, d'où leur rang avant la période ; des bornes qui ne sont pas une période du régime
+d'aujourd'hui ; une période finie avant l'obligation ; une lecture partielle (dans ces cinq cas rien d'autre ne se
+juge) ; puis la période pas finie (à Paris) et le régime à confirmer — qui n'empêchent que de déclarer AUJOURD'HUI et ne
+changent pas l'état — ; le SIREN invalide et le numéro de TVA absent, dits seulement quand il y a de quoi déclarer ;
+puis, opération par opération, dans l'ordre des dates : des lectures qui se contredisent (une fiche sans sa pièce ou
+sa ventilation, une facture sans ses lignes, un encaissement sans sa facture ou sa répartition entière, une
+contre-passation sans l'encaissement qu'elle annule — sans ce refus, une facture sans ligne passait pour exonérée), la
+fiche à revoir (sous les mots de la base), la pièce qui attend, celle mise de côté, le destinataire inconnu, la facture
+internationale (e7), la nature inconnue, la facture mixte, l'option inconnue, l'en-tête que les lignes ne redonnent
+pas, la ligne taxée d'un dossier qui ne facture pas de TVA, la ligne à 0 % d'un redevable sans article ; enfin
+l'absence d'opération. Dans une opération, le premier refus est le sien ; un motif CERTAIN de l'écarter (une facture
+antérieure à l'obligation, une opération exonérée, des biens, les débits) l'emporte sur une donnée inconnue, l'ordre
+d'`obligationEncaissee` (d2). Ce qui n'entre pas se dit (`ecartees`, `RAISONS_ECARTEES`). Aucun message ne cite
+d'article ; aucun ne dit d'un exonéré qu'il « n'y est pas tenu » — ses ventes exonérées sont écartées, et la période
+dit « aucune opération ».
+
+**LE STATUT DE TVA DÉCIDE DE CE QUI ENTRE** (CGI, art. 290, I ; BOI-TVA-DECLA-20-30-50-10, § 20) : un redevable déclare
+ses lignes taxées, sa ligne à 0 % est exonérée s'il a l'article de son exonération (elle sort, aux ventes comme aux
+paiements), une inconnue sinon ; un franchisé déclare au taux 0 (point 7) ; un dossier exonéré ne déclare pas ses
+opérations exonérées, et déclare ses ACHATS à l'étranger. Une ligne taxée d'un franchisé ou d'un exonéré contredit son
+statut : refusée.
+
+**LES HYPOTHÈSES, NOMMÉES, EN PARAMÈTRES SANS DÉFAUT** (`HYPOTHESES_DE_LA_CONCEPTION`, que l'appelant passe par son
+nom) : le RANGEMENT d'une opération (point 6, NON VÉRIFIÉ) — `date_de_realisation`, la recommandation : la livraison ou
+la prestation quand la facture la dit, la fin de la période facturée sinon, la date d'émission à défaut ; ou
+`date_de_la_facture` ; un AVOIR, à sa propre date dans les deux cas (il reprend en base la prestation de la facture
+qu'il corrige, et rouvrirait sa période) ; la CONTRE-PASSATION (point 9, NON VÉRIFIÉ) — `date_du_decaissement`, la
+recommandation (§ 4.6), ou `date_de_l_encaissement_annule`. Constantes nommées dans le code : Q3 (le numéro de TVA,
+qu'exige aussi G2.33), Q7 et le point 15 (ceux d'e2), le point 7 (le franchisé en TPS1/TLB1 au taux 0), le point 21
+(un avoir en montants positifs sous le type 381 aux achats, en moins dans un agrégat de ventes).
+
+**CE QUE LA BASE NE GARDE PAS, ET QUE LE CONTENU DEMANDE** (points d'arrêt, pour e5 ou pour le cabinet) :
+1. le régime d'e-reporting CONFIRMÉ (Q4 ; conception, § 4.3 « régime d'e-reporting à confirmer ») : paramètre
+   `regimeConfirme` — sans lui toute déclaration se refuse ;
+2. la pièce candidate que le cabinet a VÉRIFIÉE et écartée : paramètre `piecesEcartees` — sans ce geste, une candidate
+   ne se résout que par une fiche, et une pièce qui porte une TVA n'en reçoit pas (Q7) : elle bloquerait sa période ;
+3. l'HISTOIRE du statut de TVA : la base ne garde que celui d'aujourd'hui. Une période d'un autre régime se refuse, et
+   une facture que le régime passé contredit aussi — éprouvé sur un dossier sorti de la franchise à la mi-octobre :
+   sous son régime d'aujourd'hui le bimestre de la franchise n'est pas une période ; sous l'ancien, la facture taxée
+   de fin octobre se refuse ; sous le nouveau, celle du début du mois, à 0 % ;
+4. constaté en relisant d4 : un encaissement d'une vente à un particulier ne se CONTRE-PASSE jamais —
+   `annuler_encaissement` ne vise qu'un encaissement déclaré au sens de `encaissement_declare` (une ligne active de
+   `transmissions_encaissements`), qu'une facture jamais transmise n'a pas — : il ne fait que se RETIRER, même quand sa
+   période aura été déclarée. e5 choisira : étendre `encaissement_declare` aux déclarations d'e-reporting, ou faire d'un
+   retrait une période « à rectifier » (Q6). Le module compte déjà les deux.
+
+**CHOIX ASSUMÉS, ET LEURS RAISONS.** Une pièce candidate peut être « à valider » : la règle de la Checklist (une donnée
+absente ne se signale que sur une pièce validée) ne vaut pas pour une déclaration, dont le vide est une affirmation —
+un achat à l'étranger en attente de validation y manquerait. Une candidate SANS DATE attend dans toute période : on ne
+sait pas où elle va. Une facture dont l'en-tête ne se retrouve pas dans ses lignes se refuse (le refus 6 de d1). Les
+lignes d'un autre dossier glissées dans les lectures sont ignorées (la règle de d2 : le module filtre lui-même).
+
+**ÉPROUVÉ.** 72 tests (`ereporting.test.ts`), chaque attendu écrit à la main depuis la source que cite son commentaire :
+chaque statut de TVA, chaque état, chaque refus et son ordre (la liste épinglée, et deux scénarios où tout manque), les
+bords de période — premier et dernier jour, la veille et le lendemain, la période pas finie le jour de sa fin et finie
+le lendemain, à Paris —, les retraits et les contre-passations (à leur date, à celle de l'encaissement annulé, retirées,
+orphelines), une période qui chevauche un changement de statut, les lectures partielles source par source, les lignes
+d'un autre dossier, la stabilité (lectures dans le désordre), un montant que la virgule flottante écrit juste en
+dessous (4,35 €), et les quatre fuseaux posés par le test lui-même. **Mutations** : 180 au second passage, jouées une à
+une sur une copie hors du dépôt, la suite d'abord verte sans mutation : 179 mordent, 1 est équivalente — chercher
+l'encaissement qu'une contre-passation annule parmi les seuls vivants ne change rien de ce que la base laisse exister
+(d1 refuse de retirer un encaissement sous une contre-passation vivante, et son déclencheur, une contre-passation vivante
+d'un encaissement retiré). Le premier passage (180) en laissait 9 : deux tests manquaient (la fréquence d'un exonéré
+« hors régime », la fréquence rendue), trois jeux d'essai de « l'autre dossier » ne pouvaient rien montrer, et deux
+tris étaient du code mort — un agrégat se remplit déjà dans l'ordre des identifiants —, retirés.
+**ET LE PREMIER JET PRENAIT DES PAIEMENTS NON DUS POUR UN STATUT À PRÉCISER.** e1 ne propose aucune fréquence à ce qui
+n'est pas dû : les paiements d'un redevable sur les débits arrivaient sans fréquence, et le module les disait « statut
+à préciser ». Trouvé par son propre test avant toute mutation ; le refus « sur option pour les débits » se juge depuis
+juste après le statut, avant la période. En relisant, trois lectures discordantes passaient pour du vide (une facture
+sans ses lignes et un encaissement sans sa répartition se disaient exonérés, une fiche sans sa ventilation se rejugeait
+« illisible ») : elles se refusent comme telles.
+
+**LA BARRIÈRE** (règles communes v12, dans la copie de l'agent, sur la base 4957030) : `tsc -b` vert ;
+`tsconfig.edge.json`, les 25 erreurs connues, les mêmes messages qu'à la barrière d'e3 ; le lint, 63 avertissements,
+aucun dans les deux fichiers ; la construction (le module n'entre pas encore dans le paquet : aucun écran ne l'importe) ;
+sous les quatre fuseaux, le test du module et ceux des cinq modules qu'il lit (e1, e2, e3, d2, le générateur CII) —
+419 tests chaque fois ; la suite entière sous Paris, deux ouvriers : 283 fichiers, 8 238 tests, tous verts, aucun délai
+dépassé. Deux commentaires ajoutés ensuite (le code n'a pas changé, le diff le montre) ont fait rejouer `tsc -b`, le
+lint, le test sous les quatre fuseaux et la construction, verts. Le correctif (deux fichiers nouveaux) s'applique à la
+base par `git apply --check`, et redonne les fichiers à l'octet près.
+
+**CE QUI RESTE.** e5 : la table des déclarations (contenu figé, empreinte, rectificative), le geste qui écarte une
+candidate, la confirmation du régime (Q4) et son histoire, le sort d'un retrait d'encaissement B2C dans une période
+déclarée ; une fiche déclarée devra retenir sa pièce (e3). e6 : le fichier, ses choix non vérifiés en paramètres. e7 :
+les mentions d'une facture internationale (Q8), sans lesquelles ses ventes et ses paiements se refusent. Restent ouverts
+les points NON VÉRIFIÉS 6, 7, 9 et 21 de la conception (pris comme hypothèses), et le cas d'école d'un acompte encaissé
+avant le 1er septembre 2027 sur une facture émise après : sa période est hors du champ, il ne se déclare pas ici.
