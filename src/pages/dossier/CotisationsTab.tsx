@@ -48,8 +48,9 @@ import { dateFigee } from '../../lib/validationExercice'
 // UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL DE L'EXPLOITANT (ligne 26.6, phase C ; lib/cotisationPersonnelle.ts) : la
 // colonne « Paiement » offre de la déclarer sur une échéance que rien ne paie, dans une fenêtre où la date n'est jamais
 // proposée, et la dit ensuite payée, avec l'état de son écriture. Le modèle comptable ENTIER entre ici : en engagement,
-// l'écriture se passe face au compte choisi pour le dirigeant (455, 108 ou 467). Son retrait attend sa fonction en base
-// (`RETRAIT_EXPORTE`).
+// l'écriture se passe face au compte choisi pour le dirigeant (455, 108 ou 467). Elle se retire tant que son exercice
+// n'est pas validé (« Retirer ce paiement », `retirer_paiement_personnel_cotisation`, en base depuis le 10/10/2026 :
+// `RETRAIT_EXPORTE`).
 export default function CotisationsTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
   const modeComptable = modele.mode
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
@@ -283,7 +284,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   }
 
   // LE RETRAIT D'UN PAIEMENT PERSONNEL — offert seulement quand sa fonction est en base (`RETRAIT_EXPORTE`) : il défait
-  // le paiement et son écriture ensemble, et l'échéance compte de nouveau à son échéance. Même verrou, même relecture.
+  // le paiement et son écriture ensemble, et l'échéance compte de nouveau à son échéance. Même verrou, même relecture. La
+  // confirmation nomme les lignes du brouillon telles qu'elles sont — sur un brouillon lu en partie, sans les détailler.
   async function retirerPaiementPersonnel(c: CotisationDeclaree) {
     if (!RETRAIT_EXPORTE || ecritureEnCours.current) return
     const refus = refusRetraitPaiementPersonnel(c, anneesValidees)
@@ -291,7 +293,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       setError(refus.message)
       return
     }
-    if (!window.confirm(`Retirer ce paiement ?\n\n${avertissementRetraitPaiementPersonnel(c, modele)}`)) return
+    if (!window.confirm(`Retirer ce paiement ?\n\n${avertissementRetraitPaiementPersonnel(c, modele, ecrituresIncompletes ? null : ecritures)}`)) return
     ecritureEnCours.current = true
     setEnCours(true)
     try {

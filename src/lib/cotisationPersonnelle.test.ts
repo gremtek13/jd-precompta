@@ -20,15 +20,16 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 // (supabase/essais/cotisationPersonnelle.sql) pour les messages que la base a rendus, valeurs comprises, et pour les
 // écritures qu'elle a ACCEPTÉES ou refusées, lues dans l'essai avec les échéances de son jeu. Le RETRAIT vit dans une
 // migration que le cabinet colle (`retrait_du_paiement_personnel` : sa fonction supprime des lignes du brouillon) : son
-// essai (retraitPaiementPersonnel.sql) fait foi, et le texte de sa fonction dès que l'export la porte (`RETRAIT_EXPORTE`).
+// essai (retraitPaiementPersonnel.sql) fait foi, et le texte de sa fonction, que l'export porte depuis le 10/10/2026
+// (`RETRAIT_EXPORTE`).
 
 const ESSAI = readFileSync(new URL('../../supabase/essais/cotisationPersonnelle.sql', import.meta.url), 'utf8')
 const ESSAI_RETRAIT = readFileSync(new URL('../../supabase/essais/retraitPaiementPersonnel.sql', import.meta.url), 'utf8')
 
-// LA MIGRATION DU RETRAIT SE COLLE PAR LE CABINET : tant que son fichier n'est pas dans supabase/schema, ses refus ne se
-// confrontent qu'à son essai. Le jour où il y arrive, le test qui lit l'export vire au rouge et demande de passer
-// `RETRAIT_EXPORTE` à `true` dans le module — la confrontation au texte de la fonction s'ouvre alors, dans le même test, et
-// avec elle le bouton « Retirer ce paiement » de l'onglet Cotisations : un seul drapeau pour les deux.
+// LA MIGRATION DU RETRAIT S'EST COLLÉE PAR LE CABINET (10/10/2026), et son fichier est dans supabase/schema : ses refus se
+// confrontent à son essai ET au texte de la fonction exportée. Le test qui lit l'export tient le drapeau
+// `RETRAIT_EXPORTE` du module égal à ce que porte l'export — et avec lui le bouton « Retirer ce paiement » de l'onglet
+// Cotisations : un seul drapeau pour les deux.
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
@@ -598,11 +599,36 @@ describe('le retrait d’un paiement depuis le compte personnel', () => {
   })
 
   it('la confirmation nomme le paiement, son écriture, et la date à laquelle l’échéance comptera', () => {
-    expect(avertissementRetraitPaiementPersonnel(cotisation({ paiement_personnel_le: '2026-03-10' }), TRESORERIE)).toBe(
+    expect(avertissementRetraitPaiementPersonnel(cotisation({ paiement_personnel_le: '2026-03-10' }), TRESORERIE, ECRITE)).toBe(
       `Le paiement du 10/03/2026 depuis le compte personnel est retiré. Son écriture (${formatMoney(700)} au 646000, face au 108000) `
       + 'est retirée du brouillon. L’échéance compte de nouveau à son échéance, le 05/03/2026, tant qu’aucun paiement ne la date.')
-    expect(avertissementRetraitPaiementPersonnel(cotisation({ montant_appele: 250, montant_csg_crds: 250, paiement_personnel_le: '2026-05-07' }), TRESORERIE))
-      .toContain('Il n’avait rien écrit au brouillon.')
+    // Toute de CSG-CRDS : rien d'écrit en trésorerie, et rien à retirer.
+    expect(avertissementRetraitPaiementPersonnel(cotisation({ montant_appele: 250, montant_csg_crds: 250, paiement_personnel_le: '2026-05-07' }), TRESORERIE, []))
+      .toContain('Il n’a aucune ligne au brouillon : rien n’en est retiré.')
+  })
+
+  // Le retrait est le geste conseillé à une écriture « À reprendre » : la confirmation dit les lignes que la fonction
+  // retire — toutes celles qui désignent l'échéance, telles qu'elles sont —, jamais celles que le paiement produirait.
+  it('la confirmation nomme les lignes TELLES QU’ELLES SONT au brouillon, et seulement celles de l’échéance', () => {
+    const payee = cotisation({ paiement_personnel_le: '2026-03-10' })
+    const avertir = (ecritures: EcritureBrouillon[] | null) => avertissementRetraitPaiementPersonnel(payee, TRESORERIE, ecritures)
+    // Absente : rien n'est annoncé retiré.
+    expect(avertir([])).toContain('Il n’a aucune ligne au brouillon : rien n’en est retiré.')
+    expect(avertir(ECRITE.map((e) => ({ ...e, cotisation_id: 'c2' })))).toContain('Il n’a aucune ligne au brouillon : rien n’en est retiré.')
+    // Différente : ses lignes, leurs comptes, et qu'elles ne suivent plus l'échéance.
+    expect(avertir(ECRITE.map((e) => ({ ...e, montant: 650 })))).toContain(
+      'Ses 2 lignes au brouillon (108000, 646000), qui ne suivent plus l’échéance, sont retirées.')
+    expect(avertir(ECRITE.map((e) => ({ ...e, date: '2026-03-11' })))).toContain('qui ne suivent plus l’échéance, sont retirées.')
+    expect(avertir([ECRITE[0]])).toContain('Sa ligne au brouillon (646000), qui ne suit plus l’échéance, est retirée.')
+    expect(avertir([...ECRITE, ecriture({ id: 'e3', compte: '108000', montant: 0.01 })])).toContain(
+      'Ses 3 lignes au brouillon (108000, 646000), qui ne suivent plus l’échéance, sont retirées.')
+    // Juste, dans n'importe quel ordre, au milieu des lignes d'autres échéances.
+    expect(avertir([ecriture({ id: 'x', cotisation_id: 'c2' }), ...[...ECRITE].reverse()])).toContain(
+      `Son écriture (${formatMoney(700)} au 646000, face au 108000) est retirée du brouillon.`)
+    // Lu en partie : rien de détaillé, seulement ce que la fonction fait.
+    expect(avertir(null)).toBe('Le paiement du 10/03/2026 depuis le compte personnel est retiré. Ses lignes au brouillon sont '
+      + 'retirées avec lui ; le brouillon n’a été lu qu’en partie, elles ne sont pas détaillées ici. L’échéance compte de nouveau '
+      + 'à son échéance, le 05/03/2026, tant qu’aucun paiement ne la date.')
   })
 
   it('la confirmation de la suppression d’une échéance payée dit que son paiement part avec elle', () => {

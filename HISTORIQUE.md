@@ -17220,3 +17220,83 @@ connexion ; d'ici là la base refuse ce qu'il tenterait sans le droit. Le retour
 d'avant (l'`AuthContext` d'aujourd'hui nomme les deux colonnes : sans elles, un client ne verrait plus aucun dossier),
 puis une migration destructive (les cinq fonctions et les deux colonnes retirées, les droits cochés perdus), à coller
 par le cabinet.
+
+### 10/10/2026 — LE RETRAIT D'UN PAIEMENT PERSONNEL, EXPORTÉ ET OFFERT — LIGNE 26.6
+
+(Migration `retrait_du_paiement_personnel`, version 20261010071154, collée par le cabinet dans l'éditeur SQL —
+`supabase/schema/20261010071154_retrait_du_paiement_personnel.sql` et `supabase/schema/README.md` ;
+`src/lib/cotisationPersonnelle.ts` et son test ; `src/pages/dossier/CotisationsTab.tsx`,
+`CotisationsTabRetraitPaiement.test.tsx`, `CotisationsTabPaiementPersonnel.test.tsx`.) La suite de « LA PHASE C : L'ÉCRAN
+DU PAIEMENT PERSONNEL », qui avait préparé le geste fermé.
+
+**L'EXPORT.** Le texte enregistré (4 126 caractères une fois les fins de ligne `\r\n` du collage depuis un téléphone
+ramenées à `\n`, empreinte 82040d27…) a été LU dans `supabase_migrations.schema_migrations` et écrit tel quel, un saut de
+ligne final : 87853d28976cd18fc204efb4bd159f04, l'empreinte attendue. Le corps de la fonction en base, ramené à `\n` :
+1e3d0060… ; `SECURITY DEFINER`, `search_path=public`, `anon` sans droit d'exécution, `authenticated` avec. Les trois
+contrôles du README : la dérive, 109 fichiers et 109 migrations, empreinte globale bca0367fd76a0f479274a8abddf7d2c9 des
+deux côtés (aucune 110e migration en production au moment du contrôle) ; le socle, 78 instructions,
+f01053c781688bbfbee8c70ac43924a6, inchangé ; l'inventaire, 1 392 objets, a81a947319e4f30b6e1525bdf3ce45d7 des deux côtés
+— 1 391 avant, la fonction de plus.
+
+**LE DRAPEAU.** `RETRAIT_EXPORTE` passe à `true`. Témoin d'abord : le fichier exporté et le drapeau à `false`, le test du
+module vire au rouge (« RETRAIT_EXPORTE ne dit plus ce que porte l'export ») ; basculé, il passe TEL QUEL — les cinq
+refus du module sont les messages de la fonction exportée, dans son ordre. Aucun écart entre le module et la base. Le
+drapeau reste : c'est lui que le test tient égal à l'export, et le jour où l'export perdrait la fonction, le bouton se
+refermerait avec lui plutôt que de finir en erreur.
+
+**CE QUI MANQUAIT À LA CONFIRMATION.** Elle nommait l'écriture que le paiement PRODUIRAIT (« Son écriture (700,00 € au
+646000, face au 108000) est retirée du brouillon »), pas les lignes présentes. Or le retrait est précisément le geste
+que conseille une écriture « À reprendre » — absente ou différente —, et la fonction retire TOUTES les lignes qui
+désignent l'échéance, telles qu'elles sont : elle annonçait retirée une écriture qui n'existait pas, ou pas celle-là.
+`avertissementRetraitPaiementPersonnel` prend désormais le brouillon sans pièce du dossier (obligatoire, sans valeur
+par défaut) : aucune ligne (« rien n'en est retiré »), l'écriture juste (la phrase d'avant), ou les lignes telles
+qu'elles sont, leur nombre et leurs comptes, « qui ne suivent plus l'échéance » ; lu en partie (`null`), rien n'est
+détaillé, la phrase dit seulement ce que la fonction fait. La raison d'une écriture à reprendre conseille désormais
+« retire le paiement, puis déclare-le de nouveau ».
+
+**L'ÉCRAN.** `CotisationsTabRetraitPaiement.test.tsx` monte le module RÉEL (le `vi.mock` du drapeau est retiré) : de 5 à
+11 tests — confirmation exacte, annulation, lignes à reprendre (trois lignes, puis aucune), brouillon lu en partie,
+deux puis trois clics, le verrou tenu pendant la relecture (« Écrire » grisé et sans effet, le tableau en chargement),
+le verrou du brouillon partagé pendant l'appel (« Retirer » l'échéance, la déclaration), le paiement figé et
+l'échéance figée (raison en titre), aucun geste sans paiement personnel, le refus de la base dit et le verrou relâché.
+Dans `CotisationsTabPaiementPersonnel.test.tsx`, « n'offre pas de retirer » devient « offre de retirer, écrit ou à
+reprendre ». Quatorze mutations (le drapeau, la confirmation et ses quatre cas, le tri des comptes, la lecture
+partielle ignorée par l'onglet, le verrou, le verrou relâché avant la relecture, le refus avant le clic, la
+confirmation, le refus de la base, la relecture) mordent toutes après un témoin vert, chaque fichier remis et comparé à
+sa copie ; une quinzième (l'ordre des deux derniers refus inversé dans le module) n'est attrapée que par la
+confrontation au texte de la fonction exportée.
+
+**LA BARRIÈRE.** `tsc -b` vert ; `tsc -p tsconfig.edge.json` aux vingt-cinq erreurs connues ; lint, soixante-trois
+avertissements, les mêmes ; build vert ; les cinq fichiers de Cotisations et du module (124 tests) sous Paris, UTC, New
+York et Auckland ; la suite entière sous Paris, 7 435 tests. Le banc des débordements, sur un port à part : 0 à 1 440 et
+1 280 (volet ouvert), 1 024, 720 et 390 px.
+
+**L'ESSAI, SUR UNE RÉPLIQUE.** La fonction supprime des lignes : `retraitPaiementPersonnel.sql` ne se joue pas en
+production. Une réplique à moi, copie de la réplique arrêtée de l'agent du paiement personnel (celle de P1 n'avait que
+six tables), rattrapée des quatre migrations du 09/10 qui lui manquaient puis du fichier exporté, appliqués sous le rôle
+`proprietaire` — sous `postgres`, les objets créés perdaient les droits par défaut que Supabase donne, et
+`signature.sql` le voyait sur les droits des fonctions et des tables. Ensuite, les neuf familles égales à la production,
+une à une. L'essai, d'un seul tenant : 23 contrôles sur 23, « rien n'est resté » compris ; témoin sur la réplique sans
+la fonction, 22 rouges (42883).
+
+**CE QUI RESTE.** Le commentaire d'en-tête de `src/test/cotisationsPaiementPersonnel.ts` parle encore du « drapeau du
+retrait levé — un module simulé » (hors du périmètre de ce travail) ; le préalable `paiements-personnels-a-reprendre`
+(`prealablesValidation.ts`) conseille de « retirer le paiement » : c'est désormais vrai.
+
+### 10/10/2026 — AGENT-COMPTABLE REDÉPLOYÉ EN VERSION 47
+
+(`supabase/functions/agent-comptable/index.ts`, tel qu'à `main` 5d3c801.) La version en production, la 46, a d'abord été
+comparée au dépôt : elle était celle du 07/10/2026 au caractère près (aller-retour sans différence sur 3 203 lignes),
+si bien que le redéploiement portait trois changements jamais déployés : l'échéance de cotisation payée depuis le compte
+personnel (#120), la consigne qui ne nomme plus aucun cabinet, l'e-reporting et le compte d'amortissement à six chiffres
+(#123), et le refus des corps mal formés (#126). Les 30 bordures de commentaire ont été répétées sous leur forme comptée
+(`bordures.py` : « RÉPÉTITION JUSTE » du premier coup) ; la transcription des 3 236 lignes a été confiée à un exécutant au
+contexte neuf, la session gardant la comparaison, la décision et la vérification. Version 47, `verify_jwt` à `false`
+comme le veut `config.toml` ; aller-retour (`allerretour.py`) : zéro différence résiduelle sur 3 236 lignes ; un appel
+sans session rend 401 « Non authentifié. », sans que le modèle soit appelé.
+
+Relevé en passant : l'outil décode les `\uXXXX` de TOUTE entrée d'outil, pas seulement celle du déploiement — la
+répétition des bordures, écrite par la session en échappements, est arrivée sur disque en traits littéraux (le compte
+juste quand même) ; l'exécutant, lui, a transmis tout caractère non ASCII en échappement, et le contenu décodé était
+identique au fichier. La « forme marquée » n'a donc toujours pas été éprouvée DANS l'appel ; la répétition reste ce qui
+garantit le compte.
