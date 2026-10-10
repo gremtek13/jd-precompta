@@ -1,12 +1,22 @@
-// Edge Function : création (ou réutilisation) d'un accès client sur un dossier.
+// Edge Function : création d'un accès client sur un dossier — pour un compte neuf, ou pour un compte qui existe
+// déjà et que ce cabinet connaît.
 //
 // Remplace l'ancien flux signUp() côté navigateur (AccesTab) : retirer un accès (bouton "Retirer")
 // ne supprime que la ligne memberships, jamais le compte Auth sous-jacent — donc redonner accès avec
 // la même adresse e-mail à un autre dossier faisait échouer supabase.auth.signUp() en "déjà inscrit".
-// Ici, avec la clé de service : on crée le compte s'il n'existe pas encore, sinon on réutilise le
-// compte existant (et on applique le mot de passe saisi, pour que le formulaire reste prévisible :
-// le mot de passe tapé est toujours celui à donner au client, compte neuf ou réutilisé) et on ajoute
-// simplement la ligne memberships pour ce nouveau dossier.
+// Ici, avec la clé de service : on crée le compte s'il n'existe pas encore, avec le mot de passe saisi ; sinon on
+// reprend le compte existant TEL QU'IL EST, et on ajoute simplement la ligne memberships pour ce dossier.
+//
+// UN COMPTE QUI EXISTE GARDE SON MOT DE PASSE (décision du cabinet du 10/10/2026 : « le propriétaire du compte peut
+// changer son mot de passe »). La fonction posait jusque-là le mot de passe saisi sur le compte repris, pour que « le
+// mot de passe tapé soit toujours celui à donner au client » — et le posait AVANT d'écrire l'accès : un accès déjà
+// donné sur ce dossier répondait 409 « existe déjà » sur un compte dont le mot de passe venait de changer, et l'ancien
+// ne marchait plus, sans que le cabinet le sache. Désormais rien n'écrit sur un compte existant, ni avant un refus ni
+// avant un rattachement. La réponse dit lequel des deux cas s'est produit — `compte: "cree"` (le mot de passe saisi
+// est celui du compte) ou `compte: "existant"` (il n'a pas servi) —, et l'écran dit au cabinet de ne pas communiquer
+// un mot de passe qui n'ouvre rien. Le titulaire change le sien lui-même : « Mot de passe oublié », ou le lien que le
+// cabinet lui envoie depuis l'onglet Accès. La distinction n'est rendue que pour un compte que le cabinet connaît déjà
+// (voir appartientDejaAuCabinet) : de tout autre compte, la fonction ne dit que ce qu'elle disait avant (le 409).
 //
 // Sécurité : vérifie que l'appelant est bien un administrateur du cabinet (via son propre JWT, celui
 // que le navigateur envoie normalement) avant d'utiliser la clé de service — sans ce contrôle,
@@ -27,13 +37,21 @@ function json(body: unknown, status = 200) {
   })
 }
 
-// Correctif audit sécurité (compte utilisateurs, Haute) : réutiliser un compte Auth existant en lui
-// appliquant un nouveau mot de passe n'est sûr QUE si ce compte a déjà une relation avec CE cabinet —
-// un client d'un de ses dossiers, ou un membre de son équipe. Avant ce contrôle, n'importe quel email
-// déjà inscrit ailleurs sur la plateforme (client d'un autre cabinet, comptable d'un autre cabinet...)
-// voyait son mot de passe écrasé par le premier cabinet qui tapait cet email dans ce formulaire —
-// prise de contrôle de compte, avant même toute vérification d'appartenance. Vrai uniquement si le
-// cabinet appelant a déjà, en base, une raison légitime de gérer ce compte.
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
+// Un compte Auth existant ne reçoit un accès d'ici QUE s'il a déjà une relation avec CE cabinet — un
+// client d'un de ses dossiers, ou un membre de son équipe. Le contrôle est né d'un audit de sécurité
+// (compte utilisateurs, Haute) : la fonction posait alors le mot de passe saisi sur le compte repris, et
+// n'importe quel email déjà inscrit ailleurs sur la plateforme (client d'un autre cabinet, comptable d'un
+// autre cabinet...) voyait son mot de passe écrasé par le premier cabinet qui le tapait — prise de
+// contrôle de compte. Le mot de passe d'un compte existant n'est plus jamais touché (voir l'en-tête),
+// mais le contrôle garde sa raison : rattaché, ce compte verrait aussitôt le dossier avec SON mot de
+// passe, et son titulaire n'est peut-être pas le client du cabinet (une adresse mal tapée, la personne
+// d'un autre cabinet). Vrai uniquement si le cabinet appelant a déjà, en base, une raison légitime de
+// connaître ce compte.
 async function appartientDejaAuCabinet(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -114,15 +132,37 @@ Deno.serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(supabaseUrl, cleSecrete)
 
-  let payload: { dossierId?: string; email?: string; password?: string }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
-  const dossierId = payload.dossierId?.trim()
-  const email = payload.email?.trim()
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et `Deno.serve` rendait
+  // alors un 500 en texte brut, sans en-tête CORS, que la page ne pouvait même pas lire (le patron
+  // d'agent-comptable, 09/10/2026). Le navigateur envoie toujours un objet ; tout le reste se refuse ici,
+  // avant le contrôle du dossier et avant tout compte.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  const payload = corps as { dossierId?: unknown; email?: unknown; password?: unknown }
+  // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y levait, et
+  // un mot de passe en nombre passait le contrôle de longueur (la longueur d'un nombre n'existe pas, et
+  // la comparaison est fausse). Absent ou nul, le champ tombe sur le refus « requis » juste après.
+  const dossierIdLu = payload.dossierId
+  const emailLu = payload.email
   const password = payload.password
+  if (!texteOuAbsent(dossierIdLu)) {
+    return json({ error: "dossierId doit être un texte." }, 400)
+  }
+  if (!texteOuAbsent(emailLu)) {
+    return json({ error: "email doit être un texte." }, 400)
+  }
+  if (!texteOuAbsent(password)) {
+    return json({ error: "password doit être un texte." }, 400)
+  }
+  const dossierId = dossierIdLu?.trim()
+  const email = emailLu?.trim()
   if (!dossierId || !email || !password) {
     return json({ error: "dossierId, email et password sont requis." }, 400)
   }
@@ -148,8 +188,8 @@ Deno.serve(async (req: Request) => {
   }
   const cabinetId = dossierRow.cabinet_id as string
   // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —
-  // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée pour
-  // créer ou changer le mot de passe d'un compte client.
+  // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée qui crée
+  // un compte client avec un mot de passe choisi par le cabinet.
   if (password.length < 10) {
     return json({ error: "Le mot de passe doit faire au moins 10 caractères." }, 400)
   }
@@ -166,8 +206,11 @@ Deno.serve(async (req: Request) => {
   )
 
   let clientUserId: string
+  // Ce que la réponse dit à l'écran : le mot de passe saisi est-il celui du compte ?
+  let compte: "cree" | "existant"
   if (created?.user) {
     clientUserId = created.user.id
+    compte = "cree"
   } else if (dejaInscrit) {
     // Compte déjà existant (accès retiré précédemment sur un autre dossier, ou même client réinvité) —
     // on le retrouve par e-mail plutôt que d'échouer. listUsers() ne filtre pas par e-mail côté API,
@@ -190,31 +233,18 @@ Deno.serve(async (req: Request) => {
       }, 500)
     }
     clientUserId = trouve
-    // Voir appartientDejaAuCabinet ci-dessus : jamais toucher au mot de passe d'un compte qui n'a
-    // aucun lien préexistant avec ce cabinet, sous peine de prise de contrôle du compte de quelqu'un
-    // d'autre (client ou comptable d'un cabinet tiers, ou personne sans lien du tout avec celui-ci).
+    // Voir appartientDejaAuCabinet ci-dessus : un compte qui n'a aucun lien préexistant avec ce cabinet
+    // ne reçoit pas d'accès d'ici. Le refus dit ce qu'il disait avant, et pas davantage : ni où vit ce
+    // compte, ni ce qu'il est — et rien n'y a été écrit.
     if (!(await appartientDejaAuCabinet(supabaseAdmin, clientUserId, cabinetId))) {
       return json({
-        error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet — impossible de lui donner accès depuis ici (ça écraserait le mot de passe d'un compte qui n'est pas le tien). Demande à cette personne d'utiliser une autre adresse e-mail.",
+        error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet : il ne reçoit pas d'accès depuis ici, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
       }, 409)
     }
-    // Le mot de passe saisi dans le formulaire doit rester celui à donner au client, que le compte
-    // soit neuf ou réutilisé.
-    // ET CETTE ÉCRITURE-LÀ EST CELLE DONT L'ÉCHEC SE VOIT LE MOINS : son résultat partait à la
-    // poubelle, la fonction répondait `ok: true`, et le cabinet communiquait au client un mot de
-    // passe qui n'a jamais été posé. Le symptôme — « je n'arrive pas à me connecter » — ressemble
-    // à une erreur de saisie du client, et rien côté cabinet ne dit le contraire : le compte
-    // existe, l'accès existe, tout a l'air en ordre.
-    // On refuse AVANT de créer le membership plutôt que d'avertir après : à ce point rien
-    // d'irréversible n'a eu lieu (le compte préexistait, aucun accès n'est encore posé), donc
-    // échouer laisse un état propre et le nouvel essai est le geste naturel.
-    const { error: erreurMotDePasse } = await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })
-    if (erreurMotDePasse) {
-      console.error(`[create-client-access] mot de passe NON changé pour ${clientUserId} : ${erreurMotDePasse.message}`)
-      return json({
-        error: `Le mot de passe du compte existant n'a pas pu être changé (${erreurMotDePasse.message}) — aucun accès n'a été créé. Réessaie, et ne communique surtout pas ce mot de passe au client tant que ce message revient : il ne fonctionnerait pas.`,
-      }, 500)
-    }
+    // Repris TEL QU'IL EST, mot de passe compris (voir l'en-tête) : aucune écriture sur le compte, ni
+    // ici ni plus bas. Jusqu'au 10/10/2026 le mot de passe saisi s'y posait à cet endroit, avant
+    // l'insertion de l'accès — et un refus de l'insertion le laissait changé.
+    compte = "existant"
   } else {
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)
   }
@@ -224,10 +254,12 @@ Deno.serve(async (req: Request) => {
     .insert({ user_id: clientUserId, dossier_id: dossierId, role: "client", email })
   if (membershipError) {
     if (/duplicate|unique/i.test(membershipError.message)) {
-      return json({ error: "Cet accès existe déjà pour ce dossier." }, 409)
+      return json({
+        error: "Cet accès existe déjà pour ce dossier : rien n'a changé, le mot de passe du client non plus. S'il ne s'en souvient plus, envoie-lui un lien de réinitialisation depuis la liste des accès.",
+      }, 409)
     }
     return json({ error: membershipError.message }, 500)
   }
 
-  return json({ ok: true })
+  return json({ ok: true, compte })
 })

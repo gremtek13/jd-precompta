@@ -371,6 +371,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   nomme l'adresse, sous verrou, jamais sur une liste d'accès partielle ou pas encore revenue ; la durée du lien ne
   s'écrit nulle part (réglée au tableau de bord, jamais lue) → « MOT DE PASSE OUBLIÉ », « LE LIEN DE RÉINITIALISATION
   DEPUIS L'ONGLET ACCÈS ».
+- **Créer un accès ne touche jamais au mot de passe d'un compte existant** (`create-client-access`,
+  `create-team-member`, décision du cabinet du 10/10/2026) : un compte que le cabinet connaît déjà est repris tel qu'il
+  est, la réponse dit `compte: "cree"` ou `"existant"`, et l'écran dit de ne pas communiquer un mot de passe qui n'a pas
+  servi (`lib/creationDesComptes.ts`) ; le titulaire change le sien lui-même (« Mot de passe oublié », ou le lien de
+  l'onglet Accès). D'un compte d'ailleurs, le 409 dit ce qu'il disait (il existe, il n'est pas rattaché) et rien de
+  plus : une phrase unique, gardée par les contrats (`compteIntact`, `neDitQueLExistence`) →
+  « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
 - **Variables d'environnement** : PLAN_DE_REPRISE.md (fin du §3) les nomme toutes, `variablesEnvironnement.test.ts` les
   compare au code ; leurs valeurs ne se vérifient qu'à la main.
 - Les données sont fictives aujourd'hui, et traitées dès maintenant comme identifiantes : aucun service tiers hors de
@@ -383,8 +390,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   simulation » depuis P7, 10/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
-  nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet
-  Accès (10/10/2026).
+  nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
+  (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
+  (10/10/2026).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -458,7 +466,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
-  au tableau de bord, la longueur minimale à 10, le modèle d'e-mail en français et l'inscription publique à fermer.
+  au tableau de bord, la longueur minimale à 10, le modèle d'e-mail en français et l'inscription publique à fermer. Un
+  compte dont le dernier accès au cabinet a été retiré n'y est plus « rattaché » : lui recréer un accès bute sur le 409
+  (question au cabinet, Q-23.2) → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
@@ -471,12 +481,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   09/10/2026 (`lib/periodesEreporting.ts`) ; e2, la fiche d'un achat hors de France, en base le 10/10/2026 (Q3, Q7 et le
   point 15 pris comme hypothèses) ; e3, son écran, à venir → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
   L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE ».
-- **Défauts connus des Edge Functions** (25, `DEFAUTS_CONNUS`) : dix-huit corps mal formés qui font lever huit fonctions
+- **Défauts connus des Edge Functions** (19, `DEFAUTS_CONNUS`) : quatorze corps mal formés qui font lever six fonctions
   ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
-  depuis le 09/10/2026) ; deux d'`evaluer-extraction` ;
-  trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
-  (`create-client-access`, `create-team-member`), l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`),
-  `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques le referme).
+  depuis le 09/10/2026, `create-client-access` et `create-team-member` depuis le 10/10/2026) ; deux
+  d'`evaluer-extraction` ; deux décisions du cabinet — l'objet et l'expéditeur d'un e-mail reçu au journal
+  (`receive-email`), `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques
+  le referme).
 - **Une vente entrée deux fois** (ligne 28.6) : le pont, la Checklist et l'écran (phase C) en ligne le 09/10/2026 ;
   reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1 au cabinet, une migration).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
@@ -1062,7 +1072,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7938 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7998 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

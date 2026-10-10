@@ -10,8 +10,7 @@ import { CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES } from '../../lib/droits
 // on coupe l'accès d'un client qui part, et on croit l'avoir fait.
 //
 // Et « Retirer » partait sans rien demander, dans une colonne d'actions où il voisine
-// « Relancer ». Réversible, mais pas d'un clic : il faut recréer l'accès ET communiquer un
-// nouveau mot de passe.
+// « Relancer ». Il ne se défait pas d'un clic : il faut recréer l'accès.
 //
 // Aucun test de `src/lib` ne peut voir l'un ni l'autre : il n'y a pas de calcul ici, seulement un
 // écran qui affirme ou qui se tait.
@@ -330,6 +329,9 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
     expect(question).toContain('client@exemple.fr')
     // Un accès sans droit n'a rien d'autre à perdre.
     expect(question).not.toContain('droits')
+    // Et elle ne promet pas de nouveau mot de passe : un accès recréé reprend le même compte, qui garde le sien
+    // (décision du cabinet du 10/10/2026).
+    expect(question).not.toContain('mot de passe')
   })
 
   it('NOMME les droits que l’accès emporte avec lui', async () => {
@@ -793,6 +795,93 @@ describe('AccesTab — envoyer un lien de réinitialisation au client', () => {
     expect(boutonLienDe().disabled).toBe(true)
     await liberer()
     expect(boutonLienDe().disabled).toBe(false)
+  })
+})
+
+// CE QUE L'ÉCRAN DIT D'UN ACCÈS CRÉÉ (décision du cabinet du 10/10/2026 : un compte qui existe déjà garde son mot de passe).
+// La fonction dit lequel des deux cas s'est produit ; l'écran le dit au cabinet, faute de quoi il communiquerait au client
+// un mot de passe qui n'a jamais été posé.
+describe('AccesTab — ce que l’écran dit d’un accès créé', () => {
+  async function creer(adresse: string, reponse: unknown) {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: adresse } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    // L'accès créé, tel que la relecture le trouvera.
+    faux.lignes = [...faux.lignes, acces({ id: 'm9', user_id: 'u9', email: adresse, created_at: '2026-10-09T08:00:00Z' })]
+    await act(async () => { faux.resoudre?.(reponse) })
+    await laisserPasserUnTour()
+  }
+  const avis = () => screen.queryAllByRole('status').map((e) => e.textContent ?? '')
+
+  it('un compte créé : l’avis nomme l’adresse, et le mot de passe saisi se communique', async () => {
+    await creer('nouveau@exemple.fr', { data: { ok: true, compte: 'cree' }, error: null })
+    expect(avis()).toEqual(["L'accès de nouveau@exemple.fr est créé : communique-lui le mot de passe initial que tu as saisi."])
+  })
+
+  it('un compte existant : il garde son mot de passe, celui saisi ne se communique pas, et le bouton du lien est là', async () => {
+    await creer('ancien@exemple.fr', { data: { ok: true, compte: 'existant' }, error: null })
+    const [texte, ...autres] = avis()
+    expect(autres).toEqual([])
+    expect(texte).toContain("L'accès de ancien@exemple.fr est créé.")
+    expect(texte).toContain('le client garde son mot de passe actuel')
+    expect(texte).toContain("celui saisi ici n'a pas été posé — ne le lui communique pas")
+    expect(texte).not.toContain('communique-lui')
+    // Le bouton que l'avis nomme existe, sur la ligne de l'accès relu.
+    expect(texte).toContain('« Envoyer un lien de réinitialisation »')
+    const ligne = screen.getByText('ancien@exemple.fr').closest('tr')
+    if (!ligne) throw new Error('ligne de l’accès créé introuvable')
+    expect(within(ligne).getByRole('button', { name: 'Envoyer un lien de réinitialisation' })).toBeTruthy()
+  })
+
+  it('une fonction d’avant le 10/10/2026, sans le champ : l’avis d’un compte créé — elle avait posé le mot de passe', async () => {
+    await creer('nouveau@exemple.fr', { data: { ok: true }, error: null })
+    expect(avis()).toEqual(["L'accès de nouveau@exemple.fr est créé : communique-lui le mot de passe initial que tu as saisi."])
+  })
+
+  it('une réponse qui ne dit rien de sûr : aucune promesse sur le mot de passe', async () => {
+    await creer('nouveau@exemple.fr', { data: { ok: true, compte: 'repris' }, error: null })
+    const [texte] = avis()
+    expect(texte).toContain("le mot de passe saisi n'est peut-être pas le sien")
+    expect(texte).not.toContain('communique-lui')
+  })
+
+  it('un refus de la fonction se dit, sans avis de création', async () => {
+    const refus = "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet."
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'ailleurs@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    await act(async () => { faux.resoudre?.({ data: { error: refus }, error: null }) })
+    expect(screen.getByText(refus)).toBeTruthy()
+    expect(avis()).toEqual([])
+  })
+
+  it('un nouvel envoi efface l’avis du précédent : rien ne dit « créé » d’un accès encore en vol', async () => {
+    await creer('ancien@exemple.fr', { data: { ok: true, compte: 'existant' }, error: null })
+    expect(avis()).toHaveLength(1)
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toHaveLength(2)
+    expect(avis()).toEqual([])
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'cree' }, error: null }) })
+    await laisserPasserUnTour()
+    expect(avis()).toEqual(["L'accès de nouveau@exemple.fr est créé : communique-lui le mot de passe initial que tu as saisi."])
+  })
+
+  it('le formulaire le dit avant le clic : le mot de passe saisi ne sert qu’à un compte neuf', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(screen.getByText(/Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien\./)).toBeTruthy()
   })
 })
 
