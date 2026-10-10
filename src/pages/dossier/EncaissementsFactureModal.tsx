@@ -604,11 +604,13 @@ function Contenu({
   const crediteCentimes = avoirs.reduce((s, a) => s + Math.round(-a.montant_ttc * 100), 0)
   const attenduCentimes = Math.max(reste.resteCentimes - crediteCentimes, 0)
 
+  // Cette fenêtre est celle du cabinet, qui porte les deux droits (`gere_la_banque` en base) : un mouvement s'y désigne.
+  const gereLaBanque = true
   const propositions = propositionsEncaissement(
-    contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui,
+    contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui, gereLaBanque,
   )
   const saisie = formulaire ? saisieDe(formulaire) : null
-  const refus = saisie ? refusEnregistrement(contexte, saisie, lu.mouvements, aujourdHui) : null
+  const refus = saisie ? refusEnregistrement(contexte, saisie, lu.mouvements, aujourdHui, gereLaBanque) : null
   const choisie = formulaire?.ligneBancaireId ? propositions.find((p) => p.ligneBancaireId === formulaire.ligneBancaireId) ?? null : null
   const moyen = formulaire ? MOYENS_ENCAISSEMENT.find((m) => m.moyen === formulaire.moyen) ?? null : null
   const echeanceSaisie = formulaire && formulaire.date !== '' ? echeanceDeDeclaration(formulaire.date, statutTva) : null

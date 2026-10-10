@@ -252,7 +252,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
 - **Les policies se REJOUENT** (`supabase/essais/rls.sql`) : quatre profils (le quatrième, depuis P1 : le client dont les
   accès portent les deux droits), boucle sur `pg_class` (une table ajoutée sans policy est attrapée), écritures d'essai
-  annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge. Le fichier
+  annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge ; depuis
+  P7 et P2, deux blocs de plus — « La banque du client » (3bis, 4bis, trois mutations) et « Les ventes du client »
+  (3bis, 4bis, douze mutations) —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent. Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
@@ -487,6 +489,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   présentées au cabinet — `banque_du_client` (deux registres écrits par trois fonctions, la couverture du relevé), puis,
   la bascule `COUVERTURE_EXPORTEE` en ligne, `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au
   droit « Banque ») ; « Ma simulation » suit la case (EC-Q1 prise comme hypothèse) → « LA BANQUE DU CLIENT EN BASE ».
+  P2, les ventes du client en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à
+  coller) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière deux drapeaux
+  (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; avant l'application, le libellé « Notes internes »
+  d'une facture et la phrase des cases de l'onglet Accès sont à changer → « LES VENTES DU CLIENT, EN BASE ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
@@ -1001,10 +1007,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « UNE VENTE PEUT ENTRER DEUX FOIS », « LA PIÈCE JUMELLE SE VOIT ».
 - **Connexion bancaire** : sans nouvel accord, une banque ne rend que les 90 derniers jours ; le refus 422 se dit en
   français, avec le renouvellement → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+- **Les ventes du client** (P2, préparée le 10/10/2026) : le module d2 dit le refus neuf d'`enregistrer_encaissement` —
+  un mouvement ne se désigne qu'avec « Banque », au rang 2 — par `gereLaBanque`, obligatoire ; la batterie a une passe du
+  client (au seul droit « Ventes »). Les six essais des ventes exigent un client d'essai SANS « Ventes » (sinon
+  ESSAI_IMPOSSIBLE : ses refus y deviendraient des acceptations légitimes) et attendent le catalogue de l'état où la base
+  se trouve, témoin `factures_emises.valide_par` ; `ventesClient.sql` se dit impossible avant les deux migrations →
+  « LES VENTES DU CLIENT, EN BASE ».
 
 ## Tests
 
-Vitest, 7791 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7839 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

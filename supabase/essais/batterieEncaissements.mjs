@@ -18,6 +18,12 @@
 // dont le chef du cabinet (CHEF) est administrateur : le script vérifie ces deux-là avant de jouer. Le procédé qui la
 // monte, et pourquoi il n'est pas dans le dépôt : HISTORIQUE.md, entrée de l'étape d4.
 //
+// LA PASSE DU CLIENT (espace client, étape P2). Sur une base qui porte la migration ventes_du_client (son témoin : la
+// colonne `factures_emises.valide_par`), le script rejoue ensuite les saisies du dossier A en CLIENT de l'essai, son accès
+// à ce dossier passé au seul droit « Ventes » le temps de la transaction : le refus neuf d'un mouvement désigné sans
+// « Banque » s'y juge à son rang. Il rend alors une seconde empreinte à recopier, au même jour — EMPREINTE_SANS_BANQUE
+// dans src/lib/encaissementsBatterie.test.ts. Sans la migration, la passe est dite sans objet.
+//
 //   node supabase/essais/batterieEncaissements.mjs --hote /var/run/postgresql --port 5432 --base replique
 //
 // Node 22 exécute le TypeScript du dépôt tel quel, types effacés ; un crochet de résolution ajoute l'extension `.ts` aux
@@ -55,7 +61,10 @@ const connexion = ['-h', options.hote, '-p', options.port, '-U', options.utilisa
 
 const DEPOT = new URL('../../', import.meta.url)
 const generateur = await import(new URL('src/test/encaissementsBatterie.ts', DEPOT).href)
-const { DOSSIERS, GRAINE_DE_LA_BATTERIE, MONDE, SAISIES_DE_LA_BATTERIE, batterie, reponsesDuModule } = generateur
+const {
+  CLIENT, DOSSIERS, DOSSIER_DU_CLIENT, GRAINE_DE_LA_BATTERIE, MONDE, SAISIES_DE_LA_BATTERIE, batterie, casDuClient, reponsesDuModule,
+  reponsesDuModuleSansBanque,
+} = generateur
 
 function psql(texte, fichier = false) {
   const travail = fichier ? mkdtempSync(join(tmpdir(), 'batterie-')) : null
@@ -82,12 +91,22 @@ const lit = (s) => `'${String(s).replace(/'/g, "''")}'`
 const jsonb = (o) => `${lit(JSON.stringify(o))}::jsonb`
 const claims = lit(JSON.stringify({ sub: CHEF, role: 'authenticated' }))
 
-// 1. La réplique : ses deux dossiers, administrés par le chef du cabinet ; et son jour, à Paris.
+// 1. La réplique : ses deux dossiers, administrés par le chef du cabinet ; son jour, à Paris ; et, pour la passe du
+// client, la migration ventes_du_client et l'accès du client à son dossier.
 const prealables = psql(`select (now() at time zone 'Europe/Paris')::date
-  || '|' || (select count(*) from public.dossiers where id in (${lit(DOSSIERS.A)}, ${lit(DOSSIERS.B)}));`).trim()
-const [jour, dossiers] = prealables.split('|')
+  || '|' || (select count(*) from public.dossiers where id in (${lit(DOSSIERS.A)}, ${lit(DOSSIERS.B)}))
+  || '|' || exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
+                     and not attisdropped)
+  || '|' || (select count(*) from public.memberships
+              where user_id = ${lit(CLIENT)} and dossier_id = ${lit(DOSSIERS[DOSSIER_DU_CLIENT])});`).trim()
+const [jour, dossiers, ventesDuClient, accesDuClient] = prealables.split('|')
 if (dossiers !== '2') {
   console.error(`✗ La réplique ne porte pas les deux dossiers de la batterie (${DOSSIERS.A}, ${DOSSIERS.B}).`)
+  process.exit(1)
+}
+const passeDuClient = ventesDuClient === 'true'
+if (passeDuClient && accesDuClient !== '1') {
+  console.error(`✗ Le client de l'essai (${CLIENT}) n'a pas d'accès au dossier ${DOSSIERS[DOSSIER_DU_CLIENT]} : sa passe ne se joue pas.`)
   process.exit(1)
 }
 const acces = psql(`begin;
@@ -100,15 +119,19 @@ if (acces !== 't') {
   process.exit(1)
 }
 
-// 2. La batterie de ce jour, et ce que le module y répond.
+// 2. La batterie de ce jour, et ce que le module y répond — au chef, et au client qui ne porte que « Ventes ».
 const cas = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, jour)
 const module = reponsesDuModule(cas, jour)
+const casClient = casDuClient(cas)
+const moduleClient = reponsesDuModuleSansBanque(cas, jour)
 
 // 3. Le monde : les factures par enregistrer_facture, en chef du cabinet ; le reste en direct, sous les déclencheurs.
 const sql = ['begin;', 'set local client_min_messages = warning;',
   'create temp table ids (nom text primary key, id uuid not null) on commit drop;',
   'create temp table cas (n int primary key, c jsonb not null) on commit drop;',
   'create temp table resultats (n int primary key, sortie text not null) on commit drop;',
+  'create temp table cas_client (n int primary key, c jsonb not null) on commit drop;',
+  'create temp table resultats_client (n int primary key, sortie text not null) on commit drop;',
   `insert into ids values ('A', ${lit(DOSSIERS.A)}), ('B', ${lit(DOSSIERS.B)});`]
 const corps = ['do $$', 'declare v uuid; d uuid; o uuid; m uuid; e uuid; begin']
 for (const f of MONDE.factures) {
@@ -195,19 +218,63 @@ begin
     insert into resultats values (r.n, case when accepte then 'ok' else code || ' ' || msg end);
   end loop;
 end $$;`)
+// 4 bis. La passe du client (étape P2) : son accès à son dossier au seul droit « Ventes », le temps de la transaction ;
+// chaque saisie de ce dossier jouée en client et annulée, comme celles du chef.
+if (passeDuClient) {
+  sql.push(`update public.memberships set droit_ventes = true, droit_banque = false
+    where user_id = ${lit(CLIENT)} and dossier_id = ${lit(DOSSIERS[DOSSIER_DU_CLIENT])};`)
+  for (let i = 0; i < casClient.length; i += 500) {
+    sql.push(`insert into cas_client values ${casClient.slice(i, i + 500).map((c, k) => `(${i + k}, ${jsonb(c)})`).join(',\n')};`)
+  }
+  const claimsClient = lit(JSON.stringify({ sub: CLIENT, role: 'authenticated' }))
+  sql.push(`do $$
+declare
+  r record; v_dossier uuid; v_facture uuid; v_ligne uuid; v_montant numeric; accepte boolean; code text; msg text;
+begin
+  for r in select n, c from cas_client order by n loop
+    select id into v_dossier from ids where nom = r.c ->> 'dossier';
+    select id into v_facture from ids where nom = r.c ->> 'facture';
+    v_ligne := case when r.c ->> 'ligne' is null then null
+                    when r.c ->> 'ligne' = 'inconnu' then gen_random_uuid()
+                    else (select id from ids where nom = r.c ->> 'ligne') end;
+    v_montant := case when jsonb_typeof(r.c -> 'montant') = 'number' then (r.c ->> 'montant')::numeric end;
+    accepte := false; code := null; msg := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', ${claimsClient}, true);
+      perform enregistrer_encaissement(v_dossier, v_facture, (r.c ->> 'date')::date, v_montant, r.c ->> 'moyen', v_ligne,
+        r.c -> 'repartition');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code := sqlstate; msg := sqlerrm;
+    end;
+    reset role;
+    insert into resultats_client values (r.n, case when accepte then 'ok' else code || ' ' || msg end);
+  end loop;
+end $$;`)
+}
 sql.push('select n || chr(9) || sortie from resultats order by n;')
+sql.push("select 'C' || n || chr(9) || sortie from resultats_client order by n;")
 sql.push('rollback;')
 
 const reponses = new Map()
+const reponsesClient = new Map()
 for (const ligne of psql(`${sql.join('\n')}\n`, true).split('\n')) {
   const tab = ligne.indexOf('\t')
-  if (tab > 0) reponses.set(Number(ligne.slice(0, tab)), ligne.slice(tab + 1))
+  if (tab <= 0) continue
+  if (ligne.startsWith('C')) reponsesClient.set(Number(ligne.slice(1, tab)), ligne.slice(tab + 1))
+  else reponses.set(Number(ligne.slice(0, tab)), ligne.slice(tab + 1))
 }
 if (reponses.size !== cas.length) {
   console.error(`✗ ${reponses.size} réponses de la base pour ${cas.length} saisies.`)
   process.exit(1)
 }
+if (reponsesClient.size !== (passeDuClient ? casClient.length : 0)) {
+  console.error(`✗ ${reponsesClient.size} réponses de la base au client pour ${casClient.length} saisies.`)
+  process.exit(1)
+}
 const base = cas.map((_, n) => reponses.get(n))
+const baseClient = casClient.map((_, n) => reponsesClient.get(n))
 
 // 5. La confrontation, saisie par saisie.
 const ecarts = base.map((b, n) => (b === module[n] ? null : n)).filter((n) => n !== null)
@@ -226,4 +293,25 @@ console.log('Réponses de la base, par refus :')
 for (const [cle, k] of [...parRefus].sort((a, b) => b[1] - a[1])) console.log(`  ${String(k).padStart(5)}  ${cle}`)
 console.log(`empreinte base   : ${empreinte(base)}`)
 console.log(`empreinte module : ${empreinte(module)}`)
-process.exit(ecarts.length === 0 ? 0 : 1)
+
+// 6. La passe du client, de même.
+let ecartsClient = []
+if (!passeDuClient) {
+  console.log('Passe du client (étape P2) : sans objet — la base ne porte pas la migration ventes_du_client.')
+} else {
+  ecartsClient = baseClient.map((b, n) => (b === moduleClient[n] ? null : n)).filter((n) => n !== null)
+  console.log(`Passe du client, au seul droit « Ventes » : ${casClient.length} saisies, ${ecartsClient.length} écart(s)`)
+  for (const n of ecartsClient.slice(0, 30)) {
+    console.log(`  #C${n} ${JSON.stringify(casClient[n])}\n     base   : ${baseClient[n]}\n     module : ${moduleClient[n]}`)
+  }
+  const parRefusClient = new Map()
+  for (const b of baseClient) {
+    const cle = b === 'ok' ? 'ok' : b.slice(b.indexOf(' ') + 1, b.indexOf(' ') + 61)
+    parRefusClient.set(cle, (parRefusClient.get(cle) ?? 0) + 1)
+  }
+  console.log('Réponses de la base au client, par refus (les dix plus fréquentes) :')
+  for (const [cle, k] of [...parRefusClient].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`  ${String(k).padStart(5)}  ${cle}`)
+  console.log(`empreinte base, client   : ${empreinte(baseClient)}`)
+  console.log(`empreinte module, client : ${empreinte(moduleClient)}`)
+}
+process.exit(ecarts.length === 0 && ecartsClient.length === 0 ? 0 : 1)

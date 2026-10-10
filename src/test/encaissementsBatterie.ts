@@ -18,13 +18,16 @@ import type { EtatTransmission } from '../lib/types'
 // `M1355`…) deviennent des identifiants en base ; ici ils servent d'identifiants. Le script qui l'a jouée construit ce
 // monde dans une transaction, appelle la fonction en chef du cabinet pour chaque saisie, annule tout : il vit dans le
 // dépôt depuis l'étape d4 (supabase/essais/batterieEncaissements.mjs), et la batterie se rejoue n'importe quel jour.
+// Depuis l'espace client (étape P2), une SECONDE PASSE : le client de l'essai rejoue les saisies de son dossier avec le
+// seul droit « Ventes » (`reponsesDuModuleSansBanque`) — le script ne la joue que sur une base qui porte la migration
+// ventes_du_client ; sans elle, la fonction refuse le client à l'accès.
 //
 // Ce que la batterie ne joue pas, et que les tests unitaires jouent : une date qui n'en est pas une (PostgREST ne la
 // lirait pas comme une date, la fonction ne la reçoit jamais), un nombre qui n'en est pas un (JSON l'écrit `null`).
 
 /** Le jour où la base a jugé la batterie dont encaissementsBatterie.test.ts fige l'empreinte : elle lit sa date à Paris,
  * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. */
-export const AUJOURD_HUI_RELEVE = '2026-10-09'
+export const AUJOURD_HUI_RELEVE = '2026-10-10'
 
 /** Le nombre de saisies de la batterie, et la graine de son tirage. */
 export const SAISIES_DE_LA_BATTERIE = 4000
@@ -32,6 +35,12 @@ export const GRAINE_DE_LA_BATTERIE = 20261008
 
 export const DOSSIERS = { A: 'ac538d93-7da3-4403-bca6-2d7836810a6f', B: '001c7ed7-c23b-4590-901e-693489f8af24' } as const
 type NomDossier = keyof typeof DOSSIERS
+
+/** LA PASSE DU CLIENT (espace client, étape P2) : le client de l'essai, qui a un accès au dossier A, y rejoue les saisies
+ * de ce dossier avec le seul droit « Ventes » — sans « Banque », un mouvement ne se désigne pas (`gereLaBanque` faux).
+ * Sur B, où il n'a pas d'accès, la base refuserait l'accès, que le module ne juge pas : ces saisies-là ne se jouent pas. */
+export const CLIENT = '797fe440-df8d-4b8e-828b-d148927bfd60'
+export const DOSSIER_DU_CLIENT: NomDossier = 'A'
 
 export interface LigneDuMonde {
   quantite: number
@@ -344,13 +353,30 @@ export function batterie(nombre: number, graine: number, aujourdHui: string): Ca
 }
 
 // Le code de chaque refus, dans la famille que la base lui donne ; les autres sont des paramètres invalides (22023).
-const CODES_DES_REFUS: Partial<Record<CleRefusEnregistrement, string>> = { acces: '42501', facture_introuvable: 'P0002' }
+const CODES_DES_REFUS: Partial<Record<CleRefusEnregistrement, string>> = {
+  acces: '42501', mouvement_sans_banque: '42501', facture_introuvable: 'P0002',
+}
 
-/** Ce que le module répond à chaque saisie, écrit comme la base l'écrit : `ok`, ou le code et le message du refus. */
-export function reponsesDuModule(cas: readonly CasDeBatterie[], aujourdHui: string): string[] {
+function reponses(cas: readonly CasDeBatterie[], aujourdHui: string, gereLaBanque: boolean): string[] {
   return cas.map((c) => {
     const e = entreeDuCas(MONDE, c)
-    const r = refusEnregistrement(e.contexte, e.saisie, e.mouvements, aujourdHui)
+    const r = refusEnregistrement(e.contexte, e.saisie, e.mouvements, aujourdHui, gereLaBanque)
     return r ? `${CODES_DES_REFUS[r.cle] ?? '22023'} ${r.message}` : 'ok'
   })
+}
+
+/** Ce que le module répond à chaque saisie du chef du cabinet — il porte les deux droits —, écrit comme la base l'écrit :
+ * `ok`, ou le code et le message du refus. */
+export function reponsesDuModule(cas: readonly CasDeBatterie[], aujourdHui: string): string[] {
+  return reponses(cas, aujourdHui, true)
+}
+
+/** Les saisies que le client joue : celles de son dossier, dans leur ordre. */
+export function casDuClient(cas: readonly CasDeBatterie[]): CasDeBatterie[] {
+  return cas.filter((c) => c.dossier === DOSSIER_DU_CLIENT)
+}
+
+/** Ce que le module répond au client qui ne porte que « Ventes », sur les saisies de son dossier (`casDuClient`). */
+export function reponsesDuModuleSansBanque(cas: readonly CasDeBatterie[], aujourdHui: string): string[] {
+  return reponses(casDuClient(cas), aujourdHui, false)
 }

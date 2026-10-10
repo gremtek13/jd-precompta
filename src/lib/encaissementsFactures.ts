@@ -31,7 +31,10 @@ import type {
 //     (`refusDeclaration`, `refusContrePassation`) et ce que la contre-passation écrira (`contrePassationDe`) ;
 //   - depuis l'étape d7 (migration cycle_de_vie_des_factures_emises), qu'un refus (210) ou un rejet (213) LU SUR LA
 //     PLATEFORME DU CLIENT (`statuts_factures_recus`) fait refuser l'encaissement et la déclaration comme un refus de
-//     Super PDP, sous les mêmes mots.
+//     Super PDP, sous les mêmes mots ;
+//   - depuis l'espace client (étape P2, migration ventes_du_client, `VENTES_DU_CLIENT_EXPORTEES`), qu'un mouvement ne se
+//     désigne qu'avec le droit « Banque » (`gereLaBanque`, obligatoire) : le client qui ne porte que « Ventes » encaisse
+//     sans mouvement, et rien ne lui est proposé.
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -320,6 +323,15 @@ export function repartitionProposee(
 
 // ── Ce que la base refuserait ─────────────────────────────────────────────────────────────────────────────────────────
 
+// LES VENTES DU CLIENT SONT-ELLES DANS L'EXPORT ? (espace client, étape P2.) La migration `ventes_du_client` fait
+// accepter par les fonctions des encaissements le client qui porte le droit « Ventes », et donne à
+// `enregistrer_encaissement` un refus NEUF, au rang 2 : le mouvement bancaire ne se désigne qu'avec le droit « Banque ».
+// Elle attend l'accord du cabinet. Ce module dit déjà ce refus à son rang (`mouvement_sans_banque`) — sans effet tant que
+// seul le cabinet saisit : il porte les deux droits —, et encaissementsFactures.test.ts le confronte au texte de la
+// fonction : à celui d'aujourd'hui, ce refus retiré, tant que ceci reste `false` ; au texte entier dès que l'export porte
+// la migration — le test vire au rouge tant que ceci ne passe pas à `true` le même jour.
+export const VENTES_DU_CLIENT_EXPORTEES: boolean = false
+
 // Les refus d'`enregistrer_encaissement`, DANS SON ORDRE ET SOUS SES MOTS (supabase/schema/20261008180607_
 // encaissements_des_factures.sql) : l'écran les dit avant le clic, et un refus de la base arrivé après — une écriture
 // concurrente — dit la même chose. Le modèle est le texte de la fonction, apostrophes droites comprises : chaque « % »
@@ -327,6 +339,11 @@ export function repartitionProposee(
 // les confronte à cette liste, ordre et texte.
 export const REFUS_ENREGISTREMENT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
+  // Depuis la migration ventes_du_client (`VENTES_DU_CLIENT_EXPORTEES`) : juste après l'accès, avant la facture.
+  {
+    cle: 'mouvement_sans_banque',
+    modele: "Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.",
+  },
   { cle: 'facture_introuvable', modele: 'Facture introuvable dans ce dossier.' },
   { cle: 'brouillon', modele: 'Seule une facture validée reçoit un encaissement : celle-ci est un brouillon.' },
   { cle: 'avoir', modele: "Un avoir ne reçoit pas d'encaissement : seule une facture en reçoit." },
@@ -497,14 +514,22 @@ export interface SaisieEncaissement {
 /**
  * Ce que `enregistrer_encaissement` refuserait de cette saisie : le PREMIER refus, dans l'ordre de la base et sous son
  * message, ou null quand elle l'accepterait. `mouvements` : ceux du dossier, où se cherche le mouvement cité ;
- * `aujourdHui` : la date du jour À PARIS (`aujourdHuiAParis`), celle que la base lit.
+ * `aujourdHui` : la date du jour À PARIS (`aujourdHuiAParis`), celle que la base lit ; `gereLaBanque` : le droit
+ * « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base) — le cabinet le porte toujours, un client s'il lui
+ * est coché. Passé sans valeur par défaut : un écran du client qui l'oublierait laisserait désigner un mouvement que la
+ * base refuse.
  */
 export function refusEnregistrement(
   c: ContexteFacture,
   s: SaisieEncaissement,
   mouvements: readonly MouvementLu[],
   aujourdHui: string,
+  gereLaBanque: boolean,
 ): RefusEncaissement<CleRefusEnregistrement> | null {
+  // Juste après l'accès (refus 1, que seule la base juge), avant la facture : le mouvement qui prouve l'encaissement est
+  // une donnée de la banque, et sans le droit « Banque » il ne se désigne pas — l'encaissement s'enregistre sans lui
+  // (espace client, étape P2 ; migration ventes_du_client).
+  if (s.ligneBancaireId != null && !gereLaBanque) return refus('mouvement_sans_banque')
   const surLaFacture = refusDeLaFacture(c)
   if (surLaFacture) return surLaFacture
   const f = c.facture
@@ -956,6 +981,8 @@ function explication(creditCentimes: number, resteCentimes: number, solde: boole
  * un paiement déjà enregistré, un mouvement daté de demain ou une facture qui ne reçoit rien ne se proposent pas. Les
  * propositions se jugent chacune seule : l'écran les recalcule après chaque enregistrement. La jumelle d'abord, dans
  * l'ordre de ses paiements ; puis le relevé, le plus petit écart d'abord, le client cité d'abord, puis par date.
+ * `gereLaBanque` : le droit « Banque » de qui saisit (`refusEnregistrement`) — sans lui, AUCUNE : chacune désigne un
+ * mouvement, que la base refuserait (espace client, étape P2).
  */
 export function propositionsEncaissement(
   c: ContexteFacture,
@@ -963,7 +990,9 @@ export function propositionsEncaissement(
   paiements: PaiementsDesPieces,
   mouvements: readonly MouvementPropose[],
   aujourdHui: string,
+  gereLaBanque: boolean,
 ): PropositionEncaissement[] {
+  if (!gereLaBanque) return []
   const reste = resteAEncaisser(c)
   if (reste.resteCentimes <= 0) return []
   const f = c.facture
@@ -989,7 +1018,7 @@ export function propositionsEncaissement(
       ligneBancaireId: m.id,
       repartition: repartition.map((p) => ({ taux: p.taux, montant: p.centimes / 100 })),
     }
-    if (refusEnregistrement(c, saisie, mouvements, aujourdHui)) return null
+    if (refusEnregistrement(c, saisie, mouvements, aujourdHui, gereLaBanque)) return null
     const avantLaFacture = m.date < f.date_emission
     return {
       source,

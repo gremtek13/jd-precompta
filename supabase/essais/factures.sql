@@ -45,6 +45,14 @@
 --
 -- Les factures que crée la fonction ont des identifiants qu'on ne choisit pas : une étape les retrouve par leur dossier
 -- et leur numéro, ou par le nom de leur client (« ESSAI … »).
+--
+-- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, non appliquée). Les migrations
+-- `ventes_du_client` font accepter par `enregistrer_facture` le client qui porte le droit « Ventes » sur le dossier
+-- (`gere_les_ventes`), lui font écrire `valide_par`, et ajoutent `supprimer_brouillon_facture`. Le client d'essai doit
+-- donc être SANS ce droit : coché sur ce compte, le refus attendu ici deviendrait une acceptation légitime, et l'essai
+-- se dit impossible plutôt que de virer au rouge à tort ; le client qui le porte, `valide_par` et la suppression d'un
+-- brouillon se jouent dans `ventesClient.sql`. Ses 118 verdicts justes sur une réplique identique à la production
+-- (`signature.sql`), avant comme après les deux migrations de l'étape.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -66,6 +74,11 @@ begin
      or exists (select 1 from cabinet_admins where user_id = client)
      or not exists (select 1 from super_admins where user_id = chef) then
     raise exception 'ESSAI_IMPOSSIBLE : jeu de départ introuvable';
+  end if;
+  -- Le client d'essai est SANS le droit « Ventes » (espace client, étape P2) : avec lui, il enregistre les factures de
+  -- son dossier, légitimement, et c'est `ventesClient.sql` qui le joue.
+  if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
+    raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
 
   ids := jsonb_build_object('CAB', cabinet, 'DC', dossier_client, 'CLIENT', client,

@@ -17813,3 +17813,148 @@ son fichier d'export, `application_m2.patch` (le socle), `rls.sql` et `banqueCli
 (« Ma banque ») : l'écran qui proposera et précisera — et, avec lui, les confirmations de suppression d'une pièce ou
 d'un mouvement devront NOMMER les propositions et les précisions qui partent en cascade. L'entrée « Ma simulation » de
 la navigation du client reste visible sans la case (`Layout.tsx`, hors de l'étape) : l'écran dit pourquoi il se tait.
+
+### 10/10/2026 — LES VENTES DU CLIENT, EN BASE — ESPACE CLIENT, ÉTAPE P2 (PRÉPARÉE, ÉPROUVÉE, NON APPLIQUÉE)
+
+(Deux migrations, préparées hors du dépôt — l'export ne porte que ce qui est appliqué : `ventes_du_client`, 34 959
+caractères, empreinte `e60ccc6d6386a6e9379cd640bbdb27c0`, pour `apply_migration` (aucune suppression dans son texte) ;
+`ventes_du_client_facturation`, 17 549 caractères, `db69535853d481c652dbf271254280b1`, à COLLER avec sa ligne
+d'historique (son texte supprime : les lignes qu'`enregistrer_facture` remplace, et un brouillon) ; un retour arrière
+complet, destructif, 42 306 caractères, `be214d44342b7d052a0443a792d9a47d`, à coller lui aussi. L'essai neuf
+`supabase/essais/ventesClient.sql` ; `rls.sql` (un bloc « Les ventes du client », cinq lignes d'en-tête, un passage
+daté) ; les six essais des factures et des encaissements (une précondition, un témoin, un passage daté chacun) ;
+`batterieEncaissements.mjs` et la batterie ; `src/lib/encaissementsFactures.ts`, `src/lib/factures.ts`,
+`src/lib/types.ts`, `FacturesTab.tsx` et leurs tests, un test neuf `FacturesTabSuppressionBrouillon.test.tsx` ; les
+deux appels d'`EncaissementsFactureModal.tsx`, un nombre de `verrousEcritures.test.ts` ; trois passages de RGPD.md.) La troisième
+étape de l'espace client (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §3.3, §3.4, §3.6,
+§3.7, §9) : ce que la case « Ventes » ouvre en BASE. Rien n'est appliqué : une policy qui ouvre une lecture au client se
+présente au cabinet avant (la présentation, une page, accompagne le correctif). Hypothèses : EC-Q2 (une seule série de
+factures par dossier, `valide_par` noté), EC-Q4 (le client reliera sa plateforme, étape P3), EC-Q3 ouverte (ses factures
+ne comptent toujours nulle part en comptabilité). Sources : règlement (UE) 2016/679, art. 25 § 2 et 32 § 1 b) ;
+documentation de PostgreSQL, « Row Security Policies » (une policy permissive s'ajoute aux autres par un OU, et n'ouvre
+que sa commande) ; CGI, ann. II, art. 242 nonies A, I, 7° (« un numéro unique basé sur une séquence chronologique et
+continue ») ; BOI-TVA-DECLA-30-20-10-30, §90 à §210 (la facture émise par un mandataire au nom de son mandant).
+
+**MESURÉ EN PRODUCTION LE 10/10/2026** (lecture seule, comptes seulement) : 109 migrations, puis 110 — `pieces_hors_de_france`
+(étape e2) appliquée dans la matinée, dont le texte ne nomme aucun objet de P2 ; six factures, toutes validées, dans un
+seul bac à sable, aucun brouillon, aucune annotée ; deux accès clients, aucun droit coché ; aucune transmission,
+encaissement, déclaration, statut lu ni événement de Super PDP ; un e-mail, d'un autre type que « facture ». Tout client
+lit aujourd'hui les mouvements bancaires de ses dossiers (« membres peuvent lire leurs lignes bancaires ») : c'est P7
+qui les réservera à « Banque ».
+
+**LA PREMIÈRE MIGRATION** (`ventes_du_client`). Neuf policies AJOUTÉES — jamais une modifiée : le retour arrière retire
+ce qu'on a ajouté, sans toucher à ce qui existait —, `<table>_lecture_ventes`, `for select to authenticated`, sur
+`client_du_dossier(dossier_id, 'ventes')` : factures (brouillons compris), lignes (par leur facture, comme la policy du
+cabinet), transmissions, événements de Super PDP, statuts lus, encaissements et leurs parts, déclarations, et les
+e-mails de type `facture` ou `devis` seulement — jamais la relance de pièces. Aucune policy d'écriture. Six fonctions
+reprises AU CARACTÈRE PRÈS de leur dernière migration (remplacements comptés par un script, différence des corps relue :
+les seuls changements voulus), l'accès passant d'`admin_du_dossier` à `gere_les_ventes` : `prochain_numero_facture`
+(son droit d'exécution reste retiré à tous), `abandonner_transmission` (son détail dit désormais « par le client »
+quand c'est lui, celui du cabinet mot pour mot), `enregistrer_encaissement`, `retirer_encaissement`,
+`declarer_encaissement_hors_application`, `annuler_encaissement`. **UN REFUS NEUF**, au rang 2 d'`enregistrer_encaissement`,
+juste après l'accès et avant « Facture introuvable » : « Le mouvement bancaire d'un encaissement ne se désigne qu'avec
+le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement. » (42501). **QUI A FAIT
+QUOI** : `factures_emises.valide_par` (le compte qui valide, nul sur un brouillon par une contrainte, figé par la garde
+des factures validées puisqu'il n'est pas de ce qui s'écrit après coup ; nul sur les six d'avant : on ne devine pas) et
+`transmissions_factures.cree_par` (écrit par les Edge Functions à l'étape P3 ; la garde des transmissions le refuse
+changé, même posé après coup sur un nul). Ni l'un ni l'autre n'a de clé vers les comptes : un `set null` réécrirait une
+ligne figée, un `no action` empêcherait de retirer un membre parti.
+
+**LA SECONDE, À COLLER** (`ventes_du_client_facturation`). Elle vérifie d'abord que la première est en base.
+`enregistrer_facture` reprise au caractère près, deux changements : `gere_les_ventes`, et `valide_par = auth.uid()`
+dans la mise à jour qui valide — celle qui pose le numéro, sous le verrou de la série : client et cabinet numérotent
+dans UNE série, sans trou ni doublon. `supprimer_brouillon_facture(dossier, facture)` : l'accès au dossier ANNONCÉ
+d'abord (42501, écart avec la conception, qui n'écrivait que la facture : un compte sans droit n'apprend pas qu'une
+facture existe), la facture dans ce dossier, verrouillée (P0002), une facture validée refusée (22023, les mots de la
+garde) ; elle rend l'identifiant supprimé. Fermée à `anon` et à PUBLIC.
+
+**LE TÉMOIN.** Entre la fusion du code et l'application (qui attend l'accord du cabinet), une autre migration peut faire
+rejouer `rls.sql` et les essais des ventes EN PRODUCTION. Leur témoin : la colonne `valide_par`, que la première migration
+pose d'un seul tenant avec ses policies. Absente : le bloc des ventes de `rls.sql` se dit « SANS OBJET » en une ligne (le
+nom de la ligne porte l'état : le tableau final ne montre le détail que d'une ligne en faute), et les contrôles de
+catalogue 34, 93, 115 et 42 des quatre essais attendent le catalogue d'hier ; présente, chaque état s'attend exactement.
+Le témoin ne cache rien : la colonne posée SANS les policies fait virer le bloc au rouge. `ventesClient.sql`, lui, se dit
+IMPOSSIBLE sans les deux migrations. **ET UN CLIENT D'ESSAI SANS LE DROIT** : les six essais jouent le client qui a un
+accès au dossier de leur facture et attendent qu'il ne voie rien ; « Ventes » cochée sur ce compte, ces refus
+deviendraient des acceptations légitimes — mesuré : chacun des six vire au rouge sur un contrôle. Ils exigent désormais
+ce client sans le droit (ESSAI_IMPOSSIBLE sinon), et `ventesClient.sql` joue celui qui le porte. Écartés : décocher le
+droit dans l'essai (une écriture hors d'un bloc annulé, en production), rejouer chaque contrôle sous un droit retiré.
+
+**LES PREUVES, SUR UNE RÉPLIQUE.** Une grappe locale dont `signature.sql` égalait la production sur ses neuf familles, à
+109 migrations puis à 110 (la signature relue en production). `ventesClient.sql` : 89 verdicts (50 contrôles, 20 faits,
+12 valeurs, 7 mutations), justes ; 62 en faute sans les migrations. `rls.sql` entier : sans les migrations, 25 lignes, 0
+en faute, 16 mutations ; avec elles, 30 lignes (61 tables, 53 à `dossier_id`), 0 en faute, 28 mutations sur 28 (3 bis :
+sans le droit — aucun, ou « Banque » seul — aucune ligne des neuf tables, même de son dossier ; avec, toutes, jamais une
+relance ; le catalogue des policies ouvertes au droit égal à la liste présentée, en lecture seule ; 4 bis : aucune
+insertion directe, 42501 nommément, aucune mise à jour). Les six essais : justes avant, avec la première seule, et avec
+les deux. **VINGT-HUIT MUTATIONS DES DEUX MIGRATIONS**, chacune un remplacement compté, jouées une à une avec ces essais :
+au premier passage 25 vues ; deux survivantes étaient des trous de l'essai — aucun brouillon validé par un autre que son
+auteur (`valide_par` pris du créateur passait), aucune facture inexistante annoncée sans droit (la suppression qui lit
+avant l'accès passait) —, comblés (22l, 22m, 26b, 26c) ; la dernière, la suppression sans le verrou de sa ligne, n'est
+vue que par une course de deux sessions (la garde refuse en 23514 au lieu de la fonction en 22023 : jamais une facture
+validée supprimée). Les courses : cabinet et client validant ensemble prennent deux numéros qui se suivent (la seconde
+attend 2 s), validation contre suppression et suppression contre validation se refusent sous leurs mots. **RÉSULTAT
+NÉGATIF, à ne pas réenquêter** : retirer le `for update` de la numérotation est ÉQUIVALENT — l'`insert … on conflict do
+nothing` qui le précède attend déjà la transaction qui tient la ligne de la série, mesuré même sur une série existante ;
+sans aucune sérialisation, la seconde validation est refusée par l'index unique (23505) : aucun doublon possible. Les
+suppressions directes (essai local, hors du dépôt : il supprime) : le client qui porte les droits voit chaque table et
+n'en supprime rien ; le chef supprime encore un brouillon directement (la policy d'hier) ; une facture validée, jamais.
+
+**LE CODE**, qui n'appelle rien d'absent de la production. Le module d2 dit le refus neuf à son rang :
+`mouvement_sans_banque` dans `REFUS_ENREGISTREMENT`, `gereLaBanque` OBLIGATOIRE dans `refusEnregistrement` et
+`propositionsEncaissement` (sans lui, aucune proposition : chacune désigne un mouvement) ; `VENTES_DU_CLIENT_EXPORTEES`
+(faux) : la confrontation au texte de la fonction retire ce refus tant qu'il est faux, et un test exige que l'export le
+porte si et seulement s'il est vrai. La fenêtre des encaissements passe `true` (le cabinet a les deux droits). La
+batterie gagne une passe du client (les 3 693 saisies de son dossier, au seul droit « Ventes ») : sans écart sur la
+réplique migrée, comme celle du chef avec et sans migration ; le jour du relevé et l'empreinte du chef remplacés
+ensemble (10/10/2026), celle du client figée ; le refus neuf déplacé après la facture dans le module y fait 546 écarts.
+L'onglet Factures supprime un brouillon par `supprimerBrouillon` si `SUPPRESSION_BROUILLON_EXPORTEE` (faux), directement
+sinon, sous un verrou `useRef` relâché après la relecture (le garde des verrous passe de 20 à 19 suppressions nues).
+`types.ts` : `valide_par?` et `cree_par?` FACULTATIFS — écart motivé à « le type décrit la table » : avant la migration les
+lignes lues n'ont pas la colonne, et `cree_par` nommé dans le `select` explicite des transmissions ferait échouer la
+lecture en production ; obligatoires avec l'écran qui les lit. Simulé « après application » (les deux migrations dans
+l'export, drapeaux levés) : trois tests de l'onglet qui ne savaient que le chemin direct tombaient, rendus justes dans
+les deux états.
+
+**LE RETOUR ARRIÈRE.** Sans rien perdre : décocher « Ventes » — tout ce que P2 ouvre se referme, et les essais restent
+justes. Complet : une migration à coller qui retire les policies et la fonction, rend les huit fonctions à leur
+définition d'avant (relevée sur la réplique égale à la production) et DÉTRUIT `valide_par` et `cree_par` avec leurs
+valeurs ; éprouvée, la signature redevient celle d'avant (à 109 comme à 110 migrations). Avant elle, les drapeaux
+repassent à faux et l'export perd les deux fichiers.
+
+**CE QUI RESTE.** L'accord du cabinet sur ce que la case ouvre ; avant d'appliquer, le formulaire d'une facture doit dire
+que ses notes deviennent visibles du client qui a la case (§3.6 de la conception ; aucune facture annotée), et la phrase
+des cases de l'onglet Accès (« cocher une case ne change pas ce que le client voit ou fait ») devient fausse pour sa
+session — ne cocher « Ventes » pour un vrai client qu'à P4. Le jour de l'application : la première par `apply_migration`,
+la seconde collée aussitôt après (entre les deux, les validations ne notent pas `valide_par`), puis l'export, les deux
+drapeaux, `ventesClient.sql`, les six essais et `rls.sql` en production, l'advisor (une fonction de plus).
+
+### 10/10/2026 — LE CONTRÔLE CROISÉ DE P2 ET P7 : LES DEUX ÉTAPES DE L'ESPACE CLIENT, JOUÉES ENSEMBLE
+
+P2 (les ventes du client) et P7 (sa banque) ont été préparées et éprouvées chacune SEULE, sur sa propre réplique. Réunies
+dans un même commit, elles ont été rejouées ENSEMBLE par un troisième agent, sur une réplique dont la signature égalait
+la production à 110 migrations, dans les sept états où le cabinet pouvait les appliquer : aucune migration ; P7-1 ; P7-1
+et P7-2 ; P2-A et P2-B ; P2 et P7-1 ; les quatre, P2 d'abord ; les quatre, P7 d'abord. Dans chacun : `rls.sql` entier,
+`banqueClient.sql`, `ventesClient.sql`, les six essais des ventes, `ventilation.sql` et `reglementGroupe.sql`.
+
+RÉSULTAT : aucune faute qu'aucune des deux étapes n'avait vue seule. Chaque sortie égale, ligne à ligne, celle que
+l'étape avait gardée, une fois retirée la ligne d'état de l'autre (« en attente », « SANS OBJET ») ; les deux ordres
+complets donnent la même signature et les mêmes verdicts (`rls.sql` : 34 lignes, 0 en faute, 31 mutations sur 31) ;
+entre les deux migrations de P7, la faute attendue — le resserrement manque — et elle seule. Le socle et l'inventaire
+restent égaux entre base et fichiers dans les sept états (P2 ajoute 13 objets à l'inventaire, P7 en ajoute 50). Rien ne
+reste en base après les onze essais joués à la suite.
+
+DEUX ÉCARTS, hors des sept états :
+- `ventesClient.sql`, contrôle 64 (propre à P2, pas une interaction) : il comptait les lignes de facture SANS filtre, et
+  tombait dès que le client d'essai lit légitimement les factures d'un autre de ses dossiers — ce qui est le cas en
+  production. Corrigé avant la fusion : il ne compte que les lignes des factures du dossier de l'essai, relevées par le
+  propriétaire (90 verdicts, 0 en faute ; une fuite plantée et le filtre retourné le font encore tomber).
+- La phrase de l'onglet Accès sur les cases (`lib/droitsAcces.ts`) ne lit que le drapeau de P7 : dès que P2-A est
+  appliquée, « cocher une case ne change pas ce que le client voit ou fait » devient faux, quel que soit l'ordre. À
+  corriger AVANT l'application de P2, avec le libellé des notes d'une facture (condition du cabinet, 10/10/2026).
+
+Non joués : la batterie des encaissements, la restauration des deux étapes réunies, la double bascule du code, deux
+sessions en parallèle. Par lecture, les fonctions des deux étapes n'ont en commun que le verrou de la ligne du
+mouvement : elles s'attendent sans pouvoir se bloquer. LEÇON : deux étapes préparées séparément sur des répliques
+séparées ne se croient pas compatibles ; elles se rejouent ensemble, dans chaque ordre d'application, avant la première
+migration.

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fichiersDuSchema } from '../test/schema'
 
 // Le client Supabase est simulé (voir contrepartieBanque.test.ts pour le même motif) : `enregistrerFacture` et
 // `creerAvoir` ne sont que des appels RPC, il n'y a pas de calcul pur à extraire d'eux.
@@ -16,7 +17,7 @@ vi.mock('./supabase', () => ({
 
 const {
   calculerLigne, calculerTotaux, mentionsLegalesParDefaut, trierLignes, lignesSaisies,
-  enregistrerFacture, dejaCredite, refusAvoir, creerAvoir,
+  enregistrerFacture, dejaCredite, refusAvoir, creerAvoir, supprimerBrouillon, SUPPRESSION_BROUILLON_EXPORTEE,
 } = await import('./factures')
 
 beforeEach(() => {
@@ -307,5 +308,32 @@ describe('creerAvoir', () => {
       dateEmission: '2026-03-12', motif: '', mentionsLegales: '',
       lignes: [{ designation: 'Soin', quantite: 1, prix_unitaire_ht: 10, taux_tva: 0 }],
     })).rejects.toThrow("n'a plus que 10,00")
+  })
+})
+
+// LA SUPPRESSION D'UN BROUILLON PAR LA BASE (espace client, étape P2) : `supprimer_brouillon_facture` vit dans une
+// migration que le cabinet colle, et l'onglet Factures ne l'appelle que lorsque l'export la porte.
+describe('supprimerBrouillon', () => {
+  it('appelle la fonction avec le dossier annoncé puis la facture, et rend ce qu’elle a supprimé', async () => {
+    rpc.data = 'b1'
+    await expect(supprimerBrouillon('d1', 'b1')).resolves.toBe('b1')
+    expect(appels).toEqual([{ nom: 'supprimer_brouillon_facture', params: { p_dossier_id: 'd1', p_facture_id: 'b1' } }])
+  })
+
+  it('remonte le refus de la base tel quel', async () => {
+    rpc.error = { message: 'La facture F2026-0001 est validée : elle ne se supprime plus — la corriger passe par un avoir.' }
+    await expect(supprimerBrouillon('d1', 'f1')).rejects.toThrow('elle ne se supprime plus')
+  })
+
+  it('une réponse qui ne rend pas la facture demandée n’est pas une suppression', async () => {
+    rpc.data = null
+    await expect(supprimerBrouillon('d1', 'b1')).rejects.toThrow("n'a pas rendu la facture supprimée")
+    rpc.data = 'b2'
+    await expect(supprimerBrouillon('d1', 'b1')).rejects.toThrow("n'a pas rendu la facture supprimée")
+  })
+
+  it('l’export porte la fonction si et seulement si SUPPRESSION_BROUILLON_EXPORTEE le dit', () => {
+    const exportee = fichiersDuSchema().some((f) => /create (or replace )?function public\.supprimer_brouillon_facture\(/.test(f.texte))
+    expect(exportee, 'SUPPRESSION_BROUILLON_EXPORTEE ne dit plus ce que porte l’export').toBe(SUPPRESSION_BROUILLON_EXPORTEE)
   })
 })

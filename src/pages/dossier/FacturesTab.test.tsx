@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
+import { SUPPRESSION_BROUILLON_EXPORTEE } from '../../lib/factures'
 import type { ReleveStatuts } from '../../lib/receptionPlateforme'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
@@ -26,6 +27,9 @@ const faux = vi.hoisted(() => ({
   // La suppression refusée : supabase-js ne lève pas, l'échec se lit dans `{ error }`.
   refusSuppression: null as string | null,
   suppressions: [] as unknown[],
+  // Par où chaque suppression est partie : directement, ou par `supprimer_brouillon_facture` (espace client, étape P2 :
+  // l'onglet n'appelle la fonction que lorsque l'export la porte, `SUPPRESSION_BROUILLON_EXPORTEE`).
+  voies: [] as ('directe' | 'fonction')[],
   // Le compte que la base annonce, quand il ne vaut pas le nombre de factures : une lecture qui s'arrête avant lui est
   // INCOMPLÈTE (lib/lectureComplete.ts).
   compteAnnonce: null as number | null,
@@ -84,6 +88,14 @@ vi.mock('../../lib/supabase', async () => {
   type Predicat = (ligne: Record<string, unknown>) => boolean
   let barriere: Promise<void> | null = null
   return { supabase: {
+    rpc: (nom: string, args: Record<string, unknown>) => {
+      if (nom !== 'supprimer_brouillon_facture') throw new Error(`Fonction non attendue dans ce test : ${nom}`)
+      faux.suppressions.push(args.p_facture_id)
+      faux.voies.push('fonction')
+      if (faux.refusSuppression) return Promise.resolve({ data: null, error: { message: faux.refusSuppression } })
+      faux.factures = faux.factures.filter((f) => f.id !== args.p_facture_id)
+      return Promise.resolve({ data: args.p_facture_id, error: null })
+    },
     functions: {
       invoke: (nom: string, options: { body: Record<string, unknown> }) => {
         if (nom === 'plateforme-agreee' && options.body.action === 'statut') {
@@ -148,6 +160,7 @@ vi.mock('../../lib/supabase', async () => {
           }
           if (suppression) {
             faux.suppressions.push(idVise)
+            faux.voies.push('directe')
             if (faux.refusSuppression) {
               return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: null }).then(suite)
             }
@@ -197,6 +210,7 @@ function poser(factures: FactureEmise[]) {
   faux.refusLecture = null
   faux.refusSuppression = null
   faux.suppressions = []
+  faux.voies = []
   faux.transmissions = []
   faux.refusTransmissions = null
   faux.lignesDossier = []
@@ -316,6 +330,10 @@ describe('FacturesTab — l’avoir connaît ce que la facture a déjà reçu', 
 describe("FacturesTab — la suppression d'un brouillon", () => {
   const brouillon = () => facture({ id: 'b1', numero: null, statut: 'brouillon', tiers_nom: 'CABINET VOISIN', validated_at: null })
 
+  // Directement tant que la fonction de la base n'y est pas ; par elle ensuite (FacturesTabSuppressionBrouillon.test.tsx
+  // joue ce chemin-là drapeau levé, et vérifie qu'aucune suppression directe ne part).
+  const VOIE = SUPPRESSION_BROUILLON_EXPORTEE ? 'fonction' : 'directe'
+
   it('retire le brouillon quand on confirme', async () => {
     poser([brouillon()])
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -325,6 +343,7 @@ describe("FacturesTab — la suppression d'un brouillon", () => {
     await act(async () => { bouton.click() })
 
     expect(faux.suppressions).toEqual(['b1'])
+    expect(faux.voies).toEqual([VOIE])
     await screen.findByText('Aucune facture.')
   })
 
@@ -350,6 +369,22 @@ describe("FacturesTab — la suppression d'un brouillon", () => {
     await act(async () => { bouton.click() })
 
     expect(faux.suppressions).toEqual([])
+  })
+
+  // Le verrou de la suppression (espace client, étape P2) : deux clics dans le même `act` trouvent le verrou posé, et il
+  // en faut TROIS pour voir un verrou posé dans le `try` plutôt qu'avant. Tant que la fonction de la base n'y est pas
+  // (`SUPPRESSION_BROUILLON_EXPORTEE`), la suppression part directement — FacturesTabSuppressionBrouillon.test.tsx joue
+  // l'autre chemin.
+  it('deux ou trois clics du même rendu ne suppriment qu’une fois', async () => {
+    poser([brouillon()])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+
+    const bouton = within(await ligne('CABINET VOISIN')).getByRole('button', { name: 'Supprimer' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.suppressions).toEqual(['b1'])
+    await screen.findByText('Aucune facture.')
   })
 })
 

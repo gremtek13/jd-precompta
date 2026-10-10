@@ -18,6 +18,12 @@
 -- transmissions d'essai s'insèrent sous le rôle des Edge Functions (`service_role`), seules à en écrire.
 --
 -- ÉPROUVÉ LE 08/10/2026 : 13 contrôles sur 13 en production, rien laissé en base.
+-- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, non appliquée). La migration
+-- `ventes_du_client` fait accepter par la fonction le client qui porte le droit « Ventes » (`gere_les_ventes`), et son
+-- détail dit désormais qui a abandonné — celui du cabinet, mot pour mot comme hier. Le client d'essai doit donc être
+-- SANS ce droit : coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort ; le client qui le
+-- porte se joue dans `ventesClient.sql`. 13 sur 13 sur une réplique identique à la production (`signature.sql`), avant
+-- comme après les deux migrations de l'étape.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -36,6 +42,11 @@ begin
   end if;
   if exists (select 1 from transmissions_factures where facture_id = facture_v) then
     raise exception 'ESSAI_IMPOSSIBLE : la facture d''essai porte déjà une transmission';
+  end if;
+  -- Le client d'essai est SANS le droit « Ventes » (espace client, étape P2) : avec lui, il abandonne une transmission
+  -- de son dossier, légitimement, et c'est `ventesClient.sql` qui le joue.
+  if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
+    raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
   select count(*) into transmissions_avant from transmissions_factures;
 

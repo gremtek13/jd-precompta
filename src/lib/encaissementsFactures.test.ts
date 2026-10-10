@@ -7,7 +7,7 @@ import {
   centimesExacts, contrePassationDe, echeanceDeDeclaration, ecartDeFrais, encaissementsDeclares, euroCommeLaBase,
   obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
   refusContrePassation, refusDeclaration, refusDeLaFacture, refusEnregistrement, refusRetrait, remplirModele,
-  repartitionProposee, resteAEncaisser, tauxCommeLaBase, ttcParTaux,
+  repartitionProposee, resteAEncaisser, tauxCommeLaBase, ttcParTaux, VENTES_DU_CLIENT_EXPORTEES,
   type CleRefusContrePassation, type ContexteFacture, type DeclarationLue, type EcheanceDeclaration, type EncaissementLu,
   type EncaissementPourContrePassation, type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture,
   type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type StatutPlateformeLu,
@@ -31,6 +31,13 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 const MIGRATION = readFileSync(
   new URL('../../supabase/schema/20261008180607_encaissements_des_factures.sql', import.meta.url), 'utf8')
 const ESSAI = readFileSync(new URL('../../supabase/essais/encaissementsFactures.sql', import.meta.url), 'utf8')
+// L'essai de l'espace client, étape P2 (supabase/essais/ventesClient.sql), joué sur une réplique de la production, les
+// deux migrations de l'étape posées : les messages que la base y a rendus au client qui porte le droit « Ventes ».
+const ESSAI_P2 = readFileSync(new URL('../../supabase/essais/ventesClient.sql', import.meta.url), 'utf8')
+
+// Les refus que l'EXPORT doit porter, dans l'ordre : tous, sauf le refus neuf de l'étape P2 tant que sa migration attend
+// l'accord du cabinet (`VENTES_DU_CLIENT_EXPORTEES`).
+const REFUS_DE_L_EXPORT = REFUS_ENREGISTREMENT.filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
 
 const D = 'd1'
 const AUJOURD_HUI = '2027-11-02'
@@ -88,7 +95,7 @@ const MOUVEMENTS: MouvementPropose[] = [
 ]
 
 const refus = (c: ContexteFacture, s: SaisieEncaissement, mouvements: readonly MouvementPropose[] = MOUVEMENTS) =>
-  refusEnregistrement(c, s, mouvements, AUJOURD_HUI)
+  refusEnregistrement(c, s, mouvements, AUJOURD_HUI, true)
 
 // ── La migration, lue ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -323,9 +330,26 @@ describe('obligationEncaissee — le statut « Encaissée » est-il dû pour cet
 describe('les refus de la base, tels que la migration les écrit', () => {
   it('enregistrer_encaissement : les mêmes messages, dans le même ordre', () => {
     const sql = derniereDefinitionSql('enregistrer_encaissement')
-    expect(messagesSql(sql)).toHaveLength(24)
-    expect(REFUS_ENREGISTREMENT.map((r) => r.modele)).toEqual(messagesSql(sql))
+    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 25 : 24)
+    expect(REFUS_DE_L_EXPORT.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
+  })
+
+  // LE REFUS NEUF DE L'ÉTAPE P2 (migration ventes_du_client, préparée et présentée au cabinet, pas encore appliquée) : le
+  // module le dit déjà à son rang, et l'export ne le porte que le jour où la migration y entre — ce jour-là, ce test vire
+  // au rouge tant que `VENTES_DU_CLIENT_EXPORTEES` reste faux, et la confrontation ci-dessus s'étend à lui.
+  it('l’export porte le refus neuf de l’étape P2 si et seulement si VENTES_DU_CLIENT_EXPORTEES le dit, juste après l’accès', () => {
+    const sql = derniereDefinitionSql('enregistrer_encaissement')
+    const neuf = (REFUS_ENREGISTREMENT.find((r) => r.cle === 'mouvement_sans_banque') as { modele: string }).modele
+    expect(messagesSql(sql).includes(neuf), 'VENTES_DU_CLIENT_EXPORTEES ne dit plus ce que porte l’export').toBe(VENTES_DU_CLIENT_EXPORTEES)
+    expect(REFUS_ENREGISTREMENT.map((r) => r.cle).slice(0, 3)).toEqual(['acces', 'mouvement_sans_banque', 'facture_introuvable'])
+    // Les mots, ceux que la base a rendus sur la réplique (contrôles 45 et 46 de ventesClient.sql) : un mouvement désigné
+    // sans le droit, puis le même sur la facture d'un autre dossier — le refus neuf passe avant « introuvable ».
+    for (const numero of ['45', '46']) {
+      const m = new RegExp(`\\('${numero}', 'controle', [\\s\\S]*?'42501', '((?:[^']|'')*)', null\\)`).exec(ESSAI_P2)
+      expect(m, `contrôle ${numero} de ventesClient.sql`).not.toBeNull()
+      expect((m as RegExpExecArray)[1].replace(/''/g, "'"), numero).toBe(neuf)
+    }
   })
 
   it('retirer_encaissement : les mêmes messages, dans le même ordre', () => {
@@ -339,7 +363,8 @@ describe('les refus de la base, tels que la migration les écrit', () => {
   // le texte de la fonction — un mot changé, deux refus permutés, un refus ajouté — doit la faire tomber.
   it('vire au rouge sur une dérive plantée dans le texte de la fonction', () => {
     const sql = derniereDefinitionSql('enregistrer_encaissement')
-    const attendu = REFUS_ENREGISTREMENT.map((r) => r.modele)
+    const attendu = REFUS_DE_L_EXPORT.map((r) => r.modele)
+    expect(messagesSql(sql)).toEqual(attendu)
     const mot = sql.replace("'Un encaissement est un montant positif.'", "'Un encaissement est un montant strictement positif.'")
     expect(mot).not.toBe(sql)
     expect(messagesSql(mot)).not.toEqual(attendu)
@@ -368,8 +393,8 @@ describe('les refus de la base, tels que la migration les écrit', () => {
       plafond_taux: [TAUX('v_part.taux'), MONTANT('greatest(v_ttc / 100.0 - v_deja, 0)')],
     }
     const args = argumentsSql(sql)
-    expect(args).toHaveLength(REFUS_ENREGISTREMENT.length)
-    REFUS_ENREGISTREMENT.forEach((r, i) => {
+    expect(args).toHaveLength(REFUS_DE_L_EXPORT.length)
+    REFUS_DE_L_EXPORT.forEach((r, i) => {
       expect(args[i], r.cle).toEqual(attendus[r.cle] ?? [])
       // Autant de « % » à remplir que de valeurs.
       expect(r.modele.replace(/%%/g, '').split('%').length - 1, r.cle).toBe(args[i].length)
@@ -717,7 +742,10 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
       transmissions: [{ facture_id: 'f1', canal: 'plateforme', etat: 'rejete', hote: 'h', flux_id: 'x' }],
     })
     let s = saisie({ date: null, montant: null, moyen: null, ligneBancaireId: 'inconnu', repartition: [] })
+    // Sans le droit « Banque » d'abord (espace client, étape P2) : le mouvement désigné est le premier refus.
+    let banque = false
     const etapes: [string, () => void][] = [
+      ['mouvement_sans_banque', () => { banque = true }],
       ['facture_introuvable', () => { c = { ...c, facture: { ...c.facture, dossier_id: D } } }],
       ['brouillon', () => { c = { ...c, facture: { ...c.facture, statut: 'validee' } } }],
       ['avoir', () => { c = { ...c, facture: { ...c.facture, type: 'facture' } } }],
@@ -744,13 +772,40 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
     ]
     const vus: string[] = []
     for (const [cle, corriger] of etapes) {
-      vus.push(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI)?.cle ?? 'aucun')
+      vus.push(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI, banque)?.cle ?? 'aucun')
       expect(vus[vus.length - 1], `avant de corriger ${cle}`).toBe(cle)
       corriger()
     }
-    expect(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI)).toBeNull()
+    expect(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI, banque)).toBeNull()
     // Toutes les clés que le module juge, dans l'ordre du catalogue : l'accès seul reste à la base.
     expect(vus).toEqual(REFUS_ENREGISTREMENT.map((r) => r.cle).filter((cle) => cle !== 'acces'))
+  })
+})
+
+describe('le droit « Banque » de qui saisit (espace client, étape P2)', () => {
+  const NEUF = "Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement."
+
+  it('sans lui, un mouvement ne se désigne pas — avant tout refus que la facture dirait ; sans mouvement, rien ne change', () => {
+    const avecMouvement = saisie({ ligneBancaireId: 'm_credit' })
+    expect(refusEnregistrement(contexte(), avecMouvement, MOUVEMENTS, AUJOURD_HUI, false)).toEqual({ cle: 'mouvement_sans_banque', message: NEUF })
+    expect(refusEnregistrement(contexte(), avecMouvement, MOUVEMENTS, AUJOURD_HUI, true)).toBeNull()
+    // Avant « introuvable » (contrôle 46 de ventesClient.sql) : la facture d'un autre dossier, un mouvement désigné.
+    const ailleurs = contexte({ facture: facture({ dossier_id: 'd2' }) })
+    expect(refusEnregistrement(ailleurs, avecMouvement, MOUVEMENTS, AUJOURD_HUI, false)?.cle).toBe('mouvement_sans_banque')
+    expect(refusEnregistrement(ailleurs, saisie(), MOUVEMENTS, AUJOURD_HUI, false)?.cle).toBe('facture_introuvable')
+    // Un mouvement que le dossier n'a pas se désigne tout autant : la base ne le cherche qu'après le droit.
+    expect(refusEnregistrement(contexte(), saisie({ ligneBancaireId: 'inconnu' }), MOUVEMENTS, AUJOURD_HUI, false)?.cle)
+      .toBe('mouvement_sans_banque')
+    // Sans mouvement, le droit ne change aucune réponse.
+    for (const s of [saisie(), saisie({ montant: 0 }), saisie({ date: null }), saisie({ repartition: [] }), saisie({ montant: 1400 })]) {
+      expect(refusEnregistrement(contexte(), s, MOUVEMENTS, AUJOURD_HUI, false))
+        .toEqual(refusEnregistrement(contexte(), s, MOUVEMENTS, AUJOURD_HUI, true))
+    }
+  })
+
+  it('sans lui, rien ne se propose : chaque proposition désigne un mouvement', () => {
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)).toHaveLength(1)
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, false)).toEqual([])
   })
 })
 
@@ -1168,7 +1223,10 @@ describe('les statuts lus sur la plateforme du client (étape d7), tels que la b
     ]
     for (const [nom, combien] of endroits) {
       const sql = derniereDefinitionSql(nom)
-      expect(MIGRATION_D7, nom).toContain(sql)
+      // La règle est née avec la migration d7, qui définit les quatre fonctions ; la migration ventes_du_client (espace
+      // client, étape P2) en reprend trois au caractère près, l'accès ou l'auteur d'une transmission changés : la
+      // DERNIÈRE définition, d'où qu'elle vienne, porte la règle telle quelle.
+      expect(MIGRATION_D7, nom).toMatch(new RegExp(`create (or replace )?function public\\.${nom}\\(`))
       expect(codesLus(sql), nom).toEqual(Array.from({ length: combien }, () => [...STATUTS_ANNULATION_PLATEFORME]))
       expect(sql, nom).toContain('from public.statuts_factures_recus s')
     }
@@ -1365,7 +1423,7 @@ describe('repartitionProposee — au prorata des restes (Q3)', () => {
     const r = repartitionProposee(200000, RESTES) as { taux: number; centimes: number }[]
     expect(r.reduce((s, p) => s + p.centimes, 0)).toBe(200000)
     expect(refusEnregistrement(contexte(), saisie({ montant: 2000, repartition: r.map((p) => ({ taux: p.taux, montant: p.centimes / 100 })) }),
-      MOUVEMENTS, AUJOURD_HUI)?.cle).toBe('plafond_facture')
+      MOUVEMENTS, AUJOURD_HUI, true)?.cle).toBe('plafond_facture')
   })
 
   it('la somme vaut toujours le montant, et aucun taux ne dépasse son reste — sur des tirages au hasard', () => {
@@ -1560,14 +1618,14 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   })
   const proposer = (
     mouvements: MouvementPropose[], lignes: LignePayante[], o: Partial<ContexteFacture> = {}, reglements: PartReglee[] = [],
-  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI)
+  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI, true)
 
   it('la jumelle reconnue par son identité seule propose son paiement comme jumelle, pas comme un crédit du relevé', () => {
     const parIdentite: PieceLue = {
       ...JUMELLE, flux_hote: null, flux_id: null,
       identite_numero: 'F2027-0042', identite_siren_vendeur: '123456782', identite_date: '2027-10-01', identite_nature: 'facture',
     }
-    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI)
+    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true)
     expect(p.map((x) => [x.source, x.ligneBancaireId, x.piecesPayees])).toEqual([['jumelle', 'm1', ['pj']]])
   })
 
@@ -1615,9 +1673,9 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   it('un crédit du relevé qui paie déjà une autre pièce se propose, et le dit', () => {
     // Le PDF de la même vente déposé à la main, rapproché de son virement : rien ne le relie à la facture émise.
     const p = propositionsEncaissement(contexte(), [], paiementsDesPieces([ligne({ id: 'r', piece_id: 'pdf' })], []),
-      [mouvement({ id: 'r' })], AUJOURD_HUI)
+      [mouvement({ id: 'r' })], AUJOURD_HUI, true)
     expect(p).toMatchObject([{ source: 'releve', ligneBancaireId: 'r', piecesPayees: ['pdf'] }])
-    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI)[0].piecesPayees).toEqual([])
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)[0].piecesPayees).toEqual([])
   })
 
   it('un remboursement, un paiement déjà enregistré ou un mouvement non lu ne se proposent pas', () => {
@@ -1638,7 +1696,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
 
   it('les crédits du relevé qui font le reste, à l’écart des frais près, dans les deux sens', () => {
     const p = (montant: number, o: Partial<MouvementPropose> = {}) =>
-      propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', montant, ...o })], AUJOURD_HUI)
+      propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', montant, ...o })], AUJOURD_HUI, true)
     expect(p(1355.5)).toMatchObject([{ source: 'releve', ligneBancaireId: 'r', montantCentimes: 135550, ecartCentimes: 0, solde: true }])
     expect(p(1350.5)).toMatchObject([{ montantCentimes: 135550, ecartCentimes: -500 }])
     expect(p(1360.5)).toMatchObject([{ montantCentimes: 135550, ecartCentimes: 500 }])
@@ -1659,7 +1717,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       facture: facture({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 }),
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
     })
-    const p = (montant: number) => propositionsEncaissement(petite, [], new Map(), [mouvement({ id: 'r', montant })], AUJOURD_HUI)
+    const p = (montant: number) => propositionsEncaissement(petite, [], new Map(), [mouvement({ id: 'r', montant })], AUJOURD_HUI, true)
     expect(p(117.6)).toHaveLength(1)
     expect(p(117.59)).toEqual([])
     expect(p(122.4)).toHaveLength(1)
@@ -1667,7 +1725,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   })
 
   it('ce que le cabinet a classé comme autre chose qu’un paiement de client ne se propose pas', () => {
-    const p = (o: Partial<MouvementPropose>) => propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', ...o })], AUJOURD_HUI)
+    const p = (o: Partial<MouvementPropose>) => propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', ...o })], AUJOURD_HUI, true)
     expect(p({})).toHaveLength(1)
     for (const o of [
       { prelevement_personnel: true }, { compte_bilan: '580000' }, { emprunt_id: 'em1' }, { declaration_tva_id: 'dt1' }, { cotisation_id: 'c1' },
@@ -1676,13 +1734,13 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
 
   it('un crédit qui justifie déjà un encaissement vivant est pris ; retiré ou annulé, il est libre', () => {
     const p = (encaissements: EncaissementLu[]) =>
-      propositionsEncaissement(contexte({ encaissements }), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI)
+      propositionsEncaissement(contexte({ encaissements }), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)
     // Cinq centimes pour une autre facture : sous le seuil des frais, la base accepterait encore le reste sur ce
     // virement — c'est bien parce qu'il est PRIS qu'il ne se propose pas.
     const autre = encaissement({ id: 'e8', facture_id: 'f2', ligne_bancaire_id: 'r', montant: 0.05 })
     expect(refusEnregistrement(contexte({ encaissements: [autre] }), saisie({
       ligneBancaireId: 'r', montant: 1355.5, repartition: [{ taux: 20, montant: 1200 }, { taux: 5.5, montant: 105.5 }, { taux: 0, montant: 50 }],
-    }), [mouvement({ id: 'r' })], AUJOURD_HUI)).toBeNull()
+    }), [mouvement({ id: 'r' })], AUJOURD_HUI, true)).toBeNull()
     expect(p([autre])).toEqual([])
     expect(p([{ ...autre, retire_le: '2027-10-20T10:00:00Z' }])).toHaveLength(1)
     expect(p([autre, encaissement({ id: 'a8', facture_id: 'f2', montant: -0.05, annule_id: 'e8' })])).toHaveLength(1)
@@ -1701,7 +1759,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       { ligne_bancaire_id: 'mg', piece_id: 'autre', montant: 1455.5 }, { ligne_bancaire_id: 'mg', piece_id: 'pj', montant: -100 },
     ])).toEqual([])
     // Sans la jumelle, le même crédit se propose depuis le relevé.
-    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], []), [mouvement({ id: 'mg' })], AUJOURD_HUI))
+    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], []), [mouvement({ id: 'mg' })], AUJOURD_HUI, true))
       .toMatchObject([{ source: 'releve', ligneBancaireId: 'mg' }])
     // Déjà enregistré pour cette facture : ni comme paiement de la jumelle, ni depuis le relevé.
     expect(proposer([mouvement()], [ligne({})], { encaissements: [encaissement({ ligne_bancaire_id: 'm1', montant: 100 })] })).toEqual([])
@@ -1715,7 +1773,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       mouvement({ id: 'r1', date: '2027-10-10', montant: 1355.5 }),
       mouvement({ id: 'r0', date: '2027-10-10', montant: 1355.5 }),
       mouvement({ id: 'r5', date: '2027-10-02', montant: 1358.5 }),
-    ], AUJOURD_HUI)
+    ], AUJOURD_HUI, true)
     expect(p.map((x) => x.ligneBancaireId)).toEqual(['r2', 'r0', 'r1', 'r3', 'r5', 'r4'])
     expect(p.map((x) => x.clientCite)).toEqual([true, false, false, false, false, false])
     expect(p.map((x) => x.ecartCentimes)).toEqual([0, 0, 0, 0, 300, -300])
@@ -1724,20 +1782,20 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   it('le client se lit aussi dans la ligne brute, quand le libellé est générique', () => {
     const [p] = propositionsEncaissement(contexte(), [], new Map(), [
       mouvement({ id: 'r', libelle: 'Mouvement bancaire', libelle_brut: '15/10/2027;VIR FICTIF;1355,50' }),
-    ], AUJOURD_HUI)
+    ], AUJOURD_HUI, true)
     expect(p.clientCite).toBe(true)
   })
 
   it('rien quand la facture est soldée, rejetée, ou porte un taux que la base refuserait', () => {
     const soldee = contexte({ encaissements: [encaissement({ montant: 1355.5 })], parts: [part({ taux: 20, montant: 1200 }), part({ taux: 5.5, montant: 105.5 }), part({ taux: 0, montant: 50 })] })
-    expect(propositionsEncaissement(soldee, [], new Map(), [mouvement({ id: 'r', montant: 1355.5 })], AUJOURD_HUI)).toEqual([])
+    expect(propositionsEncaissement(soldee, [], new Map(), [mouvement({ id: 'r', montant: 1355.5 })], AUJOURD_HUI, true)).toEqual([])
     const rejetee = contexte({ transmissions: [{ ...T, etat: 'rejete' }] })
-    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI)).toEqual([])
+    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true)).toEqual([])
     const f19 = contexte({
       facture: facture({ montant_ht: 100, montant_tva: 19, montant_ttc: 119 }),
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 100, taux_tva: 19 }],
     })
-    expect(propositionsEncaissement(f19, [], new Map(), [mouvement({ id: 'r', montant: 119 })], AUJOURD_HUI)).toEqual([])
+    expect(propositionsEncaissement(f19, [], new Map(), [mouvement({ id: 'r', montant: 119 })], AUJOURD_HUI, true)).toEqual([])
   })
 
   it('chaque proposition est un encaissement que la base accepterait aujourd’hui', () => {
@@ -1745,14 +1803,14 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
     const mouvements = [
       mouvement(), mouvement({ id: 'r1', montant: 1352.5 }), mouvement({ id: 'r2', montant: 1360 }), mouvement({ id: 'm2', montant: 300 }),
     ]
-    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], []), mouvements, AUJOURD_HUI)
+    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], []), mouvements, AUJOURD_HUI, true)
     // La jumelle d'abord, dans l'ordre de ses paiements ; puis le relevé.
     expect(props.map((p) => `${p.source}:${p.ligneBancaireId}`)).toEqual(['jumelle:m1', 'jumelle:m2', 'releve:r1', 'releve:r2'])
     for (const p of props) {
       expect(refusEnregistrement(c, {
         date: p.date, montant: p.montantCentimes / 100, moyen: 'cheque', ligneBancaireId: p.ligneBancaireId,
         repartition: p.repartition.map((x) => ({ taux: x.taux, montant: x.centimes / 100 })),
-      }, mouvements, AUJOURD_HUI), p.ligneBancaireId).toBeNull()
+      }, mouvements, AUJOURD_HUI, true), p.ligneBancaireId).toBeNull()
     }
   })
 })

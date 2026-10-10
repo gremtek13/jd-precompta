@@ -29,7 +29,7 @@ import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
-import { dejaCredite } from '../../lib/factures'
+import { dejaCredite, SUPPRESSION_BROUILLON_EXPORTEE, supprimerBrouillon } from '../../lib/factures'
 
 interface Props {
   dossierId: string
@@ -215,12 +215,29 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   // refusé, mais sans un mot, sur un geste que l'opérateur vient de CONFIRMER — le réflexe est alors
   // de reconfirmer, et d'obtenir le même silence (le défaut de `SuperPdpModal.retirer`, corrigé de
   // même sur `SupplementsTab` et `AccesTab`).
+  // Par la base dès que sa fonction y est (`SUPPRESSION_BROUILLON_EXPORTEE`, espace client, étape P2) : le chemin du
+  // client, qui rend ce qu'il a supprimé ; directement sous la policy du cabinet tant qu'elle n'y est pas. Un verrou posé
+  // avant le `try`, relâché dans le `finally` après la relecture : deux clics du même rendu ne demandent qu'une
+  // suppression, et le second ne dit pas « introuvable » d'un brouillon que le premier vient de supprimer.
+  const suppressionEnCours = useRef(false)
   async function supprimer(f: FactureEmise) {
+    if (suppressionEnCours.current) return
     if (!window.confirm(`Supprimer le brouillon de facture pour "${f.tiers_nom}" ? Cette action est irréversible.`)) return
+    suppressionEnCours.current = true
     setErreur(null)
-    const { error: suppressionError } = await supabase.from('factures_emises').delete().eq('id', f.id)
-    if (suppressionError) setErreur(messageErreur(suppressionError, 'Le brouillon n’a pas pu être supprimé.'))
-    load()
+    try {
+      if (SUPPRESSION_BROUILLON_EXPORTEE) {
+        await supprimerBrouillon(dossierId, f.id)
+      } else {
+        const { error: suppressionError } = await supabase.from('factures_emises').delete().eq('id', f.id)
+        if (suppressionError) setErreur(messageErreur(suppressionError, 'Le brouillon n’a pas pu être supprimé.'))
+      }
+    } catch (e) {
+      setErreur(messageErreur(e, 'Le brouillon n’a pas pu être supprimé.'))
+    } finally {
+      await load()
+      suppressionEnCours.current = false
+    }
   }
 
   // La facture qu'on transmet, telle que la liste l'a relue en dernier.
