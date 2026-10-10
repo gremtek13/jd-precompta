@@ -142,10 +142,11 @@ describe('App — le lien « Mot de passe oublié »', () => {
     expect(faux.ecrans).toEqual([])
     expect(window.location.hash).not.toContain('access_token')
 
-    fireEvent.change(screen.getByLabelText('Nouveau mot de passe'), { target: { value: 'nouveau-mot-de-passe' } })
-    fireEvent.change(screen.getByLabelText('Confirmer le mot de passe'), { target: { value: 'nouveau-mot-de-passe' } })
+    // Un mot de passe qui suit la règle du projet (lib/recuperationMotDePasse.ts) : sinon l'écran le refuse avant l'appel.
+    fireEvent.change(screen.getByLabelText('Nouveau mot de passe'), { target: { value: 'Nouveau-mot-de-passe-1' } })
+    fireEvent.change(screen.getByLabelText('Confirmer le mot de passe'), { target: { value: 'Nouveau-mot-de-passe-1' } })
     await act(async () => { fireEvent.submit(screen.getByRole('button', { name: 'Enregistrer' }).closest('form')!) })
-    expect(faux.misesAJour).toEqual([{ password: 'nouveau-mot-de-passe' }])
+    expect(faux.misesAJour).toEqual([{ password: 'Nouveau-mot-de-passe-1' }])
     expect(await screen.findByText('Accueil du client')).toBeTruthy()
     expect(faux.ecrans).toEqual(['accueil du client'])
     expect(localStorage.getItem('jd-precompta-recuperation')).toBeNull()

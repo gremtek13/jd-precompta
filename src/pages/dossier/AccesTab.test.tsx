@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { AuthWeakPasswordError, FunctionsHttpError } from '@supabase/supabase-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import { CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES } from '../../lib/droitsAcces'
+import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../../lib/recuperationMotDePasse'
 
 // L'ÉCRAN QUI DIT QUI PEUT ENTRER DANS UN DOSSIER, et il se trompait dans les deux sens.
 //
@@ -137,6 +139,10 @@ vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
 function monter() {
   return render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
 }
+
+// Un mot de passe initial qui suit la règle du projet (lib/recuperationMotDePasse.ts) : sans elle, le formulaire refuse
+// avant tout appel.
+const MOT_DE_PASSE = 'Mot-de-passe-1'
 
 const acces = (o: Partial<LigneAcces> & { id: string }): LigneAcces => ({
   user_id: `u-${o.id}`, email: null, dossier_id: 'd1', created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false, ...o,
@@ -281,7 +287,7 @@ describe('« Aucun accès » ne se dit qu’une fois la liste revenue', () => {
     const libererLaSeconde = retenir()
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
-      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
     })
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
@@ -371,7 +377,7 @@ async function monterFormulaireRempli() {
   // vides, donc sans ça le clic n'atteindrait jamais `handleCreateAccess`.
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'client@exemple.fr' } })
-    fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
   })
   return screen.getByRole('button', { name: /Créer l'accès/ })
 }
@@ -533,7 +539,7 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     await screen.findByText('client@exemple.fr')
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
-      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
     })
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     const liberer = retenir()
@@ -807,7 +813,7 @@ describe('AccesTab — ce que l’écran dit d’un accès créé', () => {
     await screen.findByText('client@exemple.fr')
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: adresse } })
-      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
     })
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     // L'accès créé, tel que la relecture le trouvera.
@@ -855,7 +861,7 @@ describe('AccesTab — ce que l’écran dit d’un accès créé', () => {
     await screen.findByText('client@exemple.fr')
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'ailleurs@exemple.fr' } })
-      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
     })
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     await act(async () => { faux.resoudre?.({ data: { error: refus }, error: null }) })
@@ -868,7 +874,7 @@ describe('AccesTab — ce que l’écran dit d’un accès créé', () => {
     expect(avis()).toHaveLength(1)
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
-      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
     })
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     expect(faux.appels).toHaveLength(2)
@@ -973,5 +979,72 @@ describe('AccesTab — « Copier » l’adresse de collecte', () => {
     expect(screen.getByText(/Le navigateur a refusé la copie/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Copié ✓' })).toBeNull()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+// LA RÈGLE DES MOTS DE PASSE DU PROJET (défaut 23.5, 10/10/2026). Le service d'authentification refusait un mot de passe
+// que la règle posée au tableau de bord n'admet pas, et `create-client-access` le disait « Un compte existe déjà… ».
+// L'écran dit désormais la règle avant le clic, refuse avant tout appel ce qui ne la suit pas, et montre tel quel le
+// refus que la fonction traduit (une règle réglée autrement au tableau de bord que son reflet).
+describe('AccesTab — la règle des mots de passe du projet', () => {
+  async function saisir(motDePasse: string) {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: motDePasse } })
+    })
+  }
+
+  it('dit la règle sous le champ, avant le clic — et le navigateur n’y remplit pas le mot de passe du cabinet', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const champ = screen.getByLabelText<HTMLInputElement>('Mot de passe initial')
+    const regle = screen.getByText(REGLE_DU_MOT_DE_PASSE)
+    expect(champ.getAttribute('aria-describedby')).toBe(regle.id)
+    expect(champ.autocomplete).toBe('new-password')
+    expect(champ.minLength).toBe(10)
+  })
+
+  it('un mot de passe qui ne suit pas la règle ne part pas : aucun appel, et l’écran dit ce qui manque', async () => {
+    await saisir('1234567890')
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toEqual([])
+    expect(screen.getByText('Ce mot de passe ne suit pas la règle du projet : il doit contenir une minuscule, une majuscule et un symbole.')).toBeTruthy()
+    // Le refus ne prend pas le verrou : le mot de passe corrigé part aussitôt.
+    await act(async () => { fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } }) })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toHaveLength(1)
+    expect(screen.queryAllByText(/ne suit pas la règle du projet/)).toHaveLength(0)
+  })
+
+  it('un refus de la règle efface l’avis de la création précédente : rien ne dit « créé » à côté de lui', async () => {
+    await saisir(MOT_DE_PASSE)
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    faux.lignes = [...faux.lignes, acces({ id: 'm9', user_id: 'u9', email: 'nouveau@exemple.fr', created_at: '2026-10-09T08:00:00Z' })]
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'cree' }, error: null }) })
+    await laisserPasserUnTour()
+    expect(screen.queryAllByRole('status').map((e) => e.textContent ?? '').filter((t) => t.includes('est créé'))).toHaveLength(1)
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'autre@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: 'motdepassesimple' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toHaveLength(1)
+    expect(screen.getByText('Ce mot de passe ne suit pas la règle du projet : il doit contenir une majuscule, un chiffre et un symbole.')).toBeTruthy()
+    expect(screen.queryAllByRole('status').map((e) => e.textContent ?? '').filter((t) => t.includes('est créé'))).toEqual([])
+  })
+
+  it('le refus du service, traduit par la fonction (400), se dit tel quel, sans avis de création', async () => {
+    const refus = refusDuMotDePasse(new AuthWeakPasswordError('Password should be at least 12 characters.', 422, ['length']))
+    expect(refus).toMatch(/il est trop court\.$/)
+    await saisir(MOT_DE_PASSE)
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    // La réponse réelle d'un statut non-2xx : supabase-js ne remplit pas `data`, le corps se lit sur le contexte.
+    const reponse = new Response(JSON.stringify({ error: refus }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    await act(async () => { faux.resoudre?.({ data: null, error: new FunctionsHttpError(reponse) }) })
+    expect(await screen.findByText(refus as string)).toBeTruthy()
+    expect(screen.queryAllByText(/Un compte existe déjà/)).toHaveLength(0)
+    expect(screen.queryAllByRole('status').map((e) => e.textContent ?? '').filter((t) => t.includes('est créé'))).toEqual([])
   })
 })

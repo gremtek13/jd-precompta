@@ -126,6 +126,14 @@ découvre avant.
    - Authentication → Rate Limits : 30 e-mails par heure, la valeur que pose un SMTP personnalisé ;
    - Sign In / Providers → Email : longueur minimale des mots de passe à 10 (la règle de l'écran et
      des trois fonctions), durée du lien à 3 600 secondes (le modèle l'annonce) ;
+   - même page, les sortes de caractères exigées des mots de passe : minuscules, majuscules, chiffres
+     et symboles (posées par le cabinet le 10/10/2026). Les quatre écrans qui posent un mot de passe
+     (l'onglet Accès, l'équipe, un nouveau cabinet, le nouveau mot de passe) en portent un REFLET —
+     `lib/recuperationMotDePasse.ts`, `REGLE_DU_MOT_DE_PASSE` —, qu'ils disent sous le champ et
+     appliquent avant tout appel ; la réponse du service reste celle qui fait foi, et les trois
+     fonctions qui créent des comptes disent son refus en français. Un réglage changé ici se reporte
+     là, et inversement : sinon l'écran refuse ce que le service accepterait, ou le service refuse —
+     en le disant — ce que l'écran a laissé partir ;
    - Emails → Templates → « Reset Password », en français :
 
      ```

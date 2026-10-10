@@ -1,4 +1,7 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
+import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
+import { refusDuMotDePasse } from '../lib/recuperationMotDePasse'
+import { REGLE_DU_PROJET_RELEVEE, type RaisonDuService, type RegleDuService } from './regleDuService'
 import {
   CLE_PUBLIABLE, CLE_SECRETE, HOTE_PROJET, ID, PERSONNES, URL_PROJET, chargerFonction, decrire, depensesDe, fuitesDans, identifiantGenere,
   mondeDeReference, preflightDe, projetSurLeReseau, requeteDe, signerWebhook, sourceDe, verifyJwtDe,
@@ -69,14 +72,14 @@ export interface ContratFonction {
 
 export const DEFAUTS_CONNUS = {
   corpsNul: {
-    nombre: 8,
+    nombre: 7,
     raison: 'un corps JSON `null` fait lever la fonction (500 en texte brut, sans en-tête CORS) ou rend le message ' +
       'anglais du moteur — LATENT : le navigateur n’envoie jamais ce corps ; il faut une session (n’importe laquelle, le ' +
       'corps se lisant avant le contrôle du dossier) ou, pour evaluer-extraction, la seule clé publishable. Rien ne part ' +
       'ni ne s’écrit avant. À corriger au prochain déploiement de chaque fonction.',
   },
   champsDeTravers: {
-    nombre: 6,
+    nombre: 5,
     raison: 'un champ attendu en texte et reçu en nombre fait lever `.trim()` (500 en texte brut, sans en-tête CORS) — ' +
       'LATENT, même portée que `corpsNul`.',
   },
@@ -98,8 +101,8 @@ export const DEFAUTS_CONNUS = {
   tauxSansControle: {
     nombre: 2,
     raison: 'taux-change-bce ne contrôle aucun appelant : la passerelle (verify_jwt) seule refuse l’appel sans session, et ' +
-      'un compte inscrit seul est admis — il ne fait qu’écrire un cours de la BCE. Fermer l’inscription publique (un clic ' +
-      'du cabinet, déjà demandé) referme le second.',
+      'un compte inscrit seul est admis — il ne fait qu’écrire un cours de la BCE. L’inscription publique, fermée par le ' +
+      'cabinet le 10/10/2026, referme le second en production ; le code, lui, l’admet encore.',
   },
 } as const
 
@@ -892,6 +895,95 @@ const EVALUER_EXTRACTION: ContratFonction = {
   ],
 }
 
+// ── LES REFUS DU SERVICE D'AUTHENTIFICATION, LUS À LEUR CODE (create-cabinet, create-team-member, create-client-access) ─
+// Le service rend 422 pour une adresse déjà inscrite (`email_exists`) COMME pour un mot de passe que la règle du projet
+// refuse (`weak_password`). Les trois fonctions prenaient tout 422 pour « déjà inscrit » : le 10/10/2026, sitôt la règle
+// posée au tableau de bord, le cabinet a lu « Un compte existe déjà… » sur un mot de passe refusé (défaut 23.5). Joués
+// sur les trois : l'adresse déjà inscrite reconnue à son CODE — sous un message que la fonction ne lit pas, et sous
+// l'autre code qu'auth-js nomme — ; le mot de passe refusé, raison par raison, dit en français en 400 par la phrase même
+// du module (celle que l'écran du nouveau mot de passe dit aussi), sans qu'aucun compte soit cherché ; un autre refus,
+// sur son chemin d'avant ; et une adresse déjà inscrite avec un mot de passe refusé, que le service juge sur l'adresse
+// d'abord. Les refus viennent du faux service (`regleDuService.ts`), en VRAIES classes d'erreur d'auth-js.
+
+/** Assez long pour la fonction (dix caractères), sans majuscule, chiffre ni symbole. */
+const SANS_LES_SORTES = 'motdepassesimple'
+/** Toutes les sortes, onze caractères : seule une règle de douze le refuse. */
+const ONZE_CARACTERES = 'Mot-passe-1'
+/** Il suit la règle relevée, mais la protection des mots de passe divulgués le connaît. */
+const DIVULGUE = 'Motdepasse-2026'
+/** Il suit la règle relevée, et passe les 72 octets de bcrypt : le service refuse en `validation_failed`, un autre refus. */
+const TROP_LONG = `Mot-de-passe-1${'x'.repeat(70)}`
+
+const MOTS_DE_PASSE_REFUSES: { quoi: string; regle: RegleDuService; motDePasse: string; raisons: RaisonDuService[] }[] = [
+  { quoi: 'une sorte de caractères manque', regle: REGLE_DU_PROJET_RELEVEE, motDePasse: SANS_LES_SORTES, raisons: ['characters'] },
+  { quoi: 'trop court pour une règle de douze', regle: { ...REGLE_DU_PROJET_RELEVEE, longueurMinimale: 12 }, motDePasse: ONZE_CARACTERES, raisons: ['length'] },
+  { quoi: 'divulgué', regle: { ...REGLE_DU_PROJET_RELEVEE, divulgues: [DIVULGUE] }, motDePasse: DIVULGUE, raisons: ['pwned'] },
+]
+
+/** Le refus que la fonction doit dire : la phrase du module, pour les raisons que le service a données. */
+const refusAttendu = (raisons: RaisonDuService[]) => refusDuMotDePasse(new AuthWeakPasswordError('refus du harnais', 422, raisons))
+
+/** La réponse ne porte que `error`, et `error` est exactement la phrase attendue. */
+const refusExact = (attendu: string | null) => (r: Resultat) => {
+  const cles = Object.keys(corpsDe(r))
+  const fautes = cles.length === 1 && cles[0] === 'error' ? [] : [`la réponse porte d’autres clés que « error » : ${cles.join(', ')}`]
+  if (attendu === null || messageDe(r) !== attendu) fautes.push(`refus « ${String(messageDe(r)).slice(0, 160)} » au lieu de « ${String(attendu).slice(0, 160)} »`)
+  return fautes
+}
+
+/** Ce qu'une fonction promet de ces refus : son corps, une adresse que le cabinet connaît, ce qu'elle dépense et écrit. */
+interface RefusDuService {
+  personne: Personne
+  corps: (email: string, motDePasse: string) => unknown
+  /** Une adresse qui a déjà un compte, que la fonction reprend (accès, équipe) ou refuse (un nouveau cabinet). */
+  inscrite: string
+  /** Les dépenses d'un refus du service qui ne cherche aucun compte. */
+  depensesDuRefus: readonly string[]
+  /** Ce que la fonction rend d'une adresse déjà inscrite. */
+  dejaInscrite: Attendu
+  /** Rien n'est écrit pour l'adresse neuve. */
+  rienEcrit: (m: Monde) => string[]
+}
+
+function refusDuServiceDesComptes(f: RefusDuService): Scenario[] {
+  const aucunCompteCree = (m: Monde) => (m.comptes.some((c) => c.email === NOUVEL_EMAIL) ? ['un compte a été créé'] : [])
+  return [
+    ...MOTS_DE_PASSE_REFUSES.map(({ quoi, regle, motDePasse, raisons }): Scenario => ({
+      nom: `le service refuse le mot de passe (${quoi}) : 400, dit en français, aucun compte cherché, rien d’écrit`,
+      preparer: (m) => { m.regleDesMotsDePasse = regle; m.secrets.push(motDePasse) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(NOUVEL_EMAIL, motDePasse) }),
+      attendu: {
+        statut: 400, refusEnFrancais: true, depenses: f.depensesDuRefus,
+        verifier: (r, m) => [...refusExact(refusAttendu(raisons))(r), ...f.rienEcrit(m), ...aucunCompteCree(m)],
+      },
+    })),
+    ...([
+      ['sous un message que la fonction ne lit pas', 'email_exists', 'Adresse prise'],
+      ['sous l’autre code qu’auth-js nomme', 'user_already_exists', 'User already registered'],
+    ] as const).map(([quoi, code, message]): Scenario => ({
+      nom: `l’adresse déjà inscrite se reconnaît à son code (${code}), ${quoi}`,
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ auth: 'createUser', erreur: new AuthApiError(message, 422, code) }) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(f.inscrite, MOT_DE_PASSE) }),
+      attendu: f.dejaInscrite,
+    })),
+    {
+      nom: 'un autre refus du service (plus de 72 octets : validation_failed) : son chemin d’avant — 500 et le message du service, aucun compte cherché',
+      preparer: (m) => { m.secrets.push(TROP_LONG) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(NOUVEL_EMAIL, TROP_LONG) }),
+      attendu: {
+        statut: 500, depenses: f.depensesDuRefus,
+        verifier: (r, m) => [...refusExact('Password cannot be longer than 72 characters')(r), ...f.rienEcrit(m), ...aucunCompteCree(m)],
+      },
+    },
+    {
+      nom: 'une adresse déjà inscrite avec un mot de passe que la règle refuse : le service juge l’adresse d’abord, la fonction aussi',
+      preparer: (m) => { m.regleDesMotsDePasse = REGLE_DU_PROJET_RELEVEE; m.secrets.push(SANS_LES_SORTES) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(f.inscrite, SANS_LES_SORTES) }),
+      attendu: f.dejaInscrite,
+    },
+  ]
+}
+
 // ── CREATE-CABINET, DELETE-CABINET ───────────────────────────────────────────────────────────────────────────────────
 
 const NOUVEAU_CABINET = { nom: 'Cabinet nouveau du harnais', email: NOUVEL_EMAIL, password: MOT_DE_PASSE }
@@ -946,7 +1038,46 @@ const CREATE_CABINET: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...NOUVEAU_CABINET, password: 'court' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('superAdmin', ['nom', 'email', 'password'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    // Le cabinet s'écrit AVANT le compte : chaque refus du service le retire (la compensation), et la réponse le dit.
+    ...refusDuServiceDesComptes({
+      personne: 'superAdmin',
+      corps: (email, motDePasse) => ({ ...NOUVEAU_CABINET, email, password: motDePasse }),
+      inscrite: PERSONNES.inscrit.email,
+      depensesDuRefus: ['écriture insert cabinets', 'comptes createUser', 'écriture delete cabinets'],
+      dejaInscrite: {
+        statut: 409, refusEnFrancais: true,
+        depenses: ['écriture insert cabinets', 'comptes createUser', 'écriture delete cabinets'],
+        verifier: (r, m) => [
+          ...(String(messageDe(r)).startsWith('Un compte existe déjà avec cet e-mail') ? [] : [`refus « ${String(messageDe(r)).slice(0, 120)} »`]),
+          ...(lignes(m, 'cabinets').length === 2 ? [] : ['un cabinet fantôme est resté']),
+        ],
+      },
+      rienEcrit: (m) => [
+        ...(lignes(m, 'cabinets').length === 2 ? [] : ['un cabinet fantôme est resté']),
+        ...(lignes(m, 'cabinet_admins').some((c) => c.email === NOUVEL_EMAIL) ? ['un chef a été écrit'] : []),
+      ],
+    }),
+    {
+      // La compensation qui échoue ne se tait pas, pas plus sur un mot de passe refusé que sur une adresse déjà inscrite.
+      nom: 'le mot de passe refusé, et le cabinet qui ne se retire pas : 400, le refus suivi de ce qui reste en base',
+      preparer: (m) => {
+        m.regleDesMotsDePasse = REGLE_DU_PROJET_RELEVEE
+        m.secrets.push(SANS_LES_SORTES)
+        m.pannes.push({ table: 'cabinets', operation: 'delete', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...NOUVEAU_CABINET, password: SANS_LES_SORTES } }),
+      attendu: {
+        statut: 400, refusEnFrancais: true,
+        depenses: ['écriture insert cabinets', 'comptes createUser', 'écriture delete cabinets'],
+        verifier: (r, m) => {
+          const message = String(messageDe(r))
+          const fautes = message.startsWith(`${refusAttendu(['characters'])} (Attention : le cabinet créé n'a pas pu être retiré`)
+            ? [] : [`refus « ${message.slice(0, 200)} »`]
+          return lignes(m, 'cabinets').length === 3 ? fautes : [...fautes, 'le cabinet a disparu malgré la panne']
+        },
+      },
+    },
+    ...corpsMalFormes('superAdmin', ['nom', 'email', 'password']),
   ],
 }
 
@@ -1160,6 +1291,21 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, password: 'court' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
+    ...refusDuServiceDesComptes({
+      personne: 'chef',
+      corps: (email, motDePasse) => ({ ...MEMBRE, email, password: motDePasse }),
+      inscrite: PERSONNES.client.email,
+      depensesDuRefus: ['comptes createUser'],
+      dejaInscrite: {
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+        verifier: (r, m) => [
+          ...(membreDe(m, PERSONNES.client.email)?.cabinet_id === ID.cabinet ? [] : ['client non repris']),
+          ...reponseDeCreation('existant')(r),
+          ...compteIntact(r, m),
+        ],
+      },
+      rienEcrit: (m) => (membreDe(m, NOUVEL_EMAIL) ? ['un membre a été ajouté'] : []),
+    }),
     ...corpsMalFormes('chef', ['email', 'password', 'role']),
     // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
     // travers, les autres lisibles, prouve que son contrôle tient par lui-même. Le cabinet désigné ne se lit que pour un
@@ -1268,6 +1414,21 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, password: 'court' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
+    ...refusDuServiceDesComptes({
+      personne: 'chef',
+      corps: (email, motDePasse) => ({ ...ACCES, email, password: motDePasse }),
+      inscrite: PERSONNES.comptableNonAssigne.email,
+      depensesDuRefus: ['comptes createUser'],
+      dejaInscrite: {
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: (r, m) => [
+          ...(accesDe(m, PERSONNES.comptableNonAssigne.email).length === 1 ? [] : ['accès absent']),
+          ...reponseDeCreation('existant')(r),
+          ...compteIntact(r, m),
+        ],
+      },
+      rienEcrit: (m) => (accesDe(m, NOUVEL_EMAIL).length > 0 ? ['un accès a été créé'] : []),
+    }),
     ...corpsMalFormes('chef', ['dossierId', 'email', 'password'], {}, undefined, avantLeDossier),
     // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
     // travers, les autres lisibles, prouve que son contrôle tient par lui-même — avant le contrôle du dossier.

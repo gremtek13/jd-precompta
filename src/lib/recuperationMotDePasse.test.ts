@@ -3,9 +3,13 @@ import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthWea
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
-  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MINIMALE_MOT_DE_PASSE, avisDuLienEnvoye, avisDuRefus, lireRetourDuLien,
-  messageErreurDuLien, messageErreurDuLienEnvoye, messageErreurDuMotDePasse, questionDuLienEnvoye, refusDuNouveauMotDePasse,
+  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, SORTES_DE_CARACTERES,
+  adresseDejaInscrite, avisDuLienEnvoye, avisDuRefus, lireRetourDuLien, messageErreurDuLien, messageErreurDuLienEnvoye,
+  messageErreurDuMotDePasse, questionDuLienEnvoye, refusDeLaRegle, refusDuMotDePasse, refusDuNouveauMotDePasse,
 } from './recuperationMotDePasse'
+import {
+  LONGUEUR_MAXIMALE_EN_OCTETS, MESSAGE_RELEVE_LE_10_10_2026, REGLE_DU_PROJET_RELEVEE, jeuxDuMessage, jugementDuService,
+} from '../test/regleDuService'
 
 // Les adresses que le service d'authentification fabrique (supabase/auth) : `AsRedirectURL` ajoute les jetons après
 // un « # » (et `sb`, sa marque) ; `prepErrorRedirectURL` met l'erreur dans le fragment en flux implicite. Le jeton est
@@ -81,21 +85,167 @@ describe('ce qu’un lien refusé se dit', () => {
 })
 
 describe('le nouveau mot de passe, jugé avant tout appel', () => {
-  it('au moins dix caractères', () => {
-    expect(refusDuNouveauMotDePasse('a'.repeat(9), 'a'.repeat(9))).toBe('Le mot de passe doit faire au moins 10 caractères.')
-    expect(refusDuNouveauMotDePasse('a'.repeat(10), 'a'.repeat(10))).toBeNull()
+  it('la règle du projet : dix caractères au moins, et les quatre sortes', () => {
+    expect(refusDuNouveauMotDePasse('a'.repeat(9), 'a'.repeat(9))).toBe(
+      'Ce mot de passe ne suit pas la règle du projet : il doit faire au moins 10 caractères, et contenir une majuscule, un chiffre et un symbole.',
+    )
+    expect(refusDuNouveauMotDePasse('Abcdefgh1!', 'Abcdefgh1!')).toBeNull()
   })
 
   it('deux saisies identiques', () => {
-    expect(refusDuNouveauMotDePasse('mot-de-passe-1', 'mot-de-passe-2')).toBe('Les deux saisies ne sont pas identiques.')
-    // La longueur se dit d'abord : c'est la règle qu'on corrige en premier.
-    expect(refusDuNouveauMotDePasse('court', 'autre')).toBe('Le mot de passe doit faire au moins 10 caractères.')
+    expect(refusDuNouveauMotDePasse('Mot-de-passe-1', 'Mot-de-passe-2')).toBe('Les deux saisies ne sont pas identiques.')
+    // La règle se dit d'abord : c'est elle qu'on corrige en premier.
+    expect(refusDuNouveauMotDePasse('court', 'autre')).toBe(
+      'Ce mot de passe ne suit pas la règle du projet : il doit faire au moins 10 caractères, et contenir une majuscule, un chiffre et un symbole.',
+    )
   })
 
   it('la longueur est celle de la création des comptes, dans les trois fonctions qui en créent', () => {
     for (const fonction of ['create-client-access', 'create-team-member', 'create-cabinet']) {
       const source = readFileSync(racine(`supabase/functions/${fonction}/index.ts`), 'utf8')
       expect([...source.matchAll(/password\.length < (\d+)/g)].map((m) => Number(m[1])), fonction).toEqual([LONGUEUR_MINIMALE_MOT_DE_PASSE])
+    }
+  })
+})
+
+// LA RÈGLE DES MOTS DE PASSE DU PROJET (défaut 23.5, 10/10/2026) : un REFLET de celle du tableau de bord, que les quatre
+// écrans qui posent un mot de passe disent avant le clic et appliquent avant tout appel. Le service reste juge : ce
+// reflet se confronte à son refus relevé en production, et à un modèle de ce qu'il fait (`src/test/regleDuService.ts`).
+describe('la règle des mots de passe du projet, reflet du tableau de bord', () => {
+  // Les 32 signes de ponctuation de l'ASCII, calculés ici sans rien recopier : ce que « un symbole » couvre chez le service.
+  const PONCTUATION = Array.from({ length: 0x7e - 0x21 + 1 }, (_, i) => String.fromCharCode(0x21 + i)).filter((c) => !/[a-z0-9]/i.test(c))
+
+  it('les sortes de caractères sont celles que le service a listées en production, jeu pour jeu', () => {
+    expect(SORTES_DE_CARACTERES.map((s) => s.caracteres)).toEqual(jeuxDuMessage(MESSAGE_RELEVE_LE_10_10_2026))
+    expect(SORTES_DE_CARACTERES.map((s) => s.sorte)).toEqual(['une minuscule', 'une majuscule', 'un chiffre', 'un symbole'])
+    // « Un symbole », pour le service : les 32 signes de ponctuation de l'ASCII, ni plus ni moins.
+    expect(PONCTUATION).toHaveLength(32)
+    expect([...SORTES_DE_CARACTERES[3].caracteres].sort()).toEqual([...PONCTUATION].sort())
+  })
+
+  it('la phrase des écrans dit la longueur, les quatre sortes, chaque symbole, et ce qui ne compte pas', () => {
+    expect(REGLE_DU_MOT_DE_PASSE).toBe(
+      'Règle du projet : au moins 10 caractères, dont une minuscule, une majuscule, un chiffre et un symbole — l\'un de '
+      + '! @ # $ % ^ & * ( ) _ + - = [ ] { } ; \' \\ : " | < > ? , . / ` ~ (une lettre accentuée, « € » ou l\'espace ne '
+      + 'comptent pas).',
+    )
+    for (const c of PONCTUATION) expect(REGLE_DU_MOT_DE_PASSE, c).toContain(` ${c} `)
+  })
+
+  it('ce qui manque se dit d’un coup, dans l’ordre de la phrase', () => {
+    const tete = 'Ce mot de passe ne suit pas la règle du projet : il doit '
+    expect(refusDeLaRegle('')).toBe(`${tete}faire au moins 10 caractères, et contenir une minuscule, une majuscule, un chiffre et un symbole.`)
+    expect(refusDeLaRegle('1234567890')).toBe(`${tete}contenir une minuscule, une majuscule et un symbole.`)
+    expect(refusDeLaRegle('motdepassesimple')).toBe(`${tete}contenir une majuscule, un chiffre et un symbole.`)
+    expect(refusDeLaRegle('Motdepasse12')).toBe(`${tete}contenir un symbole.`)
+    expect(refusDeLaRegle('Mdp-1')).toBe(`${tete}faire au moins 10 caractères.`)
+    expect(refusDeLaRegle('MOT-DE-PASSE-1')).toBe(`${tete}contenir une minuscule.`)
+    expect(refusDeLaRegle('mot-de-passe-1')).toBe(`${tete}contenir une majuscule.`)
+    expect(refusDeLaRegle('Mot-de-passe')).toBe(`${tete}contenir un chiffre.`)
+    // Dix caractères tout juste, chaque sorte présente : la règle est suivie ; neuf, elle ne l'est plus.
+    expect(refusDeLaRegle('Abcdefgh1!')).toBeNull()
+    expect(refusDeLaRegle('Abcdefg1!')).toBe(`${tete}faire au moins 10 caractères.`)
+  })
+
+  it('une lettre accentuée, « € », « § » et l’espace ne font aucune sorte — comme chez le service', () => {
+    const tete = 'Ce mot de passe ne suit pas la règle du projet : il doit '
+    expect(refusDeLaRegle('Motdepasse1€')).toBe(`${tete}contenir un symbole.`)
+    expect(refusDeLaRegle('Mot de passe 1')).toBe(`${tete}contenir un symbole.`)
+    expect(refusDeLaRegle('Mötdepässe1§')).toBe(`${tete}contenir un symbole.`)
+    expect(refusDeLaRegle('ÉTÉ-À-PARIS-1')).toBe(`${tete}contenir une minuscule.`)
+    for (const c of PONCTUATION) expect(refusDeLaRegle(`Motdepasse1${c}`), c).toBeNull()
+  })
+
+  // Le reflet ne laisse JAMAIS partir ce que le service refuserait sous la règle relevée (le pire sens : le cabinet lirait
+  // le refus du service après le clic, au lieu de celui de l'écran avant). Sur l'ASCII, il dit exactement la même chose ;
+  // hors de l'ASCII il peut être plus strict — il compte des caractères, le service des octets — jamais moins.
+  it('hors de l’ASCII, l’écran compte des caractères et le service des octets : l’écran peut être plus strict, jamais moins', () => {
+    // Neuf caractères, quatorze octets : l'écran le refuse, le service l'admettrait.
+    expect('éééééAa1!'.length).toBe(9)
+    expect(refusDeLaRegle('éééééAa1!')).toBe('Ce mot de passe ne suit pas la règle du projet : il doit faire au moins 10 caractères.')
+    expect(jugementDuService('éééééAa1!', REGLE_DU_PROJET_RELEVEE)).toEqual({ admis: true })
+  })
+
+  it('le reflet ne laisse partir aucun mot de passe que le service refuserait, sur une grille de mille mots de passe', () => {
+    const morceaux = ['a', 'Z', '7', '!', '~', ' ', 'é', '€', '😀', 'ß', '\t', 'xy', 'Q9', '-_']
+    const grille: string[] = []
+    for (let n = 0; n < 1000; n++) {
+      // Un tirage déterministe : le n-ième mot de passe s'écrit en base 14 sur ses morceaux.
+      let mdp = ''
+      for (let k = n + 1; k > 0; k = Math.floor(k / 14)) mdp += morceaux[k % 14]
+      grille.push(mdp, `${mdp}${mdp}`, `Base-1${mdp}`)
+    }
+    let ascii = 0
+    let admis = 0
+    for (const mdp of grille) {
+      const service = jugementDuService(mdp, REGLE_DU_PROJET_RELEVEE)
+      if (new TextEncoder().encode(mdp).length > LONGUEUR_MAXIMALE_EN_OCTETS) continue
+      if (refusDeLaRegle(mdp) === null) {
+        admis++
+        expect(service, mdp).toEqual({ admis: true })
+      }
+      if (/^[\x20-\x7e]*$/.test(mdp)) {
+        ascii++
+        expect(refusDeLaRegle(mdp) === null, mdp).toBe(service.admis)
+      }
+    }
+    // Plancher : la grille voit des deux côtés, et assez d'ASCII pour que l'égalité y dise quelque chose.
+    expect(admis).toBeGreaterThan(300)
+    expect(ascii).toBeGreaterThan(300)
+    expect(grille.filter((m) => refusDeLaRegle(m) !== null).length).toBeGreaterThan(300)
+  })
+})
+
+// LE BLOC refusDuService, recopié dans les trois fonctions qui créent des comptes (refusDuServiceCopie.test.ts garde les
+// copies). Sur les VRAIES classes d'erreur d'auth-js, et sur des formes que le service ne rend pas.
+describe('ce que le service d’authentification dit quand il refuse — lu à son code', () => {
+  const DEJA = 'A user with this email address has already been registered'
+  const tete = "Le service d'authentification refuse ce mot de passe : il ne suit pas la règle des mots de passe du projet, "
+    + 'réglée au tableau de bord de Supabase'
+  const COURT = 'il est trop court'
+  const SORTES = "il lui manque une sorte de caractères qu'elle exige (minuscule, majuscule, chiffre ou symbole, selon le réglage)"
+  const DIVULGUE = 'il figure parmi les mots de passe divulgués lors de fuites de données'
+  const faible = (raisons: ('length' | 'characters' | 'pwned')[]) => new AuthWeakPasswordError('Password is too weak', 422, raisons)
+
+  it('une adresse inscrite se reconnaît à ses deux codes, et à rien d’autre — ni au statut 422, ni au message', () => {
+    expect(adresseDejaInscrite(new AuthApiError(DEJA, 422, 'email_exists'))).toBe(true)
+    expect(adresseDejaInscrite(new AuthApiError('User already registered', 422, 'user_already_exists'))).toBe(true)
+    expect(adresseDejaInscrite({ code: 'email_exists' })).toBe(true)
+    // Le défaut 23.5 sous sa forme exacte : un mot de passe refusé, en 422.
+    expect(adresseDejaInscrite(faible(['characters']))).toBe(false)
+    expect(adresseDejaInscrite({ status: 422, message: DEJA })).toBe(false)
+    expect(adresseDejaInscrite(new AuthApiError('Phone number already registered by another user', 422, 'phone_exists'))).toBe(false)
+    expect(adresseDejaInscrite({ code: 'EMAIL_EXISTS' })).toBe(false)
+    // Un code qui n'est pas un texte ne se convertit pas en texte : `['email_exists']` n'est pas `'email_exists'`.
+    for (const rien of [null, undefined, 'email_exists', 422, {}, { code: 422 }, { code: ['email_exists'] }]) {
+      expect(adresseDejaInscrite(rien), JSON.stringify(rien) ?? String(rien)).toBe(false)
+    }
+  })
+
+  it('un mot de passe refusé se dit en français, chaque raison dans l’ordre du service', () => {
+    expect(refusDuMotDePasse(faible(['length']))).toBe(`${tete} — ${COURT}.`)
+    expect(refusDuMotDePasse(faible(['characters']))).toBe(`${tete} — ${SORTES}.`)
+    expect(refusDuMotDePasse(faible(['pwned']))).toBe(`${tete} — ${DIVULGUE}.`)
+    expect(refusDuMotDePasse(faible(['length', 'characters', 'pwned']))).toBe(`${tete} — ${COURT} ; ${SORTES} ; ${DIVULGUE}.`)
+    // Rendues dans un autre ordre, ou deux fois : la phrase garde l'ordre du service, et chaque raison une fois.
+    expect(refusDuMotDePasse(faible(['pwned', 'length']))).toBe(`${tete} — ${COURT} ; ${DIVULGUE}.`)
+    expect(refusDuMotDePasse({ code: 'weak_password', reasons: ['characters', 'characters'] })).toBe(`${tete} — ${SORTES}.`)
+  })
+
+  it('sans raison lisible, la phrase de tête seule — une raison inconnue ne se recopie pas', () => {
+    for (const reasons of [[], undefined, null, 'length', 42, ['inconnue'], ['LENGTH'], [['length']], ['<b>raison</b>']]) {
+      expect(refusDuMotDePasse({ code: 'weak_password', reasons }), JSON.stringify(reasons)).toBe(`${tete}.`)
+    }
+    expect(refusDuMotDePasse({ code: 'weak_password', reasons: ['inconnue', 'pwned'] })).toBe(`${tete} — ${DIVULGUE}.`)
+  })
+
+  it('ce qui n’est pas un refus du mot de passe ne s’en dit pas un', () => {
+    for (const erreur of [
+      new AuthApiError(DEJA, 422, 'email_exists'), new AuthApiError('Password cannot be longer than 72 characters', 400, 'validation_failed'),
+      { status: 422, reasons: ['length'] }, { code: 'Weak_Password', reasons: ['length'] }, { code: ['weak_password'], reasons: ['length'] },
+      null, undefined, 'weak_password',
+    ]) {
+      expect(refusDuMotDePasse(erreur), JSON.stringify(erreur) ?? String(erreur)).toBeNull()
     }
   })
 })
@@ -136,8 +286,12 @@ describe('les erreurs du service, dites en français', () => {
   it('le nouveau mot de passe : chaque refus connu, puis le message du service', () => {
     expect(messageErreurDuMotDePasse(new AuthApiError('New password should be different from the old password.', 422, 'same_password')))
       .toBe("C'est déjà le mot de passe de ce compte : choisis-en un autre.")
-    expect(messageErreurDuMotDePasse(new AuthWeakPasswordError('Password is too weak', 422, ['characters'])))
-      .toMatch(/^Le service d'authentification refuse ce mot de passe comme trop faible/)
+    // Le refus du mot de passe : la phrase même des trois fonctions qui créent des comptes, ce qui manque compris.
+    expect(messageErreurDuMotDePasse(new AuthWeakPasswordError('Password is too weak', 422, ['characters']))).toBe(
+      "Le service d'authentification refuse ce mot de passe : il ne suit pas la règle des mots de passe du projet, réglée au "
+      + "tableau de bord de Supabase — il lui manque une sorte de caractères qu'elle exige (minuscule, majuscule, chiffre ou "
+      + 'symbole, selon le réglage). Choisis-en un autre.',
+    )
     const expiree = "La session ouverte par le lien a expiré : déconnecte-toi, puis redemande un lien depuis l'écran de connexion."
     expect(messageErreurDuMotDePasse(new AuthSessionMissingError())).toBe(expiree)
     expect(messageErreurDuMotDePasse(new AuthApiError('invalid JWT', 403, 'bad_jwt'))).toBe(expiree)

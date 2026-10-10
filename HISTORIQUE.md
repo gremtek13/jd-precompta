@@ -19165,3 +19165,144 @@ CHAQUE TEST ») les veut dans un `beforeAll` au délai déclaré : les deux bala
 résultats restent nuls tant que le crochet n'a rien rendu, pour qu'un balayage qui n'aurait pas tourné ne passe pas pour
 « aucune faute » (mutation : l'affectation retirée, le test tombe). Aucun délai de test n'est relevé. Le fichier, rejoué
 seul sous les quatre fuseaux : 14 tests verts chaque fois, en 4,3 à 5,2 s pour le fichier entier.
+
+### 10/10/2026 — UN MOT DE PASSE REFUSÉ SE DISAIT « UN COMPTE EXISTE DÉJÀ » — DÉFAUT 23.5
+
+(`supabase/functions/create-client-access/index.ts`, `create-team-member/index.ts`, `create-cabinet/index.ts` ;
+`src/lib/recuperationMotDePasse.ts` et son test ; `src/lib/refusDuServiceCopie.test.ts`, `src/lib/refusDuServiceClient.test.ts`
+et `src/test/regleDuService.ts`, nouveaux ; `src/test/fonctionsEdge.ts`, `src/test/contratsFonctions.ts`,
+`src/lib/edgeFunctionsHttp.test.ts` ; `src/pages/dossier/AccesTab.tsx`, `src/pages/EquipePage.tsx`,
+`src/pages/SuperAdminPage.tsx`, `src/pages/NouveauMotDePasse.tsx` et leurs tests ; `src/App.test.tsx`,
+`src/pages/ecransAvantLecture.test.tsx` ; `PLAN_DE_REPRISE.md`. Aucune migration. Les trois fonctions sont À REDÉPLOYER
+après la fusion — voir la fin.)
+
+**CE QUI S'EST PASSÉ** (10/10/2026, 15 h 22 à Paris, journaux d'authentification de la production, relevés par la session
+sans aucune adresse). Le cabinet a fermé l'inscription publique (`disable_signup` vrai, relu sur `/auth/v1/settings`) et
+posé au tableau de bord une règle des mots de passe : une minuscule, une majuscule, un chiffre et un symbole. Puis il a
+créé un accès client : `POST /admin/users` a rendu 422 — le mot de passe ne suivait pas la règle —, et
+`create-client-access` l'a pris pour un compte déjà inscrit (sa détection : `createError.status === 422 ||
+/already|exist|registered|duplicate/i.test(…)`), a cherché le compte (`listUsers`), ne l'a pas trouvé, et a répondu
+« Un compte existe déjà pour cet e-mail mais n'a pas pu être retrouvé parmi les comptes existants. » Faux. La même
+détection vivait dans `create-team-member` et dans `create-cabinet` — qui, lui, écrivait le cabinet, le retirait, et
+répondait 409 « Un compte existe déjà avec cet e-mail — utilise une autre adresse… ». Le cas « déjà inscrit » vrai porte
+le code `email_exists` (relu le même jour dans les mêmes journaux).
+
+**CE QUE DIT LE SERVICE, lu dans les sources publiques et non supposé** (supabase/auth, branche principale, lue le
+10/10/2026 ; auth-js 2.112.4, installé). `adminUserCreate` (`internal/api/admin.go`) juge l'ADRESSE d'abord —
+`email_exists`, 422, « A user with this email address has already been registered » —, puis le mot de passe :
+`checkPasswordStrength` (`internal/api/password.go`) refuse au-delà de 72 octets (400 `validation_failed`, bcrypt), puis
+nomme ses raisons — `length` (la longueur minimale, comptée en OCTETS), `characters` (un jeu exigé dont aucun caractère
+n'est présent, `strings.ContainsAny`), `pwned` (la protection des mots de passe divulgués, du plan payant) — et
+`errors.go` sert le refus en 422 `{ code: "weak_password", message, weak_password: { reasons } }` (forme ancienne :
+`error_code`). Les SEULS 422 de la création sont `email_exists`, `phone_exists` et `weak_password` : un statut ne peut
+rien distinguer. auth-js envoie toujours `X-Supabase-Api-Version: 2024-01-01`, recopie le code de la réponse sur
+l'erreur, et fait du refus du mot de passe une `AuthWeakPasswordError` qui porte `reasons`, sous la forme ancienne comme
+sous la nouvelle ; `user_already_exists` n'est rendu que par l'inscription publique, mais auth-js le nomme. Le message
+relevé en production liste les jeux exigés : les minuscules et les majuscules non accentuées, les chiffres, et
+`!@#$%^&*()_+-=[]{};'\:"|<>?,./`~` — exactement les 32 signes de ponctuation de l'ASCII : « é », « € », « § » ou l'espace
+ne font aucune sorte.
+
+**LE CHOIX, CÔTÉ FONCTIONS : LE CODE, ET LUI SEUL.** Un bloc `refusDuService`, dont l'original vit dans
+`lib/recuperationMotDePasse.ts`, recopié à l'identique dans les trois fonctions (par script, jamais à la main) :
+`adresseDejaInscrite` (codes `email_exists` et `user_already_exists`) et `refusDuMotDePasse` (code `weak_password` ;
+chaque raison dite en français, dans l'ordre du service, une seule fois ; une raison inconnue n'est pas recopiée — un
+texte du service ne s'affiche pas tel quel —, la phrase de tête suffit à dire le refus ; la règle n'est pas recopiée non
+plus : elle vit au tableau de bord, la phrase la dit « du projet »). « Déjà inscrit » se teste AVANT le refus du mot de
+passe, comme le service : c'est cet ordre qui fait tomber les contrats si la détection revient au statut. Un mot de
+passe refusé répond 400, la phrase du bloc, sans chercher aucun compte ; `create-cabinet` retire son cabinet comme avant,
+et la phrase d'un cabinet resté s'ajoute au refus. Tout autre refus garde son chemin d'avant : 500, le message du
+service. Rien d'autre ne change (la décision du 10/10 sur le mot de passe d'un compte existant reste entière). ÉCARTÉS :
+garder le statut ou les mots du message en repli (c'est le défaut) ; que les fonctions jugent elles-mêmes les sortes de
+caractères (un second reflet, côté serveur, qui refuserait encore ce que le tableau de bord aurait assoupli) ; lire
+`name === 'AuthWeakPasswordError'` (le code vaut pour toutes les formes, nom compris) ; recopier dans la réponse le
+message anglais du service.
+
+**CÔTÉ ÉCRANS : LA RÈGLE DITE AVANT LE CLIC.** `SORTES_DE_CARACTERES`, `REGLE_DU_MOT_DE_PASSE` et `refusDeLaRegle`
+rejoignent `LONGUEUR_MINIMALE_MOT_DE_PASSE` dans `lib/recuperationMotDePasse.ts` : un REFLET du tableau de bord, dit comme
+tel dans le code et dans PLAN_DE_REPRISE.md (§3, point 6, un tiret de plus). L'onglet Accès, l'équipe, un nouveau
+cabinet et le nouveau mot de passe disent la règle sous le champ (reliée par `aria-describedby`, les symboles listés
+depuis le jeu même que l'écran consulte), refusent avant tout appel un mot de passe qui ne la suit pas en disant tout ce
+qui manque d'un coup (« il doit faire au moins 10 caractères, et contenir une majuscule, un chiffre et un symbole »), et
+montrent tel quel le refus que la fonction traduit ; l'écran du nouveau mot de passe dit le refus du service par la
+phrase même des fonctions. Les trois champs de création prennent `autoComplete="new-password"` : celui de l'onglet Accès est un
+champ de mot de passe qui suit un champ d'adresse, la forme même d'un écran de connexion, et un navigateur pouvait y
+remplir l'adresse et le mot de passe du cabinet, qu'il connaît pour ce site ; les deux autres, en clair pour que le chef
+ou le super-administrateur puisse le communiquer, portent le même signal. La longueur se compte comme les fonctions la
+comptent (`length`) ; le service compte des octets, toujours au moins autant : hors de l'ASCII l'écran peut être plus
+strict que lui (« éééééAa1! », neuf caractères, quatorze octets), jamais moins. Conséquences assumées : redonner un accès
+à un client qui a déjà un compte demande un mot de passe qui suit la règle, bien qu'il ne serve pas (le formulaire dit
+déjà qu'il ne sert qu'à un compte neuf) ; et l'écran refuse sans appel ce que le service accepterait si le tableau de bord
+était assoupli sans que le reflet suive.
+
+**LES PREUVES.** LE HARNAIS HTTP modélise désormais la règle du projet (`src/test/regleDuService.ts`, d'après le
+comportement du service, et le message relevé en production comme référence), dans l'ordre d'`adminUserCreate`, avec les
+VRAIES classes d'erreur d'auth-js. Vingt-deux scénarios de plus : sept par fonction — le mot de passe refusé (une sorte
+manque ; trop court pour une règle de douze ; divulgué) : 400, la phrase même du module, dépenses exactes, aucun compte
+cherché ni créé ; l'adresse déjà inscrite reconnue à son code sous un message que la fonction ne lit pas, et sous
+`user_already_exists` ; un autre refus (plus de 72 octets) sur son chemin d'avant ; une adresse inscrite avec un mot de
+passe refusé, que le service juge sur l'adresse —, et, pour `create-cabinet`, le mot de passe refusé avec un cabinet qui
+ne se retire pas. Cinq défauts plantés : la détection remise au statut 422 dans chacune des trois fonctions (le refus du
+mot de passe tombe sur le compte introuvable), remise au message (le code sous un message neutre n'est plus reconnu), le
+refus du mot de passe oublié. LE GARDE DE COPIE (`refusDuServiceCopie.test.ts`) : chaque copie au caractère près, le
+bloc compilé seul, chaque copie exécutée seule contre le module sur une grille de 1 639 erreurs (les vraies classes
+d'auth-js, et des formes que le service ne rend pas), l'usage par chaque fonction sans reste de l'ancienne détection, et
+le garde qui mord. LE CONTRAT AVEC LE SDK (`refusDuServiceClient.test.ts`) : le vrai client installé devant les réponses du
+service telles que `errors.go` les écrit, formes 2024-01-01 et anciennes, `createUser` et `updateUser`. LE MODULE : la
+règle confrontée au message relevé en production, jeu pour jeu, et au modèle du service sur une grille de 3 000 mots de
+passe (aucun que l'écran laisse partir et que le service refuserait ; sur l'ASCII, le même verdict). LES ÉCRANS, chacun :
+la règle avant le clic, le refus sans appel, la réponse du service traduite ; et le verrou que le refus ne prend pas.
+ROUGE AVANT, joué sur une copie de 0a711c7 (les sept sources d'avant vérifiées identiques à la base, les tests et le
+harnais neufs posés dessus ; rien d'échangé dans le worktree) : 42 rouges sur 675, dans six fichiers, chacun pour sa
+raison — les fonctions d'avant y reproduisent le défaut mot pour mot (`create-client-access` : « statut 500 au lieu de
+400 : Un compte existe déjà pour cet e-mail mais n'a pas pu être retrouvé parmi les comptes existants. », dépenses
+« createUser ; listUsers » ; `create-cabinet` : 409 « Un compte existe déjà avec cet e-mail — utilise une autre
+adresse… ») ; les cinq défauts plantés ; le garde de copie ; les écrans, qui ne disaient aucune règle et laissaient partir
+le mot de passe refusé. Verts avant, et c'est juste : le code reconnu sous un message neutre et sous `user_already_exists`
+(l'ancienne détection les prenait au statut — le défaut planté « au message » garde ce flanc), l'autre refus (son chemin
+d'avant), l'adresse inscrite avec un mot de passe refusé (le service juge l'adresse d'abord), le contrat avec le SDK.
+SOIXANTE-DEUX MUTATIONS, toutes tuées (un banc hors dépôt : chaque mutation seule dans les vrais fichiers, remis et
+vérifiés à l'empreinte ; témoins verts avant) : douze sur le bloc — posées dans l'original ET les trois copies, pour que
+seul le comportement les juge —, douze sur la règle, dix-huit sur les fonctions (six chacune : la détection au statut, au
+message, le refus oublié, son statut, une clé de plus ou la phrase du cabinet resté, le message de l'autre refus), seize
+sur les écrans, quatre sur le modèle du service. Une avait d'abord survécu — le faux service jugeant le mot de passe avant
+l'adresse — parce que la mutation était fausse (elle rendait l'ordre d'origine) ; réécrite, elle meurt sur les trois
+scénarios de l'adresse inscrite avec un mot de passe refusé. Quatre trous vus en écrivant la campagne, comblés avant de
+la jouer : un code qui serait un tableau, le cabinet qui ne se retire pas après un mot de passe refusé, l'avis d'une
+création précédente effacé par un refus de la règle, la longueur du service comptée en octets. Équivalentes, non jouées :
+ôter seulement `typeof erreur !== 'object'` de la garde (lire `.code` d'un texte rend `undefined`) ; tester le refus du
+mot de passe avant « déjà inscrit » dans les fonctions (les deux codes s'excluent — d'où l'ordre choisi, le seul que les
+contrats voient). LA BARRIÈRE : `tsc -b` 0 ; `tsc -p tsconfig.edge.json`, les 25 erreurs
+connues, aucune dans les trois fonctions ; lint 0 et ses 63 avertissements ; construction 0 ; vingt-quatre fichiers (les
+miens et les gardes qui lisent les sources touchées) sous les quatre fuseaux, 878 sur 878 à chacun ; la suite entière sous
+Paris, 286 fichiers, 8 301 tests, verts, aucun délai dépassé — sa première passe avait vu UN rouge, attendu :
+`App.test.tsx` saisissait « nouveau-mot-de-passe », que la règle refuse désormais avant l'appel. LE BANC, sur le worktree,
+avec ses polices : 0 aux neuf passes, l'onglet Accès et sa règle mesurés à chacune. Il ne visite ni l'équipe, ni les
+cabinets, ni l'écran du nouveau mot de passe, ni un refus affiché : une mesure à part, hors dépôt — la même mesure, sur
+douze visites (la règle, le refus avant l'appel, le refus du service le plus long, ses trois raisons, pour les quatre
+écrans), le faux Supabase amendé le temps de la mesure puis remis à l'empreinte — rend 0 à 1 440, 1 280, 1 024, 720 et
+390 pixels.
+
+**CE QUI RESTE.** - LE DÉPLOIEMENT, par la session, APRÈS la fusion : les trois fonctions, chacune à `verify_jwt: false`
+(`config.toml`, inchangé), bordures répétées (`bordures.py` : deux de plus par fonction, le bloc `refusDuService`, 89 et
+91 traits), aller-retour (`allerretour.py`). L'ordre importe peu : la page neuve refuse avant l'appel ce que la règle
+refuse, et une fonction d'avant ne voit donc plus ces mots de passe ; une fonction neuve devant la page d'avant dit le
+refus en français, que l'écran d'avant affiche tel quel. La page d'abord est préférable : le défaut cesse dès elle. -
+NON CHANGÉ, dit : `create-cabinet` garde ses deux défauts de corps mal formés (`corpsNul`, `champsDeTravers`), que
+CLAUDE.md veut corriger « au prochain déploiement » — celui-ci en est un ; la consigne du défaut 23.5 disait de ne rien
+changer d'autre : à trancher par la session. Un mot de passe de plus de 72 octets reçoit encore, en 500, le refus anglais
+du service (le chemin d'avant de tout autre refus) ; les écrans ne le refusent pas avant l'appel (la règle du tableau de
+bord ne le dit pas). Les lectures d'`appartientDejaAuCabinet` ne lisent toujours pas leur erreur. La longueur minimale
+réglée au tableau de bord n'a pas été relevée : si elle dépasse dix, le service refusera ce que l'écran laisse partir, en
+le disant.
+
+**TRANCHÉ À L'INTÉGRATION (la session, 10/10/2026) : `create-cabinet` perd aussi ses deux corps mal formés.** La règle
+de CLAUDE.md (« à corriger au prochain déploiement de chacune ») l'emporte sur la consigne de ne rien changer d'autre,
+puisque ce déploiement-ci a lieu. Le patron est celui de `create-client-access` (23.2), recopié : un JSON qui n'est pas
+un objet se refuse en 400 (« Corps de requête invalide : un objet JSON est attendu. »), un champ reçu sous une autre
+forme qu'un texte aussi (`texteOuAbsent`), avant tout cabinet et tout compte. Le harnais HTTP l'a vu de lui-même : ses
+deux scénarios marqués `corpsNul` et `champsDeTravers` se sont dits « disparus », et `DEFAUTS_CONNUS` passe à 17 (corps
+`null` dans sept fonctions, champs de travers dans cinq). Mutations : retirer la porte de l'objet fait tomber le
+harnais ; retirer l'un des trois contrôles de champ ne le fait PAS — la batterie envoie tous les champs de travers d'un
+coup, et le contrôle suivant refuse à la place du retiré. C'est une limite de la batterie (`corpsMalFormes`), la même
+pour les trois fonctions qui créent des comptes ; la lever demande un scénario par champ, qui toucherait toutes les
+fonctions : laissé pour une autre fois, dit ici.

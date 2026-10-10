@@ -1,6 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { LONGUEUR_MINIMALE_MOT_DE_PASSE, messageErreurDuMotDePasse, refusDuNouveauMotDePasse } from '../lib/recuperationMotDePasse'
+import {
+  LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, messageErreurDuMotDePasse, refusDuNouveauMotDePasse,
+} from '../lib/recuperationMotDePasse'
 
 // L'ÉCRAN DU NOUVEAU MOT DE PASSE : la session ouverte par un lien « Mot de passe oublié » y arrive avant tout autre
 // écran (App.tsx), et l'application ne s'ouvre qu'une fois le mot de passe changé. Le compte s'affiche — le lien a
@@ -22,7 +24,8 @@ export default function NouveauMotDePasse({ email, onTermine, onDeconnexion }: P
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
     if (verrou.current) return
-    // Jugé avant tout appel : `minLength` se contourne, et le service n'exige que sa propre longueur.
+    // Jugé avant tout appel : `minLength` se contourne, et la règle des mots de passe du projet (un reflet de celle du
+    // tableau de bord) se dit ici avant que le service ne la fasse respecter.
     const refus = refusDuNouveauMotDePasse(motDePasse, confirmation)
     if (refus !== null) {
       setErreur(refus)
@@ -63,7 +66,7 @@ export default function NouveauMotDePasse({ email, onTermine, onDeconnexion }: P
             <label htmlFor="mdp-nouveau">Nouveau mot de passe</label>
             <input
               id="mdp-nouveau" type="password" required autoComplete="new-password" minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE}
-              value={motDePasse} onChange={(e) => setMotDePasse(e.target.value)}
+              aria-describedby="mdp-regle" value={motDePasse} onChange={(e) => setMotDePasse(e.target.value)}
             />
           </div>
           <div className="field">
@@ -73,7 +76,7 @@ export default function NouveauMotDePasse({ email, onTermine, onDeconnexion }: P
               value={confirmation} onChange={(e) => setConfirmation(e.target.value)}
             />
           </div>
-          <p className="muted">Au moins {LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères.</p>
+          <p className="muted" id="mdp-regle">{REGLE_DU_MOT_DE_PASSE}</p>
           {erreur && <p className="error-text" role="alert">{erreur}</p>}
           <button className="btn btn-primary" type="submit" disabled={enCours} style={{ width: '100%', marginTop: 6 }}>
             {enCours ? 'Enregistrement…' : 'Enregistrer'}

@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { AuthWeakPasswordError, FunctionsHttpError } from '@supabase/supabase-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../lib/recuperationMotDePasse'
 import EquipePage from './EquipePage'
 
 // « AJOUTER UN MEMBRE » NE SE PROTÉGEAIT QUE PAR UN ÉTAT (09/10/2026).
@@ -19,6 +21,8 @@ const faux = vi.hoisted(() => ({
   refus: null as string | null,
   // Le corps d'un ajout réussi : ce que la fonction dit du compte (décision du cabinet du 10/10/2026).
   reponse: { ok: true } as unknown,
+  // L'erreur que supabase-js rend sur un statut non-2xx (`FunctionsHttpError`, le corps sur son contexte), quand elle est posée.
+  erreur: null as unknown,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -41,6 +45,7 @@ vi.mock('../lib/supabase', () => ({
       invoke: async (nom: string, options: { body: unknown }) => {
         faux.appels.push({ nom, body: options.body })
         await faux.porte
+        if (faux.erreur) return { data: null, error: faux.erreur }
         return faux.refus ? { data: { error: faux.refus }, error: null } : { data: faux.reponse, error: null }
       },
     },
@@ -57,6 +62,7 @@ beforeEach(() => {
   faux.porte = null
   faux.refus = null
   faux.reponse = { ok: true }
+  faux.erreur = null
 })
 
 // Une porte laissée par un test qui échoue ne doit pas faire échouer les suivants.
@@ -73,13 +79,16 @@ function retenirLaReponse(): () => Promise<void> {
 
 const creations = () => faux.appels.filter((a) => a.nom === 'create-team-member')
 
+// Un mot de passe qui suit la règle du projet (lib/recuperationMotDePasse.ts) : sans elle, le formulaire refuse avant tout appel.
+const MOT_DE_PASSE = 'Mot-de-passe-fictif-1'
+
 // Les champs requis sont remplis : jsdom bloque la soumission d'un formulaire dont un champ requis est vide.
 async function ouvrirLeFormulaire() {
   await act(async () => { render(<EquipePage />) })
   await act(async () => { screen.getByRole('button', { name: '+ Ajouter un membre' }).click() })
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'nouvelle@cabinet-fictif.fr' } })
-    fireEvent.change(screen.getByLabelText('Mot de passe (au moins 10 caractères)'), { target: { value: 'mot-de-passe-fictif' } })
+    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: MOT_DE_PASSE } })
   })
   const bouton = screen.getByRole('button', { name: 'Créer le compte' }) as HTMLButtonElement
   return { bouton, formulaire: bouton.closest('form')! }
@@ -95,7 +104,7 @@ describe('EquipePage — le verrou de l’ajout d’un membre', () => {
     await act(async () => { bouton.click(); bouton.click() })
 
     expect(creations()).toHaveLength(1)
-    expect(creations()[0].body).toEqual({ email: 'nouvelle@cabinet-fictif.fr', password: 'mot-de-passe-fictif', role: 'comptable' })
+    expect(creations()[0].body).toEqual({ email: 'nouvelle@cabinet-fictif.fr', password: MOT_DE_PASSE, role: 'comptable' })
     expect(bouton.disabled).toBe(true)
     expect(bouton.textContent).toBe('Création…')
     await liberer()
@@ -186,7 +195,7 @@ describe('EquipePage — ce que l’écran dit d’un membre ajouté', () => {
     await act(async () => { screen.getByRole('button', { name: '+ Ajouter un membre' }).click() })
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'second@cabinet-fictif.fr' } })
-      fireEvent.change(screen.getByLabelText('Mot de passe (au moins 10 caractères)'), { target: { value: 'mot-de-passe-fictif' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: MOT_DE_PASSE } })
     })
     faux.reponse = { ok: true, compte: 'cree' }
     const liberer = retenirLaReponse()
@@ -195,5 +204,50 @@ describe('EquipePage — ce que l’écran dit d’un membre ajouté', () => {
     expect(avis()).toEqual([])
     await liberer()
     expect(avis()).toEqual(["second@cabinet-fictif.fr a rejoint l'équipe : communique-lui le mot de passe que tu as saisi."])
+  })
+})
+
+// LA RÈGLE DES MOTS DE PASSE DU PROJET (défaut 23.5, 10/10/2026). `create-team-member` prenait le refus d'un mot de passe
+// par le service pour une adresse déjà inscrite. L'écran dit la règle avant le clic, refuse avant tout appel ce qui ne la
+// suit pas, et montre tel quel le refus que la fonction traduit.
+describe('EquipePage — la règle des mots de passe du projet', () => {
+  async function ouvrir(motDePasse: string) {
+    await act(async () => { render(<EquipePage />) })
+    await act(async () => { screen.getByRole('button', { name: '+ Ajouter un membre' }).click() })
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'nouvelle@cabinet-fictif.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: motDePasse } })
+    })
+  }
+
+  it('dit la règle sous le champ, avant le clic — et le navigateur n’y remplit pas le mot de passe du chef', async () => {
+    await ouvrir('')
+    const champ = screen.getByLabelText<HTMLInputElement>('Mot de passe')
+    const regle = screen.getByText(REGLE_DU_MOT_DE_PASSE)
+    expect(champ.getAttribute('aria-describedby')).toBe(regle.id)
+    expect(champ.autocomplete).toBe('new-password')
+    expect(champ.minLength).toBe(10)
+  })
+
+  it('un mot de passe qui ne suit pas la règle ne part pas : aucun appel, et l’écran dit ce qui manque', async () => {
+    await ouvrir('mot-de-passe-fictif')
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(creations()).toEqual([])
+    expect(screen.getByText('Ce mot de passe ne suit pas la règle du projet : il doit contenir une majuscule et un chiffre.')).toBeTruthy()
+    // Le formulaire reste ouvert, et le mot de passe corrigé part aussitôt.
+    await act(async () => { fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: MOT_DE_PASSE } }) })
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(creations()).toHaveLength(1)
+  })
+
+  it('le refus du service, traduit par la fonction (400), se dit tel quel, et le formulaire reste ouvert', async () => {
+    const refus = refusDuMotDePasse(new AuthWeakPasswordError('Password is known to be weak and easy to guess, please choose a different one.', 422, ['pwned']))
+    expect(refus).toMatch(/divulgués lors de fuites de données\.$/)
+    faux.erreur = new FunctionsHttpError(new Response(JSON.stringify({ error: refus }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+    await ouvrir(MOT_DE_PASSE)
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(await screen.findByText(refus as string)).toBeTruthy()
+    expect(screen.queryAllByText(/Un compte existe déjà/)).toHaveLength(0)
+    expect(screen.getByRole('heading', { name: "Ajouter un membre de l'équipe" })).toBeTruthy()
   })
 })
