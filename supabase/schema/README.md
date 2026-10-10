@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 112 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 113 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -117,6 +117,14 @@ même, que son auteur ajoute à l'export) ; la production en porte 112 (empreint
 enregistré (23 337 caractères, aucun retour chariot, empreinte `43acdab78bd45c77872a10de646bfd9e` avec le
 saut de ligne final).
 
+**Rejoué le 10/10/2026 après `lectures_bancaires_au_droit_banque`** (espace client, étape P7, la seconde
+migration, version `20261010115358`) : 113 fichiers, empreinte globale `1a365b20ed384b7be186dad6f43564c0`,
+égale à celle des migrations de la production privée de `revision_des_cycles` (`20261010110733`, ligne 41,
+étape R4, appliquée trois quarts d'heure plus tôt, que son auteur ajoute à l'export) ; la production en
+porte 114 (empreinte globale `73b955fc8e4847365c0ccc3b128c45fb`), égale aux fichiers une fois le sien
+réuni. Le fichier est le texte enregistré (3 398 caractères, aucun retour chariot, empreinte
+`26919b01787e7ce2cec59b165ebdbc71` avec le saut de ligne final).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -201,6 +209,15 @@ côtés, la production prise sans les 38 objets de `plan_comptable_des_dossiers`
 `banque_du_client` en ajoute 50 : seize colonnes, douze contraintes, six index, deux déclencheurs, six
 policies — dont la lecture de `controles_releves_bancaires` à la case « Banque » —, six fonctions et la
 RLS de ses deux tables.
+
+**Rejoués le 10/10/2026 après `lectures_bancaires_au_droit_banque`** (espace client, étape P7) : le socle
+CHANGE, et c'est attendu — la migration réécrit la lecture des mouvements par un accès client, une policy
+de `lignes_bancaires`, l'une des douze tables du socle ; sa ligne est régénérée depuis le catalogue
+(`for select to authenticated`, `client_du_dossier(dossier_id, 'banque'::text)`), et les deux côtés
+rendent 78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f`. L'inventaire compte 1 564 objets dans les
+fichiers (`cf9ba7dbe87c1a96bc79be53c9cdee1d`) : la migration n'en ajoute aucun, elle modifie trois
+policies sans les renommer ; la production en porte 1 637 (`9628a4d3da780aabddc40c22569eedcf`), égale aux
+fichiers une fois celui de `revision_des_cycles` réuni (ses 73 objets).
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

@@ -233,6 +233,16 @@
 -- `banque_du_client`. Ce fichier sans ses ajouts, joué avec les devis, vire au rouge (onze tables lues, neuf
 -- présentées ; « 0 vue sur 0 » au contrôle positif). Ce que les fonctions des devis refusent et acceptent, profil par
 -- profil et par leur raison, est éprouvé par `devis.sql`.
+--
+-- 10/10/2026 — PASSAGE COMPLET après `lectures_bancaires_au_droit_banque` (espace client, étape P7, la seconde
+-- migration ; la première, `banque_du_client`, et `revision_des_cycles` (ligne 41, R4) sont en base depuis le matin) :
+-- 29 lignes de verdict (68 tables du schéma, dont 59 portant un `dossier_id`, + 3 buckets, 4 profils), 0 en faute — le
+-- domaine « Banque » complet, 3bis, 3bis+ et 4bis sur ses six tables ; le bloc des ventes SANS OBJET —, et 19 mutations
+-- sur 19 qui mordent (M2 : exactement 4). Répété d'abord sur une réplique dont `signature.sql` égalait la production :
+-- les mêmes verdicts. Le texte reçu est la copie adaptée À DIX LIGNES DE COMMENTAIRE PRÈS — 74 332 caractères,
+-- empreinte 88fe09d17a4e89ef2b3d707bc82f8187, pour 74 256 et b505e109bb320f9449f17fc46ccf804e : la bordure
+-- d'ouverture de dix titres a été transcrite en dix traits au lieu de deux ou trois. Reconstitué, ce texte rend
+-- exactement l'empreinte reçue : le code exécuté est celui de la copie, caractère pour caractère.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

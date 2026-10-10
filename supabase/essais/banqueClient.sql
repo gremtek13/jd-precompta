@@ -47,6 +47,12 @@
 -- faute ; après la première seule, exactement 3 en faute (3, 15 et 16) ; sans elles, ESSAI_IMPOSSIBLE. Les migrations elles-mêmes ont été mutées
 -- (47 mutants : policies, contrôles d'accès, ordre des refus, gardes, unicité, contraintes, volatilité, droits) : chacun
 -- fait virer au rouge ce fichier ou `rls.sql`. En production, il se joue après la seconde migration.
+--
+-- EN PRODUCTION, le 10/10/2026, par `execute_sql` — le fichier sans ses lignes de commentaire, 41 761 caractères,
+-- empreinte 108b4cd1daa150d3fae26fb8105c81fb, que la ligne 0 rend telle que la base l'a reçue : après
+-- `banque_du_client`, 86 lignes, exactement 3 en faute (3, 15 et 16) ; après `lectures_bancaires_au_droit_banque`,
+-- 86 lignes, 0 en faute.
+-- Les deux fois, rien n'est resté en base, accès et droits compris.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';

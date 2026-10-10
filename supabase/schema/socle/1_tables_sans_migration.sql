@@ -465,11 +465,12 @@ create policy "lignes_bancaires_all" on public.lignes_bancaires
   using (admin_du_dossier(dossier_id))
   with check (admin_du_dossier(dossier_id));
 
+-- RÉGÉNÉRÉE LE 10/10/2026 depuis le catalogue, après `lectures_bancaires_au_droit_banque` (espace client, étape P7) : la
+-- lecture des mouvements par un accès client passe au droit « Banque », et à `authenticated` (son prédicat appelle une
+-- fonction que l'anonyme n'exécute pas). Avant elle : `for select to public`, `exists (memberships …)` sur le dossier.
 create policy "membres peuvent lire leurs lignes bancaires" on public.lignes_bancaires
-  for select to public
-  using ((EXISTS ( SELECT 1
-   FROM memberships m
-  WHERE ((m.dossier_id = lignes_bancaires.dossier_id) AND (m.user_id = auth.uid())))));
+  for select to authenticated
+  using (client_du_dossier(dossier_id, 'banque'::text));
 
 create policy "natures_immobilisation_delete" on public.natures_immobilisation
   for delete to public

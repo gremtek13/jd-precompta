@@ -6,7 +6,8 @@ import ClientHome from './ClientHome'
 // L'ACCUEIL DU CLIENT QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7). `couverture_du_releve` y
 // est depuis le 10/10/2026, et le drapeau du module est levé ; ce fichier le FORCE levé, pour ne dépendre que de lui
 // (le chemin drapeau baissé : espaceClientAvantCouverture.test.tsx). L'accueil ne lit plus AUCUN mouvement — le
-// resserrement les fermera à un accès sans la case « Banque », et une lecture refusée rend un relevé VIDE, sans erreur —,
+// resserrement, en base depuis le 10/10/2026, les ferme à un accès sans la case « Banque », et une lecture refusée rend
+// un relevé VIDE, sans erreur —,
 // il lit des mois par la fonction, en réclame ce qui manque, et dit une couverture refusée ou illisible.
 vi.mock('../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/couvertureReleve')>(),

@@ -18470,6 +18470,18 @@ pas rattaché » (le côté fermé, sous un message faux ; `edgeFunctionsLecture
 adresse s'arrête à 25 pages de 200 comptes ; les messages anglais du service sur une création refusée pour une autre
 raison qu'un doublon passent tels quels.
 
+**LA MISE EN LIGNE (10/10/2026, après la fusion n° 134, 9d5c09b).** La page d'abord : le site a servi le paquet construit
+en local (`index-BAwjuBm6.js`) avant tout déploiement de fonction. Puis les deux fonctions, à `verify_jwt: false` lu dans
+`config.toml` et dans `list_edge_functions` : les copies déployées (versions 12 et 5) se lisaient identiques à main d'avant
+la fusion (233 et 205 lignes, aucune différence), les quatre bordures ont été répétées justes (`bordures.py`), et
+`create-client-access` (version 13) et `create-team-member` (version 6) reviennent identiques au dépôt (265 et 238 lignes,
+aucune différence, sur un marqueur que seules les nouvelles versions portent) ; sans session, l'une et l'autre répondent
+401 « Non authentifié. ». EN CHEMIN, UN DÉFAUT DE L'ALLER-RETOUR : `allerretour.py` cherchait son marqueur tel quel dans
+le résultat de `get_edge_function`, qui est du JSON — un guillemet y est échappé, et `compte = "existant"` rendait
+« INTROUVABLE … pas encore écrit » sur une lecture bien présente. Il cherche désormais aussi la forme échappée, et son
+message dit qu'aucune lecture ne porte le marqueur quand c'est le cas ; l'ancienne version rejouée sur le même journal
+reste muette, la nouvelle trouve les deux lectures.
+
 ### 10/10/2026 — LES DEVIS, EN BASE — ESPACE CLIENT, ÉTAPE P5 (PRÉPARÉE, ÉPROUVÉE, NON APPLIQUÉE)
 
 (Deux migrations, préparées hors du dépôt — l'export ne porte que ce qui est appliqué : `devis_du_client`, 44 799
@@ -18703,3 +18715,47 @@ largeur de son plus long nom et sortait du volet à 1 024 pixels ; corrigé (`mi
 d'e2 par le test du module couvre déjà les refus. Une fiche DÉCLARÉE devra retenir sa pièce (la cascade est voulue tant que
 rien n'est déclaré) : à trancher avec e5, qui figera ce qui est parti. Le banc ne mesure pas le volet superposé sous
 1 280 pixels.
+
+### 10/10/2026 — LA BANQUE DU CLIENT : LE RESSERREMENT APPLIQUÉ — ESPACE CLIENT, ÉTAPE P7
+
+(Appliquée en production : `lectures_bancaires_au_droit_banque`, version `20261010115358`, la bascule de l'application
+en ligne depuis la demande de fusion n° 133. Avec elle : le fichier d'export et le README ; la ligne de
+`lignes_bancaires` du socle, régénérée depuis le catalogue ; le passage du jour dans `banqueClient.sql` et `rls.sql` ;
+les phrases qui la disaient à venir — le module de la couverture, un en-tête de test, RGPD.md, CLAUDE.md — et EC-Q1 dite
+décidée dans cinq commentaires.) La suite de « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE ».
+
+AVANT, LA PRODUCTION AVAIT ENCORE AVANCÉ : 113 migrations, R4 ayant appliqué `revision_des_cycles` trois quarts d'heure
+plus tôt. Lue d'abord : trois tables à elle, leurs gardes et leurs policies, trois fonctions ; rien des mouvements, des
+parts, des règlements, des accès ni des droits. Son fichier (une copie dont l'empreinte est celle de l'historique) posé
+sur la réplique d'après la migration 1 : `signature.sql` rend les neuf familles égales à la production. RÉPÉTITION sur
+une copie : seule la famille des policies change ; `banqueClient.sql` 86 verdicts, 0 en faute ; `rls.sql` 0 en faute et
+19 mutations sur 19 ; `connexionBancaire.sql` 22/0, `ventilation.sql` 68/0, `reglementGroupe.sql` 51/0.
+
+APPLIQUÉE par `apply_migration`, sans confirmation demandée — trois `alter policy` qui resserrent une lecture, aucune
+suppression : 3 398 caractères, sans retour chariot, empreinte de l'historique `26919b01787e7ce2cec59b165ebdbc71`, celle
+du fichier présenté au cabinet ; la signature d'après égale la répétition. Son en-tête dit encore « EC-Q1 sans
+réponse » : c'était vrai quand il fut écrit, et le texte appliqué est celui que le cabinet a vu.
+
+EN PRODUCTION : `banqueClient.sql`, 86 lignes, 0 en faute — le client sans la case ne voit plus aucune ligne des six
+tables de la banque, « Ventes » seule n'ouvre rien —, et rien n'est resté en base ; `rls.sql` ENTIER, 29 lignes de
+verdict, 0 en faute, 19 mutations sur 19 (M2 : exactement 4). Advisors inchangés. La ligne TEXTE de `rls.sql` a rendu
+74 332 caractères pour les 74 256 de la copie adaptée : dix lignes de COMMENTAIRE transcrites avec une bordure
+d'ouverture de dix traits au lieu de deux ou trois. Reconstitué, ce texte rend exactement l'empreinte reçue : le code
+exécuté est celui de la copie.
+
+LES TROIS CONTRÔLES DE L'EXPORT : dérive — 113 fichiers, `1a365b20…`, égale à la production privée de R4 ; 114 avec son
+fichier (`73b955fc…`), qui vient avec son correctif ; socle — il CHANGE, la migration réécrivant une policy de
+`lignes_bancaires`, l'une des douze tables du socle : sa ligne régénérée, 78 instructions, `91ae95ec…` des deux côtés ;
+inventaire — 1 564 objets dans les fichiers, la migration n'en ajoute aucun ; la production en porte 1 637, égale une
+fois le fichier de R4 réuni.
+
+BARRIÈRE, sur main 9edc50b, ce correctif posé : `tsc -b` vert ; lint sans erreur, 63 avertissements, aucun dans un
+fichier touché ; les Edge Functions à leurs 25 erreurs connues ; build vert ; les tests touchés (24 fichiers, 518 tests)
+verts sous Paris, UTC, New York et Auckland ; la suite entière sous Paris, deux ouvriers : 276 fichiers, 7 938 tests,
+verts. Pas de banc : rien de ce qui s'affiche ne change (des commentaires, des documents, le socle, l'export).
+
+CE QUI RESTE : les écrans de la banque du client (P8, P9) ; l'invariant 3 bis des ventes attend P2.
+
+LEÇON : une bordure COURTE se transcrit aussi mal qu'une longue. La copie adaptée ramène les longues à dix traits, et la
+transcription a « régularisé » les courtes à dix : la ligne TEXTE l'a vu, et la reconstitution a prouvé que seuls des
+commentaires différaient. Une copie adaptée qui retirerait les bordures de ses commentaires ôterait le piège.

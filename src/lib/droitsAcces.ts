@@ -1,6 +1,6 @@
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1 ; décision du cabinet du 09/10/2026 d'ouvrir l'espace client aux
 // ventes et à la banque ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA
-// CONCEPTION », §3 et §7 ; EC-Q1 sans réponse, sa recommandation prise comme hypothèse).
+// CONCEPTION », §3 et §7 ; EC-Q1, d'abord prise comme hypothèse, décidée par le cabinet le 10/10/2026).
 //
 // Deux cases par accès, « Ventes » et « Banque », posées par le cabinet et tenues en BASE : `memberships.droit_ventes` et
 // `droit_banque`, fausses par défaut, que seule `changer_droits_acces` change — réservée au cabinet du dossier de l'accès,
@@ -121,7 +121,7 @@ export function changementApplique(rendu: unknown, domaine: Domaine, valeur: boo
 // phrases changent avec lui.
 //
 // LA PREMIÈRE ARRIVE AVEC L'ÉTAPE P7 : « Ma simulation » se calcule sur la banque, et suit la case « Banque » dès que la
-// couverture du relevé est en base (`COUVERTURE_EXPORTEE`, lib/couvertureReleve.ts ; hypothèse EC-Q1). Les deux phrases
+// couverture du relevé est en base (`COUVERTURE_EXPORTEE`, lib/couvertureReleve.ts ; EC-Q1, décidée). Les deux phrases
 // se disent donc dans les deux états, et chaque constante est celle de l'état du drapeau : le jour où il passe à vrai,
 // l'onglet dit que « Banque » ouvre la simulation, sans qu'on ait à y penser.
 

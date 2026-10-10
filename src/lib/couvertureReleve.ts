@@ -1,6 +1,6 @@
 // LA COUVERTURE DU RELEVÉ, ET LA SIMULATION DU CLIENT SOUS LA CASE « BANQUE » (espace client, étape P7 ; conception :
-// HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §6.1 et §7 ; EC-Q1 sans
-// réponse, sa recommandation prise comme hypothèse : « Ma simulation » suit la case « Banque »).
+// HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §6.1 et §7 ; EC-Q1,
+// décidée par le cabinet le 10/10/2026 : « Ma simulation » suit la case « Banque »).
 //
 // POURQUOI CE MODULE EXISTE. L'Accueil et « Mes pièces » du client lisaient TOUS les mouvements de son relevé — dates,
 // libellés, montants — pour une seule chose : savoir quels MOIS manquent (`moisManquantsDe`). L'étape P7 resserre la
@@ -17,8 +17,9 @@
 // il ne vaut vrai que si le fichier porte la fonction. Levé, il met d'un même geste les deux écrans sur la couverture,
 // la simulation sous la case « Banque » et les phrases de l'onglet Accès (lib/droitsAcces.ts). Baissé, les écrans
 // liraient les mouvements comme avant P7, et la simulation s'ouvrirait à tout accès : ce chemin, tant qu'il existe,
-// espaceClientAvantCouverture.test.tsx le garde. La migration du resserrement ne s'applique qu'APRÈS la mise en ligne
-// de la bascule.
+// espaceClientAvantCouverture.test.tsx le garde. La migration du resserrement, `lectures_bancaires_au_droit_banque`,
+// s'est appliquée APRÈS la mise en ligne de la bascule, le même jour : rebaisser le drapeau, désormais, ferait lire au
+// client sans la case un relevé que la base lui rend vide.
 //
 // Les deux registres de `banque_du_client` sont au plan de sauvegarde depuis la même bascule (sauvegardeTables.test.ts
 // et sauvegardeRelations.test.ts l'exigent dès que l'export les porte).
