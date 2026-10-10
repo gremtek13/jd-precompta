@@ -145,12 +145,12 @@ const pieces: Ligne[] = [
   // le barème couvre déjà son amortissement, que la case CH déduit une seconde fois.
   piece('p14', '2026-03-10', 'Moto Services', 4200, 0, 'c5', 'validee'),
   // Une facture reçue de la PLATEFORME DU CLIENT (ligne 28.5, voir CONNEXION_PLATEFORME_D1) : son original est un XML,
-  // la plateforme en a rendu une version lisible, et l'import a gardé sa remarque dans les notes.
+  // la plateforme en a rendu une version lisible, et l'import a gardé sa remarque dans la note interne de la pièce — dans
+  // `notes_internes` depuis l'espace client P0 (voir NOTES_INTERNES plus bas) : sur la pièce, la fiche ne la lit plus.
   {
     ...piece('p15', '2026-09-29', 'Laboratoire Biosanté Provence', 96, 16, null, 'a_valider'),
     source: 'plateforme', storage_path: 'd1/plateforme/fx-15.xml', nom_fichier: 'FA-2026-0930-BIOSANTE.xml',
     flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-15', lisible_path: 'd1/plateforme/fx-15.pdf',
-    notes: 'Reçue de la plateforme du client — à vérifier :\n- Le SIREN du destinataire n’est pas écrit sur la facture.',
   },
   // LA VENTE QUI REVIENT DEUX FOIS (ligne 28.6) : la facture F2026-0013 (`f13`), partie par Super PDP sous 4242, revenue
   // par la synchronisation Super PDP ET par la plateforme du client, dont l'original dit son numéro, son vendeur et son
@@ -164,6 +164,16 @@ const pieces: Ligne[] = [
     type_piece: 'vente', source: 'plateforme', storage_path: 'd1/plateforme/fx-17.xml', nom_fichier: 'F2026-0013-RESIDENCE-LES-CEDRES.xml',
     flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-17',
     identite_numero: 'F2026-0013', identite_siren_vendeur: '123456789', identite_date: '2026-09-18', identite_nature: 'facture',
+  },
+]
+
+// Les notes internes du cabinet (espace client, P0) : celle que l'import par la plateforme a laissée sur la facture reçue
+// (p15). La fiche d'une pièce la lit dans cette table, que le client ne lit pas.
+const NOTES_INTERNES: Ligne[] = [
+  {
+    id: 'ni15', dossier_id: 'd1', piece_id: 'p15', document_id: null,
+    texte: 'Reçue de la plateforme du client — à vérifier :\n- Le SIREN du destinataire n’est pas écrit sur la facture.',
+    created_at: '2026-09-29T10:05:00Z', updated_at: '2026-09-29T10:05:00Z',
   },
 ]
 
@@ -1050,7 +1060,17 @@ const TABLES: Record<string, Ligne[]> = {
     message(4, 'assistant', 'Oui, une seule : LogiSoins, 29,00 € le 18/08/2026. C’est un abonnement de logiciel : une catégorie « Logiciels et abonnements » conviendrait.', ['lister_pieces']),
   ],
   cabinet_admins: CLIENT_DU_BANC ? [] : [{ user_id: 'u1', cabinet_id: 'cab1', role: 'comptable_en_chef' }],
-  memberships: CLIENT_DU_BANC ? [{ user_id: 'u1', dossier_id: 'd1' }] : [],
+  // Les accès du cabinet infirmier et leurs deux droits (espace client, étape P1) : l'onglet Accès montre leurs cases —
+  // l'une cochée, et une adresse longue, qui éprouve la fiche repliée sur téléphone. En client, le compte du banc y a le
+  // sien, sans droit ; AuthContext le trouve par son identifiant, l'onglet par le dossier.
+  memberships: [
+    { id: 'm1', user_id: 'u-claire', dossier_id: 'd1', role: 'client', email: 'claire.moreau@exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-05T09:30:00Z' },
+    { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-02-10T09:30:00Z' },
+    ...(CLIENT_DU_BANC
+      ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      : []),
+  ],
+  notes_internes: NOTES_INTERNES,
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,

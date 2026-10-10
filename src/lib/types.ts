@@ -836,12 +836,18 @@ export interface Cabinet {
   created_at: string
 }
 
+// Un accès client à un dossier. Le client ne lit que SES lignes (`memberships_select`), droits compris ; aucune policy de
+// mise à jour, pour personne : les deux droits (espace client, étape P1, migration droits_des_acces_clients) ne changent
+// que par `changer_droits_acces`, réservée au cabinet du dossier — voir lib/droitsAcces.ts. Faux par défaut.
 export interface Membership {
   id: string
   user_id: string
   dossier_id: string
   role: 'client'
   created_at: string
+  email: string | null
+  droit_ventes: boolean
+  droit_banque: boolean
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'

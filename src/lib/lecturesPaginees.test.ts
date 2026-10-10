@@ -89,11 +89,6 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
     raison:
       "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
   },
-  "src/pages/dossier/AccesTab.tsx [memberships]": {
-    nombre: 1,
-    raison:
-      "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
-  },
   "src/pages/dossier/ConnexionBancaireCard.tsx [lignes_bancaires]": {
     nombre: 1,
     raison:

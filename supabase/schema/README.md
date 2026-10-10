@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 107 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 108 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,10 +84,11 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 09/10/2026** : 107 fichiers, 107 migrations, empreinte globale
-`e9e16b845c6df56ff99a92e58f273bd0` des deux côtés, aucune divergence — rejoué après
-`notes_internes_du_cabinet` (espace client, étape P0), la dernière, qui suit les cinq migrations du jour
-(`identite_des_factures_recues`, `paiement_personnel_des_cotisations`, `revision_des_soldes`,
+**Vérifié par empreinte le 09/10/2026** : 108 fichiers, 108 migrations, empreinte globale
+`a1a29e2f0b4c5bdef3edbdec4044b0cb` des deux côtés, aucune divergence — rejoué après
+`droits_des_acces_clients` (espace client, étape P1 ; 9 081 caractères, empreinte `301dc1bc6629996749d8da55f3614a52`,
+le fichier égal au texte enregistré), la dernière, qui suit `notes_internes_du_cabinet` (P0) et les cinq migrations du
+jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`, `revision_des_soldes`,
 `compte_amortissement_meme_ventilation`, `commentaire_compte_notes_de_frais_pcg_2026`) ; toutes dans l'export.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
@@ -122,7 +123,7 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (78 instructions, empreinte `f01053c781688bbfbee8c70ac43924a6` des
   deux côtés le 09/10/2026, rejoué à l'intégration des trois migrations du jour, puis inchangé après
-  `notes_internes_du_cabinet`, qui ne touche aucune table du socle ; les trois objets que
+  `notes_internes_du_cabinet` et `droits_des_acces_clients`, qui ne touchent aucune table du socle ; les trois objets que
   `paiement_personnel_des_cotisations` ajoute à `cotisations_declarees` et `ecritures_brouillon`, deux
   tables du socle, y sont), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
@@ -132,8 +133,9 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 384 objets, empreinte `38d9b783f9be2beec306d6b721781b11` des deux côtés le 09/10/2026, rejoué après
-  `notes_internes_du_cabinet`, qui en ajoute 19 : sept colonnes, sept contraintes, un index, un
+  (1 391 objets, empreinte `b5d9acea7c5f15f895e417764e9f3466` des deux côtés le 09/10/2026, rejoué après
+  `droits_des_acces_clients`, qui en ajoute 7 : les deux colonnes des droits de `memberships` et cinq fonctions ;
+  1 384 avant, après `notes_internes_du_cabinet`, qui en ajoutait 19 : sept colonnes, sept contraintes, un index, un
   déclencheur, une policy, une fonction et la RLS de sa table). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui

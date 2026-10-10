@@ -315,10 +315,6 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
 const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: string }[] = [
   { ecran: 'ClientHome', texte: 'Trois étapes, rien à trier de ton côté.', fois: 1, raison: 'le mode d’emploi de l’accueil' },
   {
-    ecran: 'AccesTab', fois: 1, raison: 'ce que l’accès permet, pas qui l’a',
-    texte: 'Le client pourra uniquement déposer des pièces sur ce dossier — aucun accès aux montants, catégories ou packs.',
-  },
-  {
     ecran: 'EncaissementsFactureModal', fois: 1, raison: 'ce que la fenêtre fait, pas ce qu’elle a lu',
     texte: 'TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.',
   },

@@ -27,41 +27,77 @@ const faux = vi.hoisted(() => ({
   admins: {} as Record<string, { cabinet_id: string; role: string }>,
   // La lecture des rôles d'un compte, retenue tant qu'on ne la relâche pas.
   rolesRetenus: {} as Record<string, Promise<void>>,
+  // Les accès clients en base, toutes personnes confondues : la lecture les FILTRE sur le compte, comme la base, et ne rend
+  // que les colonnes demandées, comme PostgREST — un droit que la requête ne nomme pas n'arrive pas.
+  acces: [] as Record<string, unknown>[],
+  erreurAcces: null as null | { message: string },
+  lecturesAcces: [] as { colonnes: string; filtre: string }[],
 }))
 
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: async () => {
-        if (faux.sessionRetenue) await faux.sessionRetenue
-        if (faux.sessionEchoue) throw new Error('stockage de session illisible')
-        return { data: { session: faux.sessionInitiale } }
-      },
-      onAuthStateChange: (rappel: (evenement: string, session: unknown) => void) => {
-        faux.rappel = rappel
-        return { data: { subscription: { unsubscribe: () => { faux.rappel = null } } } }
-      },
-      signOut: () => Promise.resolve({ error: null }),
-    },
-    from: (table: string) => {
-      let utilisateur = ''
-      const chaine: Record<string, unknown> = {}
-      Object.assign(chaine, {
-        select: () => chaine,
-        eq: (_colonne: string, valeur: string) => { utilisateur = valeur; return chaine },
-        maybeSingle: async () => {
-          if (table !== 'cabinet_admins') throw new Error(`lecture inattendue : ${table}`)
-          faux.lecturesAdmins++
-          const retenue = faux.rolesRetenus[utilisateur]
-          if (retenue) await retenue
-          return { data: faux.admins[utilisateur] ?? null, error: null }
+vi.mock('../lib/supabase', async () => {
+  const { filtrer, predicatEq, predicatIn } = await import('../test/filtresPostgrest')
+  const projeter = (lignes: Record<string, unknown>[], colonnes: string) => {
+    const noms = colonnes.split(',').map((c) => c.trim())
+    return lignes.map((l) => Object.fromEntries(noms.filter((n) => n in l).map((n) => [n, l[n]])))
+  }
+  return {
+    supabase: {
+      auth: {
+        getSession: async () => {
+          if (faux.sessionRetenue) await faux.sessionRetenue
+          if (faux.sessionEchoue) throw new Error('stockage de session illisible')
+          return { data: { session: faux.sessionInitiale } }
         },
-      })
-      return chaine
+        onAuthStateChange: (rappel: (evenement: string, session: unknown) => void) => {
+          faux.rappel = rappel
+          return { data: { subscription: { unsubscribe: () => { faux.rappel = null } } } }
+        },
+        signOut: () => Promise.resolve({ error: null }),
+      },
+      from: (table: string) => {
+        let utilisateur = ''
+        let colonnes = ''
+        const predicats: ReturnType<typeof predicatEq>[] = []
+        const filtres: string[] = []
+        const chaine: Record<string, unknown> = {}
+        Object.assign(chaine, {
+          select: (c: string) => { colonnes = c; return chaine },
+          eq: (colonne: string, valeur: string) => {
+            utilisateur = valeur
+            predicats.push(predicatEq(colonne, valeur))
+            filtres.push(`${colonne}=${valeur}`)
+            return chaine
+          },
+          in: (colonne: string, valeurs: string[]) => { predicats.push(predicatIn(colonne, valeurs)); return chaine },
+          maybeSingle: async () => {
+            if (table !== 'cabinet_admins') throw new Error(`lecture inattendue : ${table}`)
+            faux.lecturesAdmins++
+            const retenue = faux.rolesRetenus[utilisateur]
+            if (retenue) await retenue
+            return { data: faux.admins[utilisateur] ?? null, error: null }
+          },
+          then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
+            const reponse = () => {
+              if (table === 'memberships') {
+                faux.lecturesAcces.push({ colonnes, filtre: filtres.join('&') })
+                if (faux.erreurAcces) return { data: null, error: faux.erreurAcces }
+                return { data: projeter(filtrer(faux.acces, predicats), colonnes), error: null }
+              }
+              if (table === 'dossiers') {
+                const dossiers = [...new Set(faux.acces.map((a) => String(a.dossier_id)))].map((id) => ({ id, nom: `Société ${id}`, cabinet_id: 'c1' }))
+                return { data: projeter(filtrer(dossiers, predicats), colonnes), error: null }
+              }
+              throw new Error(`lecture inattendue : ${table}`)
+            }
+            return Promise.resolve().then(reponse).then(suite, echec)
+          },
+        })
+        return chaine
+      },
+      rpc: () => Promise.resolve({ data: false, error: null }),
     },
-    rpc: () => Promise.resolve({ data: false, error: null }),
-  },
-}))
+  }
+})
 
 // Une copie NEUVE à chaque appel, comme la reprise de session de Supabase la lit du stockage.
 const session = (id: string, email: string) => ({ access_token: `jeton-${Math.random()}`, user: { id, email } })
@@ -119,6 +155,9 @@ beforeEach(() => {
     u2: { cabinet_id: 'c1', role: 'comptable_en_chef' },
   }
   faux.rolesRetenus = {}
+  faux.acces = []
+  faux.erreurAcces = null
+  faux.lecturesAcces = []
   faux.sessionInitiale = session('u1', 'membre@cabinet.fr')
   montages.n = 0
   rendus.length = 0
@@ -387,5 +426,105 @@ describe('AuthProvider — la session d’un lien « Mot de passe oublié »', (
     expect(await screen.findByText('Avis : Ce lien ne peut plus servir : il a expiré, ou il a déjà été utilisé.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Oublier' }))
     expect(screen.getByText('Avis : aucun')).toBeTruthy()
+  })
+})
+
+// LES DROITS D'UN ACCÈS (espace client, étape P1) : « Ventes » et « Banque », lus avec les accès qu'AuthContext lit déjà —
+// dans la MÊME requête, au même moment : au changement d'identifiant, jamais sur l'objet session. Exposés par dossier pour
+// les étapes qui ouvriront « Mes ventes » et « Ma banque » ; aucun écran ne s'en sert encore. Un droit ne s'accorde jamais
+// par défaut : une lecture en échec, une valeur qui n'est pas strictement vraie, un dossier absent n'en donnent aucun.
+describe('AuthProvider — les droits de chaque accès du client', () => {
+  // Ce que chaque rendu commis a montré : « rôle | dossiers | d1=VB … », V et B pour chaque droit tenu.
+  const vus: string[] = []
+
+  function SondeDroits() {
+    const { loading, role, dossierIds, droitsParDossier: droits } = useAuth()
+    const texte = loading
+      ? 'chargement'
+      : `${role ?? 'personne'} | ${dossierIds.join(',')} | ${Object.keys(droits).sort()
+        .map((d) => `${d}=${droits[d].ventes ? 'V' : ''}${droits[d].banque ? 'B' : ''}`).join(' ')}`
+    useEffect(() => { vus.push(texte) })
+    return <p>Droits : {texte}</p>
+  }
+
+  const acces = (user_id: string, dossier_id: string, droit_ventes: unknown, droit_banque: unknown) =>
+    ({ id: `${user_id}-${dossier_id}`, user_id, dossier_id, role: 'client', email: null, droit_ventes, droit_banque })
+
+  beforeEach(() => {
+    vus.length = 0
+    faux.acces = [
+      acces('u3', 'd1', true, false),
+      acces('u3', 'd2', false, false),
+      // L'accès d'une AUTRE personne au même dossier : il ne doit rien donner à u3.
+      acces('u4', 'd2', true, true),
+    ]
+    faux.sessionInitiale = session('u3', 'client@exemple.fr')
+  })
+
+  it('lit les droits de chaque accès dans la même requête que les accès, filtrée sur le compte', async () => {
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
+    expect(faux.lecturesAcces).toEqual([{ colonnes: 'dossier_id, droit_ventes, droit_banque', filtre: 'user_id=u3' }])
+    // Jamais un rendu avec les accès et sans leurs droits, ni avec les droits d'un autre compte.
+    expect(vus.filter((v) => v !== 'chargement')).toEqual(['client | d1,d2 | d1=V d2='])
+  })
+
+  it('une valeur qui n’est pas strictement vraie n’accorde rien', async () => {
+    faux.acces = [acces('u3', 'd1', 'true', 1), acces('u3', 'd2', null, undefined)]
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1= d2=')).toBeTruthy()
+  })
+
+  it('une lecture des accès en échec ne donne aucun droit', async () => {
+    faux.erreurAcces = { message: 'JWT expired' }
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | |')).toBeTruthy()
+  })
+
+  it('ne se relisent qu’au changement d’identifiant : un retour sur l’onglet ou un jeton renouvelé n’y touchent pas', async () => {
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
+    // Le cabinet coche « Banque » sur d2 pendant que le client a l'application ouverte : la base change, l'écran du client
+    // le verra à sa prochaine connexion — d'ici là, la base refuse ce qu'il tenterait sans le droit.
+    faux.acces = [acces('u3', 'd1', true, false), acces('u3', 'd2', false, true)]
+    await evenement('SIGNED_IN', session('u3', 'client@exemple.fr'))
+    await evenement('TOKEN_REFRESHED', session('u3', 'client@exemple.fr'))
+    expect(screen.getByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
+    expect(faux.lecturesAcces).toHaveLength(1)
+
+    await evenement('SIGNED_OUT', null)
+    expect(await screen.findByText('Droits : personne | |')).toBeTruthy()
+    await evenement('SIGNED_IN', session('u3', 'client@exemple.fr'))
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=B')).toBeTruthy()
+    expect(faux.lecturesAcces).toHaveLength(2)
+  })
+
+  it('un AUTRE compte repart de ses propres droits, jamais de ceux du précédent', async () => {
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
+    await evenement('SIGNED_IN', session('u4', 'autre@exemple.fr'))
+    expect(await screen.findByText('Droits : client | d2 | d2=VB')).toBeTruthy()
+    expect(vus.filter((v) => v.startsWith('client | d2 '))).toEqual(['client | d2 | d2=VB'])
+  })
+
+  it('un compte du cabinet n’a aucun droit d’accès, et ses accès ne se lisent pas', async () => {
+    faux.sessionInitiale = session('u2', 'chef@cabinet.fr')
+    faux.acces.push(acces('u2', 'd1', true, true))
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : cabinet | |')).toBeTruthy()
+    expect(faux.lecturesAcces).toEqual([])
+  })
+
+  it('un compte du cabinet qui succède à un client, sans déconnexion entre les deux, ne garde aucun de ses droits', async () => {
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
+    // Une connexion faite dans un autre onglet arrive en SIGNED_IN d'un autre identifiant : pas de SIGNED_OUT qui viderait
+    // les droits avant. C'est la branche du cabinet qui doit les vider elle-même.
+    await evenement('SIGNED_IN', session('u2', 'chef@cabinet.fr'))
+    expect(await screen.findByText('Droits : cabinet | |')).toBeTruthy()
+    // Aucun rendu du cabinet, pas même un seul, avec les droits du client d'avant.
+    const vusDuCabinet = vus.filter((v) => v.startsWith('cabinet')).map((v) => v.replace(/\s+/g, ' ').trim())
+    expect(vusDuCabinet.length).toBeGreaterThan(0)
+    expect(vusDuCabinet.filter((v) => v !== 'cabinet | |')).toEqual([])
   })
 })

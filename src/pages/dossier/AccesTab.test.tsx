@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
+import { CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES } from '../../lib/droitsAcces'
 
 // L'ÉCRAN QUI DIT QUI PEUT ENTRER DANS UN DOSSIER, et il se trompait dans les deux sens.
 //
@@ -21,9 +22,20 @@ import AccesTab from './AccesTab'
 // mais pas le doublon d'APPEL : deux soumissions rapprochées lancent deux `create-client-access`
 // pour la même adresse, et le second échoue sur le compte que le premier vient de créer — un
 // message d'erreur affiché sur un accès pourtant bien créé.
+//
+// Le quatrième, depuis l'espace client (étape P1) : les DEUX CASES de chaque accès, « Ventes » et « Banque », écrites par
+// `changer_droits_acces` sous un verrou relâché après la relecture, jamais offertes sur une liste pas encore revenue ou lue
+// en partie.
+type LigneAcces = {
+  id: string; user_id: string; email: string | null; dossier_id: string; created_at: string
+  droit_ventes: unknown; droit_banque: unknown
+}
+
 const faux = vi.hoisted(() => ({
-  lignes: [] as { id: string; user_id: string; email: string | null }[],
+  lignes: [] as LigneAcces[],
   erreurLecture: null as { message: string } | null,
+  // Le total que la base annonce, quand il doit mentir : plus grand que ce qu'elle rend, la liste est lue en partie.
+  compteAnnonce: null as number | null,
   erreurSuppression: null as { message: string } | null,
   suppressions: 0,
   // create-client-access : la promesse du premier appel reste EN ATTENTE, c'est la fenêtre réelle
@@ -35,38 +47,74 @@ const faux = vi.hoisted(() => ({
   // lecture, au lieu de parier sur la vitesse du faux client.
   porte: null as Promise<void> | null,
   lectures: 0,
+  // `changer_droits_acces` : ses appels, sa réponse retenue au besoin, ou une réponse imposée (un refus).
+  appelsRpc: [] as { nom: string; args: Record<string, unknown> }[],
+  porteRpc: null as Promise<void> | null,
+  reponseRpc: null as null | { data: unknown; error: unknown },
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: () => {
-      const chaine: Record<string, unknown> = {}
-      let suppression = false
-      Object.assign(chaine, {
-        select: () => chaine,
-        delete: () => { suppression = true; faux.suppressions += 1; return chaine },
-        eq: () => (suppression ? Promise.resolve({ error: faux.erreurSuppression }) : chaine),
-        then: (suite: (r: { data: unknown[] | null; error: unknown }) => unknown) => {
-          faux.lectures += 1
-          // La réponse se compose quand elle PART : une lecture retenue rend l'état de la base à sa libération.
-          const repondre = () => (
-            faux.erreurLecture
-              ? { data: null, error: faux.erreurLecture }
-              : { data: faux.lignes, error: null }
-          )
-          return (faux.porte ? faux.porte.then(repondre) : Promise.resolve(repondre())).then(suite)
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
+  // Ce que fait la fonction en base (migration droits_des_acces_clients) : un accès inconnu se refuse comme un accès
+  // interdit, un droit nul reste tel quel, et l'accès rendu est celui que l'écriture a laissé.
+  function changerDroitsAcces(args: Record<string, unknown>) {
+    const acces = faux.lignes.find((l) => l.id === args.p_membership_id)
+    if (!acces) return { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
+    if (args.p_ventes === null && args.p_banque === null) {
+      return { data: null, error: { message: 'Aucun droit à changer : précise « Ventes », « Banque », ou les deux.', code: '22023' } }
+    }
+    if (args.p_ventes !== null) acces.droit_ventes = args.p_ventes
+    if (args.p_banque !== null) acces.droit_banque = args.p_banque
+    return { data: { ...acces }, error: null }
+  }
+  return {
+    supabase: {
+      from: () => {
+        const predicats: ReturnType<typeof predicatEq>[] = []
+        const tri: string[] = []
+        let suppression = false
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        const chaine: Record<string, unknown> = {}
+        Object.assign(chaine, {
+          select: () => chaine,
+          delete: () => { suppression = true; faux.suppressions += 1; return chaine },
+          eq: (colonne: string, valeur: unknown) => {
+            if (suppression) return Promise.resolve({ error: faux.erreurSuppression })
+            predicats.push(predicatEq(colonne, valeur))
+            return chaine
+          },
+          order: (colonne: string) => { tri.push(colonne); return chaine },
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          then: (suite: (r: { data: unknown[] | null; error: unknown; count: number | null }) => unknown) => {
+            faux.lectures += 1
+            // La réponse se compose quand elle PART : une lecture retenue rend l'état de la base à sa libération.
+            const repondre = () => {
+              if (faux.erreurLecture) return { data: null, error: faux.erreurLecture, count: null }
+              const lignes = [...filtrer(faux.lignes, predicats)].sort((a, b) =>
+                tri.map((c) => String(a[c as keyof LigneAcces])).join('\u0000')
+                  .localeCompare(tri.map((c) => String(b[c as keyof LigneAcces])).join('\u0000')))
+              return { data: lignes.slice(debut, fin + 1).map((l) => ({ ...l })), error: null, count: faux.compteAnnonce ?? lignes.length }
+            }
+            return (faux.porte ? faux.porte.then(repondre) : Promise.resolve(repondre())).then(suite)
+          },
+        })
+        return chaine
+      },
+      functions: {
+        invoke: (nom: string, options: unknown) => {
+          faux.appels.push({ nom, options })
+          return new Promise((resolve) => { faux.resoudre = resolve })
         },
-      })
-      return chaine
-    },
-    functions: {
-      invoke: (nom: string, options: unknown) => {
-        faux.appels.push({ nom, options })
-        return new Promise((resolve) => { faux.resoudre = resolve })
+      },
+      rpc: (nom: string, args: Record<string, unknown>) => {
+        faux.appelsRpc.push({ nom, args })
+        const repondre = () => faux.reponseRpc ?? changerDroitsAcces(args)
+        return faux.porteRpc ? faux.porteRpc.then(repondre) : Promise.resolve(repondre())
       },
     },
-  },
-}))
+  }
+})
 
 // La modale de relance fait ses propres appels et n'a rien à voir avec ce qu'on garde ici.
 vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
@@ -75,12 +123,26 @@ function monter() {
   return render(<AccesTab dossierId="d1" dossierNom="Cabinet Martin" codeEmail="abc123" />)
 }
 
+const acces = (o: Partial<LigneAcces> & { id: string }): LigneAcces => ({
+  user_id: `u-${o.id}`, email: null, dossier_id: 'd1', created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false, ...o,
+})
+
 // Retient les lectures suivantes jusqu'à ce que le test appelle la fonction rendue.
 function retenir(): () => Promise<void> {
   let ouvrir = () => {}
   faux.porte = new Promise<void>((resolve) => { ouvrir = resolve })
   return async () => {
     faux.porte = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+// Retient la réponse de `changer_droits_acces` : la fenêtre pendant laquelle un second clic arrive.
+function retenirLEcriture(): () => Promise<void> {
+  let ouvrir = () => {}
+  faux.porteRpc = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux.porteRpc = null
     await act(async () => { ouvrir() })
   }
 }
@@ -98,15 +160,22 @@ async function cliquerRetirer() {
   await act(async () => { within(ligne).getByRole('button', { name: /^Retirer$/ }).click() })
 }
 
+const caseDe = (droit: 'Ventes' | 'Banque', personne = 'client@exemple.fr') =>
+  screen.getByRole<HTMLInputElement>('checkbox', { name: `Droit « ${droit} » de ${personne}` })
+
 beforeEach(() => {
   faux.porte = null
   faux.lectures = 0
-  faux.lignes = [{ id: 'm1', user_id: 'u1', email: 'client@exemple.fr' }]
+  faux.lignes = [acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr' })]
   faux.erreurLecture = null
+  faux.compteAnnonce = null
   faux.erreurSuppression = null
   faux.suppressions = 0
   faux.appels = []
   faux.resoudre = null
+  faux.appelsRpc = []
+  faux.porteRpc = null
+  faux.reponseRpc = null
   window.confirm = () => true
 })
 
@@ -118,6 +187,7 @@ describe('« Aucun accès » est une affirmation, pas un écran vide', () => {
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/ne pas en conclure que personne ne l'a/)).toBeTruthy()
     expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
   })
 
   it('dit « aucun accès » quand il n’y en a vraiment aucun', async () => {
@@ -128,6 +198,16 @@ describe('« Aucun accès » est une affirmation, pas un écran vide', () => {
     monter()
 
     expect(await screen.findByText(/Aucun accès client pour ce dossier/)).toBeTruthy()
+  })
+
+  it('ne lit que les accès de SON dossier', async () => {
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr' }),
+      acces({ id: 'm9', user_id: 'u9', email: 'ailleurs@exemple.fr', dossier_id: 'd9' }),
+    ]
+    monter()
+    expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByText('ailleurs@exemple.fr')).toHaveLength(0)
   })
 })
 
@@ -171,6 +251,34 @@ describe('« Aucun accès » ne se dit qu’une fois la liste revenue', () => {
     expect(screen.queryAllByText('Chargement…')).toHaveLength(0)
   })
 
+  it('une lecture plus lente qu’une suivante ne réécrit pas la liste après elle', async () => {
+    // Un retrait puis une création rapprochés : deux relectures en vol. La plus ancienne revient la dernière, avec la base
+    // d'avant la création ; laissée écrire, elle ferait disparaître l'accès qui vient d'être créé.
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const libererLaPremiere = retenir()
+    window.confirm = () => true
+    await cliquerRetirer()
+    const libererLaSeconde = retenir()
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
+    expect(faux.lectures).toBe(3)
+
+    faux.lignes = [...faux.lignes, acces({ id: 'm3', user_id: 'u3', email: 'nouveau@exemple.fr', created_at: '2026-10-03T08:00:00Z' })]
+    await libererLaSeconde()
+    expect(await screen.findByText('nouveau@exemple.fr')).toBeTruthy()
+
+    // La première relecture revient enfin, avec l'état d'avant la création.
+    faux.lignes = faux.lignes.filter((l) => l.id !== 'm3')
+    await libererLaPremiere()
+    await laisserPasserUnTour()
+    expect(screen.getByText('nouveau@exemple.fr')).toBeTruthy()
+  })
+
   it('la relecture qui suit un retrait laisse sous les yeux la liste déjà lue', async () => {
     // La règle de `ClientUpload` : le chargement ne vaut que pour la PREMIÈRE lecture.
     monter()
@@ -200,6 +308,18 @@ describe('retirer un accès client : on demande avant, on dit après', () => {
     monter()
     await cliquerRetirer()
     expect(question).toContain('client@exemple.fr')
+    // Un accès sans droit n'a rien d'autre à perdre.
+    expect(question).not.toContain('droits')
+  })
+
+  it('NOMME les droits que l’accès emporte avec lui', async () => {
+    faux.lignes = [acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr', droit_banque: true })]
+    let question = ''
+    window.confirm = (m?: string) => { question = m ?? ''; return false }
+    monter()
+    await cliquerRetirer()
+    expect(question).toContain('Ses droits « Banque » partent avec lui : un nouvel accès n\'en a pas, il faudra les recocher.')
+    expect(question).not.toContain('« Ventes »')
   })
 
   it('DIT pourquoi quand le retrait échoue', async () => {
@@ -268,6 +388,208 @@ describe('AccesTab — le verrou de création d’un accès client', () => {
 
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
     expect(faux.appels).toHaveLength(2)
+  })
+})
+
+// LES DEUX CASES D'UN ACCÈS (espace client, étape P1).
+describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès', () => {
+  beforeEach(() => {
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr', droit_ventes: true }),
+      acces({ id: 'm2', user_id: 'u2', email: 'secretariat@exemple.fr', created_at: '2026-10-02T08:00:00Z' }),
+    ]
+  })
+
+  it('chaque accès porte ses deux cases, cochées comme la base les tient', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(caseDe('Ventes').checked).toBe(true)
+    expect(caseDe('Banque').checked).toBe(false)
+    expect(caseDe('Ventes', 'secretariat@exemple.fr').checked).toBe(false)
+    expect(caseDe('Banque', 'secretariat@exemple.fr').checked).toBe(false)
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4)
+  })
+
+  it('une valeur qui n’est pas strictement vraie ne coche rien', async () => {
+    faux.lignes = [acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr', droit_ventes: 'true', droit_banque: null })]
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(caseDe('Ventes').checked).toBe(false)
+    expect(caseDe('Banque').checked).toBe(false)
+  })
+
+  it('cocher une case écrit CE droit seul par changer_droits_acces, puis relit : la case montre ce que la base a gardé', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(faux.lectures).toBe(1)
+
+    await act(async () => { caseDe('Banque', 'secretariat@exemple.fr').click() })
+
+    expect(faux.appelsRpc).toEqual([
+      { nom: 'changer_droits_acces', args: { p_membership_id: 'm2', p_ventes: null, p_banque: true } },
+    ])
+    expect(faux.lectures).toBe(2)
+    expect(caseDe('Banque', 'secretariat@exemple.fr').checked).toBe(true)
+    expect(caseDe('Ventes', 'secretariat@exemple.fr').checked).toBe(false)
+    // L'autre accès n'a pas bougé.
+    expect(caseDe('Ventes').checked).toBe(true)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+  })
+
+  it('décocher retire le droit, et seulement lui', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { caseDe('Ventes').click() })
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null }])
+    expect(caseDe('Ventes').checked).toBe(false)
+  })
+
+  it('deux clics du même rendu n’écrivent qu’une fois', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLEcriture()
+    // DANS LE MÊME `act`, comme pour tout verrou. Ici le second clic trouve pourtant déjà la case grisée : React vide les
+    // mises à jour d'une entrée contrôlée à la fin de l'événement. Ce test garde donc l'EFFET — une écriture —, que tiennent
+    // les cases grisées et le verrou ; le verrou seul s'y voit dès que les cases restent libres (mutations d'ordre deux,
+    // HISTORIQUE.md, étape P1).
+    await act(async () => { caseDe('Banque').click(); caseDe('Banque').click() })
+    expect(faux.appelsRpc).toHaveLength(1)
+    await liberer()
+  })
+
+  it('trois clics non plus : le verrou est posé avant le `try`', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLEcriture()
+    await act(async () => {
+      caseDe('Banque').click()
+      caseDe('Ventes', 'secretariat@exemple.fr').click()
+      caseDe('Banque', 'secretariat@exemple.fr').click()
+    })
+    expect(faux.appelsRpc).toHaveLength(1)
+    await liberer()
+  })
+
+  it('pendant l’écriture, la case montre la valeur demandée et toutes les cases attendent', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLEcriture()
+    await act(async () => { caseDe('Banque').click() })
+    expect(caseDe('Banque').checked).toBe(true)
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox').every((c) => c.disabled)).toBe(true)
+    await liberer()
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox').every((c) => !c.disabled)).toBe(true)
+  })
+
+  it('le verrou ne se relâche qu’APRÈS la relecture : pendant elle, les cases attendent et l’écran le dit', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const libererLaLecture = retenir()
+    await act(async () => { caseDe('Banque').click() })
+    await laisserPasserUnTour()
+    // L'écriture est revenue, la relecture non.
+    expect(faux.appelsRpc).toHaveLength(1)
+    expect(faux.lectures).toBe(2)
+    expect(screen.getByRole('status').textContent).toBe('Relecture de la liste des accès : les cases attendent son retour.')
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox').every((c) => c.disabled)).toBe(true)
+    // La case garde la valeur demandée jusqu'au retour de la relecture : relâchée avant, elle reviendrait un instant à la
+    // liste d'avant l'écriture, décochée, puis se recocherait.
+    expect(caseDe('Banque').checked).toBe(true)
+    // Un clic pendant la relecture ne part pas.
+    await act(async () => { caseDe('Ventes', 'secretariat@exemple.fr').click() })
+    expect(faux.appelsRpc).toHaveLength(1)
+
+    await libererLaLecture()
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(caseDe('Banque').checked).toBe(true)
+    await act(async () => { caseDe('Ventes', 'secretariat@exemple.fr').click() })
+    expect(faux.appelsRpc).toHaveLength(2)
+  })
+
+  it('la relecture qui suit une création attend aussi : les cases sont grisées tant qu’elle n’est pas revenue', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: '1234567890' } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    const liberer = retenir()
+    await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
+    await laisserPasserUnTour()
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox').every((c) => c.disabled)).toBe(true)
+    await act(async () => { caseDe('Banque').click() })
+    expect(faux.appelsRpc).toHaveLength(0)
+    await liberer()
+    expect(screen.getAllByRole<HTMLInputElement>('checkbox').every((c) => !c.disabled)).toBe(true)
+  })
+
+  it('un refus de la base se dit, avec le droit et la personne, et la relecture remet la case comme la base l’a gardée', async () => {
+    faux.reponseRpc = { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { caseDe('Banque').click() })
+    expect(screen.getByRole('alert').textContent)
+      .toBe('Le droit « Banque » de client@exemple.fr n’a pas été enregistré : Accès refusé à ce dossier.')
+    expect(caseDe('Banque').checked).toBe(false)
+    expect(faux.lectures).toBe(2)
+    // Le verrou s'est relâché : on peut réessayer.
+    faux.reponseRpc = null
+    await act(async () => { caseDe('Banque').click() })
+    expect(faux.appelsRpc).toHaveLength(2)
+    expect(caseDe('Banque').checked).toBe(true)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+  })
+
+  it('un accès retiré entre-temps : le refus se dit, et la relecture le fait disparaître', async () => {
+    monter()
+    await screen.findByText('secretariat@exemple.fr')
+    faux.lignes = faux.lignes.filter((l) => l.id !== 'm2')
+    await act(async () => { caseDe('Banque', 'secretariat@exemple.fr').click() })
+    expect(screen.getByRole('alert').textContent).toContain('Accès refusé à ce dossier.')
+    expect(screen.queryAllByText('secretariat@exemple.fr')).toHaveLength(0)
+  })
+
+  it('une réponse qui ne porte pas le droit demandé ne passe pas pour un succès', async () => {
+    faux.reponseRpc = { data: { id: 'm1', droit_ventes: true, droit_banque: false }, error: null }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { caseDe('Banque').click() })
+    expect(screen.getByRole('alert').textContent)
+      .toBe('Le droit « Banque » de client@exemple.fr n’a pas été enregistré : la base n’a pas rendu le droit demandé ; la liste relue fait foi.')
+  })
+
+  it('aucune case tant que la liste n’est pas revenue', async () => {
+    const liberer = retenir()
+    monter()
+    await laisserPasserUnTour()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    await liberer()
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(4)
+  })
+
+  it('aucune case sur une liste lue en partie : les droits lus se disent, le bandeau dit pourquoi', async () => {
+    faux.compteAnnonce = 3
+    monter()
+    expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    const ligne = screen.getByText('client@exemple.fr').closest('tr')!
+    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non'])
+    expect(screen.getByText(/La liste des accès n'a pas pu être lue en entier \(2 ligne\(s\) lue\(s\) sur 3 annoncée\(s\)\)/)).toBeTruthy()
+    expect(screen.getByText(/Les droits ne se changent pas depuis une liste incomplète/)).toBeTruthy()
+    // La liste n'est pas vide pour autant : elle ne se dit pas « aucun accès ».
+    expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
+  })
+})
+
+describe('AccesTab — ce que la phrase promet', () => {
+  it('dit ce qu’un accès donne aujourd’hui, et ce qu’une case n’y change pas encore', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(screen.getByText(CE_QUE_DONNE_UN_ACCES)).toBeTruthy()
+    expect(screen.getByText(CE_QUE_DISENT_LES_CASES)).toBeTruthy()
+    // L'ancienne phrase promettait ce que le code ne tenait pas : la simulation du client montre des montants.
+    expect(screen.queryAllByText(/aucun accès aux montants/)).toHaveLength(0)
   })
 })
 

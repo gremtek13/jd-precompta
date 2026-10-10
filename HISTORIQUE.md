@@ -17091,3 +17091,132 @@ trois refus, le refus d'objet en 500, un champ lu avant le contrôle — toutes 
 pas de champ `dossierId`, la lecture rend `undefined` et « requis » refuse en 400 avec CORS — ils restent pour dire
 l'intention) ; un refus réécrit en anglais (le juge `refusEnFrancais` vérifie que le message est un texte ÉCRIT DANS LA
 SOURCE, pas sa langue — limite du harnais pour toutes les fonctions, à ne pas réenquêter ici).
+
+### 09/10/2026 — LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE — ESPACE CLIENT, ÉTAPE P1
+
+(Migration `droits_des_acces_clients`, version 20261009224031, texte de 9 081 caractères, empreinte
+`301dc1bc6629996749d8da55f3614a52` — `supabase/schema/20261009224031_droits_des_acces_clients.sql` ; l'essai
+`supabase/essais/droitsAcces.sql` ; `rls.sql` (un profil de plus, ses deux invariants et leurs mutations, en-tête) ;
+`src/lib/droitsAcces.ts` et son test ; `AccesTab.tsx`, `AuthContext.tsx`, `types.ts` et leurs tests ;
+`sauvegardeDonnees.test.ts` ; deux gardes ajustés (`lecturesPaginees.test.ts`, `ecransAvantLecture.test.tsx`) ; le faux
+Supabase du banc ; trois passages de RGPD.md — le registre, ce qui est prouvé, et le passage de `rls.sql`, qui datait du
+19/09/2026 — et `supabase/schema/README.md`.) La deuxième étape de l'espace client (« L'ESPACE CLIENT DEVIENT LE
+LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §3.1, §3.2, §7) : deux cases par accès, « Ventes » et « Banque »,
+posées par le cabinet et tenues en BASE — EC-Q1 sans réponse, sa recommandation prise comme hypothèse. Sources :
+règlement (UE) 2016/679, art. 25 § 2 (protection des données par défaut : d'où « faux par défaut ») et art. 32 § 1 b) ;
+documentation de PostgreSQL, « Writing SECURITY DEFINER Functions Safely ».
+
+**QUI LISAIT ET QUI ÉCRIVAIT `memberships`, MESURÉ LE 09/10/2026** (catalogue, policies, comptes ; aucun texte lu). Six
+colonnes (id, user_id, dossier_id, role, created_at, email) ; trois policies anciennes `to public` au prédicat fermant :
+`memberships_select` (`admin_du_dossier(dossier_id) or user_id = auth.uid()`), `memberships_write` (insertion,
+`admin_du_dossier`), `memberships_delete` (`admin_du_dossier`) ; AUCUNE de mise à jour. Deux lignes, un seul compte,
+deux bacs à sable ; aucun accès sur `test`. Lue par `AuthContext` (ses dossiers, filtrés sur le compte), l'onglet Accès
+(les accès d'un dossier ; retrait par identifiant), `SuperAdminPage` (des comptes), la sauvegarde (chemin direct) ; par
+`create-client-access` et `create-team-member` (à la clé de service, pour savoir si un compte appartient déjà au
+cabinet) et `extract-piece` (un compte rattaché ?) ; et par vingt-cinq policies de tables et du stockage, en
+sous-requête sous la RLS de l'appelant. Écrite par `create-client-access` seule (insertion, clé de service). **LE CLIENT
+NE LIT QUE SES LIGNES** — prouvé par impersonation : l'accès d'une autre personne à son propre dossier ne lui est pas
+rendu (contrôle 6) ; rien à resserrer. `create-client-access` n'a pas à changer : son insertion ne nomme pas les droits,
+la base les met à faux.
+
+**LA BASE.** Deux colonnes booléennes non nulles, fausses par défaut. Quatre fonctions de LECTURE, `stable`, `SECURITY
+DEFINER`, `search_path` fixé, noms qualifiés : `client_du_dossier(d, droit)` — « ventes », « banque », ou « membre »
+pour un accès quelconque ; tout autre mot (casse, espace, singulier, nul) rend faux, pour qu'une faute de frappe dans
+une future policy n'ouvre rien —, `gere_les_ventes` et `gere_la_banque` (`admin_du_dossier` ou le droit),
+`droits_sur_le_dossier` (`{cabinet, membre, ventes, banque}` en `jsonb` : un domaine de plus sera une clé de plus, sans
+changer la signature, ce qui demanderait un `drop`). Une d'ÉCRITURE, `changer_droits_acces(accès, ventes, banque)`, la
+seule : elle refuse en 42501 (« Accès refusé à ce dossier. ») qui n'est pas `admin_du_dossier` du dossier de l'accès —
+un accès inexistant sous les MÊMES mots, comme `justifier_solde` refuse un dossier inexistant, pour ne pas dire s'il
+existe ; 22023 si aucun droit n'est donné ; P0002 si l'accès a été retiré entre la lecture et l'écriture ; elle n'écrit
+que les deux colonnes et rend l'accès tel que l'écriture l'a laissé. **UN DROIT NUL EST UN DROIT INCHANGÉ** : l'écran
+n'envoie que la case cliquée, et deux personnes du cabinet qui cochent chacune une case du même accès, dans deux
+onglets, ne défont pas l'une l'autre — avec les deux valeurs exigées, la seconde écriture aurait renvoyé la valeur
+périmée de l'autre case. Exécution retirée à `anon` et à PUBLIC, rendue à `authenticated` : les policies qui les
+appelleront seront `to authenticated`, les Edge Functions les appelleront avec le jeton de l'appelant. Aucune policy
+créée ni changée : aucune table ne s'ouvre au client. Écartés : des rôles nommés (§7, option c) ; une policy de mise à
+jour bornée aux deux colonnes par des droits de colonne (un second chemin qu'une migration future pourrait élargir sans
+qu'on le voie) ; un type composite pour `droits_sur_le_dossier` (une famille d'objets que l'inventaire ne suit pas, et
+une signature figée) ; « introuvable » (P0002) pour un accès inexistant (dit s'il existe).
+
+**LES ÉCRANS.** L'onglet Accès lit ses accès par `lireTout` (tri total `created_at`, `id` ; l'exception de pagination
+qui l'en dispensait est retirée) et porte deux cases par accès, écrites par `changer_droits_acces` sous un verrou
+`useRef` posé avant le `try` et relâché après la relecture ; la case montre la valeur demandée pendant l'écriture,
+toutes les cases attendent. **LE VERROU EST UNE SECONDE BARRIÈRE** : une case est une entrée contrôlée, React rend donc
+toutes les cases grisées avant la fin de l'événement qui en coche une, et un second clic n'atteint jamais l'écriture —
+même deux clics dans le même `act`. Les mutations « aucun verrou » et « verrou posé dans le `try` » survivent pour cette
+raison, et seulement pour elle : jouées avec les cases laissées libres pendant l'écriture (ordre deux), la première fait
+virer les tests à deux et à trois clics, la seconde celui à trois clics seul — la signature connue. Le verrou reste,
+pour le jour où une case resterait libre. Un refus se dit avec la personne et le droit (« Le droit « Banque » de … n'a
+pas été enregistré : … »), et une réponse qui ne porte pas le droit demandé ne passe pas pour un succès. Aucune case sur
+une liste pas encore revenue, ni sur une liste lue en partie (les droits lus s'y disent « Oui » ou « Non », le bandeau
+dit pourquoi) ; pendant une relecture, les cases sont grisées et l'écran le dit ; une relecture plus lente qu'une
+suivante ne réécrit pas la liste (numéro de lecture). Le retrait d'un accès qui porte des droits les nomme dans sa
+confirmation. Repliée en fiches sous 860 pixels de carte, comme l'équipe du cabinet. **LA PHRASE « Le client pourra
+uniquement déposer des pièces… — aucun accès aux montants… » ÉTAIT FAUSSE** : « Ma simulation » montre au client son
+chiffre d'affaires et ses cotisations estimés. Elle dit désormais ce que le code fait — le client dépose ses pièces et
+ses documents, répond aux précisions, tient à jour ses informations, voit sa simulation ; les écritures, les catégories
+et les packs ne lui sont pas montrés — et, des cases : « une case cochée enregistre dès aujourd'hui un droit que
+l'espace du client honorera quand ses écrans « Ventes » et « Banque » arriveront. D'ici là, cocher une case ne change
+pas ce que le client voit ou fait. » Ce que chaque droit ouvrira s'y dit avec les mots du commentaire de sa colonne en
+base, confrontés par un test. `droitsAcces.test.ts` tient la phrase : la liste des routes du client et l'absence de
+toute lecture d'un droit dans ses écrans — le jour où « Mes ventes » arrive, il tombe, et la phrase avec lui.
+`AuthContext` lit les deux droits dans la MÊME requête que les accès (une seconde pourrait revenir d'un autre état de la
+base), au changement d'identifiant seulement, et les expose par dossier (`droitsParDossier`, `droitsSur` : un dossier
+absent n'a aucun droit, seul `true` accorde) ; vides pour le cabinet, y compris quand un compte du cabinet succède à un
+client sans déconnexion entre les deux ; rien ne change à l'écran du client.
+
+**LA SAUVEGARDE.** `memberships` est au plan (chemin direct) ; rien n'y change. Une sauvegarde d'hier porte des accès
+sans les deux colonnes : la restauration les écrit tels quels, la base leur donne « faux », la relecture n'y voit aucun
+écart ; une sauvegarde d'aujourd'hui garde ses droits (l'insertion est réservée au cabinet du dossier).
+`restauration.sql` recopie les tables `including defaults` : rien à changer.
+
+**LES PREUVES.** En production, l'essai `droitsAcces.sql` par impersonation de sept profils (anonyme, compte rattaché à
+rien, client du dossier, client d'un autre dossier, chef super-administrateur puis chef qui ne l'est pas, membre
+affecté, membre d'un autre dossier) : 43 verdicts verts et 2 informations — la table de vérité des quatre fonctions de
+lecture en neuf chiffres par profil, l'anonyme refusé par le droit d'exécution sur les cinq, le client qui ne change pas
+ses droits (son `update` ne touche aucune ligne, sans erreur : la ligne est RELUE), le chef non plus par un `update`
+direct, `changer_droits_acces` refusée en 42501 aux quatre profils qui ne sont pas le cabinet du dossier (ligne relue
+inchangée) et acceptée pour le chef et le membre affecté, rien d'autre que les deux colonnes écrit, l'accès rendu égal à
+l'accès relu ; neuf mutations qui mordent ; rien de resté en base ; aucun `delete` ; texte reçu = le fichier sans ses
+lignes de commentaire (36 401 caractères, `861960c6ae0f236ce961ef7bb31735c9`). Rouge avant : sur une réplique partielle
+locale sans la migration, l'essai échoue au contrôle 0b ; dix-huit mutations de la migration jouées sur la même réplique
+font toutes virer au moins un verdict. `rls.sql` rejoué ENTIER avec le profil « client portant les deux droits » du
+§3.7 : 3ter (la boucle de 3 sous ce profil, plus un contrôle positif — ses 31 pièces, toutes vues), 4ter (aucune
+écriture directe d'une facture ni d'un mouvement, 42501), M3ter et M4c ; 24 lignes de verdict (59 tables, dont 51
+portant un `dossier_id`), 0 en faute, 16 mutations sur 16 (texte reçu : la copie adaptée, 39 000 caractères,
+`b2ffbdc886c10091a6b3c81f6c8db862`). **L'INVARIANT 3 BIS ATTEND P2** : les tables des ventes sont fermées à tout client
+— il n'y serait vrai qu'à vide —, celles de la banque ouvertes à tout accès jusqu'à P7 — il y serait faux — ; ses deux
+mutations (le droit retiré, `client_du_dossier` remplacé par « membre ») ne mordent que sur une lecture qu'un droit
+ouvre. L'export : 108 migrations, dérive `a1a29e2f0b4c5bdef3edbdec4044b0cb` ; socle inchangé (78,
+`f01053c781688bbfbee8c70ac43924a6`) ; inventaire 1 391 objets (`b5d9acea7c5f15f895e417764e9f3466`, +7). Advisors :
+`authenticated_security_definer_function_executable` passe de 14 à 19 (les cinq fonctions) ; `anon` reste à 5. Dans le
+code : `droitsAcces.test.ts` (15 tests), `AccesTab.test.tsx` (36, dont 18 nouveaux), `AuthContext.test.tsx` (27, dont
+7), `sauvegardeDonnees.test.ts` (37, dont 2) — quarante-deux tests de plus. ROUGE AVANT, contre les sources de 9115dd5 :
+cinq des six fichiers échouent — le module absent (son test, et celui de l'onglet qui l'importe), les sept tests
+nouveaux d'`AuthContext`, le garde de pagination (l'onglet lisait ses accès sans `lireTout`) et celui des écrans avant
+lecture (l'ancienne phrase affirmait « aucun ») — ; l'écran de la base sous ses tests, le module présent : 17 des 18
+tests nouveaux échouent, le dix-huitième (la lecture filtrée sur le dossier) garde un comportement déjà là, et sa
+mutation mord ; les deux tests de la restauration gardent un code inchangé, et leurs deux mutations mordent. Quarante
+mutations du code (le module 13, l'écran 18, le contexte 5, la restauration 2, et deux d'ordre deux) : 38 mordent ;
+« aucun verrou » et « verrou dans le `try` » sont équivalentes au premier ordre (voir LES ÉCRANS) ; « le cabinet garde
+les droits du client d'avant » survivait au premier passage — un test l'attrape désormais, celui d'un compte du cabinet
+qui succède à un client sans déconnexion entre les deux. La barrière : `tsc -b` sans erreur ; `tsc -p
+tsconfig.edge.json` 25 erreurs, les connues, toutes dans des Edge Functions que P1 ne touche pas ; `npm run lint` 63
+avertissements, les mêmes ; `npm run build` passe ; vingt-trois fichiers de test (les miens et les gardes qui lisent les
+sources touchées) sous les quatre fuseaux, 459 tests à chaque fois ; la suite entière sous Paris, 260 fichiers, 7 426
+tests. Le banc des débordements, sur mon port : 0 débordement aux neuf passes — 1 440, 1 280, 1 024, 720 et 390 pixels,
+1 280 au panneau de 760, 1 280 et 1 440 à la barre de 420 et au panneau de 760, 1 280 à la barre de 420 sans panneau —,
+l'onglet Accès compris, aucune police refusée ; les captures de l'onglet (1 440 en clair et en sombre, 390) montrent ses
+quatre cases, une cochée, et la fiche de la facture reçue par la plateforme montre sa note interne, sans erreur ni
+requête externe. **UN BANC SE JOUE SUR UN ARBRE QUI NE BOUGE PLUS** : un premier passage avait compté une faute à 1 280
+pixels (barre 420, panneau 760), « la fenêtre ne s'est pas ouverte » — une visite tombée dans le rechargement que Vite
+avait fait de la page parce qu'une source avait changé pendant le banc.
+
+**CE QUI RESTE.** P2 et la suite, chacune présentée au cabinet avant d'ouvrir une lecture. EC-Q1 : si la simulation suit
+la case « Banque » (P7), la phrase de l'onglet changera avec elle — `droitsAcces.test.ts` le rappellera. L'auteur et la
+date d'un changement de droits ne sont pas gardés (la conception, §8, les voulait au registre) : une colonne de plus, et
+une question au cabinet. Un écran du client ouvert pendant que le cabinet coche une case ne la voit qu'à sa prochaine
+connexion ; d'ici là la base refuse ce qu'il tenterait sans le droit. Le retour arrière demande d'abord l'application
+d'avant (l'`AuthContext` d'aujourd'hui nomme les deux colonnes : sans elles, un client ne verrait plus aucun dossier),
+puis une migration destructive (les cinq fonctions et les deux colonnes retirées, les droits cochés perdus), à coller
+par le cabinet.

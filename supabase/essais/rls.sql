@@ -14,7 +14,11 @@
 --   2. Un utilisateur authentifié rattaché à rien — ni cabinet, ni dossier, ni super-admin — ne voit
 --      rien non plus, hors exceptions nommées ci-dessous.
 --   3. Un client ne voit, dans chaque table portant un `dossier_id`, que des lignes de SES dossiers.
+--   3ter. Le même, quand ses accès portent les deux droits (« Ventes » et « Banque », espace client P1) — et il voit
+--      bien ses pièces : un profil devenu aveugle passerait la boucle à vide.
 --   4. Un client ne peut pas écrire ce qui appartient au cabinet.
+--   4ter. Ses accès portant les deux droits, il n'écrit directement ni une facture ni un mouvement du relevé (42501) :
+--      les étapes suivantes ouvriront des LECTURES à ces droits, jamais une écriture directe.
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -138,6 +142,19 @@
 -- plus ramenées à dix traits — rien de ce qui s'exécute ne change, l'empreinte si. La table nouvelle
 -- porte les notes recopiées : ce que sa policy refuse et accepte sur une ligne qui EXISTE, profil par
 -- profil, est éprouvé par `notesInternes.sql`.
+--
+-- 09/10/2026 — PASSAGE COMPLET après `droits_des_acces_clients` (espace client, étape P1), qui ajoute à `memberships` les
+-- deux droits d'un accès et cinq fonctions, sans toucher à aucune policy — et avec un PROFIL DE PLUS, le client portant
+-- les deux droits (conception de l'espace client, §3.7) : 3ter, la boucle de 3 sous ce profil, plus un contrôle positif
+-- (ses 31 pièces, toutes vues) ; 4ter, aucune écriture directe d'une facture ni d'un mouvement (42501) ; leurs mutations
+-- M3ter et M4c. 24 lignes de verdict (59 tables du schéma, dont 51 portant un `dossier_id`, + 3 buckets, 4 profils),
+-- 0 en faute, et 16 mutations sur 16 qui mordent (M2 : exactement 3). Le texte reçu est la copie adaptée, caractère pour
+-- caractère (39 000 caractères, empreinte b2ffbdc886c10091a6b3c81f6c8db862), adaptée comme celle de P0, bordures
+-- comprises. CE QUI ATTEND P2 : l'invariant 3 bis (sans le droit d'un domaine, aucune ligne de ses tables) et son
+-- contrôle positif — les tables des ventes sont fermées à TOUT client, 3 bis n'y serait vrai qu'à vide, et celles de la
+-- banque ouvertes à tout accès jusqu'à P7, où il serait faux ; et les deux mutations de la conception (le droit retiré
+-- au profil, `client_du_dossier` remplacé par « membre »), qui ne mordent que sur une lecture qu'un droit ouvre. Ce que
+-- les droits et leurs fonctions refusent et acceptent, profil par profil, est éprouvé par `droitsAcces.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -165,6 +182,9 @@ declare
 
   t record; n bigint; hors bigint; accepte boolean; touchees int;
   numero_avant int; numero_apres int;
+  -- Le profil « client portant les deux droits » (3ter, 4ter) : ses verdicts naissent dans une sous-transaction annulée,
+  -- que la table de résultats ne traverserait pas — ils voyagent dans une variable.
+  avec_droits jsonb := '[]'::jsonb; porteurs bigint; ses_pieces bigint; vues bigint;
   -- Le code d'erreur du refus, et non un simple « ça a échoué ». Sans lui, une colonne mal
   -- orthographiée dans l'écriture d'essai produirait `42703` (colonne inconnue) et le test
   -- conclurait « RLS a refusé » — il passerait pour la mauvaise raison, ce qui est pire qu'un échec.
@@ -216,6 +236,47 @@ begin
     insert into rls_verdict values ('3. client ne voit que ses dossiers', t.nom, hors::text, hors = 0);
   end loop;
 
+  -- ══ 3ter. Le client qui porte les deux droits ne voit toujours que ses dossiers ══════════════
+  -- Les deux cases de chacun de ses accès posées le temps d'une sous-transaction annulée (espace client, étape P1). Le
+  -- contrôle 3 se joue avec les droits tels qu'ils sont en base ; celui-ci les force. Aucune policy ne les lit encore :
+  -- ils n'ouvrent rien, et c'est ce qu'il établit, table par table — l'étape qui ouvrira une lecture à un droit (P2, P7)
+  -- le verra ici si elle ouvre plus que les dossiers du client.
+  begin
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+    select count(*) into porteurs from memberships where user_id = client and droit_ventes and droit_banque;
+    select count(*) into ses_pieces from pieces p where p.dossier_id in (select m.dossier_id from memberships m where m.user_id = client);
+    for t in
+      select c.relname as nom from pg_class c
+      join pg_namespace ns on ns.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid and a.attname = 'dossier_id' and a.attnum > 0 and not a.attisdropped
+      where ns.nspname = 'public' and c.relkind = 'r' order by c.relname
+    loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin
+        execute format(
+          'select count(*) from public.%I x where x.dossier_id is not null and x.dossier_id not in (select m.dossier_id from memberships m where m.user_id = %L)',
+          t.nom, client) into hors;
+      exception when others then hors := 0;
+      end;
+      reset role;
+      avec_droits := avec_droits || jsonb_build_object('cible', t.nom, 'observe', hors::text, 'ok', hors = 0);
+    end loop;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+    select count(*) into vues from pieces;
+    reset role;
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null;
+  end;
+  reset role;
+  insert into rls_verdict
+    select '3ter. client portant les deux droits ne voit que ses dossiers', v.cible, v.observe, v.ok
+    from jsonb_to_recordset(avec_droits) as v(cible text, observe text, ok boolean);
+  insert into rls_verdict values ('3ter. client portant les deux droits ne voit que ses dossiers',
+    'le profil (contrôle positif)', porteurs || ' accès portant les deux droits, ' || vues || ' pièces vues sur ' || ses_pieces,
+    porteurs > 0 and porteurs = (select count(*) from memberships where user_id = client) and ses_pieces > 0 and vues = ses_pieces);
+
   -- ══ 4. Le client ne peut pas écrire ce qui est au cabinet ══════════════════════════════════
   -- Modifier une pièce de SON dossier : le dépôt lui appartient, l'arbitrage non.
   set local role authenticated;
@@ -256,6 +317,33 @@ begin
   select count(*) into n from pieces where dossier_id = autre_dossier;
   reset role;
   insert into rls_verdict values ('4. client ne lit pas un autre dossier', 'pieces (autre dossier)', n::text, n = 0);
+
+  -- ══ 4ter. Ses accès portant les deux droits, le client n'écrit pas directement ═════════════
+  -- Une facture (le domaine « Ventes ») et un mouvement du relevé (« Banque »), sur SON dossier : refusés par la policy
+  -- (42501). Les deux lignes sont valides — sous le chef, elles passent (mutation M4c).
+  for t in select * from (values ('factures_emises'), ('lignes_bancaires')) as v(nom) loop
+    accepte := false; motif := null;
+    begin
+      update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+      begin
+        if t.nom = 'factures_emises' then
+          insert into factures_emises (dossier_id, tiers_nom) values (dossier_du_client, 'ESSAI RLS');
+        else
+          insert into lignes_bancaires (dossier_id, date, libelle, montant) values (dossier_du_client, current_date, 'essai rls', 1);
+        end if;
+        accepte := true;
+      exception when others then motif := sqlstate;
+      end;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null;
+    end;
+    reset role;
+    insert into rls_verdict values ('4ter. client portant les deux droits n''écrit pas directement', t.nom || ' (insert)',
+      case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end,
+      (not accepte) and motif = '42501');
+  end loop;
 
   -- ══ 5 et 5bis. La numérotation ne s'appelle pas ═══════════════════════════════════════════
   -- Les deux fonctions CONSOMMENT un numéro : on relève le compteur avant et après pour prouver qu'aucun
@@ -444,7 +532,7 @@ declare
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   t record; n bigint; hors bigint; accepte boolean; touchees int; motif text;
-  raison text;
+  raison text; obs text;
   en_faute int; numero_avant int; numero_apres int; restes int;
 begin
   -- M1 : le contrôle « anonyme ne voit rien » exécuté sous le chef.
@@ -490,6 +578,29 @@ begin
   end loop;
   insert into rls_mutation values ('M3 — contrôle 3 joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
 
+  -- M3ter : le contrôle 3ter joué sous le chef — les droits posés de même, puis la boucle sous un profil qui voit tout le
+  -- cabinet. Elle doit trouver des tables en faute : sinon, sous ce profil-là non plus, elle ne regarderait rien.
+  en_faute := 0;
+  begin
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+    for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+             join pg_attribute a on a.attrelid = c.oid and a.attname = 'dossier_id' and a.attnum > 0 and not a.attisdropped
+             where ns.nspname = 'public' and c.relkind = 'r'
+    loop
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+      begin
+        execute format('select count(*) from public.%I x where x.dossier_id is not null and x.dossier_id not in (select m.dossier_id from memberships m where m.user_id = %L)', t.nom, client) into hors;
+      exception when others then hors := 0; end;
+      reset role;
+      if hors <> 0 then en_faute := en_faute + 1; end if;
+    end loop;
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null;
+  end;
+  reset role;
+  insert into rls_mutation values ('M3ter — contrôle 3ter joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
+
   -- M4a : la validation de pièce tentée par le chef, à qui elle est permise.
   set local role authenticated;
   perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
@@ -515,6 +626,32 @@ begin
   reset role;
   insert into rls_mutation values ('M4b — insert écriture sous le chef', 'ACCEPTÉ',
     case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end, accepte);
+
+  -- M4c : les deux écritures du contrôle 4ter tentées par le chef. Elles doivent passer : sinon le refus de 4ter ne
+  -- dirait rien du client, seulement d'une ligne que personne ne pourrait écrire.
+  obs := '';
+  for t in select * from (values ('factures_emises'), ('lignes_bancaires')) as v(nom) loop
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+      begin
+        if t.nom = 'factures_emises' then
+          insert into factures_emises (dossier_id, tiers_nom) values (dossier_du_client, 'ESSAI MUTATION');
+        else
+          insert into lignes_bancaires (dossier_id, date, libelle, montant) values (dossier_du_client, current_date, 'essai mutation', 1);
+        end if;
+        accepte := true;
+      exception when others then motif := sqlstate;
+      end;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null;
+    end;
+    reset role;
+    obs := obs || t.nom || ' ' || case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end || ' ';
+  end loop;
+  insert into rls_mutation values ('M4c — les écritures de 4ter sous le chef', 'ACCEPTÉ deux fois', obs,
+    obs = 'factures_emises ACCEPTÉ lignes_bancaires ACCEPTÉ ');
 
   -- M5 : le droit d'exécution RENDU aux comptes connectés, le temps d'une sous-transaction annulée — la
   -- migration défaite. Le contrôle du chef doit alors virer au rouge : le chef consomme un numéro, sur
