@@ -346,11 +346,16 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
 - **Mot de passe oublié** (`lib/recuperationMotDePasse.ts`, `pages/NouveauMotDePasse.tsx`) : flux IMPLICITE de Supabase,
   gardé — le PKCE lierait le lien au navigateur qui l'a demandé, et sur iPhone l'application installée n'est pas
-  Safari ; `redirectTo` toujours passé, `https://compta.jdarnis.fr/`, sans « # » (le service ajoute le sien) ;
+  Safari ; `redirectTo` toujours passé, `https://compta.jdarnis.fr/`, sans « # » (le service ajoute le sien), et par
+  TOUTE demande de lien de la source (`ADRESSE_DE_RETOUR`, garde de source dans `recuperationMotDePasse.test.ts`) ;
   `main.tsx` lit l'adresse AVANT le premier rendu ; la session se reconnaît au jeton du lien, jugé une fois, ou à
   `PASSWORD_RECOVERY`, et le compte en attente survit au rechargement (`localStorage`, effacé par toute absence de
   session) ; le message de la demande est NEUTRE ; un fragment qui commence par « / » est une route, jamais un retour ;
-  un code d'erreur ne s'affiche que s'il en a la forme, une description jamais → « MOT DE PASSE OUBLIÉ ».
+  un code d'erreur ne s'affiche que s'il en a la forme, une description jamais. Le cabinet envoie le MÊME lien depuis
+  l'onglet Accès (10/10/2026) : même appel, sans session (rien de plus que l'écran de connexion), un clic confirmé qui
+  nomme l'adresse, sous verrou, jamais sur une liste d'accès partielle ou pas encore revenue ; la durée du lien ne
+  s'écrit nulle part (réglée au tableau de bord, jamais lue) → « MOT DE PASSE OUBLIÉ », « LE LIEN DE RÉINITIALISATION
+  DEPUIS L'ONGLET ACCÈS ».
 - **Variables d'environnement** : PLAN_DE_REPRISE.md (fin du §3) les nomme toutes, `variablesEnvironnement.test.ts` les
   compare au code ; leurs valeurs ne se vérifient qu'à la main.
 - Les données sont fictives aujourd'hui, et traitées dès maintenant comme identifiantes : aucun service tiers hors de
@@ -362,7 +367,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext`, pas encore honorés) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
-  nouveau mot de passe avant tout autre écran, 09/10/2026).
+  nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet
+  Accès (10/10/2026).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -435,9 +441,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
-- **Mot de passe oublié** : le premier essai réel du cabinet (iPhone) ; au tableau de bord, la longueur minimale à 10,
-  le modèle d'e-mail en français et l'inscription publique à fermer ; la réinitialisation depuis l'onglet Accès (un lien
-  envoyé au client, ou un mot de passe posé par le cabinet) attend sa décision.
+- **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
+  au tableau de bord, la longueur minimale à 10, le modèle d'e-mail en français et l'inscription publique à fermer.
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
@@ -961,7 +966,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7435 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7455 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

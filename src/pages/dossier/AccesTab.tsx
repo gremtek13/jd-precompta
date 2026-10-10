@@ -6,6 +6,9 @@ import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { lireTout } from '../../lib/lectureComplete'
 import {
+  ADRESSE_DE_RETOUR, avisDuLienEnvoye, messageErreurDuLienEnvoye, questionDuLienEnvoye,
+} from '../../lib/recuperationMotDePasse'
+import {
   CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, demandeDeChangement, droitsDeLaLigne,
   libelleDeLaCase, messageDuRefus, type Domaine,
 } from '../../lib/droitsAcces'
@@ -83,6 +86,15 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // La case cliquée, le temps de son écriture : elle montre la valeur demandée, et toutes les cases attendent.
   const [droitEnCours, setDroitEnCours] = useState<{ id: string; domaine: Domaine; valeur: boolean } | null>(null)
   const [erreurDroits, setErreurDroits] = useState<string | null>(null)
+
+  // Le verrou de l'envoi d'un lien de réinitialisation, en `useRef` et posé avant le `try` comme les deux autres : chaque
+  // envoi part en e-mail dans la boîte du client et compte dans le débit du service, qui refuserait le second en « trop de
+  // demandes » — le cabinet lirait un refus sur un lien pourtant parti. Un seul envoi à la fois, tous accès confondus.
+  const envoiLienEnCours = useRef(false)
+  // L'accès dont le lien part : son bouton le dit, et tous les boutons de lien attendent.
+  const [lienEnCours, setLienEnCours] = useState<string | null>(null)
+  // Ce que le dernier envoi a donné, avec l'adresse VISÉE au clic (pas celle d'une ligne relue depuis).
+  const [avisLien, setAvisLien] = useState<{ envoye: boolean; texte: string } | null>(null)
 
   async function load() {
     const numero = ++derniereLecture.current
@@ -166,6 +178,32 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     }
   }
 
+  // « Envoyer un lien de réinitialisation » (décision du cabinet du 10/10/2026) : le même lien que « Mot de passe oublié »,
+  // par le même appel (`lib/recuperationMotDePasse.ts`), vers l'adresse de l'accès. Le client y choisit lui-même son
+  // nouveau mot de passe ; le cabinet n'en pose aucun. Rien n'est écrit en base : aucune relecture ne suit.
+  async function envoyerLien(acces: AccesLu) {
+    const adresse = acces.email
+    if (!adresse) return
+    if (envoiLienEnCours.current) return
+    // `window.confirm` bloque : rien ne part avant la réponse, et un refus ne pose aucun verrou.
+    if (!window.confirm(questionDuLienEnvoye(adresse))) return
+    envoiLienEnCours.current = true
+    setLienEnCours(acces.id)
+    setAvisLien(null)
+    try {
+      const { error: erreurLien } = await supabase.auth.resetPasswordForEmail(adresse, { redirectTo: ADRESSE_DE_RETOUR })
+      setAvisLien(erreurLien
+        ? { envoye: false, texte: messageErreurDuLienEnvoye(adresse, erreurLien) }
+        : { envoye: true, texte: avisDuLienEnvoye(adresse) })
+    } catch (x) {
+      // auth-js relance ce qui n'est pas une erreur d'authentification : il se dit aussi, jamais en erreur non gérée.
+      setAvisLien({ envoye: false, texte: messageErreurDuLienEnvoye(adresse, x) })
+    } finally {
+      envoiLienEnCours.current = false
+      setLienEnCours(null)
+    }
+  }
+
   async function revoke(row: AccesLu) {
     // Couper l'accès d'un client est réversible, mais pas d'un clic : il faut recréer l'accès ET
     // lui communiquer un nouveau mot de passe. C'était le seul geste destructeur de cet écran à
@@ -211,7 +249,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     minuteurCopie.current = setTimeout(() => setCopie(false), 2000)
   }
 
-  // Les cases ne s'offrent que sur une liste lue EN ENTIER ; lue en partie, chaque droit se lit, sans se changer.
+  // Les cases ne s'offrent que sur une liste lue EN ENTIER ; lue en partie, chaque droit se lit, sans se changer. Le lien
+  // de réinitialisation suit la même règle : il part vers l'adresse d'une ligne, et une liste tronquée ou pas encore
+  // revenue n'en est pas une que le cabinet a pu vérifier.
   const casesOffertes = !chargement && erreurLecture === null && lecturePartielle === null
 
   return (
@@ -270,6 +310,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       )}
       {relecture && !chargement && <p className="muted" role="status">Relecture de la liste des accès : les cases attendent son retour.</p>}
       {erreurDroits && <p className="error-text" role="alert">{erreurDroits}</p>}
+      {avisLien && (avisLien.envoye
+        ? <p role="status">{avisLien.texte}</p>
+        : <p className="error-text" role="alert">{avisLien.texte}</p>)}
       {/* Repliée en fiches sous 860 pixels de carte, comme l'équipe du cabinet : les deux cases et les boutons d'un accès
           passeraient sinon derrière un défilement latéral que rien n'annonce. */}
       <div className="card table-scroll tableau-adaptable" style={{ padding: 0 }}>
@@ -310,6 +353,16 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                     <td className="td-actions">
                       {r.email && (
                         <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(r)}>Relancer</button>
+                      )}
+                      {r.email && casesOffertes && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          disabled={lienEnCours !== null || relecture}
+                          onClick={() => envoyerLien(r)}
+                        >
+                          {lienEnCours === r.id ? 'Envoi du lien…' : 'Envoyer un lien de réinitialisation'}
+                        </button>
                       )}
                       <button className="btn btn-danger btn-sm" onClick={() => revoke(r)}>Retirer</button>
                     </td>
