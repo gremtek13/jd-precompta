@@ -17057,3 +17057,37 @@ de l'autre) — les deux côtés gardés. Le reste s'est fusionné seul, et la f
 pièce sous `enregistrementEnCours`, la pièce figée n'écrit que sa note et son sous-dossier, la suppression lit sa ligne
 supprimée avant de retirer les fichiers. Les deux erreurs de `tsc -b` et le rouge d'`AccesTab` relevés à la base ne s'y
 reproduisent plus : ils sont corrigés dans leurs propres commits.
+
+### 09/10/2026 — AGENT-COMPTABLE REFUSE SES CORPS MAL FORMÉS AVANT SON REDÉPLOIEMENT : DEUX DÉFAUTS CONNUS DE MOINS
+
+(`supabase/functions/agent-comptable/index.ts` ; `src/test/contratsFonctions.ts`.) Le redéploiement d'`agent-comptable`
+(sa consigne et le compte d'amortissement) était le « prochain déploiement » où CLAUDE.md demandait de corriger ses
+deux défauts connus de corps mal formé : `corpsNul` (un corps JSON `null` faisait lever la lecture de `payload.dossierId`)
+et `champsDeTravers` (`dossierId` ou `message` reçu en nombre faisait lever `.trim()`). Dans les deux cas `Deno.serve`
+rendait un 500 en texte brut, sans en-tête CORS : LATENT, le navigateur envoie toujours un objet de textes, et il fallait
+une session — mais le refus n'était lisible par personne.
+
+**LE CORRECTIF.** Après la lecture du corps et avant tout le reste (le contrôle de l'appelant reste AVANT le corps,
+l'ordre des refus existants ne change pas) : un corps qui n'est pas un objet (`null`, un tableau, un texte, un nombre)
+se refuse en 400, « Corps de requête invalide : un objet JSON est attendu. » ; puis `dossierId`, puis `message`, présents
+mais pas en texte, se refusent chacun en 400 (« dossierId doit être un texte. », « message doit être un texte. »), par
+le helper local `texteOuAbsent` (absent ou nul retombe sur « dossierId et message sont requis. », comme avant). Tous par
+`json(…)`, donc avec l'en-tête CORS, avant `admin_du_dossier`, le plafond et le modèle. `historique` n'avait pas le
+défaut : `historiqueDuClient` (bloc gardé, non touché) rend `[]` pour tout ce qui n'est pas une liste et écarte chaque
+tour qui n'est pas un objet `user`/`assistant` à texte — confirmé par lecture, aucun `.trim()` ni accès sur un champ non
+vérifié. Aucun bloc entre bornes `── DÉBUT/FIN …` n'est modifié.
+
+**LE HARNAIS.** Les deux marques retirées de `corpsMalFormes('chef', ['dossierId', 'message'])` ; `DEFAUTS_CONNUS`
+recompté au nombre près (`corpsNul` 11 → 10, `champsDeTravers` 9 → 8 ; 27 → 25 en tout). La batterie met TOUS les
+champs de travers, et le premier contrôle y masque le second (la mutation « contrôle de `dossierId` retiré » survivait :
+le contrôle de `message` refusait à sa place) : deux scénarios ajoutés, chaque champ seul en nombre derrière l'autre
+lisible, 400 en français, rien de dépensé, pas d'appel au modèle.
+
+**PREUVES.** Rouge avant : sur la source d'avant, les quatre scénarios (nul, champs de travers, chacun des deux champs
+seul) rendent « statut 500 au lieu de 400 ». Vert après. Mutations (`edgeFunctionsHttp.test.ts -t agent-comptable`) :
+contrôle d'objet retiré, chaque contrôle de type retiré, prédicat toujours vrai, l'en-tête CORS oublié sur chacun des
+trois refus, le refus d'objet en 500, un champ lu avant le contrôle — toutes mordent. Survivent, et c'est dit : retirer
+`Array.isArray` ou `typeof corps !== "object"` de la garde d'objet (équivalentes : un tableau, un texte ou un nombre n'a
+pas de champ `dossierId`, la lecture rend `undefined` et « requis » refuse en 400 avec CORS — ils restent pour dire
+l'intention) ; un refus réécrit en anglais (le juge `refusEnFrancais` vérifie que le message est un texte ÉCRIT DANS LA
+SOURCE, pas sa langue — limite du harnais pour toutes les fonctions, à ne pas réenquêter ici).
