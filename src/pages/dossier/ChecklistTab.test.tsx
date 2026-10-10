@@ -34,6 +34,8 @@ const faux = vi.hoisted(() => ({
   tronquees: new Set<string>(),
   // La mise à jour des informations du dossier (la coche d'un justificatif) que la base refuse, avec sa raison.
   refusMajInfos: null as string | null,
+  // La lecture des relevés qui ne bouclent pas échoue : la Vue d'ensemble la lit vide, best-effort, et le journalise.
+  relevesIllisibles: false,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -101,7 +103,12 @@ vi.mock('../../lib/supabase', async () => {
 })
 
 // Deux lectures best-effort que le composant fait hors du client Supabase.
-vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async () => [] }))
+vi.mock('../../lib/controlesReleves', () => ({
+  chargerRelevesIncoherents: async () => {
+    if (faux.relevesIllisibles) throw new Error('lecture des relevés refusée')
+    return []
+  },
+}))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 
 // Le jeu d'essai est TYPÉ, et sans `as` : c'est le compilateur qui vérifie alors chaque champ
@@ -183,6 +190,7 @@ function poser(pieces: {
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
   faux.refusMajInfos = null
+  faux.relevesIllisibles = false
 }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
@@ -2425,5 +2433,27 @@ describe('ChecklistTab — la coche d’un justificatif', () => {
 
     expect(alerte).not.toHaveBeenCalled()
     expect((faux.parTable.informations_dossier[0] as InformationsDossier).justificatif_tickets_restaurant_recu).toBe(true)
+  })
+})
+
+// LES LECTURES SORTIES DE L'ÉCRAN (lib/checklistLecture.ts, ligne 41, étape R3) : la Vue d'ensemble dit ce qu'elle disait.
+// Les relevés qui ne bouclent pas, illisibles, se lisent vides — best-effort, l'échec journalisé —, et une collection de
+// référence tronquée allume le bandeau des données du dossier.
+describe('ChecklistTab — ses lectures, sorties de l’écran', () => {
+  it('des relevés incohérents illisibles se taisent, et l’échec se journalise', async () => {
+    poser({ lignes: [] })
+    faux.relevesIllisibles = true
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+    monter()
+    expect(await screen.findByText('Travail à effectuer')).toBeDefined()
+    expect(screen.queryByText(/relevé\(s\) bancaire\(s\) qui ne bouclent pas/)).toBeNull()
+    expect(journal).toHaveBeenCalled()
+    journal.mockRestore()
+  })
+
+  it('les natures d’immobilisation tronquées allument le bandeau des données du dossier', async () => {
+    poser({ tronquees: ['natures_immobilisation'] })
+    monter()
+    expect(await screen.findByText(/Les données du dossier n'ont pas pu être lues en entier/)).toBeDefined()
   })
 })

@@ -342,6 +342,18 @@ const VUES = [
   { nom: 'pc-refusee-transmettre', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0009', 'Transmettre'] },
   { nom: 'pc-declarer-statuts-lus', chemin: '#/dossiers/d7/factures', l: 1440, h: 900, theme: 'light', reduite: false, ligne: ['F2026-0008', 'Encaissements'], apres: '^Déclaré sur la plateforme$', rang: 'last', vers: 'Statuts lus sur flux.plateforme-beta.example le' },
   { nom: 'pc-relire-statuts', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Plateforme du client', apres: '^Relire les statuts depuis le début$', accepter: true, vers: 'Statuts lus sur flux.plateforme-alpha.example' },
+  // La RÉVISION DES SOLDES (ligne 41, étape R3) : l'exercice 2025 validé de la kinésithérapeute — ses cartes par cycle, ses
+  // trois décisions —, le panneau « justifier » de la banque et celui du bien, son historique ; puis l'ostéopathe, dont 2025
+  // attend ses décisions.
+  { nom: 'pc-revision-clair', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
+  { nom: 'pc-revision-sombre', chemin: '#/dossiers/d9/revision', l: 1280, h: 800, theme: 'dark', reduite: false, exercice: '2025' },
+  { nom: 'pc-revision-cycles', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Exploitant et capitaux' },
+  { nom: 'pc-revision-panneau', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 512000$' },
+  { nom: 'pc-revision-historique', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 218300$', vers: 'Historique du compte' },
+  { nom: 'pc-revision-1024', chemin: '#/dossiers/d9/revision', l: 1024, h: 768, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 108000$' },
+  { nom: 'pc-revision-a-justifier', chemin: '#/dossiers/d10/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
+  { nom: 'mobile-revision-clair', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025' },
+  { nom: 'mobile-revision-panneau', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 218300$' },
   // La coque du CLIENT (09/10/2026), rendue par `client: true` (le compte du cabinet infirmier, rattaché par une adhésion : voir
   // `banc-client` dans fauxSupabase.ts). Sa navigation paraît dans la barre latérale sur ordinateur, à l'accueil comme sur ses
   // autres écrans, déployée ou réduite à ses icônes ; sur téléphone elle reste cachée à l'accueil, où ses tuiles en tiennent

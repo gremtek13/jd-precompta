@@ -169,7 +169,10 @@ describe('les cycles d’un dossier (conception, § 2.1, colonne « Dossiers »)
 // cycle avec sa raison — la discipline de `POINTS_DE_LA_CHECKLIST_ECARTES`. Un contrôle ajouté demain doit dire de quel
 // cycle il est ; un rangement qui nomme un contrôle disparu se retire.
 describe('le rangement des contrôles existants', () => {
-  const checklist = readFileSync(new URL('../pages/dossier/ChecklistTab.tsx', import.meta.url), 'utf8')
+  // Les points de la Checklist vivent dans lib/pointsDeLaChecklist.ts depuis l'étape R3 ; l'écran est relu aussi, pour
+  // qu'un point qu'on y écrirait de nouveau en dur ne passe pas inaperçu.
+  const checklist = [new URL('../pages/dossier/ChecklistTab.tsx', import.meta.url), new URL('./pointsDeLaChecklist.ts', import.meta.url)]
+    .map((chemin) => readFileSync(chemin, 'utf8')).join('\n')
   const prealables = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
     .split('export const POINTS_DE_LA_CHECKLIST_ECARTES')[0]
 

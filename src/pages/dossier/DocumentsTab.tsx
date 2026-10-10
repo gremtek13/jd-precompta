@@ -15,6 +15,11 @@ import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
 import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
+import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+
+// « C'est une facture » sur une lecture des citations de la révision partielle, ou pas encore revenue.
+const CONVERSION_SUSPENDUE = 'Les décisions de la révision des soldes n’ont pas été lues en entier : rien ne dit que ce document '
+  + 'n’y est pas cité, et la base refuserait alors de le retirer après la création de la pièce. Recharge la page.'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -90,6 +95,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // ligne à afficher. Un point qui annonce « 1 » et une destination vide.
   const [doublonParDocument, setDoublonParDocument] = useState<Map<string, number>>(new Map())
 
+  // CE QUE LA RÉVISION DES SOLDES CITE (ligne 41, lib/citationsRevisionLecture.ts) : un document cité par une décision
+  // ne se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8) — ni donc ne se transforme en
+  // pièce, qui le supprime. Dit AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
+  const [citations, setCitations] = useState<LectureDesCitations | null>(null)
+
   async function load() {
     setLoading(true)
     const [lectureDocuments, lectureSousDossiers] = await Promise.all([
@@ -127,6 +137,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       for (const id of doublon.documentIds) parDocument.set(id, doublon.pieceIds.length + doublon.documentIds.length)
     }
     setDoublonParDocument(parDocument)
+    setCitations(await lireCitationsDeLaRevision(dossierId))
     setLoading(false)
   }
 
@@ -241,6 +252,13 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   async function supprimer(doc: DocumentDivers) {
+    // Le bouton n'est pas offert sur un document cité : si la lecture change entre-temps, la phrase de la base se dit
+    // ici plutôt qu'une confirmation qui mènerait à son refus.
+    const refus = refusDeSuppression({ documentId: doc.id }, citations)
+    if (refus) {
+      setError(refus)
+      return
+    }
     if (!window.confirm(`Supprimer définitivement "${doc.nom_fichier}" ?`)) return
     const motif = await supprimerUnDocument(doc)
     setError(motif ? messageBilanSuppression({ demandes: 1, supprimes: 0, motifs: [motif] }) : null)
@@ -272,9 +290,26 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     if (suppressionEnCours.current) return
     // Ce qui est vraiment dans la liste : un identifiant resté sélectionné après une relecture qui ne
     // le rend plus n'a rien à supprimer, et ne doit pas gonfler le compte annoncé.
-    const cibles = documents.filter((d) => selected.has(d.id))
-    if (cibles.length === 0) return
-    if (!window.confirm(confirmationSuppression(cibles.length))) return
+    const selection = documents.filter((d) => selected.has(d.id))
+    if (selection.length === 0) return
+    // UN DOCUMENT CITÉ PAR LA RÉVISION NE SE SUPPRIME PLUS (`garder_source_citee`) : écarté de la sélection, chacun
+    // nommé avec la phrase de la base, plutôt qu'un refus de la base document par document.
+    const cites = selection.flatMap((d) => {
+      const refus = refusDeSuppression({ documentId: d.id }, citations)
+      return refus === null ? [] : [{ document: d, refus }]
+    })
+    const cibles = selection.filter((d) => !cites.some((c) => c.document.id === d.id))
+    const listeDesCites = cites.slice(0, 5).map((c) => `• ${c.document.nom_fichier} — ${c.refus}`).join('\n')
+      + (cites.length > 5 ? `\n… et ${cites.length - 5} autre(s)` : '')
+    if (cibles.length === 0) {
+      setError(cites.length === 1 ? cites[0].refus
+        : `Ces ${cites.length} documents sont cités par la révision des soldes : ils ne se suppriment plus.\n${listeDesCites}`)
+      return
+    }
+    const avertissementCites = cites.length === 0 ? ''
+      : `\n\n${cites.length === 1 ? 'Un document de la sélection reste' : `${cites.length} documents de la sélection restent`}, `
+        + `cité${cites.length > 1 ? 's' : ''} par la révision des soldes :\n${listeDesCites}`
+    if (!window.confirm(confirmationSuppression(cibles.length) + avertissementCites)) return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
     setSuppression({ fait: 0, total: cibles.length })
@@ -304,6 +339,19 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   async function convertirEnPiece(doc: DocumentDivers) {
     // Posé AVANT le premier `await` — un verrou posé après ne verrouille rien.
     if (conversionsEnCours.current.has(doc.id)) return
+    // AVANT DE CRÉER LA PIÈCE : la conversion supprime le document en dernier, et la base refuse de supprimer un document
+    // que la révision cite. Dit après, la pièce serait née et le document resté — le même fichier sous deux lignes, dont
+    // la suppression de la pièce retirerait le fichier que la décision cite. Et sur une lecture des citations partielle
+    // ou pas encore revenue, rien ne dit que le document n'est pas cité : la conversion attend.
+    const refus = refusDeSuppression({ documentId: doc.id }, citations)
+    if (refus) {
+      setError(`« C'est une facture » retirerait ce document d'ici : ${refus}`)
+      return
+    }
+    if (citations === null || citations.motif !== null) {
+      setError(CONVERSION_SUSPENDUE)
+      return
+    }
     conversionsEnCours.current.add(doc.id)
     try {
       const { data: userData } = await supabase.auth.getUser()
@@ -449,6 +497,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       />
 
       <BandeauLecturePartielle
+        quoi="Les décisions de la révision des soldes et leurs preuves"
+        motif={citations?.motif ?? null}
+        consequence={
+          'Un document cité par la révision peut donc paraître supprimable : la base refusera alors de le supprimer, et ' +
+          'dira pourquoi. « C’est une facture » attend : sur un document cité, la pièce naîtrait et le document resterait.'
+        }
+      />
+
+      <BandeauLecturePartielle
         quoi="La liste des sous-dossiers"
         accord="lue"
         motif={referencesIncompletes}
@@ -513,6 +570,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                             Doublon de contenu
                           </span>
                         )}
+                        {refusDeSuppression({ documentId: d.id }, citations) && (
+                          <span className="badge badge-neutral" style={{ marginLeft: 8, fontSize: '0.7rem' }}>Cité par la révision</span>
+                        )}
                         {avecTexteOcr.has(d.id) && (
                           <button
                             type="button"
@@ -538,8 +598,22 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                     <td className="hide-mobile" data-libelle="Sous-dossier">{sousDossierLabel(d.sous_dossier_id)}</td>
                     <td className="hide-mobile" data-libelle="Ajouté le">{formatDate(d.created_at)}</td>
                     <td className="td-actions" onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-outline btn-sm" onClick={() => convertirEnPiece(d)}>C'est une facture</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
+                      {refusDeSuppression({ documentId: d.id }, citations) ? (
+                        // Ni supprimer, ni transformer en pièce, qui le supprime : la phrase de la base, avant le clic.
+                        <span className="muted" style={{ fontSize: '0.8rem' }}>{refusDeSuppression({ documentId: d.id }, citations)}</span>
+                      ) : (
+                        <>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            disabled={citations === null || citations.motif !== null}
+                            title={citations === null || citations.motif !== null ? CONVERSION_SUSPENDUE : undefined}
+                            onClick={() => convertirEnPiece(d)}
+                          >
+                            C'est une facture
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
+                        </>
+                      )}
                     </td>
                   </tr>
                   {ocrOuvert?.documentId === d.id && (

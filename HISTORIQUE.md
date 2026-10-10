@@ -18117,3 +18117,112 @@ PLAN_DE_REPRISE.md (§3 et §6) dira que la base d'arrivée doit porter le catal
 rejeu du schéma — et que le plan compte 61 tables. Le retour arrière : rien ne lit le plan ; retirer les deux tables et
 les quatre fonctions est une migration DESTRUCTIVE (accord du cabinet), sans donnée perdue tant qu'aucun plan n'est
 réglé.
+
+### 10/10/2026 — L'ÉCRAN DE LA RÉVISION — LIGNE 41, ÉTAPE R3
+
+(`src/pages/dossier/RevisionTab.tsx`, `FicheSolde.tsx` et `RevisionTab.test.tsx` ; `src/lib/pointsDeLaChecklist.ts`,
+`checklistLecture.ts`, `controlesDeLaRevision.ts`, `citationsRevisionLecture.ts`, `revisionLibelles.ts` et leurs tests ;
+`ChecklistTab.tsx`, `PiecesTab.tsx`, `FichePiece.tsx`, `DocumentsTab.tsx` et les tests des deux onglets ;
+`DossierDetail.tsx`, `lib/ongletsDossier.ts`, `components/icons.tsx` ; `ecransAvantLecture.test.tsx` ; une ligne de
+chemin dans `revisionCycles.test.ts` et `prealablesValidation.test.ts` ; `src/index.css` (une règle) ; le banc de
+captures.) La troisième étape de la révision des comptes (« LA RÉVISION DES COMPTES : LA CONCEPTION », § 4.1 à 4.3 et
+4.7 ; « LA BASE DES SOLDES RÉVISÉS » ; « LE MODULE DE LA RÉVISION ») : l'écran. Aucune migration, aucune Edge Function ;
+les modules de R1 et R2 ne sont pas touchés. En production, aucune décision n'existe : tout est LATENT jusqu'au premier
+clic du cabinet.
+
+**L'ONGLET.** « Révision », dans Comptabilité, après le Bilan (la consigne ; la conception le plaçait avant Clôture, ce
+qui revient au même : Bilan, Révision, … Clôture), sous le sélecteur d'exercice de l'en-tête. Il lit le dossier ENTIER,
+tous exercices, par `lireTout` à tri total : les dix-neuf lectures de la Vue d'ensemble, et ce qu'elles ne portent pas —
+les soldes reportés, les contrôles de TOUS les relevés, les documents (colonnes nommées), les décisions et les preuves.
+Chaque lecture partielle a son bandeau — y compris les relevés qui ne bouclent pas et les doublons de contenu, que la Vue
+d'ensemble lit « au mieux » et tait sur un échec —, et l'écran ne montre alors ni état, ni preuve, ni geste. En tête :
+la phrase de la base quand l'exercice ne se révise pas (en cours, antérieur à la reprise, ouverture en attente — avec le
+chemin vers Clôture), la date de la validation et la mention « après la validation », « Vérifier l'empreinte » de N−1
+(`verifier_exercice_valide`, sous verrou, gardée avec l'exercice vérifié : la preuve du 101000 la lit), et « Ce que la
+révision ne tranche pas » — les hypothèses de R1 et Q1 nommées, le jugement du cabinet dit. Quatre tuiles (à justifier,
+justifiés ou acceptés, à revoir, anomalies). Une carte par cycle du dossier (`revisionDeLExercice`) : ses comptes de bilan,
+leur solde en mots, la preuve proposée (pastille du verdict et sa ligne), l'état déduit et ses mentions (nombre de
+décisions, reprise, « après la validation », justification de N−1 à reprendre) ; et les points de la Vue d'ensemble qui
+s'y rangent, avec leur onglet. Une carte « Hors des cycles » pour les comptes hors du motif et les contrôles hors cycle ou
+inconnus : rien n'est tu.
+
+**LES POINTS DE LA VUE D'ENSEMBLE, SORTIS DE L'ÉCRAN.** Ils étaient calculés dans `ChecklistTab.tsx`, non exportés. Les
+recomposer à côté aurait fait une seconde copie de cinquante points, qui divergerait au premier ajout — c'est l'histoire de
+`lib/resteAEnvoyer.ts`. Ils passent donc, par un script de découpe (pas une recopie à la main), dans un module PUR,
+`lib/pointsDeLaChecklist.ts` — seuls changent `premierJourDuMoisCourant()`, devenu un paramètre (« maintenant » ne se lit
+pas dans un module), et le geste de cocher un justificatif, devenu son NOM (`coche`) que l'écran habille —, et leurs
+lectures dans `lib/checklistLecture.ts`, mêmes requêtes, même ordre. La Checklist n'affiche rien de différent : ses 161
+tests passent sans une retouche. Deux gardes lisaient `ChecklistTab.tsx` COMME TEXTE pour y trouver les identifiants des
+points (`revisionCycles.test.ts`, R2 ; `prealablesValidation.test.ts`) : ils lisent désormais l'écran ET le module — la
+seule ligne touchée d'un fichier de R2, son chemin de lecture. `lib/controlesDeLaRevision.ts` choisit ce que la révision
+range : les points à traiter du dossier, et les documents attendus de l'exercice révisé seulement (un relevé manquant de
+2026 ne dit rien des soldes de 2025). Les préalables de la validation n'y sont PAS : ils demandent la 2035 de l'exercice
+et sa concordance, que Clôture calcule (R6), et pour un exercice validé ils ne diraient que « déjà validé ».
+
+**LE PANNEAU « JUSTIFIER »** (`FicheSolde`, volet de droite, occupant `solde`, plein écran sur téléphone comme une fiche
+de pièce). La preuve proposée : son titre et son verdict, ce qu'elle établit et n'établit pas, ses faits, son détail —
+chaque référence résolue en nom par l'écran, la preuve n'en portant aucun —, ses sources proposées, chacune citée d'un
+clic, jamais d'elle-même. La justification permanente de N−1 : ce qu'elle disait, le solde qui a changé (« dis ce qui
+justifie le nouveau »), les empreintes qui ne tiennent plus ; « Reprendre la justification de N−1 » REMPLIT la décision
+(sources, précisions, motif, portée permanente, `reprise_de`) sans rien écrire. L'historique du compte, de la plus
+récente : état, courante, permanente, reprise, après la validation, date, auteur (« toi », ou l'identifiant court d'un
+autre compte du cabinet), solde, motif, l'instantané relu, et chaque citation avec son empreinte RELUE. Puis la décision
+: sources citées et leur précision, la recherche du moteur commun sur les pièces et documents du dossier, « Citer la
+preuve de l'application » (son instantané part, coché seulement), la portée, le motif (« aucune donnée de patient »), et
+trois boutons — « Justifier », « Accepter sur motif », « Signaler une anomalie » — dont chacun passe la décision qu'il
+écrirait à `refusDeJustifierSolde` : refusé, il est grisé, et le refus se lit sous ses mots, un même refus dit une fois
+avec les boutons qu'il retient. `justifier_solde` seule écrit, ses onze arguments par `argumentsDeJustifierSolde`, sous
+un verrou `useRef` posé avant le `try` et relâché APRÈS la relecture, qui a lieu aussi sur un refus de la base (dit par
+`messageErreur`, la saisie gardée pour la corriger) ; une décision écrite remonte le formulaire, vide, et la suivante
+REMPLACE la courante. La garde du volet retient une saisie, qu'on ouvre un autre compte ou qu'un autre contenu demande la
+place. Un jeu d'essai l'a montré juste avant qu'on le veuille : des identifiants de pièce qui n'étaient pas des uuid
+grisaient « Justifier » sous le refus 12 (« preuves illisibles »), exactement comme la base l'aurait refusé.
+
+**LES SOURCES CITÉES NE SE RETIRENT PLUS, ET LES ÉCRANS LE DISENT AVANT** (hypothèse Q8, `garder_source_citee`).
+`lib/citationsRevisionLecture.ts` lit les décisions et les preuves du dossier (identifiants, exercice, compte : aucun
+texte), et `refusDeSuppression` rend la phrase de la base (`refusDuRetraitDUneSource`), rien avant la première lecture.
+Justificatifs : la sélection écarte une pièce citée et la NOMME, avec la phrase, dans la confirmation ; une sélection
+toute citée ne demande rien et dit la phrase ; la fiche d'une pièce citée le dit en tête (`citeePar`) et n'offre pas
+« Supprimer » — le reste se modifie toujours, un fichier remplacé changera l'empreinte que la décision relira. Documents :
+la ligne d'un document cité porte « Cité par la révision » et la phrase, à la place de « C'est une facture » et
+« Supprimer » ; la sélection l'écarte et le nomme ; et « C'est une facture », qui crée la pièce PUIS retire le document,
+se refuse AVANT de créer la pièce — et se SUSPEND tant que les citations ne sont pas lues en entier, puisque la base
+laisserait naître la pièce et refuserait de retirer le document : le même fichier sous deux lignes. Sur une lecture
+partielle, Justificatifs et Documents le disent par un bandeau (la base refusera, et dira pourquoi). Les gardes internes
+de `supprimer`, `handleDelete` et `convertirEnPiece` sont inatteignables tant que l'écran n'offre pas le geste : leurs
+mutations sont équivalentes, et elles restent, pour le jour où un écran l'offrirait.
+
+**LES PREUVES.** Tests d'écran : `RevisionTab.test.tsx` (43 : rien avant d'avoir lu ; une lecture partielle sans état
+ni geste, table par table — les vingt-trois qu'il lit, les relevés incohérents illisibles en plus ; le dossier seul, l'autre dossier filtré ; les cartes, l'état, la
+preuve ; les points rangés et leur onglet ; l'exercice en cours et l'ouverture en attente sous les mots de la base ; les
+refus avant le clic, boutons grisés ; les onze arguments ; l'instantané et la précision ; deux puis trois clics dans le
+même `act` ; le verrou relâché après la relecture, et le refus de la base dit ; la garde, deux fois ; la reprise de N−1 ;
+la vérification de l'empreinte, son verrou, son exercice, et la preuve du 101000 qui la lit), +6 dans
+`PiecesTab.test.tsx` (dont une pièce figée ET citée, qui ne se dit qu'une fois), +5 dans `DocumentsTab.test.tsx` (le faux
+client de Documents rendait les tables inconnues sans compte, donc en lecture incomplète : les deux tables de la révision
+y sont ajoutées, filtrées), +2 dans `ChecklistTab.test.tsx` (des relevés illisibles tus et journalisés ; des natures
+tronquées qui allument le bandeau — une collection de référence que rien n'éprouvait tronquée) ; les modules
+(`controlesDeLaRevision`, 5 ; `citationsRevisionLecture`, 4 ; `pointsDeLaChecklist`, 4) ; `ecransAvantLecture.test.tsx`
+monte l'onglet. Soixante-neuf tests de plus. MUTATIONS, par un banc qui ne touche pas à git (chaque fichier rendu depuis
+sa copie, empreinte vérifiée) : 58, la suite verte avant ; 54 tuées au premier passage ; les 4 survivantes étaient
+quatre trous de test — le bandeau des documents lus en partie, une collection oubliée du compte des lectures partielles
+de la Vue d'ensemble (trou antérieur à l'étape), une pièce figée ET citée comptée deux fois, des relevés illisibles lus
+autrement que vides dans la Checklist —, un cas chacune, et rejouées toutes tuées. Quatre équivalentes, jouées pour le
+dire : les gardes internes des gestes que l'écran n'offre pas sur une source citée. BANC DE CAPTURES : la
+kinésithérapeute (d9) porte trois décisions sur son 2025 validé — la banque acceptée sur motif, l'ordinateur justifié par
+sa facture de façon permanente, une anomalie sur le compte de l'exploitant prise après la validation et pour un solde qui
+n'est plus le sien, donc « à revoir » ; l'onglet est visité sur d1, sur d9 2025 (et son panneau, sur la banque puis sur
+le bien), sur d10 2025 et 2026. Premier passage : le numéro d'un compte coupé au milieu (« 2818|30 ») dans chaque carte
+repliée en fiches — dans un `table-empilable` replié, la cellule est une rangée flex, et le numéro et son libellé s'y
+serraient côte à côte ; le contenu de chaque cellule passe dans UNE `div`, comme dans Documents. Puis 0 débordement aux
+neuf passes (1 440, 1 280, 1 024, 720, 390, et les quatre combinaisons des volets), aucune police refusée. LA BARRIÈRE :
+`tsc -b` vert ; `tsconfig.edge.json`, les 25 erreurs connues ; le lint, les 63 avertissements connus (ceux de ChecklistTab,
+PiecesTab, FichePiece et DocumentsTab sont ceux d'avant, aux lignes déplacées) ; la construction ; les dix-huit fichiers
+de l'étape et de ce qu'elle touche sous les quatre fuseaux (904 tests) ; la suite entière sous Paris, deux ouvriers :
+268 fichiers, 7 821 tests, tous verts, aucun délai dépassé.
+
+**CE QUI RESTE.** Les préalables de la validation dans les cartes (R6, avec la 2035 de Clôture) ; les cycles, leur
+programme, leur conclusion et leur revue (R4) ; les fichiers du cabinet comme preuve (R8) ; les questions Q1 à Q12. Et
+deux limites dites par l'écran : un « membre du cabinet » ne se nomme que par l'identifiant court de son compte (aucune
+table ne donne son nom au navigateur) ; un dossier à plusieurs comptes bancaires voit toujours « ne conclut pas » au
+512000 (R2).

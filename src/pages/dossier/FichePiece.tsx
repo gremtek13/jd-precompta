@@ -78,12 +78,16 @@ interface Props {
   // sous-dossier, et ne se supprime plus (`garder_piece_validee`) : la fiche le dit et n'offre que ces deux champs,
   // au lieu de laisser la base refuser un enregistrement que tout l'écran proposait.
   figeePar?: string | null
+  // LA RÉVISION DES SOLDES QUI CITE CETTE PIÈCE (ligne 41, hypothèse Q8, `garder_source_citee`) : la phrase de la base
+  // qui refuse sa suppression (`refusDuRetraitDUneSource`), ou rien. La fiche le dit et n'offre pas « Supprimer » ; le
+  // reste de la pièce se modifie toujours — un fichier remplacé change son empreinte, et la décision qui la cite le dira.
+  citeePar?: string | null
   // LA FACTURE ÉMISE QUE CETTE PIÈCE PORTE (ligne 28.6, lib/ventesJumelles.ts) : sa marque, et le nom des autres pièces
   // qui portent la même facture. L'écran appelant ne la donne que sur des listes lues en entier ; rien, sinon.
   venteEmise?: (Pick<MarqueDeLaPiece, 'genre' | 'libelle' | 'explication'> & { autres: string[] }) | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, venteEmise = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
@@ -553,6 +557,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
   async function handleDelete() {
     if (!piece) return
+    // Le bouton n'est pas offert sur une pièce citée ; si la lecture des citations change pendant que la fiche est
+    // ouverte, la phrase de la base se dit ici plutôt qu'une confirmation qui mènerait à son refus.
+    if (citeePar) {
+      setError(citeePar)
+      return
+    }
     if (!window.confirm(
       `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`,
     )) return
@@ -668,6 +678,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               validation se corrige sur l’exercice suivant.
             </p>
           )}
+          {citeePar && <p className="fiche-piece-figee">{citeePar}</p>}
           {venteEmise && (
             <div className="fiche-piece-vente">
               <span className={`badge ${PASTILLE_DE_LA_MARQUE[venteEmise.genre]}`}>{venteEmise.libelle}</span>
@@ -946,7 +957,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         </div>
 
         <div className="fiche-piece-pied">
-          {piece && !fige ? (
+          {piece && !fige && !citeePar ? (
             <button type="button" className="btn btn-danger btn-sm" disabled={occupee} onClick={handleDelete}>
               {deleting ? 'Suppression…' : 'Supprimer'}
             </button>

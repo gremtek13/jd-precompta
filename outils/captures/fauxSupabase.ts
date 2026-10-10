@@ -1045,7 +1045,39 @@ function releveDuBanc(corps: Ligne) {
   }
 }
 
+// LA RÉVISION DES SOLDES de la kinésithérapeute (ligne 41, étape R3) : trois décisions sur son exercice 2025, validé —
+// le solde de la banque accepté sur motif avant la validation, l'ordinateur justifié par sa facture de façon permanente,
+// et une anomalie signalée APRÈS la validation sur le compte de l'exploitant, pour un solde qui n'est plus le sien : la
+// révision la dit « à revoir ». Les soldes sont ceux de ses écritures, comptés comme la base les compte.
+const REVISION_D9 = {
+  decisions: [
+    {
+      id: 'rj-d9-1', dossier_id: 'd9', annee: 2025, compte: '512000', solde: 6046, etat: 'accepte',
+      motif: 'Relevé de décembre 2025 remis par la cliente : solde concordant.', portee: 'exercice', preuve_application: null,
+      remplace_id: null, reprise_de: null, auteur: 'u1', cree_le: '2026-02-20T10:00:00+00:00',
+    },
+    {
+      id: 'rj-d9-2', dossier_id: 'd9', annee: 2025, compte: '218300', solde: 1500, etat: 'justifie',
+      motif: null, portee: 'permanente', preuve_application: null, remplace_id: null, reprise_de: null, auteur: 'u2',
+      cree_le: '2026-02-21T10:00:00+00:00',
+    },
+    {
+      id: 'rj-d9-3', dossier_id: 'd9', annee: 2025, compte: '108000', solde: -1200, etat: 'anomalie',
+      motif: 'Un prélèvement personnel de décembre manque au relevé transmis : à demander à la cliente.', portee: 'exercice',
+      preuve_application: null, remplace_id: null, reprise_de: null, auteur: 'u1', cree_le: '2026-04-02T10:00:00+00:00',
+    },
+  ] as Ligne[],
+  preuves: [
+    {
+      id: 'rp-d9-1', dossier_id: 'd9', justification_id: 'rj-d9-2', piece_id: 'k3', document_id: null, fichier_id: null,
+      empreinte: null, precision: 'Facture d’achat du 1er octobre 2025, ligne unique',
+    },
+  ] as Ligne[],
+}
+
 const TABLES: Record<string, Ligne[]> = {
+  revision_justifications: REVISION_D9.decisions,
+  revision_preuves: REVISION_D9.preuves,
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
     aNouveau('an2', '2154', '2154', 'Matériel médical', 'debit', 3200),

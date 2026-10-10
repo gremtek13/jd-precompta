@@ -116,6 +116,15 @@ export const IconBilan = (p: IconProps) => base(<>
   <path d="M6.5 12h3M6.5 15.5h3M14.5 12h3M14.5 15.5h3" />
 </>, p)
 
+// Révision — une loupe sur une feuille cochée : on vérifie ce qui est écrit, solde par solde. Distincte du Bilan (une
+// feuille en deux colonnes) qui la précède dans le menu, et de la recherche (une loupe seule).
+export const IconRevision = (p: IconProps) => base(<>
+  <path d="M13.5 20H6a1.5 1.5 0 0 1-1.5-1.5v-13A1.5 1.5 0 0 1 6 4h9a1.5 1.5 0 0 1 1.5 1.5V10" />
+  <path d="M7.5 8.5l1.2 1.2 2.3-2.4M7.5 13.5h4" />
+  <circle cx="16.5" cy="15.5" r="3" />
+  <path d="M18.7 17.7l2.3 2.3" />
+</>, p)
+
 // Financement — fronton de banque (colonnes + toit triangulaire), convention la plus reconnue pour
 // "banque/institution financière" — distincte d'IconBanque (relevé/rapprochement bancaire courant) :
 // ici il s'agit d'un dossier de financement (emprunts, échéancier), pas des mouvements du compte.
@@ -290,6 +299,7 @@ export const ICONES_PARCOURS: Record<DossierTab, IconComponent> = {
   ecritures: IconEcritures,
   statistiques: IconStatistiques,
   bilan: IconBilan,
+  revision: IconRevision,
   tva: IconTva,
   immobilisations: IconImmobilisations,
   cotisations: IconCotisations,
