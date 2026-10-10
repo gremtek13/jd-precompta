@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
@@ -170,6 +170,8 @@ vi.mock('./PlateformeClientModal', () => ({
 vi.mock('../../lib/texteOcr', () => ({
   piecesAvecTexteOcr: async () => ({ avecTexte: faux.avecTexte, erreur: faux.erreurPresence }),
   texteOcrDeLaPiece: async () => null,
+  // La fiche « hors de France » d'une pièce d'achat relit son texte, et le passe par ce filtre (aucun texte ici).
+  texteOcrExploitable: (texte: string | null | undefined) => texte?.trim() || null,
 }))
 
 // Typé `Piece` SANS `as` : le compilateur vérifie alors chaque champ contre la table, à chaque
@@ -1204,5 +1206,49 @@ describe('PiecesTab — une pièce citée par la révision des soldes', () => {
     faux.muetApres = { revision_preuves: 0 }
     monter('toutes')
     expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves n'ont pas pu être lues en entier/)).toBeTruthy()
+  })
+})
+
+// LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » PART AVEC SA PIÈCE (ligne 28.5, e-reporting, étape e3) : la clé
+// `pieces_hors_de_france.piece_id` est en cascade, toutes versions et ventilation comprises. La confirmation de la
+// suppression d'une sélection la NOMME — et, lue en partie, dit qu'elle ne sait pas ce qu'elle emporte.
+describe('PiecesTab — supprimer une sélection nomme les fiches « hors de France » emportées', () => {
+  function ficheDe(pieceId: string, numero: string) {
+    return {
+      id: `f-${pieceId}`, dossier_id: 'dossier-de-test', piece_id: pieceId, remplace_id: null, numero, date_facture: '2026-03-01',
+      type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE',
+      schema_identifiant: '0223', identifiant: 'IE1234567WA', nature: 'services', autoliquidation: true, date_operation: null,
+      periode_debut: null, periode_fin: null, cree_par: null, cree_le: '2026-03-11T08:00:00Z', retire_le: null, retire_par: null,
+    }
+  }
+
+  async function confirmation(): Promise<string> {
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[0]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+    return message
+  }
+
+  it('nomme la fiche de chaque pièce qui en a une', async () => {
+    poser([piece({ id: 'p1' }), piece({ id: 'p2', tiers: 'AUTRE' })])
+    faux.parTable.pieces_hors_de_france = [ficheDe('p1', 'INV-2026-0042')]
+    const message = await confirmation()
+    expect(message).toContain('Une pièce de la sélection a une fiche « fournisseur établi hors de France », supprimée avec sa pièce')
+    expect(message).toContain('• la facture n° INV-2026-0042 du 01/03/2026 (Irlande)')
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('ne dit rien d’une sélection sans fiche, et dit qu’elle ne sait pas sur une lecture partielle', async () => {
+    poser([piece({ id: 'p1' })])
+    expect(await confirmation()).not.toContain('hors de France')
+    cleanup()
+    vi.restoreAllMocks()
+    poser([piece({ id: 'p1' })])
+    faux.parTable.pieces_hors_de_france = [ficheDe('p1', 'INV-1'), ficheDe('p9', 'INV-9')]
+    faux.muetApres = { pieces_hors_de_france: 1 }
+    expect(await confirmation()).toContain('n’ont pas pu être lues en entier : une pièce de la sélection qui en a une la perd')
   })
 })

@@ -40,6 +40,7 @@ import FactureAvoirModal from './dossier/FactureAvoirModal'
 import FactureFormModal from './dossier/FactureFormModal'
 import FacturesTab from './dossier/FacturesTab'
 import FichePiece from './dossier/FichePiece'
+import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './dossier/FicheHorsDeFrance'
 import FinancementTab from './dossier/FinancementTab'
 import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import InformationsTab from './dossier/InformationsTab'
@@ -152,6 +153,11 @@ function piece(o: Partial<Piece> = {}): Piece {
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
 const rien = () => {}
+// La fiche « hors de France » d'une pièce reçoit les fiches du dossier de l'onglet des pièces (monté ici, qui les lit) :
+// montée seule, elle les reçoit lues — un dossier sans fiche. Elle lit elle-même le texte de la pièce, que ce garde retient.
+const FICHES_RECUES: DonneesHorsDeFrance = {
+  lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+}
 
 // Ce qu'un onglet reçoit de la page du dossier : le volet de droite, les exercices validés, l'exercice choisi.
 function Dossier1({ children }: { children: ReactNode }) {
@@ -255,8 +261,12 @@ const ECRANS: Ecran[] = [
       <FichePiece
         dossierId="d1" categories={[]} sousDossiers={[]} tiersCategories={[]} tiersCategoriesCabinet={[]} tiersConnus={[]}
         piece={piece()} commentaires={[]} onClose={rien} onSaved={rien} onCommentaireAjoute={rien} onCommentaireSupprime={rien}
+        horsDeFrance={FICHES_RECUES}
       />
     </Dossier1>
+  ) },
+  { nom: 'FicheHorsDeFrance', fichier: 'pages/dossier/FicheHorsDeFrance.tsx', rendre: () => (
+    <Dossier1><FicheHorsDeFrance dossierId="d1" piece={piece()} pieceModifiee={false} donnees={FICHES_RECUES} sansTexteLu={false} /></Dossier1>
   ) },
   { nom: 'FinancementTab', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} /></Dossier1> },

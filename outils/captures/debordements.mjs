@@ -314,6 +314,28 @@ const VISITES = [
       await page.getByRole('cell', { name: 'Résidence Les Cèdres SAS' }).first().click()
     },
   },
+  // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » (ligne 28.5, e-reporting, étape e3) : celle d'un abonnement en dollars,
+  // deux versions, l'identifiant et la ventilation ; puis la SAISIE de celle d'un studio établi au Portugal — ses
+  // propositions et leurs extraits, ses champs en rangées, le refus dit avant le clic —, qui ne paraît qu'au clic.
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'hors-de-france/fiche',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('cell', { name: 'Nuage Logiciel Ltd' }).first().click()
+      await page.getByText('Versions précédentes (1)').first().click()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'hors-de-france/saisie',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('cell', { name: 'Studio Lumière Lisboa' }).first().click()
+      await page.getByRole('button', { name: 'Saisir la fiche', exact: true }).click()
+      await page.getByLabel('Pays du fournisseur').selectOption('US')
+    },
+  },
   // LES FACTURES ÉMISES (ligne 28.5, étape c4) : le tableau de l'onglet est mesuré par la visite ordinaire, mais ce que
   // l'étape a ajouté ne paraît qu'à un clic, dans une fenêtre. Chacune est SUPERPOSÉE : elle se mesure contre sa propre carte
   // (`fenetre`), pas contre le panneau central. Les quatre visites du cabinet infirmier restent sur la MÊME route, que la page ne recharge pas :

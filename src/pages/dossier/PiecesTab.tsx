@@ -33,6 +33,8 @@ import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
+import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -134,6 +136,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8). Lue pour que la fiche et la
   // suppression de la sélection le disent AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
   const [citations, setCitations] = useState<LectureDesCitations | null>(null)
+  // LES FICHES « FOURNISSEUR ÉTABLI HORS DE FRANCE » DU DOSSIER (ligne 28.5, e-reporting, étape e3), toutes versions
+  // comprises : la fiche d'une pièce les montre et les écrit, et la suppression d'une pièce emporte la sienne (clé en
+  // cascade) — sa confirmation la nomme. Nulle avant sa première lecture.
+  const [fichesHorsDeFrance, setFichesHorsDeFrance] = useState<LectureFichesHorsDeFrance | null>(null)
+  // Relue seule après une écriture de la fiche : relire tout l'onglet ferait attendre la fiche sur douze lectures.
+  const relireFichesHorsDeFrance = useCallback(async () => {
+    setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
+  }, [dossierId])
 
   async function load() {
     setLoading(true)
@@ -218,6 +228,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     setFigeesIncompletes(lectureFigees.motif)
     setVentesEmises(await lireVentesEmises(dossierId))
     setCitations(await lireCitationsDeLaRevision(dossierId))
+    setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
@@ -521,8 +532,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
       ].filter((ligne) => ligne !== null).join('\n\n'))
       return
     }
+    // Les fiches « hors de France » partent avec leurs pièces (clé en cascade) : la confirmation les nomme.
+    const fichesEmportees = fichesEmporteesParLaSuppression(aSupprimer.map((p) => p.id), fichesHorsDeFrance)
     if (!window.confirm(
-      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}`,
+      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}`
+      + (fichesEmportees ? `\n\n${fichesEmportees}` : ''),
     )) return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
@@ -1026,6 +1040,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
                 autres: marque.autresPieces.map((id) => pieces.find((x) => x.id === id)?.nom_fichier ?? id),
               } : null
             })()}
+            horsDeFrance={{
+              lecture: fichesHorsDeFrance,
+              relire: relireFichesHorsDeFrance,
+              anneeFigeante: figees.get(editing.id) ?? null,
+              gelIncomplet: figeesIncompletes,
+              pieces: lectureIncomplete === null ? pieces : null,
+            }}
             onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
             onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
           />

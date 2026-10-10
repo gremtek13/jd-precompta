@@ -18624,3 +18624,82 @@ l'application : les deux migrations dans l'export, `DEVIS_EXPORTES` levé, les t
 (quatre fonctions de plus qui écrivent, `devis_numerotation` sans policy, volontaire). Puis P6, les écrans. Limites
 nommées : les notes d'un devis sont PARTAGÉES ; une date facultative mal formée (exécution prévue, période) rend l'erreur
 brute de Postgres, comme `enregistrer_facture` — l'écran n'envoie que des dates de son calendrier.
+
+### 10/10/2026 — LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN — LIGNE 28.5, ÉTAPE (E), TROISIÈME TEMPS (E3)
+
+(`src/pages/dossier/FicheHorsDeFrance.tsx` et son test ; `src/lib/propositionsHorsDeFrance.ts` et son test ;
+`src/lib/piecesHorsDeFranceLecture.ts` ; `FichePiece.tsx`, `PiecesTab.tsx` et leurs tests ; `ecransAvantLecture.test.tsx`
+et `encaissementsEcritures.test.ts` (ajouts) ; `src/index.css` ; le banc de captures : `fauxSupabase.ts`, `vitrine.mjs`,
+`debordements.mjs`.) Le troisième temps de l'e-reporting (« L'E-REPORTING : LA CONCEPTION », § 4.4 et § 6.1) : la fiche
+« fournisseur établi hors de France » qu'e2 a mise en base, à l'écran, dans la fiche d'une pièce. Aucune migration, aucune
+Edge Function, aucun appel réseau ; le module et l'essai d'e2 n'ont pas été touchés. Rien n'existe encore en base (aucune
+fiche en production) : tout ce qui suit est LATENT.
+
+**OÙ LES FICHES SE LISENT.** Dans l'onglet Pièces, une fois par chargement (`lireFichesHorsDeFrance` : `lireTout` sur les
+deux tables, tri total `id`, et `fiche_id, code_tva, taux`), relues SEULES après une écriture de la fiche. Pas dans la
+section : la suppression d'une SÉLECTION de pièces doit nommer les fiches qu'elle emporte, et le refus 20 (la même facture
+sur une autre pièce) se juge sur le dossier entier. La section reçoit la lecture, sa relecture, le gel (`figees` de
+`lirePiecesFigees`, donc `piecesFigees`) et la liste des pièces ; elle ne lit elle-même que le texte de SA pièce, déjà
+stocké (une ligne de `piece_textes_ocr`, `data` et `error` lus : un refus se DIT, il ne vaut pas « rien à proposer »), et
+pas du tout quand l'onglet sait la pièce sans texte. `FichePiece` reçoit ces données par une prop OBLIGATOIRE : un appelant
+qui l'oublierait tairait la fiche dans la confirmation de suppression.
+
+**RIEN SUR UNE LECTURE QUI N'EST PAS REVENUE ENTIÈRE.** Lecture absente : « Lecture… », aucun geste. Lecture partielle : le
+motif et « Relire les fiches », aucune fiche montrée. Gel lu en partie : ni enregistrement ni retrait. Et tant que le type,
+la TVA, le TTC ou la devise de la pièce portent une saisie non enregistrée, la fiche ne s'écrit pas : la base la compare à
+la pièce ENREGISTRÉE.
+
+**LES REFUS AVANT LE CLIC.** Par `refusFicheHorsDeFrance` et `refusRetraitFiche`, dans l'ordre et sous les mots de la base :
+ceux de la PIÈCE (pas un achat, figée, sans TTC dans sa devise, une TVA — hypothèse Q7) avant même d'ouvrir la saisie ;
+ceux de la saisie en direct, le bouton fermé, un seul à la fois, le premier dans l'ordre de la fonction. Deux champs ne
+sont pas saisis parce qu'ils sont déterminés — « une valeur par défaut connue s'applique » : le TYPE se lit au signe du
+TTC dans sa devise (380 ou 381 : le refus 11 rejette toute autre combinaison), le SCHÉMA au pays (0223 dans l'Union, 0227
+ailleurs : les refus 14). Taux et TVA sont toujours nuls et le code S n'est pas offert (Q7). Une saisie s'ouvre sur la
+version COURANTE, dont elle retient l'identifiant : une version enregistrée depuis (un autre onglet) fait dire « relire
+avant d'enregistrer » dès la relecture, avec « Repartir de la version enregistrée ». La version courante est REJUGÉE
+contre la pièce d'aujourd'hui, le gel mis à part : la base ne revoit pas une fiche quand sa pièce change (son TTC, sa TVA,
+son type), l'écran le dit. Une pièce passée en vente garde sa fiche à l'écran, et peut la retirer.
+
+**L'ÉCRITURE.** Par les deux fonctions seules (`ECRANS_DE_LA_FICHE` = cette section), paramètres de `argumentsDeLaFiche`
+et `argumentsDuRetrait`, sous UN verrou `useRef` pour les deux gestes, posé avant le `try`, relâché APRÈS la relecture ;
+le gestionnaire rejuge la saisie au clic et ne part pas sur un refus. Le retrait se confirme en nommant la fiche. L'erreur
+de la base passe par `messageErreur`. La section vit DANS le formulaire de la pièce : ses boutons sont de type `button`, et
+un Entrée dans un de ses champs ne soumet pas la pièce (il la validerait). Une saisie de fiche en cours rejoint la garde du
+volet.
+
+**LES PROPOSITIONS** (`lib/propositionsHorsDeFrance.ts`, pur, sans modèle ni réseau) : les numéros de TVA d'un autre État
+de l'Union, reconnus à la structure que la Commission publie pour VIES (vingt-six formats, confrontés par le test aux
+États d'e2 et à `NUMERO_TVA_UNION`), séparateurs d'impression admis, jamais le début d'un nombre plus long, EL rendu en GR ;
+la mention d'autoliquidation dans les langues de la directive, cherchée sur un texte plié (minuscules, sans accents) et
+rendue telle qu'imprimée ; le numéro de facture après son étiquette (huit langues, au moins un chiffre, la forme de G1.05,
+jamais une date) ; la date de la pièce ; une ligne de ventilation au TTC dans sa devise (au code AE quand la mention est
+lue) ; la fiche la plus récente, courante et non retirée, d'une autre pièce du même fournisseur (`cleFournisseur`) — pas
+sur une liste de pièces lue en partie ; l'identifiant 0227 d'après le pays choisi et le tiers. Chacune dit sa source et son
+extrait ; un clic « Reprendre » la pose, une reprise ne se propose plus ; rien n'est appliqué seul. Les SIGNAUX (devise,
+numéro de TVA, mention, fournisseur déjà décrit) disent pourquoi une pièce d'achat sans fiche en mérite peut-être une.
+
+**LA SUPPRESSION D'UNE PIÈCE NOMME LA FICHE QU'ELLE EMPORTE** (la clé est en cascade, toutes versions et ventilation
+comprises) : `FichePiece` pour une pièce (« Sa fiche … — la facture n° … (pays) — est supprimée avec elle, avec ses N
+versions précédentes »), `PiecesTab` pour une sélection (combien, et lesquelles, cinq au plus) ; sur une lecture absente ou
+partielle, la confirmation dit qu'elle ne sait pas.
+
+**CE QUI RESTE AU CABINET** — les hypothèses d'e2, que l'écran ne tranche pas et rappelle dans la saisie : Q7 (un achat
+facturé avec une TVA, mis de côté), point 5 (un fournisseur hors de l'Union en AE ou en O, non vérifié), point 15 (une
+acquisition de biens que le dossier n'aurait pas à autoliquider), Q3 (le numéro de TVA du dossier, exigé par la
+déclaration et non par la fiche).
+
+**LES PREUVES.** Tests : le module (31), la section (27 : lecture absente, partielle, gel incomplet, refus de la pièce, gel,
+pièce modifiée, les refus de la saisie un à un dans l'ordre, facture déjà décrite, version changée depuis, paramètres
+envoyés, verrou à deux puis trois clics du même `act`, verrou tenu pendant la relecture, refus de la base dit, rejugement
+au clic, retrait confirmé et verrouillé, Entrée, versions, reprise d'une version, fiche rejugée, pièce passée en vente,
+fiche retirée, signaux, propositions et leur reprise, texte refusé, identifiant 0227), `FichePiece` (+3 : confirmation,
+suspension, garde du volet), `PiecesTab` (+2 : sélection nommée, lecture partielle), le garde des écrans avant lecture
+(la section montée, rien d'affirmé ni d'écrit). MUTATIONS : 46, dont 44 mordent et 2 équivalentes justifiées (un rejugement au clic que le bouton fermé rend inatteignable ; une liste partielle remplacée par une liste vide). Banc (port 5351) : deux
+visites ajoutées (la fiche à deux versions, la saisie ouverte), 0 débordement aux neuf passes ; les captures ont montré ce
+que le banc ne mesure pas — sous 1 280 pixels le volet se superpose et n'est pas mesuré : la liste des pays prenait la
+largeur de son plus long nom et sortait du volet à 1 024 pixels ; corrigé (`min-width: 0`), recapturé.
+
+**CE QUI RESTE.** La batterie « sur réplique » de la conception (facultative ici) n'a pas été jouée : le rejeu de l'essai
+d'e2 par le test du module couvre déjà les refus. Une fiche DÉCLARÉE devra retenir sa pièce (la cascade est voulue tant que
+rien n'est déclaré) : à trancher avec e5, qui figera ce qui est parti. Le banc ne mesure pas le volet superposé sous
+1 280 pixels.
