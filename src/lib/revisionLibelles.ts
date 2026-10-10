@@ -1,6 +1,7 @@
 import type { CauseARevoir, EtatDuSolde } from './revision'
 import type { VerdictDePreuve } from './revisionPreuves'
-import type { EtatDecisionRevision } from './types'
+import type { CauseDuCycle, EtatDuCycle } from './revisionRevue'
+import type { AvisRevueRevision, EtatConclusionRevision, EtatDecisionRevision } from './types'
 
 // LES MOTS DE L'ÉCRAN DE LA RÉVISION (ligne 41, étape R3) : l'état d'un solde, le verdict d'une preuve, la décision, et
 // pourquoi un solde est à revoir. Le texte garde sa couleur ; le statut se lit à la pastille (CLAUDE.md, tableaux de
@@ -45,4 +46,38 @@ export const CAUSES_A_REVOIR: Readonly<Record<CauseARevoir, string>> = {
   'empreinte-disparue': 'une source citée n’a plus d’empreinte',
   'source-introuvable': 'une source citée est introuvable dans ce qui a été lu',
   'chaine-illisible': 'la chaîne des décisions du compte ne se lit pas',
+}
+
+// LES MOTS DES CYCLES (ligne 41, étape R4, phase C) : l'état d'un cycle tel que `cyclesDeLExercice` le déduit, et ce qui
+// le retient. La carte du cycle et son panneau disent la même chose du même cycle.
+export const ETAT_DU_CYCLE: Readonly<Record<EtatDuCycle, Pastille>> = {
+  'en-attente': { mot: 'en attente', classe: 'badge-neutral' },
+  'non-commence': { mot: 'non commencé', classe: 'badge-neutral' },
+  'en-cours': { mot: 'en cours', classe: 'badge-warning' },
+  revise: { mot: 'révisé, à revoir par le chef', classe: 'badge-ok' },
+  anomalie: { mot: 'anomalie', classe: 'badge-danger' },
+  'a-reprendre': { mot: 'à reprendre', classe: 'badge-warning' },
+  revu: { mot: 'revu', classe: 'badge-ok' },
+  'revue-perimee': { mot: 'revue périmée', classe: 'badge-warning' },
+  'a-revoir': { mot: 'à revoir', classe: 'badge-warning' },
+}
+
+export const CAUSES_DU_CYCLE: Readonly<Record<CauseDuCycle, string>> = {
+  'soldes-a-justifier': 'un solde de bilan du cycle reste à justifier',
+  'soldes-a-revoir': 'la décision d’un solde du cycle est à revoir',
+  'soldes-en-anomalie': 'un solde du cycle est signalé en anomalie',
+  'soldes-en-attente': 'les soldes du cycle attendent la validation de l’exercice précédent',
+  'cycles-ouverts': 'un autre cycle n’est encore ni révisé, ni en anomalie, ni revu',
+  'activite-posterieure': 'une décision, une conclusion ou une note a suivi la revue',
+  'chaine-illisible': 'la chaîne des conclusions du cycle ne se lit pas',
+}
+
+export const PASTILLE_DE_LA_CONCLUSION: Readonly<Record<EtatConclusionRevision, Pastille>> = {
+  revise: { mot: 'révisé', classe: 'badge-ok' },
+  anomalie: { mot: 'anomalie', classe: 'badge-danger' },
+}
+
+export const PASTILLE_DE_LA_REVUE: Readonly<Record<AvisRevueRevision, Pastille>> = {
+  approuve: { mot: 'approuvé', classe: 'badge-ok' },
+  a_reprendre: { mot: 'à reprendre', classe: 'badge-warning' },
 }

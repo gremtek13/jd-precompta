@@ -58,8 +58,9 @@ export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuv
 export const TABLES_DES_FICHES_HORS_DE_FRANCE = ['pieces_hors_de_france', 'pieces_hors_de_france_taux'] as const
 export const TABLES_DES_CYCLES_DE_LA_REVISION = ['revision_conclusions', 'revision_notes', 'revision_revues'] as const
 
-// Les écrans qui appelleront les trois fonctions des cycles, nommément : aucun avant la phase C de l'étape R4.
-const ECRANS_DES_CYCLES: readonly string[] = []
+// Les écrans qui appellent les trois fonctions des cycles, nommément : l'onglet Révision (étape R4, phase C), qui écrit
+// pour son panneau d'un cycle (`FicheCycle`, qui n'écrit rien lui-même).
+const ECRANS_DES_CYCLES: readonly string[] = ['src/pages/dossier/RevisionTab.tsx']
 
 // Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
 const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']

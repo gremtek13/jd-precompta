@@ -524,8 +524,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3, l'onglet Révision, le
   10/10/2026 (les préalables de la validation n'y sont pas encore) ; R4, les cycles — le programme de travail PROPOSÉ,
   la conclusion, le journal, la revue du chef —, en base et en module le 10/10/2026 (Q2, Q7 et Q11 prises comme
-  hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes ; l'écran, sa phase C, à venir) ; R6 attend Q1 → « LA BASE DES
-  SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION ».
+  hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes), et à l'écran le même jour (phase C) ; R6 attend Q1 → « LA BASE
+  DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION »,
+  « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -904,7 +905,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`cyclesDeLExercice` : non commencé, en cours, révisé, anomalie, à reprendre, revu, revue périmée…), jamais stocké ;
   le cycle « ensemble » porte la synthèse et ne se dit révisé que quand les autres le sont. `lib/revisionRevue.ts` redit
   les refus avant le clic, confronté au texte exporté des fonctions et rejoué sur l'essai → « LES CYCLES DE LA
-  RÉVISION ».
+  RÉVISION ». À l'écran (phase C) : chaque carte de l'onglet Révision porte l'état DÉDUIT de son cycle, ce qui le
+  retient, sa conclusion courante et ce que l'exercice précédent a laissé à suivre ; le panneau `FicheCycle` (volet
+  `cycle`, plein écran sur téléphone) le programme — celui de la courante, ou le proposé —, l'historique, le journal et
+  la revue, offerte au chef seul (`estChef`). Les trois tables se lisent par `lireTout` avec le reste, et rien ne se
+  montre sur une lecture partielle ; chaque bouton passe son refus du module et se grise ; une saisie RETIENT la
+  conclusion qu'elle remplace (refus 10 dit avant le clic si une autre a été prise depuis) ; un verrou `cycleEnCours`,
+  que la décision d'un solde partage, relâché après la relecture → « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1165,7 +1172,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8306 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8397 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

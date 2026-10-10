@@ -1761,9 +1761,11 @@ a.nav-menu-item { text-decoration: none; }
   /* Une fiche de pièce a besoin de tout l'écran : l'aperçu du justificatif et ses champs ne tiennent
      pas dans la carte de l'assistant. Le rapprochement d'un mouvement non plus — les pièces proposées,
      leurs signaux et le choix à la main —, ni le panneau « justifier » d'un solde de bilan (la preuve,
-     l'historique, la décision). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
+     l'historique, la décision), ni celui d'un cycle de la révision (le programme, la conclusion, le
+     journal, la revue). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
      remplacent — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
-  .panneau-droit[data-occupant="piece"], .panneau-droit[data-occupant="mouvement"], .panneau-droit[data-occupant="solde"] {
+  .panneau-droit[data-occupant="piece"], .panneau-droit[data-occupant="mouvement"], .panneau-droit[data-occupant="solde"],
+  .panneau-droit[data-occupant="cycle"] {
     top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom));
     left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
   }

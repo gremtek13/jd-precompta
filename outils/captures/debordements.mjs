@@ -250,6 +250,26 @@ const VISITES = [
       await page.getByRole('button', { name: 'Ouvrir le compte 218300', exact: true }).click()
     },
   },
+  // LES CYCLES DE LA RÉVISION (étape R4, phase C) : le panneau d'un cycle conclu et revu — son programme exécuté, son
+  // journal, sa revue —, puis celui de la synthèse, dont la conclusion est longue et que les autres cycles retiennent.
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/cycle',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Ouvrir le cycle Trésorerie', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/cycle-ensemble',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Ouvrir le cycle Ensemble', exact: true }).click()
+    },
+  },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/à-justifier', apres: exercice('2025') },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/en-cours', apres: exercice('2026') },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
