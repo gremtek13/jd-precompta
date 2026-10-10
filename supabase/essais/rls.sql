@@ -209,6 +209,16 @@
 -- témoin posé seul, sans les policies, fait virer le bloc au rouge (contrôle positif 9 sur 9, catalogue, 4bis). Le
 -- passage en production suivra l'application des migrations et se notera ici. Ce que les fonctions des ventes refusent
 -- et acceptent, profil par profil et par leur raison, est éprouvé par `ventesClient.sql`.
+--
+-- 10/10/2026 — PASSAGE COMPLET après `plan_comptable_des_dossiers` (ligne 43, étape PC1), qui crée `roles_comptables` —
+-- le catalogue des rôles, lisible par tout compte connecté : il rejoint les référentiels tolérés, et M2 en attend 4 — et
+-- `plan_comptable_dossier` (lecture sous `admin_du_dossier`, AUCUNE policy d'écriture, une garde) ; la production porte
+-- aussi `pieces_hors_de_france` et `banque_du_client`, appliquées par d'autres étapes : 24 lignes de verdict (65 tables
+-- du schéma, dont 56 portant un `dossier_id`, + 3 buckets, 4 profils), 0 en faute, et 16 mutations sur 16 qui mordent
+-- (M2 : exactement 4). Le texte reçu est la copie adaptée, caractère pour caractère (39 332 caractères, empreinte
+-- b2ed6e7e4077d49aa582fafc18695b33), adaptée comme celle de P1, bordures comprises. La table du plan est vide en
+-- production : ce que sa policy, sa garde et sa clé étrangère refusent et acceptent sur une ligne qui EXISTE, profil par
+-- profil, est éprouvé par `planComptable.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -229,10 +239,13 @@ declare
   --   - taux_change_bce : cours publiés par la BCE, publics par nature ;
   --   - categories / natures_immobilisation : libellés comptables partagés par le cabinet
   --     (`dossier_id` nul). Réservés aux connectés depuis la migration du 19/09/2026 — avant, ils
-  --     étaient lisibles par un ANONYME, ce que ce script a découvert.
+  --     étaient lisibles par un ANONYME, ce que ce script a découvert ;
+  --   - roles_comptables : le catalogue des rôles du plan comptable (ligne 43, PC1, 10/10/2026) — des
+  --     numéros et des intitulés du plan comptable général, publics par nature, sans `dossier_id` ; le
+  --     plan d'un DOSSIER (`plan_comptable_dossier`) n'est pas ici : il se lit sous `admin_du_dossier`.
   -- Toute AUTRE table visible d'un inconnu serait une fuite. Cette liste est l'endroit où « on a
   -- décidé que c'était acceptable » est écrit ; elle doit rester courte et justifiée.
-  tolerees text[] := array['taux_change_bce', 'categories', 'natures_immobilisation'];
+  tolerees text[] := array['taux_change_bce', 'categories', 'natures_immobilisation', 'roles_comptables'];
 
   t record; n bigint; hors bigint; accepte boolean; touchees int;
   numero_avant int; numero_apres int;
@@ -602,7 +615,7 @@ begin
   end loop;
   insert into rls_mutation values ('M1 — contrôle 1 joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
 
-  -- M2 : le contrôle 2 sans sa liste d'exceptions. Les 3 référentiels tolérés doivent ressortir —
+  -- M2 : le contrôle 2 sans sa liste d'exceptions. Les 4 référentiels tolérés doivent ressortir —
   -- preuve que la boucle lit de vrais comptes, et non zéro parce que l'impersonation a échoué.
   en_faute := 0;
   for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
@@ -614,7 +627,7 @@ begin
     reset role;
     if not (n <= 0) then en_faute := en_faute + 1; end if;
   end loop;
-  insert into rls_mutation values ('M2 — contrôle 2 sans sa liste tolerees', 'exactement 3 en faute', en_faute || ' tables', en_faute = 3);
+  insert into rls_mutation values ('M2 — contrôle 2 sans sa liste tolerees', 'exactement 4 en faute', en_faute || ' tables', en_faute = 4);
 
   -- M3 : le contrôle 3 joué sous le chef, qui voit tout le cabinet.
   en_faute := 0;

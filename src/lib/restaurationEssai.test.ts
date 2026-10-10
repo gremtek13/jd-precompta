@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CHEMINS_DOSSIER,
   ORDRE_RESTAURATION,
+  PARENTS_HORS_PLAN_VOULUS,
   TABLES_AUTO_REFERENCEES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES,
   type CheminDossier,
@@ -115,6 +116,14 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(ecartsAuCode(plan)).toEqual([])
   })
 
+  it('pose en prérequis chaque parent que la sauvegarde ne porte pas, comme la base d’arrivée doit le porter', () => {
+    // Le cabinet du dossier, et le catalogue des rôles comptables (ligne 43, PC1) : sans eux, le script s'arrêterait sur
+    // la clé du dossier, ou sur celle du plan.
+    for (const parent of PARENTS_HORS_PLAN_VOULUS) {
+      expect(texteDeLEssai).toMatch(new RegExp(`insert into essai_restauration\\.${parent}\\s+select \\* from public\\.${parent}`))
+    }
+  })
+
   it('les vagues partent une instruction par vague, sur chacun des liens de la table', () => {
     // La condition d'une vague : chaque lien vide, hors du dossier, ou déjà écrit — celle de `vaguesParLien`.
     expect(texteDeLEssai).toContain(`'(s.%1$I is null or s.%1$I not in (select x.id from public.%2$I x where x.dossier_id = $1)'`)
@@ -127,19 +136,31 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       expect(texteDeLEssai).toContain(avant)
       return ecartsAuCode(planDeLEssai(texteDeLEssai.replace(avant, apres)))
     }
+    // Les rangs se lisent dans le code, pas dans ce fichier : une table ajoutée à l'ordre les décale tous — le plan
+    // comptable d'un dossier et son catalogue, deux d'un coup (ligne 43, PC1).
+    const rang = (table: string) => ORDRE_RESTAURATION.indexOf(table) + 1
+    const [justifications, preuves, valides] = ['revision_justifications', 'revision_preuves', 'exercices_valides'].map(rang)
 
     it('deux tables échangées dans l’ordre', () => {
-      const ecarts = remplacer("(59,'revision_justifications'),(60,'revision_preuves')", "(59,'revision_preuves'),(60,'revision_justifications')")
-      expect(ecarts.join('\n')).toContain('premier écart au rang 59')
+      const ecarts = remplacer(`(${justifications},'revision_justifications'),(${preuves},'revision_preuves')`,
+        `(${justifications},'revision_preuves'),(${preuves},'revision_justifications')`)
+      expect(ecarts.join('\n')).toContain(`premier écart au rang ${justifications}`)
     })
 
     it('une table oubliée dans l’ordre', () => {
-      const ecarts = remplacer(",(60,'revision_preuves'),(61,'exercices_valides')", ",(60,'exercices_valides')")
+      const ecarts = remplacer(`,(${preuves},'revision_preuves'),(${valides},'exercices_valides')`, `,(${preuves},'exercices_valides')`)
       expect(ecarts.join('\n')).toContain('manquantes : revision_preuves')
     })
 
     it('un rang sauté', () => {
-      expect(remplacer("(61,'exercices_valides')", "(62,'exercices_valides')")).toContain('_ordre : le rang 62 est à la place 61')
+      expect(remplacer(`(${valides},'exercices_valides')`, `(${valides + 1},'exercices_valides')`))
+        .toContain(`_ordre : le rang ${valides + 1} est à la place ${valides}`)
+    })
+
+    it('le plan comptable d’un dossier, ou son catalogue, oublié', () => {
+      const plan = rang('plan_comptable_dossier')
+      expect(remplacer(`,(${plan},'plan_comptable_dossier')`, '').join('\n')).toContain('manquantes : plan_comptable_dossier')
+      expect(remplacer("('roles_comptables','global',null,null),", '')).toContain('_chemins : roles_comptables manque')
     })
 
     it('un chemin oublié, ou faux', () => {

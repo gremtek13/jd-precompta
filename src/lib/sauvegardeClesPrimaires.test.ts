@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { clesPrimairesDuSchema, fichiersDuSchema } from '../test/schema'
-import { CLES_PRIMAIRES, RELATIONS } from './sauvegarde'
+import { clePrimaire, CLES_PRIMAIRES, RELATIONS } from './sauvegarde'
 
 // UNE PROMESSE ÉCRITE DANS UN COMMENTAIRE, ET RIEN DERRIÈRE — trouvée le 22/09/2026 en balayant les
 // commentaires qui AFFIRMENT qu'un test garde quelque chose. Six affirmations de ce genre dans les
@@ -21,6 +21,11 @@ import { CLES_PRIMAIRES, RELATIONS } from './sauvegarde'
 // L'INVARIANT TIENT AUJOURD'HUI — 11 parents, aucun à clé composite. Ce test ne corrige donc rien :
 // il rend vraie une phrase qui était fausse, et attrape la relation qu'on ajoutera demain vers l'une
 // des six tables à clé non-`id`.
+//
+// LE 10/10/2026 (ligne 43, étape PC1), cette relation est arrivée : le plan d'un dossier pointe le
+// catalogue des rôles comptables, dont la clé est `role`. Une clé d'une seule colonne, donc légitime —
+// `liensPerdus` compare depuis sur la clé de `clePrimaire`, et le test exige une clé d'UNE colonne,
+// celle que la liste déclare, plutôt que `id`.
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
 // LA SOURCE EST LE SCHÉMA EXPORTÉ, JAMAIS UNE LISTE TENUE À LA MAIN — comme `sauvegardeTables` et
@@ -68,16 +73,22 @@ describe('clés primaires — ce que la sauvegarde suppose du schéma', () => {
     expect(cles.has('pack_pieces')).toBe(false)
   })
 
-  it('TOUTE table PARENTE du graphe a `id` pour clé primaire', () => {
-    // LA PHRASE QUE `liensPerdus` ÉCRIT DEPUIS TOUJOURS, enfin vérifiée. Une relation ajoutée demain
-    // vers `superpdp_credentials`, `previsionnels_bancaires` ou l'une des quatre autres rendrait
-    // toute restauration impossible — voir l'en-tête.
-    const fautifs = parents.filter((p) => !estId(cles.get(p) ?? []))
+  it('TOUTE table PARENTE du graphe a une clé d’UNE colonne, celle que `clePrimaire` déclare', () => {
+    // LA PHRASE QUE `liensPerdus` ÉCRIT DEPUIS TOUJOURS, enfin vérifiée — puis élargie le 10/10/2026 (ligne 43, PC1) :
+    // le catalogue des rôles comptables est le premier parent dont la clé n'est pas `id` (`role`), et `liensPerdus`
+    // compare désormais sur la clé de `clePrimaire`. Un parent à clé composite, ou dont `CLES_PRIMAIRES` dirait la clé
+    // autrement que le schéma, rendrait toute restauration impossible — voir l'en-tête.
+    const fautifs = parents.filter((p) => {
+      const duSchema = cles.get(p) ?? []
+      return duSchema.length !== 1 || clePrimaire(p).length !== 1 || duSchema[0] !== clePrimaire(p)[0]
+    })
     expect(
       fautifs,
-      'un parent dont la clé primaire n’est pas `id` : `liensPerdus` compare sur `id` et déclarerait ' +
-        'perdue chaque ligne fille, donc `restaurerSauvegarde` refuserait tout.',
+      'un parent dont la clé primaire n’est pas d’une seule colonne, ou pas celle de `clePrimaire` : `liensPerdus` ' +
+        'déclarerait perdue chaque ligne fille, donc `restaurerSauvegarde` refuserait tout.',
     ).toEqual([])
+    // Le seul parent dont la clé ne s'appelle pas `id`, compté : un second se verra ici avant de se voir ailleurs.
+    expect(parents.filter((p) => !estId(cles.get(p) ?? []))).toEqual(['roles_comptables'])
   })
 
   it('rejoue les instructions dans l’ORDRE ÉCRIT, pas dans l’ordre des motifs', () => {

@@ -146,9 +146,10 @@ src/
 supabase/
   functions/      une Edge Function par sous-dossier, auto-portée.
   essais/         essais à REJOUER, jamais seulement relire, par impersonation (anonyme, compte rattaché à
-                  rien, client, chef de cabinet). Sans suppression en production (l'outil d'exécution la
-                  soumet à une confirmation qui n'arrive pas) : ce qu'une suppression rencontre se joue sur une
-                  réplique locale du schéma.
+                  rien, client, chef de cabinet). Sans suppression ni mise à jour sans `where` en production
+                  (l'outil d'exécution les retient pour une confirmation qui n'arrive pas : l'appel expire à
+                  60 s sans avoir atteint la base) : ce qu'une suppression rencontre se joue sur une réplique
+                  locale du schéma.
                   - rls.sql : toutes les tables et le stockage, boucle sur pg_class, se mute lui-même ;
                   - restauration.sql (sur une réplique : le plan de sauvegarde.ts, gardé par
                     restaurationEssai.test.ts) ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
@@ -164,7 +165,7 @@ supabase/
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes,
-                    droitsAcces, piecesHorsDeFrance ;
+                    droitsAcces, piecesHorsDeFrance, planComptable ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -498,7 +499,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
 - **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
   lu par la base, figé à la première écriture ; étapes PC1 à PC9, douze questions au cabinet → « LE PLAN COMPTABLE
-  PERSONNALISABLE : LA CONCEPTION ».
+  PERSONNALISABLE : LA CONCEPTION » ; PC1, le catalogue des rôles et le plan d'un dossier, en base le 10/10/2026 —
+  NEUTRE : rien ne le lit avant PC2, aucune policy ne l'écrit avant PC4, le plan de chaque dossier est vide (Q3 et Q5
+  prises comme hypothèses) → « LE CATALOGUE DES RÔLES ET LE PLAN D'UN DOSSIER, EN BASE ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -559,7 +562,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   SANS LEVER. Jamais `WHERE dossier_id = ?` seul ; un écran qui en offre l'écriture le dit avant le clic et lit la ligne
   rendue (`lib/categoriesCommunes.ts`, `supabase/essais/categoriesCommunes.sql`) → « CINQ DÉFAUTS RELEVÉS EN CONCEVANT
   LE PLAN COMPTABLE PERSONNALISABLE ».
-- **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`, épinglée au schéma) ; une table auto-référencée se
+- **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`, épinglée au schéma), même d'un parent (`roles_comptables` :
+  `role`) — `liensPerdus` compare sur `clePrimaire` ; une table auto-référencée se
   restaure en deux passes ; le plan free n'a AUCUNE sauvegarde automatique (PLAN_DE_REPRISE.md).
 - **Un type de `types.ts` décrit la table**, colonnes NOT NULL comprises — et les déclencheurs comptent : ceux de
   `dossiers` remplissent `cabinet_id` et `code_email` seulement s'ils sont nuls.
@@ -804,6 +808,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
   (`comptes.test.ts` les épingle, recopiés de la nomenclature), et le refus du 468 sur un mouvement du relevé garde le
   sens de 2019 jusqu'à la réponse du cabinet à Q12 → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ».
+- **Le plan comptable d'un dossier** (`plan_comptable_dossier`, ligne 43, PC1) : un rôle sans ligne prend le défaut du
+  catalogue (`roles_comptables`, 26 rôles = les constantes de `comptes.ts`, confrontés à la migration et épinglés par
+  `planComptable.test.ts`) ; `compte_du_role` (lève sur un rôle inconnu), `compte_du_dirigeant` (le `case` que cinq
+  fonctions recopient, prouvé contre leur texte) et `plan_du_dossier` le lisent ; le client n'en voit rien ; aucune
+  policy d'écriture, et la garde n'admet que la restauration par le super-administrateur dans un dossier sans écriture,
+  à-nouveau ni solde reporté (six chiffres — Q5 —, sous une racine du rôle, préfixe des seuls tiers). Le catalogue est
+  hors de toute sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la restauration lit dans la base d'arrivée chaque rôle qu'un
+  plan désigne avant d'écrire, et réinsère le plan juste après son dossier → « LE CATALOGUE DES RÔLES ET LE PLAN D'UN
+  DOSSIER, EN BASE ».
 - **Montant retenu** : le HT pour un assujetti, le TTC pour un exonéré (`lib/montantRetenu.ts`, statut en paramètre
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de

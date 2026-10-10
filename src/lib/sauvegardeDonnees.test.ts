@@ -154,8 +154,9 @@ describe('export d’un dossier', () => {
     expect(manifeste.lignesParTable.pieces).toBe(1)
     expect(contenu.pieces).toHaveLength(1)
     // Ce qu'une sauvegarde de données ne remplace pas doit être écrit, pas sous-entendu : les
-    // fichiers, les comptes et la ligne du cabinet.
-    expect(manifeste.horsPerimetre).toHaveLength(3)
+    // fichiers, les comptes, la ligne du cabinet et le catalogue des rôles comptables (ligne 43, PC1).
+    expect(manifeste.horsPerimetre).toHaveLength(4)
+    expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
     expect(manifeste.comptes.facultatifs).toEqual(['u1'])
     expect(manifeste.referencesExternes).toEqual([
       { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: [CABINET] },
@@ -733,6 +734,66 @@ describe('restauration des accès clients et de leurs droits', () => {
       ['m2', false, true],
     ])
     expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+})
+
+// LE PLAN COMPTABLE D'UN DOSSIER (ligne 43, étape PC1). Le plan suit son dossier dans la sauvegarde ; le catalogue des
+// rôles, posé par migration dans toute base, n'y est pas, et la restauration lit dans la base d'arrivée chaque rôle que le
+// plan désigne avant d'écrire la première ligne (point NON VÉRIFIÉ 7 de la conception). En base, l'insertion attend la
+// policy de l'étape PC4 : à PC1 aucune policy n'écrit le plan, donc aucun dossier n'en a de ligne, ni aucune sauvegarde.
+describe('restauration du plan comptable d’un dossier', () => {
+  const catalogue: Ligne[] = [
+    { role: 'banque', racines: ['512'], compte_defaut: '512000', libelle_defaut: 'Banque', prefixe_auxiliaire_defaut: null, ordre: 10 },
+    { role: 'fournisseurs', racines: ['401'], compte_defaut: '401000', libelle_defaut: 'Fournisseurs', prefixe_auxiliaire_defaut: 'F', ordre: 100 },
+  ]
+  const plan: Ligne[] = [
+    { dossier_id: DOSSIER, role: 'fournisseurs', compte: '401100', libelle: null, prefixe_auxiliaire: 'FO', origine: 'dossier' },
+    { dossier_id: DOSSIER, role: 'banque', compte: '512100', libelle: null, prefixe_auxiliaire: null, origine: 'dossier' },
+  ]
+  const copie = (lignes: Ligne[]) => lignes.map((l) => ({ ...l }))
+  function baseDArrivee() {
+    base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [], roles_comptables: copie(catalogue) }
+  }
+
+  it('exporte le plan avec son dossier, sans le catalogue, et le réécrit juste après le dossier, avant ses écritures', async () => {
+    base.tables.roles_comptables = copie(catalogue)
+    base.tables.plan_comptable_dossier = copie(plan)
+    base.tables.ecritures_brouillon = [{ id: 'e1', dossier_id: DOSSIER, compte: '512100', sens: 'debit', montant: 10 }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+
+    expect(sauvegarde.contenu.plan_comptable_dossier).toHaveLength(2)
+    expect(sauvegarde.contenu.roles_comptables).toBeUndefined()
+    // Lu trié sur sa clé entière : le dossier, puis le rôle.
+    expect(journal.find((j) => j.table === 'plan_comptable_dossier')?.tri).toEqual(['dossier_id', 'role'])
+    expect(sauvegarde.manifeste.referencesExternes).toContainEqual(
+      { table: 'plan_comptable_dossier', colonne: 'role', parent: 'roles_comptables', valeurs: ['banque', 'fournisseurs'] },
+    )
+
+    baseDArrivee()
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(resultat.lignesParTable.plan_comptable_dossier).toBe(2)
+    const tables = ecritures.filter((e) => e.action === 'insert').map((e) => e.table)
+    expect(tables.indexOf('plan_comptable_dossier')).toBe(tables.indexOf('dossiers') + 1)
+    expect(tables.indexOf('ecritures_brouillon')).toBeGreaterThan(tables.indexOf('plan_comptable_dossier'))
+    // Le catalogue de la base d'arrivée n'est ni réécrit ni complété.
+    expect(tables).not.toContain('roles_comptables')
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('refuse, avant d’écrire, un plan qui désigne un rôle que la base d’arrivée ne connaît pas', async () => {
+    // Une sauvegarde faite dans une base plus récente que celle où on la restaure : la clé étrangère refuserait la ligne au
+    // milieu de la restauration ; la lecture préalable le dit avant la première écriture.
+    const role = { role: 'role_d_une_base_plus_recente', racines: ['512'], compte_defaut: '512900', libelle_defaut: 'Essai', prefixe_auxiliaire_defaut: null, ordre: 999 }
+    base.tables.roles_comptables = [...copie(catalogue), role]
+    base.tables.plan_comptable_dossier = [...copie(plan),
+      { dossier_id: DOSSIER, role: role.role, compte: '512900', libelle: null, prefixe_auxiliaire: null, origine: 'dossier' }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+
+    baseDArrivee()
+    await expect(restaurerSauvegarde(sauvegarde)).rejects.toThrow(
+      /roles_comptables « role_d_une_base_plus_recente » doit exister dans la base d'arrivée \(pointé par plan_comptable_dossier\.role\)/,
+    )
+    expect(ecritures).toEqual([])
   })
 })
 

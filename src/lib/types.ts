@@ -1250,3 +1250,68 @@ export interface PieceHorsDeFranceTaux {
   motif_code: string | null
   motif_texte: string | null
 }
+
+// Le catalogue des rôles comptables (`roles_comptables`, ligne 43, étape PC1) : les comptes que l'application tient
+// elle-même — la banque, les comptes de TVA, les tiers, le dirigeant… —, les racines du PCG sous lesquelles chacun se
+// tient, son compte et son libellé par défaut (les constantes de `comptes.ts`), le préfixe des auxiliaires d'un rôle de
+// tiers. Posé par migration, jamais écrit ensuite ; tout compte connecté le lit. `planComptable.ts` en porte la copie
+// (`ROLES_COMPTABLES`), que son test confronte à la migration. `role` reste un texte : une base plus récente que le code
+// peut connaître un rôle que ce code ignore.
+export interface RoleComptable {
+  role: string
+  racines: string[]
+  compte_defaut: string
+  // Nul pour le capital et les deux comptes du résultat, que l'application ne nomme pas d'avance.
+  libelle_defaut: string | null
+  // F, FI et C pour les trois rôles de tiers, nul ailleurs.
+  prefixe_auxiliaire_defaut: string | null
+  ordre: number
+}
+
+// Ce qui a posé une ligne du plan d'un dossier : le dossier lui-même, le modèle du cabinet (étape PC5), la balance reprise
+// (étape PC6).
+export type OriginePlanComptable = 'dossier' | 'modele_du_cabinet' | 'balance_reprise'
+
+// Un rôle qu'un dossier règle (`plan_comptable_dossier`, ligne 43, étape PC1) ; un rôle sans ligne prend le défaut du
+// catalogue. Le cabinet à qui le dossier est ouvert le lit (`admin_du_dossier`, hypothèse Q3), jamais le client. Aucune
+// policy ne l'écrit, et sa garde n'admet que la restauration d'une sauvegarde par le super-administrateur dans un dossier
+// sans écriture : il reste vide jusqu'à l'étape PC4, et rien ne le lit avant PC2.
+export interface PlanComptableDossier {
+  dossier_id: string
+  role: string
+  // Six chiffres (hypothèse Q5), sous une racine de son rôle.
+  compte: string
+  // Nul : celui du catalogue ; sinon l'intitulé de la subdivision ouverte, qui peut nommer un associé (RGPD.md).
+  libelle: string | null
+  // Le préfixe des comptes auxiliaires d'un rôle de tiers ; nul : celui du catalogue.
+  prefixe_auxiliaire: string | null
+  origine: OriginePlanComptable
+  // Repère d'audit, sans clé étrangère : qui a réglé la ligne, et quand.
+  regle_par: string | null
+  regle_le: string
+}
+
+// Les trois fonctions de lecture du plan (étape PC1), que les fonctions de la base liront à l'étape PC2 et l'application
+// à l'étape PC3. `compte_du_role` rend le compte d'un rôle dans un dossier (sa ligne, sinon le défaut du catalogue) et
+// lève sur un rôle inconnu (22023) ; `compte_du_dirigeant` rend le compte du dirigeant (celui que le dossier a choisi en
+// engagement, le compte du rôle `exploitant` en trésorerie), nul pour un dossier que l'appelant ne voit pas ;
+// `plan_du_dossier` rend le plan effectif, un rôle par ligne dans l'ordre du catalogue, et refuse en 42501 qui n'est pas
+// le cabinet du dossier.
+export interface ArgumentsCompteDuRole {
+  p_dossier_id: string
+  p_role: string
+}
+export interface ArgumentsCompteDuDirigeant {
+  p_dossier_id: string
+}
+export interface ArgumentsPlanDuDossier {
+  p_dossier_id: string
+}
+// Une ligne de `plan_du_dossier` : `application` pour un rôle que le dossier ne règle pas.
+export interface LignePlanDuDossier {
+  role: string
+  compte: string
+  libelle: string | null
+  prefixe_auxiliaire: string | null
+  origine: OriginePlanComptable | 'application'
+}
