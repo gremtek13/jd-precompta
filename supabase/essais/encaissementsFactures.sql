@@ -52,6 +52,17 @@
 -- refus 5 de `enregistrer_encaissement` à un refus lu sur la plateforme du client : 109 contrôles sur 109 en
 -- production, le texte transmis identique à ce fichier, ce paragraphe retiré (67 530 caractères, empreinte
 -- 4b0bf6ab65c73927f5e6340be4891023), rien laissé en base.
+--
+-- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, non appliquée). La migration
+-- `ventes_du_client` ajoute aux deux tables la lecture du client qui porte le droit « Ventes », fait accepter ce client
+-- par les deux fonctions (`gere_les_ventes`), et donne à `enregistrer_encaissement` un refus NEUF à son rang 2 : le
+-- mouvement bancaire ne se désigne qu'avec le droit « Banque ». Le chef du cabinet porte les deux droits : les refus
+-- joués ici gardent leur ordre et leurs mots ; le refus neuf et le client qui porte les droits se jouent dans
+-- `ventesClient.sql`. Le contrôle 93 attend désormais le catalogue de l'état où la base se trouve, chacun exactement
+-- (témoin : la colonne `factures_emises.valide_par`, posée d'un seul tenant avec les policies), et le client d'essai
+-- doit être SANS le droit « Ventes » — coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à
+-- tort. 109 contrôles sur 109 sur une réplique identique à la production (`signature.sql`), avant comme après les deux
+-- migrations de l'étape.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -67,7 +78,7 @@ declare
   accepte boolean; code_recu text; message_recu text; obs text; motif text; code_attendu text; prep text; appel text;
   requete text; attendu boolean; vus int; vus_taux int; n_maj int; detail text; ligne record;
   code_e text; msg_e text; code_r text; msg_r text; code_i text; msg_i text; fixture text;
-  avant jsonb; apres jsonb;
+  avant jsonb; apres jsonb; ventes_du_client boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
   select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f
@@ -80,6 +91,11 @@ begin
   end if;
   if exists (select 1 from encaissements_factures where facture_id = facture_v) then
     raise exception 'ESSAI_IMPOSSIBLE : la facture d''essai porte déjà un encaissement';
+  end if;
+  -- Le client d'essai est SANS le droit « Ventes » (espace client, étape P2) : avec lui, il voit les encaissements de
+  -- son dossier et les enregistre, légitimement, et c'est `ventesClient.sql` qui le joue.
+  if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
+    raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
   select jsonb_build_object('encaissements', (select count(*) from encaissements_factures),
     'parts', (select count(*) from encaissements_factures_taux), 'factures', (select count(*) from factures_emises),
@@ -729,12 +745,18 @@ begin
   reset role;
 
   -- ══ 93 à 100. Ce que le catalogue dit ══════════
+  -- Depuis la migration `ventes_du_client` (espace client, étape P2 ; son témoin : `factures_emises.valide_par`), chaque
+  -- table a aussi la lecture du client qui porte le droit « Ventes ». Chaque état s'attend exactement.
+  select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
+                 and not attisdropped) into ventes_du_client;
   select string_agg(p.tablename || '.' || p.policyname || ' ' || p.roles::text || ' ' || p.cmd || ' ' || coalesce(p.qual, '-') || ' ' || coalesce(p.with_check, '-'), ' | ' order by p.tablename, p.policyname) into obs
     from pg_policies p where p.schemaname = 'public' and p.tablename in ('encaissements_factures', 'encaissements_factures_taux');
-  verdicts := verdicts || jsonb_build_object('controle', '93. catalogue : la lecture du cabinet et la restauration du super-administrateur, rien d''autre',
+  verdicts := verdicts || jsonb_build_object('controle', '93. catalogue : la lecture du cabinet et la restauration du super-administrateur — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
     'observe', obs, 'ok', obs = 'encaissements_factures.encaissements_factures_lecture {authenticated} SELECT admin_du_dossier(dossier_id) -'
+      || case when ventes_du_client then ' | encaissements_factures.encaissements_factures_lecture_ventes {authenticated} SELECT client_du_dossier(dossier_id, ''ventes''::text) -' else '' end
       || ' | encaissements_factures.encaissements_factures_restauration {authenticated} INSERT - is_super_admin()'
       || ' | encaissements_factures_taux.encaissements_factures_taux_lecture {authenticated} SELECT admin_du_dossier(dossier_id) -'
+      || case when ventes_du_client then ' | encaissements_factures_taux.encaissements_factures_taux_lecture_ventes {authenticated} SELECT client_du_dossier(dossier_id, ''ventes''::text) -' else '' end
       || ' | encaissements_factures_taux.encaissements_factures_taux_restauration {authenticated} INSERT - is_super_admin()');
 
   select string_agg(c.conname || ':' || c.confdeltype::text, ', ' order by c.conname) into obs

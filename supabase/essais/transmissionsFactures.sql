@@ -17,7 +17,8 @@
 --     un rejet postérieur — une restauration rejoue l'historique avec ses dates — ; l'avoir d'une facture rejetée, ou
 --     refusée chez Super PDP (statut 210), ne se transmet pas ; celui d'une facture simplement transmise, si ;
 --   - CE QUE LE CATALOGUE DIT, faute de pouvoir le jouer sans suppression : ni modification ni suppression depuis le
---     navigateur (deux policies seulement), la suppression d'un dossier ou d'une facture emporte ses transmissions, et
+--     navigateur (deux policies seulement — trois depuis la migration `ventes_du_client`, qui ajoute la lecture du
+--     client au droit « Ventes » —), la suppression d'un dossier ou d'une facture emporte ses transmissions, et
 --     personne n'appelle le déclencheur en RPC ;
 --   - et que RIEN ne reste en base après l'essai.
 --
@@ -39,6 +40,13 @@
 -- Rejoué le 09/10/2026 après la migration `cycle_de_vie_des_factures_emises`, qui redéfinit `garder_transmission_facture`
 -- (un refus lu sur la plateforme du client) : 43 sur 43 en production. Ce que la clause nouvelle refuse est éprouvé par
 -- `statutsFacturesRecus.sql` (contrôles 35 à 41).
+-- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, non appliquée) : la migration
+-- `ventes_du_client` ajoute une policy de lecture au client qui porte le droit « Ventes » ; le contrôle 34 attend
+-- désormais le catalogue de l'état où la base se trouve, chacun exactement (témoin : la colonne
+-- `factures_emises.valide_par`, posée d'un seul tenant avec les policies). Et le client d'essai doit être SANS ce droit :
+-- avec lui, il voit les transmissions de son dossier, légitimement (c'est `ventesClient.sql` qui le joue) ; coché sur
+-- ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort. 43 sur 43 sur une réplique identique à la
+-- production (`signature.sql`), avant comme après les deux migrations de l'étape.
 --
 -- L'AVOIR D'ESSAI se crée par `enregistrer_facture`, sous le chef du cabinet, dans la sous-transaction du contrôle :
 -- son numéro de la série « A » est consommé puis rendu par l'annulation, et rien ne reste.
@@ -52,7 +60,7 @@ declare
   facture_v uuid; dossier_f uuid; autre_dossier uuid; brouillon uuid; ident uuid; chef_super boolean; avoir uuid;
   accepte boolean; code_recu text; message_recu text; obs text; attendu boolean; requete text; motif text;
   a text; b text; vus int; n_maj int;
-  transmissions_avant int; factures_avant int;
+  transmissions_avant int; factures_avant int; ventes_du_client boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
   select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f where f.statut = 'validee' order by f.id limit 1;
@@ -63,6 +71,11 @@ begin
   end if;
   if exists (select 1 from transmissions_factures where facture_id = facture_v) then
     raise exception 'ESSAI_IMPOSSIBLE : la facture d''essai porte déjà une transmission';
+  end if;
+  -- Le client d'essai est SANS le droit « Ventes » (espace client, étape P2) : avec lui, il voit les transmissions de
+  -- son dossier, légitimement, et c'est `ventesClient.sql` qui le joue.
+  if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
+    raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
   select count(*) into transmissions_avant from transmissions_factures;
   select count(*) into factures_avant from factures_emises;
@@ -278,10 +291,17 @@ begin
   end loop;
 
   -- ══ 34 à 37. Ce que le catalogue dit ═════════════════════════════════════════════════════════════════════════
+  -- Depuis la migration `ventes_du_client` (espace client, étape P2 ; son témoin : `factures_emises.valide_par`), une
+  -- troisième policy, la lecture du client qui porte le droit « Ventes » ; avant elle, deux. Chaque état s'attend
+  -- exactement : une policy de plus ou de moins, dans l'un comme dans l'autre, fait virer le contrôle.
+  select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
+                 and not attisdropped) into ventes_du_client;
   select string_agg(p.policyname || ' ' || p.roles::text || ' ' || p.cmd, ', ' order by p.policyname) into obs
     from pg_policies p where p.schemaname = 'public' and p.tablename = 'transmissions_factures';
-  verdicts := verdicts || jsonb_build_object('controle', '34. catalogue : deux policies, lecture et restauration, rien d''autre',
-    'observe', obs, 'ok', obs = 'transmissions_factures_lecture {authenticated} SELECT, transmissions_factures_restauration {authenticated} INSERT');
+  verdicts := verdicts || jsonb_build_object('controle', '34. catalogue : la lecture du cabinet, la restauration — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
+    'observe', obs, 'ok', obs = 'transmissions_factures_lecture {authenticated} SELECT, '
+      || case when ventes_du_client then 'transmissions_factures_lecture_ventes {authenticated} SELECT, ' else '' end
+      || 'transmissions_factures_restauration {authenticated} INSERT');
 
   select string_agg(c.conname || ':' || c.confdeltype::text, ', ' order by c.conname) into obs
     from pg_constraint c where c.conrelid = 'public.transmissions_factures'::regclass and c.contype = 'f';

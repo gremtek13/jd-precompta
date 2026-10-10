@@ -25,6 +25,11 @@
 --      les étapes suivantes ouvriront des LECTURES à ces droits, jamais une écriture directe.
 --   4bis (Banque). Avec la case « Banque », il n'écrit directement dans aucune des tables de la banque (42501 à
 --      l'insertion, aucune ligne touchée à la mise à jour) : il propose, précise et retire par les fonctions. Section P7.
+--   3bis (Ventes). Sans le droit « Ventes » (aucun droit, ou « Banque » seul), le client ne lit aucune ligne des tables des ventes,
+--      pas même de son dossier ; avec lui, il les lit toutes pour ses dossiers (contrôle positif), jamais une relance de
+--      pièces ; et les tables ouvertes à ce droit, lues au catalogue, sont celles présentées au cabinet, en lecture seule
+--      (espace client, étape P2 ; bloc « Les ventes du client », en fin de fichier).
+--   4bis (Ventes). Avec les droits, il n'écrit directement aucune table des ventes (42501) : ses gestes passent par les fonctions.
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -192,6 +197,18 @@
 -- un `dossier_id`, + 3 buckets, 4 profils), 0 en faute, et 19 mutations sur 19 — les mêmes verdicts qu'à 109 migrations.
 -- En production, le passage se fait après la seconde migration. Ce que les fonctions refusent et acceptent, profil par
 -- profil, est éprouvé par `banqueClient.sql`.
+--
+-- 10/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, présentée au cabinet, non
+-- appliquée). Le bloc « Les ventes du client », en fin de fichier, ajoute 3bis et 4bis et leurs mutations M3bis,
+-- M3bis-membre, M3bis-catalogue et M4bis (une par table). Joué ENTIER sur une réplique dont `signature.sql` égalait la
+-- production sur ses neuf familles — à 109 migrations, puis à 110 (`pieces_hors_de_france`, appliquée le même jour) —,
+-- semée d'un jeu fictif et d'un talon de `storage` aux policies relevées en production : sans les migrations, 25 lignes
+-- de verdict (le bloc se dit SANS OBJET, son témoin `factures_emises.valide_par` absent), 0 en faute, 16 mutations sur 16
+-- qui mordent ; avec elles, 30 lignes (à 110 migrations : 61 tables du schéma, dont 53 portant un `dossier_id`,
+-- + 3 buckets, 4 profils), 0 en faute, 28 mutations sur 28 qui mordent ; la première migration seule, de même ; le
+-- témoin posé seul, sans les policies, fait virer le bloc au rouge (contrôle positif 9 sur 9, catalogue, 4bis). Le
+-- passage en production suivra l'application des migrations et se notera ici. Ce que les fonctions des ventes refusent
+-- et acceptent, profil par profil et par leur raison, est éprouvé par `ventesClient.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1025,6 +1042,269 @@ begin
     select v.controle, v.cible, v.observe, v.ok from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
   insert into rls_mutation
     select m.mutation, m.attendu, m.observe, m.mord from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ═══ Les ventes du client (espace client, étape P2) ═══════════════════════════════════════════
+--
+-- Depuis la migration `ventes_du_client`, un accès client qui porte le droit « Ventes » LIT les ventes de ses dossiers :
+-- neuf tables, chacune par une policy `for select to authenticated` sur `client_du_dossier(…, 'ventes')`. Deux
+-- invariants, et leurs mutations :
+--   3bis. Sans le droit — aucun droit, ou « Banque » seul —, le client ne lit AUCUNE ligne de ces tables, pas même de
+--         son dossier ; avec lui, il les lit TOUTES pour ses dossiers : le contrôle POSITIF, sans lequel une lecture que
+--         la RLS refuse (zéro ligne, sans erreur) passerait pour un succès ; et jamais la relance de pièces que le cabinet
+--         lui adresse, qui n'est pas une vente. Les tables se lisent au CATALOGUE — les policies qui appellent
+--         `client_du_dossier(…, 'ventes')` — et se confrontent à la liste présentée au cabinet : une policy ouverte demain
+--         à ce droit sur une autre table, à une autre commande que la lecture ou à un autre rôle fait virer ce contrôle.
+--   4bis. Avec les droits, le client n'écrit DIRECTEMENT aucune de ces tables : chaque insertion est refusée par la RLS
+--         (42501), nommément — les lignes tentées sont valides, leurs gardes les laissent passer, et le chef les écrit
+--         (M4bis) — ; une mise à jour ne touche aucune ligne. Ses gestes passent par les fonctions (ventesClient.sql).
+-- Le jeu d'essai naît dans le dossier du client, dans un bloc qui s'annule : une facture validée de l'année fictive 2099
+-- (par `enregistrer_facture`, en chef du cabinet) et un brouillon, une transmission acceptée, un événement de Super PDP,
+-- un statut lu, un encaissement (par sa fonction) et sa déclaration, un encaissement sans parts, deux e-mails (une
+-- facture, une relance de pièces) ; il s'ajoute à ce que la base porte déjà. Les verdicts voyagent dans des variables.
+-- Mutations : le droit retiré au profil (M3bis), le prédicat passé à « membre » (M3bis-membre), une policy d'écriture
+-- ouverte au droit (M3bis-catalogue), les insertions de 4bis sous le chef (M4bis).
+-- TANT QUE LA MIGRATION N'EST PAS EN BASE (son témoin : la colonne `factures_emises.valide_par`, qu'elle pose d'un seul
+-- tenant avec les policies), le bloc le dit en une ligne et ne juge rien : préparée et présentée au cabinet avant d'être
+-- appliquée, elle peut attendre son accord pendant qu'une autre migration fait rejouer ce fichier. Une fois la colonne
+-- là, tout se juge — une policy qui manquerait fait virer le catalogue.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  -- Les tables des ventes telles que présentées au cabinet (étape P2, 10/10/2026). Le catalogue doit dire exactement
+  -- celles-ci : une de plus serait une lecture ouverte sans avoir été présentée, une de moins une vente qui manque.
+  attendues text[] := array['emails_envoyes', 'encaissements_factures', 'encaissements_factures_taux', 'facture_lignes',
+    'facture_superpdp_events', 'factures_emises', 'statuts_factures_recus', 'transmissions_encaissements',
+    'transmissions_factures'];
+  catalogue_sql text := $q$
+    select coalesce(array_agg(distinct c.relname::text order by c.relname::text), '{}'),
+           string_agg(c.relname || '.' || po.polname || ' (' || po.polcmd::text || ', '
+                      || array_to_string(po.polroles::regrole[]::text[], ',') || ')', ', ')
+             filter (where not (po.polcmd = 'r' and po.polpermissive and po.polroles = array['authenticated'::regrole::oid]))
+      from pg_policy po join pg_class c on c.oid = po.polrelid join pg_namespace ns on ns.oid = c.relnamespace
+     where ns.nspname = 'public'
+       and coalesce(pg_get_expr(po.polqual, po.polrelid), '') || ' ' || coalesce(pg_get_expr(po.polwithcheck, po.polrelid), '')
+           ~ 'client_du_dossier\([^)]*''ventes'''
+  $q$;
+  tables_ventes text[]; a_lire text[]; hors_lecture text; t text; reglage text; r record;
+  f_validee uuid; f_brouillon uuid; enc uuid; enc_nu uuid; empreinte text := repeat('ef', 32);
+  vus bigint; attendus bigint; relances_vues bigint; relances bigint; touchees int; accepte boolean; motif text;
+  construit boolean := false; erreur text; total bigint; obs text; mauvais text;
+  lus jsonb := '{}'::jsonb;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
+                  and not attisdropped) then
+    -- Le nom de la ligne porte l'état : le tableau final ne montre le détail que d'une ligne en faute.
+    insert into rls_verdict values ('3bis et 4bis. SANS OBJET : la migration ventes_du_client n''est pas encore en base',
+      'factures_emises.valide_par', 'absente : 3bis et 4bis se jugent dès que la migration y est', true);
+    return;
+  end if;
+  -- Le catalogue, tel qu'il est.
+  execute catalogue_sql into tables_ventes, hors_lecture;
+  verdicts := verdicts || jsonb_build_object('controle', '3bis. les tables ouvertes au droit « Ventes » sont celles présentées au cabinet, en lecture seule',
+    'cible', 'pg_policy', 'observe', coalesce(nullif(array_to_string(tables_ventes, ', '), ''), 'aucune') || coalesce(' — hors lecture : ' || hors_lecture, ''),
+    'ok', tables_ventes = attendues and hors_lecture is null);
+  a_lire := array(select distinct x from unnest(tables_ventes || attendues) x order by 1);
+
+  begin
+    -- ── Le jeu d'essai, dans le dossier du client ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select e.facture_id into f_validee from enregistrer_facture(dossier_du_client, null,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"2099-01-15","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
+    select e.facture_id into f_brouillon from enregistrer_facture(dossier_du_client, null,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"2099-01-16","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb,
+      '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, false) e;
+    reset role;
+    insert into transmissions_factures (dossier_id, facture_id, canal, hote, flux_id, sha256, etat)
+      values (dossier_du_client, f_validee, 'plateforme', 'pa.exemple.fr', 'flux-rls', empreinte, 'accepte');
+    insert into facture_superpdp_events (dossier_id, facture_id, superpdp_event_id, status_code, status_text, occurred_at)
+      values (dossier_du_client, f_validee, -9001, 'fr:200', 'essai rls', now());
+    insert into statuts_factures_recus (dossier_id, facture_id, hote, flux_id, code)
+      values (dossier_du_client, f_validee, 'pa.exemple.fr', 'cycle-rls', '205');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select e.id into enc from enregistrer_encaissement(dossier_du_client, f_validee, current_date, 10, 'virement', null,
+      '[{"taux":20,"montant":10}]'::jsonb) e;
+    perform declarer_encaissement_hors_application(dossier_du_client, enc, null);
+    reset role;
+    insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+      values (dossier_du_client, f_validee, current_date, 5, 'virement') returning id into enc_nu;
+    insert into emails_envoyes (dossier_id, type, destinataire, objet, facture_id) values
+      (dossier_du_client, 'facture', 'essai-rls@exemple.invalid', 'essai rls', f_validee),
+      (dossier_du_client, 'relance_pieces', 'essai-rls@exemple.invalid', 'essai rls', null);
+    construit := true;
+
+    -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
+    foreach reglage in array array['aucun', 'banque', 'ventes'] loop
+      update memberships set droit_ventes = (reglage = 'ventes'), droit_banque = (reglage = 'banque') where user_id = client;
+      foreach t in array a_lire loop
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        begin execute format('select count(*) from public.%I', t) into vus; exception when others then vus := -1; end;
+        reset role;
+        lus := jsonb_set(lus, array[t], coalesce(lus -> t, '{}'::jsonb) || jsonb_build_object(reglage, vus));
+      end loop;
+    end loop;
+    -- Ce qu'il doit lire avec le droit : les lignes de SES dossiers — par la facture pour les lignes, qui n'ont pas de
+    -- dossier ; pour les e-mails, ceux d'une facture ou d'un devis seulement.
+    foreach t in array a_lire loop
+      if exists (select 1 from pg_attribute a where a.attrelid = ('public.' || quote_ident(t))::regclass
+                  and a.attname = 'dossier_id' and not a.attisdropped) then
+        execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)%s',
+          t, client, case when t = 'emails_envoyes' then ' and x.type in (''facture'', ''devis'')' else '' end) into attendus;
+      else
+        execute format('select count(*) from public.%I x where x.facture_id in (select f.id from factures_emises f where f.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L))',
+          t, client) into attendus;
+      end if;
+      lus := jsonb_set(lus, array[t], (lus -> t) || jsonb_build_object('attendus', attendus));
+    end loop;
+    update memberships set droit_ventes = true, droit_banque = false where user_id = client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into relances_vues from emails_envoyes where type = 'relance_pieces';
+    reset role;
+    select count(*) into relances from emails_envoyes
+     where type = 'relance_pieces' and dossier_id in (select m.dossier_id from memberships m where m.user_id = client);
+
+    -- ── 4bis. Avec les droits, aucune écriture directe ──
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+    for r in select * from (values
+        ('factures_emises', format('insert into factures_emises (dossier_id, tiers_nom) values (%L, %L)', dossier_du_client, 'ESSAI RLS 4bis')),
+        ('facture_lignes', format('insert into facture_lignes (facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva) values (%L, 9, %L, 1, 1, 20)', f_brouillon, 'essai 4bis')),
+        ('transmissions_factures', format('insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat) values (%L, %L, %L, %L, %L, %L)', dossier_du_client, f_validee, 'plateforme', 'pb.exemple.fr', empreinte, 'echec')),
+        ('facture_superpdp_events', format('insert into facture_superpdp_events (dossier_id, facture_id, superpdp_event_id, status_code, status_text, occurred_at) values (%L, %L, -9002, %L, %L, now())', dossier_du_client, f_validee, 'fr:205', 'essai 4bis')),
+        ('statuts_factures_recus', format('insert into statuts_factures_recus (dossier_id, facture_id, hote, flux_id, code) values (%L, %L, %L, %L, %L)', dossier_du_client, f_validee, 'pa.exemple.fr', 'cycle-rls-4bis', '205')),
+        ('encaissements_factures', format('insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen) values (%L, %L, current_date, 1, %L)', dossier_du_client, f_validee, 'virement')),
+        ('encaissements_factures_taux', format('insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (%L, %L, 20, 5)', enc_nu, dossier_du_client)),
+        ('transmissions_encaissements', format('insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values (%L, %L, %L, %L, %L, %L)', dossier_du_client, enc_nu, f_validee, 'manuel', 'pa.exemple.fr', 'depose')),
+        ('emails_envoyes', format('insert into emails_envoyes (dossier_id, type, destinataire, objet, facture_id) values (%L, %L, %L, %L, %L)', dossier_du_client, 'facture', 'essai-4bis@exemple.invalid', 'essai 4bis', f_validee))
+      ) as v(nom, ordre) loop
+      -- Sous le client portant les deux droits : refusé par la RLS, nommément.
+      accepte := false; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        execute r.ordre;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', '4bis. client portant les droits n''écrit directement aucune table des ventes',
+        'cible', r.nom || ' (insert)', 'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end,
+        'ok', not accepte and motif = '42501');
+      -- La même, sous le chef : elle doit passer, sans quoi le refus ne dirait rien du client (M4bis).
+      accepte := false; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        execute r.ordre;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := case when accepte then null else sqlstate end;
+      end;
+      reset role;
+      mutations := mutations || jsonb_build_object('mutation', 'M4bis — l''écriture de 4bis sous le chef : ' || r.nom,
+        'attendu', 'ACCEPTÉ', 'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end, 'mord', accepte);
+    end loop;
+    -- Une mise à jour directe d'une facture, d'une transmission ou d'un encaissement ne touche aucune ligne.
+    for r in select * from (values
+        ('factures_emises', format('update factures_emises set tiers_nom = tiers_nom where dossier_id = %L', dossier_du_client)),
+        ('transmissions_factures', format('update transmissions_factures set detail = detail where dossier_id = %L', dossier_du_client)),
+        ('encaissements_factures', format('update encaissements_factures set moyen = moyen where dossier_id = %L', dossier_du_client))
+      ) as v(nom, ordre) loop
+      touchees := -1; motif := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        execute r.ordre;
+        get diagnostics touchees = row_count;
+        raise exception 'ANNULATION_ESSAI';
+      exception when sqlstate 'P0001' then null; when others then motif := sqlstate; touchees := 0;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', '4bis. client portant les droits n''écrit directement aucune table des ventes',
+        'cible', r.nom || ' (update)', 'observe', touchees || ' ligne(s) touchée(s)' || coalesce(', refusé par ' || motif, ''),
+        'ok', touchees = 0);
+    end loop;
+
+    -- ── M3bis-membre : le prédicat des neuf policies passé à « membre », le client sans droit ──
+    begin
+      for r in select po.polname, c.relname, pg_get_expr(po.polqual, po.polrelid) as qual
+                 from pg_policy po join pg_class c on c.oid = po.polrelid join pg_namespace ns on ns.oid = c.relnamespace
+                where ns.nspname = 'public' and pg_get_expr(po.polqual, po.polrelid) ~ 'client_du_dossier\([^)]*''ventes'''
+      loop
+        execute format('alter policy %I on public.%I using (%s)', r.polname, r.relname, replace(r.qual, '''ventes''::text', '''membre''::text'));
+      end loop;
+      update memberships set droit_ventes = false, droit_banque = false where user_id = client;
+      total := 0;
+      foreach t in array a_lire loop
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        begin execute format('select count(*) from public.%I', t) into vus; exception when others then vus := 0; end;
+        reset role;
+        total := total + vus;
+      end loop;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre — 3bis sans droit, les policies sur « membre »',
+      'attendu', 'des lignes vues', 'observe', total || ' ligne(s) vue(s)', 'mord', total > 0);
+
+    -- ── M3bis-catalogue : une policy d'écriture ouverte au droit « Ventes » sur une autre table ──
+    begin
+      create policy rls_mutation_ecriture_ventes on public.pieces for insert to authenticated
+        with check (client_du_dossier(dossier_id, 'ventes'));
+      execute catalogue_sql into tables_ventes, hors_lecture;
+      obs := coalesce(nullif(array_to_string(tables_ventes, ', '), ''), 'aucune') || coalesce(' — hors lecture : ' || hors_lecture, '');
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M3bis-catalogue — une policy d''écriture ouverte au droit sur pieces',
+      'attendu', 'le catalogue en faute', 'observe', obs, 'mord', not (tables_ventes = attendues and hors_lecture is null));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  verdicts := verdicts || jsonb_build_object('controle', '3bis. le jeu d''essai des ventes s''est construit dans le dossier du client',
+    'cible', 'dossier du client', 'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+  foreach t in array a_lire loop
+    verdicts := verdicts || jsonb_build_object('controle', '3bis. sans le droit « Ventes », aucune ligne des ventes, même de son dossier',
+      'cible', t, 'observe', 'aucun droit : ' || coalesce(lus -> t ->> 'aucun', '?') || ', « Banque » seul : ' || coalesce(lus -> t ->> 'banque', '?'),
+      'ok', coalesce((lus -> t ->> 'aucun')::bigint = 0 and (lus -> t ->> 'banque')::bigint = 0, false));
+    verdicts := verdicts || jsonb_build_object('controle', '3bis. avec le droit « Ventes », toutes les lignes de ses dossiers (contrôle positif)',
+      'cible', t, 'observe', coalesce(lus -> t ->> 'ventes', '?') || ' vue(s) sur ' || coalesce(lus -> t ->> 'attendus', '?'),
+      'ok', coalesce((lus -> t ->> 'ventes')::bigint = (lus -> t ->> 'attendus')::bigint and (lus -> t ->> 'attendus')::bigint > 0, false));
+  end loop;
+  verdicts := verdicts || jsonb_build_object('controle', '3bis. avec le droit « Ventes », jamais une relance de pièces',
+    'cible', 'emails_envoyes (relance_pieces)', 'observe', coalesce(relances_vues::text, '?') || ' vue(s) sur ' || coalesce(relances::text, '?') || ' en base',
+    'ok', coalesce(relances_vues = 0 and relances > 0, false));
+
+  -- M3bis : le contrôle positif, le droit retiré au profil — ce que le client voit sans droit ne fait pas le compte.
+  mauvais := null;
+  foreach t in array a_lire loop
+    if coalesce((lus -> t ->> 'aucun')::bigint = (lus -> t ->> 'attendus')::bigint and (lus -> t ->> 'attendus')::bigint > 0, false) then
+      mauvais := coalesce(mauvais || ', ', '') || t;
+    end if;
+  end loop;
+  mutations := mutations || jsonb_build_object('mutation', 'M3bis — le contrôle positif de 3bis, le droit retiré au profil',
+    'attendu', 'aucune table où le compte tombe juste', 'observe', coalesce('juste sur : ' || mauvais, 'aucune'), 'mord', mauvais is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :

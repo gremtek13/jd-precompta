@@ -160,6 +160,27 @@ export async function creerAvoir(
   )
 }
 
+// ── LA SUPPRESSION D'UN BROUILLON (espace client, étape P2) ─────────────────────────────────────────────────────────
+// `supprimer_brouillon_facture(dossier, facture)` (migration ventes_du_client_facturation) supprime un brouillon et ses
+// lignes, pour le cabinet comme pour le client qui porte le droit « Ventes » : un seul chemin. Elle refuse dans cet ordre
+// — l'accès au dossier ANNONCÉ, avant toute lecture (42501), la facture introuvable dans ce dossier (P0002), une facture
+// validée (22023, les mots de la garde) — et rend l'identifiant supprimé : l'écran ne dit « supprimé » que sur ce que la
+// base a rendu.
+//
+// EST-ELLE EN BASE ? Sa migration se colle (son texte supprime) et attend l'accord du cabinet. Tant qu'elle n'y est pas,
+// l'appeler finirait en erreur : l'onglet Factures supprime un brouillon comme hier, directement, sous la policy du
+// cabinet. Le jour où l'export la porte (supabase/schema), factures.test.ts vire au rouge tant que ceci reste `false` :
+// le passer à `true` fait passer l'onglet par la fonction.
+export const SUPPRESSION_BROUILLON_EXPORTEE: boolean = false
+
+/** Supprime un brouillon par la base. Rend l'identifiant qu'elle a supprimé ; lève son refus, sous ses mots. */
+export async function supprimerBrouillon(dossierId: string, factureId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('supprimer_brouillon_facture', { p_dossier_id: dossierId, p_facture_id: factureId })
+  if (error) throw new Error(error.message)
+  if (data !== factureId) throw new Error("La suppression du brouillon n'a pas rendu la facture supprimée.")
+  return data
+}
+
 // Représentation triée par ordre d'affichage — les lignes arrivent de Supabase déjà triées par la
 // requête (order('ordre')), mais toute fonction qui les reçoit d'ailleurs (ex. un futur export) ne
 // doit pas supposer cet ordre déjà garanti.

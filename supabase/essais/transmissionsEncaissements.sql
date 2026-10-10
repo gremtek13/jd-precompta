@@ -46,6 +46,15 @@
 -- refus 6 de `declarer_encaissement_hors_application` et la garde des déclarations à un refus lu sur la plateforme du
 -- client : 128 contrôles sur 128 en production, le texte transmis identique à ce fichier, ce paragraphe retiré
 -- (81 538 caractères, empreinte 3938487ebf356d3a822d97cab57674d2), rien laissé en base.
+--
+-- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P2 : préparée, non appliquée). La migration
+-- `ventes_du_client` ajoute à la table la lecture du client qui porte le droit « Ventes » et fait accepter ce client par
+-- les deux fonctions (`gere_les_ventes`) ; leurs refus gardent leur ordre et leurs mots. Le contrôle 115 attend
+-- désormais le catalogue de l'état où la base se trouve, chacun exactement (témoin : la colonne
+-- `factures_emises.valide_par`, posée d'un seul tenant avec les policies), et le client d'essai doit être SANS le droit
+-- « Ventes » — coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort ; le client qui le
+-- porte se joue dans `ventesClient.sql`. 128 sur 128 sur une réplique identique à la production (`signature.sql`),
+-- avant comme après les deux migrations de l'étape.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -64,7 +73,7 @@ declare
   qui text; verif text; verif_attendue text; verif_lue text; requete text; attendu boolean;
   vus int; n_maj int; detail text; trace text; fixture text; ident uuid; ident2 uuid;
   code_d text; msg_d text; code_a text; msg_a text; code_i text; msg_i text; code_r text; msg_r text;
-  avant jsonb; apres jsonb;
+  avant jsonb; apres jsonb; ventes_du_client boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
   select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f
@@ -77,6 +86,11 @@ begin
   if exists (select 1 from transmissions_factures where facture_id = facture_v)
      or exists (select 1 from encaissements_factures where facture_id = facture_v) then
     raise exception 'ESSAI_IMPOSSIBLE : la facture d''essai porte déjà une transmission ou un encaissement';
+  end if;
+  -- Le client d'essai est SANS le droit « Ventes » (espace client, étape P2) : avec lui, il voit les déclarations de
+  -- son dossier et déclare, légitimement, et c'est `ventesClient.sql` qui le joue.
+  if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
+    raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
   select jsonb_build_object('declarations', (select count(*) from transmissions_encaissements),
     'encaissements', (select count(*) from encaissements_factures), 'parts', (select count(*) from encaissements_factures_taux),
@@ -843,10 +857,15 @@ begin
   reset role;
 
   -- ══ 115 à 120. Ce que le catalogue dit ══════════
+  -- Depuis la migration `ventes_du_client` (espace client, étape P2 ; son témoin : `factures_emises.valide_par`), la
+  -- table a aussi la lecture du client qui porte le droit « Ventes ». Chaque état s'attend exactement.
+  select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
+                 and not attisdropped) into ventes_du_client;
   select string_agg(p.policyname || ' ' || p.roles::text || ' ' || p.cmd || ' ' || coalesce(p.qual, '-') || ' ' || coalesce(p.with_check, '-'), ' | ' order by p.policyname) into obs
     from pg_policies p where p.schemaname = 'public' and p.tablename = 'transmissions_encaissements';
-  verdicts := verdicts || jsonb_build_object('controle', '115. catalogue : la lecture du cabinet et la restauration du super-administrateur, rien d''autre',
+  verdicts := verdicts || jsonb_build_object('controle', '115. catalogue : la lecture du cabinet et la restauration du super-administrateur — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
     'observe', obs, 'ok', obs = 'transmissions_encaissements_lecture {authenticated} SELECT admin_du_dossier(dossier_id) -'
+      || case when ventes_du_client then ' | transmissions_encaissements_lecture_ventes {authenticated} SELECT client_du_dossier(dossier_id, ''ventes''::text) -' else '' end
       || ' | transmissions_encaissements_restauration {authenticated} INSERT - is_super_admin()');
 
   select string_agg(c.conname || ':' || c.confdeltype::text, ', ' order by c.conname) into obs
