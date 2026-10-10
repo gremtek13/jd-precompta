@@ -18288,3 +18288,69 @@ LEÇON : une production qui avance pendant qu'on prépare ne se suppose pas. La 
 d'appliquer la sienne, sa copie se pose sur la réplique, et c'est la signature d'APRÈS — réplique répétée contre
 production appliquée — qui dit que le texte transmis est celui qu'on a éprouvé. Et un plan de sauvegarde ne se recopie
 pas d'une tête à l'autre : les rangs avaient bougé de deux (e2), les ancres des défauts plantés avec eux.
+
+### 10/10/2026 — AVANT LES VENTES DU CLIENT : CE QUE LE CLIENT LIT DE LA MAIN DU CABINET, ET CE QU'UNE CASE CHANGE — ESPACE CLIENT, ÉTAPE P2, PREMIER TEMPS DE L'APPLICATION (A)
+
+Le cabinet a dit oui, le 10/10/2026, aux deux migrations de P2 (« LES VENTES DU CLIENT, EN BASE »), à une condition :
+AVANT l'application, l'écran dit au-dessus du champ des notes d'une facture que le client qui porte la case « Ventes »
+les lira. Le contrôle croisé de P2 et P7 (« LE CONTRÔLE CROISÉ DE P2 ET P7 ») avait relevé de son côté que la phrase des
+cases de l'onglet Accès ne lisait que le drapeau de P7. Les deux se corrigent ici, sur la tête de la demande de fusion
+qui porte P2 et P7, sans rien appliquer.
+
+**CE QUE LA BASE OUVRE, RELU DANS LES MIGRATIONS AVANT D'ÉCRIRE UN MOT.** `ventes_du_client` : neuf policies
+`for select to authenticated` sur `client_du_dossier(…, 'ventes')`, TOUTES colonnes — factures et lignes, transmissions
+et événements de Super PDP, statuts lus sur la plateforme, encaissements, leurs parts et leurs déclarations, e-mails
+d'envoi — et cinq fonctions sous `gere_les_ventes` (abandon d'une transmission ; enregistrement, retrait, déclaration et
+contre-passation d'un encaissement) ; désigner le mouvement qui prouve un encaissement demande AUSSI `gere_la_banque`.
+`ventes_du_client_facturation` : `enregistrer_facture` (créer, modifier, valider un brouillon, créer un avoir) et
+`supprimer_brouillon_facture`. `banque_du_client` (P7, appliquée ce matin) : le contrôle de solde, les justificatifs
+proposés et les précisions d'un mouvement, trois fonctions sous `gere_la_banque`.
+
+**QUATRE TEXTES LIBRES, ET NON UN.** Relevés dans `src/` : les notes d'une facture (`FactureFormModal`, le seul endroit
+où elles se saisissent ou se voient — l'aperçu ne les imprime pas, aucune liste ne les montre), le motif d'un avoir
+(rangé dans ses notes par `creerAvoir`, et libellé « note interne »), le motif d'une contre-passation et la note d'une
+déclaration (`EncaissementsFactureModal`), tous dans des tables que « Ventes » ouvre. Chacun dit désormais, dans son
+libellé, où va le texte et que « le client qui porte la case « Ventes » » le lit ; les quatre libellés sont des
+constantes de `lib/droitsAcces.ts`, composées du libellé de la case. Le libellé ne suit PAS le drapeau : un texte saisi
+aujourd'hui reste, et le client le lira dès la migration appliquée — le présent dit la vie du texte. L'objet d'un e-mail
+d'envoi part chez l'acheteur : il n'a jamais été interne.
+
+**CE QU'UNE CASE CHANGE N'EST PAS UNE AFFAIRE D'ÉCRANS.** `ceQueDisentLesCases(simulationSousBanque, ventesOuvertes)`,
+quatre phrases : rien d'ouvert (la phrase de P1, inchangée) ; la banque seule — la phrase de P7 disait « « Banque » ouvre
+déjà au client sa simulation ; le reste arrivera avec ses écrans », or P7 ouvre déjà à la session du client le contrôle
+de solde et trois gestes : elle les nomme, « par la base et sans écran encore » ; les ventes seules — « Ventes » permet
+de lire ses ventes, « avec ce que le cabinet y a écrit (notes et motifs) », et d'en faire les gestes ; ET « Banque » n'y
+est PAS sans effet : avec « Ventes », elle permet de désigner le mouvement qui prouve un encaissement — « cocher « Banque »
+ne change rien » aurait été le même faux, déplacé ; les deux ouvertes. Toutes finissent par « Les écrans « Ventes » et
+« Banque » de son espace viendront ensuite. » La constante affichée lit `COUVERTURE_EXPORTEE` et
+`VENTES_DU_CLIENT_EXPORTEES` ; le drapeau de la seconde migration des ventes vit dans `factures.ts`, qui importe le client
+Supabase : il n'entre pas dans un module de calcul, et la phrase dit les deux migrations ensemble — un test exige que
+l'export les porte toutes deux ou aucune. CONSÉQUENCE pour l'application : A et B s'exportent ensemble, les deux drapeaux
+passent ensemble (B collée aussitôt après A, comme prévu).
+
+**CHAQUE MOT CONFRONTÉ À L'EXPORT.** Dès que l'export porte la migration qu'il nomme, `droitsAcces.test.ts` vérifie les
+neuf tables lues (ni plus ni moins de policies `…_lecture_ventes`, sous `client_du_dossier(…, 'ventes')`), les sept
+fonctions des gestes sous `gere_les_ventes`, le mouvement sous `gere_la_banque`, et pour P7 le contrôle de solde sous
+« Banque » et ses trois fonctions. Une étape qui ouvrirait une table de plus à « Ventes » (les devis, P5) fera tomber ce
+test tant que la phrase ne la nomme pas.
+
+**PREUVES.** Trois états simulés (les fichiers des migrations dans l'export, sous des versions fictives sauf P7, au texte
+de l'historique ; les drapeaux levés ; arbre rendu identique à l'octet) : ventes ouvertes, 398 tests verts sur onze
+fichiers ; les deux étapes ouvertes, 189 ; la banque seule, 91. L'onglet Accès monté drapeaux levés
+(`AccesTab.casesOuvertes.test.tsx`) affiche la phrase des deux étapes ouvertes. Trente et une mutations, toutes mordues
+par le test qui les vise : huit sur l'export des ventes et la constante, quatre sur l'export de P7, dix sur la phrase,
+deux sur les libellés, cinq sur les écrans (les quatre libellés d'avant remis, celui des notes posé sous le champ), deux
+sur l'onglet Accès drapeaux levés. Barrière : `tsc -b` 0, Edge Functions 25 erreurs connues, lint 63 avertissements (les
+mêmes), build ; la suite entière sous Paris, 272 fichiers et 7 857 tests verts ; les douze fichiers touchés ou voisins
+sous les quatre fuseaux, 385 tests ; le banc sur un port à part, 0 débordement aux neuf passes. Sous Paris, une fois,
+sous une charge de 13 sur 4 cœurs, un test de P1 (`AuthContext.test.tsx`, « lit les droits de chaque accès… ») a vu le
+texte final à l'écran avant que l'effet qui note les rendus ait tourné ; rejoué seul trois fois, vert : instabilité de
+la sonde, vraisemblablement (un `useEffect`, différé, là où un `useLayoutEffect` noterait chaque rendu dans sa
+validation même), hors de l'étape, non corrigée ici.
+
+**CE QUI RESTE.** Le commentaire du générateur CII (`factureCii.ts`, dans le bloc recopié au caractère près dans
+`plateforme-agreee` et `superpdp-emit`) dit encore les notes « INTERNES » et cite les anciens libellés : il ne se corrige
+qu'avec les deux copies, au prochain déploiement de ces fonctions. Le resserrement de P7 (`lectures_bancaires_au_droit_banque`)
+n'a pas de drapeau : la phrase ne dit rien de la lecture des mouvements, vraie avant comme après lui. Entre l'application
+de A et la mise en ligne des drapeaux levés, l'onglet dit encore « Cocher « Ventes » ne change pas encore… » : ne cocher
+« Ventes » pour personne dans cette fenêtre.

@@ -236,13 +236,14 @@ function colonnesDe(source: string, nom: string, ou: string): string[] {
 
 describe('les blocs de facturation recopiés dans les Edge Functions', () => {
   it.each(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR)))(
-    '%s : lit en base chaque colonne que le générateur lit, et pas les notes internes',
+    '%s : lit en base chaque colonne que le générateur lit, et pas les notes',
     (fonction) => {
       const source = sourceDe(fonction)
       expect(source, fonction).toContain('.select(COLONNES_FACTURE)')
       const lues = colonnesDe(source, 'COLONNES_FACTURE', fonction)
       for (const c of Object.keys(LUES_PAR_LE_GENERATEUR)) expect(lues, `${fonction} : ${c}`).toContain(c)
-      // Une note interne n'a rien à faire dans ce que la fonction transmet : elle ne la lit même pas.
+      // Les notes ne figurent pas sur la facture — le client qui porte la case « Ventes » les lit, l'acheteur jamais : la
+      // fonction qui transmet ne les lit même pas.
       expect(lues).not.toContain('notes')
     },
   )

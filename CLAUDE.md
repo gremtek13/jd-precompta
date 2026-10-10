@@ -338,8 +338,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
   `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` sont le prédicat des étapes
   suivantes ; depuis P7 (10/10/2026), « Banque » ouvre en base les deux registres de la banque du client et le contrôle
-  de solde des relevés, et à l'écran « Ma simulation », ce que l'onglet dit ; « Ventes » n'ouvre encore rien →
-  « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  de solde des relevés, et à l'écran « Ma simulation » ; « Ventes » n'ouvre encore rien. L'onglet Accès dit ce que la
+  base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
+  drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) →
+  « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
+  saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
+  « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
+  déclaration ; `LIBELLE_*` de `lib/droitsAcces.ts`).
   **La banque sous la case « Banque »** (P7 ; l'ajout appliqué le 10/10/2026, le resserrement à suivre) : un ordre, et
   il est la règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la
   bascule de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur,
@@ -499,8 +504,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   ligne de la bascule → « LA BANQUE DU CLIENT EN BASE », « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE ».
   P2, les ventes du client en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à
   coller) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière deux drapeaux
-  (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; avant l'application, le libellé « Notes internes »
-  d'une facture et la phrase des cases de l'onglet Accès sont à changer → « LES VENTES DU CLIENT, EN BASE ».
+  (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; acceptées par le cabinet le 10/10/2026, à condition
+  que les notes d'une facture disent avant l'application que le client « Ventes » les lit : fait le même jour, avec les
+  trois autres textes libres des ventes et la phrase des cases dans ses quatre états (étape A) ; A et B s'exportent
+  ensemble, les deux drapeaux passent ensemble → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
@@ -666,7 +673,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Copies gardées** : montants, dates, classification, orientation, statut de TVA, la lecture d'un statut reçu
   (`cdarRecu`, dans `plateforme-agreee`), blocs de l'assistant (un garde par
   bloc), et `historiqueDuClient`, seule barrière entre le fil envoyé par le navigateur et le modèle →
-  « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ».
+  « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ». Au prochain déploiement de `plateforme-agreee` et `superpdp-emit` : le
+  commentaire du générateur CII qui dit les notes « INTERNES » (bloc `factureCii`, trois copies) se corrige ; elles ne
+  figurent pas sur la facture, le client « Ventes » les lit.
 
 - **Chaque Edge Function s'appelle en HTTP dans la suite** (ligne 23, `src/test/fonctionsEdge.ts`) : sa VRAIE source,
   transpilée, devant un monde factice qui journalise tout (`Deno.serve` capturé, clés fabriquées, base aux filtres et aux

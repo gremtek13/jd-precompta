@@ -4,6 +4,7 @@ import { calculerLigne, calculerTotaux, creerAvoir, lignesSaisies, refusAvoir } 
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
 
 interface LigneAvoirEdit {
   designation: string
@@ -222,7 +223,8 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, credite, 
             </div>
 
             <div className="field">
-              <label htmlFor="avoir-motif">Motif (note interne, n'apparaît pas sur l'avoir)</label>
+              {/* Le motif est rangé dans les notes de l'avoir, que lit le client qui porte la case « Ventes ». */}
+              <label htmlFor="avoir-motif">{LIBELLE_MOTIF_AVOIR}</label>
               <input id="avoir-motif" value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="ex. Erreur de quantité, remise commerciale a posteriori…" />
             </div>
 

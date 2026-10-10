@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
+import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
   StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
@@ -724,8 +725,21 @@ describe('EncaissementsFactureModal — « Déclaré sur la plateforme »', () =
     fireEvent.click(within(l).getByRole('button', { name: 'Déclaré sur la plateforme' }))
   }
   const inscrire = () => screen.getByRole('button', { name: 'Inscrire la déclaration' })
-  const note = () => champ('Note (facultative) : qui l’a saisi, quand, sous quelle référence')
+  const note = () => champ(LIBELLE_NOTE_DECLARATION)
   const champsASaisir = () => [...document.querySelectorAll('.etape-encaissement tbody tr')].map((r) => r.textContent)
+
+  // LA NOTE SE DIT LUE PAR LE CLIENT « VENTES » (espace client, étape P2) : la migration ventes_du_client lui ouvre les
+  // déclarations de ses encaissements, note comprise ; le libellé le dit au-dessus du champ (accord du 10/10/2026).
+  it('le libellé de la note dit que le client qui porte la case « Ventes » la lit, au-dessus du champ', async () => {
+    monterDeclarations()
+    await ouvrir()
+    const champNote = note()
+    expect(champNote.id).toBe('declaration-note')
+    const libelle = document.querySelector('label[for="declaration-note"]') as HTMLLabelElement
+    expect(libelle.textContent).toBe(LIBELLE_NOTE_DECLARATION)
+    expect(libelle.compareDocumentPosition(champNote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryAllByLabelText(/interne/i)).toEqual([])
+  })
 
   it('dit ce qu’il faut saisir sur la plateforme, champ par champ, et que les statuts ne sont pas encore lus', async () => {
     monterDeclarations()
@@ -866,11 +880,24 @@ describe('EncaissementsFactureModal — « Contre-passer » un encaissement déc
     fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
   }
   const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' })
-  const motif = () => champ('Motif d’annulation, que la plateforme portera')
+  const motif = () => champ(LIBELLE_MOTIF_CONTRE_PASSATION)
   const saisir = (date: string, texte: string) => {
     fireEvent.change(champ('Date du décaissement'), { target: { value: date } })
     fireEvent.change(motif(), { target: { value: texte } })
   }
+
+  // LE MOTIF SE DIT LU PAR LE CLIENT « VENTES » (espace client, étape P2) : la migration ventes_du_client lui ouvre ses
+  // encaissements, motif compris ; le libellé le dit au-dessus du champ, condition du cabinet à son accord du 10/10/2026.
+  it('le libellé du motif dit que le client qui porte la case « Ventes » le lit, au-dessus du champ', async () => {
+    monterDeclarations()
+    await ouvrir()
+    const champMotif = motif()
+    expect(champMotif.id).toBe('contre-passation-motif')
+    const libelle = document.querySelector('label[for="contre-passation-motif"]') as HTMLLabelElement
+    expect(libelle.textContent).toBe(LIBELLE_MOTIF_CONTRE_PASSATION)
+    expect(libelle.compareDocumentPosition(champMotif) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryAllByLabelText(/interne/i)).toEqual([])
+  })
 
   it('les refus de la base dans son ordre, la date jamais proposée ; le bouton grisé tant qu’un refus tient', async () => {
     monterDeclarations()
