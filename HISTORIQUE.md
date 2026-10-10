@@ -19153,3 +19153,15 @@ dit « Cocher « Ventes » ne change pas encore ce que le client voit ou fait »
 fermée n'était pas le code, mais un compte — aucun accès ne portait la case, vérifié avant A, après A, après B — et la
 consigne au cabinet de n'en cocher aucune. La fenêtre se ferme par la bascule ; elle se garde, jusque-là, par un compte
 relu à chaque temps.
+
+### 10/10/2026 — LE BALAYAGE DES ANCIENNES NOTES PASSAIT LES 5 S SOUS LA CHARGE
+
+À la barrière de ce lot (e4 et la bascule de P2), sous UTC, avec une charge de 9,7 (trois agents jouaient leurs propres
+suites), `notesInternesEcritures.test.ts` a dépassé le délai de Vitest : « règles K et L » en 5 444 ms. Le rejeu du
+fichier seul est passé (14 tests), et les trois autres fuseaux aussi. La cause est dans le test, pas dans la machine :
+il relisait tout le dépôt dans son corps — `fautesDeMention(sources)` analyse chaque source par le compilateur —, et
+« règle E » faisait de même avec `fautesDEcriture`. La règle du 09/10/2026 (« LES GARDES DE COPIE COMPILAIENT DANS
+CHAQUE TEST ») les veut dans un `beforeAll` au délai déclaré : les deux balayages s'y paient désormais (60 s), et leurs
+résultats restent nuls tant que le crochet n'a rien rendu, pour qu'un balayage qui n'aurait pas tourné ne passe pas pour
+« aucune faute » (mutation : l'affectation retirée, le test tombe). Aucun délai de test n'est relevé. Le fichier, rejoué
+seul sous les quatre fuseaux : 14 tests verts chaque fois, en 4,3 à 5,2 s pour le fichier entier.

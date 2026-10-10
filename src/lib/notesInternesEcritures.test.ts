@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { posix } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // LES ANCIENNES COLONNES DES NOTES NE S'ÉCRIVENT ET NE SE LISENT PLUS (espace client, étape P0, 09/10/2026).
 //
@@ -648,6 +648,15 @@ describe('les anciennes colonnes des notes internes ne s’écrivent ni ne se li
   const sources = sourcesDeProduction()
   const sites = tousLesSites(sources)
   const surLesTrois = sites.filter((s) => s.tables === null || s.tables.some((t) => TABLES_AUX_ANCIENNES_NOTES.includes(t)))
+  // Les deux balayages relisent tout le dépôt : ils se paient une fois, dans un crochet au délai déclaré, jamais
+  // dans le corps d'un test, où la charge leur faisait passer les 5 s de Vitest. Nuls tant que le crochet n'a rien
+  // rendu : un balayage qui n'aurait pas tourné ne passe pas pour « aucune faute ».
+  let fautesDesEcritures: string[] | null = null
+  let fautesDesMentions: string[] | null = null
+  beforeAll(() => {
+    fautesDesEcritures = fautesDEcriture(sources)
+    fautesDesMentions = fautesDeMention(sources)
+  }, 60_000)
 
   it('le scanner a tout lu : les sources, et les écritures des trois tables (le plancher)', () => {
     // « Zéro faute » et « aveugle » se ressemblent trop : un balayage qui ne verrait plus rien passerait au vert.
@@ -669,11 +678,11 @@ describe('les anciennes colonnes des notes internes ne s’écrivent ni ne se li
   })
 
   it('règle E : aucune écriture des trois tables ne porte la colonne, et ce qui ne se suit pas est nommé', () => {
-    expect(fautesDEcriture(sources)).toEqual([])
+    expect(fautesDesEcritures).toEqual([])
   })
 
   it('règles K et L : la colonne n’est nommée que pour la note d’une autre table, au nombre près', () => {
-    expect(fautesDeMention(sources)).toEqual([])
+    expect(fautesDesMentions).toEqual([])
   })
 
   it('la fiche d’une pièce et l’import écrivent la note interne, pas la pièce', () => {
