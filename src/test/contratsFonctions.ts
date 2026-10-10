@@ -69,14 +69,14 @@ export interface ContratFonction {
 
 export const DEFAUTS_CONNUS = {
   corpsNul: {
-    nombre: 11,
+    nombre: 10,
     raison: 'un corps JSON `null` fait lever la fonction (500 en texte brut, sans en-tête CORS) ou rend le message ' +
       'anglais du moteur — LATENT : le navigateur n’envoie jamais ce corps ; il faut une session (n’importe laquelle, le ' +
       'corps se lisant avant le contrôle du dossier) ou, pour evaluer-extraction, la seule clé publishable. Rien ne part ' +
       'ni ne s’écrit avant. À corriger au prochain déploiement de chaque fonction.',
   },
   champsDeTravers: {
-    nombre: 9,
+    nombre: 8,
     raison: 'un champ attendu en texte et reçu en nombre fait lever `.trim()` (500 en texte brut, sans en-tête CORS) — ' +
       'LATENT, même portée que `corpsNul`.',
   },
@@ -795,7 +795,15 @@ const AGENT_COMPTABLE: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
       attendu: { statut: 502, refusEnFrancais: true, depenses: ['modèle'] },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'message'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...corpsMalFormes('chef', ['dossierId', 'message']),
+    // La batterie met TOUS les champs de travers, et un contrôle y masque l'autre : chaque champ seul de travers, l'autre
+    // lisible, prouve que son contrôle tient par lui-même.
+    ...(['dossierId', 'message'] as const).map((champ): Scenario => ({
+      nom: `${champ} seul reçu en nombre : 400 en français, rien de dépensé`,
+      preparer: modeleQuiRepond,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...QUESTION, [champ]: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    })),
   ],
 }
 

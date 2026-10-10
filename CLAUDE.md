@@ -443,8 +443,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
   09/10/2026 (`lib/periodesEreporting.ts`) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE
   JUSTE ».
-- **Défauts connus des Edge Functions** (27, `DEFAUTS_CONNUS`) : vingt corps mal formés qui font lever neuf fonctions
-  ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune) ; deux d'`evaluer-extraction` ;
+- **Défauts connus des Edge Functions** (25, `DEFAUTS_CONNUS`) : dix-huit corps mal formés qui font lever huit fonctions
+  ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
+  depuis le 09/10/2026) ; deux d'`evaluer-extraction` ;
   trois décisions du cabinet — le mot de passe d'un compte déjà rattaché changé avant un refus 409
   (`create-client-access`, `create-team-member`), l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`),
   `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques le referme).
@@ -946,7 +947,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 6868 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7386 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

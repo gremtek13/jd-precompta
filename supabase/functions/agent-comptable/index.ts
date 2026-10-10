@@ -75,6 +75,11 @@ function json(body: unknown, status = 200) {
   })
 }
 
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
 // Claude Opus 5 / Sonnet 5 : accord de modèle accepté et confirmé "AVAILABLE" côté Bedrock
 // (get-foundation-model-availability), mais AWS refuse encore l'invocation elle-même
 // (AccessDeniedException persistante, incohérence remontée à AWS Support). En attendant leur
@@ -2990,15 +2995,33 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, cleSecrete)
 
-  let payload: { dossierId?: string; message?: string; historique?: unknown }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` lève, et `Deno.serve` rendait
+  // alors un 500 en texte brut, sans en-tête CORS, que la page ne pouvait même pas lire. Le navigateur
+  // envoie toujours un objet ; tout le reste se refuse ici, avant le dossier et avant le modèle.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  const payload = corps as { dossierId?: unknown; message?: unknown; historique?: unknown }
+  // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y lèverait.
+  // Absent ou nul, il tombe sur le refus « requis » plus bas. `historique` n'a pas ce défaut :
+  // `historiqueDuClient` écarte déjà tout ce qui n'est pas une liste de tours de texte.
+  const dossierIdLu = payload.dossierId
+  const messageLu = payload.message
+  if (!texteOuAbsent(dossierIdLu)) {
+    return json({ error: "dossierId doit être un texte." }, 400)
+  }
+  if (!texteOuAbsent(messageLu)) {
+    return json({ error: "message doit être un texte." }, 400)
+  }
 
-  const dossierId = payload.dossierId?.trim()
-  const message = payload.message?.trim().slice(0, 4000)
+  const dossierId = dossierIdLu?.trim()
+  const message = messageLu?.trim().slice(0, 4000)
   if (!dossierId || !message) {
     return json({ error: "dossierId et message sont requis." }, 400)
   }
