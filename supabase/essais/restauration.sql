@@ -109,6 +109,15 @@
 -- catalogue des rôles justes. Planté — les revues avant leurs conclusions —, le script s'arrête sur la clé.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
+-- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
+-- étrangères, qui échoue quand une table de la base n'est pas au plan, laissait la restauration courir sans aucune clé
+-- jusqu'à un verdict « IDENTIQUE » qui ne prouvait rien (défaut relevé le 10/10/2026, ligne 41, étape R4). `\set` est
+-- une commande de psql : le script ne se joue que par lui, sur une réplique. Arrêté, il laisse son schéma d'essai, que
+-- le passage suivant supprime en commençant. Éprouvé le 10/10/2026 sur une copie de la réplique de l'étape R4, égale à
+-- la production à 114 migrations, où l'on avait planté une table hors du plan liée au dossier : il s'arrête sur la
+-- recopie des clés et nomme la clé, sans avoir recopié aucune ligne ; sans l'arrêt, son verdict se dit EN FAUTE ; le
+-- script d'avant y rendait 62 tables IDENTIQUES. Sans la table plantée : 119 clés recopiées, le verdict d'avant.
+\set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;
 
@@ -192,10 +201,28 @@ begin
 end $$;
 
 -- Les clés étrangères telles que Postgres les déclare, redirigées vers le schéma d'essai. Seules
--- celles entre tables de `public` — voir l'en-tête pour ce que cette exclusion coûte.
+-- celles entre tables de `public` — voir l'en-tête pour ce que cette exclusion coûte. Une clé dont une table n'est pas
+-- au plan — une base en avance sur le code : une migration appliquée, pas encore au plan de ce fichier — ne peut pas se
+-- recopier : le bloc les NOMME toutes et s'arrête avant d'en recopier aucune. Le témoin `_cles_recopiees` ne s'écrit que
+-- si toutes ont passé ; le verdict (section 3) se dit EN FAUTE sans lui.
+create table essai_restauration._cles_recopiees (nombre bigint not null);
 do $$
-declare r record;
+declare r record; hors_plan text;
 begin
+  select string_agg(format('%s (%s → %s)', c.conname, te.relname, tp.relname), ', ' order by c.conname)
+    into hors_plan
+    from pg_constraint c
+    join pg_class te on te.oid = c.conrelid
+    join pg_namespace ne on ne.oid = te.relnamespace
+    join pg_class tp on tp.oid = c.confrelid
+    join pg_namespace np on np.oid = tp.relnamespace
+   where c.contype = 'f' and ne.nspname = 'public' and np.nspname = 'public'
+     and (to_regclass(format('essai_restauration.%I', te.relname)) is null
+          or to_regclass(format('essai_restauration.%I', tp.relname)) is null);
+  if hors_plan is not null then
+    raise exception 'ESSAI EN FAUTE : des clés étrangères ne se recopient pas, une de leurs tables n''est pas au plan — %',
+      hors_plan;
+  end if;
   for r in
     select c.conname, te.relname as enfant, pg_get_constraintdef(c.oid) as def
     from pg_constraint c
@@ -208,7 +235,12 @@ begin
     execute format('alter table essai_restauration.%I add constraint %I %s',
       r.enfant, r.conname, replace(r.def, 'REFERENCES ', 'REFERENCES essai_restauration.'));
   end loop;
+  insert into essai_restauration._cles_recopiees
+    select count(*) from pg_constraint c join pg_namespace ns on ns.oid = c.connamespace
+     where c.contype = 'f' and ns.nspname = 'essai_restauration';
 end $$;
+
+select nombre as cles_etrangeres_recopiees from essai_restauration._cles_recopiees;
 
 -- ══ 2. La restauration ════════════════════════════════════════════════════════════════════════════
 -- Remplacer l'identifiant ci-dessous par le dossier à éprouver.
@@ -310,7 +342,11 @@ begin
 end $$;
 
 select verdict, count(*) as tables, sum(nb_essai) as lignes, string_agg(table_nom || ' (' || nb_essai || ')', ', ' order by table_nom) as lesquelles
-from essai_restauration._egalite group by verdict order by verdict;
+from essai_restauration._egalite group by verdict
+union all
+select 'EN FAUTE', 0, 0, 'les clés étrangères n''ont pas été recopiées : rien ci-dessus ne prouve que la restauration tient'
+ where not exists (select 1 from essai_restauration._cles_recopiees)
+order by verdict;
 
 -- Le point NON VÉRIFIÉ 7 de la conception du plan comptable (ligne 43, PC1) : une sauvegarde dont le plan désigne un rôle
 -- que la base d'arrivée ne connaît pas — une base plus ancienne que celle qui l'a écrite. La clé étrangère vers le

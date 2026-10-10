@@ -281,3 +281,72 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     })
   })
 })
+
+// LA RECOPIE DES CLÉS ÉTRANGÈRES NE PEUT PLUS ÉCHOUER EN SILENCE (défaut relevé le 10/10/2026, ligne 41, étape R4). Sur une
+// base en avance sur le plan du script — une migration appliquée dont les tables n'y sont pas encore —, le bloc qui
+// recopie les clés échouait ; psql passait à la suite, la restauration courait sans aucune clé et le verdict disait
+// « IDENTIQUE ». Faute de base, ce test lit dans le texte ce qui l'empêche : l'arrêt à la première erreur, posé avant
+// toute instruction et jamais levé ; un bloc des clés qui cherche dans le plan les deux tables de chaque clé, lève en
+// NOMMANT celles qui manquent avant d'en recopier aucune, et ne rattrape rien ; son témoin, écrit après la recopie dans
+// le même bloc (un bloc `do` est tout ou rien) ; un verdict qui se dit EN FAUTE sans le témoin. Le comportement, lui,
+// s'éprouve sur une réplique (le commentaire de la section 1 du script).
+function fautesDeLArret(texte: string): string[] {
+  const fautes: string[] = []
+  const instructions = texte.split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('--'))
+  if (instructions[0] !== '\\set ON_ERROR_STOP on') fautes.push('la première instruction n’est pas « \\set ON_ERROR_STOP on »')
+  for (const m of texte.matchAll(/\\(?:un)?set\s+ON_ERROR_STOP\b[^\n]*/gi)) {
+    if (m[0].trim() !== '\\set ON_ERROR_STOP on') fautes.push(`l’arrêt à la première erreur est touché plus loin : ${m[0].trim()}`)
+  }
+  const recopie = texte.indexOf("execute format('alter table essai_restauration.%I add constraint %I %s'")
+  const debut = texte.lastIndexOf('do $$', recopie)
+  const fin = texte.indexOf('end $$;', recopie)
+  if (recopie < 0 || debut < 0 || fin < 0) return [...fautes, 'le bloc qui recopie les clés étrangères est introuvable']
+  const corps = texte.slice(debut, fin)
+  const leve = corps.indexOf("raise exception 'ESSAI EN FAUTE")
+  if (leve < 0 || leve > corps.indexOf('for r in')) fautes.push('le bloc des clés ne lève pas avant d’en recopier aucune')
+  if (!corps.includes("string_agg(format('%s (%s → %s)', c.conname, te.relname, tp.relname)")
+    || !/raise exception 'ESSAI EN FAUTE(?:[^']|'')*%',\s*hors_plan;/.test(corps)) {
+    fautes.push('le bloc des clés ne nomme pas celles qui ne se recopient pas')
+  }
+  for (const [alias, quelle] of [['te', 'enfant'], ['tp', 'parente']]) {
+    if (!corps.includes(`to_regclass(format('essai_restauration.%I', ${alias}.relname)) is null`)) {
+      fautes.push(`le bloc des clés ne cherche pas la table ${quelle} dans le plan`)
+    }
+  }
+  if (/exception\s+when/i.test(corps)) fautes.push('le bloc des clés rattrape une erreur')
+  const temoin = corps.indexOf('insert into essai_restauration._cles_recopiees')
+  if (temoin < 0 || temoin < corps.lastIndexOf('end loop;')) fautes.push('le témoin ne s’écrit pas après la recopie, dans son bloc')
+  if (!/select 'EN FAUTE'[^;]*where not exists \(select 1 from essai_restauration\._cles_recopiees\)/.test(texte)) {
+    fautes.push('le verdict ne se dit pas EN FAUTE sans le témoin')
+  }
+  return fautes
+}
+
+describe('l’essai s’arrête, nommément, quand les clés étrangères ne se recopient pas', () => {
+  it('l’arrêt, le bloc qui nomme et lève, le témoin, le verdict EN FAUTE', () => {
+    expect(fautesDeLArret(texteDeLEssai)).toEqual([])
+  })
+
+  it('un défaut planté se voit', () => {
+    const plante = (avant: string, apres: string) => {
+      expect(texteDeLEssai).toContain(avant)
+      return fautesDeLArret(texteDeLEssai.replace(avant, apres)).join('\n')
+    }
+    expect(plante('\\set ON_ERROR_STOP on\n', '')).toContain('la première instruction')
+    expect(plante('-- ══ 2. La restauration', '\\set ON_ERROR_STOP off\n-- ══ 2. La restauration')).toContain('touché plus loin')
+    expect(plante("raise exception 'ESSAI EN FAUTE", "raise notice 'ESSAI EN FAUTE")).toContain('ne lève pas')
+    expect(plante("n''est pas au plan — %',\n      hors_plan;", "n''est pas au plan',\n      hors_plan;")).toContain('ne nomme pas')
+    expect(plante("to_regclass(format('essai_restauration.%I', te.relname)) is null", 'false')).toContain('table enfant')
+    expect(plante("to_regclass(format('essai_restauration.%I', tp.relname)) is null", 'false')).toContain('table parente')
+    expect(plante("ns.nspname = 'essai_restauration';\nend $$;", "ns.nspname = 'essai_restauration';\nexception when others then null;\nend $$;"))
+      .toContain('rattrape')
+    // Le témoin retiré, puis écrit AVANT la recopie : il ne prouverait plus qu'elle a passé.
+    const temoin = '  insert into essai_restauration._cles_recopiees\n'
+      + '    select count(*) from pg_constraint c join pg_namespace ns on ns.oid = c.connamespace\n'
+      + "     where c.contype = 'f' and ns.nspname = 'essai_restauration';\n"
+    expect(plante(temoin, '')).toContain('le témoin')
+    expect(fautesDeLArret(texteDeLEssai.replace(temoin, '').replace('  end if;\n  for r in', `  end if;\n${temoin}  for r in`)).join('\n'))
+      .toContain('le témoin')
+    expect(plante(' where not exists (select 1 from essai_restauration._cles_recopiees)', ' where false')).toContain('EN FAUTE')
+  })
+})
