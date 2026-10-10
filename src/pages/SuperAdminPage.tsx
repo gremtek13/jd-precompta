@@ -8,6 +8,7 @@ import { extraireErreurFonction } from '../lib/invokeErreur'
 import { lireTout } from '../lib/lectureComplete'
 import { formatDate } from '../lib/format'
 import { messageErreur } from '../lib/messageErreur'
+import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle } from '../lib/recuperationMotDePasse'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
 interface CabinetApercu {
@@ -171,8 +172,11 @@ export default function SuperAdminPage() {
 
   async function creerCabinet(e: FormEvent) {
     e.preventDefault()
-    if (password.length < 10) {
-      setErreur('Le mot de passe doit faire au moins 10 caractères.')
+    // La règle des mots de passe du projet, dite sous le champ, jugée avant tout appel : un refus du service viendrait
+    // après l'écriture du cabinet, que la fonction retire alors (lib/recuperationMotDePasse.ts, un reflet du réglage).
+    const refusRegle = refusDeLaRegle(password)
+    if (refusRegle !== null) {
+      setErreur(refusRegle)
       return
     }
     // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
@@ -435,8 +439,14 @@ export default function SuperAdminPage() {
                 <input id="cab-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="field">
-                <label htmlFor="cab-password">Mot de passe (au moins 10 caractères)</label>
-                <input id="cab-password" type="text" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+                <label htmlFor="cab-password">Mot de passe</label>
+                {/* En clair : le super-administrateur le communique. `new-password` dit au navigateur qu'il s'agit d'un mot de
+                    passe neuf : il n'y propose aucun de ceux qu'il a enregistrés. */}
+                <input
+                  id="cab-password" type="text" required minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE} autoComplete="new-password"
+                  aria-describedby="cab-password-regle" value={password} onChange={(e) => setPassword(e.target.value)}
+                />
+                <span className="muted" id="cab-password-regle">{REGLE_DU_MOT_DE_PASSE}</span>
               </div>
               {erreur && <p className="error-text">{erreur}</p>}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>

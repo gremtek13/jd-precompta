@@ -387,6 +387,15 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   l'onglet Accès). D'un compte d'ailleurs, le 409 dit ce qu'il disait (il existe, il n'est pas rattaché) et rien de
   plus : une phrase unique, gardée par les contrats (`compteIntact`, `neDitQueLExistence`) →
   « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
+- **La règle des mots de passe est celle du tableau de bord** (une minuscule, une majuscule, un chiffre, un symbole,
+  posées par le cabinet le 10/10/2026 ; dix caractères) : les quatre écrans qui posent un mot de passe (Accès, équipe,
+  nouveau cabinet, nouveau mot de passe) en portent un REFLET (`lib/recuperationMotDePasse.ts` :
+  `REGLE_DU_MOT_DE_PASSE`, `refusDeLaRegle`, à côté de `LONGUEUR_MINIMALE_MOT_DE_PASSE`), dit sous le champ et appliqué
+  avant tout appel ; un réglage changé au tableau de bord se reporte là et dans PLAN_DE_REPRISE.md (§3, point 6). Le
+  service fait foi : les trois fonctions qui créent des comptes lisent son refus au CODE, jamais au statut (422 pour les
+  deux) ni au message — `email_exists` ou `user_already_exists`, déjà inscrit ; `weak_password`, 400 en français avec ce
+  qui manque, sans chercher aucun compte (bloc `refusDuService`, recopié, `refusDuServiceCopie.test.ts` ; le SDK
+  installé joué par `refusDuServiceClient.test.ts`) → « UN MOT DE PASSE REFUSÉ SE DISAIT « UN COMPTE EXISTE DÉJÀ » ».
 - **Variables d'environnement** : PLAN_DE_REPRISE.md (fin du §3) les nomme toutes, `variablesEnvironnement.test.ts` les
   compare au code ; leurs valeurs ne se vérifient qu'à la main.
 - Les données sont fictives aujourd'hui, et traitées dès maintenant comme identifiantes : aucun service tiers hors de
@@ -402,7 +411,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
   (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
-  (10/10/2026).
+  (10/10/2026) ; la règle des mots de passe dite avant le clic par les quatre écrans qui en posent un, et le refus du
+  service dit en français (10/10/2026, défaut 23.5).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -477,9 +487,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
-  au tableau de bord, la longueur minimale à 10, le modèle d'e-mail en français et l'inscription publique à fermer. Un
-  compte dont le dernier accès au cabinet a été retiré n'y est plus « rattaché » : lui recréer un accès bute sur le 409
-  (question au cabinet, Q-23.2) → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
+  au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
+  est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
+  encore le refus anglais du service, en 500 (question au cabinet, défaut 23.5). Un compte dont le dernier accès au
+  cabinet a été retiré n'y est plus « rattaché » : lui recréer un accès bute sur le 409 (question au cabinet, Q-23.2) →
+  « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
@@ -496,12 +508,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   statut de TVA) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT
   HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS
   D'E-REPORTING ».
-- **Défauts connus des Edge Functions** (19, `DEFAUTS_CONNUS`) : quatorze corps mal formés qui font lever six fonctions
-  ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
-  depuis le 09/10/2026, `create-client-access` et `create-team-member` depuis le 10/10/2026) ; deux
-  d'`evaluer-extraction` ; deux décisions du cabinet — l'objet et l'expéditeur d'un e-mail reçu au journal
-  (`receive-email`), `taux-change-bce` sans contrôle d'appelant (fermer l'inscription publique et les clés historiques
-  le referme).
+- **Défauts connus des Edge Functions** (17, `DEFAUTS_CONNUS`) : douze corps mal formés, dans sept fonctions, qui les
+  font lever ou répondre en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les
+  refuse depuis le 09/10/2026, `create-client-access`, `create-team-member` et `create-cabinet` depuis le 10/10/2026) ;
+  deux d'`evaluer-extraction` ; deux décisions du cabinet — l'objet et l'expéditeur d'un e-mail reçu au journal
+  (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription publique, fermée le 10/10/2026, n'admet
+  plus un inconnu ; les clés historiques restent à désactiver).
 - **Une vente entrée deux fois** (ligne 28.6) : le pont, la Checklist et l'écran (phase C) en ligne le 09/10/2026 ;
   reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1 au cabinet, une migration).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
@@ -702,8 +714,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`clesSupabase.test.ts`) → « LES CLÉS HISTORIQUES DE SUPABASE SONT QUITTÉES ».
 - **`extract-piece`** n'accepte qu'un compte RATTACHÉ (`cabinet_admins`, `memberships` ou `super_admins`, lus à la clé de
   service, session vérifiée auprès du service d'authentification) ou la clé secrète exacte en `apikey`, contrôlés avant
-  de lire le corps. **L'inscription publique reste ouverte** (`disable_signup: false`) : à fermer par un clic du
-  cabinet → « ET LA FONCTION DE LECTURE ÉTAIT OUVERTE ».
+  de lire le corps. **L'inscription publique est fermée** depuis le 10/10/2026 (`disable_signup: true`, relu sur les
+  réglages publics du service) → « ET LA FONCTION DE LECTURE ÉTAIT OUVERTE ».
 - **`evaluer-extraction` facture seulement dans sa fenêtre datée** (`ESSAI_OUVERT_JUSQU_A`) : mesurer = poser une date une
   heure devant, déployer, mesurer, attendre la fermeture, PUIS commiter (`categorisationIaCopie.test.ts` refuse une
   fenêtre ouverte) → « LE HARNAIS DE MESURE ÉTAIT UNE PORTE PUBLIQUE ».
@@ -712,8 +724,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le compilateur des Edge Functions** (`tsconfig.edge.json`, `edgeFunctionsCodeMort.test.ts`) ne garantit que le CODE
   MORT ; le typage complet rend des erreurs connues (SDK non installés).
 - **Copies gardées** : montants, dates, classification, orientation, statut de TVA, la lecture d'un statut reçu
-  (`cdarRecu`, dans `plateforme-agreee`), blocs de l'assistant (un garde par
-  bloc), et `historiqueDuClient`, seule barrière entre le fil envoyé par le navigateur et le modèle →
+  (`cdarRecu`, dans `plateforme-agreee`), le refus du service d'authentification (`refusDuService`, dans les trois
+  fonctions qui créent des comptes), blocs de l'assistant (un garde par bloc), et `historiqueDuClient`, seule barrière
+  entre le fil envoyé par le navigateur et le modèle →
   « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ». Au prochain déploiement de `plateforme-agreee` et `superpdp-emit` : le
   commentaire du générateur CII qui dit les notes « INTERNES » (bloc `factureCii`, trois copies) se corrige ; elles ne
   figurent pas sur la facture, le client « Ventes » les lit.

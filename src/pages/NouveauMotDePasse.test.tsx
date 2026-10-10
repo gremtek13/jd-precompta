@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { AuthApiError, AuthSessionMissingError } from '@supabase/supabase-js'
+import { AuthApiError, AuthSessionMissingError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { REGLE_DU_MOT_DE_PASSE } from '../lib/recuperationMotDePasse'
 import NouveauMotDePasse from './NouveauMotDePasse'
 
 // L'écran que la session d'un lien « Mot de passe oublié » rencontre avant tout autre (App.tsx). Ce qu'aucun calcul pur
@@ -34,7 +35,8 @@ function retenue() {
   return { promesse, relacher }
 }
 
-const MOT_DE_PASSE = 'un-mot-de-passe-fictif'
+// Un mot de passe qui suit la règle du projet : dix caractères au moins, une minuscule, une majuscule, un chiffre, un symbole.
+const MOT_DE_PASSE = 'Un-mot-de-passe-fictif-1'
 
 function monter() {
   const onTermine = vi.fn()
@@ -70,10 +72,42 @@ describe('NouveauMotDePasse', () => {
 
   it('un mot de passe de moins de dix caractères ne part pas', () => {
     const { onTermine } = monter()
-    saisir('a'.repeat(9), 'a'.repeat(9))
+    saisir('Ab1!'.repeat(2), 'Ab1!'.repeat(2))
     fireEvent.submit(formulaire())
-    expect(screen.getByRole('alert').textContent).toBe('Le mot de passe doit faire au moins 10 caractères.')
+    expect(screen.getByRole('alert').textContent).toBe('Ce mot de passe ne suit pas la règle du projet : il doit faire au moins 10 caractères.')
     expect(faux.appels).toEqual([])
+    expect(onTermine).not.toHaveBeenCalled()
+  })
+
+  // LA RÈGLE DES MOTS DE PASSE DU PROJET (défaut 23.5, 10/10/2026) : dite avant le clic, appliquée avant tout appel, et le
+  // refus du service — seul juge — dit en français, ce qui manque compris.
+  it('dit la règle du projet sous le champ, avant le clic', () => {
+    monter()
+    const regle = screen.getByText(REGLE_DU_MOT_DE_PASSE)
+    expect(screen.getByLabelText('Nouveau mot de passe').getAttribute('aria-describedby')).toBe(regle.id)
+    expect(regle.textContent).toContain('une minuscule, une majuscule, un chiffre et un symbole')
+  })
+
+  it('un mot de passe sans majuscule, chiffre ni symbole ne part pas, et l’écran dit ce qui manque', () => {
+    const { onTermine } = monter()
+    saisir('motdepassesimple', 'motdepassesimple')
+    fireEvent.submit(formulaire())
+    expect(screen.getByRole('alert').textContent)
+      .toBe('Ce mot de passe ne suit pas la règle du projet : il doit contenir une majuscule, un chiffre et un symbole.')
+    expect(faux.appels).toEqual([])
+    expect(onTermine).not.toHaveBeenCalled()
+  })
+
+  it('le refus du service (une règle réglée autrement au tableau de bord) se dit en français, avec ce qui manque', async () => {
+    faux.resultat = { data: { user: null }, error: new AuthWeakPasswordError('Password should be at least 12 characters.', 422, ['length']) }
+    const { onTermine } = monter()
+    saisir(MOT_DE_PASSE, MOT_DE_PASSE)
+    await act(async () => { fireEvent.submit(formulaire()) })
+    expect(faux.appels).toEqual([{ password: MOT_DE_PASSE }])
+    expect(screen.getByRole('alert').textContent).toBe(
+      "Le service d'authentification refuse ce mot de passe : il ne suit pas la règle des mots de passe du projet, réglée au "
+      + 'tableau de bord de Supabase — il est trop court. Choisis-en un autre.',
+    )
     expect(onTermine).not.toHaveBeenCalled()
   })
 
@@ -86,11 +120,11 @@ describe('NouveauMotDePasse', () => {
     expect(onTermine).not.toHaveBeenCalled()
   })
 
-  it('dix caractères identiques partent, une fois, et l’application s’ouvre sur le succès', async () => {
+  it('dix caractères qui suivent la règle, identiques, partent, une fois, et l’application s’ouvre sur le succès', async () => {
     const { onTermine } = monter()
-    saisir('b'.repeat(10), 'b'.repeat(10))
+    saisir('Abcdefgh1!', 'Abcdefgh1!')
     await act(async () => { fireEvent.submit(formulaire()) })
-    expect(faux.appels).toEqual([{ password: 'b'.repeat(10) }])
+    expect(faux.appels).toEqual([{ password: 'Abcdefgh1!' }])
     expect(onTermine).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('alert')).toBeNull()
   })

@@ -7,6 +7,7 @@ import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
 import { avisDuMembreAjoute, compteDeLaReponse } from '../lib/creationDesComptes'
+import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle } from '../lib/recuperationMotDePasse'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
   comptable_en_chef: 'Comptable en chef',
@@ -78,8 +79,11 @@ export default function EquipePage() {
 
   async function ajouterMembre(e: FormEvent) {
     e.preventDefault()
-    if (password.length < 10) {
-      setErreur('Le mot de passe doit faire au moins 10 caractères.')
+    // La règle des mots de passe du projet, dite sous le champ, jugée avant tout appel : le service la ferait respecter de
+    // toute façon (lib/recuperationMotDePasse.ts, un reflet de son réglage). Rien ne part.
+    const refusRegle = refusDeLaRegle(password)
+    if (refusRegle !== null) {
+      setErreur(refusRegle)
       return
     }
     // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
@@ -232,8 +236,14 @@ export default function EquipePage() {
                 <input id="eq-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="field">
-                <label htmlFor="eq-password">Mot de passe (au moins 10 caractères)</label>
-                <input id="eq-password" type="text" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+                <label htmlFor="eq-password">Mot de passe</label>
+                {/* En clair : le chef le communique. `new-password` dit au navigateur qu'il s'agit d'un mot de passe neuf : il n'y
+                    propose aucun de ceux qu'il a enregistrés. */}
+                <input
+                  id="eq-password" type="text" required minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE} autoComplete="new-password"
+                  aria-describedby="eq-password-regle" value={password} onChange={(e) => setPassword(e.target.value)}
+                />
+                <span className="muted" id="eq-password-regle">{REGLE_DU_MOT_DE_PASSE}</span>
               </div>
               <div className="field">
                 <label htmlFor="eq-role">Rôle</label>

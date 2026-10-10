@@ -256,6 +256,30 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     ]],
     scenario: 'le chef d’un autre cabinet, que ce cabinet ne connaît pas : 409, le même refus, et le compte n’est pas touché',
   },
+  // Le défaut 23.5 (10/10/2026) : « déjà inscrit » lu au STATUT. Le service rend 422 aussi pour un mot de passe que la
+  // règle du projet refuse : la fonction cherchait alors un compte qui n'existe pas, puis disait « Un compte existe
+  // déjà… ». Remis dans chacune des trois fonctions, il doit faire tomber le refus du mot de passe ; remis au MESSAGE, la
+  // reconnaissance au code sous un message neutre ; et le refus du mot de passe oublié retombe sur le chemin d'avant.
+  ...(['create-client-access', 'create-team-member'] as const).map((slug): DefautPlante => ({
+    slug, quoi: '« déjà inscrit » de nouveau lu au statut 422',
+    remplacements: [['} else if (adresseDejaInscrite(createError)) {', '} else if (createError?.status === 422) {']],
+    scenario: 'le service refuse le mot de passe (une sorte de caractères manque) : 400, dit en français, aucun compte cherché, rien d’écrit',
+  })),
+  {
+    slug: 'create-cabinet', quoi: '« déjà inscrit » de nouveau lu au statut 422',
+    remplacements: [['    if (adresseDejaInscrite(createError)) {', '    if (createError?.status === 422) {']],
+    scenario: 'le service refuse le mot de passe (une sorte de caractères manque) : 400, dit en français, aucun compte cherché, rien d’écrit',
+  },
+  {
+    slug: 'create-client-access', quoi: '« déjà inscrit » de nouveau lu dans le message',
+    remplacements: [['} else if (adresseDejaInscrite(createError)) {', '} else if (/already|exist|registered|duplicate/i.test(createError?.message ?? "")) {']],
+    scenario: 'l’adresse déjà inscrite se reconnaît à son code (email_exists), sous un message que la fonction ne lit pas',
+  },
+  {
+    slug: 'create-team-member', quoi: 'le refus du mot de passe oublié',
+    remplacements: [['    if (refusMotDePasse !== null) return json({ error: refusMotDePasse }, 400)\n', '']],
+    scenario: 'le service refuse le mot de passe (divulgué) : 400, dit en français, aucun compte cherché, rien d’écrit',
+  },
   {
     slug: 'taux-change-bce', quoi: 'le préflight oublié',
     remplacements: [['  if (req.method === "OPTIONS") {\n    return new Response("ok", { headers: corsHeaders })\n  }\n', '']],

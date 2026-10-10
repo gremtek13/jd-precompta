@@ -6,7 +6,8 @@ import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { lireTout } from '../../lib/lectureComplete'
 import {
-  ADRESSE_DE_RETOUR, avisDuLienEnvoye, messageErreurDuLienEnvoye, questionDuLienEnvoye,
+  ADRESSE_DE_RETOUR, LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, avisDuLienEnvoye, messageErreurDuLienEnvoye,
+  questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
   CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, demandeDeChangement, droitsDeLaLigne,
@@ -126,6 +127,14 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   async function handleCreateAccess(e: FormEvent) {
     e.preventDefault()
     if (creationEnCours.current) return
+    // La règle des mots de passe du projet, dite sous le champ, jugée avant tout appel : le service la ferait respecter de
+    // toute façon (lib/recuperationMotDePasse.ts, un reflet de son réglage). Rien ne part, ni compte ni accès.
+    const refusRegle = refusDeLaRegle(password)
+    if (refusRegle !== null) {
+      setError(refusRegle)
+      setAvisCreation(null)
+      return
+    }
     creationEnCours.current = true
     setInviting(true)
     setError(null)
@@ -298,8 +307,14 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
             </div>
             <div className="field">
               <label htmlFor="password">Mot de passe initial</label>
-              <input id="password" type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
-              <span className="muted">10 caractères minimum — c'est toi qui le choisis et le communiques au client, pas lui. Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien.</span>
+              {/* `new-password` : un champ de mot de passe après un champ d'adresse a la forme d'une connexion, et le navigateur
+                  pouvait y remplir l'adresse et le mot de passe du cabinet, qu'il connaît pour ce site. */}
+              <input
+                id="password" type="password" required minLength={LONGUEUR_MINIMALE_MOT_DE_PASSE} autoComplete="new-password"
+                aria-describedby="password-regle" value={password} onChange={(e) => setPassword(e.target.value)}
+              />
+              <span className="muted" id="password-regle">{REGLE_DU_MOT_DE_PASSE}</span>
+              <span className="muted">C'est toi qui le choisis et le communiques au client, pas lui. Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien.</span>
             </div>
           </div>
           {error && <p className="error-text">{error}</p>}

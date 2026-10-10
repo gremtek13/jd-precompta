@@ -103,6 +103,67 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE refusDuService ───────────────────────────────────────────────────────────────────────────────────────
+// CE QUE LE SERVICE D'AUTHENTIFICATION DIT QUAND IL REFUSE de créer un compte (`auth.admin.createUser` :
+// create-client-access, create-team-member, create-cabinet) ou de poser un mot de passe (`auth.updateUser` : l'écran
+// du nouveau mot de passe). Son original vit dans src/lib/recuperationMotDePasse.ts ; il est copié À L'IDENTIQUE dans
+// les trois fonctions, qui sont auto-portées, et refusDuServiceCopie.test.ts compare les copies au caractère près et les
+// exécute contre l'original.
+//
+// Lu sur le CODE de l'erreur, jamais sur son statut ni sur son message. Le service (supabase/auth, `adminUserCreate`
+// et `errors.go`) rend 422 pour une adresse déjà inscrite (`email_exists`) COMME pour un mot de passe que la règle du
+// projet refuse (`weak_password`) : la détection par le statut prenait le second pour le premier, et le cabinet lisait
+// « Un compte existe déjà… » sur un mot de passe refusé (10/10/2026, défaut 23.5). Le message, lui, est en anglais et
+// change d'une version du service à l'autre. auth-js (2.112.4, `lib/fetch.js`) recopie sur l'erreur le code de la
+// réponse (`code`), et fait d'un refus du mot de passe une `AuthWeakPasswordError` qui porte ses raisons (`reasons`) —
+// `refusDuServiceClient.test.ts` le joue sur le client installé.
+
+/**
+ * Les codes d'une adresse qui a déjà un compte : `email_exists`, celui d'`adminUserCreate`, et `user_already_exists`,
+ * celui de l'inscription publique — auth-js nomme les deux, et ils disent la même chose.
+ */
+const CODES_DEJA_INSCRIT: readonly string[] = ['email_exists', 'user_already_exists']
+
+/** Le code que porte une erreur du service (`AuthError.code`), lu sur la valeur et non sur sa classe. */
+function codeDuRefus(erreur: unknown): string | null {
+  if (erreur === null || typeof erreur !== 'object') return null
+  const code = (erreur as { code?: unknown }).code
+  return typeof code === 'string' ? code : null
+}
+
+/** Vrai si le service refuse la création parce que l'adresse a déjà un compte. */
+export function adresseDejaInscrite(erreur: unknown): boolean {
+  const code = codeDuRefus(erreur)
+  return code !== null && CODES_DEJA_INSCRIT.includes(code)
+}
+
+/**
+ * Ce qui manque au mot de passe, raison par raison, dans l'ordre où le service les juge (`checkPasswordStrength` :
+ * `length`, `characters`, `pwned`). Une raison qu'il ajouterait demain ne se recopie pas : un texte venu du service ne
+ * s'affiche pas tel quel, et la phrase de tête suffit à dire le refus.
+ */
+const CE_QUI_MANQUE: readonly (readonly [string, string])[] = [
+  ['length', 'il est trop court'],
+  ['characters', "il lui manque une sorte de caractères qu'elle exige (minuscule, majuscule, chiffre ou symbole, selon le réglage)"],
+  ['pwned', 'il figure parmi les mots de passe divulgués lors de fuites de données'],
+]
+
+/**
+ * Le refus d'un mot de passe par la règle du projet, dit en français — ou null si l'erreur n'en est pas un. La règle
+ * se règle au tableau de bord de Supabase et le service seul l'applique : la phrase la dit « du projet », et dit ce
+ * qui manque sans la recopier (elle a pu changer depuis que les écrans en ont écrit le reflet).
+ */
+export function refusDuMotDePasse(erreur: unknown): string | null {
+  if (codeDuRefus(erreur) !== 'weak_password') return null
+  const lues = (erreur as { reasons?: unknown }).reasons
+  const raisons: unknown[] = Array.isArray(lues) ? lues : []
+  const manques = CE_QUI_MANQUE.filter(([raison]) => raisons.includes(raison)).map(([, phrase]) => phrase)
+  const tete = "Le service d'authentification refuse ce mot de passe : il ne suit pas la règle des mots de passe du projet, "
+    + 'réglée au tableau de bord de Supabase'
+  return manques.length === 0 ? `${tete}.` : `${tete} — ${manques.join(' ; ')}.`
+}
+// ── FIN COPIE refusDuService ─────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -198,20 +259,16 @@ Deno.serve(async (req: Request) => {
     email, password, email_confirm: true,
   })
 
-  // Le message exact ("User already registered", "A user with this email address has already been
-  // registered"...) varie selon la version de GoTrue — on élargit donc la détection (mots-clés +
-  // statut 422, le code HTTP habituel de ce cas précis) plutôt que de dépendre d'un seul libellé.
-  const dejaInscrit = createError && (
-    createError.status === 422 || /already|exist|registered|duplicate/i.test(createError.message)
-  )
-
   let clientUserId: string
   // Ce que la réponse dit à l'écran : le mot de passe saisi est-il celui du compte ?
   let compte: "cree" | "existant"
   if (created?.user) {
     clientUserId = created.user.id
     compte = "cree"
-  } else if (dejaInscrit) {
+  } else if (adresseDejaInscrite(createError)) {
+    // « Déjà inscrit » se lit au CODE de l'erreur (le bloc refusDuService), jamais au statut : 422 est aussi celui d'un
+    // mot de passe que la règle du projet refuse, et le prendre pour un doublon faisait chercher un compte qui n'existe
+    // pas, puis dire « Un compte existe déjà… » (10/10/2026, défaut 23.5).
     // Compte déjà existant (accès retiré précédemment sur un autre dossier, ou même client réinvité) —
     // on le retrouve par e-mail plutôt que d'échouer. listUsers() ne filtre pas par e-mail côté API,
     // on pagine donc et on compare nous-mêmes (suffisant pour un nombre de comptes clients raisonnable).
@@ -246,6 +303,10 @@ Deno.serve(async (req: Request) => {
     // l'insertion de l'accès — et un refus de l'insertion le laissait changé.
     compte = "existant"
   } else {
+    // Un mot de passe que la règle du projet refuse se dit en français, en 400, sans chercher aucun compte ; tout autre
+    // refus du service garde son chemin : 500, et son message.
+    const refusMotDePasse = refusDuMotDePasse(createError)
+    if (refusMotDePasse !== null) return json({ error: refusMotDePasse }, 400)
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)
   }
 

@@ -1,8 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { format } from 'node:util'
+import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import ts from 'typescript'
 import { predicatEq, predicatIn, predicatIs, predicatNot, predicatOr, type Ligne, type Predicat } from './filtresPostgrest'
+import { REGLE_D_UN_PROJET_NEUF, jugementDuService, type RegleDuService } from './regleDuService'
 import { clesPrimairesDuSchema, fichiersDuSchema, relationsDuSchema, type RelationDuSchema } from './schema'
 
 // LES EDGE FUNCTIONS APPELÉES EN HTTP, DANS LA SUITE — DEPUIS LEUR VRAIE SOURCE, SANS RÉSEAU, SANS SECRET, SANS APPEL
@@ -169,6 +171,11 @@ export interface Monde {
   defauts: Record<string, (ligne: Ligne) => Ligne>
   /** `auth.users`. */
   comptes: Compte[]
+  /**
+   * La règle des mots de passe du projet, que le service applique à la création d'un compte (`regleDuService.ts`) :
+   * celle d'un projet neuf par défaut ; un scénario pose celle du projet relevée le 10/10/2026, ou une autre.
+   */
+  regleDesMotsDePasse: RegleDuService
   /** Les jetons de session que le service d'authentification reconnaît (et que la passerelle tient pour des JWT signés). */
   sessions: Record<string, string>
   /** Le réseau, hôte par hôte. Un hôte absent lève : le réseau du harnais est FERMÉ. */
@@ -206,6 +213,7 @@ export function nouveauMonde(): Monde {
     uniques: {},
     defauts: {},
     comptes: [],
+    regleDesMotsDePasse: REGLE_D_UN_PROJET_NEUF,
     sessions: {},
     hotes: {},
     textract: null,
@@ -801,10 +809,21 @@ function serviceAuthentification(monde: Monde, contexte: { cle: 'publiable' | 's
       return reponseCompte(compte, null)
     },
     admin: {
+      // Dans l'ordre d'`adminUserCreate` (supabase/auth) : l'adresse d'abord, puis le mot de passe, sous la règle du monde.
+      // Les erreurs sont les VRAIES classes d'auth-js, celles que le SDK déployé rend : `code`, `status` et `reasons` s'y
+      // lisent comme en production — 422 pour l'adresse déjà inscrite COMME pour le mot de passe refusé.
       createUser: async (attributs: { email?: string; password?: string }) => admin('createUser', () => {
         const email = String(attributs.email ?? '').toLowerCase()
         if (monde.comptes.some((c) => c.email.toLowerCase() === email)) {
-          return reponseCompte(null, { status: 422, code: 'email_exists', message: 'A user with this email address has already been registered' })
+          return reponseCompte(null, new AuthApiError('A user with this email address has already been registered', 422, 'email_exists'))
+        }
+        if (typeof attributs.password === 'string' && attributs.password !== '') {
+          const jugement = jugementDuService(attributs.password, monde.regleDesMotsDePasse)
+          if (!jugement.admis) {
+            return reponseCompte(null, jugement.code === 'weak_password'
+              ? new AuthWeakPasswordError(jugement.message, jugement.statut, jugement.raisons)
+              : new AuthApiError(jugement.message, jugement.statut, jugement.code))
+          }
         }
         const compte = { id: identifiantGenere(), email }
         monde.comptes.push(compte)

@@ -4,6 +4,9 @@ import { messageErreur } from './messageErreur'
 // l'e-mail rapporte, et ce que l'écran du nouveau mot de passe refuse. Aucun appel ici : les écrans appellent
 // (`Login.tsx`, `NouveauMotDePasse.tsx`, et l'onglet Accès, qui envoie le même lien depuis le cabinet), ce module décide
 // de ce qui se dit. Chaque demande de lien passe `{ redirectTo: ADRESSE_DE_RETOUR }` : le test le vérifie sur la source.
+// Il porte aussi LA RÈGLE DES MOTS DE PASSE du projet, telle que les quatre écrans qui en posent un la disent, et ce que
+// le service d'authentification dit quand il refuse un compte ou un mot de passe — un bloc que les trois fonctions qui
+// créent des comptes recopient (10/10/2026, défaut 23.5).
 //
 // CE QUE FAIT LE CLIENT SUPABASE AU CHARGEMENT, lu dans le code installé (@supabase/supabase-js et @supabase/auth-js
 // 2.112.4), et non dans une documentation :
@@ -31,8 +34,125 @@ import { messageErreur } from './messageErreur'
  */
 export const ADRESSE_DE_RETOUR = 'https://compta.jdarnis.fr/'
 
-/** La règle de la création des comptes (create-client-access, create-team-member, create-cabinet), confrontée par le test. */
+// ── LA RÈGLE DES MOTS DE PASSE DU PROJET, TELLE QUE LES ÉCRANS LA DISENT ─────────────────────────────────────────────
+// Un REFLET. La règle qui fait foi est celle du service d'authentification, réglée au tableau de bord de Supabase
+// (Sign In / Providers → Email : la longueur minimale, et les sortes de caractères exigées, que le cabinet a posées le
+// 10/10/2026 : une minuscule, une majuscule, un chiffre et un symbole). Les écrans qui posent un mot de passe — l'onglet
+// Accès, l'équipe, un nouveau cabinet, le nouveau mot de passe — la disent avant le clic et refusent avant tout appel un
+// mot de passe qui ne la suit pas ; le service reste juge, et son refus se dit en français (`refusDuMotDePasse`,
+// ci-dessous). Un réglage changé au tableau de bord se reporte ici et dans PLAN_DE_REPRISE.md (§3, point 6) : sinon
+// l'écran refuse ce que le service accepterait, ou le service refuse — en le disant — ce que l'écran a laissé partir.
+
+/** La longueur de la création des comptes (create-client-access, create-team-member, create-cabinet), confrontée par le test. */
 export const LONGUEUR_MINIMALE_MOT_DE_PASSE = 10
+
+/**
+ * Les sortes de caractères exigées, chacune avec les caractères qui la font, tels que le service les liste dans son
+ * refus (message relevé le 10/10/2026, « Password should contain at least one character of each: … », que le test
+ * recopie) : il en exige un de chaque jeu (`strings.ContainsAny`, supabase/auth, `checkPasswordStrength`). Un « é »
+ * n'est donc pas une minuscule, ni « € », « § » ou l'espace un symbole : seuls comptent les 32 signes de ponctuation
+ * de l'ASCII.
+ */
+export const SORTES_DE_CARACTERES: readonly { sorte: string; caracteres: string }[] = [
+  { sorte: 'une minuscule', caracteres: 'abcdefghijklmnopqrstuvwxyz' },
+  { sorte: 'une majuscule', caracteres: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+  { sorte: 'un chiffre', caracteres: '0123456789' },
+  { sorte: 'un symbole', caracteres: '!@#$%^&*()_+-=[]{};\'\\:"|<>?,./`~' },
+]
+
+/** « a », « a et b », « a, b et c ». */
+function enumeration(termes: readonly string[]): string {
+  return termes.length <= 1 ? termes.join('') : `${termes.slice(0, -1).join(', ')} et ${termes[termes.length - 1]}`
+}
+
+const SYMBOLES = SORTES_DE_CARACTERES.find((s) => s.sorte === 'un symbole')?.caracteres ?? ''
+
+/**
+ * La règle en une phrase : ce que les écrans disent sous le champ, avant le clic. Les symboles se listent depuis le jeu
+ * même que `refusDeLaRegle` consulte : la phrase ne peut pas promettre un symbole que l'écran refuserait.
+ */
+export const REGLE_DU_MOT_DE_PASSE = `Règle du projet : au moins ${LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères, dont `
+  + `${enumeration(SORTES_DE_CARACTERES.map((s) => s.sorte))} — l'un de ${[...SYMBOLES].join(' ')} `
+  + "(une lettre accentuée, « € » ou l'espace ne comptent pas)."
+
+/**
+ * Ce que la règle refuse d'un mot de passe, dit en français, ou null s'il la suit : jugé avant tout appel, il dit tout
+ * ce qui manque d'un coup. La longueur se compte comme les trois fonctions la comptent (`password.length`) ; le service,
+ * lui, compte des octets, toujours au moins autant : ce que l'écran laisse partir, la longueur du service l'admet.
+ */
+export function refusDeLaRegle(motDePasse: string): string | null {
+  const court = motDePasse.length < LONGUEUR_MINIMALE_MOT_DE_PASSE
+  const manquantes = SORTES_DE_CARACTERES
+    .filter(({ caracteres }) => ![...caracteres].some((c) => motDePasse.includes(c)))
+    .map((s) => s.sorte)
+  if (!court && manquantes.length === 0) return null
+  const exigences = [
+    ...(court ? [`faire au moins ${LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères`] : []),
+    ...(manquantes.length > 0 ? [`contenir ${enumeration(manquantes)}`] : []),
+  ]
+  return `Ce mot de passe ne suit pas la règle du projet : il doit ${exigences.join(', et ')}.`
+}
+
+// ── DÉBUT COPIE refusDuService ───────────────────────────────────────────────────────────────────────────────────────
+// CE QUE LE SERVICE D'AUTHENTIFICATION DIT QUAND IL REFUSE de créer un compte (`auth.admin.createUser` :
+// create-client-access, create-team-member, create-cabinet) ou de poser un mot de passe (`auth.updateUser` : l'écran
+// du nouveau mot de passe). Son original vit dans src/lib/recuperationMotDePasse.ts ; il est copié À L'IDENTIQUE dans
+// les trois fonctions, qui sont auto-portées, et refusDuServiceCopie.test.ts compare les copies au caractère près et les
+// exécute contre l'original.
+//
+// Lu sur le CODE de l'erreur, jamais sur son statut ni sur son message. Le service (supabase/auth, `adminUserCreate`
+// et `errors.go`) rend 422 pour une adresse déjà inscrite (`email_exists`) COMME pour un mot de passe que la règle du
+// projet refuse (`weak_password`) : la détection par le statut prenait le second pour le premier, et le cabinet lisait
+// « Un compte existe déjà… » sur un mot de passe refusé (10/10/2026, défaut 23.5). Le message, lui, est en anglais et
+// change d'une version du service à l'autre. auth-js (2.112.4, `lib/fetch.js`) recopie sur l'erreur le code de la
+// réponse (`code`), et fait d'un refus du mot de passe une `AuthWeakPasswordError` qui porte ses raisons (`reasons`) —
+// `refusDuServiceClient.test.ts` le joue sur le client installé.
+
+/**
+ * Les codes d'une adresse qui a déjà un compte : `email_exists`, celui d'`adminUserCreate`, et `user_already_exists`,
+ * celui de l'inscription publique — auth-js nomme les deux, et ils disent la même chose.
+ */
+const CODES_DEJA_INSCRIT: readonly string[] = ['email_exists', 'user_already_exists']
+
+/** Le code que porte une erreur du service (`AuthError.code`), lu sur la valeur et non sur sa classe. */
+function codeDuRefus(erreur: unknown): string | null {
+  if (erreur === null || typeof erreur !== 'object') return null
+  const code = (erreur as { code?: unknown }).code
+  return typeof code === 'string' ? code : null
+}
+
+/** Vrai si le service refuse la création parce que l'adresse a déjà un compte. */
+export function adresseDejaInscrite(erreur: unknown): boolean {
+  const code = codeDuRefus(erreur)
+  return code !== null && CODES_DEJA_INSCRIT.includes(code)
+}
+
+/**
+ * Ce qui manque au mot de passe, raison par raison, dans l'ordre où le service les juge (`checkPasswordStrength` :
+ * `length`, `characters`, `pwned`). Une raison qu'il ajouterait demain ne se recopie pas : un texte venu du service ne
+ * s'affiche pas tel quel, et la phrase de tête suffit à dire le refus.
+ */
+const CE_QUI_MANQUE: readonly (readonly [string, string])[] = [
+  ['length', 'il est trop court'],
+  ['characters', "il lui manque une sorte de caractères qu'elle exige (minuscule, majuscule, chiffre ou symbole, selon le réglage)"],
+  ['pwned', 'il figure parmi les mots de passe divulgués lors de fuites de données'],
+]
+
+/**
+ * Le refus d'un mot de passe par la règle du projet, dit en français — ou null si l'erreur n'en est pas un. La règle
+ * se règle au tableau de bord de Supabase et le service seul l'applique : la phrase la dit « du projet », et dit ce
+ * qui manque sans la recopier (elle a pu changer depuis que les écrans en ont écrit le reflet).
+ */
+export function refusDuMotDePasse(erreur: unknown): string | null {
+  if (codeDuRefus(erreur) !== 'weak_password') return null
+  const lues = (erreur as { reasons?: unknown }).reasons
+  const raisons: unknown[] = Array.isArray(lues) ? lues : []
+  const manques = CE_QUI_MANQUE.filter(([raison]) => raisons.includes(raison)).map(([, phrase]) => phrase)
+  const tete = "Le service d'authentification refuse ce mot de passe : il ne suit pas la règle des mots de passe du projet, "
+    + 'réglée au tableau de bord de Supabase'
+  return manques.length === 0 ? `${tete}.` : `${tete} — ${manques.join(' ; ')}.`
+}
+// ── FIN COPIE refusDuService ─────────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * Ce que l'adresse du chargement rapporte d'un lien d'authentification. `recuperation` porte le jeton d'accès du lien :
@@ -85,11 +205,10 @@ export function avisDuRefus(code: string | null): string {
   return `Ce lien a été refusé par le service d'authentification (code ${code}).`
 }
 
-/** Les deux saisies du nouveau mot de passe, jugées avant tout appel. */
+/** Les deux saisies du nouveau mot de passe, jugées avant tout appel : la règle d'abord, c'est elle qu'on corrige en premier. */
 export function refusDuNouveauMotDePasse(motDePasse: string, confirmation: string): string | null {
-  if (motDePasse.length < LONGUEUR_MINIMALE_MOT_DE_PASSE) {
-    return `Le mot de passe doit faire au moins ${LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères.`
-  }
+  const refus = refusDeLaRegle(motDePasse)
+  if (refus !== null) return refus
   if (motDePasse !== confirmation) return 'Les deux saisies ne sont pas identiques.'
   return null
 }
@@ -144,9 +263,9 @@ export function messageErreurDuLien(erreur: unknown): string {
 export function messageErreurDuMotDePasse(erreur: unknown): string {
   const t = traits(erreur)
   if (t.code === 'same_password') return "C'est déjà le mot de passe de ce compte : choisis-en un autre."
-  if (t.code === 'weak_password') {
-    return "Le service d'authentification refuse ce mot de passe comme trop faible : choisis-en un plus long, qui mêle minuscules, majuscules, chiffres et symboles."
-  }
+  // La même phrase que les trois fonctions qui créent des comptes, ce qui manque compris.
+  const refus = refusDuMotDePasse(erreur)
+  if (refus !== null) return `${refus} Choisis-en un autre.`
   // `session_not_found` devient une `AuthSessionMissingError` dans auth-js (lib/fetch.js, handleError).
   if (t.nom === 'AuthSessionMissingError' || t.code === 'session_expired' || t.statut === 401 || t.statut === 403) {
     return "La session ouverte par le lien a expiré : déconnecte-toi, puis redemande un lien depuis l'écran de connexion."

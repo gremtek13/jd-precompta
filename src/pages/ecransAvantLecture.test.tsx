@@ -8,6 +8,7 @@ import { etat, libererTout, reinitialiser } from '../test/clientRetenu'
 import { MENTIONS_VIDES } from '../test/factures'
 import type { Dossier, FactureEmise, Piece } from '../lib/types'
 import type { ModeleComptable } from '../lib/engagement'
+import { refusDeLaRegle } from '../lib/recuperationMotDePasse'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../components/PanneauDroit'
 import { AnneeProvider } from '../context/AnneeContext'
 import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
@@ -572,10 +573,16 @@ function fichierPour(champ: HTMLInputElement): File {
   return new File(['%PDF-1.4 fictif'], 'document.pdf', { type: 'application/pdf' })
 }
 
+// Un champ qui pose un NOUVEAU mot de passe (`autocomplete="new-password"`) reçoit un mot de passe qui suit la règle du
+// projet : sinon l'écran le refuse avant tout appel (lib/recuperationMotDePasse.ts), et sa création n'écrirait rien.
+const MOT_DE_PASSE_FICTIF = 'Valeur-fictive-1'
+
 function remplirLesChamps() {
   for (const champ of document.querySelectorAll<HTMLInputElement>('input')) {
     if (champ.disabled || champ.value || ['file', 'checkbox', 'radio', 'hidden', 'color'].includes(champ.type)) continue
-    const valeur = { number: '100', date: '2026-09-15', email: 'contact@exemple-fictif.fr', month: '2026-09' }[champ.type] ?? 'Valeur fictive'
+    const valeur = champ.autocomplete === 'new-password'
+      ? MOT_DE_PASSE_FICTIF
+      : { number: '100', date: '2026-09-15', email: 'contact@exemple-fictif.fr', month: '2026-09' }[champ.type] ?? 'Valeur fictive'
     fireEvent.change(champ, { target: { value: valeur } })
   }
   for (const zone of document.querySelectorAll<HTMLTextAreaElement>('textarea')) {
@@ -673,6 +680,10 @@ describe('aucun geste n’écrit avant que ses listes soient lues', () => {
   afterAll(() => { vi.restoreAllMocks() })
 
   const bilan = { tentes: 0, ecransTentes: 0, vusDeLaBanque: new Set<string>() }
+
+  it('le mot de passe fictif suit la règle du projet : les créations de compte partent', () => {
+    expect(refusDeLaRegle(MOT_DE_PASSE_FICTIF)).toBeNull()
+  })
 
   it('chaque écriture admise désigne un écran monté ici', () => {
     const noms = new Set(ECRANS.map((e) => e.nom))
