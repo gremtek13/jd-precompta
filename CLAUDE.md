@@ -164,7 +164,7 @@ supabase/
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, cotisationPersonnelle, categoriesCommunes, notesInternes,
-                    droitsAcces ;
+                    droitsAcces, piecesHorsDeFrance ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -452,8 +452,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   `plateforme-agreee` et à l'écran le 09/10/2026 (le premier relevé réel reste à faire) ; l'essai réel sur le bac à sable de Super PDP — et (e)
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
-  09/10/2026 (`lib/periodesEreporting.ts`) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE
-  JUSTE ».
+  09/10/2026 (`lib/periodesEreporting.ts`) ; e2, la fiche d'un achat hors de France, en base le 10/10/2026 (Q3, Q7 et le
+  point 15 pris comme hypothèses) ; e3, son écran, à venir → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
+  L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE ».
 - **Défauts connus des Edge Functions** (25, `DEFAUTS_CONNUS`) : dix-huit corps mal formés qui font lever huit fonctions
   ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
   depuis le 09/10/2026) ; deux d'`evaluer-extraction` ;
@@ -512,11 +513,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 20 fonctions au 10/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 22 fonctions au 10/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
-  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation` et `changer_droits_acces`
-  écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
+  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`, `enregistrer_fiche_hors_de_france` et
+  `retirer_fiche_hors_de_france` écrivent, chacune avec son propre contrôle d'accès ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits
   de l'appelant (`droitsAcces.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
   Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
@@ -950,6 +951,19 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   l'échéance est la plus proche que laissent les sources ; aucune transmission à blanc ; `echeanceDeDeclaration` (d2)
   en tire sa période. Aucun écran ne dit plus d'un exonéré qu'il « n'y est pas tenu », ni d'un non-redevable qu'il
   « n'a pas de déclaration à déposer » → « L'E-REPORTING : L'OBLIGATION DITE JUSTE ».
+- **La fiche d'un achat hors de France** (`pieces_hors_de_france`, `pieces_hors_de_france_taux`, ligne 28.5 e2) : ce que
+  l'e-reporting des achats transmettra d'une facture d'un fournisseur établi hors de France (CGI, art. 290, I-3° ; flux
+  10, bloc 10.1), SAISI par le cabinet sur une pièce d'achat ou une note de frais — rien ne s'en déduit. Elle ne se
+  modifie jamais : une version nouvelle REMPLACE la courante (`remplace_id`, une chaîne par pièce), la courante se
+  RETIRE (`retire_le`), rien ne se supprime sauf avec la pièce ou le dossier ; seules `enregistrer_fiche_hors_de_france`
+  (48 refus, dans un ordre que `lib/piecesHorsDeFrance.ts` redit avant le clic) et `retirer_fiche_hors_de_france`
+  l'écrivent, sous le verrou de la validation puis celui des fiches ; le client n'en voit rien. Elle suit le gel de sa
+  pièce (`exercice_figeant_la_piece`, le critère de `garder_piece_validee`) ; une pièce qui en a une ne change plus de
+  dossier ; une facture — numéro, année, fournisseur — ne se décrit qu'une fois par dossier. Hypothèses : Q7 (une TVA
+  facturée met l'achat de côté), Q3 (la fiche ne dépend pas du numéro de TVA du dossier), point 15 (une acquisition
+  dans l'Union sans autoliquidation est à trancher) ; ni la France, ni Monaco, ni l'outre-mer. Le test du module rejoue
+  l'essai étape par étape ; la restauration la réinsère par vagues, avant le brouillon → « LA FICHE D'UN ACHAT HORS DE
+  FRANCE, EN BASE ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -975,7 +989,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7749 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 7791 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

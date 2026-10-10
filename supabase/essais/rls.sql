@@ -155,6 +155,23 @@
 -- banque ouvertes à tout accès jusqu'à P7, où il serait faux ; et les deux mutations de la conception (le droit retiré
 -- au profil, `client_du_dossier` remplacé par « membre »), qui ne mordent que sur une lecture qu'un droit ouvre. Ce que
 -- les droits et leurs fonctions refusent et acceptent, profil par profil, est éprouvé par `droitsAcces.sql`.
+--
+-- 10/10/2026 — PASSAGE COMPLET après `pieces_hors_de_france` (ligne 28.5, étape e2), qui crée
+-- `pieces_hors_de_france` et `pieces_hors_de_france_taux`, deux policies chacune (lecture sous
+-- `admin_du_dossier`, insertion de restauration réservée au super-admin) ; la production porte aussi
+-- `droits_des_acces_clients` et `retrait_du_paiement_personnel`, appliquées par d'autres étapes : 22 lignes
+-- de verdict (61 tables du schéma, dont 53 portant un `dossier_id`, + 3 buckets, 3 profils), 0 en faute, et
+-- 14 mutations sur 14 qui mordent (M2 : exactement 3). Le texte reçu est la copie adaptée du passage
+-- précédent, caractère pour caractère, son saut de ligne final compris (31 823 caractères, empreinte
+-- 8e6cece826d8250ee893b379dd36f8d6 ; sans lui, 31 822 et c3609cc06322574b712a3c17e4d640fe) : seul cet
+-- en-tête a changé depuis. Les deux tables nouvelles sont vides en production : ce que leurs policies,
+-- leurs gardes et leurs fonctions refusent sur une ligne qui EXISTE est éprouvé par `piecesHorsDeFrance.sql`.
+--
+-- 10/10/2026 — PASSAGE COMPLET À L'INTÉGRATION DE L'ÉTAPE e2 : le passage précédent jouait la copie d'avant P1
+-- (trois profils) ; celui-ci joue le fichier fusionné, dont la copie adaptée est celle de P1 au caractère près
+-- (39 000 caractères, empreinte b2ffbdc886c10091a6b3c81f6c8db862, rendue par la base), sur la production à 110
+-- migrations : 24 lignes de verdict (61 tables du schéma, dont 53 portant un `dossier_id`, 4 profils, et les
+-- contrôles du stockage), 0 en faute, et 16 mutations sur 16 qui mordent.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

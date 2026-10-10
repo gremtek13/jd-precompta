@@ -1147,3 +1147,64 @@ export interface RevisionPreuve {
   empreinte: string | null
   precision: string | null
 }
+
+// La fiche « fournisseur établi hors de France » d'une pièce d'achat ou d'une note de frais (`pieces_hors_de_france`,
+// ligne 28.5, étape e2) : ce que l'e-reporting des achats transmettra de sa facture (flux 10, bloc 10.1, rôle acheteur),
+// saisi par le cabinet — rien ne s'en déduit. Elle ne se modifie jamais : une autre la REMPLACE (`remplace_id`), et la
+// fiche courante d'une pièce est celle qu'aucune ne remplace ; une pièce qui n'était pas un achat à l'étranger voit sa
+// fiche courante RETIRÉE (`retire_le`), jamais supprimée. Le cabinet la lit ; seules `enregistrer_fiche_hors_de_france`
+// et `retirer_fiche_hors_de_france` l'écrivent depuis le navigateur ; le client n'en voit rien.
+export type NatureAchatHorsDeFrance = 'biens' | 'services' | 'mixte'
+// 0223 : le numéro de TVA d'un fournisseur établi dans l'Union ; 0227 : le code pays et les seize premiers caractères
+// de la dénomination d'un fournisseur établi hors de l'Union (règle G2.19).
+export type SchemaIdentifiantFournisseur = '0223' | '0227'
+export interface PieceHorsDeFrance {
+  id: string
+  dossier_id: string
+  piece_id: string
+  remplace_id: string | null
+  // Règle G1.05 : 35 caractères au plus, lettres sans accent, chiffres, espaces simples et « - + _ / ».
+  numero: string
+  date_facture: string
+  // La liste de la règle G1.01 ; la fonction n'écrit que 380 (facture) et 381 (avoir).
+  type_document: string
+  // La facture qu'un avoir corrige (règle G1.32) : les deux, ou aucune.
+  facture_origine_numero: string | null
+  facture_origine_date: string | null
+  // Celle de la pièce, que la fonction recopie : la ventilation est dans la devise de la facture.
+  devise: string
+  // ISO 3166-1 alpha-2, jamais FR.
+  pays: string
+  schema_identifiant: SchemaIdentifiantFournisseur
+  // Le numéro de TVA (préfixe EL pour la Grèce), ou le code pays suivi du nom : 18 caractères au plus.
+  identifiant: string
+  nature: NatureAchatHorsDeFrance
+  autoliquidation: boolean
+  // Une date de livraison OU une période de facturation (règle G1.38), facultatives.
+  date_operation: string | null
+  periode_debut: string | null
+  periode_fin: string | null
+  // Repères d'audit, sans clé étrangère : qui a écrit cette version, qui l'a retirée.
+  cree_par: string | null
+  cree_le: string
+  retire_le: string | null
+  retire_par: string | null
+}
+
+// La ventilation d'une version de la fiche (`pieces_hors_de_france_taux`), par code (règle G2.31) et taux (règle G1.24,
+// l'un des TAUX_ADMIS de factureCii.ts), dans la devise de la facture. Clé primaire : la fiche, le code et le taux
+// (CLES_PRIMAIRES).
+export type CodeTvaHorsDeFrance = 'S' | 'E' | 'AE' | 'K' | 'G' | 'O' | 'Z'
+export interface PieceHorsDeFranceTaux {
+  fiche_id: string
+  dossier_id: string
+  code_tva: CodeTvaHorsDeFrance
+  taux: number
+  // Au centime, positive.
+  base: number
+  // Au centime ; nulle sans TVA facturée (tout code sauf S).
+  tva: number
+  // Le motif d'une exonération (règle G1.40) : un code VATEX et son libellé ; aucun sur une ligne S ni Z.
+  motif_code: string | null
+  motif_texte: string | null
+}
