@@ -6,6 +6,7 @@ import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
+import { avisDuMembreAjoute, compteDeLaReponse } from '../lib/creationDesComptes'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
   comptable_en_chef: 'Comptable en chef',
@@ -33,6 +34,9 @@ export default function EquipePage() {
   const [role, setRole] = useState<RoleCabinetAdmin>('comptable')
   const [enregistrement, setEnregistrement] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Ce que le dernier ajout a fait du compte (décision du cabinet du 10/10/2026 : un compte qui existe déjà garde son mot
+  // de passe) — sans cet avis, le chef communiquerait un mot de passe qui n'a pas été posé.
+  const [avisAjout, setAvisAjout] = useState<string | null>(null)
   // Verrou d'exécution de l'ajout, en `useRef` : `setEnregistrement(true)` ne prend effet qu'au rendu suivant, donc
   // `disabled={enregistrement}` laissait passer deux soumissions rapprochées. Le second `create-team-member` trouve le
   // compte que le premier vient de créer et répond une ERREUR sur un membre bien ajouté (même défaut qu'`AccesTab`).
@@ -84,14 +88,18 @@ export default function EquipePage() {
     ajoutEnCours.current = true
     setEnregistrement(true)
     setErreur(null)
+    // L'avis de l'ajout précédent s'efface : rien ne dit « a rejoint l'équipe » d'un ajout encore en vol.
+    setAvisAjout(null)
+    const adresse = email.trim()
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-team-member', {
-        body: { email: email.trim(), password, role },
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; compte?: string; error?: string }>('create-team-member', {
+        body: { email: adresse, password, role },
       })
       if (data?.error || invokeError) {
         setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du compte."))
         return
       }
+      setAvisAjout(avisDuMembreAjoute(adresse, compteDeLaReponse(data)))
       setEmail('')
       setPassword('')
       setRole('comptable')
@@ -156,6 +164,7 @@ export default function EquipePage() {
         Un comptable en chef voit tous les dossiers du cabinet ; un comptable ne voit que ceux qui lui
         sont assignés explicitement ci-dessous.
       </p>
+      {avisAjout && <p role="status">{avisAjout}</p>}
 
       {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : le choix du rôle, le bouton des dossiers assignés et « Retirer »
           passaient derrière un défilement latéral que rien n'annonce — sur téléphone, et à 1 024 pixels avec les courriels du banc étendu

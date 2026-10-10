@@ -235,6 +235,27 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['await supabaseAsCaller.rpc("admin_du_dossier"', 'await supabaseAdmin.rpc("admin_du_dossier"']],
     scenario: 'chef : l’accès client est créé sur le dossier',
   },
+  // Le défaut d'avant le 10/10/2026 : le mot de passe saisi posé sur le compte repris, avant l'écriture de l'accès
+  // (décision du cabinet : un compte existant garde son mot de passe). Puis une réponse qui en dirait plus, d'un compte
+  // que le cabinet ne connaît pas, que ce que la fonction en disait.
+  {
+    slug: 'create-client-access', quoi: 'le mot de passe du compte repris à nouveau posé',
+    remplacements: [['    compte = "existant"\n', '    await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })\n    compte = "existant"\n']],
+    scenario: 'un compte existant déjà lié au cabinet (un membre de son équipe) : repris tel qu’il est, et la réponse le dit',
+  },
+  {
+    slug: 'create-team-member', quoi: 'le mot de passe posé, puis l’ajout refusé',
+    remplacements: [['    compte = "existant"\n', '    await admin.auth.admin.updateUserById(userId, { password })\n    compte = "existant"\n']],
+    scenario: 'un membre déjà dans l’équipe : 409, rien n’a changé, son mot de passe non plus',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le refus d’un compte d’ailleurs qui rend son identifiant',
+    remplacements: [[
+      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n      }, 409)',
+      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n        compteId: clientUserId,\n      }, 409)',
+    ]],
+    scenario: 'le chef d’un autre cabinet, que ce cabinet ne connaît pas : 409, le même refus, et le compte n’est pas touché',
+  },
   {
     slug: 'taux-change-bce', quoi: 'le préflight oublié',
     remplacements: [['  if (req.method === "OPTIONS") {\n    return new Response("ok", { headers: corsHeaders })\n  }\n', '']],

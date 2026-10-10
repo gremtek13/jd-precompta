@@ -17,6 +17,8 @@ const faux = vi.hoisted(() => ({
   // La réponse de la fonction attend `porte` quand le test la pose : la fenêtre pendant laquelle un second envoi arrive.
   porte: null as Promise<void> | null,
   refus: null as string | null,
+  // Le corps d'un ajout réussi : ce que la fonction dit du compte (décision du cabinet du 10/10/2026).
+  reponse: { ok: true } as unknown,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -39,7 +41,7 @@ vi.mock('../lib/supabase', () => ({
       invoke: async (nom: string, options: { body: unknown }) => {
         faux.appels.push({ nom, body: options.body })
         await faux.porte
-        return faux.refus ? { data: { error: faux.refus }, error: null } : { data: { ok: true }, error: null }
+        return faux.refus ? { data: { error: faux.refus }, error: null } : { data: faux.reponse, error: null }
       },
     },
   },
@@ -54,6 +56,7 @@ beforeEach(() => {
   faux.appels = []
   faux.porte = null
   faux.refus = null
+  faux.reponse = { ok: true }
 })
 
 // Une porte laissée par un test qui échoue ne doit pas faire échouer les suivants.
@@ -119,5 +122,78 @@ describe('EquipePage — le verrou de l’ajout d’un membre', () => {
     await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
 
     expect(creations()).toHaveLength(2)
+  })
+})
+
+// CE QUE L'ÉCRAN DIT D'UN MEMBRE AJOUTÉ (décision du cabinet du 10/10/2026 : un compte qui existe déjà garde son mot de
+// passe). La fonction dit lequel des deux cas s'est produit ; l'écran le dit au chef, faute de quoi il communiquerait un
+// mot de passe qui n'a jamais été posé.
+describe('EquipePage — ce que l’écran dit d’un membre ajouté', () => {
+  const avis = () => screen.queryAllByRole('status').map((e) => e.textContent ?? '')
+
+  it('un compte créé : l’avis nomme l’adresse, et le mot de passe saisi se communique', async () => {
+    faux.reponse = { ok: true, compte: 'cree' }
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    expect(avis()).toEqual(["nouvelle@cabinet-fictif.fr a rejoint l'équipe : communique-lui le mot de passe que tu as saisi."])
+  })
+
+  it('un compte existant : la personne garde son mot de passe, celui saisi ne se communique pas', async () => {
+    faux.reponse = { ok: true, compte: 'existant' }
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    const [texte, ...autres] = avis()
+    expect(autres).toEqual([])
+    expect(texte).toContain("nouvelle@cabinet-fictif.fr a rejoint l'équipe.")
+    expect(texte).toContain('la personne garde son mot de passe actuel')
+    expect(texte).toContain("celui saisi ici n'a pas été posé — ne le lui communique pas")
+    expect(texte).toContain('« Mot de passe oublié »')
+    expect(texte).not.toContain('communique-lui')
+    // Le formulaire s'est refermé sur l'ajout réussi : l'avis vit sur la page.
+    expect(screen.queryByRole('heading', { name: "Ajouter un membre de l'équipe" })).toBeNull()
+  })
+
+  it('une fonction d’avant le 10/10/2026, sans le champ : l’avis d’un compte créé — elle avait posé le mot de passe', async () => {
+    faux.reponse = { ok: true }
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    expect(avis()).toEqual(["nouvelle@cabinet-fictif.fr a rejoint l'équipe : communique-lui le mot de passe que tu as saisi."])
+  })
+
+  it('une réponse qui ne dit rien de sûr : aucune promesse sur le mot de passe', async () => {
+    faux.reponse = { ok: true, compte: 'repris' }
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    const [texte] = avis()
+    expect(texte).toContain("le mot de passe saisi n'est peut-être pas le sien")
+    expect(texte).not.toContain('communique-lui')
+  })
+
+  it('un refus de la fonction se dit, sans avis d’ajout', async () => {
+    faux.refus = 'Cette personne appartient déjà à un cabinet (le sien ou un autre) : rien n’a changé, son mot de passe non plus.'
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    expect(screen.getByText(faux.refus)).toBeTruthy()
+    expect(avis()).toEqual([])
+  })
+
+  it('un nouvel ajout efface l’avis du précédent : rien ne dit « a rejoint l’équipe » d’un ajout encore en vol', async () => {
+    faux.reponse = { ok: true, compte: 'existant' }
+    const { bouton } = await ouvrirLeFormulaire()
+    await act(async () => { bouton.click() })
+    expect(avis()).toHaveLength(1)
+
+    await act(async () => { screen.getByRole('button', { name: '+ Ajouter un membre' }).click() })
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'second@cabinet-fictif.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe (au moins 10 caractères)'), { target: { value: 'mot-de-passe-fictif' } })
+    })
+    faux.reponse = { ok: true, compte: 'cree' }
+    const liberer = retenirLaReponse()
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(creations()).toHaveLength(2)
+    expect(avis()).toEqual([])
+    await liberer()
+    expect(avis()).toEqual(["second@cabinet-fictif.fr a rejoint l'équipe : communique-lui le mot de passe que tu as saisi."])
   })
 })

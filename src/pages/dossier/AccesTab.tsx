@@ -12,6 +12,7 @@ import {
   CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, demandeDeChangement, droitsDeLaLigne,
   libelleDeLaCase, messageDuRefus, type Domaine,
 } from '../../lib/droitsAcces'
+import { avisDeLAccesCree, compteDeLaReponse } from '../../lib/creationDesComptes'
 import type { Membership } from '../../lib/types'
 
 // Un accès tel que l'onglet le lit : la personne, et ses deux droits (espace client, étape P1, voir lib/droitsAcces.ts).
@@ -27,6 +28,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Ce que la dernière création a fait du compte (décision du cabinet du 10/10/2026 : un compte qui existe déjà garde son
+  // mot de passe) — sans cet avis, le cabinet communiquerait au client un mot de passe qui n'a pas été posé.
+  const [avisCreation, setAvisCreation] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
   const [copie, setCopie] = useState(false)
   const [copieRefusee, setCopieRefusee] = useState(false)
@@ -125,13 +129,15 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     creationEnCours.current = true
     setInviting(true)
     setError(null)
+    // L'avis de la création précédente s'efface : rien ne dit « créé » d'un accès encore en vol.
+    setAvisCreation(null)
     try {
       // Passe par une fonction Edge (clé de service) plutôt qu'un signUp() classique côté navigateur :
       // retirer un accès (bouton "Retirer" ci-dessous) ne supprime que la ligne memberships, jamais le
       // compte Auth sous-jacent — un signUp() sur la même adresse pour un autre dossier échouerait donc
       // en "déjà inscrit". La fonction réutilise le compte existant le cas échéant. L'accès qu'elle crée n'a
       // aucun droit (les deux cases sont fausses par défaut en base) : le cabinet les coche ensuite.
-      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: true; error?: string }>(
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: true; compte?: string; error?: string }>(
         'create-client-access',
         { body: { dossierId, email, password } },
       )
@@ -143,6 +149,8 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       if (invokeError) throw new Error(await extraireErreurFonction(invokeError))
       if (!data?.ok) throw new Error("La création de l'accès n'a rien retourné.")
 
+      // L'adresse envoyée à la fonction, celle du clic : le champ se vide juste après.
+      setAvisCreation(avisDeLAccesCree(email, compteDeLaReponse(data)))
       setEmail('')
       setPassword('')
       load()
@@ -205,15 +213,16 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   }
 
   async function revoke(row: AccesLu) {
-    // Couper l'accès d'un client est réversible, mais pas d'un clic : il faut recréer l'accès ET
-    // lui communiquer un nouveau mot de passe. C'était le seul geste destructeur de cet écran à
+    // Couper l'accès d'un client ne se défait pas d'un clic : il faut recréer l'accès, qui reprend le même compte avec
+    // son mot de passe (décision du cabinet du 10/10/2026) — et que `create-client-access` refuse quand c'était le
+    // dernier lien de ce compte avec le cabinet. C'était le seul geste destructeur de cet écran à
     // partir sans rien demander, dans une colonne d'actions où il voisine « Relancer ». Ses droits partent
     // avec lui : un accès recréé n'en a aucun, la confirmation le nomme.
     const droits = droitsDeLaLigne(row)
     const droitsTenus = DOMAINES.filter((d) => droits[d.domaine]).map((d) => `« ${d.libelle} »`)
     if (!window.confirm(
       `Retirer l'accès de ${row.email ?? 'ce compte'} au dossier ? Le client ne pourra plus déposer `
-      + 'de pièces tant qu\'un nouvel accès ne lui aura pas été créé, avec un nouveau mot de passe.'
+      + 'de pièces tant qu\'un nouvel accès ne lui aura pas été créé.'
       + (droitsTenus.length > 0
         ? ` Ses droits ${droitsTenus.join(' et ')} partent avec lui : un nouvel accès n'en a pas, il faudra les recocher.`
         : ''),
@@ -290,10 +299,11 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
             <div className="field">
               <label htmlFor="password">Mot de passe initial</label>
               <input id="password" type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
-              <span className="muted">10 caractères minimum — c'est toi qui le choisis et le communiques au client, pas lui.</span>
+              <span className="muted">10 caractères minimum — c'est toi qui le choisis et le communiques au client, pas lui. Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien.</span>
             </div>
           </div>
           {error && <p className="error-text">{error}</p>}
+          {avisCreation && <p role="status">{avisCreation}</p>}
           <button className="btn btn-primary" type="submit" disabled={inviting}>
             {inviting ? 'Création…' : 'Créer l\'accès'}
           </button>

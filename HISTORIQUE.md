@@ -18354,3 +18354,118 @@ qu'avec les deux copies, au prochain déploiement de ces fonctions. Le resserrem
 n'a pas de drapeau : la phrase ne dit rien de la lecture des mouvements, vraie avant comme après lui. Entre l'application
 de A et la mise en ligne des drapeaux levés, l'onglet dit encore « Cocher « Ventes » ne change pas encore… » : ne cocher
 « Ventes » pour personne dans cette fenêtre.
+
+### 10/10/2026 — LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT — DÉFAUT 23.2
+
+(`supabase/functions/create-client-access/index.ts`, `supabase/functions/create-team-member/index.ts` ;
+`src/test/contratsFonctions.ts`, `src/lib/edgeFunctionsHttp.test.ts` ; `src/lib/creationDesComptes.ts` et son test,
+nouveaux ; `src/pages/dossier/AccesTab.tsx`, `src/pages/EquipePage.tsx` et leurs tests. Aucune migration. Les deux
+fonctions sont À REDÉPLOYER, après la fusion — voir la fin.) **La décision**, du cabinet, le 10/10/2026, à la question «
+la création d'un accès ne changerait plus jamais le mot de passe d'un compte existant ? » : « le propriétaire du compte
+peut changer son mot de passe ».
+
+**LE DÉFAUT** (`motDePasseAvantRefus`, deux défauts connus depuis la ligne 23, « LES EDGE FUNCTIONS S'APPELLENT EN HTTP
+»). Sur une adresse dont le compte existe et que le cabinet connaît déjà (un client d'un de ses dossiers, un membre de
+son équipe), les deux fonctions posaient le mot de passe saisi (`auth.admin.updateUserById`) AVANT d'écrire l'accès ou
+le membre — pour que « le mot de passe tapé soit toujours celui à donner au client ». Un accès déjà donné sur ce
+dossier, ou une personne déjà dans un cabinet, répondait alors 409 « existe déjà » sur un compte dont le mot de passe
+venait de changer : le cabinet croyait que rien n'avait bougé, l'ancien mot de passe ne marchait plus. Une écriture de
+l'accès en panne (500) faisait de même. Et, réussi, le geste changeait le mot de passe d'un client actif sans qu'il le
+sache.
+
+**LE CHOIX : UN COMPTE EXISTANT EST REPRIS TEL QU'IL EST, ET LA RÉPONSE LE DIT.** `updateUserById` disparaît des deux
+fonctions : plus aucune écriture sur un compte existant, ni avant un refus ni avant un rattachement. La réponse d'une
+création réussie devient `{ ok: true, compte: "cree" }` (le mot de passe saisi est celui du compte) ou `{ ok: true,
+compte: "existant" }` (il n'a pas servi) ; l'écran le dit. Écartés : poser le mot de passe APRÈS l'écriture réussie
+(contraire à la décision, et toujours le mot de passe d'un client actif changé sans lui) ; répondre `{ ok: true }` comme
+avant (l'écran ne pourrait pas dire « ne communique pas ce mot de passe », et le cabinet donnerait au client un mot de
+passe jamais posé — le défaut même qu'avait corrigé, le 21/09/2026, la lecture du résultat de cette écriture) ;
+rattacher aussi un compte que le cabinet ne connaît pas, maintenant que la prise de contrôle n'est plus possible (un
+élargissement non décidé : question Q-23.2, plus bas).
+
+**CE QUE LA FONCTION DIT, ET RIEN DE PLUS.** D'un compte que le cabinet ne connaît pas, le 409 dit ce qu'il disait — il
+existe, il n'est rattaché à aucun dossier ni membre de ce cabinet — et sa raison devenue fausse (« ça écraserait le mot
+de passe d'un compte qui n'est pas le tien ») cède à « rien n'y a été changé ». La distinction « créé / existant » n'est
+rendue que pour un compte que le cabinet connaît déjà : c'est ce que l'écran doit savoir pour ne pas faire communiquer
+un mot de passe qui n'ouvre rien. Conséquence assumée, dite : un comptable assigné à un dossier apprend, en créant un
+accès, qu'une adresse a déjà un compte lié à SON cabinet (un client d'un dossier qui n'est pas le sien, un collègue) —
+la fonction ne dit pas lequel. Le 409 d'un doublon dit désormais que rien n'a changé, mot de passe compris, et, côté
+accès, le lien de réinitialisation.
+
+**LES CORPS MAL FORMÉS, CORRIGÉS AU PASSAGE** (le patron d'`agent-comptable` du 09/10/2026) : un corps qui n'est pas un
+objet se refuse en 400 « Corps de requête invalide : un objet JSON est attendu. » ; un champ texte reçu sous une autre
+forme, en 400 « <champ> doit être un texte. » (`dossierId`, `email`, `password` ; `email`, `password`, `cabinetId` pour
+l'équipe — `role` n'en a pas besoin, sa comparaison à deux textes refuse déjà toute autre forme en 400). Tous par
+`json(…)`, donc avec l'en-tête CORS, avant le contrôle du dossier et avant tout compte. Un mot de passe en NOMBRE
+passait auparavant le contrôle de longueur (la longueur d'un nombre n'existe pas) et allait jusqu'à la création du
+compte — dans le harnais, qui ne modélise pas ce que le service en ferait. Un `cabinetId` en nombre, que seul un
+super-admin fait lire, levait `.trim()`. Changement de comportement, sur un corps mal formé seulement : un chef qui
+enverrait un `cabinetId` en nombre (le navigateur n'en envoie jamais) est refusé au lieu d'être ignoré.
+
+**LES ÉCRANS** (`lib/creationDesComptes.ts`, pur). `compteDeLaReponse` lit « existant » ou « cree » ; un objet SANS le
+champ vient d'une fonction d'avant ce jour, qui avait posé le mot de passe saisi, et se lit « cree » ; toute autre
+réponse ne dit rien de sûr (« inconnu ») et l'écran ne promet rien. L'onglet Accès dit, après la création : « L'accès de
+… est créé : communique-lui le mot de passe initial que tu as saisi. », ou, sur un compte existant, que le client garde
+son mot de passe actuel, que celui saisi n'a pas été posé — ne le lui communique pas —, et nomme le bouton « Envoyer un
+lien de réinitialisation » de la liste ; l'avis s'efface au nouvel envoi. Sous « Mot de passe initial », une phrase de
+plus : « Il ne sert qu'à un compte neuf : un client qui a déjà un compte garde le sien. » La question de « Retirer » ne
+promet plus « un nouveau mot de passe » (un accès recréé reprend le même compte). L'écran de l'équipe dit l'ajout sur la
+page (le formulaire se referme) ; sur un compte existant, « Mot de passe oublié » est le recours de la personne (un
+membre n'a pas de ligne dans l'onglet Accès). `lib/droitsAcces.ts` n'est pas touché.
+
+**LES PREUVES.** Les contrats (`contratsFonctions.ts`) : `create-client-access` passe de 24 à 32 scénarios,
+`create-team-member` de 26 à 33. `compteIntact` exige qu'aucune opération de compte autre que la création tentée et la
+recherche par adresse ne parte — tentée ou non : le monde journalise même une demande refusée ou en panne ; il remplace
+`motDePasseIntact`, qui ne voyait que `updateUserById`. Les dépenses sont EXACTES sur chaque chemin d'un compte existant
+: repris (deux sortes : un membre de l'équipe, le client d'un autre dossier du cabinet), doublon (le défaut sous sa
+forme exacte), écriture de l'accès ou du membre en panne, recherche du compte en panne. `reponseDeCreation` fixe le
+corps exact d'un succès. `neDitQueLExistence` exige, pour quatre sortes de comptes d'ailleurs (un inscrit seul, le chef
+d'un autre cabinet, le client d'un autre cabinet, le super-administrateur), le MÊME refus, sous la seule clé `error` :
+l'unique phrase que la source écrit, lue dans la source — une phrase par sorte de compte serait déjà une faute. Chaque
+champ seul reçu en nombre ; pour `create-client-access`, `avantLeDossier` (ni `admin_du_dossier` ni lecture avant le
+refus), aussi sur la batterie (paramètre optionnel ajouté à `corpsMalFormes`). `DEFAUTS_CONNUS` passe de 25 à 19
+(`corpsNul` 10 → 8, `champsDeTravers` 8 → 6, `motDePasseAvantRefus` retiré). Trois défauts plantés de plus dans
+`edgeFunctionsHttp.test.ts` : le mot de passe reposé avant l'accès, le mot de passe posé puis l'ajout refusé, le refus
+d'un compte d'ailleurs qui rend l'identifiant du compte — chacun vu, aucune faute sur la vraie source. ROUGE AVANT, les
+contrats neufs contre les sources de 1c8491a : 22 rouges sur 396, chacun pour sa raison (cinq exceptions — 500 sans CORS
+sur `null` et sur `.trim()` d'un nombre —, `updateUserById` journalisé quatre fois et dans quatre listes de dépenses,
+deux mots de passe en nombre acceptés — 200, un compte créé dans le harnais ; ce que ferait le vrai service d'un mot de
+passe qui n'est pas un texte n'a pas été vérifié, et la fonction ne s'en remet plus à lui —, quatre réponses sans
+`compte`, un refus tombé après le contrôle du dossier, et le défaut planté existant, dont le scénario rougit avec). Les
+tests neufs des écrans contre les écrans de 1c8491a : 12 rouges sur 13 ; le vert restant est, dans chaque écran, le
+garde symétrique « un refus se dit, sans avis ». CINQUANTE-NEUF MUTATIONS, 57 tuées (un banc hors dépôt : chaque
+mutation seule dans le vrai fichier, remis et vérifié à l'empreinte ; témoins verts avant) : 21 sur
+`create-client-access`, 15 sur `create-team-member`, 8 sur l'onglet Accès, 5 sur l'équipe, 10 sur le module. SURVIVENT,
+équivalentes : retirer `Array.isArray(corps)` ou `typeof corps !== "object"` de la garde d'objet — un tableau, un texte
+ou un nombre n'a pas de champ, la lecture rend `undefined` et « requis » refuse en 400 avec CORS (le précédent
+d'`agent-comptable`). Les mutations d'un contrôle de champ ne meurent que par les scénarios « champ seul » : la batterie
+met tous les champs de travers, et le premier contrôle masque les autres. Un test retiré avant de le garder : jsdom,
+comme les navigateurs, ôte déjà les blancs d'un champ `type="email"`, si bien qu'un `.trim()` de l'écran ne s'y voit
+pas. LA BARRIÈRE : `tsc -b` 0 ; `tsc -p tsconfig.edge.json`, les 25 erreurs connues, aucune dans les deux fonctions ;
+lint 0 et ses 63 avertissements ; construction 0 ; vingt fichiers (les miens et les gardes qui lisent les sources
+touchées) sous les quatre fuseaux, 815 sur 815 à chacun ; la suite entière sous Paris, 272 fichiers, 7 881 tests, verts,
+aucun délai dépassé. LE BANC : le banc des débordements, sur le worktree, avec ses polices : 0 aux neuf passes (1 440, 1
+280, 1 024, 720 et 390 pixels, 1 280 au panneau de 760, 1 280 et 1 440 à la barre de 420 et au panneau de 760, 1 280 à
+la barre de 420 sans panneau), l'onglet Accès et sa phrase nouvelle compris, aucune police refusée. Et, hors dépôt,
+l'avis lui-même — le banc ordinaire ne clique pas « Créer l'accès » : une copie du banc, le faux Supabase répondant «
+compte existant » le temps de la mesure, a créé un accès puis un membre sur une adresse de soixante-treize caractères, à
+1 440, 1 280, 1 024, 720 et 390 pixels — rien ne déborde, ni dans l'onglet Accès ni sur la page de l'équipe ; le faux
+est remis octet pour octet, et `outils/` ne diffère pas de la base.
+
+**CE QUI RESTE.** - LE DÉPLOIEMENT, par la session, APRÈS la fusion : la page d'abord, puis `create-client-access` et
+`create-team-member`, chacune à `verify_jwt: false` (`config.toml`, inchangé), bordures répétées (`bordures.py`),
+aller-retour (`allerretour.py`). Dans l'ordre inverse, une fonction neuve devant la page d'avant reprendrait un compte
+sans poser le mot de passe saisi, et l'écran d'avant ne le dirait pas ; dans cet ordre-ci, la page neuve devant une
+fonction d'avant lit une réponse sans `compte` comme un compte créé — ce qu'elle était : la fonction d'avant posait le
+mot de passe. Les deux copies déployées (versions 12 et 5) se lisent identiques à 1c8491a. - Q-23.2, AU CABINET : un
+compte existant que le cabinet ne connaît pas — ou plus — ne reçoit pas d'accès d'ici. Le cas qui compte : « Retirer »
+le dernier accès d'un client dans le cabinet le rend inconnu, et lui recréer un accès bute sur le 409 (« Demande à cette
+personne d'utiliser une autre adresse e-mail ») ; de même un compte neuf dont l'accès n'a pas pu s'écrire. La question
+de « Retirer » ne le dit pas. Maintenant que la création ne touche plus au mot de passe, le rattacher ne donnerait plus
+la main sur le compte ; le risque qui reste est d'ouvrir le dossier au titulaire d'une adresse mal tapée, ou d'une
+personne d'un autre cabinet, qui le verrait aussitôt avec son propre mot de passe. Garder le refus (aujourd'hui) ;
+rattacher tout compte existant ; ou rattacher après une confirmation du cabinet qui nomme l'adresse et ce qu'elle ouvre.
+- Non changé, dit : les lectures d'`appartientDejaAuCabinet` ne lisent pas leur erreur — en panne, le compte est dit «
+pas rattaché » (le côté fermé, sous un message faux ; `edgeFunctionsLectures.test.ts` les compte) ; la recherche par
+adresse s'arrête à 25 pages de 200 comptes ; les messages anglais du service sur une création refusée pour une autre
+raison qu'un doublon passent tels quels.

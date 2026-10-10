@@ -69,14 +69,14 @@ export interface ContratFonction {
 
 export const DEFAUTS_CONNUS = {
   corpsNul: {
-    nombre: 10,
+    nombre: 8,
     raison: 'un corps JSON `null` fait lever la fonction (500 en texte brut, sans en-tête CORS) ou rend le message ' +
       'anglais du moteur — LATENT : le navigateur n’envoie jamais ce corps ; il faut une session (n’importe laquelle, le ' +
       'corps se lisant avant le contrôle du dossier) ou, pour evaluer-extraction, la seule clé publishable. Rien ne part ' +
       'ni ne s’écrit avant. À corriger au prochain déploiement de chaque fonction.',
   },
   champsDeTravers: {
-    nombre: 8,
+    nombre: 6,
     raison: 'un champ attendu en texte et reçu en nombre fait lever `.trim()` (500 en texte brut, sans en-tête CORS) — ' +
       'LATENT, même portée que `corpsNul`.',
   },
@@ -84,11 +84,6 @@ export const DEFAUTS_CONNUS = {
     nombre: 1,
     raison: 'evaluer-extraction rend 500 et le message anglais de JSON.parse sur un corps illisible — harnais de mesure, ' +
       'appelé à la main.',
-  },
-  motDePasseAvantRefus: {
-    nombre: 2,
-    raison: 'un compte déjà rattaché voit son mot de passe changé, puis l’ajout refusé en 409 (« existe déjà ») : le ' +
-      'cabinet croit que rien n’a changé, l’ancien mot de passe ne marche plus. Décision du cabinet.',
   },
   objetAuJournal: {
     nombre: 1,
@@ -266,10 +261,13 @@ function refus(
 
 type FormeCorps = 'illisible' | 'nul' | 'tableau' | 'texte' | 'nombre' | 'vide' | 'champsDeTravers'
 
-/** La batterie des corps mal formés, envoyés par une personne ADMISE : un refus en français, rien de dépensé. */
+/**
+ * La batterie des corps mal formés, envoyés par une personne ADMISE : un refus en français, rien de dépensé — et, quand
+ * la fonction le promet, ce que `verifier` exige de plus (le refus tombé avant le contrôle du dossier).
+ */
 function corpsMalFormes(
   personne: Personne | null, champs: readonly string[], defauts: Partial<Record<FormeCorps, CleDefaut>> = {},
-  preparer?: Scenario['preparer'],
+  preparer?: Scenario['preparer'], verifier?: Attendu['verifier'],
 ): Scenario[] {
   const formes: [FormeCorps, string][] = [
     ['illisible', '{"dossierId": '],
@@ -284,7 +282,7 @@ function corpsMalFormes(
     nom: `corps mal formé (${forme}) : refus en français, rien de dépensé`,
     preparer,
     requete: (s: string) => requeteDe(s, { personne, corpsBrut: brut, entetes: { 'Content-Type': 'application/json' } }),
-    attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier },
     defautConnu: defauts[forme],
   }))
 }
@@ -898,9 +896,6 @@ const EVALUER_EXTRACTION: ContratFonction = {
 
 const NOUVEAU_CABINET = { nom: 'Cabinet nouveau du harnais', email: NOUVEL_EMAIL, password: MOT_DE_PASSE }
 const motDePasseSecret = (m: Monde) => { m.secrets.push(MOT_DE_PASSE) }
-/** Un refus d'ajout ne touche pas au compte : ni mot de passe posé, ni rien d'autre. */
-const motDePasseIntact = (_r: Resultat, m: Monde) =>
-  m.journal.some((e) => e.genre === 'comptes' && e.operation === 'updateUserById') ? ['le mot de passe du compte existant a été changé avant le refus'] : []
 const CABINET_VIDE = 'c9000000-0000-4000-8000-000000000009'
 
 const CREATE_CABINET: ContratFonction = {
@@ -993,14 +988,85 @@ const DELETE_CABINET: ContratFonction = {
 }
 
 // ── CREATE-TEAM-MEMBER, CREATE-CLIENT-ACCESS ─────────────────────────────────────────────────────────────────────────
+// Créer un accès client ou un membre de l'équipe ne touche à AUCUN compte qui existe déjà (décision du cabinet du
+// 10/10/2026 : « le propriétaire du compte peut changer son mot de passe ») — ni avant un refus, ni avant un
+// rattachement. Le compte repris l'est tel qu'il est, et la réponse le dit (`compte: "existant"`), pour que l'écran dise
+// au cabinet de ne pas communiquer un mot de passe qui n'a pas servi. D'un compte que le cabinet ne connaît pas, la
+// fonction ne dit que ce qu'elle disait avant : il existe, il n'est pas rattaché à ce cabinet.
 
 const MEMBRE = { email: NOUVEL_EMAIL, password: MOT_DE_PASSE, role: 'comptable' }
 const membreDe = (m: Monde, email: string) => lignes(m, 'cabinet_admins').find((c) => c.email === email)
 
+/**
+ * Aucun compte existant n'est touché : le service des comptes ne voit passer que la création tentée et la recherche par
+ * adresse — ni mot de passe posé, ni rien d'autre. Le monde journalise chaque demande, refusée ou en panne comprise : une
+ * mise à jour seulement TENTÉE se voit aussi.
+ */
+const compteIntact = (_r: Resultat, m: Monde) => {
+  const touches = m.journal.filter((e) => e.genre === 'comptes' && e.operation !== 'createUser' && e.operation !== 'listUsers')
+  return touches.length > 0 ? [`un compte existant a été touché : ${touches.map(decrire).join(' ; ')}`] : []
+}
+
+/** La réponse d'une création réussie, exactement : ce que l'écran lit, et rien d'autre — ni identifiant, ni cabinet. */
+const reponseDeCreation = (compte: 'cree' | 'existant') => (r: Resultat) => {
+  const attendue = JSON.stringify({ ok: true, compte })
+  return JSON.stringify(r.json) === attendue ? [] : [`réponse ${r.texte.slice(0, 160)} au lieu de ${attendue}`]
+}
+
+/**
+ * Le refus d'un compte d'ailleurs, tel que la source l'écrit : UNE phrase. Lue dans la source plutôt que recopiée ici,
+ * pour que le contrat juge ce que la fonction RÉPOND contre ce qu'elle ÉCRIT ; deux phrases (une par sorte de compte)
+ * seraient déjà une faute.
+ */
+function refusDUnCompteDAilleurs(slug: string): string {
+  const trouves = [...sourceDe(slug).matchAll(/"(Un compte existe déjà avec cet e-mail[^"]*)"/g)].map((m) => m[1])
+  return trouves.length === 1 ? trouves[0] : `(${trouves.length} refus d’un compte d’ailleurs dans la source, au lieu d’un)`
+}
+
+/**
+ * D'un compte d'ailleurs, la fonction dit ce qu'elle en disait avant le 10/10/2026 — il existe, il n'est rattaché à aucun
+ * dossier ni membre de ce cabinet — et RIEN DE PLUS : la même phrase quel que soit ce compte, sous la seule clé `error`.
+ * Une phrase qui changerait selon lui dirait où il vit, ou ce qu'il est.
+ */
+const neDitQueLExistence = (slug: string) => (r: Resultat) => {
+  const fautes: string[] = []
+  const cles = Object.keys(corpsDe(r))
+  if (cles.length !== 1 || cles[0] !== 'error') fautes.push(`le refus porte d’autres clés que « error » : ${cles.join(', ')}`)
+  const message = messageDe(r)
+  if (message !== refusDUnCompteDAilleurs(slug)) fautes.push(`le refus n’est pas la phrase unique de la source : ${String(message).slice(0, 160)}`)
+  return fautes
+}
+
+/** Des comptes que ce cabinet ne connaît pas, chacun d'une autre sorte : le refus doit être le même pour tous. */
+const COMPTES_D_AILLEURS: { quoi: string; email: string; preparer?: (m: Monde) => void }[] = [
+  { quoi: 'un compte inscrit seul', email: PERSONNES.inscrit.email },
+  { quoi: 'le chef d’un autre cabinet', email: PERSONNES.chefAutreCabinet.email },
+  {
+    quoi: 'le client d’un autre cabinet',
+    email: PERSONNES.inscrit.email,
+    preparer: (m) => {
+      m.base.memberships.push({ id: identifiantGenere(), user_id: PERSONNES.inscrit.id, dossier_id: ID.dossierAutreCabinet, role: 'client', email: PERSONNES.inscrit.email })
+    },
+  },
+  { quoi: 'le super-administrateur', email: PERSONNES.superAdmin.email },
+]
+
+function refusDesComptesDAilleurs(slug: string, corps: (email: string) => unknown): Scenario[] {
+  return COMPTES_D_AILLEURS.map(({ quoi, email, preparer }) => ({
+    nom: `${quoi}, que ce cabinet ne connaît pas : 409, le même refus, et le compte n’est pas touché`,
+    preparer: (m: Monde) => { motDePasseSecret(m); preparer?.(m) },
+    requete: (s: string) => requeteDe(s, { personne: 'chef', corps: corps(email) }),
+    attendu: {
+      statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+      verifier: (r: Resultat, m: Monde) => [...compteIntact(r, m), ...neDitQueLExistence(slug)(r)],
+    },
+  }))
+}
+
 const CREATE_TEAM_MEMBER: ContratFonction = {
   slug: 'create-team-member',
   navigateur: true,
-  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet',
+  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet, et tel qu’il est : son mot de passe n’est jamais touché',
   scenarios: [
     preflight(),
     ...sansSession('create-team-member', MEMBRE),
@@ -1017,7 +1083,10 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: MEMBRE }),
       attendu: {
         statut: 200, depenses: ['comptes createUser', 'écriture insert cabinet_admins'],
-        verifier: (_r, m) => (membreDe(m, NOUVEL_EMAIL)?.cabinet_id === ID.cabinet ? [] : ['membre absent du cabinet du chef']),
+        verifier: (r, m) => [
+          ...(membreDe(m, NOUVEL_EMAIL)?.cabinet_id === ID.cabinet ? [] : ['membre absent du cabinet du chef']),
+          ...reponseDeCreation('cree')(r),
+        ],
       },
     },
     {
@@ -1041,33 +1110,45 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, cabinetId: ID.autreCabinet } }),
       attendu: { statut: 200, verifier: (_r, m) => (membreDe(m, NOUVEL_EMAIL)?.cabinet_id === ID.autreCabinet ? [] : ['membre mal posé']) },
     },
+    ...refusDesComptesDAilleurs('create-team-member', (email) => ({ ...MEMBRE, email })),
     {
-      nom: 'un compte existant SANS lien avec le cabinet : 409, et son mot de passe n’est pas touché',
-      preparer: motDePasseSecret,
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.inscrit.email } }),
-      attendu: { statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'] },
-    },
-    {
-      nom: 'un compte existant déjà lié au cabinet (un client de ses dossiers) : repris',
+      nom: 'un compte existant déjà lié au cabinet (un client de ses dossiers) : repris tel qu’il est, et la réponse le dit',
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'comptes updateUserById', 'écriture insert cabinet_admins'],
-        verifier: (_r, m) => (membreDe(m, PERSONNES.client.email)?.cabinet_id === ID.cabinet ? [] : ['client non repris']),
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+        verifier: (r, m) => [
+          ...(membreDe(m, PERSONNES.client.email)?.cabinet_id === ID.cabinet ? [] : ['client non repris']),
+          ...reponseDeCreation('existant')(r),
+          ...compteIntact(r, m),
+        ],
       },
     },
     {
-      nom: 'le mot de passe d’un compte repris ne se pose pas : 500 qui le dit, personne n’est ajouté',
-      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ auth: 'updateUserById', erreur: { message: 'refusé' } }) },
+      nom: 'la recherche du compte existant en panne : 500 qui le dit, personne n’est ajouté, aucun compte touché',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ auth: 'listUsers', erreur: { message: 'délai dépassé' } }) },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
-      attendu: { statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers', 'comptes updateUserById'] },
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...(membreDe(m, PERSONNES.client.email) ? ['un membre a été ajouté'] : []), ...compteIntact(r, m)],
+      },
     },
     {
-      nom: 'un membre déjà dans l’équipe : 409, et son mot de passe n’a pas changé',
+      nom: 'l’équipe ne s’écrit pas (panne de la base) pour un compte repris : 500, et le compte n’a pas été touché',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table: 'cabinet_admins', operation: 'insert', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      attendu: { statut: 500, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'], verifier: compteIntact },
+    },
+    {
+      // Le défaut d'avant le 10/10/2026 sous sa forme exacte : le mot de passe posé, PUIS l'ajout refusé.
+      nom: 'un membre déjà dans l’équipe : 409, rien n’a changé, son mot de passe non plus',
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.comptableNonAssigne.email } }),
-      attendu: { statut: 409, refusEnFrancais: true, verifier: motDePasseIntact },
-      defautConnu: 'motDePasseAvantRefus',
+      attendu: {
+        statut: 409, refusEnFrancais: true,
+        depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+        verifier: compteIntact,
+      },
     },
     {
       nom: 'un rôle inconnu : 400, rien d’écrit',
@@ -1079,17 +1160,50 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, password: 'court' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['email', 'password', 'role'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...corpsMalFormes('chef', ['email', 'password', 'role']),
+    // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
+    // travers, les autres lisibles, prouve que son contrôle tient par lui-même. Le cabinet désigné ne se lit que pour un
+    // super-admin : c'est lui qui l'envoie.
+    ...(['email', 'password'] as const).map((champ): Scenario => ({
+      nom: `${champ} seul reçu en nombre : 400 en français, rien de dépensé`,
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, [champ]: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    })),
+    {
+      nom: 'cabinetId seul reçu en nombre, d’un super-admin : 400 en français, rien de dépensé',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, cabinetId: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
   ],
 }
 
 const ACCES = { dossierId: D, email: NOUVEL_EMAIL, password: MOT_DE_PASSE }
 const accesDe = (m: Monde, email: string) => lignes(m, 'memberships').filter((x) => x.email === email && x.dossier_id === D)
 
+/** Le refus d'un corps tombe AVANT le contrôle du dossier : ni `admin_du_dossier` demandé, ni une table lue. */
+const avantLeDossier = (_r: Resultat, m: Monde) => [
+  ...jamais(m, 'rpc', 'le contrôle du dossier a été demandé avant le refus'),
+  ...jamais(m, 'lecture', 'une table a été lue avant le refus'),
+]
+
+/** Deux façons d'être déjà connu du cabinet (`appartientDejaAuCabinet`) : un membre de son équipe, le client d'un autre de ses dossiers. */
+const COMPTES_DU_CABINET: { quoi: string; email: string; preparer?: (m: Monde) => void }[] = [
+  { quoi: 'un membre de son équipe', email: PERSONNES.comptableNonAssigne.email },
+  {
+    quoi: 'le client d’un autre de ses dossiers',
+    email: PERSONNES.inscrit.email,
+    preparer: (m) => {
+      m.base.memberships.push({ id: identifiantGenere(), user_id: PERSONNES.inscrit.id, dossier_id: ID.dossierVoisin, role: 'client', email: PERSONNES.inscrit.email })
+    },
+  },
+]
+
 const CREATE_CLIENT_ACCESS: ContratFonction = {
   slug: 'create-client-access',
   navigateur: true,
-  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant ; un compte existant n’est repris que s’il est déjà lié au cabinet du dossier',
+  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant ; un compte existant n’est repris que s’il est déjà lié au cabinet du dossier, et tel qu’il est : son mot de passe n’est jamais touché',
   scenarios: [
     preflight(),
     ...sansSession('create-client-access', ACCES),
@@ -1106,40 +1220,63 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       requete: (s) => requeteDe(s, { personne, corps: ACCES }),
       attendu: {
         statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
-        verifier: (_r, m) => (accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']),
+        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
+      },
+    })),
+    ...refusDesComptesDAilleurs('create-client-access', (email) => ({ ...ACCES, email })),
+    ...COMPTES_DU_CABINET.map(({ quoi, email, preparer }): Scenario => ({
+      nom: `un compte existant déjà lié au cabinet (${quoi}) : repris tel qu’il est, et la réponse le dit`,
+      preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email } }),
+      attendu: {
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: (r, m) => [
+          ...(accesDe(m, email).length === 1 ? [] : ['accès absent']),
+          ...reponseDeCreation('existant')(r),
+          ...compteIntact(r, m),
+        ],
       },
     })),
     {
-      nom: 'un compte existant SANS lien avec le cabinet : 409, et son mot de passe n’est pas touché',
-      preparer: motDePasseSecret,
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email: PERSONNES.chefAutreCabinet.email } }),
-      attendu: { statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'] },
-    },
-    {
-      nom: 'un compte existant déjà lié au cabinet : repris',
-      preparer: motDePasseSecret,
+      nom: 'la recherche du compte existant en panne : 500 qui le dit, aucun accès créé, aucun compte touché',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ auth: 'listUsers', erreur: { message: 'délai dépassé' } }) },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email: PERSONNES.comptableNonAssigne.email } }),
-      attendu: { statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'comptes updateUserById', 'écriture insert memberships'] },
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...(accesDe(m, PERSONNES.comptableNonAssigne.email).length > 0 ? ['un accès a été créé'] : []), ...compteIntact(r, m)],
+      },
     },
     {
-      nom: 'le mot de passe d’un compte repris ne se pose pas : 500 qui le dit, aucun accès n’est créé',
-      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ auth: 'updateUserById', erreur: { message: 'refusé' } }) },
+      nom: 'l’accès ne s’écrit pas (panne de la base) pour un compte repris : 500, et le compte n’a pas été touché',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table: 'memberships', operation: 'insert', erreur: { message: 'délai dépassé' } }) },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email: PERSONNES.comptableNonAssigne.email } }),
-      attendu: { statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers', 'comptes updateUserById'] },
+      attendu: { statut: 500, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'], verifier: compteIntact },
     },
     {
-      nom: 'un accès déjà donné sur ce dossier : 409, et le mot de passe du client n’a pas changé',
+      // Le défaut d'avant le 10/10/2026 sous sa forme exacte : le mot de passe posé, PUIS l'accès refusé.
+      nom: 'un accès déjà donné sur ce dossier : 409, rien n’a changé, le mot de passe du client non plus',
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email: PERSONNES.client.email } }),
-      attendu: { statut: 409, refusEnFrancais: true, verifier: motDePasseIntact },
-      defautConnu: 'motDePasseAvantRefus',
+      attendu: {
+        statut: 409, refusEnFrancais: true,
+        depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: compteIntact,
+      },
     },
     {
       nom: 'un mot de passe de moins de dix caractères : 400, rien d’écrit',
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, password: 'court' } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['dossierId', 'email', 'password'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...corpsMalFormes('chef', ['dossierId', 'email', 'password'], {}, undefined, avantLeDossier),
+    // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
+    // travers, les autres lisibles, prouve que son contrôle tient par lui-même — avant le contrôle du dossier.
+    ...(['dossierId', 'email', 'password'] as const).map((champ): Scenario => ({
+      nom: `${champ} seul reçu en nombre : 400 en français, avant le contrôle du dossier, rien de dépensé`,
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, [champ]: 42 } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: avantLeDossier },
+    })),
   ],
 }
 
