@@ -17524,3 +17524,160 @@ validation se lit « avant ». Une décision écrite par la porte de restauratio
 comme les autres. Ce que R3 trouve prêt : `revisionDeLExercice` ; `refusDeJustifierSolde` et
 `argumentsDeJustifierSolde` ; `instantaneDeLaPreuve` et `lireInstantaneDePreuve` ; `repriseProposee` et
 `decisionDeLaReprise` ; `refusDuRetraitDUneSource` ; `DESCRIPTION_DES_CYCLES` et `controlesParCycle`.
+
+### 10/10/2026 — LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE — LIGNE 28.5, ÉTAPE (E), DEUXIÈME TEMPS (E2)
+
+(Migration `pieces_hors_de_france`, version 20261010081009, texte de 47 593 caractères, empreinte
+`5f81e12eca162933e3390794cc3532b2` — `supabase/schema/20261010081009_pieces_hors_de_france.sql` ; l'essai
+`supabase/essais/piecesHorsDeFrance.sql` ; `src/lib/piecesHorsDeFrance.ts` et son test ; `types.ts` ; `sauvegarde.ts`,
+`sauvegarde.test.ts`, `restaurationEssai.test.ts`, `supabase/essais/restauration.sql` ; `encaissementsEcritures.test.ts`
+; une ligne du registre de RGPD.md, un paragraphe du § 6 de PLAN_DE_REPRISE.md, ceux de `rls.sql` et de
+`supabase/schema/README.md`.) Le deuxième temps de l'e-reporting (« L'E-REPORTING : LA CONCEPTION », § 3 et § 6.1) : la
+base où le cabinet SAISIT ce que l'e-reporting des achats transmettra d'une facture d'un fournisseur établi hors de
+France. Aucun écran (e3), aucune Edge Function, aucun appel réseau. Données mesurées en production le 10/10/2026,
+comptes seulement : dans le dossier `test`, 40 pièces d'achat, dont 4 en dollars, toutes portant une TVA — sous
+l'hypothèse Q7, aucune ne recevrait de fiche ; aucune fiche n'existe, tout ce qui suit est LATENT.
+
+**AVANT DE CONCEVOIR, LE DÉCRET DU CIBS (point 2 de la conception, NON VÉRIFIÉ).** Le dernier alinéa de l'art. L. 216-55
+du CIBS (LEGIARTI000053106721, créé par l'ordonnance n° 2025-1247 du 17/12/2025) renvoie à un décret « les catégories
+d'opérations concernées » ; la partie réglementaire du CIBS au 10/10/2026 n'a pas de livre II, aucun article R. ou D.
+216-… : le décret n'est pas pris. Le BOFiP du 07/10/2026 (ACTU-2026-00126) reporte au 01/01/2027 le transfert de la TVA
+au livre II ; l'art. 290 du CGI (LEGIARTI000053546668), abrogé à cette date, est « maintenu en vigueur jusqu'à [sa]
+reprise par les mesures réglementaires ». La fiche se fonde donc sur l'art. 290, I-3° — acquisitions intracommunautaires
+(a), livraisons de biens situées en France par un non-établi (b), prestations situées en France en application du 1° de
+l'art. 259 et de l'art. 259 A (c) — et décrit une facture sans décider l'obligation : le point 2 reste ouvert, la fiche
+n'en dépend pas.
+
+**SOURCES.** Les annexes 6 (v1.10, flux 10, bloc 10.1) et 7 (v1.9, règles de gestion) des spécifications externes de la
+DGFiP, citées par leur numéro (G1.01, G1.05, G1.07, G1.24, G1.32, G1.36, G1.38, G1.40, G1.42, G1.53, G1.102, G2.01,
+G2.19, G2.31, G6.20) ; les artefacts de validation EN 16931 1.3.16 (BR-AE, BR-E, BR-IC, BR-G, BR-O, BR-S, BR-Z 05, 09,
+10 ; listes VATEX) ; BOI-TVA-DECLA-20-30-50-20 (§ 70 : pas de lignes pour un achat ; § 80 : les identifiants) et
+-20-30-50-10 (§ 60 ; § 170 à § 220 : la Guadeloupe, la Martinique et La Réunion par la facture électronique, le reste de
+l'outre-mer hors du territoire, Monaco comme la France) ; la liste ISO 3166-1 alpha-2 (249 codes, paquet iso-codes
+4.16.0). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+**CE QUI A ÉTÉ DÉCIDÉ, ET ÉCARTÉ.** Deux tables, comme la conception — `pieces_hors_de_france` (la fiche) et
+`pieces_hors_de_france_taux` (sa ventilation par code et taux) —, mais une fiche VERSIONNÉE : chaque enregistrement est
+une ligne nouvelle qui REMPLACE la courante (`remplace_id`, unique ; une seule « première » par pièce, index partiel
+qu'aucun upsert ne vise) — le patron de la révision (R1). Écartés : la fiche modifiée en place, dont la ventilation se
+réécrirait par une suppression dans le corps de la fonction (donc une migration à coller pour le geste principal), et la
+ventilation en jsonb (plus de contrainte par ligne). Le versionnement garde « modifiable tant qu'on veut » sans rien
+supprimer, l'historique — ce qu'une déclaration rectificative devra comparer — et la concurrence : de deux onglets, le
+second se fait dire de relire. Une pièce qui n'était pas un achat à l'étranger voit sa fiche courante RETIRÉE
+(`retire_le`, le patron de d1), jamais supprimée, et une fiche retirée se remplace. ACHATS SEULEMENT (pièce d'achat ou
+note de frais) : une vente à l'étranger demande ses lignes (G6.15) et ses mentions (e7). La devise est RECOPIÉE de la
+pièce (la ventilation est dans la devise de la facture, TT-22), et pas jugée contre une liste ISO 4217 qui vieillit.
+Ajouts sourcés à la conception : la facture d'origine d'un avoir (G1.32), une date de livraison OU une période (G1.38),
+le motif VATEX d'une exonération (G1.40), aucune exonération pour un fournisseur hors de l'Union (G1.102), une facture —
+numéro, année, fournisseur — décrite une seule fois par dossier (G1.42, transposée à l'acheteur).
+
+**LES HYPOTHÈSES, RANGÉES DANS LA FONCTION.** Q7 : une TVA facturée — sur la pièce, ou une ligne au taux normal (S) —
+met l'achat « de côté, à trancher par le cabinet » ; la TABLE admet une ligne S (taux positif) : une autre réponse ne
+changera que la fonction. Q3 : la fiche décrit la facture et ne dépend pas du numéro de TVA du dossier — c'est la
+déclaration (e5) qui refusera un dossier sans numéro. Point 15 : une ligne AE ou K suppose que le dossier autoliquide,
+une acquisition de biens qu'il n'aurait pas à autoliquider est à trancher. Point 5 (un achat hors de l'Union s'écrit AE
+ou O), NON VÉRIFIÉ : les deux sont admis.
+
+**LA BASE.** La fiche : le numéro (G1.05 : 35 caractères, lettres sans accent, chiffres, « - + _ / », espaces simples,
+ni en tête ni en fin), la date (2000 à 2099), le type (la liste de G1.01 ; la fonction n'écrit que 380 et 381), la
+facture d'origine d'un avoir ou d'une facture rectificative, et d'eux seuls (G1.32), la devise, le pays (deux capitales,
+jamais FR), le schéma (0223 : le numéro de TVA d'un fournisseur de l'Union ; 0227 : le code pays et les seize premiers
+caractères de la dénomination), l'identifiant (3 à 18 caractères, sans espace aux bords), la nature (biens, services,
+mixte), l'autoliquidation, la livraison ou la période, l'auteur et le retrait (sans clé étrangère, comme
+`revision_justifications.auteur`). La ventilation : code de G2.31, taux de G1.24 (`TAUX_ADMIS`), base positive au
+centime, TVA ; sans TVA facturée, taux et TVA nuls ; une exonération porte son motif, une ligne S ou Z n'en porte pas ;
+clé primaire (fiche, code, taux). Trois gardes : `garder_fiche_hors_de_france` (aux droits de l'appelant : une fiche
+décrit une pièce de son dossier, en remplace une de la même pièce, ne se pose pas sur une pièce figée ; ensuite, rien ne
+change que le retrait, une fois, de la fiche COURANTE d'une pièce que rien ne fige ; rien ne se supprime, sauf avec la
+pièce ou le dossier, que la ligne ne voit déjà plus) ; `garder_fiche_hors_de_france_taux` (une ligne appartient à une
+fiche de son dossier, ne se modifie pas) ; `garder_piece_hors_de_france` (DEFINER : une pièce qui a une fiche ne change
+plus de dossier). Le gel : `exercice_figeant_la_piece`, la requête même de `garder_piece_validee` (une écriture validée
+de la pièce, ou de son bien). La RLS : le cabinet LIT (`admin_du_dossier`, `to authenticated`), le super-administrateur
+insère pour restaurer, aucune policy ne nomme le client. Le verrou : celui de la validation en PARTAGÉ, puis
+`cle_hors_de_france` en exclusif, et la ligne de la pièce `FOR SHARE`. `enregistrer_fiche_hors_de_france` (dix-sept
+paramètres) et ses QUARANTE-HUIT refus, dans cet ordre — l'accès (42501), la pièce dans ce dossier (P0002), puis en
+22023 : un achat, une pièce que rien ne fige, son TTC dans sa devise, sans TVA (Q7), la fiche remplacée (de cette pièce,
+et la courante), le numéro, la date (pas avant 2000, pas dans l'avenir à Paris), le type, le sens (un avoir est négatif
+dans la pièce, lu dans sa devise), la facture d'origine, le pays (ISO 3166 ; ni la France, ni Monaco, ni l'outre-mer),
+le schéma et l'identifiant (EL pour la Grèce), la nature, l'autoliquidation dite, la livraison ou la période, puis la
+ventilation — lisible, sans ligne répétée, des codes de G2.31, aucune ligne S, taux et TVA nuls, bases au centime,
+motifs, aucune exonération hors de l'Union, l'autoliquidation d'une ligne AE ou K, quelque chose à autoliquider, la
+somme des bases égale au TTC de la pièce à un centime près (G1.53) —, enfin la même facture sur une autre pièce du
+dossier. Chaque règle de la ventilation se juge sur toutes les lignes avant la suivante, et le refus nomme la PREMIÈRE
+ligne fautive. `retirer_fiche_hors_de_france` : l'accès, la fiche dans ce dossier, remplacée depuis, déjà retirée,
+figée. Mesuré en production avant d'écrire le module (PostgreSQL 17.6, locale ICU en-US) : `upper()` suit le mappage de
+casse complet d'Unicode (« ß » donne « SS », comme `toUpperCase`) ; `[[:cntrl:]]` ne vise que U+0000 à U+001F et U+007F
+à U+009F ; `btrim()` sans second argument ne retire que l'espace.
+
+**CE QUE LE CLIENT N'APPREND PAS.** La garde de la fiche est aux droits de l'appelant et s'exécute AVANT la RLS : un
+client qui insère sur SA pièce figée ne lit ni les écritures ni les biens, le gel lui paraît nul, et c'est la RLS qui
+répond (42501) — jamais l'année de la validation (contrôle 138b) ; sous le chef, c'est le gel qui parle (mutation 146).
+Une branche de la garde des pièces (« dossier disparu ») était morte — la suppression d'un dossier ne MODIFIE pas ses
+pièces — et a été retirée avant l'application.
+
+**L'ÉPREUVE.** Sur une réplique locale (PostgreSQL 16) dont `signature.sql` a montré les neuf familles égales à la
+production privée des objets de deux migrations d'autres chantiers, appliquées la veille au soir et le matin même
+(`droits_des_acces_clients`, `retrait_du_paiement_personnel` : deux colonnes de `memberships`, six fonctions) : l'essai,
+196 verdicts ; onze contrôles qui suppriment (la fiche et sa ventilation en direct, refusées ; personne ne supprime par
+la RLS ; la cascade d'une pièce, d'un dossier, d'un dossier figé ; une pièce figée ne se supprime pas et sa fiche reste)
+; onze courses de deux sessions (deux premières fiches ; la même facture sur deux pièces ; remplacement et retrait
+croisés ; validation et fiche dans les deux ordres ; fiche et changement de dossier ; montant changé ; suppression et
+fiche dans les deux ordres) ; et cent quarante-huit mutations de la migration, qui mordent toutes, chacune par le
+contrôle qui la vise. En production : `apply_migration`, le texte de l'historique égal au fichier ; l'essai, **196
+verdicts sur 196**, le texte reçu de 99 452 caractères (`03d33b0a…`) égal au fichier d'alors, rien laissé
+(4/77/0/0/3/0/2/1/0/2 lignes avant comme après) ; `rls.sql` EN ENTIER (22 lignes de verdict, 61 tables dont 53 portant
+un `dossier_id`, 3 buckets, 0 en faute, 14 mutations sur 14, M2 : exactement 3 ; texte reçu de 31 823 caractères,
+`8e6cece8…`) ; les advisors : les deux fonctions qui écrivent rejoignent les fonctions `SECURITY DEFINER` qu'un compte
+connecté exécute (22 avec celles de P1 et du retrait), chacune avec son contrôle d'accès en tête ; aucune n'est
+exécutable par l'anonyme (5 inchangé) ; rien côté performances.
+
+**L'EXPORT.** La dérive : 108 fichiers dans l'export de l'étape, `04b98b1a…`, égale à la production privée des deux
+migrations d'autres chantiers, que leurs auteurs exportent (110 en production, `4d2d9d78…`). Le socle : 78 instructions,
+`f01053c7…`, inchangé (aucune table du socle n'est touchée). L'inventaire : 1 468 objets des deux côtés (`81cdc82a…`),
+la production prise sans les huit objets des deux autres migrations (1 476 en tout) ; l'étape en ajoute 84 — trente
+colonnes, trente-quatre contraintes, quatre index, trois déclencheurs, quatre policies, sept fonctions, la RLS de ses
+deux tables.
+
+**L'APPLICATION.** `src/lib/piecesHorsDeFrance.ts`, pur : les refus dans l'ordre et sous les mots des deux fonctions
+(`REFUS_FICHE_HORS_DE_FRANCE`, `REFUS_RETRAIT_FICHE`), `refusFicheHorsDeFrance` et `refusRetraitFiche` — sauf l'accès et
+l'introuvable, que l'écran ne peut pas dire —, `ficheCourante`, `argumentsDeLaFiche` et `argumentsDuRetrait` (les dates
+civiles seules), les listes de la fonction. Il ne lit ni la base ni l'horloge : les fiches du dossier lues EN ENTIER,
+l'exercice qui fige la pièce (`piecesFigees`) et le jour à Paris lui sont passés. La ventilation passe par
+`JSON.stringify` comme la base la reçoit ; l'écart au TTC se calcule sur l'écriture décimale du montant, sans virgule
+flottante, et s'écrit arrondi au plus loin de zéro, comme `to_char`. Son test confronte les messages, les codes, les
+valeurs des « % », les paramètres, les listes, les motifs, les bornes et le jour de Paris au texte des fonctions ; les
+contraintes des tables à `TAUX_ADMIS` ; le gel à la requête de `garder_piece_validee` ; et REJOUE L'ESSAI ÉTAPE PAR
+ÉTAPE, sur son jeu et dans son ordre : 207 étapes lues, 107 appels d'enregistrement et 7 de retrait, dont 103 que
+l'écran peut faire — 22 que la base a acceptés, 81 refus au mot et à la valeur près — et 11 qu'il ne peut pas dire ; les
+48 et 5 refus lus au moins une fois en base ; `piecesFigees` rend le contrôle 139. Quatre-vingts mutations du module :
+le premier passage en laissait six en vie, que le rejeu ne distinguait pas (une facture qui ne cite que la date
+d'origine, une livraison avec la seule fin d'une période, le même code à deux taux, le schéma dans l'unicité, la
+première ligne fautive pour le taux et pour le code) ; chacune a reçu son cas, et les quatre-vingts mordent. `types.ts`
+(`PieceHorsDeFrance`, `PieceHorsDeFranceTaux`). `sauvegarde.ts` : cinq relations, l'ordre (après les notes internes,
+AVANT le brouillon : la garde lit le gel dans les écritures, sans clé), les versions par vagues (`remplace_id`), la clé
+de la ventilation (`CLES_PRIMAIRES`), les chemins ; seize mutations, toutes mordent. `restauration.sql` au plan (61
+tables), rejoué sur la réplique semée par les fonctions (une chaîne de trois versions, deux fiches retirées) : 56 tables
+restaurées et identiques, les versions en trois vagues, 0 écart, et son mutant (la ventilation avant la fiche) s'arrête
+sur la clé ; la vraie porte, gardes comprises, sous le chef super-administrateur : par vagues tout passe à l'identique,
+et la chaîne en une instruction à rebours est refusée par la garde. `encaissementsEcritures.test.ts` : aucune écriture
+directe des deux tables hors de la restauration, aucune Edge Function ne les nomme, aucun écran n'appelle encore les
+deux fonctions (`ECRANS_DE_LA_FICHE`, vide), quatre mutations qui mordent. RGPD.md : une ligne du registre (le cabinet
+seul, aucune donnée de patient, la durée de la pièce).
+
+**LA BARRIÈRE** (forme allégée v8) : `tsc -b` vert ; `tsconfig.edge.json`, les 25 erreurs connues et aucune autre (les
+mêmes messages que ceux de e1, aux numéros de ligne près) ; le lint, 63 avertissements, aucun dans les fichiers de
+l'étape ; la construction ; sous les quatre fuseaux, les vingt-quatre fichiers de l'étape et de ce qu'elle touche (813
+tests) ; la suite entière sous le fuseau de Paris, deux ouvriers : 260 fichiers, 7 426 tests (42 de l'étape : 35 du
+module, sept de la sauvegarde et du scanner), tous verts, aucun délai dépassé.
+
+**CE QUI RESTE, ET LES RISQUES.** e3, l'écran (une section de `FichePiece`) : lire les deux tables par `lireTout` — une
+lecture partielle ne propose rien —, l'exercice qui fige par `piecesFigees` sur des écritures et des biens lus en
+entier, le jour par `aujourdHuiAParis` ; dire les refus avant le clic par le module, écrire par les deux fonctions sous
+un verrou relâché après la relecture, et s'inscrire dans `ECRANS_DE_LA_FICHE`. La confirmation de la suppression d'une
+pièce qui a une fiche devra NOMMER la fiche qu'elle emporte : la cascade est voulue aujourd'hui, mais une fiche DÉCLARÉE
+devra retenir sa pièce — à trancher par e5, qui figera ce qui est parti. La porte de restauration du
+super-administrateur (le chef du cabinet en production) insère en direct, sans les refus de la fonction : les gardes
+tiennent la pièce, le dossier, la chaîne et le gel, les contraintes les formats — pas la ventilation contre le TTC, ni
+l'unicité d'une facture. La liste ISO 3166 du module et de la fonction vieillira : une mise à jour passe par les deux,
+et le test le dira. Restent ouverts les points NON VÉRIFIÉS 2 (le décret) et 5 (AE ou O hors de l'Union), et les
+questions Q3, Q7 et le point 15, pris comme hypothèses.

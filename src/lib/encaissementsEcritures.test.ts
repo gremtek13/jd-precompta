@@ -33,6 +33,13 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // des écritures. Aucune Edge Function ne la lit ni ne l'écrit ; dans `src/`, rien ne l'écrit en direct, sauf la
 // restauration.
 //
+// LA FICHE « HORS DE FRANCE » D'UNE PIÈCE NON PLUS (ligne 28.5, étape e2) : `pieces_hors_de_france` et sa ventilation
+// décrivent la facture d'un fournisseur établi hors de France, que l'e-reporting des achats transmettra. Seule
+// `enregistrer_fiche_hors_de_france` juge ce qu'elle porte — ses quarante-huit refus, la fiche courante et la même
+// facture sur deux pièces, sous verrou — et seule `retirer_fiche_hors_de_france` la retire. La policy laisse la porte de
+// la restauration au super-administrateur, le chef du cabinet en production : une écriture directe écrite demain depuis
+// un écran passerait les gardes sans aucun de ces contrôles. Aucune Edge Function ne la nomme avant la déclaration (e5).
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -42,6 +49,10 @@ export const TABLES_DU_REGISTRE = ['encaissements_factures', 'encaissements_fact
 export const TABLES_DES_DECLARATIONS = ['transmissions_encaissements'] as const
 export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
 export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuves'] as const
+export const TABLES_DES_FICHES_HORS_DE_FRANCE = ['pieces_hors_de_france', 'pieces_hors_de_france_taux'] as const
+
+// Les écrans qui appelleront les deux fonctions de la fiche, nommément : aucun avant l'étape e3.
+const ECRANS_DE_LA_FICHE: readonly string[] = []
 
 // Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
 const FONCTIONS_QUI_DECLARENT: readonly string[] = []
@@ -186,6 +197,14 @@ export function ecrituresDeLaRevision(
   return ecrituresDesTables(sources, TABLES_DE_LA_REVISION, exceptions, 'seule justifier_solde l’écrit')
 }
 
+/** La fiche « hors de France » (ligne 28.5, étape e2) : ses deux tables, dans `src/` et les Edge Functions. */
+export function ecrituresDesFichesHorsDeFrance(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DES_FICHES_HORS_DE_FRANCE, exceptions, 'seules ses deux fonctions l’écrivent')
+}
+
 /** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
 export function ecrituresDuRegistre(
   sources: readonly Source[],
@@ -306,6 +325,38 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
       .toEqual(['remplace_id', 'reprise_de'])
   })
 
+  it('aucune écriture directe de la fiche « hors de France », hors de la restauration (ligne 28.5, étape e2)', () => {
+    expect(ecrituresDesFichesHorsDeFrance(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme la fiche : ni ne la lit, ni ne l’écrit, ni n’appelle ses fonctions', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DES_FICHES_HORS_DE_FRANCE, 'enregistrer_fiche_hors_de_france', 'retirer_fiche_hors_de_france']) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('les deux fonctions de la fiche ne s’appellent que des écrans qui s’inscrivent nommément', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of ['enregistrer_fiche_hors_de_france', 'retirer_fiche_hors_de_france']) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DE_LA_FICHE)
+      // Un appel planté se voit, sur plusieurs lignes ; cité dans un commentaire, non.
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', argumentsDuRetrait(d, f))`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue la fiche par l’insertion — ses versions par vagues —, avant le brouillon qui la figerait', () => {
+    for (const t of TABLES_DES_FICHES_HORS_DE_FRANCE) expect(ORDRE_RESTAURATION).toContain(t)
+    expect(TABLES_AUTO_REFERENCEES.map((t) => t.table)).not.toContain('pieces_hors_de_france')
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table === 'pieces_hors_de_france').map((t) => t.colonne))
+      .toEqual(['remplace_id'])
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('pieces_hors_de_france_taux')).toBeLessThan(rang('ecritures_brouillon'))
+  })
+
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
   // cassé, un dossier qu'on ne parcourt plus.
   it('voit encore quelque chose', () => {
@@ -407,6 +458,23 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(jugerR(`const T = 'revision_justifications'\nawait supabase.from(T).update({ etat: 'justifie' })`)).toHaveLength(1)
     expect(jugerR(`await admin.from('revision_preuves').insert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
     expect(jugerR(`await supabase.from('revision_justifications').select('*', { count: 'exact' })`)).toEqual([])
+  })
+
+  it('attrape une écriture directe de la fiche « hors de France », dans src/ comme dans une Edge Function', () => {
+    const jugerF = (texte: string, chemin = 'src/faux.ts') => ecrituresDesFichesHorsDeFrance([{ chemin, texte }], {})
+    expect(jugerF(`
+      await supabase
+        .from('pieces_hors_de_france')
+        .update({ retire_le: maintenant })
+        .eq('id', id)`))
+      .toEqual(['src/faux.ts:3 — .update() sur pieces_hors_de_france : seules ses deux fonctions l’écrivent'])
+    expect(jugerF(`await supabase.from('pieces_hors_de_france_taux').insert(lignes)`)).toHaveLength(1)
+    expect(jugerF(`const T = 'pieces_hors_de_france'\nawait supabase.from(T).delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerF(`await admin.from('pieces_hors_de_france').upsert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerF(`await supabase.from('pieces_hors_de_france').select('*', { count: 'exact' })`)).toEqual([])
+    // Le registre ne prend pas la fiche pour une de ses tables, ni la fiche le registre.
+    expect(juger(`await supabase.from('pieces_hors_de_france').insert(x)`)).toEqual([])
+    expect(jugerF(`await supabase.from('encaissements_factures').insert(x)`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {

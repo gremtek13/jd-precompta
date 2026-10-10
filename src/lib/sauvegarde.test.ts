@@ -111,7 +111,26 @@ describe('ordre de restauration', () => {
     expect([...enDeuxPasses, ...parVagues].sort()).toEqual(auto)
     expect(parVagues).toEqual([
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
+      'pieces_hors_de_france.remplace_id',
     ])
+  })
+
+  it('écrit la fiche « hors de France » après sa pièce, et avant le brouillon dont la validation la figerait', () => {
+    // Une dépendance qu'aucune clé étrangère ne porte (ligne 28.5, étape e2) : la garde de la fiche refuse une version sur
+    // une pièce qu'une écriture VALIDÉE fige, et la lit dans `ecritures_brouillon`. Réinsérée après le brouillon, la fiche
+    // d'une pièce d'un exercice validé ne repasserait pas ; avant, elle passe telle qu'elle a été écrite.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('pieces')).toBeLessThan(rang('pieces_hors_de_france'))
+    expect(rang('pieces_hors_de_france')).toBeLessThan(rang('pieces_hors_de_france_taux'))
+    expect(rang('pieces_hors_de_france_taux')).toBeLessThan(rang('ecritures_brouillon'))
+    expect(RELATIONS.filter((r) => r.enfant.startsWith('pieces_hors_de_france')).map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'pieces_hors_de_france.dossier_id>dossiers:cascade',
+        'pieces_hors_de_france.piece_id>pieces:cascade',
+        'pieces_hors_de_france.remplace_id>pieces_hors_de_france:bloque',
+        'pieces_hors_de_france_taux.dossier_id>dossiers:cascade',
+        'pieces_hors_de_france_taux.fiche_id>pieces_hors_de_france:cascade',
+      ])
   })
 
   it('écrit les preuves de la révision après les pièces, les documents et les décisions', () => {
@@ -627,6 +646,22 @@ describe('plan de réinsertion', () => {
     // Par une seule colonne, la reprise partirait avec la première vague, avant sa cible.
     expect(vaguesParLien([reprise, troisieme, premiere, seconde, autre], 'remplace_id').map((v) => v.map((l) => l.id)))
       .toEqual([['j4', 'j1', 'j5'], ['j2'], ['j3']])
+  })
+
+  it('écrit chaque version d’une fiche « hors de France » après celle qu’elle remplace, et sa ventilation ensuite', () => {
+    // Une version en remplace une de la même pièce (`remplace_id`, ligne 28.5, étape e2) : immuable hors de son retrait,
+    // elle ne part pas à NULL, et sa garde lit la version remplacée. Une fiche retirée part avec son retrait.
+    const troisieme = { id: 'f3', dossier_id: 'd1', piece_id: 'p1', remplace_id: 'f2', retire_le: '2026-05-01T10:00:00Z' }
+    const premiere = { id: 'f1', dossier_id: 'd1', piece_id: 'p1', remplace_id: null, retire_le: null }
+    const seconde = { id: 'f2', dossier_id: 'd1', piece_id: 'p1', remplace_id: 'f1', retire_le: null }
+    const autre = { id: 'g1', dossier_id: 'd1', piece_id: 'p2', remplace_id: null, retire_le: null }
+    const ventilation = [{ fiche_id: 'f3', dossier_id: 'd1', code_tva: 'AE', taux: 0, base: 120, tva: 0 }]
+    const plan = planReinsertion({ pieces_hors_de_france_taux: ventilation, pieces_hors_de_france: [troisieme, premiere, seconde, autre] })
+    expect(plan.etapes.map((e) => `${e.table}:${e.lignes.map((l) => l.id ?? l.fiche_id).join(',')}`)).toEqual([
+      'pieces_hors_de_france:f1,g1', 'pieces_hors_de_france:f2', 'pieces_hors_de_france:f3', 'pieces_hors_de_france_taux:f3',
+    ])
+    expect(plan.etapes[2].lignes[0]).toEqual(troisieme)
+    expect(plan.secondePasse).toEqual([])
   })
 
   it('une décision qui pointe une décision absente part dans la première vague — et `liensPerdus` refuse', () => {

@@ -57,6 +57,14 @@
 -- qu'elle annote. Le script n'a PAS été rejoué depuis — aucune réplique complète n'était montée ; ce que la
 -- restauration fait des anciennes colonnes des notes (`sansAnciennesNotes`, en TypeScript) n'est pas de son ressort :
 -- il recopie des lignes, il ne les transforme pas.
+--
+-- 10/10/2026, ligne 28.5, étape e2 : `pieces_hors_de_france` et `pieces_hors_de_france_taux` entrent au plan (61 tables),
+-- après les notes internes et avant le brouillon, les versions de la fiche par vagues (`remplace_id`). Rejoué sur la
+-- réplique locale de l'étape (signature.sql : les neuf familles égales à la production, hors des objets de deux
+-- migrations d'autres chantiers), le dossier `test` semé par les fonctions de la base — trois pièces, cinq fiches dont
+-- une chaîne de trois versions et deux retirées, six lignes de ventilation : 61 tables recréées, 56 restaurées et
+-- IDENTIQUES à la source (15 lignes), les fiches en trois vagues, 0 écart, aucun arrêt. Planté — la ventilation avant
+-- sa fiche —, le script s'arrête sur la clé.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -79,7 +87,8 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (41,'supplements'),(42,'regles_affectation_bancaire'),(43,'tiers_categories'),(44,'tiers_categories_cabinet'),(45,'immobilisations'),
  (46,'lignes_bancaires'),(47,'ventilations_bancaires'),(48,'reglements_groupes'),(49,'encaissements_factures'),(50,'encaissements_factures_taux'),
  (51,'transmissions_encaissements'),(52,'lettrages_manuels'),(53,'piece_commentaires'),(54,'piece_textes_ocr'),(55,'notes_internes'),
- (56,'ecritures_brouillon'),(57,'revision_justifications'),(58,'revision_preuves'),(59,'exercices_valides');
+ (56,'pieces_hors_de_france'),(57,'pieces_hors_de_france_taux'),
+ (58,'ecritures_brouillon'),(59,'revision_justifications'),(60,'revision_preuves'),(61,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -95,6 +104,7 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('mouvements_cca','par_parent','comptes_courants_associes','compte_id'),('natures_immobilisation','partage',null,null),('notes_internes','direct',null,null),
  ('packs','direct',null,null),
  ('piece_commentaires','direct',null,null),('piece_textes_ocr','direct',null,null),('pieces','direct',null,null),
+ ('pieces_hors_de_france','direct',null,null),('pieces_hors_de_france_taux','direct',null,null),
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),
  ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('soldes_reportes','direct',null,null),
@@ -105,7 +115,8 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('volet_social_pamc','direct',null,null);
 
 insert into essai_restauration._vagues (table_nom, colonne) values
- ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de');
+ ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de'),
+ ('pieces_hors_de_france','remplace_id');
 
 do $$
 declare t text;

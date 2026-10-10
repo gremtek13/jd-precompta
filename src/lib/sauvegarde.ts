@@ -92,6 +92,11 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'pieces', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'pieces', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces', parent: 'sous_dossiers', colonne: 'sous_dossier_id', aLaSuppression: 'met_a_null' },
+  { enfant: 'pieces_hors_de_france', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_hors_de_france', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_hors_de_france', parent: 'pieces_hors_de_france', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'pieces_hors_de_france_taux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_hors_de_france_taux', parent: 'pieces_hors_de_france', colonne: 'fiche_id', aLaSuppression: 'cascade' },
   { enfant: 'previsionnels_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_annuelles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_postes_annuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -179,6 +184,11 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // lisent rien qu'une validation fige, et une décision prise APRÈS la validation se restaure comme une autre. Les
 // décisions partent par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`) ; leurs preuves suivent les pièces et les
 // documents qu'elles citent, que leur garde lit sans clé étrangère (`LIENS_GARDES`, que `violationsOrdre` compte).
+//
+// La fiche « hors de France » d'une pièce (ligne 28.5, étape e2) suit les pièces qu'elle décrit et PRÉCÈDE le brouillon :
+// sa garde refuse une fiche sur une pièce qu'une écriture validée fige — la sienne ou celle de son bien —, et le lit
+// dans `ecritures_brouillon`, sans clé étrangère. Réinsérées avant les écritures, ses versions passent telles qu'elles
+// ont été écrites, par vagues (`remplace_id`), et sa ventilation la suit. `sauvegarde.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -235,6 +245,8 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'piece_commentaires',
   'piece_textes_ocr',
   'notes_internes',
+  'pieces_hors_de_france',
+  'pieces_hors_de_france_taux',
   'ecritures_brouillon',
   'revision_justifications',
   'revision_preuves',
@@ -278,6 +290,9 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   { table: 'encaissements_factures', colonne: 'annule_id' },
   { table: 'revision_justifications', colonne: 'remplace_id' },
   { table: 'revision_justifications', colonne: 'reprise_de' },
+  // La fiche « hors de France » (ligne 28.5, étape e2) : une version en remplace une autre de la même pièce
+  // (`remplace_id`) ; immuable hors de son retrait, elle ne part pas à NULL, et sa garde lit la version remplacée.
+  { table: 'pieces_hors_de_france', colonne: 'remplace_id' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
@@ -419,12 +434,16 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 // par nature — une ligne par dossier, par exercice ou par taux d'un encaissement — donc la pagination ne s'y
 // déclenchera jamais en pratique. Ce n'est pas une raison de les traiter à part : un mécanisme dont la justesse
 // dépend de la petitesse des données est un mécanisme qui tombera le jour où elles grandissent.
+//
+// `pieces_hors_de_france_taux` (ligne 28.5, étape e2) en fait DIX, et sept dans le plan d'export : une ligne par code et
+// par taux d'une version de la fiche « hors de France », petite par nature elle aussi.
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
   encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
+  pieces_hors_de_france_taux: ['fiche_id', 'code_tva', 'taux'],
   previsionnels_bancaires: ['dossier_id'],
   super_admins: ['user_id'],
   superpdp_credentials: ['dossier_id'],
@@ -585,6 +604,8 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   piece_commentaires: { acces: 'direct' },
   piece_textes_ocr: { acces: 'direct' },
   pieces: { acces: 'direct' },
+  pieces_hors_de_france: { acces: 'direct' },
+  pieces_hors_de_france_taux: { acces: 'direct' },
   previsionnels_bancaires: { acces: 'direct' },
   references_annuelles: { acces: 'direct' },
   references_postes_annuels: { acces: 'direct' },

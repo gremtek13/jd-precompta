@@ -95,6 +95,14 @@ le fichier égal au texte enregistré), la dernière, qui suit `notes_internes_d
 jour (`identite_des_factures_recues`, `paiement_personnel_des_cotisations`, `revision_des_soldes`,
 `compte_amortissement_meme_ventilation`, `commentaire_compte_notes_de_frais_pcg_2026`) ; toutes dans l'export.
 
+**Rejoué le 10/10/2026 après `pieces_hors_de_france`** (ligne 28.5, étape e2, version `20261010081009`) :
+108 fichiers dans l'export de cette étape, empreinte `04b98b1aff5dbefc07aea42074727fe8`, égale à celle
+des migrations de la production privée de `droits_des_acces_clients` (`20261009224031`) et de
+`retrait_du_paiement_personnel` (`20261010071154`) — deux migrations d'autres chantiers, appliquées la
+veille au soir et le matin même, que leurs auteurs ajoutent à l'export ; la production en porte alors
+110 (empreinte globale `4d2d9d78fca8dadf3d40ba5985886f1a`), et l'égalité des 110 se rejoue quand les
+trois fichiers sont réunis.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -158,6 +166,14 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   fichier.
 
 Les deux essais se rejouent à la main après toute migration : la CI n'a pas accès à la base.
+
+**Rejoués le 10/10/2026 après `pieces_hors_de_france`** (ligne 28.5, étape e2) : le socle est inchangé
+(78 instructions, `f01053c781688bbfbee8c70ac43924a6` des deux côtés — la migration ne touche aucune table
+du socle) ; l'inventaire compte 1 468 objets, empreinte `81cdc82ae5d44444c52c0eaad5b0d216` des deux
+côtés, la production prise sans les huit objets de ces deux migrations d'autres chantiers (deux colonnes
+de `memberships`, six fonctions ; 1 476 objets en tout, `8ebeee2fda0acdb92a76b43a2ebd646d`).
+`pieces_hors_de_france` en ajoute 84 : trente colonnes, trente-quatre contraintes, quatre index, trois
+déclencheurs, quatre policies, sept fonctions et la RLS de ses deux tables.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

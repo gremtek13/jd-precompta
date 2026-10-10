@@ -303,6 +303,12 @@ Un plan de reprise jamais exécuté est une intention. Deux niveaux de répétit
   le 09/10/2026 sur la réplique, un dossier semé (dont une chaîne de décisions de la révision),
   53 tables restaurées, 53 identiques, 0 écart.
 
+Le 10/10/2026 (ligne 28.5, étape e2), les fiches « hors de France » d'une pièce et leur ventilation sont entrées au
+plan — 61 tables : la liste du premier point en compte désormais autant. Sur la réplique de l'étape, le dossier semé
+par les fonctions de la base (une chaîne de trois versions d'une fiche, deux fiches retirées) : 56 tables restaurées,
+56 identiques, 0 écart, les versions en trois vagues ; et, gardes comprises, la réinsertion par la porte de la
+restauration passe par vagues et se refuse en une seule instruction à rebours.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 
