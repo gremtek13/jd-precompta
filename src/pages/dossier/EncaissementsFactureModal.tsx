@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
+import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
   ETATS_DECLARANTS, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts, contrePassationDe, echeanceDeDeclaration,
@@ -1098,7 +1099,8 @@ function EtapeDeclaration({
         </table>
       </div>
       <div className="field">
-        <label htmlFor="declaration-note">Note (facultative) : qui l’a saisi, quand, sous quelle référence</label>
+        {/* La note est lue par le client qui porte la case « Ventes » (migration ventes_du_client) : le libellé le dit. */}
+        <label htmlFor="declaration-note">{LIBELLE_NOTE_DECLARATION}</label>
         <textarea
           id="declaration-note" rows={3} value={etape.note}
           onChange={(ev) => setEtape({ ...etape, note: ev.target.value })}
@@ -1153,7 +1155,8 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
         </p>
       </div>
       <div className="field">
-        <label htmlFor="contre-passation-motif">Motif d’annulation, que la plateforme portera</label>
+        {/* Le motif est lu par le client qui porte la case « Ventes » (migration ventes_du_client) : le libellé le dit. */}
+        <label htmlFor="contre-passation-motif">{LIBELLE_MOTIF_CONTRE_PASSATION}</label>
         <textarea
           id="contre-passation-motif" rows={3} value={etape.motif}
           onChange={(ev) => setEtape({ ...etape, motif: ev.target.value })}

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import FactureAvoirModal from './FactureAvoirModal'
 import { MENTIONS_VIDES } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
+import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
 
 // L'AVOIR S'ENREGISTRE D'UN SEUL TENANT PAR LA BASE (ligne 28.5, étape c ; migration mentions_de_la_facture).
 //
@@ -274,5 +275,23 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     const bouton = await monter()
     expect(bouton).toBeTruthy()
     expect(screen.queryByText(/on ne l'a pas lue/)).toBeNull()
+  })
+})
+
+// LE MOTIF D'UN AVOIR N'EST PLUS UNE NOTE INTERNE (espace client, étape P2) : il est rangé dans les notes de l'avoir
+// (`creerAvoir`), que lit le client qui porte la case « Ventes » dès la migration ventes_du_client. Le libellé le dit
+// au-dessus du champ, condition du cabinet à son accord du 10/10/2026.
+describe('FactureAvoirModal — le motif se dit lu par le client qui porte la case « Ventes »', () => {
+  it('le libellé du champ le dit, au-dessus du champ, et le motif part dans les notes de l’avoir', async () => {
+    const bouton = await monter()
+    const champ = screen.getByLabelText(LIBELLE_MOTIF_AVOIR) as HTMLInputElement
+    expect(champ.id).toBe('avoir-motif')
+    const libelle = document.querySelector('label[for="avoir-motif"]') as HTMLLabelElement
+    expect(libelle.textContent).toBe(LIBELLE_MOTIF_AVOIR)
+    expect(libelle.compareDocumentPosition(champ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryAllByLabelText(/interne/i)).toEqual([])
+    fireEvent.change(champ, { target: { value: 'Erreur de quantité' } })
+    await act(async () => { bouton.click() })
+    expect((faux.appelsRpc[0].params as { p_facture: Record<string, unknown> }).p_facture).toMatchObject({ notes: 'Erreur de quantité' })
   })
 })

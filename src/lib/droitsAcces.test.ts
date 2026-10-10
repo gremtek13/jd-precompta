@@ -2,11 +2,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCases, ceQueDonneUnAcces,
-  changementApplique, definitionDe, demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase,
-  messageDuRefus,
+  AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
+  LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
+  demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
+import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1). Ce qui se garde ici : qu'un droit ne s'accorde jamais par défaut,
 // qu'une case cliquée n'envoie que SON droit, et que le module, la migration et les écrans du client disent la même chose.
@@ -141,21 +143,13 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(simulation).not.toMatch(/droit_ventes|droit_banque|\.ventes\b/)
   })
 
-  it('les phrases de l’onglet disent ce qu’un accès donne, et ce qu’une case change — dans les deux états du drapeau', () => {
-    // Avant que la couverture du relevé soit en base : rien ne change pour le client, quelle que soit la case.
+  it('la phrase de l’onglet dit ce qu’un accès donne — dans les deux états du drapeau de la banque', () => {
+    // Avant que la couverture du relevé soit en base : la simulation, pour tout accès.
     expect(ceQueDonneUnAcces(false)).toContain('dépose ses pièces et ses documents')
     expect(ceQueDonneUnAcces(false)).toContain('voit sa simulation')
-    expect(ceQueDisentLesCases(false)).toContain('« Ventes » (devis, factures, facture électronique)')
-    expect(ceQueDisentLesCases(false)).toContain('« Banque » (comptes, mouvements, connexion bancaire)')
-    expect(ceQueDisentLesCases(false)).toContain('honorera quand ses écrans « Ventes » et « Banque » arriveront')
-    expect(ceQueDisentLesCases(false)).toContain('cocher une case ne change pas ce que le client voit ou fait')
-    // Après : la simulation suit la case « Banque » (hypothèse EC-Q1), et la phrase ne dit plus qu'une case ne change rien.
+    // Après : la simulation suit la case « Banque » (hypothèse EC-Q1).
     expect(ceQueDonneUnAcces(true)).toContain('dépose ses pièces et ses documents')
     expect(ceQueDonneUnAcces(true)).toContain('avec la case « Banque », il voit aussi sa simulation')
-    expect(ceQueDisentLesCases(true)).toContain('« Banque » (comptes, mouvements, connexion bancaire)')
-    expect(ceQueDisentLesCases(true)).toContain('« Banque » ouvre déjà au client sa simulation')
-    expect(ceQueDisentLesCases(true)).toContain('cocher « Ventes » ne change pas ce que le client voit ou fait')
-    expect(ceQueDisentLesCases(true)).not.toContain('cocher une case ne change pas')
     for (const etat of [false, true]) {
       // L'ancienne phrase promettait « aucun accès aux montants » : la simulation en montre. Elle ne doit pas revenir.
       expect(ceQueDonneUnAcces(etat)).not.toMatch(/montants|uniquement/)
@@ -163,7 +157,6 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     }
     // Ce que l'onglet affiche est la phrase de l'état du drapeau.
     expect(CE_QUE_DONNE_UN_ACCES).toBe(ceQueDonneUnAcces(COUVERTURE_EXPORTEE))
-    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(COUVERTURE_EXPORTEE))
   })
 
   it('le nom d’une case et le message d’un refus nomment le droit et la personne', () => {
@@ -171,5 +164,176 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(libelleDeLaCase('banque', 'client@exemple.fr')).toBe('Droit « Banque » de client@exemple.fr')
     expect(messageDuRefus('banque', 'client@exemple.fr', 'Accès refusé à ce dossier.'))
       .toBe('Le droit « Banque » de client@exemple.fr n’a pas été enregistré : Accès refusé à ce dossier.')
+  })
+})
+
+// CE QU'UNE CASE CHANGE, DANS LES QUATRE ÉTATS DES DEUX ÉTAPES (contrôle croisé P2 × P7, 10/10/2026). L'épingle d'avant ne
+// connaissait que le drapeau de la banque : la migration des ventes appliquée, la phrase aurait gardé « cocher une case ne
+// change pas ce que le client voit ou fait », ou « cocher « Ventes » ne change pas… » — faux dans les deux états de ce
+// drapeau, puisque la base ouvre ses ventes à la SESSION du client, écran ou non. Chaque état est épinglé ici sur ce que la
+// base ouvre alors, et ce qu'il nomme est confronté à l'export dès qu'il porte la migration qui l'ouvre.
+
+// Ce que « Ventes » ouvre en LECTURE, tel que la phrase le nomme, et les tables que la migration ventes_du_client ouvre
+// pour le dire (une policy `…_lecture_ventes` chacune).
+const LU_AVEC_VENTES: Record<string, readonly string[]> = {
+  'ses factures et avoirs': ['factures_emises', 'facture_lignes'],
+  'leurs transmissions et leur suivi': ['transmissions_factures', 'facture_superpdp_events'],
+  'les statuts lus sur sa plateforme': ['statuts_factures_recus'],
+  'ses encaissements et leurs déclarations': ['encaissements_factures', 'encaissements_factures_taux', 'transmissions_encaissements'],
+  'les e-mails qui les ont envoyés': ['emails_envoyes'],
+}
+// Ses GESTES, et les fonctions qui les font : chacune accepte, depuis les ventes du client, `gere_les_ventes`.
+const GESTES_AVEC_VENTES: Record<string, readonly string[]> = {
+  'créer, modifier, valider ou supprimer un brouillon': ['enregistrer_facture', 'supprimer_brouillon_facture'],
+  'créer un avoir': ['enregistrer_facture'],
+  'enregistrer, retirer, déclarer ou contre-passer un encaissement':
+    ['enregistrer_encaissement', 'retirer_encaissement', 'declarer_encaissement_hors_application', 'annuler_encaissement'],
+  'abandonner une transmission restée sans issue connue': ['abandonner_transmission'],
+}
+// Ce que « Banque » ouvre par la base depuis la migration banque_du_client (P7) : trois fonctions sous `gere_la_banque`.
+const GESTES_AVEC_BANQUE: Record<string, readonly string[]> = {
+  'de proposer ou de retirer une pièce comme justificatif d’un mouvement': ['proposer_justificatif', 'retirer_proposition'],
+  'd’écrire des précisions sur un mouvement': ['ecrire_precision_mouvement'],
+}
+
+describe('ce que disent les cases, dans les quatre états des deux étapes', () => {
+  const PREFIXE = '« Ventes » (devis, factures, facture électronique) et « Banque » (comptes, mouvements, connexion bancaire) : '
+  const ETATS = [
+    { banque: false, ventes: false },
+    { banque: true, ventes: false },
+    { banque: false, ventes: true },
+    { banque: true, ventes: true },
+  ]
+
+  it.each(ETATS)('banque ouverte : $banque, ventes ouvertes : $ventes — ce que la base ouvre, et rien d’autre', ({ banque, ventes }) => {
+    const phrase = ceQueDisentLesCases(banque, ventes)
+    expect(phrase.startsWith(PREFIXE)).toBe(true)
+    const suite = phrase.slice(PREFIXE.length)
+    // Les devis n'existent pas encore (étape P5) : seul le préfixe, qui dit ce que la case OUVRIRA, les nomme.
+    expect(suite).not.toMatch(/devis/)
+    expect(suite).toContain('une case cochée enregistre dès aujourd’hui un droit')
+
+    if (!banque && !ventes) {
+      // Aucune des deux étapes en base : rien ne change, quelle que soit la case — la phrase de l'étape P1, inchangée.
+      expect(suite).toBe('une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses '
+        + 'écrans « Ventes » et « Banque » arriveront. D’ici là, cocher une case ne change pas ce que le client voit ou fait.')
+      return
+    }
+    expect(suite).not.toContain('cocher une case ne change pas')
+    expect(suite.endsWith(' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')).toBe(true)
+    // Chaque étape ouverte se dit « par la base et sans écran encore » : sa session lit et agit, aucun écran ne le montre.
+    expect(suite.match(/par la base et sans écran encore/g)?.length).toBe(Number(banque) + Number(ventes))
+
+    if (banque) {
+      expect(suite).toContain('« Banque » permet déjà au client de voir sa simulation')
+      expect(suite).toContain('de lire le contrôle de solde de ses relevés')
+      for (const geste of Object.keys(GESTES_AVEC_BANQUE)) expect(suite).toContain(geste)
+    } else {
+      expect(suite).not.toMatch(/simulation|contrôle de solde|justificatif|précisions/)
+    }
+
+    if (ventes) {
+      expect(suite).toContain('« Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes')
+      for (const lu of Object.keys(LU_AVEC_VENTES)) expect(suite).toContain(lu)
+      for (const geste of Object.keys(GESTES_AVEC_VENTES)) expect(suite).toContain(geste)
+      // Ce que le cabinet y écrit est lu aussi : les libellés de ces champs le disent (plus bas).
+      expect(suite).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
+      // Désigner le mouvement qui prouve un encaissement demande AUSSI « Banque » — seul effet de cette case sans P7.
+      expect(suite).toContain(banque
+        ? 'et, avec « Ventes », de désigner celui qui prouve un encaissement.'
+        : '« Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement '
+          + 'du relevé qui prouve un encaissement.')
+      expect(suite).not.toMatch(/ne change pas/)
+    } else {
+      expect(suite).not.toMatch(/encaissement|notes|factures/)
+      expect(suite).toContain('Cocher « Ventes » ne change pas encore ce que le client voit ou fait.')
+    }
+  })
+
+  it('les quatre états ont quatre phrases', () => {
+    expect(new Set(ETATS.map(({ banque, ventes }) => ceQueDisentLesCases(banque, ventes))).size).toBe(4)
+  })
+
+  it('ce que l’onglet affiche est la phrase de l’état des deux drapeaux', () => {
+    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES))
+  })
+})
+
+describe('ce que disent les cases, confronté à l’export', () => {
+  const fichiers = fichiersDuSchema()
+  const porte = (motif: RegExp) => fichiers.some((f) => motif.test(f.texte))
+  const premiereDesVentes = porte(/create policy factures_emises_lecture_ventes on public\.factures_emises\b/)
+  const secondeDesVentes = porte(/create (or replace )?function public\.supprimer_brouillon_facture\(/)
+
+  // LES DEUX MIGRATIONS DES VENTES S'EXPORTENT ENSEMBLE : la première ouvre la lecture et les encaissements, la seconde
+  // les brouillons et leur validation ; la phrase lit le drapeau de la première et dit les deux. Un export qui porterait
+  // l'une sans l'autre la ferait mentir, dans un sens ou dans l'autre.
+  it('l’export porte les deux migrations des ventes, ou aucune, et le drapeau dit lequel', () => {
+    expect(secondeDesVentes, 'une migration des ventes exportée sans l’autre').toBe(premiereDesVentes)
+    expect(VENTES_DU_CLIENT_EXPORTEES, 'VENTES_DU_CLIENT_EXPORTEES ne dit plus ce que porte l’export').toBe(premiereDesVentes)
+  })
+
+  it('les ventes ouvertes : chaque table lue et chaque geste que la phrase nomme, l’export les ouvre à « Ventes »', () => {
+    if (!premiereDesVentes) return
+    const policies = [...fichiers.map((f) => f.texte).join('\n')
+      .matchAll(/create policy \w+_lecture_ventes on public\.(\w+)\s+for select to authenticated\s+using \(([^;]*)\);/g)]
+    for (const [, table, predicat] of policies) {
+      expect(predicat, table).toMatch(/client_du_dossier\((f\.)?dossier_id, 'ventes'\)/)
+    }
+    expect(policies.map((p) => p[1]).sort()).toEqual(Object.values(LU_AVEC_VENTES).flat().sort())
+    for (const fonction of new Set(Object.values(GESTES_AVEC_VENTES).flat())) {
+      expect(derniereDefinitionSql(fonction), fonction).toMatch(/if not public\.gere_les_ventes\((p_dossier_id|v_transmission\.dossier_id)\) then/)
+    }
+    expect(derniereDefinitionSql('enregistrer_encaissement'))
+      .toContain('if p_ligne_bancaire_id is not null and not public.gere_la_banque(p_dossier_id) then')
+  })
+
+  it('la banque ouverte (P7) : le contrôle de solde et chaque geste que la phrase nomme, l’export les ouvre à « Banque »', () => {
+    if (!COUVERTURE_EXPORTEE) return
+    expect(porte(/create policy \w+ on public\.controles_releves_bancaires\s+for select to authenticated using \(client_du_dossier\(dossier_id, 'banque'\)\);/))
+      .toBe(true)
+    for (const fonction of Object.values(GESTES_AVEC_BANQUE).flat()) {
+      expect(derniereDefinitionSql(fonction), fonction).toContain('if not public.gere_la_banque(p_dossier_id)')
+    }
+  })
+})
+
+// CE QUE LE CLIENT « VENTES » LIT DE LA MAIN DU CABINET (espace client, étape P2 ; conception, §3.6). Le cabinet a accepté
+// les deux migrations des ventes, le 10/10/2026, à une condition remplie avant l'application : le libellé de chaque texte
+// libre qu'il saisit dans une table que « Ventes » ouvre dit que le client qui porte la case le lit. Les écrans les
+// montrent (FactureFormModal, FactureAvoirModal et EncaissementsFactureModal, leurs tests).
+describe('ce que le client « Ventes » lit de la main du cabinet : chaque libellé le dit', () => {
+  const LIBELLES: [string, string, string][] = [
+    [LIBELLE_NOTES_FACTURE, 'elles ne figurent pas sur la facture', 'les lit'],
+    [LIBELLE_MOTIF_AVOIR, 'il ne figure pas sur l’avoir', 'le lit'],
+    [LIBELLE_MOTIF_CONTRE_PASSATION, 'que la plateforme portera', 'que lit le client'],
+    [LIBELLE_NOTE_DECLARATION, 'qui l’a saisi, quand, sous quelle référence', 'la lit'],
+  ]
+
+  it('aucun ne se dit interne ; chacun dit où le texte va, et que le client qui porte la case le lit', () => {
+    for (const [libelle, ou, lit] of LIBELLES) {
+      expect(libelle).not.toMatch(/intern/i)
+      expect(libelle).toContain(`le client qui porte la case « ${definitionDe('ventes').libelle} »`)
+      expect(libelle).toContain(ou)
+      expect(libelle).toContain(lit)
+    }
+    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(4)
+  })
+
+  it('la phrase des cases dit lus les textes que les libellés disent lus', () => {
+    for (const banque of [false, true]) {
+      expect(ceQueDisentLesCases(banque, true)).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
+    }
+  })
+
+  // Chaque texte vit dans une table que la migration des ventes ouvre en lecture : le jour où l'export la porte, la
+  // policy de chaque table est là (sinon le libellé dirait lu ce que le client ne lit pas).
+  it('chaque texte vit dans une table que l’export ouvre à « Ventes », dès qu’il porte la migration', () => {
+    const tables = ['factures_emises', 'encaissements_factures', 'transmissions_encaissements']
+    for (const table of tables) expect(Object.values(LU_AVEC_VENTES).flat()).toContain(table)
+    if (!VENTES_DU_CLIENT_EXPORTEES) return
+    for (const table of tables) {
+      expect(fichiersDuSchema().some((f) => f.texte.includes(`create policy ${table}_lecture_ventes on public.${table}`)), table).toBe(true)
+    }
   })
 })

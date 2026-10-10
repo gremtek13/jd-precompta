@@ -4,6 +4,7 @@ import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, menti
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { LIBELLE_NOTES_FACTURE } from '../../lib/droitsAcces'
 import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
 import {
   apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
@@ -521,8 +522,10 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               )}
             </div>
 
+            {/* Le client qui porte la case « Ventes » lit les notes (migration ventes_du_client) : le libellé le dit
+                au-dessus du champ, condition du cabinet à son accord (lib/droitsAcces.ts). */}
             <div className="field">
-              <label htmlFor="notes">Notes internes (n'apparaissent pas sur la facture)</label>
+              <label htmlFor="notes">{LIBELLE_NOTES_FACTURE}</label>
               <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 

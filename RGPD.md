@@ -293,10 +293,11 @@ Ce qui est **prouvé**, pas seulement affirmé :
   égale la production : `supabase/essais/ventesClient.sql` (89 verdicts), `rls.sql` entier avec deux invariants de plus
   — sans le droit, aucune ligne des ventes, même de son dossier ; avec lui, toutes, et aucune écriture directe — et les
   six essais des factures et des encaissements ; vingt-huit mutations des deux migrations, toutes vues. **Limites
-  nommées** : le client qui porte « Ventes » lira aussi ce que le cabinet écrit sur ces lignes — les notes d'une facture
-  et le motif d'une contre-passation : dans un domaine ouvert, un texte saisi est PARTAGÉ (conception de l'espace client,
-  §3.6) ; or le formulaire d'une facture dit encore « Notes internes (n'apparaissent pas sur la facture) ». Aucune facture
-  n'est annotée au 10/10/2026 ; l'écran doit le dire au-dessus du champ AVANT que la migration soit appliquée. Et
+  nommées** : le client qui porte « Ventes » lira aussi ce que le cabinet écrit sur ces lignes — les notes d'une facture,
+  le motif d'un avoir (rangé dans ses notes), le motif d'une contre-passation et la note d'une déclaration : dans un
+  domaine ouvert, un texte saisi est PARTAGÉ (conception de l'espace client, §3.6). Aucune facture n'est annotée au
+  10/10/2026, et depuis ce jour, avant l'application, le libellé de chacun de ces quatre champs le dit au-dessus du champ
+  (« … le client qui porte la case « Ventes » les lit » ; condition du cabinet à son accord). Et
   `valide_par`, sans clé vers les comptes, reste nul sur les factures validées avant la migration.
 - **Une restauration éprouvée** contre Postgres, avec son plan de reprise (`PLAN_DE_REPRISE.md`).
 - **Les policies RLS rejouées en bloc**, par impersonation réelle de quatre profils — le quatrième, depuis le

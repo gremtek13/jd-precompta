@@ -4,6 +4,7 @@ import FactureFormModal from './FactureFormModal'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIREN_CLIENT, SIRET_CLIENT, SIRET_VENDEUR } from '../../test/facturesCii'
 import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
+import { LIBELLE_NOTES_FACTURE } from '../../lib/droitsAcces'
 
 // DIXIÈME PORTEUR DU MOTIF « un verrou d'exécution est un `useRef`, jamais un état React »
 // (CLAUDE.md) — et le plus cher des dix.
@@ -460,6 +461,45 @@ describe('FactureFormModal — les mentions de la facture électronique', () => 
     expect(champ('date-prestation')!.value).toBe('2026-09-12')
     await act(async () => { enregistrerBrouillon().click() })
     expect(facture()).toMatchObject({ type_client: 'organisme_public', code_service: 'SERVICE-ACHATS', nature_operation: 'mixte', date_prestation: '2026-09-12' })
+    faux.lignes = []
+  })
+})
+
+// LES NOTES D'UNE FACTURE NE SONT PLUS INTERNES (espace client, étape P2) : la migration ventes_du_client ouvre au client
+// qui porte la case « Ventes » la lecture de ses factures, notes comprises. Le cabinet l'a acceptée le 10/10/2026 à une
+// condition, remplie avant l'application : le formulaire le dit au-dessus du champ, dans son libellé — « Notes internes »
+// aurait fait écrire au cabinet, pour lui-même, ce que le client lira.
+describe('FactureFormModal — les notes se disent lues par le client qui porte la case « Ventes »', () => {
+  const enregistrerBrouillon = () => screen.getByRole('button', { name: 'Enregistrer le brouillon' })
+  const facture = () => (faux.appels[0].args as { p_facture: Record<string, unknown> }).p_facture
+
+  it('le libellé du champ le dit, au-dessus du champ, et aucun libellé ne se dit interne', async () => {
+    monter('redevable')
+    const champ = screen.getByLabelText(LIBELLE_NOTES_FACTURE) as HTMLTextAreaElement
+    expect(champ.id).toBe('notes')
+    const libelle = document.querySelector('label[for="notes"]') as HTMLLabelElement
+    expect(libelle.textContent).toBe(LIBELLE_NOTES_FACTURE)
+    expect(libelle.compareDocumentPosition(champ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryAllByLabelText(/interne/i)).toEqual([])
+    expect(screen.queryByText(/notes internes/i)).toBeNull()
+    // Ce qu'on y écrit part avec le brouillon, tel quel : c'est bien ce champ que le client lira.
+    fireEvent.change(champ, { target: { value: 'Relancer le client en janvier' } })
+    await act(async () => { enregistrerBrouillon().click() })
+    expect(facture()).toMatchObject({ notes: 'Relancer le client en janvier' })
+  })
+
+  it('un brouillon rouvert montre ses notes sous le même libellé', async () => {
+    faux.lignes = [{ id: 'l1', facture_id: 'f1', ordre: 0, designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
+    const brouillon: FactureEmise = {
+      id: 'f1', dossier_id: 'd1', numero: null, statut: 'brouillon', type: 'facture', facture_origine_id: null,
+      date_emission: '2026-09-15', date_echeance: null, tiers_nom: 'Client Fictif', tiers_adresse: null, tiers_siret: null,
+      montant_ht: 100, montant_tva: 20, montant_ttc: 120, mentions_legales: null, notes: 'Remise promise au téléphone',
+      emetteur_nom: null, emetteur_siret: null, emetteur_adresse: null, superpdp_invoice_id: null, superpdp_dernier_statut: null,
+      tiers_email: null, created_by: null, created_at: '2026-09-15T08:00:00Z', validated_at: null, ...MENTIONS_VIDES,
+    }
+    monter('redevable', null, { facture: brouillon })
+    const champ = await screen.findByLabelText(LIBELLE_NOTES_FACTURE)
+    expect((champ as HTMLTextAreaElement).value).toBe('Remise promise au téléphone')
     faux.lignes = []
   })
 })

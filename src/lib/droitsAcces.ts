@@ -12,7 +12,13 @@
 // couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`). Le reste — ses écrans « Ventes » et « Banque » —
 // arrivera avec les étapes P2 à P9, chacune présentée au cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet
 // Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
+//
+// LA BASE, ELLE, N'ATTEND PAS LES ÉCRANS : une policy ou une fonction ouverte à un droit vaut dès sa migration, pour la
+// session du client, qu'un écran la montre ou non (étapes P2 et P7). Ce qu'une case change se dit donc de ce que la base
+// ouvre (`ceQueDisentLesCases`), et ce que le cabinet écrit dans une table que la case « Ventes » ouvre le dit au-dessus
+// de son champ (les libellés en fin de module).
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
+import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 
 export type Domaine = 'ventes' | 'banque'
 
@@ -129,19 +135,46 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
       + 'et les packs ne lui sont pas montrés.'
 }
 
-export function ceQueDisentLesCases(simulationSousBanque: boolean): string {
+// LA SECONDE DIT CE QU'UNE CASE CHANGE, ET CE N'EST PAS UNE AFFAIRE D'ÉCRANS (contrôle croisé P2 × P7, 10/10/2026 : elle
+// ne lisait que le drapeau de P7, et aurait dit qu'une case ne change rien une fois les ventes du client en base). Deux
+// étapes ouvrent un droit à la SESSION du client avant tout écran :
+//   - `banque_du_client` (P7, `COUVERTURE_EXPORTEE`) : avec « Banque », la simulation, et par la base le contrôle de solde
+//     des relevés, les justificatifs proposés pour un mouvement et les précisions d'un mouvement (trois fonctions) ;
+//   - `ventes_du_client`, puis `ventes_du_client_facturation` (P2, `VENTES_DU_CLIENT_EXPORTEES`) : avec « Ventes », la
+//     lecture des neuf tables de ses ventes, colonnes comprises, et leurs gestes par les fonctions du cabinet ; désigner
+//     le mouvement qui prouve un encaissement y demande AUSSI « Banque » — seul effet de cette case sans P7.
+// Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
+// droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
+export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
-  return simulationSousBanque
-    ? cases + 'une case cochée enregistre dès aujourd’hui un droit. « Banque » ouvre déjà au client sa simulation ; le '
-      + 'reste arrivera avec ses écrans « Ventes » et « Banque ». D’ici là, cocher « Ventes » ne change pas ce que le '
-      + 'client voit ou fait.'
-    : cases + 'une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses écrans '
+  if (!simulationSousBanque && !ventesOuvertes) {
+    return cases + 'une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses écrans '
       + '« Ventes » et « Banque » arriveront. D’ici là, cocher une case ne change pas ce que le client voit ou fait.'
+  }
+  const ventes = ventesOuvertes
+    ? ' « Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes — ses factures et avoirs, '
+      + 'leurs transmissions et leur suivi, les statuts lus sur sa plateforme, ses encaissements et leurs déclarations, '
+      + 'les e-mails qui les ont envoyés, avec ce que le cabinet y a écrit (notes et motifs) — et d’en faire les gestes : '
+      + 'créer, modifier, valider ou supprimer un brouillon, créer un avoir, enregistrer, retirer, déclarer ou '
+      + 'contre-passer un encaissement, abandonner une transmission restée sans issue connue.'
+    : ''
+  const banque = simulationSousBanque
+    ? ' « Banque » permet déjà au client de voir sa simulation et, par la base et sans écran encore, de lire le contrôle '
+      + 'de solde de ses relevés, de proposer ou de retirer une pièce comme justificatif d’un mouvement'
+      + (ventesOuvertes
+        ? ', d’écrire des précisions sur un mouvement et, avec « Ventes », de désigner celui qui prouve un encaissement.'
+        : ' et d’écrire des précisions sur un mouvement.')
+    : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
+      + 'relevé qui prouve un encaissement.'
+  const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + banque + ventesFermees
+    + ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.'
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 
-export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(COUVERTURE_EXPORTEE)
+// L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est.
+export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES)
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
 export function libelleDeLaCase(domaine: Domaine, personne: string): string {
@@ -152,3 +185,22 @@ export function libelleDeLaCase(domaine: Domaine, personne: string): string {
 export function messageDuRefus(domaine: Domaine, personne: string, raison: string): string {
   return `Le droit « ${definitionDe(domaine).libelle} » de ${personne} n’a pas été enregistré : ${raison}`
 }
+
+// ── Ce que le client « Ventes » lit de la main du cabinet ──────────────────────────────────────────────────────────────
+// La migration `ventes_du_client` ouvre au client qui porte « Ventes » la lecture des lignes de ses ventes, TOUTES leurs
+// colonnes : ce que le cabinet y écrit pour lui-même devient PARTAGÉ (conception de l'espace client, §3.6 : un texte du
+// cabinet seul ne se range jamais dans une table que le client lit). Quatre textes libres s'y saisissent au cabinet — les
+// notes d'une facture, le motif d'un avoir (rangé dans ses notes, `creerAvoir`), le motif d'une contre-passation et la
+// note d'une déclaration — et chacun le dit DANS SON LIBELLÉ, au-dessus du champ : la condition que le cabinet a mise à
+// son accord du 10/10/2026, à remplir avant l'application. Le libellé ne suit pas le drapeau : un texte saisi aujourd'hui
+// reste, et le client qui porte la case le lira dès la migration appliquée.
+const LE_CLIENT_VENTES = `le client qui porte la case « ${definitionDe('ventes').libelle} »`
+
+export const LIBELLE_NOTES_FACTURE = `Notes (elles ne figurent pas sur la facture, mais ${LE_CLIENT_VENTES} les lit)`
+
+export const LIBELLE_MOTIF_AVOIR = `Motif (il ne figure pas sur l’avoir, mais ${LE_CLIENT_VENTES} le lit)`
+
+export const LIBELLE_MOTIF_CONTRE_PASSATION = `Motif d’annulation, que la plateforme portera et que lit ${LE_CLIENT_VENTES}`
+
+export const LIBELLE_NOTE_DECLARATION =
+  `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${LE_CLIENT_VENTES} la lit`
