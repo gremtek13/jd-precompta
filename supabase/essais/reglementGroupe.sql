@@ -9,7 +9,8 @@
 --   - QUI peut : un anonyme n'a pas le droit d'appeler, un compte rattaché à rien et un client se font
 --     refuser — le client sur le dossier d'un autre comme sur le SIEN —, et le chef du cabinet règle bien
 --     (le contrôle POSITIF, sans lequel les refus seraient satisfaits par une fonction qui refuse tout le
---     monde) ; et sur la table des parts, le client lit celles de SES dossiers et n'en écrit aucune ;
+--     monde) ; et sur la table des parts, le client à la case « Banque » (espace client, P7) lit celles de SES
+--     dossiers et n'en écrit aucune ;
 --   - CE QUI s'écrit : le mouvement rapproché et marqué, `piece_id` nul, une part par pièce au montant
 --     donné ; un avoir déduit d'un paiement (une part en sens inverse) ; un second règlement REMPLACE le
 --     premier ; les écritures du mouvement partent quand il est réglé de nouveau, et avec le retrait ;
@@ -569,6 +570,12 @@ begin
     insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant)
     values (du_client.dossier_id, du_client.id, piece_client.id, du_client.montant);
     perform regler_pieces_par_mouvement(debit.id, parts_ab);
+    -- Espace client, étape P7 : seul un accès qui porte la case « Banque » lit les parts. Elle est posée le temps de la
+    -- sous-transaction, et le contrôle vaut avant comme après le resserrement (`lectures_bancaires_au_droit_banque`) ;
+    -- ce qu'un accès SANS la case ne voit plus est éprouvé par banqueClient.sql et rls.sql (3bis).
+    reset role;
+    update memberships set droit_banque = true where user_id = client;
+    set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
     select count(*) filter (where ligne_bancaire_id = du_client.id)::text || ' des siennes, '
            || count(*) filter (where ligne_bancaire_id = debit.id)::text || ' d''un autre dossier'
@@ -591,7 +598,7 @@ begin
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
   reset role;
-  insert into essai_reglement_groupe values ('43. le client lit ses parts, pas celles d''un autre ; l''inconnu et l''anonyme aucune',
+  insert into essai_reglement_groupe values ('43. le client à la case « Banque » lit ses parts, pas celles d''un autre ; l''inconnu et l''anonyme aucune',
     coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), accepte and code_recu = 'P0001' and coalesce(ok, false));
 
   -- 44 : le client n'ÉCRIT aucune part, même sur son dossier.

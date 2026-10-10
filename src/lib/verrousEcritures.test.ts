@@ -55,6 +55,16 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'Lit le rôle de la session (fonction `security definer` sans écriture), au montage d’AuthContext.',
   },
+  'rpc:couverture_du_releve': {
+    nature: 'lecture',
+    raison: 'Les mois du relevé d’un dossier (fonction `stable`, `security definer`, sans écriture ; migration '
+      + '`banque_du_client`, espace client P7), au montage de l’Accueil et de « Mes pièces » du client.',
+  },
+  'rpc:droits_sur_le_dossier': {
+    nature: 'lecture',
+    raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
+      + 'au montage de « Ma simulation » (P7).',
+  },
   'fonction:superpdp-credentials:status': {
     nature: 'lecture',
     raison: 'L’action « status » ne lit que `superpdp_credentials` en base : aucun appel à Super PDP.',

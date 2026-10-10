@@ -77,6 +77,20 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '`FichePiece.memoriser` attend la requête, lit `{ error }` et le journalise : apprendre la règle « tiers → ' +
       'catégorie » est un confort, son échec ne doit pas faire échouer l’enregistrement de la pièce',
   },
+  lireLaCouverture: {
+    nombre: 2,
+    raison:
+      'ce n’est pas une écriture : `couverture_du_releve` LIT les mois du relevé (espace client, étape P7), pour ' +
+      'l’Accueil et « Mes pièces » du client. `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
+      'ou une réponse illisible rendent une lecture INCOMPLÈTE, que l’écran dit, jamais un relevé vide',
+  },
+  lireLeDroitBanque: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Ma ' +
+      'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus FERME la simulation, ' +
+      'avec son motif',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {

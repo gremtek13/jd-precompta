@@ -9,7 +9,8 @@
 --   - QUI peut : un anonyme n'a pas le droit d'appeler, un compte rattaché à rien et un client se font
 --     refuser — le client sur le dossier d'un autre comme sur le SIEN —, et le chef du cabinet écrit bien
 --     (le contrôle POSITIF, sans lequel les refus seraient satisfaits par une fonction qui refuse tout le
---     monde) ; et sur la table des parts, le client lit celles de SES dossiers et n'en écrit aucune ;
+--     monde) ; et sur la table des parts, le client à la case « Banque » (espace client, P7) lit celles de SES
+--     dossiers et n'en écrit aucune ;
 --   - CE QUI s'écrit : la banque au montant et dans le sens du mouvement, une ligne par part dans le sens de
 --     son signe — une part de sens contraire comprise, la commission retenue sur une remise —, le compte du
 --     dirigeant lu dans le modèle du dossier ; une seconde ventilation REMPLACE la première ; un retrait
@@ -678,6 +679,12 @@ begin
         jsonb_build_object('compte', cat_achats.compte_comptable, 'sens', 'debit', 'montant', abs(du_client.montant) - 1),
         jsonb_build_object('compte', cat_frais.compte_comptable, 'sens', 'debit', 'montant', 1)));
     perform ventiler_mouvement_bancaire(debit.id, parts_categories, ecriture_categories);
+    -- Espace client, étape P7 : seul un accès qui porte la case « Banque » lit les parts. Elle est posée le temps de la
+    -- sous-transaction, et le contrôle vaut avant comme après le resserrement (`lectures_bancaires_au_droit_banque`) ;
+    -- ce qu'un accès SANS la case ne voit plus est éprouvé par banqueClient.sql et rls.sql (3bis).
+    reset role;
+    update memberships set droit_banque = true where user_id = client;
+    set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
     select count(*) filter (where ligne_bancaire_id = du_client.id)::text || ' des siennes, '
            || count(*) filter (where ligne_bancaire_id = debit.id)::text || ' d''un autre dossier'
@@ -701,7 +708,7 @@ begin
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
   reset role;
-  insert into essai_ventilation values ('52. le client lit ses parts, pas celles d''un autre ; l''inconnu et l''anonyme aucune',
+  insert into essai_ventilation values ('52. le client à la case « Banque » lit ses parts, pas celles d''un autre ; l''inconnu et l''anonyme aucune',
     coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), accepte and code_recu = 'P0001' and coalesce(ok, false));
 
   -- 53 : le client n'ÉCRIT aucune part, même sur son dossier.

@@ -14,6 +14,7 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
 import type { CibleCommentaire } from '../lib/commentaires'
 import { lireTout } from '../lib/lectureComplete'
+import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -42,7 +43,9 @@ export default function ClientUpload() {
   const dossierId = dossierActifId
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
-  const [lignes, setLignes] = useState<LigneBancaire[]>([])
+  // Les mois où le relevé porte un mouvement : l'accueil les lit de la même façon (voir ClientHome) — par
+  // `couverture_du_releve` depuis l'étape P7, les mouvements eux-mêmes n'étant plus lus qu'avec la case « Banque ».
+  const [lignes, setLignes] = useState<MoisCouvert[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Vrai tant que la PREMIÈRE lecture n'est pas revenue. Avant elle les listes sont vides faute d'avoir été lues, pas
   // faute d'envois : « ce qu'il reste à envoyer » se calculait sur ce vide, réclamait « Relevés bancaires 2026 — Mois
@@ -96,10 +99,12 @@ export default function ClientUpload() {
         supabase.from('documents_divers').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
-      lireTout<LigneBancaire>((debut, fin) =>
-        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('id').range(debut, fin),
-      ),
+      COUVERTURE_EXPORTEE
+        ? lireLaCouverture(supabase.rpc('couverture_du_releve', { p_dossier_id: dossierId }))
+        : lireTout<LigneBancaire>((debut, fin) =>
+          supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),

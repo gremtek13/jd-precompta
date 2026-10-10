@@ -8,9 +8,11 @@
 // `supabase/essais/droitsAcces.sql`). Ce module dit ce que chaque droit ouvrira, lit les droits d'une ligne sans jamais en
 // accorder un par défaut, et compose l'appel d'une case cliquée.
 //
-// AUCUN ÉCRAN DU CLIENT NE S'EN SERT ENCORE : une case cochée enregistre un droit que l'espace du client honorera quand ses
-// écrans « Ventes » et « Banque » arriveront (étapes P2 à P9, chacune présentée au cabinet avant d'ouvrir quoi que ce
-// soit). Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
+// UN SEUL ÉCRAN DU CLIENT S'EN SERT, ET SEULEMENT DERRIÈRE UN DRAPEAU : « Ma simulation » suit la case « Banque » dès que la
+// couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`). Le reste — ses écrans « Ventes » et « Banque » —
+// arrivera avec les étapes P2 à P9, chacune présentée au cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet
+// Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
+import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 
 export type Domaine = 'ventes' | 'banque'
 
@@ -111,16 +113,35 @@ export function changementApplique(rendu: unknown, domaine: Domaine, valeur: boo
 // documents, précisions), « Mes informations » et « Ma simulation » (chiffre d'affaires et cotisations estimés). Aucun
 // écran du client ne montre une écriture, une catégorie ni un pack. Le jour où un écran du client lira un droit, ces
 // phrases changent avec lui.
+//
+// LA PREMIÈRE ARRIVE AVEC L'ÉTAPE P7 : « Ma simulation » se calcule sur la banque, et suit la case « Banque » dès que la
+// couverture du relevé est en base (`COUVERTURE_EXPORTEE`, lib/couvertureReleve.ts ; hypothèse EC-Q1). Les deux phrases
+// se disent donc dans les deux états, et chaque constante est celle de l'état du drapeau : le jour où il passe à vrai,
+// l'onglet dit que « Banque » ouvre la simulation, sans qu'on ait à y penser.
 
-export const CE_QUE_DONNE_UN_ACCES =
-  'Avec son accès, le client dépose ses pièces et ses documents, répond à tes précisions, tient à jour ses '
-  + 'informations et voit sa simulation (chiffre d’affaires et cotisations estimés). Les écritures, les catégories '
-  + 'et les packs ne lui sont pas montrés.'
+export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
+  return simulationSousBanque
+    ? 'Avec son accès, le client dépose ses pièces et ses documents, répond à tes précisions et tient à jour ses '
+      + 'informations ; avec la case « Banque », il voit aussi sa simulation (chiffre d’affaires et cotisations '
+      + 'estimés), qui se calcule sur sa banque. Les écritures, les catégories et les packs ne lui sont pas montrés.'
+    : 'Avec son accès, le client dépose ses pièces et ses documents, répond à tes précisions, tient à jour ses '
+      + 'informations et voit sa simulation (chiffre d’affaires et cotisations estimés). Les écritures, les catégories '
+      + 'et les packs ne lui sont pas montrés.'
+}
 
-export const CE_QUE_DISENT_LES_CASES =
-  `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
-  + 'une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses écrans « Ventes » et '
-  + '« Banque » arriveront. D’ici là, cocher une case ne change pas ce que le client voit ou fait.'
+export function ceQueDisentLesCases(simulationSousBanque: boolean): string {
+  const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
+  return simulationSousBanque
+    ? cases + 'une case cochée enregistre dès aujourd’hui un droit. « Banque » ouvre déjà au client sa simulation ; le '
+      + 'reste arrivera avec ses écrans « Ventes » et « Banque ». D’ici là, cocher « Ventes » ne change pas ce que le '
+      + 'client voit ou fait.'
+    : cases + 'une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses écrans '
+      + '« Ventes » et « Banque » arriveront. D’ici là, cocher une case ne change pas ce que le client voit ou fait.'
+}
+
+export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
+
+export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(COUVERTURE_EXPORTEE)
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
 export function libelleDeLaCase(domaine: Domaine, personne: string): string {

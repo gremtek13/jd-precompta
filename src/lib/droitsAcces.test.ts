@@ -2,9 +2,11 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, definitionDe,
-  demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
+  AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCases, ceQueDonneUnAcces,
+  changementApplique, definitionDe, demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase,
+  messageDuRefus,
 } from './droitsAcces'
+import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1). Ce qui se garde ici : qu'un droit ne s'accorde jamais par défaut,
 // qu'une case cliquée n'envoie que SON droit, et que le module, la migration et les écrans du client disent la même chose.
@@ -118,7 +120,10 @@ describe('le module, la migration et les écrans disent la même chose', () => {
 
   // « Le client ne voit aucun changement » est une AFFIRMATION de l'onglet Accès : elle tient tant qu'aucun écran du client
   // ne lit un droit. Le jour où « Mes ventes » ou « Ma banque » arrive, ce test tombe, et la phrase avec lui.
-  it('les écrans du client sont ceux que la phrase décrit, et aucun ne lit encore un droit', () => {
+  // DEPUIS L'ÉTAPE P7, UN SEUL ÉCRAN EN LIT UN : « Ma simulation » lit la case « Banque », et seulement derrière
+  // `COUVERTURE_EXPORTEE` — ce que ClientSimulation.test.tsx (drapeau faux) et ClientSimulation.banque.test.tsx (vrai)
+  // éprouvent sur l'écran rendu ; la phrase de l'onglet suit le même drapeau (test suivant).
+  it('les écrans du client sont ceux que la phrase décrit, et seule « Ma simulation » lit un droit : « Banque », derrière le drapeau', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(routesClient).toEqual([
@@ -126,21 +131,38 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual(['ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx'])
-    for (const fichier of [...ecransClient.map((f) => `src/pages/${f}`), 'src/components/Layout.tsx']) {
+    for (const fichier of [...ecransClient.filter((f) => f !== 'ClientSimulation.tsx').map((f) => `src/pages/${f}`), 'src/components/Layout.tsx']) {
       const texte = readFileSync(resolve(process.cwd(), fichier), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|droitsAcces/)
     }
+    const simulation = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
+    expect(simulation).toContain('simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
+    expect(simulation).not.toMatch(/droit_ventes|droit_banque|\.ventes\b/)
   })
 
-  it('les phrases de l’onglet disent ce qu’un accès donne aujourd’hui, et ce qu’une case n’y change pas', () => {
-    expect(CE_QUE_DONNE_UN_ACCES).toContain('dépose ses pièces et ses documents')
-    expect(CE_QUE_DONNE_UN_ACCES).toContain('voit sa simulation')
-    // L'ancienne phrase promettait « aucun accès aux montants » : la simulation en montre. Elle ne doit pas revenir.
-    expect(CE_QUE_DONNE_UN_ACCES).not.toMatch(/montants|uniquement/)
-    expect(CE_QUE_DISENT_LES_CASES).toContain('« Ventes » (devis, factures, facture électronique)')
-    expect(CE_QUE_DISENT_LES_CASES).toContain('« Banque » (comptes, mouvements, connexion bancaire)')
-    expect(CE_QUE_DISENT_LES_CASES).toContain('honorera quand ses écrans « Ventes » et « Banque » arriveront')
-    expect(CE_QUE_DISENT_LES_CASES).toContain('cocher une case ne change pas ce que le client voit ou fait')
+  it('les phrases de l’onglet disent ce qu’un accès donne, et ce qu’une case change — dans les deux états du drapeau', () => {
+    // Avant que la couverture du relevé soit en base : rien ne change pour le client, quelle que soit la case.
+    expect(ceQueDonneUnAcces(false)).toContain('dépose ses pièces et ses documents')
+    expect(ceQueDonneUnAcces(false)).toContain('voit sa simulation')
+    expect(ceQueDisentLesCases(false)).toContain('« Ventes » (devis, factures, facture électronique)')
+    expect(ceQueDisentLesCases(false)).toContain('« Banque » (comptes, mouvements, connexion bancaire)')
+    expect(ceQueDisentLesCases(false)).toContain('honorera quand ses écrans « Ventes » et « Banque » arriveront')
+    expect(ceQueDisentLesCases(false)).toContain('cocher une case ne change pas ce que le client voit ou fait')
+    // Après : la simulation suit la case « Banque » (hypothèse EC-Q1), et la phrase ne dit plus qu'une case ne change rien.
+    expect(ceQueDonneUnAcces(true)).toContain('dépose ses pièces et ses documents')
+    expect(ceQueDonneUnAcces(true)).toContain('avec la case « Banque », il voit aussi sa simulation')
+    expect(ceQueDisentLesCases(true)).toContain('« Banque » (comptes, mouvements, connexion bancaire)')
+    expect(ceQueDisentLesCases(true)).toContain('« Banque » ouvre déjà au client sa simulation')
+    expect(ceQueDisentLesCases(true)).toContain('cocher « Ventes » ne change pas ce que le client voit ou fait')
+    expect(ceQueDisentLesCases(true)).not.toContain('cocher une case ne change pas')
+    for (const etat of [false, true]) {
+      // L'ancienne phrase promettait « aucun accès aux montants » : la simulation en montre. Elle ne doit pas revenir.
+      expect(ceQueDonneUnAcces(etat)).not.toMatch(/montants|uniquement/)
+      expect(ceQueDonneUnAcces(etat)).toContain('Les écritures, les catégories et les packs ne lui sont pas montrés.')
+    }
+    // Ce que l'onglet affiche est la phrase de l'état du drapeau.
+    expect(CE_QUE_DONNE_UN_ACCES).toBe(ceQueDonneUnAcces(COUVERTURE_EXPORTEE))
+    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(COUVERTURE_EXPORTEE))
   })
 
   it('le nom d’une case et le message d’un refus nomment le droit et la personne', () => {

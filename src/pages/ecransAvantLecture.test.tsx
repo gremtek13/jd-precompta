@@ -98,6 +98,9 @@ vi.mock('../context/AuthContext', () => ({
     role: 'cabinet', dossierIds: ['d1'], mesSocietes: [{ id: 'd1', nom: 'Dossier fictif' }],
     dossierActifId: 'd1', setDossierActifId: () => {}, isSuperAdmin: true, estChef: true,
     monCabinetId: 'cab1', loading: false, signOut: async () => {},
+    // Les deux cases sur le dossier monté (espace client, étape P7) : sans « Banque », « Ma simulation » ne demanderait
+    // rien une fois la couverture du relevé en base, et ce garde la tiendrait pour aveugle.
+    droitsParDossier: { d1: { ventes: true, banque: true } },
   }),
 }))
 
@@ -530,6 +533,11 @@ const LECTURES_PAR_FONCTION = new Set([
   'fonction:banque-connexion (statut)', 'fonction:plateforme-agreee (statut)', 'fonction:superpdp-credentials (status)',
 ])
 
+// Les fonctions SQL qui LISENT, appelées au montage : la couverture du relevé (l'Accueil et « Mes pièces » du client) et
+// les droits de l'appelant (« Ma simulation »), espace client, étape P7. Le faux client note tout `rpc` comme une écriture
+// possible ; celles-ci n'écrivent rien.
+const LECTURES_PAR_RPC = new Set(['rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier'])
+
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
 const REFERMER = /^(Annuler|Fermer.*|×|Réduire.*)$/
 
@@ -599,7 +607,7 @@ async function ecrituresAvantLecture(ecran: Ecran): Promise<{ montage: string[];
   const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
   render(<>{ecran.rendre()}</>)
   await laisserPasser()
-  const ecritures = (depuis: number) => etat.ecritures.slice(depuis).filter((e) => !LECTURES_PAR_FONCTION.has(e))
+  const ecritures = (depuis: number) => etat.ecritures.slice(depuis).filter((e) => !LECTURES_PAR_FONCTION.has(e) && !LECTURES_PAR_RPC.has(e))
   const montage = ecritures(0)
   const gestes: string[] = []
   const leves: string[] = []

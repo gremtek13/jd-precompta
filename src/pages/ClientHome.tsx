@@ -13,6 +13,7 @@ import ProgressRing from '../components/widgets/ProgressRing'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import type { CotisationDeclaree, DocumentDivers, Dossier, LigneBancaire, Piece } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
+import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -48,7 +49,11 @@ export default function ClientHome() {
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
-  const [lignes, setLignes] = useState<LigneBancaire[]>([])
+  // Les mois où le relevé porte un mouvement — seule chose que cet écran en tire (« ce qu'il reste à envoyer »). Depuis
+  // l'étape P7 (`COUVERTURE_EXPORTEE`), ils se lisent par `couverture_du_releve`, des mois sans montant ni libellé, que
+  // tout accès lit : les mouvements eux-mêmes ne se lisent plus qu'avec la case « Banque », et un relevé que la base
+  // refuse se lit VIDE, sans erreur — l'écran réclamerait alors tous les mois de l'année.
+  const [lignes, setLignes] = useState<MoisCouvert[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [chargement, setChargement] = useState(true)
   // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
@@ -84,10 +89,12 @@ export default function ClientHome() {
           supabase.from('documents_divers').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
         ),
-        lireTout<LigneBancaire>((debut, fin) =>
-          supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-            .eq('dossier_id', dossierId).order('id').range(debut, fin),
-        ),
+        COUVERTURE_EXPORTEE
+          ? lireLaCouverture(supabase.rpc('couverture_du_releve', { p_dossier_id: dossierId }))
+          : lireTout<LigneBancaire>((debut, fin) =>
+            supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+              .eq('dossier_id', dossierId).order('id').range(debut, fin),
+          ),
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
