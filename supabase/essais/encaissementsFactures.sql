@@ -63,6 +63,12 @@
 -- doit être SANS le droit « Ventes » — coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à
 -- tort. 109 contrôles sur 109 sur une réplique identique à la production (`signature.sql`), avant comme après les deux
 -- migrations de l'étape.
+--
+-- 10/10/2026, EN PRODUCTION, après les deux migrations de l'étape P2 (116 migrations) : 109 sur 109, le contrôle 93 sur
+-- le catalogue des ventes, rien resté (101). Le texte reçu est la copie adaptée de la tête 0a711c7, ses lignes de
+-- commentaire retirées et une ligne qui rend le texte reçu ajoutée au verdict (60 722 caractères, empreinte
+-- c43f32b16f35f271386d080bf729bbb9) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes
+-- verdicts, à l'octet.
 do $$
 declare
   inconnu uuid := gen_random_uuid();

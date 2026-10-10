@@ -4,21 +4,27 @@ import FacturesTab from './FacturesTab'
 import { MENTIONS_VIDES } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
 
-// LA SUPPRESSION D'UN BROUILLON PAR LA BASE, PRÉPARÉE (espace client, étape P2). `supprimer_brouillon_facture` vit dans
-// une migration que le cabinet colle : tant qu'elle n'est pas en base, `SUPPRESSION_BROUILLON_EXPORTEE` est faux dans
-// lib/factures.ts, et l'onglet supprime un brouillon comme hier, directement (FacturesTab.test.tsx le garde). Le jour où
-// l'export la porte, factures.test.ts exige de passer le drapeau à `true` — et l'onglet passe par la fonction, le chemin
-// du client. Ce fichier le joue dès aujourd'hui, drapeau levé, pour que ce jour-là le geste soit déjà éprouvé.
+// LA SUPPRESSION D'UN BROUILLON, DANS LES DEUX ÉTATS DU DRAPEAU (espace client, étape P2). `supprimer_brouillon_facture`
+// vit dans une migration que le cabinet a collée le 10/10/2026 (20261010130643) ; l'export la porte depuis, et
+// `SUPPRESSION_BROUILLON_EXPORTEE` est levé dans lib/factures.ts (factures.test.ts confronte l'un à l'autre) : l'onglet
+// supprime un brouillon par la fonction, le chemin du client. Ce fichier FORCE le drapeau, lu à chaque appel par un
+// accesseur, pour jouer les deux chemins quel que soit son état : levé, celui d'aujourd'hui ; baissé, celui d'avant —
+// la suppression directe sous la policy du cabinet —, qui reste éprouvé tant que son code existe, comme
+// espaceClientAvantCouverture.test.tsx le fait pour l'étape P7. FacturesTab.test.tsx joue l'état réel.
 vi.mock('../../lib/factures', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../lib/factures')>(),
-  SUPPRESSION_BROUILLON_EXPORTEE: true,
+  get SUPPRESSION_BROUILLON_EXPORTEE() { return faux.drapeau },
 }))
 
 const faux = vi.hoisted(() => ({
+  // Le drapeau tel que l'onglet le lit, posé par chaque bloc.
+  drapeau: true,
   factures: [] as FactureEmise[],
-  // Les appels à la fonction, et une suppression directe, qui ne doit plus partir.
+  // Les appels à la fonction, et les suppressions directes : une seule des deux voies part, selon le drapeau.
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   suppressionsDirectes: 0,
+  // Le refus d'une suppression directe, tel que supabase-js le rend : `{ error }`, sans lever.
+  refusDirect: null as string | null,
   // Le refus de la fonction, tel que supabase-js le rend : `{ error }`, sans lever.
   refusRpc: null as string | null,
   // La fonction qui rend AUTRE CHOSE que la facture demandée : l'écran ne doit pas dire « supprimé ».
@@ -45,17 +51,29 @@ vi.mock('../../lib/supabase', async () => {
       const chaine: Record<string, unknown> = {}
       const predicats: Predicat[] = []
       let plage: [number, number] | null = null
+      let suppression = false
       Object.assign(chaine, {
         select: () => chaine,
         order: () => chaine,
         range: (debut: number, fin: number) => { plage = [debut, fin]; return chaine },
-        delete: () => { faux.suppressionsDirectes += 1; return chaine },
+        delete: () => { suppression = true; return chaine },
         eq: (colonne: string, valeur: unknown) => {
           // Les lignes, les événements de Super PDP : par leur facture, la table n'ayant pas de dossier.
           predicats.push(colonne === 'factures_emises.dossier_id' ? () => false : predicatEq(colonne, valeur))
           return chaine
         },
         then: (suite: (r: { data: unknown[] | null; error: unknown; count: number | null }) => unknown) => {
+          if (suppression) {
+            // La suppression directe MORD sur le faux, sur les lignes que ses filtres désignent : la relecture qui suit
+            // voit le brouillon parti — ou elle est refusée, et rien ne bouge.
+            faux.suppressionsDirectes += 1
+            if (faux.refusDirect) return Promise.resolve({ data: null, error: { message: faux.refusDirect }, count: null }).then(suite)
+            if (table === 'factures_emises') {
+              const visees = new Set(filtrer(faux.factures, predicats).map((f) => f.id))
+              faux.factures = faux.factures.filter((f) => !visees.has(f.id))
+            }
+            return Promise.resolve({ data: null, error: null, count: null }).then(suite)
+          }
           // Les autres tables de l'onglet sont vides : ce test ne regarde que la suppression d'un brouillon.
           const lignes = table === 'factures_emises' ? filtrer(faux.factures, predicats) : []
           if (table === 'factures_emises') faux.lecturesFactures += 1
@@ -97,9 +115,11 @@ async function boutonSupprimer() {
 }
 
 beforeEach(() => {
+  faux.drapeau = true
   faux.factures = [brouillon()]
   faux.rpcs = []
   faux.suppressionsDirectes = 0
+  faux.refusDirect = null
   faux.refusRpc = null
   faux.rendu = null
   faux.lecturesFactures = 0
@@ -107,7 +127,7 @@ beforeEach(() => {
 
 afterEach(() => { vi.restoreAllMocks() })
 
-describe('FacturesTab — la suppression d’un brouillon par la base, quand sa fonction y est', () => {
+describe('FacturesTab — la suppression d’un brouillon par la base, drapeau levé (l’état depuis le 10/10/2026)', () => {
   it('confirme, supprime par la fonction — le dossier annoncé, puis la facture —, jamais directement, et relit', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     monter()
@@ -160,6 +180,46 @@ describe('FacturesTab — la suppression d’un brouillon par la base, quand sa 
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
 
     expect(faux.rpcs).toHaveLength(1)
+    await screen.findByText('Aucune facture.')
+  })
+})
+
+// Drapeau baissé : l'état d'avant la migration, celui que rétablirait un retour arrière (le drapeau baissé avec la
+// fonction retirée). Le brouillon part directement, sous la policy du cabinet, et la fonction n'est jamais appelée.
+describe('FacturesTab — la suppression directe d’un brouillon, drapeau baissé (l’état d’avant, tant que son code existe)', () => {
+  beforeEach(() => { faux.drapeau = false })
+
+  it('confirme, supprime directement — jamais par la fonction —, et relit', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+    const bouton = await boutonSupprimer()
+    await act(async () => { bouton.click() })
+
+    expect(faux.suppressionsDirectes).toBe(1)
+    expect(faux.rpcs).toEqual([])
+    await screen.findByText('Aucune facture.')
+  })
+
+  it('dit le refus de la base, et la ligne reste', async () => {
+    faux.refusDirect = 'permission denied for table factures_emises'
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+    const bouton = await boutonSupprimer()
+    await act(async () => { bouton.click() })
+
+    await screen.findByText(/permission denied for table factures_emises/)
+    expect(screen.getByText('CABINET VOISIN')).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('deux ou trois clics du même rendu ne suppriment qu’une fois', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+    const bouton = await boutonSupprimer()
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.suppressionsDirectes).toBe(1)
+    expect(faux.rpcs).toEqual([])
     await screen.findByText('Aucune facture.')
   })
 })

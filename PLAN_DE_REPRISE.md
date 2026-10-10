@@ -323,6 +323,13 @@ du client semé par les fonctions de la base (deux propositions, dont une retir�
 restaurées, 58 identiques, 0 écart ; une proposition ou une précision réinsérée avant les mouvements arrête l'essai sur
 sa clé.
 
+Le même jour (espace client, étape P2, les deux migrations des ventes appliquées), aucune table n'entre au plan : deux
+colonnes, `factures_emises.valide_par` et `transmissions_factures.cree_par` — le compte qui a validé une facture, celui
+qui a réservé une transmission —, sans clé vers les comptes, comme `encaissements_factures.cree_par` : une restauration
+dans une base dont les comptes ont disparu les garde, et seule la trace de l'auteur ne désigne plus personne (elles ne
+sont pas parmi les prérequis du §3, 1). Sur une copie de la réplique égale à la production à 116 migrations, la facture
+validée et la transmission du dossier `test` portant les deux colonnes : 62 tables restaurées, 62 identiques, 0 écart.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 

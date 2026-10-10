@@ -48,6 +48,12 @@
 -- ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort. 43 sur 43 sur une réplique identique à la
 -- production (`signature.sql`), avant comme après les deux migrations de l'étape.
 --
+-- 10/10/2026, EN PRODUCTION, après les deux migrations de l'étape P2 (116 migrations) : 43 sur 43, le contrôle 34 sur le
+-- catalogue des ventes. Le texte reçu est la copie adaptée de la tête 0a711c7, ses lignes de commentaire retirées et une
+-- ligne qui rend le texte reçu ajoutée au verdict (22 125 caractères, empreinte 5d812f92220c2e2aa65026db09e630c7) ; sur
+-- une réplique égale à la production, la copie et ce fichier rendent les mêmes verdicts, la colonne « observe » mise à
+-- part (elle porte des identifiants tirés au hasard).
+--
 -- L'AVOIR D'ESSAI se crée par `enregistrer_facture`, sous le chef du cabinet, dans la sous-transaction du contrôle :
 -- son numéro de la série « A » est consommé puis rendu par l'annulation, et rien ne reste.
 do $$

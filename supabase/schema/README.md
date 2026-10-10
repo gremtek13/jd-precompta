@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 114 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 116 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -131,6 +131,15 @@ fichier réuni à l'export : 114 fichiers, 114 migrations, empreinte globale
 octet pour octet (31 737 caractères, saut de ligne final compris, aucun retour chariot, empreinte
 `d943dfed6d701712b5c66ec3e41bdf0a`).
 
+**Rejoué le 10/10/2026 après `ventes_du_client` puis `ventes_du_client_facturation`** (espace client, étape P2,
+versions `20261010123950` et `20261010130643`), leurs fichiers réunis à l'export : 116 fichiers, 116 migrations,
+empreinte globale `deea18c0ff552ddece515c1c35e6c116` des deux côtés, aucune divergence. Le premier fichier est le texte
+enregistré, octet pour octet (34 959 caractères, saut de ligne final compris, aucun retour chariot, empreinte
+`e60ccc6d6386a6e9379cd640bbdb27c0`). Le second a été collé par le cabinet dans l'éditeur SQL (son texte supprime les
+lignes d'une facture et un brouillon) : son texte enregistré porte 311 fins de ligne `\r\n` (17 860 caractères), et le
+fichier, tiré de la base par la requête ci-dessus, en est la conversion en `\n` (17 549 caractères, saut de ligne final
+compris, empreinte `db69535853d481c652dbf271254280b1`).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -230,6 +239,14 @@ inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés 
 table du socle) ; l'inventaire compte 1 637 objets, empreinte `9628a4d3da780aabddc40c22569eedcf` des deux
 côtés. `revision_des_cycles` en ajoute 73 : vingt-sept colonnes, vingt-quatre contraintes, quatre index, trois
 déclencheurs, six policies, six fonctions et la RLS de ses trois tables.
+
+**Rejoués le 10/10/2026 après `ventes_du_client` puis `ventes_du_client_facturation`** (espace client, étape P2), leurs
+fichiers réunis : le socle est inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés — les deux
+migrations ne touchent aucune table du socle) ; l'inventaire compte 1 650 objets, empreinte
+`a2c522361a91e2a44641098ec1e1e2c6` des deux côtés. Elles en ajoutent 13 : deux colonnes (`factures_emises.valide_par`,
+`transmissions_factures.cree_par`), une contrainte, neuf policies — les lectures au droit « Ventes » — et une fonction,
+`supprimer_brouillon_facture` ; les huit fonctions qu'elles réécrivent gardent leur nom, et l'inventaire, qui compare
+des noms, ne les voit pas changer.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

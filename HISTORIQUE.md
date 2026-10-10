@@ -19061,3 +19061,95 @@ déclarée ; une fiche déclarée devra retenir sa pièce (e3). e6 : le fichier,
 les mentions d'une facture internationale (Q8), sans lesquelles ses ventes et ses paiements se refusent. Restent ouverts
 les points NON VÉRIFIÉS 6, 7, 9 et 21 de la conception (pris comme hypothèses), et le cas d'école d'un acompte encaissé
 avant le 1er septembre 2027 sur une facture émise après : sa période est hors du champ, il ne se déclare pas ici.
+
+### 10/10/2026 — LES VENTES DU CLIENT, APPLIQUÉES : LA BASCULE — ESPACE CLIENT, ÉTAPE P2
+
+(Appliquées en production, sur décision du cabinet du 10/10/2026 — son accord donné à la condition des libellés, que
+l'étape A a remplie avant : `ventes_du_client`, version `20261010123950`, par `apply_migration` ; puis
+`ventes_du_client_facturation`, version `20261010130643`, collée par le cabinet dans l'éditeur SQL. Avec elles : les
+deux fichiers d'export et le README (116 migrations) ; `VENTES_DU_CLIENT_EXPORTEES` et `SUPPRESSION_BROUILLON_EXPORTEE`
+levés ; le passage du jour dans `rls.sql`, `ventesClient.sql` (son compte corrigé), les six essais des factures et des
+encaissements et `restauration.sql` ; les commentaires de `types.ts`, de l'onglet Factures et de six fichiers de test
+qui parlaient des migrations au futur ; RGPD.md et PLAN_DE_REPRISE.md.) La suite de « LES VENTES DU CLIENT, EN BASE » et
+de « AVANT LES VENTES DU CLIENT ».
+
+AVANT A, LA PRODUCTION AVAIT AVANCÉ DE QUATRE MIGRATIONS depuis la réplique de l'étape (110) : PC1, les deux de P7, R4.
+Leurs textes, pris dans l'historique, posés sur la réplique : `signature.sql` neuf familles sur neuf. Les huit fonctions
+que A et B recréent avaient en production le corps d'où A et B sont partis — aucune migration ne les avait touchées. La
+réplique a dû être refaite en UTF8 : en SQL_ASCII, `length()` compte des octets, et `banqueClient.sql` y rendait une
+faute qui n'en était pas une (« deux mille caractères passent », 4 000 octets) ; la recopie par `pg_dump` réécrit trois
+contraintes `between` sans en changer le sens, reposées au texte de leurs migrations. Sur elle, trois états — 114,
+114 + A, 114 + A + B — et onze essais, ceux des ventes et ceux des étapes voisines (P7, PC1, R4) : aucune faute, aucune
+mutation qui ne morde pas ; `ventesClient.sql` ne se joue qu'avec les deux migrations (sa seconde garde exige
+`supprimer_brouillon_facture`).
+
+A, APPLIQUÉE PAR L'OUTIL, sans confirmation demandée (son texte ne supprime rien) : un morceau, 34 959 caractères, aucun
+retour chariot, l'empreinte de l'historique celle du fichier présenté au cabinet (`e60ccc6d…`). `signature.sql`
+d'après : la réplique « 114 + A », neuf sur neuf. `rls.sql` ENTIER en production dans l'état « A seule » : 34 lignes, 0
+en faute, 31 mutations sur 31 ; le texte reçu est la copie — et une copie de plus que la procédure de son en-tête :
+AUCUNE ligne entièrement en commentaire, donc aucune bordure à recopier (la faute de transcription de P7), équivalence
+prouvée sur la réplique verdict pour verdict. Au moment d'appliquer : aucun accès ne portait « Ventes ».
+
+B, COLLÉE PAR LE CABINET : son texte supprime (les lignes d'une facture qu'`enregistrer_facture` remplace, un
+brouillon), l'outil aurait attendu une confirmation qui n'arrive pas. Le bloc à coller — en-tête, `begin`, B, la ligne
+d'historique, `commit` ; la version calculée au collage, donc après A — relu contre B par un vérificateur éprouvé par
+quatre mutants (un caractère dans l'historique seul, un dans le texte exécuté seul, deux retours chariot), puis RÉPÉTÉ
+sur la réplique : sur l'état de la production il passe et laisse la signature « 114 + A + B » ; sans A, sa garde
+l'arrête et rien ne reste. Collé : une ligne d'historique, un morceau, après A, du même auteur ; son texte porte 311
+fins de ligne `\r\n` (17 860 caractères, l'éditeur), et leur conversion en `\n` rend exactement B (17 549 caractères,
+`db695358…`) — le fichier d'export est cette conversion.
+
+EN PRODUCTION APRÈS B, lectures et essais annulés : `signature.sql` = la réplique « 114 + A + B », neuf sur neuf ;
+advisors attendus (`authenticated_security_definer_function_executable` 29 → 30, `supprimer_brouillon_facture` ; `anon`
+5, B retirant le droit à `public` et à `anon`). Huit essais par `execute_sql`, chacun une copie adaptée — ses lignes de
+commentaire retirées, et une ligne qui rend le texte reçu ajoutée au verdict quand il n'en avait pas —, prouvée sur la
+réplique égale à la production (les verdicts à l'octet ; sans la colonne « observe » pour les deux dont l'original tire
+des identifiants au hasard), et chaque texte reçu égal à sa copie, à l'empreinte : `rls.sql` 35 lignes (les devis EN
+ATTENTE), 0 en faute, 31 mutations sur 31 ; `ventesClient.sql` 90 verdicts, 0 en faute, sept mutations qui mordent ;
+`factures` 118, `transmissionsFactures` 43, `abandonTransmission` 13, `encaissementsFactures` 109,
+`transmissionsEncaissements` 128, `statutsFacturesRecus` 61, tous justes. Rien n'est resté : signature inchangée, aucune
+marque d'essai, tous les comptes égaux — sauf les accès, 2 puis 3 : un accès créé à 15 h 27 pendant la campagne, pour un
+compte neuf, sur le dossier `test`, sans aucun droit. Aucun essai ne crée de compte, et chacun avait jugé « rien n'est
+resté » dans sa propre transaction : c'est le cabinet, à l'écran. Aucun accès ne porte « Ventes » (0 sur 3).
+
+LES TROIS CONTRÔLES DE L'EXPORT, les deux fichiers réunis : dérive — 116 fichiers, 116 migrations, `deea18c0…` des deux
+côtés ; socle inchangé (78 instructions, `91ae95ec…`) ; inventaire 1 650 objets, `a2c52236…` des deux côtés — 13 de
+plus : deux colonnes, une contrainte, neuf policies, une fonction ; les huit fonctions réécrites gardent leur nom.
+
+LA BASCULE, sur la tête 0a711c7. L'export portant A et B, six tests virent au rouge drapeaux baissés — l'export et le
+drapeau ne disent plus la même chose (`factures.test.ts`, `droitsAcces.test.ts`, quatre dans
+`encaissementsFactures.test.ts`) — et repassent au vert drapeaux levés. Ce qui change à l'écran : l'onglet Accès dit,
+sous « Accès actuels », ce que « Ventes » ouvre par la base (« … permet déjà au client, par la base et sans écran
+encore, de lire ses ventes […] et d'en faire les gestes […] ») et ce que « Banque » y ajoute avec elle (« … et, avec
+« Ventes », de désigner celui qui prouve un encaissement ») ; l'onglet Factures supprime un brouillon par
+`supprimer_brouillon_facture` — le chemin du client —, qui rend l'identifiant supprimé, et dit son refus sous ses mots.
+L'ancien chemin, la suppression directe sous la policy du cabinet, reste codé :
+`FacturesTabSuppressionBrouillon.test.tsx` joue désormais les deux états, le drapeau lu par un accesseur ; l'onglet au
+drapeau inversé fait virer sept tests sur huit, l'accesseur figé à vrai les trois du chemin direct.
+
+LA SAUVEGARDE NE CHANGE PAS : aucune table, deux colonnes sans clé vers `auth.users`, des lignes recopiées entières.
+`restauration.sql`, rejoué sur une copie de la réplique égale à la production, la facture validée du dossier `test`
+portant un `valide_par` et sa transmission un `cree_par` (posés sur la copie) : 68 tables, 119 clés, 62 IDENTIQUES (18
+lignes), 0 écart ; l'une ou l'autre colonne effacée avant le verdict, sa table seule vire à l'ÉCART.
+
+`ventesClient.sql` annonçait 89 verdicts et 12 valeurs : une valeur oubliée au compte — une exécution en rend 90, et 13
+valeurs. Corrigé avec le passage du jour ; rejoué sans les migrations, ses gardes retirées, il rend 62 fautes sur 90.
+
+BARRIÈRE, la bascule posée sur 0a711c7 : `tsc -b` vert ; les Edge Functions à leurs 25 erreurs connues ; lint sans
+erreur, 63 avertissements, les mêmes ; build vert ; les fichiers touchés et ceux des modules touchés (15 fichiers, 427
+tests) verts sous Paris, UTC, New York et Auckland ; la suite entière sous Paris, deux ouvriers : 284 fichiers, 8 234
+tests, verts — trois de plus, le chemin direct de la suppression d'un brouillon. BANC, sur un port privé : aucun
+débordement aux cinq largeurs (1 440, 1 280, 1 024, 720 et 390 px) ni aux quatre combinaisons des volets, Accès et
+Factures compris, aucune police refusée. Une retouche de commentaire faite PENDANT le banc l'a rechargé à chaud
+(« useAuth doit être utilisé dans AuthProvider » au journal du serveur, pendant la passe de 1 024 px) : cette passe,
+rejouée seule sur un serveur neuf, sans rien toucher, rend aussi 0. Un banc se joue sur un arbre qui ne bouge plus.
+
+CE QUI RESTE : P3 (les Edge Functions qui déposent écriront `cree_par` ; la transmission par le client) et P4 (ses
+écrans « Ventes »), avec lesquelles `valide_par` et `cree_par` deviendront obligatoires dans `types.ts`.
+
+LEÇON : une phrase qui dit ce que la base ouvre suit l'export, et l'export suit la base. Entre l'application d'une
+migration qui ouvre un droit et la mise en ligne de sa bascule, l'écran ment : de 14 h 39 à la bascule, l'onglet Accès a
+dit « Cocher « Ventes » ne change pas encore ce que le client voit ou fait », faux depuis A. Ce qui tenait la fenêtre
+fermée n'était pas le code, mais un compte — aucun accès ne portait la case, vérifié avant A, après A, après B — et la
+consigne au cabinet de n'en cocher aucune. La fenêtre se ferme par la bascule ; elle se garde, jusque-là, par un compte
+relu à chaque temps.

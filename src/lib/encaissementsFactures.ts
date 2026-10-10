@@ -326,11 +326,11 @@ export function repartitionProposee(
 // LES VENTES DU CLIENT SONT-ELLES DANS L'EXPORT ? (espace client, étape P2.) La migration `ventes_du_client` fait
 // accepter par les fonctions des encaissements le client qui porte le droit « Ventes », et donne à
 // `enregistrer_encaissement` un refus NEUF, au rang 2 : le mouvement bancaire ne se désigne qu'avec le droit « Banque ».
-// Elle attend l'accord du cabinet. Ce module dit déjà ce refus à son rang (`mouvement_sans_banque`) — sans effet tant que
-// seul le cabinet saisit : il porte les deux droits —, et encaissementsFactures.test.ts le confronte au texte de la
-// fonction : à celui d'aujourd'hui, ce refus retiré, tant que ceci reste `false` ; au texte entier dès que l'export porte
-// la migration — le test vire au rouge tant que ceci ne passe pas à `true` le même jour.
-export const VENTES_DU_CLIENT_EXPORTEES: boolean = false
+// Appliquée en production le 10/10/2026 (20261010123950), puis `ventes_du_client_facturation` (20261010130643) ;
+// l'export porte les deux depuis. Ce module dit ce refus à son rang (`mouvement_sans_banque`) — sans effet sur le cabinet,
+// qui porte les deux droits —, et encaissementsFactures.test.ts le confronte au texte de la fonction : au texte entier
+// tant que ceci est `true`, et le test vire au rouge si l'export et ce drapeau cessent de dire la même chose.
+export const VENTES_DU_CLIENT_EXPORTEES: boolean = true
 
 // Les refus d'`enregistrer_encaissement`, DANS SON ORDRE ET SOUS SES MOTS (supabase/schema/20261008180607_
 // encaissements_des_factures.sql) : l'écran les dit avant le clic, et un refus de la base arrivé après — une écriture

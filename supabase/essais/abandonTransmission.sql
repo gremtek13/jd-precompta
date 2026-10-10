@@ -24,6 +24,11 @@
 -- SANS ce droit : coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort ; le client qui le
 -- porte se joue dans `ventesClient.sql`. 13 sur 13 sur une réplique identique à la production (`signature.sql`), avant
 -- comme après les deux migrations de l'étape.
+--
+-- 10/10/2026, EN PRODUCTION, après les deux migrations de l'étape P2 (116 migrations) : 13 sur 13. Le texte reçu est la
+-- copie adaptée de la tête 0a711c7, ses lignes de commentaire retirées et une ligne qui rend le texte reçu ajoutée au
+-- verdict (9 379 caractères, empreinte 4820f09c05968c14cbaf842e35ecd6ec) ; sur une réplique égale à la production, la
+-- copie et ce fichier rendent les mêmes verdicts, à l'octet.
 do $$
 declare
   inconnu uuid := gen_random_uuid();

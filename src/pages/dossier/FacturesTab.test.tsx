@@ -330,8 +330,9 @@ describe('FacturesTab — l’avoir connaît ce que la facture a déjà reçu', 
 describe("FacturesTab — la suppression d'un brouillon", () => {
   const brouillon = () => facture({ id: 'b1', numero: null, statut: 'brouillon', tiers_nom: 'CABINET VOISIN', validated_at: null })
 
-  // Directement tant que la fonction de la base n'y est pas ; par elle ensuite (FacturesTabSuppressionBrouillon.test.tsx
-  // joue ce chemin-là drapeau levé, et vérifie qu'aucune suppression directe ne part).
+  // Par la fonction de la base depuis qu'elle y est (le 10/10/2026, `SUPPRESSION_BROUILLON_EXPORTEE` levé) ; directement
+  // avant. Ce bloc joue l'état réel du drapeau ; FacturesTabSuppressionBrouillon.test.tsx joue les deux, drapeau forcé,
+  // et vérifie qu'une seule des deux voies part.
   const VOIE = SUPPRESSION_BROUILLON_EXPORTEE ? 'fonction' : 'directe'
 
   it('retire le brouillon quand on confirme', async () => {
@@ -372,9 +373,8 @@ describe("FacturesTab — la suppression d'un brouillon", () => {
   })
 
   // Le verrou de la suppression (espace client, étape P2) : deux clics dans le même `act` trouvent le verrou posé, et il
-  // en faut TROIS pour voir un verrou posé dans le `try` plutôt qu'avant. Tant que la fonction de la base n'y est pas
-  // (`SUPPRESSION_BROUILLON_EXPORTEE`), la suppression part directement — FacturesTabSuppressionBrouillon.test.tsx joue
-  // l'autre chemin.
+  // en faut TROIS pour voir un verrou posé dans le `try` plutôt qu'avant. Sur la voie de l'état réel du drapeau
+  // (`SUPPRESSION_BROUILLON_EXPORTEE`) — FacturesTabSuppressionBrouillon.test.tsx joue les deux.
   it('deux ou trois clics du même rendu ne suppriment qu’une fois', async () => {
     poser([brouillon()])
     vi.spyOn(window, 'confirm').mockReturnValue(true)

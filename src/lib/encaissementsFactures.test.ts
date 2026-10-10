@@ -35,8 +35,8 @@ const ESSAI = readFileSync(new URL('../../supabase/essais/encaissementsFactures.
 // deux migrations de l'étape posées : les messages que la base y a rendus au client qui porte le droit « Ventes ».
 const ESSAI_P2 = readFileSync(new URL('../../supabase/essais/ventesClient.sql', import.meta.url), 'utf8')
 
-// Les refus que l'EXPORT doit porter, dans l'ordre : tous, sauf le refus neuf de l'étape P2 tant que sa migration attend
-// l'accord du cabinet (`VENTES_DU_CLIENT_EXPORTEES`).
+// Les refus que l'EXPORT doit porter, dans l'ordre : tous, le refus neuf de l'étape P2 compris depuis que sa migration
+// est en base (le 10/10/2026, `VENTES_DU_CLIENT_EXPORTEES`) ; sans lui tant qu'elle n'y était pas.
 const REFUS_DE_L_EXPORT = REFUS_ENREGISTREMENT.filter((r) => VENTES_DU_CLIENT_EXPORTEES || r.cle !== 'mouvement_sans_banque')
 
 const D = 'd1'
@@ -335,9 +335,10 @@ describe('les refus de la base, tels que la migration les écrit', () => {
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
   })
 
-  // LE REFUS NEUF DE L'ÉTAPE P2 (migration ventes_du_client, préparée et présentée au cabinet, pas encore appliquée) : le
-  // module le dit déjà à son rang, et l'export ne le porte que le jour où la migration y entre — ce jour-là, ce test vire
-  // au rouge tant que `VENTES_DU_CLIENT_EXPORTEES` reste faux, et la confrontation ci-dessus s'étend à lui.
+  // LE REFUS NEUF DE L'ÉTAPE P2 (migration ventes_du_client, appliquée le 10/10/2026, que l'export porte depuis) : le
+  // module le dit à son rang, et la confrontation ci-dessus s'étend à lui. Ce test virait au rouge le jour où l'export a
+  // porté la migration, tant que `VENTES_DU_CLIENT_EXPORTEES` restait faux ; il vire au rouge si l'un et l'autre
+  // cessent de dire la même chose.
   it('l’export porte le refus neuf de l’étape P2 si et seulement si VENTES_DU_CLIENT_EXPORTEES le dit, juste après l’accès', () => {
     const sql = derniereDefinitionSql('enregistrer_encaissement')
     const neuf = (REFUS_ENREGISTREMENT.find((r) => r.cle === 'mouvement_sans_banque') as { modele: string }).modele

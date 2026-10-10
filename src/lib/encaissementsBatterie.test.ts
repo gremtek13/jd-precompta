@@ -30,7 +30,8 @@ import {
 // fois, et l'empreinte du chef identique des deux côtés ; le jour du relevé et l'empreinte remplacés ensemble. Avec elles,
 // le script joue en plus les 3 693 saisies du dossier du client EN CLIENT, son accès au seul droit « Ventes » : aucun
 // écart, et leur empreinte figée ci-dessous — 2 086 refusées par le refus neuf d'un mouvement désigné sans « Banque »,
-// 285 acceptées. Elle dit ce que répond une base qui porte la migration ventes_du_client, qui attend l'accord du cabinet.
+// 285 acceptées. Elle dit ce que répond une base qui porte la migration ventes_du_client — la production depuis le
+// 10/10/2026.
 // Le refus neuf déplacé après ceux de la facture, dans le module, y faisait 546 écarts (la passe du chef, aucun).
 
 const EMPREINTE_DE_LA_BASE = '38a63609e3cd1b1aa047253b3bf482b1'

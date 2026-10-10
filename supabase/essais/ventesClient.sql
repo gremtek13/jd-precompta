@@ -37,11 +37,22 @@
 -- doit MORDRE, c'est-à-dire rendre ce que le contrôle qu'elle vise refuserait.
 --
 -- 10/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION : une réplique dont `signature.sql` égale la production à 109 migrations,
--- les deux migrations de l'étape posées — 89 verdicts (50 contrôles, 20 faits, 12 valeurs, 7 mutations), tous justes,
--- rien laissé en base ; sans les migrations (cette garde retirée), 62 sur 89 en faute. Les vingt-huit mutations des deux
--- migrations, jouées une à une sur la réplique avec rls.sql et les six essais des factures et des encaissements : vingt-sept
--- vues par ces essais, la dernière — la suppression d'un brouillon sans le verrou de sa ligne — par une course de deux
--- sessions seulement. Le passage en production suivra l'application des migrations, et se notera ici.
+-- les deux migrations de l'étape posées — 90 verdicts (50 contrôles, le dernier, « 99. », compris, 20 faits, 13 valeurs,
+-- 7 mutations), tous justes, rien laissé en base ; sans les migrations (ses deux gardes retirées), 62 sur 90 en faute. Les
+-- vingt-huit mutations des deux migrations, jouées une à une sur la réplique avec rls.sql et les six essais des factures
+-- et des encaissements : vingt-sept vues par ces essais, la dernière — la suppression d'un brouillon sans le verrou de sa
+-- ligne — par une course de deux sessions seulement. Le passage en production suivra l'application des migrations, et se
+-- notera ici.
+--
+-- 10/10/2026, EN PRODUCTION, après `ventes_du_client` puis `ventes_du_client_facturation` (116 migrations) : 90 verdicts,
+-- 0 en faute — 83 justes et 7 mutations sur 7 qui mordent ; « 99. » rend les mêmes comptes avant et après, rien n'est
+-- resté. Le texte reçu est la copie adaptée de la tête 0a711c7, toutes ses lignes de commentaire retirées et une ligne qui
+-- rend le texte reçu ajoutée au verdict (39 990 caractères, empreinte 27393540cd23285ca44a5ac40ed1ff0e, rendue par la
+-- base) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes verdicts, la colonne
+-- « observe » mise à part (elle porte des identifiants tirés au hasard). Le passage précédent a été corrigé ce jour-là :
+-- il disait 89 verdicts et 12 valeurs, une valeur oubliée au compte (le fichier n'avait pas changé) ; rejoué sur une
+-- réplique sans les migrations, ses deux gardes retirées, il rend 62 verdicts en faute sur 90, et avec elles il se dit
+-- impossible.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';

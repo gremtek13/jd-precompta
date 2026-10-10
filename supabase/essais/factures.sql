@@ -53,6 +53,11 @@
 -- se dit impossible plutôt que de virer au rouge à tort ; le client qui le porte, `valide_par` et la suppression d'un
 -- brouillon se jouent dans `ventesClient.sql`. Ses 118 verdicts justes sur une réplique identique à la production
 -- (`signature.sql`), avant comme après les deux migrations de l'étape.
+--
+-- 10/10/2026, EN PRODUCTION, après les deux migrations de l'étape P2 (116 migrations) : 118 sur 118, rien resté. Le texte
+-- reçu est la copie adaptée de la tête 0a711c7, ses lignes de commentaire retirées et une ligne qui rend le texte reçu
+-- ajoutée au verdict (47 819 caractères, empreinte 18ee1b25b70510a80dd0aef0fe2ed7df) ; sur une réplique égale à la
+-- production, la copie et ce fichier rendent les mêmes verdicts, à l'octet.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

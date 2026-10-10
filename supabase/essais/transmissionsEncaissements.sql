@@ -55,6 +55,12 @@
 -- « Ventes » — coché sur ce compte, l'essai se dit impossible plutôt que de virer au rouge à tort ; le client qui le
 -- porte se joue dans `ventesClient.sql`. 128 sur 128 sur une réplique identique à la production (`signature.sql`),
 -- avant comme après les deux migrations de l'étape.
+--
+-- 10/10/2026, EN PRODUCTION, après les deux migrations de l'étape P2 (116 migrations) : 128 sur 128, le contrôle 115 sur
+-- le catalogue des ventes, rien resté (121). Le texte reçu est la copie adaptée de la tête 0a711c7, ses lignes de
+-- commentaire retirées et une ligne qui rend le texte reçu ajoutée au verdict (75 141 caractères, empreinte
+-- 6bc5ae99e6c07feabeded01b003f8764) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes
+-- verdicts, à l'octet.
 do $$
 declare
   inconnu uuid := gen_random_uuid();

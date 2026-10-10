@@ -167,11 +167,11 @@ export async function creerAvoir(
 // validée (22023, les mots de la garde) — et rend l'identifiant supprimé : l'écran ne dit « supprimé » que sur ce que la
 // base a rendu.
 //
-// EST-ELLE EN BASE ? Sa migration se colle (son texte supprime) et attend l'accord du cabinet. Tant qu'elle n'y est pas,
-// l'appeler finirait en erreur : l'onglet Factures supprime un brouillon comme hier, directement, sous la policy du
-// cabinet. Le jour où l'export la porte (supabase/schema), factures.test.ts vire au rouge tant que ceci reste `false` :
-// le passer à `true` fait passer l'onglet par la fonction.
-export const SUPPRESSION_BROUILLON_EXPORTEE: boolean = false
+// EST-ELLE EN BASE ? Oui : sa migration, qui se colle (son texte supprime), l'a été par le cabinet le 10/10/2026
+// (20261010130643), et l'export la porte depuis. L'onglet Factures supprime donc un brouillon par elle, et plus
+// directement : la policy du cabinet qui le permettait reste en place, mais aucun écran ne la prend plus. factures.test.ts
+// vire au rouge si l'export cesse de porter la fonction tant que ceci reste `true`.
+export const SUPPRESSION_BROUILLON_EXPORTEE: boolean = true
 
 /** Supprime un brouillon par la base. Rend l'identifiant qu'elle a supprimé ; lève son refus, sous ses mots. */
 export async function supprimerBrouillon(dossierId: string, factureId: string): Promise<string> {

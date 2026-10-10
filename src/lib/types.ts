@@ -986,11 +986,11 @@ export interface FactureEmise {
   // L'option pour le paiement de la TVA d'après les débits (11° bis), FIGÉE par la base à la validation, telle
   // que le dossier la portait ce jour-là. Nulle sur un brouillon et sur une facture validée avant elle.
   option_debits: boolean | null
-  // QUI A VALIDÉ (espace client, étape P2 ; migration ventes_du_client) : le compte — du cabinet, ou du client qui porte
-  // le droit « Ventes » — qu'`enregistrer_facture` écrit dans la transaction qui numérote, figé avec la facture. Nul sur
-  // un brouillon, et sur une facture validée avant la migration : on ne devine pas qui l'a validée. FACULTATIF tant que
-  // la migration attend l'accord du cabinet : les lignes lues avant elle n'ont pas la colonne, et le type décrit la
-  // table telle qu'elle est des deux côtés. Il deviendra obligatoire avec le premier écran qui le lit (étape P4).
+  // QUI A VALIDÉ (espace client, étape P2 ; migration ventes_du_client, en base depuis le 10/10/2026) : le compte — du
+  // cabinet, ou du client qui porte le droit « Ventes » — qu'`enregistrer_facture` écrit dans la transaction qui
+  // numérote, figé avec la facture. Nul sur un brouillon, et sur une facture validée avant la migration : on ne devine pas
+  // qui l'a validée. FACULTATIF encore : aucun écran ne le lit, et une sauvegarde écrite avant la migration n'a pas la
+  // colonne. Il deviendra obligatoire avec le premier écran qui le lit (étape P4).
   valide_par?: string | null
 }
 
@@ -1024,10 +1024,11 @@ export interface TransmissionFacture {
   detail: string | null
   cree_le: string
   maj_le: string
-  // Le compte qui a réservé la transmission (espace client, étape P2 ; migration ventes_du_client), que les fonctions
-  // qui déposent écriront (étape P3) ; nul pour une transmission d'avant ; il ne change plus (la garde de la table).
-  // FACULTATIF, et absent des listes de colonnes que les écrans lisent : nommé dans un `select` avant que la migration
-  // soit en base, il ferait échouer la lecture. Il y entrera, obligatoire, avec l'étape qui l'écrit ou le lit (P3, P4).
+  // Le compte qui a réservé la transmission (espace client, étape P2 ; migration ventes_du_client, en base depuis le
+  // 10/10/2026), que les fonctions qui déposent écriront (étape P3) ; nul pour une transmission d'avant ; il ne change
+  // plus (la garde de la table). FACULTATIF, et absent des listes de colonnes que les écrans lisent : rien ne l'écrit
+  // encore, et une sauvegarde écrite avant la migration n'a pas la colonne. Il y entrera, obligatoire, avec l'étape qui
+  // l'écrit ou le lit (P3, P4).
   cree_par?: string | null
 }
 

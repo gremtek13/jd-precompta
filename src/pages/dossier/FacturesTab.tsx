@@ -215,8 +215,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   // refusé, mais sans un mot, sur un geste que l'opérateur vient de CONFIRMER — le réflexe est alors
   // de reconfirmer, et d'obtenir le même silence (le défaut de `SuperPdpModal.retirer`, corrigé de
   // même sur `SupplementsTab` et `AccesTab`).
-  // Par la base dès que sa fonction y est (`SUPPRESSION_BROUILLON_EXPORTEE`, espace client, étape P2) : le chemin du
-  // client, qui rend ce qu'il a supprimé ; directement sous la policy du cabinet tant qu'elle n'y est pas. Un verrou posé
+  // Par la base, puisque sa fonction y est depuis le 10/10/2026 (`SUPPRESSION_BROUILLON_EXPORTEE`, espace client, étape
+  // P2) : le chemin du client, qui rend ce qu'il a supprimé ; directement sous la policy du cabinet si le drapeau
+  // redescendait avec elle (le chemin d'avant, gardé et éprouvé tant que son code existe). Un verrou posé
   // avant le `try`, relâché dans le `finally` après la relecture : deux clics du même rendu ne demandent qu'une
   // suppression, et le second ne dit pas « introuvable » d'un brouillon que le premier vient de supprimer.
   const suppressionEnCours = useRef(false)
