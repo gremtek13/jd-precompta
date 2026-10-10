@@ -255,7 +255,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   accès portent les deux droits), boucle sur `pg_class` (une table ajoutée sans policy est attrapée), écritures d'essai
   annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge ; depuis
   P7 et P2, deux blocs de plus — « La banque du client » (3bis, 4bis, trois mutations) et « Les ventes du client »
-  (3bis, 4bis, douze mutations) —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; entre les
+  (3bis, 4bis, douze mutations), que les devis rejoignent dès leur migration (P5 ; témoin : la table `devis` ; avant,
+  une ligne « EN ATTENTE ») —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; entre les
   deux migrations de P7 (depuis le 10/10/2026), le 3 bis de la banque est EN FAUTE, et c'est attendu. Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
@@ -517,7 +518,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; acceptées par le cabinet le 10/10/2026, à condition
   que les notes d'une facture disent avant l'application que le client « Ventes » les lit : fait le même jour, avec les
   trois autres textes libres des ventes et la phrase des cases dans ses quatre états (étape A) ; A et B s'exportent
-  ensemble, les deux drapeaux passent ensemble → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT ».
+  ensemble, les deux drapeaux passent ensemble → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT ». P5,
+  les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
+  d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
+  (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
+  EC-D2 les mentions d'un métier, EC-D3 l'acompte, EC-D4 les données des clients du client) → « LES DEVIS, EN BASE ».
 - **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
@@ -592,6 +597,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **`id` n'est pas la clé primaire partout** (`CLES_PRIMAIRES`, épinglée au schéma), même d'un parent (`roles_comptables` :
   `role`) — `liensPerdus` compare sur `clePrimaire` ; une table auto-référencée se
   restaure en deux passes ; le plan free n'a AUCUNE sauvegarde automatique (PLAN_DE_REPRISE.md).
+- **Une table préparée et non appliquée se déclare au plan de sauvegarde derrière son drapeau** (P5 : listes
+  `*_PREVU(E)S`, filtre `auPlan`, `sauvegardeDevis.test.ts`) : la lire avant sa migration ferait échouer toute
+  sauvegarde, et lever le drapeau suffit le jour de l'application ; `restauration.sql` la met au plan quand elle existe,
+  ses rangs comptés depuis celui d'`exercices_valides` → « LES DEVIS, EN BASE ».
 - **Un type de `types.ts` décrit la table**, colonnes NOT NULL comprises — et les déclencheurs comptent : ceux de
   `dossiers` remplissent `cabinet_id` et `code_email` seulement s'ils sont nuls.
 - **`pack_pieces` a été supprimée** (jamais écrite) : la composition d'un pack n'est pas modélisée. Avant de supprimer
@@ -1069,6 +1078,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ESSAI_IMPOSSIBLE : ses refus y deviendraient des acceptations légitimes) et attendent le catalogue de l'état où la base
   se trouve, témoin `factures_emises.valide_par` ; `ventesClient.sql` se dit impossible avant les deux migrations →
   « LES VENTES DU CLIENT, EN BASE ».
+- **Les devis** (P5, préparée le 10/10/2026, `lib/devis.ts`) : une série par dossier et par année (`D2026-0001`), prise
+  à l'émission sous le verrou de la série, reprise du plus haut numéro émis, émise par le cabinet ou par le client ; un
+  devis émis est figé par sa garde (seule la réponse s'écrit, une fois ; une acceptation après la validité se
+  CONFIRME) ; les lignes en `jsonb` vérifiées et les totaux confrontés au centime (`centimes_ligne_facture`) ;
+  `facturer_devis` tire une facture BROUILLON, une fois, sans la date d'exécution prévue ni les mentions légales ;
+  quatre fonctions seules écrivent, l'accès d'abord (`gere_les_ventes`). Tant que l'export ne porte pas les migrations,
+  `devis.sql` est la RÉFÉRENCE des refus du module (`devis.test.ts` : chaque refus exigé de la base, les écritures de
+  l'essai rejouées) ; le contrôle 0c de `ventesClient.sql` attend les quatre fonctions dès la table `devis` →
+  « LES DEVIS, EN BASE ».
 
 ## Tests
 

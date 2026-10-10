@@ -117,11 +117,15 @@ begin
                || ' public ' || exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
              from pg_proc p where p.oid = 'public.supprimer_brouillon_facture(uuid,uuid)'::regprocedure$q$,
         'OK', 'true search_path=public anon false authenticated true public false', null),
-      ('0c', 'valeur', 'les huit fonctions de la vente contrôlent l''accès par gere_les_ventes', 'proprietaire', null,
+      -- Les quatre fonctions des devis (étape P5) s'y ajoutent dès que leur migration est en base : le contrôle part du
+      -- catalogue, et une fonction de plus sous ce droit doit avoir été présentée au cabinet.
+      ('0c', 'valeur', 'les fonctions de la vente contrôlent l''accès par gere_les_ventes : les huit des factures, et les quatre des devis dès leur migration', 'proprietaire', null,
         $q$select string_agg(p.proname, ',' order by p.proname) from pg_proc p
             where p.pronamespace = 'public'::regnamespace and p.prosrc ~ 'if not public\.gere_les_ventes\('
               and p.prosrc !~ 'if not admin_du_dossier\('$q$,
-        'OK', 'abandonner_transmission,annuler_encaissement,declarer_encaissement_hors_application,enregistrer_encaissement,enregistrer_facture,prochain_numero_facture,retirer_encaissement,supprimer_brouillon_facture', null),
+        'OK', case when to_regclass('public.devis') is null
+          then 'abandonner_transmission,annuler_encaissement,declarer_encaissement_hors_application,enregistrer_encaissement,enregistrer_facture,prochain_numero_facture,retirer_encaissement,supprimer_brouillon_facture'
+          else 'abandonner_transmission,annuler_encaissement,decider_devis,declarer_encaissement_hors_application,enregistrer_devis,enregistrer_encaissement,enregistrer_facture,facturer_devis,prochain_numero_facture,retirer_encaissement,supprimer_brouillon_devis,supprimer_brouillon_facture' end, null),
 
       -- ══ 1 à 6. Qui enregistre une facture ══════════
       ('1', 'controle', 'l''anonyme n''exécute pas enregistrer_facture', 'anon', null,

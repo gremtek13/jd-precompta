@@ -1315,3 +1315,94 @@ export interface LignePlanDuDossier {
   prefixe_auxiliaire: string | null
   origine: OriginePlanComptable | 'application'
 }
+
+// LES DEVIS D'UN DOSSIER (espace client, étape P5 ; migrations devis_du_client et devis_du_client_suppression, présentées
+// au cabinet, PAS ENCORE APPLIQUÉES : tant que `DEVIS_EXPORTES` est faux, src/lib/devis.ts, aucun code ne lit ces tables).
+// Un devis est un BROUILLON, puis ÉMIS — numéroté « D<année>-<numéro> » dans la série du dossier et figé —, et reçoit une
+// RÉPONSE une fois ; « expiré » et « facturé » se déduisent (`etatDuDevis`). Le cabinet et le client qui porte le droit
+// « Ventes » le lisent ; seules les fonctions l'écrivent. Ses colonnes « client et mentions » sont celles de FactureEmise,
+// sous les mêmes contraintes.
+export type StatutDevis = 'brouillon' | 'emis'
+export type ReponseDevis = 'acceptee' | 'refusee'
+
+// Une ligne, telle qu'`enregistrer_devis` la réécrit dans la colonne `lignes` (jsonb), dans son ordre : quantité positive
+// à quatre décimales au plus, prix à six (négatif pour une remise), un taux de TAUX_ADMIS.
+export interface LigneDevis {
+  designation: string
+  quantite: number
+  prix_unitaire_ht: number
+  taux_tva: number
+}
+
+export interface Devis {
+  id: string
+  dossier_id: string
+  // Nul jusqu'à l'émission ; unique dans le dossier ensuite.
+  numero: string | null
+  statut: StatutDevis
+  date_emission: string
+  // Le dernier jour où l'offre vaut (« valable jusqu'au ») : aucune durée légale, elle se fixe.
+  date_validite: string
+  objet: string | null
+  tiers_nom: string
+  tiers_adresse: string | null
+  tiers_siret: string | null
+  tiers_email: string | null
+  type_client: TypeClient | null
+  tiers_siren: string | null
+  tiers_adresse_electronique: string | null
+  code_service: string | null
+  numero_engagement: string | null
+  nature_operation: NatureOperation | null
+  // La date ou la période d'exécution PRÉVUE (code de la consommation, art. L111-1, 3°) : la facture tirée du devis ne
+  // la reprend pas.
+  date_prestation: string | null
+  periode_debut: string | null
+  periode_fin: string | null
+  livraison_adresse: string | null
+  livraison_code_postal: string | null
+  livraison_ville: string | null
+  livraison_pays: string | null
+  lignes: LigneDevis[]
+  // Ceux des lignes, au centime : la base le vérifie à chaque écriture.
+  montant_ht: number
+  montant_tva: number
+  montant_ttc: number
+  // Délai d'exécution, paiement, acompte demandé : un texte imprimé.
+  conditions: string | null
+  mentions_legales: string | null
+  // PARTAGÉES et non imprimées : le client qui porte « Ventes » les lit comme le cabinet.
+  notes: string | null
+  // Figé à l'émission, avec le reste.
+  emetteur_nom: string | null
+  emetteur_siret: string | null
+  emetteur_adresse: string | null
+  // Qui a fait quoi : des identifiants de compte, sans clé étrangère.
+  cree_par: string | null
+  cree_le: string
+  emis_par: string | null
+  emis_le: string | null
+  reponse: ReponseDevis | null
+  date_reponse: string | null
+  decide_par: string | null
+  decide_le: string | null
+}
+
+// La facture tirée d'un devis accepté (`facturer_devis`) : une facture vient d'un devis au plus. Le lien part avec le
+// brouillon de la facture, le devis ou le dossier.
+export interface DevisFacture {
+  id: string
+  dossier_id: string
+  devis_id: string
+  facture_id: string
+  cree_par: string | null
+  cree_le: string
+}
+
+// La série des devis d'un dossier, par année (clé primaire : le dossier et l'année, CLES_PRIMAIRES). Aucune policy :
+// personne ne la lit hors des fonctions.
+export interface DevisNumerotation {
+  dossier_id: string
+  annee: number
+  dernier_numero: number
+}
