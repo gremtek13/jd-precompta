@@ -18759,3 +18759,132 @@ CE QUI RESTE : les écrans de la banque du client (P8, P9) ; l'invariant 3 bis d
 LEÇON : une bordure COURTE se transcrit aussi mal qu'une longue. La copie adaptée ramène les longues à dix traits, et la
 transcription a « régularisé » les courtes à dix : la ligne TEXTE l'a vu, et la reconstitution a prouvé que seuls des
 commentaires différaient. Une copie adaptée qui retirerait les bordures de ses commentaires ôterait le piège.
+
+### 10/10/2026 — LES CYCLES DE LA RÉVISION — LIGNE 41, ÉTAPE R4
+
+(Migration `revision_des_cycles`, version 20261010110733, appliquée en production : texte de 31 737 caractères, saut de
+ligne final compris, empreinte `d943dfed6d701712b5c66ec3e41bdf0a` — `supabase/schema/20261010110733_revision_des_cycles.sql`,
+le texte enregistré octet pour octet ; l'essai `supabase/essais/revisionCycles.sql` ; `src/lib/revisionRevue.ts`, ses
+tests `revisionRevue.test.ts` et `revisionRevueEssai.test.ts`, deux utilitaires de test (`src/test/raiseSql.ts`,
+`src/test/revisionRevue.ts`) ; `types.ts`, `sauvegarde.ts` et ses tests, `sauvegardeDonnees.test.ts`,
+`encaissementsEcritures.test.ts`, `restauration.sql` et `restaurationEssai.test.ts` ; une ligne du registre de RGPD.md ;
+les passages datés de `rls.sql` et du README de l'export, qui passe à 114 migrations.) La quatrième étape de la
+révision des comptes (« LA RÉVISION DES COMPTES : LA CONCEPTION », § 1.5, 2, 3.3 à 3.5, 4.4 et la ligne R4 du
+découpage), sans l'écran : la phase C le posera dans l'onglet « Révision » de R3. Aucune Edge Function. Données mesurées
+en production le 10/10/2026, comptes seulement : aucune décision de la révision, aucun exercice validé — tout ce qui
+suit est LATENT. Sources relues sur Légifrance le même jour : la norme de management de la qualité (arrêté du
+30/05/2024), § 29 (« La nature et l'étendue des consultations et les conclusions qui en résultent sont consignées dans
+la documentation de la mission »), § 30 (la revue de dossier par une personne ayant la compétence appropriée) et A30-1
+(supervision et revue « peuvent, en pratique, être réalisées par la même personne ») ; la NP 2300 (arrêté du
+01/09/2016), A8 (le dossier « formalise également les discussions intervenues avec la direction »), A9 (« un programme
+de travail adapté », « une note de synthèse générale ») et § 18 (les trois formes de l'attestation, que le travail
+« ensemble-rapport » nomme).
+
+**ON RÉVISE PAR COMPTE ET PAR CYCLE.** R1 pose une décision par SOLDE ; R4 pose, par CYCLE et par exercice, le travail
+et sa revue. Trois tables, au patron de R1 — des affirmations datées, signées, IMMUABLES, écrites par des fonctions
+seules, lues par le cabinet seul :
+- `revision_conclusions` : la feuille d'un cycle — l'état (« révisé » ou « anomalie »), le programme de travail TEL QU'IL
+  A ÉTÉ EXÉCUTÉ (`travaux`, une liste jsonb de 64 Kio au plus, chaque travail `{ code, travail, fait, note }`), la
+  conclusion (8 000 caractères), les points que l'exercice suivant doit reprendre (`a_suivre`, 4 000) ; elle se
+  REMPLACE (`remplace_id` : une première par cycle et par exercice, index unique partiel qu'aucun upsert ne vise, une
+  seule suite à chacune) — la chaîne est l'ordre, et la courante celle qu'aucune ne remplace ;
+- `revision_notes` : le JOURNAL d'un cycle — un échange avec la direction, une consultation, un travail ; il ne fait que
+  s'allonger ;
+- `revision_revues` : la revue d'une conclusion, « approuvé » ou « à reprendre » avec son observation (une contrainte
+  l'exige) ; UNE par conclusion — revoir de nouveau suppose une nouvelle conclusion, et l'historique garde les deux.
+Trois gardes, aux droits de l'appelant : rien ne se modifie ni ne se supprime, sauf avec le dossier ; une conclusion en
+remplace une du même cycle et du même exercice ; une revue porte sur une conclusion de son dossier et de son exercice.
+La RLS : le cabinet LIT (`admin_du_dossier`, `to authenticated`), le super-administrateur insère pour restaurer, le
+client ne voit rien. Les auteurs (`auteur`, `revu_par`) sont des repères d'audit sans clé, comme `valide_par`.
+
+**CE QUI A ÉTÉ CHOISI, ET POURQUOI.** Le programme dans la CONCLUSION (un instantané jsonb), et non une table de tâches :
+un programme ne vaut que tel qu'il a été exécuté au jour de la conclusion, et des tâches en lignes auraient demandé leur
+propre immuabilité ; la contrainte n'en garde que la forme et la borne, `conclure_cycle` juge le détail. Le programme
+PROPOSÉ dans le CODE (`PROGRAMME_DES_CYCLES`, 38 travaux sur les onze cycles, codes stables préfixés du cycle), et non
+en base : la proposition évolue avec l'application, la conclusion garde les mots qu'elle portait ce jour-là, le code
+retrouve un travail d'une conclusion à la suivante (`programmeDeDepart`). L'ÉTAT d'un cycle DÉDUIT (§ 3.5), jamais
+stocké. UNE revue par conclusion plutôt qu'une chaîne de revues : une revue dit un fait sur UNE conclusion. Les verrous
+dans l'ordre de R1 — partagé de la validation, puis exclusif de la révision (`cle_revision`) — : une conclusion, une
+note ou une revue ne s'écrit jamais à côté d'une validation, et deux conclusions concurrentes d'un même cycle se suivent
+(la seconde voit la première, refus 10).
+
+**LES QUESTIONS SANS RÉPONSE, PRISES COMME HYPOTHÈSES, RANGÉES POUR SE REPRENDRE PAR `create or replace function`.** Q2,
+QUI REVOIT : tout membre affecté PRÉPARE (`admin_du_dossier`, refus 1 de `conclure_cycle` et de `noter_revision`) ; seul
+le chef du cabinet REVOIT (`est_chef_du_cabinet`, super-administrateur compris ; refus 1 de `revoir_cycle`) — il peut
+revoir ce qu'il a préparé (A30-1), la trace le dit (`parLAuteur`). Q11 : seul un exercice terminé se révise (refus 3,
+l'année lue à Paris). Q7 : la suppression d'un dossier emporte sa révision (clés du dossier en cascade). Q6 : figer le
+dossier de travail est l'étape R9, sa place gardée (refus 4). Q5 (la mission) n'est pas tranchée : la conclusion
+envisagée d'une attestation s'écrit dans la conclusion du cycle « ensemble », sans colonne qui la présumerait. Q1 est
+l'étape R6 : `valider_exercice` ne change pas.
+
+**LES TROIS FONCTIONS ET LEURS REFUS, DANS CET ORDRE** (22023, sauf l'accès en 42501). `conclure_cycle` (dix) : 1.
+l'accès, sur le dossier annoncé — un dossier qui n'existe pas se refuse comme un dossier interdit ; 2. l'exercice hors
+de 2000 à 2100 ; 3. l'exercice pas terminé ; 4. (R9) ; 5. un cycle qui n'est pas l'un des onze ; 6. un état ni
+« révisé » ni « anomalie » ; 7. une conclusion vide (des blancs ne sont pas une conclusion ; une espace insécable si) ou
+de plus de 8 000 caractères ; 8. des points à suivre de blancs ou de plus de 4 000 ; 9. le programme — illisible (la
+forme : une liste d'objets aux quatre clés, « fait » booléen, un code au motif, d'abord le TYPE, car `->>` rendrait
+`true` au motif), plus de cent travaux ou de 64 Kio mesurés comme la base mesure le texte jsonb, un libellé vide ou de
+plus de 500, une note de blancs ou de plus de 2 000, un travail proposé cité deux fois ; 10. un remplacement qui n'est
+pas du cycle et de l'exercice, ou pas la courante — ou aucun quand le cycle en a une. `noter_revision` (sept) : l'accès,
+l'exercice (2 et 3), (R9), le cycle, la nature, le texte (vide ou plus de 4 000). `revoir_cycle` (neuf) : le chef, 2,
+3, (R9), l'avis, l'observation (« à reprendre » se motive ; pas de blancs ; 4 000), une conclusion de l'exercice dans ce
+dossier, la COURANTE de son cycle, pas déjà revue. Les trois sont parmi les 29 fonctions `SECURITY DEFINER` que
+l'advisor dit exécutables par un compte connecté (5 par l'anonyme, aucune de R4), chacune avec son contrôle d'accès en
+premier refus.
+
+**LE MODULE (`lib/revisionRevue.ts`), PUR** : le programme proposé et sa relecture sans deviner (`lireProgramme`) ; la
+chaîne, la courante, les points à suivre de l'exercice précédent ; les refus des trois fonctions dans leur ordre et
+sous leurs mots (`refusDeConclureCycle`, `refusDeNoterRevision`, `refusDeRevoirCycle`), les arguments tels que
+supabase-js les envoie (nuls plutôt qu'absents ; des blancs partent nuls) ; l'état DÉDUIT de chaque cycle
+(`cyclesDeLExercice`) — en attente (exercice en cours), non commencé, en cours (rien de conclu, ou « révisé » alors
+qu'un solde du cycle reste à justifier, à revoir, en anomalie ou en attente — R2 —, ou, pour « ensemble », qu'un autre
+cycle n'est pas réglé), révisé, anomalie, à reprendre, revu, revue périmée (une décision, une conclusion ou une note
+suit la revue — de tout l'exercice pour « ensemble »), à revoir (chaîne illisible). Confronté au texte EXPORTÉ des trois
+fonctions (messages, codes, numéros, valeurs des « % ») et REJOUÉ sur l'essai : chacun de ses 149 appels (87
+conclusions, 25 notes, 37 revues) rend du module le refus que la base a rendu ; quatre dérives plantées virent au rouge.
+LE NOM DU JOURNAL : dans le module, les lignes de `revision_notes` s'appellent `journal` (`DonneesDesCycles.journal`,
+`CycleRevu.journal`) — le garde des anciennes colonnes des notes internes (`notesInternesEcritures.test.ts`, règles K et
+L) compte toute clé `notes` et toute lecture `.notes` des sources de production, au nombre près, et la suite entière l'a
+fait virer ; l'écran gardera ce nom.
+
+**LES PREUVES, AVANT ET APRÈS L'APPLICATION.** Réplique PG 16 (`signature.sql` : les neuf familles égales à la
+production). Essai : 216 verdicts sur 216, en production comme sur la réplique (texte reçu = fichier, 81 740 caractères,
+`7e7262af…`) ; six profils (anonyme, compte rattaché à rien, client, membre affecté à un dossier et non à l'autre, chef
+sans être super-administrateur, super-administrateur) ; chaque refus par sa RAISON ; rien ne reste. Sur la réplique
+seulement : les suppressions (refusées par les gardes même au propriétaire ; la cascade du dossier emporte tout) et
+onze courses de deux sessions. Mutations de la migration : 200, dont 4 survivantes au premier passage — des contraintes
+de TABLE que les fonctions masquent ; l'essai les juge désormais par insertion directe et par le texte des quatorze
+contraintes de vérification (201bis) : toutes mordent. Après l'application, à 113 migrations : signature égale ;
+`rls.sql` ENTIER en production (copie adaptée de la tête 2aa2ef4, 74 256 caractères, `b505e109…`) : 26 lignes, 25 à 0
+en faute — 68 tables, 59 portant un `dossier_id`, les trois de R4 comprises, vides —, et UNE en faute qui n'était pas
+de R4 : le domaine « Banque », la seconde migration de P7 pas encore en base ; 16 mutations sur 16. 88 mutations du code
+(81 du module, 5 de la sauvegarde, 2 de la restauration) : trois survivaient au premier passage, trois TROUS DE TEST —
+le compte des travaux non faits (un jeu symétrique), l'ordre de l'historique des revues (promis par le titre d'un test,
+jamais vérifié), un cycle en revue périmée pour la synthèse —, comblés : toutes mordent.
+
+**L'INTÉGRATION : DEUX FOIS REFAITE.** Écrit sur 77669ab, le correctif a été refait sur c62567c (PC1, R3, la première
+migration de P7, P2 premier temps, 23.2, P5), puis sur 4957030 (e3, la seconde migration de P7). L'ordre de la
+sauvegarde : les trois tables aux rangs 63 à 65, après les décisions de la révision et avant les registres de P7 — dans
+l'ordre réel comme dans l'ordre PRÉVU des devis (`ORDRE_RESTAURATION_PREVU`, qui finit par les devis puis
+`exercices_valides`) —, la vague `revision_conclusions.remplace_id`, les trois chemins ; `restauration.sql` recopie le
+même plan (68 tables, 71 avec les devis), et `restaurationEssai.test.ts` lit ses rangs dans le code, comme PC1 l'a voulu.
+En-têtes : le passage de R4 dans `rls.sql` après ceux de P5 et de P7 ; ceux du README après ceux de P7. Les trois
+contrôles de l'export, la production à 114 migrations : dérive — 114 fichiers, 114 migrations, `73b955fc…` des deux
+côtés ; socle — 78 instructions, `91ae95ec…` des deux côtés (R4 ne touche aucune table du socle ; la ligne de
+`lignes_bancaires`, que P7 réécrit, vient avec 4957030) ; inventaire — 1 637 objets, `9628a4d3…` des deux côtés, dont
+73 de R4 (vingt-sept colonnes, vingt-quatre contraintes, quatre index, trois déclencheurs, six policies, six fonctions,
+la RLS de trois tables). Sur une réplique égale à la production à 114 migrations (`signature.sql`, les neuf familles,
+vérifiées de nouveau à l'intégration) : la restauration au plan réuni — 68 tables recréées, 62 restaurées et
+IDENTIQUES (12 lignes), les conclusions en trois vagues, 0 écart, les deux contrôles du catalogue des rôles justes ;
+plantée — les revues avant leurs conclusions —, elle s'arrête sur la clé ; `rls.sql` ENTIER, joué par psql avec le
+talon du stockage et le semis de P2 : 29 lignes, 0 en faute (le domaine « Banque » compris), 19 mutations sur 19, M3
+voyant les trois tables de R4 ; l'essai, 216 sur 216. Barrière sur 4957030, le correctif posé : `tsc -b` vert ; les
+Edge Functions à leurs 25 erreurs connues ; lint, 63 avertissements, aucun dans un fichier touché ; build vert ; les
+neuf fichiers de test touchés ou gardiens (252 tests) verts sous Paris ; avec le harnais posé, ces neuf fichiers (254
+tests) sous Paris, UTC, New York et Auckland, et la suite entière sous Paris, deux ouvriers : 284 fichiers, 8 231 tests,
+verts — 8 229 sans les deux du harnais ; 4957030 seule en compte 8 166. Le défaut latent du harnais de
+restauration, relevé en route, a son entrée à part (« L'ESSAI DE RESTAURATION S'ARRÊTE, NOMMÉMENT »), qui voyage avec
+son correctif.
+
+**CE QUI RESTE.** La phase C (l'écran, dans l'onglet de R3) ; R9 (figer le dossier de travail : refus 4) ; les réponses
+du cabinet à Q2, Q5, Q6, Q7 et Q11.

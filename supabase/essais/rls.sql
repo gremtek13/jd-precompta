@@ -243,6 +243,21 @@
 -- empreinte 88fe09d17a4e89ef2b3d707bc82f8187, pour 74 256 et b505e109bb320f9449f17fc46ccf804e : la bordure
 -- d'ouverture de dix titres a été transcrite en dix traits au lieu de deux ou trois. Reconstitué, ce texte rend
 -- exactement l'empreinte reçue : le code exécuté est celui de la copie, caractère pour caractère.
+--
+-- 10/10/2026 — PASSAGE COMPLET après `revision_des_cycles` (ligne 41, étape R4), qui crée `revision_conclusions`,
+-- `revision_notes` et `revision_revues` — lecture sous `admin_du_dossier`, insertion de restauration réservée au
+-- super-administrateur, aucune autre policy, trois gardes. EN PRODUCTION, à 113 migrations : la copie adaptée de la
+-- tête 2aa2ef4, caractère pour caractère (74 256 caractères, empreinte b505e109bb320f9449f17fc46ccf804e, rendue par la
+-- base) : 26 lignes de verdict (68 tables du schéma, dont 59 portant un `dossier_id`, + 3 buckets, 4 profils), une
+-- seule en faute, la ligne du domaine « Banque » (la seconde migration de P7 n'était pas en base), et 16 mutations sur
+-- 16 qui mordent ; les trois tables y sont vides. SUR UNE RÉPLIQUE égale à la production à 114 migrations
+-- (signature.sql, neuf familles ; la seconde migration de P7 comprise), munie du talon du stockage et du semis fictif
+-- de l'étape P2 (policies du stockage égales à celles de la production) et des lignes de l'étape semées par ses
+-- fonctions dans le dossier `test` : ce fichier, joué ENTIER par psql, 29 lignes de verdict à 0 en faute — le domaine
+-- « Banque » compris — et 19 mutations sur 19 qui mordent ; M3 voit les trois tables de l'étape hors des dossiers du
+-- client, que l'invariant 3 lui refuse. Ce que leurs policies, leurs gardes et leurs fonctions refusent et acceptent,
+-- profil par profil, est éprouvé par `revisionCycles.sql`. Le passage de P7, ci-dessus, en production à 114 migrations,
+-- compte ces trois tables parmi les 68 du schéma.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

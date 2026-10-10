@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 113 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 114 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -125,6 +125,12 @@ porte 114 (empreinte globale `73b955fc8e4847365c0ccc3b128c45fb`), égale aux fic
 réuni. Le fichier est le texte enregistré (3 398 caractères, aucun retour chariot, empreinte
 `26919b01787e7ce2cec59b165ebdbc71` avec le saut de ligne final).
 
+**Rejoué le 10/10/2026 après `revision_des_cycles`** (ligne 41, étape R4, version `20261010110733`), son
+fichier réuni à l'export : 114 fichiers, 114 migrations, empreinte globale
+`73b955fc8e4847365c0ccc3b128c45fb` des deux côtés, aucune divergence. Le fichier est le texte enregistré,
+octet pour octet (31 737 caractères, saut de ligne final compris, aucun retour chariot, empreinte
+`d943dfed6d701712b5c66ec3e41bdf0a`).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -218,6 +224,12 @@ rendent 78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f`. L'inventaire compte
 fichiers (`cf9ba7dbe87c1a96bc79be53c9cdee1d`) : la migration n'en ajoute aucun, elle modifie trois
 policies sans les renommer ; la production en porte 1 637 (`9628a4d3da780aabddc40c22569eedcf`), égale aux
 fichiers une fois celui de `revision_des_cycles` réuni (ses 73 objets).
+
+**Rejoués le 10/10/2026 après `revision_des_cycles`** (ligne 41, étape R4), son fichier réuni : le socle est
+inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés — la migration ne touche aucune
+table du socle) ; l'inventaire compte 1 637 objets, empreinte `9628a4d3da780aabddc40c22569eedcf` des deux
+côtés. `revision_des_cycles` en ajoute 73 : vingt-sept colonnes, vingt-quatre contraintes, quatre index, trois
+déclencheurs, six policies, six fonctions et la RLS de ses trois tables.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

@@ -138,6 +138,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'revision_justifications', parent: 'revision_justifications', colonne: 'reprise_de', aLaSuppression: 'bloque' },
   { enfant: 'revision_preuves', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'revision_preuves', parent: 'revision_justifications', colonne: 'justification_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_conclusions', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_conclusions', parent: 'revision_conclusions', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'revision_notes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_revues', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_revues', parent: 'revision_conclusions', colonne: 'conclusion_id', aLaSuppression: 'bloque' },
   { enfant: 'soldes_reportes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'sous_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'statuts_factures_recus', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -214,6 +219,8 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // lisent rien qu'une validation fige, et une décision prise APRÈS la validation se restaure comme une autre. Les
 // décisions partent par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`) ; leurs preuves suivent les pièces et les
 // documents qu'elles citent, que leur garde lit sans clé étrangère (`LIENS_GARDES`, que `violationsOrdre` compte).
+// Les cycles de la révision (étape R4) les suivent, pour la même raison : rien de ce qu'une validation fige ne les
+// concerne. Les conclusions partent par vagues (`remplace_id`), leurs revues après elles, le journal n'importe où.
 //
 // La fiche « hors de France » d'une pièce (ligne 28.5, étape e2) suit les pièces qu'elle décrit et PRÉCÈDE le brouillon :
 // sa garde refuse une fiche sur une pièce qu'une écriture validée fige — la sienne ou celle de son bien —, et le lit
@@ -301,6 +308,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'ecritures_brouillon',
   'revision_justifications',
   'revision_preuves',
+  'revision_conclusions',
+  'revision_notes',
+  'revision_revues',
   'justificatifs_proposes',
   'precisions_mouvements',
   'devis_numerotation',
@@ -352,6 +362,9 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   // La fiche « hors de France » (ligne 28.5, étape e2) : une version en remplace une autre de la même pièce
   // (`remplace_id`) ; immuable hors de son retrait, elle ne part pas à NULL, et sa garde lit la version remplacée.
   { table: 'pieces_hors_de_france', colonne: 'remplace_id' },
+  // La conclusion d'un cycle de la révision (ligne 41, étape R4) : elle en remplace une du même cycle et du même exercice
+  // (`remplace_id`) ; immuable, elle ne part pas à NULL, et sa garde lit la conclusion remplacée.
+  { table: 'revision_conclusions', colonne: 'remplace_id' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
@@ -700,6 +713,9 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   regles_bancaires_ignorees: { acces: 'direct' },
   revision_justifications: { acces: 'direct' },
   revision_preuves: { acces: 'direct' },
+  revision_conclusions: { acces: 'direct' },
+  revision_notes: { acces: 'direct' },
+  revision_revues: { acces: 'direct' },
   soldes_reportes: { acces: 'direct' },
   sous_dossiers: { acces: 'direct' },
   statuts_factures_recus: { acces: 'direct' },

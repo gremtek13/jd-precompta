@@ -1190,6 +1190,63 @@ export interface RevisionPreuve {
   precision: string | null
 }
 
+// La conclusion d'un cycle de la révision pour un exercice (`revision_conclusions`, ligne 41, étape R4) : le programme
+// de travail tel qu'il a été exécuté, « révisé » ou « anomalie », les points que l'exercice suivant doit reprendre. Elle
+// ne se modifie jamais : une autre la REMPLACE (`remplace_id`), et la conclusion courante d'un cycle est celle qu'aucune
+// ne remplace. L'ÉTAT du cycle (en cours, révisé, revu…) n'est pas stocké : il se déduit (lib/revisionRevue.ts). Le
+// cabinet la lit ; seule `conclure_cycle` l'écrit depuis le navigateur ; le client n'en voit rien.
+export type EtatConclusionRevision = 'revise' | 'anomalie'
+export interface RevisionConclusion {
+  id: string
+  dossier_id: string
+  annee: number
+  // L'un des onze codes de `CYCLES_DE_REVISION` (lib/revisionCycles.ts).
+  cycle: string
+  etat: EtatConclusionRevision
+  // Le programme exécuté : une liste de `{ code, travail, fait, note }`, 64 Kio au plus, relue par `lireProgramme`.
+  travaux: unknown
+  // 8 000 caractères au plus.
+  conclusion: string
+  // 4 000 caractères au plus : la mémoire du cycle, reprise en tête du même cycle l'exercice suivant.
+  a_suivre: string | null
+  remplace_id: string | null
+  // Repère d'audit, sans clé étrangère : qui a conclu.
+  auteur: string
+  cree_le: string
+}
+
+// Une note du journal d'un cycle (`revision_notes`, étape R4) : un échange avec la direction, une consultation, un
+// travail fait (4 000 caractères au plus). Le journal ne fait que s'allonger : une note ne se modifie ni ne se supprime.
+// Seule `noter_revision` l'écrit ; le client n'en voit rien.
+export type NatureNoteRevision = 'echange_direction' | 'consultation' | 'travail'
+export interface RevisionNote {
+  id: string
+  dossier_id: string
+  annee: number
+  cycle: string
+  nature: NatureNoteRevision
+  texte: string
+  auteur: string
+  cree_le: string
+}
+
+// La revue d'une conclusion par le chef du cabinet (`revision_revues`, étape R4, hypothèse Q2 du cabinet) : approuvée, ou
+// à reprendre avec son observation. Une seule par conclusion : revoir de nouveau suppose une nouvelle conclusion. Seule
+// `revoir_cycle` l'écrit ; le client n'en voit rien.
+export type AvisRevueRevision = 'approuve' | 'a_reprendre'
+export interface RevisionRevue {
+  id: string
+  dossier_id: string
+  annee: number
+  conclusion_id: string
+  avis: AvisRevueRevision
+  // Obligatoire pour « à reprendre » ; 4 000 caractères au plus.
+  observation: string | null
+  // Repère d'audit, sans clé étrangère : qui a revu.
+  revu_par: string
+  revu_le: string
+}
+
 // La fiche « fournisseur établi hors de France » d'une pièce d'achat ou d'une note de frais (`pieces_hors_de_france`,
 // ligne 28.5, étape e2) : ce que l'e-reporting des achats transmettra de sa facture (flux 10, bloc 10.1, rôle acheteur),
 // saisi par le cabinet — rien ne s'en déduit. Elle ne se modifie jamais : une autre la REMPLACE (`remplace_id`), et la

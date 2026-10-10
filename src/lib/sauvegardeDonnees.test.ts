@@ -537,6 +537,52 @@ describe('restauration', () => {
     expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 
+  it('écrit les conclusions d’un cycle par vagues, leurs revues après elles, le journal, et les relit à l’identique', async () => {
+    // Ligne 41, étape R4 : une conclusion immuable ne part pas à NULL pour se compléter, et sa garde lit celle qu'elle
+    // remplace ; la garde d'une revue lit sa conclusion. L'ordre de la sauvegarde n'y change rien.
+    base.tables.revision_conclusions = [
+      { id: 'k3', dossier_id: DOSSIER, annee: 2025, cycle: 'tresorerie', remplace_id: 'k2' },
+      { id: 'k1', dossier_id: DOSSIER, annee: 2025, cycle: 'tresorerie', remplace_id: null },
+      { id: 'k2', dossier_id: DOSSIER, annee: 2025, cycle: 'tresorerie', remplace_id: 'k1' },
+    ]
+    base.tables.revision_revues = [
+      { id: 'v3', dossier_id: DOSSIER, annee: 2025, conclusion_id: 'k3' },
+      { id: 'v1', dossier_id: DOSSIER, annee: 2025, conclusion_id: 'k1' },
+    ]
+    base.tables.revision_notes = [{ id: 'n1', dossier_id: DOSSIER, annee: 2025, cycle: 'tresorerie' }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    expect(sauvegarde.contenu.revision_conclusions).toHaveLength(3)
+    expect(sauvegarde.contenu.revision_revues).toHaveLength(2)
+    expect(sauvegarde.contenu.revision_notes).toHaveLength(1)
+    expect(sauvegarde.manifeste.liensPerdus).toEqual([])
+    baseVide()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(ecritures.filter((e) => e.table === 'revision_conclusions').map((e) => e.nb)).toEqual([1, 1, 1])
+    expect(base.tables.revision_conclusions.map((l) => l.id)).toEqual(['k1', 'k2', 'k3'])
+    const tables = ecritures.map((e) => e.table)
+    expect(tables.lastIndexOf('revision_conclusions')).toBeLessThan(tables.indexOf('revision_revues'))
+    expect(resultat.lignesParTable.revision_conclusions).toBe(3)
+    expect(resultat.lignesParTable.revision_revues).toBe(2)
+    expect(resultat.lignesParTable.revision_notes).toBe(1)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('refuse, avant d’écrire, une revue dont la conclusion manque à la sauvegarde', async () => {
+    baseVide()
+    const sauvegarde = {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, cabinet_id: CABINET }],
+        revision_conclusions: [],
+        revision_revues: [{ id: 'v1', dossier_id: DOSSIER, annee: 2025, conclusion_id: 'k-absente' }],
+      },
+    }
+    await expect(restaurerSauvegarde(sauvegarde))
+      .rejects.toThrow('revision_revues.conclusion_id pointe revision_conclusions « k-absente », absent de la sauvegarde.')
+    expect(ecritures).toEqual([])
+  })
+
   it('refuse, avant d’écrire, une preuve de la révision dont la pièce manque à la sauvegarde', async () => {
     baseVide()
     const sauvegarde = {

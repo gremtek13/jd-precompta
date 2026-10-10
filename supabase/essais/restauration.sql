@@ -98,6 +98,15 @@
 -- migrations des devis, 65 tables, le plan d'hier. Planté — le lien avant son devis —, le script s'arrête sur la clé.
 -- À 113 migrations (`revision_des_cycles`, appliquée le même jour), il s'arrête à la copie des clés : les tables de
 -- la révision par cycle ne sont pas encore au plan de ce fichier.
+--
+-- 10/10/2026, ligne 41, étape R4 : `revision_conclusions`, `revision_notes` et `revision_revues` entrent au plan (68 tables,
+-- 71 avec les devis), après les décisions de la révision et avant les registres de P7, les conclusions par vagues
+-- (`remplace_id`), leurs revues après elles. Rejoué sur une copie de la réplique locale de l'étape, égale à la production
+-- à 114 migrations (signature.sql : les neuf familles ; la seconde migration de P7 comprise, celles des devis absentes),
+-- le dossier `test` semé par les fonctions de la base — une chaîne de trois conclusions dont deux revues, une conclusion
+-- revue d'un autre cycle, une d'un autre exercice, trois notes du journal : 68 tables recréées, 62 restaurées et
+-- IDENTIQUES à la source (12 lignes), les conclusions en trois vagues, 0 écart, aucun arrêt, les deux contrôles du
+-- catalogue des rôles justes. Planté — les revues avant leurs conclusions —, le script s'arrête sur la clé.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -121,7 +130,8 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (46,'tiers_categories_cabinet'),(47,'immobilisations'),(48,'lignes_bancaires'),(49,'ventilations_bancaires'),(50,'reglements_groupes'),
  (51,'encaissements_factures'),(52,'encaissements_factures_taux'),(53,'transmissions_encaissements'),(54,'lettrages_manuels'),(55,'piece_commentaires'),
  (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
- (61,'revision_justifications'),(62,'revision_preuves'),(63,'justificatifs_proposes'),(64,'precisions_mouvements'),(65,'exercices_valides');
+ (61,'revision_justifications'),(62,'revision_preuves'),(63,'revision_conclusions'),(64,'revision_notes'),(65,'revision_revues'),
+ (66,'justificatifs_proposes'),(67,'precisions_mouvements'),(68,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -144,6 +154,7 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),
  ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('roles_comptables','global',null,null),
+ ('revision_conclusions','direct',null,null),('revision_notes','direct',null,null),('revision_revues','direct',null,null),
  ('soldes_reportes','direct',null,null),
  ('sous_dossiers','direct',null,null),('statuts_factures_recus','direct',null,null),('super_admins','global',null,null),
  ('superpdp_credentials','direct',null,null),('supplements','direct',null,null),('taux_change_bce','global',null,null),
@@ -153,7 +164,8 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
 
 insert into essai_restauration._vagues (table_nom, colonne) values
  ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de'),
- ('pieces_hors_de_france','remplace_id');
+ ('pieces_hors_de_france','remplace_id'),
+ ('revision_conclusions','remplace_id');
 
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme

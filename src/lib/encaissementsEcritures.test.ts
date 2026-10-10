@@ -33,6 +33,12 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // des écritures. Aucune Edge Function ne la lit ni ne l'écrit ; dans `src/`, rien ne l'écrit en direct, sauf la
 // restauration.
 //
+// LES CYCLES DE LA RÉVISION NON PLUS (ligne 41, étape R4) : `revision_conclusions`, `revision_notes` et `revision_revues`
+// gardent la conclusion de chaque cycle, son journal et la revue du chef. Seules `conclure_cycle`, `noter_revision` et
+// `revoir_cycle` les écrivent — la conclusion courante, la revue réservée au chef, une revue par conclusion, sous verrou
+// —, et aucun écran ne les appelle avant la phase C de l'étape. La policy laisse la porte de la restauration au
+// super-administrateur, le chef du cabinet en production. Aucune Edge Function ne les nomme.
+//
 // LA FICHE « HORS DE FRANCE » D'UNE PIÈCE NON PLUS (ligne 28.5, étape e2) : `pieces_hors_de_france` et sa ventilation
 // décrivent la facture d'un fournisseur établi hors de France, que l'e-reporting des achats transmettra. Seule
 // `enregistrer_fiche_hors_de_france` juge ce qu'elle porte — ses quarante-huit refus, la fiche courante et la même
@@ -50,6 +56,10 @@ export const TABLES_DES_DECLARATIONS = ['transmissions_encaissements'] as const
 export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
 export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuves'] as const
 export const TABLES_DES_FICHES_HORS_DE_FRANCE = ['pieces_hors_de_france', 'pieces_hors_de_france_taux'] as const
+export const TABLES_DES_CYCLES_DE_LA_REVISION = ['revision_conclusions', 'revision_notes', 'revision_revues'] as const
+
+// Les écrans qui appelleront les trois fonctions des cycles, nommément : aucun avant la phase C de l'étape R4.
+const ECRANS_DES_CYCLES: readonly string[] = []
 
 // Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
 const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']
@@ -197,6 +207,14 @@ export function ecrituresDeLaRevision(
   return ecrituresDesTables(sources, TABLES_DE_LA_REVISION, exceptions, 'seule justifier_solde l’écrit')
 }
 
+/** Les cycles de la révision (ligne 41, étape R4) : leurs trois tables, dans `src/` et les Edge Functions. */
+export function ecrituresDesCyclesDeLaRevision(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DES_CYCLES_DE_LA_REVISION, exceptions, 'seules ses trois fonctions l’écrivent')
+}
+
 /** La fiche « hors de France » (ligne 28.5, étape e2) : ses deux tables, dans `src/` et les Edge Functions. */
 export function ecrituresDesFichesHorsDeFrance(
   sources: readonly Source[],
@@ -323,6 +341,34 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(TABLES_AUTO_REFERENCEES.map((t) => t.table)).not.toContain('revision_justifications')
     expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table === 'revision_justifications').map((t) => t.colonne))
       .toEqual(['remplace_id', 'reprise_de'])
+  })
+
+  it('aucune écriture directe des cycles de la révision, hors de la restauration (ligne 41, étape R4)', () => {
+    expect(ecrituresDesCyclesDeLaRevision(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme les cycles de la révision : ni leurs tables, ni leurs fonctions', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DES_CYCLES_DE_LA_REVISION, 'conclure_cycle', 'noter_revision', 'revoir_cycle']) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('les trois fonctions des cycles ne s’appellent que des écrans qui s’inscrivent nommément', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of ['conclure_cycle', 'noter_revision', 'revoir_cycle']) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DES_CYCLES)
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', args)`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue les cycles par l’insertion — les conclusions par vagues —, jamais par sa seconde passe', () => {
+    for (const t of TABLES_DES_CYCLES_DE_LA_REVISION) expect(ORDRE_RESTAURATION).toContain(t)
+    for (const t of TABLES_DES_CYCLES_DE_LA_REVISION) expect(TABLES_AUTO_REFERENCEES.map((x) => x.table)).not.toContain(t)
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((x) => x.table === 'revision_conclusions').map((x) => x.colonne)).toEqual(['remplace_id'])
   })
 
   it('aucune écriture directe de la fiche « hors de France », hors de la restauration (ligne 28.5, étape e2)', () => {
@@ -458,6 +504,22 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(jugerR(`const T = 'revision_justifications'\nawait supabase.from(T).update({ etat: 'justifie' })`)).toHaveLength(1)
     expect(jugerR(`await admin.from('revision_preuves').insert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
     expect(jugerR(`await supabase.from('revision_justifications').select('*', { count: 'exact' })`)).toEqual([])
+  })
+
+  it('attrape une écriture directe des cycles de la révision, dans src/ comme dans une Edge Function', () => {
+    const jugerC = (texte: string, chemin = 'src/faux.ts') => ecrituresDesCyclesDeLaRevision([{ chemin, texte }], {})
+    expect(jugerC(`
+      await supabase
+        .from('revision_conclusions')
+        .insert({ dossier_id: d, annee: 2025, cycle: 'tresorerie', etat: 'revise' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur revision_conclusions : seules ses trois fonctions l’écrivent'])
+    expect(jugerC(`await supabase.from('revision_notes').delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerC(`const T = 'revision_revues'\nawait supabase.from(T).update({ avis: 'approuve' })`)).toHaveLength(1)
+    expect(jugerC(`await admin.from('revision_revues').insert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerC(`await supabase.from('revision_conclusions').select('*', { count: 'exact' })`)).toEqual([])
+    // La révision des soldes ne prend pas les cycles pour ses tables, ni l'inverse.
+    expect(ecrituresDeLaRevision([{ chemin: 'src/faux.ts', texte: `await supabase.from('revision_notes').insert(x)` }], {})).toEqual([])
+    expect(jugerC(`await supabase.from('revision_justifications').insert(x)`)).toEqual([])
   })
 
   it('attrape une écriture directe de la fiche « hors de France », dans src/ comme dans une Edge Function', () => {
