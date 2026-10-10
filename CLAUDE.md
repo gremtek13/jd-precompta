@@ -100,9 +100,12 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs par un modèle ; réservée à un compte RATTACHÉ au cabinet
     et à `receive-email`, qui présente la clé secrète dans l'en-tête `apikey`.
-  - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture, relance ; domaine `precompta.jdarnis.fr`).
+  - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
+    e-mails par dossier et par jour de Paris pour un client, comptés avant Resend ; relance : le cabinet seul ; domaine
+    `precompta.jdarnis.fr`).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; `superpdp-emit` transmet le CII de
-    l'application, jugé avant tout appel, sous une transmission réservée.
+    l'application, jugé avant tout appel, sous une transmission réservée ; le client « Ventes » relie Super PDP (EC-Q4,
+    hypothèse) et transmet, la réception (`superpdp-sync`) reste au cabinet.
   - `proposer-categorie` — la catégorie d'UNE pièce depuis son texte OCR, sur un clic ; rien d'écrit.
   - `evaluer-extraction` — harnais de MESURE ; ne facture que pendant une fenêtre datée ; `limite: 0` et la question
     « cles » sont gratuites.
@@ -111,7 +114,8 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   - `plateforme-agreee` — la plateforme agréée du CLIENT, par l'API de flux que publient les plateformes ; REND les
     factures, l'écran importe ; DÉPOSE une facture émise et suit son accusé ; RELÈVE les statuts du cycle de vie des
     factures émises et les écrit elle-même (`statuts_factures_recus`) ; le secret de la connexion ne revient jamais au
-    navigateur.
+    navigateur, ni ne part vers une adresse changée sans être ressaisi ; le client « Ventes » y fait tout sauf la
+    réception des achats (P3).
   - `taux-change-bce` — le cours BCE d'une devise à une date.
 
 ## Stack technique
@@ -365,6 +369,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   pièce, écrites avant elle ; `pieces.notes`, `documents_divers.notes` et `dossiers.notes` ne se lisent ni ne s'écrivent
   plus (`notesInternesEcritures.test.ts`) et attendent leur suppression (EC-Q7) : d'ici là le client lit leur copie
   figée → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT ».
+- **Les fonctions de la vente acceptent le client** (P3, 10/10/2026) : `plateforme-agreee`, `superpdp-emit`,
+  `superpdp-credentials` et `send-email` lisent `droits_sur_le_dossier` au jeton de l'appelant (bloc `droitsDeLAppelant`,
+  quatre copies), avant toute autre lecture et tout appel extérieur, puis jugent l'action par leur table `QUI_PEUT_QUOI`
+  (une DONNÉE ; attendue dans `src/test/quiPeutQuoi.ts`, que la phrase des cases de l'onglet Accès nomme action par
+  action) ; sans le droit, 404 « Dossier introuvable. », droits illisibles 503 ; `cree_par` à la réservation, `lu_par`
+  au relevé ; le plafond d'e-mails se LIT, il ne se réserve pas → « LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -405,8 +415,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
   leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture du
-  relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2,
-  10/10/2026) ; client
+  relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2, et
+  dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -508,9 +518,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   statut de TVA) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT
   HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS
   D'E-REPORTING ».
-- **Défauts connus des Edge Functions** (17, `DEFAUTS_CONNUS`) : douze corps mal formés, dans sept fonctions, qui les
-  font lever ou répondre en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les
-  refuse depuis le 09/10/2026, `create-client-access`, `create-team-member` et `create-cabinet` depuis le 10/10/2026) ;
+- **Défauts connus des Edge Functions** (11, `DEFAUTS_CONNUS`) : six corps mal formés, dans quatre fonctions
+  (`delete-cabinet`, `superpdp-sync`, `proposer-categorie`, `evaluer-extraction`), qui les font lever ou répondre en
+  anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse depuis le 09/10/2026,
+  `create-client-access`, `create-team-member`, `create-cabinet` et les quatre fonctions de la vente depuis le
+  10/10/2026) ;
   deux d'`evaluer-extraction` ; deux décisions du cabinet — l'objet et l'expéditeur d'un e-mail reçu au journal
   (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription publique, fermée le 10/10/2026, n'admet
   plus un inconnu ; les clés historiques restent à désactiver).
@@ -550,7 +562,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   `supprimer_brouillon_facture`), et la bascule (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) :
   l'onglet Accès dit ce que « Ventes » ouvre, l'onglet Factures supprime un brouillon par la fonction ; ses écrans
   viendront avec P3 et P4 → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT », « LES VENTES DU CLIENT,
-  APPLIQUÉES : LA BASCULE ». P5,
+  APPLIQUÉES : LA BASCULE ». P3, les fonctions de la vente acceptent le client, le 10/10/2026 (EC-Q4 prise comme
+  hypothèse ; la phrase des cases de l'onglet Accès dit ce qu'elles ouvrent) → « LES FONCTIONS DE LA VENTE ACCEPTENT LE
+  CLIENT ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -727,11 +741,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   MORT ; le typage complet rend des erreurs connues (SDK non installés).
 - **Copies gardées** : montants, dates, classification, orientation, statut de TVA, la lecture d'un statut reçu
   (`cdarRecu`, dans `plateforme-agreee`), le refus du service d'authentification (`refusDuService`, dans les trois
-  fonctions qui créent des comptes), blocs de l'assistant (un garde par bloc), et `historiqueDuClient`, seule barrière
-  entre le fil envoyé par le navigateur et le modèle →
-  « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ». Au prochain déploiement de `plateforme-agreee` et `superpdp-emit` : le
-  commentaire du générateur CII qui dit les notes « INTERNES » (bloc `factureCii`, trois copies) se corrige ; elles ne
-  figurent pas sur la facture, le client « Ventes » les lit.
+  fonctions qui créent des comptes), les droits de l'appelant (`droitsDeLAppelant`, dans les quatre fonctions de la
+  vente, `droitsDeLAppelantCopie.test.ts`), blocs de l'assistant (un garde par bloc), et `historiqueDuClient`, seule
+  barrière entre le fil envoyé par le navigateur et le modèle → « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ».
 
 - **Chaque Edge Function s'appelle en HTTP dans la suite** (ligne 23, `src/test/fonctionsEdge.ts`) : sa VRAIE source,
   transpilée, devant un monde factice qui journalise tout (`Deno.serve` capturé, clés fabriquées, base aux filtres et aux
@@ -1173,7 +1185,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8397 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8571 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

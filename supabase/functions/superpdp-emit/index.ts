@@ -28,6 +28,10 @@
 // - "envoyer" : juge, écrit, valide, réserve et transmet une facture validée pas encore transmise.
 // - "actualiser" : relit le statut d'une facture déjà transmise et met à jour son historique.
 //
+// Qui peut quoi (`QUI_PEUT_QUOI`, espace client, étape P3) : les deux actions au cabinet du dossier et au client dont
+// l'accès porte la case « Ventes », lus avec le jeton de l'appelant (bloc droitsDeLAppelant) avant toute lecture de la
+// facture et des identifiants ; la transmission réservée garde le compte qui l'a demandée (`cree_par`).
+//
 // Les journaux ne portent ni le fichier transmis ni la raison d'un refus, qui revient à l'écran du
 // cabinet : des codes de retour, des nombres et, pour une erreur inattendue, son message.
 
@@ -47,6 +51,19 @@ function json(body: unknown, status = 200) {
 }
 
 const SUPERPDP_ENDPOINT = "https://api.superpdp.tech"
+
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
+// QUI PEUT QUOI (conception de l'espace client, §3.5) : le droit que chaque action exige — « ventes », le cabinet du
+// dossier ou un accès client qui porte la case « Ventes » ; « cabinet », le cabinet seul. Un changement de décision est
+// une ligne.
+const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
+  envoyer: "ventes",
+  actualiser: "ventes",
+}
 
 // La facture telle que le générateur la lit, avec l'émetteur qu'elle a figé, la facture qu'un avoir corrige et son
 // identifiant chez Super PDP.
@@ -861,9 +878,9 @@ export function factureCii(d: DonneesCii): ResultatCii {
       el('ram:ID', f.numero as string),
       el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
       dateCii('ram:IssueDateTime', f.date_emission),
-      // Seules les mentions légales partent avec la facture (BT-22). Les notes sont INTERNES : l'écran le dit en les
-      // saisissant — « n'apparaissent pas sur la facture », et le motif d'un avoir, « note interne » —, l'aperçu ne les
-      // imprime pas, et ce que le cabinet y écrit pour lui-même n'a rien à faire chez le client.
+      // Seules les mentions légales partent avec la facture (BT-22). Les notes n'y figurent pas, ni le motif d'un avoir
+      // rangé avec elles : l'écran le dit en les saisissant, l'aperçu ne les imprime pas, l'acheteur n'en reçoit rien.
+      // Elles ne sont pas internes pour autant : le client qui porte la case « Ventes » les lit (`ventes_du_client`).
       f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [
@@ -1062,6 +1079,50 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE droitsDeLAppelant ────────────────────────────────────────────────────────────────────────────────────
+// Ce que l'appelant peut faire sur ce dossier (espace client, étape P3). Ses droits se lisent par
+// `droits_sur_le_dossier` (migration `droits_des_acces_clients`, étape P1) avec SON jeton — sous la clé de service,
+// `auth.uid()` serait nul —, avant toute lecture d'un secret et tout appel extérieur. Seul `true` accorde : une erreur,
+// une exception, ou une réponse sans ses quatre cases booléennes rendent `illisible`, le côté fermé ; une case de plus
+// (un domaine neuf, que la fonction SQL ajoute sans changer de signature) ne ferme rien. Le droit qu'une action exige
+// est une DONNÉE de chaque fonction, sa table « qui peut quoi » : « cabinet » (`admin_du_dossier`), ou « ventes »
+// (`gere_les_ventes` : le cabinet, ou un accès client qui porte la case « Ventes ») ; une action hors de la table n'est
+// permise à personne. Copié à l'identique dans plateforme-agreee, superpdp-emit, superpdp-credentials et send-email :
+// `droitsDeLAppelantCopie.test.ts` exécute chaque copie contre sa propre grille.
+type DroitExige = "cabinet" | "ventes"
+interface Droits { cabinet: boolean; membre: boolean; ventes: boolean; banque: boolean }
+
+async function droitsDeLAppelant(
+  appelant: { rpc: (nom: string, args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }> },
+  dossierId: string,
+): Promise<{ droits: Droits } | { illisible: string }> {
+  let lu: unknown
+  try {
+    const reponse = await appelant.rpc("droits_sur_le_dossier", { p_dossier_id: dossierId })
+    if (reponse.error != null) {
+      const message = (reponse.error as { message?: unknown }).message
+      return { illisible: typeof message === "string" && message !== "" ? message : "erreur de la base" }
+    }
+    lu = reponse.data
+  } catch {
+    return { illisible: "la base n'a pas répondu" }
+  }
+  if (lu === null || typeof lu !== "object" || Array.isArray(lu)) return { illisible: "réponse d'une autre forme" }
+  const cases = lu as Record<string, unknown>
+  if (!["cabinet", "membre", "ventes", "banque"].every((c) => typeof cases[c] === "boolean")) {
+    return { illisible: "réponse d'une autre forme" }
+  }
+  const { cabinet, membre, ventes, banque } = cases as unknown as Droits
+  return { droits: { cabinet, membre, ventes, banque } }
+}
+
+/** L'appelant porte-t-il le droit que la table exige pour cette action ? */
+function actionPermise(table: Readonly<Record<string, DroitExige>>, action: string, droits: Droits): boolean {
+  const exige = Object.prototype.hasOwnProperty.call(table, action) ? table[action] : null
+  return exige === "cabinet" ? droits.cabinet : exige === "ventes" ? droits.ventes : false
+}
+// ── FIN COPIE droitsDeLAppelant ──────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -1089,23 +1150,39 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, cleSecrete)
 
-  let payload: { dossierId?: string; factureId?: string; action?: "envoyer" | "actualiser" }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
-  const dossierId = payload.dossierId?.trim()
-  const factureId = payload.factureId?.trim()
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et `Deno.serve` rendait alors un 500 en
+  // texte brut, sans en-tête CORS, que la page ne pouvait pas lire ; un champ reçu en nombre faisait lever `.trim()`
+  // (défauts connus des Edge Functions, corrigés ici comme dans create-cabinet). Absent ou nul, un champ tombe sur le
+  // refus « requis » qui suit.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  const payload = corps as Record<string, unknown>
+  for (const champ of ["dossierId", "factureId", "action"]) {
+    if (!texteOuAbsent(payload[champ])) {
+      return json({ error: `Corps de requête invalide : « ${champ} » doit être un texte.` }, 400)
+    }
+  }
+  const dossierId = (payload.dossierId as string | null | undefined)?.trim()
+  const factureId = (payload.factureId as string | null | undefined)?.trim()
   const action = payload.action
   if (!dossierId || !factureId || (action !== "envoyer" && action !== "actualiser")) {
     return json({ error: "dossierId, factureId et action ('envoyer' ou 'actualiser') sont requis." }, 400)
   }
 
-  // Même vérification que les autres fonctions de ce dossier (voir agent-comptable, superpdp-sync) :
-  // super-admin, chef de cabinet, ou comptable assigné à ce dossier précisément.
-  const { data: aAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
-  if (!aAcces) {
+  // Les droits de l'appelant, avec SON jeton, avant toute lecture de la facture et des identifiants. Sans le droit que
+  // l'action exige, la réponse d'avant l'espace client, mot pour mot : elle ne dit pas si le dossier existe.
+  const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)
+  if ("illisible" in lus) {
+    return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${lus.illisible}).` }, 503)
+  }
+  if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) {
     return json({ error: "Dossier introuvable." }, 404)
   }
 
@@ -1240,10 +1317,14 @@ Deno.serve(async (req: Request) => {
 
     // 2. La transmission se RÉSERVE avant de partir : une seule active par facture, tous canaux confondus (index
     // unique), si bien que deux clics, deux onglets ou un dépôt par la plateforme du client ne la transmettent pas deux
-    // fois.
+    // fois. Elle garde le compte qui l'a demandée, le cabinet ou le client (`cree_par`, étape P2) : posé ici, à la
+    // réservation, puisque la garde de la table refuse qu'il change ensuite.
     const { data: reservee, error: erreurReservation } = await admin
       .from("transmissions_factures")
-      .insert({ dossier_id: dossierId, facture_id: factureId, canal: "superpdp", hote: HOTE_SUPERPDP, sha256: fichier.sha256 })
+      .insert({
+        dossier_id: dossierId, facture_id: factureId, canal: "superpdp", hote: HOTE_SUPERPDP, sha256: fichier.sha256,
+        cree_par: callerData.user.id,
+      })
       .select("id")
       .maybeSingle()
     if (erreurReservation?.code === "23505") {

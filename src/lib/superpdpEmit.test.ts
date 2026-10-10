@@ -138,7 +138,8 @@ describe('superpdp-emit — le câblage du gestionnaire', () => {
 
   it('la facture se juge AVANT tout appel à Super PDP, puis se valide, se réserve, part, et son issue s’enregistre', () => {
     const etapes = [
-      'rpc("admin_du_dossier"',
+      'await droitsDeLAppelant(supabaseAsCaller, dossierId)',
+      'if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) {',
       '.eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()',
       'if (facture.superpdp_invoice_id) {',
       'const donnees = donneesDeLaFacture(facture,',
@@ -146,7 +147,7 @@ describe('superpdp-emit — le câblage du gestionnaire', () => {
       'const cii = factureCii(donnees)',
       'const token = await obtenirToken(',
       '/v1.beta/validation_reports',
-      '.insert({ dossier_id: dossierId, facture_id: factureId, canal: "superpdp", hote: HOTE_SUPERPDP, sha256: fichier.sha256 })',
+      'dossier_id: dossierId, facture_id: factureId, canal: "superpdp", hote: HOTE_SUPERPDP, sha256: fichier.sha256,\n        cree_par: callerData.user.id,',
       '/v1.beta/invoices?external_id=',
       'const issue = issueDeLEnvoi(statutEnvoi, corpsEnvoi)',
       '.eq("id", reservee.id).eq("etat", "envoi")',

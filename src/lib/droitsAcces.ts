@@ -143,6 +143,9 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 //   - `ventes_du_client`, puis `ventes_du_client_facturation` (P2, `VENTES_DU_CLIENT_EXPORTEES`) : avec « Ventes », la
 //     lecture des neuf tables de ses ventes, colonnes comprises, et leurs gestes par les fonctions du cabinet ; désigner
 //     le mouvement qui prouve un encaissement y demande AUSSI « Banque » — seul effet de cette case sans P7.
+// Avec les ventes ouvertes, la phrase dit aussi ce que « Ventes » ouvre dans les quatre fonctions de la vente (P3, qui
+// suit P2 et n'a pas de sens sans elle) : chaque action que leur table « qui peut quoi » ouvre à la case, et elle seule
+// (droitsAcces.test.ts la confronte à `src/test/quiPeutQuoi.ts`, que droitsDeLAppelantCopie.test.ts confronte aux sources).
 // Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
 // droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
 export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean): string {
@@ -156,7 +159,10 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
       + 'leurs transmissions et leur suivi, les statuts lus sur sa plateforme, ses encaissements et leurs déclarations, '
       + 'les e-mails qui les ont envoyés, avec ce que le cabinet y a écrit (notes et motifs) — et d’en faire les gestes : '
       + 'créer, modifier, valider ou supprimer un brouillon, créer un avoir, enregistrer, retirer, déclarer ou '
-      + 'contre-passer un encaissement, abandonner une transmission restée sans issue connue.'
+      + 'contre-passer un encaissement, abandonner une transmission restée sans issue connue. Par les fonctions du '
+      + 'serveur, il peut aussi relier lui-même sa plateforme agréée et Super PDP et voir leur état, y transmettre une '
+      + 'facture et en suivre la transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, '
+      + 'trente par dossier et par jour au plus.'
     : ''
   const banque = simulationSousBanque
     ? ' « Banque » permet déjà au client de voir sa simulation et, par la base et sans écran encore, de lire le contrôle '

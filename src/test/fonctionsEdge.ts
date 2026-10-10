@@ -297,6 +297,44 @@ function membreDuDossier(monde: Monde, utilisateur: string | null, dossierId: un
   return !!utilisateur && (monde.base.memberships ?? []).some((m) => m.dossier_id === dossierId && m.user_id === utilisateur)
 }
 
+/**
+ * La case de `memberships` que chaque droit lit dans `client_du_dossier` (migration `droits_des_acces_clients`, étape
+ * P1) : `true` pour « membre » (un accès quelconque) ; tout autre mot ne vaut rien. `fonctionsEdge.test.ts` confronte
+ * cette table, et les deux suivantes, au texte de la migration.
+ */
+export const CASES_DES_DROITS: Readonly<Record<string, string | true>> = {
+  membre: true,
+  ventes: 'droit_ventes',
+  banque: 'droit_banque',
+}
+
+/** `client_du_dossier(dossier, droit)` : un accès de l'appelant à CE dossier, qui porte ce droit. */
+export function clientDuDossier(monde: Monde, utilisateur: string | null, dossierId: unknown, droit: unknown): boolean {
+  if (!utilisateur || typeof droit !== 'string' || !Object.hasOwn(CASES_DES_DROITS, droit)) return false
+  const caseLue = CASES_DES_DROITS[droit]
+  return (monde.base.memberships ?? []).some((m) =>
+    m.dossier_id === dossierId && m.user_id === utilisateur && (caseLue === true || m[caseLue] === true))
+}
+
+/**
+ * Chaque clé de `droits_sur_le_dossier`, et ce qu'elle vaut : le OU de ses termes — `admin_du_dossier`, ou
+ * `client_du_dossier` sous le droit nommé (`gere_les_ventes` et `gere_la_banque` déroulées).
+ */
+export const DROITS_DU_DOSSIER: Readonly<Record<string, readonly ('admin_du_dossier' | `client_du_dossier:${string}`)[]>> = {
+  cabinet: ['admin_du_dossier'],
+  membre: ['client_du_dossier:membre'],
+  ventes: ['admin_du_dossier', 'client_du_dossier:ventes'],
+  banque: ['admin_du_dossier', 'client_du_dossier:banque'],
+}
+
+/** `droits_sur_le_dossier(dossier)` : l'objet que la fonction SQL rend, une case par clé. */
+export function droitsSurLeDossier(monde: Monde, utilisateur: string | null, dossierId: unknown): Record<string, boolean> {
+  return Object.fromEntries(Object.entries(DROITS_DU_DOSSIER).map(([cle, termes]) => [cle, termes.some((terme) =>
+    terme === 'admin_du_dossier'
+      ? adminDuDossier(monde, utilisateur, dossierId)
+      : clientDuDossier(monde, utilisateur, dossierId, terme.slice('client_du_dossier:'.length)))]))
+}
+
 // `pieces_select` et `piece_textes_ocr_select` (le cabinet sur ses dossiers, le client sur le sien) ;
 // `categories_select`, réservée aux connectés (migration `categories_et_natures_reservees_aux_connectes`).
 const POLITIQUES_LECTURE: Record<string, Politique> = {
@@ -308,6 +346,7 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
 // Les fonctions SQL qu'une fonction appelle par `rpc`, avec ce que fait leur corps. Une autre LÈVE.
 const FONCTIONS_SQL: Record<string, (monde: Monde, utilisateur: string | null, args: Record<string, unknown>) => unknown> = {
   admin_du_dossier: (monde, utilisateur, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
+  droits_sur_le_dossier: (monde, utilisateur, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
 }
 
 const PGRST116 = (n: number): ErreurFactice => ({
@@ -1348,8 +1387,12 @@ export function mondeDeReference(): Monde {
       { id: 'e1000000-0000-4000-8000-000000000001', dossier_id: ID.dossier, user_id: PERSONNES.comptableAssigne.id },
       { id: 'e3000000-0000-4000-8000-000000000003', dossier_id: ID.dossierVoisin, user_id: PERSONNES.comptableNonAssigne.id },
     ],
+    // Ses deux cases (étape P1) à leur valeur par défaut, fausses : un scénario qui veut un client « Ventes » les coche.
     memberships: [
-      { id: 'f1000000-0000-4000-8000-000000000001', user_id: PERSONNES.client.id, dossier_id: ID.dossier, role: 'client', email: PERSONNES.client.email },
+      {
+        id: 'f1000000-0000-4000-8000-000000000001', user_id: PERSONNES.client.id, dossier_id: ID.dossier, role: 'client',
+        email: PERSONNES.client.email, droit_ventes: false, droit_banque: false,
+      },
     ],
     super_admins: [{ user_id: PERSONNES.superAdmin.id }],
   }

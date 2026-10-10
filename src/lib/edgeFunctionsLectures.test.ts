@@ -90,25 +90,19 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       'la suppression est refusée',
   },
   'send-email': {
-    nombre: 2,
-    raison:
-      'le contrôle d’accès et le nom du dossier, qui répondent tous deux « Dossier introuvable. » ' +
-      'en 404 : l’e-mail n’est pas envoyé. La lecture des LIGNES de facture, elle, n’est pas ' +
-      'dispensée — elle produisait une facture sans détail, et c’est le défaut corrigé le 22/09/2026',
-  },
-  'superpdp-credentials': {
     nombre: 1,
     raison:
-      'le contrôle d’accès `admin_du_dossier`, qui répond 404. La lecture du STATUT n’est pas ' +
-      'dispensée : `configured: false` est une affirmation, et l’écran en tire une invitation à ' +
-      'ressaisir un `client_secret` par-dessus celui qui existe',
+      'le nom du dossier, qui répond « Dossier introuvable. » en 404 : l’e-mail n’est pas envoyé. ' +
+      'Le contrôle des droits lit son erreur depuis l’espace client (bloc droitsDeLAppelant, étape P3), ' +
+      'et la lecture des LIGNES de facture n’est pas dispensée — elle produisait une facture sans ' +
+      'détail, et c’est le défaut corrigé le 22/09/2026',
   },
   'superpdp-emit': {
-    nombre: 2,
+    nombre: 1,
     raison:
-      'le contrôle d’accès et les identifiants Super PDP. Sans identifiants lisibles la fonction ' +
-      'refuse d’émettre (400) — le côté FERMÉ sur une transmission à une plateforme agréée DGFiP, ' +
-      'qu’un avoir seul peut corriger une fois partie',
+      'les identifiants Super PDP. Sans identifiants lisibles la fonction refuse d’émettre (400) — le ' +
+      'côté FERMÉ sur une transmission à une plateforme agréée DGFiP, qu’un avoir seul peut corriger ' +
+      'une fois partie. Le contrôle des droits, lui, lit son erreur (bloc droitsDeLAppelant, étape P3)',
   },
   'superpdp-sync': {
     nombre: 2,

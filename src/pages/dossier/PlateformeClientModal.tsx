@@ -365,7 +365,12 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
             <div className="field">
               <label htmlFor="pa-secret">Secret (client_secret)</label>
               <input id="pa-secret" type="password" autoComplete="new-password" {...champ('client_secret')} />
-              {!creation && <span className="muted">Laissé vide, le secret enregistré est gardé : il ne s’affiche jamais.</span>}
+              {!creation && (
+                <span className="muted">
+                  Laissé vide, le secret enregistré est gardé tant que les deux adresses restent les mêmes : il ne
+                  s’affiche jamais. Une adresse changée le fait ressaisir.
+                </span>
+              )}
             </div>
             <div className="field-row">
               <div className="field">

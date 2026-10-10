@@ -219,6 +219,22 @@ describe('plateforme-agreee — ce que le cabinet enregistre', () => {
     expect(C.saisieDeConnexion({ ...SAISIE, client_secret: '' }, null)).toEqual({ refus: expect.stringMatching(/secret est requis/) })
   })
 
+  it('un secret gardé ne part que là où il partait : une adresse changée exige de le ressaisir (étape P3)', () => {
+    // Ouverte au client qui porte « Ventes » (hypothèse EC-Q4), la modification ne doit pas pouvoir envoyer le secret
+    // enregistré — ni le jeton qu'il obtient — vers un hôte que personne n'a saisi avec lui.
+    for (const adresse of [{ url_jeton: 'https://ailleurs.fr/token' }, { url_flux: 'https://ailleurs.fr/afnor' }]) {
+      expect(C.saisieDeConnexion({ ...SAISIE, ...adresse, client_secret: '' }, EXISTANTE))
+        .toEqual({ refus: expect.stringMatching(/ressaisissez le secret/) })
+      expect(valeurs(C.saisieDeConnexion({ ...SAISIE, ...adresse, client_secret: 'nouveau' }, EXISTANTE)).valeurs.client_secret)
+        .toBe('nouveau')
+    }
+    // Les mêmes adresses, un autre nom ou une autre identité : le secret enregistré reste.
+    expect(valeurs(C.saisieDeConnexion({ ...SAISIE, nom: 'Autre nom', client_secret: '' }, EXISTANTE)).valeurs.client_secret)
+      .toBe('secret-enregistre')
+    expect(valeurs(C.saisieDeConnexion({ ...SAISIE, client_id: 'autre', client_secret: '' }, EXISTANTE)).valeurs.client_secret)
+      .toBe('secret-enregistre')
+  })
+
   it('la recherche ne repart du début que pour une autre plateforme, une autre identité ou une autre entreprise', () => {
     const memes = valeurs(C.saisieDeConnexion({ ...SAISIE, nom: 'Autre nom', portee: 'flux.lire', client_secret: 'nouveau' }, EXISTANTE))
     expect(memes.reinitialiser).toBe(false)
@@ -1256,7 +1272,7 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
       .toBe('json({ error:  e.message , a: , b:  }, 500)')
   })
 
-  const acces = GESTIONNAIRE.indexOf('rpc("admin_du_dossier"')
+  const acces = GESTIONNAIRE.indexOf('await droitsDeLAppelant(supabaseAsCaller, dossierId)')
 
   it('l’accès au dossier se vérifie AVANT toute lecture de la connexion et tout appel à la plateforme', () => {
     expect(acces).toBeGreaterThan(-1)
@@ -1268,10 +1284,11 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
   })
 
   it('l’accès se lit avec le jeton de l’APPELANT, sur une session vérifiée, et son échec refuse', () => {
+    // Les droits de l'appelant (étape P3, bloc droitsDeLAppelant), puis la table « qui peut quoi » de la fonction.
     expect(GESTIONNAIRE.indexOf('await supabaseAsCaller.auth.getUser()')).toBeLessThan(acces)
-    expect(GESTIONNAIRE).toMatch(/const \{ data: aAcces, error: erreurAcces \} = await supabaseAsCaller\.rpc\("admin_du_dossier", \{ p_dossier_id: dossierId \}\)/)
-    expect(GESTIONNAIRE).toMatch(/if \(erreurAcces\) return json\(/)
-    expect(GESTIONNAIRE).toMatch(/if \(!aAcces\) return json\(\{ error: "Dossier introuvable\." \}, 404\)/)
+    expect(GESTIONNAIRE).toContain('const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)')
+    expect(GESTIONNAIRE).toMatch(/if \("illisible" in lus\) \{\n {4}return json\(/)
+    expect(GESTIONNAIRE).toMatch(/if \(!actionPermise\(QUI_PEUT_QUOI, action, lus\.droits\)\) return json\(\{ error: "Dossier introuvable\." \}, 404\)/)
   })
 
   it('« statut », « retirer », « enregistrer », « retenir » et « repartir » ne parlent pas à la plateforme ; « statut » ne rend que la vue publique', () => {
@@ -1346,7 +1363,8 @@ describe('plateforme-agreee — le câblage du gestionnaire', () => {
     expect(branche).toContain('if (erreurReservation?.code === "23505") {')
     // L'identifiant de suivi est celui de la transmission, et l'empreinte réservée celle du fichier qui part.
     expect(branche).toContain('{ flowSyntax: SYNTAXE_DEPOSEE, name: nomDuFichier(facture.numero as string), sha256, trackingId: transmission.id }')
-    expect(branche).toContain('.insert({ dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256 })')
+    // Et le compte qui la demande, cabinet ou client (`cree_par`, étape P3) : posé à la réservation, la garde le fige.
+    expect(branche).toContain('dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256, cree_par: utilisateur,')
     expect(branche).toContain('const sha256 = await empreinteSha256(fichier)')
     // Une facture partie par l'ancien chemin de Super PDP, sans transmission en base, ne repart pas.
     const anciennement = branche.indexOf('if (facture.superpdp_invoice_id !== null) {')

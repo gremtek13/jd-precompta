@@ -13,8 +13,10 @@
 // policy : refus total côté navigateur, voir supabase/essais/receptionPlateforme.sql). Le secret ne quitte jamais
 // le serveur : il ouvre toutes les factures de l'entreprise, reçues comme émises.
 //
-// Onze actions, toutes demandées par un membre du cabinet qui a accès au dossier — `admin_du_dossier`, vérifié
-// AVANT toute lecture de la connexion et tout appel à la plateforme :
+// Onze actions, chacune réservée au droit que sa ligne de `QUI_PEUT_QUOI` exige (espace client, étape P3) : le cabinet
+// du dossier pour toutes, et le client dont l'accès porte la case « Ventes » pour celles de sa vente — tout sauf la
+// réception des factures d'achat. Les droits se lisent par `droits_sur_le_dossier`, avec le jeton de l'appelant (bloc
+// droitsDeLAppelant), AVANT toute lecture de la connexion et tout appel à la plateforme :
 //   - statut       la connexion du dossier, SANS appel extérieur : c'est le seul appel que l'écran fait en s'ouvrant ;
 //   - enregistrer  les adresses, l'identifiant, le secret, l'organisation et la portée — vérifiés ici, pas seulement
 //                  par la base : la fonction y envoie un secret ;
@@ -78,9 +80,25 @@ const BUDGET_TELECHARGEMENTS_STATUTS_MS = 95_000
 const MAX_STATUTS = 50
 const MAX_STATUT_OCTETS = 1_000_000
 
-const ACTIONS = [
-  "statut", "enregistrer", "retirer", "tester", "lister", "telecharger", "retenir", "repartir", "deposer", "suivre", "relever",
-]
+// QUI PEUT QUOI (conception de l'espace client, §3.5) : le droit que chaque action exige — « ventes », le cabinet du
+// dossier ou un accès client qui porte la case « Ventes » ; « cabinet », le cabinet seul. Un changement de décision est
+// une ligne. HYPOTHÈSE EC-Q4 (« le client relie aussi sa plateforme »), recommandée au cabinet et PAS ENCORE TRANCHÉE :
+// `enregistrer`, `retirer` et `tester` sont ouverts au client ; « le cabinet seul » les fait passer à « cabinet ».
+const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
+  statut: "ventes",
+  enregistrer: "ventes", // EC-Q4
+  retirer: "ventes", // EC-Q4
+  tester: "ventes", // EC-Q4
+  // La réception des factures d'ACHAT en pièces « à valider » reste au cabinet (conception, §5.5).
+  lister: "cabinet",
+  telecharger: "cabinet",
+  retenir: "cabinet",
+  repartir: "cabinet",
+  deposer: "ventes",
+  suivre: "ventes",
+  relever: "ventes",
+}
+const ACTIONS = Object.keys(QUI_PEUT_QUOI)
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
@@ -198,9 +216,10 @@ function cibleRedirection(location: string | null, depuis: string): { url: strin
 // ── FIN ADRESSES ────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT CONNEXION ─────────────────────────────────────────────────────────────────────────────────
-// Ce que le cabinet enregistre, et ce que l'écran en voit. Les règles sont celles des contraintes de la base, dites ici
-// en français ; un secret laissé vide à la modification garde celui qui est enregistré — il ne s'affiche jamais, donc
-// le cabinet ne peut pas le retaper.
+// Ce que le cabinet — ou le client qui porte la case « Ventes » (étape P3, hypothèse EC-Q4) — enregistre, et ce que
+// l'écran en voit. Les règles sont celles des contraintes de la base, dites ici en français ; un secret laissé vide à
+// la modification garde celui qui est enregistré — il ne s'affiche jamais, donc on ne peut pas le retaper —, tant que
+// les deux adresses restent celles pour lesquelles il a été saisi.
 interface ConnexionLue {
   dossier_id: string
   nom: string
@@ -253,6 +272,16 @@ function saisieDeConnexion(
   let secret: string
   if (secretSaisi === "") {
     if (!existante) return { refus: "Le secret est requis pour une première connexion." }
+    // Un secret gardé ne part que là où il partait. Une adresse des jetons changée sans le ressaisir l'enverrait à un
+    // hôte pour lequel personne ne l'a saisi ; une adresse des flux changée, le jeton qu'il obtient — de quoi lire
+    // toutes les factures de l'entreprise. Ouverte à un accès client (étape P3), la modification serait sinon une porte
+    // de sortie du secret enregistré.
+    if (existante.url_jeton !== jeton.url || existante.url_flux !== flux.url) {
+      return {
+        refus: "Une adresse change : ressaisissez le secret, qui ne part jamais vers une adresse pour laquelle il " +
+          "n'a pas été saisi.",
+      }
+    }
     secret = existante.client_secret
   } else {
     if (secretSaisi.length > 2000 || CONTROLE.test(secretSaisi)) {
@@ -2147,9 +2176,9 @@ export function factureCii(d: DonneesCii): ResultatCii {
       el('ram:ID', f.numero as string),
       el('ram:TypeCode', f.type === 'avoir' ? '381' : '380'),
       dateCii('ram:IssueDateTime', f.date_emission),
-      // Seules les mentions légales partent avec la facture (BT-22). Les notes sont INTERNES : l'écran le dit en les
-      // saisissant — « n'apparaissent pas sur la facture », et le motif d'un avoir, « note interne » —, l'aperçu ne les
-      // imprime pas, et ce que le cabinet y écrit pour lui-même n'a rien à faire chez le client.
+      // Seules les mentions légales partent avec la facture (BT-22). Les notes n'y figurent pas, ni le motif d'un avoir
+      // rangé avec elles : l'écran le dit en les saisissant, l'aperçu ne les imprime pas, l'acheteur n'en reçoit rien.
+      // Elles ne sont pas internes pour autant : le client qui porte la case « Ventes » les lit (`ventes_du_client`).
       f.mentions_legales?.trim() ? el('ram:IncludedNote', [el('ram:Content', f.mentions_legales.trim())]) : null,
     ]),
     el('rsm:SupplyChainTradeTransaction', [
@@ -2905,6 +2934,50 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE droitsDeLAppelant ────────────────────────────────────────────────────────────────────────────────────
+// Ce que l'appelant peut faire sur ce dossier (espace client, étape P3). Ses droits se lisent par
+// `droits_sur_le_dossier` (migration `droits_des_acces_clients`, étape P1) avec SON jeton — sous la clé de service,
+// `auth.uid()` serait nul —, avant toute lecture d'un secret et tout appel extérieur. Seul `true` accorde : une erreur,
+// une exception, ou une réponse sans ses quatre cases booléennes rendent `illisible`, le côté fermé ; une case de plus
+// (un domaine neuf, que la fonction SQL ajoute sans changer de signature) ne ferme rien. Le droit qu'une action exige
+// est une DONNÉE de chaque fonction, sa table « qui peut quoi » : « cabinet » (`admin_du_dossier`), ou « ventes »
+// (`gere_les_ventes` : le cabinet, ou un accès client qui porte la case « Ventes ») ; une action hors de la table n'est
+// permise à personne. Copié à l'identique dans plateforme-agreee, superpdp-emit, superpdp-credentials et send-email :
+// `droitsDeLAppelantCopie.test.ts` exécute chaque copie contre sa propre grille.
+type DroitExige = "cabinet" | "ventes"
+interface Droits { cabinet: boolean; membre: boolean; ventes: boolean; banque: boolean }
+
+async function droitsDeLAppelant(
+  appelant: { rpc: (nom: string, args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }> },
+  dossierId: string,
+): Promise<{ droits: Droits } | { illisible: string }> {
+  let lu: unknown
+  try {
+    const reponse = await appelant.rpc("droits_sur_le_dossier", { p_dossier_id: dossierId })
+    if (reponse.error != null) {
+      const message = (reponse.error as { message?: unknown }).message
+      return { illisible: typeof message === "string" && message !== "" ? message : "erreur de la base" }
+    }
+    lu = reponse.data
+  } catch {
+    return { illisible: "la base n'a pas répondu" }
+  }
+  if (lu === null || typeof lu !== "object" || Array.isArray(lu)) return { illisible: "réponse d'une autre forme" }
+  const cases = lu as Record<string, unknown>
+  if (!["cabinet", "membre", "ventes", "banque"].every((c) => typeof cases[c] === "boolean")) {
+    return { illisible: "réponse d'une autre forme" }
+  }
+  const { cabinet, membre, ventes, banque } = cases as unknown as Droits
+  return { droits: { cabinet, membre, ventes, banque } }
+}
+
+/** L'appelant porte-t-il le droit que la table exige pour cette action ? */
+function actionPermise(table: Readonly<Record<string, DroitExige>>, action: string, droits: Droits): boolean {
+  const exige = Object.prototype.hasOwnProperty.call(table, action) ? table[action] : null
+  return exige === "cabinet" ? droits.cabinet : exige === "ventes" ? droits.ventes : false
+}
+// ── FIN COPIE droitsDeLAppelant ──────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   const debut = Date.now()
   if (req.method === "OPTIONS") {
@@ -2947,11 +3020,14 @@ Deno.serve(async (req: Request) => {
   const dossierId = typeof payload.dossierId === "string" ? payload.dossierId.trim() : ""
   if (!UUID.test(dossierId)) return json({ error: "dossierId est requis." }, 400)
 
-  // Avec le jeton de l'APPELANT : la même fonction que les règles de la base (super-admin, chef du cabinet, ou membre
-  // d'équipe assigné à ce dossier). Rien n'est lu de la connexion, et rien ne part chez la plateforme, avant elle.
-  const { data: aAcces, error: erreurAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
-  if (erreurAcces) return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${erreurAcces.message}).` }, 503)
-  if (!aAcces) return json({ error: "Dossier introuvable." }, 404)
+  // Les droits de l'appelant, avec SON jeton : rien n'est lu de la connexion, et rien ne part chez la plateforme, avant
+  // eux. Sans le droit que l'action exige, la réponse d'avant l'espace client, mot pour mot : elle ne dit pas si le
+  // dossier existe.
+  const lus = await droitsDeLAppelant(supabaseAsCaller, dossierId)
+  if ("illisible" in lus) {
+    return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${lus.illisible}).` }, 503)
+  }
+  if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) return json({ error: "Dossier introuvable." }, 404)
 
   const { data: lue, error: erreurLecture } = await admin
     .from("connexions_plateformes").select(COLONNES).eq("dossier_id", dossierId).maybeSingle()
@@ -3089,9 +3165,13 @@ Deno.serve(async (req: Request) => {
 
     // La transmission se RÉSERVE avant de partir : une seule active par facture, tous canaux confondus (index unique),
     // si bien que deux clics, deux onglets ou un envoi par Super PDP ne la transmettent pas deux fois. Son identifiant est
-    // l'identifiant de suivi du dépôt : c'est lui qui retrouve le flux quand la réponse se perd.
+    // l'identifiant de suivi du dépôt : c'est lui qui retrouve le flux quand la réponse se perd. Elle garde le compte
+    // qui l'a demandée, le cabinet ou le client (`cree_par`, étape P2) : posé ici, à la réservation, puisque la garde
+    // de la table refuse qu'il change ensuite.
     const { data: reservee, error: erreurReservation } = await admin.from("transmissions_factures")
-      .insert({ dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256 })
+      .insert({
+        dossier_id: dossierId, facture_id: factureId, canal: "plateforme", hote, sha256, cree_par: utilisateur,
+      })
       .select(COLONNES_TRANSMISSION).maybeSingle()
     if (erreurReservation?.code === "23505") {
       return json({ error: "Cette facture a déjà une transmission en cours ou faite : suivez-la plutôt que de la renvoyer.", deja: true }, 409)
