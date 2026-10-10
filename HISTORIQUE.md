@@ -17375,3 +17375,152 @@ leur boîte ; sur téléphone, les trois boutons d'un accès s'empilent dans sa 
 était changée au tableau de bord, le service répondrait sans rien envoyer (aucun compte à cette adresse) et l'écran dirait
 le lien parti — la lire dans Auth demanderait une Edge Function. `Login.tsx` garde son propre appel, identique ; le garde
 de source tient les deux ensemble.
+
+### 10/10/2026 — LE MODULE DE LA RÉVISION — LIGNE 41, ÉTAPE R2
+
+(`src/lib/revision.ts`, `src/lib/revisionCycles.ts`, `src/lib/revisionPreuves.ts` et leurs tests ;
+`src/lib/revisionEssai.test.ts` ; la fabrique `src/test/revision.ts`. Aucun autre fichier.) La deuxième étape de la
+révision des comptes (« LA RÉVISION DES COMPTES : LA CONCEPTION », § 2.1, 2.2, 3.4 à 3.7, 4.2, 5.1 et 5.4), sur la base
+de R1 (« LA BASE DES SOLDES RÉVISÉS ») : un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas
+l'horloge et n'importe pas `supabase.ts` (`revision.ts` atteint quarante-huit modules, `revisionPreuves.ts` quarante-six,
+`revisionCycles.ts` huit ; aucun ne l'importe). Aucun écran (R3), aucune migration, aucune Edge Function ;
+`revisionSoldes.ts` (R1) n'est pas touché. La base n'a été lue qu'en `select`, sur des littéraux ou des comptes : en
+production, aucune décision ni preuve, aucun exercice validé, trois écritures et un contrôle de relevé — tout ce qui
+suit est LATENT. Les six fonctions de R1 en production ont, md5 pour md5, le corps de leur export
+(`justifier_solde` : 11 196 caractères) ; aucune migration postérieure ne les redéfinit.
+
+**UNE RELANCE, À PARTIR D'UNE ÉBAUCHE NON VÉRIFIÉE.** Un premier agent, arrêté le 09/10 avant d'avoir rendu, avait
+laissé les huit fichiers, écrits sur fb42326. Ils ont été relus ligne à ligne contre la conception et contre le code de
+5d3c801 (entre-temps, `amortissements.ts` — le compte d'amortissement à sept chiffres —, `comptes.ts`, `aNouveaux.ts`,
+`engagement.ts`, `cotisationPersonnelle.ts`, `statutTva.ts` et `types.ts` avaient changé, `bilan.ts` était né ;
+`revisionSoldes.ts` n'avait pas bougé) ; chaque fonction empruntée a été relue à 5d3c801 pour ce que l'ébauche en
+supposait. GARDÉ, parce que prouvé : la structure en trois modules, la chaîne des décisions, la relecture des citations,
+les états déduits, les vingt-six refus et leur ordre, la lecture « comme envoyé » des preuves et de l'instantané, le
+texte jsonb, l'instantané borné, la reprise, le rangement total des comptes et celui des contrôles. NEUF FAUTES,
+refaites :
+1. LA PREUVE DU RELEVÉ ADDITIONNAIT plusieurs relevés au 31 décembre et concluait « concorde » sur leur somme. Or rien
+   ne dit de quel compte bancaire est un relevé (aucune colonne), l'import écarte les mouvements déjà présents, et deux
+   relevés d'un MÊME compte — le mensuel et l'annuel — peuvent finir le 31/12 : la somme compte le compte deux fois et
+   peut tomber juste à tort. Son propre test concluait « concorde » sur le DOUBLE du solde, d'un cas que la base rend
+   impossible (`unique (dossier_id, source_fichier)`). Désormais, plusieurs relevés retenus : la preuve les montre un à
+   un, avec leur somme, et ne conclut pas (`plusieurs-releves`) — le cabinet sait, lui, combien le dossier a de comptes.
+2. Un relevé dont la période commence le 1er janvier suivant n'était ni « fini » ni « couvrant » ; or les dates d'un
+   contrôle sont celles de ses lignes de solde (`soldeReleve.ts`) : son solde initial EST le solde de la fin du 31.
+3. Les causes d'un écart du 512 ne se comptaient pas toutes depuis la reprise — les écritures sans mouvement, dans
+   l'exercice seul —, alors que le 512 du 31/12 cumule depuis l'ouverture ; et elles ne se disaient que sur un écart,
+   jamais quand la preuve ne concluait pas. Les mouvements ignorés se disent dans leurs deux sens
+   (`montantsDesMouvementsIgnores` : un net cache un encaissement derrière un paiement du même montant).
+4. L'échéancier ne disait qu'« aucun déblocage » : un déblocage partiel, ou rapproché deux fois, se dit désormais,
+   emprunt par emprunt, sauf pour un emprunt antérieur à la reprise (`deblocages-ecart`).
+5. « Les TVA collectée et déductible soldées quand toutes les périodes sont déclarées » n'est vrai que si chaque TVA est
+   exigible dans la période de son écriture : la CA3 compte au paiement (ou à la facture sur les débits), le brouillon
+   date à la pièce ; une facture réglée après le 31/12, et en engagement toute facture non réglée, laissent un solde
+   LÉGITIME. Dit dans « n'établit pas », et nommé comme cause possible quand rien d'autre n'explique l'écart
+   (`exigibilite-decalee`).
+6. Les cycles s'ouvraient aussi sur les comptes de RÉSULTAT : la catégorie commune qui écrit au 758000 aurait ouvert
+   une carte TVA vide sur un dossier non redevable. Seuls les comptes de BILAN — ceux que la révision montre — et les
+   contrôles qui ont quelque chose à dire ouvrent un cycle ; sans ce second point, « statut de TVA à préciser » (un
+   dossier que rien ne dit redevable) ou la facture du véhicule de société (un registre vide) tombaient dans une carte
+   cachée.
+7. `controlesParCycle` laissait tomber en silence un contrôle inconnu : il rend à part les contrôles hors cycle et les
+   inconnus, et l'assemblage les porte pour que l'écran les montre.
+8. 641 et 645 allaient aux dépenses quand 42 et 43 allaient au social : tout le 64 va au social.
+9. Le document proposé pour un relevé, par son nom de fichier, se restreint aux documents classés « relevé bancaire » —
+   proposé, jamais cité : un nom n'est pas une preuve d'identité.
+AJOUTÉ : `citationQuiGarde` et `refusDuRetraitDUneSource`, le refus de `garder_source_citee` (hypothèse Q8) dit avant
+le clic, sous ses mots — la décision nommée est la première par exercice puis par compte, comme l'`order by` du
+déclencheur.
+
+**CE QUE LE MODULE DIT.** L'EXERCICE, dans l'ordre des refus de la base (2, 3, 6, 7), avec sa phrase ; validé, il se
+révise encore (§ 3.9). LES SOLDES, en lot, confrontés à `soldeDuCompteCentimes` sur six cents écritures tirées au
+millième. LA CHAÎNE des décisions d'un compte : de la première, de suite en suite — la chaîne est l'ordre, aucun
+horodatage ne départage ; un identifiant se compare sans la casse, comme la base compare un uuid ; une chaîne qui ne
+passe pas par chaque décision, ou ne s'arrête pas, n'a pas de courante et se revoit. LA CITATION relue : intacte, sans
+empreinte, changée, disparue, introuvable. L'ÉTAT D'UN SOLDE, déduit, jamais stocké : en attente, solde nul, à
+justifier, justifié, accepté, anomalie, à revoir, avec ses causes — une ANOMALIE dont le solde a changé se revoit
+aussi (§ 1.9, règle 2 : « à revoir dès que les deux divergent »). Les mentions « après la validation » et « reprise de
+N−1 ». LES PREUVES PROPOSÉES (§ 3.6) : le relevé au 31/12 (512000), les virements internes (580000), le registre en
+valeurs (20…, 21…) et en amortissements (28…), l'échéancier (164000, `capitalRestantDu` à la date passée
+EXPLICITEMENT), les déclarations de TVA (445510 reçoit la ligne 28 de la CA3, 445670 le crédit reporté, 445830 le
+remboursement demandé et non reçu ; 445620, 445660 et 445710 soldés), l'ouverture (101000 : la balance reprise, ou le
+report dont chaque ligne porte l'empreinte de l'exercice validé, relue par `verifier_exercice_valide`), la composition
+du 108000 par source ; tout autre compte : « aucune preuve ». Chacune dit ce qu'elle ÉTABLIT et n'ÉTABLIT PAS, conclut —
+seule `concorde`, au centime, suffit seule (§ 5.4) —, nomme les causes possibles d'un écart sans en choisir une, et
+PROPOSE des sources sans jamais les citer. AUCUN TEXTE SAISI n'entre dans une preuve : des dates, des montants, des
+comptes, des identifiants ; un test sème une marque dans chaque champ saisi de chaque source et la cherche dans chaque
+preuve. L'INSTANTANÉ, versionné, relu sans deviner, borné sous les 64 Kio de la base — le plus long début du détail qui
+tient, ce qui est omis compté — et mesuré comme jsonb le mesure. LES REFUS DE `justifier_solde` (les vingt-six RAISE,
+dans l'ordre, sous leurs mots, le refus 4 gardé pour R9), sur ce que supabase-js envoie ; les onze arguments, nuls plutôt
+qu'absents. LA MÉMOIRE (§ 3.7) : la décision permanente COURANTE de N−1 se propose — jamais pour un solde nul, ni sur un
+compte déjà décidé —, et la décision qu'elle compose passe les refus de la base. LES CYCLES : onze codes, ceux que R4
+écrira dans sa contrainte ; le rangement d'un compte par le plus long préfixe, TOTAL sur les classes 1 à 7 ; chaque point
+de la Checklist et chaque préalable de la validation a son cycle, ou est hors cycle avec sa raison. L'ASSEMBLAGE
+(`revisionDeLExercice(d, controles)`, la liste des contrôles sans valeur par défaut) : une lecture partielle n'affirme
+rien et n'offre aucun geste.
+
+**LES HYPOTHÈSES DE R1, NOMMÉES OÙ LE MODULE EN DÉPEND, AUCUNE TRANCHÉE.** Q3 : l'état `accepte` et son refus ; Q2 :
+l'accès est un paramètre, `accesAuDossier`, que l'écran tient de la session ; Q11 : l'état « en cours » et le refus 3 ;
+Q8 : `refusDuRetraitDUneSource`, et une source citée introuvable fait revoir la décision ; Q7 : rien. Aucune question
+encore ouverte n'est tranchée ici : Q1 est R6, et rien ne refuse une validation ; Q4 (le seuil) n'a aucune valeur — une
+preuve compare au centime ; Q10 n'a pas de fonction — un clic par compte. Quatre LECTURES de la conception, dites dans
+le code : « montant-suspect » à la trésorerie (le § 2.2 le cite sous les recettes, mais il lit toutes les pièces
+validées et la Checklist l'envoie à la banque) ; « piste-rompue » à l'ensemble (un seul nombre réunit ses deux moitiés) ;
+le 758000 à la TVA, la revue analytique (R5) séparant l'arrondi par sa SOURCE ; le 64 au social, que la conception
+renvoyait « plus tard, phase 5 » — un rangement total ne peut pas attendre.
+
+**LES PREUVES DE L'ÉTAPE.** Deux cent quatre-vingt-quatorze tests dans les quatre fichiers de l'étape
+(`revision.test.ts`, `revisionCycles.test.ts`, `revisionPreuves.test.ts`, `revisionEssai.test.ts`) : la suite passe de
+7 386 à 7 680. La confrontation au TEXTE des fonctions, lu dans leur dernière définition exportée :
+les vingt-six messages de `justifier_solde` dans l'ordre, leurs codes, leurs numéros, les valeurs de chaque « % », les
+bornes et les blancs, une dérive plantée qui vire au rouge ; le message de `garder_source_citee`. L'ESSAI DE R1 REJOUÉ
+SUR LE MODULE (`revisionEssai.test.ts`) : ses quatre-vingt-douze appels de `justifier_solde` — même refus, même code,
+mêmes mots, ou aucun refus quand l'essai attend l'écriture —, l'appel de l'anonyme compté à part, ses sept lectures de
+`solde_du_compte` et ses six changements de dossier d'une source (contrôles 137 à 142 : quatre refusés, deux acceptés) ;
+trois dérives plantées le font virer au rouge, et le mauvais geste change les mots des quatre refus. LES TABLES RELEVÉES
+EN BASE, en `select` : le texte jsonb de trente-trois valeurs, octet pour octet — rejoué le 10/10 sur des littéraux
+encodés en hexadécimal, une première recopie à la main ayant normalisé un séparateur U+2028 (19 octets au lieu de 21) ;
+`->>` sur un nombre, un booléen, un objet, une liste, JSON null et une clé absente ; la forme d'un uuid sans la casse et
+sans fin de ligne ; `btrim`, qui ne prend ni l'espace insécable ni le saut de page ; `length`, en points de code ;
+`to_char` au-delà de quatorze chiffres ; les comptes des catégories et des natures, toutes communes. LES MUTATIONS de
+la logique de l'étape, par un banc qui ne touche pas à git (le module remis depuis sa copie, son empreinte vérifiée) :
+207 — 30 sur les cycles, 86 sur la révision, 91 sur les preuves —, la suite verte avant ; 198 tuées au premier passage.
+Les neuf survivantes ont toutes dit quelque chose. Sept bornes ou branches que rien n'éprouvait — l'exercice 2100, une
+décision dont l'identifiant est en capitales, un compte 22, une ouverture présente face à un écart d'un autre montant,
+une ouverture vide dont le maillon tient, le fait d'une empreinte altérée, des écritures du 108 qui se compensent — :
+un cas chacune. UNE DIXIÈME FAUTE DE L'ÉBAUCHE, que la mutation avait raison de faire : le premier relevé de la tenue se
+cherchait parmi ceux qui finissent « à la reprise ou après » ; or un relevé qui finit le jour même de la reprise a pour
+solde de clôture l'ouverture — la convention qui fait d'un relevé du 1er janvier le solde de la fin du 31 décembre —,
+et son solde initial ne dit rien d'elle : strictement après, désormais, et la mutation inverse est tuée. UNE
+ÉQUIVALENTE, justifiée : pour le 445830, la ligne 26 d'une CA3 ou `remboursement_demande`, que
+`enregistrer_declaration_tva` rend égales (« La déclaration proposée ne se tient pas »), seul chemin par lequel
+l'application écrit une déclaration. Rejouées : huit tuées, l'équivalente seule survit. Le cas « le 445510 reçoit la
+ligne 28, pas la 32 » porte un état que la même fonction refuse (l32 = l28) : il épingle la SOURCE — ce que la
+liquidation écrit au compte —, pour le jour où la ligne 32 porterait autre chose que la TVA nette, et le dit. LA
+BARRIÈRE, sous sa forme allégée : `tsc -b` vert ; `tsconfig.edge.json`, les 25 erreurs connues, aucune de l'étape ; le
+lint, les mêmes 63 avertissements, aucun dans ses fichiers ; la construction ; les cinq fichiers de la révision (335
+tests, dont les 41 de R1) sous les quatre fuseaux, verts ; la suite entière sous Paris, deux ouvriers : 263 fichiers,
+7 680 tests, tous verts, aucun délai dépassé.
+
+**LA LEÇON DE RECOPIE.** Deux espaces insécables de l'ébauche étaient devenues des espaces ordinaires dans la réécriture,
+et un U+2028 s'était normalisé dans le littéral SQL ; l'outil d'écriture décode lui-même un échappement `\u…` qu'on lui
+confie, et le texte de cette entrée a dû être remis en échappement par un script : un caractère invisible se perd à la
+recopie. Les tests les écrivent désormais en échappement (`'\u00a0'`, `\u2028`), et un littéral non
+ASCII part en base encodé en hexadécimal.
+
+**CE QUI RESTE, ET LES RISQUES.** Rien n'est écrit ni montré : R3 branche le module. Il suppose des lectures ENTIÈRES
+(`lireTout`) de tout le dossier — le brouillon, la reprise, les soldes reportés, les exercices validés, les lignes et les
+contrôles de relevés, les pièces, les documents avec leur catégorie, le registre et les natures communes, les emprunts,
+les déclarations de TVA, les catégories, les décisions et leurs preuves — et l'année en cours à Paris ; sur une lecture
+partielle, l'écran passe son motif. La liste des contrôles se COMPOSE à l'écran : les préalables par
+`prealablesDeValidation`, les points de la Checklist calculés DANS `ChecklistTab.tsx`, non exportés — R3 les en
+extraira ou les recomposera — ; le module range par identifiant, il ne refait aucun contrôle. La garde Q8 est active : R3 doit dire le refus AVANT
+le clic dans la fiche d'une pièce, la suppression groupée des Justificatifs et les Documents — et AVANT de créer la pièce
+quand un document cité se transforme en pièce, sinon la pièce naît et le document reste (« LA BASE DES SOLDES
+RÉVISÉS »). Un dossier qui a plusieurs comptes bancaires verra toujours « incomplète » au 512000 : le cabinet cite ses
+relevés ; une colonne qui dirait le compte d'un relevé lèverait la limite, à décider. Un solde de TVA collectée ou
+déductible au 31/12 peut être juste (l'exigibilité) : la preuve le dit sans le calculer. La mention « après la
+validation » compare deux débuts de transaction, à la milliseconde : une décision dont la transaction a commencé avant la
+validation se lit « avant ». Une décision écrite par la porte de restauration n'a pas passé les refus : le module la lit
+comme les autres. Ce que R3 trouve prêt : `revisionDeLExercice` ; `refusDeJustifierSolde` et
+`argumentsDeJustifierSolde` ; `instantaneDeLaPreuve` et `lireInstantaneDePreuve` ; `repriseProposee` et
+`decisionDeLaReprise` ; `refusDuRetraitDUneSource` ; `DESCRIPTION_DES_CYCLES` et `controlesParCycle`.
