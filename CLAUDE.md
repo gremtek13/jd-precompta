@@ -474,8 +474,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
   étapes R1 à R9, douze questions au cabinet → « LA RÉVISION DES COMPTES : LA CONCEPTION » ; R1, la base des soldes
-  révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2, le module, le 10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3
-  (l'écran) à venir ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION ».
+  révisés, en base le 09/10/2026 (Q2, Q3, Q7, Q8 et Q11 prises comme hypothèses, à confirmer) ; R2, le module, le
+  10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3, l'onglet Révision, le
+  10/10/2026 (les préalables de la validation n'y sont pas encore) ; R4, les cycles, en cours ; R6 attend Q1 → « LA BASE
+  DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -740,6 +742,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un constructeur de requête n'est pas une promesse** : `.then(f)` sur lui rend ce que SON `then` rend — rien, pour
   la doublure qui retient (`clientRetenu`). Un module qui reçoit une requête l'ATTEND (`await`), et une requête qui lève
   tombe du côté signalé (`lireLaCouverture`, `lireLeDroitBanque`) → « LA BANQUE DU CLIENT EN BASE ».
+- **Les points de la Vue d'ensemble se calculent dans `lib/pointsDeLaChecklist.ts`** (pur : l'appelant donne l'année, les
+  mois écoulés et le premier jour du mois) **et se lisent par `lib/checklistLecture.ts`** : la Checklist et la révision
+  les disent des mêmes lectures. Un point s'y écrit `{ id: '…', …, severite: '…' }` : `revisionCycles.test.ts` et
+  `prealablesValidation.test.ts` lisent cette source comme du texte → « L'ÉCRAN DE LA RÉVISION ».
 
 ### Comptabilité
 
@@ -793,8 +799,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   l'exercice suivant. Seule `justifier_solde` l'écrit — treize refus dans un ordre fixé, sous le verrou de la
   validation puis celui de la révision, au solde de `solde_du_compte` (jumeau `soldeDuCompteCentimes`) ; une preuve
   RECOPIE l'empreinte de sa source, et une source citée ne se supprime plus (`garder_source_citee`, hypothèse Q8) :
-  les écrans qui suppriment devront le
-  dire avant le clic (R3, par `refusDuRetraitDUneSource` ; « transformer en pièce » avant de créer la pièce) → « LA BASE DES SOLDES RÉVISÉS ».
+  Justificatifs (la sélection, la fiche) et Documents le disent avant le clic, sous les mots de la base
+  (`lib/citationsRevisionLecture.ts`), et « C'est une facture » se refuse AVANT de créer la pièce — suspendue sur une
+  lecture partielle des citations → « LA BASE DES SOLDES RÉVISÉS », « L'ÉCRAN DE LA RÉVISION ».
 - **Le module de la révision** (ligne 41, R2 ; `lib/revision.ts`, `revisionCycles.ts`, `revisionPreuves.ts`, purs) :
   l'état d'un solde se DÉDUIT de la chaîne de ses décisions, du solde du jour et des empreintes relues, jamais stocké —
   une anomalie dont le solde a changé se revoit aussi ; chaque compte de bilan reçoit une preuve PROPOSÉE, qui dit ce
@@ -803,6 +810,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   le clic, confrontés au texte des fonctions et rejoués sur l'essai de R1 (`revisionEssai.test.ts`) ; tout compte des
   classes 1 à 7 et tout contrôle de la Checklist et des préalables a son cycle, ou le test refuse, et seuls les comptes
   de BILAN et les contrôles qui ont quelque chose à dire ouvrent un cycle → « LE MODULE DE LA RÉVISION ».
+- **L'onglet Révision** (ligne 41, R3 ; Comptabilité, après le Bilan) : il lit TOUT le dossier — les lectures de la Vue
+  d'ensemble (`lib/checklistLecture.ts`), plus les soldes reportés, les contrôles de tous les relevés, les documents, les
+  décisions et leurs preuves — et, sur une lecture partielle (relevés incohérents ou doublons illisibles compris), ne
+  montre ni état, ni preuve, ni geste. Une carte par cycle : comptes, état déduit, preuve proposée, et les points de la
+  Vue d'ensemble qui s'y rangent (`lib/controlesDeLaRevision.ts` : ceux du dossier, les documents attendus de l'exercice
+  révisé seulement). Le panneau « justifier » (`FicheSolde`, volet `solde`) dit ce que la preuve établit et n'établit
+  pas, la justification permanente de N−1 (elle remplit, n'écrit pas) et l'historique, empreintes relues ; chaque bouton
+  passe `refusDeJustifierSolde` et se grise sous le refus dit ; `justifier_solde` seule écrit, sous un verrou `useRef`
+  relâché après la relecture, relue aussi sur refus → « L'ÉCRAN DE LA RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019

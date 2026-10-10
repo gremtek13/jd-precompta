@@ -887,7 +887,10 @@ describe('prealablesDeValidation — la couverture des cartes de Clôture', () =
 // dans le dossier ; un défaut qu'elle signale en erreur ne se fige pas. Un contrôle ajouté demain à la Checklist
 // doit se poser la question de la validation : ce test le refuse tant qu'il ne figure dans aucune des deux listes.
 describe('prealablesDeValidation — la couverture des points de la Checklist', () => {
-  const checklist = readFileSync(new URL('../pages/dossier/ChecklistTab.tsx', import.meta.url), 'utf8')
+  // Les points de la Checklist vivent dans lib/pointsDeLaChecklist.ts depuis l'étape R3 de la révision ; l'écran est
+  // relu aussi, pour qu'un point qu'on y écrirait de nouveau en dur ne passe pas inaperçu.
+  const checklist = [new URL('../pages/dossier/ChecklistTab.tsx', import.meta.url), new URL('./pointsDeLaChecklist.ts', import.meta.url)]
+    .map((chemin) => readFileSync(chemin, 'utf8')).join('\n')
   const module = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
 
   // Les points écrits `{ id: '…', … severite: 'erreur' … }`, sur une ou plusieurs lignes : on lit chaque objet

@@ -17,6 +17,7 @@ export type DossierTab =
   | 'ecritures'
   | 'statistiques'
   | 'bilan'
+  | 'revision'
   | 'tva'
   | 'immobilisations'
   | 'cotisations'
@@ -80,6 +81,9 @@ export const GROUPES_PARCOURS: GroupeParcours[] = [
       { id: 'statistiques', label: 'Balance des comptes' },
       // Le bilan de l'exercice (lib/bilan.ts), juste après la balance dont il range les soldes.
       { id: 'bilan', label: 'Bilan' },
+      // La révision des soldes de bilan (ligne 41) : après le bilan dont elle justifie les comptes, avant Clôture où
+      // l'exercice se valide.
+      { id: 'revision', label: 'Révision' },
       { id: 'tva', label: 'TVA' },
       { id: 'immobilisations', label: 'Immobilisations' },
       { id: 'cotisations', label: 'Cotisations' },

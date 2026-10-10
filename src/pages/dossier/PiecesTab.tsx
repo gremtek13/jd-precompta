@@ -32,6 +32,7 @@ import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
+import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -129,6 +130,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // transmissions, pour marquer la pièce qui EST une facture émise, et celles qui la comptent deux fois. Nulle avant sa
   // première lecture : aucune marque ne se pose sur une liste pas encore revenue.
   const [ventesEmises, setVentesEmises] = useState<LectureVentesEmises | null>(null)
+  // CE QUE LA RÉVISION DES SOLDES CITE (ligne 41, lib/citationsRevisionLecture.ts) : une pièce citée par une décision ne
+  // se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8). Lue pour que la fiche et la
+  // suppression de la sélection le disent AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
+  const [citations, setCitations] = useState<LectureDesCitations | null>(null)
 
   async function load() {
     setLoading(true)
@@ -212,6 +217,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     setFigees(lectureFigees.figees)
     setFigeesIncompletes(lectureFigees.motif)
     setVentesEmises(await lireVentesEmises(dossierId))
+    setCitations(await lireCitationsDeLaRevision(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
@@ -487,20 +493,36 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     // rien à supprimer — et sans sa ligne, ses fichiers ne seraient pas connus.
     const selection = pieces.filter((p) => selected.has(p.id))
     if (selection.length === 0) return
-    const aSupprimer = selection.filter((p) => !figees.has(p.id))
-    const nbFigees = selection.length - aSupprimer.length
+    const nonFigees = selection.filter((p) => !figees.has(p.id))
+    const nbFigees = selection.length - nonFigees.length
+    // UNE PIÈCE CITÉE PAR LA RÉVISION NE SE SUPPRIME PLUS NON PLUS (`garder_source_citee`) : écartée de la sélection,
+    // chacune nommée avec la phrase de la base — la décision qui la cite —, plutôt qu'un refus de la base pièce par pièce.
+    const citees = nonFigees.flatMap((p) => {
+      const refus = refusDeSuppression({ pieceId: p.id }, citations)
+      return refus === null ? [] : [{ piece: p, refus }]
+    })
+    const aSupprimer = nonFigees.filter((p) => !citees.some((c) => c.piece.id === p.id))
     const avertissementFigees = nbFigees === 0 ? ''
       : nbFigees === 1 ? '\n\nUne pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste.'
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
+    const listeDesCitees = citees.slice(0, 5).map((c) => `• ${c.piece.nom_fichier} — ${c.refus}`).join('\n')
+      + (citees.length > 5 ? `\n… et ${citees.length - 5} autre(s)` : '')
+    const avertissementCitees = citees.length === 0 ? ''
+      : `\n\n${citees.length === 1 ? 'Une pièce de la sélection reste' : `${citees.length} pièces de la sélection restent`}, `
+        + `citée${citees.length > 1 ? 's' : ''} par la révision des soldes :\n${listeDesCitees}`
     if (aSupprimer.length === 0) {
-      window.alert((nbFigees === 1
-        ? 'Cette pièce justifie une écriture validée : elle ne se supprime plus.'
-        : 'Ces pièces justifient une écriture validée : elles ne se suppriment plus.')
-        + ' Une erreur trouvée après la validation se corrige sur l’exercice suivant.')
+      window.alert([
+        nbFigees === 0 ? null : (nbFigees === 1
+          ? 'Cette pièce justifie une écriture validée : elle ne se supprime plus.'
+          : 'Ces pièces justifient une écriture validée : elles ne se suppriment plus.')
+          + ' Une erreur trouvée après la validation se corrige sur l’exercice suivant.',
+        citees.length === 0 ? null : citees.length === 1 && nbFigees === 0 ? citees[0].refus
+          : `Citée${citees.length > 1 ? 's' : ''} par la révision des soldes, ${citees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesCitees}`,
+      ].filter((ligne) => ligne !== null).join('\n\n'))
       return
     }
     if (!window.confirm(
-      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}`,
+      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}`,
     )) return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
@@ -632,6 +654,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
         consequence={
           'Une pièce qu’un exercice validé a figée peut donc paraître modifiable : la base refusera alors de ' +
           'l’enregistrer ou de la supprimer, et dira pourquoi.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les décisions de la révision des soldes et leurs preuves"
+        motif={citations?.motif ?? null}
+        consequence={
+          'Une pièce citée par la révision peut donc paraître supprimable : la base refusera alors de la supprimer, et ' +
+          'dira pourquoi.'
         }
       />
       <BandeauLecturePartielle
@@ -988,6 +1018,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
             onModifiee={noterModification}
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
             figeePar={figees.has(editing.id) ? `L'exercice ${figees.get(editing.id)} est validé` : null}
+            citeePar={refusDeSuppression({ pieceId: editing.id }, citations)}
             venteEmise={(() => {
               const marque = marqueParPiece.get(editing.id)
               return marque ? {

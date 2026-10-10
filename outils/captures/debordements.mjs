@@ -44,7 +44,7 @@ import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
 const ONGLETS = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'tva', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'revision', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 // Les onglets qu'un dossier tenu en ENGAGEMENT (d8) rend autrement : le réglage du modèle et le
@@ -228,6 +228,30 @@ const VISITES = [
   // et sa dette au 404000 —, celui de la kinésithérapeute pour 2026, ouvert par ses soldes reportés, l'exercice de l'ostéopathe
   // qui attend la validation de 2025, et le détail par compte du cabinet infirmier, déplié — ses listes, ses libellés longs.
   { dossier: 'd8', onglet: 'bilan', nom: 'bilan/engagement-2025', apres: exercice('2025') },
+  // LA RÉVISION DES SOLDES (ligne 41, étape R3) : la kinésithérapeute, dont 2025 est validé et porte trois décisions — un solde
+  // accepté sur motif, un bien justifié par sa facture, une anomalie à revoir — ; le panneau « justifier » de la banque, puis
+  // celui du bien, son historique et sa citation ; l'ostéopathe, dont 2025 attend ses décisions, et son 2026 en cours.
+  { dossier: 'd9', onglet: 'revision', nom: 'revision/validé', apres: exercice('2025') },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/panneau',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Ouvrir le compte 512000', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/historique',
+    apres: async (page) => {
+      // La page ne se recharge pas : le panneau de la visite précédente est encore ouvert, et sous 1 280 pixels il se pose
+      // sur les cartes. On le ferme d'abord, comme on le ferait à la main.
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Ouvrir le compte 218300', exact: true }).click()
+    },
+  },
+  { dossier: 'd10', onglet: 'revision', nom: 'revision/à-justifier', apres: exercice('2025') },
+  { dossier: 'd10', onglet: 'revision', nom: 'revision/en-cours', apres: exercice('2026') },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
   { dossier: 'd10', onglet: 'bilan', nom: 'bilan/en-attente', apres: exercice('2026') },
   {

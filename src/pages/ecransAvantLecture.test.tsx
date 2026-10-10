@@ -46,6 +46,7 @@ import InformationsTab from './dossier/InformationsTab'
 import PacksTab from './dossier/PacksTab'
 import PiecesTab from './dossier/PiecesTab'
 import PlateformeClientModal from './dossier/PlateformeClientModal'
+import RevisionTab from './dossier/RevisionTab'
 import StatistiquesTab from './dossier/StatistiquesTab'
 import SuperPdpModal from './dossier/SuperPdpModal'
 import SupplementsTab from './dossier/SupplementsTab'
@@ -266,6 +267,11 @@ const ECRANS: Ecran[] = [
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" /></Dossier1> },
   { nom: 'PlateformeClientModal', fichier: 'pages/dossier/PlateformeClientModal.tsx', rendre: () => (
     <Dossier1><PlateformeClientModal dossierId="d1" dossierSiret="12345678901234" onClose={rien} onImported={rien} /></Dossier1>
+  ) },
+  { nom: 'RevisionTab', fichier: 'pages/dossier/RevisionTab.tsx', rendre: () => (
+    <Dossier1>
+      <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} onNavigate={rien} />
+    </Dossier1>
   ) },
   { nom: 'StatistiquesTab (trésorerie)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
     <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modeComptable="tresorerie" /></Dossier1>

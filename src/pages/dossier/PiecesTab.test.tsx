@@ -44,7 +44,8 @@ const faux = vi.hoisted(() => ({
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
-  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures'])
+  // Les décisions de la révision et leurs preuves aussi (ligne 41, étape R3) : celles d'un autre dossier ne citent rien ici.
+  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves'])
   return {
   supabase: {
     from: (table: string) => {
@@ -1098,5 +1099,110 @@ describe('PiecesTab — la pièce jumelle d’une facture émise', () => {
       expect(screen.getByText('CLIENT FICTIF', { selector: 'td' })).toBeTruthy()
       expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()
     })
+  })
+})
+
+// UNE PIÈCE CITÉE PAR LA RÉVISION DES SOLDES NE SE SUPPRIME PLUS (ligne 41, étape R3 ; `garder_source_citee`, hypothèse
+// Q8) : même citée par une décision remplacée depuis — l'historique garde ses preuves. La fiche le dit sous les mots de la
+// base et n'offre pas « Supprimer » ; la sélection l'écarte et la NOMME ; rien ne part que la base refuserait.
+describe('PiecesTab — une pièce citée par la révision des soldes', () => {
+  const PHRASE = 'Cette pièce est citée par la révision du solde du compte 164000 (exercice 2025) : elle ne se supprime plus, sauf avec son dossier.'
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const deux = () => [
+    piece({ id: 'p-citee', tiers: 'ALPHA', statut: 'validee', nom_fichier: 'tableau-emprunt.pdf' }),
+    piece({ id: 'p-libre', tiers: 'BETA', statut: 'validee' }),
+  ]
+  function citer(dossier = 'dossier-de-test') {
+    // Deux décisions : la première, remplacée, cite la pièce ; la courante ne la cite plus — elle la garde quand même.
+    faux.parTable.revision_justifications = [
+      { id: 'j-1', dossier_id: dossier, annee: 2025, compte: '164000' },
+      { id: 'j-2', dossier_id: dossier, annee: 2025, compte: '164000' },
+    ]
+    faux.parTable.revision_preuves = [{ id: 'rp-1', dossier_id: dossier, justification_id: 'j-1', piece_id: 'p-citee', document_id: null }]
+  }
+
+  it('la fiche d’une pièce citée le dit sous les mots de la base, et n’offre pas « Supprimer »', async () => {
+    poser(deux())
+    citer()
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    // Le reste de la pièce se modifie toujours : seule la suppression est gardée.
+    expect(within(volet()).getByRole('button', { name: 'Valider' })).toBeTruthy()
+
+    await ouvrir('BETA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une citation d’un autre dossier ne garde rien ici', async () => {
+    poser(deux())
+    citer('autre-dossier')
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une sélection écarte la pièce citée, et la confirmation la NOMME avec la phrase de la base', async () => {
+    poser(deux())
+    citer()
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
+    expect(message.endsWith(`Une pièce de la sélection reste, citée par la révision des soldes :\n• tableau-emprunt.pdf — ${PHRASE}`)).toBe(true)
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('une sélection faite de la seule pièce citée ne demande rien, dit la phrase de la base, et n’envoie rien', async () => {
+    poser([deux()[0]])
+    citer()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(alerte).toBe(PHRASE)
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('une pièce figée ET citée se dit figée, une fois : elle ne paraît pas aussi parmi les citées', async () => {
+    poser(deux())
+    citer()
+    faux.parTable.ecritures_brouillon = [{ id: 'ev-1', statut: 'validee', date: '2025-12-30', piece_id: 'p-citee', immobilisation_id: null }]
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message).toMatch(/Une pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste\.$/)
+    expect(message).not.toContain('citée par la révision')
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('lues en partie, les citations le disent : la base refusera, et dira pourquoi', async () => {
+    poser(deux())
+    citer()
+    faux.muetApres = { revision_preuves: 0 }
+    monter('toutes')
+    expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves n'ont pas pu être lues en entier/)).toBeTruthy()
   })
 })
