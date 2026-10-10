@@ -151,8 +151,10 @@ supabase/
                   60 s sans avoir atteint la base) : ce qu'une suppression rencontre se joue sur une réplique
                   locale du schéma.
                   - rls.sql : toutes les tables et le stockage, boucle sur pg_class, se mute lui-même ;
-                  - restauration.sql (sur une réplique : le plan de sauvegarde.ts, gardé par
-                    restaurationEssai.test.ts) ; allerretour.py (copie déployée ↔ dépôt, après chaque déploiement) ;
+                  - restauration.sql (sur une réplique, par psql, arrêté à la première erreur : le plan de
+                    sauvegarde.ts, gardé par restaurationEssai.test.ts ; une clé étrangère qu'il ne peut recopier se
+                    nomme, et sans elles son verdict se dit EN FAUTE) ; allerretour.py (copie déployée ↔ dépôt, après
+                    chaque déploiement) ;
                     bordures.py (les bordures répétées et comptées, avant de transcrire une fonction) ;
                     socle.py/.sql et inventaire.py/.sql (export ↔ catalogue, après chaque migration) ;
                     signature.sql (les neuf familles d'objets, réplique ↔ production, avant de croire ce qu'on joue
@@ -1127,7 +1129,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 7998 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8231 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

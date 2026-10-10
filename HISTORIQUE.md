@@ -18888,3 +18888,40 @@ son correctif.
 
 **CE QUI RESTE.** La phase C (l'écran, dans l'onglet de R3) ; R9 (figer le dossier de travail : refus 4) ; les réponses
 du cabinet à Q2, Q5, Q6, Q7 et Q11.
+
+### 10/10/2026 — L'ESSAI DE RESTAURATION S'ARRÊTE, NOMMÉMENT — LIGNE 41, ÉTAPE R4 (LE HARNAIS)
+
+(`supabase/essais/restauration.sql`, `src/lib/restaurationEssai.test.ts` ; correctif à part, indépendant de celui de
+R4.) Relevé en route par R4. Joué sur une réplique EN AVANCE sur son plan — une base qui porte une table que le plan du
+fichier ne connaît pas encore, ce qui arrive entre l'application d'une migration et l'intégration de son correctif —, le
+bloc qui recopie les clés étrangères échouait sur la première clé de cette table ; psql passait à l'instruction
+suivante, le bloc entier annulé (un `do` est tout ou rien) : la restauration courait SANS AUCUNE CLÉ, et le verdict
+disait « IDENTIQUE » de toutes les tables. Rejoué pour le prouver, sur une copie de la réplique à 114 migrations où l'on
+avait planté une table hors du plan liée au dossier : le script d'avant y rend 62 tables IDENTIQUES ; seul le contrôle
+du point 7 de PC1, lu APRÈS le verdict, trahissait l'absence des clés (un rôle inconnu ACCEPTÉ au lieu de 23503).
+L'en-tête du passage de P5 note qu'à 113 migrations « il s'arrête à la copie des clés » : sans `ON_ERROR_STOP` posé par
+qui le lance, il ne s'arrêtait pas.
+
+**CE QUI CHANGE : trois barrières qui ne se recouvrent pas.** `\set ON_ERROR_STOP on`, première instruction du script :
+psql s'arrête à la première erreur (le script ne se joue que par psql ; ailleurs, cette ligne même est une erreur). Le
+bloc des clés cherche d'abord dans le plan les DEUX tables de chaque clé entre tables de `public` et, s'il en manque,
+LÈVE « ESSAI EN FAUTE : des clés étrangères ne se recopient pas, une de leurs tables n'est pas au plan — » suivi de
+chaque clé et de ses deux tables, AVANT d'en recopier aucune, sans rien rattraper. Un témoin (`_cles_recopiees`), écrit
+à la fin du même bloc, que le verdict exige : sans lui, une ligne EN FAUTE précède les autres — pour qui jouerait le
+script sans l'arrêt. Le nombre de clés recopiées s'affiche (119 à 114 migrations).
+
+**LES PREUVES**, sur la réplique (`signature.sql` : les neuf familles égales à la production à 114 migrations). La table
+plantée : le script s'arrête (code 3 de psql) et nomme `table_hors_plan_dossier_id_fkey (table_hors_plan → dossiers)`,
+aucune ligne recopiée. Le même, l'arrêt retiré : l'erreur nommée, puis « EN FAUTE » en tête du verdict. Le plan de
+4957030, sans les tables de R4, sur la base sans table plantée : il s'arrête et nomme les cinq clés de
+`revision_conclusions`, `revision_notes` et `revision_revues`. Au plan réuni, sans table plantée : 119 clés recopiées,
+la sortie d'avant à la ligne près (68 tables, 62 IDENTIQUES, 12 lignes, 0 écart, les deux contrôles de PC1 justes).
+`restaurationEssai.test.ts` le garde sans base (deux tests) : il lit l'arrêt en première instruction et jamais levé ;
+le bloc qui cherche les deux tables, nomme, lève avant la boucle et ne rattrape rien ; le témoin après la boucle, dans
+son bloc ; la ligne EN FAUTE du verdict. Dix défauts plantés dans le texte virent au rouge, et le script d'avant échoue
+sur sept points. Le correctif s'applique à 4957030 seule (18 tests verts) comme après celui de R4.
+
+**CE QUI RESTE.** Arrêté, le script laisse son schéma d'essai — vide quand il s'arrête aux clés ; le passage suivant le
+supprime en commençant. Une erreur APRÈS la recopie des données, hors du bloc de la restauration (qui la rattrape en
+ARRET), le laisserait garni des lignes de la réplique jusqu'au passage suivant : c'est une réplique, et le script ne se
+joue nulle part ailleurs.
