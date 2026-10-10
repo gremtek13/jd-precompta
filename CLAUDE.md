@@ -487,8 +487,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
   09/10/2026 (`lib/periodesEreporting.ts`) ; e2, la fiche d'un achat hors de France, en base le 10/10/2026 (Q3, Q7 et le
   point 15 pris comme hypothèses) ; e3, son écran, le 10/10/2026 (hypothèses Q3, Q7 et point 15 d'e2 inchangées, dites
-  dans la saisie) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE »,
-  « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN ».
+  dans la saisie) ; e4, le contenu des déclarations d'une période, en module le 10/10/2026 (`lib/ereporting.ts` ; trois
+  données que la base ne garde pas, attendues d'e5 : le régime confirmé, la pièce candidate écartée, l'histoire du
+  statut de TVA) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT
+  HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS
+  D'E-REPORTING ».
 - **Défauts connus des Edge Functions** (19, `DEFAUTS_CONNUS`) : quatorze corps mal formés qui font lever six fonctions
   ou répondre deux en anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse
   depuis le 09/10/2026, `create-client-access` et `create-team-member` depuis le 10/10/2026) ; deux
@@ -1089,6 +1092,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   numéro de facture, fiche la plus récente d'un même fournisseur), chacune avec sa source et son extrait, jamais
   appliquée seule. La suppression d'une pièce (FichePiece) ou d'une sélection (PiecesTab) NOMME la fiche que la cascade
   emporte, ou dit qu'elle ne la sait pas → « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN ».
+- **Le contenu des déclarations d'e-reporting** (`lib/ereporting.ts`, e4, pur) : pour une période d'e1 (`periodeDe` sous
+  le régime d'AUJOURD'HUI — des bornes d'un autre régime se refusent, la base ne gardant pas l'histoire du statut),
+  trois déclarations qui ne se mêlent pas (G6.29, G7.52) : les ACHATS (10.1, acheteur ; la fiche courante non retirée
+  d'e2, rejugée contre la pièce d'aujourd'hui ; numéro de TVA du dossier exigé, Q3), les VENTES à un particulier (10.3,
+  par jour, TLB1 ou TPS1, option et taux, depuis les seules factures émises — `montantsDuDocument`, un avoir en moins et
+  à sa date), leurs PAIEMENTS (10.4, par jour et taux, le registre de d1 net des retraits et des contre-passations). La
+  facture décide de l'obligation, la réalisation range (point 6) ; un motif certain d'écarter (exonérée, biens, débits)
+  l'emporte sur une donnée inconnue ; une facture à un client étranger se refuse jusqu'à e7. Quatre états, vingt-deux
+  refus dans un ordre fixé (`REFUS_EREPORTING`, le premier est ce que e5 et e6 diront) ; jamais « rien à déclarer » sur
+  une lecture partielle ni tant qu'une pièce candidate (les signaux d'e3) attend. Hypothèses nommées, passées sans
+  défaut (`HYPOTHESES_DE_LA_CONCEPTION`) → « LE CONTENU DES DÉCLARATIONS D'E-REPORTING ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
