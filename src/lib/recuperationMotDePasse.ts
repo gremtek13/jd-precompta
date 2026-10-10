@@ -2,7 +2,8 @@ import { messageErreur } from './messageErreur'
 
 // « MOT DE PASSE OUBLIÉ » (demande du cabinet du 09/10/2026) : ce que l'écran de connexion demande, ce que le lien de
 // l'e-mail rapporte, et ce que l'écran du nouveau mot de passe refuse. Aucun appel ici : les écrans appellent
-// (`Login.tsx`, `NouveauMotDePasse.tsx`), ce module décide de ce qui se dit.
+// (`Login.tsx`, `NouveauMotDePasse.tsx`, et l'onglet Accès, qui envoie le même lien depuis le cabinet), ce module décide
+// de ce qui se dit. Chaque demande de lien passe `{ redirectTo: ADRESSE_DE_RETOUR }` : le test le vérifie sur la source.
 //
 // CE QUE FAIT LE CLIENT SUPABASE AU CHARGEMENT, lu dans le code installé (@supabase/supabase-js et @supabase/auth-js
 // 2.112.4), et non dans une documentation :
@@ -153,4 +154,46 @@ export function messageErreurDuMotDePasse(erreur: unknown): string {
   if (tropDeDemandes(t)) return 'Trop de demandes en peu de temps : attends quelques minutes, puis réessaie.'
   if (sansReponse(t)) return SANS_REPONSE
   return `Le mot de passe n'a pas pu être changé : ${messageErreur(erreur, 'raison inconnue')}`
+}
+
+// ── LE LIEN ENVOYÉ PAR LE CABINET (onglet Accès, décision du cabinet du 10/10/2026) ──────────────────────────────────
+// Le même lien que « Mot de passe oublié », par le même appel (`resetPasswordForEmail`, retour `ADRESSE_DE_RETOUR`),
+// parti d'un autre écran : la réinitialisation par un mot de passe que le cabinet poserait n'a pas été retenue. Le
+// cabinet n'y gagne aucun droit : auth-js (2.112.4, `resetPasswordForEmail`) n'envoie à `/recover` que les en-têtes de
+// son client — la clé publique, jamais le jeton de la session (supabase-js, `_initSupabaseAuthClient`, sans
+// `fetchWithAuth`) —, c'est l'appel que quiconque fait depuis l'écran de connexion, et le lien
+// part dans la boîte du titulaire du compte, seul à pouvoir s'en servir. La session du cabinet n'en est pas touchée.
+//
+// Ici, contrairement à l'écran de connexion, l'adresse est celle d'un accès que le cabinet a créé : les messages peuvent
+// la nommer. Ce qu'ils ne disent pas : la durée du lien, réglée au tableau de bord et lue nulle part dans le dépôt.
+
+/** La question posée avant l'envoi : elle nomme l'adresse, et ce que l'envoi ne change pas. */
+export function questionDuLienEnvoye(adresse: string): string {
+  return `Envoyer à ${adresse} un lien pour choisir un nouveau mot de passe ? `
+    + "Le mot de passe actuel reste valable tant que le client n'en a pas choisi un autre par ce lien."
+}
+
+/** Ce que l'écran dit d'une demande acceptée par le service. */
+export function avisDuLienEnvoye(adresse: string): string {
+  return `Un lien de réinitialisation est parti vers ${adresse}. Il ne sert qu'une fois.`
+}
+
+/** L'erreur d'un envoi demandé par le cabinet : ce qui est parti ou non, et vers quelle adresse. */
+export function messageErreurDuLienEnvoye(adresse: string, erreur: unknown): string {
+  const t = traits(erreur)
+  if (tropDeDemandes(t)) {
+    // Le débit du service, par compte (un lien vient peut-être d'y partir, demandé d'ici ou par le client lui-même depuis
+    // l'écran de connexion) ou pour tout le projet. Le refus n'envoie rien.
+    return `Trop de demandes rapprochées : le service d'authentification n'a pas envoyé de nouveau lien vers ${adresse}. `
+      + "Un lien vient peut-être d'y partir ; sinon, attends quelques minutes, puis réessaie."
+  }
+  if (t.code === 'email_address_invalid') {
+    return `Le service d'authentification refuse l'adresse ${adresse} comme invalide : aucun lien n'est parti.`
+  }
+  // Sans réponse, la demande a pu atteindre le service ou non : on ne le sait pas, et l'écran le dit.
+  if (sansReponse(t)) {
+    return `Le service de connexion n'a pas répondu : on ne sait pas si le lien est parti vers ${adresse}. `
+      + 'Vérifie la connexion à Internet, puis réessaie.'
+  }
+  return `Le lien n'a pas pu partir vers ${adresse} : ${messageErreur(erreur, 'raison inconnue')}`
 }

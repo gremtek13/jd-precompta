@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthWeakPasswordError } from '@supabase/supabase-js'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
-  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MINIMALE_MOT_DE_PASSE, avisDuRefus, lireRetourDuLien,
-  messageErreurDuLien, messageErreurDuMotDePasse, refusDuNouveauMotDePasse,
+  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MINIMALE_MOT_DE_PASSE, avisDuLienEnvoye, avisDuRefus, lireRetourDuLien,
+  messageErreurDuLien, messageErreurDuLienEnvoye, messageErreurDuMotDePasse, questionDuLienEnvoye, refusDuNouveauMotDePasse,
 } from './recuperationMotDePasse'
 
 // Les adresses que le service d'authentification fabrique (supabase/auth) : `AsRedirectURL` ajoute les jetons après
@@ -147,5 +148,133 @@ describe('les erreurs du service, dites en français', () => {
       .toBe("Le service de connexion n'a pas répondu : vérifie la connexion à Internet, puis réessaie.")
     expect(messageErreurDuMotDePasse(new AuthApiError('Password cannot be longer than 72 characters', 422, 'validation_failed')))
       .toBe("Le mot de passe n'a pas pu être changé : Password cannot be longer than 72 characters")
+  })
+})
+
+// LE LIEN ENVOYÉ PAR LE CABINET depuis l'onglet Accès (décision du cabinet du 10/10/2026) : le même lien, dont les mots,
+// eux, peuvent nommer l'adresse — celle d'un accès que le cabinet a créé.
+describe('le lien envoyé par le cabinet : ce qui se dit', () => {
+  const adresse = 'client@exemple.fr'
+
+  it('la question nomme l’adresse, et dit que le mot de passe actuel reste valable', () => {
+    expect(questionDuLienEnvoye(adresse)).toBe(
+      'Envoyer à client@exemple.fr un lien pour choisir un nouveau mot de passe ? '
+      + "Le mot de passe actuel reste valable tant que le client n'en a pas choisi un autre par ce lien.",
+    )
+  })
+
+  it('le succès dit vers quelle adresse le lien est parti, sans durée (réglée hors du dépôt)', () => {
+    expect(avisDuLienEnvoye(adresse)).toBe("Un lien de réinitialisation est parti vers client@exemple.fr. Il ne sert qu'une fois.")
+    expect(avisDuLienEnvoye(adresse)).not.toMatch(/heure|minute|expire/)
+  })
+
+  it('le débit du service se dit en français, sous son statut comme sous ses deux codes, et dit que rien n’est parti', () => {
+    const trop = 'Trop de demandes rapprochées : le service d\'authentification n\'a pas envoyé de nouveau lien vers client@exemple.fr. '
+      + "Un lien vient peut-être d'y partir ; sinon, attends quelques minutes, puis réessaie."
+    expect(messageErreurDuLienEnvoye(adresse, new AuthApiError('For security purposes, you can only request this after 42 seconds.', 429, undefined))).toBe(trop)
+    expect(messageErreurDuLienEnvoye(adresse, new AuthApiError('email rate limit exceeded', 429, 'over_email_send_rate_limit'))).toBe(trop)
+    expect(messageErreurDuLienEnvoye(adresse, { message: 'x', code: 'over_email_send_rate_limit' })).toBe(trop)
+    expect(messageErreurDuLienEnvoye(adresse, { message: 'x', code: 'over_request_rate_limit' })).toBe(trop)
+  })
+
+  it('une adresse refusée, le réseau muet (on ne sait pas si le lien est parti), puis le message du service', () => {
+    expect(messageErreurDuLienEnvoye(adresse, new AuthApiError('Unable to validate email address: invalid format', 400, 'email_address_invalid')))
+      .toBe("Le service d'authentification refuse l'adresse client@exemple.fr comme invalide : aucun lien n'est parti.")
+    expect(messageErreurDuLienEnvoye(adresse, new AuthRetryableFetchError('Failed to fetch', 0))).toBe(
+      "Le service de connexion n'a pas répondu : on ne sait pas si le lien est parti vers client@exemple.fr. "
+      + 'Vérifie la connexion à Internet, puis réessaie.',
+    )
+    // Un SMTP mal réglé : statut 500, « à réessayer » mais avec une réponse — son message se dit.
+    expect(messageErreurDuLienEnvoye(adresse, new AuthRetryableFetchError('Error sending recovery email', 500)))
+      .toBe("Le lien n'a pas pu partir vers client@exemple.fr : Error sending recovery email")
+    // Une erreur qui n'est pas une `Error` (objet nu) passe par `messageErreur`, comme toutes.
+    expect(messageErreurDuLienEnvoye(adresse, { message: 'refus du service' }))
+      .toBe("Le lien n'a pas pu partir vers client@exemple.fr : refus du service")
+    expect(messageErreurDuLienEnvoye(adresse, undefined)).toBe("Le lien n'a pas pu partir vers client@exemple.fr : raison inconnue")
+  })
+})
+
+// « redirectTo toujours passé, jamais construit à part » : chaque demande de lien de la source passe
+// `{ redirectTo: ADRESSE_DE_RETOUR }`, la constante importée de CE module. Sans `redirectTo`, le service retombe sur la
+// « Site URL » du tableau de bord ; avec une adresse écrite ailleurs, deux écrans enverraient deux liens différents. Lu sur
+// l'EXPRESSION (l'arbre de TypeScript), jamais sur la ligne.
+interface AppelDuLien { chemin: string; faute: string | null }
+
+function appelsDuLien(sources: { chemin: string; texte: string }[]): AppelDuLien[] {
+  const sortie: AppelDuLien[] = []
+  for (const { chemin, texte } of sources) {
+    const sf = ts.createSourceFile(chemin, texte, ts.ScriptTarget.Latest, true, chemin.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+    // L'adresse de retour doit venir de ce module, sous son nom (un alias pourrait nommer n'importe quoi).
+    const importee = sf.statements.some((s) => ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)
+      && /(^|\/)recuperationMotDePasse$/.test(s.moduleSpecifier.text)
+      && s.importClause?.namedBindings !== undefined && ts.isNamedImports(s.importClause.namedBindings)
+      && s.importClause.namedBindings.elements.some((e) => e.name.text === 'ADRESSE_DE_RETOUR' && e.propertyName === undefined))
+    const visiter = (n: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(n) && n.name.text === 'resetPasswordForEmail') {
+        const appel = n.parent
+        let faute: string | null = null
+        if (!ts.isCallExpression(appel) || appel.expression !== n) faute = 'méthode prise sans être appelée'
+        else {
+          const options = appel.arguments[1]
+          const propriete = options && ts.isObjectLiteralExpression(options) && options.properties.length === 1
+            ? options.properties[0] : null
+          if (!propriete || !ts.isPropertyAssignment(propriete) || propriete.name.getText(sf) !== 'redirectTo'
+            || !ts.isIdentifier(propriete.initializer) || propriete.initializer.text !== 'ADRESSE_DE_RETOUR') {
+            faute = `options « ${options ? options.getText(sf) : 'absentes'} »`
+          } else if (!importee) faute = 'ADRESSE_DE_RETOUR non importée de recuperationMotDePasse'
+        }
+        sortie.push({ chemin, faute })
+      }
+      ts.forEachChild(n, visiter)
+    }
+    visiter(sf)
+  }
+  return sortie
+}
+
+function sourcesDeProduction(): { chemin: string; texte: string }[] {
+  const sortie: { chemin: string; texte: string }[] = []
+  ;(function parcourir(dossier: string) {
+    for (const e of readdirSync(racine(dossier), { withFileTypes: true })) {
+      const chemin = `${dossier}${e.name}`
+      if (e.isDirectory()) { if (chemin !== 'src/test') parcourir(`${chemin}/`) }
+      else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) sortie.push({ chemin, texte: readFileSync(racine(chemin), 'utf8') })
+    }
+  })('src/')
+  return sortie
+}
+
+describe('chaque demande de lien de la source revient à l’adresse de retour de ce module', () => {
+  it('l’écran de connexion et l’onglet Accès, et eux seuls, demandent le lien — avec `{ redirectTo: ADRESSE_DE_RETOUR }`', () => {
+    const sources = sourcesDeProduction()
+    // Plancher : sans lui, « aucune faute » se confondrait avec « aucun fichier lu ».
+    expect(sources.length).toBeGreaterThan(180)
+    const appels = appelsDuLien(sources)
+    expect(appels).toEqual([
+      { chemin: 'src/pages/Login.tsx', faute: null },
+      { chemin: 'src/pages/dossier/AccesTab.tsx', faute: null },
+    ])
+  })
+
+  it('le garde voit une adresse écrite à part, des options absentes ou étalées, une constante d’ailleurs', () => {
+    const avecImport = (corps: string) => `import { ADRESSE_DE_RETOUR } from '../lib/recuperationMotDePasse'\n${corps}`
+    const fautes = appelsDuLien([
+      { chemin: 'a.ts', texte: avecImport("supabase.auth.resetPasswordForEmail(a, { redirectTo: 'https://ailleurs.example/' })") },
+      { chemin: 'b.ts', texte: avecImport('supabase.auth.resetPasswordForEmail(a)') },
+      { chemin: 'c.ts', texte: avecImport('supabase.auth.resetPasswordForEmail(a, { ...options })') },
+      { chemin: 'd.ts', texte: avecImport('supabase.auth.resetPasswordForEmail(a, { redirectTo: ADRESSE_DE_RETOUR, captchaToken: x })') },
+      { chemin: 'e.ts', texte: "import { ADRESSE_DE_RETOUR } from './ailleurs'\nsupabase.auth.resetPasswordForEmail(a, { redirectTo: ADRESSE_DE_RETOUR })" },
+      { chemin: 'f.ts', texte: "import { AUTRE as ADRESSE_DE_RETOUR } from './recuperationMotDePasse'\nsupabase.auth.resetPasswordForEmail(a, { redirectTo: ADRESSE_DE_RETOUR })" },
+      { chemin: 'g.ts', texte: avecImport('const demander = supabase.auth.resetPasswordForEmail') },
+      { chemin: 'h.tsx', texte: avecImport('await supabase.auth\n  .resetPasswordForEmail(\n    a,\n    { redirectTo: ADRESSE_DE_RETOUR },\n  )') },
+      { chemin: 'i.ts', texte: avecImport('supabase.auth.resetPasswordForEmail(a, { emailRedirectTo: ADRESSE_DE_RETOUR })') },
+    ])
+    expect(fautes.map((f) => [f.chemin, f.faute === null])).toEqual([
+      ['a.ts', false], ['b.ts', false], ['c.ts', false], ['d.ts', false], ['e.ts', false], ['f.ts', false], ['g.ts', false],
+      // Coupée sur cinq lignes, l'expression reste juste : le garde ne lit pas la ligne.
+      ['h.tsx', true],
+      // La bonne constante sous une autre option : `resetPasswordForEmail` ne lit que `redirectTo`.
+      ['i.ts', false],
+    ])
   })
 })

@@ -51,6 +51,12 @@ const faux = vi.hoisted(() => ({
   appelsRpc: [] as { nom: string; args: Record<string, unknown> }[],
   porteRpc: null as Promise<void> | null,
   reponseRpc: null as null | { data: unknown; error: unknown },
+  // Le lien de réinitialisation : un DOUBLE du service d'authentification, qui n'envoie rien à personne. Ses appels, sa
+  // réponse retenue au besoin, l'erreur qu'il rend ou l'exception qu'il lève.
+  appelsLien: [] as { adresse: string; options: unknown }[],
+  porteLien: null as Promise<void> | null,
+  erreurLien: null as unknown,
+  exceptionLien: null as unknown,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -105,6 +111,16 @@ vi.mock('../../lib/supabase', async () => {
         invoke: (nom: string, options: unknown) => {
           faux.appels.push({ nom, options })
           return new Promise((resolve) => { faux.resoudre = resolve })
+        },
+      },
+      auth: {
+        resetPasswordForEmail: (adresse: string, options: unknown) => {
+          faux.appelsLien.push({ adresse, options })
+          const repondre = () => {
+            if (faux.exceptionLien) throw faux.exceptionLien
+            return { data: faux.erreurLien ? null : {}, error: faux.erreurLien }
+          }
+          return faux.porteLien ? faux.porteLien.then(repondre) : Promise.resolve().then(repondre)
         },
       },
       rpc: (nom: string, args: Record<string, unknown>) => {
@@ -176,6 +192,10 @@ beforeEach(() => {
   faux.appelsRpc = []
   faux.porteRpc = null
   faux.reponseRpc = null
+  faux.appelsLien = []
+  faux.porteLien = null
+  faux.erreurLien = null
+  faux.exceptionLien = null
   window.confirm = () => true
 })
 
@@ -579,6 +599,200 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     expect(screen.getByText(/Les droits ne se changent pas depuis une liste incomplète/)).toBeTruthy()
     // La liste n'est pas vide pour autant : elle ne se dit pas « aucun accès ».
     expect(screen.queryAllByText(/Aucun accès client pour ce dossier/)).toHaveLength(0)
+  })
+})
+
+// LE LIEN DE RÉINITIALISATION (décision du cabinet du 10/10/2026) : le même lien que « Mot de passe oublié », envoyé par
+// le cabinet vers l'adresse d'un accès, sur un clic confirmé, sous un verrou. Tout se joue sur un double : aucun lien ne
+// part vers personne.
+const LIEN = 'Envoyer un lien de réinitialisation'
+
+function retenirLeLien(): () => Promise<void> {
+  let ouvrir = () => {}
+  faux.porteLien = new Promise<void>((resolve) => { ouvrir = resolve })
+  return async () => {
+    faux.porteLien = null
+    await act(async () => { ouvrir() })
+  }
+}
+
+const boutonLienDe = (personne = 'client@exemple.fr') => {
+  const ligne = screen.getByText(personne).closest('tr')
+  if (!ligne) throw new Error('ligne de l’accès introuvable')
+  return within(ligne).getByRole<HTMLButtonElement>('button', { name: /lien/ })
+}
+
+describe('AccesTab — envoyer un lien de réinitialisation au client', () => {
+  beforeEach(() => {
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr' }),
+      acces({ id: 'm2', user_id: 'u2', email: 'secretariat@exemple.fr', created_at: '2026-10-02T08:00:00Z' }),
+    ]
+  })
+
+  it('un bouton par accès qui a une adresse, et aucun pour un accès sans adresse', async () => {
+    faux.lignes = [...faux.lignes, acces({ id: 'm3', user_id: 'u-sans-adresse', created_at: '2026-10-03T08:00:00Z' })]
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(screen.getAllByRole('button', { name: LIEN })).toHaveLength(2)
+    const sansAdresse = screen.getByText('u-sans-adresse').closest('tr')!
+    expect(within(sansAdresse).queryAllByRole('button', { name: LIEN })).toHaveLength(0)
+    // Rien ne part au chargement.
+    expect(faux.appelsLien).toHaveLength(0)
+  })
+
+  it('la confirmation NOMME l’adresse ; le lien part vers elle avec l’adresse de retour du module, et le succès le dit', async () => {
+    const questions: string[] = []
+    window.confirm = (m?: string) => { questions.push(m ?? ''); return true }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe('secretariat@exemple.fr').click() })
+
+    expect(questions).toEqual([
+      'Envoyer à secretariat@exemple.fr un lien pour choisir un nouveau mot de passe ? '
+      + "Le mot de passe actuel reste valable tant que le client n'en a pas choisi un autre par ce lien.",
+    ])
+    // L'adresse de retour écrite en clair : une constante changée dans le module se verrait ici aussi.
+    expect(faux.appelsLien).toEqual([{ adresse: 'secretariat@exemple.fr', options: { redirectTo: 'https://compta.jdarnis.fr/' } }])
+    expect(screen.getByRole('status').textContent)
+      .toBe("Un lien de réinitialisation est parti vers secretariat@exemple.fr. Il ne sert qu'une fois.")
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    // Rien n'est écrit en base, et rien n'est relu.
+    expect(faux.appelsRpc).toHaveLength(0)
+    expect(faux.suppressions).toBe(0)
+    expect(faux.lectures).toBe(1)
+  })
+
+  it('la confirmation refusée n’envoie rien et ne dit rien', async () => {
+    window.confirm = () => false
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe().click() })
+    expect(faux.appelsLien).toHaveLength(0)
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    // Le refus ne laisse aucun verrou derrière lui : le clic suivant, confirmé, part.
+    window.confirm = () => true
+    await act(async () => { boutonLienDe().click() })
+    expect(faux.appelsLien).toHaveLength(1)
+  })
+
+  it('deux clics du même rendu n’envoient qu’un lien', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLeLien()
+    await act(async () => { boutonLienDe().click(); boutonLienDe().click() })
+    expect(faux.appelsLien).toHaveLength(1)
+    await liberer()
+  })
+
+  it('trois clics non plus : le verrou est posé avant le `try`', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLeLien()
+    await act(async () => {
+      boutonLienDe().click()
+      boutonLienDe('secretariat@exemple.fr').click()
+      boutonLienDe().click()
+    })
+    expect(faux.appelsLien).toHaveLength(1)
+    await liberer()
+  })
+
+  it('pendant l’envoi, le bouton le dit et tous les boutons de lien attendent ; après, ils reviennent', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenirLeLien()
+    await act(async () => { boutonLienDe().click() })
+    expect(boutonLienDe().textContent).toBe('Envoi du lien…')
+    expect(boutonLienDe().disabled).toBe(true)
+    expect(boutonLienDe('secretariat@exemple.fr').disabled).toBe(true)
+    await liberer()
+    expect(boutonLienDe().textContent).toBe(LIEN)
+    expect(boutonLienDe().disabled).toBe(false)
+    expect(boutonLienDe('secretariat@exemple.fr').disabled).toBe(false)
+  })
+
+  it('un nouvel envoi efface l’avis du précédent : rien ne dit « parti » d’un lien encore en vol', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe().click() })
+    expect(screen.getByRole('status').textContent).toContain('client@exemple.fr')
+    const liberer = retenirLeLien()
+    await act(async () => { boutonLienDe('secretariat@exemple.fr').click() })
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    await liberer()
+    expect(screen.getByRole('status').textContent).toContain('secretariat@exemple.fr')
+  })
+
+  it('le refus pour trop de demandes se dit en français, avec l’adresse, et le verrou se relâche', async () => {
+    faux.erreurLien = { name: 'AuthApiError', message: 'For security purposes, you can only request this after 42 seconds.', status: 429, code: 'over_email_send_rate_limit' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe().click() })
+    expect(screen.getByRole('alert').textContent).toBe(
+      "Trop de demandes rapprochées : le service d'authentification n'a pas envoyé de nouveau lien vers client@exemple.fr. "
+      + "Un lien vient peut-être d'y partir ; sinon, attends quelques minutes, puis réessaie.",
+    )
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+
+    faux.erreurLien = null
+    await act(async () => { boutonLienDe().click() })
+    expect(faux.appelsLien).toHaveLength(2)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(screen.getByRole('status').textContent).toContain('client@exemple.fr')
+  })
+
+  it('une autre erreur du service se dit par son message', async () => {
+    faux.erreurLien = { name: 'AuthRetryableFetchError', message: 'Error sending recovery email', status: 500 }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe().click() })
+    expect(screen.getByRole('alert').textContent).toBe("Le lien n'a pas pu partir vers client@exemple.fr : Error sending recovery email")
+  })
+
+  it('une exception se dit aussi, et relâche le verrou', async () => {
+    faux.exceptionLien = new TypeError('réseau coupé')
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => { boutonLienDe().click() })
+    expect(screen.getByRole('alert').textContent).toBe("Le lien n'a pas pu partir vers client@exemple.fr : réseau coupé")
+    faux.exceptionLien = null
+    await act(async () => { boutonLienDe().click() })
+    expect(faux.appelsLien).toHaveLength(2)
+  })
+
+  it('aucun bouton tant que la liste n’est pas revenue', async () => {
+    const liberer = retenir()
+    monter()
+    await laisserPasserUnTour()
+    expect(screen.queryAllByRole('button', { name: LIEN })).toHaveLength(0)
+    await liberer()
+    expect(await screen.findAllByRole('button', { name: LIEN })).toHaveLength(2)
+  })
+
+  it('aucun bouton sur une liste lue en partie', async () => {
+    faux.compteAnnonce = 3
+    monter()
+    expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: LIEN })).toHaveLength(0)
+  })
+
+  it('aucun bouton sur une liste illisible', async () => {
+    faux.erreurLecture = { message: 'JWT expired' }
+    monter()
+    expect(await screen.findByText(/JWT expired/)).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: LIEN })).toHaveLength(0)
+  })
+
+  it('pendant une relecture, les boutons de lien attendent', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const liberer = retenir()
+    await act(async () => { caseDe('Banque').click() })
+    await laisserPasserUnTour()
+    expect(boutonLienDe().disabled).toBe(true)
+    await liberer()
+    expect(boutonLienDe().disabled).toBe(false)
   })
 })
 

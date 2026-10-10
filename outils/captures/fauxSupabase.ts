@@ -1456,6 +1456,8 @@ export const supabase = {
     getUser: () => Promise.resolve({ data: { user: session.user }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signOut: () => Promise.resolve({ error: null }),
+    // « Envoyer un lien de réinitialisation » (onglet Accès) : la demande est acceptée, et rien ne part vers personne.
+    resetPasswordForEmail: () => Promise.resolve({ data: {}, error: null }),
   },
   // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; tout autre appel, faux.
   rpc: (nom: string) => Promise.resolve({ data: nom === 'verifier_exercice_valide', error: null }),

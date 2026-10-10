@@ -17300,3 +17300,78 @@ répétition des bordures, écrite par la session en échappements, est arrivée
 juste quand même) ; l'exécutant, lui, a transmis tout caractère non ASCII en échappement, et le contenu décodé était
 identique au fichier. La « forme marquée » n'a donc toujours pas été éprouvée DANS l'appel ; la répétition reste ce qui
 garantit le compte.
+
+### 10/10/2026 — LE LIEN DE RÉINITIALISATION DEPUIS L'ONGLET ACCÈS
+
+(`src/pages/dossier/AccesTab.tsx`, `src/lib/recuperationMotDePasse.ts`, leurs tests.) **La décision**, du cabinet, le
+10/10/2026 : dans l'onglet Accès, pour chaque accès client, un bouton « Envoyer un lien de réinitialisation » qui envoie à
+l'adresse du client le même lien que « Mot de passe oublié ». La réinitialisation par un mot de passe que le cabinet
+poserait n'est PAS retenue : le client choisit lui-même le sien, et le cabinet ne connaît jamais que le mot de passe
+initial qu'il a donné.
+
+**Ce que fait l'appel, lu dans le code installé** (supabase-js et auth-js 2.112.4). `resetPasswordForEmail`, en flux
+implicite, ne fait qu'un `POST /recover` avec les en-têtes du client d'authentification : supabase-js le construit avec la
+clé publique comme `apikey` et comme porteur (`_initSupabaseAuthClient`), et avec le `fetch` ordinaire — pas
+`fetchWithAuth`, qui joindrait le jeton de la session. L'appel du cabinet est donc ANONYME, celui que n'importe qui fait
+depuis l'écran de connexion : le cabinet n'y gagne aucun droit, la session du cabinet n'est pas touchée, et le lien part
+dans la boîte du titulaire du compte, seul à pouvoir s'en servir. Rien n'est écrit en base, rien n'est relu.
+
+**Les choix.** Le geste passe par le MÊME appel que l'écran de connexion — `supabase.auth.resetPasswordForEmail(adresse,
+{ redirectTo: ADRESSE_DE_RETOUR })` —, écrit dans l'écran et non enveloppé dans une fonction de `src/lib` : le garde des
+verrous (`verrousEcritures.test.ts`) ne suit pas une méthode passée en valeur, et une enveloppe lui aurait caché cette
+porte. « Jamais construit à part » se garde donc sur la source : un garde nouveau de `recuperationMotDePasse.test.ts` lit
+l'ARBRE de TypeScript de toute la source de production et exige, pour chaque `resetPasswordForEmail`, un appel dont les
+options sont exactement `{ redirectTo: ADRESSE_DE_RETOUR }`, la constante importée du module sous son nom ; il ne trouve
+que `Login.tsx` et `AccesTab.tsx`, et un troisième appelant devra s'y nommer. Le module ne gagne que ce qui se DIT : la
+question, qui nomme l'adresse et dit que le mot de passe actuel reste valable tant que le client n'en a pas choisi un
+autre ; l'avis du succès (« Un lien de réinitialisation est parti vers … Il ne sert qu'une fois. ») ; et les erreurs, qui
+nomment l'adresse — ici l'adresse est celle d'un accès que le cabinet a créé, le message neutre de l'écran de connexion
+n'a pas lieu d'être. Le débit du service (429, `over_email_send_rate_limit`, `over_request_rate_limit`) se dit en
+français, avec ce qu'il veut dire — aucun lien n'est parti de cette demande, un lien vient peut-être d'y partir (demandé
+d'ici ou par le client lui-même) — ; une adresse refusée dit qu'aucun lien n'est parti ; un réseau muet (statut 0) dit
+qu'on ne sait pas si le lien est parti ; le reste passe par `messageErreur`. **LA DURÉE DU LIEN NE S'ÉCRIT PAS** : elle
+est réglée au tableau de bord (PLAN_DE_REPRISE.md, §3, point 6, la demande à 3 600 secondes), aucun outil de cette session
+ne la lit, `/auth/v1/settings` ne la rend pas, et l'interroger aurait été un appel au service de production.
+
+**L'écran.** Un bouton par accès qui a une adresse (comme « Relancer »), offert seulement sur une liste lue en entier —
+ni avant la première lecture, ni sur une liste lue en partie, ni sur une liste illisible : la règle des cases. Un clic,
+puis `window.confirm`, qui bloque : rien ne part avant la réponse, et un refus ne pose aucun verrou. Le verrou est un
+`useRef`, lu puis posé avant le `try` et relâché dans le `finally` ; un seul envoi à la fois, tous accès confondus — un
+second envoi buterait sur le débit du service et le cabinet lirait un refus sur un lien parti. Pendant l'envoi, le bouton
+dit « Envoi du lien… » et tous les boutons de lien attendent, comme pendant une relecture de la liste. L'avis nomme
+l'adresse VISÉE au clic ; un nouvel envoi efface l'avis du précédent (rien ne dit « parti » d'un lien encore en vol) ; le
+succès en `status`, l'erreur en `alert` ; une exception (auth-js relance ce qui n'est pas une erreur d'authentification)
+se dit aussi. CONTRAIREMENT AUX CASES, LE VERROU EST ICI LA SEULE BARRIÈRE au second clic du même rendu : un bouton n'est
+pas une entrée contrôlée, React ne le grise pas avant la fin de l'`act` — la mutation « aucun verrou » fait virer les
+tests à deux et à trois clics.
+
+**Les preuves.** Tests : le module (6 nouveaux : la question, l'avis sans durée, le débit sous son statut et ses deux
+codes, l'adresse refusée, le réseau muet, le message du service et l'objet nu, le garde de source et ses neuf cas
+plantés — adresse écrite à part, options absentes, étalées ou en trop, constante d'ailleurs ou sous alias, méthode prise
+sans être appelée, mauvaise option, et l'appel coupé sur cinq lignes, juste) ; l'écran (14 nouveaux, sur un double du
+service d'authentification qui n'envoie rien : le bouton par accès et aucun sans adresse, rien au chargement, la
+question qui nomme l'adresse, l'appel avec l'adresse de retour écrite en clair, aucune écriture ni relecture, la
+confirmation refusée, deux puis trois clics dans le même `act`, le bouton pendant l'envoi, l'avis effacé par un nouvel
+envoi, le débit, l'erreur du service, l'exception, aucun bouton avant la lecture, sur une liste partielle, sur une liste
+illisible, et pendant une relecture). ROUGE AVANT, contre l'écran et le module de ef86290 : 17 des 20 tests nouveaux
+échouent ; les trois verts (aucun bouton sur une liste partielle ou illisible, les cas plantés du garde) le sont aussi sur
+la base, et leurs mutations mordent. **Vingt-huit mutations, toutes mordent** (l'écran 16 : aucun verrou, verrou dans le
+`try`, sans confirmation, question sans adresse, sans `redirectTo`, verrou jamais relâché, bouton sur une liste partielle
+ou avant la lecture, succès sur une erreur, exception tue, bouton libre pendant l'envoi ou pendant la relecture, libellé
+figé, avis précédent gardé, adresse d'une autre ligne, erreur en `status` ; le module 6 ; le garde 6 — « nom d'option non
+vérifié » survivait au premier passage, le cas planté `emailRedirectTo` l'attrape). La barrière : `tsc -b` sans erreur ;
+`tsc -p tsconfig.edge.json` 25 erreurs, les connues ; `npm run lint` 63 avertissements, les mêmes ; `npm run build`
+passe ; treize fichiers de test (les miens et les gardes qui lisent la source : verrous, erreurs, lectures, écrans avant
+lecture, `Login`, `App`, droits) sous les quatre fuseaux, 263 tests à chaque fois ; la suite entière sous Paris, 260
+fichiers, 7 448 tests. Le banc des débordements, sur mon port : 0 débordement aux neuf passes — 1 440, 1 280,
+1 024, 720 et 390 pixels, 1 280 au panneau de 760, 1 280 et 1 440 à la barre de 420 et au panneau de 760, 1 280 à la barre
+de 420 sans panneau —, l'onglet Accès compris, aucune police refusée. Le faux Supabase du banc sait désormais accepter une
+demande de lien (sans rien envoyer) : une capture ponctuelle, hors dépôt, a cliqué le bouton à 1 440 pixels en clair et en
+sombre et à 390 — la question nomme l'adresse longue de l'accès, l'avis aussi, et ni les boutons ni l'avis ne sortent de
+leur boîte ; sur téléphone, les trois boutons d'un accès s'empilent dans sa fiche.
+
+**Ce qui reste.** Le premier essai réel est celui du cabinet. L'adresse du bouton est celle de `memberships.email`, que
+`create-client-access` écrit telle que le cabinet l'a tapée, et qu'aucun écran ne change ensuite ; si l'adresse du compte
+était changée au tableau de bord, le service répondrait sans rien envoyer (aucun compte à cette adresse) et l'écran dirait
+le lien parti — la lire dans Auth demanderait une Edge Function. `Login.tsx` garde son propre appel, identique ; le garde
+de source tient les deux ensemble.
