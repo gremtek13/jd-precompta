@@ -6,7 +6,7 @@ import ClientUpload from './ClientUpload'
 // « MES PIÈCES » QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7) — le pendant de
 // ClientHome.couverture.test.tsx. Drapeau levé, l'écran ne lit plus aucun mouvement : il lit des mois par
 // `couverture_du_releve`, en réclame ce qui manque, dit une couverture refusée, et ne réclame rien avant qu'elle revienne.
-// Drapeau baissé (ClientUpload.test.tsx), il lit les mouvements comme avant.
+// Drapeau baissé (espaceClientAvantCouverture.test.tsx), il lirait les mouvements comme avant P7.
 vi.mock('../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/couvertureReleve')>(),
   COUVERTURE_EXPORTEE: true,

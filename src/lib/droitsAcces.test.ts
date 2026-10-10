@@ -121,8 +121,9 @@ describe('le module, la migration et les écrans disent la même chose', () => {
   // « Le client ne voit aucun changement » est une AFFIRMATION de l'onglet Accès : elle tient tant qu'aucun écran du client
   // ne lit un droit. Le jour où « Mes ventes » ou « Ma banque » arrive, ce test tombe, et la phrase avec lui.
   // DEPUIS L'ÉTAPE P7, UN SEUL ÉCRAN EN LIT UN : « Ma simulation » lit la case « Banque », et seulement derrière
-  // `COUVERTURE_EXPORTEE` — ce que ClientSimulation.test.tsx (drapeau faux) et ClientSimulation.banque.test.tsx (vrai)
-  // éprouvent sur l'écran rendu ; la phrase de l'onglet suit le même drapeau (test suivant).
+  // `COUVERTURE_EXPORTEE` — ce qu'espaceClientAvantCouverture.test.tsx (drapeau faux) et
+  // ClientSimulation.banque.test.tsx (vrai) éprouvent sur l'écran rendu ; la phrase de l'onglet suit le même drapeau
+  // (test suivant).
   it('les écrans du client sont ceux que la phrase décrit, et seule « Ma simulation » lit un droit : « Banque », derrière le drapeau', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)

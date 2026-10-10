@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 110 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 112 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -109,6 +109,14 @@ veille au soir et le matin même, que leurs auteurs ajoutent à l'export ; la pr
 110 (empreinte globale `4d2d9d78fca8dadf3d40ba5985886f1a`), et l'égalité des 110 se rejoue quand les
 trois fichiers sont réunis.
 
+**Rejoué le 10/10/2026 après `banque_du_client`** (espace client, étape P7, version `20261010095439`) :
+111 fichiers, empreinte globale `672fb2ee33556d0e19e8ec20e1a3c025`, égale à celle des migrations de la
+production privée de `plan_comptable_des_dossiers` (`20261010092601`, chantier PC1, appliquée le matin
+même, que son auteur ajoute à l'export) ; la production en porte 112 (empreinte globale
+`0a4e465a1faa75132de290bc53aa1cc9`), égale aux fichiers une fois le sien réuni. Le fichier est le texte
+enregistré (23 337 caractères, aucun retour chariot, empreinte `43acdab78bd45c77872a10de646bfd9e` avec le
+saut de ligne final).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -185,6 +193,14 @@ côtés, la production prise sans les huit objets de ces deux migrations d'autre
 de `memberships`, six fonctions ; 1 476 objets en tout, `8ebeee2fda0acdb92a76b43a2ebd646d`).
 `pieces_hors_de_france` en ajoute 84 : trente colonnes, trente-quatre contraintes, quatre index, trois
 déclencheurs, quatre policies, sept fonctions et la RLS de ses deux tables.
+
+**Rejoués le 10/10/2026 après `banque_du_client`** (espace client, étape P7) : le socle est inchangé
+(78 instructions, `f01053c781688bbfbee8c70ac43924a6` des deux côtés — la migration ne touche aucune table
+du socle) ; l'inventaire compte 1 526 objets, empreinte `62a97d519c9a761311ca9834f5d5effa` des deux
+côtés, la production prise sans les 38 objets de `plan_comptable_des_dossiers` (1 564 objets en tout).
+`banque_du_client` en ajoute 50 : seize colonnes, douze contraintes, six index, deux déclencheurs, six
+policies — dont la lecture de `controles_releves_bancaires` à la case « Banque » —, six fonctions et la
+RLS de ses deux tables.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

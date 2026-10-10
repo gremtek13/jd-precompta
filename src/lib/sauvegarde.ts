@@ -68,6 +68,9 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'immobilisations', parent: 'natures_immobilisation', colonne: 'nature_id', aLaSuppression: 'bloque' },
   { enfant: 'immobilisations', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'informations_dossier', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'justificatifs_proposes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'justificatifs_proposes', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
+  { enfant: 'justificatifs_proposes', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'lettrages_manuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'lettrages_manuels', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'lignes_bancaires', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
@@ -99,6 +102,8 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'pieces_hors_de_france_taux', parent: 'pieces_hors_de_france', colonne: 'fiche_id', aLaSuppression: 'cascade' },
   { enfant: 'plan_comptable_dossier', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'plan_comptable_dossier', parent: 'roles_comptables', colonne: 'role', aLaSuppression: 'bloque' },
+  { enfant: 'precisions_mouvements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'precisions_mouvements', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
   { enfant: 'previsionnels_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_annuelles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_postes_annuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -197,6 +202,12 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // reporté — et les écritures d'une pièce devront, à l'étape PC4, trouver le plan du dossier déjà là. Le catalogue des
 // rôles (`roles_comptables`) vient en tête, avec les autres tables sans parent : posé par migration dans toute base, il
 // n'est dans aucune sauvegarde d'un dossier (`PARENTS_HORS_PLAN_VOULUS`). `sauvegarde.test.ts` garde cet ordre.
+//
+// Les propositions de justificatif et les précisions sur un mouvement (espace client, étape P7, migration
+// `banque_du_client`) suivent les mouvements et les pièces qu'elles désignent, et précèdent `exercices_valides` sans
+// qu'il le faille : aucune de leurs gardes ne lit une validation. À l'insertion, elles ne refusent qu'une ligne dont
+// le mouvement ou la pièce n'est pas de son dossier ; la restauration y insère par la policy du super-administrateur,
+// et une proposition déjà retirée se réinsère telle quelle, datée de son retrait.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -260,6 +271,8 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'ecritures_brouillon',
   'revision_justifications',
   'revision_preuves',
+  'justificatifs_proposes',
+  'precisions_mouvements',
   'exercices_valides',
 ]
 
@@ -618,6 +631,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   factures_emises: { acces: 'direct' },
   immobilisations: { acces: 'direct' },
   informations_dossier: { acces: 'direct' },
+  justificatifs_proposes: { acces: 'direct' },
   lettrages_manuels: { acces: 'direct' },
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
@@ -629,6 +643,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   pieces_hors_de_france: { acces: 'direct' },
   pieces_hors_de_france_taux: { acces: 'direct' },
   plan_comptable_dossier: { acces: 'direct' },
+  precisions_mouvements: { acces: 'direct' },
   previsionnels_bancaires: { acces: 'direct' },
   references_annuelles: { acces: 'direct' },
   references_postes_annuels: { acces: 'direct' },

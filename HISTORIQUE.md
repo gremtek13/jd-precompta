@@ -18226,3 +18226,65 @@ programme, leur conclusion et leur revue (R4) ; les fichiers du cabinet comme pr
 deux limites dites par l'écran : un « membre du cabinet » ne se nomme que par l'identifiant court de son compte (aucune
 table ne donne son nom au navigateur) ; un dossier à plusieurs comptes bancaires voit toujours « ne conclut pas » au
 512000 (R2).
+
+### 10/10/2026 — LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE — ESPACE CLIENT, ÉTAPE P7
+
+(Appliquée en production : `banque_du_client`, version `20261010095439`, sur décision du cabinet du 10/10/2026 — les
+deux migrations de P7, EC-Q1, et les relevés déposés en fichier lisibles par tout accès. Avec elle : le fichier d'export
+`supabase/schema/20261010095439_banque_du_client.sql` et le README ; `COUVERTURE_EXPORTEE` levé ; le plan de sauvegarde
+(`RELATIONS`, `ORDRE_RESTAURATION`, `CHEMINS_DOSSIER`) et sa copie dans `supabase/essais/restauration.sql`, avec les
+ancres de ses défauts plantés, et le passage du jour dans PLAN_DE_REPRISE.md ; RGPD.md (les deux registres en base, la
+décision sur les relevés déposés) ; le faux Supabase et la vitrine du banc ; six commentaires de test qui parlaient de
+la migration au futur.) La suite de « LA BANQUE DU CLIENT EN BASE ».
+
+AVANT D'APPLIQUER, LA PRODUCTION AVAIT AVANCÉ. Elle portait 111 migrations : la 111e, `plan_comptable_des_dossiers`
+(chantier PC1), appliquée une demi-heure plus tôt. Lue d'abord : ses propres tables, ses fonctions, une garde sur sa
+table, aucun objet dont P7 dépend. Son fichier posé sur la réplique de l'étape (110 migrations, puis lui),
+`signature.sql` rendait les neuf familles égales à la production ; RÉPÉTITION sur cette réplique : la migration passe,
+et `banqueClient.sql` rend les trois fautes attendues entre les deux migrations, et elles seules (3, 15, 16 : le client
+sans la case lit encore les mouvements, une part, un règlement — le resserrement manque).
+
+APPLIQUÉE par `apply_migration`, sans confirmation demandée (le texte ne supprime rien) : un morceau, 23 337 caractères,
+sans retour chariot, empreinte de l'historique `43acdab78bd45c77872a10de646bfd9e`, celle du fichier. `signature.sql`
+d'après : les neuf familles égales à la répétition, objet par objet (663 colonnes, 479 contraintes, 179 index,
+40 déclencheurs, 121 fonctions, 114 policies, 65 RLS, et les droits) — le texte transmis est celui qui a été éprouvé.
+
+EN PRODUCTION, `banqueClient.sql` (par `execute_sql`, le fichier sans ses lignes de commentaire, texte reçu égal à la
+copie transmise) : 86 lignes, exactement trois en faute, 3, 15 et 16 ; les refus par leur raison, la couverture, la
+restauration, les gardes et les trois mutations verts ; rien n'est resté en base, accès et droits compris. `rls.sql` ne
+se joue pas en production (il supprime dans ses sous-transactions) : rejoué sur une copie de la réplique, il rend la
+faute attendue du 3 bis de la banque et, hors de P7, une faute de l'invariant 2 — `roles_comptables`, table de PC1
+lisible par tout compte authentifié —, qui fait aussi ne plus mordre M2 ; au correctif de PC1 d'en décider. Advisors :
+`authenticated_security_definer_function_executable` 22 → 26 (les trois fonctions qui écrivent, chacune avec son
+contrôle d'accès, et `couverture_du_releve`, qui lit) ; le reste inchangé.
+
+LES TROIS CONTRÔLES DE L'EXPORT : dérive — 111 fichiers, `672fb2ee33556d0e19e8ec20e1a3c025`, égale à la production
+privée de PC1 ; 112 avec lui (`0a4e465a1faa75132de290bc53aa1cc9`), son fichier venant avec son correctif ; socle
+inchangé (78 instructions, `f01053c7…`) ; inventaire 1 526 objets des deux côtés (`62a97d51…`), la production prise sans
+les 38 objets de PC1 — la migration en ajoute 50.
+
+LA BASCULE, sur la tête de la demande de fusion qui porte P7 et P2 : le drapeau levé (`couvertureReleve.test.ts` l'exige
+dès que l'export porte la fonction) ; les deux registres au plan de sauvegarde — cinq relations, après les mouvements et
+les pièces, avant `exercices_valides`, un chemin direct. L'essai de restauration, rejoué sur une réplique dont la
+signature égale la production hors des objets de PC1 : 63 tables recréées, 58 IDENTIQUES (43 lignes, dont deux
+propositions — une retirée — et deux précisions), 0 écart ; une proposition, puis une précision, plantées avant les
+mouvements arrêtent le script sur leur clé. Sur une réplique ÉGALE à la production, il s'arrête plus tôt, à la copie des
+clés : la table de PC1 n'est pas encore au plan (son correctif l'y met ; `sauvegardeTables.test.ts` l'exigera). La
+raison écrite au-dessus de l'ordre a été relue contre la migration avant d'être posée : elle disait « aucune suppression
+hors cascade », et le cabinet peut retirer une précision hors sujet — corrigée avant de partir.
+
+BARRIÈRE, la bascule posée sur la tête : `tsc -b` vert ; lint sans erreur, 63 avertissements, aucun dans un fichier
+touché ; les Edge Functions à leurs 25 erreurs connues ; build vert ; les tests touchés (24 fichiers, 508 tests) verts
+sous Paris, UTC, New York et Auckland ; la suite entière sous Paris, deux ouvriers : 271 fichiers, 7 839 tests, verts —
+la bascule n'en ajoute ni n'en retire. BANC, sur un port privé : aucun débordement aux cinq largeurs (1 440, 1 280,
+1 024, 720 et 390 px) ; la vitrine du client — huit vues, sans erreur ni requête externe — montre l'Accueil et « Mes
+pièces » tirés de la couverture (les relevés manquants, mois par mois), et « Ma simulation » d'un accès sans la case qui
+dit pourquoi elle se tait, sur ordinateur et sur téléphone.
+
+CE QUI RESTE : `lectures_bancaires_au_droit_banque`, APRÈS la mise en ligne de la bascule — d'ici là, le 3 bis de la
+banque en faute est l'état attendu.
+
+LEÇON : une production qui avance pendant qu'on prépare ne se suppose pas. La migration d'un autre chantier se LIT avant
+d'appliquer la sienne, sa copie se pose sur la réplique, et c'est la signature d'APRÈS — réplique répétée contre
+production appliquée — qui dit que le texte transmis est celui qu'on a éprouvé. Et un plan de sauvegarde ne se recopie
+pas d'une tête à l'autre : les rangs avaient bougé de deux (e2), les ancres des défauts plantés avec eux.

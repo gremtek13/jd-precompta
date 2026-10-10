@@ -3,10 +3,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientHome from './ClientHome'
 
-// L'ACCUEIL DU CLIENT QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7). `couverture_du_releve` vit dans
-// une migration présentée au cabinet avant d'être appliquée : tant qu'elle n'est pas dans l'export, `COUVERTURE_EXPORTEE`
-// est faux et l'accueil lit les mouvements comme avant (ClientHome.test.tsx le garde). Ce fichier joue l'écran drapeau
-// LEVÉ, pour que le jour de la bascule le geste soit déjà éprouvé : l'accueil ne lit plus AUCUN mouvement — le
+// L'ACCUEIL DU CLIENT QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7). `couverture_du_releve` y
+// est depuis le 10/10/2026, et le drapeau du module est levé ; ce fichier le FORCE levé, pour ne dépendre que de lui
+// (le chemin drapeau baissé : espaceClientAvantCouverture.test.tsx). L'accueil ne lit plus AUCUN mouvement — le
 // resserrement les fermera à un accès sans la case « Banque », et une lecture refusée rend un relevé VIDE, sans erreur —,
 // il lit des mois par la fonction, en réclame ce qui manque, et dit une couverture refusée ou illisible.
 vi.mock('../lib/couvertureReleve', async (importOriginal) => ({

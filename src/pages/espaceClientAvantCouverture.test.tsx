@@ -6,13 +6,13 @@ import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
 import { SIMULATION_SANS_BANQUE } from '../lib/couvertureReleve'
 
-// L'ESPACE CLIENT TANT QUE LA COUVERTURE DU RELEVÉ N'EST PAS EN BASE (étape P7, drapeau BAISSÉ). La migration
-// `banque_du_client` se présente au cabinet avant d'être appliquée ; tant que l'export ne la porte pas,
-// `COUVERTURE_EXPORTEE` est faux et RIEN ne change pour le client : l'Accueil et « Mes pièces » lisent les mouvements
-// comme avant, sans appeler aucune fonction, et « Ma simulation » s'affiche à un accès qui ne porte aucune case. Le
-// drapeau est FORCÉ ici, pour que ce comportement reste éprouvé après la bascule, tant que son code existe ; le drapeau
-// levé se joue dans ClientHome.couverture.test.tsx, ClientUpload.couverture.test.tsx et ClientSimulation.banque.test.tsx,
-// et les autres tests des trois écrans valent dans les deux états.
+// L'ESPACE CLIENT DRAPEAU BAISSÉ (étape P7) : ce qu'il était avant que la couverture du relevé soit en base — la
+// migration `banque_du_client`, appliquée le 10/10/2026, que l'export porte depuis. `COUVERTURE_EXPORTEE` faux, RIEN ne
+// change pour le client : l'Accueil et « Mes pièces » lisent les mouvements comme avant, sans appeler aucune fonction,
+// et « Ma simulation » s'affiche à un accès qui ne porte aucune case. Le drapeau est FORCÉ ici, pour que ce
+// comportement reste éprouvé après la bascule, tant que son code existe ; le drapeau levé se joue dans
+// ClientHome.couverture.test.tsx, ClientUpload.couverture.test.tsx et ClientSimulation.banque.test.tsx, et les autres
+// tests des trois écrans valent dans les deux états.
 vi.mock('../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/couvertureReleve')>(),
   COUVERTURE_EXPORTEE: false,
