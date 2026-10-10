@@ -30,6 +30,7 @@
 --      pièces ; et les tables ouvertes à ce droit, lues au catalogue, sont celles présentées au cabinet, en lecture seule
 --      (espace client, étape P2 ; bloc « Les ventes du client », en fin de fichier).
 --   4bis (Ventes). Avec les droits, il n'écrit directement aucune table des ventes (42501) : ses gestes passent par les fonctions.
+--      Les devis (espace client, étape P5) rejoignent les tables des ventes dès que leur migration est en base (3bis et 4bis).
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -219,6 +220,19 @@
 -- b2ed6e7e4077d49aa582fafc18695b33), adaptée comme celle de P1, bordures comprises. La table du plan est vide en
 -- production : ce que sa policy, sa garde et sa clé étrangère refusent et acceptent sur une ligne qui EXISTE, profil par
 -- profil, est éprouvé par `planComptable.sql`.
+--
+-- 10/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape P5 : préparée, présentée au cabinet, non
+-- appliquée). Les devis rejoignent le bloc « Les ventes du client » : dès que la table `devis` existe, `devis` et
+-- `devis_factures` entrent dans la liste attendue, le jeu d'essai émet, accepte et transforme un devis, et 4bis tente une
+-- insertion directe dans chacune et une mise à jour d'un devis ; avant, une ligne « EN ATTENTE ». Joué ENTIER sur une
+-- réplique en UTF8 égale à la production à 113 migrations (`signature.sql`, neuf familles), semée du jeu de P2 : sans
+-- P2, 42 lignes (le bloc SANS OBJET) et 16 mutations sur 16 ; avec P2, 60 lignes (la ligne des devis EN ATTENTE) et 28
+-- sur 28 ; avec P2 et les deux migrations des devis, 61 lignes — le catalogue juste à onze tables, contrôle positif et
+-- sans droit 11 sur 11, 4bis 15 vérifications — et 30 mutations sur 30 (M4bis 11 sur 11). Dans les trois états, une
+-- seule ligne en faute, hors des devis et attendue : 3bis (Banque), « le domaine », entre les deux migrations de
+-- `banque_du_client`. Ce fichier sans ses ajouts, joué avec les devis, vire au rouge (onze tables lues, neuf
+-- présentées ; « 0 vue sur 0 » au contrôle positif). Ce que les fonctions des devis refusent et acceptent, profil par
+-- profil et par leur raison, est éprouvé par `devis.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1081,6 +1095,13 @@ end $$;
 -- tenant avec les policies), le bloc le dit en une ligne et ne juge rien : préparée et présentée au cabinet avant d'être
 -- appliquée, elle peut attendre son accord pendant qu'une autre migration fait rejouer ce fichier. Une fois la colonne
 -- là, tout se juge — une policy qui manquerait fait virer le catalogue.
+-- LES DEVIS (étape P5) rejoignent ce domaine dès que la migration `devis_du_client` est en base (son témoin : la table
+-- `devis`) : `devis` et `devis_factures` entrent dans la liste attendue ; le jeu d'essai y ajoute un devis du jour, émis
+-- par le chef, accepté puis transformé en facture, par leurs fonctions ; 4bis y tente l'insertion directe d'un devis et
+-- d'un lien, et la mise à jour d'un devis. Le cabinet n'a AUCUNE policy d'écriture sur ces tables : le chef de l'essai,
+-- super-administrateur, fait passer les insertions de M4bis par la policy de la restauration. La série
+-- (`devis_numerotation`) n'a aucune policy et n'est pas une vente : le client ne la lit pas (devis.sql, 97). Avant cette
+-- migration, une ligne dit que les devis attendent, et les neuf tables se jugent seules.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -1107,6 +1128,9 @@ declare
   construit boolean := false; erreur text; total bigint; obs text; mauvais text;
   lus jsonb := '{}'::jsonb;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+  -- Les devis (étape P5) : celui du jeu, son jour (à Paris, comme la base date une émission), et ce que 4bis tentera.
+  dv uuid; jour date := (now() at time zone 'Europe/Paris')::date;
+  ecritures_devis jsonb := '[]'::jsonb; mises_a_jour_devis jsonb := '[]'::jsonb;
 begin
   if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                   and not attisdropped) then
@@ -1114,6 +1138,13 @@ begin
     insert into rls_verdict values ('3bis et 4bis. SANS OBJET : la migration ventes_du_client n''est pas encore en base',
       'factures_emises.valide_par', 'absente : 3bis et 4bis se jugent dès que la migration y est', true);
     return;
+  end if;
+  -- Les devis, dès que leur migration est en base ; avant, une ligne le dit.
+  if to_regclass('public.devis') is not null then
+    attendues := array(select x from unnest(attendues || array['devis', 'devis_factures']) x order by 1);
+  else
+    insert into rls_verdict values ('3bis et 4bis. les devis : EN ATTENTE de la migration devis_du_client',
+      'public.devis', 'absente : les devis se jugent avec les ventes dès que la migration y est', true);
   end if;
   -- Le catalogue, tel qu'il est.
   execute catalogue_sql into tables_ventes, hors_lecture;
@@ -1150,6 +1181,27 @@ begin
     insert into emails_envoyes (dossier_id, type, destinataire, objet, facture_id) values
       (dossier_du_client, 'facture', 'essai-rls@exemple.invalid', 'essai rls', f_validee),
       (dossier_du_client, 'relance_pieces', 'essai-rls@exemple.invalid', 'essai rls', null);
+    -- Les devis : un devis du jour émis par le chef, accepté, puis transformé en facture — par leurs fonctions.
+    if to_regclass('public.devis') is not null then
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select e.devis_id into dv from enregistrer_devis(dossier_du_client, null,
+        jsonb_build_object('tiers_nom', 'ESSAI RLS', 'date_emission', jour, 'date_validite', jour, 'montant_ht', 100,
+          'montant_tva', 20, 'montant_ttc', 120, 'emetteur_nom', 'ESSAI RLS'),
+        '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
+      perform decider_devis(dossier_du_client, dv, 'acceptee', jour, false);
+      perform facturer_devis(dossier_du_client, dv);
+      reset role;
+      -- Ce que 4bis tentera : un brouillon de devis valide, et un second lien de ce devis accepté, vers le brouillon de
+      -- facture du jeu — que ses gardes laissent passer.
+      ecritures_devis := jsonb_build_array(
+        jsonb_build_object('nom', 'devis', 'ordre', format('insert into devis (dossier_id, date_emission, date_validite, tiers_nom, lignes, montant_ht, montant_tva, montant_ttc) values (%L, %L, %L, %L, %L::jsonb, 100, 20, 120)',
+          dossier_du_client, jour, jour, 'ESSAI RLS 4bis', '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]')),
+        jsonb_build_object('nom', 'devis_factures', 'ordre', format('insert into devis_factures (dossier_id, devis_id, facture_id) values (%L, %L, %L)',
+          dossier_du_client, dv, f_brouillon)));
+      mises_a_jour_devis := jsonb_build_array(
+        jsonb_build_object('nom', 'devis', 'ordre', format('update devis set notes = notes where dossier_id = %L', dossier_du_client)));
+    end if;
     construit := true;
 
     -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
@@ -1196,7 +1248,10 @@ begin
         ('encaissements_factures_taux', format('insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (%L, %L, 20, 5)', enc_nu, dossier_du_client)),
         ('transmissions_encaissements', format('insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values (%L, %L, %L, %L, %L, %L)', dossier_du_client, enc_nu, f_validee, 'manuel', 'pa.exemple.fr', 'depose')),
         ('emails_envoyes', format('insert into emails_envoyes (dossier_id, type, destinataire, objet, facture_id) values (%L, %L, %L, %L, %L)', dossier_du_client, 'facture', 'essai-4bis@exemple.invalid', 'essai 4bis', f_validee))
-      ) as v(nom, ordre) loop
+      ) as v(nom, ordre)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(ecritures_devis) as d(nom text, ordre text)
+    loop
       -- Sous le client portant les deux droits : refusé par la RLS, nommément.
       accepte := false; motif := null;
       begin
@@ -1230,7 +1285,10 @@ begin
         ('factures_emises', format('update factures_emises set tiers_nom = tiers_nom where dossier_id = %L', dossier_du_client)),
         ('transmissions_factures', format('update transmissions_factures set detail = detail where dossier_id = %L', dossier_du_client)),
         ('encaissements_factures', format('update encaissements_factures set moyen = moyen where dossier_id = %L', dossier_du_client))
-      ) as v(nom, ordre) loop
+      ) as v(nom, ordre)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_devis) as d(nom text, ordre text)
+    loop
       touchees := -1; motif := null;
       begin
         set local role authenticated;

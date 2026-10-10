@@ -10,6 +10,8 @@
 // `sauvegardeRelations.test.ts` le compare au schéma exporté à chaque exécution : une clé étrangère
 // ajoutée par une migration et oubliée ici fait échouer la suite, action à la suppression comprise.
 
+import { DEVIS_EXPORTES } from './devis'
+
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
   /** La table qui porte la colonne. */
@@ -21,10 +23,23 @@ export interface Relation {
   aLaSuppression: 'cascade' | 'bloque' | 'met_a_null'
 }
 
+// LES DEVIS (espace client, étape P5 ; migrations devis_du_client et devis_du_client_suppression, présentées au cabinet,
+// PAS ENCORE APPLIQUÉES). Leurs trois tables sont déclarées ci-dessous à leur place — relations, ordre, chemins, clé de la
+// série — et RETIRÉES du plan tant que `DEVIS_EXPORTES` (src/lib/devis.ts) est baissé : la production ne les a pas, et
+// lire une table absente ferait échouer toute sauvegarde. Le jour où l'export porte les migrations, lever le drapeau les
+// met au plan, et les tests qui confrontent le plan au schéma exporté les jugent comme les autres. Les listes « prévues »
+// sont le plan tel qu'il sera : restaurationEssai.test.ts et sauvegardeDevis.test.ts l'éprouvent avant le jour.
+export const TABLES_DES_DEVIS: readonly string[] = ['devis', 'devis_factures', 'devis_numerotation']
+
+/** Une table au plan de sauvegarde : toutes, sauf celles des devis tant que leurs migrations ne sont pas exportées. */
+export function auPlan(table: string, devisExportes: boolean): boolean {
+  return devisExportes || !TABLES_DES_DEVIS.includes(table)
+}
+
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
 // sont volontairement absentes : cette table n'appartient pas à l'application, elle n'est ni
 // sauvegardée ni restaurée par ce chemin, et l'y faire figurer donnerait l'illusion du contraire.
-export const RELATIONS: readonly Relation[] = [
+export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'a_nouveaux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'agent_conversations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cabinet_admins', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
@@ -35,6 +50,11 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'controles_releves_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cotisations_declarees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'declarations_tva', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'devis', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'devis_factures', parent: 'devis', colonne: 'devis_id', aLaSuppression: 'cascade' },
+  { enfant: 'devis_factures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'devis_factures', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
+  { enfant: 'devis_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'documents_divers', parent: 'cotisations_declarees', colonne: 'attached_to_cotisation_id', aLaSuppression: 'met_a_null' },
   { enfant: 'documents_divers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'documents_divers', parent: 'sous_dossiers', colonne: 'sous_dossier_id', aLaSuppression: 'bloque' },
@@ -141,6 +161,9 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
+// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis tant que leurs migrations ne sont pas exportées.
+export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlan(r.enfant, DEVIS_EXPORTES))
+
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
 // l'insertion, et `garder_source_citee` refuse ensuite de supprimer ou de déplacer la source — une règle que le cabinet
@@ -208,7 +231,14 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // qu'il le faille : aucune de leurs gardes ne lit une validation. À l'insertion, elles ne refusent qu'une ligne dont
 // le mouvement ou la pièce n'est pas de son dossier ; la restauration y insère par la policy du super-administrateur,
 // et une proposition déjà retirée se réinsère telle quelle, datée de son retrait.
-export const ORDRE_RESTAURATION: readonly string[] = [
+//
+// Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
+// parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
+// le rang d'aucune table d'hier dans l'essai de restauration. La série d'abord (aucune policy : la sauvegarde n'en lit
+// rien, elle se reprend du plus haut numéro restauré), les devis — un devis émis ne naît que par la porte de la
+// restauration, dans un dossier sans série —, puis leurs liens, dont la garde lit le devis et la facture.
+// `sauvegardeDevis.test.ts` garde cet ordre.
+export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
   'taux_change_bce',
@@ -273,8 +303,14 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'revision_preuves',
   'justificatifs_proposes',
   'precisions_mouvements',
+  'devis_numerotation',
+  'devis',
+  'devis_factures',
   'exercices_valides',
 ]
+
+// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis tant que leurs migrations ne sont pas exportées.
+export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlan(t, DEVIS_EXPORTES))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
 // ligne insérée peut pointer une ligne qui n'existe pas encore. Ici c'est `factures_emises`, dont un
@@ -468,9 +504,13 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 // dossier règle, vingt-six au plus) ; le rôle. Le catalogue est le premier PARENT du
 // graphe dont la clé ne s'appelle pas `id` : c'est sur elle que `liensPerdus` compare, et que la restauration lit, dans
 // la base d'arrivée, les rôles qu'un plan désigne (`referencesExternes`).
-export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
+//
+// `devis_numerotation` (espace client, étape P5) en fera TREIZE, et neuf dans le plan d'export, le jour où ses
+// migrations seront exportées : une ligne par dossier et par année, comme `facture_numerotation`.
+export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
+  devis_numerotation: ['dossier_id', 'annee'],
   encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
@@ -482,6 +522,11 @@ export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   superpdp_credentials: ['dossier_id'],
   taux_change_bce: ['date', 'devise'],
 }
+
+// Les clés telles qu'elles s'appliquent AUJOURD'HUI : sans la série des devis tant que ses migrations ne sont pas exportées.
+export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Object.entries(CLES_PRIMAIRES_PREVUES).filter(([table]) => auPlan(table, DEVIS_EXPORTES)),
+)
 
 /** La clé primaire d'une table — `id` sauf exception déclarée. */
 export function clePrimaire(table: string): readonly string[] {
@@ -593,7 +638,7 @@ export type CheminDossier =
   /** Référentiel que rien dans l'export ne pointe : hors de cet export lui aussi. */
   | { acces: 'global' }
 
-export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
+export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   cabinets: { acces: 'global' },
   super_admins: { acces: 'global' },
   taux_change_bce: { acces: 'global' },
@@ -617,6 +662,9 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   controles_releves_bancaires: { acces: 'direct' },
   cotisations_declarees: { acces: 'direct' },
   declarations_tva: { acces: 'direct' },
+  devis: { acces: 'direct' },
+  devis_factures: { acces: 'direct' },
+  devis_numerotation: { acces: 'direct' },
   documents_divers: { acces: 'direct' },
   dossier_assignations: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
@@ -664,6 +712,12 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   ventilations_bancaires: { acces: 'direct' },
   volet_social_pamc: { acces: 'direct' },
 }
+
+// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis tant que leurs migrations ne sont pas
+// exportées.
+export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
+  Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlan(table, DEVIS_EXPORTES)),
+)
 
 /** Une étape du plan de lecture d'un dossier, dans l'ordre où elle doit être exécutée. */
 export interface EtapeExport {

@@ -53,6 +53,7 @@ ses données sont là. Voir §6 et §8.7.
 | **E-reporting des achats à l'étranger : la fiche « hors de France » d'une pièce** *(base posée le 10/10/2026, aucun écran encore)* | Décrire, facture par facture, ce que le client achète à un fournisseur établi hors de France, pour le transmettre à l'administration à partir des opérations du 01/09/2027 (e-reporting) ; le cabinet la saisit, rien ne s'en déduit | Obligation légale du client (CGI, art. 290, I-3°) | Client ; ses fournisseurs établis hors de France — une personne physique seulement quand le fournisseur en est une ; membres du cabinet (auteur de chaque version) | `pieces_hors_de_france` : numéro, date et type de la facture, la facture qu'un avoir corrige, devise, pays du fournisseur et son identifiant — son numéro de TVA dans l'Union ; hors de l'Union, son code pays suivi des seize premiers caractères de sa dénomination, qui peut être le nom d'une personne —, nature de l'achat, autoliquidation, date de livraison ou période, identifiant de l'auteur et horodatages de chaque version et de son retrait ; `pieces_hors_de_france_taux` : code et taux de TVA, base, TVA, motif d'exonération (code VATEX et libellé). Ni l'adresse du fournisseur, ni sa dénomination entière : la facture reste dans le fichier de la pièce ; aucune donnée de patient. Lue par le cabinet seul — le client n'en voit rien —, écrite par `enregistrer_fiche_hors_de_france` et `retirer_fiche_hors_de_france` seules ; rien ne s'y modifie ni ne s'y supprime, sauf avec la pièce ou le dossier. Durée de conservation : celle de la pièce qu'elle décrit, avec laquelle elle part |
 | **Gestion des accès** | Ouvrir et fermer les comptes cabinet et client ; depuis le 09/10/2026, rendre l'accès à qui a oublié son mot de passe (lien « Mot de passe oublié »), et poser les droits de chaque accès client (espace client, étape P1) | Exécution du contrat | Membres du cabinet, clients | E-mail, identifiant, rôle ; pour un mot de passe oublié : l'adresse saisie à l'écran de connexion, et l'e-mail que le service d'authentification envoie au compte — un lien à usage unique, valable une heure, que rien n'envoie quand aucun compte n'existe ; tant que le nouveau mot de passe n'est pas choisi, le navigateur garde l'identifiant du compte (`localStorage`, `jd-precompta-recuperation`) ; pour chaque accès client, deux droits, « Ventes » et « Banque » (`memberships.droit_ventes`, `droit_banque`), faux par défaut, cochés par le cabinet — ni leur auteur ni leur date ne sont gardés ; le client lit les siens, jamais ceux d'une autre personne. Aucun écran du client ne les honore encore : ils ouvriront ses ventes et sa banque aux étapes suivantes, chacune présentée au cabinet avant — les ventes à l'étape P2, préparée le 10/10/2026 et pas encore appliquée (§7) |
 | **Journalisation** | Savoir qui a reçu quoi et quand (envois d'e-mails, événements Super PDP) | Intérêt légitime (preuve et diagnostic) | Client | Destinataire, objet, horodatage, statut |
+| **Devis** *(préparés le 10/10/2026, espace client P5 — deux migrations présentées au cabinet, NON APPLIQUÉES ; aucun écran encore)* | Établir, émettre et suivre les devis que le client adresse à SES clients — par le cabinet, ou par le client qui porte le droit « Ventes » —, enregistrer leur réponse, et tirer la facture d'un devis accepté | Pour le client : l'exécution de mesures précontractuelles prises à la demande de son propre client (RGPD, art. 6, 1, b) ; pour le cabinet : l'exécution du contrat de mission — la qualification de chacun est une question au cabinet (§8.9) | Client ; les clients du client — le destinataire de chaque devis, une personne physique quand c'est un particulier ; membres du cabinet et client (auteurs) | `devis` : le destinataire (nom, adresse, SIRET, e-mail) et ses mentions (SIREN, adresse de facturation électronique, code service et numéro d'engagement d'un organisme public, nature des opérations, date ou période d'exécution PRÉVUE, adresse de livraison), l'objet, les lignes (désignation, quantité, prix, taux), les montants, les conditions, les mentions légales, des notes PARTAGÉES — le client qui porte « Ventes » les lit comme le cabinet —, l'émetteur figé à l'émission, le numéro, les dates (du devis, de validité, de la réponse), la réponse, et qui a créé, émis, répondu (identifiants des comptes, horodatages) ; `devis_factures` : le lien d'un devis accepté à la facture qui en est tirée, et qui l'a tirée ; `devis_numerotation` : le dernier numéro de la série, par année. Lus par le cabinet du dossier et par l'accès qui porte « Ventes » ; écrits par quatre fonctions seules. Aucune donnée de patient : l'information écrite préalable d'un professionnel de santé n'est pas un devis de l'application (§8.7, §8.9). Durée de conservation : question au cabinet (§8.9) |
 
 **Aucune décision automatisée au sens de l'article 22.** C'est une propriété du produit, pas un
 hasard : l'application signale et propose, elle ne tranche jamais — une pièce importée arrive
@@ -310,6 +311,19 @@ Ce qui est **prouvé**, pas seulement affirmé :
   super-admin, liste d'exceptions retirée) doivent toutes virer au rouge, et elles le font. Sans
   cela, une impersonation qui échouerait silencieusement rendrait zéro partout et afficherait « 0 en
   faute » sur une base grande ouverte — la panne qui ressemble exactement au succès.
+- **Les devis du client, en base** (espace client, étape P5 : PRÉPARÉE le 10/10/2026, présentée au cabinet, PAS
+  APPLIQUÉE ; art. 25 § 2 et 32 § 1 b). Trois tables neuves, sous RLS : le cabinet du dossier et l'accès client qui
+  porte « Ventes » LISENT les devis et leurs liens (une policy `for select to authenticated` chacun, celle du client à
+  part) ; PERSONNE n'écrit directement — quatre fonctions `SECURITY DEFINER` qui vérifient l'accès d'abord
+  (`gere_les_ventes`), énumèrent leurs colonnes et refusent dans un ordre fixé ; le super-administrateur seul insère,
+  pour restaurer une sauvegarde ; la série n'a aucune policy. Un devis émis est figé par une garde (seule sa réponse
+  s'écrit, une fois) ; un brouillon seul se supprime. Éprouvé sur une réplique dont la signature égale la production
+  (113 migrations, plus les deux de P2) : `supabase/essais/devis.sql` (167 verdicts, 0 en faute, chaque refus par sa
+  raison, rien resté), `rls.sql` entier (onze tables des ventes au catalogue, contrôle positif, aucune écriture directe ;
+  avant la migration, une ligne « en attente »), la restauration (68 tables, 0 écart), cinq courses à deux sessions, et
+  42 mutations des migrations, toutes vues. **Limites nommées** : les notes d'un devis sont PARTAGÉES (un texte saisi
+  dans un domaine ouvert au client, conception §3.6) — l'écran de l'étape P6 doit le dire au-dessus du champ ; et la
+  durée de conservation des devis refusés ou expirés n'est pas tranchée (§8.9) : rien ne les purge.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 
@@ -501,3 +515,23 @@ avant la première connexion d'un vrai compte.
 - **Retirer la connexion referme l'accord chez la banque**, puis efface la ligne. Si la banque ne
   répond pas, l'écran le dit et propose de retirer quand même : l'accord expire alors de lui-même, à
   sa date, et plus rien dans l'application ne permet de s'en servir.
+
+### 8.9 — Les devis du client : qui en répond, et combien de temps *(questions au cabinet, 10/10/2026)*
+
+L'étape P5 de l'espace client (préparée, non appliquée) range dans l'application les devis que le client adresse à ses
+propres clients. Trois questions se posent avant l'application, et aucune ne se tranche dans le code :
+
+- **Qui est responsable de ces données ?** Un devis nomme le client du client — un particulier, parfois. Quand le
+  client établit ses devis lui-même dans l'application, c'est LUI qui décide pourquoi et comment ces données sont
+  traitées : il en serait le responsable, et le cabinet (qui lui fournit l'outil) son sous-traitant pour cette part —
+  ce qui appelle un contrat au sens de l'article 28 — la conception de l'espace client le recommande dans la lettre de
+  mission (question EC-Q2, sans réponse au 10/10/2026). Hypothèse retenue en attendant : la recommandation ; rien ne
+  s'écrit dans le code, et le premier devis réel attend la réponse.
+- **Combien de temps les garder ?** Aucun texte ne fixe la durée de conservation d'un devis. Un devis REFUSÉ ou EXPIRÉ
+  ne nomme qu'un prospect : le référentiel de la CNIL sur la gestion des activités commerciales retient trois ans
+  après le dernier contact (repris de la conception de l'espace client) ; un devis ACCEPTÉ fait partie du contrat et
+  accompagne la facture qui en est tirée, que le code de commerce fait garder dix ans (art. L123-22, §5). Aucune purge
+  n'existe ; la décider, c'est choisir ces durées.
+- **Aucun devis de soins.** L'information écrite préalable qu'un professionnel de santé remet à un patient (arrêté du
+  30 mai 2018) nomme un patient et a son propre modèle : elle n'entre pas dans l'application, comme les bordereaux
+  (§8.7). La consigne aux clients le dira ; le code ne le distingue pas.

@@ -59,6 +59,7 @@ export const CLES_NOTES_ADMISES: Record<string, { nombre: number; table: string 
   'src/pages/dossier/InformationsTab.tsx': { nombre: 1, table: 'informations_dossier (la saisie du cabinet)' },
   'src/pages/dossier/FactureFormModal.tsx': { nombre: 1, table: 'factures_emises (par enregistrer_facture)' },
   'src/pages/dossier/SupplementsTab.tsx': { nombre: 1, table: 'supplements' },
+  'src/lib/devis.ts': { nombre: 1, table: 'devis (les notes PARTAGÉES d’un devis, par enregistrer_devis ; espace client P5)' },
 }
 
 /** Les fichiers qui lisent un `.notes` — celui d'une autre table —, au nombre près (règle L). */
@@ -68,6 +69,7 @@ export const LECTURES_NOTES_ADMISES: Record<string, { nombre: number; table: str
   'src/pages/dossier/InformationsTab.tsx': { nombre: 1, table: 'informations_dossier' },
   'src/pages/dossier/FactureFormModal.tsx': { nombre: 1, table: 'factures_emises' },
   'src/pages/dossier/SupplementsTab.tsx': { nombre: 1, table: 'supplements' },
+  'src/lib/devis.ts': { nombre: 1, table: 'devis (la saisie du formulaire d’un devis ; espace client P5)' },
 }
 
 export interface Source { chemin: string; texte: string }

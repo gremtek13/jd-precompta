@@ -87,6 +87,17 @@
 -- retirée par le cabinet — et de deux précisions (client, cabinet) : 63 tables recréées, 58 restaurées et IDENTIQUES
 -- à la source (43 lignes, dont les quatre de l'étape), 0 écart, aucun arrêt. Plantées — une proposition, puis une
 -- précision, avant les mouvements —, le script s'arrête sur leur clé.
+--
+-- 10/10/2026, espace client P5 (migrations préparées, NON appliquées) : `devis_numerotation`, `devis` et `devis_factures`
+-- entrent au plan quand leurs tables existent (le bloc « Les devis », ci-dessous), juste avant `exercices_valides` et
+-- après les registres de P7, comme le code les y met quand `DEVIS_EXPORTES` est levé. Rejoué sur une réplique en UTF8
+-- égale à la production à 112 migrations (signature.sql, neuf familles), plus les deux de l'étape P2 et les deux de
+-- celle-ci, le dossier `test` semé par les fonctions de la base (cinq devis : accepté puis transformé en facture,
+-- refusé, en attente, un de 2025, un brouillon ; deux séries ; un lien) : 68 tables recréées, 62 restaurées et
+-- IDENTIQUES à la source (28 lignes), 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles justes ; sans les
+-- migrations des devis, 65 tables, le plan d'hier. Planté — le lien avant son devis —, le script s'arrête sur la clé.
+-- À 113 migrations (`revision_des_cycles`, appliquée le même jour), il s'arrête à la copie des clés : les tables de
+-- la révision par cycle ne sont pas encore au plan de ce fichier.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -143,6 +154,22 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
 insert into essai_restauration._vagues (table_nom, colonne) values
  ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de'),
  ('pieces_hors_de_france','remplace_id');
+
+-- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
+-- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme
+-- la marche (ORDRE_RESTAURATION_PREVU), leurs rangs calculés pour qu'aucune table d'hier ne change de place. Absentes de
+-- la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+begin
+  if to_regclass('public.devis') is not null then
+    update essai_restauration._ordre set rang = rang + 3 where table_nom = 'exercices_valides';
+    insert into essai_restauration._ordre (rang, table_nom)
+      select (select o.rang from essai_restauration._ordre o where o.table_nom = 'exercices_valides') - 4 + v.i, v.t
+        from (values (1,'devis_numerotation'),(2,'devis'),(3,'devis_factures')) as v(i, t);
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('devis','direct',null,null),('devis_factures','direct',null,null),('devis_numerotation','direct',null,null);
+  end if;
+end $$;
 
 do $$
 declare t text;

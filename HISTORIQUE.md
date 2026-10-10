@@ -18469,3 +18469,158 @@ rattacher tout compte existant ; ou rattacher après une confirmation du cabinet
 pas rattaché » (le côté fermé, sous un message faux ; `edgeFunctionsLectures.test.ts` les compte) ; la recherche par
 adresse s'arrête à 25 pages de 200 comptes ; les messages anglais du service sur une création refusée pour une autre
 raison qu'un doublon passent tels quels.
+
+### 10/10/2026 — LES DEVIS, EN BASE — ESPACE CLIENT, ÉTAPE P5 (PRÉPARÉE, ÉPROUVÉE, NON APPLIQUÉE)
+
+(Deux migrations, préparées hors du dépôt — l'export ne porte que ce qui est appliqué : `devis_du_client`, 44 799
+caractères, md5 `5262b07e96d71df9c36f0274b2b488ae`, pour `apply_migration` (aucune suppression dans son texte ; une
+version à coller de secours) ; `devis_du_client_suppression`, 3 343 caractères, `c3c4774ade28ee576e6e00c16c03a67d`, à
+COLLER avec sa ligne d'historique (son corps supprime un brouillon) ; un retour arrière complet, DESTRUCTIF
+(`defaire_les_devis_du_client`, 3 195 caractères, `003c1a581762464f42436db73faadd3c`), à coller lui aussi, seulement sur
+l'accord explicite du cabinet. L'essai neuf `supabase/essais/devis.sql` ; `rls.sql` (le bloc « Les ventes du client »
+reçoit les devis) ; `restauration.sql` (un bloc conditionnel, un passage daté) ; `ventesClient.sql` (le contrôle 0c) ;
+`src/lib/devis.ts` et `devis.test.ts` (neufs) ; `src/lib/types.ts` (six types) ; `src/lib/sauvegarde.ts` (le plan
+PRÉVU et son filtre), `sauvegardeDevis.test.ts` (neuf), `restaurationEssai.test.ts` ; deux entrées admises dans
+`notesInternesEcritures.test.ts` ; trois passages de RGPD.md.) La
+cinquième étape de l'espace client (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §2.3,
+§3, §4.3) : les devis en base, rien à l'écran (P6). Rien n'est appliqué : une policy qui ouvre une lecture au client se
+présente au cabinet avant (la présentation, une page, accompagne le correctif). Elle suppose P2 (ses deux migrations
+d'abord ; la première de P5 le vérifie et s'arrête sinon). Hypothèses : EC-Q1 (une case « Ventes » par accès), EC-Q2 (une
+seule série par dossier, que le devis soit émis par le cabinet ou par le client ; la clause de sous-traitance dans la
+lettre de mission), EC-Q3 ouverte (un devis n'entre jamais en comptabilité). Sources : service-public.gouv.fr, « Devis »
+(F31144 : aucune durée de validité légale, une offre qui engage le professionnel une fois acceptée, le client à sa
+signature) ; code de la consommation, art. L111-1 (3° : la date ou le délai d'exécution) et L214-1 (sauf stipulation
+contraire, les sommes versées d'avance sont des arrhes) ; arrêté du 24 janvier 2017, art. 4 (le devis détaillé des
+dépannages et travaux du bâtiment) ; code de procédure civile, art. 641 (un mois se compte au quantième, le dernier jour
+du mois à défaut — pris par analogie pour « un mois de validité ») ; arrêté du 30 mai 2018 (l'information écrite
+préalable d'un professionnel de santé : hors du périmètre) ; CGI, art. 289, I-1 c (un acompte reçu appelle une facture).
+
+**MESURÉ EN PRODUCTION LE 10/10/2026** (lecture seule) : 111 migrations à la première lecture (`plan_comptable_des_dossiers`
+appliquée à 09:26 UTC), 112 à la seconde (`banque_du_client`, la première de P7, à 09:54 UTC) — aucune ne nomme un objet
+des devis ; ni les migrations de P2 ni aucune table `devis` ; deux accès clients, aucun avec la case « Ventes » —
+appliquer n'ouvrirait rien à personne avant que le cabinet en coche une. Puis 113 (`revision_des_cycles`, R4, à 11:07
+UTC). La réplique, refaite à chaque fois (les textes de PC1, de P7 et de R4 confrontés à l'historique de la production
+par leur empreinte), puis RECOPIÉE EN UTF8 — la grappe héritée est en SQL_ASCII, où `length()` compte des octets (le
+piège relevé par P7) ; trois contraintes que la recopie réécrit (un AND aplati) remises du texte de leur migration —,
+égale la production à 113 migrations sur les neuf familles de `signature.sql`.
+
+**LA PREMIÈRE MIGRATION** (`devis_du_client`). Trois tables. `devis` : le devis entier, ses lignes en `jsonb` (aucune
+table de lignes à remplacer, donc aucune suppression dans un corps), le client et ses mentions sous les contraintes de
+`factures_emises`, l'émetteur figé à l'émission, le numéro (nul jusqu'à l'émission, unique par dossier d'une contrainte
+TOTALE), la réponse complète ou absente (`num_nonnulls`), les montants au centime (TTC = HT + TVA), qui a créé, émis,
+répondu (sans clé vers les comptes, comme `valide_par`). `devis_numerotation` : le repère de la série par dossier et par
+année, SANS policy. `devis_factures` : le lien d'un devis accepté à la facture qui en est tirée (une facture vient d'un
+devis au plus). Deux gardes : `devis_figes` (DEFINER : un devis émis ne change plus que sa réponse, une fois ; ne se
+supprime plus, sauf avec son dossier ; ne s'émet que par la fonction, qui l'annonce par le réglage `jd.emission_devis` ;
+ne naît émis que par la porte de la restauration — le super-administrateur dans un dossier sans série) et
+`devis_factures_gardes` (INVOKER : un devis accepté de son dossier, une facture, jamais un avoir ; ne change pas ; part
+avec la facture, le devis ou le dossier). Six policies AJOUTÉES : la lecture du cabinet (`admin_du_dossier`), celle du
+client à part (`*_lecture_ventes` sur `client_du_dossier(…, 'ventes')`, que le catalogue de `rls.sql` reconnaît), une
+insertion de restauration réservée au super-administrateur — sur `devis` et sur `devis_factures` ; aucune policy de mise
+à jour ni de suppression. Trois fonctions `SECURITY DEFINER`, l'accès d'abord (`gere_les_ventes`, « Accès refusé à ce
+dossier. », 42501), les colonnes énumérées, les refus dans un ordre fixé que le module redit : `enregistrer_devis`
+(dix-neuf refus — le devis du dossier, un émis ne se modifie plus, le nom, la date et l'an 2000, la validité qui ne
+précède pas la date, de 1 à 500 lignes, chaque ligne vérifiée : forme, désignation, quantité positive à quatre décimales,
+prix à six, montant sous dix milliards d'euros, taux de la liste G1.24 ; les totaux de l'en-tête confrontés AU CENTIME
+par `centimes_ligne_facture` ; pour émettre : pas daté de l'avenir à Paris, un total positif, l'émetteur nommé ; la
+ligne réécrite telle que lue, quatre clés ; le numéro `D<année>-<0001>` pris sous le verrou de la série de l'année de la
+DATE, repris du plus haut numéro émis), `decider_devis` (une fois, datée, ni avant le devis ni dans l'avenir ; une
+acceptation après la validité se CONFIRME), `facturer_devis` (une facture BROUILLON par `enregistrer_facture`, sous
+l'identité de l'appelant : le client, ses mentions, les lignes, les totaux, l'émetteur ; ni la date d'exécution PRÉVUE —
+celle d'une facture est constatée — ni les mentions légales du devis ; une fois, la première facture du lien nommée dans
+le refus ; le lien part avec le brouillon supprimé, et le devis se transforme de nouveau). Deux bornes TECHNIQUES, dites
+comme telles : 500 lignes, une ligne sous dix milliards d'euros — de quoi compter tout total exactement au centime dans
+le navigateur.
+
+**LA SECONDE, À COLLER** (`devis_du_client_suppression`) : `supprimer_brouillon_devis`, trois refus (l'accès, le devis du
+dossier verrouillé, « émis : il ne se supprime plus »), rend l'identifiant supprimé. Elle vérifie la première.
+
+**LE MODULE** (`src/lib/devis.ts`, pur, derrière `DEVIS_EXPORTES` baissé) : la validité proposée (un mois, `ajouterMois`),
+le numéro, les totaux (`calculerTotaux`, donc `calculerLigne`), l'état déduit au jour de Paris passé en paramètre
+(« expiré » le lendemain de la validité, « facturé » sur un lien), les mentions sous les libellés de la facture imprimée,
+le numéro de TVA de l'émetteur (`numeroTvaImprime`), les mentions légales proposées (`mentionTva` seule), « Bon pour
+accord », l'écriture envoyée (totaux recalculés, mentions fermées à nul, SIRET par `siretAEnregistrer`), et les refus des
+quatre fonctions dans leur ordre et sous leurs mots — en lisant le JSON COMME la fonction (`->>`, `btrim` qui ne retire
+que les espaces, NaN et l'infini partis en `null`, décimales comptées sur l'écriture décimale, borne en décimal exact,
+date au calendrier grégorien proleptique sans an 0). `devis.test.ts` (91 tests) prend `devis.sql` pour RÉFÉRENCE tant
+que l'export ne porte pas les migrations : chaque refus du module y est exigé de la fonction qui le lève, sous son code et
+ses mots ; les 57 écritures de l'essai sans identifiant rejouées dans le module (même premier refus, ou aucun) ; le jour
+où l'export porte les deux migrations, le drapeau doit être levé et les `raise exception` égaux aux listes, dans l'ordre.
+
+**LA SAUVEGARDE SUIT UN DRAPEAU**, plutôt qu'un correctif d'application à poser le jour J : les trois tables sont
+déclarées à leur place (`RELATIONS_PREVUES`, `ORDRE_RESTAURATION_PREVU` — juste avant `exercices_valides`, aucun rang
+d'hier ne bouge —, `CHEMINS_DOSSIER_PREVUS`, `CLES_PRIMAIRES_PREVUES`) et retirées du plan effectif tant que
+`DEVIS_EXPORTES` est baissé (`auPlan`) : une sauvegarde lirait sinon une table absente et échouerait. `restauration.sql`
+les met au plan quand elles existent.
+
+**ÉPROUVÉ SUR LA RÉPLIQUE** (d'abord à 112 migrations sur la base 1c30d1a ; puis, le correctif rebasé sur 2aa2ef4 — PC1,
+R3 et la bascule de P7 —, sur la réplique en UTF8 à 113 migrations, plus les deux de P2) :
+- `devis.sql` : **167 verdicts, 0 en faute, 10 mutations sur 10 qui mordent, rien resté** (base nue et base semée, aux
+  deux passages) ; ESSAI_IMPOSSIBLE, nommé, sans B, sans A, sans P2. Seize contrôles d'ORDRE (deux fautes voisines dans une écriture, le
+  premier refus exigé) ont été ajoutés en route : sans eux, l'ordre « nom avant date », « taux avant montants »… n'était
+  tenu que par le texte des fonctions.
+- `rls.sql` ENTIER (celui de 2aa2ef4, mes ajouts compris) sur trois bases semées à 113 migrations : la production — 42
+  lignes, le bloc SANS OBJET, 16 mutations sur 16 ; avec P2 — 60 lignes, une ligne « devis EN ATTENTE », les neuf tables
+  comme avant, 28 sur 28 ; avec P2 et P5 — 61 lignes, le catalogue juste à ONZE tables, contrôle positif 11 sur 11, sans
+  droit 11 sur 11, 4bis 15 vérifications, 30 mutations sur 30 dont M4bis 11 sur 11 (le chef, super-administrateur,
+  passe par la policy de la restauration). Une seule ligne en faute dans les trois états, hors de P5 et attendue : 3bis
+  (Banque), « le domaine », entre les deux migrations de P7 (l'invariant 2, que `roles_comptables` faisait virer avant
+  PC1, est juste). Le `rls.sql` de 2aa2ef4 sans mes ajouts, joué avec P5, vire au rouge (onze tables lues, neuf
+  présentées ; « 0 vue sur 0 » au contrôle positif) : le fichier attrape la lecture ouverte sans présentation.
+- `ventesClient.sql` : son contrôle 0c (toute fonction sous `gere_les_ventes`, au catalogue) virait au rouge avec P5 ;
+  sa valeur attendue dépend désormais de `to_regclass('public.devis')` — 90 verdicts (celui de 2aa2ef4), 0 en faute,
+  avec et sans P5. Les essais des factures et des encaissements, sur une réplique nue en UTF8 à 113 migrations :
+  identiques avec et sans P5 (factures 119, encaissementsFactures 111, transmissionsFactures 44,
+  transmissionsEncaissements 130, statutsFacturesRecus 63, abandonTransmission 14, identiteFacturesRecues 39, 0 en
+  faute).
+- La restauration (le script de 2aa2ef4, mon bloc compris), sur la réplique en UTF8 à 112 migrations plus P2 et P5, le
+  dossier `test` semé de cinq devis, deux séries et un lien : **68 tables recréées, 62 IDENTIQUES (28 lignes), 0 écart,
+  aucun arrêt**, les deux contrôles du catalogue des rôles justes ; sans les migrations des devis, 65 tables et 59 ;
+  plantée (le lien avant son devis), elle s'arrête sur la clé. À 113 migrations, le script de 2aa2ef4 s'arrête à la
+  copie des clés sur `revision_conclusions` : les tables de R4 ne sont pas encore à son plan (au correctif de R4).
+- La suppression d'un dossier qui porte des devis émis, un lien et deux séries : tout part en cascade, les gardes laissent
+  passer.
+- MUTATIONS (jouées avant le rebase, à 112 migrations ; les migrations n'ont pas changé depuis) : 42 des migrations
+  (huit sur les policies et la RLS, trente sur les fonctions et les gardes, quatre sur B),
+  **toutes tuées** par `devis.sql` — et par `rls.sql` pour celles qui touchent le client ; 30 du module, **toutes tuées**
+  par `devis.test.ts`, après l'ajout du contrôle 47b (une réponse datée du jour du devis : la mutation `<=` survivait).
+- COURSES (deux sessions) : deux émissions dans la même série se suivent (la seconde attend, prend le numéro suivant) ;
+  deux transformations, deux réponses, une émission contre une suppression et l'inverse : la seconde attend, puis le refus
+  attendu. Sans le verrou de `facturer_devis`, DEUX factures ; sans celui de la série, la fenêtre élargie (`pg_sleep`
+  posé après la lecture du repère) fait buter la seconde émission sur l'unicité au lieu de prendre le numéro suivant.
+- Le retour arrière, collé avec ou sans B, sur base nue ou semée : la signature redevient celle d'avant, neuf familles
+  sur neuf ; les factures tirées des devis restent. Les versions à coller (B, R, A de secours) : leur ligne d'historique
+  porte le texte exact (empreinte relue).
+
+**LE JOUR DE L'APPLICATION, SIMULÉ** : les deux migrations de P2 et les deux des devis posées dans l'export sous des
+versions fictives, les trois drapeaux levés, la suite ENTIÈRE jouée (273 fichiers, 7 942 tests) — un seul échec réel,
+trouvé avant la barrière : le scanner des anciennes notes internes (P0, `notesInternesEcritures.test.ts`) voit dans
+`lib/devis.ts` une clé `notes` et une lecture `.notes` hors des fichiers admis. C'est la colonne des DEVIS (partagée,
+documentée), pas une ancienne note interne : deux entrées admises, au nombre près, table nommée — un défaut qui existait
+aussi drapeau baissé (le scanner lit la source, pas l'état). Dans l'état posé, les refus du module sont ÉGAUX aux
+`raise exception` des fonctions exportées, dans l'ordre ; le drapeau oublié fait virer quatre tests. L'arbre rendu à
+l'octet (empreinte de 754 fichiers). Rejoué sur 2aa2ef4 (les versions fictives après la 113e) : 278 fichiers, 8 041
+tests, TOUS verts — les défauts plantés de la restauration compris, leurs rangs lus sans les devis ; l'arbre rendu à
+l'octet (770 fichiers).
+
+**LE REBASE SUR 2aa2ef4** (PC1, R3, la bascule de P7) : cinq fichiers en conflit, résolus en GARDANT tout ce que PC1 et
+P7 y ont posé — `sauvegarde.ts` (les devis juste avant `exercices_valides`, APRÈS les deux registres de P7 ; le
+catalogue des rôles et le plan d'un dossier à leur place ; `CLES_PRIMAIRES_PREVUES` à treize tables, neuf au plan
+d'export), `types.ts` (les types de PC1 puis ceux des devis), `restaurationEssai.test.ts` (les rangs lus dans le code,
+SANS les devis, que le bloc à part ajoute : `ordreSansDevis`), `restauration.sql` et `rls.sql` (les passages datés de
+PC1, de P7 et des devis, à la suite).
+
+**LA BARRIÈRE** (sur 2aa2ef4, état réel, drapeaux baissés) : `tsc -b` 0 ; Edge Functions 25 erreurs, les connues
+(aucune touchée) ; lint 0 erreur, 63 avertissements, aucun dans un fichier touché ; build construit ; les fichiers de
+test touchés et ceux des modules touchés (16 fichiers, 605 tests) verts sous Paris, UTC, New York et Auckland ; la suite
+entière sous Paris : 278 fichiers, 8 041 tests, tous verts (103 de plus que la tête). Le correctif s'applique sur 2aa2ef4 et sur la tête de `main` (9edc50b, le
+même arbre).
+
+**CE QUI RESTE.** Les décisions du cabinet : appliquer (après P2), EC-D1 (la durée de validité proposée : un mois),
+EC-D2 (les mentions d'un métier : un modèle par profession ?), EC-D3 (l'acompte : arrhes sauf stipulation, et la facture
+d'acompte), EC-D4 (les données des clients du client : EC-Q2, et la conservation des devis refusés ou expirés). Le jour de
+l'application : les deux migrations dans l'export, `DEVIS_EXPORTES` levé, les trois contrôles de l'export, `rls.sql`,
+`devis.sql` et `ventesClient.sql` rejoués, la phrase des cases de l'onglet Accès (P2) qui nomme les devis, les advisors
+(quatre fonctions de plus qui écrivent, `devis_numerotation` sans policy, volontaire). Puis P6, les écrans. Limites
+nommées : les notes d'un devis sont PARTAGÉES ; une date facultative mal formée (exécution prévue, période) rend l'erreur
+brute de Postgres, comme `enregistrer_facture` — l'écran n'envoie que des dates de son calendrier.
