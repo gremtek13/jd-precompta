@@ -19306,3 +19306,96 @@ harnais ; retirer l'un des trois contrôles de champ ne le fait PAS — la batte
 coup, et le contrôle suivant refuse à la place du retiré. C'est une limite de la batterie (`corpsMalFormes`), la même
 pour les trois fonctions qui créent des comptes ; la lever demande un scénario par champ, qui toucherait toutes les
 fonctions : laissé pour une autre fois, dit ici.
+
+### 10/10/2026 — L'ÉCRAN DES CYCLES DE LA RÉVISION — LIGNE 41, ÉTAPE R4, PHASE C
+
+(`src/pages/dossier/FicheCycle.tsx`, nouveau ; `RevisionTab.tsx` et `RevisionTab.test.tsx` ; `src/lib/revisionLibelles.ts`
+(les mots des cycles) ; `src/index.css` (une règle : l'occupant `cycle` du volet, plein écran sur téléphone) ; le banc
+de captures — le faux Supabase, deux passes de `debordements.mjs`, trois vues de `vitrine.mjs`.) La phase C de « LES
+CYCLES DE LA RÉVISION » : ce que R4 a mis en base et en module, à l'écran, dans l'onglet Révision de R3. Aucune
+migration, aucune Edge Function, aucun réseau ; `lib/revisionRevue.ts` n'est pas touché. En production, aucune
+conclusion, note ni revue n'existe : tout est LATENT jusqu'au premier clic du cabinet.
+
+**CE QUE LE CABINET VOIT.** En tête de l'onglet, une phrase de plus : chaque cycle se travaille sur son programme, se
+conclut — révisé, ou en anomalie —, garde son journal et se revoit par le chef ; « Ensemble » porte la synthèse ; puis
+l'avancement des cycles de l'exercice (« 7 cycles — revu : 1 ; anomalie : 1 ; … » : l'état avant son nombre, il ne
+s'accorde pas). « Ce que la révision ne tranche pas » dit désormais Q2 telle que la base la prend (tout membre affecté
+prépare, le chef seul revoit, et peut revoir ce qu'il a préparé), que le programme est une PROPOSITION et qu'un travail
+non fait n'empêche pas de conclure, Q5 (la conclusion envisagée d'une attestation s'écrit dans « Ensemble ») et Q6 (R9).
+Chaque carte de cycle commence par le TRAVAIL du cycle : la pastille de son état déduit (`cyclesDeLExercice` : non
+commencé, en cours, « révisé, à revoir par le chef », anomalie, à reprendre, revu, revue périmée, à revoir, en attente),
+ce qui le retient (un solde à justifier, à revoir, en anomalie, en attente ; un autre cycle pas réglé pour la synthèse ;
+une activité postérieure à la revue ; une chaîne illisible), la conclusion courante (sa date, « programme : 4 faits sur
+5 » — un constat, jamais un refus), sa revue, son journal, et ce que l'exercice précédent a laissé à suivre ; puis un
+bouton, « Conclure » sur un cycle sans conclusion d'un exercice terminé, « Ouvrir le cycle » sinon. La carte de la
+synthèse ne dit plus « aucun solde de bilan » (elle n'en a jamais). Les cartes sont celles de `cyclesDeLExercice` : un
+cycle que seule une conclusion ou une note nomme a la sienne — rien d'écrit ne se cache.
+
+**LE PANNEAU D'UN CYCLE** (`FicheCycle`, volet de droite, occupant `cycle`, plein écran sur téléphone comme le panneau
+« justifier »). L'état et ce qui le retient ; pour « Ensemble », ce que la synthèse attend ; ce que l'exercice précédent a
+laissé à suivre. L'HISTORIQUE des conclusions, de la plus récente : état, « courante », date, auteur (« toi », ou
+l'identifiant court d'un autre compte du cabinet — la limite de R3), le texte, les points à suivre, le programme relu
+(`lireProgramme` : « 1 fait sur 1 travail », chaque travail fait ou pas et sa note ; illisible, il le dit et ne montre
+rien), ses revues ; une chaîne illisible le dit. LA REVUE DU CHEF : la revue de la courante (avis, date, auteur,
+observation ; « qui l'avait préparée » quand le chef revoit sa propre conclusion — A30-1 ; « périmée » et pourquoi) ;
+au chef (`estChef`, le super-administrateur compris, comme `est_chef_du_cabinet`) : une observation, « Approuver » et
+« Renvoyer à reprendre » ; à un autre compte, la phrase de la base (refus 1 du module), et ni champ ni bouton. LE
+JOURNAL : chaque note, sa nature, sa date, son auteur ; la nature à CHOISIR (aucune n'est proposée) et le texte ; « une
+note ne se modifie ni ne s'efface ». LA CONCLUSION : le programme — celui de la conclusion courante tel qu'il a été
+exécuté, suivi des travaux proposés depuis (`programmeDeDepart`), ou le programme proposé — à cocher, annoter, retirer,
+compléter ; la conclusion et les points à suivre en N+1, qui partent du texte de la courante ; « Conclure : révisé » et
+« Conclure : anomalie ». Un exercice qui ne se révise pas (en cours, hors des bornes) : la phrase de la base, telle que
+le module la rend pour ce que la fiche enverrait, et aucun formulaire.
+
+**LES REFUS AVANT LE CLIC, ET LA SAISIE QUI NE REMPLACE PAS CE QU'ELLE N'A PAS VU.** Chaque bouton passe ce qu'il
+enverrait — par `argumentsDeConclureCycle`, `argumentsDeNoterRevision`, `argumentsDeRevoirCycle` — à
+`refusDeConclureCycle`, `refusDeNoterRevision`, `refusDeRevoirCycle` : refusé, il est grisé, et le refus se lit sous ses
+mots, un même refus dit une fois avec les boutons qu'il retient (le patron de `FicheSolde`). Un champ qu'on n'a pas
+touché REFLÈTE la conclusion courante ; au premier changement, la saisie RETIENT la conclusion qu'elle remplacera
+(`depart`), et l'observation celle qu'elle revoit (`revueSur`). Une autre conclusion prise depuis — vue à la relecture
+qui suit une note, une revue ou une décision — ne se remplace donc pas en silence : le module dit le refus 10 (« Une autre
+conclusion a été prise sur ce cycle depuis : relire avant de conclure. »), le bouton se grise, la saisie reste, et
+« Repartir de la conclusion courante » la remet sur ce qui est. Un test le joue.
+
+**LES ÉCRITURES.** `conclure_cycle`, `noter_revision`, `revoir_cycle` SEULES, chacune dans sa fonction d'écran
+(`{ error }` lu, `messageErreur`), sous UN verrou `useRef` (`cycleEnCours`), posé avant le `try` et relâché dans le
+`finally` APRÈS la relecture, qui a lieu aussi sur un refus ; la décision d'un solde (R3) et le travail d'un cycle se
+tiennent l'un l'autre (chacun refuse tant que l'autre écrit, et chaque panneau est « occupé » par les deux) : chacun
+relit TOUT, et une relecture plus lente ne doit pas écrire par-dessus celle de l'autre écriture. Écrite, la saisie de son
+geste repart de zéro (la fonction d'écran rend vrai) ; refusée, elle reste. La garde du volet retient une saisie, qu'on
+ouvre un autre cycle, un compte, ou qu'un autre contenu demande la place. LES LECTURES : les trois tables par `lireTout`
+(tri total par `id`, le dossier seul, tous exercices — les points à suivre se lisent sur N−1), avec leurs bandeaux ; sur
+une lecture partielle, l'onglet s'arrête à ses bandeaux comme en R3 : ni état, ni carte, ni geste. Les lignes de
+`revision_notes` s'appellent `journal` à l'écran aussi (`notesInternesEcritures.test.ts`, règles K et L).
+
+**LES PREUVES.** `RevisionTab.test.tsx` passe de 43 à 64 tests : les trois tables refusées une à une (un bandeau, ni
+état, ni carte, ni « Ouvrir le cycle ») ; l'état des cartes et l'avancement de l'en-tête ; le programme proposé et les
+refus avant le clic, boutons grisés ; les huit arguments de `conclure_cycle` (un travail ajouté part sans code) ; la
+reprise du programme et la saisie qui repart vide ; deux puis trois clics dans le même `act` (conclure, noter,
+approuver) ; le verrou relâché après la relecture, le refus de la base dit et la saisie gardée ; une conclusion en vol
+qui grise la décision d'un solde ; une conclusion prise ailleurs pendant la saisie ; la garde, deux fois ; l'exercice en
+cours ; le journal ; la revue réservée au chef, approuver, renvoyer à reprendre puis revoir la conclusion suivante ;
+l'historique (programme relu, revue par l'auteur, revue périmée, programme illisible) ; la synthèse retenue ; les points
+à suivre de N−1, un cycle que seule une conclusion nomme, et rien d'un autre dossier. `encaissementsEcritures.test.ts`
+inscrit l'onglet Révision parmi les écrans qui appellent les trois fonctions (la liste était vide jusqu'à la phase C) :
+la suite entière l'a fait virer, c'était son rôle. MUTATIONS, par un banc qui ne touche pas à git (chaque fichier rendu
+depuis sa copie, empreinte vérifiée) : 41, toutes tuées — le verrou de conclure SEUL compris (deux clics du même `act`
+partent avant que React grise le bouton), l'ordre deux pour la note et la revue, la relecture non attendue, sans
+refus, non relue, le chef, l'ancrage de la conclusion remplacée, la reprise du programme, le préremplissage, les
+remises à zéro, les refus qui ne grisent pas ou ne se disent pas, la garde, les bandeaux, le filtre du dossier, les
+cartes que seule une conclusion nomme. BANC (port privé, faux Supabase : la kinésithérapeute d9 porte pour 2025 cinq
+conclusions — dont une de 2024 qui laisse un point à suivre —, trois notes et deux revues ; deux passes de plus,
+`revision/cycle` et `revision/cycle-ensemble`) : 0 débordement aux neuf passes (1 440, 1 280, 1 024, 720, 390 et les
+quatre combinaisons extrêmes des volets) sur la première version de la fiche ; après le dernier changement (texte non
+prérempli, revue sans objet tue), 0 aux cinq largeurs de référence — les quatre combinaisons des volets n'ont pas été
+rejouées sur cette version (demande du cabinet de ralentir). Aucune police refusée. LA BARRIÈRE : `tsc -b` vert ; Edge
+Functions à leurs 25 erreurs ; lint, 63 avertissements, aucun dans un fichier touché ; build vert ; la suite entière
+sous Paris, deux ouvriers : 284 fichiers, 8 252 tests, un rouge (le garde ci-dessus), corrigé et rejoué seul sous les
+quatre fuseaux ; `RevisionTab.test.tsx` et `ecransAvantLecture.test.tsx` sous les quatre fuseaux (161 tests).
+
+**CE QUI RESTE, ET UN ÉCART.** Sur une chaîne de conclusions ILLISIBLE — que la base ne laisse pas naître, seule une
+restauration fautive la produirait —, l'écran n'a pas de courante et envoie `p_remplace_id` nul ; le module, qui tient
+pour courante la première non remplacée, dit le refus 10, et la conclusion ne se prend pas de l'écran. Le module ne rend
+pas la courante « selon la base » d'une chaîne illisible : à l'architecte d'en décider, si cela doit se pouvoir. Puis
+R5 (la revue analytique), R6 (les préalables, Q1), R9 (figer le dossier de travail) ; les réponses du cabinet à Q2, Q5,
+Q6, Q7 et Q11.

@@ -1106,9 +1106,82 @@ const REVISION_D9 = {
   ] as Ligne[],
 }
 
+// LES CYCLES DE LA RÉVISION de la kinésithérapeute (ligne 41, étape R4, phase C), sur son exercice 2025 : la trésorerie
+// conclue « révisé » et approuvée par le chef — son programme presque entier fait, une note par travail —, le registre
+// conclu puis renvoyé à reprendre avec son observation, l'exploitant conclu en anomalie, les recettes au journal sans
+// conclusion, et la synthèse rédigée, qui reste « en cours » tant que les autres cycles ne sont pas réglés. Ce que 2024
+// a laissé à suivre en trésorerie s'affiche en tête de 2025. Des textes FICTIFS, sans nom de tiers ni donnée de patient.
+const TRAVAUX_TRESORERIE_D9 = [
+  { code: 'tresorerie-releves', travail: 'Obtenir le relevé au 31 décembre de chaque compte bancaire du dossier.', fait: true, note: 'Relevé de décembre 2025 remis par la cliente.' },
+  { code: 'tresorerie-rapprochement', travail: 'Rapprocher le solde de chaque compte de banque du relevé au 31 décembre, et expliquer l’écart.', fait: true, note: 'Aucun écart.' },
+  { code: 'tresorerie-mouvements', travail: 'Examiner les mouvements ignorés et ceux qui ne sont pas rapprochés.', fait: true },
+  { code: 'tresorerie-virements-internes', travail: 'Vérifier que le compte de virements internes est soldé au 31 décembre.', fait: true },
+  { code: 'tresorerie-especes', travail: 'Demander s’il existe des encaissements ou des paiements en espèces.', fait: false, note: 'Question posée, réponse attendue.' },
+]
+const CYCLES_D9 = {
+  conclusions: [
+    {
+      id: 'rc-d9-2024', dossier_id: 'd9', annee: 2024, cycle: 'tresorerie', etat: 'revise', travaux: [],
+      conclusion: 'Le solde bancaire concorde avec le relevé de fin d’année.',
+      a_suivre: 'Obtenir l’attestation de solde du compte d’épargne professionnel, ouvert en novembre 2024.',
+      remplace_id: null, auteur: 'u1', cree_le: '2025-03-10T10:00:00+00:00',
+    },
+    {
+      id: 'rc-d9-1', dossier_id: 'd9', annee: 2025, cycle: 'tresorerie', etat: 'revise', travaux: TRAVAUX_TRESORERIE_D9,
+      conclusion: 'Le solde de la banque est accepté sur le relevé de décembre ; aucun mouvement non rapproché ne reste.',
+      a_suivre: null, remplace_id: null, auteur: 'u2', cree_le: '2026-04-10T10:00:00+00:00',
+    },
+    {
+      id: 'rc-d9-2', dossier_id: 'd9', annee: 2025, cycle: 'immobilisations', etat: 'revise', travaux: [],
+      conclusion: 'Le registre concorde avec les comptes 2183 et 28183 ; la facture de l’ordinateur est au dossier.',
+      a_suivre: null, remplace_id: null, auteur: 'u2', cree_le: '2026-04-11T10:00:00+00:00',
+    },
+    {
+      id: 'rc-d9-3', dossier_id: 'd9', annee: 2025, cycle: 'capitaux', etat: 'anomalie', travaux: [],
+      conclusion: 'Un prélèvement personnel de décembre manque au relevé transmis : le compte de l’exploitant ne se justifie pas encore.',
+      a_suivre: 'Rapprocher les prélèvements de 2026 mois par mois.', remplace_id: null, auteur: 'u1', cree_le: '2026-04-12T10:00:00+00:00',
+    },
+    {
+      id: 'rc-d9-4', dossier_id: 'd9', annee: 2025, cycle: 'ensemble', etat: 'revise', travaux: [],
+      conclusion: 'Note de synthèse : les recettes concordent avec le relevé annuel de l’assurance maladie ; une anomalie reste '
+        + 'ouverte sur le compte de l’exploitant ; les autres cycles sont révisés ou en cours de revue.',
+      a_suivre: null, remplace_id: null, auteur: 'u1', cree_le: '2026-04-13T10:00:00+00:00',
+    },
+  ] as Ligne[],
+  journal: [
+    {
+      id: 'rn-d9-1', dossier_id: 'd9', annee: 2025, cycle: 'recettes', nature: 'echange_direction',
+      texte: 'La cliente confirme qu’aucune recette n’a été encaissée en espèces en 2025.', auteur: 'u1', cree_le: '2026-04-05T10:00:00+00:00',
+    },
+    {
+      id: 'rn-d9-2', dossier_id: 'd9', annee: 2025, cycle: 'recettes', nature: 'consultation',
+      texte: 'Consultation interne sur le rattachement des chèques reçus fin décembre et crédités en janvier.', auteur: 'u2',
+      cree_le: '2026-04-06T10:00:00+00:00',
+    },
+    {
+      id: 'rn-d9-3', dossier_id: 'd9', annee: 2025, cycle: 'tresorerie', nature: 'travail',
+      texte: 'Relevé de décembre rapproché ligne à ligne.', auteur: 'u2', cree_le: '2026-04-09T10:00:00+00:00',
+    },
+  ] as Ligne[],
+  revues: [
+    {
+      id: 'rv-d9-1', dossier_id: 'd9', annee: 2025, conclusion_id: 'rc-d9-1', avis: 'approuve', observation: null, revu_par: 'u1',
+      revu_le: '2026-04-20T10:00:00+00:00',
+    },
+    {
+      id: 'rv-d9-2', dossier_id: 'd9', annee: 2025, conclusion_id: 'rc-d9-2', avis: 'a_reprendre',
+      observation: 'Joindre le tableau des amortissements de l’exercice et dire la durée retenue pour l’ordinateur.', revu_par: 'u1',
+      revu_le: '2026-04-20T11:00:00+00:00',
+    },
+  ] as Ligne[],
+}
+
 const TABLES: Record<string, Ligne[]> = {
   revision_justifications: REVISION_D9.decisions,
   revision_preuves: REVISION_D9.preuves,
+  revision_conclusions: CYCLES_D9.conclusions,
+  revision_notes: CYCLES_D9.journal,
+  revision_revues: CYCLES_D9.revues,
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
     aNouveau('an2', '2154', '2154', 'Matériel médical', 'debit', 3200),
