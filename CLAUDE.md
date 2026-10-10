@@ -703,8 +703,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   décode les `\uXXXX` (sans conséquence — ne pas doubler les antislashs). Les longues bordures `─` se transcrivent mal,
   et une transcription refaite recopie les fautes de la précédente : les répéter d'abord par
   `supabase/essais/bordures.py`, qui les décode et les compte, sous une forme marquée (par cinq, quatre échappements et
-  un trait littéral, un double trait tous les vingt-cinq) → « Déployer une Edge Function via l'outil MCP décode les
-  échappements », « LES BORDURES SE RECOPIENT ».
+  un trait littéral, un double trait tous les vingt-cinq) ; le texte ENVOYÉ, relu dans le journal de la session, se
+  compare au dépôt avant de relire la copie déployée → « Déployer une Edge Function via l'outil MCP décode les
+  échappements », « LES BORDURES SE RECOPIENT », « UN MOT DE PASSE REFUSÉ SE DISAIT « UN COMPTE EXISTE DÉJÀ » ».
 - **Un commit n'est pas un déploiement, un déploiement n'est pas une autorisation** : `edgeFunctionsIam.test.ts` compte
   les actions IAM, pas les ressources (changer de modèle demande un appel réel). `bright-task` vit en production sans
   exister dans le dépôt, neutralisée (410) et non appelée : à supprimer le jour où un outil le permet, ne pas

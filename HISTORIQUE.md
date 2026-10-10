@@ -19307,6 +19307,19 @@ coup, et le contrôle suivant refuse à la place du retiré. C'est une limite de
 pour les trois fonctions qui créent des comptes ; la lever demande un scénario par champ, qui toucherait toutes les
 fonctions : laissé pour une autre fois, dit ici.
 
+**MISE EN LIGNE (la session, 10/10/2026, après la fusion de la demande n° 137).** Les trois fonctions redéployées,
+`verify_jwt` à faux comme le veut `supabase/config.toml` (relu contre `list_edge_functions`), la copie en place comparée
+au dépôt avant d'écraser : `create-client-access` en version 14 (aller-retour : 0 différence sur 326 lignes),
+`create-team-member` en version 9 (0 sur 301), `create-cabinet` en version 7 (0 sur 253) ; chacune répond 401
+« Non authentifié. » sans session. Trois versions intermédiaires ont porté une bordure fausse — la fin du bloc
+`refusDuService` à 87 traits au lieu de 89 (`create-team-member` v7), puis le début et la fin à 83 et 85
+(`create-team-member` v8, `create-cabinet` v6) —, chaque fois une faute de TRANSCRIPTION du texte envoyé, vue par
+l'aller-retour et réparée par un nouveau déploiement. Aucune ne changeait le comportement (un commentaire), mais une
+copie gardée qui diffère du dépôt n'est plus gardée. La règle qui en sort : le texte ENVOYÉ se relit dans le journal de
+la session et se compare au dépôt AVANT de relire la fonction déployée ; et toute bordure s'écrit sous la forme marquée
+de `bordures.py` (par cinq, quatre échappements et un trait littéral, un double trait tous les vingt-cinq), jamais de
+tête.
+
 ### 10/10/2026 — L'ÉCRAN DES CYCLES DE LA RÉVISION — LIGNE 41, ÉTAPE R4, PHASE C
 
 (`src/pages/dossier/FicheCycle.tsx`, nouveau ; `RevisionTab.tsx` et `RevisionTab.test.tsx` ; `src/lib/revisionLibelles.ts`
