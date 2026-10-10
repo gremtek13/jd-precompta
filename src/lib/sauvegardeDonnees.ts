@@ -14,6 +14,7 @@ import {
   tablesSansChemin,
   violationsOrdre,
   ORDRE_RESTAURATION,
+  PARENTS_HORS_PLAN_VOULUS,
   type CheminDossier,
   type ComptesRequis,
   type LienPerdu,
@@ -27,7 +28,8 @@ import {
 //
 // Ce que cette sauvegarde contient : les lignes de base d'un dossier. Ce qu'elle ne contient pas, et
 // qui est dit en toutes lettres dans son manifeste : les fichiers du stockage (l'export de pack les
-// couvre déjà), les comptes utilisateurs, et la ligne `cabinets` du cabinet propriétaire.
+// couvre déjà), les comptes utilisateurs, la ligne `cabinets` du cabinet propriétaire, et le catalogue des
+// rôles comptables (`roles_comptables`), posé par migration dans toute base.
 
 /** Nombre de lignes lues par aller-retour. Voir `lireToutesLesLignes` pour ce qui en dépend. */
 export const TAILLE_PAGE = 500
@@ -70,6 +72,7 @@ const HORS_PERIMETRE = [
   'Les fichiers eux-mêmes (pièces, documents, packs) restent dans le stockage : ils sont couverts par l’export de pack, pas par celui-ci.',
   'Les comptes utilisateurs (auth.users) ne sont ni lus ni restaurés. Voir `comptes` : trois tables en exigent, et refusent NULL.',
   'La ligne du cabinet propriétaire n’est pas incluse : elle doit exister dans la base d’arrivée. Voir `referencesExternes`.',
+  'Le catalogue des rôles comptables n’est pas inclus : une migration le pose dans toute base, qui doit connaître chaque rôle que le plan du dossier désigne. Voir `referencesExternes`.',
 ]
 
 type Ligne = Record<string, unknown>
@@ -196,7 +199,7 @@ export async function exporterDossier(
     ...violationsOrdre(ORDRE_RESTAURATION).map((v) => `${v.enfant} → ${v.parent} (${v.motif})`),
     ...tablesSansChemin().map((t) => `${t.table} (${t.motif})`),
     ...parentsHorsPlan()
-      .filter((p) => p.parent !== 'cabinets')
+      .filter((p) => !PARENTS_HORS_PLAN_VOULUS.includes(p.parent))
       .map((p) => `${p.parent}, pointée par ${p.pointeePar.join(', ')}, est hors du plan`),
   ]
   if (defautsDuPlan.length > 0) {

@@ -65,6 +65,19 @@
 -- une chaîne de trois versions et deux retirées, six lignes de ventilation : 61 tables recréées, 56 restaurées et
 -- IDENTIQUES à la source (15 lignes), les fiches en trois vagues, 0 écart, aucun arrêt. Planté — la ventilation avant
 -- sa fiche —, le script s'arrête sur la clé.
+--
+-- 10/10/2026, ligne 43, étape PC1 : le catalogue des rôles comptables entre à l'ordre (rang 4, référentiel `global` que
+-- la base d'arrivée doit porter, comme le cabinet : il est recopié ci-dessous en prérequis) et le plan d'un dossier juste
+-- après son dossier (61 tables) ; le contrôle du point NON VÉRIFIÉ 7 suit le verdict. Rejoué sur la réplique locale de
+-- l'étape (signature.sql : les neuf familles égales à la production, migration `plan_comptable_des_dossiers` comprise),
+-- dans une transaction annulée, le dossier `test` semé du plan fictif décalé — 26 rôles, posés par la seule porte
+-- ouverte, le propriétaire sous la session du super-administrateur — puis de deux écritures ; la réplique portant, comme
+-- la production, les deux tables de l'étape e2, le script joué leur ajoutait leurs lignes de l'ordre, des chemins et des
+-- vagues telles que le correctif d'e2 les écrit : 63 tables recréées, 57 restaurées et IDENTIQUES à la source (29
+-- lignes, dont les 26 du plan au rang 7), 0 écart, aucun arrêt ; un rôle inconnu de la base d'arrivée refusé par la clé
+-- (23503), la même ligne acceptée une fois le rôle inscrit. Plantés — le catalogue absent de la base d'arrivée, puis le
+-- plan avant son dossier —, le script s'arrête sur la clé du plan. Ce que la garde exige à la restauration (le
+-- super-administrateur, un dossier encore sans écriture) n'est pas de son ressort : `planComptable.sql`.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 drop schema if exists essai_restauration cascade;
@@ -76,19 +89,19 @@ create table essai_restauration._vagues (table_nom text not null, colonne text n
 
 -- Recopiés de src/lib/sauvegarde.ts (ORDRE_RESTAURATION, CHEMINS_DOSSIER, TABLES_AUTO_REFERENCEES_PAR_VAGUES).
 insert into essai_restauration._ordre (rang, table_nom) values
- (1,'cabinets'),(2,'super_admins'),(3,'taux_change_bce'),(4,'cabinet_admins'),(5,'dossiers'),
- (6,'a_nouveaux'),(7,'agent_conversations'),(8,'categories'),(9,'comptes_courants_associes'),(10,'connexions_bancaires'),
- (11,'connexions_plateformes'),(12,'controles_releves_bancaires'),(13,'cotisations_declarees'),(14,'declarations_tva'),(15,'dossier_assignations'),
- (16,'emprunts'),(17,'exercices_clotures'),(18,'facture_numerotation'),(19,'factures_emises'),(20,'informations_dossier'),
- (21,'memberships'),(22,'natures_immobilisation'),(23,'packs'),(24,'previsionnels_bancaires'),(25,'references_annuelles'),
- (26,'references_postes_annuels'),(27,'regles_bancaires_ignorees'),(28,'soldes_reportes'),(29,'sous_dossiers'),(30,'superpdp_credentials'),
- (31,'vehicules'),(32,'volet_social_pamc'),(33,'documents_divers'),(34,'emails_envoyes'),(35,'facture_lignes'),
- (36,'facture_superpdp_events'),(37,'statuts_factures_recus'),(38,'transmissions_factures'),(39,'mouvements_cca'),(40,'pieces'),
- (41,'supplements'),(42,'regles_affectation_bancaire'),(43,'tiers_categories'),(44,'tiers_categories_cabinet'),(45,'immobilisations'),
- (46,'lignes_bancaires'),(47,'ventilations_bancaires'),(48,'reglements_groupes'),(49,'encaissements_factures'),(50,'encaissements_factures_taux'),
- (51,'transmissions_encaissements'),(52,'lettrages_manuels'),(53,'piece_commentaires'),(54,'piece_textes_ocr'),(55,'notes_internes'),
- (56,'pieces_hors_de_france'),(57,'pieces_hors_de_france_taux'),
- (58,'ecritures_brouillon'),(59,'revision_justifications'),(60,'revision_preuves'),(61,'exercices_valides');
+ (1,'cabinets'),(2,'super_admins'),(3,'taux_change_bce'),(4,'roles_comptables'),(5,'cabinet_admins'),
+ (6,'dossiers'),(7,'plan_comptable_dossier'),(8,'a_nouveaux'),(9,'agent_conversations'),(10,'categories'),
+ (11,'comptes_courants_associes'),(12,'connexions_bancaires'),(13,'connexions_plateformes'),(14,'controles_releves_bancaires'),(15,'cotisations_declarees'),
+ (16,'declarations_tva'),(17,'dossier_assignations'),(18,'emprunts'),(19,'exercices_clotures'),(20,'facture_numerotation'),
+ (21,'factures_emises'),(22,'informations_dossier'),(23,'memberships'),(24,'natures_immobilisation'),(25,'packs'),
+ (26,'previsionnels_bancaires'),(27,'references_annuelles'),(28,'references_postes_annuels'),(29,'regles_bancaires_ignorees'),(30,'soldes_reportes'),
+ (31,'sous_dossiers'),(32,'superpdp_credentials'),(33,'vehicules'),(34,'volet_social_pamc'),(35,'documents_divers'),
+ (36,'emails_envoyes'),(37,'facture_lignes'),(38,'facture_superpdp_events'),(39,'statuts_factures_recus'),(40,'transmissions_factures'),
+ (41,'mouvements_cca'),(42,'pieces'),(43,'supplements'),(44,'regles_affectation_bancaire'),(45,'tiers_categories'),
+ (46,'tiers_categories_cabinet'),(47,'immobilisations'),(48,'lignes_bancaires'),(49,'ventilations_bancaires'),(50,'reglements_groupes'),
+ (51,'encaissements_factures'),(52,'encaissements_factures_taux'),(53,'transmissions_encaissements'),(54,'lettrages_manuels'),(55,'piece_commentaires'),
+ (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
+ (61,'revision_justifications'),(62,'revision_preuves'),(63,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -105,9 +118,11 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('packs','direct',null,null),
  ('piece_commentaires','direct',null,null),('piece_textes_ocr','direct',null,null),('pieces','direct',null,null),
  ('pieces_hors_de_france','direct',null,null),('pieces_hors_de_france_taux','direct',null,null),
+ ('plan_comptable_dossier','direct',null,null),
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),
- ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('soldes_reportes','direct',null,null),
+ ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('roles_comptables','global',null,null),
+ ('soldes_reportes','direct',null,null),
  ('sous_dossiers','direct',null,null),('statuts_factures_recus','direct',null,null),('super_admins','global',null,null),
  ('superpdp_credentials','direct',null,null),('supplements','direct',null,null),('taux_change_bce','global',null,null),
  ('tiers_categories','direct',null,null),('tiers_categories_cabinet','cabinet',null,null),('transmissions_encaissements','direct',null,null),
@@ -151,10 +166,12 @@ create table essai_restauration._verdict (etape text, detail text);
 create table essai_restauration._cible (dossier uuid primary key);
 insert into essai_restauration._cible values ('001c7ed7-c23b-4590-901e-693489f8af24');
 
--- Le prérequis que la sauvegarde ne contient pas (voir referencesExternes).
+-- Les prérequis que la sauvegarde ne contient pas (voir referencesExternes) : le cabinet du dossier, et le catalogue des
+-- rôles comptables, qu'une migration pose dans toute base d'arrivée (`PARENTS_HORS_PLAN_VOULUS`, ligne 43, PC1).
 insert into essai_restauration.cabinets
   select * from public.cabinets
   where id = (select cabinet_id from public.dossiers where id = (select dossier from essai_restauration._cible));
+insert into essai_restauration.roles_comptables select * from public.roles_comptables;
 
 do $$
 declare d uuid := (select dossier from essai_restauration._cible); r record; n bigint; ecrits bigint; vagues int; condition text;
@@ -244,6 +261,38 @@ end $$;
 
 select verdict, count(*) as tables, sum(nb_essai) as lignes, string_agg(table_nom || ' (' || nb_essai || ')', ', ' order by table_nom) as lesquelles
 from essai_restauration._egalite group by verdict order by verdict;
+
+-- Le point NON VÉRIFIÉ 7 de la conception du plan comptable (ligne 43, PC1) : une sauvegarde dont le plan désigne un rôle
+-- que la base d'arrivée ne connaît pas — une base plus ancienne que celle qui l'a écrite. La clé étrangère vers le
+-- catalogue le refuse (23503) ; `restaurerSauvegarde` le refuse AVANT d'écrire, en lisant les rôles dans la base
+-- d'arrivée (`referencesExternes`). Et la même ligne passe dès que le catalogue connaît son rôle : le refus est celui de
+-- la clé, pas d'autre chose. Chaque essai s'annule (`ANNULATION_ESSAI`) : le contenu comparé ci-dessus reste celui de la
+-- restauration.
+create table essai_restauration._controles (controle text, attendu text, observe text);
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); code text; inscrit boolean;
+begin
+  foreach inscrit in array array[false, true] loop
+    code := null;
+    begin
+      if inscrit then
+        insert into essai_restauration.roles_comptables (role, racines, compte_defaut, libelle_defaut, ordre)
+        values ('role_d_une_base_plus_recente', '{512}', '512900', 'Essai', 999);
+      end if;
+      insert into essai_restauration.plan_comptable_dossier (dossier_id, role, compte)
+      values (d, 'role_d_une_base_plus_recente', '512100');
+      code := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if code is null then code := sqlstate; end if;
+    end;
+    insert into essai_restauration._controles values (
+      case when inscrit then 'le même rôle, une fois inscrit au catalogue de la base d''arrivée'
+           else 'un rôle que la base d''arrivée ne connaît pas' end,
+      case when inscrit then 'ACCEPTÉ' else '23503' end, coalesce(code, '?'));
+  end loop;
+end $$;
+
+select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;
 
 -- ══ 4. Nettoyage ══════════════════════════════════════════════════════════════════════════════════
 -- Le schéma d'essai contient de vraies données comptables : ne pas le laisser traîner.

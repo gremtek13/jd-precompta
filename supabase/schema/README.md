@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 109 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 110 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -84,7 +84,13 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 10/10/2026** : 109 fichiers, 109 migrations, empreinte globale
+**Vérifié par empreinte le 10/10/2026**, après `plan_comptable_des_dossiers` (ligne 43, étape PC1 ; 20 648 caractères,
+empreinte `698beb34b2890f235bd801a004c86811`, le fichier égal au texte enregistré) : 110 fichiers, 110 migrations,
+empreinte globale `18219c5557253791c0d31ee653f74d98` des deux côtés, aucune divergence — la base en porte alors 112 :
+`pieces_hors_de_france` (ligne 28.5, étape e2) et `banque_du_client` (espace client, étape P7), appliquées par d'autres
+étapes dont les fichiers voyagent avec leurs correctifs, sont écartées de la requête (`where version not in
+('20261010081009', '20261010095439')`) le temps que ces fichiers rejoignent l'export ; leurs textes enregistrés sont
+ceux de ces fichiers (empreintes `5f81e12e…` et `43acdab7…`). Plus tôt le même jour : 109 fichiers, 109 migrations, empreinte globale
 `bca0367fd76a0f479274a8abddf7d2c9` des deux côtés, aucune divergence — rejoué après
 `retrait_du_paiement_personnel` (ligne 26.6), la dernière, collée par le cabinet dans l'éditeur SQL (elle supprime des
 lignes dans le corps de sa fonction) : son texte enregistré porte des fins de ligne `\r\n`, et le fichier, tiré de la
@@ -135,8 +141,8 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (78 instructions, empreinte `f01053c781688bbfbee8c70ac43924a6` des
   deux côtés le 09/10/2026, rejoué à l'intégration des trois migrations du jour, puis inchangé après
-  `notes_internes_du_cabinet`, `droits_des_acces_clients` et, le 10/10/2026, `retrait_du_paiement_personnel`, qui ne
-  touchent aucune table du socle ; les trois objets que
+  `notes_internes_du_cabinet`, `droits_des_acces_clients` et, le 10/10/2026, `retrait_du_paiement_personnel` puis
+  `plan_comptable_des_dossiers`, qui ne touchent aucune table du socle ; les trois objets que
   `paiement_personnel_des_cotisations` ajoute à `cotisations_declarees` et `ecritures_brouillon`, deux
   tables du socle, y sont), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
@@ -146,7 +152,12 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   à `assujetti_tva`, aurait été comptée deux fois.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (1 392 objets, empreinte `a81a947319e4f30b6e1525bdf3ce45d7` des deux côtés le 10/10/2026, rejoué après
+  (1 430 objets dans l'export le 10/10/2026 après `plan_comptable_des_dossiers`, empreinte
+  `cccfb25cfc26abe211942930a5be473b` ; elle en ajoute 38 : quatorze colonnes,
+  quatorze contraintes, un index, un déclencheur, deux policies, quatre fonctions et la RLS de ses deux tables ; la base
+  en compte alors 1 564, exactement l'export et les migrations des deux autres étapes du jour — `pieces_hors_de_france`
+  et `banque_du_client`, rejouées depuis leurs fichiers —, empreinte `cf9ba7dbe87c1a96bc79be53c9cdee1d` des deux côtés.
+  Plus tôt : 1 392 objets, empreinte `a81a947319e4f30b6e1525bdf3ce45d7` des deux côtés le 10/10/2026, rejoué après
   `retrait_du_paiement_personnel`, qui en ajoute un : sa fonction ; 1 391 avant, après `droits_des_acces_clients`,
   qui en ajoutait 7 : les deux colonnes des droits de `memberships` et cinq fonctions ;
   1 384 avant, après `notes_internes_du_cabinet`, qui en ajoutait 19 : sept colonnes, sept contraintes, un index, un

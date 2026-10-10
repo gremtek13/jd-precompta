@@ -17958,3 +17958,162 @@ sessions en parallèle. Par lecture, les fonctions des deux étapes n'ont en com
 mouvement : elles s'attendent sans pouvoir se bloquer. LEÇON : deux étapes préparées séparément sur des répliques
 séparées ne se croient pas compatibles ; elles se rejouent ensemble, dans chaque ordre d'application, avant la première
 migration.
+
+### 10/10/2026 — LE CATALOGUE DES RÔLES ET LE PLAN D'UN DOSSIER, EN BASE — LIGNE 43, ÉTAPE PC1
+
+(Migration `plan_comptable_des_dossiers`, version 20261010092601, texte de 20 648 caractères, empreinte
+`698beb34b2890f235bd801a004c86811` — `supabase/schema/20261010092601_plan_comptable_des_dossiers.sql` ; l'essai
+`supabase/essais/planComptable.sql` ; `rls.sql` (un référentiel toléré de plus, M2 à quatre, en-tête) ;
+`restauration.sql` (deux tables à l'ordre, le catalogue en prérequis, le contrôle du point NON VÉRIFIÉ 7, en-tête) ;
+`src/lib/planComptable.ts` et son test ; `sauvegarde.ts`, `sauvegardeDonnees.ts` et leurs tests (`sauvegarde.test.ts`,
+`sauvegardeDonnees.test.ts`, `sauvegardeClesPrimaires.test.ts`, `restaurationEssai.test.ts`) ; `types.ts` ; le registre
+de RGPD.md et `supabase/schema/README.md`.) La première étape du plan comptable personnalisable (« LE PLAN COMPTABLE
+PERSONNALISABLE : LA CONCEPTION », §3.3 à §3.6, §3.10, §5, la ligne PC1 du §6, les points NON VÉRIFIÉS 5 et 7 du §8) :
+le plan EXISTE en base, aux valeurs d'aujourd'hui, et RIEN NE LE LIT — aucune fonction existante ne change (PC2), aucun
+écran ni module (PC3). Sources : le plan comptable général (règlement ANC n° 2014-03 consolidé au 01/01/2026), art.
+1011-5 (le plan de comptes de l'entité), 1121-1, 1131-1 (un compte divisionnaire commence par le numéro qu'il
+subdivise) et 1131-2 ; LPF, art. A47 A-1 (trois chiffres en tête ; CompteLib) ; BOI-CF-IOR-60-40-20, § 150 et 160 ; la
+documentation de PostgreSQL (verrous consultatifs, ordre d'évaluation des contraintes, fonctions `SECURITY DEFINER`).
+
+**L'ÉTAT AVANT, MESURÉ LE 10/10/2026** (catalogue et comptes de lignes ; aucun texte, aucun libellé lu). Quatre
+dossiers, tous en trésorerie, leur dirigeant au 455000 ; `test` sans écriture, à-nouveau ni solde reporté ; un bac à
+sable porte trois écritures ; un seul chef, super-administrateur ; aucun membre ni affectation. Le compte du dirigeant
+vit dans CINQ fonctions (`classer_virement_personnel`, `ventiler_mouvement_bancaire`, `ecrire_forfait_kilometrique`,
+`ecrire_mouvement_compte_bilan`, `enregistrer_paiement_personnel_cotisation`), sous la même forme — `case when
+[d.]mode_comptable = 'engagement' then [d.]compte_notes_de_frais else '108000' end`, lu par un `select … into` — et
+quatre s'exécutent aux droits de l'appelant. Les libellés de 467, 658 et 758 de `LIBELLES_COMPTES` sont DÉJÀ ceux du
+plan comptable de 2026 (« CINQ DÉFAUTS RELEVÉS… », point 3) : « les libellés d'aujourd'hui » du catalogue sont donc
+ceux de 2026, et PC4 n'aura rien à y passer.
+
+**LA BASE.** `roles_comptables`, le catalogue : vingt-six rôles (clé texte), leurs racines du PCG (une à quatre,
+classes 1 à 7), le compte par défaut — la constante d'aujourd'hui —, le libellé par défaut (`LIBELLES_COMPTES` ; NUL
+pour le capital et les deux comptes du résultat, que l'application ne nomme pas d'avance : un écart assumé au « not
+null » du §3.4), le préfixe des auxiliaires des trois rôles de tiers (F, FI, C), l'ordre de dix en dix ; sept
+contraintes, dont « le défaut sous sa racine ». `plan_comptable_dossier` : un rôle par ligne et par dossier (clé
+`(dossier_id, role)`), le compte — sa contrainte de colonne ne dit que ce qui ne se règle jamais : des chiffres, trois
+au moins, classes 1 à 7 —, le libellé, le préfixe, l'origine (le dossier, le modèle du cabinet, la balance reprise),
+qui et quand ; cascade avec le dossier, clé vers le catalogue sans action, un index sur le rôle. La garde
+`garder_plan_comptable_dossier` (DEFINER, exécutable par personne) : aucune ligne ne se modifie ni ne se retire hors de
+la cascade de son dossier (42501) ; une insertion n'est admise que du super-administrateur — la restauration —, sous
+le verrou EXCLUSIF de la validation du dossier, dans un dossier qui n'a encore ni écriture, ni à-nouveau, ni solde
+reporté (23514) ; un compte de SIX chiffres (HYPOTHÈSE Q5) qui commence par une racine de son rôle ; un préfixe d'une à
+cinq lettres majuscules ou chiffres, sur les trois rôles de tiers seulement ; un rôle inconnu du catalogue passe la
+garde et bute sur la clé (23503). Trois fonctions de LECTURE, `stable`, aux droits de l'appelant, exécutables par
+`authenticated` et non par `anon` : `compte_du_role(dossier, rôle)` (la ligne, sinon le défaut ; 22023 sur un rôle
+inconnu, jamais un compte nul), `compte_du_dirigeant(dossier)` (le `case` des cinq fonctions, le 108000 lu au rôle
+`exploitant` ; nul pour un dossier que l'appelant ne voit pas, comme leur `select … into`), `plan_du_dossier(dossier)`
+(le plan effectif dans l'ordre du catalogue, `admin_du_dossier` d'abord, 42501 sinon). RLS : le catalogue en lecture à
+tout compte connecté (les numéros publics du PCG, comme `taux_change_bce`) ; le plan en lecture sous `admin_du_dossier`
+(HYPOTHÈSE Q3, « comme le modèle comptable ») — aucune branche client ; AUCUNE policy d'écriture, pas même l'insertion
+de restauration que portent les autres tables figées : tant que rien ne règle un plan (PC4), aucune sauvegarde n'en
+porte une ligne, la table reste vide par construction, et PC2 et PC3 liront le plan par défaut quoi qu'il arrive. PC4
+ajoutera, avec la fonction qui règle le plan, la policy `for insert to authenticated with check (is_super_admin())` :
+la garde en porte déjà la règle. Non tranchées : Q7 (la seule racine du dirigeant non associé est le 467 : le 468 est
+refusé, comme aujourd'hui sur un mouvement du relevé), Q6 (la colonne du préfixe existe, rien ne la remplit) et toutes
+les autres. Écartés : la forme d'un compte dans une contrainte de table (une autre réponse à Q5 demanderait un `drop
+constraint` ; dans la garde, un `create or replace function` suffit) ; une liste de rôles dans une contrainte plutôt
+qu'une table (un rôle de plus serait un `drop`) ; les trois fonctions en DEFINER (quatre des cinq qui les liront
+s'exécutent aux droits de l'appelant ; qui ne lit pas le plan en reçoit le défaut, que le catalogue public dit déjà) ;
+une policy d'insertion dès PC1 (une porte ouverte sans rien derrière).
+
+**APPLIQUÉE SANS CONFIRMATION.** Jouée d'abord sur une réplique propre à l'étape (copie à froid, port privé), dont
+`signature.sql` disait les neuf familles égales à la production avant (110 migrations) et après (111) ; puis
+`apply_migration` en production sans demande de confirmation — le texte porte `on delete cascade`, `before insert or
+update or delete` et `tg_op = 'DELETE'`, aucune instruction de suppression : le point NON VÉRIFIÉ 5 de la conception
+est levé. Les 111 fonctions d'avant, leurs corps et leurs droits, inchangés (empreintes relevées avant et après) : la
+neutralité côté base.
+
+**L'OUTIL D'EXÉCUTION RETIENT AUSSI UNE MISE À JOUR SANS `where`.** Le premier envoi de l'essai en production a expiré
+à 60 secondes, deux fois, sans rien laisser (aucune session, aucun verrou, aucune transaction préparée, aucune ligne
+d'essai) et sans que `pg_stat_statements` connaisse le texte : il n'avait jamais atteint la base. Recherché par
+morceaux — les contrôles 1 à 18 passent en quelques dizaines de millisecondes, sous un `statement_timeout` que la base
+aurait fait valoir —, le seul contrôle 19 retenait l'appel : ses deux `update` sans `where` (« aucun profil connecté
+ne modifie une ligne »), que l'outil soumet à une confirmation qui n'arrive pas, comme une suppression ; le même
+contrôle avec un `where` passe en 39 ms. Il vise désormais les lignes que l'essai pose (le plan est vide hors du bloc)
+et un rôle ; ses deux mutants mordent sur la réplique (sans le changement de rôle, la garde atteinte partout en 42501 ;
+le rôle mis à jour par le propriétaire, « 0/1 » partout) : les deux `where` atteignent leurs lignes. Ce n'est pas un
+texte déguisé pour passer : la mise à jour de masse a disparu de l'essai, et son en-tête le dit.
+
+**LES PREUVES EN BASE.** En production, `planComptable.sql` : 58 contrôles verts sur 58 — le catalogue à l'empreinte de
+`ROLES_COMPTABLES` (`5b9073a0…`), le plan vide, une policy de lecture par table, les droits d'exécution ; LA
+NEUTRALITÉ : `compte_du_role` rend le défaut pour chaque dossier et chaque rôle (104 vérifications), `compte_du_dirigeant`
+rend ce que rend le `case` LU DANS LE TEXTE de chacune des cinq fonctions et évalué tel quel, sur chaque dossier et dans
+les six configurations du modèle comptable (50) ; la lecture par les six profils du §5.3 (l'anonyme : rien, ni
+catalogue, ni plan, ni fonction ; un compte rattaché à rien : le catalogue seul ; le client : le catalogue, aucune ligne
+du plan — pas même de son dossier —, `plan_du_dossier` refusé, `compte_du_role` ne lui rend que le défaut ; un membre
+non affecté : rien du plan ; le membre affecté et le chef : les lignes de leurs dossiers) ; aucune écriture directe par
+les six profils (42501 ; pour le chef super-administrateur, le refus de la RLS) ; la garde — qui (sans session, le
+client, un chef non super-administrateur refusés ; la restauration acceptée), où (une écriture, un à-nouveau, un solde
+reporté ferment la restauration), quoi (cinq et sept chiffres, des lettres, hors de sa racine, le 468 du dirigeant, un
+préfixe sur la banque, en minuscules, de six caractères) — ; un rôle inconnu buté sur la clé (23503, le point NON
+VÉRIFIÉ 7) ; le plan fictif décalé écrit et relu par les trois fonctions ; les sept contraintes du catalogue ; sept
+mutations qui mordent ; rien de resté en base ; aucun `delete`. Texte reçu : le fichier sans ses lignes de commentaire
+(46 442 caractères, `e318223e1e25cfd8fbc88d925c757b30`). Sur la réplique : les mêmes 58 ; quatre contrôles qui
+suppriment (une ligne, par le propriétaire puis par le chef ; le dossier, dont la cascade emporte le plan ; un rôle
+cité, que la clé retient) ; une COURSE de deux sessions — une écriture en vol pendant la restauration du plan : avec le
+verrou, la restauration attend puis refuse ; sans lui, les deux passent et le dossier porte une écriture ET un plan
+restauré après elle — ; quarante-trois mutations de la migration (la garde, la clé, la cascade, les policies, les
+droits, la sécurité des fonctions, les trois fonctions, le catalogue et ses contraintes), toutes mordent. `rls.sql`
+rejoué ENTIER : `roles_comptables` rejoint les référentiels tolérés (M2 en attend quatre) ; 24 lignes de verdict (65
+tables, dont 56 portant un `dossier_id`, + 3 buckets, 4 profils), 0 en faute, 16 mutations sur 16 (texte reçu : la
+copie adaptée, 39 332 caractères, `b2ed6e7e4077d49aa582fafc18695b33`). L'export : 110 fichiers, 110 migrations,
+dérive `18219c5557253791c0d31ee653f74d98` — la base en porte alors 112 : `pieces_hors_de_france` (e2) et
+`banque_du_client` (P7), d'autres étapes, écartées de la requête et non ajoutées à cet export — ; socle inchangé (78,
+`f01053c7…`) ; inventaire de l'export 1 430 objets (+38, `cccfb25c…`), et la base 1 564 = l'export et les deux
+migrations des autres étapes rejouées depuis leurs fichiers (`cf9ba7db…`). Advisors : rien de la migration, sinon
+l'index du rôle « jamais utilisé » (INFO, attendu sur une table vide ; sans lui, la clé vers le catalogue serait une
+clé sans index).
+
+**LE MODULE.** `src/lib/planComptable.ts`, pur (il n'importe pas `supabase.ts`) : `ROLES_COMPTABLES` (le catalogue, que
+son test lit dans le texte de la migration rôle par rôle et colonne par colonne, et dont il recalcule l'empreinte que
+l'essai exige du catalogue vivant), `PLAN_PAR_DEFAUT` (les vingt-six constantes de `comptes.ts`, toutes couvertes,
+ÉPINGLÉ et gelé), `PLAN_DECALE` (fictif, §5.1 : chaque rôle sur un autre compte que son défaut, que la garde accepte,
+jamais deux rôles sur le même compte à des zéros près — celui que l'essai écrit et relit), la forme que la garde exige
+(confrontée à son texte), la racine, l'égalité à des zéros près. Le test prouve aussi `compte_du_dirigeant` contre le
+texte des cinq fonctions dans l'export. À son premier passage il échouait sur un défaut DU TEST : il relisait chaque
+fonction par `derniereDefinitionSql`, qui ne lit que les corps entre `$$` et lève sur l'unique fonction écrite entre
+`$function$` ; il lit désormais la dernière définition quel que soit le délimiteur (plancher : 107 fonctions), et
+vérifie que les deux lecteurs s'accordent sur les cinq.
+
+**LA SAUVEGARDE.** Le plan d'un dossier suit son dossier (chemin direct, clé `(dossier_id, role)`), réinséré JUSTE
+APRÈS lui, avant les à-nouveaux, les soldes reportés et les écritures : sa garde n'admet la restauration que dans un
+dossier qui n'en a encore aucune. Le catalogue est hors de toute sauvegarde, référentiel `global` que la base d'arrivée
+doit porter comme le cabinet : `PARENTS_HORS_PLAN_VOULUS` (`cabinets`, `roles_comptables`) remplace l'exception unique
+de `cabinets` écrite en dur dans l'export, et le manifeste dit une quatrième chose qu'il ne contient pas. **LE PREMIER
+PARENT DONT LA CLÉ NE S'APPELLE PAS `id`** : `liensPerdus` comparait sur `id`, et aurait déclaré perdue chaque ligne
+d'un plan dont la sauvegarde aurait porté le catalogue ; il compare sur `clePrimaire`, et `sauvegardeClesPrimaires.test.ts`
+exige de tout parent une clé d'une seule colonne, celle que `CLES_PRIMAIRES` déclare (un seul parent non-`id`,
+compté). Le point NON VÉRIFIÉ 7 : la restauration lit dans la base d'arrivée chaque rôle qu'un plan désigne
+(`referencesExternes`, sur la clé du catalogue) et refuse AVANT toute écriture celui qu'elle ignore ; sans cette
+lecture, Postgres le refuserait sur la clé, au milieu de la restauration. `restauration.sql` : le catalogue au rang 4,
+recopié en prérequis, le plan au rang 7 (61 tables) ; sur la réplique, dans une transaction annulée, le dossier `test`
+semé des 26 rôles décalés puis de deux écritures — et les deux tables d'e2 ajoutées à l'ordre joué telles que leur
+correctif les écrit, la réplique les portant comme la production — : 63 tables recréées, 57 IDENTIQUES (29 lignes,
+dont les 26 du plan), 0 écart, aucun arrêt ; un rôle inconnu de la base d'arrivée refusé par la clé (23503), la même
+ligne acceptée une fois le rôle inscrit ; plantés — le catalogue absent de la base d'arrivée, puis le plan avant son
+dossier —, le script s'arrête sur la clé du plan. `restaurationEssai.test.ts` lit désormais les rangs dans le code
+(plus de 57, 58 et 59 en dur) et exige que chaque parent voulu hors plan soit posé en prérequis. En base, l'insertion
+d'un plan restauré attend la policy de PC4 : aujourd'hui aucune sauvegarde n'en porte.
+
+**DANS LE CODE.** Vingt-sept tests de plus : `planComptable.test.ts` (20, neuf), `sauvegarde.test.ts` (3 : l'ordre du
+plan et du catalogue, `liensPerdus` sur la clé `role`, `referencesExternes` qui nomme les rôles ; deux autres
+réécrits : les exceptions voulues, le plan d'export), `sauvegardeDonnees.test.ts` (2 : l'aller-retour d'un plan —
+export trié sur `dossier_id, role`, le catalogue dehors, réécrit juste après le dossier et avant ses écritures, relu
+sans écart — et le rôle inconnu de la base d'arrivée refusé avant toute écriture ; le manifeste à quatre lignes),
+`restaurationEssai.test.ts` (2), `sauvegardeClesPrimaires.test.ts` (1 réécrit). Vingt-quatre mutations du code (la
+sauvegarde 10, l'export 2, l'essai de restauration 3, le module 9) : toutes mordent — « la racine jugée par inclusion »
+ne mordait pas au premier passage, faute d'un cas où la racine paraît au milieu du numéro ; le test en a un
+(`451200` n'est pas sous `512`). La barrière : `tsc -b` sans erreur ; `tsc -p tsconfig.edge.json` 25 erreurs, les
+connues ; `npm run lint` 63 avertissements, les mêmes, aucun dans ces fichiers ; `npm run build` passe ; quinze fichiers
+de test (les miens et ceux qui lisent la sauvegarde) sous les quatre fuseaux, 270 tests à chaque fois ; la suite
+entière sous Paris, 261 fichiers, 7 462 tests.
+
+**CE QUI RESTE.** PC2 (les fonctions de la base lisent le plan au lieu de leurs comptes en dur, `compte_du_dirigeant`
+comprise), PC3 (l'application et l'assistant le lisent avec le dossier), PC4 (le plan se règle : sa fonction, la policy
+d'insertion de la restauration, les deux contraintes à remplacer — Q4, une migration à coller), puis la suite. Les
+réponses du cabinet à Q3 et Q5 confirmeront ou remplaceront les hypothèses (une autre longueur : la garde et
+`FORME_COMPTE_DE_ROLE` ensemble, `create or replace`) ; Q6, Q7 et les autres restent ouvertes. Hors de ce correctif :
+PLAN_DE_REPRISE.md (§3 et §6) dira que la base d'arrivée doit porter le catalogue — posé par la migration, donc par le
+rejeu du schéma — et que le plan compte 61 tables. Le retour arrière : rien ne lit le plan ; retirer les deux tables et
+les quatre fonctions est une migration DESTRUCTIVE (accord du cabinet), sans donnée perdue tant qu'aucun plan n'est
+réglé.

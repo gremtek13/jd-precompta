@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  clePrimaire,
   comptesRequis,
   estLignePartagee,
   identiteRestauree,
@@ -19,6 +20,7 @@ import {
   CHEMINS_DOSSIER,
   LIENS_GARDES,
   ORDRE_RESTAURATION,
+  PARENTS_HORS_PLAN_VOULUS,
   PREREQUIS_AUTH,
   RELATIONS,
   TABLES_AUTO_REFERENCEES,
@@ -52,6 +54,18 @@ describe('ordre de restauration', () => {
   it('ne cite aucune table deux fois', () => {
     // Un doublon réinsérerait les mêmes lignes, et ferait échouer la seconde passe sur la clé primaire.
     expect(ORDRE_RESTAURATION.length).toBe(new Set(ORDRE_RESTAURATION).size)
+  })
+
+  it('réinsère le plan comptable d’un dossier juste après lui, avant tout ce qui porte un compte', () => {
+    // Sa garde n'admet la restauration que dans un dossier qui n'a encore ni écriture, ni à-nouveau, ni solde reporté
+    // (ligne 43, PC1) : réinséré après l'un d'eux, il serait refusé. Le catalogue des rôles le précède.
+    const rang = (table: string) => ORDRE_RESTAURATION.indexOf(table)
+    expect(rang('plan_comptable_dossier')).toBe(rang('dossiers') + 1)
+    for (const apres of ['a_nouveaux', 'soldes_reportes', 'ecritures_brouillon']) {
+      expect(rang(apres), apres).toBeGreaterThan(rang('plan_comptable_dossier'))
+    }
+    expect(rang('roles_comptables')).toBeGreaterThanOrEqual(0)
+    expect(rang('roles_comptables')).toBeLessThan(rang('plan_comptable_dossier'))
   })
 
   it('restaure les exercices validés en dernier', () => {
@@ -261,6 +275,10 @@ describe('chemins d’accès aux lignes d’un dossier', () => {
     expect(plan.map((e) => e.table)).not.toContain('taux_change_bce')
     expect(plan.map((e) => e.table)).not.toContain('cabinets')
     expect(plan.map((e) => e.table)).not.toContain('super_admins')
+    // Le catalogue des rôles comptables non plus (ligne 43, PC1) : le restaurer avec un client réécrirait les défauts
+    // de l'application pour tous les dossiers. Le plan du dossier, lui, en est.
+    expect(plan.map((e) => e.table)).not.toContain('roles_comptables')
+    expect(plan.map((e) => e.table)).toContain('plan_comptable_dossier')
   })
 
   it('garde le dossier lui-même dans le plan', () => {
@@ -363,6 +381,24 @@ describe('liens perdus après restauration', () => {
       dossiers: [{ id: '7' }],
       pieces: [{ id: 'p1', dossier_id: 7 }],
     })).toEqual([])
+  })
+
+  it('compare un lien sur la clé primaire de son parent, qui n’est pas toujours `id`', () => {
+    // Le catalogue des rôles comptables a pour clé `role` (ligne 43, PC1) : comparée sur `id`, chaque ligne du plan d'un
+    // dossier serait déclarée perdue, donc la restauration refusée.
+    expect(liensPerdus({
+      roles_comptables: [{ role: 'banque' }, { role: 'fournisseurs' }],
+      plan_comptable_dossier: [
+        { dossier_id: 'd1', role: 'banque', compte: '512100' },
+        { dossier_id: 'd1', role: 'fournisseurs', compte: '401100' },
+      ],
+    })).toEqual([])
+    expect(liensPerdus({
+      roles_comptables: [{ role: 'banque' }],
+      plan_comptable_dossier: [{ dossier_id: 'd1', role: 'role_inconnu', compte: '512100' }],
+    })).toEqual([
+      { table: 'plan_comptable_dossier', colonne: 'role', parent: 'roles_comptables', valeur: 'role_inconnu', effacable: false },
+    ])
   })
 
   it('attrape une source citée par la révision, absente de la sauvegarde, que rien ne permet d’effacer', () => {
@@ -521,6 +557,22 @@ describe('lignes supposées déjà présentes dans la base d’arrivée', () => 
     expect(referencesExternes({
       pieces: [{ id: 'p1', dossier_id: null, sous_dossier_id: null }],
     })).toEqual([])
+  })
+
+  it('nomme les rôles comptables que le plan du dossier désigne, que la base d’arrivée doit connaître', () => {
+    // Le point NON VÉRIFIÉ 7 de la conception (ligne 43, PC1) : un rôle qu'une base plus récente connaîtrait, et pas celle
+    // d'arrivée. La restauration les y lit, sur la clé du catalogue, avant d'écrire la première ligne.
+    expect(referencesExternes({
+      dossiers: [{ id: 'd1', cabinet_id: 'cab-1' }],
+      plan_comptable_dossier: [
+        { dossier_id: 'd1', role: 'fournisseurs', compte: '401100', prefixe_auxiliaire: 'FO' },
+        { dossier_id: 'd1', role: 'banque', compte: '512100', prefixe_auxiliaire: null },
+      ],
+    })).toEqual([
+      { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: ['cab-1'] },
+      { table: 'plan_comptable_dossier', colonne: 'role', parent: 'roles_comptables', valeurs: ['banque', 'fournisseurs'] },
+    ])
+    expect(clePrimaire('roles_comptables')).toEqual(['role'])
   })
 
   it('réclame aussi la source qu’une preuve de la révision cite, liée par une garde et non par une clé', () => {
@@ -725,13 +777,16 @@ describe('lignes partagées entre tous les dossiers', () => {
 })
 
 describe('tables pointées mais absentes du plan', () => {
-  it('ne laisse qu’une seule exception, et c’est une exception voulue', () => {
+  it('ne laisse que les exceptions voulues', () => {
     // L'invariant qui aurait dit le défaut ci-dessus dès la première exécution des tests : une table
-    // du plan qui en pointe une hors du plan fera buter la restauration. `cabinets` est la seule
-    // admise — un export de dossier ne la contient délibérément pas, la base d'arrivée doit la porter.
+    // du plan qui en pointe une hors du plan fera buter la restauration. `cabinets` et le catalogue des
+    // rôles comptables (ligne 43, PC1) sont les seules admises — un export de dossier ne les contient
+    // délibérément pas, la base d'arrivée doit les porter (`referencesExternes` les nomme).
     expect(parentsHorsPlan()).toEqual([
       { parent: 'cabinets', pointeePar: ['dossiers'], effacable: false },
+      { parent: 'roles_comptables', pointeePar: ['plan_comptable_dossier'], effacable: false },
     ])
+    expect(parentsHorsPlan().map((p) => p.parent)).toEqual([...PARENTS_HORS_PLAN_VOULUS].sort())
   })
 
   it('signale une table pointée qu’on aurait sortie du plan', () => {

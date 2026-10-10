@@ -73,7 +73,10 @@ découvre avant.
    l'historique des packs. Le manifeste de chaque sauvegarde liste les UUID attendus.
 2. **La ligne du cabinet** (`cabinets`). Une sauvegarde est par dossier ; elle suppose son cabinet
    déjà présent. Le manifeste donne son identifiant, et la restauration refuse de commencer s'il
-   manque.
+   manque. Et le catalogue des rôles comptables (`roles_comptables`, ligne 43) : une sauvegarde de dossier
+   ne le porte pas — la migration `plan_comptable_des_dossiers` le pose dans toute base, donc le rejeu
+   du schéma ; la restauration lit dans la base d'arrivée chaque rôle que le plan du dossier désigne,
+   et refuse de commencer s'il en manque un.
 3. **Les secrets de fonctions** — à reposer à la main dans les secrets du projet, et listés un par
    un au bas de cette section (« Les variables d'environnement, une par une »). Ce point tenait en
    une ligne jusqu'au 25/09/2026 — « `RESEND_API_KEY`, les identifiants Bedrock » — et en oubliait
@@ -308,6 +311,11 @@ plan — 61 tables : la liste du premier point en compte désormais autant. Sur 
 par les fonctions de la base (une chaîne de trois versions d'une fiche, deux fiches retirées) : 56 tables restaurées,
 56 identiques, 0 écart, les versions en trois vagues ; et, gardes comprises, la réinsertion par la porte de la
 restauration passe par vagues et se refuse en une seule instruction à rebours.
+
+Le 10/10/2026 (ligne 43, étape PC1), le catalogue des rôles comptables (référentiel, prérequis de la base d'arrivée) et
+le plan d'un dossier (juste après son dossier) sont entrés à l'ordre — 61 tables avant e2, 63 avec elle. Sur la réplique
+de l'étape, le dossier `test` semé des 26 rôles décalés puis de deux écritures : 57 tables restaurées, 57 identiques,
+0 écart ; un rôle inconnu de la base d'arrivée est refusé par la clé.
 
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.

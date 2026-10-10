@@ -97,6 +97,8 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'pieces_hors_de_france', parent: 'pieces_hors_de_france', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'pieces_hors_de_france_taux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_hors_de_france_taux', parent: 'pieces_hors_de_france', colonne: 'fiche_id', aLaSuppression: 'cascade' },
+  { enfant: 'plan_comptable_dossier', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'plan_comptable_dossier', parent: 'roles_comptables', colonne: 'role', aLaSuppression: 'bloque' },
   { enfant: 'previsionnels_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_annuelles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_postes_annuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -154,7 +156,7 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // exécution des tests contre RELATIONS, de sorte qu'une relation ajoutée sans reclasser la liste
 // casse bruyamment au lieu de casser une nuit de restauration.
 //
-// Les tables sans aucune dépendance (cabinets, super_admins, taux_change_bce) viennent en tête ;
+// Les tables sans aucune dépendance (cabinets, super_admins, taux_change_bce, roles_comptables) viennent en tête ;
 // `ecritures_brouillon` suit tout le reste de la chaîne comptable, dont elle dépend.
 //
 // `exercices_valides` ferme la marche, et ce n'est pas le tri qui l'y met : son seul parent est le dossier.
@@ -189,12 +191,20 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // sa garde refuse une fiche sur une pièce qu'une écriture validée fige — la sienne ou celle de son bien —, et le lit
 // dans `ecritures_brouillon`, sans clé étrangère. Réinsérées avant les écritures, ses versions passent telles qu'elles
 // ont été écrites, par vagues (`remplace_id`), et sa ventilation la suit. `sauvegarde.test.ts` garde cet ordre.
+//
+// Le plan comptable d'un dossier (ligne 43, étape PC1) se réinsère JUSTE APRÈS son dossier, avant tout ce qui porte un
+// compte : sa garde n'admet la restauration que dans un dossier qui n'a encore ni écriture, ni à-nouveau, ni solde
+// reporté — et les écritures d'une pièce devront, à l'étape PC4, trouver le plan du dossier déjà là. Le catalogue des
+// rôles (`roles_comptables`) vient en tête, avec les autres tables sans parent : posé par migration dans toute base, il
+// n'est dans aucune sauvegarde d'un dossier (`PARENTS_HORS_PLAN_VOULUS`). `sauvegarde.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
   'taux_change_bce',
+  'roles_comptables',
   'cabinet_admins',
   'dossiers',
+  'plan_comptable_dossier',
   'a_nouveaux',
   'agent_conversations',
   'categories',
@@ -371,19 +381,22 @@ type Contenu = Record<string, Record<string, unknown>[]>
 //
 // `contenu` est la sauvegarde entière : un tableau de lignes par table.
 //
-// La comparaison se fait sur `id`, et c'est justifié mais pas évident : `id` n'est PAS la clé primaire
-// partout — neuf tables ont une autre clé, et aucune des neuf n'a même de colonne `id` (voir
-// CLES_PRIMAIRES). Ce qui rend la lecture correcte ici, c'est qu'une clé étrangère d'une seule colonne
-// ne peut viser qu'une clé primaire d'une seule colonne : toutes les tables PARENTES du graphe ont
-// donc `id`. `sauvegardeClesPrimaires.test.ts` le vérifie — en DÉRIVANT les clés primaires du
-// schéma exporté, `alter` rejoués, plutôt qu'en croyant CLES_PRIMAIRES — pour que le jour où ce
-// ne serait plus vrai se voie ici. Cette phrase a vécu sans aucun test derrière elle jusqu'au
-// 22/09/2026 : un parent à clé composite ferait déclarer perdue CHAQUE ligne fille, donc
-// refuser toute restauration.
+// La comparaison se fait sur la CLÉ PRIMAIRE du parent, et c'est justifié mais pas évident : une clé
+// étrangère d'une seule colonne ne vise qu'une clé primaire d'une seule colonne, qui est `id` partout
+// sauf au catalogue des rôles comptables (`role`, ligne 43, étape PC1) — le premier parent du graphe
+// dont la clé ne s'appelle pas `id`. Comparée sur `id`, chaque ligne du plan d'un dossier qui viserait
+// un rôle présent dans la sauvegarde serait déclarée perdue, donc la restauration refusée.
+// `sauvegardeClesPrimaires.test.ts` vérifie que toute table PARENTE a une clé d'une seule colonne, et
+// que c'est celle que CLES_PRIMAIRES déclare — en DÉRIVANT les clés primaires du schéma exporté,
+// `alter` rejoués. Une table à clé composite n'est le parent de personne : elle n'a pas d'identifiants
+// ici. Cette règle a vécu sans aucun test derrière elle jusqu'au 22/09/2026 : un parent à clé
+// composite ferait déclarer perdue CHAQUE ligne fille, donc refuser toute restauration.
 export function liensPerdus(contenu: Contenu): LienPerdu[] {
   const identifiants = new Map<string, Set<string>>()
   for (const [table, lignes] of Object.entries(contenu)) {
-    identifiants.set(table, new Set(lignes.map((l) => String(l.id))))
+    const cle = clePrimaire(table)
+    if (cle.length !== 1) continue
+    identifiants.set(table, new Set(lignes.map((l) => String(l[cle[0]]))))
   }
 
   const perdus: LienPerdu[] = []
@@ -437,6 +450,11 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 //
 // `pieces_hors_de_france_taux` (ligne 28.5, étape e2) en fait DIX, et sept dans le plan d'export : une ligne par code et
 // par taux d'une version de la fiche « hors de France », petite par nature elle aussi.
+// Le plan comptable d'un dossier et le catalogue des rôles (ligne 43, étape PC1) en ont aussi une à eux — DOUZE tables
+// en tout, huit dans le plan d'export, où le catalogue n'entre pas : le dossier et le rôle (une ligne par rôle que le
+// dossier règle, vingt-six au plus) ; le rôle. Le catalogue est le premier PARENT du
+// graphe dont la clé ne s'appelle pas `id` : c'est sur elle que `liensPerdus` compare, et que la restauration lit, dans
+// la base d'arrivée, les rôles qu'un plan désigne (`referencesExternes`).
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
@@ -444,7 +462,9 @@ export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   pieces_hors_de_france_taux: ['fiche_id', 'code_tva', 'taux'],
+  plan_comptable_dossier: ['dossier_id', 'role'],
   previsionnels_bancaires: ['dossier_id'],
+  roles_comptables: ['role'],
   super_admins: ['user_id'],
   superpdp_credentials: ['dossier_id'],
   taux_change_bce: ['date', 'devise'],
@@ -535,7 +555,8 @@ export function violationsOrdre(
 // Ce qui reste dehors, et la règle qui le décide : une table est exclue de l'export d'un dossier
 // uniquement si RIEN dans l'export ne la pointe. Les taux de change, les super-administrateurs et les
 // cabinets eux-mêmes remplissent cette condition — sauf `cabinets`, que `dossiers.cabinet_id` pointe,
-// et qui est donc un prérequis explicite de la base d'arrivée (voir `referencesExternes`). Les tables
+// et qui est donc un prérequis explicite de la base d'arrivée (voir `referencesExternes`) ; de même le
+// catalogue des rôles comptables, que le plan d'un dossier pointe (`PARENTS_HORS_PLAN_VOULUS`). Les tables
 // de niveau cabinet sont dehors pour une raison de sens, pas de graphe : elles décrivent qui dirige le
 // cabinet et quelles règles il partage, pas ce que contient un dossier. Les embarquer ferait
 // réinsérer, en restaurant un client, la liste des administrateurs du cabinet.
@@ -563,6 +584,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   cabinets: { acces: 'global' },
   super_admins: { acces: 'global' },
   taux_change_bce: { acces: 'global' },
+  roles_comptables: { acces: 'global' },
 
   dossiers: { acces: 'le_dossier' },
   cabinet_admins: { acces: 'cabinet' },
@@ -606,6 +628,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   pieces: { acces: 'direct' },
   pieces_hors_de_france: { acces: 'direct' },
   pieces_hors_de_france_taux: { acces: 'direct' },
+  plan_comptable_dossier: { acces: 'direct' },
   previsionnels_bancaires: { acces: 'direct' },
   references_annuelles: { acces: 'direct' },
   references_postes_annuels: { acces: 'direct' },
@@ -712,12 +735,19 @@ export interface ParentHorsPlan {
 //
 // La règle est simple et se vérifie toute seule : si une table du plan pointe une table absente du
 // plan, alors la restauration butera dessus — soit Postgres refuse (NO ACTION), soit il faut sacrifier
-// le lien. Une seule exception est légitime, et elle doit être VOULUE, pas subie : `cabinets`, qu'un
-// export de dossier ne contient délibérément pas et que la base d'arrivée doit déjà porter.
+// le lien. Deux exceptions sont légitimes, et elles doivent être VOULUES, pas subies
+// (`PARENTS_HORS_PLAN_VOULUS`) : `cabinets`, qu'un export de dossier ne contient délibérément pas et que
+// la base d'arrivée doit déjà porter ; et `roles_comptables`, le catalogue des rôles du plan comptable
+// (ligne 43, étape PC1), qu'une migration pose dans toute base — une sauvegarde qui le porterait
+// réécrirait, en restaurant un client, les défauts de l'application pour tous les dossiers. La base
+// d'arrivée doit connaître chaque rôle que le plan du dossier désigne : `referencesExternes` les nomme,
+// et la restauration les y lit avant d'écrire.
 //
 // Écrit après coup : `categories` et `natures_immobilisation` étaient lues avec un filtre qui rendait
 // zéro ligne, donc absentes de fait de tout export, pendant que les pièces et les immobilisations les
 // pointaient. Ce contrôle-là l'aurait dit dès la première exécution des tests.
+export const PARENTS_HORS_PLAN_VOULUS: readonly string[] = ['cabinets', 'roles_comptables']
+
 export function parentsHorsPlan(
   ordre: readonly string[] = ORDRE_RESTAURATION,
   chemins: Readonly<Record<string, CheminDossier>> = CHEMINS_DOSSIER,
