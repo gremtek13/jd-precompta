@@ -147,7 +147,7 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     // Avant que la couverture du relevé soit en base : la simulation, pour tout accès.
     expect(ceQueDonneUnAcces(false)).toContain('dépose ses pièces et ses documents')
     expect(ceQueDonneUnAcces(false)).toContain('voit sa simulation')
-    // Après : la simulation suit la case « Banque » (hypothèse EC-Q1).
+    // Après : la simulation suit la case « Banque » (EC-Q1, décidée).
     expect(ceQueDonneUnAcces(true)).toContain('dépose ses pièces et ses documents')
     expect(ceQueDonneUnAcces(true)).toContain('avec la case « Banque », il voit aussi sa simulation')
     for (const etat of [false, true]) {

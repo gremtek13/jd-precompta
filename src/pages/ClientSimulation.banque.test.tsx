@@ -4,7 +4,7 @@ import ClientSimulation from './ClientSimulation'
 import { SIMULATION_BANQUE_INVERIFIABLE, SIMULATION_SANS_BANQUE } from '../lib/couvertureReleve'
 import type { Piece } from '../lib/types'
 
-// « MA SIMULATION » SOUS LA CASE « BANQUE » (espace client, étape P7 ; hypothèse EC-Q1). Drapeau levé — la couverture du
+// « MA SIMULATION » SOUS LA CASE « BANQUE » (espace client, étape P7 ; EC-Q1, décidée). Drapeau levé — la couverture du
 // relevé en base —, la simulation se calcule sur la banque, que la base ne rend plus qu'à la case : sans elle, l'écran se
 // TAIT en le disant et ne demande rien ; avec elle, il demande aussi la case à la BASE, dans la même vague de lectures,
 // et c'est la base qui décide (une case retirée depuis la connexion ferait calculer sur un relevé rendu vide, sans

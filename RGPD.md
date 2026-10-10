@@ -265,19 +265,19 @@ Ce qui est **prouvé**, pas seulement affirmé :
   facture ni un mouvement. **Limite nommée** : ces droits n'ont rien ouvert jusqu'au 10/10/2026 ; depuis, « Banque »
   ouvre la lecture des deux registres de P7 et du contrôle de solde des relevés, et « Ma simulation » (ci-dessous). Ce
   qu'ils ouvriront ensuite (P2, P5, la suite de P7) sera une policy élargie, présentée au cabinet avant.
-- **La banque d'un dossier sous la case « Banque »** (espace client P7, décision du cabinet du 10/10/2026 : la première
-  migration, `banque_du_client`, appliquée ce jour-là ; la seconde, le resserrement, après la mise en ligne de la
-  bascule de l'application ; art. 5 § 1 c, 25 § 2 et 32 § 1 b). Aujourd'hui encore, tout accès client LIT en base les
-  mouvements de son relevé (date, libellé, montant, catégorie, compte), les parts d'un mouvement ventilé et les
-  règlements groupés, sans qu'aucun écran les lui montre. Depuis la première migration, le contrôle de solde des
-  relevés importés et les deux registres ci-dessus ne se lisent qu'avec la case, et tout accès lit les mois couverts —
-  sans montant ni libellé — par `couverture_du_releve`, d'où l'Accueil et « Mes pièces » les tirent ; « Ma
-  simulation », calculée sur la banque, se tait sans la case (EC-Q1, décidée). Après la seconde, les mouvements, leurs
-  parts et les règlements groupés ne se lisent plus qu'avec la case. Éprouvé sur une réplique (neuf
+- **La banque d'un dossier sous la case « Banque »** (espace client P7, décision du cabinet du 10/10/2026 : les deux
+  migrations appliquées ce jour-là, `banque_du_client` puis, la bascule de l'application en ligne, le resserrement
+  `lectures_bancaires_au_droit_banque` ; art. 5 § 1 c, 25 § 2 et 32 § 1 b). Jusque-là, tout accès client LISAIT en
+  base les mouvements de son relevé (date, libellé, montant, catégorie, compte), les parts d'un mouvement ventilé et
+  les règlements groupés, sans qu'aucun écran les lui montre. Désormais, seul un accès qui porte la case les lit, avec
+  le contrôle de solde des relevés importés et les deux registres ci-dessus ; tout accès lit les mois couverts — sans
+  montant ni libellé — par `couverture_du_releve`, d'où l'Accueil et « Mes pièces » les tirent ; « Ma simulation »,
+  calculée sur la banque, se tait sans la case (EC-Q1, décidée). Éprouvé sur une réplique (neuf
   familles égales à la production) : `supabase/essais/banqueClient.sql` (86 verdicts, 0 en faute, sept profils, chaque
   refus par sa raison), `rls.sql` (3bis, son contrôle positif, 4bis : 28 lignes, 0 en faute, 19 mutations sur 19), et 47
-  mutations des migrations, qui mordent toutes ; la première, appliquée, rejouée en production par `banqueClient.sql` :
-  les trois fautes attendues avant le resserrement, et elles seules. **Limites nommées** : les relevés DÉPOSÉS en
+  mutations des migrations, qui mordent toutes ; puis EN PRODUCTION, après chacune : `banqueClient.sql` rendait après
+  la première les trois fautes attendues avant le resserrement, et elles seules, et après la seconde 86 verdicts, 0 en
+  faute ; `rls.sql` entier, 0 en faute et 19 mutations sur 19. **Limites nommées** : les relevés DÉPOSÉS en
   fichier — par le client ou par le cabinet — restent lisibles par tout accès du dossier (`documents_divers`, seau
   `pieces`), comme l'a décidé le cabinet le 10/10/2026 : la case porte sur les mouvements que l'application tient, pas
   sur les fichiers ; et une précision est un texte libre qui peut nommer une personne — chez un praticien, un patient :

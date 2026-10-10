@@ -256,8 +256,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge ; depuis
   P7 et P2, deux blocs de plus — « La banque du client » (3bis, 4bis, trois mutations) et « Les ventes du client »
   (3bis, 4bis, douze mutations), que les devis rejoignent dès leur migration (P5 ; témoin : la table `devis` ; avant,
-  une ligne « EN ATTENTE ») —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; entre les
-  deux migrations de P7 (depuis le 10/10/2026), le 3 bis de la banque est EN FAUTE, et c'est attendu. Le fichier
+  une ligne « EN ATTENTE ») —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la
+  banque se juge entier depuis le 10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en
+  production). Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
@@ -346,12 +347,14 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
   « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
   déclaration ; `LIBELLE_*` de `lib/droitsAcces.ts`).
-  **La banque sous la case « Banque »** (P7 ; l'ajout appliqué le 10/10/2026, le resserrement à suivre) : un ordre, et
-  il est la règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la
-  bascule de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur,
-  et un écran d'avant croirait le relevé vide → « LA BANQUE DU CLIENT EN BASE ».
+  **La banque sous la case « Banque »** (P7, les deux migrations appliquées le 10/10/2026) : un ordre, et il est la
+  règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule
+  de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un
+  écran d'avant croirait le relevé vide ; rebaisser `COUVERTURE_EXPORTEE` le ferait désormais → « LA BANQUE DU CLIENT
+  EN BASE », « LA BANQUE DU CLIENT : LE RESSERREMENT APPLIQUÉ ».
   **Aujourd'hui la restriction est une règle d'ÉCRAN** : la base laisse déjà le client lire les montants de ses pièces et
-  de son relevé et les catégories ; un texte du cabinet seul ne se range jamais dans une table que le client lit →
+  les catégories — son relevé, depuis P7, à la seule case « Banque » ; un texte du cabinet seul ne se range jamais dans
+  une table que le client lit →
   « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION ». **Les notes internes du cabinet** vivent
   dans `notes_internes` (P0, 09/10/2026 ; `admin_du_dossier`, aucune branche client), lues à part par la fiche d'une
   pièce, écrites avant elle ; `pieces.notes`, `documents_divers.notes` et `dossiers.notes` ne se lisent ni ne s'écrivent
@@ -387,8 +390,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 ## Fonctionnalités déjà implémentées
 
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
-  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre « Ma
-  simulation » depuis P7, 10/10/2026) ; client
+  leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture
+  du relevé et « Ma simulation » depuis P7, 10/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -511,10 +514,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1 prise comme hypothèse ;
   l'invariant 3 bis de `rls.sql` attend P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
   P7, la banque du client en base (décision du cabinet du 10/10/2026 : les deux migrations, EC-Q1, les relevés déposés
-  en fichier lisibles par tout accès) : `banque_du_client` APPLIQUÉE le 10/10/2026 (deux registres écrits par trois
-  fonctions, la couverture du relevé), `COUVERTURE_EXPORTEE` levé avec elle, « Ma simulation » sous la case ; reste
-  `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au droit « Banque »), qui part APRÈS la mise en
-  ligne de la bascule → « LA BANQUE DU CLIENT EN BASE », « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE ».
+  en fichier lisibles par tout accès) : FAITE le 10/10/2026 — `banque_du_client` (deux registres écrits par trois
+  fonctions, la couverture du relevé), la bascule `COUVERTURE_EXPORTEE` en ligne, puis le resserrement
+  `lectures_bancaires_au_droit_banque` (les trois lectures de la banque au droit « Banque ») ; ses écrans viendront avec
+  P8 et P9 → « LA BANQUE DU CLIENT EN BASE », « LA BANQUE DU CLIENT : LA PREMIÈRE MIGRATION APPLIQUÉE », « LA BANQUE DU
+  CLIENT : LE RESSERREMENT APPLIQUÉ ».
   P2, les ventes du client en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à
   coller) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière deux drapeaux
   (`VENTES_DU_CLIENT_EXPORTEES`, `SUPPRESSION_BROUILLON_EXPORTEE`) ; acceptées par le cabinet le 10/10/2026, à condition
@@ -1160,8 +1164,8 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
   jamais se fier à ce document ou à une session précédente.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
-- Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et**
-  seize mutations qui mordent) ; la CI n'a pas accès à la base.
+- Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** toutes
+  ses mutations qui mordent — dix-neuf depuis P7, douze de plus avec P2) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

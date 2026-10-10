@@ -96,7 +96,10 @@ def source_deployee(fonction: str, marqueur: str | None) -> str | None:
             # Désignée par son nom, ou par l'uuid que porte le résultat lui-même.
             if appels[bloc['tool_use_id']] != fonction and f'"id":"{fonction}"' not in texte:
                 continue
-            if MARQUE not in texte or (marqueur and marqueur not in texte):
+            # Le résultat est du JSON : un guillemet ou un saut de ligne du marqueur y est ÉCHAPPÉ. Jusqu'au
+            # 10/10/2026 le marqueur se cherchait tel quel, et `compte = "existant"` ne se trouvait jamais.
+            if MARQUE not in texte or (marqueur and marqueur not in texte
+                                       and json.dumps(marqueur, ensure_ascii=False)[1:-1] not in texte):
                 continue
             derniere = texte
     if derniere is None:
@@ -123,7 +126,8 @@ def main() -> int:
 
     deploye = source_deployee(fonction, marqueur)
     if deploye is None:
-        print("INTROUVABLE dans le journal — le résultat de get_edge_function n'y est pas encore écrit")
+        print("INTROUVABLE dans le journal — le résultat de get_edge_function n'y est pas encore écrit"
+              + (", ou aucun ne porte le marqueur" if marqueur else ""))
         return 1
 
     brut = open(chemin, encoding='utf8').read()

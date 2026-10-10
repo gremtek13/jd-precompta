@@ -25,7 +25,7 @@ import {
 // client voit où il en est, il ne modifie rien ici — cohérent avec le reste de l'app côté client
 // (dépôt de pièces mis à part, rien ne s'écrit sans un clic explicite du cabinet).
 //
-// SOUS LA CASE « BANQUE » (espace client, étape P7 ; hypothèse EC-Q1). La simulation se calcule SUR LA BANQUE — le chiffre
+// SOUS LA CASE « BANQUE » (espace client, étape P7 ; EC-Q1, décidée). La simulation se calcule SUR LA BANQUE — le chiffre
 // d'affaires encaissé, les cotisations prélevées —, et la base ne rend plus les mouvements qu'à un accès qui porte la
 // case. Une lecture que la RLS refuse rend ZÉRO ligne, sans erreur : sans la case, l'écran calculerait une simulation
 // plausible et basse. Dès que la couverture du relevé est en base (`COUVERTURE_EXPORTEE`), il se TAIT donc, en le
