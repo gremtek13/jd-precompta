@@ -381,6 +381,13 @@ const VUES = [
   // « Ma simulation » d'un accès sans la case « Banque » (espace client, étape P7) : elle se tait, et dit pourquoi.
   { nom: 'pc-client-simulation', chemin: '#/ma-simulation', l: 1440, h: 900, theme: 'light', reduite: false, client: true },
   { nom: 'mobile-client-simulation', chemin: '#/ma-simulation', l: 390, h: 844, theme: 'light', reduite: false, client: true },
+  // « Mes ventes › Factures » (espace client, étape P4a) : le même compte, rattaché aussi à l'atelier (d7) avec la case
+  // « Ventes » (`ventes`, voir `banc-client-ventes` dans fauxSupabase.ts) — cinq entrées dans la navigation, la liste des
+  // factures, et la fenêtre des encaissements sans « Banque », qui dit qu'elle ne lit pas le relevé.
+  { nom: 'pc-client-ventes', chemin: '#/mes-ventes', l: 1440, h: 900, theme: 'light', reduite: false, client: true, ventes: 'sans-banque' },
+  { nom: 'pc-client-ventes-sombre', chemin: '#/mes-ventes', l: 1280, h: 800, theme: 'dark', reduite: false, client: true, ventes: 'sans-banque' },
+  { nom: 'mobile-client-ventes', chemin: '#/mes-ventes', l: 390, h: 844, theme: 'light', reduite: false, client: true, ventes: 'sans-banque' },
+  { nom: 'pc-client-ventes-encaissements', chemin: '#/mes-ventes', l: 1440, h: 900, theme: 'light', reduite: false, client: true, ventes: 'sans-banque', clicLigne: ['F2026-0007', 'Encaissements'] },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -388,13 +395,17 @@ for (const v of VUES) {
   const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h }, userAgent: CHROME })
   // Les largeurs choisies des deux volets (lib/largeurVolets.ts), quand la vue les montre : retenues comme le
   // navigateur les retient.
-  await contexte.addInitScript(({ theme, reduite, largeurs, client }) => {
+  await contexte.addInitScript(({ theme, reduite, largeurs, client, ventes }) => {
     localStorage.setItem('jd-precompta-theme', theme)
     if (client) localStorage.setItem('banc-client', '1')
+    if (ventes) {
+      localStorage.setItem('banc-client-ventes', ventes)
+      localStorage.setItem('jd-precompta-dossier-actif', 'd7')
+    }
     localStorage.setItem('jd-precompta-barre-reduite', reduite ? '1' : '0')
     if (largeurs?.barre) localStorage.setItem('jd-precompta-largeur-barre', String(largeurs.barre))
     if (largeurs?.panneau) localStorage.setItem('jd-precompta-largeur-panneau', String(largeurs.panneau))
-  }, { theme: v.theme, reduite: v.reduite, largeurs: v.largeurs ?? null, client: v.client ?? false })
+  }, { theme: v.theme, reduite: v.reduite, largeurs: v.largeurs ?? null, client: v.client ?? false, ventes: v.ventes ?? null })
   const externes = []
   await contexte.route(/^https?:\/\//, (route) => {
     const url = route.request().url()
@@ -421,6 +432,11 @@ for (const v of VUES) {
   if (v.clic) {
     await page.getByRole('button', { name: v.clic, exact: true }).click()
     await page.waitForTimeout(600)
+  }
+  // Un bouton d'une ligne de tableau, désignée par un texte qu'elle porte : [texte, bouton].
+  if (v.clicLigne) {
+    await page.locator('tr', { hasText: v.clicLigne[0] }).getByRole('button', { name: v.clicLigne[1], exact: true }).click()
+    await page.waitForTimeout(900)
   }
   // Une ligne de liste, désignée par le texte d'une de ses cellules.
   if (v.cellule) {

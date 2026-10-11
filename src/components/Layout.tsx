@@ -5,8 +5,11 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
 import { useCabinetBranding } from '../lib/branding'
 import { useListeDossiers } from '../lib/listeDossiers'
+import { droitsSur } from '../lib/droitsAcces'
+import { mesVentesOuvertes } from '../lib/espaceVentes'
+import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import {
-  IconAccueil, IconApparence, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation,
+  IconAccueil, IconApparence, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
   IconInformations, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -81,7 +84,11 @@ export default function Layout() {
 }
 
 function Coque() {
-  const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
+  const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut, droitsParDossier } = useAuth()
+  // « Mes ventes » (espace client, étape P4a) n'existe que si la société AFFICHÉE porte la case « Ventes », comme sa route
+  // (App.tsx). `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
+  const mesVentes = role === 'client'
+    && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -295,6 +302,13 @@ function Coque() {
                 <span className="nav-label-full">Mes pièces</span>
                 <span className="nav-label-court">Pièces</span>
               </NavLink>
+              {mesVentes && (
+                <NavLink to="/mes-ventes" title="Mes ventes" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconFactures width={18} height={18} />
+                  <span className="nav-label-full">Mes ventes</span>
+                  <span className="nav-label-court">Ventes</span>
+                </NavLink>
+              )}
               <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>
                 <IconInformations width={18} height={18} />
                 <span className="nav-label-full">Mes informations</span>

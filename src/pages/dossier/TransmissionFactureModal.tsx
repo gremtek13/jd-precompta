@@ -13,12 +13,16 @@ import {
 } from '../../lib/transmissionsFactures'
 import { CONSEQUENCE_ANNULATION, libelleStatutLu, statutsDeLaFacture, type StatutLu } from '../../lib/statutsLus'
 import type { ArticleExoneration, FactureEmise, FactureSuperpdpEvent, StatutTva, TransmissionFacture } from '../../lib/types'
+import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
 
 // Ce que la fenêtre lit d'un statut lu sur la plateforme du client : de quoi dire un refus, et où.
 type StatutAnnulant = Pick<StatutLu, 'id' | 'facture_id' | 'code' | 'hote' | 'emis_le' | 'lu_le'>
 
 interface Props {
   dossierId: string
+  // Qui transmet : le cabinet, ou le client « Ventes » (espace client, étape P4a) — les mêmes fonctions, qui l'acceptent
+  // depuis P3 ; le client ne RELIE pas de plateforme d'ici (c'est son cabinet), et les mots sont ceux de son espace.
+  espace: EspaceVentes
   facture: FactureEmise
   // Le statut de TVA du dossier aujourd'hui : la facture ne le fige pas, et les fonctions qui la transmettent le relisent.
   statutTva: StatutTva | null
@@ -39,7 +43,8 @@ const COLONNES_TRANSMISSION = 'id, dossier_id, facture_id, canal, hote, flux_id,
 // CE QUI L'EMPÊCHE DE PARTIR SE DIT AVANT LE CLIC, avec le jugement même des fonctions (`refusEmission`, sur la facture
 // assemblée par `donneesDeLaFacture`) ; elles le refont de leur côté, sur la facture relue en base. Et rien n'est
 // proposé tant qu'on ne SAIT pas si elle est déjà partie : ses transmissions lues en entier, sinon aucun bouton.
-export default function TransmissionFactureModal({ dossierId, facture, statutTva, articleExoneration, numeroTvaAttribue, onClose, onUpdated }: Props) {
+export default function TransmissionFactureModal({ dossierId, espace, facture, statutTva, articleExoneration, numeroTvaAttribue, onClose, onUpdated }: Props) {
+  const dire = (texte: string) => pourLEspace(espace, texte)
   const [lignes, setLignes] = useState<LigneCii[] | null>(null)
   // Pour un avoir : la facture qu'il corrige, dont il transmet le numéro et la date. `undefined` tant qu'elle n'est pas lue ;
   // nulle pour une facture, et pour un avoir qui n'en cite aucune — `refusEmission` le dit alors.
@@ -289,17 +294,19 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
       <div className="card" style={{ width: 'min(640px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Transmettre {nature} {facture.numero}</h2>
         <p className="muted" style={{ marginTop: -8 }}>
-          À {facture.tiers_nom}, par une plateforme agréée : celle du client, que l’onglet Justificatifs relie au dossier,
-          ou Super PDP. Une facture transmise ne se reprend pas : seul un avoir la corrige.
+          {espace === 'client'
+            ? `À ${facture.tiers_nom}, par une plateforme agréée : la tienne, que ton cabinet relie à ta société, ou Super PDP.`
+            : `À ${facture.tiers_nom}, par une plateforme agréée : celle du client, que l’onglet Justificatifs relie au dossier, ou Super PDP.`}
+          {' '}Une facture transmise ne se reprend pas : seul un avoir la corrige.
         </p>
 
         {lectureRatee ? (
           <p className="error-text">
-            {lectureRatee} On ne sait donc pas si elle est déjà partie : rien n’est proposé. Rouvre cette fenêtre.
+            {dire(lectureRatee)} On ne sait donc pas si elle est déjà partie : rien n’est proposé. Rouvre cette fenêtre.
           </p>
         ) : statutsErreur ? (
           <p className="error-text">
-            Les statuts de la facture lus sur la plateforme du client n’ont pas pu être lus en entier ({statutsErreur}). On ne
+            {dire('Les statuts de la facture lus sur la plateforme du client')} n’ont pas pu être lus en entier ({statutsErreur}). On ne
             sait donc pas si l’acheteur l’a refusée : rien n’est proposé. Rouvre cette fenêtre.
           </p>
         ) : siennes == null || statuts == null ? (
@@ -309,7 +316,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
             {active && (
               <p>
                 <span className={`badge ${ETATS_TRANSMISSION[active.etat].badge}`}>{ETATS_TRANSMISSION[active.etat].libelle}</span>{' '}
-                par {libelleCanal(active)}. {ETATS_TRANSMISSION[active.etat].explication}
+                par {dire(libelleCanal(active))}. {ETATS_TRANSMISSION[active.etat].explication}
                 {active.etat === 'envoi' && (active.canal === 'plateforme'
                   ? ' « Suivre » la cherche sur la plateforme ; si elle ne la retrouve pas, elle s’abandonne un quart d’heure après son départ, vérification faite.'
                   : ' Super PDP ne se consulte pas d’ici : un quart d’heure après son départ, elle s’abandonne, vérification faite sur Super PDP.')}
@@ -317,7 +324,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
             )}
             {rejet && (
               <p className="alerte-tva" style={{ marginTop: 0 }}>
-                Rejetée par {libelleCanal(rejet)} : elle ne repart pas. Elle s’annule par un avoir interne — qui ne se
+                Rejetée par {dire(libelleCanal(rejet))} : elle ne repart pas. Elle s’annule par un avoir interne — qui ne se
                 transmet pas —, puis une nouvelle facture ({REGLE_AVOIR_INTERNE}).
               </p>
             )}
@@ -329,7 +336,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
             )}
             {refusLu && (
               <p className="alerte-tva" style={{ marginTop: 0 }}>
-                {libelleStatutLu(refusLu.code)} sur la plateforme du client ({refusLu.hote}) : elle ne part pas — {CONSEQUENCE_ANNULATION}.
+                {libelleStatutLu(refusLu.code)} sur {dire('la plateforme du client')} ({refusLu.hote}) : elle ne part pas — {CONSEQUENCE_ANNULATION}.
               </p>
             )}
             {avoirInterne === true && (
@@ -362,7 +369,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
                           {/* Une seule pièce dans la rangée de la fiche : sans `span`, la date et son « il y a… » seraient
                               deux éléments écartés l'un de l'autre. */}
                           <td data-libelle="Date"><span>{formatDate(t.cree_le)} <span className="muted">({dateRelative(t.cree_le)})</span></span></td>
-                          <td data-libelle="Par">{libelleCanal(t)}</td>
+                          <td data-libelle="Par">{dire(libelleCanal(t))}</td>
                           <td data-libelle="État"><span className={`badge ${ETATS_TRANSMISSION[t.etat].badge}`}>{ETATS_TRANSMISSION[t.etat].libelle}</span></td>
                           {/* `anywhere` : une adresse de facturation électronique n'a aucune espace (250100021_25010002100014_SSIAD-…),
                               et un mot insécable que `break-word` ne compte pas dans la largeur minimale repoussait la cellule
@@ -423,7 +430,7 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
               <div className="alerte-tva" style={{ marginTop: 8 }}>
                 <strong>Elle ne peut pas partir telle quelle</strong> :
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                  {refus.map((r) => <li key={r}>{r}</li>)}
+                  {refus.map((r) => <li key={r}>{dire(r)}</li>)}
                 </ul>
               </div>
             )}
@@ -435,19 +442,21 @@ export default function TransmissionFactureModal({ dossierId, facture, statutTva
                 )}
                 {connexion === null && superpdp === false && (
                   <p className="muted">
-                    Aucune plateforme n’est reliée à ce dossier : relie celle du client dans l’onglet Justificatifs
-                    (« Plateforme du client »), ou configure Super PDP.
+                    {espace === 'client'
+                      ? 'Aucune plateforme n’est reliée à ta société : c’est ton cabinet qui relie ta plateforme agréée, ou Super PDP.'
+                      : 'Aucune plateforme n’est reliée à ce dossier : relie celle du client dans l’onglet Justificatifs '
+                        + '(« Plateforme du client »), ou configure Super PDP.'}
                   </p>
                 )}
-                {connexionErreur && <p className="error-text">{connexionErreur}</p>}
-                {superpdpErreur && <p className="error-text">{superpdpErreur}</p>}
+                {connexionErreur && <p className="error-text">{dire(connexionErreur)}</p>}
+                {superpdpErreur && <p className="error-text">{dire(superpdpErreur)}</p>}
               </>
             )}
           </>
         )}
 
-        {message && <p className="muted" role="status">{message}</p>}
-        {erreur && <p className="error-text">{erreur}</p>}
+        {message && <p className="muted" role="status">{dire(message)}</p>}
+        {erreur && <p className="error-text">{pourLEspaceSiTexte(espace, erreur)}</p>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={enCours != null}>Fermer</button>

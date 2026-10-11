@@ -181,7 +181,7 @@ function monter(o: {
   faux.appels = []
   faux.resoudre = null
   render(
-    <TransmissionFactureModal
+    <TransmissionFactureModal espace="cabinet"
       dossierId="d1" facture={o.facture ?? FACTURE} statutTva={o.statutTva ?? 'redevable'} articleExoneration={null}
       numeroTvaAttribue={o.numeroTvaAttribue ?? false} onClose={() => {}} onUpdated={() => {}}
     />,

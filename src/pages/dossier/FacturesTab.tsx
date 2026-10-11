@@ -30,8 +30,18 @@ import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 import { dejaCredite, SUPPRESSION_BROUILLON_EXPORTEE, supprimerBrouillon } from '../../lib/factures'
+import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 
-interface Props {
+// QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
+// l'adresse du dossier depuis une facture ; ou le client qui porte la case « Ventes », depuis « Mes ventes › Factures »,
+// avec ou sans « Banque » sur la société affichée. Les mêmes gestes, par les mêmes fonctions (P2 et P3 les lui ouvrent) ;
+// ceux du cabinet seul retirés, les mots de son espace (lib/espaceVentes.ts). Une propriété OBLIGATOIRE, sans valeur par
+// défaut : un écran qui oublierait de dire qui regarde ne compile pas.
+type QuiRegarde =
+  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
+  | { espace: 'client'; banque: boolean }
+
+type Props = QuiRegarde & {
   dossierId: string
   dossierNom: string
   dossierSiret: string | null
@@ -43,7 +53,6 @@ interface Props {
   numeroTvaAttribue: boolean
   // L'option du dossier pour le paiement de la TVA d'après les débits, que la validation fige sur la facture.
   tvaSurDebits: boolean
-  onAdresseUpdated: (adresse: string) => void
 }
 
 // Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
@@ -51,7 +60,9 @@ interface Props {
 // agréée — celle du client ou Super PDP (voir TransmissionFactureModal) — ou, comme avant, simplement
 // imprimée/exportée en PDF pour être envoyée manuellement : la transmission électronique n'est jamais
 // obligatoire ici (un client particulier, une plateforme pas encore reliée).
-export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, onAdresseUpdated }: Props) {
+export default function FacturesTab(props: Props) {
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, espace } = props
+  const dire = (texte: string) => pourLEspace(espace, texte)
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -287,7 +298,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         }
       />
       <BandeauLecturePartielle
-        quoi="Les statuts lus sur la plateforme du client"
+        quoi={dire('Les statuts lus sur la plateforme du client')}
         accord="lus"
         motif={statutsIncomplets}
         consequence={
@@ -295,6 +306,10 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           + 'pas laisserait dire « À déclarer » d’une facture refusée. La fenêtre « Encaissements » relit ceux de sa facture.'
         }
       />
+      {/* Le statut de TVA se précise au cabinet : le client ne peut que l'attendre, et le sait avant de rédiger. */}
+      {espace === 'client' && statutTva == null && (
+        <p className="alerte-tva">Ton cabinet doit d’abord préciser ton statut de TVA : tes factures ne peuvent pas partir.</p>
+      )}
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
         par une facture d'avoir plutôt qu'en la rouvrant.
@@ -304,8 +319,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         <p style={{ marginTop: 6, marginBottom: 0 }}>
           Le bouton "Avoir" sur une ligne crée un avoir avec sa propre numérotation (série "A",
           indépendante des factures), qui référence toujours la facture corrigée. Une fois validée,
-          une facture peut être transmise par une plateforme agréée — celle du client, reliée dans
-          l'onglet Justificatifs, ou Super PDP — ou envoyée par e-mail ; imprimer/enregistrer en PDF
+          une facture peut être transmise par une plateforme agréée —{' '}
+          {espace === 'client' ? 'la tienne, que ton cabinet relie à ta société,' : 'celle du client, reliée dans l\'onglet Justificatifs,'}
+          {' '}ou Super PDP — ou envoyée par e-mail ; imprimer/enregistrer en PDF
           reste possible si tu préfères l'envoyer toi-même.
         </p>
       </details>
@@ -330,7 +346,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       {connexion && (
         <div className="plateforme-statuts">
           <p>
-            Plateforme du client : {connexion.nom} <span className="muted">({connexion.hote})</span> —{' '}
+            {dire('Plateforme du client')} : {connexion.nom} <span className="muted">({connexion.hote})</span> —{' '}
             {connexion.cycle_vie_lu_le
               ? `statuts des factures émises lus le ${formatDate(connexion.cycle_vie_lu_le)}.`
               : 'les statuts des factures émises n’ont pas encore été lus.'}
@@ -340,15 +356,22 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           </button>
         </div>
       )}
+      {/* Le client VOIT l'état de sa plateforme ; c'est son cabinet qui la relie (P4b ouvrira la liaison, sous EC-Q4). Rien
+          ne se dit avant la lecture : `connexion` n'est nul qu'une fois lue. */}
+      {espace === 'client' && connexion === null && (
+        <p className="muted">Aucune plateforme agréée n’est reliée à ta société : c’est ton cabinet qui la relie.</p>
+      )}
       {connexionErreur && (
         <p className="muted">
-          Plateforme du client : {connexionErreur} Les statuts de ses factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.
+          {espace === 'client'
+            ? `Ta plateforme : ${dire(connexionErreur)} Les statuts de tes factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.`
+            : `Plateforme du client : ${connexionErreur} Les statuts de ses factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.`}
         </p>
       )}
-      {erreurReleve && <p className="error-text">{erreurReleve}</p>}
-      {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} />}
+      {erreurReleve && <p className="error-text">{dire(erreurReleve)}</p>}
+      {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} espace={espace} />}
 
-      {erreur && <p className="error-text">{erreur}</p>}
+      {erreur && <p className="error-text">{pourLEspaceSiTexte(espace, erreur)}</p>}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
@@ -415,7 +438,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                             if (courante) {
                               return (
                                 <span className={`badge badge-une-ligne ${ETATS_TRANSMISSION[courante.etat].badge}`}>
-                                  {libelleCourtCanal(courante)} · {ETATS_TRANSMISSION[courante.etat].libelle}
+                                  {dire(libelleCourtCanal(courante))} · {ETATS_TRANSMISSION[courante.etat].libelle}
                                 </span>
                               )
                             }
@@ -502,6 +525,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
       {editing && (
         <FactureFormModal
+          {...(props.espace === 'cabinet'
+            ? { espace: 'cabinet' as const, onAdresseUpdated: props.onAdresseUpdated }
+            : { espace: 'client' as const })}
           dossierId={dossierId}
           dossierNom={dossierNom}
           dossierSiret={dossierSiret}
@@ -511,7 +537,6 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           numeroTvaAttribue={numeroTvaAttribue}
           tvaSurDebits={tvaSurDebits}
           facture={editing === 'new' ? null : editing}
-          onAdresseUpdated={onAdresseUpdated}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
@@ -528,6 +553,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       {avoirDe && (
         <FactureAvoirModal
           dossierId={dossierId}
+          espace={espace}
           factureOrigine={avoirDe}
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
@@ -541,6 +567,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         <TransmissionFactureModal
           key={transmise.id}
           dossierId={dossierId}
+          espace={espace}
           facture={transmise}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
@@ -553,6 +580,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       {encaissee && (
         <EncaissementsFactureModal
           key={encaissee.id}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={encaissee}
           statutTva={statutTva}

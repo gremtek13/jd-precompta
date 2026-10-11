@@ -61,7 +61,7 @@ function monter(
   faux.appels = []
   faux.resoudre = null
   render(
-    <FactureFormModal
+    <FactureFormModal espace="cabinet"
       dossierId="d1"
       dossierNom="Cabinet de test"
       dossierSiret={autres.dossierSiret ?? null}

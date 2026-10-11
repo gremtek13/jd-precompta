@@ -206,7 +206,7 @@ function monter(o: {
   }
   faux.connexion = o.connexion === undefined ? null : o.connexion
   return render(
-    <EncaissementsFactureModal
+    <EncaissementsFactureModal espace="cabinet"
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
       onClose={() => {}} onUpdated={onUpdated}
     />,

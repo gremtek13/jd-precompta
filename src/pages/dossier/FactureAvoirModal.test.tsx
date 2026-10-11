@@ -96,7 +96,7 @@ async function monter(
   faux.lectureLignesRefusee = false
   faux.lignes = lignes
   render(
-    <FactureAvoirModal dossierId="d1" factureOrigine={origine} credite={credite} onClose={() => {}} onCreated={() => {}} />,
+    <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={origine} credite={credite} onClose={() => {}} onCreated={() => {}} />,
   )
   // Les lignes se chargent de façon asynchrone (useEffect) avant que le bouton ne devienne utile —
   // affichées dans des `<input>`, donc `findByDisplayValue` et non `findByText`.
@@ -260,7 +260,7 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     faux.appelsRpc = []
     faux.lectureLignesRefusee = true
     render(
-      <FactureAvoirModal dossierId="d1" factureOrigine={factureOrigine} credite={0} onClose={() => {}} onCreated={() => {}} />,
+      <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} onClose={() => {}} onCreated={() => {}} />,
     )
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()

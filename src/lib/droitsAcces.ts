@@ -8,10 +8,12 @@
 // `supabase/essais/droitsAcces.sql`). Ce module dit ce que chaque droit ouvrira, lit les droits d'une ligne sans jamais en
 // accorder un par défaut, et compose l'appel d'une case cliquée.
 //
-// UN SEUL ÉCRAN DU CLIENT S'EN SERT, ET SEULEMENT DERRIÈRE UN DRAPEAU : « Ma simulation » suit la case « Banque » dès que la
-// couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`). Le reste — ses écrans « Ventes » et « Banque » —
-// arrivera avec les étapes P3 à P9 (P2 n'a ouvert que la base), chacune présentée au cabinet avant d'ouvrir quoi que ce
-// soit. Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie contre ce que le code FAIT.
+// DEUX ÉCRANS DU CLIENT S'EN SERVENT, CHACUN DERRIÈRE LE DRAPEAU DE SA MIGRATION : « Ma simulation » suit la case « Banque »
+// dès que la couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`) ; « Mes ventes » (étape P4a) n'existe qu'avec
+// la case « Ventes » sur la société affichée, dès que les ventes du client sont en base (`VENTES_DU_CLIENT_EXPORTEES`,
+// lib/espaceVentes.ts). Le reste — l'écran « Banque », les devis — arrivera avec les étapes P5 à P9, chacune présentée au
+// cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie
+// contre ce que le code FAIT.
 //
 // LA BASE, ELLE, N'ATTEND PAS LES ÉCRANS : une policy ou une fonction ouverte à un droit vaut dès sa migration, pour la
 // session du client, qu'un écran la montre ou non (étapes P2 et P7). Ce qu'une case change se dit donc de ce que la base
@@ -146,6 +148,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // Avec les ventes ouvertes, la phrase dit aussi ce que « Ventes » ouvre dans les quatre fonctions de la vente (P3, qui
 // suit P2 et n'a pas de sens sans elle) : chaque action que leur table « qui peut quoi » ouvre à la case, et elle seule
 // (droitsAcces.test.ts la confronte à `src/test/quiPeutQuoi.ts`, que droitsDeLAppelantCopie.test.ts confronte aux sources).
+// Et, depuis l'étape P4a, l'écran qui les montre : « Mes ventes », derrière le même drapeau. Relier la plateforme y reste
+// sans écran (P4b, sous EC-Q4) : la phrase le dit de ce geste-là seulement.
 // Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
 // droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
 export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean): string {
@@ -155,14 +159,14 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
       + '« Ventes » et « Banque » arriveront. D’ici là, cocher une case ne change pas ce que le client voit ou fait.'
   }
   const ventes = ventesOuvertes
-    ? ' « Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes — ses factures et avoirs, '
-      + 'leurs transmissions et leur suivi, les statuts lus sur sa plateforme, ses encaissements et leurs déclarations, '
-      + 'les e-mails qui les ont envoyés, avec ce que le cabinet y a écrit (notes et motifs) — et d’en faire les gestes : '
-      + 'créer, modifier, valider ou supprimer un brouillon, créer un avoir, enregistrer, retirer, déclarer ou '
-      + 'contre-passer un encaissement, abandonner une transmission restée sans issue connue. Par les fonctions du '
-      + 'serveur, il peut aussi relier lui-même sa plateforme agréée et Super PDP et voir leur état, y transmettre une '
-      + 'facture et en suivre la transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, '
-      + 'trente par dossier et par jour au plus.'
+    ? ' « Ventes » ouvre au client « Mes ventes », où il lit ses ventes — ses factures et avoirs, leurs transmissions et '
+      + 'leur suivi, les statuts lus sur sa plateforme, ses encaissements et leurs déclarations, les e-mails qui les ont '
+      + 'envoyés, avec ce que le cabinet y a écrit (notes et motifs) — et en fait les gestes : créer, modifier, valider ou '
+      + 'supprimer un brouillon, créer un avoir, enregistrer, retirer, déclarer ou contre-passer un encaissement, '
+      + 'abandonner une transmission restée sans issue connue. Par les fonctions du serveur, il peut aussi y voir l’état '
+      + 'de sa plateforme agréée et de Super PDP, y transmettre une facture et en suivre la transmission, relever les '
+      + 'statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par jour au plus ; et, sans '
+      + 'écran encore, relier lui-même sa plateforme agréée et Super PDP.'
     : ''
   const banque = simulationSousBanque
     ? ' « Banque » permet déjà au client de voir sa simulation et, par la base et sans écran encore, de lire le contrôle '
@@ -173,8 +177,10 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
   const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
-  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + banque + ventesFermees
-    + ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.'
+  const aVenir = ventesOuvertes
+    ? ' L’écran « Banque » de son espace viendra ensuite.'
+    : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.'
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + banque + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
@@ -210,3 +216,16 @@ export const LIBELLE_MOTIF_CONTRE_PASSATION = `Motif d’annulation, que la plat
 
 export const LIBELLE_NOTE_DECLARATION =
   `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${LE_CLIENT_VENTES} la lit`
+
+// ET CE QUE LE MÊME CLIENT LIT AU-DESSUS DU CHAMP, quand c'est LUI qui écrit (« Mes ventes », espace client, étape P4a) : ces
+// textes ne figurent pas sur la facture, et ton cabinet les lit aussi. On tutoie le client (lib/resteAEnvoyer.ts).
+const TON_CABINET = 'ton cabinet'
+
+export const LIBELLE_NOTES_FACTURE_CLIENT = `Notes (elles ne figurent pas sur la facture, mais ${TON_CABINET} les lit aussi)`
+
+export const LIBELLE_MOTIF_AVOIR_CLIENT = `Motif (il ne figure pas sur l’avoir, mais ${TON_CABINET} le lit aussi)`
+
+export const LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT = `Motif d’annulation, que la plateforme portera et que ${TON_CABINET} lit aussi`
+
+export const LIBELLE_NOTE_DECLARATION_CLIENT =
+  `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${TON_CABINET} la lit aussi`

@@ -19515,3 +19515,84 @@ action ouverte à « Ventes » que la phrase tait, ou une action du cabinet qu'e
 plafond dit est relu dans `send-email`. Deux mutations mordent (un geste retiré de la phrase, le plafond à 31). (2)
 `PlateformeClientModal` : « Laissé vide, le secret enregistré est gardé tant que les deux adresses restent les mêmes :
 il ne s'affiche jamais. Une adresse changée le fait ressaisir. »
+
+**MISE EN LIGNE (la session, 11/10/2026).** La demande de fusion #138 fusionnée à 01 h 57 (Paris) ; le site sert le
+paquet de la barrière (`index-DkoMoj4m.js`). Les quatre fonctions redéployées entre 01 h 59 et 02 h 18 : `send-email` v7
+et `superpdp-credentials` v7 (`verify_jwt` faux), `superpdp-emit` v14 et `plateforme-agreee` v8 (`verify_jwt` vrai),
+chaque valeur lue dans `config.toml` et confrontée à `list_edge_functions`. Chaque version en place comparée au dépôt avant
+d'être écrasée ; les fichiers envoyés en JSON dont tout caractère hors ASCII est échappé (`\uXXXX`, les bordures en suites
+de `\u2500` comptées, les échappements de la source doublés) ; le texte ENVOYÉ, relu dans le journal de la session, égal
+au dépôt (zéro différence ; 3 513 lignes pour `plateforme-agreee`) ; puis l'aller-retour (`allerretour.py`, zéro
+différence résiduelle) et un appel sans session refusé (401). Aucune fonction n'a été appelée avec une session : le
+premier essai réel reste celui du cabinet.
+
+### 11/10/2026 — « MES VENTES › FACTURES » : L'ONGLET FACTURES OUVERT AU CLIENT « VENTES » — ESPACE CLIENT, ÉTAPE P4a
+
+(Écrans seulement : aucune migration, aucune Edge Function. Neufs : `src/lib/espaceVentes.ts`, `src/pages/ClientVentes.tsx`
+et leurs tests, `src/espaceClientVentes.test.tsx`, `src/pages/dossier/FacturesTabClient.test.tsx`. Modifiés : App.tsx,
+Layout.tsx, DossierDetail.tsx, FacturesTab et ses cinq fenêtres, BilanReleveStatuts, PlateformeClientModal,
+`lib/droitsAcces.ts` ; les montages des tests existants reçoivent `espace="cabinet"` ; `droitsAcces.test.ts`,
+`AccesTab.casesOuvertes.test.tsx`, `ecrituresVerifiees.test.ts` ; le banc `outils/captures/`.) Le premier tiers de P4
+(« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §2.1, §2.4, §5.1 à §5.4, ligne P4 du §9),
+après P2 (la base) et P3 (les fonctions).
+
+**LA ROUTE ET L'ENTRÉE.** `/mes-ventes` et « Mes ventes » (court « Ventes », entre « Mes pièces » et « Mes informations »)
+n'existent que si `mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier, dossierActifId).ventes)` :
+la case de la société AFFICHÉE, et seulement les ventes du client en base — avant elles, la RLS rendrait les factures
+vides sans erreur. Sans elle, l'adresse mène à l'accueil ; changer de société écran ouvert retire l'entrée et quitte
+l'écran (éprouvé de bout en bout : vrai AuthProvider, vraie coque, vrai portier). À 390 px, cinq entrées tiennent (banc :
+contrôle neuf de la barre du bas, qui est en `position: fixed` et échappait aux autres règles) : « Mes informations »
+reste dans la barre.
+
+**L'ÉCRAN.** `ClientVentes` lit, en une vague, la société (sept colonnes : nom, SIRET, adresse, statut de TVA, article,
+case du numéro, débits) et les cases à la BASE (`droits_sur_le_dossier`, par `lireLesDroitsVentes`, consommateur nommé
+du scanner des écritures) — comme « Ma simulation » relit « Banque » : l'application installée reste ouverte des jours.
+Lecture refusée, société absente, droits illisibles, « Ventes » retirée : aucun geste, le motif dit. « Banque » passée à
+l'onglet est celle de la base.
+
+**UNE PROPRIÉTÉ, OBLIGATOIRE.** `espace` sur FacturesTab et ses fenêtres, en unions typées : `onAdresseUpdated` n'existe
+qu'au cabinet, `banque` qu'au client — un écran qui oublie de dire qui regarde ne compile pas. Côté cabinet, rien ne
+change (tests existants : la propriété seule). FactureApercu et EnvoyerEmailModal n'en ont pas besoin : aucun de leurs
+mots ne désigne le titulaire ; le refus du plafond (429) est déjà en français et tutoyé par `send-email`.
+
+**CE QUI EST RETIRÉ AU CLIENT.** Enregistrer l'adresse de l'émetteur comme celle du dossier (la case, et l'écriture gardée
+par `onAdresseUpdated` nul) ; une adresse absente se dit (« Ton cabinet n’a pas encore enregistré l’adresse de ta
+société… »). Le statut de TVA et la case du numéro ne s'offraient pas dans ces écrans ; un statut à préciser se dit :
+« Ton cabinet doit d’abord préciser ton statut de TVA : tes factures ne peuvent pas partir. » La liaison des plateformes
+n'y est pas (P4b, EC-Q4) ; le client voit leur état, et qu'aucune n'est reliée (« c’est ton cabinet qui la relie »).
+
+**LA BANQUE.** Sans « Banque », la fenêtre des encaissements ne lit ni le relevé, ni les règlements groupés, ni les pièces
+(rien n'en dépend que les propositions) ; elle le dit et l'encaissement s'enregistre sans mouvement ; le mouvement qu'un
+encaissement porte déjà se dit « Un mouvement du relevé, que ton accès ne montre pas », jamais « — ». Le paramètre
+`gereLaBanque` du module d2 reçoit le vrai droit.
+
+**LES MOTS.** Les phrases d'écran ont leur variante tutoyée à côté d'elles. Celles des modules partagés ne peuvent pas
+changer à la source — plusieurs vivent dans des copies gardées (bloc `statutTva`, générateur CII) — : `pourLEspace` les
+réécrit à l'affichage, pour le client seul, quinze phrases, chacune confrontée au texte que son module PRODUIT (une
+phrase changée à la source ne se réécrirait plus en silence). Les erreurs rendues par la base ou une fonction passent par
+la même réécriture. « Le client » désigne toujours l'acheteur (les modules partagés le nomment ainsi) ; le titulaire
+n'est jamais « le client ». Les quatre libellés des textes partagés ont leur version client (« ton cabinet … lit aussi »).
+**Le garde des mots** (`MOTS_DU_CABINET`) : un onglet, « la plateforme (agréée) du client », « celle du client »,
+« demande… au client », « le client qui porte », « le cabinet ou le client », le vouvoiement (vous, votre, vos, et les
+verbes en -ez, sauf chez et assez). Il lit tout le texte rendu, titres, textes d'aide et confirmations compris, dans douze
+états de l'onglet et de ses vraies fenêtres ; son DÉFAUT PLANTÉ : les mêmes états montés pour le cabinet, où il trouve
+chaque fois au moins une forme.
+
+**LA PHRASE DE L'ONGLET ACCÈS** tombait comme son test l'avait prévu (« Le jour où « Mes ventes » arrive, ce test tombe ») :
+avec les ventes ouvertes, « Ventes » ouvre au client « Mes ventes » ; relier sa plateforme reste dit « sans écran
+encore » ; « L’écran « Banque » de son espace viendra ensuite. »
+
+**LES PREUVES.** Suite entière : 8 661 tests. Trente-quatre mutations ciblées, toutes vues (gardes de la route et de
+l'entrée, drapeau, banque, droits de la base, adresse, propriété passée à chaque fenêtre, réécriture, garde des mots, mots
+d'écran, phrase des cases, lecture qui lève). Banc (clé `banc-client-ventes` du faux Supabase : le compte du banc aussi
+rattaché à l'atelier d7) : la passe `client`, 0 à 390, 720, 1024, 1280 et 1440 ; la passe `client-banque`, 0 à 390 et
+1440 ; le cabinet, 0 aux cinq mêmes largeurs.
+
+**CE QUI RESTE.** P4b (cartes de connexion du client, sous EC-Q4 ; tuiles « À encaisser » et « À déclarer » de l'accueil),
+P4c (« par le client » et le mandataire, EC-Q2). EC-Q3 avant tout usage réel. Le détail d'une transmission abandonnée
+par le client, écrit par la base (« … par le client »), s'affiche tel quel.
+
+**COMPLÉTÉ À L'INTÉGRATION (la session, 11/10/2026).** Trois commentaires de `src/lib/types.ts` disaient encore « Le
+client n'en voit rien » des encaissements, de leurs déclarations et des statuts lus sur la plateforme : vrai avant P2, que
+la case « Ventes » ouvre en lecture ; ils disent désormais que le client qui porte « Ventes » les lit. Le premier nomme
+aussi `annuler_encaissement`, qui écrit la contre-passation au même registre.

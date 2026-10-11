@@ -91,6 +91,13 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus FERME la simulation, ' +
       'avec son motif',
   },
+  lireLesDroitsVentes: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Mes ventes » ' +
+      '(P4a). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une réponse illisible, ne rend ' +
+      'AUCUN droit, et l’écran n’offre alors aucun geste, avec son motif',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {

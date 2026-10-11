@@ -4,7 +4,8 @@ import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, menti
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
-import { LIBELLE_NOTES_FACTURE } from '../../lib/droitsAcces'
+import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
+import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
 import {
   apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
@@ -25,7 +26,14 @@ function ligneVide(statut: StatutTva | null): LigneEdit {
   return { designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0' }
 }
 
-interface Props {
+// QUI RÉDIGE LA FACTURE (espace client, étape P4a) : le cabinet, qui peut aussi enregistrer l'adresse de l'émetteur comme
+// celle du dossier, ou le client « Ventes », qui ne le peut pas — l'adresse du dossier, c'est le cabinet qui la renseigne.
+// Le reste est le même formulaire, par la même fonction (`enregistrer_facture`, ouverte au client par P2).
+type QuiRedige =
+  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
+  | { espace: 'client' }
+
+type Props = QuiRedige & {
   dossierId: string
   dossierNom: string
   dossierSiret: string | null
@@ -38,7 +46,6 @@ interface Props {
   // L'option du dossier pour le paiement de la TVA d'après les débits : la validation la fige sur la facture.
   tvaSurDebits: boolean
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
-  onAdresseUpdated: (adresse: string) => void
   onClose: () => void
   onSaved: () => void
 }
@@ -47,7 +54,11 @@ interface Props {
 // qui ouvre FactureApercu à la place dans ce cas) : toute la logique ici suppose qu'on peut encore
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
-export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, facture, onAdresseUpdated, onClose, onSaved }: Props) {
+export default function FactureFormModal(props: Props) {
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, facture, onClose, onSaved } = props
+  const { espace } = props
+  // Le geste du cabinet seul : retenir l'adresse de l'émetteur comme celle du dossier. Nul pour le client.
+  const onAdresseUpdated = props.espace === 'cabinet' ? props.onAdresseUpdated : null
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
@@ -227,7 +238,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
     // validée : la validation se confirme, et la confirmation dit ce qu'on perd.
     if (statutCible === 'validee' && nonTransmissible) {
-      const premier = nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.'
+      const premier = pourLEspace(espace, nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.')
       const n = nonTransmissible.refus.length + nonTransmissible.ailleurs
       const points = n === 1 ? 'un point à compléter :' : `${n} points à compléter, dont :`
       if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n`
@@ -249,7 +260,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
 
       // Hors transaction à dessein : mémoriser l'adresse sur le dossier est un confort, sans rapport
       // avec l'intégrité de la facture, et son échec ne doit pas la remettre en cause.
-      if (enregistrerAdresseDossier && emetteurAdresse.trim()) {
+      if (onAdresseUpdated && enregistrerAdresseDossier && emetteurAdresse.trim()) {
         const { error: adresseError } = await supabase.from('dossiers').update({ adresse: emetteurAdresse.trim() }).eq('id', dossierId)
         if (!adresseError) onAdresseUpdated(emetteurAdresse.trim())
       }
@@ -291,10 +302,17 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
             <div className="field">
               <label htmlFor="emetteur-adresse">Adresse de l'émetteur ({dossierNom}{dossierSiret ? ` — SIRET ${dossierSiret}` : ''})</label>
               <textarea id="emetteur-adresse" rows={2} value={emetteurAdresse} onChange={(e) => setEmetteurAdresse(e.target.value)} placeholder="Numéro, rue, code postal, ville" />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontWeight: 400 }}>
-                <input type="checkbox" checked={enregistrerAdresseDossier} onChange={(e) => setEnregistrerAdresseDossier(e.target.checked)} />
-                <span className="muted" style={{ fontSize: '0.8rem' }}>Enregistrer comme adresse du dossier (proposée par défaut la prochaine fois)</span>
-              </label>
+              {onAdresseUpdated ? (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontWeight: 400 }}>
+                  <input type="checkbox" checked={enregistrerAdresseDossier} onChange={(e) => setEnregistrerAdresseDossier(e.target.checked)} />
+                  <span className="muted" style={{ fontSize: '0.8rem' }}>Enregistrer comme adresse du dossier (proposée par défaut la prochaine fois)</span>
+                </label>
+              ) : !dossierAdresse?.trim() && (
+                <span className="muted" style={{ fontSize: '0.8rem' }}>
+                  Ton cabinet n’a pas encore enregistré l’adresse de ta société : saisis-la ici pour cette facture, et
+                  demande-lui de l’enregistrer pour les suivantes.
+                </span>
+              )}
             </div>
 
             <div className="field-row">
@@ -442,7 +460,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
             )}
             {refusMentions.length > 0 && (
               <div className="error-text" role="alert">
-                {refusMentions.map((r) => <p key={r} style={{ margin: '0 0 4px' }}>{r}</p>)}
+                {refusMentions.map((r) => <p key={r} style={{ margin: '0 0 4px' }}>{pourLEspace(espace, r)}</p>)}
               </div>
             )}
 
@@ -483,12 +501,15 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
                   une ligne porte une désignation et une quantité positive.
                 </p>
               )}
-              {refusTaxe && <p className="error-text">{refusTaxe}</p>}
+              {refusTaxe && <p className="error-text">{pourLEspace(espace, refusTaxe)}</p>}
               {zeroSansArticle && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>
-                  Une ligne à 0 % : sur un dossier redevable, l’exonération se justifie par son article. Choisis-le dans
-                  l’onglet TVA du dossier, ou corrige le taux — sans lui, la facture ne peut pas être transmise à une
-                  plateforme.
+                  {espace === 'client'
+                    ? 'Une ligne à 0 % : pour une société redevable, l’exonération se justifie par son article. Ton cabinet '
+                      + 'doit le préciser, ou corrige le taux — sans lui, la facture ne peut pas être transmise à une plateforme.'
+                    : 'Une ligne à 0 % : sur un dossier redevable, l’exonération se justifie par son article. Choisis-le dans '
+                      + 'l’onglet TVA du dossier, ou corrige le taux — sans lui, la facture ne peut pas être transmise à une '
+                      + 'plateforme.'}
                 </p>
               )}
             </div>
@@ -505,7 +526,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               <span className="muted" style={{ fontSize: '0.78rem' }}>
                 Proposées par défaut selon le statut de TVA du dossier — à vérifier et ajuster, ce n'est pas une garantie de conformité complète.
               </span>
-              {manqueMention && <p className="alerte-tva" style={{ marginTop: 8 }}>{manqueMention}</p>}
+              {manqueMention && <p className="alerte-tva" style={{ marginTop: 8 }}>{pourLEspace(espace, manqueMention)}</p>}
               {mentionAbsente && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>
                   La mention « {mentionAbsente} » manque aux mentions légales.{' '}
@@ -525,17 +546,20 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
             {/* Le client qui porte la case « Ventes » lit les notes (migration ventes_du_client) : le libellé le dit
                 au-dessus du champ, condition du cabinet à son accord (lib/droitsAcces.ts). */}
             <div className="field">
-              <label htmlFor="notes">{LIBELLE_NOTES_FACTURE}</label>
+              <label htmlFor="notes">{espace === 'client' ? LIBELLE_NOTES_FACTURE_CLIENT : LIBELLE_NOTES_FACTURE}</label>
               <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
             {debitsImprimes && (
               <p className="muted">
-                La facture portera l’option pour le paiement de la TVA d’après les débits, que le dossier a prise (onglet TVA) :
-                la validation la fige.
+                {espace === 'client'
+                  ? 'La facture portera l’option pour le paiement de la TVA d’après les débits, que ta société a prise (ton '
+                    + 'cabinet l’a enregistrée) : la validation la fige.'
+                  : 'La facture portera l’option pour le paiement de la TVA d’après les débits, que le dossier a prise (onglet '
+                    + 'TVA) : la validation la fige.'}
               </p>
             )}
-            {apercu?.cas === 'hors_plateforme' && <p className="muted">{apercu.message}</p>}
+            {apercu?.cas === 'hors_plateforme' && <p className="muted">{pourLEspace(espace, apercu.message)}</p>}
             {apercu?.cas === 'transmissible' && (
               <p className="muted">Rien n’empêchera cette facture, une fois validée, de partir par une plateforme agréée.</p>
             )}
@@ -543,14 +567,14 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
               <div className="alerte-tva" style={{ marginTop: 8 }}>
                 <strong>Pour partir par une plateforme agréée</strong>, cette facture devra encore :
                 <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
-                  {apercu.refus.map((r) => <li key={r}>{r}</li>)}
+                  {apercu.refus.map((r) => <li key={r}>{pourLEspace(espace, r)}</li>)}
                   {apercu.ailleurs > 0 && <li>régler la TVA, comme le formulaire le signale plus haut.</li>}
                 </ul>
                 Une facture validée ne se corrige plus que par un avoir : complète-la avant de la valider si elle doit partir ainsi.
               </div>
             )}
 
-            {error && <p className="error-text">{error}</p>}
+            {error && <p className="error-text">{pourLEspaceSiTexte(espace, error)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>

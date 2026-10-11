@@ -123,25 +123,37 @@ describe('le module, la migration et les écrans disent la même chose', () => {
 
   // « Le client ne voit aucun changement » est une AFFIRMATION de l'onglet Accès : elle tient tant qu'aucun écran du client
   // ne lit un droit. Le jour où « Mes ventes » ou « Ma banque » arrive, ce test tombe, et la phrase avec lui.
-  // DEPUIS L'ÉTAPE P7, UN SEUL ÉCRAN EN LIT UN : « Ma simulation » lit la case « Banque », et seulement derrière
-  // `COUVERTURE_EXPORTEE` — ce qu'espaceClientAvantCouverture.test.tsx (drapeau faux) et
-  // ClientSimulation.banque.test.tsx (vrai) éprouvent sur l'écran rendu ; la phrase de l'onglet suit le même drapeau
-  // (test suivant).
-  it('les écrans du client sont ceux que la phrase décrit, et seule « Ma simulation » lit un droit : « Banque », derrière le drapeau', () => {
+  // DEPUIS L'ÉTAPE P7, « Ma simulation » lit la case « Banque », et seulement derrière `COUVERTURE_EXPORTEE` — ce
+  // qu'espaceClientAvantCouverture.test.tsx (drapeau faux) et ClientSimulation.banque.test.tsx (vrai) éprouvent sur l'écran
+  // rendu. DEPUIS L'ÉTAPE P4a, « Mes ventes » lit la case « Ventes » — sa route et son entrée, derrière
+  // `VENTES_DU_CLIENT_EXPORTEES` (lib/espaceVentes.ts, `mesVentesOuvertes`) —, et l'écran relit ses cases à la base. La phrase
+  // de l'onglet suit les deux drapeaux (tests suivants).
+  it('les écrans du client sont ceux que la phrase décrit : « Ma simulation » lit « Banque », « Mes ventes » « Ventes », chacun derrière son drapeau', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
+      '/mes-ventes ClientVentes',
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
-    expect(ecransClient.sort()).toEqual(['ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx'])
-    for (const fichier of [...ecransClient.filter((f) => f !== 'ClientSimulation.tsx').map((f) => `src/pages/${f}`), 'src/components/Layout.tsx']) {
+    expect(ecransClient.sort()).toEqual(['ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx'])
+    for (const fichier of ['ClientHome.tsx', 'ClientInformations.tsx', 'ClientUpload.tsx'].map((f) => `src/pages/${f}`)) {
       const texte = readFileSync(resolve(process.cwd(), fichier), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|droitsAcces/)
     }
     const simulation = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
     expect(simulation).toContain('simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
     expect(simulation).not.toMatch(/droit_ventes|droit_banque|\.ventes\b/)
+    // La route et l'entrée de « Mes ventes » lisent la case « Ventes » de la société AFFICHÉE, derrière le drapeau, et rien
+    // d'autre ; l'écran, lui, relit ses cases à la base et ne lit pas celles d'AuthContext.
+    const gardeVentes = 'mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)'
+    expect(app).toContain(`{${gardeVentes} && <Route path="/mes-ventes" element={<ClientVentes />} />}`)
+    const layout = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
+    expect(layout).toContain(gardeVentes)
+    expect(layout).not.toMatch(/droit_ventes|droit_banque|\.banque\b/)
+    const ventes = readFileSync(resolve(process.cwd(), 'src/pages/ClientVentes.tsx'), 'utf8')
+    expect(ventes).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    expect(ventes).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
   })
 
   it('la phrase de l’onglet dit ce qu’un accès donne — dans les deux états du drapeau de la banque', () => {
@@ -200,10 +212,11 @@ const GESTES_AVEC_BANQUE: Record<string, readonly string[]> = {
 // table attendue est confrontée au texte des fonctions par droitsDeLAppelantCopie.test.ts.
 type FonctionDeLaVente = keyof typeof QUI_PEUT_QUOI_ATTENDU
 const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente, string])[]> = {
-  'relier lui-même sa plateforme agréée et Super PDP et voir leur état': [
-    ['plateforme-agreee', 'statut'], ['plateforme-agreee', 'enregistrer'], ['plateforme-agreee', 'tester'],
-    ['plateforme-agreee', 'retirer'], ['superpdp-credentials', 'status'], ['superpdp-credentials', 'save'],
-    ['superpdp-credentials', 'remove'],
+  // Voir leur état : « Mes ventes » le montre depuis l'étape P4a ; les relier reste sans écran (P4b, sous EC-Q4).
+  'y voir l’état de sa plateforme agréée et de Super PDP': [['plateforme-agreee', 'statut'], ['superpdp-credentials', 'status']],
+  'sans écran encore, relier lui-même sa plateforme agréée et Super PDP': [
+    ['plateforme-agreee', 'enregistrer'], ['plateforme-agreee', 'tester'], ['plateforme-agreee', 'retirer'],
+    ['superpdp-credentials', 'save'], ['superpdp-credentials', 'remove'],
   ],
   'y transmettre une facture et en suivre la transmission': [
     ['plateforme-agreee', 'deposer'], ['plateforme-agreee', 'suivre'], ['superpdp-emit', 'envoyer'],
@@ -237,9 +250,13 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
       return
     }
     expect(suite).not.toContain('cocher une case ne change pas')
-    expect(suite.endsWith(' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')).toBe(true)
-    // Chaque étape ouverte se dit « par la base et sans écran encore » : sa session lit et agit, aucun écran ne le montre.
-    expect(suite.match(/par la base et sans écran encore/g)?.length).toBe(Number(banque) + Number(ventes))
+    // Depuis l'étape P4a, « Mes ventes » existe avec les ventes ouvertes : seul l'écran « Banque » reste à venir.
+    expect(suite.endsWith(ventes
+      ? ' L’écran « Banque » de son espace viendra ensuite.'
+      : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')).toBe(true)
+    // La banque ouverte se dit « par la base et sans écran encore » : sa session lit et agit, aucun écran ne le montre. Les
+    // ventes, elles, ont « Mes ventes ».
+    expect(suite.match(/par la base et sans écran encore/g)?.length ?? 0).toBe(Number(banque))
 
     if (banque) {
       expect(suite).toContain('« Banque » permet déjà au client de voir sa simulation')
@@ -250,7 +267,7 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
     }
 
     if (ventes) {
-      expect(suite).toContain('« Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes')
+      expect(suite).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
       for (const lu of Object.keys(LU_AVEC_VENTES)) expect(suite).toContain(lu)
       for (const geste of Object.keys(GESTES_AVEC_VENTES)) expect(suite).toContain(geste)
       for (const geste of Object.keys(GESTES_DES_FONCTIONS)) expect(suite).toContain(geste)

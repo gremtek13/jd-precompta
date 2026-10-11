@@ -1058,7 +1058,8 @@ export interface FactureLigne {
 // Un encaissement d'une facture émise validée (`encaissements_factures`, ligne 28.5, étape d1), ou l'ANNULATION d'un
 // encaissement déclaré : montant négatif, `annule_id` et `motif` renseignés — et seulement elle. Immuable : jamais
 // déclaré, il se RETIRE (`retire_le`, `retire_par`) et reste au registre ; déclaré, il se contre-passe. Le cabinet le
-// lit ; seules `enregistrer_encaissement` et `retirer_encaissement` l'écrivent. Le client n'en voit rien.
+// lit, et le client qui porte « Ventes » depuis l'étape P2 ; seules `enregistrer_encaissement` et `retirer_encaissement`
+// l'écrivent (et `annuler_encaissement`, une contre-passation).
 export type MoyenEncaissement =
   | 'virement' | 'cheque' | 'carte' | 'prelevement' | 'especes' | 'effet' | 'compensation' | 'autre'
 export interface EncaissementFacture {
@@ -1093,8 +1094,8 @@ export interface EncaissementFactureTaux {
 // Une déclaration du statut « Encaissée » d'un encaissement, ou de sa contre-passation (`transmissions_encaissements`,
 // ligne 28.5, étape d4). `manuel` : saisie sur la plateforme par le cabinet ou le client, que l'application garde —
 // ni flux ni fichier, née déposée ; `plateforme` et `superpdp` : par une API (étapes d6 et d8). Une seule ACTIVE par
-// encaissement (envoi, depose, accepte), et c'est elle qui le dit déclaré. Le cabinet la lit ; seule
-// `declarer_encaissement_hors_application` l'écrit depuis le navigateur. Le client n'en voit rien.
+// encaissement (envoi, depose, accepte), et c'est elle qui le dit déclaré. Le cabinet la lit, et le client qui porte
+// « Ventes » depuis l'étape P2 ; seule `declarer_encaissement_hors_application` l'écrit depuis le navigateur.
 export type CanalDeclaration = 'manuel' | 'plateforme' | 'superpdp'
 export interface TransmissionEncaissement {
   id: string
@@ -1119,8 +1120,8 @@ export interface TransmissionEncaissement {
 // Un statut du cycle de vie d'une facture émise, lu sur la plateforme du client (`statuts_factures_recus`, ligne 28.5,
 // étape d7) et rattaché à une facture validée du dossier : son code (tableau 8 des spécifications externes de la DGFiP)
 // et ce que le message dit, l'hôte et le flux qui l'ont porté, qui l'a lu et quand. Un 210 ou un 213 fait refuser
-// l'encaissement, la déclaration et la transmission de la facture. Le cabinet le lit ; seule plateforme-agreee l'écrit,
-// une fois par flux ; rien ne s'y modifie. Le client n'en voit rien.
+// l'encaissement, la déclaration et la transmission de la facture. Le cabinet le lit, et le client qui porte « Ventes »
+// depuis l'étape P2 ; seule plateforme-agreee l'écrit, une fois par flux ; rien ne s'y modifie.
 export interface StatutFactureRecu {
   id: string
   dossier_id: string

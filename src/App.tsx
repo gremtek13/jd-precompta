@@ -11,6 +11,10 @@ import ClientHome from './pages/ClientHome'
 import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
+import ClientVentes from './pages/ClientVentes'
+import { droitsSur } from './lib/droitsAcces'
+import { mesVentesOuvertes } from './lib/espaceVentes'
+import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
 import CabinetBrandingPage from './pages/CabinetBrandingPage'
@@ -48,7 +52,7 @@ function LienSansEffet({ avis, email, onContinuer, onDeconnexion }: {
 function Gate() {
   const {
     session, role, isSuperAdmin, estChef, loading, signOut,
-    recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien,
+    recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien, dossierActifId, droitsParDossier,
   } = useAuth()
   const navigate = useNavigate()
 
@@ -96,6 +100,10 @@ function Gate() {
             <Route path="/mes-pieces" element={<ClientUpload />} />
             <Route path="/mes-informations" element={<ClientInformations />} />
             <Route path="/ma-simulation" element={<ClientSimulation />} />
+            {/* « Mes ventes » (espace client, étape P4a) : seulement si la société AFFICHÉE porte la case « Ventes » — un client
+                à plusieurs sociétés peut l'avoir sur l'une et pas sur l'autre. Sans elle, l'adresse renvoie à l'accueil, et
+                changer de société pour une qui ne la porte pas y ramène aussi ; la base refuse de toute façon (P2). */}
+            {mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes) && <Route path="/mes-ventes" element={<ClientVentes />} />}
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
         )}

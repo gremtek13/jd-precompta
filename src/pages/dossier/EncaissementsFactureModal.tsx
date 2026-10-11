@@ -3,7 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
-import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
+import {
+  LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT, LIBELLE_NOTE_DECLARATION, LIBELLE_NOTE_DECLARATION_CLIENT,
+} from '../../lib/droitsAcces'
+import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
+import type { LectureComplete } from '../../lib/lectureComplete'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
   ETATS_DECLARANTS, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts, contrePassationDe, echeanceDeDeclaration,
@@ -27,7 +31,14 @@ import type {
   EncaissementFacture, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
 
-interface Props {
+// QUI REGARDE (espace client, étape P4a) : le cabinet, qui porte les deux droits (`gere_la_banque` en base) ; ou le client
+// « Ventes », avec ou sans « Banque » sur la société affichée. Les mêmes gestes, par les mêmes fonctions (P2 les lui
+// ouvre) ; mais sans « Banque », la fenêtre ne lit ni le relevé ni ce qui en dépend — la base les lui refuse, et une
+// lecture que la RLS refuse rend ZÉRO ligne, sans erreur : « aucun mouvement ne se propose » serait une affirmation fausse
+// (conception, §5.4). Elle le DIT, et l'encaissement s'enregistre sans mouvement.
+type QuiRegarde = { espace: 'cabinet' } | { espace: 'client'; banque: boolean }
+
+type Props = QuiRegarde & {
   dossierId: string
   facture: FactureEmise
   // Le statut de TVA du dossier aujourd'hui : l'obligation et l'échéance en dépendent, et la facture ne le fige pas.
@@ -35,6 +46,12 @@ interface Props {
   onClose: () => void
   // L'onglet relit ses encaissements : sa pastille doit dire ce que la fenêtre vient d'écrire.
   onUpdated: () => void
+}
+
+// Ce que la fenêtre ne lit PAS sans le droit « Banque » : rien ne s'en sert alors (aucune proposition, aucun mouvement
+// désigné), et la lecture que la base refuserait n'est pas demandée.
+function pasLue<T>(): Promise<LectureComplete<T>> {
+  return Promise.resolve({ lignes: [], complete: true, motif: null })
 }
 
 // LES ENCAISSEMENTS D'UNE FACTURE ÉMISE (ligne 28.5, étapes d3 et d4) : ce que la facture doit déclarer, ce qui en reste
@@ -101,7 +118,9 @@ const CONSEQUENCE_DECLARATIONS = 'Rien n’est proposé — ni enregistrer, ni r
 const CONSEQUENCE_STATUTS = 'Rien n’est proposé — ni enregistrer, ni déclarer : un refus de l’acheteur qu’on ne verrait '
   + 'pas laisserait proposer l’encaissement ou la déclaration d’une facture refusée. Rouvre cette fenêtre.'
 
-async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: Lu; manques: Manque[] }> {
+async function lireDonnees(
+  dossierId: string, factureId: string, espace: EspaceVentes, gereLaBanque: boolean,
+): Promise<{ lu: Lu; manques: Manque[] }> {
   const [
     factures, lignes, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces, declarations, statuts,
   ] = await Promise.all([
@@ -133,19 +152,20 @@ async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: 
       supabase.from('encaissements_factures_taux').select('encaissement_id, dossier_id, taux, montant', { count: 'exact' })
         .eq('dossier_id', dossierId).order('encaissement_id').order('taux').range(debut, fin),
     ),
-    lireTout<MouvementEcran>((debut, fin) =>
+    // Le relevé, ses règlements groupés et les pièces qu'il paie : de quoi PROPOSER un mouvement, ce qui demande « Banque ».
+    gereLaBanque ? lireTout<MouvementEcran>((debut, fin) =>
       supabase.from('lignes_bancaires')
         .select('id, dossier_id, date, montant, libelle, libelle_brut, statut, piece_id, reglement_groupe, prelevement_personnel, compte_bilan, emprunt_id, declaration_tva_id, cotisation_id', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
-    ),
-    lireTout<ReglementEcran>((debut, fin) =>
+    ) : pasLue<MouvementEcran>(),
+    gereLaBanque ? lireTout<ReglementEcran>((debut, fin) =>
       supabase.from('reglements_groupes').select('id, ligne_bancaire_id, piece_id, montant', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    ),
-    lireTout<PieceEcran>((debut, fin) =>
+    ) : pasLue<ReglementEcran>(),
+    gereLaBanque ? lireTout<PieceEcran>((debut, fin) =>
       supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, tiers, nom_fichier', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    ),
+    ) : pasLue<PieceEcran>(),
     // Les déclarations du DOSSIER, échouées et rejetées comprises : le module décide lui-même de ce qui compte.
     lireTout<DeclarationEcran>((debut, fin) =>
       supabase.from('transmissions_encaissements')
@@ -173,7 +193,7 @@ async function lireDonnees(dossierId: string, factureId: string): Promise<{ lu: 
   noter('Les règlements groupés', 'lus', reglements.complete, reglements.motif)
   noter('Les pièces du dossier', 'lues', pieces.complete, pieces.motif)
   noter('Les déclarations des encaissements', 'lues', declarations.complete, declarations.motif, CONSEQUENCE_DECLARATIONS)
-  noter('Les statuts lus sur la plateforme du client', 'lus', statuts.complete, statuts.motif, CONSEQUENCE_STATUTS)
+  noter(pourLEspace(espace, 'Les statuts lus sur la plateforme du client'), 'lus', statuts.complete, statuts.motif, CONSEQUENCE_STATUTS)
   return {
     lu: {
       factures: factures.lignes, lignes: lignes.lignes, transmissions: transmissions.lignes, evenements: evenements.lignes,
@@ -292,7 +312,11 @@ function partsDeLEncaissement(parts: readonly PartLue[], encaissementId: string)
 const messageDeclaration = (cle: (typeof REFUS_DECLARATION)[number]['cle']) =>
   (REFUS_DECLARATION.find((r) => r.cle === cle) as (typeof REFUS_DECLARATION)[number]).modele
 
-export default function EncaissementsFactureModal({ dossierId, facture: factureOuverte, statutTva, onClose, onUpdated }: Props) {
+export default function EncaissementsFactureModal(props: Props) {
+  const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace } = props
+  // Le droit « Banque » de qui regarde : le cabinet le porte toujours ; le client, selon la société affichée.
+  const gereLaBanque = props.espace === 'cabinet' || props.banque
+  const dire = (texte: string) => pourLEspace(espace, texte)
   const [lu, setLu] = useState<Lu | null>(null)
   const [manques, setManques] = useState<Manque[]>([])
   const [formulaire, setFormulaire] = useState<Formulaire | null>(null)
@@ -309,7 +333,7 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
   // `vider` : le formulaire repart de ce qui vient d'être lu — à l'ouverture, et après un geste réussi, quand le reste
   // et les propositions ont changé. Après un refus de la base, la saisie reste, pour qu'on la corrige.
   async function lire(vider: boolean) {
-    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id), dossierId, factureOuverte.id)
+    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque), dossierId, factureOuverte.id)
     setManques(etat.manques)
     setLu(etat.lu)
     if (vider && etat.formulaire !== undefined) setFormulaire(etat.formulaire)
@@ -319,7 +343,7 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
   // qu'un formulaire existe. Une fenêtre fermée avant la réponse ne l'écrit pas.
   useEffect(() => {
     let fermee = false
-    lireDonnees(dossierId, factureOuverte.id).then((r) => {
+    lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque).then((r) => {
       if (fermee) return
       const etat = etatLu(r, dossierId, factureOuverte.id)
       setManques(etat.manques)
@@ -332,7 +356,7 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
       setConnexionErreur(r.erreur)
     })
     return () => { fermee = true }
-  }, [dossierId, factureOuverte.id])
+  }, [dossierId, factureOuverte.id, espace, gereLaBanque])
 
   async function lireConnexion() {
     const r = await lireConnexionPlateforme(dossierId)
@@ -422,13 +446,14 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
     const hote = plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements) ?? '—'
     const dont = partsEnMots(partsDeLEncaissement(lu.parts, e.id))
     const contrePassation = e.annule_id != null
+    const client = espace === 'client'
     if (!window.confirm(
-      `Vous déclarez avoir saisi sur ${hote} le statut « Encaissée » de ${nature} : `
+      `${client ? 'Tu déclares' : 'Vous déclarez'} avoir saisi sur ${hote} le statut « Encaissée » de ${nature} : `
       + (contrePassation
         ? `${formatMoney(e.montant)} décaissés le ${formatDate(e.date_encaissement)}, dont ${dont}, avec le motif d’annulation « ${e.motif ?? ''} ». `
         : `${formatMoney(e.montant)} encaissés le ${formatDate(e.date_encaissement)}, dont ${dont}. `)
       + 'Cette mention ne s’efface pas.\n\n'
-      + 'Ne confirmez qu’une fois le statut saisi sur la plateforme : une déclaration inscrite ici ne se retire plus, et une '
+      + `${client ? 'Ne confirme' : 'Ne confirmez'} qu’une fois le statut saisi sur la plateforme : une déclaration inscrite ici ne se retire plus, et une `
       + 'erreur ne se corrige que par une contre-passation, déclarée à son tour.',
     )) return
     verrou.current = true
@@ -523,8 +548,9 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
       <div className="card" style={{ width: 'min(820px, 95vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Encaissements de la facture {facture.numero}</h2>
         <p className="muted" style={{ marginTop: -8 }}>
-          {facture.tiers_nom}, du {formatDate(facture.date_emission)}, {formatMoney(facture.montant_ttc)} TTC. Un encaissement
-          s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.
+          {facture.tiers_nom}, du {formatDate(facture.date_emission)}, {formatMoney(facture.montant_ttc)}{espace === 'client'
+            ? ' TTC. Un encaissement s’enregistre ici, au registre de ta société ; rien ne part vers une plateforme ni vers l’administration.'
+            : ' TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.'}
         </p>
 
         {manques.length > 0 ? (
@@ -536,19 +562,24 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
         ) : !lu ? (
           <p className="muted">Chargement…</p>
         ) : !contexte ? (
-          <p className="error-text">Cette facture n’a pas été retrouvée dans le dossier : rien n’est proposé. Rouvre l’onglet Factures.</p>
+          <p className="error-text">
+            {espace === 'client'
+              ? 'Cette facture n’a pas été retrouvée parmi celles de ta société : rien n’est proposé. Ferme cette fenêtre et relis tes factures.'
+              : 'Cette facture n’a pas été retrouvée dans le dossier : rien n’est proposé. Rouvre l’onglet Factures.'}
+          </p>
         ) : (
           <Contenu
             dossierId={dossierId} contexte={contexte} lu={lu} statutTva={statutTva} aujourdHui={aujourdHui}
             formulaire={formulaire} setFormulaire={setFormulaire} etape={etape} setEtape={setEtape} enCours={enCours}
             onEnregistrer={enregistrer} onRetirer={retirer} onDeclarer={declarer} onContrePasser={contrePasser}
             connexion={connexion} connexionErreur={connexionErreur} onRelever={releverStatuts}
+            espace={espace} gereLaBanque={gereLaBanque}
           />
         )}
 
-        {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} />}
-        {message && <p className="muted" role="status">{message}</p>}
-        {erreur && <p className="error-text">{erreur}</p>}
+        {resultatReleve && <BilanReleveStatuts resultat={resultatReleve} espace={espace} />}
+        {message && <p className="muted" role="status">{dire(message)}</p>}
+        {erreur && <p className="error-text">{pourLEspaceSiTexte(espace, erreur)}</p>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={enCours != null}>Fermer</button>
@@ -560,7 +591,7 @@ export default function EncaissementsFactureModal({ dossierId, facture: factureO
 
 function Contenu({
   dossierId, contexte, lu, statutTva, aujourdHui, formulaire, setFormulaire, etape, setEtape, enCours, onEnregistrer,
-  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever,
+  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque,
 }: {
   dossierId: string
   contexte: ContexteFacture
@@ -579,7 +610,11 @@ function Contenu({
   connexion: ConnexionPlateformeVue | null | undefined
   connexionErreur: string | null
   onRelever: () => void
+  espace: EspaceVentes
+  // Le droit « Banque » de qui saisit : sans lui, aucun mouvement ne se propose ni ne se désigne (module d2, refus 2).
+  gereLaBanque: boolean
 }) {
+  const dire = (texte: string) => pourLEspace(espace, texte)
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
   const statuts = statutsDeLaFacture(lu.statuts, facture.id)
   const obligation = obligationEncaissee(facture, lu.lignes, statutTva)
@@ -605,8 +640,6 @@ function Contenu({
   const crediteCentimes = avoirs.reduce((s, a) => s + Math.round(-a.montant_ttc * 100), 0)
   const attenduCentimes = Math.max(reste.resteCentimes - crediteCentimes, 0)
 
-  // Cette fenêtre est celle du cabinet, qui porte les deux droits (`gere_la_banque` en base) : un mouvement s'y désigne.
-  const gereLaBanque = true
   const propositions = propositionsEncaissement(
     contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui, gereLaBanque,
   )
@@ -632,16 +665,22 @@ function Contenu({
       ? 'Aucun encaissement de cette facture ne se déclare.'
       : obligation.etat === 'a_preciser'
         ? statutTva == null
-          ? 'Rien ne se déclare d’ici : précisez d’abord le statut de TVA du dossier.'
+          ? (espace === 'client'
+            ? 'Rien ne se déclare d’ici : ton cabinet doit d’abord préciser ton statut de TVA.'
+            : 'Rien ne se déclare d’ici : précisez d’abord le statut de TVA du dossier.')
           : 'Rien ne se déclare d’ici tant que l’obligation est à préciser.'
         : 'Rien ne se déclare d’ici pour une facture mixte : seule la part des services se déclarerait, et ses lignes ne disent pas laquelle.'
     : surLaFacture?.cle === 'rejetee'
       ? messageDeclaration('facture_rejetee')
       : hoteAcceptee == null
         ? messageDeclaration('sans_transmission_acceptee')
-        : `Il se déclare hors de l’application, sur ${hoteAcceptee} — la plateforme qui a accepté la facture : le cabinet ou le `
-          + 'client y saisit le statut « Encaissée », puis l’inscrit ici par « Déclaré sur la plateforme ». Rien ne part d’ici '
-          + 'vers la plateforme ni vers l’administration.'
+        : espace === 'client'
+          ? `Il se déclare hors de l’application, sur ${hoteAcceptee} — la plateforme qui a accepté la facture : tu y saisis `
+            + 'le statut « Encaissée » (ou ton cabinet le fait), puis tu l’inscris ici par « Déclaré sur la plateforme ». Rien ne '
+            + 'part d’ici vers la plateforme ni vers l’administration.'
+          : `Il se déclare hors de l’application, sur ${hoteAcceptee} — la plateforme qui a accepté la facture : le cabinet ou le `
+            + 'client y saisit le statut « Encaissée », puis l’inscrit ici par « Déclaré sur la plateforme ». Rien ne part d’ici '
+            + 'vers la plateforme ni vers l’administration.'
 
   function changerMontant(texte: string) {
     if (!formulaire) return
@@ -686,7 +725,7 @@ function Contenu({
     if (d) {
       lignes.push(
         <div key="declare">
-          Déclaré {MANIERE[d.canal]} sur {d.hote} le {formatDate(d.cree_le)}{d.etat === 'envoi' ? ' — issue inconnue' : ''}
+          Déclaré {dire(MANIERE[d.canal])} sur {d.hote} le {formatDate(d.cree_le)}{d.etat === 'envoi' ? ' — issue inconnue' : ''}
         </div>,
       )
       if (d.note) lignes.push(<div key="note" className="note-declaration">Note : {d.note}</div>)
@@ -698,7 +737,7 @@ function Contenu({
     if (!offerte) lignes.push(<div key="hors">Ne se déclare pas d’ici : voir le statut « Encaissée » ci-dessus.</div>)
     else if (refusDecl == null) {
       lignes.push(<div key="ou">À déclarer sur {plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements)}</div>)
-    } else lignes.push(<div key="refus">{refusDecl.message}</div>)
+    } else lignes.push(<div key="refus">{dire(refusDecl.message)}</div>)
     // L'échéance, tant que le statut est (ou peut être) dû : une facture rejetée n'en a plus, une obligation sans objet ou
     // refusée non plus.
     const echeance = (offerte && (refusDecl == null || refusDecl.cle === 'sans_transmission_acceptee'))
@@ -724,13 +763,13 @@ function Contenu({
     <>
       <div className="field">
         <label>Le statut « Encaissée »</label>
-        <p style={{ margin: 0 }}>{obligation.raison}</p>
-        <p className="muted" style={{ margin: '4px 0 0' }}>{commentSeDeclare}</p>
+        <p style={{ margin: 0 }}>{dire(obligation.raison)}</p>
+        <p className="muted" style={{ margin: '4px 0 0' }}>{dire(commentSeDeclare)}</p>
       </div>
 
       {statuts.length > 0 && (
         <div className="field">
-          <label>Statuts lus sur la plateforme du client</label>
+          <label>{dire('Statuts lus sur la plateforme du client')}</label>
           <ul className="statuts-lus">
             {statuts.map((s) => <StatutDeLaFacture key={s.id} statut={s} />)}
           </ul>
@@ -801,7 +840,12 @@ function Contenu({
                       <td data-libelle="Date">{formatDate(e.date_encaissement)}</td>
                       <td data-libelle="Moyen">{libelleMoyen(e.moyen)}</td>
                       <td data-libelle="Montant">{formatMoney(e.montant)}</td>
-                      <td data-libelle="Mouvement" style={{ overflowWrap: 'anywhere' }}>{libelleMouvement(mouvement(e.ligne_bancaire_id))}</td>
+                      <td data-libelle="Mouvement" style={{ overflowWrap: 'anywhere' }}>
+                        {/* Sans « Banque », le relevé n'est pas lu : un mouvement désigné se dit, sans « — » qui le nierait. */}
+                        {!gereLaBanque && e.ligne_bancaire_id != null
+                          ? 'Un mouvement du relevé, que ton accès ne montre pas'
+                          : libelleMouvement(mouvement(e.ligne_bancaire_id))}
+                      </td>
                       <td data-libelle="Répartition">
                         <span>{partsDe(e.id).map((p) => `${tauxAffiche(p.taux)} : ${formatMoney(p.montant)}`).join(' · ') || '—'}</span>
                       </td>
@@ -838,10 +882,10 @@ function Contenu({
                           </button>
                         )}
                         {refusDuRetrait != null && refusDuRetrait.cle !== 'deja_retire' && (
-                          <span className="muted" style={{ fontSize: '0.82rem' }}>{refusDuRetrait.message}</span>
+                          <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusDuRetrait.message)}</span>
                         )}
                         {refusCp != null && !contrePassable && (
-                          <span className="muted" style={{ fontSize: '0.82rem' }}>{refusCp.message}</span>
+                          <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusCp.message)}</span>
                         )}
                       </td>
                     </tr>
@@ -858,7 +902,7 @@ function Contenu({
           <EtapeDeclaration
             dossierId={dossierId} lu={lu} facture={facture} encaissement={enEtape} etape={etape} setEtape={setEtape}
             enCours={enCours} onDeclarer={onDeclarer} connexion={connexion} connexionErreur={connexionErreur}
-            onRelever={onRelever}
+            onRelever={onRelever} espace={espace}
           />
         </div>
       )}
@@ -866,19 +910,25 @@ function Contenu({
         <div ref={refEtape}>
           <EtapeContrePassation
             dossierId={dossierId} lu={lu} encaissement={enEtape} etape={etape} setEtape={setEtape} aujourdHui={aujourdHui}
-            enCours={enCours} onContrePasser={onContrePasser}
+            enCours={enCours} onContrePasser={onContrePasser} espace={espace}
           />
         </div>
       )}
 
       {surLaFacture ? (
-        <p className="alerte-tva">{surLaFacture.message}</p>
+        <p className="alerte-tva">{dire(surLaFacture.message)}</p>
       ) : reste.resteCentimes <= 0 ? (
         <p className="muted">La facture est entièrement encaissée : il n’y a plus rien à enregistrer.</p>
       ) : formulaire && saisie && (
         <div className="field">
           <label>Enregistrer un encaissement</label>
 
+          {!gereLaBanque ? (
+            <p className="muted" style={{ margin: '0 0 8px' }}>
+              Ton accès ne porte pas « Banque » sur cette société : le relevé n’est pas lu ici, et aucun mouvement ne s’y
+              propose ni ne s’y désigne. L’encaissement s’enregistre sans mouvement.
+            </p>
+          ) : (
           <div className="field">
             <label htmlFor="encaissement-mouvement">Mouvement du relevé (facultatif)</label>
             <select
@@ -911,7 +961,7 @@ function Contenu({
                   ? ` Ce mouvement paie ${payeesJumelles.length > 0 ? 'aussi' : 'déjà'} `
                     + `${payeesAutres.length > 1 ? 'd’autres pièces' : 'une autre pièce'}, que rien ne relie à cette facture `
                     + `(${payeesAutres.map(nomPiece).join(', ')}) : si c’est le PDF de cette vente, elle compte deux fois — `
-                    + 'ne gardez qu’une pièce par facture.'
+                    + (espace === 'client' ? 'ne garde qu’une pièce par facture.' : 'ne gardez qu’une pièce par facture.')
                   : ''}
               </p>
             ) : (
@@ -921,6 +971,7 @@ function Contenu({
               </p>
             )}
           </div>
+          )}
 
           <div className="field-row">
             <div className="field">
@@ -985,7 +1036,7 @@ function Contenu({
             Proposée au prorata de ce qui reste à chaque taux ; corrigible. Une part laissée vide n’est pas envoyée.
           </p>
 
-          {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{refus.message}</p>}
+          {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{dire(refus.message)}</p>}
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onEnregistrer}>
@@ -1026,7 +1077,7 @@ function StatutDeLaFacture({ statut: s }: { statut: StatutLu }) {
 // contre-passation, des montants négatifs et le motif d'annulation en commentaire, règles P1.15 et P1.17 de l'annexe 7
 // des spécifications externes), une note facultative, et les refus de la base avant le clic.
 function EtapeDeclaration({
-  dossierId, lu, facture, encaissement: e, etape, setEtape, enCours, onDeclarer, connexion, connexionErreur, onRelever,
+  dossierId, lu, facture, encaissement: e, etape, setEtape, enCours, onDeclarer, connexion, connexionErreur, onRelever, espace,
 }: {
   dossierId: string
   lu: Lu
@@ -1039,7 +1090,9 @@ function EtapeDeclaration({
   connexion: ConnexionPlateformeVue | null | undefined
   connexionErreur: string | null
   onRelever: () => void
+  espace: EspaceVentes
 }) {
+  const dire = (texte: string) => pourLEspace(espace, texte)
   const contrePassation = e.annule_id != null
   const hote = plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements)
   const refus = refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, noteEnvoyee(etape.note))
@@ -1069,15 +1122,16 @@ function EtapeDeclaration({
         Déclaré sur la plateforme — {contrePassation ? 'la contre-passation' : 'l’encaissement'} du {formatDate(e.date_encaissement)}
       </h3>
       <p>
-        Saisissez d’abord sur la plateforme le statut « Encaissée » de la facture, avec ces données ; puis inscrivez ici que
-        c’est fait. Rien ne part d’ici.
+        {espace === 'client'
+          ? 'Saisis d’abord sur la plateforme le statut « Encaissée » de la facture, avec ces données ; puis inscris ici que c’est fait. Rien ne part d’ici.'
+          : 'Saisissez d’abord sur la plateforme le statut « Encaissée » de la facture, avec ces données ; puis inscrivez ici que c’est fait. Rien ne part d’ici.'}
         {contrePassation && ' Une contre-passation est un décaissement : ses montants se saisissent en négatif, et son motif '
           + 'd’annulation en commentaire du statut.'}
       </p>
       {/* Un refus lu n'a rien à vérifier : la déclaration est refusée, et le refus de la base le dit sous le tableau. */}
       {verification && verification.etat !== 'refusee' && (
         <div className="verification-declaration">
-          <p>{verification.texte}</p>
+          <p>{dire(verification.texte)}</p>
           {verification.relevable && (
             <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={onRelever}>
               {enCours === 'relever' ? 'Lecture des statuts…' : 'Lire les statuts de la plateforme'}
@@ -1099,15 +1153,16 @@ function EtapeDeclaration({
         </table>
       </div>
       <div className="field">
-        {/* La note est lue par le client qui porte la case « Ventes » (migration ventes_du_client) : le libellé le dit. */}
-        <label htmlFor="declaration-note">{LIBELLE_NOTE_DECLARATION}</label>
+        {/* La note est lue par le client qui porte la case « Ventes » (migration ventes_du_client) — et par le cabinet, quand
+            c'est le client qui l'écrit : le libellé le dit. */}
+        <label htmlFor="declaration-note">{espace === 'client' ? LIBELLE_NOTE_DECLARATION_CLIENT : LIBELLE_NOTE_DECLARATION}</label>
         <textarea
           id="declaration-note" rows={3} value={etape.note}
           onChange={(ev) => setEtape({ ...etape, note: ev.target.value })}
         />
         <p className="muted" style={{ margin: '4px 0 0' }}>2 000 caractères au plus. Elle ne se modifie plus ensuite.</p>
       </div>
-      {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{refus.message}</p>}
+      {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{dire(refus.message)}</p>}
       <div className="rangee-boutons">
         <button type="button" className="btn btn-outline" disabled={enCours != null} onClick={() => setEtape(null)}>Annuler</button>
         <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onDeclarer}>
@@ -1120,7 +1175,7 @@ function EtapeDeclaration({
 
 // « CONTRE-PASSER » UN ENCAISSEMENT DÉCLARÉ : la date du décaissement, jamais proposée — l'écran ne la choisit pas à la
 // place du cabinet —, le motif d'annulation, ce qui sera écrit, et les refus de la base avant le clic, au jour de Paris.
-function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser }: {
+function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace }: {
   dossierId: string
   lu: Lu
   encaissement: EncaissementEcran
@@ -1129,6 +1184,7 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
   aujourdHui: string
   enCours: string | null
   onContrePasser: () => void
+  espace: EspaceVentes
 }) {
   const hote = declarationActive(lu.declarations, e.id)?.hote ?? '—'
   const cp = contrePassationDe(e, lu.parts)
@@ -1155,8 +1211,11 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
         </p>
       </div>
       <div className="field">
-        {/* Le motif est lu par le client qui porte la case « Ventes » (migration ventes_du_client) : le libellé le dit. */}
-        <label htmlFor="contre-passation-motif">{LIBELLE_MOTIF_CONTRE_PASSATION}</label>
+        {/* Le motif est lu par le client qui porte la case « Ventes » (migration ventes_du_client) — et par le cabinet, quand
+            c'est le client qui l'écrit : le libellé le dit. */}
+        <label htmlFor="contre-passation-motif">
+          {espace === 'client' ? LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT : LIBELLE_MOTIF_CONTRE_PASSATION}
+        </label>
         <textarea
           id="contre-passation-motif" rows={3} value={etape.motif}
           onChange={(ev) => setEtape({ ...etape, motif: ev.target.value })}
@@ -1167,7 +1226,7 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
         Sera écrit : {formatMoney(cp.montantCentimes / 100)}, dont {partsEnMots(cp.parts)}, du même moyen de paiement
         ({libelleMoyen(e.moyen)}).
       </p>
-      {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{refus.message}</p>}
+      {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{pourLEspace(espace, refus.message)}</p>}
       <div className="rangee-boutons">
         <button type="button" className="btn btn-outline" disabled={enCours != null} onClick={() => setEtape(null)}>Annuler</button>
         <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onContrePasser}>

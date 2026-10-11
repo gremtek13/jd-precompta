@@ -13,6 +13,10 @@
 //                                                           # retenue comme le navigateur la retient, puis bornée par la coque
 //   node outils/captures/debordements.mjs 390               # téléphone : la barre du bas (`position: fixed`) n'est pas posée
 //                                                           # dans le panneau, elle n'est donc pas mesurée contre lui
+//   node outils/captures/debordements.mjs 390 client         # le CLIENT « Mes ventes » (espace client, étape P4a) : le compte du
+//   node outils/captures/debordements.mjs 390 client-banque  # banc rattaché à l'atelier (d7) avec la case « Ventes » — et « Banque »
+//                                                           # pour la seconde passe —, ses factures et leurs fenêtres, et la barre
+//                                                           # du bas du téléphone, dont les entrées doivent tenir (cinq avec « Mes ventes »)
 //   Les visites `factures/*` ouvrent chacune une fenêtre superposée et la mesurent contre sa carte (`fenetre`), dont celles
 //   d'une facture de REDEVABLE jamais transmise (dossier d7) : son aperçu, qui imprime le numéro de TVA de l'émetteur, et sa
 //   fenêtre de transmission, la seule à offrir à la fois « Envoyer par Super PDP » et « Déposer sur… ».
@@ -500,6 +504,71 @@ const VISITES = [
   },
 ]
 
+// « MES VENTES › FACTURES » (espace client, étape P4a) : l'onglet Factures en mode client, sur l'atelier de conseil (d7), et
+// ses fenêtres — celles du cabinet, aux mots du client : une facture neuve (l'adresse de l'émetteur sans la case du cabinet),
+// la transmission, les encaissements (sans « Banque », le relevé n'est pas lu et la fenêtre le dit), la déclaration et la
+// contre-passation, l'avoir, l'aperçu. Puis l'accueil et « Mes pièces », pour la barre du bas du téléphone et ses cinq
+// entrées (`nav`). La page ne se recharge pas d'une visite à l'autre : chacune ferme d'abord ce qui est ouvert.
+const VISITES_CLIENT = [
+  { chemin: '#/mes-ventes', nom: 'client/mes-ventes', nav: true },
+  {
+    chemin: '#/mes-ventes', nom: 'client/nouvelle', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: '+ Nouvelle facture', exact: true }).click()
+      await page.locator('select#type-client').selectOption('organisme_public')
+      await page.locator('select#nature-operation').selectOption('mixte')
+      await page.locator('#tiers-nom').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/transmettre', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Transmettre').click()
+      await page.getByRole('button', { name: /^Déposer sur / }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/encaissements', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Encaissements').click()
+      await page.getByRole('button', { name: 'Enregistrer l’encaissement', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  ...[
+    { nom: 'client/declarer', bouton: 'Déclaré sur la plateforme', rang: 'last', attendu: 'Inscrire la déclaration' },
+    { nom: 'client/contre-passer', bouton: 'Contre-passer', rang: 'first', attendu: 'Enregistrer la contre-passation' },
+  ].map(({ nom, bouton, rang, attendu }) => ({
+    chemin: '#/mes-ventes', nom, fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0008', 'Encaissements').click()
+      await page.getByRole('button', { name: bouton, exact: true })[rang]().click()
+      await page.getByRole('button', { name: attendu, exact: true }).waitFor({ timeout: 10000 })
+    },
+  })),
+  {
+    chemin: '#/mes-ventes', nom: 'client/avoir', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Avoir').click()
+      await page.getByRole('button', { name: /^Valider l.avoir$/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/apercu', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0007', 'Aperçu').click()
+      await page.getByText(/N° TVA intracommunautaire FR/).waitFor({ timeout: 10000 })
+    },
+  },
+  { chemin: '#/mes-pieces', nom: 'client/mes-pieces', nav: true },
+  { chemin: '#/ma-simulation', nom: 'client/ma-simulation', nav: true },
+]
+
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.
 function boutonDeFacture(page, numero, nom) {
   return page.locator('tr', { hasText: numero }).getByRole('button', { name: nom, exact: true })
@@ -526,7 +595,9 @@ function exercice(annee) {
   }
 }
 const largeur = Number(process.argv[2] ?? 1440)
-const avecPanneau = process.argv[3] !== 'sans'
+// La passe du client : `client` (la case « Ventes » seule) ou `client-banque` (et « Banque »).
+const passeClient = process.argv.slice(3).find((a) => a === 'client' || a === 'client-banque') ?? null
+const avecPanneau = process.argv[3] !== 'sans' && passeClient === null
 // LE PANNEAU DE DROITE N'EST OUVERT QUE LÀ OÙ IL RÉTRÉCIT LE PANNEAU CENTRAL (08/10/2026). Sous 1 280 pixels
 // (`SEUIL_VOLET_EN_LIGNE`, lib/largeurVolets.ts) il se SUPERPOSE à la page (voir CLAUDE.md, « Le panneau de droite ») :
 // il n'enlève rien au panneau mesuré, et son voile intercepte les clics des visites à `apres` — à 1 024 pixels, la
@@ -546,16 +617,22 @@ const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${
 const BASE = 'http://127.0.0.1:5199/'
 const navigateur = await chromium.launch({ executablePath: executable })
 const contexte = await navigateur.newContext({ viewport: { width: largeur, height: 900 } })
-await contexte.addInitScript(({ barre, panneau }) => {
+await contexte.addInitScript(({ barre, panneau, client }) => {
   if (barre) localStorage.setItem('jd-precompta-largeur-barre', barre)
   if (panneau) localStorage.setItem('jd-precompta-largeur-panneau', panneau)
-}, { barre: choisies.barre ?? null, panneau: choisies.panneau ?? null })
+  // Le compte du banc en client, rattaché à l'atelier avec « Ventes » (voir fauxSupabase.ts), qui est la société affichée.
+  if (client) {
+    localStorage.setItem('banc-client', '1')
+    localStorage.setItem('banc-client-ventes', client === 'client-banque' ? 'banque' : 'sans-banque')
+    localStorage.setItem('jd-precompta-dossier-actif', 'd7')
+  }
+}, { barre: choisies.barre ?? null, panneau: choisies.panneau ?? null, client: passeClient })
 // Aucune requête hors du serveur local (voir le piège du mandataire dans vitrine.mjs).
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
-for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
-  await page.goto(`${BASE}#/dossiers/${dossier}/${onglet}`)
+for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient ? VISITES_CLIENT : VISITES) {
+  await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)
   if (panneauOuvert) {
     const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
@@ -566,7 +643,7 @@ for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
     await apres(page)
     await page.waitForTimeout(300)
   }
-  const fautes = await page.evaluate((fenetre) => {
+  const fautes = await page.evaluate(({ fenetre, nav }) => {
     // Une fenêtre SUPERPOSÉE se mesure contre sa propre carte : centrée sur l'écran, elle n'a pas à tenir dans le
     // panneau central, mais rien ne doit en sortir. Sa carte défile (overflow-y), donc le défilement ne se cherche
     // qu'à l'intérieur : sinon tout son contenu passerait pour « dans un conteneur qui défile », et rien n'y serait vu.
@@ -669,8 +746,30 @@ for (const { dossier, onglet, nom, apres, fenetre } of VISITES) {
         }
       }
     }
-    return [...trouvees.map((t) => t.texte), ...textes, ...coupes]
-  }, fenetre ?? null)
+    // LA NAVIGATION DU CLIENT (`nav`) : posée en `position: fixed` sur téléphone, elle échappe aux règles ci-dessus. Chacune
+    // de ses entrées doit tenir dans sa case, et la barre dans la largeur de l'écran — cinq entrées avec « Mes ventes ».
+    const entrees = []
+    if (nav) {
+      const barreNav = document.querySelector('.sidebar nav')
+      if (!barreNav) entrees.push('la navigation du client est absente')
+      else {
+        const visible = getComputedStyle(barreNav).display !== 'none'
+        if (visible && barreNav.scrollWidth > barreNav.clientWidth + 1) {
+          entrees.push(`${barreNav.scrollWidth - barreNav.clientWidth} px de navigation hors de la barre`)
+        }
+        for (const a of barreNav.querySelectorAll('a')) {
+          if (!visible || a.clientWidth === 0) continue
+          if (a.scrollWidth > a.clientWidth + 1) entrees.push(`entrée « ${a.getAttribute('title')} » : ${a.scrollWidth - a.clientWidth} px hors de sa case`)
+          const r = a.getBoundingClientRect()
+          if (r.right > window.innerWidth + 1 || r.left < -1) entrees.push(`entrée « ${a.getAttribute('title')} » hors de l’écran`)
+        }
+        if (!visible) entrees.push('la navigation du client est cachée sur cet écran')
+        // La passe du client ne mesure rien si le compte n'est pas celui qui porte « Ventes » : l'entrée doit être là.
+        if (!barreNav.querySelector('a[title="Mes ventes"]')) entrees.push('l’entrée « Mes ventes » manque à la navigation')
+      }
+    }
+    return [...trouvees.map((t) => t.texte), ...textes, ...coupes, ...entrees]
+  }, { fenetre: fenetre ?? null, nav: nav ?? false })
   total += fautes.length
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
 }
@@ -679,5 +778,5 @@ const volets = Object.entries(choisies).map(([k, v]) => `${k} ${v}`).join(', ')
 const etatDuPanneau = panneauOuvert ? 'ouvert'
   : avecPanneau ? `fermé (sous ${LARGEUR_DU_PANNEAU_A_COTE} px il se superpose au lieu de rétrécir le panneau central : l’ouvrir ne mesurerait rien de plus)`
   : 'fermé'
-console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}.`)
+console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}${passeClient ? `, passe du client (${passeClient})` : ''}.`)
 process.exitCode = total > 0 ? 1 : 0
