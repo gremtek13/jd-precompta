@@ -4,9 +4,11 @@ import FichePiece from './FichePiece'
 import { AUCUNE_PIECE_SUPPRIMEE } from '../../lib/bilanSuppression'
 import type { Piece } from '../../lib/types'
 import type { DonneesHorsDeFrance } from './FicheHorsDeFrance'
+import { ECARTS_ET_DECLARATIONS_VIDES } from '../../test/ereportingDeLaPiece'
 
 const HORS_DE_FRANCE: DonneesHorsDeFrance = {
   lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+  ...ECARTS_ET_DECLARATIONS_VIDES,
 }
 
 // « SUPPRIMER » UNE PIÈCE DEPUIS SA FICHE RETIRAIT SES FICHIERS SUR LA SEULE ABSENCE D'ERREUR (09/10/2026,

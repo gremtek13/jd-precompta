@@ -131,6 +131,16 @@ vi.mock('../../lib/supabase', async () => {
       })
       return chaine
     },
+    // L'écart d'une pièce (e-reporting, étape e5c) : la base l'écrit, la relecture des écarts le voit.
+    rpc: (nom: string, args: Record<string, unknown>) => {
+      if (nom === 'ecarter_piece_ereporting') {
+        faux.parTable.pieces_ecartees_ereporting = [...(faux.parTable.pieces_ecartees_ereporting ?? []), {
+          id: 'x-ecrit', dossier_id: args.p_dossier_id, piece_id: args.p_piece_id, motif: args.p_motif, cree_par: null,
+          cree_le: '2027-10-26T10:00:00Z', retire_le: null, retire_par: null,
+        }]
+      }
+      return Promise.resolve({ data: {}, error: null })
+    },
     // La fiche d'une pièce enregistre sous l'identité de l'utilisateur, et son aperçu demande une URL
     // signée : les deux répondent sans rien faire ici.
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
@@ -1250,5 +1260,172 @@ describe('PiecesTab — supprimer une sélection nomme les fiches « hors de Fra
     faux.parTable.pieces_hors_de_france = [ficheDe('p1', 'INV-1'), ficheDe('p9', 'INV-9')]
     faux.muetApres = { pieces_hors_de_france: 1 }
     expect(await confirmation()).toContain('n’ont pas pu être lues en entier : une pièce de la sélection qui en a une la perd')
+  })
+})
+
+// UNE PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING NE SE SUPPRIME PLUS (ligne 28.5, étape e5c ; hypothèse E5-Q6,
+// `garder_piece_declaree`) : la fiche de la pièce le dit sous les mots de la base et n'offre pas « Supprimer » ; la
+// sélection l'écarte et la NOMME ; lues en partie, les déclarations ne disent rien d'elle — la confirmation le dit.
+describe('PiecesTab — une pièce dont la fiche est déclarée à l’e-reporting', () => {
+  const PHRASE = 'Cette pièce est déclarée à l\'e-reporting des achats du 01/10/2027 au 31/10/2027 : elle ne se supprime plus, sauf avec son dossier — une erreur se corrige par une déclaration rectificative de la période.'
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const deux = () => [
+    piece({ id: 'p-declaree', tiers: 'ALPHA', statut: 'validee', nom_fichier: 'facture-logiciel.pdf' }),
+    piece({ id: 'p-libre', tiers: 'BETA', statut: 'validee' }),
+  ]
+  function declarer(o: { dossier?: string; etat?: string; genre?: string } = {}) {
+    const dossier = o.dossier ?? 'dossier-de-test'
+    faux.parTable.pieces_hors_de_france = [{
+      id: 'f-declaree', dossier_id: 'dossier-de-test', piece_id: 'p-declaree', remplace_id: null, numero: 'INV-1', date_facture: '2027-10-05',
+      type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE', schema_identifiant: '0223',
+      identifiant: 'IE1234567WA', nature: 'services', autoliquidation: true, date_operation: null, periode_debut: null, periode_fin: null,
+      cree_par: null, cree_le: '2027-10-06T08:00:00Z', retire_le: null, retire_par: null,
+    }]
+    faux.parTable.declarations_ereporting = [{
+      id: 'dec-1', dossier_id: dossier, objet: 'achats', periode_debut: '2027-10-01', periode_fin: '2027-10-31', regime_id: 'r1',
+      type_transmission: 'IN', remplace_id: null, canal: 'manuel', plateforme: 'Plateforme fictive', contenu: {}, empreinte: 'a'.repeat(64),
+      nb_operations: 1, etat: o.etat ?? 'declaree', note: null, cree_par: null, cree_le: '2027-11-02T09:00:00Z',
+    }]
+    faux.parTable.declarations_ereporting_sources = [{ declaration_id: 'dec-1', dossier_id: dossier, genre: o.genre ?? 'fiche', source_id: 'f-declaree' }]
+  }
+
+  it('la fiche d’une pièce déclarée le dit sous les mots de la base, et n’offre pas « Supprimer »', async () => {
+    poser(deux())
+    declarer()
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    // Le reste de la pièce se modifie toujours : seule la suppression est gardée.
+    expect(within(volet()).getByRole('button', { name: 'Valider' })).toBeTruthy()
+    await ouvrir('BETA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it.each([
+    ['une déclaration remplacée', { etat: 'remplacee' }],
+    ['une source qui n’est pas une fiche', { genre: 'facture' }],
+  ])('%s ne retient pas la pièce', async (_nom, o) => {
+    poser(deux())
+    declarer(o)
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une sélection écarte la pièce déclarée, et la confirmation la NOMME avec la phrase de la base', async () => {
+    poser(deux())
+    declarer()
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
+    expect(message).toContain(`Une pièce de la sélection reste, déclarée à l’e-reporting :\n• facture-logiciel.pdf — ${PHRASE}`)
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('une sélection faite de la seule pièce déclarée ne demande rien, dit la phrase de la base, et n’envoie rien', async () => {
+    poser([deux()[0]])
+    declarer()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(alerte).toBe(PHRASE)
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('lues en partie, les déclarations le disent : la base refusera, et dira pourquoi', async () => {
+    poser(deux())
+    declarer()
+    faux.muetApres = { declarations_ereporting_sources: 0 }
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+    expect(message).toContain('n’ont pas pu être lues en entier : si la fiche de cette pièce est déclarée, la base refuse de la supprimer.')
+    expect(message).not.toContain('reste, déclarée')
+  })
+})
+
+// LES PIÈCES ÉCARTÉES DE L'E-REPORTING, LUES PAR L'ONGLET POUR LA FICHE DE LA PIÈCE (étape e5c) : la fiche d'un achat en
+// dollars sans fiche « hors de France » offre de l'écarter ; écartée, elle le dit et offre de la reprendre ; les écarts lus
+// en partie, elle ne dit rien d'elle et le dit.
+describe('PiecesTab — la fiche d’une pièce candidate à l’e-reporting', () => {
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  const enDollars = () => piece({ id: 'p-usd', tiers: 'NUAGE', devise: 'USD', montant_devise: 120, montant_ttc: 110, date_piece: '2027-10-02' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const ecartDe = (o: Record<string, unknown> = {}) => ({
+    id: 'x1', dossier_id: 'dossier-de-test', piece_id: 'p-usd', motif: 'Fournisseur établi en France.', cree_par: null,
+    cree_le: '2027-10-20T10:00:00Z', retire_le: null, retire_par: null, ...o,
+  })
+
+  it('une candidate, les écarts lus en entier : la fiche offre de l’écarter', async () => {
+    poser([enDollars()])
+    monter('toutes')
+    await ouvrir('NUAGE')
+    expect(within(volet()).getByRole('button', { name: 'Écarter de l’e-reporting…' })).toBeTruthy()
+    expect(within(volet()).queryByText(/Écartée de l’e-reporting/)).toBeNull()
+  })
+
+  it('une pièce écartée le dit, avec son motif, et offre de la reprendre', async () => {
+    poser([enDollars()])
+    faux.parTable.pieces_ecartees_ereporting = [ecartDe()]
+    monter('toutes')
+    await ouvrir('NUAGE')
+    expect(within(volet()).getByText(/Écartée de l’e-reporting/).closest('p')?.textContent).toContain('« Fournisseur établi en France. »')
+    expect(within(volet()).getByRole('button', { name: 'Reprendre la pièce' })).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Écarter de l’e-reporting…' })).toBeNull()
+  })
+
+  it('des écarts lus en partie : la fiche le dit, n’offre ni l’écart ni la reprise', async () => {
+    poser([enDollars()])
+    faux.parTable.pieces_ecartees_ereporting = [ecartDe(), ecartDe({ id: 'x2', piece_id: 'autre' })]
+    faux.muetApres = { pieces_ecartees_ereporting: 1 }
+    monter('toutes')
+    await ouvrir('NUAGE')
+    expect(within(volet()).getByText(/Les pièces écartées de l’e-reporting n’ont pas pu être lues en entier/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Écarter de l’e-reporting…' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Reprendre la pièce' })).toBeNull()
+  })
+
+  it('écartée depuis la fiche, la pièce le dit aussitôt : les écarts sont relus par l’onglet', async () => {
+    poser([enDollars()])
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    monter('toutes')
+    await ouvrir('NUAGE')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Écarter de l’e-reporting…' })) })
+    await act(async () => { fireEvent.change(within(volet()).getByLabelText('Ce que la vérification a établi'), { target: { value: 'Établi en France.' } }) })
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Écarter la pièce' })) })
+    expect(await within(volet()).findByText(/Écartée de l’e-reporting/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Reprendre la pièce' })).toBeTruthy()
+  })
+
+  it('un achat en euros, sans signal, n’offre rien', async () => {
+    poser([piece({ id: 'p-eur', tiers: 'LOCAL' })])
+    monter('toutes')
+    await ouvrir('LOCAL')
+    expect(within(volet()).queryByRole('button', { name: 'Écarter de l’e-reporting…' })).toBeNull()
   })
 })

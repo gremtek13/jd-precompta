@@ -19,16 +19,27 @@ export interface LectureRegimesEtEcarts {
   motif: string | null
 }
 
+// Les régimes SEULS (étape e5c) : la carte de l'onglet TVA n'a pas besoin des écarts, et une lecture ratée des écarts ne
+// doit pas lui faire dire qu'elle ne sait pas le régime. La table n'est nommée qu'ici (un seul site de lecture,
+// `encaissementsEcritures.test.ts`). Le drapeau est recopié, non jeté (`lecturesSignalees.test.ts`).
+export async function lireRegimes(dossierId: string): Promise<LectureComplete<RegimeEreporting>> {
+  const lecture = await lireTout<RegimeEreporting>((debut, fin) =>
+    supabase.from('regimes_ereporting').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  )
+  return { lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif }
+}
+
+// Les écarts SEULS (étape e5c) : la fiche d'une pièce n'a besoin que d'eux.
+export async function lireEcarts(dossierId: string): Promise<LectureComplete<PieceEcarteeEreporting>> {
+  const lecture = await lireTout<PieceEcarteeEreporting>((debut, fin) =>
+    supabase.from('pieces_ecartees_ereporting').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  )
+  return { lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif }
+}
+
 export async function lireRegimesEtEcarts(dossierId: string): Promise<LectureRegimesEtEcarts> {
-  const [regimes, ecarts] = await Promise.all([
-    lireTout<RegimeEreporting>((debut, fin) =>
-      supabase.from('regimes_ereporting').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    ),
-    lireTout<PieceEcarteeEreporting>((debut, fin) =>
-      supabase.from('pieces_ecartees_ereporting').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    ),
-  ])
+  const [regimes, ecarts] = await Promise.all([lireRegimes(dossierId), lireEcarts(dossierId)])
   return { regimes, ecarts, motif: [regimes, ecarts].find((l) => !l.complete)?.motif ?? null }
 }

@@ -2,13 +2,15 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
-import type { Categorie, Piece, TiersCategorie } from '../../lib/types'
+import type { Categorie, DeclarationEreportingHorsApplication, Piece, SourceDeclarationEreporting, TiersCategorie } from '../../lib/types'
 import type { DonneesHorsDeFrance } from './FicheHorsDeFrance'
+import { ECARTS_ET_DECLARATIONS_VIDES } from '../../test/ereportingDeLaPiece'
 
 // La fiche « hors de France » d'un dossier qui n'en a aucune, lue en entier : ce fichier ne la regarde pas
 // (FicheHorsDeFrance.test.tsx le fait), il lui faut seulement de quoi monter la fiche de la pièce.
 const HORS_DE_FRANCE: DonneesHorsDeFrance = {
   lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+  ...ECARTS_ET_DECLARATIONS_VIDES,
 }
 
 // Le verrou d'exécution de l'enregistrement d'une pièce (CLAUDE.md, « un verrou d'exécution est un
@@ -995,5 +997,87 @@ describe('FichePiece — la fiche « hors de France » de la pièce', () => {
     expect(modifiee).toHaveBeenLastCalledWith(true)
     await act(async () => { screen.getByRole('button', { name: 'Abandonner la saisie' }).click() })
     expect(modifiee).toHaveBeenLastCalledWith(false)
+  })
+})
+
+// LA PIÈCE DONT LA FICHE EST DÉCLARÉE NE SE SUPPRIME PLUS (ligne 28.5, étape e5c ; hypothèse E5-Q6, `garder_piece_declaree`) :
+// la fiche de la pièce le dit sous les mots de la base, avec les bornes de la période, et n'offre pas « Supprimer » ; une
+// déclaration remplacée ou d'une autre pièce ne la retient pas ; des fiches ou des déclarations lues en partie — ou pas
+// encore — ne disent rien d'elle, et la confirmation de la suppression le dit plutôt que de se taire.
+describe('FichePiece — la pièce dont la fiche est déclarée à l’e-reporting', () => {
+  const FICHE = {
+    id: 'f1', dossier_id: 'd1', piece_id: 'piece-1', remplace_id: null, numero: 'INV-2026-0042', date_facture: '2026-03-01',
+    type_document: '380' as const, facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE',
+    schema_identifiant: '0223' as const, identifiant: 'IE1234567WA', nature: 'services' as const, autoliquidation: true, date_operation: null,
+    periode_debut: null, periode_fin: null, cree_par: null, cree_le: '2026-03-11T08:00:00Z', retire_le: null, retire_par: null,
+  }
+  const DECLARATION: DeclarationEreportingHorsApplication = {
+    id: 'dec-1', dossier_id: 'd1', objet: 'achats', periode_debut: '2027-10-01', periode_fin: '2027-10-31', regime_id: 'r1',
+    type_transmission: 'IN', remplace_id: null, canal: 'manuel', plateforme: 'Plateforme fictive', contenu: {}, empreinte: 'a'.repeat(64),
+    nb_operations: 1, etat: 'declaree', note: null, cree_par: null, cree_le: '2027-11-02T09:00:00Z',
+  }
+  const SOURCE: SourceDeclarationEreporting = { declaration_id: 'dec-1', dossier_id: 'd1', genre: 'fiche', source_id: 'f1' }
+  const lue = <T,>(lignes: T[]) => ({ lignes, complete: true, motif: null })
+  const DECLAREE: DonneesHorsDeFrance = {
+    ...HORS_DE_FRANCE,
+    lecture: { fiches: [FICHE], taux: [], motif: null },
+    declarations: { declarations: lue([DECLARATION]), sources: lue([SOURCE]), motif: null },
+  }
+  const LIMITE = 'Cette pièce est déclarée à l\'e-reporting des achats du 01/10/2027 au 31/10/2027 : elle ne se supprime plus, sauf avec son dossier — une erreur se corrige par une déclaration rectificative de la période.'
+
+  function monter(horsDeFrance: DonneesHorsDeFrance) {
+    faux.suppressions = []
+    render(
+      <FichePiece
+        dossierId="d1" horsDeFrance={horsDeFrance} categories={[]} sousDossiers={[]} tiersCategories={[]}
+        tiersCategoriesCabinet={[]} tiersConnus={[]} piece={pieceDeTest({ statut: 'a_valider' })} commentaires={[]}
+        onClose={() => {}} onSaved={() => {}} onCommentaireAjoute={() => {}} onCommentaireSupprime={() => {}}
+      />,
+    )
+  }
+
+  it('dit que la pièce est déclarée, sous les mots de la base, et n’offre pas « Supprimer »', async () => {
+    monter(DECLAREE)
+    await act(async () => {})
+    expect(screen.getByText(LIMITE).className).toBe('fiche-piece-figee')
+    expect(screen.queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it.each([
+    ['une déclaration remplacée', { ...DECLAREE, declarations: { declarations: lue([{ ...DECLARATION, etat: 'remplacee' as const }]), sources: lue([SOURCE]), motif: null } }],
+    ['la fiche d’une autre pièce', { ...DECLAREE, lecture: { fiches: [{ ...FICHE, piece_id: 'autre' }], taux: [], motif: null } }],
+    ['une source qui n’est pas une fiche', { ...DECLAREE, declarations: { declarations: lue([DECLARATION]), sources: lue([{ ...SOURCE, genre: 'facture' as const }]), motif: null } }],
+    ['une pièce sans fiche', { ...HORS_DE_FRANCE }],
+  ])('%s ne retient pas la pièce : « Supprimer » reste offert, sans la phrase de la base', async (_nom, donnees) => {
+    monter(donnees)
+    await act(async () => {})
+    expect(screen.queryByText(LIMITE)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it.each([
+    ['des déclarations pas encore lues', { ...DECLAREE, declarations: null }],
+    ['des déclarations lues en partie', { ...DECLAREE, declarations: { declarations: lue([DECLARATION]), sources: lue([SOURCE]), motif: 'x' } }],
+    ['des déclarations lues en partie (déclarations)', { ...DECLAREE, declarations: { declarations: { lignes: [DECLARATION], complete: false, motif: 'tronquée' }, sources: lue([SOURCE]), motif: 'tronquée' } }],
+    ['des sources lues en partie', { ...DECLAREE, declarations: { declarations: lue([DECLARATION]), sources: { lignes: [SOURCE], complete: false, motif: 'tronquée' }, motif: 'tronquée' } }],
+    ['des fiches lues en partie', { ...DECLAREE, lecture: { fiches: [FICHE], taux: [], motif: 'tronquée' } }],
+    ['des fiches pas encore lues', { ...DECLAREE, lecture: null }],
+  ])('%s : on ne sait pas, la confirmation de la suppression le dit — la base reste juge', async (_nom, donnees) => {
+    monter(donnees)
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+    await act(async () => { screen.getByRole('button', { name: 'Supprimer' }).click() })
+    expect(message).toContain('Les fiches « hors de France » ou les déclarations d’e-reporting du dossier n’ont pas pu être lues en entier : si la fiche de cette pièce est déclarée, la base refuse de la supprimer.')
+    expect(screen.queryByText(LIMITE)).toBeNull()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('lues en entier et sans déclaration, la confirmation ne dit rien de l’e-reporting', async () => {
+    monter({ ...DECLAREE, declarations: { declarations: lue([]), sources: lue([]), motif: null } })
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+    await act(async () => { screen.getByRole('button', { name: 'Supprimer' }).click() })
+    expect(message).not.toContain('e-reporting')
   })
 })

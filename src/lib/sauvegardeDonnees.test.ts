@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { clePrimaire } from './sauvegarde'
 
 // Le client Supabase est simulé, mais pas en rendant des réponses toutes faites : le faux client
 // ci-dessous est un petit moteur qui filtre, trie et découpe pour de bon. C'est la seule façon de
@@ -24,7 +25,8 @@ const base = {
   erreurParTable: {} as Record<string, Error>,
   // Les valeurs par défaut que la BASE donne aux colonnes qu'une insertion ne nomme pas (une sauvegarde d'avant une
   // migration qui ajoute des colonnes ne les porte pas) : sans elles, le faux client ne pourrait pas dire ce qu'une
-  // telle ligne devient une fois écrite.
+  // telle ligne devient une fois écrite. Une colonne qu'un lot NOMME et qu'une de ses lignes omet ne les reçoit pas,
+  // sauf `defaultToNull: false` (voir `ecrivain`).
   defauts: {} as Record<string, Ligne>,
   // Les colonnes que la BASE calcule, comme Postgres le fait d'une colonne générée : un lot qui en nomme une — dans une
   // seule de ses lignes, et quelle que soit la valeur, NULL compris — est refusé en entier (428C9), puisque PostgREST
@@ -103,9 +105,18 @@ function constructeur(table: string) {
 // aller-retour complet — exporter, vider, restaurer, puis vérifier par une relecture. Un faux client
 // qui se contente de noter les appels ne peut pas prouver qu'une restauration rend le dossier
 // d'origine ; il ne prouve que la forme des requêtes.
+//
+// Et elle écrit comme le SERVICE, pas mieux. postgrest-js (2.112.4, `insert`) passe à PostgREST l'UNION des clés des
+// lignes d'un lot (`columns=`) ; PostgREST met NULL dans une colonne de cette union qu'une ligne omet — ou porte à
+// `undefined`, que JSON ne transmet pas —, sauf `defaultToNull: false` (`Prefer: missing=default`), qui lui donne la
+// valeur par défaut ; une colonne qu'aucune ligne ne nomme reçoit la sienne dans les deux cas (INSERT). Une valeur par
+// défaut que le test ne déclare pas est celle de la base — `gen_random_uuid()` pour chaque `id` du plan —, que le faux
+// client n'invente pas : la colonne reste absente. Une clé primaire NULL fait refuser le lot ENTIER, comme la base
+// (23502) : un lot est une transaction. Jusqu'au 11/10/2026, toute colonne omise recevait la valeur par défaut : plus
+// indulgent que le service, le faux client laissait passer un lot que la base refuse.
 function ecrivain(table: string) {
   return {
-    insert: (lignes: Ligne[]) => {
+    insert: (lignes: Ligne[], options: { defaultToNull?: boolean } = {}) => {
       const erreur = base.erreurParTable[table] ?? base.erreur
       if (erreur) return Promise.resolve({ error: erreur })
       const generees = base.generees[table] ?? {}
@@ -113,13 +124,29 @@ function ecrivain(table: string) {
       if (nommee) {
         return Promise.resolve({ error: { code: '428C9', message: `cannot insert a non-DEFAULT value into column "${nommee}"` } })
       }
-      ecritures.push({ table, action: 'insert', nb: lignes.length })
-      envoyees[table] = [...(envoyees[table] ?? []), ...lignes.map((l) => ({ ...l }))]
-      base.tables[table] = [...(base.tables[table] ?? []), ...lignes.map((l) => {
-        const ecrite: Ligne = { ...(base.defauts[table] ?? {}), ...l }
+      const union = [...new Set(lignes.flatMap((l) => Object.keys(l)))]
+      const defauts = base.defauts[table] ?? {}
+      const ecrites = lignes.map((l) => {
+        const ecrite: Ligne = Object.fromEntries(Object.entries(defauts).filter(([colonne]) => !union.includes(colonne)))
+        for (const colonne of union) {
+          if (l[colonne] !== undefined) ecrite[colonne] = l[colonne]
+          else if (options.defaultToNull !== false) ecrite[colonne] = null
+          else if (colonne in defauts) ecrite[colonne] = defauts[colonne]
+        }
         for (const [colonne, calcul] of Object.entries(generees)) ecrite[colonne] = calcul(ecrite)
         return ecrite
-      })]
+      })
+      for (const ecrite of ecrites) {
+        const nulle = clePrimaire(table).find((colonne) => ecrite[colonne] === null)
+        if (nulle) {
+          return Promise.resolve({
+            error: { code: '23502', message: `null value in column "${nulle}" of relation "${table}" violates not-null constraint` },
+          })
+        }
+      }
+      ecritures.push({ table, action: 'insert', nb: lignes.length })
+      envoyees[table] = [...(envoyees[table] ?? []), ...lignes.map((l) => ({ ...l }))]
+      base.tables[table] = [...(base.tables[table] ?? []), ...ecrites]
       return Promise.resolve({ error: null })
     },
     update: (patch: Ligne) => ({
@@ -140,8 +167,9 @@ vi.mock('./supabase', () => ({
   supabase: { from: (table: string) => ({ select: () => constructeur(table), ...ecrivain(table) }) },
 }))
 
-const { exporterDossier, restaurerSauvegarde, verifierRestauration, TAILLE_PAGE, VERSION_SAUVEGARDE } =
-  await import('./sauvegardeDonnees')
+const {
+  exporterDossier, lotsDEcriture, restaurerSauvegarde, verifierRestauration, TAILLE_LOT_ECRITURE, TAILLE_PAGE, VERSION_SAUVEGARDE,
+} = await import('./sauvegardeDonnees')
 
 const DOSSIER = 'd1'
 const CABINET = 'cab1'
@@ -794,6 +822,96 @@ describe('restauration d’une sauvegarde aux anciennes notes', () => {
     // Une note de dossier blanche n'en est pas une.
     await restaurerSauvegarde(ancienneSauvegarde({ noteDossier: '  ' }))
     expect(base.tables.dossiers).toHaveLength(1)
+  })
+})
+
+// UN LOT DONT LES LIGNES NE NOMMENT PAS LES MÊMES COLONNES (défaut relevé le 11/10/2026). postgrest-js passe au service
+// l'UNION des clés d'un lot, et le service met NULL dans ce qu'une ligne omet : la note recopiée d'une ancienne colonne
+// recevait un identifiant NULL à côté d'une note sauvegardée, et la base refusait le lot. La restauration n'envoie plus
+// que des lots dont les lignes nomment les mêmes colonnes (`lotsDEcriture`) ; le faux client écrit comme le service.
+describe('un lot dont les lignes ne nomment pas les mêmes colonnes', () => {
+  const acces = (id: string, autres: Ligne = {}): Ligne => ({ id, dossier_id: DOSSIER, user_id: `u-${id}`, ...autres })
+  const droits = (lignes: Ligne[]) => lignes.map((m) => [m.id, m.droit_ventes, m.droit_banque])
+
+  it('le faux client écrit comme le service : sans l’option, ce qu’une ligne omet d’un lot qui le nomme devient NULL ; avec, sa valeur par défaut', async () => {
+    base.defauts = { memberships: { droit_ventes: false, droit_banque: false } }
+    // `droit_banque`, qu'aucune ligne ne nomme, reçoit sa valeur par défaut dans les deux cas ; `undefined` ne se transmet pas.
+    const lot = [acces('m1', { droit_ventes: true }), acces('m2'), acces('m3', { droit_ventes: undefined })]
+    expect((await ecrivain('memberships').insert(lot)).error).toBeNull()
+    expect(droits(base.tables.memberships)).toEqual([['m1', true, false], ['m2', null, false], ['m3', null, false]])
+    base.tables.memberships = []
+    expect((await ecrivain('memberships').insert(lot, { defaultToNull: false })).error).toBeNull()
+    expect(droits(base.tables.memberships)).toEqual([['m1', true, false], ['m2', false, false], ['m3', false, false]])
+  })
+
+  it('le faux client refuse comme la base un lot dont une ligne laisse sa clé primaire NULL (23502), et n’en écrit rien', async () => {
+    base.tables = {}
+    const { error } = await ecrivain('notes_internes').insert([
+      { id: 'n1', dossier_id: DOSSIER, piece_id: 'p1', document_id: null, texte: '' },
+      { dossier_id: DOSSIER, document_id: 'doc1', texte: 'Reclassé.' },
+    ])
+    expect(error).toEqual({ code: '23502', message: 'null value in column "id" of relation "notes_internes" violates not-null constraint' })
+    // Écrite NULL en clair, avec l'option aussi : `missing=default` ne remplit que ce qui MANQUE.
+    const nulle = await ecrivain('notes_internes').insert([{ id: null, dossier_id: DOSSIER, document_id: 'doc1', texte: 'x' }], { defaultToNull: false })
+    expect(nulle.error).toMatchObject({ code: '23502' })
+    expect(ecritures).toEqual([])
+    // Une clé qu'aucune ligne ne nomme, la base la tire (`gen_random_uuid()`) : le lot passe.
+    expect((await ecrivain('notes_internes').insert([{ dossier_id: DOSSIER, document_id: 'doc1', texte: 'Reclassé.' }])).error).toBeNull()
+    expect(base.tables.notes_internes).toEqual([{ dossier_id: DOSSIER, document_id: 'doc1', texte: 'Reclassé.' }])
+  })
+
+  it('la restauration écrit une forme par écriture : ce qu’une ligne omet prend sa valeur par défaut, jamais NULL', async () => {
+    base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [] }
+    base.defauts = { memberships: { droit_ventes: false, droit_banque: false } }
+    const sauvegarde = {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET }],
+        // Un accès qui porte ses droits, un qui ne les porte pas, un dont le droit est `undefined` (le JSON ne le dit pas).
+        memberships: [
+          acces('m1', { droit_ventes: true, droit_banque: true }),
+          acces('m2'),
+          acces('m3', { droit_ventes: undefined }),
+        ],
+      } as Record<string, Ligne[]>,
+    }
+    await restaurerSauvegarde(sauvegarde)
+    expect(ecritures.filter((e) => e.table === 'memberships').map((e) => e.nb)).toEqual([1, 2])
+    expect(envoyees.memberships.map((l) => Object.keys(l).sort())).toEqual([
+      ['dossier_id', 'droit_banque', 'droit_ventes', 'id', 'user_id'],
+      ['dossier_id', 'id', 'user_id'],
+      ['dossier_id', 'id', 'user_id'],
+    ])
+    expect(droits(base.tables.memberships)).toEqual([['m1', true, true], ['m2', false, false], ['m3', false, false]])
+    // La sauvegarde reçue n'a pas été modifiée.
+    expect(Object.keys(sauvegarde.contenu.memberships[2])).toContain('droit_ventes')
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('une sauvegarde lue par `select(\'*\')` part comme avant : des tranches de TAILLE_LOT_ECRITURE, ses lignes telles quelles', () => {
+    const lignes = Array.from({ length: TAILLE_LOT_ECRITURE * 2 + 50 }, (_, i) => ({ id: `l${i}`, dossier_id: DOSSIER, montant: i }))
+    const lots = lotsDEcriture(lignes)
+    expect(lots.map((lot) => lot.length)).toEqual([TAILLE_LOT_ECRITURE, TAILLE_LOT_ECRITURE, 50])
+    // Les mêmes objets, dans le même ordre : aucune copie, donc les mêmes requêtes qu'avant le correctif.
+    expect(lots.flat().every((ligne, i) => ligne === lignes[i])).toBe(true)
+  })
+
+  it('range les formes dans l’ordre où elles paraissent, quel que soit l’ordre des clés, chacune en tranches, sans `undefined`', () => {
+    const a1 = { id: 'a1', texte: 'x' }
+    const b1 = { id: 'b1' }
+    // Les mêmes colonnes dans un autre ordre : la même forme.
+    const a2 = { texte: 'y', id: 'a2' }
+    // `texte` n'y est pas nommé : la ligne part sans lui, la sauvegarde reçue le garde.
+    const b2 = { id: 'b2', texte: undefined }
+    const lots = lotsDEcriture([a1, b1, a2, b2])
+    expect(lots.map((lot) => lot.map((l) => l.id))).toEqual([['a1', 'a2'], ['b1', 'b2']])
+    expect(lots[1].map((l) => Object.keys(l))).toEqual([['id'], ['id']])
+    expect(Object.keys(b2)).toEqual(['id', 'texte'])
+    // Une forme plus nombreuse qu'une tranche se découpe, sans se mêler à une autre : 220 lignes `id` (la première
+    // forme parue), puis 10 lignes `id, x` — une sur vingt-trois à partir de la deuxième.
+    const nombreuses = Array.from({ length: TAILLE_LOT_ECRITURE + 30 }, (_, i) => (i % 23 === 1 ? { id: `c${i}`, x: 1 } : { id: `c${i}` }))
+    expect(lotsDEcriture(nombreuses).map((lot) => [lot.length, ...new Set(lot.map((l) => Object.keys(l).join()))]))
+      .toEqual([[TAILLE_LOT_ECRITURE, 'id'], [20, 'id'], [10, 'id,x']])
   })
 })
 

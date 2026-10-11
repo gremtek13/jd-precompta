@@ -46,6 +46,7 @@ import type {
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import StatutTvaCard, { FacturationElectroniqueCard, type ModificationStatutTva } from './StatutTvaCard'
+import EreportingCard from './EreportingCard'
 
 // LA DÉCLARATION DE TVA (CA3), PRÉPARÉE CASE PAR CASE — ligne 28 de la feuille de route, étape 1.
 //
@@ -234,6 +235,9 @@ export default function TvaTab({
   // même déclaration (voir CLAUDE.md, « un verrou d'exécution »). UN seul pour l'enregistrement et le retrait : ils
   // écrivent la même table, et l'un pendant l'autre partirait d'une liste que l'autre est en train de changer.
   const ecriture = useRef(false)
+  // Le statut de TVA ou le régime de la CA3 vient d'être changé dans cet onglet : la carte de l'e-reporting dit alors que le
+  // régime se reconfirme à partir du jour du changement (étape e5c ; hypothèse E5-Q2).
+  const [statutChange, setStatutChange] = useState(false)
 
   useEffect(() => {
     if (!assujettiTva) return
@@ -255,6 +259,8 @@ export default function TvaTab({
     if (error) {
       onRegimeUpdated(avant)
       setErreurRegime(messageErreur(error, "Le régime de TVA n'a pas pu être enregistré."))
+    } else {
+      setStatutChange(true)
     }
   }
 
@@ -265,11 +271,25 @@ export default function TvaTab({
       article={articleExoneration}
       numeroTvaAttribue={numeroTvaAttribue}
       siret={siret}
-      onStatutUpdated={onStatutUpdated}
+      onStatutUpdated={(modification) => {
+        setStatutChange(true)
+        onStatutUpdated(modification)
+      }}
     />
   )
   const facturationElectronique = (
     <FacturationElectroniqueCard statut={statutTva} article={articleExoneration} periodicite={periodicite} surDebits={surDebits} />
+  )
+  // La carte de l'e-reporting vit dans les DEUX branches : un dossier exonéré ou en franchise y est tenu de ses achats à
+  // l'étranger comme un redevable (étape e1).
+  const ereporting = (
+    <EreportingCard
+      dossierId={dossierId} statutChange={statutChange}
+      dossier={{
+        id: dossierId, siret, statut_tva: statutTva, article_exoneration: articleExoneration, numero_tva_attribue: numeroTvaAttribue,
+        tva_periodicite: periodicite, tva_sur_debits: surDebits,
+      }}
+    />
   )
 
   if (!assujettiTva) {
@@ -283,6 +303,7 @@ export default function TvaTab({
           <p className="muted" style={{ marginBottom: 0 }}>{declarationDuNonRedevable(statutTva)}</p>
         </div>
         {facturationElectronique}
+        {ereporting}
       </>
     )
   }
@@ -1009,6 +1030,7 @@ export default function TvaTab({
       </div>
 
       {facturationElectronique}
+      {ereporting}
     </>
   )
 }

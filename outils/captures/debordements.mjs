@@ -532,6 +532,64 @@ const VISITES = [
       await page.getByRole('heading', { name: /^Statuts lus sur / }).waitFor({ timeout: 10000 })
     },
   },
+  // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
+  // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
+  // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
+  // jour, celui de paiements à déclarer (le formulaire, rempli d'une note longue), et le formulaire d'un nouveau régime. Les
+  // données du banc sont de novembre 2027 (voir `EREPORTING_D7`) : ces visites, les DERNIÈRES, posent l'horloge au 5 novembre
+  // 2027 — un temps figé reste posé pour la suite —, et la carte des visites précédentes se mesure à la date réelle.
+  ...[
+    { nom: 'ereporting/fenetre', pas: async () => {}, attendu: null },
+    {
+      nom: 'ereporting/rectifier',
+      pas: async (page) => {
+        await page.getByRole('button', { name: /^Achats/ }).click()
+        await page.locator('tr', { hasText: 'octobre 2027' }).getByRole('button', { name: 'Détail', exact: true }).click()
+      },
+      attendu: 'Déclarer la rectificative',
+    },
+    {
+      nom: 'ereporting/ventes-a-jour',
+      pas: async (page) => {
+        await page.getByRole('button', { name: /^Ventes/ }).click()
+        await page.locator('tr', { hasText: 'octobre 2027' }).getByRole('button', { name: 'Détail', exact: true }).click()
+      },
+      attendu: /Empreinte du contenu figé/,
+    },
+    {
+      nom: 'ereporting/declarer-paiements',
+      pas: async (page) => {
+        await page.getByRole('button', { name: /^Paiements/ }).click()
+        await page.locator('tr', { hasText: 'octobre 2027' }).getByRole('button', { name: 'Détail', exact: true }).click()
+        await page.getByLabel('Plateforme sur laquelle la période a été déclarée').fill('Plateforme fictive de démonstration')
+        await page.getByLabel('Note (facultative)').fill(
+          'Déposée sur la plateforme du dossier le 5 novembre 2027 à 10 h 12, accusé de réception conservé avec la référence de l’envoi',
+        )
+      },
+      attendu: 'Déclarée sur la plateforme',
+    },
+    {
+      nom: 'ereporting/confirmer-regime',
+      pas: async (page) => {
+        await page.getByRole('button', { name: 'Confirmer un régime…', exact: true }).click()
+      },
+      attendu: 'Confirmer le régime',
+    },
+  ].map(({ nom, pas, attendu }) => ({
+    dossier: 'd7', onglet: 'tva', nom, fenetre: 'div[role="dialog"]',
+    apres: async (page) => {
+      await page.clock.setFixedTime(new Date('2027-11-05T10:00:00+01:00'))
+      if ((await page.locator('div[role="dialog"]').count()) > 0) {
+        await page.locator('div[role="dialog"]').getByRole('button', { name: 'Fermer', exact: true }).last().click()
+        await page.waitForTimeout(200)
+      }
+      await page.getByRole('button', { name: 'Régime, périodes et déclarations', exact: true }).click()
+      await page.getByRole('heading', { name: 'E-reporting du dossier' }).waitFor({ timeout: 10000 })
+      await page.getByRole('table', { name: /^Périodes : / }).waitFor({ timeout: 10000 })
+      await pas(page)
+      if (attendu !== null) await page.getByRole('button', { name: attendu }).or(page.getByText(attendu)).first().waitFor({ timeout: 10000 })
+    },
+  })),
 ]
 
 // « MES VENTES › FACTURES » (espace client, étape P4a) : l'onglet Factures en mode client, sur l'atelier de conseil (d7), et

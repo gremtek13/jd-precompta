@@ -270,9 +270,48 @@ export interface EcartRestauration {
   identite: string
 }
 
+// LES COLONNES QU'UNE LIGNE NOMME (défaut relevé le 11/10/2026). Pour un lot, postgrest-js passe à PostgREST l'UNION des
+// clés de ses lignes (`columns=`), et PostgREST met NULL dans toute colonne de cette union qu'une ligne omet — pas la
+// valeur par défaut que Postgres donne à une colonne absente de la liste d'un INSERT. Une note interne déjà sauvegardée
+// (avec son `id`) et une note recopiée d'une ancienne colonne (sans, voir `sansAnciennesNotes`) partaient ensemble : la
+// seconde recevait un identifiant NULL, la base refusait le lot (23502), et la restauration s'arrêtait au milieu, les
+// tables d'avant déjà écrites.
+//
+// Une écriture ne porte donc que des lignes qui nomment EXACTEMENT les mêmes colonnes : `columns=` est alors la liste de
+// chacune, et ce qu'une ligne omet prend sa valeur par défaut, comme si elle partait seule. Une colonne à `undefined`
+// n'est pas nommée, et la ligne part sans elle : JSON ne transmet pas la valeur, mais `Object.keys` mettrait la colonne
+// dans `columns=`, donc à NULL. Les lignes d'une sauvegarde (`select('*')`) nomment toutes les mêmes colonnes : leurs
+// écritures sont celles d'avant, tranche pour tranche. Les formes partent dans l'ordre où elles paraissent, chacune par
+// tranches ; comme la taille du lot, ce découpage ne décide de rien (la seconde passe, les vagues).
+//
+// Écarté : `defaultToNull: false` (`Prefer: missing=default`). PostgREST passe alors le corps en `jsonb` et fusionne
+// CHAQUE ligne de CHAQUE lot avec toutes les valeurs par défaut des colonnes nommées (`fromJsonBodyF`, v12.2.3) : toutes
+// les écritures de toutes les restaurations changeraient de chemin — un chemin que l'application n'emprunte nulle part —
+// pour un lot que seule une conversion fabrique. Inoffensif sur le catalogue du 11/10/2026 (ni séquence, ni domaine, ni
+// colonne `json`) ; une colonne ajoutée demain n'a pas cette garantie.
+export function lotsDEcriture(lignes: Record<string, unknown>[]): Record<string, unknown>[][] {
+  const parForme = new Map<string, Ligne[]>()
+  for (const ligne of lignes) {
+    const nommees = Object.keys(ligne).filter((colonne) => ligne[colonne] !== undefined)
+    // Une copie pour la seule ligne qui porte un `undefined` : toutes les autres partent telles quelles.
+    const envoyee = nommees.length === Object.keys(ligne).length
+      ? ligne
+      : Object.fromEntries(nommees.map((colonne) => [colonne, ligne[colonne]]))
+    const forme = JSON.stringify([...nommees].sort())
+    const memeForme = parForme.get(forme)
+    if (memeForme) memeForme.push(envoyee)
+    else parForme.set(forme, [envoyee])
+  }
+  const lots: Ligne[][] = []
+  for (const memeForme of parForme.values()) {
+    for (let i = 0; i < memeForme.length; i += TAILLE_LOT_ECRITURE) lots.push(memeForme.slice(i, i + TAILLE_LOT_ECRITURE))
+  }
+  return lots
+}
+
 async function ecrireParLots(table: string, lignes: Ligne[]): Promise<void> {
-  for (let i = 0; i < lignes.length; i += TAILLE_LOT_ECRITURE) {
-    const { error } = await supabase.from(table).insert(lignes.slice(i, i + TAILLE_LOT_ECRITURE))
+  for (const lot of lotsDEcriture(lignes)) {
+    const { error } = await supabase.from(table).insert(lot)
     // Jamais un `await` sans destructuration : `supabase.from(...)` ne lève pas, l'erreur se lit dans
     // `{ error }`. Une restauration qui avale ses erreurs est une restauration qui rend une base
     // amputée en se disant réussie — c'est précisément ce contre quoi tout ce chantier existe.

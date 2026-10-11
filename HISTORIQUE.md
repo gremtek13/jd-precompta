@@ -20574,3 +20574,144 @@ copie neuve de `t2_semee` (le dossier `test` semé de trois textes lus) : code 0
 contrôles neufs justes (la liste égale au catalogue, la colonne d'essai générée comme dans la base, 3 empreintes
 recalculées sur 3 égales à la source), le schéma d'essai supprimé. Intégré avec « Ma banque » (P9a), dont les fichiers
 sont disjoints.
+
+### 11/10/2026 — LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE PIÈCE — LIGNE 28.5, ÉTAPE (E5C)
+
+(À ranger sous « Entrées postérieures au 08/10/2026 ». Aucune migration, aucune policy, aucune fonction SQL, aucune Edge Function :
+les cinq fonctions de la base existaient depuis e5a et e5b1. Base `64818f18` ; sources : HISTORIQUE.md, « L'E-REPORTING : LA
+CONCEPTION », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN BASE », « LA DÉCLARATION D'E-REPORTING HORS APPLICATION,
+EN BASE ».)
+
+**CE QUI EST LIVRÉ.** Une carte « E-reporting » dans l'onglet TVA, dans les DEUX branches (redevable ; franchise, exonéré, à
+préciser), et sa fenêtre « Régime, périodes et déclarations » : le régime confirmé et son histoire, « à reconfirmer » quand
+l'onglet le contredit (E5-Q2 : la date se saisit, elle n'est jamais proposée ; la carte dit aussi que le statut ou le régime de
+CA3 vient d'être changé), confirmer et retirer ; trois objets (achats, ventes, paiements) et leurs périodes, chacune avec ce que
+dit e4 (rien à déclarer, à déclarer, en retard, en cours, à vérifier, refus et pourquoi), la déclaration active et son historique,
+« à rectifier » et ses causes en mots, « Déclarée sur la plateforme » — initiale ou rectificative —, qui dit ce qu'elle GARDE (le
+contenu figé, son empreinte, la période entière) et confirme en le nommant, et « Télécharger le détail (CSV) ». Écarter et
+reprendre une pièce candidate : dans la FICHE de la pièce (là où e3 place la fiche et ses signaux), pas dans la fenêtre, qui dit
+les candidates. Une pièce dont la fiche est déclarée ne se supprime plus (E5-Q6) : sa fiche le dit et n'offre plus « Supprimer » ;
+la suppression d'une sélection nomme ces pièces et dit « on ne sait pas » sur une lecture partielle.
+
+**LES RÈGLES, TENUES PAR LE CÂBLAGE.** Douze lectures de la fenêtre, chacune par `lireTout` (`lib/ereportingLecture.ts` ; les
+régimes et les écarts par `lireRegimes` et `lireEcarts`, extraites de `lireRegimesEtEcarts` ; les textes OCR des seules pièces
+d'achat à juger, par lots de 100) ; un module d'affichage PUR (`lib/ereportingEcran.ts`) qui ne change aucune règle de ceux
+d'en dessous. Rien d'affirmé ni d'offert sur une lecture absente, en cours, partielle ou qui lève ; chaque manque se nomme avec son
+motif. Cinq fonctions seules écrivent, sous UN verrou `useRef` par écran, relâché après la relecture, relue aussi sur un refus ;
+la confirmation précède le verrou ; les refus des modules se disent AVANT le clic, jamais réécrits ; une relecture qui lève
+après une écriture se dit comme une lecture, sans faire dire que l'écriture a échoué.
+
+**ÉPROUVÉ.** 22 fichiers (l'étape et les modules touchés, avec les gardes `ecransAvantLecture`, `ecrituresVerifiees`,
+`verrousEcritures`, `verrousExecution`, `lecturesPaginees`, `lecturesSignalees`, `triTotal`, `erreursSupabase`,
+`encaissementsEcritures`) : 771 tests, verts sous quatre fuseaux ; la suite entière sous Paris : 314 fichiers, 9 373 tests.
+Nouveaux : 205 cas dans cinq fichiers neufs, une vingtaine ailleurs. **Mutations du câblage : 78, 72 mordent, 6 ÉQUIVALENTES**
+(les gardes « tout lu » des trois gestionnaires de la fenêtre et le calcul des lignes sur lecture partielle — rendu conditionné
+par la même condition —, la garde du refus du gestionnaire de la déclaration — le bouton est grisé par le même refus —, la garde de
+suppression de `handleDelete` — le bouton n'existe pas) ; neuf survivaient d'abord, chacune faute d'un test (le retrait relu sur un
+refus, une relecture qui lève, la carte sur une lecture partielle, la carte absente d'une branche, le changement de statut ou de
+régime qui ne prévient plus la carte, l'écart offert sur une lecture partielle, les écarts non relus par l'onglet, les sources
+partielles d'une pièce déclarée) : tests ajoutés, mutations rejouées. **Banc** (port 5321) : neuf passes, 107 visites, 0
+débordement ; cinq visites pour l'e-reporting, dont le banc a révélé trois défauts de la fenêtre à 390 px, corrigés (un bouton
+de 14 px en dehors, des mots coupés dans une cellule de fiche repliée parce qu'une cellule `flex` à plusieurs enfants fait une
+colonne de chaque morceau de texte, un tableau replié en fiches à 900 px de bureau). Le monde du banc tire ses données de
+`src/test/ereportingEcran.ts` sur l'atelier (d7) et pose l'horloge au 5 novembre 2027 pour ces visites, qui sont les dernières.
+
+**LE CSV, ET UNE CONTRADICTION.** La conception (ligne e5 du tableau des étapes) et l'entrée e5a rangent « Télécharger le détail
+(CSV) » en phase C ; l'entrée e5b1 ne le reprend plus dans son « Reste ». Pris comme dû : le bouton est livré (BOM UTF-8,
+point-virgule, virgule décimale, champs par `champCsv` de la piste d'audit, une ligne par opération, un nom qui dit l'objet et la
+période, jamais le dossier). Le fichier de la plateforme est e6.
+
+**HYPOTHÈSES PRISES** (voir les questions) : E5-Q2, E5-Q3, E5-Q5, E5-Q6, E5-Q7, Q4 ; la rectificative qui viderait toute la
+période est dite et jamais offerte (question ouverte de e5b1).
+
+**UNE SINGULARITÉ D'e4, NON CORRIGÉE.** e4 signale « à reconfirmer » quand le statut de TVA du dossier est nul ; la situation est
+pratiquement inatteignable (la base déduit « à préciser ») et l'écran l'écarte avant, par un test.
+
+**RESTE.** Les hypothèses à confirmer ; e5b2 (Q6) ; e6, le fichier ; e9, le dépôt par l'API d'une plateforme ; la garde de sortie
+d'une saisie de la fenêtre n'existe pas (quitter l'onglet par la barre latérale n'est couvert nulle part).
+
+**LA RELECTURE ET L'INTÉGRATION, PAR LA SESSION.** Les cinq fonctions ne s'appellent que des deux écrans qui
+s'inscrivent nommément, fonction par fonction (`encaissementsEcritures.test.ts`) ; chaque écriture passe une confirmation,
+dit son erreur par `messageErreur`, et relit sous le verrou avant de le relâcher — la fiche d'une pièce réutilise le
+verrou `useRef` qu'elle avait depuis e3, la fenêtre en a un pour ses trois gestes. Le module de lecture ne lit le texte
+que des pièces d'achat qui peuvent entrer dans une période (datées du 1er septembre 2027 ou après, ou sans date), par
+lots de cent ; `regimesEreportingLecture.ts` est seulement scindé en deux lectures. Le correctif, écrit sur `64818f1`, a
+été appliqué en trois voies au-dessus de « Ma banque » (P9a) : un seul conflit, les deux mondes du banc ajoutés au même
+endroit de `fauxSupabase.ts`, gardés l'un et l'autre, aucune table en double. Au passage, le registre RGPD disait encore
+« aucun écran encore » de six traitements dont l'écran est en ligne (la révision des soldes, ses cycles, la revue
+analytique, la fiche « hors de France », le régime et les écarts, les déclarations) : corrigé.
+
+### 11/10/2026 — UN LOT D'INSERTION NE MÊLE PLUS DES LIGNES DE FORMES DIFFÉRENTES — LA RESTAURATION, L'OBSERVATION DE T2
+
+(Correctif T3, sans migration ni Edge Function ni écran ; base : `5f51cbc2`, `main` portant T2 et P9a.)
+
+**LE DÉFAUT.** Pour un lot, postgrest-js (2.112.4, `insert`) passe à PostgREST l'UNION des clés de ses lignes
+(`columns=`), et PostgREST met NULL dans toute colonne de cette union qu'une ligne omet — pas la valeur par défaut que
+Postgres donne à une colonne absente de la liste d'un INSERT. Le seul lot mélangé que la restauration fabrique :
+`notes_internes`, les notes déjà sauvegardées (toutes les colonnes) à côté des notes recopiées des anciennes colonnes
+(`dossier_id`, `piece_id` ou `document_id`, `texte` : `sansAnciennesNotes`). La recopiée recevait un `id` NULL : 23502,
+la restauration arrêtée au rang 57, les tables d'avant déjà écrites. Le faux client de `sauvegardeDonnees.test.ts`
+donnait la valeur par défaut à toute colonne omise : le test « une note interne déjà dans la sauvegarde fait foi » jouait
+ce lot et passait. Mesuré le 11/10/2026 (des comptes, aucun texte lu) : aucun dossier n'a de note à recopier, `test` a
+17 notes internes — une sauvegarde d'aujourd'hui ne fabrique pas ce lot ; une note écrite dans l'ancienne colonne APRÈS
+la recopie, par un onglet resté sur l'application d'avant (le cas que prévoit le commentaire d'`updated_at` de la
+migration P0), l'aurait fabriqué.
+
+**CE QUI A ÉTÉ LU.** La source installée de postgrest-js (`dist/index.mjs` : `insert`, l. 2986-3006, `upsert`, l.
+3227-3242 ; JSDoc de `defaultToNull`, l. 2888-2890 : « Make missing fields default to `null`. Otherwise, use the default
+value for the column. Only applies for bulk inserts. »). La documentation de PostgREST (`preferences.rst`, « Missing » :
+« any missing columns in the payload will be inserted as null value by default. To use the DEFAULT column value
+instead, use the Prefer: missing=default header. » ; CHANGELOG : introduit en 11.0.0, corrigé en 11.0.1, 11.2.0 et
+12.2.4). Sa source, v12.2.3, `fromJsonBodyF` : sans l'option, `json_to_recordset` ; avec, le corps passe en `jsonb` et
+CHAQUE élément devient `jsonb_build_object(<toutes les colonnes nommées qui ont un défaut>) || elem` — un `null` écrit
+reste NULL, une clé absente prend le défaut, et toutes les valeurs par défaut sont évaluées pour toutes les lignes. La
+documentation de PostgreSQL (INSERT) : « Each column not present in the explicit or implicit column list will be filled
+with a default value, either its declared default value or null if there is none. » La page publique de Supabase pour
+`insert` ne détaille pas `options`.
+
+**LE CHOIX.** `ecrireParLots` n'envoie que des lots dont toutes les lignes nomment EXACTEMENT les mêmes colonnes
+(`lotsDEcriture` : une forme est l'ensemble trié des clés dont la valeur n'est pas `undefined` ; les formes dans l'ordre
+où elles paraissent, chacune par tranches de 200). Une colonne à `undefined` n'est pas nommée : JSON ne transmet pas la
+valeur, mais `Object.keys` la mettrait dans `columns=`, donc à NULL — la ligne part sans elle, la sauvegarde reçue la
+garde. Une sauvegarde lue par `select('*')` a des lots uniformes : ses requêtes sont celles d'avant, octet pour octet
+(mêmes objets, mêmes tranches). Écarté : `defaultToNull: false`, qui corrigeait aussi le lot, mais faisait passer
+TOUTES les écritures de toutes les restaurations par un chemin du service que l'application n'emprunte nulle part
+(`jsonb`, fusion des défauts pour chaque ligne), pour un lot que seule une conversion fabrique ; inoffensif sur le
+catalogue relevé (200 valeurs par défaut : `gen_random_uuid()`, `now()`, `CURRENT_DATE` et des constantes ; ni
+séquence, ni identité, ni domaine, ni colonne `json`), sans garantie pour une colonne ajoutée demain. Le découpage ne
+décide de rien, comme la taille du lot : la seconde passe et les vagues le garantissent déjà.
+
+**LES ÉCRITURES DE LA RESTAURATION.** Une seule insertion, `ecrireParLots` : toutes les étapes (tables, vagues, première
+passe des avoirs, plan comptable du dossier, une étape ordinaire après `dossiers`). La seconde passe : une mise à jour
+d'une ligne et d'une colonne, sans union. Aucun `upsert`. `restauration.sql` recopie table à table (`insert … select`),
+sans JSON : non concerné.
+
+**LE FAUX CLIENT ÉCRIT COMME LE SERVICE.** Union des clés du lot ; une colonne de l'union omise (ou `undefined`) : NULL,
+ou la valeur par défaut déclarée sous `defaultToNull: false` ; une colonne qu'aucune ligne ne nomme : sa valeur par
+défaut dans les deux cas ; une clé primaire NULL : le lot ENTIER refusé, 23502, rien d'écrit. Une valeur par défaut que
+le test ne déclare pas (celle de la base, `gen_random_uuid()` pour chaque `id`) reste absente.
+
+**LES PREUVES.** Le test des notes, inchangé : sous le faux client fidèle et SANS la correction, il échoue — « Restauration
+interrompue sur « notes_internes » : null value in column "id" of relation "notes_internes" violates not-null constraint »
+(« les range dans les notes internes » tombe aussi, pour une différence de représentation : NULL écrit en clair là où la
+base aurait laissé NULL) ; avec la correction, 46 sur 46, aucun test existant modifié. Cinq tests nouveaux (deux de
+fidélité du faux client, un de restauration, deux de `lotsDEcriture`), 51 sur 51. Mutations : 10 sur 10 mordent — la
+correction retirée (3 rouges, dont le test des notes), `undefined` compté comme nommé, la copie oubliée, la forme qui
+dépend de l'ordre des clés, une forme sans tranches, l'ordre inverse, le faux client rendu indulgent, sans le refus
+23502, sans l'option ; indulgent ET sans correction, les deux tests des notes PASSENT : l'angle mort d'avant, reproduit.
+Contre-épreuve : l'option écartée passe le test des notes sous le faux client fidèle — il la modélise.
+
+**LA BARRIÈRE.** `tsc -b` vert ; les 25 erreurs connues du compilateur des Edge Functions et les 63 avertissements du
+lint, à l'identique de la base ; build vert. Onze fichiers (le module, les gardes qui lisent sa source, le plan de
+sauvegarde, PLAN_DE_REPRISE.md) sous les quatre fuseaux : 293 tests chacun. La suite entière à Paris : 313 fichiers,
+9 237 tests verts, aucun délai dépassé. Fichiers : `src/lib/sauvegardeDonnees.ts` et son test, PLAN_DE_REPRISE.md (§3.1,
+par ajout).
+
+**PLAN_DE_REPRISE.md, §3.1, PAR AJOUT.** `auth.users.confirmed_at` est une colonne générée (`least(email_confirmed_at,
+phone_confirmed_at)`, lue au catalogue) : recréer les comptes en recopiant leurs lignes bute en 428C9 ; une recopie par
+SQL l'omet, l'API d'administration ne l'écrit pas et prend l'`id` d'origine selon le client installé — à éprouver avec
+le reste (§6).
+
+**EN PASSANT.** Les autres insertions en lot de l'application (génération et règlement des écritures, deux imports du
+relevé, connexion bancaire, cotisations, historique de Super PDP, taux de la BCE) envoient des lignes uniformes, ou
+n'omettent que des colonnes sans valeur par défaut : rien à corriger ; aucun garde ne le tient pour elles.

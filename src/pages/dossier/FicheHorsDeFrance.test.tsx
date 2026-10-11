@@ -5,6 +5,7 @@ import { remplirModele } from '../../lib/encaissementsFactures'
 import { REFUS_FICHE_HORS_DE_FRANCE, REFUS_RETRAIT_FICHE, type CleRefusFiche, type CleRefusRetraitFiche } from '../../lib/piecesHorsDeFrance'
 import type { LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 import type { Piece, PieceHorsDeFrance, PieceHorsDeFranceTaux } from '../../lib/types'
+import { ECARTS_ET_DECLARATIONS_VIDES } from '../../test/ereportingDeLaPiece'
 
 // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » À L'ÉCRAN (ligne 28.5, e-reporting, étape e3). Ce que le module ne
 // voit pas, et que ce test garde : rien n'est montré ni offert sur une lecture pas encore revenue ou partielle ; les refus
@@ -87,7 +88,7 @@ interface Montage {
 
 function elements(o: Montage) {
   const relire = vi.fn<() => Promise<void>>(() => Promise.resolve())
-  const donnees: DonneesHorsDeFrance = { lecture: VIDE, relire, anneeFigeante: null, gelIncomplet: null, pieces: [], ...o.donnees }
+  const donnees: DonneesHorsDeFrance = { lecture: VIDE, relire, anneeFigeante: null, gelIncomplet: null, pieces: [], ...ECARTS_ET_DECLARATIONS_VIDES, ...o.donnees }
   return {
     donnees,
     jsx: (
