@@ -1,21 +1,24 @@
 import { formatDate } from '../../lib/format'
 import type { ResultatReleve } from '../../lib/releveStatuts'
 import { bilanDuReleve, CONSEQUENCE_ANNULATION } from '../../lib/statutsLus'
+import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 
 // LE BILAN D'UN RELEVÉ DES STATUTS DES FACTURES ÉMISES (ligne 28.5, étape d7, phase C), le même dans les trois écrans qui
 // l'offrent : l'onglet Factures, la fenêtre des encaissements et celle de la plateforme du client. Il reçoit le relevé
 // que l'écran a lancé sur un clic (`releverEtNommer`, lib/releveStatuts.ts) ; il ne lit rien. Les statuts gardés d'abord,
-// un refus en tête et en rouge avec sa conséquence ; puis ce qui ne l'a pas été, et pourquoi.
-export default function BilanReleveStatuts({ resultat }: { resultat: ResultatReleve }) {
+// un refus en tête et en rouge avec sa conséquence ; puis ce qui ne l'a pas été, et pourquoi. Pour le client « Ventes »
+// (`espace`), les phrases du module sont celles de son espace (lib/espaceVentes.ts).
+export default function BilanReleveStatuts({ resultat, espace }: { resultat: ResultatReleve; espace: EspaceVentes }) {
   const b = bilanDuReleve(resultat.releve, resultat.numeros, formatDate)
+  const dire = (texte: string) => pourLEspace(espace, texte)
   return (
     <div className="releve-statuts">
-      <h3>{b.titre}</h3>
+      <h3>{dire(b.titre)}</h3>
       {b.rienDeNouveau && <p>Pas de nouveau statut sur une facture du dossier.</p>}
       {resultat.numerosIncomplets && (
         <p className="muted">
           Les numéros des factures n’ont pas pu être lus en entier ({resultat.numerosIncomplets}) : les statuts sont gardés,
-          l’onglet Factures les montre sur chaque facture.
+          {espace === 'client' ? ' la liste de tes factures les montre sur chacune.' : ' l’onglet Factures les montre sur chaque facture.'}
         </p>
       )}
       {b.gardes.length > 0 && (
@@ -26,7 +29,7 @@ export default function BilanReleveStatuts({ resultat }: { resultat: ResultatRel
               <span className={`badge ${g.classe}`}>{g.libelle}</span>
               {g.annulation && <> — {CONSEQUENCE_ANNULATION}.</>}
               {g.avertissements.length > 0 && (
-                <div className="releve-avertissement">Données écartées du message : {g.avertissements.join(' ')}</div>
+                <div className="releve-avertissement">Données écartées du message : {dire(g.avertissements.join(' '))}</div>
               )}
             </li>
           ))}
@@ -34,8 +37,8 @@ export default function BilanReleveStatuts({ resultat }: { resultat: ResultatRel
       )}
       {(b.dejaLus || b.comptes.length > 0) && (
         <ul className="plateforme-liste muted">
-          {b.dejaLus && <li>{b.dejaLus}</li>}
-          {b.comptes.map((c) => <li key={c}>{c}</li>)}
+          {b.dejaLus && <li>{dire(b.dejaLus)}</li>}
+          {b.comptes.map((c) => <li key={c}>{dire(c)}</li>)}
         </ul>
       )}
       {b.ecartes.length > 0 && (
@@ -44,8 +47,8 @@ export default function BilanReleveStatuts({ resultat }: { resultat: ResultatRel
           <ul className="plateforme-liste">
             {b.ecartes.map((e) => (
               <li key={e.flux}>
-                {e.texte}
-                {e.detail && <div className="releve-avertissement">{e.detail}</div>}
+                {dire(e.texte)}
+                {e.detail && <div className="releve-avertissement">{dire(e.detail)}</div>}
               </li>
             ))}
           </ul>
@@ -55,12 +58,12 @@ export default function BilanReleveStatuts({ resultat }: { resultat: ResultatRel
         <>
           <p className="releve-sous-titre">En échec :</p>
           <ul className="plateforme-liste">
-            {b.echecs.map((e) => <li key={e.flux}>{e.texte}</li>)}
+            {b.echecs.map((e) => <li key={e.flux}>{dire(e.texte)}</li>)}
           </ul>
         </>
       )}
-      {b.incomplet && <p className="alerte-tva">{b.incomplet}</p>}
-      {b.reprise && <p className="error-text">{b.reprise}</p>}
+      {b.incomplet && <p className="alerte-tva">{dire(b.incomplet)}</p>}
+      {b.reprise && <p className="error-text">{dire(b.reprise)}</p>}
     </div>
   )
 }

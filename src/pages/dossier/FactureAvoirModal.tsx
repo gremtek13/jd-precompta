@@ -4,7 +4,8 @@ import { calculerLigne, calculerTotaux, creerAvoir, lignesSaisies, refusAvoir } 
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
-import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
+import { LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT } from '../../lib/droitsAcces'
+import { pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
 
 interface LigneAvoirEdit {
   designation: string
@@ -17,6 +18,9 @@ interface LigneAvoirEdit {
 
 interface Props {
   dossierId: string
+  // Qui crée l'avoir : le cabinet, ou le client « Ventes » (espace client, étape P4a) — le même geste, par la même
+  // fonction ; seuls les mots changent (lib/espaceVentes.ts).
+  espace: EspaceVentes
   factureOrigine: FactureEmise
   // Ce que les autres avoirs de cette facture ont déjà crédité (lib/factures.ts:dejaCredite) ; null quand la liste
   // des factures n'a pas été lue en entier — on ne sait pas, et c'est alors la base qui juge du plafond.
@@ -42,7 +46,7 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, factureOrigine, credite, onClose, onCreated }: Props) {
+export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
@@ -223,8 +227,9 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, credite, 
             </div>
 
             <div className="field">
-              {/* Le motif est rangé dans les notes de l'avoir, que lit le client qui porte la case « Ventes ». */}
-              <label htmlFor="avoir-motif">{LIBELLE_MOTIF_AVOIR}</label>
+              {/* Le motif est rangé dans les notes de l'avoir, que lit le client qui porte la case « Ventes » — et le cabinet,
+                  quand c'est le client qui l'écrit. */}
+              <label htmlFor="avoir-motif">{espace === 'client' ? LIBELLE_MOTIF_AVOIR_CLIENT : LIBELLE_MOTIF_AVOIR}</label>
               <input id="avoir-motif" value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="ex. Erreur de quantité, remise commerciale a posteriori…" />
             </div>
 
@@ -233,7 +238,7 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, credite, 
               <textarea id="avoir-mentions" rows={2} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
             </div>
 
-            {(error ?? refus) && <p className="error-text">{error ?? refus}</p>}
+            {(error ?? refus) && <p className="error-text">{pourLEspaceSiTexte(espace, error ?? refus)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={saving}>Annuler</button>

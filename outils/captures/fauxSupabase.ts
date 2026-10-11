@@ -50,6 +50,12 @@ const LOGO_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.g
 // drapeau que l'application ignorerait.
 const CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client') === '1'
 
+// « Mes ventes » (espace client, étape P4a) : une seconde clé rattache AUSSI ce compte à l'atelier de conseil (d7), redevable,
+// dont les factures portent transmissions, encaissements et déclarations — avec la case « Ventes », et « Banque » quand la
+// clé vaut « banque ». Le client a alors deux sociétés : son sélecteur paraît, et la société affichée se choisit par la clé
+// d'AuthContext (`jd-precompta-dossier-actif`).
+const VENTES_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-client-ventes')
+
 const dossiers: Ligne[] = [
   ['d1', 'Cabinet infirmier Moreau', '12345678900012', '86.90D', 'Activités des infirmiers et des sages-femmes'],
   ['d2', 'Sophie Lambert', null, null, null],
@@ -1204,6 +1210,9 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-02-10T09:30:00Z' },
     ...(CLIENT_DU_BANC
       ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      : []),
+    ...(CLIENT_DU_BANC && VENTES_DU_BANC
+      ? [{ id: 'm-u1-d7', user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
       : []),
   ],
   notes_internes: NOTES_INTERNES,

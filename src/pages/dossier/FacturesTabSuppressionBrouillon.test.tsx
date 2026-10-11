@@ -101,7 +101,7 @@ function brouillon(o: Partial<FactureEmise> = {}): FactureEmise {
 
 function monter() {
   return render(
-    <FacturesTab
+    <FacturesTab espace="cabinet"
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
       dossierAdresse={null} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false}
       tvaSurDebits={false} onAdresseUpdated={() => {}}

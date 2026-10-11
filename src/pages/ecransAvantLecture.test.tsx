@@ -18,6 +18,7 @@ import ClientHome from './ClientHome'
 import ClientInformations from './ClientInformations'
 import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
+import ClientVentes from './ClientVentes'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
 import EquipePage from './EquipePage'
@@ -191,6 +192,8 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientUpload', fichier: 'pages/ClientUpload.tsx', rendre: () => <MemoryRouter><ClientUpload /></MemoryRouter> },
   { nom: 'ClientInformations', fichier: 'pages/ClientInformations.tsx', rendre: () => <MemoryRouter><ClientInformations /></MemoryRouter> },
   { nom: 'ClientSimulation', fichier: 'pages/ClientSimulation.tsx', rendre: () => <MemoryRouter><ClientSimulation /></MemoryRouter> },
+  // « Mes ventes » (espace client, étape P4a) : la société affichée et ses droits lus, puis l'onglet Factures en mode client.
+  { nom: 'ClientVentes', fichier: 'pages/ClientVentes.tsx', rendre: () => <MemoryRouter><ClientVentes /></MemoryRouter> },
   { nom: 'DossiersList', fichier: 'pages/DossiersList.tsx', rendre: () => <Dossier1><DossiersList /></Dossier1> },
   { nom: 'DossierDetail', fichier: 'pages/DossierDetail.tsx', rendre: () => (
     <MemoryRouter initialEntries={['/dossiers/d1/checklist']}>
@@ -231,18 +234,18 @@ const ECRANS: Ecran[] = [
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} onModeleUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EstimationTab', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'FactureApercu', fichier: 'pages/dossier/FactureApercu.tsx', rendre: () => (
     <Dossier1><FactureApercu facture={facture()} dossier={{ statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }} onClose={rien} /></Dossier1>
   ) },
   { nom: 'FactureAvoirModal', fichier: 'pages/dossier/FactureAvoirModal.tsx', rendre: () => (
-    <Dossier1><FactureAvoirModal dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
+    <Dossier1><FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
   ) },
   { nom: 'FactureFormModal', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal
+      <FactureFormModal espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onAdresseUpdated={rien} onClose={rien} onSaved={rien}
@@ -251,7 +254,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'FacturesTab', fichier: 'pages/dossier/FacturesTab.tsx', rendre: () => (
     <Dossier1>
-      <FacturesTab
+      <FacturesTab espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} onAdresseUpdated={rien}
       />
@@ -293,7 +296,7 @@ const ECRANS: Ecran[] = [
   { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },
   { nom: 'SupplementsTab', fichier: 'pages/dossier/SupplementsTab.tsx', rendre: () => <Dossier1><SupplementsTab dossierId="d1" /></Dossier1> },
   { nom: 'TransmissionFactureModal', fichier: 'pages/dossier/TransmissionFactureModal.tsx', rendre: () => (
-    <Dossier1><TransmissionFactureModal dossierId="d1" facture={facture()} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><TransmissionFactureModal espace="cabinet" dossierId="d1" facture={facture()} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   { nom: 'TvaTab', fichier: 'pages/dossier/TvaTab.tsx', rendre: () => (
     <Dossier1>

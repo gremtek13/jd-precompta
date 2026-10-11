@@ -222,7 +222,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   `debordements.mjs` compte ce qui sort du panneau, d'une carte, d'une case de grille, le texte plus large que sa
   boîte, et un mot de 2 à 24 caractères coupé au milieu : 0 aux quatre largeurs de référence, à 720 px et aux
   combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
-  1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Ne
+  1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. La passe
+  du client « Mes ventes » : `debordements.mjs <largeur> client` (ou `client-banque`), qui mesure aussi la barre du bas du
+  téléphone. Ne
   JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
   Sous un `node_modules` fait de liens (worktree d'agent), Vite refuse les polices et le banc mesure la police de
   repli sans échouer : `outils/captures/vite.config.ts` autorise le `node_modules` réel (`realpathSync` d'un paquet)
@@ -375,6 +377,14 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   (une DONNÉE ; attendue dans `src/test/quiPeutQuoi.ts`, que la phrase des cases de l'onglet Accès nomme action par
   action) ; sans le droit, 404 « Dossier introuvable. », droits illisibles 503 ; `cree_par` à la réservation, `lu_par`
   au relevé ; le plafond d'e-mails se LIT, il ne se réserve pas → « LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT ».
+- **« Mes ventes » (P4a, 11/10/2026)** : route et entrée sous `mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, case
+  « Ventes » de la société AFFICHÉE)` ; `ClientVentes` relit la société et les cases à la base (`lireLesDroitsVentes`), et
+  une lecture ratée n'offre aucun geste. FacturesTab et ses fenêtres portent `espace` (OBLIGATOIRE, unions typées :
+  `onAdresseUpdated` au cabinet seul, `banque` au client seul) ; sans « Banque », la fenêtre des encaissements ne lit ni
+  relevé, ni règlements, ni pièces, et le dit. Les mots du client : variantes à côté des phrases d'écran, `pourLEspace`
+  pour celles des modules partagés (copies gardées : jamais changées à la source) ; garde des mots `MOTS_DU_CABINET`
+  (aucun onglet, jamais « le client » pour le titulaire, tutoiement), éprouvé sur les mêmes états montés pour le cabinet
+  (`FacturesTabClient.test.tsx`) → « « MES VENTES › FACTURES » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -416,7 +426,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Cabinets et accès** : multi-cabinets avec super-admin, charte graphique par cabinet ; équipe ; accès clients, et
   leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture du
   relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2, et
-  dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; client
+  dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; « Mes ventes › Factures » (P4a, 11/10/2026) : l'onglet
+  Factures et ses fenêtres pour le client « Ventes » ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -564,7 +575,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   viendront avec P3 et P4 → « LES VENTES DU CLIENT, EN BASE », « AVANT LES VENTES DU CLIENT », « LES VENTES DU CLIENT,
   APPLIQUÉES : LA BASCULE ». P3, les fonctions de la vente acceptent le client, le 10/10/2026 (EC-Q4 prise comme
   hypothèse ; la phrase des cases de l'onglet Accès dit ce qu'elles ouvrent) → « LES FONCTIONS DE LA VENTE ACCEPTENT LE
-  CLIENT ». P5,
+  CLIENT ». P4a, « Mes ventes › Factures », le 11/10/2026 (les gestes du cabinet retirés, la banque dite, les mots du
+  client) ; restent P4b (connexions du client, sous EC-Q4 ; tuiles de l'accueil) et P4c (« par le client », EC-Q2) →
+  « « MES VENTES › FACTURES » ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -1185,7 +1198,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8571 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8661 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

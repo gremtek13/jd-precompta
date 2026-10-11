@@ -72,7 +72,7 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     expect(screen.queryByText('autre@exemple.fr')).toBeNull()
     expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(true, true))
     const phrase = screen.getByText(ceQueDisentLesCases(true, true))
-    expect(phrase.textContent).toContain('« Ventes » permet déjà au client, par la base et sans écran encore, de lire ses ventes')
+    expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
     expect(phrase.textContent).toContain('et, avec « Ventes », de désigner celui qui prouve un encaissement.')
     expect(screen.queryByText(/cocher une case ne change pas|Cocher « Ventes » ne change pas/)).toBeNull()

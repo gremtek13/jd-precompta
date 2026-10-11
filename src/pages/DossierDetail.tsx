@@ -332,6 +332,7 @@ export default function DossierDetail() {
             {tab === 'pieces' && <PiecesTab dossierId={id} dossierSiret={dossier?.siret ?? null} />}
             {tab === 'factures' && (
               <FacturesTab
+                espace="cabinet"
                 dossierId={id}
                 dossierNom={dossier?.nom ?? ''}
                 dossierSiret={dossier?.siret ?? null}

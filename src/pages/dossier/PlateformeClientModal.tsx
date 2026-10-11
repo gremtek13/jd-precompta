@@ -523,7 +523,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           </div>
         )}
 
-        {releve && <BilanReleveStatuts resultat={releve} />}
+        {releve && <BilanReleveStatuts resultat={releve} espace="cabinet" />}
         {message && <p className="muted">{message}</p>}
         {erreur && <p className="error-text">{erreur}</p>}
 
