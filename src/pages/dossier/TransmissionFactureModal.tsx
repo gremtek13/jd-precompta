@@ -295,7 +295,7 @@ export default function TransmissionFactureModal({ dossierId, espace, facture, s
         <h2 style={{ marginTop: 0 }}>Transmettre {nature} {facture.numero}</h2>
         <p className="muted" style={{ marginTop: -8 }}>
           {espace === 'client'
-            ? `À ${facture.tiers_nom}, par une plateforme agréée : la tienne, que ton cabinet relie à ta société, ou Super PDP.`
+            ? `À ${facture.tiers_nom}, par une plateforme agréée : la tienne, ou Super PDP, que tu relies dans « Tes plateformes ».`
             : `À ${facture.tiers_nom}, par une plateforme agréée : celle du client, que l’onglet Justificatifs relie au dossier, ou Super PDP.`}
           {' '}Une facture transmise ne se reprend pas : seul un avoir la corrige.
         </p>
@@ -443,7 +443,8 @@ export default function TransmissionFactureModal({ dossierId, espace, facture, s
                 {connexion === null && superpdp === false && (
                   <p className="muted">
                     {espace === 'client'
-                      ? 'Aucune plateforme n’est reliée à ta société : c’est ton cabinet qui relie ta plateforme agréée, ou Super PDP.'
+                      ? 'Aucune plateforme n’est reliée à ta société : relie ta plateforme agréée, ou Super PDP, dans « Tes '
+                        + 'plateformes », au-dessus de tes factures.'
                       : 'Aucune plateforme n’est reliée à ce dossier : relie celle du client dans l’onglet Justificatifs '
                         + '(« Plateforme du client »), ou configure Super PDP.'}
                   </p>

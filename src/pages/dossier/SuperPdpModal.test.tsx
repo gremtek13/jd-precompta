@@ -59,7 +59,7 @@ function repondre(reponse: ReponsePlateforme<{ connexion: ConnexionPlateformeVue
 }
 
 async function ouvrir() {
-  await act(async () => { render(<SuperPdpModal dossierId="d1" onClose={() => {}} onImported={() => {}} />) })
+  await act(async () => { render(<SuperPdpModal espace="cabinet" dossierId="d1" onClose={() => {}} onImported={() => {}} />) })
 }
 
 beforeEach(() => {

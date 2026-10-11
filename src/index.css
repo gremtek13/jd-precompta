@@ -1997,6 +1997,17 @@ a.nav-menu-item { text-decoration: none; }
   overflow-wrap: anywhere;
 }
 .releve-statuts > h3 { margin: 0 0 8px; font-size: 1rem; }
+/* Les connexions du client (« Mes ventes », espace client, étape P4b) : sa plateforme agréée et Super PDP, une rangée
+   chacune — l'état, puis le bouton qui ouvre la fenêtre, qui passe sous le texte plutôt que de déborder —, encadrées
+   comme le bilan d'un relevé. */
+.connexions-client {
+  margin: 0 0 14px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.connexions-client > h3 { margin: 0 0 8px; font-size: 1rem; }
+.connexions-client > .plateforme-statuts { margin: 0 0 8px; }
+.connexions-client > .plateforme-statuts:last-of-type { margin-bottom: 0; }
 .releve-statuts > p { margin: 0 0 8px; font-size: 0.88rem; }
 .releve-statuts > .alerte-tva { margin: 0 0 8px; }
 .releve-sous-titre { font-weight: 600; }

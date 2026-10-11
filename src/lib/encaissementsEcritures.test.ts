@@ -415,9 +415,10 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     for (const t of [...TABLES_DU_REGISTRE, ...TABLES_DES_DECLARATIONS]) {
       expect(nommes.some((s) => s.tables?.includes(t) && s.ecriture == null), t).toBe(true)
     }
-    // Les déclarations sont lues par la fenêtre ET par l'onglet : le scanner voit les deux.
+    // Les déclarations sont lues par la fenêtre ET par l'onglet — depuis l'étape P4b, par la lecture que l'onglet partage
+    // avec l'accueil du client (lib/ventesLecture.ts) : le scanner voit les deux.
     expect(new Set(nommes.filter((s) => s.tables?.includes('transmissions_encaissements')).map((s) => s.chemin)))
-      .toEqual(new Set(['src/pages/dossier/EncaissementsFactureModal.tsx', 'src/pages/dossier/FacturesTab.tsx']))
+      .toEqual(new Set(['src/pages/dossier/EncaissementsFactureModal.tsx', 'src/lib/ventesLecture.ts']))
     // Les Edge Functions sont parcourues.
     expect(sites.some((s) => s.chemin.startsWith('supabase/functions/'))).toBe(true)
     // Une table passée par un paramètre typé se lit : le dépôt d'une pièce ou d'un document.

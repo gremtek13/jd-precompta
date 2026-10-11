@@ -14,6 +14,10 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import type { CotisationDeclaree, DocumentDivers, Dossier, LigneBancaire, Piece } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
+import { droitsSur } from '../lib/droitsAcces'
+import { mesVentesOuvertes } from '../lib/espaceVentes'
+import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
+import TuilesVentesClient from './TuilesVentesClient'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -43,8 +47,10 @@ interface Depot {
 // est en cours de vérification, ce qu'il reste à envoyer. Volontairement limité aux chiffres qu'un
 // non-comptable comprend : jamais de solde, de TVA ni de résultat ici.
 export default function ClientHome() {
-  const { dossierActifId } = useAuth()
+  const { dossierActifId, droitsParDossier } = useAuth()
   const dossierId = dossierActifId
+  // « Mes ventes » ouvert sur la société affichée, comme la coque le décide pour son entrée (Layout.tsx) : ses tuiles aussi.
+  const ventesOuvertes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)
   const navigate = useNavigate()
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -350,6 +356,8 @@ export default function ClientHome() {
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
+          {/* « À encaisser » et « À déclarer » (étape P4b) : seulement si « Mes ventes » est ouvert sur la société affichée. */}
+          {ventesOuvertes && <TuilesVentesClient key={dossierId} dossierId={dossierId} />}
 
           <Widget
             className="span-7"

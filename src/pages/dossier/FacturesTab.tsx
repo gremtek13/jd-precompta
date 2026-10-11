@@ -20,13 +20,14 @@ import {
 } from '../../lib/transmissionsFactures'
 import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import {
-  COLONNES_STATUT_LU, CONSEQUENCE_ANNULATION, auteurDuStatut, classeStatutLu, libelleStatutLu, statutDeLaPastille,
+  CONSEQUENCE_ANNULATION, auteurDuStatut, classeStatutLu, libelleStatutLu, statutDeLaPastille,
   type StatutLu,
 } from '../../lib/statutsLus'
 import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
 import BilanReleveStatuts from './BilanReleveStatuts'
+import ConnexionsClient from './ConnexionsClient'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
-import { lireTout } from '../../lib/lectureComplete'
+import { lireLesVentesDuDossier } from '../../lib/ventesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 import { dejaCredite, SUPPRESSION_BROUILLON_EXPORTEE, supprimerBrouillon } from '../../lib/factures'
@@ -106,69 +107,22 @@ export default function FacturesTab(props: Props) {
 
   async function load() {
     setLoading(true)
-    // La suite des factures émises est LÉGALE : elle n'admet ni trou ni doublon, et une liste
-    // tronquée ferait croire à un trou là où il n'y en a pas. Tri TOTAL, `date_emission` n'étant
-    // pas unique — plusieurs factures partent le même jour.
-    const lecture = await lireTout<FactureEmise>((debut, fin) =>
-      supabase.from('factures_emises').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
-    )
-    // Tri TOTAL, la clé primaire en dernier : deux envois d'une même seconde se lisent toujours dans le même ordre.
-    const envois = await lireTout<TransmissionFacture>((debut, fin) =>
-      supabase.from('transmissions_factures')
-        .select('id, dossier_id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
-    )
-    // Les lignes de TOUTES les factures du dossier — par leur facture, la table n'ayant pas de dossier —, ses
-    // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte. Puis les
-    // déclarations du dossier, échouées et rejetées comprises, et l'historique de Super PDP de ses factures (par leur
-    // facture, comme les lignes) : `pastilleDeclaration` décide lui-même de ce qui est déclaré, et de ce qui ne le sera pas.
-    const [lignes, encaisses, parts, declares, evenements, statuts] = await Promise.all([
-      lireTout<LigneDeFacture & { id: string }>((debut, fin) =>
-        supabase.from('facture_lignes')
-          .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
-          .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
-      ),
-      lireTout<EncaissementPourContrePassation>((debut, fin) =>
-        supabase.from('encaissements_factures')
-          .select('id, dossier_id, facture_id, date_encaissement, montant, ligne_bancaire_id, annule_id, retire_le', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('id').range(debut, fin),
-      ),
-      lireTout<PartLue>((debut, fin) =>
-        supabase.from('encaissements_factures_taux').select('encaissement_id, taux, montant', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('encaissement_id').order('taux').range(debut, fin),
-      ),
-      lireTout<DeclarationLue>((debut, fin) =>
-        supabase.from('transmissions_encaissements')
-          .select('id, dossier_id, encaissement_id, facture_id, canal, hote, etat', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
-      ),
-      lireTout<EvenementSuperpdpLu & { id: string }>((debut, fin) =>
-        supabase.from('facture_superpdp_events')
-          .select('id, facture_id, status_code, factures_emises!inner(dossier_id)', { count: 'exact' })
-          .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('occurred_at').order('id').range(debut, fin),
-      ),
-      // Les statuts lus du dossier, tri TOTAL : `lu_le` n'est pas unique, un relevé en écrit plusieurs à la suite.
-      lireTout<StatutLu>((debut, fin) =>
-        supabase.from('statuts_factures_recus').select(COLONNES_STATUT_LU, { count: 'exact' })
-          .eq('dossier_id', dossierId).order('lu_le').order('id').range(debut, fin),
-      ),
-    ])
-    setFactures(lecture.lignes)
-    setLectureIncomplete(lecture.complete ? null : lecture.motif)
-    setTransmissions(envois.lignes)
-    setTransmissionsIncompletes(envois.complete ? null : envois.motif)
-    setLignesFactures(lignes.lignes)
-    setEncaissements(encaisses.lignes)
-    setPartsEncaissements(parts.lignes)
-    setEncaissementsIncomplets(
-      !lignes.complete ? lignes.motif : !encaisses.complete ? encaisses.motif : !parts.complete ? parts.motif : null,
-    )
-    setDeclarations(declares.lignes)
-    setEvenementsSuperpdp(evenements.lignes)
-    setDeclarationsIncompletes(!declares.complete ? declares.motif : !evenements.complete ? evenements.motif : null)
-    setStatutsLus(statuts.lignes)
-    setStatutsIncomplets(statuts.complete ? null : statuts.motif)
+    // Les lectures de l'onglet, que l'accueil du client compte aussi (lib/ventesLecture.ts) : la suite LÉGALE des
+    // factures, leurs transmissions, leurs encaissements, leurs déclarations, l'historique de Super PDP et les statuts lus.
+    const lu = await lireLesVentesDuDossier(dossierId)
+    setFactures(lu.factures)
+    setLectureIncomplete(lu.facturesIncompletes)
+    setTransmissions(lu.transmissions)
+    setTransmissionsIncompletes(lu.transmissionsIncompletes)
+    setLignesFactures(lu.lignes)
+    setEncaissements(lu.encaissements)
+    setPartsEncaissements(lu.parts)
+    setEncaissementsIncomplets(lu.encaissementsIncomplets)
+    setDeclarations(lu.declarations)
+    setEvenementsSuperpdp(lu.evenementsSuperpdp)
+    setDeclarationsIncompletes(lu.declarationsIncompletes)
+    setStatutsLus(lu.statutsLus)
+    setStatutsIncomplets(lu.statutsIncomplets)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -320,7 +274,7 @@ export default function FacturesTab(props: Props) {
           Le bouton "Avoir" sur une ligne crée un avoir avec sa propre numérotation (série "A",
           indépendante des factures), qui référence toujours la facture corrigée. Une fois validée,
           une facture peut être transmise par une plateforme agréée —{' '}
-          {espace === 'client' ? 'la tienne, que ton cabinet relie à ta société,' : 'celle du client, reliée dans l\'onglet Justificatifs,'}
+          {espace === 'client' ? 'la tienne, que tu relies dans « Tes plateformes »,' : 'celle du client, reliée dans l\'onglet Justificatifs,'}
           {' '}ou Super PDP — ou envoyée par e-mail ; imprimer/enregistrer en PDF
           reste possible si tu préfères l'envoyer toi-même.
         </p>
@@ -342,6 +296,14 @@ export default function FacturesTab(props: Props) {
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvelle facture</button>
       </div>
 
+      {/* Le client relie lui-même sa plateforme agréée et Super PDP (étape P4b, sous EC-Q4) : la section dit leur état, une
+          lecture ratée comprise, et ouvre leurs fenêtres en mode client. Rien ne s'y dit avant la lecture. */}
+      {espace === 'client' && (
+        <ConnexionsClient
+          dossierId={dossierId} connexion={connexion} connexionErreur={connexionErreur} relireConnexion={lireConnexion}
+        />
+      )}
+
       {/* La plateforme du client et le cycle de vie de ses factures émises : relevé sur un clic, jamais à l'ouverture. */}
       {connexion && (
         <div className="plateforme-statuts">
@@ -356,16 +318,10 @@ export default function FacturesTab(props: Props) {
           </button>
         </div>
       )}
-      {/* Le client VOIT l'état de sa plateforme ; c'est son cabinet qui la relie (P4b ouvrira la liaison, sous EC-Q4). Rien
-          ne se dit avant la lecture : `connexion` n'est nul qu'une fois lue. */}
-      {espace === 'client' && connexion === null && (
-        <p className="muted">Aucune plateforme agréée n’est reliée à ta société : c’est ton cabinet qui la relie.</p>
-      )}
-      {connexionErreur && (
+      {/* Une connexion illisible : le client le lit dans « Tes plateformes », au-dessus. */}
+      {espace === 'cabinet' && connexionErreur && (
         <p className="muted">
-          {espace === 'client'
-            ? `Ta plateforme : ${dire(connexionErreur)} Les statuts de tes factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.`
-            : `Plateforme du client : ${connexionErreur} Les statuts de ses factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.`}
+          Plateforme du client : {connexionErreur} Les statuts de ses factures ne se relèvent pas d’ici tant qu’elle n’est pas lue.
         </p>
       )}
       {erreurReleve && <p className="error-text">{dire(erreurReleve)}</p>}

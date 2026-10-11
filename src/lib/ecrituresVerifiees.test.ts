@@ -92,11 +92,12 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'avec son motif',
   },
   lireLesDroitsVentes: {
-    nombre: 1,
+    // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases.
+    nombre: 2,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Mes ventes » ' +
-      '(P4a). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une réponse illisible, ne rend ' +
-      'AUCUN droit, et l’écran n’offre alors aucun geste, avec son motif',
+      '(P4a) et ses tuiles de l’accueil (P4b). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
+      'réponse illisible, ne rend AUCUN droit, et l’écran n’offre alors aucun geste, ni les tuiles aucun chiffre, avec son motif',
   },
 }
 

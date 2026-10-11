@@ -52,8 +52,10 @@ const PRODUITES: Record<string, () => string> = {
   },
   'libelleCanal': () => libelleCanal({ canal: 'plateforme', hote: 'flux.plateforme-fictive.fr' }),
   'libelleCourtCanal': () => libelleCourtCanal({ canal: 'plateforme' }),
-  // Le seul message d'un module qui appelle le client Supabase : lu dans sa source, que ce test n'importe pas.
-  'lireConnexionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
+  // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
+  'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
+  // Les refus de la fonction que la liaison du client rencontre (étape P4b) : lus dans sa source, au caractère près.
+  'plateforme-agreee (source)': () => readFileSync(resolve(process.cwd(), 'supabase/functions/plateforme-agreee/index.ts'), 'utf8'),
 }
 
 describe('les réécritures du client', () => {
@@ -72,6 +74,31 @@ describe('les réécritures du client', () => {
     }
     const message = 'La connexion à la plateforme du client n’a pas pu être lue.'
     expect(pourLEspace('client', message)).toBe('La connexion à ta plateforme n’a pas pu être lue.')
+  })
+
+  // Ce que `plateforme-agreee` répond aux gestes de la liaison que le client fait depuis l'étape P4b — relier, tester,
+  // relire les statuts —, tel qu'il s'affiche une fois les morceaux de la source assemblés et les valeurs posées. Chaque
+  // `de` est confronté à la source plus haut ; ces phrases-ci gardent que leur assemblage, lu par le client, est le sien.
+  it.each([
+    'Donnez à la plateforme un nom de 1 à 80 caractères.',
+    'Une adresse change : ressaisissez le secret, qui ne part jamais vers une adresse pour laquelle il n\'a pas été saisi.',
+    'L\'identifiant du cabinet chez la plateforme est vide, trop long ou porte un caractère invisible.',
+    'La plateforme refuse la portée demandée : vérifiez-la, ou laissez-la vide.',
+    'La plateforme ne connaît pas l\'adresse des jetons (404) : vérifiez-la.',
+    'La plateforme n\'a pas répondu à temps (jeton). Réessayez dans un instant.',
+    'La plateforme limite le nombre d\'appels (flux) : réessayez dans un instant.',
+    'La plateforme refuse l\'accès (flux, 403) : l\'identité ouverte au cabinet n\'a pas les droits de lecture des flux de '
+      + 'cette entreprise, ou l\'organisation est à préciser.',
+    'La plateforme ne connaît pas cette route (flux, 404) : vérifiez l\'adresse du service des flux, qui s\'arrête avant « /v1 ».',
+    'La lecture des statuts s\'est interrompue : réessayez.',
+    'La transmission a changé entre-temps : rechargez la page.',
+    'Cette facture a déjà une transmission en cours ou faite : suivez-la plutôt que de la renvoyer.',
+  ])('« %s » : le client la lit tutoyée, sans « le cabinet » pour qui la lit', (phrase) => {
+    const client = pourLEspace('client', phrase)
+    expect(client).not.toBe(phrase)
+    expect(motsDuCabinet(client), client).toEqual([])
+    expect(client).not.toMatch(/\bau cabinet\b|\bdu cabinet\b/)
+    expect(pourLEspace('cabinet', phrase)).toBe(phrase)
   })
 
   it('le texte du cabinet reste le sien, au caractère près', () => {

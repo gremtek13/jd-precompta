@@ -1072,11 +1072,12 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
       )}
 
       {superPdpOpen && (
-        <SuperPdpModal dossierId={dossierId} onClose={() => setSuperPdpOpen(false)} onImported={load} />
+        <SuperPdpModal espace="cabinet" dossierId={dossierId} onClose={() => setSuperPdpOpen(false)} onImported={load} />
       )}
 
       {plateformeOuverte && (
         <PlateformeClientModal
+          espace="cabinet"
           dossierId={dossierId}
           dossierSiret={dossierSiret}
           onClose={() => setPlateformeOuverte(false)}
