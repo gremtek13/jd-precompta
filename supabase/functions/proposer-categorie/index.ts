@@ -314,12 +314,20 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Non authentifié." }, 401)
     }
 
-    let payload: { pieceId?: unknown; typePiece?: unknown }
+    let corps: unknown
     try {
-      payload = await req.json()
+      corps = await req.json()
     } catch {
       return json({ error: "Corps de requête invalide." }, 400)
     }
+    // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et la fonction rendait alors le
+    // message du moteur au lieu d'un refus (le patron d'agent-comptable, 09/10/2026). Le navigateur envoie toujours un
+    // objet ; tout le reste se refuse ici, avant la pièce, la base et le modèle. Un `pieceId` d'une autre forme qu'un
+    // texte est déjà refusé plus bas, avec l'UUID.
+    if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+      return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+    }
+    const payload = corps as { pieceId?: unknown; typePiece?: unknown }
     const pieceId = typeof payload.pieceId === "string" ? payload.pieceId.trim() : ""
     if (!UUID.test(pieceId)) {
       return json({ error: "pieceId : l'identifiant d'une pièce est attendu." }, 400)

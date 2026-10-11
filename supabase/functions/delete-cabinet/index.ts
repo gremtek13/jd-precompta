@@ -24,6 +24,11 @@ function json(body: unknown, status = 200) {
   })
 }
 
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
 // Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
 // historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
@@ -86,14 +91,26 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Réservé aux super-admins." }, 403)
   }
 
-  let payload: { cabinetId?: string }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et `Deno.serve` rendait alors un 500
+  // en texte brut, sans en-tête CORS, que la page ne pouvait pas lire (le patron de create-cabinet, 10/10/2026). Le
+  // navigateur envoie toujours un objet ; tout le reste se refuse ici, avant toute suppression.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y levait. Absent ou nul,
+  // le champ tombe sur le refus « requis » juste après.
+  const cabinetIdLu = (corps as { cabinetId?: unknown }).cabinetId
+  if (!texteOuAbsent(cabinetIdLu)) {
+    return json({ error: "cabinetId doit être un texte." }, 400)
+  }
 
-  const cabinetId = payload.cabinetId?.trim()
+  const cabinetId = cabinetIdLu?.trim()
   if (!cabinetId) {
     return json({ error: "cabinetId est requis." }, 400)
   }
