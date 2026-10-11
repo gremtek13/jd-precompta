@@ -534,14 +534,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   statut de TVA) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT
   HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS
   D'E-REPORTING ».
-- **Défauts connus des Edge Functions** (11, `DEFAUTS_CONNUS`) : six corps mal formés, dans quatre fonctions
-  (`delete-cabinet`, `superpdp-sync`, `proposer-categorie`, `evaluer-extraction`), qui les font lever ou répondre en
-  anglais (latents, à corriger au prochain déploiement de chacune ; `agent-comptable` les refuse depuis le 09/10/2026,
-  `create-client-access`, `create-team-member`, `create-cabinet` et les quatre fonctions de la vente depuis le
-  10/10/2026) ;
-  deux d'`evaluer-extraction` ; deux décisions du cabinet — l'objet et l'expéditeur d'un e-mail reçu au journal
-  (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription publique, fermée le 10/10/2026, n'admet
-  plus un inconnu ; les clés historiques restent à désactiver).
+- **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : deux décisions du cabinet seulement — l'objet et
+  l'expéditeur d'un e-mail reçu au journal (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription
+  publique, fermée le 10/10/2026, n'admet plus un inconnu ; les clés historiques restent à désactiver). Plus aucune
+  fonction ne lève ni ne répond en anglais sur un corps mal formé (JSON `null`, tableau, texte, nombre, champ d'une autre
+  forme qu'un texte) : toutes le refusent en 400 français avant toute dépense (les quatre dernières, `delete-cabinet`,
+  `superpdp-sync`, `proposer-categorie` et `evaluer-extraction`, le 11/10/2026) ; `evaluer-extraction` ne journalise
+  plus la réponse illisible du modèle, seulement sa longueur → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
 - **Une vente entrée deux fois** (ligne 28.6) : le pont, la Checklist et l'écran (phase C) en ligne le 09/10/2026 ;
   reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1 au cabinet, une migration).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.

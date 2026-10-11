@@ -19740,3 +19740,36 @@ pour tout texte affiché au client, comme toute entrée de `REECRITURES_CLIENT`.
 du bas y est cachée et ses grandes tuiles mènent toutes à « Mes pièces » — « Mes ventes » ne s'atteignait que par un
 autre écran. Les deux tuiles, et le lien de leur phrase muette, y mènent désormais ; pendant le chargement (des
 squelettes) il n'y a encore rien, et sans la case « Ventes » relue en base, il n'y a rien à y voir.
+
+### 11/10/2026 — LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS — LIGNE 23.1
+
+`DEFAUTS_CONNUS` tenait onze défauts ; huit vivaient dans quatre fonctions, et tombent. Le patron est celui d'`agent-comptable`
+(09/10/2026) et de `create-cabinet` (10/10/2026), recopié : le corps se lit sous `try` (illisible : « Corps de requête
+invalide. », 400), un JSON qui n'est pas un objet se refuse (« Corps de requête invalide : un objet JSON est attendu. »),
+un champ attendu en texte et reçu autrement aussi (`texteOuAbsent`, « X doit être un texte. »), à la place où la fonction
+lisait déjà le corps — donc après la session et le contrôle d'accès quand elle les fait d'abord (`delete-cabinet` :
+super-admin d'abord ; `superpdp-sync` et `proposer-categorie` : session d'abord, le corps avant la pièce ou le dossier ;
+`evaluer-extraction` : la clé publishable en `apikey` d'abord).
+
+- `delete-cabinet`, `superpdp-sync` : porte de l'objet + `texteOuAbsent` sur `cabinetId` / `dossierId` (`corpsNul`,
+  `champsDeTravers`).
+- `proposer-categorie` : porte de l'objet seule ; un `pieceId` d'une autre forme qu'un texte était déjà refusé avec l'UUID
+  (`corpsNul`).
+- `evaluer-extraction` : lecture sous `try` (`corpsIllisibleMesure`), porte de l'objet (`corpsNul`) ; les champs de travers
+  y étaient déjà refusés un à un (uuid, question, entier). Sans en-tête CORS : fonction de mesure, appelée à la main, et
+  le juge ne l'exige que d'une fonction du navigateur. Fenêtre `ESSAI_OUVERT_JUSQU_A` inchangée, fermée.
+  `JSON.parse` de la citation du modèle sous `try` : l'erreur du moteur CITE le morceau de réponse illisible, qui reprend le
+  texte de la pièce ; le journal ne porte plus que « réponse du modèle illisible (N caractères) » et la pièce compte en
+  échec (`jsonIllisibleAuJournalMesure`).
+
+`DEFAUTS_CONNUS` : quatre clés retirées, trois défauts restent (`objetAuJournal`, `tauxSansControle` ×2). Les scénarios de
+`corpsMalFormes` et celui de la réponse illisible exigent désormais le comportement neuf (400 français, aucune dépense,
+CORS pour le navigateur, aucune valeur de pièce au journal). Mutations (10, toutes mordent) : porte de l'objet retirée dans
+chaque fonction (+ inversée à `delete-cabinet`, réduite au tableau à `proposer-categorie`), porte du champ retirée
+(`delete-cabinet`, `superpdp-sync`), lecture illisible d'`evaluer-extraction` rendue à l'exception, journal de l'erreur de
+`JSON.parse` rétabli. La limite de la batterie (tous les champs de travers d'un coup) ne joue pas ici : chaque fonction
+n'en lit qu'un.
+
+**CE QUI RESTE.** Le redéploiement des quatre fonctions, `verify_jwt` à la valeur de `config.toml` (faux pour
+`delete-cabinet`, `superpdp-sync` et `evaluer-extraction`, vrai pour `proposer-categorie`), aller-retour. Aucun bloc copié
+n'a changé.

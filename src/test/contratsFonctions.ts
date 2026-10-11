@@ -74,32 +74,10 @@ export interface ContratFonction {
 // ── LES DÉFAUTS CONNUS : CONSTATÉS, NOMMÉS, COMPTÉS ──────────────────────────────────────────────────────────────────
 
 export const DEFAUTS_CONNUS = {
-  corpsNul: {
-    nombre: 4,
-    raison: 'un corps JSON `null` fait lever la fonction (500 en texte brut, sans en-tête CORS) ou rend le message ' +
-      'anglais du moteur — LATENT : le navigateur n’envoie jamais ce corps ; il faut une session (n’importe laquelle, le ' +
-      'corps se lisant avant le contrôle du dossier) ou, pour evaluer-extraction, la seule clé publishable. Rien ne part ' +
-      'ni ne s’écrit avant. À corriger au prochain déploiement de chaque fonction.',
-  },
-  champsDeTravers: {
-    nombre: 2,
-    raison: 'un champ attendu en texte et reçu en nombre fait lever `.trim()` (500 en texte brut, sans en-tête CORS) — ' +
-      'LATENT, même portée que `corpsNul`.',
-  },
-  corpsIllisibleMesure: {
-    nombre: 1,
-    raison: 'evaluer-extraction rend 500 et le message anglais de JSON.parse sur un corps illisible — harnais de mesure, ' +
-      'appelé à la main.',
-  },
   objetAuJournal: {
     nombre: 1,
     raison: 'receive-email journalise l’objet et l’expéditeur de chaque e-mail reçu (adresse inconnue, et bilan) : un ' +
       'objet peut nommer un patient. Décision du cabinet.',
-  },
-  jsonIllisibleAuJournalMesure: {
-    nombre: 1,
-    raison: 'evaluer-extraction journalise l’erreur de JSON.parse, qui CITE la réponse du modèle — fenêtre de mesure ' +
-      'fermée, à corriger au prochain déploiement du harnais.',
   },
   tauxSansControle: {
     nombre: 2,
@@ -892,9 +870,8 @@ const EVALUER_EXTRACTION: ContratFonction = {
       preparer: (m) => { fenetreOuverte(m); m.modele = () => reponseModele(`{"tiers": ${MARQUEUR_TEXTE_OCR}}`) },
       requete: MESURE({ dossierId: D, limite: 1 }),
       attendu: { statut: 200, depenses: ['modèle'] },
-      defautConnu: 'jsonIllisibleAuJournalMesure',
     },
-    ...corpsMalFormes(null, ['dossierId', 'question', 'limite'], { illisible: 'corpsIllisibleMesure', nul: 'corpsNul' }),
+    ...corpsMalFormes(null, ['dossierId', 'question', 'limite']),
   ],
 }
 
@@ -1117,7 +1094,7 @@ const DELETE_CABINET: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: {} }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('superAdmin', ['cabinetId'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...corpsMalFormes('superAdmin', ['cabinetId']),
   ],
 }
 
@@ -1738,7 +1715,7 @@ const SUPERPDP_SYNC: ContratFonction = {
         depenses: ['réseau POST api.superpdp.tech/oauth2/token', 'réseau GET api.superpdp.tech/v1.beta/invoices'],
       },
     },
-    ...corpsMalFormes('chef', ['dossierId'], { nul: 'corpsNul', champsDeTravers: 'champsDeTravers' }),
+    ...corpsMalFormes('chef', ['dossierId']),
   ],
 }
 
@@ -2339,7 +2316,7 @@ const PROPOSER_CATEGORIE: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { pieceId: PIECE } }),
       attendu: { statut: 500, refusEnFrancais: true, aucuneDepense: true },
     },
-    ...corpsMalFormes('chef', ['pieceId'], { nul: 'corpsNul' }),
+    ...corpsMalFormes('chef', ['pieceId']),
   ],
 }
 

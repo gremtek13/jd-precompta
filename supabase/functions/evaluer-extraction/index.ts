@@ -533,7 +533,19 @@ Deno.serve(async (req) => {
     if (req.headers.get("apikey") !== cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"))) {
       return Response.json({ error: "La clé publishable du projet est attendue dans l'en-tête apikey." }, { status: 401 })
     }
-    const { dossierId, question = "extraction", modele = MODELE_PAR_DEFAUT, limite = 100 } = await req.json()
+    let corps: unknown
+    try {
+      corps = await req.json()
+    } catch {
+      return Response.json({ error: "Corps de requête invalide." }, { status: 400 })
+    }
+    // Un JSON lisible n'est pas encore un objet : en lire un champ levait, et la fonction rendait alors le message du
+    // moteur, en anglais, en 500 (le patron d'agent-comptable, 09/10/2026). Tout le reste se refuse ici, avant la
+    // fenêtre, la base et le modèle ; les champs reçus sous une autre forme se refusent plus bas, champ par champ.
+    if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+      return Response.json({ error: "Corps de requête invalide : un objet JSON est attendu." }, { status: 400 })
+    }
+    const { dossierId, question = "extraction", modele = MODELE_PAR_DEFAUT, limite = 100 } = corps as Record<string, any>
     // Aucun dossier, aucun modèle : voir `sonderCles`. Hors fenêtre comme dedans, elle ne facture rien.
     if (question === "cles") {
       return Response.json({ question: "cles", ...(await sonderCles(Deno.env.get("SUPABASE_URL"))) })
@@ -606,7 +618,18 @@ Deno.serve(async (req) => {
         const brut = reponse.content.find((b) => b.type === "text")
         const json = brut?.text?.match(/\{[\s\S]*\}/)?.[0]
         if (!json) { echecs++; continue }
-        const { retenues, rejetees } = verifierCitations(JSON.parse(json), ligne.texte)
+        // L'erreur de `JSON.parse` CITE le morceau de la réponse du modèle qu'elle n'a pas pu lire, et cette réponse
+        // reprend le texte de la pièce : elle n'est jamais journalisée. Seule la FORME l'est — que la lecture a
+        // échoué, et sur combien de caractères.
+        let citees: any
+        try {
+          citees = JSON.parse(json)
+        } catch {
+          echecs++
+          console.error("[evaluer-extraction]", piece?.id, `réponse du modèle illisible (${json.length} caractères)`)
+          continue
+        }
+        const { retenues, rejetees } = verifierCitations(citees, ligne.texte)
 
         for (const champ of CHAMPS_CITES) if (retenues[champ]) couverture[champ]++
         for (const r of rejetees) rejets[r.champ]++

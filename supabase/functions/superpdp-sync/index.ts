@@ -37,6 +37,11 @@ function json(body: unknown, status = 200) {
   })
 }
 
+/** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
+function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
+  return valeur == null || typeof valeur === "string"
+}
+
 const SUPERPDP_ENDPOINT = "https://api.superpdp.tech"
 // Borne défensive : évite qu'une synchronisation ne tourne indéfiniment sur un très gros historique.
 // Largement suffisant en usage normal (une synchro régulière ne rattrape jamais des milliers de
@@ -199,13 +204,25 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, cleSecrete)
 
-  let payload: { dossierId?: string }
+  let corps: unknown
   try {
-    payload = await req.json()
+    corps = await req.json()
   } catch {
     return json({ error: "Corps de requête invalide." }, 400)
   }
-  const dossierId = payload.dossierId?.trim()
+  // Un JSON lisible n'est pas encore un objet : lire un champ de `null` levait, et `Deno.serve` rendait alors un 500
+  // en texte brut, sans en-tête CORS, que la page ne pouvait pas lire (le patron d'agent-comptable, 09/10/2026). Le
+  // navigateur envoie toujours un objet ; tout le reste se refuse ici, avant le dossier et avant Super PDP.
+  if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
+    return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
+  }
+  // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y levait. Absent ou nul,
+  // le champ tombe sur le refus « requis » juste après.
+  const dossierIdLu = (corps as { dossierId?: unknown }).dossierId
+  if (!texteOuAbsent(dossierIdLu)) {
+    return json({ error: "dossierId doit être un texte." }, 400)
+  }
+  const dossierId = dossierIdLu?.trim()
   if (!dossierId) {
     return json({ error: "dossierId est requis." }, 400)
   }
