@@ -20931,3 +20931,71 @@ rend 53 verdicts.
 
 **CE QUI RESTE.** PC3, l'application lit le plan. Le retour arrière reste celui de la préparation : recoller les quatorze corps d'avant, sans
 perte tant qu'aucun plan n'est réglé (PC4).
+
+### 11/10/2026 — « MA BANQUE » CÔTÉ CABINET — ESPACE CLIENT, ÉTAPE P9 (SECONDE MOITIÉ, P9b)
+
+Agent P9B (dev), base `5f51cbc`. Aucune migration, aucune policy, aucune fonction, aucune Edge Function : l'écran lit ce que
+la migration `banque_du_client` (P7) ouvre au cabinet — `justificatifs_proposes` et `precisions_mouvements` par
+`gere_la_banque(dossier_id)`, qui contient `admin_du_dossier` — et `memberships` (`memberships_select`), et n'écrit que par
+`ecrire_precision_mouvement`, plus le rapprochement d'aujourd'hui. Vérifié avant d'écrire, en lecture seule sur la
+production : les deux policies de lecture `to authenticated`, la fonction `SECURITY DEFINER`, exécutable par
+`authenticated` et pas par `anon`.
+
+**Ce qui est fait.**
+- `src/lib/banqueCabinet.ts` (pur) : les envois du client — propositions et fil — jugés ENSEMBLE (en cours, incomplets
+  avec leur motif, lus) ; les accès du dossier (comptes, et le nombre d'accès qui portent « Banque ») ; qui a proposé ou
+  écrit : l'ORIGINE que la base a écrite, le compte reconnu parmi les accès lus en entier (comme P4c) — « Proposée par le
+  client le … », « … par un compte qui ne porte plus d'accès à ce dossier », ou, sur des accès pas lus, rien sur le compte ;
+  le retrait d'une proposition (par son auteur, sinon par le cabinet : la base n'admet que ces deux) ; les envois d'un
+  mouvement (courantes la plus récente d'abord, retirées, fil dans l'ordre écrit, question en attente) ; ce que voit le
+  client dans « Ma banque » (`etatDuMouvement` de P9a) ; l'ÉTAT d'une proposition — retenue (le mouvement rapproché de sa
+  pièce, seule ou parmi les parts LUES d'un virement groupé), mouvement classé autrement, mouvement figé, pièce absente
+  (lecture partielle ou suppression), figée, payée ailleurs (ses paiements datés), payée en partie (son reste et
+  `refusSecondPaiement`), à associer — et sa phrase ; les signaux d'une pièce proposée (à valider, montant au centime,
+  sens) ; le filtre « Proposés par le client » (proposition courante d'origine client) et sa garde.
+- `src/lib/banqueCabinetLecture.ts` : les deux registres et les accès par `lireTout`, tri total, une requête qui lève tombe
+  du côté signalé.
+- `src/pages/dossier/EnvoisDuClient.tsx` : `PropositionsDuClient` (EN TÊTE de la fiche, avant les pièces que le
+  rapprochement propose ; « Voir le justificatif » par `lib/apercu.ts` ; « Associer cette pièce » par `onRapprocher`) et
+  `FilDuMouvement` (le fil daté, « Demander au client », compteur en caractères, refus du texte avant le clic, et une note
+  quand aucun accès ne porte « Banque »).
+- `FicheMouvement` : le contexte de la proposition est celui du choix à la main (`horsRapprochement`, `restesARegler`,
+  `piecesFigees`, `refusSecondPaiement`) ; rien n'est offert sur un mouvement figé ou déjà classé.
+- `BanqueTab` : les envois et les accès lus avec le reste, remis « en cours » au DÉBUT de chaque lecture (la première comme
+  une relecture) ; « Demander au client » (`demanderAuClient`) sous `sousVerrou` — le verrou `useRef` des écritures de
+  l'écran, relâché après la relecture —, le brouillon effacé seulement quand la question est écrite ; le filtre, ajouté à
+  `avantRecherche` (ni totaux, ni contrôle de solde, ni lots ; « N sur M » après lui) et grisé avec sa raison ; une pastille
+  « Pièce proposée par le client » dans la liste.
+- `src/lib/droitsAcces.ts` (ajout) : `LIBELLE_QUESTION_MOUVEMENT`, qui dit que le client qui porte la case « Banque » lit
+  la question ; `droitsAcces.test.ts` (ajout) confronte la policy du fil et le contrôle d'accès de la fonction à l'export.
+- `src/index.css` (ajout) : `.carte-proposee`, `.fil-mouvement`.
+
+**Choix (sans question au cabinet).** « par le client » se fonde sur l'origine écrite par la base, qui est un fait ; la
+reconnaissance du compte parmi les accès n'ajoute que « il porte encore un accès » — un compte qui n'en porte plus est dit
+tel, jamais « par le cabinet ». La proposition n'est JAMAIS retirée par le rapprochement : elle reste au registre, et la fiche
+dit ce qu'il en advient. La question s'écrit aussi sur un mouvement figé ou rapproché (la base l'accepte : c'est une parole,
+pas une écriture comptable). Une pièce « à valider » proposée s'associe comme au choix à la main, et le signal le dit.
+
+**Questions au cabinet.** P9B-Q1 : le cabinet doit-il pouvoir RETIRER une proposition qu'il écarte (`retirer_proposition`
+l'admet) — aujourd'hui elle reste « Justificatif envoyé » côté client tant que le mouvement n'est pas classé ? P9B-Q2 : la
+suppression d'un message hors sujet du fil (policy `precisions_mouvements_suppression_cabinet`) — à offrir ?
+
+**Preuves.** Tests neufs : le module (20), la lecture (5), l'écran (15, `BanqueTabEnvoisDuClient.test.tsx` : la pièce en tête
+et nommée, « Voir le justificatif », accès retiré et accès lus en partie, pièce payée ailleurs, mouvement figé, « Associer »
+deux puis trois clics dans le même `act` et la proposition « retenue » après, propositions ou fil lus en partie, relecture
+retenue, le fil et ses auteurs, « Demander au client » deux puis trois clics, refus de la base, refus avant le clic, aucun
+accès « Banque », le filtre et « N sur M », le vide « dans ce filtre »), `droitsAcces.test.ts` (+2). Suite entière à Paris :
+316 fichiers, 9 274 tests verts ; les fichiers touchés sous les quatre fuseaux : 508 tests. 50 mutations ciblées : 49 tuées
+(deux d'abord survivantes — le champ du fil pas grisé sur un fil lu en partie, le bouton « Associer » pas grisé pendant
+l'écriture — : tests renforcés), une équivalente (`aTraiter && !fige` → `aTraiter` : l'état « mouvement figé » du module
+refuse déjà l'association). `tsc -b` vert ; lint (63 avertissements) et compilateur des Edge Functions (25 erreurs) à
+l'identique de la base ; build vert. Banc (port 5323) : deux visites neuves (`banque/proposé-par-le-client`,
+`banque/filtre-proposés`), 0 débordement à 390, 720, 1 024, 1 280, 1 440, 1 280 volet 760, 1 440 barre 420 volet 760, et
+390 `client-banque` ; aucune police refusée. La capture à 390 (fiche plein écran, `data-occupant="mouvement"`) a montré
+« Aucune pièce proposée pour ce mouvement » sous la pièce du client : une proposition du client compte désormais comme une
+proposition (« Choisir une autre pièce »), test et mutation à l'appui.
+
+**Fichiers partagés, par ajout.** `src/lib/droitsAcces.ts` et son test, `src/index.css`, `src/pages/ecransAvantLecture.test.tsx`
+(`EnvoisDuClient.tsx` parmi les fichiers sans lecture au montage), `outils/captures/fauxSupabase.ts` (une proposition, une
+retirée et un fil sur le cabinet infirmier, passes du cabinet seulement), `outils/captures/debordements.mjs` (deux visites, en
+fin de liste).

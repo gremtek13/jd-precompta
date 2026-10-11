@@ -1330,6 +1330,22 @@ const EREPORTING_D7 = {
   fiches: FICHES_EREPORTING.map((f) => ({ ...f })),
   taux: TAUX_EREPORTING.map((t) => ({ ...t })),
 }
+// « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b) : sur le cabinet infirmier (d1), et pour les passes du cabinet
+// seulement, la pièce du garage que l'accès « Claire » a proposée pour le prélèvement du garage (l12) — un montant qui ne
+// concorde pas, et la pièce encore à valider —, une proposition retirée avant elle, et le fil : la question du cabinet, la
+// réponse du client, longue. Rien de la passe du client n'en change.
+const ENVOIS_DU_CLIENT_D1 = CLIENT_DU_BANC
+  ? { propositions: [], precisions: [] }
+  : {
+    propositions: [
+      { id: 'jc1', dossier_id: 'd1', ligne_bancaire_id: 'l12', piece_id: 'p5', auteur_id: 'u-claire', origine: 'client', created_at: '2026-09-19T08:00:00Z', retire_le: null, retire_par: null },
+      { id: 'jc0', dossier_id: 'd1', ligne_bancaire_id: 'l12', piece_id: 'p7', auteur_id: 'u-claire', origine: 'client', created_at: '2026-09-18T18:00:00Z', retire_le: '2026-09-18T18:30:00Z', retire_par: 'u-claire' },
+    ],
+    precisions: [
+      { id: 'qc1', dossier_id: 'd1', ligne_bancaire_id: 'l12', auteur_id: 'u1', origine: 'cabinet', texte: 'Ce prélèvement du garage est-il l’entretien du véhicule de tournée ? Le montant ne correspond à aucune facture reçue.', created_at: '2026-09-18T09:00:00Z' },
+      { id: 'qc2', dossier_id: 'd1', ligne_bancaire_id: 'l12', auteur_id: 'u-claire', origine: 'client', texte: 'Oui : la vidange et les plaquettes du scooter de tournée.\nLa facture du garage porte aussi le pneu changé en août, réglé à part par chèque — je vous envoie la facture complète.', created_at: '2026-09-19T07:55:00Z' },
+    ],
+  }
 
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
@@ -1588,8 +1604,8 @@ const TABLES: Record<string, Ligne[]> = {
     ...SOURCES_D10.lignes,
     ...BANQUE_DU_CLIENT_D7.lignes,
   ],
-  justificatifs_proposes: BANQUE_DU_CLIENT_D7.propositions,
-  precisions_mouvements: BANQUE_DU_CLIENT_D7.precisions,
+  justificatifs_proposes: [...BANQUE_DU_CLIENT_D7.propositions, ...ENVOIS_DU_CLIENT_D1.propositions],
+  precisions_mouvements: [...BANQUE_DU_CLIENT_D7.precisions, ...ENVOIS_DU_CLIENT_D1.precisions],
   controles_releves_bancaires: BANQUE_DU_CLIENT_D7.controles,
   cotisations_declarees: [...COTISATIONS_D1.echeances, ...SOURCES_D9.cotisations],
   // L'exercice 2025 de la kinésithérapeute, validé : ce qu'il garde, et sa 2035 telle qu'elle a été validée.

@@ -240,3 +240,12 @@ export const LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT = `Motif d’annulation, que 
 
 export const LIBELLE_NOTE_DECLARATION_CLIENT =
   `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${TON_CABINET} la lit aussi`
+
+// ── Ce que le client « Banque » lit de la main du cabinet (espace client, étape P9b) ──────────────────────────────────
+// La migration `banque_du_client` ouvre le fil d'un mouvement (`precisions_mouvements`) au cabinet et au client qui porte
+// « Banque » : la question que le cabinet y écrit est LUE par ce client, et le libellé du champ le dit, comme ceux des
+// ventes.
+const LE_CLIENT_BANQUE = `le client qui porte la case « ${definitionDe('banque').libelle} »`
+
+export const LIBELLE_QUESTION_MOUVEMENT =
+  `Ta question sur ce mouvement (${LE_CLIENT_BANQUE} la lit et y répond ; envoyée, elle reste telle quelle)`

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
-  LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
+  LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
@@ -429,5 +429,22 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     for (const table of tables) {
       expect(fichiersDuSchema().some((f) => f.texte.includes(`create policy ${table}_lecture_ventes on public.${table}`)), table).toBe(true)
     }
+  })
+})
+
+// CE QUE LE CLIENT « BANQUE » LIT DE LA MAIN DU CABINET (espace client, étape P9b) : la question que le cabinet écrit sur un
+// mouvement (« Demander au client », FicheMouvement) vit dans le fil, que la migration `banque_du_client` ouvre au client qui
+// porte la case — et son libellé le dit, comme ceux des ventes.
+describe('ce que le client « Banque » lit de la main du cabinet : la question le dit', () => {
+  it('le libellé de la question nomme le client qui porte la case « Banque », et qu’il la lit', () => {
+    expect(LIBELLE_QUESTION_MOUVEMENT).not.toMatch(/intern/i)
+    expect(LIBELLE_QUESTION_MOUVEMENT).toContain(`le client qui porte la case « ${definitionDe('banque').libelle} » la lit`)
+  })
+
+  it('le fil vit dans une table que l’export ouvre à « Banque », et ne s’écrit que par sa fonction', () => {
+    const fichiers = fichiersDuSchema()
+    expect(fichiers.some((f) => /create policy precisions_mouvements_lecture on public\.precisions_mouvements\s+for select to authenticated using \(gere_la_banque\(dossier_id\)\);/.test(f.texte)))
+      .toBe(true)
+    expect(derniereDefinitionSql('ecrire_precision_mouvement')).toContain('if not public.gere_la_banque(p_dossier_id)')
   })
 })

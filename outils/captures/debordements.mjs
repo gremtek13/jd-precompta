@@ -532,6 +532,27 @@ const VISITES = [
       await page.getByRole('heading', { name: /^Statuts lus sur / }).waitFor({ timeout: 10000 })
     },
   },
+  // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b) : la fiche d'un mouvement du cabinet infirmier pour lequel le
+  // client a proposé une pièce — en tête, ses signaux, une proposition retirée —, le fil (une question, une réponse longue)
+  // et « Demander au client » ; plein écran sur téléphone. Puis le relevé filtré sur « Proposés par le client ». La page ne
+  // se recharge pas d'une visite à l'autre : un volet resté ouvert se ferme d'abord.
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'banque/proposé-par-le-client',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'PRLV SEPA GARAGE DU CENTRE' }).first().click()
+      await page.getByRole('heading', { name: 'Pièce proposée par le client' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'banque/filtre-proposés',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('checkbox', { name: 'Proposés par le client' }).check()
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
