@@ -60,6 +60,7 @@ import TvaTab from './dossier/TvaTab'
 import VehiculesCard from './dossier/VehiculesCard'
 import VirementsTab from './dossier/VirementsTab'
 import VoletSocialCard from './dossier/VoletSocialCard'
+import { ACCES_EN_COURS } from '../lib/auteursVentes'
 
 // LE VIDE EST UNE AFFIRMATION, ET AUCUN ÉCRAN NE LA FAIT AVANT D'AVOIR LU (CLAUDE.md, « Lectures et écritures »).
 //
@@ -138,7 +139,7 @@ function facture(o: Partial<FactureEmise> = {}): FactureEmise {
     montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, mentions_legales: null, notes: null,
     emetteur_nom: 'Cabinet fictif', emetteur_siret: '12345678901234', emetteur_adresse: null,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-    created_by: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, ...o,
+    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, ...o,
   }
 }
 
@@ -241,7 +242,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} onModeleUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EstimationTab', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'FactureApercu', fichier: 'pages/dossier/FactureApercu.tsx', rendre: () => (
@@ -313,7 +314,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'SupplementsTab', fichier: 'pages/dossier/SupplementsTab.tsx', rendre: () => <Dossier1><SupplementsTab dossierId="d1" /></Dossier1> },
   { nom: 'TransmissionFactureModal', fichier: 'pages/dossier/TransmissionFactureModal.tsx', rendre: () => (
-    <Dossier1><TransmissionFactureModal espace="cabinet" dossierId="d1" facture={facture()} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><TransmissionFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   { nom: 'TvaTab', fichier: 'pages/dossier/TvaTab.tsx', rendre: () => (
     <Dossier1>

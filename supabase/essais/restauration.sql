@@ -116,6 +116,36 @@
 -- sur la copie, les gardes écartées le temps de semer) : 68 tables recréées, 119 clés recopiées, 62 restaurées et
 -- IDENTIQUES à la source (18 lignes), 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles justes. L'une ou
 -- l'autre colonne effacée dans le schéma d'essai avant le verdict, sa table seule vire à l'ÉCART : la comparaison les voit.
+--
+-- 11/10/2026, ligne 41, étape R5 (migration `revue_analytique`, préparée, non appliquée) : `revision_seuils` et
+-- `revision_explications` entrent au plan (70 tables, 73 avec les devis), après les cycles de la révision et avant les
+-- registres de P7, leurs deux chaînes par vagues (`remplace_id`). Rejoué sur une copie de la réplique de l'étape, égale à
+-- la production à 116 migrations (signature.sql, neuf familles), la migration appliquée, le dossier `test` semé par les
+-- fonctions de la base — une chaîne de trois seuils et un seuil d'un autre exercice, une chaîne de trois explications du
+-- résultat, une d'un poste, une d'un compte : 70 tables recréées, 123 clés recopiées, 64 restaurées et IDENTIQUES à la
+-- source, les seuils et les explications en trois vagues chacun, 0 écart, aucun arrêt, les deux contrôles du catalogue
+-- des rôles justes. Planté — un seuil avant son dossier —, le script s'arrête sur la clé. Sans la migration, ce fichier
+-- s'arrête à la création de son schéma d'essai : la table `revision_seuils` n'existe pas encore.
+--
+-- 11/10/2026, ligne 28.5, étape e5a (migration `regimes_ereporting_et_pieces_ecartees`, préparée, à appliquer AVANT
+-- que ce fichier ne soit fusionné) : `regimes_ereporting` et `pieces_ecartees_ereporting` entrent au plan
+-- (70 tables, 73 avec les devis), après les registres de P7 et avant `exercices_valides`, sans vague (rien ne s'y
+-- référence) ; seul le rang d'`exercices_valides` change. Rejoué sur la réplique de l'étape, égale à la production à 116
+-- migrations plus celle-ci (signature.sql, neuf familles), le dossier `test` semé PAR LES FONCTIONS de trois régimes —
+-- dont un retiré puis confirmé de nouveau le même jour — et de quatre écarts — dont un repris puis posé de nouveau — :
+-- 70 tables recréées, 122 clés recopiées, 64 restaurées et IDENTIQUES à la source (62 lignes, dont les sept de l'étape),
+-- 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles justes. Plantés — un écart, puis un régime, avant son
+-- dossier —, le script s'arrête sur leur clé. Sur une base qui n'a pas la migration, il s'arrête dès la création de ses
+-- tables d'essai, en nommant la table absente.
+--
+-- 11/10/2026, les deux migrations appliquées en production (`revue_analytique`, 20261011090828, puis
+-- `regimes_ereporting_et_pieces_ecartees`, 20261011091325) : 72 tables au plan (75 avec les devis), chaque étape à sa
+-- place — la revue analytique après les cycles de la révision, le régime et l'écart après les registres de P7. Rejoué
+-- sur une réplique dont `signature.sql` égale la production à 118 migrations, le dossier `test` semé par les fonctions
+-- de la base des lignes des deux étapes (quatre seuils, cinq explications, trois régimes dont un retiré, quatre écarts
+-- dont un repris) : 72 tables recréées, 126 clés recopiées, 66 restaurées et IDENTIQUES à la source (71 lignes), les
+-- seuils et les explications en trois vagues chacun, 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles
+-- justes. Plantés — un seuil, puis un écart, avant leur dossier —, le script s'arrête sur leur clé.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -149,7 +179,8 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (51,'encaissements_factures'),(52,'encaissements_factures_taux'),(53,'transmissions_encaissements'),(54,'lettrages_manuels'),(55,'piece_commentaires'),
  (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
  (61,'revision_justifications'),(62,'revision_preuves'),(63,'revision_conclusions'),(64,'revision_notes'),(65,'revision_revues'),
- (66,'justificatifs_proposes'),(67,'precisions_mouvements'),(68,'exercices_valides');
+ (66,'revision_seuils'),(67,'revision_explications'),(68,'justificatifs_proposes'),(69,'precisions_mouvements'),(70,'regimes_ereporting'),
+ (71,'pieces_ecartees_ereporting'),(72,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -166,13 +197,16 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('mouvements_cca','par_parent','comptes_courants_associes','compte_id'),('natures_immobilisation','partage',null,null),('notes_internes','direct',null,null),
  ('packs','direct',null,null),
  ('piece_commentaires','direct',null,null),('piece_textes_ocr','direct',null,null),('pieces','direct',null,null),
+ ('pieces_ecartees_ereporting','direct',null,null),
  ('pieces_hors_de_france','direct',null,null),('pieces_hors_de_france_taux','direct',null,null),
  ('plan_comptable_dossier','direct',null,null),
  ('precisions_mouvements','direct',null,null),
  ('previsionnels_bancaires','direct',null,null),('references_annuelles','direct',null,null),('references_postes_annuels','direct',null,null),
+ ('regimes_ereporting','direct',null,null),
  ('reglements_groupes','direct',null,null),('regles_affectation_bancaire','direct',null,null),('regles_bancaires_ignorees','direct',null,null),
  ('revision_justifications','direct',null,null),('revision_preuves','direct',null,null),('roles_comptables','global',null,null),
  ('revision_conclusions','direct',null,null),('revision_notes','direct',null,null),('revision_revues','direct',null,null),
+ ('revision_seuils','direct',null,null),('revision_explications','direct',null,null),
  ('soldes_reportes','direct',null,null),
  ('sous_dossiers','direct',null,null),('statuts_factures_recus','direct',null,null),('super_admins','global',null,null),
  ('superpdp_credentials','direct',null,null),('supplements','direct',null,null),('taux_change_bce','global',null,null),
@@ -183,7 +217,9 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
 insert into essai_restauration._vagues (table_nom, colonne) values
  ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de'),
  ('pieces_hors_de_france','remplace_id'),
- ('revision_conclusions','remplace_id');
+ ('revision_conclusions','remplace_id'),
+ ('revision_seuils','remplace_id'),
+ ('revision_explications','remplace_id');
 
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme

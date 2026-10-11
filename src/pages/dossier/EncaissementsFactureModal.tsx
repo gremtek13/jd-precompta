@@ -30,13 +30,18 @@ import { paiementsDesPieces, type LignePayante, type PartReglee } from '../../li
 import type {
   EncaissementFacture, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
+import {
+  ACCES_SANS_OBJET, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, estLeClient, type AccesDuDossier,
+} from '../../lib/auteursVentes'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, qui porte les deux droits (`gere_la_banque` en base) ; ou le client
 // « Ventes », avec ou sans « Banque » sur la société affichée. Les mêmes gestes, par les mêmes fonctions (P2 les lui
 // ouvre) ; mais sans « Banque », la fenêtre ne lit ni le relevé ni ce qui en dépend — la base les lui refuse, et une
 // lecture que la RLS refuse rend ZÉRO ligne, sans erreur : « aucun mouvement ne se propose » serait une affirmation fausse
 // (conception, §5.4). Elle le DIT, et l'encaissement s'enregistre sans mouvement.
-type QuiRegarde = { espace: 'cabinet' } | { espace: 'client'; banque: boolean }
+// Le cabinet reçoit de l'onglet les ACCÈS du dossier (étape P4c) : il dit « par le client » de ce que le client a fait, sur
+// une liste lue en entier seulement (lib/auteursVentes.ts). Le client, lui, n'en lit aucun et rien ne s'y dit.
+type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client'; banque: boolean }
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -75,12 +80,12 @@ function pasLue<T>(): Promise<LectureComplete<T>> {
 type LigneLue = LigneDeFacture & { id: string }
 type TransmissionEcran = TransmissionLue & TransmissionPourDeclaration & Pick<TransmissionFacture, 'id' | 'cree_le'>
 type EvenementEcran = EvenementSuperpdpLu & Pick<FactureSuperpdpEvent, 'id' | 'occurred_at'>
-type EncaissementEcran = EncaissementLu & Pick<EncaissementFacture, 'date_encaissement' | 'moyen' | 'motif' | 'cree_le'>
+type EncaissementEcran = EncaissementLu & Pick<EncaissementFacture, 'date_encaissement' | 'moyen' | 'motif' | 'cree_le' | 'cree_par'>
 type PartEcran = PartLue & { dossier_id: string }
 type MouvementEcran = MouvementPropose & LignePayante
 type ReglementEcran = PartReglee & { id: string }
 type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier'>
-type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le'>
+type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le' | 'cree_par'>
 
 interface Lu {
   // La facture et ses avoirs : un avoir réduit ce que le client doit encore, à l'écran seulement.
@@ -145,7 +150,7 @@ async function lireDonnees(
     // encaissements qu'il justifie, de toutes les factures — le module filtre lui-même ceux de la facture.
     lireTout<EncaissementEcran>((debut, fin) =>
       supabase.from('encaissements_factures')
-        .select('id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif, cree_le, retire_le', { count: 'exact' })
+        .select('id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif, cree_par, cree_le, retire_le', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date_encaissement').order('cree_le').order('id').range(debut, fin),
     ),
     lireTout<PartEcran>((debut, fin) =>
@@ -169,7 +174,7 @@ async function lireDonnees(
     // Les déclarations du DOSSIER, échouées et rejetées comprises : le module décide lui-même de ce qui compte.
     lireTout<DeclarationEcran>((debut, fin) =>
       supabase.from('transmissions_encaissements')
-        .select('id, dossier_id, encaissement_id, facture_id, canal, hote, etat, note, cree_le', { count: 'exact' })
+        .select('id, dossier_id, encaissement_id, facture_id, canal, hote, etat, note, cree_par, cree_le', { count: 'exact' })
         .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
     ),
     // Les statuts de la facture, tri TOTAL : un relevé en écrit plusieurs dans la même milliseconde.
@@ -316,6 +321,8 @@ export default function EncaissementsFactureModal(props: Props) {
   const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace } = props
   // Le droit « Banque » de qui regarde : le cabinet le porte toujours ; le client, selon la société affichée.
   const gereLaBanque = props.espace === 'cabinet' || props.banque
+  // Qui est le client : au cabinet seulement, sur les accès que l'onglet a lus ; le client n'en lit aucun.
+  const acces = props.espace === 'cabinet' ? props.acces : ACCES_SANS_OBJET
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [lu, setLu] = useState<Lu | null>(null)
   const [manques, setManques] = useState<Manque[]>([])
@@ -573,7 +580,7 @@ export default function EncaissementsFactureModal(props: Props) {
             formulaire={formulaire} setFormulaire={setFormulaire} etape={etape} setEtape={setEtape} enCours={enCours}
             onEnregistrer={enregistrer} onRetirer={retirer} onDeclarer={declarer} onContrePasser={contrePasser}
             connexion={connexion} connexionErreur={connexionErreur} onRelever={releverStatuts}
-            espace={espace} gereLaBanque={gereLaBanque}
+            espace={espace} gereLaBanque={gereLaBanque} acces={acces}
           />
         )}
 
@@ -591,7 +598,7 @@ export default function EncaissementsFactureModal(props: Props) {
 
 function Contenu({
   dossierId, contexte, lu, statutTva, aujourdHui, formulaire, setFormulaire, etape, setEtape, enCours, onEnregistrer,
-  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque,
+  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque, acces,
 }: {
   dossierId: string
   contexte: ContexteFacture
@@ -613,6 +620,8 @@ function Contenu({
   espace: EspaceVentes
   // Le droit « Banque » de qui saisit : sans lui, aucun mouvement ne se propose ni ne se désigne (module d2, refus 2).
   gereLaBanque: boolean
+  // Qui est le client (étape P4c) : « par le client » de ce qu'il a enregistré, contre-passé ou déclaré, sur des accès lus en entier.
+  acces: AccesDuDossier
 }) {
   const dire = (texte: string) => pourLEspace(espace, texte)
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
@@ -726,6 +735,9 @@ function Contenu({
       lignes.push(
         <div key="declare">
           Déclaré {dire(MANIERE[d.canal])} sur {d.hote} le {formatDate(d.cree_le)}{d.etat === 'envoi' ? ' — issue inconnue' : ''}
+          {estLeClient(acces, d.cree_par) && (
+            <> <span className="badge badge-neutral badge-une-ligne" title={TITRES_PAR_LE_CLIENT.declaration}>{PAR_LE_CLIENT}</span></>
+          )}
         </div>,
       )
       if (d.note) lignes.push(<div key="note" className="note-declaration">Note : {d.note}</div>)
@@ -857,6 +869,12 @@ function Contenu({
                             : contrePasse
                               ? <span className="badge badge-neutral">Contre-passé</span>
                               : <span className="badge badge-ok">Enregistré</span>}
+                        {estLeClient(acces, e.cree_par) && (
+                          <> <span
+                            className="badge badge-neutral badge-une-ligne"
+                            title={e.annule_id != null ? TITRES_PAR_LE_CLIENT.contrePassation : TITRES_PAR_LE_CLIENT.encaissement}
+                          >{PAR_LE_CLIENT}</span></>
+                        )}
                       </td>
                       <td data-libelle="Déclaration" className="muted cellule-declaration">{celluleDeclaration(e)}</td>
                       <td className="td-actions">

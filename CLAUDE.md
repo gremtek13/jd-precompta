@@ -170,8 +170,9 @@ supabase/
                     reglementGroupe, cotisationRapprochee, dotations, forfaitKilometrique, lettrageManuel,
                     compteBilan, reportDesSoldes, statutTva, receptionPlateforme, transmissionsFactures,
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
-                    identiteFacturesRecues, revisionSoldes, revisionCycles, cotisationPersonnelle, categoriesCommunes,
-                    notesInternes, droitsAcces, piecesHorsDeFrance, planComptable ;
+                    identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
+                    categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
+                    regimesEreporting ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -389,6 +390,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   réception n'y existe pas, ni bouton ni texte, et le secret ne s'affiche jamais) ; les refus de `plateforme-agreee`,
   rédigés pour le cabinet, se réécrivent à l'affichage (`REECRITURES_CLIENT`, chaque `de` lu dans la source de la
   fonction) → « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL ».
+- **« Par le client » côté cabinet** (P4c, 11/10/2026) : le client est un compte qui porte un accès du dossier
+  (`memberships.user_id`), reconnu par `lib/auteursVentes.ts` (pur) sur une liste lue EN ENTIER
+  (`lib/auteursVentesLecture.ts`, par l'onglet Factures du cabinet, une fois, passée aux deux fenêtres) ; en cours,
+  partielle, refusée ou dans l'espace du client, il ne dit rien de personne, un auteur nul n'est personne, un accès retiré
+  n'est pas deviné, et jamais « par le cabinet ». Pastille sur une validée (`valide_par`) ou un brouillon (`created_by`),
+  filtre « Émises par le client » qui ne filtre que l'AFFICHAGE, mention dans les fenêtres (`cree_par`) ;
+  `FactureEmise.valide_par` est obligatoire → « « PAR LE CLIENT » CÔTÉ CABINET ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -432,7 +440,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2, et
   dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; « Mes ventes › Factures » (P4a, 11/10/2026) : l'onglet
   Factures et ses fenêtres pour le client « Ventes » ; la liaison de sa plateforme et de Super PDP, et les tuiles « À
-  encaisser » et « À déclarer » de son accueil (P4b, 11/10/2026) ; client
+  encaisser » et « À déclarer » de son accueil (P4b, 11/10/2026) ; « par le client » côté cabinet — pastille, filtre et
+  mention dans les fenêtres (P4c, 11/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -529,11 +538,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet ; e1, l'obligation dite juste, le
   09/10/2026 (`lib/periodesEreporting.ts`) ; e2, la fiche d'un achat hors de France, en base le 10/10/2026 (Q3, Q7 et le
   point 15 pris comme hypothèses) ; e3, son écran, le 10/10/2026 (hypothèses Q3, Q7 et point 15 d'e2 inchangées, dites
-  dans la saisie) ; e4, le contenu des déclarations d'une période, en module le 10/10/2026 (`lib/ereporting.ts` ; trois
-  données que la base ne garde pas, attendues d'e5 : le régime confirmé, la pièce candidate écartée, l'histoire du
-  statut de TVA) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT
-  HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS
-  D'E-REPORTING ».
+  dans la saisie) ; e4, le contenu des déclarations d'une période, en module le 10/10/2026 (`lib/ereporting.ts`) ; e5a,
+  le régime d'e-reporting confirmé et son histoire — celle du statut de TVA — et la pièce écartée, en base le 11/10/2026
+  et lus par le contenu d'e4 ; e5b conçue — la déclaration hors application, Q6, la fiche déclarée qui retient sa
+  pièce — et neuf questions au cabinet (Q4, E5-Q1 à E5-Q7, Q6) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
+  L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À
+  L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
+  BASE ».
 - **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : deux décisions du cabinet seulement — l'objet et
   l'expéditeur d'un e-mail reçu au journal (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription
   publique, fermée le 10/10/2026, n'admet plus un inconnu ; les clés historiques restent à désactiver). Plus aucune
@@ -551,7 +562,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   10/10/2026 (quatre lectures de la conception dites dans le code, aucune question tranchée) ; R3, l'onglet Révision, le
   10/10/2026 (les préalables de la validation n'y sont pas encore) ; R4, les cycles — le programme de travail PROPOSÉ,
   la conclusion, le journal, la revue du chef —, en base et en module le 10/10/2026 (Q2, Q7 et Q11 prises comme
-  hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes), et à l'écran le même jour (phase C) ; R6 attend Q1 → « LA BASE
+  hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes), et à l'écran le même jour (phase C) ; R5, la revue analytique —
+  le seuil de signification fixé et motivé par le cabinet, l'explication d'une variation, la source de N−1 dite —, en
+  base et en module le 11/10/2026 (Q4, Q2, Q11 et Q7 prises comme hypothèses ; l'écran est sa phase C) → « LA REVUE
+  ANALYTIQUE, EN BASE » ; R6 attend Q1 → « LA BASE
   DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION »,
   « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
@@ -581,8 +595,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   hypothèse ; la phrase des cases de l'onglet Accès dit ce qu'elles ouvrent) → « LES FONCTIONS DE LA VENTE ACCEPTENT LE
   CLIENT ». P4a, « Mes ventes › Factures », le 11/10/2026 (les gestes du cabinet retirés, la banque dite, les mots du
   client) ; P4b, les connexions du client (EC-Q4 prise comme hypothèse) et les tuiles de son accueil, le 11/10/2026 ;
-  reste P4c (« par le client », EC-Q2) → « « MES VENTES › FACTURES » », « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON
-  ACCUEIL ». P5,
+  P4c, « par le client » côté cabinet, le 11/10/2026 ; reste la mention du mandataire à l'impression (EC-Q2 : le nom du
+  cabinet figé avec la facture, une migration d'`enregistrer_facture`) → « « MES VENTES › FACTURES » », « LES CONNEXIONS
+  DU CLIENT ET LES TUILES DE SON ACCUEIL », « « PAR LE CLIENT » CÔTÉ CABINET ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -623,15 +638,19 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 30 fonctions au 10/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 36 fonctions au 11/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
   `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
   `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition`,
-  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle` et `supprimer_brouillon_facture`
-  écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour
-  conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des
-  ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon) ; `client_du_dossier`,
+  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`, `supprimer_brouillon_facture`,
+  `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`, `retirer_regime_ereporting`,
+  `ecarter_piece_ereporting` et `reprendre_piece_ereporting` écrivent, chacune avec son propre contrôle d'accès (les
+  trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet du dossier —
+  `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de
+  celui de la transmission pour l'abandon ; les deux de R5 et les quatre d'e5a : `admin_du_dossier` du dossier annoncé,
+  avant toute lecture ; `garder_piece_ecartee`, garde `SECURITY DEFINER`, n'est exécutée par aucun rôle) ;
+  `client_du_dossier`,
   `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
   (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
   plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
@@ -950,6 +969,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   montre sur une lecture partielle ; chaque bouton passe son refus du module et se grise ; une saisie RETIENT la
   conclusion qu'elle remplace (refus 10 dit avant le clic si une autre a été prise depuis) ; un verrou `cycleEnCours`,
   que la décision d'un solde partage, relâché après la relecture → « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
+- **La revue analytique** (ligne 41, R5 ; `revision_seuils`, `revision_explications`, `lib/revueAnalytique.ts`, pur) :
+  N face à N−1 par poste de la 2035 (avec sa NATURE), par total et par compte des classes 1 à 7 (les autres dits « hors
+  de la revue ») ; la source de N−1 se DÉDUIT ligne par ligne — la 2035 ou l'exercice VALIDÉ, sinon un repère annuel (un
+  poste de dépenses à son nom exact, le chiffre d'affaires, le résultat net), sinon rien ; jamais un recalcul — ; le
+  seuil de signification est fixé et MOTIVÉ par le cabinet (Q4), « au-delà » est strict ; l'état d'une ligne se DÉDUIT
+  (à expliquer, expliquée, à revoir quand les montants ou la source commentés ont changé…), et aucune variation n'est
+  dite « normale ». La base vérifie ce qu'elle sait lire (solde d'un compte, 2035 validée, repère) et garde le montant
+  d'une 2035 calculée tel que l'écran l'a montré ; seules `fixer_seuil_de_signification` et `expliquer_variation`
+  écrivent, sous les verrous de la validation puis de la révision, les repères de N−1 verrouillés en partage ; leurs
+  refus sont redits avant le clic, confrontés au texte exporté et rejoués sur l'essai (`revueAnalytiqueEssai.test.ts`)
+  → « LA REVUE ANALYTIQUE, EN BASE ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1158,8 +1188,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   appliquée seule. La suppression d'une pièce (FichePiece) ou d'une sélection (PiecesTab) NOMME la fiche que la cascade
   emporte, ou dit qu'elle ne la sait pas → « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN ».
 - **Le contenu des déclarations d'e-reporting** (`lib/ereporting.ts`, e4, pur) : pour une période d'e1 (`periodeDe` sous
-  le régime d'AUJOURD'HUI — des bornes d'un autre régime se refusent, la base ne gardant pas l'histoire du statut),
-  trois déclarations qui ne se mêlent pas (G6.29, G7.52) : les ACHATS (10.1, acheteur ; la fiche courante non retirée
+  le régime confirmé qui couvre son premier jour — e5a —, sinon sous le statut d'aujourd'hui, proposé ; à cheval sur deux
+  régimes, elle se refuse), trois déclarations qui ne se mêlent pas (G6.29, G7.52) : les ACHATS (10.1, acheteur ; la fiche courante non retirée
   d'e2, rejugée contre la pièce d'aujourd'hui ; numéro de TVA du dossier exigé, Q3), les VENTES à un particulier (10.3,
   par jour, TLB1 ou TPS1, option et taux, depuis les seules factures émises — `montantsDuDocument`, un avoir en moins et
   à sa date), leurs PAIEMENTS (10.4, par jour et taux, le registre de d1 net des retraits et des contre-passations). La
@@ -1168,6 +1198,18 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   refus dans un ordre fixé (`REFUS_EREPORTING`, le premier est ce que e5 et e6 diront) ; jamais « rien à déclarer » sur
   une lecture partielle ni tant qu'une pièce candidate (les signaux d'e3) attend. Hypothèses nommées, passées sans
   défaut (`HYPOTHESES_DE_LA_CONCEPTION`) → « LE CONTENU DES DÉCLARATIONS D'E-REPORTING ».
+- **Le régime d'e-reporting confirmé et la pièce écartée** (`regimes_ereporting`, `pieces_ecartees_ereporting`, e5a ;
+  `lib/regimesEreporting.ts`) : le régime est une DONNÉE que le dossier a déclarée à sa plateforme (impots.gouv.fr,
+  22/09/2026), confirmée par le cabinet et DATÉE — son histoire est celle du statut de TVA, jamais pour l'avenir ; une
+  période se juge sous le régime de son premier jour (fréquence confirmée, statut, numéro de TVA de la période) ; à
+  cheval sur deux régimes, elle se refuse (NON VÉRIFIÉ, E5-Q1) ; un onglet TVA qui le contredit la fait reconfirmer. Les
+  fréquences des textes sont des contraintes de la table, celle d'un exonéré confirmée « chaque mois » par la fonction
+  (Q4). Un régime et un écart ne se modifient pas : ils se RETIRENT ; seules `confirmer_regime_ereporting` (seize refus),
+  `retirer_regime_ereporting`, `ecarter_piece_ereporting` et `reprendre_piece_ereporting` écrivent ; le client n'en voit
+  rien. Une pièce qui a une fiche « hors de France » ne s'écarte pas, une fiche posée après l'écart l'emporte ; une pièce
+  écartée ne change plus de dossier. Le module redit les refus et REJOUE l'essai appel par appel
+  (`src/test/essaiSql.ts`) ; `lib/regimesEreportingLecture.ts` lit les deux tables en entier → « LE RÉGIME
+  D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN BASE ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -1210,7 +1252,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8768 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8951 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

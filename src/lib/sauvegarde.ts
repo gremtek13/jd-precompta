@@ -115,6 +115,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'pieces', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'pieces', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces', parent: 'sous_dossiers', colonne: 'sous_dossier_id', aLaSuppression: 'met_a_null' },
+  { enfant: 'pieces_ecartees_ereporting', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'pieces_ecartees_ereporting', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_hors_de_france', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_hors_de_france', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
   { enfant: 'pieces_hors_de_france', parent: 'pieces_hors_de_france', colonne: 'remplace_id', aLaSuppression: 'bloque' },
@@ -127,6 +129,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'previsionnels_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_annuelles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'references_postes_annuels', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'regimes_ereporting', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'reglements_groupes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'reglements_groupes', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
   { enfant: 'reglements_groupes', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
@@ -143,6 +146,10 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'revision_notes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'revision_revues', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'revision_revues', parent: 'revision_conclusions', colonne: 'conclusion_id', aLaSuppression: 'bloque' },
+  { enfant: 'revision_seuils', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_seuils', parent: 'revision_seuils', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'revision_explications', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'revision_explications', parent: 'revision_explications', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'soldes_reportes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'sous_dossiers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'statuts_factures_recus', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -221,6 +228,10 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // documents qu'elles citent, que leur garde lit sans clé étrangère (`LIENS_GARDES`, que `violationsOrdre` compte).
 // Les cycles de la révision (étape R4) les suivent, pour la même raison : rien de ce qu'une validation fige ne les
 // concerne. Les conclusions partent par vagues (`remplace_id`), leurs revues après elles, le journal n'importe où.
+// La revue analytique (étape R5) les suit à son tour : le seuil de signification d'un exercice et les explications de ses
+// variations ne lisent, à l'insertion, que le seuil ou l'explication qu'ils remplacent — leurs gardes ne lisent ni la
+// validation ni le brouillon ; les montants, la base ne les vérifie que dans `expliquer_variation`, que la restauration
+// ne rejoue pas. Les deux chaînes partent par vagues (`remplace_id`). `sauvegarde.test.ts` garde cet ordre.
 //
 // La fiche « hors de France » d'une pièce (ligne 28.5, étape e2) suit les pièces qu'elle décrit et PRÉCÈDE le brouillon :
 // sa garde refuse une fiche sur une pièce qu'une écriture validée fige — la sienne ou celle de son bien —, et le lit
@@ -238,6 +249,14 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // qu'il le faille : aucune de leurs gardes ne lit une validation. À l'insertion, elles ne refusent qu'une ligne dont
 // le mouvement ou la pièce n'est pas de son dossier ; la restauration y insère par la policy du super-administrateur,
 // et une proposition déjà retirée se réinsère telle quelle, datée de son retrait.
+//
+// Le régime d'e-reporting confirmé et la pièce écartée (ligne 28.5, étape e5a, migration
+// `regimes_ereporting_et_pieces_ecartees`) suivent les registres de P7 : le régime ne dépend que de son dossier, l'écart
+// suit la pièce qu'il vise (sa garde la lit, de son dossier) ; aucune validation ne les fige, et rien de ce qui précède
+// ne les lit. L'histoire se réinsère telle qu'elle a été écrite, retraits compris — la garde d'un régime ne regarde
+// pas l'insertion, celle d'un écart que sa pièce —, par la policy du super-administrateur. À cette place, ils ne
+// déplacent que le rang de `exercices_valides` dans l'essai de restauration. Le contrôle de l'ordre contre le graphe
+// (`sauvegarde.test.ts`) garde l'écart après sa pièce.
 //
 // Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
 // parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
@@ -311,8 +330,12 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'revision_conclusions',
   'revision_notes',
   'revision_revues',
+  'revision_seuils',
+  'revision_explications',
   'justificatifs_proposes',
   'precisions_mouvements',
+  'regimes_ereporting',
+  'pieces_ecartees_ereporting',
   'devis_numerotation',
   'devis',
   'devis_factures',
@@ -365,6 +388,11 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   // La conclusion d'un cycle de la révision (ligne 41, étape R4) : elle en remplace une du même cycle et du même exercice
   // (`remplace_id`) ; immuable, elle ne part pas à NULL, et sa garde lit la conclusion remplacée.
   { table: 'revision_conclusions', colonne: 'remplace_id' },
+  // Le seuil de signification d'un exercice et l'explication d'une variation (ligne 41, étape R5) : l'un remplace un seuil
+  // du même exercice, l'autre une explication de la même ligne et du même exercice (`remplace_id`) ; immuables, ils ne
+  // partent pas à NULL, et leur garde lit la cible.
+  { table: 'revision_seuils', colonne: 'remplace_id' },
+  { table: 'revision_explications', colonne: 'remplace_id' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
@@ -701,6 +729,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   piece_commentaires: { acces: 'direct' },
   piece_textes_ocr: { acces: 'direct' },
   pieces: { acces: 'direct' },
+  pieces_ecartees_ereporting: { acces: 'direct' },
   pieces_hors_de_france: { acces: 'direct' },
   pieces_hors_de_france_taux: { acces: 'direct' },
   plan_comptable_dossier: { acces: 'direct' },
@@ -708,6 +737,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   previsionnels_bancaires: { acces: 'direct' },
   references_annuelles: { acces: 'direct' },
   references_postes_annuels: { acces: 'direct' },
+  regimes_ereporting: { acces: 'direct' },
   reglements_groupes: { acces: 'direct' },
   regles_affectation_bancaire: { acces: 'direct' },
   regles_bancaires_ignorees: { acces: 'direct' },
@@ -716,6 +746,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   revision_conclusions: { acces: 'direct' },
   revision_notes: { acces: 'direct' },
   revision_revues: { acces: 'direct' },
+  revision_seuils: { acces: 'direct' },
+  revision_explications: { acces: 'direct' },
   soldes_reportes: { acces: 'direct' },
   sous_dossiers: { acces: 'direct' },
   statuts_factures_recus: { acces: 'direct' },

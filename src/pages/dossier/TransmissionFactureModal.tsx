@@ -13,16 +13,22 @@ import {
 } from '../../lib/transmissionsFactures'
 import { CONSEQUENCE_ANNULATION, libelleStatutLu, statutsDeLaFacture, type StatutLu } from '../../lib/statutsLus'
 import type { ArticleExoneration, FactureEmise, FactureSuperpdpEvent, StatutTva, TransmissionFacture } from '../../lib/types'
-import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
+import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
+import {
+  ACCES_SANS_OBJET, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, estLeClient, type AccesDuDossier,
+} from '../../lib/auteursVentes'
 
 // Ce que la fenêtre lit d'un statut lu sur la plateforme du client : de quoi dire un refus, et où.
 type StatutAnnulant = Pick<StatutLu, 'id' | 'facture_id' | 'code' | 'hote' | 'emis_le' | 'lu_le'>
 
-interface Props {
+// Qui transmet : le cabinet, ou le client « Ventes » (espace client, étape P4a) — les mêmes fonctions, qui l'acceptent
+// depuis P3 ; le client ne RELIE pas de plateforme d'ici (c'est son cabinet), et les mots sont ceux de son espace. Le
+// cabinet reçoit de l'onglet les ACCÈS du dossier (étape P4c) pour dire « par le client » d'une transmission que le
+// client a déposée ; le client n'en lit aucun, et rien ne s'y dit.
+type QuiTransmet = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client' }
+
+type Props = QuiTransmet & {
   dossierId: string
-  // Qui transmet : le cabinet, ou le client « Ventes » (espace client, étape P4a) — les mêmes fonctions, qui l'acceptent
-  // depuis P3 ; le client ne RELIE pas de plateforme d'ici (c'est son cabinet), et les mots sont ceux de son espace.
-  espace: EspaceVentes
   facture: FactureEmise
   // Le statut de TVA du dossier aujourd'hui : la facture ne le fige pas, et les fonctions qui la transmettent le relisent.
   statutTva: StatutTva | null
@@ -33,7 +39,7 @@ interface Props {
   onUpdated: () => void
 }
 
-const COLONNES_TRANSMISSION = 'id, dossier_id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le'
+const COLONNES_TRANSMISSION = 'id, dossier_id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_par, cree_le, maj_le'
 
 // LA TRANSMISSION D'UNE FACTURE VALIDÉE (ligne 28.5, étape c4) : par la plateforme agréée du client, que la connexion
 // de l'onglet Justificatifs désigne (plateforme-agreee, « déposer » puis « suivre »), ou par Super PDP (superpdp-emit,
@@ -43,7 +49,9 @@ const COLONNES_TRANSMISSION = 'id, dossier_id, facture_id, canal, hote, flux_id,
 // CE QUI L'EMPÊCHE DE PARTIR SE DIT AVANT LE CLIC, avec le jugement même des fonctions (`refusEmission`, sur la facture
 // assemblée par `donneesDeLaFacture`) ; elles le refont de leur côté, sur la facture relue en base. Et rien n'est
 // proposé tant qu'on ne SAIT pas si elle est déjà partie : ses transmissions lues en entier, sinon aucun bouton.
-export default function TransmissionFactureModal({ dossierId, espace, facture, statutTva, articleExoneration, numeroTvaAttribue, onClose, onUpdated }: Props) {
+export default function TransmissionFactureModal(props: Props) {
+  const { dossierId, espace, facture, statutTva, articleExoneration, numeroTvaAttribue, onClose, onUpdated } = props
+  const acces = props.espace === 'cabinet' ? props.acces : ACCES_SANS_OBJET
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [lignes, setLignes] = useState<LigneCii[] | null>(null)
   // Pour un avoir : la facture qu'il corrige, dont il transmet le numéro et la date. `undefined` tant qu'elle n'est pas lue ;
@@ -369,7 +377,14 @@ export default function TransmissionFactureModal({ dossierId, espace, facture, s
                           {/* Une seule pièce dans la rangée de la fiche : sans `span`, la date et son « il y a… » seraient
                               deux éléments écartés l'un de l'autre. */}
                           <td data-libelle="Date"><span>{formatDate(t.cree_le)} <span className="muted">({dateRelative(t.cree_le)})</span></span></td>
-                          <td data-libelle="Par">{dire(libelleCanal(t))}</td>
+                          <td data-libelle="Par">
+                            <span>
+                              {dire(libelleCanal(t))}
+                              {estLeClient(acces, t.cree_par) && (
+                                <> <span className="badge badge-neutral badge-une-ligne" title={TITRES_PAR_LE_CLIENT.transmission}>{PAR_LE_CLIENT}</span></>
+                              )}
+                            </span>
+                          </td>
                           <td data-libelle="État"><span className={`badge ${ETATS_TRANSMISSION[t.etat].badge}`}>{ETATS_TRANSMISSION[t.etat].libelle}</span></td>
                           {/* `anywhere` : une adresse de facturation électronique n'a aucune espace (250100021_25010002100014_SSIAD-…),
                               et un mot insécable que `break-word` ne compte pas dans la largeur minimale repoussait la cellule

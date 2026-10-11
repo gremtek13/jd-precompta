@@ -46,6 +46,20 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // la restauration au super-administrateur, le chef du cabinet en production : une écriture directe écrite demain depuis
 // un écran passerait les gardes sans aucun de ces contrôles. Aucune Edge Function ne la nomme avant la déclaration (e5).
 //
+// LA REVUE ANALYTIQUE NON PLUS (ligne 41, étape R5) : `revision_seuils` et `revision_explications` gardent le seuil de
+// signification de chaque exercice, fixé et motivé par le cabinet, et les explications de ses variations. Seules
+// `fixer_seuil_de_signification` et `expliquer_variation` les écrivent — le seuil et l'explication courants, la source de
+// l'exercice précédent, les montants que la base sait relire, sous verrou — ; aucun écran ne les appelle avant la phase C
+// de l'étape. La policy laisse la porte de la restauration au super-administrateur, le chef du cabinet en production.
+// Aucune Edge Function ne les nomme.
+// LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE NON PLUS (ligne 28.5, étape e5a) : `regimes_ereporting` garde le
+// régime que le dossier a déclaré à sa plateforme, et son histoire — celle du statut de TVA, sous lequel une période
+// passée se déclare — ; `pieces_ecartees_ereporting`, les pièces candidates que le cabinet a vérifiées et écartées, qu'une
+// déclaration n'attend plus. Seules `confirmer_regime_ereporting` (seize refus, les fréquences que les textes écrivent),
+// `retirer_regime_ereporting`, `ecarter_piece_ereporting` (la fiche courante d'abord, sous le verrou des fiches) et
+// `reprendre_piece_ereporting` les écrivent ; la policy laisse la porte de la restauration au super-administrateur. Aucun
+// écran ne les appelle avant la phase C, et aucune Edge Function ne les nomme avant le fichier (e6).
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -57,10 +71,21 @@ export const TABLES_DES_STATUTS_LUS = ['statuts_factures_recus'] as const
 export const TABLES_DE_LA_REVISION = ['revision_justifications', 'revision_preuves'] as const
 export const TABLES_DES_FICHES_HORS_DE_FRANCE = ['pieces_hors_de_france', 'pieces_hors_de_france_taux'] as const
 export const TABLES_DES_CYCLES_DE_LA_REVISION = ['revision_conclusions', 'revision_notes', 'revision_revues'] as const
+export const TABLES_DE_LA_REVUE_ANALYTIQUE = ['revision_seuils', 'revision_explications'] as const
+export const TABLES_DU_REGIME_ET_DES_ECARTS = ['regimes_ereporting', 'pieces_ecartees_ereporting'] as const
+const FONCTIONS_DU_REGIME_ET_DES_ECARTS = [
+  'confirmer_regime_ereporting', 'retirer_regime_ereporting', 'ecarter_piece_ereporting', 'reprendre_piece_ereporting',
+] as const
+
+// Les écrans qui appellent les quatre fonctions du régime et des écarts, nommément : aucun avant la phase C d'e5.
+const ECRANS_DU_REGIME_ET_DES_ECARTS: readonly string[] = []
 
 // Les écrans qui appellent les trois fonctions des cycles, nommément : l'onglet Révision (étape R4, phase C), qui écrit
 // pour son panneau d'un cycle (`FicheCycle`, qui n'écrit rien lui-même).
 const ECRANS_DES_CYCLES: readonly string[] = ['src/pages/dossier/RevisionTab.tsx']
+
+// Les écrans qui appellent les deux fonctions de la revue analytique, nommément : aucun avant la phase C de l'étape R5.
+const ECRANS_DE_LA_REVUE_ANALYTIQUE: readonly string[] = []
 
 // Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
 const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']
@@ -216,12 +241,29 @@ export function ecrituresDesCyclesDeLaRevision(
   return ecrituresDesTables(sources, TABLES_DES_CYCLES_DE_LA_REVISION, exceptions, 'seules ses trois fonctions l’écrivent')
 }
 
+/** La revue analytique (ligne 41, étape R5) : ses deux tables, dans `src/` et les Edge Functions. */
+export function ecrituresDeLaRevueAnalytique(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DE_LA_REVUE_ANALYTIQUE, exceptions, 'seules ses deux fonctions l’écrivent')
+}
+
 /** La fiche « hors de France » (ligne 28.5, étape e2) : ses deux tables, dans `src/` et les Edge Functions. */
 export function ecrituresDesFichesHorsDeFrance(
   sources: readonly Source[],
   exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
 ): string[] {
   return ecrituresDesTables(sources, TABLES_DES_FICHES_HORS_DE_FRANCE, exceptions, 'seules ses deux fonctions l’écrivent')
+}
+
+/** Le régime d'e-reporting confirmé et la pièce écartée (ligne 28.5, étape e5a) : leurs deux tables, dans `src/` et les
+ * Edge Functions. */
+export function ecrituresDuRegimeEtDesEcarts(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DU_REGIME_ET_DES_ECARTS, exceptions, 'seules ses quatre fonctions les écrivent')
 }
 
 /** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
@@ -372,6 +414,36 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((x) => x.table === 'revision_conclusions').map((x) => x.colonne)).toEqual(['remplace_id'])
   })
 
+  it('aucune écriture directe de la revue analytique, hors de la restauration (ligne 41, étape R5)', () => {
+    expect(ecrituresDeLaRevueAnalytique(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme la revue analytique : ni ses tables, ni ses fonctions', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DE_LA_REVUE_ANALYTIQUE, 'fixer_seuil_de_signification', 'expliquer_variation']) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('les deux fonctions de la revue analytique ne s’appellent que des écrans qui s’inscrivent nommément', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of ['fixer_seuil_de_signification', 'expliquer_variation']) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DE_LA_REVUE_ANALYTIQUE)
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', args)`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue la revue analytique par l’insertion — ses deux chaînes par vagues —, jamais par sa seconde passe', () => {
+    for (const t of TABLES_DE_LA_REVUE_ANALYTIQUE) expect(ORDRE_RESTAURATION).toContain(t)
+    for (const t of TABLES_DE_LA_REVUE_ANALYTIQUE) expect(TABLES_AUTO_REFERENCEES.map((x) => x.table)).not.toContain(t)
+    for (const t of TABLES_DE_LA_REVUE_ANALYTIQUE) {
+      expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((x) => x.table === t).map((x) => x.colonne), t).toEqual(['remplace_id'])
+    }
+  })
+
   it('aucune écriture directe de la fiche « hors de France », hors de la restauration (ligne 28.5, étape e2)', () => {
     expect(ecrituresDesFichesHorsDeFrance(sources)).toEqual([])
   })
@@ -402,6 +474,47 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
       .toEqual(['remplace_id'])
     const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
     expect(rang('pieces_hors_de_france_taux')).toBeLessThan(rang('ecritures_brouillon'))
+  })
+
+  it('aucune écriture directe du régime confirmé ni des écarts, hors de la restauration (ligne 28.5, étape e5a)', () => {
+    expect(ecrituresDuRegimeEtDesEcarts(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme le régime ni les écarts : ni leurs tables, ni leurs fonctions', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DU_REGIME_ET_DES_ECARTS, ...FONCTIONS_DU_REGIME_ET_DES_ECARTS]) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('les quatre fonctions du régime et des écarts ne s’appellent que des écrans qui s’inscrivent nommément', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of FONCTIONS_DU_REGIME_ET_DES_ECARTS) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DU_REGIME_ET_DES_ECARTS)
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', argumentsDeLEcart(d, p, m))`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue le régime et les écarts par l’insertion, sans seconde passe ni vague, l’écart après sa pièce', () => {
+    const secondes = [...TABLES_AUTO_REFERENCEES, ...TABLES_AUTO_REFERENCEES_PAR_VAGUES].map((t) => t.table)
+    for (const t of TABLES_DU_REGIME_ET_DES_ECARTS) {
+      expect(ORDRE_RESTAURATION).toContain(t)
+      expect(secondes).not.toContain(t)
+    }
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('pieces')).toBeLessThan(rang('pieces_ecartees_ereporting'))
+    expect(rang('pieces_ecartees_ereporting')).toBeLessThan(rang('exercices_valides'))
+    expect(rang('regimes_ereporting')).toBeLessThan(rang('exercices_valides'))
+  })
+
+  it('le scanner voit passer la lecture du régime et des écarts (lib/regimesEreportingLecture.ts)', () => {
+    for (const t of TABLES_DU_REGIME_ET_DES_ECARTS) {
+      expect(sites.filter((s) => s.tables?.includes(t)).map((s) => [s.chemin, s.ecriture]), t)
+        .toEqual([['src/lib/regimesEreportingLecture.ts', null]])
+    }
   })
 
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
@@ -524,6 +637,22 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(jugerC(`await supabase.from('revision_justifications').insert(x)`)).toEqual([])
   })
 
+  it('attrape une écriture directe de la revue analytique, dans src/ comme dans une Edge Function', () => {
+    const jugerA = (texte: string, chemin = 'src/faux.ts') => ecrituresDeLaRevueAnalytique([{ chemin, texte }], {})
+    expect(jugerA(`
+      await supabase
+        .from('revision_seuils')
+        .insert({ dossier_id: d, annee: 2025, seuil: 1000, motif: 'm' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur revision_seuils : seules ses deux fonctions l’écrivent'])
+    expect(jugerA(`await supabase.from('revision_explications').delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerA(`const T = 'revision_explications'\nawait supabase.from(T).update({ explication: 'x' })`)).toHaveLength(1)
+    expect(jugerA(`await admin.from('revision_seuils').upsert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerA(`await supabase.from('revision_seuils').select('*', { count: 'exact' })`)).toEqual([])
+    // Les cycles ne prennent pas la revue analytique pour leurs tables, ni l'inverse.
+    expect(ecrituresDesCyclesDeLaRevision([{ chemin: 'src/faux.ts', texte: `await supabase.from('revision_seuils').insert(x)` }], {})).toEqual([])
+    expect(jugerA(`await supabase.from('revision_conclusions').insert(x)`)).toEqual([])
+  })
+
   it('attrape une écriture directe de la fiche « hors de France », dans src/ comme dans une Edge Function', () => {
     const jugerF = (texte: string, chemin = 'src/faux.ts') => ecrituresDesFichesHorsDeFrance([{ chemin, texte }], {})
     expect(jugerF(`
@@ -539,6 +668,23 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     // Le registre ne prend pas la fiche pour une de ses tables, ni la fiche le registre.
     expect(juger(`await supabase.from('pieces_hors_de_france').insert(x)`)).toEqual([])
     expect(jugerF(`await supabase.from('encaissements_factures').insert(x)`)).toEqual([])
+  })
+
+  it('attrape une écriture directe du régime ou d’un écart, dans src/ comme dans une Edge Function', () => {
+    const jugerE = (texte: string, chemin = 'src/faux.ts') => ecrituresDuRegimeEtDesEcarts([{ chemin, texte }], {})
+    expect(jugerE(`
+      await supabase
+        .from('regimes_ereporting')
+        .insert({ dossier_id: d, depuis, statut_tva: 'franchise' })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur regimes_ereporting : seules ses quatre fonctions les écrivent'])
+    expect(jugerE(`await supabase.from('pieces_ecartees_ereporting').update({ retire_le: maintenant }).eq('id', id)`)).toHaveLength(1)
+    expect(jugerE(`const T = 'pieces_ecartees_ereporting'\nawait supabase.from(T).delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerE(`await admin.from('regimes_ereporting').upsert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerE(`await supabase.from('regimes_ereporting').select('*', { count: 'exact' })`)).toEqual([])
+    // La fiche ne prend pas l'écart pour une de ses tables, ni l'écart la fiche.
+    expect(ecrituresDesFichesHorsDeFrance([{ chemin: 'src/faux.ts', texte: `await supabase.from('pieces_ecartees_ereporting').insert(x)` }], {}))
+      .toEqual([])
+    expect(jugerE(`await supabase.from('pieces_hors_de_france').insert(x)`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {

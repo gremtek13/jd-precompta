@@ -267,7 +267,9 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     it('une vague oubliée', () => {
       expect(remplacer(",('revision_justifications','reprise_de'),", ',').join('\n')).toContain('_vagues vaut')
       expect(remplacer(",\n ('pieces_hors_de_france','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
-      expect(remplacer(",\n ('revision_conclusions','remplace_id');", ';').join('\n')).toContain('_vagues vaut')
+      expect(remplacer(",\n ('revision_conclusions','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
+      expect(remplacer(",\n ('revision_seuils','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
+      expect(remplacer(",\n ('revision_explications','remplace_id');", ';').join('\n')).toContain('_vagues vaut')
     })
 
     it('une seconde passe qui viserait une autre colonne', () => {

@@ -450,7 +450,7 @@ describe('FactureFormModal — les mentions de la facture électronique', () => 
       date_emission: '2026-09-15', date_echeance: null, tiers_nom: 'Mairie Fictive', tiers_adresse: null, tiers_siret: null,
       montant_ht: 100, montant_tva: 20, montant_ttc: 120, mentions_legales: null, notes: null, emetteur_nom: null,
       emetteur_siret: null, emetteur_adresse: null, superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-      created_by: null, created_at: '2026-09-15T08:00:00Z', validated_at: null,
+      created_by: null, valide_par: null, created_at: '2026-09-15T08:00:00Z', validated_at: null,
       ...MENTIONS_VIDES, type_client: 'organisme_public', code_service: 'SERVICE-ACHATS', nature_operation: 'mixte',
       date_prestation: '2026-09-12',
     }
@@ -495,7 +495,7 @@ describe('FactureFormModal — les notes se disent lues par le client qui porte 
       date_emission: '2026-09-15', date_echeance: null, tiers_nom: 'Client Fictif', tiers_adresse: null, tiers_siret: null,
       montant_ht: 100, montant_tva: 20, montant_ttc: 120, mentions_legales: null, notes: 'Remise promise au téléphone',
       emetteur_nom: null, emetteur_siret: null, emetteur_adresse: null, superpdp_invoice_id: null, superpdp_dernier_statut: null,
-      tiers_email: null, created_by: null, created_at: '2026-09-15T08:00:00Z', validated_at: null, ...MENTIONS_VIDES,
+      tiers_email: null, created_by: null, valide_par: null, created_at: '2026-09-15T08:00:00Z', validated_at: null, ...MENTIONS_VIDES,
     }
     monter('redevable', null, { facture: brouillon })
     const champ = await screen.findByLabelText(LIBELLE_NOTES_FACTURE)

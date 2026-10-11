@@ -125,7 +125,8 @@ describe('ordre de restauration', () => {
     expect([...enDeuxPasses, ...parVagues].sort()).toEqual(auto)
     expect(parVagues).toEqual([
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
-      'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id',
+      'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
+      'revision_explications.remplace_id',
     ])
   })
 
@@ -186,6 +187,25 @@ describe('ordre de restauration', () => {
         'revision_revues.conclusion_id>revision_conclusions:bloque',
         'revision_revues.dossier_id>dossiers:cascade',
       ])
+  })
+
+  it('écrit la revue analytique après les cycles de la révision, avant les registres de P7 (étape R5)', () => {
+    // Deux tables qui ne lisent, à l'insertion, que la ligne qu'elles remplacent : rien de ce qu'une validation fige, rien
+    // du brouillon. Elles suivent les cycles, avant `exercices_valides` ; chacune pointe sa cible par une clé sans action.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(ORDRE_RESTAURATION.slice(rang('revision_revues'), rang('justificatifs_proposes') + 1))
+      .toEqual(['revision_revues', 'revision_seuils', 'revision_explications', 'justificatifs_proposes'])
+    expect(rang('revision_explications')).toBeLessThan(rang('exercices_valides'))
+    expect(RELATIONS.filter((r) => ['revision_seuils', 'revision_explications'].includes(r.enfant))
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'revision_explications.dossier_id>dossiers:cascade',
+        'revision_explications.remplace_id>revision_explications:bloque',
+        'revision_seuils.dossier_id>dossiers:cascade',
+        'revision_seuils.remplace_id>revision_seuils:bloque',
+      ])
+    expect(CHEMINS_DOSSIER.revision_seuils).toEqual({ acces: 'direct' })
+    expect(CHEMINS_DOSSIER.revision_explications).toEqual({ acces: 'direct' })
   })
 
   it('signale une preuve placée avant la pièce qu’elle cite, que le graphe des clés ne voit pas', () => {
@@ -740,6 +760,29 @@ describe('plan de réinsertion', () => {
         { table: 'revision_conclusions', colonne: 'remplace_id', parent: 'revision_conclusions', valeur: 'k1', effacable: false },
         { table: 'revision_revues', colonne: 'conclusion_id', parent: 'revision_conclusions', valeur: 'k9', effacable: false },
       ])
+  })
+
+  it('écrit chaque seuil et chaque explication de la revue analytique après celui qu’il remplace (étape R5)', () => {
+    // Un seuil en remplace un du même exercice, une explication une de la même ligne et du même exercice (`remplace_id`) :
+    // immuables, ils ne partent pas à NULL, et leur garde lit la cible — un maillon par vague, table par table.
+    const s2 = { id: 's2', dossier_id: 'd1', annee: 2025, remplace_id: 's1' }
+    const s1 = { id: 's1', dossier_id: 'd1', annee: 2025, remplace_id: null }
+    const s9 = { id: 's9', dossier_id: 'd1', annee: 2024, remplace_id: null }
+    const x3 = { id: 'x3', dossier_id: 'd1', annee: 2025, remplace_id: 'x2' }
+    const x2 = { id: 'x2', dossier_id: 'd1', annee: 2025, remplace_id: 'x1' }
+    const x1 = { id: 'x1', dossier_id: 'd1', annee: 2025, remplace_id: null }
+    const y1 = { id: 'y1', dossier_id: 'd1', annee: 2025, remplace_id: null }
+    const plan = planReinsertion({ revision_explications: [x3, y1, x2, x1], revision_seuils: [s2, s1, s9] })
+    expect(plan.etapes.map((e) => `${e.table}:${e.lignes.map((l) => l.id).join(',')}`)).toEqual([
+      'revision_seuils:s1,s9', 'revision_seuils:s2',
+      'revision_explications:y1,x1', 'revision_explications:x2', 'revision_explications:x3',
+    ])
+    expect(plan.secondePasse).toEqual([])
+    // Un seuil ou une explication qui en remplace un absent de la sauvegarde : des liens perdus, jamais effaçables.
+    expect(liensPerdus({ dossiers: [{ id: 'd1' }], revision_seuils: [s2], revision_explications: [x3] })).toEqual([
+      { table: 'revision_seuils', colonne: 'remplace_id', parent: 'revision_seuils', valeur: 's1', effacable: false },
+      { table: 'revision_explications', colonne: 'remplace_id', parent: 'revision_explications', valeur: 'x2', effacable: false },
+    ])
   })
 
   it('écrit chaque version d’une fiche « hors de France » après celle qu’elle remplace, et sa ventilation ensuite', () => {

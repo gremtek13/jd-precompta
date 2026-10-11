@@ -35,7 +35,7 @@ function validee(o: Partial<FactureEmise> = {}): FactureEmise {
     date_emission: '2026-09-30', date_echeance: '2026-10-30', tiers_nom: 'Client Fictif SAS', tiers_adresse: null, tiers_siret: null,
     montant_ht: 100, montant_tva: 20, montant_ttc: 120, mentions_legales: null, notes: 'Client lent à payer : relancer le 10.',
     emetteur_nom: 'Atelier Démo Conseil', emetteur_siret: null, emetteur_adresse: null, superpdp_invoice_id: null,
-    superpdp_dernier_statut: null, tiers_email: null, created_by: null, created_at: '2026-09-30T08:00:00Z',
+    superpdp_dernier_statut: null, tiers_email: null, created_by: null, valide_par: null, created_at: '2026-09-30T08:00:00Z',
     validated_at: '2026-09-30T08:05:00Z', ...MENTIONS_VIDES, ...o,
   }
 }

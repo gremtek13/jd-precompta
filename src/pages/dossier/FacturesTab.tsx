@@ -32,6 +32,11 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 import { dejaCredite, SUPPRESSION_BROUILLON_EXPORTEE, supprimerBrouillon } from '../../lib/factures'
 import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
+import {
+  ACCES_EN_COURS, ACCES_SANS_OBJET, AIDE_DU_FILTRE, LIBELLE_DU_FILTRE, emiseParLeClient, etatDuFiltre, pastilleParLeClient,
+  type AccesDuDossier,
+} from '../../lib/auteursVentes'
+import { lireLesAccesDuDossier } from '../../lib/auteursVentesLecture'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
 // l'adresse du dossier depuis une facture ; ou le client qui porte la case « Ventes », depuis « Mes ventes › Factures »,
@@ -104,6 +109,16 @@ export default function FacturesTab(props: Props) {
   const [erreurReleve, setErreurReleve] = useState<string | null>(null)
   const [releveOccupe, setReleveOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // QUI EST LE CLIENT (étape P4c), au cabinet seul : les accès du dossier, lus UNE fois ici et passés aux fenêtres. Gardés
+  // AVEC le dossier pour lequel ils ont été lus : changer de dossier repart en lecture, et une réponse arrivée après ne
+  // reconnaît le client de personne d'autre. Dans l'espace du client, rien n'est lu et rien n'est dit « par le client ».
+  const [accesLus, setAccesLus] = useState<{ dossierId: string; acces: AccesDuDossier } | null>(null)
+  const acces: AccesDuDossier = espace === 'client'
+    ? ACCES_SANS_OBJET
+    : accesLus?.dossierId === dossierId ? accesLus.acces : ACCES_EN_COURS
+  // La case « Émises par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des accès lus en entier.
+  const [filtreClient, setFiltreClient] = useState(false)
+  const filtre = etatDuFiltre(acces)
 
   async function load() {
     setLoading(true)
@@ -144,6 +159,17 @@ export default function FacturesTab(props: Props) {
     return () => { annule = true }
   }, [dossierId])
 
+  // Les accès du dossier, lus à l'ouverture (la base, jamais une plateforme) : une réponse arrivée après un changement de
+  // dossier ne s'écrit pas.
+  useEffect(() => {
+    if (espace !== 'cabinet') return
+    let annule = false
+    lireLesAccesDuDossier(dossierId).then((lu) => {
+      if (!annule) setAccesLus({ dossierId, acces: lu })
+    })
+    return () => { annule = true }
+  }, [dossierId, espace])
+
   // LE RELEVÉ DES STATUTS, SUR UN CLIC : la fonction lit la plateforme du client, garde ce qui se rattache à une facture
   // du dossier et rend son bilan. Un verrou posé avant le `try`, relâché dans le `finally` APRÈS la relecture des
   // factures, des statuts et de la connexion : un second clic pendant qu'elle court relirait la plateforme pour rien, et
@@ -171,7 +197,12 @@ export default function FacturesTab(props: Props) {
   // Le jour à Paris, lu au rendu : une déclaration en retard l'est au jour de la base, pas à celui du chargement.
   const aujourdHui = aujourdHuiAParis()
   const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
-  const avantRecherche = factures.filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
+  // Le filtre « Émises par le client » ne touche que l'AFFICHAGE : les pastilles d'encaissement et de déclaration, la liste
+  // des avoirs déjà crédités et les fenêtres lisent `factures` en entier. Il n'agit que si les accès sont lus en entier.
+  const filtreActif = filtreClient && filtre.disponible
+  const avantRecherche = factures
+    .filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
+    .filter((f) => !filtreActif || emiseParLeClient(acces, f))
   const filtered = avantRecherche.filter((f) =>
     correspondALaRecherche([f.numero, f.tiers_nom, f.statut, f.date_emission, formatDate(f.date_emission), f.montant_ttc], recherche),
   )
@@ -292,6 +323,23 @@ export default function FacturesTab(props: Props) {
         />
       </div>
 
+      {/* Le cabinet seul : « Émises par le client » (étape P4c). Grisée avec sa raison tant que les accès ne sont pas lus en
+          entier ; l'aide dit ce que la case reconnaît, et ce qu'elle ne reconnaît plus (un accès retiré). */}
+      {espace === 'cabinet' && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="checkbox" checked={filtreActif} disabled={!filtre.disponible} aria-describedby="aide-filtre-client"
+              onChange={(e) => setFiltreClient(e.target.checked)}
+            />
+            {LIBELLE_DU_FILTRE}
+          </label>
+          <p id="aide-filtre-client" className="muted" style={{ margin: '4px 0 0', fontSize: '0.82rem' }}>
+            {filtre.disponible ? AIDE_DU_FILTRE : filtre.raison}
+          </p>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvelle facture</button>
       </div>
@@ -339,7 +387,8 @@ export default function FacturesTab(props: Props) {
           <div className="empty-state">
             {recherche.trim()
               ? `Aucune facture ne correspond à « ${recherche.trim()} ».`
-              : lectureIncomplete ? 'La liste des factures n’a pas pu être lue.' : 'Aucune facture.'}
+              : lectureIncomplete ? 'La liste des factures n’a pas pu être lue.'
+                : filtreActif ? 'Aucune facture ni aucun avoir n’a été validé par le client.' : 'Aucune facture.'}
           </div>
         ) : (
           // REPLIÉE EN FICHES SOUS 860 PIXELS D'ENVELOPPE (08/10/2026). Six colonnes — dont une de quatre boutons — ne
@@ -380,6 +429,11 @@ export default function FacturesTab(props: Props) {
                           {f.statut === 'validee'
                             ? <span className="badge badge-ok">Validée</span>
                             : <span className="badge badge-warning">Brouillon</span>}
+                          {/* « Par le client » : discrète, au cabinet seul, et seulement sur des accès lus en entier. */}
+                          {(() => {
+                            const pastille = pastilleParLeClient(acces, f)
+                            return pastille ? <span className="badge badge-neutral badge-une-ligne" title={pastille.titre}>{pastille.libelle}</span> : null
+                          })()}
                           {f.statut === 'validee' && (() => {
                             const courante = transmissionCourante(transmissions, f.id)
                             // Partie par Super PDP, la facture a un cycle de vie que Super PDP rend (reçue, refusée par
@@ -523,7 +577,7 @@ export default function FacturesTab(props: Props) {
         <TransmissionFactureModal
           key={transmise.id}
           dossierId={dossierId}
-          espace={espace}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
           facture={transmise}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
@@ -536,7 +590,7 @@ export default function FacturesTab(props: Props) {
       {encaissee && (
         <EncaissementsFactureModal
           key={encaissee.id}
-          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const } : { espace: 'client' as const, banque: props.banque })}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={encaissee}
           statutTva={statutTva}

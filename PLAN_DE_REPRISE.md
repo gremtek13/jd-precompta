@@ -338,6 +338,23 @@ dans une base dont les comptes ont disparu les garde, et seule la trace de l'aut
 sont pas parmi les prérequis du §3, 1). Sur une copie de la réplique égale à la production à 116 migrations, la facture
 validée et la transmission du dossier `test` portant les deux colonnes : 62 tables restaurées, 62 identiques, 0 écart.
 
+Le 11/10/2026 (ligne 28.5, étape e5a, migration `regimes_ereporting_et_pieces_ecartees`, appliquée AVANT la fusion du
+correctif qui les met au plan : sans elle, toute sauvegarde échouerait sur deux tables absentes), le régime d'e-reporting
+confirmé d'un dossier, avec son histoire, et les pièces écartées de l'e-reporting entrent au plan, avant
+`exercices_valides`. Leurs auteurs (`cree_par`, `retire_par`) n'ont pas de clé vers les comptes : ils
+ne sont pas parmi les prérequis du §3, 1. Sur la réplique de l'étape, le dossier `test` semé par les fonctions de la base
+(trois régimes, dont un retiré puis confirmé de nouveau le même jour ; quatre écarts, dont un repris puis posé de
+nouveau) : 64 tables restaurées, 64 identiques, 0 écart ; un écart ou un régime réinsérés avant leur dossier arrêtent
+l'essai sur leur clé.
+
+Le même jour (ligne 41, étape R5, migration `revue_analytique`, appliquée elle aussi avant la fusion), le seuil de
+signification de chaque exercice et les explications de ses variations entrent au plan, après les cycles de la révision,
+leurs deux chaînes par vagues (`remplace_id`) ; leurs auteurs n'ont pas de clé vers les comptes non plus. Les deux
+étapes réunies : 72 tables au plan, 75 avec les devis. Sur une réplique égale à la production à 118 migrations, le
+dossier `test` semé par les fonctions de la base des lignes des deux étapes (quatre seuils, cinq explications, trois
+régimes, quatre écarts) : 66 tables restaurées, 66 identiques, 0 écart ; un seuil ou un écart réinsérés avant leur
+dossier arrêtent l'essai sur leur clé.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 

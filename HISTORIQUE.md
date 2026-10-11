@@ -19770,6 +19770,376 @@ chaque fonction (+ inversée à `delete-cabinet`, réduite au tableau à `propos
 `JSON.parse` rétabli. La limite de la batterie (tous les champs de travers d'un coup) ne joue pas ici : chaque fonction
 n'en lit qu'un.
 
-**CE QUI RESTE.** Le redéploiement des quatre fonctions, `verify_jwt` à la valeur de `config.toml` (faux pour
-`delete-cabinet`, `superpdp-sync` et `evaluer-extraction`, vrai pour `proposer-categorie`), aller-retour. Aucun bloc copié
-n'a changé.
+**MIS EN LIGNE LE 11/10/2026** (demande de fusion #141, `main` 199ceca, le site servant le même paquet,
+`index-Bld_0926.js`). Avant l'écrasement, les quatre copies de production — `delete-cabinet` v3, `superpdp-sync` v10,
+`proposer-categorie` v3 et `evaluer-extraction` v11, toutes du 30/09 — étaient égales au dépôt d'avant la correction.
+Redéployées avec `verify_jwt` à la valeur de `config.toml`, relue sur `list_edge_functions` (faux, faux, vrai, faux),
+les bordures répétées d'abord (`bordures.py`, les quatre répétitions justes) : le texte ENVOYÉ, relu dans le journal de
+la session, égal au dépôt pour chacune, puis l'aller-retour sans différence — `delete-cabinet` v4 sur 129 lignes,
+`superpdp-sync` v11 sur 366, `proposer-categorie` v4 sur 436, `evaluer-extraction` v12 sur 678, la fenêtre de mesure
+toujours fermée — ; sans session, 401 pour les trois premières, et pour la dernière sans la clé publishable. Aucune
+fonction n'a été appelée pour de vrai. Aucun bloc copié n'a changé.
+
+### 11/10/2026 — LA REVUE ANALYTIQUE, EN BASE — LIGNE 41, ÉTAPE R5
+
+(Migration `revue_analytique`, préparée et éprouvée sur une réplique, PAS appliquée : 40 480 caractères, 41 221 octets,
+saut de ligne final compris, aucun retour chariot, md5 `0e4c83a7bd096f96cb03475565e8ff46`, pour `apply_migration` — aucune
+instruction de suppression : le mot n'y paraît que dans `on delete cascade`, `tg_op = 'DELETE'` et l'événement des deux
+déclencheurs, les formes de `revision_des_cycles` ; son fichier d'export porte une version PROVISOIRE,
+`supabase/schema/20261011999999_revue_analytique.sql`, à renommer à celle de l'historique. L'essai neuf
+`supabase/essais/revueAnalytique.sql` ; `src/lib/revueAnalytique.ts` (neuf), ses tests `revueAnalytique.test.ts` et
+`revueAnalytiqueEssai.test.ts`, ses fabriques `src/test/revueAnalytique.ts` ; `types.ts` (trois types) ;
+`sauvegarde.ts`, `sauvegarde.test.ts`, `sauvegardeDonnees.test.ts`, `restaurationEssai.test.ts`,
+`encaissementsEcritures.test.ts` ; `restauration.sql` ; le contrôle 141 de `validationExercice.sql` ; les passages
+datés de `rls.sql` et du README de l'export, qui passe à 117 migrations ; une ligne du registre de RGPD.md.) La
+cinquième étape de la révision des comptes (« LA RÉVISION DES COMPTES : LA CONCEPTION », § 1.4, 3.7, 4.5 et la ligne R5
+du découpage), sans l'écran : la phase C le posera dans l'onglet « Révision ». Aucune Edge Function. Sources relues sur
+Légifrance le 11/10/2026 : la NP 2300 (arrêté du 01/09/2016), § 13 (l'expert-comptable « met en œuvre une revue
+analytique lors de l'examen de la cohérence et de la vraisemblance »), § 14 (« des variations significatives ou des
+tendances inattendues » appellent des diligences complémentaires), § 15 (il « s'efforce d'obtenir des explications de la
+direction »), A7 (les rapprochements entre les rubriques, avec l'exercice précédent) ; le glossaire agréé par l'arrêté du
+30/05/2024 (en vigueur le 01/01/2025) : le seuil de signification, « montant au-delà duquel les décisions économiques ou
+le jugement fondé sur les comptes sont susceptibles d'être influencés ».
+
+**MESURÉ EN PRODUCTION LE 11/10/2026** (lecture seule, comptes seulement) : 116 migrations (empreinte globale
+`deea18c0…`), 68 tables, aucune décision ni conclusion de la révision, aucun exercice validé, un repère annuel, aucun
+repère par poste : tout ce qui suit est LATENT. La signature (`signature.sql`, neuf familles) relue le matin puis en fin
+d'étape : égale à celle de la réplique de travail.
+
+**DEUX TABLES, au patron de R1 et R4** — des affirmations datées, signées, IMMUABLES, écrites par des fonctions seules,
+lues par le cabinet seul :
+- `revision_seuils` : le seuil de signification d'un exercice, un MONTANT au centime (positif, sous 10^14 €) et son
+  MOTIF (4 000 caractères ; des blancs ne sont pas un motif) ; il se REMPLACE (`remplace_id` : un premier par exercice,
+  index unique partiel qu'aucun upsert ne vise, une seule suite à chacun) ;
+- `revision_explications` : l'explication d'une variation sur une LIGNE de la revue — un poste de la 2035 AVEC SA NATURE
+  (recette ou dépense : le moteur tient une ligne par poste ET par nature), un total de la 2035 (`recettes`, `depenses`,
+  `resultat`) ou un compte des classes 1 à 7 —, les deux montants qu'elle commente, au centime, et la SOURCE de
+  l'exercice précédent (`validee`, `reference`, `aucune` ; un montant précédent avec elle seulement ; jamais un repère
+  pour un compte) ; elle se remplace de même (une première par ligne et par exercice, deux natures nulles se heurtant).
+Deux gardes, aux droits de l'appelant : rien ne se modifie ni ne se supprime, sauf avec le dossier ; un seuil en remplace
+un du même exercice, une explication une de la même ligne et du même exercice. La RLS : le cabinet LIT
+(`admin_du_dossier`, `to authenticated`), le super-administrateur insère pour restaurer, le client ne voit rien.
+
+**CE QUI A ÉTÉ CHOISI, ET POURQUOI.** Deux écarts à la conception, motivés : la colonne `nature` (un nom de poste seul ne
+désigne pas une ligne de la 2035) et le type `total_2035` (un repère annuel ne porte que le chiffre d'affaires et le
+résultat ; la variation du résultat est la première que la revue regarde). La source de N−1 se DÉDUIT, ligne par ligne,
+dans cet ordre et jamais d'un recalcul : la 2035 VALIDÉE de N−1 pour une ligne de la 2035, son exercice validé pour un
+compte ; sinon un repère annuel qui porte la ligne — un poste de DÉPENSES à son nom exact, le chiffre d'affaires pour le
+total des recettes, le résultat net pour le résultat, rien d'autre ; un repère NaN ou hors des bornes n'en est pas un ;
+sinon rien. Un exercice validé en engagement n'a pas de 2035 validée : ses lignes de la 2035 passent au repère. LA BASE
+VÉRIFIE CE QU'ELLE SAIT LIRE, comme `justifier_solde` : le solde d'un compte (N, et N−1 validé : `solde_du_compte`), une
+ligne d'une 2035 validée (N ou N−1 ; une 2035 validée qui ne se relit pas se refuse, elle ne passe jamais au repère),
+une ligne d'un repère ; le montant d'une ligne de la 2035 d'un exercice NON validé — calculée dans le navigateur — se
+garde tel que l'écran l'a montré, et le module la dit « à revoir » dès que la 2035 du jour en diffère. Les centimes se
+comptent comme le navigateur (`centimes_du_navigateur` : Math.round sur le double, écrit avec floor(), nul hors de
+±10^14 €), confrontés à une table relevée en base. Les verrous de R1 et R4 (partagé de la validation, puis exclusif de
+la révision), et, de plus, les repères de N−1 verrouillés en PARTAGE avant la lecture de la source : un repère modifié ou
+retiré pendant une explication la fait attendre, puis relire (un repère AJOUTÉ dans cet instant ne s'attend pas — le
+module rattrape : « à revoir », source changée). « Au-delà du seuil » se lit STRICTEMENT supérieur.
+
+**LES QUESTIONS SANS RÉPONSE, PRISES COMME HYPOTHÈSES, RANGÉES POUR SE REPRENDRE PAR `create or replace function`.** Q4 :
+le seuil est FIXÉ par le cabinet, motivé ; l'application n'en calcule ni n'en propose aucun ; sans seuil, aucune
+explication n'est attendue. Q2 : tout membre affecté au dossier fixe le seuil et explique (refus 1). Q11 : seul un
+exercice terminé se révise (refus 3, l'année lue à Paris) — sans attendre l'ouverture définitive que les soldes de R1
+attendent. Q7 : la suppression d'un dossier emporte sa revue analytique. Q6 : R9, sa place gardée (refus 4). Q1 : rien ne
+change dans `valider_exercice` ; une explication attendue est DITE, pas imposée.
+
+**LES DEUX FONCTIONS ET LEURS REFUS, DANS CET ORDRE** (22023, sauf l'accès en 42501). `fixer_seuil_de_signification` :
+1. l'accès, sur le dossier annoncé (un dossier qui n'existe pas se refuse comme un dossier interdit) ; 2. l'exercice hors
+de 2000 à 2100 ; 3. l'exercice pas terminé ; 4. (R9) ; 5. un seuil qui n'est pas un montant positif au centime ; 6. un
+motif absent, fait de blancs, ou de plus de 4 000 caractères ; 7. un remplacement qui n'est pas un seuil de l'exercice
+dans ce dossier, ou pas le courant — ou aucun quand l'exercice en a un. `expliquer_variation` : 1 à 4 de même ; 5. la
+ligne (un type inconnu ; un poste sans nom, de plus de 500 caractères ou sans nature ; un total inconnu ; un compte hors
+des classes 1 à 7 ; une nature hors d'un poste) ; 6. la forme des montants et de la source ; 7. l'explication (vide,
+plus de 4 000 caractères) ; 8. une source qui n'est pas celle que la base retient (« L'exercice N−1 est validé… », « Un
+repère annuel de N−1 porte cette ligne… », « L'exercice N−1 n'offre rien à comparer… ») ; 9. des montants qui ne sont
+plus ceux de la base (le solde d'un compte et son côté, une 2035 validée illisible ou à un autre montant, un repère à
+un autre montant, le montant écrit comme la base l'écrit) ; 10. un remplacement qui n'est pas une explication de la
+ligne pour l'exercice, ou pas sa courante. Les deux sont `SECURITY DEFINER`, exécutables par un compte connecté, jamais
+par l'anonyme ; les quatre fonctions internes ne s'exécutent par personne.
+
+**LE MODULE (`lib/revueAnalytique.ts`), PUR** : le TABLEAU de l'exercice face au précédent — chaque poste de la 2035
+(recettes puis dépenses, par point de code) et ses trois totaux, chaque compte des classes 1 à 7 (les autres DITS « hors
+de la revue »), la variation en centimes et en dixièmes de point (sur |N−1|, la moitié loin de zéro ; aucune sur un N−1
+nul), la source ; l'ÉTAT DÉDUIT de chaque ligne — en attente (exercice en cours), sans comparaison, sans seuil, sous le
+seuil, à expliquer, expliquée, à revoir (montant, précédent ou source changés, chaîne illisible) ; aucun ne dit d'une
+variation qu'elle est « normale » ; les RECETTES MOIS PAR MOIS (comptes du cycle des recettes, crédit moins débit, face
+au mois de N−1 validé) ; les DÉPENSES AFFECTÉES SANS PIÈCE (parts du relevé affectées ou ventilées sur une charge, par
+mouvement, au-delà du seuil strictement) ; la 2035 VALIDÉE de l'exercice l'emporte sur la 2035 calculée ; une lecture
+partielle, une chaîne de seuils illisible, une 2035 illisible ou hors des bornes : rien ne s'affirme. Les refus des deux
+fonctions, dans leur ordre et sous leurs mots, confrontés au texte EXPORTÉ (messages, codes, numéros, valeurs des « % »)
+et REJOUÉS sur l'essai : ses 157 appels (41 seuils, 116 explications ; 2 de l'anonyme à part) rendent du module la
+réponse de la base, et ses quatre lectures des fonctions internes leurs valeurs ; des dérives plantées — un mot, une
+valeur relevée, un refus oublié, deux paires permutées, une 2035 illisible lue à zéro — virent au rouge.
+Les arguments tels que supabase-js les envoie (nuls plutôt qu'absents ; des blancs partent nuls ; un poste avec sa
+nature).
+
+**LES PREUVES, SUR UNE RÉPLIQUE ÉGALE À LA PRODUCTION À 116 MIGRATIONS** (la base semée de PC2 : talon du stockage, semis
+fictif de P2 et P7 ; signature égale sur les neuf familles), la migration appliquée en propriétaire avec sa ligne
+d'historique : l'essai, 228 lignes sur 228 (227 contrôles, six profils, chaque refus par sa RAISON, rien de resté) ; TOUS
+les essais du dépôt avant (cffa136, sans la migration) et après, sorties comparées : 35 identiques, trois différences
+attendues (`rls.sql`, 70 tables ; `restauration.sql`, deux tables au plan ; `validationExercice.sql`, ci-dessous) ;
+`rls.sql` ENTIER, les lignes de l'étape semées par ses fonctions dans `test` : 35 lignes, 0 en faute (70 tables, 61 à
+`dossier_id`), 31 mutations sur 31, M3 voyant les deux tables ; la restauration : 70 tables recréées, 123 clés
+recopiées, 64 IDENTIQUES, les seuils et les explications en trois vagues chacun ; plantée (un seuil avant son dossier),
+elle s'arrête sur la clé ; les suppressions (6 sur 6 : les gardes, même pour le propriétaire ; le chef n'efface rien ;
+la cascade du dossier emporte tout) ; treize courses de deux sessions (deux premiers seuils, deux remplacements, deux
+premières explications : le second attend et voit le premier ; la validation tient, seuil et explication attendent ; un
+seuil tient, la validation attend ; une conclusion de R4 tient, un seuil attend ; un verrou partagé de la validation ne
+fait rien attendre ; un repère modifié ou retiré pendant une explication : elle attend, puis relit). Les trois contrôles
+de l'export, la réplique migrée : dérive 117 = 117 (`4322160e…` sous la version provisoire), socle inchangé (78,
+`91ae95ec…`), inventaire 1 712 objets des deux côtés (`326c3b41…` ; +62 : 21 colonnes, 21 contraintes, 4 index, 2
+déclencheurs, 4 policies, 8 fonctions, 2 RLS). MUTATIONS de la migration : 231 ; 211 mordaient au premier passage — vingt
+survivantes, dont dix-sept TROUS DE L'ESSAI (l'auteur et le montant devenus facultatifs, un repère d'un autre dossier au
+même nom, une entrée de poste sans nature, un nom de poste à la casse près, un seuil ou une explication d'un autre
+dossier du même exercice, d'un autre compte, d'une autre nature, l'auteur d'un membre affecté, ce que les fonctions
+rendent, la borne du montant précédent, la courante d'une ligne sans sa nature, une explication sous un verrou partagé
+de la validation), comblés : 228 sur 231. Les trois qui restent sont ÉQUIVALENTES, et le restent : sous les contraintes
+de la table, le type d'une ligne se déduit de son objet et de sa nature (deux mutations qui retirent le type d'une
+comparaison) ; une entrée de poste qui n'est pas un objet échoue déjà au type de son nom. MUTATIONS du code : 164 (module,
+sauvegarde, restauration) ; 154 au premier passage, neuf trous de test comblés (les libellés, la courante d'une chaîne
+lue dans le désordre, la nature envoyée, l'ordre par point de code, les comptes soldés ou du seul exercice précédent
+ouvert, la source des comptes sans validation, une 2035 calculée hors des bornes) : 163 sur 164 ; la dernière,
+équivalente (un tableau pris pour un objet ne porte jamais de postes). Barrière sur cffa136, le correctif posé : `tsc -b`
+vert ; les Edge Functions à leurs 25 erreurs connues, le lint à ses 63 avertissements — les comptes de cffa136, aucun
+dans un fichier touché ; build vert ; les onze fichiers de test de R5 et de ce qu'elle touche (297 tests) verts sous
+Paris, UTC, New York et Auckland ; la suite entière sous Paris, deux ouvriers : 291 fichiers, 8 656 tests, verts (8 571
+à cffa136). L'essai : 92 331 caractères, md5 `fe7dc1da…` (`a9ae44c4…` sans le saut de ligne final, ce que l'outil
+d'exécution reçoit).
+
+**UN DÉFAUT LATENT RELEVÉ EN ROUTE.** Le contrôle 141 de `validationExercice.sql` (tout déclencheur qui garde une
+suppression laisse passer la cascade d'un dossier) attendait la liste du 09/10/2026, 22 déclencheurs ; la production en
+porte 29 — R1, R4, e2, P7 et PC1 ne l'ont pas tenue : il tombait à tout rejeu depuis R1. Son attendu est désormais la
+liste du catalogue, les deux gardes de R5 comprises (31) : 151 sur 151 sur la réplique migrée ; sans la migration, une
+faute (les deux gardes manquent) — il se rejoue APRÈS l'application.
+
+**L'INTÉGRATION.** Le correctif porte l'état d'APRÈS l'application : la sauvegarde lit les deux tables, et le fusionner
+avant la migration ferait échouer toute sauvegarde (la règle des tables préparées derrière un drapeau, celle de P5, n'a
+pas été prise : R4 ne l'avait pas prise non plus, la session appliquant elle-même). Dans l'ordre : `apply_migration`
+(nom `revue_analytique`) ; le fichier d'export renommé à la version de l'historique, son texte confronté à la ligne
+enregistrée (`0e4c83a7…`) ; les trois contrôles de l'export rejoués en production (la dérive change avec la version ; le
+socle et l'inventaire ne changent pas) et les valeurs du README mises à jour ; l'essai joué en production par
+`execute_sql` (aucune instruction de suppression) ; `rls.sql` entier ; `validationExercice.sql` (le contrôle 141) ; les
+advisors (deux fonctions `SECURITY DEFINER` de plus, chacune avec son contrôle d'accès en premier refus).
+
+**CE QUI RESTE.** La phase C (l'écran de la revue analytique dans l'onglet « Révision ») ; R6 (Q1) ; les réponses du
+cabinet à Q4, Q2, Q11, Q7 et Q6 ; la confirmation que le détail par poste de l'Estimation n'est fait que de charges.
+
+### 11/10/2026 — LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN BASE — LIGNE 28.5, ÉTAPE (E), CINQUIÈME TEMPS, PREMIÈRE MOITIÉ (E5A)
+
+(Migration `regimes_ereporting_et_pieces_ecartees`, préparée sur une réplique et rendue à la session — version PROVISOIRE
+`20261011120000` au nom de son fichier d'export, à renommer à celle qu'`apply_migration` donnera ; 31 067 caractères,
+empreinte `d26bbb0cbef54284f7894b40f1952220` ; AUCUNE instruction de suppression — le mot n'y paraît que dans `on delete
+cascade` et dans les gardes, comme `pieces_hors_de_france` (e2) — : elle passe par `apply_migration`. À appliquer AVANT
+la fusion : le plan de sauvegarde lit ses deux tables. L'essai `supabase/essais/regimesEreporting.sql` ;
+`src/lib/regimesEreporting.ts`, `regimesEreportingLecture.ts` et leurs tests ; `src/test/essaiSql.ts` ; `ereporting.ts`
+et son test (e4, branché) ; `periodesEreporting.ts` et son test (e1, la certitude « confirmée ») ; `types.ts` ;
+`sauvegarde.ts`, `supabase/essais/restauration.sql` ; `encaissementsEcritures.test.ts` ; les en-têtes de `rls.sql`, de
+`supabase/schema/README.md` et un paragraphe du § 6 de PLAN_DE_REPRISE.md.) Ce que le contenu d'une déclaration (e4)
+supposait sans que la base le garde — ses points 1 à 3 : le régime d'e-reporting CONFIRMÉ, l'HISTOIRE du statut de TVA,
+la pièce candidate ÉCARTÉE —, en base et branché sur e4. La déclaration elle-même, Q6 et la fiche déclarée qui retient sa
+pièce sont la seconde moitié (e5b), conçue (SP/d/e5/conception.md) et non écrite. Aucun écran, aucune Edge Function,
+aucun appel réseau. Données mesurées en production le 11/10/2026 : 116 migrations, aucune des deux tables ; aucune
+déclaration n'est due avant les factures du 01/09/2027 : tout ce qui suit est LATENT.
+
+**SOURCES.** impots.gouv.fr, actualité du 22/09/2026 (modifiée le 23/09/2026) : « Les entreprises doivent veiller à
+communiquer à leur plateforme agréée leur régime de TVA et tout changement de régime » ; BOI-TVA-DECLA-20-30-50-30
+(30/09/2026), § 40 (la fréquence suit le régime « quelle que soit l'opération »), § 50, § 60, § 70 ; BOI-TVA-DECLA-20-30-60
+(30/09/2026), § 30 (pas de paiements sur option pour les débits), § 170, § 180. Les normes AFNOR XP Z12-012 et XP Z12-013
+n'ont été ni lues ni citées.
+
+**CE QUI A ÉTÉ DÉCIDÉ, ET ÉCARTÉ.** UNE table pour le régime et son histoire, `regimes_ereporting` : une ligne dit « à
+partir de ce jour, le dossier déclare sous ce régime » (statut de TVA, article d'exonération, périodicité et option pour
+les débits d'un redevable, fréquences des transactions et des paiements) ; l'histoire du régime EST celle du statut de
+TVA, et une période passée se juge sous le régime qui couvre son premier jour. Écartés : une case « régime confirmé » sur
+`dossiers` (aucune histoire) ; un journal du statut écrit par déclencheur à chaque modification de l'onglet TVA (il
+daterait la SAISIE, pas le changement, que le cabinet apprend souvent après coup) ; une déduction depuis les CA3 (rien
+pour un franchisé ni un exonéré). Les fréquences que les textes écrivent sont des contraintes de la table ; celle d'un
+exonéré, qu'ils n'écrivent pas, y est libre, et la FONCTION la confirme « chaque mois » (hypothèse Q4). Le régime ne se
+modifie pas : il se RETIRE (qui, quand), un autre se confirme, le même jour s'il le faut ; un seul actif par jour de
+départ ; jamais pour l'avenir (Paris) ; rien ne se supprime, sauf avec le dossier ; pas figé par la validation d'un
+exercice (ce n'est pas une écriture). AUCUN contrôle en base contre l'onglet TVA, qui ne dit qu'aujourd'hui : un écart
+est un signal (« à reconfirmer »), pas une faute. La pièce écartée, `pieces_ecartees_ereporting` : une pièce d'achat ou
+une note de frais vérifiée, avec ce que la vérification a établi (motif obligatoire) ; se RETIRE (la pièce redevient à
+vérifier) ; un seul écart actif par pièce ; part avec sa pièce ; une pièce écartée ne change plus de dossier ; une pièce
+qui a une fiche « hors de France » ne s'écarte pas (courante : c'est elle qui se retire ; retirée : la pièce n'est déjà
+plus à vérifier), et une fiche posée APRÈS l'écart l'emporte — e4 ne consulte un écart que pour une pièce sans fiche. La
+base ne refait pas les signaux d'e3 : c'est l'écran qui proposera le geste sur une candidate.
+
+**LA BASE.** Deux tables, RLS : lecture `admin_du_dossier` (`to authenticated`), insertion de restauration par
+`is_super_admin()`, aucune autre policy, aucune branche client. Trois gardes : `garder_regime_ereporting` (rien ne change
+que le retrait, une fois ; rien ne se supprime tant que le dossier existe), `garder_ecart_ereporting` (un écart vise une
+pièce de son dossier ; le retrait, une fois ; supprimé seulement avec sa pièce ou son dossier), `garder_piece_ecartee`
+(DEFINER : une pièce écartée, même reprise, ne change plus de dossier). Les verrous : `cle_ereporting` en exclusif pour
+confirmer et retirer un régime ; `cle_hors_de_france` (e2) en exclusif et la pièce `FOR SHARE` pour écarter et reprendre —
+« pas de fiche » reste vrai pendant l'écart. Les fonctions, l'accès d'abord (`admin_du_dossier` du dossier annoncé,
+42501, un dossier qui n'existe pas compris) : `confirmer_regime_ereporting` (neuf paramètres) et ses SEIZE refus dans cet
+ordre — l'accès, le jour absent, avant 2000, dans l'avenir (« nous sommes le … »), un régime actif ce jour-là, le statut
+(un statut à préciser ne se confirme pas), l'article inconnu, l'article d'un franchisé, la périodicité d'un redevable
+absente ou inconnue, la périodicité hors redevable, l'option absente, l'option hors redevable, la fréquence des
+transactions, des paiements sur option pour les débits, la fréquence des paiements, la note de plus de 2 000
+caractères (une note faite d'espaces n'en est pas une) ; `retirer_regime_ereporting` (l'accès, introuvable en P0002,
+déjà retiré) ; `ecarter_piece_ereporting` (l'accès, la pièce introuvable dans ce dossier en P0002, ni achat ni note de
+frais, une fiche courante, une fiche retirée, déjà écartée, le motif absent, le motif trop long) ;
+`reprendre_piece_ereporting` (l'accès, introuvable, déjà repris). Droits : les quatre aux connectés seuls, rien à
+l'anonyme ; la clé de verrou et les gardes à personne.
+
+**LE MODULE** (`lib/regimesEreporting.ts`, pur) redit les refus avant le clic, dans l'ordre et sous les mots de la base
+(`REFUS_CONFIRMATION_REGIME`, `REFUS_RETRAIT_REGIME`, `REFUS_ECART_PIECE`, `REFUS_REPRISE_PIECE`), propose le régime du
+statut d'aujourd'hui (le jour, jamais deviné), et lit l'histoire : `regimesActifs`, `regimeEnVigueur`, `memeRegime`,
+`regimeDeLaPeriode` — confirmé ; à confirmer (rien ne couvre le premier jour) ; À CHEVAL (un régime différent commence
+dans la période : les sources ne disent pas comment elle se déclare, NON VÉRIFIÉ — refusée) ; À RECONFIRMER (l'onglet TVA
+contredit le régime en vigueur aujourd'hui : toute période qui finit depuis son début, jugée en attendant sous le régime de
+son premier jour). `lib/regimesEreportingLecture.ts` lit les deux tables en entier (`lireTout`, retirés compris).
+**BRANCHÉ SUR e4** : `ContexteDeclaration.regimes` remplace `regimeConfirme`, `SourcesDesAchats.ecarts` remplace
+`piecesEcartees` ; la période se juge sous le régime confirmé de son premier jour (statut, article, fréquence CONFIRMÉE —
+certitude `confirmee`, ajoutée à e1 —, numéro de TVA de la période), sinon sous le statut d'aujourd'hui, proposé ; refus
+nouveaux `regimes_illisibles` et `regime_change_dans_la_periode` en tête, `regime_a_reconfirmer` après
+`regime_a_confirmer` (sans effet sur l'état) ; `periode_hors_regime` et `regime_a_confirmer` réécrits ; chaque
+déclaration rend son `regime`.
+
+**ÉPROUVÉ.** L'essai, sur une réplique dont `signature.sql` égalait la production (neuf familles, 116 migrations,
+empreinte globale `deea18c0…` ; revérifiée à la fin du travail, inchangée) : 186 verdicts, 0 en faute (accès des sept
+profils, chaque refus par sa raison et les refus cumulés dans leur ordre, l'histoire, le retrait puis la confirmation du
+même jour, les chaînes de fiches d'e2, l'écriture directe, les contraintes sans les fonctions, les lectures, le catalogue,
+huit mutations de profil qui mordent), rien laissé en base ; sans la migration, il s'arrête en erreur. Sur la réplique
+seulement : les suppressions (une pièce, un dossier, une suppression directe) 11 sur 11 ; deux sessions qui se croisent,
+8 courses sur 8. Le module (35 tests) confronté au texte des fonctions et REJOUANT l'essai appel par appel — 98 appels,
+chaque refus que l'écran peut dire rendu au moins une fois par la base ; deux défauts plantés dans l'essai vus par le
+rejeu. e4 : 80 tests (72 avant), dont l'histoire — une période passée sous SON régime, à cheval, à reconfirmer, le
+numéro de TVA de la période, la fréquence confirmée qui l'emporte, les régimes lus en partie. **Mutations** : de la
+migration, 118 — 116 mordent, 2 ÉQUIVALENTES (le droit d'exécution du cabinet, que les droits par défaut des fonctions
+donnent déjà, le survivant de d4 ; la branche « dossier disparu » de la garde des écarts, la clé de `pieces` vers
+`dossiers` précédant toujours la sienne) ; G06 survivait d'abord (un retrait qui change aussi la note) : contrôle ajouté ;
+du module, du branchement, de la lecture et d'e1, 80 — 79 mordent, 1 ÉQUIVALENTE (l'option des débits hors de
+`memeRegime` : d'une ligne de la base, elle se lit déjà aux paiements d'un redevable et vaut faux ailleurs) ; L02
+survivait d'abord (aucun écart retiré dans le jeu de la lecture) : ajouté ; du plan de sauvegarde, 14 sur 14.
+**Restauration** rejouée sur la réplique (le dossier `test` semé par les fonctions : trois régimes, dont un retiré puis
+confirmé de nouveau le même jour ; quatre écarts, dont un repris puis posé de nouveau) : 70 tables recréées, 122 clés
+recopiées, 64 IDENTIQUES (62 lignes, dont les sept de l'étape), 0 écart ; plantés, un écart puis un régime avant leur
+dossier, l'essai s'arrête sur leur clé. **`rls.sql` ENTIER** sur la réplique : sans la migration 35 lignes, 0 en faute,
+31 mutations sur 31 ; avec elle et les deux tables semées dans `test` et dans le dossier du client, 35 lignes (70 tables,
+61 portant un `dossier_id`), 0 en faute, 31 sur 31 — M1 et M3 y voient les deux tables de plus. **L'export** : dérive,
+117 fichiers et 117 migrations de la réplique, `efdcade0…` ; socle inchangé (78, `91ae95ec…`) ; inventaire 1 711 objets
+des deux côtés (`5fffd292…`), 61 de plus.
+
+**LA BARRIÈRE** (règles v15, dans le worktree de l'agent, sur cffa136) : `tsc -b` vert ; `tsconfig.edge.json`, les 25
+erreurs connues, dans les mêmes quatre fonctions ; le lint, 63 avertissements, aucun dans un fichier touché ; la
+construction ; sous les quatre fuseaux, les tests de l'étape et ceux des modules touchés — 616 chaque fois ; la suite
+entière sous Paris, deux ouvriers : 291 fichiers, 8 623 tests, tous verts. Le correctif s'applique à cffa136 par
+`git apply --check`.
+
+**CE QUI RESTE.** e5b (conçue) : la table des déclarations — contenu figé, empreinte calculée par la base, initiale et
+rectificative, une seule active par dossier, objet et période, le régime de la période gardé —, une table de ses sources,
+la garde qui retient une pièce dont la fiche a été déclarée, et Q6 (une erreur se retire et la période passe « à
+rectifier » ; un remboursement réel se contre-passe). Puis la phase C (la carte et la fenêtre de l'onglet TVA, la
+confirmation du régime là où l'onglet change de statut, le CSV) et e6 (le fichier). Questions au cabinet : Q4 (rappel),
+E5-Q1 (une période à cheval sur deux régimes), E5-Q2 (l'onglet TVA et le régime confirmé), E5-Q3 (qui confirme), E5-Q4
+(rien de figé par la validation), E5-Q5 (la fiche l'emporte sur l'écart), Q6, E5-Q6 et E5-Q7 pour e5b.
+
+### 11/10/2026 — LA REVUE ANALYTIQUE ET LE RÉGIME D'E-REPORTING, APPLIQUÉS ET INTÉGRÉS — LIGNES 41 (R5) ET 28.5 (E5A)
+
+(Les deux migrations relues par la session puis appliquées par `apply_migration` : `revue_analytique` sous la version
+`20261011090828`, `regimes_ereporting_et_pieces_ecartees` sous `20261011091325` — 118 migrations en production. Leurs
+textes enregistrés rendent les empreintes des correctifs, `0e4c83a7…` et `d26bbb0c…` ; leurs fichiers d'export ont
+quitté les versions provisoires pour celles-ci.)
+
+**DEUX ÉTAPES ÉCRITES CHACUNE SUR SA RÉPLIQUE, JOUÉES ENSEMBLE AVANT D'ÊTRE CRUES.** Chaque agent avait éprouvé sa
+migration seule, sur une réplique à 116 migrations. Ce qui ne se voyait d'aucune des deux : leurs tables entrent au même
+plan de sauvegarde, dans le même essai de restauration, sous les mêmes contrôles de catalogue. La session a donc monté une
+réplique portant les deux, l'une sur l'autre, et l'a confrontée à la production APRÈS l'application : `signature.sql`
+égal sur les neuf familles (colonnes 735, contraintes 542, déclencheurs 48, droits des fonctions 144, droits des tables
+72, fonctions 144, index 203, policies 137, RLS 72). Sur elle : `revueAnalytique.sql` 228 verdicts, `regimesEreporting.sql`
+186, sans une faute, chacun laissant la base comme il l'a trouvée ; `rls.sql` entier, 35 lignes (72 tables, dont 63
+portant un `dossier_id`), 0 en faute, 31 mutations sur 31 qui mordent.
+
+**ET LE CONTRÔLE 141 DE LA VALIDATION ÉTAIT EN RETARD DE SEPT DÉCLENCHEURS.** `validationExercice.sql` y rendait 150
+contrôles sur 151 : la lecture de la cascade attendait encore les 22 déclencheurs du 09/10, la production en portait 29
+avant ces deux étapes — R4, la fiche hors de France et sa ventilation, le plan comptable d'un dossier, les propositions de
+justificatif s'y étaient ajoutés sans que l'attente suive, parce que personne n'avait rejoué ce fichier depuis. R5 l'avait
+porté à 31 sur sa réplique ; la valeur attendue est désormais les 33 du catalogue, `garder_regime_ereporting` et
+`garder_ecart_ereporting` compris, tous de la forme `dossier` : 151 sur 151.
+
+**LA RESTAURATION, REJOUÉE SUR LES DEUX.** Le dossier `test` d'une copie de cette réplique semé par les fonctions de la
+base des lignes des deux étapes (quatre seuils, cinq explications, trois régimes dont un retiré, quatre écarts dont un
+repris) : 72 tables recréées, 126 clés recopiées (119, plus quatre de R5 et trois d'e5a), 66 restaurées et IDENTIQUES à
+la source (71 lignes), les seuils et les explications en trois vagues chacun, 0 écart, aucun arrêt, les deux contrôles du
+catalogue des rôles justes ; un seuil, puis un écart, plantés avant leur dossier arrêtent le script sur leur clé.
+
+**L'EXPORT, EN PRODUCTION.** Dérive : 118 fichiers, 118 migrations, empreinte globale `a03b7f0b…` des deux côtés ;
+socle inchangé (78 instructions, `91ae95ec…`) ; inventaire 1 773 objets, `4b6f605b…` des deux côtés (1 650 + 62 + 61).
+Advisors : 5 et 36 fonctions `SECURITY DEFINER` exécutables (30 la veille, plus les deux de R5 et les quatre d'e5a,
+chacune avec `admin_du_dossier` du dossier annoncé en premier refus), aucun avertissement neuf.
+
+**DANS LES FICHIERS PARTAGÉS,** les deux étapes se sont rejointes sans se gêner : `types.ts` porte leurs types côte à
+côte ; `encaissementsEcritures.test.ts` refuse toute écriture directe de leurs quatre tables ; `sauvegarde.ts` les range
+— la revue analytique après les cycles de la révision, le régime et l'écart après les registres de P7 — et
+`restauration.sql` en recopie l'ordre (rangs 66, 67, 70 et 71, `exercices_valides` au 72) ; les en-têtes de `rls.sql`,
+de `restauration.sql` et du README de l'export gardent le passage de chaque étape sur sa réplique, puis le passage commun.
+
+### 11/10/2026 — « PAR LE CLIENT » CÔTÉ CABINET — ESPACE CLIENT, ÉTAPE P4c
+
+(Écrans seulement : aucune migration, aucune Edge Function, aucune écriture. Neufs : `src/lib/auteursVentes.ts`,
+`src/lib/auteursVentesLecture.ts` et leurs tests, `src/pages/dossier/FacturesTabParLeClient.test.tsx`. Modifiés :
+`FacturesTab`, `EncaissementsFactureModal`, `TransmissionFactureModal` ; `lib/types.ts` (`valide_par` OBLIGATOIRE dans
+`FactureEmise`, le commentaire de `cree_par` de `TransmissionFacture`) ; les fabriques des tests de factures ; les montages des
+deux fenêtres dans leurs tests et dans `ecransAvantLecture.test.tsx` ; le banc `outils/captures/fauxSupabase.ts`.) Le dernier
+tiers de P4 (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §2.7 et ligne P4 du §9), après P4a
+(« « MES VENTES › FACTURES » ») et P4b (« LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL »). Hors de P4c, dit : la mention du
+mandataire à l'impression (EC-Q2 — elle demande que le nom du cabinet soit FIGÉ avec la facture à la validation, une migration
+d'`enregistrer_facture` à concevoir), la banque (P9), les devis (P5), la carte de la Vue d'ensemble (P10).
+
+**QUI EST LE CLIENT.** Un compte est « le client » quand il porte un accès client du dossier : `memberships.user_id` (la policy
+`memberships_select` ouvre au cabinet toutes les lignes du dossier). Le jugement est un module PUR (`lib/auteursVentes.ts`), la
+lecture un module à part (`lib/auteursVentesLecture.ts` : `lireTout`, tri total `created_at` puis `id`, une requête qui LÈVE
+tombe du côté signalé). Quatre états des accès — en cours, incomplets (avec leur motif), lus en entier, sans objet — et le
+client ne se reconnaît QUE sur une liste lue en entier : en cours, partielle, refusée, ou dans l'espace du client, il ne dit rien
+de personne. Un auteur nul (une facture d'avant P2) n'est personne. Un accès RETIRÉ depuis n'a plus de ligne : on ne le devine
+pas, l'aide du filtre le dit, et rien n'est jamais dit « par le cabinet » d'un compte qu'on ne reconnaît pas — il n'y a qu'UNE
+mention, « par le client ».
+
+**L'ONGLET FACTURES (cabinet).** `FacturesTab` lit les accès UNE fois, gardés avec le dossier pour lequel ils ont été lus
+(`{ dossierId, acces }` : un autre dossier repart en lecture, et la réponse tardive d'un dossier quitté ne s'écrit pas), et les
+passe aux deux fenêtres. Une pastille « par le client » sur une facture ou un avoir VALIDÉ dont `valide_par` est le client
+(« Validée par le client » au survol) et sur un BROUILLON dont `created_by` est le client (« Brouillon du client ») — jamais l'autre
+colonne : rédigée par le client puis validée par le cabinet, elle n'en porte pas. Le filtre « Émises par le client » (les validées
+dont le client est l'auteur de la validation) ne filtre que l'AFFICHAGE : les pastilles d'encaissement et de déclaration se
+calculent sur les listes du dossier entier, l'origine d'un avoir masquée se lit encore (`factures.find`, non `avantRecherche`), rien
+n'est relu, et « N sur M » compte M après le filtre, avant la recherche. Tant que les accès ne sont pas lus en entier : aucune
+pastille, la case grisée, et sa raison dite (« en cours de lecture », ou le motif de la lecture partielle). Une case cochée dont les
+accès cessent d'être lus en entier ne filtre plus. L'aide de la case dit ce qu'elle reconnaît (les accès d'aujourd'hui) et ce
+qu'elle ne reconnaît plus (un accès retiré).
+
+**LES FENÊTRES (cabinet).** `acces` est une propriété OBLIGATOIRE du cabinet dans l'union typée de `EncaissementsFactureModal` et de
+`TransmissionFactureModal` (le client n'en a pas : rien ne se dit dans son espace, et il ne lit pas `memberships`). « Par le client »
+sur une transmission (colonne « Par »), un encaissement et une contre-passation (colonne « État », titres distincts) et une
+déclaration (colonne « Déclaration ») — les colonnes `cree_par` sont ajoutées aux trois requêtes qui alimentent ces listes
+(`transmissions_factures` de la fenêtre de transmission, `encaissements_factures` et `transmissions_encaissements` de celle des
+encaissements) ; la liste de l'onglet n'en a pas besoin (`TransmissionFacture.cree_par` reste facultatif, et le dit).
+
+**LE TYPE.** `FactureEmise.valide_par` devient `string | null`, obligatoire : les fabriques de tests (`Partial<T> => T`) et le faux
+Supabase du banc le portent. La sauvegarde et la restauration n'en sont pas changées : la colonne est en base et dans l'export
+depuis P2 (`uuid` sans clé étrangère, hors des quatorze colonnes qui pointent `auth.users`), la sauvegarde lit `select('*')`, la
+restauration réécrit les lignes telles quelles.
+
+**LES PREUVES.** Tests neufs : le module pur (16), la lecture (6), l'onglet (15 : pastille sur une validée, un avoir et un
+brouillon du client, aucune sur une validation du cabinet, une facture d'avant P2, un accès retiré, un brouillon du cabinet ou sans
+auteur ; le filtre — affichage seul, origine d'un avoir masquée, « N sur M », message du filtre vide ; accès en cours, partiels,
+refusés, levés ; changement de dossier et réponse tardive ; une seule lecture passée aux deux fenêtres ; l'espace du client ne
+lit rien), les fenêtres (+5 encaissements, +4 transmission). Les gardes de lecture (`lecturesSignalees`, `lecturesPaginees`,
+`triTotal`) et le garde des écrans avant lecture passent SANS exception nouvelle (la lecture lit `complete` à sa déclaration).
+**Mutations : 43** (17 sur le module et la lecture, 26 sur l'onglet et les deux fenêtres), 42 mordent — dont une, les titres
+inversés d'un encaissement et d'une contre-passation, d'abord survivante parce que le test triait les titres : il compare
+maintenant chaque mention à sa ligne — ; une équivalente, justifiée (l'espace du client lit « en cours » au lieu de « sans objet » :
+ni l'un ni l'autre ne reconnaît personne, et la case n'existe pas côté client). **La barrière** : `tsc -b` sans erreur ;
+`tsc -p tsconfig.edge.json` aux 25 erreurs connues ; `npm run lint` aux 63 avertissements connus, aucun dans les fichiers touchés
+(hors ceux d'effets déjà présents) ; `npm run build` vert ; les quinze fichiers touchés et leurs gardes (411 tests) verts sous
+Paris, UTC, New York et Auckland ; la suite entière sous Paris (`--maxWorkers=2`) : 8 814 tests verts sur 8 814, 300 fichiers.
+**Le banc** (le faux Supabase porte un accès client d'atelier, d7, et des auteurs : F2026-0007 à 0009, la transmission, une
+contre-passation et une déclaration sont « du client » ; le brouillon de d1 est de la main de l'accès « Claire ») : 0 débordement,
+0 mot coupé à 1 440, 1 280, 1 024, 720 et 390 px ; la passe `client` à 390 et 1 440 px, 0, inchangée ; aucune police refusée ; une
+capture relue (d7, 1 440 px) : la pastille « par le client » est discrète, empilée sous « Validée », la case et son aide au-dessus de
+la liste.
+
+**CE QUI RESTE** (inchangé, sinon) : P4b/P4c clos pour l'écran des ventes ; EC-Q2 (le mandataire à l'impression), P5 (les devis), P8 et
+P9 (la banque du client), P10 (la carte « Espace client : ce qui a bougé depuis le… » de la Vue d'ensemble).

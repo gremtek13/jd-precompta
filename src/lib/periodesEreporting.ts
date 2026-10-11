@@ -35,8 +35,10 @@ export type FrequenceEreporting = 'decade' | 'mois' | 'bimestre'
  * régime du dossier « quelle que soit l'opération effectuée » (BOI-TVA-DECLA-20-30-50-30, §40). */
 export type ObjetEreporting = 'ventes' | 'achats' | 'paiements'
 
-/** Écrite : les textes disent la fréquence de ce régime. À confirmer : ils ne la disent pas, elle est présumée. */
-export type Certitude = 'ecrite' | 'a_confirmer'
+/** Écrite : les textes disent la fréquence de ce régime. À confirmer : ils ne la disent pas, elle est présumée.
+ * Confirmée : le cabinet a confirmé le régime du dossier, tel qu'il l'a déclaré à sa plateforme (étape e5a,
+ * lib/regimesEreporting.ts) — e1 ne la propose jamais ainsi, le contenu d'une déclaration la reçoit de la base. */
+export type Certitude = 'ecrite' | 'a_confirmer' | 'confirmee'
 
 export interface FrequenceProposee<F extends FrequenceEreporting = FrequenceEreporting> {
   frequence: F
@@ -85,7 +87,7 @@ const RYTHME: Record<FrequenceEreporting, string> = { decade: 'par décade', moi
 
 /** « par décade », « chaque mois », « tous les deux mois » — et, à confirmer, le dit : en bref, ou avec sa raison. */
 export function libelleFrequence(f: FrequenceProposee, avecLaRaison: boolean): string {
-  if (f.certitude === 'ecrite') return RYTHME[f.frequence]
+  if (f.certitude !== 'a_confirmer') return RYTHME[f.frequence]
   return `${RYTHME[f.frequence]} (fréquence à confirmer${avecLaRaison && f.raison ? ` : ${f.raison}` : ''})`
 }
 
