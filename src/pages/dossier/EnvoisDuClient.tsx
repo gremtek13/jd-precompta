@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { IconAttention, IconCoche } from '../../components/icons'
 import type { AccesDuDossier } from '../../lib/auteursVentes'
 import {
-  associable, auteurDuMessage, ceQueVoitLeClient, envoisDuMouvement, etatDeLaProposition, lecteursDeLaQuestion, phraseDeLaProposition,
-  phraseDeLEtat, phraseDuRetrait, signauxDeLaProposition, silenceDesEnvois, titreDesPropositions,
+  associable, auteurDuMessage, ceQueVoitLeClient, confirmationDEcarter, confirmationDeSupprimer, ecartable, envoisDuMouvement,
+  etatDeLaProposition, lecteursDeLaQuestion, phraseDeLaProposition, phraseDeLEtat, phraseDuRetrait, refusDEcarter,
+  signauxDeLaProposition, silenceDesEnvois, titreDesPropositions,
   type AccesDuReleve, type ContexteDeLaProposition, type EnvoisDuClient,
 } from '../../lib/banqueCabinet'
 import { LONGUEUR_MAX_PRECISION, longueurEnCaracteres, refusDeLaPrecision } from '../../lib/banqueClient'
@@ -20,9 +21,12 @@ import type { LigneBancaire } from '../../lib/types'
 // La proposition n'écrit rien : « Associer cette pièce » passe par le rapprochement de la fiche (`onRapprocher`), avec
 // les refus du choix à la main — une pièce payée ailleurs, figée, un second paiement qui dépasserait son reste. Sur des
 // envois pas lus en entier, ou pas encore revenus, rien n'est dit de ce que le client a envoyé, et aucun geste n'est offert.
-// La question du cabinet s'écrit par `ecrire_precision_mouvement` seule, sous le verrou de l'onglet (BanqueTab).
+// La question du cabinet s'écrit par `ecrire_precision_mouvement` seule, sous le verrou de l'onglet (BanqueTab). Les deux
+// gestes de P9b2 passent par une confirmation (window.confirm) qui dit ce que le client verra ensuite ; refusée, elle
+// n'écrit rien : « Écarter cette proposition » retire par `retirer_proposition`, « Supprimer ce message » supprime par la
+// policy du cabinet — l'un et l'autre sous le verrou de BanqueTab, et rien de tout cela sur des envois pas lus en entier.
 
-export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter, occupe, onAssocier }: {
+export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter, occupe, onAssocier, onEcarter }: {
   ligne: LigneBancaire
   envois: EnvoisDuClient
   acces: AccesDuDossier
@@ -31,6 +35,8 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
   aTraiter: boolean
   occupe: boolean
   onAssocier: (pieceId: string) => void
+  // Écarte la proposition de ce numéro (BanqueTab : `retirer_proposition`, sous le verrou des écritures).
+  onEcarter: (propositionId: string) => void
 }) {
   const silence = silenceDesEnvois(envois)
   if (envois.etat !== 'lus') {
@@ -48,6 +54,9 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
         const etat = etatDeLaProposition(p, c)
         const phrase = phraseDeLEtat(etat)
         const offert = aTraiter && associable(etat)
+        // Le refus de la base redit avant le clic : une proposition courante n'est jamais « déjà retirée » à la lecture,
+        // sauf si la liste a changé sous la fiche — le bouton se grise alors, avec les mots de la fonction.
+        const refusEcart = refusDEcarter(ligne.dossier_id, p)
         return (
           <div key={p.id} className="carte-rapprochement carte-proposee">
             <div className="carte-rapprochement-entete">
@@ -83,7 +92,20 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
                   Associer cette pièce
                 </button>
               )}
+              {ecartable(p, etat) && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={occupe || refusEcart !== null}
+                  onClick={() => {
+                    if (window.confirm(confirmationDEcarter(ligne, siens, p, piece ? nomDeLaPiece(piece) : 'pièce non lue'))) onEcarter(p.id)
+                  }}
+                >
+                  Écarter cette proposition
+                </button>
+              )}
             </div>
+            {ecartable(p, etat) && refusEcart && <p className="fiche-mouvement-alerte">{refusEcart}</p>}
           </div>
         )
       })}
@@ -102,7 +124,7 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
   )
 }
 
-export function FilDuMouvement({ dossierId, ligne, envois, acces, occupe, onDemander }: {
+export function FilDuMouvement({ dossierId, ligne, envois, acces, occupe, onDemander, onSupprimer }: {
   dossierId: string
   ligne: LigneBancaire
   envois: EnvoisDuClient
@@ -110,6 +132,8 @@ export function FilDuMouvement({ dossierId, ligne, envois, acces, occupe, onDema
   occupe: boolean
   // Rend vrai quand la question est écrite et relue : le brouillon s'efface alors, et seulement alors.
   onDemander: (texte: string) => Promise<boolean>
+  // Supprime le message de ce numéro (BanqueTab : suppression directe, relue, sous le verrou des écritures).
+  onSupprimer: (messageId: string) => void
 }) {
   const [texte, setTexte] = useState('')
   const lus = envois.etat === 'lus'
@@ -136,6 +160,14 @@ export function FilDuMouvement({ dossierId, ligne, envois, acces, occupe, onDema
             <li key={q.id} className={q.origine === 'cabinet' ? 'fil-mouvement-cabinet' : 'fil-mouvement-client'}>
               <span className="muted">{auteurDuMessage(acces.acces, q)}, le {formatDate(q.created_at)} :</span>{' '}
               <span className="fil-mouvement-texte">{q.texte}</span>
+              <button
+                type="button"
+                className="carte-rapprochement-lien fil-mouvement-supprimer"
+                disabled={occupe}
+                onClick={() => { if (window.confirm(confirmationDeSupprimer(ligne, acces.acces, siens, q))) onSupprimer(q.id) }}
+              >
+                Supprimer ce message
+              </button>
             </li>
           ))}
         </ul>
