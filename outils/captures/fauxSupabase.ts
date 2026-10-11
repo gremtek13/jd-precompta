@@ -1183,7 +1183,50 @@ const CYCLES_D9 = {
   ] as Ligne[],
 }
 
+// LA REVUE ANALYTIQUE DE LA KINÉSITHÉRAPEUTE (ligne 41, étape R5, phase C) : 2025 est validé, son précédent, 2024, ne l'est pas — il
+// se compare à ses repères annuels (onglet Estimation). Un seuil de 500 € après un premier de 300 €, une explication sur le total
+// des recettes qui commente les montants du jour, et une sur le résultat qui commente d'autres chiffres — « à revoir ».
+const DECLARATION_D9 = VALIDATION_D9.valide.declaration as { totalRecettes: number; resultat: number }
+const REVUE_D9 = {
+  seuils: [
+    {
+      id: 'rs-d9-1', dossier_id: 'd9', annee: 2025, seuil: 300, motif: 'Premier jet, avant d’avoir vu le relevé annuel.',
+      remplace_id: null, auteur: 'u2', cree_le: '2026-04-02T10:00:00+00:00',
+    },
+    {
+      id: 'rs-d9-2', dossier_id: 'd9', annee: 2025, seuil: 500,
+      motif: 'Un trentième du chiffre d’affaires de l’exercice précédent, arrondi : en dessous, une variation ne change pas la lecture des comptes par la cliente.',
+      remplace_id: 'rs-d9-1', auteur: 'u1', cree_le: '2026-04-03T10:00:00+00:00',
+    },
+  ] as Ligne[],
+  explications: [
+    {
+      id: 're-d9-1', dossier_id: 'd9', annee: 2025, objet_type: 'total_2035', objet: 'recettes', nature: null,
+      montant: DECLARATION_D9.totalRecettes, montant_precedent: 14800, source_precedent: 'reference',
+      explication: 'Deux mois de congé maternité en 2025 : la cliente a été remplacée, et les remboursements de l’assurance maladie suivent.',
+      remplace_id: null, auteur: 'u1', cree_le: '2026-04-04T10:00:00+00:00',
+    },
+    {
+      id: 're-d9-2', dossier_id: 'd9', annee: 2025, objet_type: 'total_2035', objet: 'resultat', nature: null,
+      montant: DECLARATION_D9.resultat + 100, montant_precedent: 6100, source_precedent: 'reference',
+      explication: 'La baisse suit celle des recettes ; les charges fixes n’ont pas bougé.',
+      remplace_id: null, auteur: 'u2', cree_le: '2026-04-04T11:00:00+00:00',
+    },
+  ] as Ligne[],
+  reperes: [
+    { id: 'ra-d9-2024', dossier_id: 'd9', annee: 2024, chiffre_affaires: 14800, resultat_net: 6100, total_cotisations_sociales: 2100, source: 'saisie_manuelle', created_at: '2025-04-01T10:00:00Z' },
+  ] as Ligne[],
+  postes: [
+    { id: 'rp-d9-1', dossier_id: 'd9', annee: 2024, poste: 'Loyers et charges locatives', montant: 8400, created_at: '2025-04-01T10:00:00Z' },
+    { id: 'rp-d9-2', dossier_id: 'd9', annee: 2024, poste: "Primes d'assurance", montant: 360, created_at: '2025-04-01T10:00:00Z' },
+  ] as Ligne[],
+}
+
 const TABLES: Record<string, Ligne[]> = {
+  revision_seuils: REVUE_D9.seuils,
+  revision_explications: REVUE_D9.explications,
+  references_annuelles: REVUE_D9.reperes,
+  references_postes_annuels: REVUE_D9.postes,
   revision_justifications: REVISION_D9.decisions,
   revision_preuves: REVISION_D9.preuves,
   revision_conclusions: CYCLES_D9.conclusions,

@@ -1762,10 +1762,11 @@ a.nav-menu-item { text-decoration: none; }
      pas dans la carte de l'assistant. Le rapprochement d'un mouvement non plus — les pièces proposées,
      leurs signaux et le choix à la main —, ni le panneau « justifier » d'un solde de bilan (la preuve,
      l'historique, la décision), ni celui d'un cycle de la révision (le programme, la conclusion, le
-     journal, la revue). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
+     journal, la revue), ni celui d'une ligne de la revue analytique (ses montants, l'historique de ses
+     explications, la saisie). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
      remplacent — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
   .panneau-droit[data-occupant="piece"], .panneau-droit[data-occupant="mouvement"], .panneau-droit[data-occupant="solde"],
-  .panneau-droit[data-occupant="cycle"] {
+  .panneau-droit[data-occupant="cycle"], .panneau-droit[data-occupant="explication"] {
     top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom));
     left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
   }

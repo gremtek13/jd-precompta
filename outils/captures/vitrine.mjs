@@ -366,6 +366,12 @@ const VUES = [
   { nom: 'pc-revision-cycle', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le cycle Trésorerie$' },
   { nom: 'pc-revision-cycle-sombre', chemin: '#/dossiers/d9/revision', l: 1280, h: 800, theme: 'dark', reduite: false, exercice: '2025', apres: '^Ouvrir le cycle Ensemble$' },
   { nom: 'mobile-revision-cycle', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le cycle Trésorerie$' },
+  // La revue analytique (étape R5, phase C) : sa section sous les cycles, le panneau d'une ligne expliquée, celui d'une ligne
+  // « à revoir », en sombre, et sur téléphone.
+  { nom: 'pc-revue-section', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Le seuil de signification' },
+  { nom: 'pc-revue-ligne', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir la ligne Total des recettes$', vers: 'Les postes et les totaux de la 2035' },
+  { nom: 'pc-revue-a-revoir-sombre', chemin: '#/dossiers/d9/revision', l: 1280, h: 800, theme: 'dark', reduite: false, exercice: '2025', apres: '^Revoir la ligne Résultat$', vers: 'Les postes et les totaux de la 2035' },
+  { nom: 'mobile-revue-ligne', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir la ligne Total des recettes$' },
   { nom: 'mobile-revision-clair', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025' },
   { nom: 'mobile-revision-panneau', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 218300$' },
   // La coque du CLIENT (09/10/2026), rendue par `client: true` (le compte du cabinet infirmier, rattaché par une adhésion : voir

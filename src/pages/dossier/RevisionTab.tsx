@@ -18,9 +18,15 @@ import {
   argumentsDeConclureCycle, argumentsDeNoterRevision, argumentsDeRevoirCycle, cyclesDeLExercice, type ConclusionComposee,
   type ContexteDesCycles, type CycleRevu, type CyclesDeLExercice, type EtatDuCycle, type ExercicePourLesCycles,
 } from '../../lib/revisionRevue'
+import {
+  argumentsDeFixerSeuil, argumentsDExpliquerVariation, revueAnalytiqueDeLExercice, type CleDeLigne, type ContexteDeLExplication, type ContexteDuSeuil,
+  type LigneDeLaRevue, type ReperesAnnuels,
+} from '../../lib/revueAnalytique'
+import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import type {
-  AvisRevueRevision, ControleReleveBancaire, NatureNoteRevision, PeriodiciteTva, RevisionConclusion, RevisionJustification,
-  RevisionNote, RevisionPreuve, RevisionRevue, SoldeReporte, StatutTva,
+  AvisRevueRevision, ControleReleveBancaire, NatureNoteRevision, PeriodiciteTva,
+  RevisionConclusion, RevisionExplication, RevisionJustification, RevisionNote, RevisionPreuve, RevisionRevue, RevisionSeuil,
+  SoldeReporte, StatutTva,
 } from '../../lib/types'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import { useAnnee } from '../../context/AnneeContext'
@@ -32,6 +38,8 @@ import BandeauLecturePartielle, { type AccordLecture } from '../../components/Ba
 import KpiTile from '../../components/widgets/KpiTile'
 import FicheSolde from './FicheSolde'
 import FicheCycle, { type GesteDuCycle } from './FicheCycle'
+import FicheExplication from './FicheExplication'
+import RevueAnalytiqueSection, { type MotifDeLectureDeLaRevue } from './RevueAnalytiqueSection'
 
 // LA RÉVISION DES SOLDES DE BILAN D'UN EXERCICE (ligne 41, étape R3 ; conception du 09/10/2026, HISTORIQUE.md, « LA
 // RÉVISION DES COMPTES : LA CONCEPTION », § 4.1 à 4.3). Chaque solde de bilan au 31 décembre se JUSTIFIE par une pièce,
@@ -57,6 +65,14 @@ import FicheCycle, { type GesteDuCycle } from './FicheCycle'
 // tables de l'étape se lisent EN ENTIER avec le reste ; une conclusion, une note et une revue s'écrivent par
 // `conclure_cycle`, `noter_revision` et `revoir_cycle` SEULES, sous un verrou `useRef` relâché après la relecture. La
 // revue ne s'offre qu'au chef du cabinet (hypothèse Q2) ; la base le vérifie de toute façon.
+//
+// LA REVUE ANALYTIQUE (étape R5, phase C ; conception, § 4.5) : une section de l'exercice révisé (`RevueAnalytiqueSection`) —
+// le seuil de signification FIXÉ par le cabinet, le tableau de l'exercice face au précédent, les recettes mois par mois,
+// les dépenses sans pièce — et son panneau (`FicheExplication`, volet `explication`). Le module (`lib/revueAnalytique.ts`)
+// calcule et refuse ; l'écran lui donne ce qu'il a lu EN ENTIER (les lectures de la Vue d'ensemble, plus les seuils, les
+// explications et les repères annuels) et n'écrit que par `fixer_seuil_de_signification` et `expliquer_variation` SEULES,
+// sous un verrou `useRef` relâché après la relecture. Les quatre lectures propres à la revue, ratées, ne cachent pas
+// l'onglet : la section dit pourquoi et ne montre rien.
 
 interface MotifDeLecture { quoi: string; accord: AccordLecture; motif: string }
 
@@ -73,7 +89,14 @@ interface LectureDeLaRevision {
   conclusions: RevisionConclusion[]
   journal: RevisionNote[]
   revues: RevisionRevue[]
+  // La revue analytique (étape R5) : le seuil et les explications de TOUS les exercices (le précédent reprend sa chaîne),
+  // et les repères annuels de l'onglet Estimation (le précédent s'y compare à défaut d'exercice validé).
+  seuils: RevisionSeuil[]
+  explications: RevisionExplication[]
+  reperes: ReperesAnnuels
   motifs: MotifDeLecture[]
+  // Les motifs des quatre lectures de la revue analytique, À PART : ils ne cachent que sa section.
+  motifsRevue: MotifDeLectureDeLaRevue[]
 }
 
 // Tout ce que la révision lit du dossier : les lectures de la Vue d'ensemble — ses points s'y rangent, et le module y
@@ -84,7 +107,7 @@ interface LectureDeLaRevision {
 async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   const [
     checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
-    lectureJournal, lectureRevues,
+    lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes,
   ] = await Promise.all([
     lireLaChecklist(dossierId),
     lireTout<SoldeReporte>((debut, fin) =>
@@ -121,6 +144,25 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
       supabase.from('revision_revues').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // La revue analytique, tous exercices : le seuil et les explications d'un exercice se lisent en chaîne, et le précédent
+    // reprend la sienne.
+    lireTout<RevisionSeuil>((debut, fin) =>
+      supabase.from('revision_seuils').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    ),
+    lireTout<RevisionExplication>((debut, fin) =>
+      supabase.from('revision_explications').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    ),
+    // Les repères annuels de l'onglet Estimation, les colonnes que la base lit d'eux et rien d'autre.
+    lireTout<ReperesAnnuels['annuels'][number]>((debut, fin) =>
+      supabase.from('references_annuelles').select('annee, chiffre_affaires, resultat_net', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
+    ),
+    lireTout<ReperesAnnuels['postes'][number]>((debut, fin) =>
+      supabase.from('references_postes_annuels').select('annee, poste, montant', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee').order('poste').order('id').range(debut, fin),
+    ),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -142,6 +184,11 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   if (lectureConclusions.motif) motifs.push({ quoi: 'Les conclusions des cycles', accord: 'lues', motif: lectureConclusions.motif })
   if (lectureJournal.motif) motifs.push({ quoi: 'Le journal des cycles', accord: 'lu', motif: lectureJournal.motif })
   if (lectureRevues.motif) motifs.push({ quoi: 'Les revues des cycles', accord: 'lues', motif: lectureRevues.motif })
+  const motifsRevue: MotifDeLectureDeLaRevue[] = []
+  if (lectureSeuils.motif) motifsRevue.push({ quoi: 'Les seuils de signification', accord: 'lus', motif: lectureSeuils.motif })
+  if (lectureExplications.motif) motifsRevue.push({ quoi: 'Les explications de la revue analytique', accord: 'lues', motif: lectureExplications.motif })
+  if (lectureReperes.motif) motifsRevue.push({ quoi: 'Les repères annuels de l’onglet Estimation', accord: 'lus', motif: lectureReperes.motif })
+  if (lectureReperesDesPostes.motif) motifsRevue.push({ quoi: 'Les repères par poste de l’onglet Estimation', accord: 'lus', motif: lectureReperesDesPostes.motif })
   return {
     checklist: { ...checklist, relevesIncoherents: checklist.relevesIncoherents ?? [], doublonsTexte: checklist.doublonsTexte ?? [] },
     reprise: checklist.aNouveaux,
@@ -153,7 +200,11 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     conclusions: lectureConclusions.lignes,
     journal: lectureJournal.lignes,
     revues: lectureRevues.lignes,
+    seuils: lectureSeuils.lignes,
+    explications: lectureExplications.lignes,
+    reperes: { annuels: lectureReperes.lignes, postes: lectureReperesDesPostes.lignes },
     motifs,
+    motifsRevue,
   }
 }
 
@@ -230,6 +281,22 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   )
   useGardePanneau('cycle', cycleOuvert ? confirmerAbandonDuCycle : null)
 
+  // LA REVUE ANALYTIQUE : un verrou d'exécution pour ses deux fonctions, posé avant le `try` et relâché APRÈS la relecture —
+  // un second clic du même rendu enverrait un second seuil (que la base refuserait, refus 7) ou une seconde explication
+  // (refus 10) sans que l'écran ait rien relu. Il s'attend avec les deux autres verrous de l'onglet : chacun relit tout.
+  const revueEnCours = useRef(false)
+  const [revueOccupee, setRevueOccupee] = useState(false)
+  const [erreurRevue, setErreurRevue] = useState<{ geste: 'seuil' | 'explication'; ligne: string | null; message: string } | null>(null)
+  const panneauExplication = usePanneauDroit('explication')
+  const [ligneOuverte, setLigneOuverte] = useState<CleDeLigne | null>(null)
+  const explicationModifiee = useRef(false)
+  const noterModificationDeLExplication = useCallback((modifiee: boolean) => { explicationModifiee.current = modifiee }, [])
+  const confirmerAbandonDeLExplication = useCallback(
+    () => !explicationModifiee.current || window.confirm('L’explication en cours de saisie n’est pas enregistrée. L’abandonner ?'),
+    [],
+  )
+  useGardePanneau('explication', ligneOuverte ? confirmerAbandonDeLExplication : null)
+
   useEffect(() => {
     let annule = false
     void lireLaRevision(dossierId).then((lue) => { if (!annule) setLecture(lue) })
@@ -237,7 +304,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }, [dossierId])
 
   async function decider(decision: DecisionComposee) {
-    if (decisionEnCours.current || cycleEnCours.current || typeof annee !== 'number') return
+    if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || typeof annee !== 'number') return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     decisionEnCours.current = true
     setEnCours(true)
@@ -259,7 +326,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function conclure(cycle: CycleRevision, composee: ConclusionComposee): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
     // Posé AVANT le `try` et avant le premier `await`.
     cycleEnCours.current = true
     setCycleOccupe(true)
@@ -283,7 +350,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function noter(cycle: CycleRevision, nature: NatureNoteRevision, texte: string): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
     cycleEnCours.current = true
     setCycleOccupe(true)
     setErreurCycle(null)
@@ -304,7 +371,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function revoir(cycle: CycleRevision, conclusionId: string, avis: AvisRevueRevision, observation: string | null): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
     cycleEnCours.current = true
     setCycleOccupe(true)
     setErreurCycle(null)
@@ -320,6 +387,56 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
+    }
+    return ecrite
+  }
+
+  async function fixerSeuil(centimes: number, motif: string, remplaceId: string | null): Promise<boolean> {
+    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || typeof annee !== 'number') return false
+    // Posé AVANT le `try` et avant le premier `await`.
+    revueEnCours.current = true
+    setRevueOccupee(true)
+    setErreurRevue(null)
+    let ecrit = false
+    try {
+      const { error } = await supabase.rpc('fixer_seuil_de_signification', argumentsDeFixerSeuil(dossierId, annee, centimes, motif, remplaceId))
+      if (error) {
+        setErreurRevue({ geste: 'seuil', ligne: null, message: messageErreur(error, 'Le seuil n’a pas pu être enregistré.') })
+      } else {
+        ecrit = true
+      }
+      // Relue dans les deux cas, AVANT de relâcher le verrou : écrit, le seuil devient le courant et l'état des lignes change ;
+      // refusé, la base a peut-être vu ce que l'écran n'avait pas lu (un autre seuil fixé depuis).
+      setLecture(await lireLaRevision(dossierId))
+    } finally {
+      revueEnCours.current = false
+      setRevueOccupee(false)
+    }
+    return ecrit
+  }
+
+  async function expliquer(ligne: LigneDeLaRevue, explication: string, remplaceId: string | null): Promise<boolean> {
+    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || typeof annee !== 'number') return false
+    revueEnCours.current = true
+    setRevueOccupee(true)
+    setErreurRevue(null)
+    let ecrite = false
+    try {
+      const { error } = await supabase.rpc('expliquer_variation', argumentsDExpliquerVariation(dossierId, annee, ligne, explication, remplaceId))
+      if (error) {
+        setErreurRevue({
+          geste: 'explication', ligne: identifiantDeLaLigne(ligne.cle),
+          message: messageErreur(error, 'L’explication n’a pas pu être enregistrée.'),
+        })
+      } else {
+        ecrite = true
+      }
+      // Relue dans les deux cas : écrite, elle devient la courante ; refusée, la base a vu des montants ou une explication
+      // que l'écran n'avait pas lus.
+      setLecture(await lireLaRevision(dossierId))
+    } finally {
+      revueEnCours.current = false
+      setRevueOccupee(false)
     }
     return ecrite
   }
@@ -363,6 +480,18 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   function fermerCycle() {
     if (panneauCycle.fermer()) setCycleOuvert(null)
+  }
+
+  function ouvrirLaLigne(cle: CleDeLigne) {
+    if (panneauExplication.ouvert && ligneOuverte !== null && !memeCleDeLigne(ligneOuverte, cle) && !confirmerAbandonDeLExplication()) return
+    if (!panneauExplication.ouvrir()) return
+    explicationModifiee.current = false
+    setErreurRevue(null)
+    setLigneOuverte(cle)
+  }
+
+  function fermerLaLigne() {
+    if (panneauExplication.fermer()) setLigneOuverte(null)
   }
 
   if (!lecture) {
@@ -434,6 +563,26 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     accesAuDossier: true, chefDuCabinet: estChef, anneeCourante, conclusions: lecture.conclusions, revues: lecture.revues,
   }
   const cycleAffiche = cycleOuvert !== null && panneauCycle.ouvert ? cycles.cycles.find((x) => x.cycle === cycleOuvert) ?? null : null
+
+  // LA REVUE ANALYTIQUE de l'exercice (lib/revueAnalytique.ts) : le module reçoit ce que l'onglet a lu EN ENTIER. Ses quatre
+  // lectures propres, ratées ou partielles, lui sont dites — il n'affirme alors rien, et la section nomme ce qui manque.
+  const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
+    dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
+    reperes: lecture.reperes, seuils: lecture.seuils, explications: lecture.explications,
+  })
+  const lectureDeLaRevueIncomplete = lecture.motifsRevue.length > 0
+    ? lecture.motifsRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')
+    : null
+  const revueAnalytique = revueAnalytiqueDeLExercice(donneesDeLaRevue, lectureDeLaRevueIncomplete)
+  // Ce qu'il faut pour dire les refus des deux fonctions : l'accès comme pour les soldes (hypothèse Q2), le dossier en entier.
+  const contexteDuSeuil: ContexteDuSeuil = { accesAuDossier: true, anneeCourante, seuils: lecture.seuils }
+  const contexteDeLExplication: ContexteDeLExplication = {
+    accesAuDossier: true, anneeCourante, ecritures: lecture.checklist.ecritures, reprise: lecture.reprise, reportes: lecture.reportes,
+    exercicesValides: exercices, reperes: lecture.reperes, explications: lecture.explications,
+  }
+  const ligneExpliquee = ligneOuverte !== null && panneauExplication.ouvert
+    ? [...revueAnalytique.la2035.lignes, ...revueAnalytique.comptes.lignes].find((x) => memeCleDeLigne(x.cle, ligneOuverte)) ?? null
+    : null
 
   // Le nom de ce qu'une ligne de détail désigne : la preuve ne porte que des identifiants, jamais un texte saisi.
   function nommer(reference: { type: TypeDeReference; id: string }): string | null {
@@ -533,6 +682,22 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         )
       })}
 
+      <RevueAnalytiqueSection
+        dossierId={dossierId}
+        annee={annee}
+        revue={revueAnalytique}
+        motifs={lecture.motifsRevue}
+        enEngagement={modele.mode === 'engagement'}
+        contexteDuSeuil={contexteDuSeuil}
+        utilisateur={session?.user.id ?? null}
+        occupe={revueOccupee || enCours || cycleOccupe}
+        erreur={erreurRevue !== null && erreurRevue.geste === 'seuil' ? erreurRevue.message : null}
+        ligneOuverte={ligneExpliquee === null ? null : ligneExpliquee.cle}
+        libelleDuMouvement={(ligneId) => lecture.checklist.lignes.find((l) => l.id === ligneId)?.libelle ?? null}
+        onFixerSeuil={fixerSeuil}
+        onOuvrirLaLigne={ouvrirLaLigne}
+      />
+
       {(revision.horsDuMotif.length > 0 || revision.controlesHorsCycle.length > 0 || revision.controlesInconnus.length > 0) && (
         <section className="card" style={{ marginTop: 20 }}>
           <h3 style={{ marginTop: 0 }}>Hors des cycles</h3>
@@ -571,7 +736,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             valideLe={valide?.valide_le ?? null}
             utilisateur={session?.user.id ?? null}
             nommer={nommer}
-            occupe={enCours || cycleOccupe}
+            occupe={enCours || cycleOccupe || revueOccupee}
             erreur={erreurDecision !== null && erreurDecision.compte === compteAffiche.compte ? erreurDecision.message : null}
             onDecider={decider}
             onModifiee={noterModification}
@@ -592,13 +757,34 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             exercice={cycles.exercice}
             contexte={contexteDesCycles}
             utilisateur={session?.user.id ?? null}
-            occupe={cycleOccupe || enCours}
+            occupe={cycleOccupe || enCours || revueOccupee}
             erreur={erreurCycle !== null && erreurCycle.cycle === cycleAffiche.cycle ? erreurCycle : null}
             onConclure={(composee) => conclure(cycleAffiche.cycle, composee)}
             onNoter={(nature, texte) => noter(cycleAffiche.cycle, nature, texte)}
             onRevoir={(conclusionId, avis, observation) => revoir(cycleAffiche.cycle, conclusionId, avis, observation)}
             onModifiee={noterModificationDuCycle}
             onFermer={fermerCycle}
+          />
+        </PanneauDroit>
+      )}
+
+      {ligneExpliquee && (
+        <PanneauDroit nom="explication">
+          {/* `key` : une saisie par ligne et par exercice ; une explication écrite remet la sienne à zéro, et la courante RETENUE
+              au premier mot survit à une relecture (le module dit avant le clic qu'une autre a été donnée depuis). */}
+          <FicheExplication
+            key={`${annee}|${identifiantDeLaLigne(ligneExpliquee.cle)}`}
+            dossierId={dossierId}
+            annee={annee}
+            ligne={ligneExpliquee}
+            contexte={contexteDeLExplication}
+            utilisateur={session?.user.id ?? null}
+            occupe={revueOccupee || enCours || cycleOccupe}
+            erreur={erreurRevue !== null && erreurRevue.geste === 'explication' && erreurRevue.ligne === identifiantDeLaLigne(ligneExpliquee.cle)
+              ? erreurRevue.message : null}
+            onExpliquer={expliquer}
+            onModifiee={noterModificationDeLExplication}
+            onFermer={fermerLaLigne}
           />
         </PanneauDroit>
       )}
