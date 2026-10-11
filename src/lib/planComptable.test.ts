@@ -299,42 +299,44 @@ describe('la garde du plan (`garder_plan_comptable_dossier`)', () => {
   })
 })
 
-// « compte_du_dirigeant comme le case recopié dans les fonctions d'aujourd'hui, à prouver contre leur texte » : le texte
-// de chacune est lu dans l'export, et la fonction nouvelle se lit à côté. L'essai (contrôles 8 et 9) évalue de plus ces
-// expressions telles que la base les porte, sur chaque dossier.
-describe('compte_du_dirigeant est le case que cinq fonctions recopient', () => {
-  const CASE = /case when (?:\w+\.)?mode_comptable = 'engagement' then (?:\w+\.)?compte_notes_de_frais else '108000' end/g
-  // La DERNIÈRE définition de chaque fonction de l'export — celle que la base exécute —, quel que soit le délimiteur de
-  // son corps : `derniereDefinitionSql` ne lit que `$$`, et une fonction de l'export s'écrit entre `$function$`.
-  const dernieresDefinitions = () => {
-    const corps = new Map<string, string>()
-    for (const { texte } of fichiersDuSchema()) {
-      for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)) {
-        const ouverture = /\bas\s+(\$\w*\$)/i.exec(texte.slice(m.index))
-        if (!ouverture) throw new Error(`Corps de ${m[1]} introuvable dans le schéma exporté.`)
-        const debutDuCorps = m.index + ouverture.index + ouverture[0].length
-        const fin = texte.indexOf(ouverture[1], debutDuCorps)
-        if (fin < 0) throw new Error(`Fin du corps de ${m[1]} introuvable dans le schéma exporté.`)
-        corps.set(m[1], texte.slice(m.index, fin))
-      }
+// La DERNIÈRE définition de chaque fonction de l'export — celle que la base exécute —, quel que soit le délimiteur de son
+// corps : `derniereDefinitionSql` ne lit que `$$`, et une fonction de l'export s'écrit entre `$function$`. Rend, par nom,
+// la définition jusqu'au délimiteur qui ferme le corps, et le corps seul : ce que `pg_proc.prosrc` porte en base.
+function dernieresDefinitions(): Map<string, { definition: string; corps: string }> {
+  const vues = new Map<string, { definition: string; corps: string }>()
+  for (const { texte } of fichiersDuSchema()) {
+    for (const m of texte.matchAll(/create (?:or replace )?function public\.(\w+)\(/g)) {
+      const ouverture = /\bas\s+(\$\w*\$)/i.exec(texte.slice(m.index))
+      if (!ouverture) throw new Error(`Corps de ${m[1]} introuvable dans le schéma exporté.`)
+      const debutDuCorps = m.index + ouverture.index + ouverture[0].length
+      const fin = texte.indexOf(ouverture[1], debutDuCorps)
+      if (fin < 0) throw new Error(`Fin du corps de ${m[1]} introuvable dans le schéma exporté.`)
+      vues.set(m[1], { definition: texte.slice(m.index, fin), corps: texte.slice(debutDuCorps, fin) })
     }
-    return corps
   }
+  return vues
+}
 
-  it('cinq fonctions le portent aujourd’hui, une fois chacune, sous la même forme — et elles seules', () => {
-    const definitions = dernieresDefinitions()
-    // Le plancher qui distingue « cinq porteuses » d'un lecteur devenu aveugle : l'export compte 107 fonctions au
-    // 10/10/2026, dont `compte_du_dirigeant`, qui ne recopie pas le case mais le remplace.
+// « compte_du_dirigeant comme le case recopié dans les fonctions d'aujourd'hui, à prouver contre leur texte » : prouvé à
+// l'étape PC1, contre les cinq qui le recopiaient ; depuis l'étape PC2, elles l'appellent à sa place. L'essai (contrôles
+// 8 et 9) évalue de plus ces expressions telles que la base les porte, sur chaque dossier.
+describe('compte_du_dirigeant remplace le case que cinq fonctions recopiaient', () => {
+  it('les cinq l’appellent, une fois chacune — et plus aucune fonction ne recopie le case', () => {
+    const definitions = new Map([...dernieresDefinitions()].map(([nom, d]) => [nom, d.definition]))
+    // Le plancher qui distingue « aucune porteuse » d'un lecteur devenu aveugle : l'export compte 107 fonctions au
+    // 10/10/2026, dont `compte_du_dirigeant`.
     expect(definitions.size).toBeGreaterThanOrEqual(107)
     expect(definitions.has('compte_du_dirigeant')).toBe(true)
-    const porteuses = [...definitions].filter(([, corps]) => /else '108000' end/.test(corps)).map(([nom]) => nom).sort()
-    expect(porteuses).toEqual([
+    expect([...definitions].filter(([, corps]) => /else '108000' end/.test(corps)).map(([nom]) => nom)).toEqual([])
+    const lectrices = [...definitions]
+      .filter(([nom, corps]) => nom !== 'compte_du_dirigeant' && /public\.compte_du_dirigeant\(/.test(corps))
+      .map(([nom]) => nom).sort()
+    expect(lectrices).toEqual([
       'classer_virement_personnel', 'ecrire_forfait_kilometrique', 'ecrire_mouvement_compte_bilan',
       'enregistrer_paiement_personnel_cotisation', 'ventiler_mouvement_bancaire',
     ])
-    for (const nom of porteuses) {
-      expect([...definitions.get(nom)!.matchAll(CASE)], nom).toHaveLength(1)
-      expect(definitions.get(nom)!.match(/else '108000' end/g), nom).toHaveLength(1)
+    for (const nom of lectrices) {
+      expect(definitions.get(nom)!.match(/public\.compte_du_dirigeant\(/g), nom).toHaveLength(1)
       // Et c'est la définition que `derniereDefinitionSql` lit aussi : les deux lecteurs s'accordent.
       expect(definitions.get(nom)).toBe(derniereDefinitionSql(nom))
     }
@@ -350,6 +352,142 @@ describe('compte_du_dirigeant est le case que cinq fonctions recopient', () => {
     // Le compte d'un rôle sans ligne : le défaut du catalogue, que le test du catalogue confronte à la migration.
     expect(derniereDefinitionSql('compte_du_role')).toContain('select coalesce(p.compte, r.compte_defaut) into v_compte')
   })
+})
+
+// LA BASE LIT LE PLAN (étape PC2). Six migrations, `la_base_lit_le_plan_1` à `_6`, font lire aux quatorze fonctions de la
+// conception (§ 2.3) le compte de chaque rôle dans le plan du dossier ; elles se COLLENT par le cabinet. Leur essai en
+// base, supabase/essais/laBaseLitLePlan.sql, porte ce qui se confronte ici : le plan décalé qu'il pose, ce qu'il attend
+// de chaque fonction, et `pc2_exigee` — vrai seulement quand l'export porte les six migrations, comme dans
+// planComptable.sql. Avant, une fonction qui ne lit pas encore le plan s'y dit EN ATTENTE ; après, c'est une faute.
+const ESSAI_PC2 = readFileSync(new URL('supabase/essais/laBaseLitLePlan.sql', RACINE), 'utf8')
+const PC2_EXPORTEE = readdirSync(new URL('supabase/schema/', RACINE)).some((n) => /^\d{14}_la_base_lit_le_plan_6\.sql$/.test(n))
+
+/** Ce que l'essai attend d'une des quatorze : ses rôles, son dirigeant, le dossier de son verrou (nul pour une lectrice),
+ *  les expressions qui désignent ce dossier dans une lecture du plan, et sa forme. */
+interface FonctionQuiLitLePlan {
+  f: string
+  roles: string
+  dirigeant: boolean
+  verrou: string | null
+  lus: string[]
+  forme: string
+}
+
+function quatorzeDeLEssai(): FonctionQuiLitLePlan[] {
+  const m = /\n {2}quatorze constant jsonb := '(\[[\s\S]*?\])';\n/.exec(ESSAI_PC2)
+  if (!m) throw new Error('la liste des quatorze est introuvable dans l’essai')
+  return JSON.parse(m[1]) as FonctionQuiLitLePlan[]
+}
+
+function pc2Exigee(texte: string): boolean {
+  const m = [...texte.matchAll(/\bpc2_exigee constant boolean := (true|false);/g)]
+  if (m.length !== 1) throw new Error(`pc2_exigee introuvable ou en double (${m.length})`)
+  return m[0][1] === 'true'
+}
+
+// Les quatorze de la conception (§ 2.3), recopiées à la main : l'inventaire refait le 10/10/2026 sur la production n'en a
+// trouvé ni une de plus, ni une de moins.
+const QUATORZE = [
+  'affecter_mouvement_bancaire', 'classer_virement_personnel', 'ecrire_mouvement_compte_bilan', 'ventiler_mouvement_bancaire',
+  'rapprocher_echeance_emprunt', 'rapprocher_cotisation', 'rapprocher_declaration_tva', 'ecrire_dotation_amortissement',
+  'ecrire_forfait_kilometrique', 'ecrire_liquidation_tva', 'liquidation_attendue', 'lettrer_pieces', 'soldes_a_reporter',
+  'enregistrer_paiement_personnel_cotisation',
+]
+
+describe('l’essai de la base qui lit le plan (étape PC2)', () => {
+  it('pose le plan décalé de ce module, rôle par rôle', () => {
+    const tete = 'select %L, v.role, v.compte from (values'
+    const debut = ESSAI_PC2.indexOf(tete)
+    expect(debut).toBeGreaterThan(0)
+    expect(ESSAI_PC2.indexOf(tete, debut + 1)).toBe(-1)
+    const lignes = nUplets(ESSAI_PC2, debut + tete.length)
+    expect(Object.fromEntries(lignes.map(([role, compte]) => [role, compte]))).toEqual(PLAN_DECALE)
+  })
+
+  it('attend des quatorze de la conception des rôles du catalogue, et le verrou des seules qui écrivent', () => {
+    const quatorze = quatorzeDeLEssai()
+    expect(quatorze.map((q) => q.f.split('(')[0]).sort()).toEqual([...QUATORZE].sort())
+    const definitions = dernieresDefinitions()
+    for (const q of quatorze) {
+      const nom = q.f.split('(')[0]
+      expect(definitions.has(nom), nom).toBe(true)
+      const roles = q.roles.split(',')
+      // Dans l'ordre où la base les range (`collate "C"`), sans doublon, tous au catalogue.
+      expect(roles, nom).toEqual([...new Set(roles)].sort())
+      for (const role of roles) expect(ROLES, `${nom} : ${role}`).toContain(role)
+      expect(q.verrou === null, nom).toBe(nom === 'liquidation_attendue' || nom === 'soldes_a_reporter')
+      if (q.verrou !== null) expect(q.lus, nom).toContain(q.verrou === 'cle_validation' ? 'p_dossier_id' : q.verrou)
+    }
+    // Les cinq qui lisent le compte du dirigeant sont celles qui recopient le case jusqu'à l'étape PC2.
+    expect(quatorze.filter((q) => q.dirigeant).map((q) => q.f.split('(')[0]).sort()).toEqual([
+      'classer_virement_personnel', 'ecrire_forfait_kilometrique', 'ecrire_mouvement_compte_bilan',
+      'enregistrer_paiement_personnel_cotisation', 'ventiler_mouvement_bancaire',
+    ])
+  })
+
+  it('n’exige la lecture du plan, ici comme dans planComptable.sql, que lorsque l’export porte les six migrations', () => {
+    expect(pc2Exigee(ESSAI_PC2)).toBe(PC2_EXPORTEE)
+    expect(pc2Exigee(ESSAI)).toBe(PC2_EXPORTEE)
+  })
+})
+
+// LA FORME QUE L'ESSAI EXIGE DE LA BASE (supabase/essais/laBaseLitLePlan.sql, contrôles 1 à 7), EXIGÉE ICI DU TEXTE
+// EXPORTÉ — la dernière définition de chacune, celle que la base exécute : la CI ne joue pas l'essai, et une migration qui
+// remettrait un compte en dur, lirait un rôle pour un autre ou le plan d'un autre dossier, ou retirerait le verrou, se
+// verrait ici avant d'être appliquée. Les attentes sont celles de l'essai, lues dans son texte : une seule liste.
+describe('les quatorze fonctions de la base lisent le plan (étape PC2)', () => {
+  const definitions = dernieresDefinitions()
+  // La clé du verrou de la validation, lue dans le corps de `cle_validation` : celle que les fonctions écrivent en ligne,
+  // leur appelant n'exécutant pas `cle_validation`.
+  const cle = /hashtextextended\(('[^']*') \|\| p_dossier_id::text, 0\)/.exec(derniereDefinitionSql('cle_validation'))?.[1]
+  const DEFAUTS = ROLES_COMPTABLES.map((r) => r.compteDefaut)
+
+  it('l’export porte les six migrations, et la clé du verrou se lit dans cle_validation', () => {
+    expect(PC2_EXPORTEE).toBe(true)
+    expect(cle).toBe("'jd.validation_exercice:'")
+  })
+
+  for (const q of quatorzeDeLEssai()) {
+    const nom = q.f.split('(')[0]
+    it(`${nom} : ses rôles, le dossier de l’appel, son verrou, aucun compte en dur, sa forme`, () => {
+      const corps = definitions.get(nom)!.corps
+      // Sa forme, celle que l'essai attend (contrôle 6) : sécurité, volatilité, langage, search_path — lus dans l'en-tête.
+      const entete = definitions.get(nom)!.definition.split(/\bas\s+\$\w*\$/i)[0].toLowerCase()
+      const [securite, volatilite, langage, reglages] = q.forme.split(':')
+      expect(/\bsecurity\s+definer\b/.test(entete) ? 'definer' : 'invoker', `${nom} : sécurité`).toBe(securite)
+      expect(/\bstable\b/.test(entete) ? 's' : /\bimmutable\b/.test(entete) ? 'i' : 'v', `${nom} : volatilité`).toBe(volatilite)
+      expect(/\blanguage\s+(\w+)/.exec(entete)?.[1], `${nom} : langage`).toBe(langage)
+      expect(/\bset\s+search_path\s*(?:=|to)\s*'?public'?/.test(entete) ? 'search_path=public' : '', `${nom} : réglages`).toBe(reglages)
+      // Ses rôles, exactement, tous au catalogue ; le dirigeant par compte_du_dirigeant, jamais le case recopié.
+      expect(ROLES.filter((role) => corps.includes(`'${role}'`)).sort(), nom).toEqual(q.roles.split(','))
+      expect(corps.includes('public.compte_du_dirigeant('), nom).toBe(q.dirigeant)
+      expect(corps, nom).not.toMatch(/else '108000' end/)
+      // Aucun compte du catalogue entre apostrophes.
+      expect(DEFAUTS.filter((compte) => corps.includes(`'${compte}'`)), nom).toEqual([])
+      // Chaque lecture du plan porte le dossier de l'appel : `compte_du_role` rend le défaut d'un rôle pour un dossier
+      // qu'il ne connaît pas, si bien qu'un autre identifiant passerait inaperçu tant qu'aucun plan n'est réglé.
+      const lus = [
+        ...[...corps.matchAll(/public\.compte_du_role\(\s*([^,]+?)\s*,/g)].map((m) => m[1]),
+        ...[...corps.matchAll(/public\.compte_du_dirigeant\(\s*([^)]+?)\s*\)/g)].map((m) => m[1]),
+      ]
+      expect(lus.length, nom).toBeGreaterThan(0)
+      for (const x of lus) expect(q.lus, `${nom} : ${x}`).toContain(x)
+      // Le verrou partagé de son dossier, avant la première lecture du plan ; aucun dans une lectrice, qui se lit sous
+      // celui de son appelante.
+      const premiereLecture = Math.min(
+        ...[corps.indexOf('public.compte_du_role('), corps.indexOf('public.compte_du_dirigeant(')].filter((i) => i >= 0))
+      if (q.verrou === null) {
+        expect(corps, nom).not.toMatch(/advisory/)
+      } else {
+        const verrou = q.verrou === 'cle_validation'
+          ? 'perform pg_advisory_xact_lock_shared(public.cle_validation(p_dossier_id));'
+          : `perform pg_advisory_xact_lock_shared(hashtextextended(${cle} || ${q.verrou}::text, 0));`
+        const ici = corps.indexOf(verrou)
+        expect(ici, `${nom} : le verrou`).toBeGreaterThanOrEqual(0)
+        expect(ici, `${nom} : le verrou avant la lecture du plan`).toBeLessThan(premiereLecture)
+      }
+    })
+  }
 })
 
 describe('le lecteur des n-uplets', () => {

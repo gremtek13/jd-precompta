@@ -14,6 +14,7 @@ import {
   remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement, suiviDesDeclarations, type ContexteDeDeclaration,
   type DeclarationLiquidable, type DemandeDeDeclaration,
 } from './liquidationTva'
+import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import { REFUS_REGLE_EN_GROUPE, refusReglementGroupe } from './reglementGroupe'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from './types'
@@ -21,6 +22,7 @@ import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { tirage } from '../test/encaissementsBatterie'
+import { derniereDefinitionSql } from '../test/schema'
 
 function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
   return {
@@ -485,6 +487,62 @@ describe('ecritureDuPaiementTva', () => {
   it('porte le libellé complet du relevé quand l’import n’a gardé que le générique', () => {
     const lignes = ecritureDuPaiementTva(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA DGFIP TVA 1T' }))
     expect(new Set(lignes.map((l) => l.libelle))).toEqual(new Set(['PRLV SEPA DGFIP TVA 1T']))
+  })
+})
+
+// LA COMPOSITION DE LA BASE, RÔLE PAR RÔLE (ligne 43, étape PC2). `liquidation_attendue`, `ecrire_liquidation_tva` et
+// `rapprocher_declaration_tva` lisent leurs comptes dans le plan du dossier, par la CLÉ de leur rôle ; ce module les écrit
+// sous les constantes, qui sont les défauts de ces clés. Chaque solde de la base est rapporté ici à son rôle, évalué sur
+// une déclaration dont chaque ligne vaut autre chose, et comparé à `ecritureDeLaLiquidation` : un rôle échangé d'un seul
+// côté — le crédit pour le remboursement, la TVA déductible pour celle des immobilisations — se verrait ici.
+describe('la liquidation et le paiement de la base, rôle par rôle', () => {
+  const sansApostrophes = (s: string) => s.replace(/''/g, "'")
+  const attendue = derniereDefinitionSql('liquidation_attendue')
+
+  it('liquidation_attendue : chaque solde au compte que ce module lui donne', () => {
+    const d = declaration({
+      cases: { l22: 1, l26: 3, l27: 7, l28: 80 }, tva_collectee: 100.40, tva_deductible: 20.60, tva_deductible_immobilisations: 10.30,
+    })
+    // La valeur de chaque expression de la base sur cette déclaration ; une expression inconnue lève.
+    const valeurs: Record<string, number> = {
+      collectee: 100.40, '-deductible': -20.60, '-immobilisations': -10.30, 'l27 - l22': 6, '-l28': -80, l26: 3,
+    }
+    const lignes = [...attendue.matchAll(/select public\.compte_du_role\(dossier_id, '(\w+)'\)(?: as compte)?, (.+?)(?: as solde)? from d/g)]
+    expect(lignes.map((m) => m[1])).toEqual([
+      'tva_collectee', 'tva_deductible', 'tva_immobilisations', 'credit_tva_a_reporter', 'tva_a_decaisser', 'remboursement_tva_demande',
+    ])
+    const soldes = lignes.map(([, role, expression]) => {
+      if (!(expression in valeurs)) throw new Error(`expression inconnue : ${expression}`)
+      return { compte: PLAN_PAR_DEFAUT[role as CleRoleComptable], solde: valeurs[expression] }
+    })
+    // L'arrondi : en charge quand il est positif, en produit sinon — la règle de la base.
+    expect(attendue).toContain("case when a.solde > 0 then public.compte_du_role(d.dossier_id, 'arrondi_charge')\n"
+      + "                          else public.compte_du_role(d.dossier_id, 'arrondi_produit') end")
+    const arrondi = Math.round(-soldes.reduce((s, x) => s + x.solde, 0) * 100) / 100
+    soldes.push({ compte: arrondi > 0 ? PLAN_PAR_DEFAUT.arrondi_charge : PLAN_PAR_DEFAUT.arrondi_produit, solde: arrondi })
+    const deLaBase = soldes.filter((x) => x.solde !== 0)
+      .map((x) => ({ compte: x.compte, sens: x.solde > 0 ? 'debit' : 'credit', montant: Math.round(Math.abs(x.solde) * 100) / 100 }))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d)))).toEqual(parCompte(deLaBase))
+  })
+
+  it('ecrire_liquidation_tva : l’écart se lit aux deux comptes d’arrondi du plan, au-delà du même seuil', () => {
+    const sql = derniereDefinitionSql('ecrire_liquidation_tva')
+    expect(sql).toContain("v_compte_arrondi_charge := public.compte_du_role(v_declaration.dossier_id, 'arrondi_charge');")
+    expect(sql).toContain("v_compte_arrondi_produit := public.compte_du_role(v_declaration.dossier_id, 'arrondi_produit');")
+    expect(sql).toContain('where compte in (v_compte_arrondi_charge, v_compte_arrondi_produit);')
+    expect(sql).toContain(`if v_arrondi > ${ARRONDI_MAXIMAL} then`)
+  })
+
+  it('rapprocher_declaration_tva : un prélèvement à la TVA à décaisser, un remboursement au remboursement demandé, face à la banque', () => {
+    const sql = sansApostrophes(derniereDefinitionSql('rapprocher_declaration_tva'))
+    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    expect(sql).toContain("v_compte := public.compte_du_role(v_ligne.dossier_id,\n"
+      + "    case when v_ligne.montant < 0 then 'tva_a_decaisser' else 'remboursement_tva_demande' end);")
+    expect(sql).toContain("select v_banque as compte, case when v_ligne.montant > 0 then 'debit' else 'credit' end as sens,")
+    expect(sql).toContain("select v_compte, case when v_ligne.montant > 0 then 'credit' else 'debit' end, abs(v_ligne.montant)")
+    const compteDe = (montant: number) => ecritureDuPaiementTva(mouvement({ montant })).find((l) => l.compte !== PLAN_PAR_DEFAUT.banque)?.compte
+    expect(compteDe(-79)).toBe(PLAN_PAR_DEFAUT.tva_a_decaisser)
+    expect(compteDe(300)).toBe(PLAN_PAR_DEFAUT.remboursement_tva_demande)
   })
 })
 

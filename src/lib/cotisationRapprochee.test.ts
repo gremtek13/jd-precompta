@@ -6,9 +6,10 @@ import {
   ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE,
   REFUS_MONTANTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel, refusRapprochementCotisation,
 } from './cotisationRapprochee'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon } from './types'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
@@ -47,30 +48,33 @@ const ECRITE = [
   ecriture({ id: 'e3', compte: COMPTE_EXPLOITANT, sens: 'debit', montant: 48.5 }),
 ]
 
-// La définition de `rapprocher_cotisation` telle que l'export du schéma la porte, la dernière en date.
+// La définition de `rapprocher_cotisation` telle que l'export du schéma la porte, la dernière en date, ELLE SEULE : depuis
+// l'étape PC2, son fichier porte aussi `classer_virement_personnel`, qui lit la banque sous les mêmes mots.
 function definitionSql(): string {
-  const definitions = fichiersDuSchema().filter((f) => /function public\.rapprocher_cotisation\(/.test(f.texte))
-  expect(definitions.length).toBeGreaterThan(0)
-  const texte = definitions[definitions.length - 1].texte
-  const debut = texte.indexOf('function public.rapprocher_cotisation(')
-  const fin = texte.indexOf('function public.retirer_rapprochement_cotisation(', debut)
-  return texte.slice(debut, fin < 0 ? undefined : fin)
+  return derniereDefinitionSql('rapprocher_cotisation')
 }
 
 // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
 
 describe('les comptes de l’écriture', () => {
-  // La base vérifie ces numéros EXACTEMENT : un compte renommé d'un seul côté ferait refuser chaque
-  // rapprochement, avec « L'écriture proposée ne correspond pas », sans que rien dise pourquoi.
+  // La base vérifie ces comptes EXACTEMENT : un compte renommé d'un seul côté ferait refuser chaque
+  // rapprochement, avec « L'écriture proposée ne correspond pas », sans que rien dise pourquoi. Depuis l'étape PC2
+  // (ligne 43), elle les lit dans le plan du dossier par la CLÉ de leur rôle, dont le défaut est la constante d'ici.
   it('sont ceux que la fonction SQL exportée attend, dans le sens du mouvement', () => {
     const sql = definitionSql()
-    expect(sql).toContain(`('${COMPTE_BANQUE}', v_sens_banque, v_total)`)
-    expect(sql).toContain(`('${COMPTE_COTISATIONS_EXPLOITANT}', v_sens_compte, v_total - v_csg)`)
-    expect(sql).toContain(`('${COMPTE_EXPLOITANT}', v_sens_compte, v_csg)`)
+    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    expect(sql).toContain("v_compte_cotisations := public.compte_du_role(v_ligne.dossier_id, 'cotisations_exploitant');")
+    expect(sql).toContain("v_compte_exploitant := public.compte_du_role(v_ligne.dossier_id, 'exploitant');")
+    expect([PLAN_PAR_DEFAUT.banque, PLAN_PAR_DEFAUT.cotisations_exploitant, PLAN_PAR_DEFAUT.exploitant])
+      .toEqual([COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT])
+    expect(sql).toContain('(v_banque, v_sens_banque, v_total)')
+    expect(sql).toContain('(v_compte_cotisations, v_sens_compte, v_total - v_csg)')
+    expect(sql).toContain('(v_compte_exploitant, v_sens_compte, v_csg)')
     expect(sql).toContain("v_sens_banque := case when v_ligne.montant > 0 then 'debit' else 'credit' end")
     expect(sql).toContain("v_sens_compte := case when v_ligne.montant > 0 then 'credit' else 'debit' end")
-    // La CSG-CRDS ne passe au 108000 qu'en trésorerie, et la base le lit au même endroit que l'écran.
+    // La CSG-CRDS ne passe au compte de l'exploitant (108000 par défaut) qu'en trésorerie, et la base le lit au même
+    // endroit que l'écran.
     expect(sql).toContain("if v_mode = 'tresorerie' and v_cotisation.montant_csg_crds is not null then")
   })
 

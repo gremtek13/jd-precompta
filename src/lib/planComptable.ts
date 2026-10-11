@@ -11,7 +11,9 @@
 // constantes d'aujourd'hui), aux préfixes des comptes auxiliaires de lib/engagement.ts et à des défauts ÉPINGLÉS :
 // changer le défaut d'un rôle existant changerait, sans un mot, les comptes de tout dossier qui ne le règle pas.
 //
-// RIEN NE LE LIT ENCORE : les modules et les écrans prendront le plan du dossier en paramètre à l'étape PC3.
+// LA BASE LE LIT depuis l'étape PC2 : les quatorze fonctions qui écrivent ou vérifient un compte de rôle le prennent par
+// `compte_du_role` et `compte_du_dirigeant`. L'APPLICATION ne le lit pas encore : les modules et les écrans prendront le
+// plan du dossier en paramètre à l'étape PC3.
 
 /** Un rôle du catalogue, tel que `roles_comptables` le porte. */
 export interface DefinitionRoleComptable {
@@ -80,8 +82,9 @@ export const PLAN_PAR_DEFAUT: PlanComptable = Object.freeze(
 // la TVA déductible au 445661… Les étapes suivantes feront tourner sous lui chaque test d'un module qui compose ou lit un
 // compte de rôle : une constante oubliée y écrirait un 512000 que le test refuserait. Chaque compte y est un compte que
 // la garde du plan accepte (six chiffres sous une racine du rôle), aucun n'égale son défaut, et deux rôles n'y partagent
-// jamais un compte, même à des zéros près (art. 1131-2) — `planComptable.test.ts` le vérifie, et
-// supabase/essais/planComptable.sql le fait écrire et relire par la base.
+// jamais un compte, même à des zéros près (art. 1131-2) — `planComptable.test.ts` le vérifie,
+// supabase/essais/planComptable.sql le fait écrire et relire par la base, et supabase/essais/laBaseLitLePlan.sql le pose
+// pour éprouver les quatorze fonctions de la base que l'étape PC2 fait lire dans le plan d'un dossier.
 export const PLAN_DECALE: PlanComptable = Object.freeze({
   banque: '512100',
   tva_deductible: '445661',

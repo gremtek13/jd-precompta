@@ -13,6 +13,7 @@ import { montantsDesMouvementsIgnores, mouvementRapprocheSansObjet, mouvementsIg
 import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import type { ModeleComptable } from './engagement'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE, refusReglementGroupe } from './reglementGroupe'
 import type { EcritureBrouillon, ModeComptable } from './types'
 import { refusVentilation } from './ventilationBanque'
@@ -261,7 +262,9 @@ describe('refusMouvementCompteDeBilan — le mouvement, avant le compte, dans l�
     expect(refusCompteDeBilanDuMouvement(mouvement(), '108000', TRESORERIE)).toContain('(108000)')
     expect(refusCompteDeBilanDuMouvement(mouvement({ montant: 0 }), '512000', TRESORERIE)).toBe('Un mouvement de zéro euro n’a rien à écrire.')
     expect(refusCompteDeBilanDuMouvement(mouvement(), null, TRESORERIE)).toContain('six à dix chiffres')
-    expect(sql).toContain("case when mode_comptable = 'engagement' then compte_notes_de_frais else '108000' end")
+    // Le compte du dirigeant, par `compte_du_dirigeant` depuis l'étape PC2 : le même case, le 108000 lu dans le plan
+    // au rôle de l'exploitant (planComptable.test.ts les confronte).
+    expect(sql).toContain('select mode_comptable, public.compte_du_dirigeant(id)\n    into v_mode, v_dirigeant from public.dossiers where id = v_ligne.dossier_id;')
   })
 })
 
@@ -283,8 +286,10 @@ describe('ecritureDuCompteDeBilan — le compte choisi face à la banque, dans l
 
   it('est l’écriture que la base attend : la banque au montant et dans le sens du mouvement, le compte en face', () => {
     const sql = definitionSql('ecrire_mouvement_compte_bilan')
-    expect(COMPTE_BANQUE).toBe('512000')
-    expect(sql).toContain("select '512000'::text as compte, v_sens_banque as sens, abs(v_ligne.montant) as montant")
+    // La banque, lue dans le plan du dossier par la CLÉ de son rôle (étape PC2), dont le défaut est la constante.
+    expect(PLAN_PAR_DEFAUT.banque).toBe(COMPTE_BANQUE)
+    expect(sql).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    expect(sql).toContain('select v_banque as compte, v_sens_banque as sens, abs(v_ligne.montant) as montant')
     expect(sql).toContain('select p_compte, v_sens_compte, abs(v_ligne.montant)')
     expect(sql).toContain("v_sens_banque := case when v_ligne.montant > 0 then 'debit' else 'credit' end;")
     expect(sql).toContain("v_sens_compte := case when v_ligne.montant > 0 then 'credit' else 'debit' end;")

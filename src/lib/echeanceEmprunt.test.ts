@@ -10,8 +10,9 @@ import {
 } from './echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from './emprunts'
 import { partsDuReleve } from './partsDuReleve'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { Categorie, EcritureBrouillon } from './types'
-import { fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
 
 const EMPRUNT: Emprunt = {
@@ -45,16 +46,22 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
 const aucune = new Map<number, string>()
 
 describe('les comptes et les postes de l’échéance', () => {
-  // La base vérifie ces numéros EXACTEMENT : un compte renommé d'un seul côté ferait refuser chaque
-  // rapprochement, avec « L'écriture proposée ne correspond pas », sans que rien dise pourquoi.
+  // La base vérifie ces comptes EXACTEMENT : un compte renommé d'un seul côté ferait refuser chaque
+  // rapprochement, avec « L'écriture proposée ne correspond pas », sans que rien dise pourquoi. Depuis l'étape PC2
+  // (ligne 43), elle les lit dans le plan du dossier par la CLÉ de leur rôle, dont le défaut est la constante d'ici ; la
+  // DERNIÈRE définition de la fonction, celle que la base exécute, seule — une voisine du même fichier ne compte pas.
   it('sont ceux que la fonction SQL exportée attend', () => {
-    const definitions = fichiersDuSchema().filter((f) => /function public\.rapprocher_echeance_emprunt\(/.test(f.texte))
-    expect(definitions.length).toBeGreaterThan(0)
-    const derniere = definitions[definitions.length - 1].texte
-    expect(derniere).toContain(`('${COMPTE_BANQUE}', case when v_ligne.montant > 0 then 'debit' else 'credit' end, v_total)`)
-    expect(derniere).toContain(`('${COMPTE_EMPRUNT}', case when v_ligne.montant > 0 then 'credit' else 'debit' end, v_capital)`)
-    expect(derniere).toContain(`('${COMPTE_INTERETS_EMPRUNT}', 'debit', v_interets)`)
-    expect(derniere).toContain(`('${COMPTE_ASSURANCE_EMPRUNT}', 'debit', v_assurance)`)
+    const derniere = derniereDefinitionSql('rapprocher_echeance_emprunt')
+    expect(derniere).toContain("v_banque := public.compte_du_role(v_ligne.dossier_id, 'banque');")
+    expect(derniere).toContain("v_compte_emprunt := public.compte_du_role(v_ligne.dossier_id, 'emprunt');")
+    expect(derniere).toContain("v_compte_interets := public.compte_du_role(v_ligne.dossier_id, 'interets_emprunt');")
+    expect(derniere).toContain("v_compte_assurance := public.compte_du_role(v_ligne.dossier_id, 'assurance_emprunt');")
+    expect([PLAN_PAR_DEFAUT.banque, PLAN_PAR_DEFAUT.emprunt, PLAN_PAR_DEFAUT.interets_emprunt, PLAN_PAR_DEFAUT.assurance_emprunt])
+      .toEqual([COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, COMPTE_ASSURANCE_EMPRUNT])
+    expect(derniere).toContain("(v_banque, case when v_ligne.montant > 0 then 'debit' else 'credit' end, v_total)")
+    expect(derniere).toContain("(v_compte_emprunt, case when v_ligne.montant > 0 then 'credit' else 'debit' end, v_capital)")
+    expect(derniere).toContain("(v_compte_interets, 'debit', v_interets)")
+    expect(derniere).toContain("(v_compte_assurance, 'debit', v_assurance)")
   })
 
   it('portent un libellé, que la balance et le FEC reprennent', () => {
