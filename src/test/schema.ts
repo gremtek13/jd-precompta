@@ -256,3 +256,113 @@ export function derniereDefinitionSql(nom: string): string {
   if (fin < 0) throw new Error(`Corps de ${nom} introuvable dans le schéma exporté.`)
   return texte.slice(debut, fin)
 }
+
+/** Une colonne GÉNÉRÉE lue dans le schéma exporté : la base la calcule, et refuse qu'une insertion y écrive. */
+export interface ColonneGeneree {
+  table: string
+  colonne: string
+}
+
+const GENERATED = /\bgenerated\b/gi
+
+function occurrences(texte: string, motif: RegExp): number {
+  return [...texte.matchAll(motif)].length
+}
+
+function nomDeTable(nom: string): string {
+  return nom.trim().replace(/"/g, '').replace(/^public\./i, '')
+}
+
+function formeDesGenerees(chemin: string, quoi: string): never {
+  throw new FormeInconnue(`${chemin} : ${quoi} — forme jamais rencontrée, ses colonnes générées ne se déduisent pas encore`)
+}
+
+/**
+ * Les colonnes GÉNÉRÉES du schéma exporté (`generated always as (…) stored`), instructions rejouées dans l'ordre des
+ * fichiers puis du texte : déclarées dans un `create table` ou par `alter table … add column`, rendues ordinaires par
+ * `alter column … drop expression`, emportées par `drop table` (toutes les tables qu'il nomme).
+ *
+ * LA SOURCE EST LE MOT, PAS UNE FORME : chaque occurrence de `generated` hors des lignes de commentaire doit appartenir à
+ * une colonne générée reconnue, sinon `FormeInconnue` — une colonne d'identité (`generated … as identity`), le mot dans un
+ * corps `$…$` (une colonne posée par un bloc ou par une fonction), ou ailleurs (une chaîne, un commentaire de fin de
+ * ligne). Lèvent aussi, parce qu'elles feraient une colonne générée sans écrire le mot, ou la déplaceraient : une table
+ * créée par `like` ou par héritage (`inherits`, `partition of`), un renommage ou un `drop` de colonne sur une table qui en
+ * porte une. La règle s'écrira le jour où la forme apparaîtra, contre `pg_attribute`.
+ */
+export function colonnesGenereesDuSchema(fichiers: { chemin: string; texte: string }[]): ColonneGeneree[] {
+  const parTable = new Map<string, Set<string>>()
+  const ajouter = (table: string, colonne: string) => parTable.set(table, new Set([...(parTable.get(table) ?? []), colonne]))
+
+  for (const { chemin, texte } of fichiers) {
+    const brut = texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
+    const sql = sansCorpsDeFonction(brut)
+    if (occurrences(brut, GENERATED) !== occurrences(sql, GENERATED)) formeDesGenerees(chemin, '« generated » dans un corps `$…$`')
+    const heritage = /\binherits\s*\(|\bpartition\s+of\b/i.exec(sql)
+    if (heritage) formeDesGenerees(chemin, `une table créée par héritage (« ${heritage[0]} »)`)
+    let reconnues = 0
+
+    type Evt = { i: number; genre: 'create' | 'alter' | 'drop_table'; table: string; pos: number; tables: string[] }
+    const evts: Evt[] = []
+    for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s*\(/gi)) {
+      evts.push({ i: m.index!, genre: 'create', table: m[1], pos: m.index! + m[0].length - 1, tables: [] })
+    }
+    for (const m of sql.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?"?(\w+)"?\s+/gi)) {
+      evts.push({ i: m.index!, genre: 'alter', table: m[1], pos: m.index! + m[0].length, tables: [] })
+    }
+    for (const m of sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?([^;]*)/gi)) {
+      const tables = m[1].replace(/\b(?:cascade|restrict)\b/gi, '').split(',').map(nomDeTable).filter(Boolean)
+      evts.push({ i: m.index!, genre: 'drop_table', table: tables[0] ?? '', pos: m.index!, tables })
+    }
+    // L'ORDRE ÉCRIT DÉCIDE, comme pour les clés : une colonne rendue ordinaire après sa création ne l'est plus.
+    evts.sort((a, b) => a.i - b.i)
+
+    for (const e of evts) {
+      if (e.genre === 'drop_table') {
+        for (const t of e.tables) parTable.delete(t)
+        continue
+      }
+      if (e.genre === 'create') {
+        for (const entree of entrees(groupe(sql, e.pos).corps)) {
+          const t = entree.trim()
+          if (/^like\b/i.test(t)) formeDesGenerees(chemin, `${e.table} créée par « ${t.slice(0, 60)} »`)
+          if (occurrences(t, GENERATED) === 0) continue
+          const colonne = /^"?(\w+)"?\s[\s\S]*?\bgenerated\s+always\s+as\s*\(/i.exec(t)
+          if (!colonne || occurrences(t, GENERATED) !== 1 || /^(?:constraint|primary|unique|check|exclude|foreign)\b/i.test(t)) {
+            formeDesGenerees(chemin, `${e.table} : « ${t.slice(0, 80)} »`)
+          }
+          ajouter(e.table, colonne[1])
+          reconnues += 1
+        }
+        continue
+      }
+      // Un `alter table` jusqu'à son point-virgule, découpé en actions sur les virgules de premier niveau.
+      const finInstruction = sql.indexOf(';', e.pos)
+      for (const action of entrees(sql.slice(e.pos, finInstruction < 0 ? undefined : finInstruction))) {
+        const a = action.trim()
+        if (occurrences(a, GENERATED) > 0) {
+          const ajout = /^add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?"?(\w+)"?\s[\s\S]*?\bgenerated\s+always\s+as\s*\(/i.exec(a)
+          if (!ajout || occurrences(a, GENERATED) !== 1 || /^add\s+(?:constraint|primary|unique|check|exclude|foreign)\b/i.test(a)) {
+            formeDesGenerees(chemin, `${e.table} : « ${a.slice(0, 80)} »`)
+          }
+          ajouter(e.table, ajout[1])
+          reconnues += 1
+          continue
+        }
+        const ordinaire = /^alter\s+(?:column\s+)?"?(\w+)"?\s+drop\s+expression\b/i.exec(a)
+        if (ordinaire) {
+          parTable.get(e.table)?.delete(ordinaire[1])
+          continue
+        }
+        if ((parTable.get(e.table)?.size ?? 0) > 0 && /^(?:rename\b|drop\s+(?!constraint\b))/i.test(a)) {
+          formeDesGenerees(chemin, `${e.table}, qui porte une colonne générée : « ${a.slice(0, 60)} »`)
+        }
+      }
+    }
+    if (reconnues !== occurrences(sql, GENERATED)) {
+      formeDesGenerees(chemin, `${occurrences(sql, GENERATED) - reconnues} occurrence(s) de « generated » hors de toute colonne générée`)
+    }
+  }
+  return [...parTable]
+    .flatMap(([table, colonnes]) => [...colonnes].map((colonne) => ({ table, colonne })))
+    .sort((a, b) => a.table.localeCompare(b.table) || a.colonne.localeCompare(b.colonne))
+}

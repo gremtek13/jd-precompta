@@ -1222,6 +1222,29 @@ const REVUE_D9 = {
   ] as Ligne[],
 }
 
+// « MA BANQUE » (espace client, étape P9) : seulement pour le client du banc qui porte « Banque » sur l'atelier (d7), pour
+// ne rien changer à ce que mesurent les passes du cabinet. Trois mouvements à traiter de plus — un abonnement au libellé
+// LONG, sans justificatif ; un repas, pour lequel le client a déjà envoyé une pièce ; le loyer, sur lequel le cabinet a posé
+// une question —, le fil de cette question, et le contrôle de solde du relevé d'août, cohérent : le solde « au relevé ».
+const BANQUE_DU_CLIENT_D7 = CLIENT_DU_BANC && VENTES_DU_BANC === 'banque'
+  ? {
+    lignes: [
+      { ...paiementTva('t20', '2026-09-26', 'PRLV SEPA ABONNEMENT LOGICIEL DE GESTION COMMERCIALE ET COMPTABLE', -59.9, null), statut: 'non_rapprochee' },
+      { ...paiementTva('t21', '2026-09-22', 'CB RESTAURANT LE COMPTOIR DES HALLES', -42.5, null), statut: 'non_rapprochee' },
+      { ...paiementTva('t22', '2026-09-05', 'VIR SEPA EMIS LOYER BUREAU SEPTEMBRE', -1080, null), statut: 'non_rapprochee' },
+    ],
+    propositions: [
+      { id: 'jb1', dossier_id: 'd7', ligne_bancaire_id: 't21', piece_id: 'a3', auteur_id: 'u1', origine: 'client', created_at: '2026-09-23T08:00:00Z', retire_le: null, retire_par: null },
+    ],
+    precisions: [
+      { id: 'qb1', dossier_id: 'd7', ligne_bancaire_id: 't22', auteur_id: 'u-cabinet', origine: 'cabinet', texte: 'Peux-tu nous envoyer la quittance de loyer de septembre ? Le bail ne couvre que jusqu’en août.', created_at: '2026-09-24T08:00:00Z' },
+    ],
+    controles: [
+      { id: 'cb1', dossier_id: 'd7', source_fichier: 'releve-2026.csv', solde_initial: 10000, solde_final: 12480.35, somme_mouvements: 2480.35, ecart: 0, coherent: true, periode_debut: '2026-08-01', periode_fin: '2026-08-31', created_at: MAINTENANT },
+    ],
+  }
+  : { lignes: [], propositions: [], precisions: [], controles: [] }
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1472,7 +1495,11 @@ const TABLES: Record<string, Ligne[]> = {
     ...ENGAGEMENT_D8.lignes,
     ...SOURCES_D9.lignes,
     ...SOURCES_D10.lignes,
+    ...BANQUE_DU_CLIENT_D7.lignes,
   ],
+  justificatifs_proposes: BANQUE_DU_CLIENT_D7.propositions,
+  precisions_mouvements: BANQUE_DU_CLIENT_D7.precisions,
+  controles_releves_bancaires: BANQUE_DU_CLIENT_D7.controles,
   cotisations_declarees: [...COTISATIONS_D1.echeances, ...SOURCES_D9.cotisations],
   // L'exercice 2025 de la kinésithérapeute, validé : ce qu'il garde, et sa 2035 telle qu'elle a été validée.
   exercices_valides: [VALIDATION_D9.valide],

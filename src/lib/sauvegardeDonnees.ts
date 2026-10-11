@@ -290,6 +290,11 @@ async function ecrireParLots(table: string, lignes: Ligne[]): Promise<void> {
 //
 // Ce qui n'est JAMAIS fait : écraser une ligne existante, et effacer un lien perdu pour que ça
 // passe. Les deux feraient aboutir la restauration, et les deux détruiraient du travail sans le dire.
+//
+// Ni écrire une colonne que la base calcule (`COLONNES_GENEREES`, l'empreinte du texte lu) : Postgres refuserait le lot
+// entier, et la restauration s'arrêterait au milieu — ce qu'elle faisait jusqu'au 11/10/2026 sur tout dossier qui avait
+// un texte lu. Le plan de réinsertion la retire de chaque ligne envoyée, et la base la recalcule de ce qui est restauré ;
+// une sauvegarde d'avant, qui la porte, se restaure donc telle quelle.
 export async function restaurerSauvegarde(
   sauvegarde: SauvegardeDossier,
   onProgression?: (fait: number, total: number, table: string) => void,

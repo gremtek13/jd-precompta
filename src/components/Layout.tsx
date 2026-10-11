@@ -8,8 +8,10 @@ import { useListeDossiers } from '../lib/listeDossiers'
 import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
+import { maBanqueOuverte } from '../lib/banqueClient'
+import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
-  IconAccueil, IconApparence, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
+  IconAccueil, IconApparence, IconBanque, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
   IconInformations, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -89,6 +91,9 @@ function Coque() {
   // (App.tsx). `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
   const mesVentes = role === 'client'
     && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)
+  // « Ma banque » (étape P9) : de même, avec la case « Banque » sur la société affichée, comme sa route.
+  const maBanque = role === 'client'
+    && maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -307,6 +312,13 @@ function Coque() {
                   <IconFactures width={18} height={18} />
                   <span className="nav-label-full">Mes ventes</span>
                   <span className="nav-label-court">Ventes</span>
+                </NavLink>
+              )}
+              {maBanque && (
+                <NavLink to="/ma-banque" title="Ma banque" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconBanque width={18} height={18} />
+                  <span className="nav-label-full">Ma banque</span>
+                  <span className="nav-label-court">Banque</span>
                 </NavLink>
               )}
               <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>

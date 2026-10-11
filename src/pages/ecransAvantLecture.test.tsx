@@ -19,6 +19,7 @@ import ClientInformations from './ClientInformations'
 import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
+import ClientBanque from './ClientBanque'
 import TuilesVentesClient from './TuilesVentesClient'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
@@ -197,6 +198,8 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientSimulation', fichier: 'pages/ClientSimulation.tsx', rendre: () => <MemoryRouter><ClientSimulation /></MemoryRouter> },
   // « Mes ventes » (espace client, étape P4a) : la société affichée et ses droits lus, puis l'onglet Factures en mode client.
   { nom: 'ClientVentes', fichier: 'pages/ClientVentes.tsx', rendre: () => <MemoryRouter><ClientVentes /></MemoryRouter> },
+  // « Ma banque » (espace client, étape P9) : la case « Banque » relue à la base, le relevé, ses envois, son fil, les pièces.
+  { nom: 'ClientBanque', fichier: 'pages/ClientBanque.tsx', rendre: () => <MemoryRouter><ClientBanque /></MemoryRouter> },
   // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) : montées seules, l'accueil ne les monte qu'une
   // fois ses propres lectures revenues.
   { nom: 'TuilesVentesClient', fichier: 'pages/TuilesVentesClient.tsx', rendre: () => (

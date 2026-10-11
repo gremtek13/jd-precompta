@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Le client Supabase est simulé, mais pas en rendant des réponses toutes faites : le faux client
@@ -25,6 +26,10 @@ const base = {
   // migration qui ajoute des colonnes ne les porte pas) : sans elles, le faux client ne pourrait pas dire ce qu'une
   // telle ligne devient une fois écrite.
   defauts: {} as Record<string, Ligne>,
+  // Les colonnes que la BASE calcule, comme Postgres le fait d'une colonne générée : un lot qui en nomme une — dans une
+  // seule de ses lignes, et quelle que soit la valeur, NULL compris — est refusé en entier (428C9), puisque PostgREST
+  // insère l'union des clés du lot ; une ligne écrite sans elle la reçoit calculée.
+  generees: {} as Record<string, Record<string, (ligne: Ligne) => unknown>>,
 }
 const journal: { table: string; filtres: string[]; tri: string[] }[] = []
 // Les lignes telles que la restauration les ENVOIE, avant que la base y mette ses valeurs par défaut.
@@ -103,9 +108,18 @@ function ecrivain(table: string) {
     insert: (lignes: Ligne[]) => {
       const erreur = base.erreurParTable[table] ?? base.erreur
       if (erreur) return Promise.resolve({ error: erreur })
+      const generees = base.generees[table] ?? {}
+      const nommee = Object.keys(generees).find((colonne) => lignes.some((l) => colonne in l))
+      if (nommee) {
+        return Promise.resolve({ error: { code: '428C9', message: `cannot insert a non-DEFAULT value into column "${nommee}"` } })
+      }
       ecritures.push({ table, action: 'insert', nb: lignes.length })
       envoyees[table] = [...(envoyees[table] ?? []), ...lignes.map((l) => ({ ...l }))]
-      base.tables[table] = [...(base.tables[table] ?? []), ...lignes.map((l) => ({ ...(base.defauts[table] ?? {}), ...l }))]
+      base.tables[table] = [...(base.tables[table] ?? []), ...lignes.map((l) => {
+        const ecrite: Ligne = { ...(base.defauts[table] ?? {}), ...l }
+        for (const [colonne, calcul] of Object.entries(generees)) ecrite[colonne] = calcul(ecrite)
+        return ecrite
+      })]
       return Promise.resolve({ error: null })
     },
     update: (patch: Ligne) => ({
@@ -139,6 +153,7 @@ beforeEach(() => {
   base.erreur = null
   base.erreurParTable = {}
   base.defauts = {}
+  base.generees = {}
   journal.length = 0
   ecritures.length = 0
   for (const table of Object.keys(envoyees)) delete envoyees[table]
@@ -882,6 +897,65 @@ describe('restauration du plan comptable d’un dossier', () => {
       /roles_comptables « role_d_une_base_plus_recente » doit exister dans la base d'arrivée \(pointé par plan_comptable_dossier\.role\)/,
     )
     expect(ecritures).toEqual([])
+  })
+})
+
+// L'EMPREINTE DU TEXTE LU (défaut relevé à l'étape e5b1, corrigé le 11/10/2026). `piece_textes_ocr.texte_md5` est une
+// colonne GÉNÉRÉE : la base la calcule, et refuse toute insertion qui la nomme (428C9). La sauvegarde la lit avec le reste
+// de la ligne ; la restauration l'envoie sans elle, et la base la recalcule du texte restauré. Jusque-là, toute
+// restauration d'un dossier qui avait un texte lu s'arrêtait sur cette table, le reste du dossier déjà écrit.
+describe('restauration d’un dossier qui a des textes lus', () => {
+  // L'expression de la migration 20260919142532, transcrite : `trim` n'ôte que les espaces, `\s` les blancs.
+  const empreinte = (ligne: Ligne) => createHash('md5')
+    .update(String(ligne.texte).replace(/^ +| +$/g, '').replace(/[ \t\n\r\f\v]+/g, ' ')).digest('hex')
+  const baseDArrivee = () => { base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [] } }
+
+  beforeEach(() => {
+    base.generees = { piece_textes_ocr: { texte_md5: empreinte } }
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }, { id: 'p2', dossier_id: DOSSIER }]
+    base.tables.documents_divers = [{ id: 'doc1', dossier_id: DOSSIER }]
+    // Écrits avec l'empreinte que la base a calculée, comme en production.
+    base.tables.piece_textes_ocr = [
+      { id: 't1', dossier_id: DOSSIER, piece_id: 'p1', document_id: null, texte: 'Texte fictif, total 120,00' },
+      // Le même aux blancs près : la même empreinte — deux exports d'un même document.
+      { id: 't2', dossier_id: DOSSIER, piece_id: 'p2', document_id: null, texte: '  Texte   fictif,\ntotal 120,00  ' },
+      { id: 't3', dossier_id: DOSSIER, piece_id: null, document_id: 'doc1', texte: 'Relevé fictif' },
+    ].map((l) => ({ ...l, texte_md5: empreinte(l) }))
+  })
+
+  it('la ligne part SANS l’empreinte, la base la recalcule, égale à la source, et la relecture ne voit aucun écart', async () => {
+    const sauvegarde = await exporterDossier(DOSSIER)
+    const source = sauvegarde.contenu.piece_textes_ocr.map((l) => ({ ...l }))
+    expect(source.map((l) => l.texte_md5)).toEqual([source[0].texte_md5, source[0].texte_md5, empreinte(source[2])])
+    baseDArrivee()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(resultat.lignesParTable.piece_textes_ocr).toBe(3)
+    // Ce qui est ENVOYÉ : chaque ligne sans la colonne, tout le reste tel que lu.
+    expect(envoyees.piece_textes_ocr).toEqual(source.map(({ texte_md5: _empreinte, ...reste }) => reste))
+    expect(envoyees.piece_textes_ocr.some((l) => 'texte_md5' in l)).toBe(false)
+    // Ce qui est ÉCRIT : l'empreinte que la base vient de calculer, celle de la source.
+    expect(base.tables.piece_textes_ocr).toEqual(source)
+    // La sauvegarde reçue la porte encore.
+    expect(sauvegarde.contenu.piece_textes_ocr).toEqual(source)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('le faux client refuse comme la base : un lot dont une seule ligne nomme l’empreinte, même NULL', async () => {
+    // Sans ce refus, le test précédent passerait aussi sur une restauration qui écrirait la colonne.
+    const lignes = base.tables.piece_textes_ocr.map(({ texte_md5: _empreinte, ...reste }) => reste)
+    const { error } = await ecrivain('piece_textes_ocr').insert([...lignes.slice(0, 2), { ...lignes[2], texte_md5: null }])
+    expect(error).toEqual({ code: '428C9', message: 'cannot insert a non-DEFAULT value into column "texte_md5"' })
+    expect(ecritures).toEqual([])
+  })
+
+  it('une sauvegarde téléchargée avant le correctif se restaure telle quelle : le retrait se fait à l’écriture', async () => {
+    // Les sauvegardes déjà téléchargées portent l'empreinte, comme celles d'aujourd'hui : rien n'est à réécrire.
+    const sauvegarde = JSON.parse(JSON.stringify(await exporterDossier(DOSSIER))) as Awaited<ReturnType<typeof exporterDossier>>
+    baseDArrivee()
+    await restaurerSauvegarde(sauvegarde)
+    expect(base.tables.piece_textes_ocr.map((l) => l.texte_md5)).toEqual(sauvegarde.contenu.piece_textes_ocr.map((l) => l.texte_md5))
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 })
 

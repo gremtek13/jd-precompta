@@ -157,8 +157,9 @@ supabase/
                   - rls.sql : toutes les tables et le stockage, boucle sur pg_class, se mute lui-même ;
                   - restauration.sql (sur une réplique, par psql, arrêté à la première erreur : le plan de
                     sauvegarde.ts, gardé par restaurationEssai.test.ts ; une clé étrangère qu'il ne peut recopier se
-                    nomme, et sans elles son verdict se dit EN FAUTE) ; allerretour.py (copie déployée ↔ dépôt, après
-                    chaque déploiement) ;
+                    nomme, et sans elles son verdict se dit EN FAUTE ; ses tables d'essai portent la génération, et
+                    chaque insertion nomme ses colonnes sans celles que le code retire) ; allerretour.py (copie
+                    déployée ↔ dépôt, après chaque déploiement) ;
                     bordures.py (les bordures répétées et comptées, avant de transcrire une fonction) ;
                     socle.py/.sql et inventaire.py/.sql (export ↔ catalogue, après chaque migration) ;
                     signature.sql (les neuf familles d'objets, réplique ↔ production, avant de croire ce qu'on joue
@@ -350,7 +351,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   par `changer_droits_acces` seule (aucune policy de mise à jour, pour personne ; un droit nul y est un droit inchangé) ;
   `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` sont le prédicat des étapes
   suivantes ; depuis P7 (10/10/2026), « Banque » ouvre en base les deux registres de la banque du client et le contrôle
-  de solde des relevés, et à l'écran « Ma simulation » ; depuis P2 (10/10/2026), « Ventes » ouvre en base la lecture
+  de solde des relevés, et à l'écran « Ma simulation » et, depuis P9a (11/10/2026), « Ma banque » ; depuis P2
+  (10/10/2026), « Ventes » ouvre en base la lecture
   des neuf tables des ventes de son dossier et leurs gestes par les fonctions du cabinet (`gere_les_ventes`), sans écran
   encore — désigner le mouvement d'un encaissement demande aussi « Banque ». L'onglet Accès dit ce que la
   base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
@@ -397,6 +399,16 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   n'est pas deviné, et jamais « par le cabinet ». Pastille sur une validée (`valide_par`) ou un brouillon (`created_by`),
   filtre « Émises par le client » qui ne filtre que l'AFFICHAGE, mention dans les fenêtres (`cree_par`) ;
   `FactureEmise.valide_par` est obligatoire → « « PAR LE CLIENT » CÔTÉ CABINET ».
+- **« Ma banque » (P9a, 11/10/2026)** : route, entrée et tuile d'accueil sous `maBanqueOuverte(COUVERTURE_EXPORTEE, case
+  « Banque » de la société AFFICHÉE)` ; `ClientBanque` relit la case à la base (`lireLeDroitBanque`) dans la vague de ses
+  lectures, et sans elle ne montre rien. Les mouvements du relevé importé (EC-Q5 prise comme hypothèse : le client ne
+  connecte pas sa banque, l'écran le dit), l'état de chacun DÉDUIT par `lib/banqueClient.ts` (pur, sur
+  `mouvementJustifieParLeReleve`), le solde LU au dernier relevé contrôlé cohérent et daté, jamais calculé, les mois
+  couverts ; jamais la catégorie ni l'écriture, d'une pièce seulement son nom et son jour de dépôt. Proposer une pièce
+  (déjà déposée, ou `deposerFichier` puis proposée), retirer la sienne, écrire une précision : par les trois fonctions de
+  P7 seules, refus redits avant le clic sous les mots de la migration (le refus 4, exercice figé, ne se dit pas d'avance
+  au client : il ne lit pas `exercices_valides`), sous UN verrou relâché après la relecture ; propositions ou fil lus en
+  partie : ni état ni geste → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -441,7 +453,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; « Mes ventes › Factures » (P4a, 11/10/2026) : l'onglet
   Factures et ses fenêtres pour le client « Ventes » ; la liaison de sa plateforme et de Super PDP, et les tuiles « À
   encaisser » et « À déclarer » de son accueil (P4b, 11/10/2026) ; « par le client » côté cabinet — pastille, filtre et
-  mention dans les fenêtres (P4c, 11/10/2026) ; client
+  mention dans les fenêtres (P4c, 11/10/2026) ; « Ma banque » (P9a, 11/10/2026) : le relevé importé, l'état de chaque
+  mouvement, le solde lu, et proposer une pièce, retirer sa proposition, écrire une précision ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -601,7 +614,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   client) ; P4b, les connexions du client (EC-Q4 prise comme hypothèse) et les tuiles de son accueil, le 11/10/2026 ;
   P4c, « par le client » côté cabinet, le 11/10/2026 ; reste la mention du mandataire à l'impression (EC-Q2 : le nom du
   cabinet figé avec la facture, une migration d'`enregistrer_facture`) → « « MES VENTES › FACTURES » », « LES CONNEXIONS
-  DU CLIENT ET LES TUILES DE SON ACCUEIL », « « PAR LE CLIENT » CÔTÉ CABINET ». P5,
+  DU CLIENT ET LES TUILES DE SON ACCUEIL », « « PAR LE CLIENT » CÔTÉ CABINET ». P9a, « Ma banque » côté client, le
+  11/10/2026 (EC-Q5 prise comme hypothèse) ; reste P9b, le côté cabinet (la pièce proposée en tête de la fiche du
+  mouvement, le fil, « Demander au client », le filtre « Proposés par le client ») → « « MA BANQUE » : L'ÉCRAN DU CLIENT
+  « BANQUE » ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -672,9 +688,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`socle/2_objets_sans_migration.sql`) avaient été créés hors migration ; `socle.py/.sql` les compare au caractère près
   et `inventaire.py/.sql` tout le reste nom par nom. La procédure qui rejouerait l'export dans une base vide n'a jamais
   tourné (PLAN_DE_REPRISE.md §4) → « UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ».
-  Une colonne GÉNÉRÉE ne se restaure pas par la porte de l'application (Postgres refuse d'y écrire, 428C9) : une
-  empreinte que la base calcule est une colonne ordinaire qu'une garde recalcule (`declarations_ereporting.empreinte`) ;
-  `piece_textes_ocr.texte_md5` en est une, et sa restauration est à reprendre.
+- **Une colonne GÉNÉRÉE ne se restaure pas, elle se recalcule** (Postgres refuse toute insertion qui la nomme, 428C9,
+  même NULL, même à zéro ligne) : la sauvegarde la lit, le plan de réinsertion la retire de chaque ligne envoyée
+  (`COLONNES_GENEREES`, `planReinsertion`) ; `sauvegardeColonnesGenerees.test.ts` la tire de l'export en partant du mot
+  `generated` (une seule : `piece_textes_ocr.texte_md5`), et `restauration.sql` en porte la génération (`_generees`,
+  insertions par liste de colonnes). Une empreinte qu'une GARDE doit vérifier reste une colonne ordinaire qu'elle
+  recalcule (`declarations_ereporting.empreinte`) → « UNE COLONNE GÉNÉRÉE NE SE RESTAURE PAS, ELLE SE RECALCULE ».
 - **Ce qui doit être tout ou rien vit dans une fonction SQL** (`SECURITY DEFINER` qui vérifie l'accès et énumère les
   colonnes qu'elle écrit). Ce qui est testé en TypeScript n'est pas réécrit en SQL — sauf quand la base doit VÉRIFIER
   une écriture : le calcul est alors le même des deux côtés, en entiers, confronté par un test à une table relevée en
@@ -1284,7 +1303,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9137 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9232 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

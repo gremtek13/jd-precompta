@@ -369,6 +369,17 @@ septembre 2027, l'initiale remplacée par une rectificative, et ceux d'octobre) 
 0 écart ; une déclaration réinsérée avant son régime, ou une source avant sa déclaration, arrête l'essai sur sa clé ; et
 la réinsertion par la porte du super-administrateur, gardes comprises, du contenu relu en JSON : lignes identiques.
 
+Le 11/10/2026 (défaut relevé à l'étape e5b1, corrigé le même jour), une colonne GÉNÉRÉE ne se restaure plus, elle se
+recalcule. `piece_textes_ocr.texte_md5`, l'empreinte du texte lu, est calculée par la base, qui refuse toute insertion
+qui la nomme (428C9, même NULL) : jusque-là, la restauration d'un dossier qui avait un texte lu s'arrêtait sur cette
+table, une cinquantaine de tables déjà écrites — à vider à la main avant de recommencer. La sauvegarde la lit toujours ;
+la restauration la retire de chaque ligne envoyée (`COLONNES_GENEREES`, `src/lib/sauvegarde.ts`), et la base la
+recalcule du texte restauré. Une sauvegarde téléchargée avant le correctif, qui la porte, se restaure donc telle quelle.
+L'essai de restauration ne voyait pas le défaut (ses tables d'essai n'avaient pas la génération) : elles l'ont, et il
+rejoue le retrait. Sur une réplique égale à la production à 119 migrations, le dossier `test` semé de trois textes lus :
+68 tables restaurées, 68 identiques, 0 écart, les trois empreintes recalculées égales à la source ; sans le retrait,
+l'essai s'arrête sur `piece_textes_ocr`, en 428C9.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 
