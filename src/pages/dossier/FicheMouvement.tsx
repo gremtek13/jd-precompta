@@ -236,6 +236,9 @@ interface FicheMouvementProps {
   accesDuReleve: AccesDuReleve
   piecesIncompletes: string | null
   onDemanderAuClient: (texte: string) => Promise<boolean>
+  // P9b2 : écarter la pièce que le client a proposée (`retirer_proposition`), supprimer un message du fil — par le numéro.
+  onEcarterProposition: (propositionId: string) => void
+  onSupprimerMessage: (messageId: string) => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -568,6 +571,7 @@ export default function FicheMouvement({
   restesARegler, onEcrireCompteBilan, onRetirerCompteBilan,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
+  onEcarterProposition, onSupprimerMessage,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -1271,6 +1275,7 @@ export default function FicheMouvement({
           aTraiter={aTraiter && !fige}
           occupe={occupe}
           onAssocier={onRapprocher}
+          onEcarter={onEcarterProposition}
         />
 
         {piecesCandidates.length === 1 && (
@@ -1985,6 +1990,7 @@ export default function FicheMouvement({
           acces={accesDuReleve}
           occupe={occupe}
           onDemander={onDemanderAuClient}
+          onSupprimer={onSupprimerMessage}
         />
 
         {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand le libellé est retombé

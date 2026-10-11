@@ -22224,3 +22224,51 @@ montrer.
 garde, des droits, des ventes du client, de la banque du client) ; RGPD.md.
 **Lu en base** (lecture seule, 11/10/2026) : les colonnes de quatorze tables, les contraintes et index des factures, les
 déclencheurs, les policies des tables lues par le client et du stockage, les seaux, et des comptes de lignes.
+
+### 11/10/2026 — ÉCARTER UNE PROPOSITION, SUPPRIMER UN MESSAGE — ESPACE CLIENT, ÉTAPE P9 (P9b2)
+
+Agent P9B2 (dev), base `e42ba7a` (main + P9b). Aucune migration, aucune policy, aucune fonction : vérifié en lecture seule sur la
+production avant d'écrire — `authenticated` a le privilège DELETE sur `precisions_mouvements`, la policy
+`precisions_mouvements_suppression_cabinet` (`for delete to authenticated using (admin_du_dossier(dossier_id))`) y est, le seul
+déclencheur (`precisions_mouvements_gardes`) ne garde que l'insertion et la modification, `retirer_proposition` est exécutable par
+`authenticated` et pas par `anon`. Décisions du cabinet du 11/10/2026 sur P9B-Q1 et P9B-Q2 : OUI et OUI.
+
+**Ce qui est fait.**
+- `lib/banqueCabinet.ts` (pur, ajouts) : `ecartable` (la proposition COURANTE du CLIENT, que le mouvement ne retient pas — un
+  mouvement rapproché de cette pièce la garde) ; `refusDEcarter` (les refus de `retirer_proposition` que le cabinet peut
+  rencontrer, sous les mots de `REFUS_RETIRER` déjà confrontés à la fonction : une proposition d'un autre dossier, déjà
+  retirée et depuis quand — le jour de Paris) ; `confirmationDEcarter` (ce que le client verra ensuite, TIRÉ de
+  `etatDuMouvement` sur les propositions qui resteront, « il le voit aujourd'hui » quand cela change, « toujours » sinon ; la
+  pièce reste dans ses pièces, la proposition reste au registre retirée et datée, le client n'est pas prévenu : lui écrire
+  dans le fil) ; `premiersMots` (60 caractères, coupé entre deux mots, « … ») ; `confirmationDeSupprimer` (qui, quand, ses
+  premiers mots, « le client ne le verra plus », « définitive », et ce que le client verra du mouvement si c'était la dernière
+  question en attente).
+- `EnvoisDuClient.tsx` : « Écarter cette proposition » sur la carte, « Supprimer ce message » sous chaque message du fil ;
+  `window.confirm` avec le texte du module, refusée elle n'écrit rien ; grisés pendant une écriture de l'écran ; rien sur des
+  envois pas lus en entier ou pas encore revenus (le composant ne montre alors que sa note).
+- `BanqueTab.tsx` : `ecarterLaProposition` (`retirer_proposition` seule, `argumentsDeRetirer`) et `supprimerLeMessage`
+  (`.from('precisions_mouvements').delete().eq('id').eq('dossier_id').select('id').maybeSingle()` : zéro ligne = « Rien n'a
+  été supprimé »), tous deux sous `sousVerrou`, l'erreur dite par `messageErreur` ET suivie d'une relecture (un refus veut dire
+  que la fiche est en retard : proposition déjà retirée par le client, message déjà supprimé).
+- `FicheMouvement.tsx` : deux props câblées seulement (`onEcarterProposition`, `onSupprimerMessage`) ; `index.css` : deux règles.
+
+**Choix.** « Écarter » n'est pas offert sur un mouvement rapproché de la pièce proposée (la proposition y est retenue) ; il
+l'est sur un mouvement classé autrement ou figé, où la proposition resterait sinon au registre et dans le filtre « Proposés par
+le client ». Il n'est offert que pour les propositions d'origine « client ». Le refus « déjà retirée » du module n'est pas
+atteignable à l'écran sur une lecture entière (une proposition courante n'est jamais retirée) : il garde la fiche contre une
+liste qui changerait sous elle, et l'erreur de la base arrive par la relecture qui suit un refus.
+
+**Preuves.** Tests neufs : `banqueCabinetGestes.test.ts` (28 : qui s'écarte, les refus relus dans `retirer_proposition`, les
+confirmations dans chacun de leurs états, les premiers mots, la policy, le déclencheur et les droits relus dans l'export) ;
+`BanqueTabEcarterSupprimer.test.tsx` (17 : le bouton selon l'origine et l'état, la confirmation refusée n'écrit rien, deux puis
+trois clics dans le même `act`, grisé, verrou tenu jusqu'à la relecture retenue, refus de la base dit et fiche relue, zéro ligne
+supprimée, lectures partielles) ; une attente de `BanqueTabEnvoisDuClient.test.tsx` lue sans le nouveau bouton.
+
+**Chiffres de l'agent** (sur `e42ba7a`) : 323 fichiers, 9 580 tests verts à Paris ; les six fichiers touchés sous les
+quatre fuseaux, 405 sur 405 ; `tsc -b` vert ; lint, 63 avertissements, comme la base ; build vert ; banc (port 5323) :
+0 débordement à 390, 720, 1 024, 1 280 et 1 440, à 1 280 volet 760, à 1 440 barre 420 volet 760, et à 390 en
+`client-banque`, aucune police refusée. Mutations : 33 sur 33 tuées — l'origine, le retrait, l'état « retenue », les mots
+des confirmations, la coupe des premiers mots, la dernière question en attente, les `confirm`, les `disabled`, les
+identifiants passés, les filtres `id` et `dossier_id`, la relecture de la ligne supprimée, les alertes, les relectures
+après un refus, l'ordre des arguments, le retrait du verrou. Intégré avec P9b et e6 dans une seule demande de fusion
+(demande du cabinet du 11/10/2026 : ralentir, moins de barrières et de CI).

@@ -368,7 +368,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'components/FilCommentaires.tsx': 'reçoit le fil de l’écran qui l’ouvre ; n’écrit qu’à l’envoi',
   'pages/dossier/BilanReleveStatuts.tsx': 'reçoit le relevé des statuts que l’écran qui l’offre a lancé sur un clic (FacturesTab, EncaissementsFactureModal, PlateformeClientModal, montés ici)',
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
-  'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif que sur un clic',
+  'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif, n’écarte une proposition et ne supprime un message que sur un clic confirmé, et seulement sur des envois lus en entier',
 }
 
 // LES PHRASES FIXES qui contiennent un mot du vide sans rien affirmer d'une liste : une explication, une consigne. Chacune

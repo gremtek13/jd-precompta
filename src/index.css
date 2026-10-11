@@ -879,6 +879,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 }
 .fil-mouvement > li.fil-mouvement-client { background: var(--tint-primary); }
 .fil-mouvement-texte { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Supprimer un message (P9b2) : sur sa propre ligne sous le texte, grisé pendant une écriture de l'écran. */
+.fil-mouvement-supprimer { display: block; margin-top: 4px; }
+.fil-mouvement-supprimer:disabled { opacity: 0.5; cursor: not-allowed; text-decoration: none; }
 .signal-concordant svg { color: var(--color-primary); }
 .signal-reserve svg { color: var(--color-warning); }
 

@@ -334,7 +334,9 @@ describe('le fil et « Demander au client »', () => {
     rendre()
     await ouvrir()
     const fil = within(volet()).getByRole('region', { name: 'Échanges avec le client' })
-    const messages = within(fil).getAllByRole('listitem').map(texteDe)
+    // Chaque message porte son geste « Supprimer ce message » (P9b2, BanqueTabEcarterSupprimer.test.tsx) : le texte du
+    // message est lu SANS lui.
+    const messages = within(fil).getAllByRole('listitem').map((li) => texteDe(li).replace(/Supprimer ce message$/, ''))
     expect(messages).toEqual([
       'Le cabinet, le 06/06/2026 : À quoi correspond ce prélèvement ?',
       'Le client, le 07/06/2026 : Le logiciel du cabinet médical.',

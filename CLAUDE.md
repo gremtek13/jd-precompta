@@ -418,10 +418,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   compte reconnu parmi les accès lus en entier (`lib/banqueCabinet.ts`, pur ; `lib/banqueCabinetLecture.ts`), un accès
   retiré dit tel, jamais deviné ; elle s'associe par `onRapprocher` (le chemin et les refus du choix à la main), et ce
   qu'il en advient (retenue, mouvement classé ou figé, pièce payée ailleurs, figée, absente) se lit et se dit ; elle ne
-  se retire jamais d'elle-même. Le fil (`precisions_mouvements`) et « Demander au client » (`ecrire_precision_mouvement`
+  se retire jamais d'elle-même : le cabinet l'écarte (P9b2, P9B-Q1 : `retirer_proposition` seule, jamais celle que le
+  mouvement retient) et supprime un message du fil (P9B-Q2 : la policy du cabinet, la ligne supprimée relue), sur une
+  confirmation qui dit ce que le client verra ensuite, tirée d'`etatDuMouvement`. Le fil (`precisions_mouvements`) et « Demander au client » (`ecrire_precision_mouvement`
   seule, sous `sousVerrou`, `LIBELLE_QUESTION_MOUVEMENT`) ; le filtre « Proposés par le client » ne change que la liste
   affichée. Propositions et fil se lisent ENSEMBLE, remis « en cours » à chaque lecture : partiels ou pas revenus, rien
-  n'est dit ni offert → « « MA BANQUE » CÔTÉ CABINET ».
+  n'est dit ni offert → « « MA BANQUE » CÔTÉ CABINET », « ÉCARTER UNE PROPOSITION, SUPPRIMER UN MESSAGE ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -469,7 +471,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   mention dans les fenêtres (P4c, 11/10/2026) ; « Ma banque » (P9a, 11/10/2026) : le relevé importé, l'état de chaque
   mouvement, le solde lu, et proposer une pièce, retirer sa proposition, écrire une précision ; « Ma banque » côté
   cabinet — la pièce proposée en tête de la fiche d'un mouvement, le fil et « Demander au client », le filtre « Proposés
-  par le client » (P9b, 11/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
+  par le client » (P9b, 11/10/2026), écarter la pièce proposée et supprimer un message du fil (P9b2, 11/10/2026) ;
+  client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
   (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
@@ -636,9 +639,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   P4c, « par le client » côté cabinet, le 11/10/2026 ; reste la mention du mandataire à l'impression (EC-Q2 : le nom du
   cabinet figé avec la facture, une migration d'`enregistrer_facture`) → « « MES VENTES › FACTURES » », « LES CONNEXIONS
   DU CLIENT ET LES TUILES DE SON ACCUEIL », « « PAR LE CLIENT » CÔTÉ CABINET ». P9a, « Ma banque » côté client, le
-  11/10/2026 (EC-Q5 prise comme hypothèse), et P9b, le côté cabinet, le même jour ; restent P8 (la connexion du client)
-  et les questions P9B-Q1 (le cabinet retire-t-il une proposition qu'il écarte ?) et P9B-Q2 (supprimer un message hors
-  sujet du fil, que la base permet) → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » », « « MA BANQUE » CÔTÉ CABINET ».
+  11/10/2026 (EC-Q5 prise comme hypothèse), P9b, le côté cabinet, et P9b2 (P9B-Q1 et P9B-Q2 tranchées « oui » par le
+  cabinet : écarter une proposition, supprimer un message du fil) le même jour ; reste P8 (la connexion du client) →
+  « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » », « « MA BANQUE » CÔTÉ CABINET », « ÉCARTER UNE PROPOSITION, SUPPRIMER
+  UN MESSAGE ».
   P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
@@ -1370,7 +1374,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9494 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9809 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

@@ -20,7 +20,7 @@
 //     d'être entière ne filtre plus.
 import { sensCoherent } from './appariementBanque'
 import { estLeClient, type AccesDuDossier, type EtatDuFiltre } from './auteursVentes'
-import { etatDuMouvement, LIBELLE_DE_L_ETAT } from './banqueClient'
+import { etatDuMouvement, LIBELLE_DE_L_ETAT, refusDeRetirer } from './banqueClient'
 import { formatDate, formatMoney } from './format'
 import type { PaiementDePiece } from './rattachement'
 import type { JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement } from './types'
@@ -178,6 +178,86 @@ export function ceQueVoitLeClient(
   ligne: Parameters<typeof etatDuMouvement>[0], envoisDuMouv: Pick<EnvoisDuMouvement, 'courantes' | 'questionEnAttente'>,
 ): string {
   return LIBELLE_DE_L_ETAT[etatDuMouvement(ligne, envoisDuMouv.courantes.length, envoisDuMouv.questionEnAttente)]
+}
+
+// ── Écarter une proposition, supprimer un message (P9b2) ─────────────────────────────────────────────────────────────
+// Deux gestes du cabinet, décidés le 11/10/2026 (P9B-Q1 et P9B-Q2), qui n'ajoutent rien à la base : `retirer_proposition`
+// (la proposition reste au registre, datée) et la policy `precisions_mouvements_suppression_cabinet` (le message disparaît).
+// Ce module dit ce qui précède le clic ; l'écriture est dans BanqueTab, sous le verrou des écritures de l'écran.
+
+/**
+ * « Écarter cette proposition » est offert sur la pièce que le CLIENT a proposée et que rien ne retient : un mouvement
+ * rapproché de cette pièce la garde, et l'écarter ne dirait rien de juste. Sur un mouvement classé autrement ou figé elle
+ * reste offerte — la proposition y reste sinon au registre, et le filtre « Proposés par le client » la montre encore.
+ */
+export function ecartable(p: Pick<JustificatifPropose, 'origine' | 'retire_le'>, etat: EtatDeLaProposition): boolean {
+  return p.origine === 'client' && p.retire_le === null && etat.etat !== 'retenue'
+}
+
+/**
+ * Ce que `retirer_proposition` refuserait au cabinet, avec les mots de la fonction (`REFUS_RETIRER`, confrontés à son texte
+ * par banqueClient.test.ts) : une proposition d'un autre dossier, déjà retirée — et depuis quand. Le cabinet du dossier
+ * passe l'accès (refus 1) et le refus d'auteur (3) : ils ne sont pas à redire ici.
+ */
+export function refusDEcarter(
+  dossierId: string, p: Pick<JustificatifPropose, 'dossier_id' | 'auteur_id' | 'retire_le'>,
+): string | null {
+  return refusDeRetirer({ dossierId, gereLaBanque: true, proposition: p, appelant: '', estCabinet: true })?.message ?? null
+}
+
+/**
+ * La confirmation de l'écart. Ce que le client verra ensuite de ce mouvement est TIRÉ de `etatDuMouvement`, sur les
+ * propositions qui resteront : jamais écrit à la main, il suit l'écran du client. Une proposition retirée ne prévient
+ * personne — la phrase dit où écrire pour expliquer pourquoi.
+ */
+export function confirmationDEcarter(
+  ligne: Parameters<typeof etatDuMouvement>[0], siens: Pick<EnvoisDuMouvement, 'courantes' | 'questionEnAttente'>,
+  proposition: Pick<JustificatifPropose, 'id'>, nomDeLaPiece: string,
+): string {
+  const aujourdhui = ceQueVoitLeClient(ligne, siens)
+  const ensuite = ceQueVoitLeClient(ligne, {
+    courantes: siens.courantes.filter((p) => p.id !== proposition.id), questionEnAttente: siens.questionEnAttente,
+  })
+  const vu = ensuite === aujourdhui
+    ? `Dans « Ma banque », le client verra toujours ce mouvement « ${ensuite} ».`
+    : `Dans « Ma banque », le client verra ensuite ce mouvement « ${ensuite} » (il le voit aujourd’hui « ${aujourdhui} »).`
+  return `Écarter la pièce « ${nomDeLaPiece} », proposée par le client, pour ce mouvement ?\n\n${vu}\n\n`
+    + 'La pièce reste dans ses pièces ; la proposition reste au registre, retirée par le cabinet et datée. Le client n’en est '
+    + 'pas prévenu : pour lui dire pourquoi, écris-lui dans le fil, sous « Échanges avec le client ».'
+}
+
+const LONGUEUR_DES_PREMIERS_MOTS = 60
+
+/** Les premiers mots d'un message : les blancs ramenés à une espace, coupés entre deux mots, « … » quand il y a plus. */
+export function premiersMots(texte: string): string {
+  const mots = texte.split(/\s+/).filter((m) => m !== '')
+  let resume = ''
+  for (const mot of mots) {
+    const suite = resume === '' ? mot : `${resume} ${mot}`
+    if (resume !== '' && [...suite].length > LONGUEUR_DES_PREMIERS_MOTS) return `${resume}…`
+    resume = suite
+  }
+  // Un premier mot plus long que la limite se coupe, sinon la confirmation déborderait de la fenêtre.
+  const caracteres = [...resume]
+  return caracteres.length > LONGUEUR_DES_PREMIERS_MOTS ? `${caracteres.slice(0, LONGUEUR_DES_PREMIERS_MOTS).join('')}…` : resume
+}
+
+/**
+ * La confirmation de la suppression d'un message : elle le NOMME (qui, quand, ses premiers mots), dit que le client ne le
+ * verra plus et que c'est définitif. Quand le message supprimé est la dernière question en attente, le client verra
+ * le mouvement autrement : la phrase le dit, tirée de `etatDuMouvement` comme celle de l'écart.
+ */
+export function confirmationDeSupprimer(
+  ligne: Parameters<typeof etatDuMouvement>[0], acces: AccesDuDossier, siens: EnvoisDuMouvement, message: PrecisionMouvement,
+): string {
+  const restant = siens.fil.filter((q) => q.id !== message.id)
+  const aujourdhui = ceQueVoitLeClient(ligne, siens)
+  const ensuite = ceQueVoitLeClient(ligne, {
+    courantes: siens.courantes, questionEnAttente: restant.length > 0 && restant[restant.length - 1].origine === 'cabinet',
+  })
+  const vu = ensuite === aujourdhui ? '' : ` Dans « Ma banque », il verra ensuite ce mouvement « ${ensuite} » (il le voit aujourd’hui « ${aujourdhui} »).`
+  return `Supprimer ce message du fil ?\n\n${auteurDuMessage(acces, message)}, le ${formatDate(message.created_at)} : `
+    + `« ${premiersMots(message.texte)} »\n\nLe client ne le verra plus.${vu} La suppression est définitive : le message ne se récupère pas.`
 }
 
 // ── Ce qu'il advient d'une proposition ────────────────────────────────────────────────────────────────────────────

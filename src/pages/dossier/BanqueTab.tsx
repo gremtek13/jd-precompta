@@ -59,7 +59,7 @@ import {
   gardeParLeFiltre, mouvementsProposesParLeClient, type AccesDuReleve, type EnvoisDuClient,
 } from '../../lib/banqueCabinet'
 import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCabinetLecture'
-import { argumentsDeLaPrecision } from '../../lib/banqueClient'
+import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -501,6 +501,32 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       return true
     })
     return ecrite
+  }
+
+  // « ÉCARTER CETTE PROPOSITION » (P9B-Q1) : `retirer_proposition` SEULE (accès, proposition du dossier, auteur ou cabinet,
+  // pas déjà retirée), sous le verrou des écritures de l'écran, relâché après la relecture qui remet la fiche à jour.
+  // Un refus de la base est dit ET suivi d'une relecture : le plus probable est une fiche en retard (la proposition déjà
+  // retirée par le client entre-temps), et la relecture la remet d'aplomb.
+  async function ecarterLaProposition(propositionId: string) {
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('retirer_proposition', argumentsDeRetirer(dossierId, propositionId))
+      if (error) window.alert(`La proposition n’a pas été écartée : ${messageErreur(error, 'raison inconnue')}`)
+      return true
+    })
+  }
+
+  // « SUPPRIMER CE MESSAGE » (P9B-Q2) : suppression directe, que la policy `precisions_mouvements_suppression_cabinet`
+  // ouvre au cabinet du dossier, filtrée sur l'identifiant ET le dossier. Zéro ligne n'est pas une erreur pour PostgREST
+  // (la policy écarte sans lever) : la ligne supprimée est RELUE, et son absence se dit « rien n'a été supprimé ». Même
+  // verrou, même relecture que l'écart.
+  async function supprimerLeMessage(messageId: string) {
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { data, error } = await supabase.from('precisions_mouvements').delete()
+        .eq('id', messageId).eq('dossier_id', dossierId).select('id').maybeSingle()
+      if (error) window.alert(`Le message n’a pas été supprimé : ${messageErreur(error, 'raison inconnue')}`)
+      else if (!data) window.alert('Rien n’a été supprimé : le message n’existe plus, ou n’est pas un message de ce dossier.')
+      return true
+    })
   }
 
   // Une pièce figée par un exercice validé ne se règle plus sur le montant de la banque : la base refuserait d'en changer
@@ -2030,6 +2056,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             accesDuReleve={accesDuReleve}
             piecesIncompletes={piecesIncompletes}
             onDemanderAuClient={(texte) => demanderAuClient(ligneOuverte.id, texte)}
+            onEcarterProposition={(propositionId) => { void ecarterLaProposition(propositionId) }}
+            onSupprimerMessage={(messageId) => { void supprimerLeMessage(messageId) }}
           />
         </PanneauDroit>
       )}
