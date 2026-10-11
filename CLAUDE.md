@@ -195,7 +195,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
                   D16B et le Schematron EN 16931 (instruments hors du dépôt, versions vérifiées) ; écrit
                   exemples/valides.json, que factureCii.test.ts confronte aux exemples figés. cdar/valider.mjs : de
                   même pour les messages du statut « Encaissée » (cdar/exemples/*.xml) et le schéma CDAR D22B de
-                  l'UN/CEFACT, que cdarEncaissee.test.ts confronte.
+                  l'UN/CEFACT, que cdarEncaissee.test.ts confronte. ereporting/valider.mjs : de même pour les fichiers
+                  d'e-reporting (ereporting/exemples/*.xml, fictifs) et les cinq XSD du flux 10 de l'archive officielle
+                  v3.2 de la DGFiP (archive et XSD à leur empreinte), que fluxEreporting.test.ts confronte.
 ```
 
 ## Conventions de développement
@@ -572,8 +574,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   module le 11/10/2026 (E5-Q6 et E5-Q7 prises comme hypothèses ; Q6 attend le cabinet, e5b2 ; quatre questions
   nouvelles, E5B-Q1 à Q4) ; e5c, les écrans — la carte de l'onglet TVA et sa fenêtre, l'écart d'une pièce dans sa fiche,
   la pièce déclarée qui ne se supprime plus —, le 11/10/2026 (E5-Q2, E5-Q3, E5-Q5, E5-Q6, E5-Q7 et Q4 prises comme les
-  recommandations ; la rectificative à zéro opération dite et jamais offerte) ; restent e5b2 (Q6), e6 (le fichier) et
-  la suite → « L'E-REPORTING : LA CONCEPTION », « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE
+  recommandations ; la rectificative à zéro opération dite et jamais offerte) ; e6, le fichier FRR d'une déclaration, en
+  module et instrument le 11/10/2026 (`lib/fluxEreporting.ts`, `outils/facturation/ereporting/valider.mjs`, six
+  exemples fictifs validés par les XSD officiels ; quatre choix non vérifiés en paramètres et quatre questions de plus,
+  E6-Q1 à E6-Q8) ; restent e5b2 (Q6), e6b (le bouton qui télécharge le fichier) et la suite → « LE FICHIER D'UNE
+  DÉCLARATION D'E-REPORTING », « L'E-REPORTING : LA CONCEPTION », « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE
   PIÈCE », « L'E-REPORTING :
   L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À
   L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
@@ -639,6 +644,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
   EC-D2 les mentions d'un métier, EC-D3 l'acompte, EC-D4 les données des clients du client) → « LES DEVIS, EN BASE ».
+  La suite, conçue le 11/10/2026 en trois parties à la demande du cabinet (« au minimum faire comme le logiciel du
+  client, et aller plus loin ») : dans les domaines ouverts, les articles, les règlements, les factures importées et la
+  numérotation qui continue, les contacts, les paramètres de facturation, l'encart « Facture électronique » (A1 à A11) ;
+  la parité — achats, notes de frais, analyse, documents du cabinet, trois cases neuves (« Achats », « Notes de frais »,
+  « Documents »), le resserrement des pièces (B1 à B9) ; « aller plus loin » — l'échéancier, l'état du dossier, les
+  situations publiées (C1 à C8) ; trente-cinq questions au cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT :
+  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -835,7 +847,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Copies gardées** : montants, dates, classification, orientation, statut de TVA, la lecture d'un statut reçu
   (`cdarRecu`, dans `plateforme-agreee`), le refus du service d'authentification (`refusDuService`, dans les trois
   fonctions qui créent des comptes), les droits de l'appelant (`droitsDeLAppelant`, dans les quatre fonctions de la
-  vente, `droitsDeLAppelantCopie.test.ts`), blocs de l'assistant (un garde par bloc), et `historiqueDuClient`, seule
+  vente, `droitsDeLAppelantCopie.test.ts`), le fichier de l'e-reporting (`fluxEreporting`, bornes posées, recopié dans
+  `plateforme-agreee` à e9 ; garde avant copie `fluxEreportingCopie.test.ts`), blocs de l'assistant (un garde par bloc),
+  et `historiqueDuClient`, seule
   barrière entre le fil envoyé par le navigateur et le modèle → « ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT ».
 
 - **Chaque Edge Function s'appelle en HTTP dans la suite** (ligne 23, `src/test/fonctionsEdge.ts`) : sa VRAIE source,
@@ -1138,6 +1152,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ### Facturation électronique
 
+- **La racine du mandataire (G1.45)** : une facture que le cabinet valide au nom du client est émise sous mandat, et la
+  DGFiP demande alors une racine de numéro propre au mandataire ; l'hypothèse d'une seule série (P2, EC-Q2) ne la donne
+  pas. À trancher (MEG1-Q5) avant toute facture réelle validée par le cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU
+  CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
 - **Pièges EN 16931 / Super PDP** : la TVA sur chaque ligne (BR-S-08), l'unité `C62` (BR-23), le n° de TVA du vendeur
   (BR-S-02), `is_valid=false` porté aussi par un rapport fait d'avertissements, le SIRET du vendeur = l'entreprise
   authentifiée, le motif d'une ligne à 0 % selon le statut de TVA → « Pièges EN16931/Super PDP ».
@@ -1299,6 +1317,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   plateforme. Écarter et reprendre se font dans la FICHE de la pièce (candidate : sans fiche, un signal) ; une pièce dont
   la fiche est déclarée ne se supprime plus et la suppression le dit (E5-Q6) ; le CSV est le détail de la période, pas le
   fichier de la plateforme (e6) → « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE PIÈCE ».
+- **Le fichier d'une déclaration d'e-reporting** (`lib/fluxEreporting.ts`, e6, pur) : le XML du flux 10 de la DGFiP
+  (« FRR ») d'une déclaration ENREGISTRÉE (e5b1), depuis son contenu FIGÉ lu sans rien deviner (version 1), jamais
+  recalculé ; TT-1 est l'identifiant de la déclaration, TT-4 IN ou RE, une remplacée ne se dépose plus ; un fichier ne
+  porte que le bloc de son objet (G6.29, que le schéma laisse passer) ; soixante refus dans un ordre fixé (`REFUS_FRR`),
+  chacun sa règle — celle du flux 10 : l'annexe 7 a une jumelle par flux (G1.43 pour la facture, G1.44 pour
+  l'e-reporting), la colonne « RG applicable au F10 » tranche, et un test la confronte —, dits avant tout fichier ;
+  l'émetteur (TG-3), le fuseau de TT-3, le code de l'option pour les débits et un paiement négatif sont des PARAMÈTRES
+  sans défaut (`ChoixFrr`, E6-Q1 à E6-Q4) ; la raison sociale du déclarant (TT-14) n'est pas figée, l'appelant la donne ;
+  G1.53 se juge sans sa tolérance d'un centime. Le bloc `fluxEreporting` (bornes posées, recopié à e9) ne nomme que
+  cinq exports du bloc factureCii (`fluxEreportingCopie.test.ts`) ; `outils/facturation/ereporting/valider.mjs` en juge
+  les exemples par les XSD de l'archive officielle → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.

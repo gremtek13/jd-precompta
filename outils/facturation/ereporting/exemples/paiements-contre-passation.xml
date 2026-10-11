@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report>
+  <ReportDocument>
+    <Id>e6a0f000-0000-4000-8000-000000000f06</Id>
+    <IssueDateTime>
+      <DateTimeString>20271203100000</DateTimeString>
+    </IssueDateTime>
+    <TypeCode>IN</TypeCode>
+    <Sender>
+      <Id schemeId="0238">9991</Id>
+      <Name>Plateforme Fictive</Name>
+      <RoleCode>WK</RoleCode>
+    </Sender>
+    <Issuer>
+      <Id schemeId="0002">123456782</Id>
+      <Name>Atelier Démo Conseil</Name>
+      <RoleCode>SE</RoleCode>
+    </Issuer>
+  </ReportDocument>
+  <PaymentsReport>
+    <ReportPeriod>
+      <StartDate>20271101</StartDate>
+      <EndDate>20271130</EndDate>
+    </ReportPeriod>
+    <Transactions>
+      <Payment>
+        <Date>20271103</Date>
+        <SubTotals>
+          <TaxPercent>20</TaxPercent>
+          <Amount>-60.00</Amount>
+        </SubTotals>
+      </Payment>
+    </Transactions>
+  </PaymentsReport>
+</Report>

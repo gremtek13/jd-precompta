@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report>
+  <ReportDocument>
+    <Id>e6a0f000-0000-4000-8000-000000000f05</Id>
+    <IssueDateTime>
+      <DateTimeString>20271105083000</DateTimeString>
+    </IssueDateTime>
+    <TypeCode>IN</TypeCode>
+    <Sender>
+      <Id schemeId="0002">123456782</Id>
+      <Name>Atelier Démo Conseil</Name>
+      <RoleCode>SE</RoleCode>
+    </Sender>
+    <Issuer>
+      <Id schemeId="0002">123456782</Id>
+      <Name>Atelier Démo Conseil</Name>
+      <RoleCode>SE</RoleCode>
+    </Issuer>
+  </ReportDocument>
+  <PaymentsReport>
+    <ReportPeriod>
+      <StartDate>20271001</StartDate>
+      <EndDate>20271031</EndDate>
+    </ReportPeriod>
+    <Transactions>
+      <Payment>
+        <Date>20271015</Date>
+        <SubTotals>
+          <TaxPercent>20</TaxPercent>
+          <Amount>120.00</Amount>
+        </SubTotals>
+        <SubTotals>
+          <TaxPercent>10</TaxPercent>
+          <Amount>100.00</Amount>
+        </SubTotals>
+      </Payment>
+    </Transactions>
+    <Transactions>
+      <Payment>
+        <Date>20271022</Date>
+        <SubTotals>
+          <TaxPercent>10</TaxPercent>
+          <Amount>120.00</Amount>
+        </SubTotals>
+      </Payment>
+    </Transactions>
+  </PaymentsReport>
+</Report>
