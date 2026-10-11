@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 118 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 119 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -163,6 +163,22 @@ production, la version réelle au nom du fichier.
 versions, textes inchangés (`0e4c83a7…` et `d26bbb0c…`, les empreintes que rendent leurs lignes d'historique) :
 118 fichiers, 118 migrations, empreinte globale `a03b7f0b653a01f7a1e9e1c79a321546` des deux côtés, aucune divergence.
 
+**Préparé le 11/10/2026, PAS ENCORE APPLIQUÉ : `declarations_ereporting`** (ligne 28.5, étape e5b1). Son fichier porte une
+version PROVISOIRE, `20261011150000` : `apply_migration` lui donnera la sienne, et le fichier se RENOMME à cette version
+avant la fusion — le texte ne change pas (40 799 caractères, 41 670 octets, saut de ligne final compris, aucun retour
+chariot, empreinte `3deb437355c47f1e184baa9829e0e600`), l'empreinte globale si, la version y entrant. Il ne contient
+aucune instruction de suppression (`delete` n'y paraît que dans `on delete cascade`, `tg_op = 'DELETE'` et
+`before … delete`) : `apply_migration` ne devrait pas attendre de confirmation. Sur la réplique de l'étape, égale à la
+production à 118 migrations (empreinte globale `a03b7f0b…`, ci-dessus) puis munie de celle-ci et de sa ligne
+d'historique à la version provisoire : 119 fichiers, 119 migrations, empreinte globale
+`fa2c86cf48b00d6d02875f2b863aceaa` des deux côtés. Après l'application, le contrôle se rejoue contre la production, la
+version réelle au nom du fichier.
+
+**Rejoué le 11/10/2026 après `declarations_ereporting`** (ligne 28.5, étape e5b1), appliquée par la session sous la
+version `20261011124310`, sans confirmation demandée ; son fichier a quitté la version provisoire pour celle-ci, texte
+inchangé (`3deb4373…`, l'empreinte que rend sa ligne d'historique) : 119 fichiers, 119 migrations, empreinte globale
+`29fedc2f680740d16956cecb0393b57c` des deux côtés, aucune divergence.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -290,6 +306,17 @@ ses deux tables. Après l'application, les deux contrôles se rejouent contre la
 `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés) ; l'inventaire compte 1 773 objets, empreinte
 `4b6f605bfd59c002202749f83e4450ed` des deux côtés — les 1 650 de P2, plus les 62 de `revue_analytique` et les 61 de
 `regimes_ereporting_et_pieces_ecartees`.
+
+**Rejoués le 11/10/2026 pour `declarations_ereporting`** (ligne 28.5, étape e5b1), sur la réplique de l'étape puis
+contre la production après l'application : le socle est inchangé (78 instructions,
+`91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés — la
+migration ne touche aucune table du socle, et le déclencheur qu'elle pose sur `pieces` vit dans son fichier) ;
+l'inventaire compte 1 834 objets, empreinte `417e33d59ae5172b0c4b6ab2f0e5a72a` des deux côtés (la réplique sans la
+migration : 1 773, `4b6f605b…`, la production d'aujourd'hui). La migration en ajoute 61 : vingt et une colonnes, vingt
+et une contraintes, cinq index, trois déclencheurs, quatre policies, cinq fonctions et la RLS de ses deux tables. La
+période d'e1 en SQL (`periode_ereporting`) rend une table et non des paramètres de sortie : l'inventaire, qui compte les
+arguments d'une fonction dans sa parenthèse, en aurait compté quatre là où le catalogue en compte deux. En production,
+après l'application : les mêmes valeurs, socle 78 `91ae95ec…` et inventaire 1 834 `417e33d5…` des deux côtés.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

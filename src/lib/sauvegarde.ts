@@ -49,6 +49,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'connexions_plateformes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'controles_releves_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cotisations_declarees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'declarations_ereporting', parent: 'declarations_ereporting', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'declarations_ereporting', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'declarations_ereporting', parent: 'regimes_ereporting', colonne: 'regime_id', aLaSuppression: 'bloque' },
+  { enfant: 'declarations_ereporting_sources', parent: 'declarations_ereporting', colonne: 'declaration_id', aLaSuppression: 'cascade' },
+  { enfant: 'declarations_ereporting_sources', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'declarations_tva', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'devis', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'devis_factures', parent: 'devis', colonne: 'devis_id', aLaSuppression: 'cascade' },
@@ -258,6 +263,17 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // déplacent que le rang de `exercices_valides` dans l'essai de restauration. Le contrôle de l'ordre contre le graphe
 // (`sauvegarde.test.ts`) garde l'écart après sa pièce.
 //
+// La déclaration d'e-reporting hors application et ses sources (ligne 28.5, étape e5b1, migration
+// `declarations_ereporting`) suivent le régime sous lequel elle a été jugée (`regime_id`, une clé sans action) ; aucune
+// validation ne les fige, et rien de ce qui précède ne les lit. Une rectificative pointe la déclaration qu'elle remplace
+// (`remplace_id`) : la chaîne d'une période part par VAGUES, et la garde, à l'insertion, ne lit que cette cible — déjà
+// « remplacée » dans la sauvegarde —, le régime, les autres déclarations actives et l'empreinte du contenu, qu'elle
+// recalcule sur le texte du `jsonb` reçu : un contenu produit par le module (ses nombres sont des doubles du navigateur)
+// traverse une sauvegarde à l'identique. Les sources suivent leur déclaration ; elles désignent une fiche, une facture
+// ou un encaissement SANS clé — l'histoire d'une déclaration remplacée survit à sa pièce —, et leur garde ne lit que la
+// déclaration : elles ne sont pas des `LIENS_GARDES`. À cette place, elles ne déplacent que le rang de
+// `exercices_valides` dans l'essai de restauration. `sauvegarde.test.ts` garde cet ordre.
+//
 // Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
 // parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
 // le rang d'aucune table d'hier dans l'essai de restauration. La série d'abord (aucune policy : la sauvegarde n'en lit
@@ -336,6 +352,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'precisions_mouvements',
   'regimes_ereporting',
   'pieces_ecartees_ereporting',
+  'declarations_ereporting',
+  'declarations_ereporting_sources',
   'devis_numerotation',
   'devis',
   'devis_factures',
@@ -393,6 +411,10 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   // partent pas à NULL, et leur garde lit la cible.
   { table: 'revision_seuils', colonne: 'remplace_id' },
   { table: 'revision_explications', colonne: 'remplace_id' },
+  // La déclaration d'e-reporting hors application (ligne 28.5, étape e5b1) : une rectificative remplace la déclaration
+  // de la même période (`remplace_id`) ; immuable hors du passage de l'active à « remplacée », elle ne part pas à NULL, et
+  // sa garde exige une cible déjà écrite et déjà « remplacée ».
+  { table: 'declarations_ereporting', colonne: 'remplace_id' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
@@ -548,9 +570,14 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 //
 // `devis_numerotation` (espace client, étape P5) en fera TREIZE, et neuf dans le plan d'export, le jour où ses
 // migrations seront exportées : une ligne par dossier et par année, comme `facture_numerotation`.
+//
+// Les sources d'une déclaration d'e-reporting (ligne 28.5, étape e5b1) en ont une aussi — la déclaration, le genre et la
+// source : une ligne par fiche, facture ou encaissement déclaré —, ce qui porte le compte à TREIZE tables, neuf dans le
+// plan d'export (quatorze et dix avec la série des devis).
 export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
+  declarations_ereporting_sources: ['declaration_id', 'genre', 'source_id'],
   devis_numerotation: ['dossier_id', 'annee'],
   encaissements_factures_taux: ['encaissement_id', 'taux'],
   exercices_valides: ['dossier_id', 'annee'],
@@ -702,6 +729,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   connexions_plateformes: { acces: 'direct' },
   controles_releves_bancaires: { acces: 'direct' },
   cotisations_declarees: { acces: 'direct' },
+  declarations_ereporting: { acces: 'direct' },
+  declarations_ereporting_sources: { acces: 'direct' },
   declarations_tva: { acces: 'direct' },
   devis: { acces: 'direct' },
   devis_factures: { acces: 'direct' },

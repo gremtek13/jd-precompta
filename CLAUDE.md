@@ -172,7 +172,7 @@ supabase/
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
-                    regimesEreporting ;
+                    regimesEreporting, declarationsEreporting ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -542,10 +542,13 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dans la saisie) ; e4, le contenu des déclarations d'une période, en module le 10/10/2026 (`lib/ereporting.ts`) ; e5a,
   le régime d'e-reporting confirmé et son histoire — celle du statut de TVA — et la pièce écartée, en base le 11/10/2026
   et lus par le contenu d'e4 ; e5b conçue — la déclaration hors application, Q6, la fiche déclarée qui retient sa
-  pièce — et neuf questions au cabinet (Q4, E5-Q1 à E5-Q7, Q6) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
+  pièce — et neuf questions au cabinet (Q4, E5-Q1 à E5-Q7, Q6) ; e5b1, la déclaration hors application — le contenu
+  d'e4 figé et son empreinte, l'initiale et la rectificative, la pièce que sa fiche déclarée retient —, en base et en
+  module le 11/10/2026 (E5-Q6 et E5-Q7 prises comme hypothèses ; Q6 attend le cabinet, e5b2 ; quatre questions
+  nouvelles, E5B-Q1 à Q4) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
   L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À
   L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
-  BASE ».
+  BASE », « LA DÉCLARATION D'E-REPORTING HORS APPLICATION, EN BASE ».
 - **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : deux décisions du cabinet seulement — l'objet et
   l'expéditeur d'un e-mail reçu au journal (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription
   publique, fermée le 10/10/2026, n'admet plus un inconnu ; les clés historiques restent à désactiver). Plus aucune
@@ -640,18 +643,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 36 fonctions au 11/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 37 fonctions au 11/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
   `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
   `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
   `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition`,
   `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`, `supprimer_brouillon_facture`,
   `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`, `retirer_regime_ereporting`,
-  `ecarter_piece_ereporting` et `reprendre_piece_ereporting` écrivent, chacune avec son propre contrôle d'accès (les
+  `ecarter_piece_ereporting`, `reprendre_piece_ereporting` et `declarer_ereporting_hors_application` écrivent, chacune
+  avec son propre contrôle d'accès (les
   trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet du dossier —
   `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de
-  celui de la transmission pour l'abandon ; les deux de R5 et les quatre d'e5a : `admin_du_dossier` du dossier annoncé,
-  avant toute lecture ; `garder_piece_ecartee`, garde `SECURITY DEFINER`, n'est exécutée par aucun rôle) ;
+  celui de la transmission pour l'abandon ; les deux de R5, les quatre d'e5a et celle d'e5b1 : `admin_du_dossier` du
+  dossier annoncé, avant toute lecture ; `garder_piece_ecartee` et `garder_piece_declaree`, gardes `SECURITY DEFINER`,
+  ne sont exécutées par aucun rôle) ;
   `client_du_dossier`,
   `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
   (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
@@ -667,6 +672,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`socle/2_objets_sans_migration.sql`) avaient été créés hors migration ; `socle.py/.sql` les compare au caractère près
   et `inventaire.py/.sql` tout le reste nom par nom. La procédure qui rejouerait l'export dans une base vide n'a jamais
   tourné (PLAN_DE_REPRISE.md §4) → « UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ».
+  Une colonne GÉNÉRÉE ne se restaure pas par la porte de l'application (Postgres refuse d'y écrire, 428C9) : une
+  empreinte que la base calcule est une colonne ordinaire qu'une garde recalcule (`declarations_ereporting.empreinte`) ;
+  `piece_textes_ocr.texte_md5` en est une, et sa restauration est à reprendre.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL** (`SECURITY DEFINER` qui vérifie l'accès et énumère les
   colonnes qu'elle écrit). Ce qui est testé en TypeScript n'est pas réécrit en SQL — sauf quand la base doit VÉRIFIER
   une écriture : le calcul est alors le même des deux côtés, en entiers, confronté par un test à une table relevée en
@@ -1223,6 +1231,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   écartée ne change plus de dossier. Le module redit les refus et REJOUE l'essai appel par appel
   (`src/test/essaiSql.ts`) ; `lib/regimesEreportingLecture.ts` lit les deux tables en entier → « LE RÉGIME
   D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN BASE ».
+- **La déclaration d'e-reporting hors application** (`declarations_ereporting`, `declarations_ereporting_sources`, e5b1 ;
+  `lib/declarationsEreporting.ts`) : le cabinet dit ce qu'il a déclaré sur la plateforme du dossier, et la base GARDE
+  le contenu d'e4 figé et son empreinte SHA-256, qu'elle CALCULE sur le texte du `jsonb` (une colonne ordinaire que la
+  garde recalcule) ; une seule active par dossier, objet et période, aucune qui en chevauche une autre ; une
+  rectificative remplace la période ENTIÈRE (DGFiP, § 3.7.7, note 127). Seule `declarer_ereporting_hors_application`
+  écrit — trente refus, l'accès d'abord, la période vérifiée en SQL (`periode_ereporting`, la grille d'e1 confrontée
+  par le test), la période finie à Paris EN DERNIER, le contenu jugé à sa FORME, jamais à son calcul — ; le client
+  n'en voit rien. Une pièce dont une fiche est source d'une déclaration ACTIVE ne se supprime plus (E5-Q6,
+  `garder_piece_declaree`) ; un régime retiré reste désigné (E5-Q7). Le module redit les refus, REJOUE l'essai appel
+  par appel et dit « à rectifier » par opération, jamais sur une lecture partielle → « LA DÉCLARATION D'E-REPORTING
+  HORS APPLICATION, EN BASE ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
@@ -1265,7 +1284,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9079 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9137 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

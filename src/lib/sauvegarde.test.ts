@@ -126,7 +126,7 @@ describe('ordre de restauration', () => {
     expect(parVagues).toEqual([
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
       'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
-      'revision_explications.remplace_id',
+      'revision_explications.remplace_id', 'declarations_ereporting.remplace_id',
     ])
   })
 
@@ -206,6 +206,43 @@ describe('ordre de restauration', () => {
       ])
     expect(CHEMINS_DOSSIER.revision_seuils).toEqual({ acces: 'direct' })
     expect(CHEMINS_DOSSIER.revision_explications).toEqual({ acces: 'direct' })
+  })
+
+  it('écrit les déclarations d’e-reporting après le régime, par vagues, et leurs sources après elles (étape e5b1)', () => {
+    // La garde d'une déclaration lit, à l'insertion, son régime (une clé sans action), la déclaration qu'elle remplace —
+    // déjà « remplacée » dans la sauvegarde, d'où les vagues — et les autres déclarations actives ; celle d'une source ne
+    // lit que sa déclaration. Rien de ce qu'une validation fige : elles précèdent `exercices_valides`.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(ORDRE_RESTAURATION.slice(rang('regimes_ereporting'), rang('declarations_ereporting_sources') + 1))
+      .toEqual(['regimes_ereporting', 'pieces_ecartees_ereporting', 'declarations_ereporting', 'declarations_ereporting_sources'])
+    expect(rang('declarations_ereporting_sources')).toBeLessThan(rang('exercices_valides'))
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toContainEqual({ table: 'declarations_ereporting', colonne: 'remplace_id' })
+    expect(RELATIONS.filter((r) => r.enfant.startsWith('declarations_ereporting'))
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'declarations_ereporting.dossier_id>dossiers:cascade',
+        'declarations_ereporting.regime_id>regimes_ereporting:bloque',
+        'declarations_ereporting.remplace_id>declarations_ereporting:bloque',
+        'declarations_ereporting_sources.declaration_id>declarations_ereporting:cascade',
+        'declarations_ereporting_sources.dossier_id>dossiers:cascade',
+      ])
+    // Une source désigne sa fiche, sa facture ou son encaissement sans clé, et rien ne la vérifie à la restauration.
+    expect(LIENS_GARDES.filter((l) => l.enfant.startsWith('declarations_ereporting'))).toEqual([])
+    expect(CHEMINS_DOSSIER.declarations_ereporting).toEqual({ acces: 'direct' })
+    expect(CHEMINS_DOSSIER.declarations_ereporting_sources).toEqual({ acces: 'direct' })
+    expect(clePrimaire('declarations_ereporting_sources')).toEqual(['declaration_id', 'genre', 'source_id'])
+  })
+
+  it('réinsère une chaîne de déclarations d’e-reporting maillon après maillon', () => {
+    // L'initiale d'abord, puis chaque rectificative dans la vague qui suit l'écriture de la déclaration qu'elle remplace :
+    // dans un même lot, Postgres ne promet pas l'ordre des lignes, et la garde de la rectificative lit sa cible.
+    const ligne = (id: string, remplace: string | null) => ({ id, dossier_id: 'd', remplace_id: remplace })
+    const plan = planReinsertion({
+      declarations_ereporting: [ligne('re2', 're1'), ligne('in', null), ligne('re1', 'in'), ligne('autre', null)],
+    })
+    expect(plan.etapes.filter((e) => e.table === 'declarations_ereporting').map((e) => e.lignes.map((l) => l.id)))
+      .toEqual([['in', 'autre'], ['re1'], ['re2']])
+    expect(plan.secondePasse).toEqual([])
   })
 
   it('signale une preuve placée avant la pièce qu’elle cite, que le graphe des clés ne voit pas', () => {

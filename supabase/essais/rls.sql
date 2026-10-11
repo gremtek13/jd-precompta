@@ -304,6 +304,20 @@
 -- 4 profils), 0 en faute, et 31 mutations sur 31 qui mordent (M1 : 16 tables, M3 : 5). Sur la même réplique,
 -- `revueAnalytique.sql` rend 228 verdicts et `regimesEreporting.sql` 186, sans une faute, chacun laissant la base comme
 -- il l'a trouvée.
+--
+-- 11/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 28.5, étape e5b1 : migration `declarations_ereporting`,
+-- préparée, non appliquée), qui crée `declarations_ereporting` et `declarations_ereporting_sources` — lecture sous
+-- `admin_du_dossier`, insertion de restauration réservée au super-administrateur, aucune autre policy, aucune branche
+-- client — ; ce fichier n'y change rien que cet en-tête. Joué ENTIER par psql sur la réplique de l'étape (signature.sql :
+-- les neuf familles égales à la production à 118 migrations) : sans la migration, 35 lignes de verdict (72 tables, dont
+-- 63 portant un `dossier_id`), 0 en faute, 31 mutations sur 31 qui mordent ; avec elle, les deux tables semées PAR LES
+-- FONCTIONS (à l'horloge du serveur avancée au 29/02/2028 : une période ne se déclare que finie) dans le dossier `test`
+-- (les achats de septembre 2027, l'initiale remplacée par une rectificative, et ceux d'octobre, sous un régime, sur trois
+-- fiches) et dans celui du client (un régime, une fiche, une déclaration), 35 lignes (74 tables, dont 65 portant un
+-- `dossier_id`), 0 en faute, 31 sur 31 — M1 et M3 y voient les tables semées de plus (21 et 10 tables en faute, pour
+-- 16 et 5), que les invariants 1 et 3 refusent à l'anonyme et au client. Le passage en production suivra l'application
+-- de la migration et se notera ici. Ce que leurs policies, leurs gardes et leur fonction refusent et acceptent, profil
+-- par profil, est éprouvé par `declarationsEreporting.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

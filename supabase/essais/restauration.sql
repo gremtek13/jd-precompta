@@ -146,6 +146,20 @@
 -- dont un repris) : 72 tables recréées, 126 clés recopiées, 66 restaurées et IDENTIQUES à la source (71 lignes), les
 -- seuils et les explications en trois vagues chacun, 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles
 -- justes. Plantés — un seuil, puis un écart, avant leur dossier —, le script s'arrête sur leur clé.
+--
+-- 11/10/2026, ligne 28.5, étape e5b1 (migration `declarations_ereporting`, préparée, à appliquer AVANT que ce fichier
+-- ne soit fusionné) : `declarations_ereporting` et `declarations_ereporting_sources` entrent au plan (74 tables, 77 avec
+-- les devis), après le régime et l'écart et avant `exercices_valides`, les déclarations par vagues (`remplace_id` : une
+-- rectificative après la déclaration qu'elle remplace, déjà « remplacée ») ; seul le rang d'`exercices_valides` change.
+-- Rejoué sur la réplique de l'étape, égale à la production à 118 migrations plus celle-ci (signature.sql, neuf familles),
+-- le dossier `test` semé PAR LES FONCTIONS (à l'horloge du serveur avancée : une période ne se déclare que finie) d'un
+-- régime, de trois fiches, des achats de septembre 2027 — l'initiale remplacée par une rectificative — et de ceux
+-- d'octobre : 74 tables recréées, 131 clés recopiées, 68 restaurées et IDENTIQUES à la source (72 lignes), les
+-- déclarations en deux vagues, 0 écart, aucun arrêt, les deux contrôles du catalogue des rôles justes. Plantés — une
+-- déclaration avant son régime, une source avant sa déclaration —, le script s'arrête sur leur clé. Ce script recopie les
+-- clés, pas les gardes : la réinsertion par la porte du super-administrateur, gardes comprises (l'empreinte recalculée
+-- sur le contenu relu en JSON, la rectificative après ce qu'elle remplace), a été jouée à part sur la même réplique —
+-- lignes relues identiques ; la rectificative d'abord, la garde la refuse.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -180,13 +194,14 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
  (61,'revision_justifications'),(62,'revision_preuves'),(63,'revision_conclusions'),(64,'revision_notes'),(65,'revision_revues'),
  (66,'revision_seuils'),(67,'revision_explications'),(68,'justificatifs_proposes'),(69,'precisions_mouvements'),(70,'regimes_ereporting'),
- (71,'pieces_ecartees_ereporting'),(72,'exercices_valides');
+ (71,'pieces_ecartees_ereporting'),(72,'declarations_ereporting'),(73,'declarations_ereporting_sources'),(74,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
  ('cabinets','global',null,null),('categories','partage',null,null),('comptes_courants_associes','direct',null,null),
  ('connexions_bancaires','direct',null,null),('connexions_plateformes','direct',null,null),('controles_releves_bancaires','direct',null,null),
  ('cotisations_declarees','direct',null,null),('declarations_tva','direct',null,null),('documents_divers','direct',null,null),
+ ('declarations_ereporting','direct',null,null),('declarations_ereporting_sources','direct',null,null),
  ('dossier_assignations','direct',null,null),('dossiers','le_dossier',null,null),('ecritures_brouillon','direct',null,null),
  ('emails_envoyes','direct',null,null),('emprunts','direct',null,null),('encaissements_factures','direct',null,null),
  ('encaissements_factures_taux','direct',null,null),('exercices_clotures','direct',null,null),('exercices_valides','direct',null,null),
@@ -219,7 +234,8 @@ insert into essai_restauration._vagues (table_nom, colonne) values
  ('pieces_hors_de_france','remplace_id'),
  ('revision_conclusions','remplace_id'),
  ('revision_seuils','remplace_id'),
- ('revision_explications','remplace_id');
+ ('revision_explications','remplace_id'),
+ ('declarations_ereporting','remplace_id');
 
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme

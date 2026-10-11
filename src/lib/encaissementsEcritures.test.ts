@@ -60,6 +60,13 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // `reprendre_piece_ereporting` les écrivent ; la policy laisse la porte de la restauration au super-administrateur. Aucun
 // écran ne les appelle avant la phase C, et aucune Edge Function ne les nomme avant le fichier (e6).
 //
+// LA DÉCLARATION D'E-REPORTING HORS APPLICATION NON PLUS (ligne 28.5, étape e5b1) : `declarations_ereporting` garde ce que
+// le cabinet a déclaré à l'administration sur la plateforme du dossier — le contenu figé, son empreinte calculée par la
+// base, l'initiale et la rectificative qui la remplace —, et `declarations_ereporting_sources` ce qu'elle porte, que la
+// garde d'une pièce lit (hypothèse E5-Q6). Seule `declarer_ereporting_hors_application` les écrit — ses trente refus, le
+// régime et la période vérifiés, sous verrou — ; la policy laisse la porte de la restauration au super-administrateur.
+// Aucun écran ne l'appelle avant la phase C, et aucune Edge Function ne les nomme avant le fichier (e6).
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -76,6 +83,11 @@ export const TABLES_DU_REGIME_ET_DES_ECARTS = ['regimes_ereporting', 'pieces_eca
 const FONCTIONS_DU_REGIME_ET_DES_ECARTS = [
   'confirmer_regime_ereporting', 'retirer_regime_ereporting', 'ecarter_piece_ereporting', 'reprendre_piece_ereporting',
 ] as const
+export const TABLES_DES_DECLARATIONS_EREPORTING = ['declarations_ereporting', 'declarations_ereporting_sources'] as const
+const FONCTIONS_DES_DECLARATIONS_EREPORTING = ['declarer_ereporting_hors_application'] as const
+
+// Les écrans qui appellent la fonction de la déclaration d'e-reporting, nommément : aucun avant la phase C d'e5b.
+const ECRANS_DES_DECLARATIONS_EREPORTING: readonly string[] = []
 
 // Les écrans qui appellent les quatre fonctions du régime et des écarts, nommément : aucun avant la phase C d'e5.
 const ECRANS_DU_REGIME_ET_DES_ECARTS: readonly string[] = []
@@ -265,6 +277,15 @@ export function ecrituresDuRegimeEtDesEcarts(
   exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
 ): string[] {
   return ecrituresDesTables(sources, TABLES_DU_REGIME_ET_DES_ECARTS, exceptions, 'seules ses quatre fonctions les écrivent')
+}
+
+/** La déclaration d'e-reporting hors application (ligne 28.5, étape e5b1) : ses deux tables, dans `src/` et les Edge
+ * Functions. */
+export function ecrituresDesDeclarationsEreporting(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DES_DECLARATIONS_EREPORTING, exceptions, 'seule sa fonction les écrit')
 }
 
 /** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
@@ -518,6 +539,46 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     }
   })
 
+  it('aucune écriture directe des déclarations d’e-reporting, hors de la restauration (ligne 28.5, étape e5b1)', () => {
+    expect(ecrituresDesDeclarationsEreporting(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme les déclarations d’e-reporting : ni leurs tables, ni leur fonction', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DES_DECLARATIONS_EREPORTING, ...FONCTIONS_DES_DECLARATIONS_EREPORTING]) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('la fonction de la déclaration ne s’appelle que des écrans qui s’inscrivent nommément : aucun avant la phase C', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of FONCTIONS_DES_DECLARATIONS_EREPORTING) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction)
+        .toEqual(ECRANS_DES_DECLARATIONS_EREPORTING)
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', argumentsDeLaDeclaration(d, s))`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue les déclarations d’e-reporting par l’insertion — par vagues —, après le régime, avant la validation', () => {
+    expect(TABLES_AUTO_REFERENCEES.map((t) => t.table)).not.toContain('declarations_ereporting')
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table.startsWith('declarations_ereporting')))
+      .toEqual([{ table: 'declarations_ereporting', colonne: 'remplace_id' }])
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('regimes_ereporting')).toBeLessThan(rang('declarations_ereporting'))
+    expect(rang('declarations_ereporting')).toBeLessThan(rang('declarations_ereporting_sources'))
+    expect(rang('declarations_ereporting_sources')).toBeLessThan(rang('exercices_valides'))
+  })
+
+  it('le scanner voit passer la lecture des déclarations d’e-reporting (lib/declarationsEreportingLecture.ts)', () => {
+    for (const t of TABLES_DES_DECLARATIONS_EREPORTING) {
+      expect(sites.filter((s) => s.tables?.includes(t)).map((s) => [s.chemin, s.ecriture]), t)
+        .toEqual([['src/lib/declarationsEreportingLecture.ts', null]])
+    }
+  })
+
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
   // cassé, un dossier qu'on ne parcourt plus.
   it('voit encore quelque chose', () => {
@@ -686,6 +747,23 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(ecrituresDesFichesHorsDeFrance([{ chemin: 'src/faux.ts', texte: `await supabase.from('pieces_ecartees_ereporting').insert(x)` }], {}))
       .toEqual([])
     expect(jugerE(`await supabase.from('pieces_hors_de_france').insert(x)`)).toEqual([])
+  })
+
+  it('attrape une écriture directe d’une déclaration d’e-reporting ou d’une source, dans src/ comme dans une Edge Function', () => {
+    const jugerD = (texte: string, chemin = 'src/faux.ts') => ecrituresDesDeclarationsEreporting([{ chemin, texte }], {})
+    expect(jugerD(`
+      await supabase
+        .from('declarations_ereporting')
+        .insert({ dossier_id: d, objet: 'achats', contenu })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur declarations_ereporting : seule sa fonction les écrit'])
+    expect(jugerD(`await supabase.from('declarations_ereporting').update({ etat: 'remplacee' }).eq('id', id)`)).toHaveLength(1)
+    expect(jugerD(`const T = 'declarations_ereporting_sources'\nawait supabase.from(T).delete().eq('declaration_id', id)`)).toHaveLength(1)
+    expect(jugerD(`await admin.from('declarations_ereporting_sources').upsert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerD(`await supabase.from('declarations_ereporting').select('*', { count: 'exact' })`)).toEqual([])
+    // Le statut « Encaissée » ne prend pas l'e-reporting pour une de ses déclarations, ni l'e-reporting le statut.
+    expect(ecrituresDesDeclarations([{ chemin: 'src/faux.ts', texte: `await supabase.from('declarations_ereporting').insert(x)` }], {}))
+      .toEqual([])
+    expect(jugerD(`await supabase.from('transmissions_encaissements').insert(x)`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {
