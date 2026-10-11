@@ -8,6 +8,9 @@ import {
   type RubriqueActif, type RubriqueDuDetail, type RubriquePassif,
 } from '../../lib/bilan'
 import { LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
+import {
+  confronterLOuverture, type CauseDeLEcart, type ConfrontationDeLOuverture, type EcartDeCompte,
+} from '../../lib/ouvertureConfrontee'
 import type { EtatDeLOuverture } from '../../lib/reportDesSoldes'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece, SoldeReporte } from '../../lib/types'
 import type { DossierTab } from '../../lib/ongletsDossier'
@@ -27,6 +30,10 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // LA COLONNE DE L'EXERCICE PRÉCÉDENT (N−1, en net, comme le 2033-A-SD la porte) se calcule par le même module sur les
 // mêmes lectures (`colonneDeLExercicePrecedent`) : quand son bilan ne s'établit pas, l'en-tête dit pourquoi et aucun
 // chiffre de N−1 ne paraît, ni dans les tableaux ni dans le détail.
+//
+// L'OUVERTURE CONFRONTÉE À LA CLÔTURE DE N−1 (code de commerce, art. L123-19 ; PCG, art. 112-2) se juge de même sur
+// les mêmes lectures (`confronterLOuverture`) : une ligne « Ouverture » dans l'en-tête — concordante, ou ses écarts,
+// rubrique par rubrique puis compte par compte —, ou pourquoi il n'y a rien à confronter. Rien ne s'en corrige d'ici.
 
 const euros = (centimes: number) => formatMoney(centimes / 100)
 // Les montants à droite, comme dans tout tableau de chiffres ; replié en fiche, le tableau les remet à gauche de
@@ -295,6 +302,96 @@ function ExercicePrecedent({ colonne }: { colonne: ColonneDeLExercicePrecedent }
   )
 }
 
+// Un solde lu, débit − crédit en centimes : son montant et son sens, ou son absence.
+const soldeLu = (centimes: number) =>
+  (centimes === 0 ? 'aucun solde' : `${euros(Math.abs(centimes))} ${centimes > 0 ? 'au débit' : 'au crédit'}`)
+
+const CAUSE_DE_L_ECART: Record<CauseDeLEcart, string> = {
+  'absent-de-l-ouverture': 'à la clôture seulement',
+  'absent-de-la-cloture': 'à l’ouverture seulement',
+  'montants-differents': 'des deux côtés, d’un montant différent',
+}
+
+// « a, b et c ». Pas de remplacement de la dernière virgule : celle d'un montant (« 2 000,00 € ») passerait pour elle.
+const enumeration = (elements: string[]) =>
+  (elements.length > 1 ? `${elements.slice(0, -1).join(', ')} et ${elements[elements.length - 1]}` : elements.join(''))
+
+// Un compte en écart : ses deux soldes, la différence, et ce que le report y réunit quand ce n'est pas lui seul.
+function LigneEcartDeCompte({ e, precedent }: { e: EcartDeCompte; precedent: number }) {
+  const reunis = e.report
+    ? [
+      ...e.report.comptes,
+      ...(e.report.resultat !== null
+        ? [`${e.report.resultat > 0 ? 'le bénéfice' : 'la perte'} de ${precedent} (${euros(Math.abs(e.report.resultat))})`]
+        : []),
+    ]
+    : []
+  return (
+    <li>
+      <span style={NUMERO}>{e.compte}</span>
+      {` ${e.libelle} : ouverture ${soldeLu(e.ouverture)}, clôture de ${precedent} ${soldeLu(e.cloture)} — `}
+      {`${euros(Math.abs(e.difference))} de plus ${e.difference > 0 ? 'au débit' : 'au crédit'} à l’ouverture ; `}
+      {CAUSE_DE_L_ECART[e.cause]}.
+      {reunis.length > 0 && (
+        <span className="muted">{` À la clôture, le report y réunit ${enumeration(reunis)}.`}</span>
+      )}
+    </li>
+  )
+}
+
+// La ligne « Ouverture » de l'en-tête. Rien sur une lecture partielle : l'écran ne va pas jusque-là (le bandeau).
+function OuvertureConfrontee({ c }: { c: ConfrontationDeLOuverture }) {
+  if (c.etat === 'illisible') return null
+  if (c.etat === 'sans-objet') {
+    return <p className="muted" style={{ margin: '12px 0 0' }}>{`Ouverture : rien à confronter. ${c.texte}`}</p>
+  }
+  if (c.etat === 'concordante') {
+    return (
+      <p style={{ margin: '12px 0 0' }}>
+        {'Ouverture : '}<span className="badge badge-ok">concordante</span>{` ${c.texte} `}
+        <span className="muted">{c.regle}</span>
+      </p>
+    )
+  }
+  // Les comptes en écart d'une rubrique se disent sous elle ; ceux dont la rubrique concorde — deux écarts qui s'y
+  // compensent — se disent à part.
+  const sousUneRubrique = new Set(c.rubriques.flatMap((r) => r.comptes))
+  const aPart = c.comptes.filter((e) => !sousUneRubrique.has(e.compte))
+  const ecartDe = (compte: string) => c.comptes.find((e) => e.compte === compte)!
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ margin: 0 }}>
+        {'Ouverture : '}<span className="badge badge-danger">en écart</span>{` ${c.texte} `}
+        <span className="muted">{c.regle}</span>
+      </p>
+      <ul style={{ margin: '8px 0 0', paddingLeft: 20, display: 'grid', gap: 8 }}>
+        {c.rubriques.map((r) => (
+          <li key={`${r.cote}-${r.id}`}>
+            <strong>{r.libelle}</strong>
+            {` (${r.cote}) : ouverture ${euros(r.ouverture)}, clôture de ${c.precedent} ${euros(r.cloture)} — `}
+            {`${euros(Math.abs(r.difference))} de ${r.difference > 0 ? 'plus' : 'moins'} à l’ouverture.`}
+            {r.comptes.length > 0 && (
+              <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                {r.comptes.map((compte) => <LigneEcartDeCompte key={compte} e={ecartDe(compte)} precedent={c.precedent} />)}
+              </ul>
+            )}
+          </li>
+        ))}
+        {aPart.length > 0 && (
+          <li>
+            {c.rubriques.length > 0
+              ? 'Dans des rubriques qui concordent, les écarts s’y compensant :'
+              : 'Les rubriques concordent, les écarts s’y compensant :'}
+            <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+              {aPart.map((e) => <LigneEcartDeCompte key={e.compte} e={e} precedent={c.precedent} />)}
+            </ul>
+          </li>
+        )}
+      </ul>
+    </div>
+  )
+}
+
 interface Lectures {
   ecritures: EcritureBrouillon[]
   categories: Categorie[]
@@ -365,14 +462,20 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
   const aujourdHui = aujourdHuiAParis()
   // L'exercice précédent se calcule sur les MÊMES lectures : tout le brouillon, les à-nouveaux et les soldes reportés
   // sont déjà lus en entier, et changer d'exercice ne relit rien. Il n'existe que si l'exercice affiché a son bilan.
-  const { bilan, precedent } = useMemo(() => {
-    if (!lectures || lectures.motifs.length > 0 || typeof annee !== 'number') return { bilan: null, precedent: null }
+  const { bilan, precedent, ouvertureConfrontee } = useMemo(() => {
+    if (!lectures || lectures.motifs.length > 0 || typeof annee !== 'number') {
+      return { bilan: null, precedent: null, ouvertureConfrontee: null }
+    }
     const entrees = {
       exercice: annee, ecritures: lectures.ecritures, categories: lectures.categories, reprise: lectures.aNouveaux,
       reportes: lectures.reportes, anneesValidees, pieces: lectures.pieces, modele, aujourdHui,
     }
     const deN = bilanDeLExercice(entrees)
-    return { bilan: deN, precedent: deN.etat === 'etabli' ? colonneDeLExercicePrecedent(entrees) : null }
+    if (deN.etat !== 'etabli') return { bilan: deN, precedent: null, ouvertureConfrontee: null }
+    // Les lectures sont toutes revenues entières : on n'arrive ici qu'après le contrôle des motifs.
+    return {
+      bilan: deN, precedent: colonneDeLExercicePrecedent(entrees), ouvertureConfrontee: confronterLOuverture(entrees, 'complete'),
+    }
   }, [lectures, annee, anneesValidees, modele, aujourdHui])
 
   if (!lectures) {
@@ -461,6 +564,7 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
             ))}
           </ul>
         )}
+        {ouvertureConfrontee && <OuvertureConfrontee c={ouvertureConfrontee} />}
         {precedent && <ExercicePrecedent colonne={precedent} />}
       </div>
 

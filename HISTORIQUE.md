@@ -20143,3 +20143,67 @@ la liste.
 
 **CE QUI RESTE** (inchangé, sinon) : P4b/P4c clos pour l'écran des ventes ; EC-Q2 (le mandataire à l'impression), P5 (les devis), P8 et
 P9 (la banque du client), P10 (la carte « Espace client : ce qui a bougé depuis le… » de la Vue d'ensemble).
+
+### 11/10/2026 — L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE — LIGNE 33, TROISIÈME BRIQUE DU BILAN
+
+(Neufs : `src/lib/ouvertureConfrontee.ts` et son test. Modifiés : `src/lib/bilan.ts` (le bilan établi expose ses
+`soldes`), `src/lib/reportDesSoldes.ts` (deux règles exportées), `src/pages/dossier/BilanTab.tsx` et `BilanTab.test.tsx`.
+Aucune migration, aucune lecture de plus, rien d'écrit.) **Pourquoi.** « Le bilan d'ouverture d'un exercice doit
+correspondre au bilan de clôture de l'exercice précédent » (code de commerce, art. L123-19, al. 3, en vigueur depuis le
+01/01/2016) ; « le bilan d'ouverture d'un exercice correspond au bilan de clôture avant répartition de l'exercice
+précédent » (PCG, art. 112-2, quatrième phrase — règlement ANC n° 2014-03, annexe de l'arrêté du 8 septembre 2014) ; les
+deux relus sur Légifrance le 11/10/2026. L'onglet montrait N et N−1 sans dire si l'un s'ouvre par l'autre.
+
+**La conception.** Deux côtés lus dans deux sources : l'OUVERTURE de N telle que N la lit (`ouvertureDeLExercice`, les
+soldes reportés écrits par la base), la CLÔTURE de N−1 calculée comme la colonne N−1 (`colonneDeLExercicePrecedent`,
+jamais l'ouverture relue, qui concorderait à coup sûr). La clôture passe par `soldesAReporter`, le jumeau de
+`soldes_a_reporter` : la règle du report est CITÉE, pas récrite — `compteDuResultat` et `compteQuiRecoit`, extraites
+de `soldesAReporter` à calcul égal (`reportDesSoldes.test.ts` inchangé et vert) : pour une entreprise individuelle 101, 108, 12 et le résultat
+au 101000 (PCG, art. 1211-10) ; pour une société le résultat avant répartition au 120000 ou au 129000. Compte par compte
+(débit − crédit, en centimes) : chaque écart dit ses deux soldes, la différence, sa cause (à la clôture seulement, à
+l'ouverture seulement, montants différents) et ce que le report y réunit (les autres comptes, le résultat de N−1).
+Rubrique par rubrique : l'ouverture rangée par le bilan de N SANS ses écritures (le même calcul : une banque créditrice,
+un fournisseur partagé entre l'actif et le passif par tiers depuis la reprise), la clôture par le bilan de N−1, son
+résultat versé dans la rubrique du compte qui le reçoit (`regleDuCompte` : capital, ou résultats en attente
+d'affectation). Deux écarts de sens contraires dans une rubrique : le compte parle, la rubrique se tait. Sans objet, et
+pourquoi : ouverture en attente de la validation de N−1 ; premier exercice ; avant la reprise (N ouvert par une balance
+reprise, ou N antérieur à elle) ; N−1 qui ne s'établit pas. Illisible sur une lecture partielle. **Une observation qui
+borne le cas** : la confrontation ne s'applique qu'à une ouverture par report — N−1 est alors validé et figé avec ses
+soldes reportés, et un écart ne vient pas d'une saisie (une restauration, ou deux calculs qui divergent) : rien ne se
+corrige d'ici, et l'écran le dit.
+
+**L'écran.** Une ligne « Ouverture » dans l'en-tête, entre les points de N et la phrase de N−1 : « concordante » (badge
+vert) et la règle du report ; ou « en écart » (badge rouge), la cause, puis chaque rubrique en écart avec ses comptes
+dessous, et à part les comptes dont la rubrique concorde ; ou « rien à confronter » et le motif. Rien avant la lecture,
+rien sur une lecture partielle (le bandeau), rien quand N ne s'établit pas. Mêmes cinq requêtes (comptées).
+
+**Les preuves.** `ouvertureConfrontee.test.ts` (16) : les six cas sans objet ou illisible ; un exploitant concordant, un
+écart d'un centime (deux comptes, deux rubriques), le 101000 déjà ouvert (le report n'y réunit que les autres), le 108
+reporté tel quel (deux comptes, le capital concorde) ; une société concordante (bénéfice au 120000), un compte présent
+d'un seul côté de chaque côté, le bénéfice reporté au 129000 (la rubrique se tait), une perte, un fournisseur partagé par
+tiers sans écart de rubrique, un N−1 ouvert par une reprise. `BilanTab.test.tsx` (+9) : concordante (texte entier, cinq
+requêtes), l'écart d'un centime (la rubrique puis le compte), deux écarts compensés dits à part, premier exercice,
+reprise, lecture partielle de trois tables, ouverture en attente. **Mutations : 19, 18 mordent** ; la dix-neuvième
+(rendre l'état « illisible ») est équivalente : l'écran ne calcule la confrontation qu'après le contrôle des lectures.
+**Le banc** (port 5322) : aux neuf exécutions, 0 débordement ; aucune police refusée ; deux photographies de d9 (1 440 px
+clair et 390 px sombre) concordante, puis avec un solde reporté faussé d'un centime (copie du faux rétablie) : 0 erreur
+de page. **La barrière** : `tsc -b` sans erreur ; `tsc -p tsconfig.edge.json` aux 25 erreurs connues ; `npm run lint`
+aux 63 avertissements connus, aucun dans les fichiers touchés ; `npm run build` vert ; les cinq fichiers touchés ou qui
+montent l'écran (329 tests) verts sous Paris, UTC, New York et Auckland ; la suite entière sous Paris (`--maxWorkers=2`) : 8 976 tests verts sur 8 976, 305 fichiers, aucun délai.
+
+**Questions au cabinet** : O33-Q1 (un écart d'ouverture doit-il retenir la validation de N ?), O33-Q2 (confronter un jour
+la balance reprise au bilan de clôture du logiciel précédent — une donnée à stocker).
+
+**Ce qui reste** (ligne 33) : l'affectation du résultat d'une société, la forme juridique, l'impôt sur les sociétés,
+l'inventaire (35), les stocks (36), puis la liasse 2033 (37).
+
+**L'INTÉGRATION** (la session, sur `main` à 6fb4656, dont l'arbre est celui de la base de l'agent). Le correctif
+s'applique tel quel. Relu : le calcul cite la règle du report sans la récrire (l'extraction de `compteDuResultat` et
+`compteQuiRecoit` laisse `soldesAReporter` à calcul égal) ; le résultat d'une société va dans « résultats en attente
+d'affectation » (`regleDuCompte` du 12, `individuel` faux), la rubrique « résultat » de l'ouverture restant vide. **UN
+DÉFAUT TROUVÉ À LA RELECTURE** : la liste de ce que le report réunit mettait son « et » en remplaçant la DERNIÈRE
+virgule suivie d'une espace — or le bénéfice ou la perte de N−1 s'y dit avec son montant (« 2 000,00 € »), dont la
+virgule décimale empêchait toute correspondance : « 108000, le bénéfice de 2025 (2 000,00 €) », sans « et ». Le seul
+test qui la lisait n'avait qu'un élément. La liste se compose désormais élément par élément (`enumeration`), et un test
+d'écran (un exploitant : le 108 et le bénéfice réunis au 101000) l'exige — rouge sur l'ancienne écriture, vert sur la
+nouvelle.

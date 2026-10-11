@@ -125,6 +125,23 @@ export interface ReportDesSoldes {
 //     individuel » ; le résultat d'une société porte son exercice, ou « Résultats en attente d'affectation » quand son
 //     compte portait déjà un solde.
 //   - Un compte soldé ne s'écrit pas.
+//
+// Les deux premières règles sont exportées (`compteDuResultat`, `compteQuiRecoit`) pour que la confrontation de
+// l'ouverture au bilan qui la précède (lib/ouvertureConfrontee.ts) dise quels comptes de la clôture un compte de
+// l'ouverture réunit, sous la MÊME écriture de la règle que le report.
+
+/** Le compte qui reçoit le résultat d'un exercice (`resultat` : débit − crédit des classes 6 et 7, en centimes). */
+export function compteDuResultat(individuel: boolean, resultat: number): string {
+  return individuel ? COMPTE_CAPITAL_INDIVIDUEL : resultat < 0 ? COMPTE_RESULTAT_BENEFICE : COMPTE_RESULTAT_PERTE
+}
+
+/** Le compte de l'ouverture où le report verse le solde de clôture de `compte`. */
+export function compteQuiRecoit(compte: string, individuel: boolean, versLeResultat: string): string {
+  return COMPTE_DE_RESULTAT.test(compte) ? versLeResultat
+    : individuel && CAPITAUX_DE_L_EXPLOITANT.test(compte) ? COMPTE_CAPITAL_INDIVIDUEL
+      : compte
+}
+
 export function soldesAReporter(
   mouvements: readonly MouvementDeCloture[],
   modele: ModeleComptable,
@@ -142,13 +159,8 @@ export function soldesAReporter(
   // Débit − crédit des comptes de résultat : négatif, un bénéfice.
   let resultat = 0
   for (const [compte, s] of parCompte) if (COMPTE_DE_RESULTAT.test(compte)) resultat += s.net
-  const compteDuResultat = individuel
-    ? COMPTE_CAPITAL_INDIVIDUEL
-    : resultat < 0 ? COMPTE_RESULTAT_BENEFICE : COMPTE_RESULTAT_PERTE
-  const cibleDe = (compte: string) =>
-    COMPTE_DE_RESULTAT.test(compte) ? compteDuResultat
-      : individuel && CAPITAUX_DE_L_EXPLOITANT.test(compte) ? COMPTE_CAPITAL_INDIVIDUEL
-        : compte
+  const versLeResultat = compteDuResultat(individuel, resultat)
+  const cibleDe = (compte: string) => compteQuiRecoit(compte, individuel, versLeResultat)
 
   const parCible = new Map<string, { net: number; libelle: string | null; soldeAnterieur: boolean }>()
   for (const [compte, s] of parCompte) {
@@ -170,7 +182,7 @@ export function soldesAReporter(
   let credit = 0
   for (const [compte, g] of parCible) {
     if (g.net === 0) continue
-    const libelle = !individuel && resultat !== 0 && compte === compteDuResultat
+    const libelle = !individuel && resultat !== 0 && compte === versLeResultat
       ? (g.soldeAnterieur ? LIBELLE_RESULTATS_EN_ATTENTE : libelleDuResultat(exercice, resultat < 0))
       // Le numéro du compte, en dernier recours : un compte qui reçoit un solde a toujours un libellé dans la
       // numérotation (`libellesDesComptes`, lib/fec.ts) — la base, elle, refuserait d'écrire un solde sans libellé.
