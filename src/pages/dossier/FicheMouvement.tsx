@@ -38,6 +38,8 @@ import {
 } from '../../lib/liquidationTva'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
+import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
+import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -224,6 +226,16 @@ interface FicheMouvementProps {
   // (`rapprocher_declaration_tva`) —, ou l'en retirer, par la base qui retire l'écriture AVEC le lien.
   onRapprocherDeclarationTva: (declarationId: string) => void
   onRetirerDeclarationTva: () => void
+  // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b ; lib/banqueCabinet.ts) : ce que le client a envoyé pour le
+  // relevé — les pièces proposées et le fil, lus ENSEMBLE et en entier, ou rien n'en est dit —, les accès du dossier qui
+  // reconnaissent son compte, et la lecture des pièces (une pièce proposée absente d'une liste partielle n'est pas une
+  // pièce supprimée). La pièce proposée s'associe par `onRapprocher`, le chemin du choix à la main ; la question part par
+  // `onDemanderAuClient`, qui rend vrai une fois écrite et relue.
+  dossierId: string
+  envoisDuClient: EnvoisDuClient
+  accesDuReleve: AccesDuReleve
+  piecesIncompletes: string | null
+  onDemanderAuClient: (texte: string) => Promise<boolean>
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -555,6 +567,7 @@ export default function FicheMouvement({
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
   restesARegler, onEcrireCompteBilan, onRetirerCompteBilan,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
+  dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -811,7 +824,25 @@ export default function FicheMouvement({
   const piecesReglables = piecesFigees.size === 0
     ? pieces
     : pieces.filter((p) => !piecesFigees.has(p.id) || dansCeReglement.has(p.id))
-  const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0
+  // Une pièce que le client a proposée, et pas retirée, est une proposition aussi : « Aucune pièce proposée » la
+  // contredirait, et le choix à la main devient celui d'une AUTRE pièce.
+  const proposeeParLeClient = envoisDuClient.etat === 'lus'
+    && envoisDuClient.propositions.some((p) => p.ligne_bancaire_id === ligne.id && p.retire_le === null)
+  const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0 || proposeeParLeClient
+
+  // LA PIÈCE PROPOSÉE PAR LE CLIENT passe par le MÊME chemin que le choix à la main : les pièces hors du choix (payées,
+  // figées), le reste d'une pièce payée en partie et son refus (`refusSecondPaiement`). Les parts d'un virement groupé ne
+  // disent la pièce retenue que lues en entier.
+  const contexteDeLaProposition = (pieceId: string): ContexteDeLaProposition => {
+    const piece = pieces.find((p) => p.id === pieceId) ?? null
+    const paiementsDeLaPiece = paiements.get(pieceId) ?? []
+    return {
+      ligne, figeePar, pieces, piecesLuesEnEntier: piecesIncompletes === null,
+      piecesDuReglement: reglementsIncomplets ? null : reglements.map((r) => r.piece_id).filter((id): id is string => id !== null),
+      piecesFigees, horsRapprochement, restesARegler, paiementsDeLaPiece,
+      refusSecondPaiement: piece && restesARegler.has(pieceId) ? refusSecondPaiement(ligne, piece, paiementsDeLaPiece) : null,
+    }
+  }
 
   // La liste des catégories et son bouton. Le refus que la base opposerait est dit AVANT le clic, et
   // le bouton se grise ; un encaissement rangé sur une dépense (ou l'inverse) n'est pas refusé — c'est
@@ -1230,6 +1261,17 @@ export default function FicheMouvement({
             validation se corrige sur l’exercice suivant.
           </p>
         )}
+
+        {/* EN TÊTE : ce que le client a proposé pour ce mouvement, avant ce que le rapprochement propose de lui-même. */}
+        <PropositionsDuClient
+          ligne={ligne}
+          envois={envoisDuClient}
+          acces={accesDuReleve.acces}
+          contexte={contexteDeLaProposition}
+          aTraiter={aTraiter && !fige}
+          occupe={occupe}
+          onAssocier={onRapprocher}
+        />
 
         {piecesCandidates.length === 1 && (
           <section className="fiche-mouvement-section">
@@ -1935,6 +1977,15 @@ export default function FicheMouvement({
             rattaché à rien. Annule le rapprochement pour le refaire.
           </p>
         )}
+
+        <FilDuMouvement
+          dossierId={dossierId}
+          ligne={ligne}
+          envois={envoisDuClient}
+          acces={accesDuReleve}
+          occupe={occupe}
+          onDemander={onDemanderAuClient}
+        />
 
         {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand le libellé est retombé
             sur le générique « Mouvement bancaire » : de quoi retrouver le fichier et la ligne d'origine

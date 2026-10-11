@@ -411,6 +411,15 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   P7 seules, refus redits avant le clic sous les mots de la migration (le refus 4, exercice figé, ne se dit pas d'avance
   au client : il ne lit pas `exercices_valides`), sous UN verrou relâché après la relecture ; propositions ou fil lus en
   partie : ni état ni geste → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » ».
+- **« Ma banque » côté cabinet** (P9b, 11/10/2026) : la fiche d'un mouvement dit EN TÊTE la pièce que le client a
+  proposée (`justificatifs_proposes`), « Proposée par le client le … » — l'origine est celle que la base a écrite, le
+  compte reconnu parmi les accès lus en entier (`lib/banqueCabinet.ts`, pur ; `lib/banqueCabinetLecture.ts`), un accès
+  retiré dit tel, jamais deviné ; elle s'associe par `onRapprocher` (le chemin et les refus du choix à la main), et ce
+  qu'il en advient (retenue, mouvement classé ou figé, pièce payée ailleurs, figée, absente) se lit et se dit ; elle ne
+  se retire jamais d'elle-même. Le fil (`precisions_mouvements`) et « Demander au client » (`ecrire_precision_mouvement`
+  seule, sous `sousVerrou`, `LIBELLE_QUESTION_MOUVEMENT`) ; le filtre « Proposés par le client » ne change que la liste
+  affichée. Propositions et fil se lisent ENSEMBLE, remis « en cours » à chaque lecture : partiels ou pas revenus, rien
+  n'est dit ni offert → « « MA BANQUE » CÔTÉ CABINET ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -456,8 +465,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   Factures et ses fenêtres pour le client « Ventes » ; la liaison de sa plateforme et de Super PDP, et les tuiles « À
   encaisser » et « À déclarer » de son accueil (P4b, 11/10/2026) ; « par le client » côté cabinet — pastille, filtre et
   mention dans les fenêtres (P4c, 11/10/2026) ; « Ma banque » (P9a, 11/10/2026) : le relevé importé, l'état de chaque
-  mouvement, le solde lu, et proposer une pièce, retirer sa proposition, écrire une précision ; client
-  à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
+  mouvement, le solde lu, et proposer une pièce, retirer sa proposition, écrire une précision ; « Ma banque » côté
+  cabinet — la pièce proposée en tête de la fiche d'un mouvement, le fil et « Demander au client », le filtre « Proposés
+  par le client » (P9b, 11/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
   (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
@@ -621,9 +631,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   P4c, « par le client » côté cabinet, le 11/10/2026 ; reste la mention du mandataire à l'impression (EC-Q2 : le nom du
   cabinet figé avec la facture, une migration d'`enregistrer_facture`) → « « MES VENTES › FACTURES » », « LES CONNEXIONS
   DU CLIENT ET LES TUILES DE SON ACCUEIL », « « PAR LE CLIENT » CÔTÉ CABINET ». P9a, « Ma banque » côté client, le
-  11/10/2026 (EC-Q5 prise comme hypothèse) ; reste P9b, le côté cabinet (la pièce proposée en tête de la fiche du
-  mouvement, le fil, « Demander au client », le filtre « Proposés par le client ») → « « MA BANQUE » : L'ÉCRAN DU CLIENT
-  « BANQUE » ». P5,
+  11/10/2026 (EC-Q5 prise comme hypothèse), et P9b, le côté cabinet, le même jour ; restent P8 (la connexion du client)
+  et les questions P9B-Q1 (le cabinet retire-t-il une proposition qu'il écarte ?) et P9B-Q2 (supprimer un message hors
+  sujet du fil, que la base permet) → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » », « « MA BANQUE » CÔTÉ CABINET ».
+  P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,

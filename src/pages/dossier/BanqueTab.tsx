@@ -54,6 +54,12 @@ import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
 import FicheMouvement from './FicheMouvement'
 import { messageErreur } from '../../lib/messageErreur'
+import {
+  ACCES_DU_RELEVE_EN_COURS, AIDE_FILTRE_PROPOSES, ENVOIS_EN_COURS, LIBELLE_FILTRE_PROPOSES, PASTILLE_PROPOSE, etatDuFiltreProposes,
+  gardeParLeFiltre, mouvementsProposesParLeClient, type AccesDuReleve, type EnvoisDuClient,
+} from '../../lib/banqueCabinet'
+import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCabinetLecture'
+import { argumentsDeLaPrecision } from '../../lib/banqueClient'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -173,9 +179,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Relevés dont l'arithmétique ne tombe pas juste. Affichés en permanence, pas seulement à l'import :
   // c'est toute la raison d'être de leur conservation en base (voir lib/controlesReleves.ts).
   const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[]>([])
+  // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b ; lib/banqueCabinet.ts) : les pièces que le client a proposées et
+  // le fil des mouvements, lus ENSEMBLE, et les accès du dossier. Remis « en cours » à CHAQUE lecture, la première comme
+  // une relecture : pendant qu'ils reviennent, la fiche n'en dit rien et n'offre ni « Associer » ni « Demander ».
+  const [envoisDuClient, setEnvoisDuClient] = useState<EnvoisDuClient>(ENVOIS_EN_COURS)
+  const [accesDuReleve, setAccesDuReleve] = useState<AccesDuReleve>(ACCES_DU_RELEVE_EN_COURS)
+  // La case « Proposés par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des envois lus en entier.
+  const [filtreProposes, setFiltreProposes] = useState(false)
 
   async function load() {
     setLoading(true)
+    setEnvoisDuClient(ENVOIS_EN_COURS)
+    setAccesDuReleve(ACCES_DU_RELEVE_EN_COURS)
     // Lue par tranches, triée sur un ordre TOTAL (`date` n'est pas unique) : PostgREST plafonne le
     // nombre de lignes rendues sans le signaler, et c'est la plus grosse table du projet — le total
     // non rapproché, le contrôle de solde et tout le rapprochement porteraient alors sur une partie
@@ -291,7 +306,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setPiecesFigees(lectureFigees)
     setLettragesManuels(lectureLettrages)
     setDeclarationsTva(lectureDeclarations.lignes)
+    const envois = await lireLesEnvoisDuClient(dossierId)
+    const accesLus = await lireLesAccesDuReleve(dossierId)
+
     setRelevesIncoherents(controles)
+    setEnvoisDuClient(envois)
+    setAccesDuReleve(accesLus)
     setLoading(false)
   }
 
@@ -370,8 +390,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 
   // Le compteur de la barre de recherche compare ce qui est comparable : `avantRecherche` porte déjà
   // les filtres Statut/Année/Mois, la recherche ne fait que réduire cet ensemble-là.
+  // « Proposés par le client » s'ajoute aux filtres de l'écran, AVANT la recherche : il ne filtre que l'affichage — ni les
+  // totaux, ni le contrôle de solde, ni les lots, qui partent du relevé entier — et « N sur M » compte M après lui.
+  const filtreDesProposes = etatDuFiltreProposes(envoisDuClient)
+  const proposesParLeClient = useMemo(() => mouvementsProposesParLeClient(envoisDuClient), [envoisDuClient])
   const avantRecherche = lignesAnneeEtStatut.filter(
-    (l) => moisFilter === 'tous' || (moisDe(l.date) - 1) === moisFilter,
+    (l) => (moisFilter === 'tous' || (moisDe(l.date) - 1) === moisFilter)
+      && gardeParLeFiltre(envoisDuClient, filtreProposes, proposesParLeClient, l.id),
   )
   const filtered = avantRecherche.filter((l) =>
     correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
@@ -458,6 +483,24 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 
   function agirSurMouvement(ecrire: () => Promise<boolean>) {
     return sousVerrou(setActionMouvementEnCours, ecrire)
+  }
+
+  // « DEMANDER AU CLIENT » (espace client, étape P9b) : la question s'écrit par `ecrire_precision_mouvement` SEULE — la base
+  // en déduit l'origine (« cabinet ») et l'auteur —, sous le verrou des écritures de l'écran, relâché après la relecture qui
+  // remet le fil à l'écran. Rend vrai quand elle est écrite : la fiche n'efface son brouillon qu'alors ; un second clic
+  // pendant l'écriture ne part pas (`sousVerrou`), et son brouillon reste.
+  async function demanderAuClient(ligneId: string, texte: string): Promise<boolean> {
+    let ecrite = false
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('ecrire_precision_mouvement', argumentsDeLaPrecision(dossierId, ligneId, texte))
+      if (error) {
+        window.alert(`La question n’a pas été enregistrée : ${messageErreur(error, 'raison inconnue')}`)
+        return false
+      }
+      ecrite = true
+      return true
+    })
+    return ecrite
   }
 
   // Une pièce figée par un exercice validé ne se règle plus sur le montant de la banque : la base refuserait d'en changer
@@ -1764,6 +1807,21 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         </div>
       )}
 
+      {/* « Proposés par le client » (espace client, étape P9b) : grisée avec sa raison tant que les pièces proposées et le
+          fil ne sont pas lus en entier ; l'aide dit qu'elle ne change que la liste affichée. */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox" checked={filtreProposes && filtreDesProposes.disponible} disabled={!filtreDesProposes.disponible}
+            aria-describedby="aide-filtre-proposes" onChange={(e) => setFiltreProposes(e.target.checked)}
+          />
+          {LIBELLE_FILTRE_PROPOSES}
+        </label>
+        <p id="aide-filtre-proposes" className="muted" style={{ margin: '4px 0 0', fontSize: '0.82rem' }}>
+          {filtreDesProposes.disponible ? AIDE_FILTRE_PROPOSES : filtreDesProposes.raison}
+        </p>
+      </div>
+
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche
           valeur={recherche}
@@ -1787,7 +1845,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           <div className="empty-state">
             {recherche.trim()
               ? `Aucun mouvement ne correspond à « ${recherche.trim()} ».`
-              : `Aucun mouvement bancaire${filter !== 'toutes' || moisFilter !== 'tous' ? ' dans ce filtre' : ''}.`}
+              : `Aucun mouvement bancaire${filter !== 'toutes' || moisFilter !== 'tous' || (filtreProposes && filtreDesProposes.disponible) ? ' dans ce filtre' : ''}.`}
           </div>
         ) : (
           <div className="tableau-adaptable">
@@ -1898,6 +1956,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                             <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
                           )}
                           {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
+                          {/* Une pièce envoyée depuis l'espace client, à arbitrer dans la fiche — sur des envois lus en entier. */}
+                          {proposesParLeClient.has(l.id) && <span className="badge badge-neutral">{PASTILLE_PROPOSE}</span>}
                         </div>
                       </td>
                     </tr>
@@ -1965,6 +2025,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             releveIncomplet={lignesIncompletes}
             onRapprocherDeclarationTva={(declarationId) => agirSurMouvement(() => rapprocherDeclarationTva(ligneOuverte, declarationId))}
             onRetirerDeclarationTva={() => agirSurMouvement(() => retirerDeclarationTva(ligneOuverte.id))}
+            dossierId={dossierId}
+            envoisDuClient={envoisDuClient}
+            accesDuReleve={accesDuReleve}
+            piecesIncompletes={piecesIncompletes}
+            onDemanderAuClient={(texte) => demanderAuClient(ligneOuverte.id, texte)}
           />
         </PanneauDroit>
       )}
