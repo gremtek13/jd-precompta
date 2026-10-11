@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report>
+  <ReportDocument>
+    <Id>e6a0f000-0000-4000-8000-000000000f04</Id>
+    <IssueDateTime>
+      <DateTimeString>20271105093000</DateTimeString>
+    </IssueDateTime>
+    <TypeCode>IN</TypeCode>
+    <Sender>
+      <Id schemeId="0238">9991</Id>
+      <Name>Plateforme Fictive</Name>
+      <RoleCode>WK</RoleCode>
+    </Sender>
+    <Issuer>
+      <Id schemeId="0002">987654324</Id>
+      <Name>Démo &amp; Fils — Débits</Name>
+      <RoleCode>SE</RoleCode>
+    </Issuer>
+  </ReportDocument>
+  <TransactionsReport>
+    <ReportPeriod>
+      <StartDate>20271001</StartDate>
+      <EndDate>20271031</EndDate>
+    </ReportPeriod>
+    <Transactions>
+      <Date>20271006</Date>
+      <TransactionsCurrency>EUR</TransactionsCurrency>
+      <CategoryCode>TLB1</CategoryCode>
+      <TaxExclusiveAmount>40.00</TaxExclusiveAmount>
+      <TaxTotal>2.20</TaxTotal>
+      <TaxSubtotal>
+        <TaxPercent>5.5</TaxPercent>
+        <TaxableAmount>40.00</TaxableAmount>
+        <TaxTotal>2.20</TaxTotal>
+      </TaxSubtotal>
+    </Transactions>
+    <Transactions>
+      <Date>20271006</Date>
+      <TransactionsCurrency>EUR</TransactionsCurrency>
+      <TaxDueDateTypeCode>5</TaxDueDateTypeCode>
+      <CategoryCode>TPS1</CategoryCode>
+      <TaxExclusiveAmount>300.00</TaxExclusiveAmount>
+      <TaxTotal>60.00</TaxTotal>
+      <TaxSubtotal>
+        <TaxPercent>20</TaxPercent>
+        <TaxableAmount>300.00</TaxableAmount>
+        <TaxTotal>60.00</TaxTotal>
+      </TaxSubtotal>
+    </Transactions>
+  </TransactionsReport>
+</Report>

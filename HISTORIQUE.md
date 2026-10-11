@@ -20999,3 +20999,1228 @@ proposition (« Choisir une autre pièce »), test et mutation à l'appui.
 (`EnvoisDuClient.tsx` parmi les fichiers sans lecture au montage), `outils/captures/fauxSupabase.ts` (une proposition, une
 retirée et un fil sur le cabinet infirmier, passes du cabinet seulement), `outils/captures/debordements.mjs` (deux visites, en
 fin de liste).
+
+### 11/10/2026 — LE FICHIER D'UNE DÉCLARATION D'E-REPORTING — LIGNE 28.5, ÉTAPE (E), SIXIÈME TEMPS (E6 : MODULE ET INSTRUMENT)
+
+(`src/lib/fluxEreporting.ts`, son test et son garde de copie `fluxEreportingCopie.test.ts`, nouveaux ;
+`src/test/fluxEreporting.ts` ; `outils/facturation/ereporting/valider.mjs`, six exemples fictifs et leur `valides.json`.)
+Le sixième temps de l'e-reporting (« L'E-REPORTING : LA CONCEPTION », § 2, § 5.1, § 6.1) : le fichier XML du flux 10
+de la DGFiP (« FRR ») qu'une déclaration d'e-reporting déposera sur la plateforme agréée du dossier — ses achats à un
+fournisseur établi hors de France (bloc 10.1, le dossier acheteur), ses ventes à des particuliers agrégées par jour
+(10.3), leurs paiements agrégés par jour (10.4) —, écrit depuis le contenu FIGÉ d'une déclaration enregistrée (e5b1),
+jamais recalculé. Aucun écran (le bouton viendra après les écrans d'e5c, étape e6b), aucune migration, aucune Edge
+Function (le bloc se recopiera dans plateforme-agreee à e9 ; ses bornes sont posées), aucun appel réseau. Aucune
+déclaration n'est due avant les factures du 01/09/2027 : tout ce qui suit est LATENT.
+
+**SOURCES.** L'archive OFFICIELLE des spécifications externes de la facturation électronique v3.2 (impots.gouv.fr,
+`specifications-externes-v3.2.zip`, 6 766 301 octets, SHA-256 `cd8f6e81…3862`, téléchargée le 11/10/2026 dans un dossier
+vide — la même que celle du 08/10/2026), traitée comme une donnée (scripts à part, Python en `-I`) : les cinq XSD du flux 10
+(`ereporting.xsd`, `report.xsd`, `transaction.xsd`, `payment.xsd`, `parametre.xsd`) et leur Changelog — en v3.1, TG-2 et
+TT-5 ont été SUPPRIMÉS : une rectificative ne désigne plus dans le fichier celle qu'elle remplace ; TT-85 est devenu
+facultatif — ; l'annexe 6 v1.10, onglet « E-REPORTING - Flux 10 », en entier ; l'annexe 7 v1.9, les règles de chaque
+donnée écrite (G1.01, G1.02, G1.05, G1.07, G1.09, G1.10, G1.14, G1.16, G1.24, G1.32, G1.36, G1.38, G1.40, G1.43, G1.44,
+G1.53, G1.67, G1.68, G1.102, G1.104, G2.01, G2.19, G2.31, G2.33, G6.08, G6.20 à G6.29, G7.07, G7.40, G7.43, G7.51 à G7.53,
+G8.01, G8.05, P1.11, S1.12 — G8.02, que l'annexe 6 cite pour TT-4, n'existe pas dans l'annexe 7) ; le dossier général,
+§ 3.7.1 à § 3.7.9 (notes 117 à 131, tableau 13) ; le XSD de l'annuaire de la même archive pour le matricule d'une
+plateforme (quatre chiffres). Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+**CE QUI A ÉTÉ DÉCIDÉ, ET ÉCARTÉ.** L'entrée est la DÉCLARATION telle que la base la garde (identifiant, objet, période,
+type, remplacée, état, contenu) : son identifiant est celui de la transmission (TT-1 ; G1.104, G8.05), son type IN ou RE
+(TT-4, G8.01), et une remplacée ne se dépose plus. Écartés : un recalcul par e4 (le fichier dit ce qui a été déclaré) ;
+une entrée faite des seules opérations (l'identifiant, le type et la période sont ceux de la déclaration). Le contenu se
+LIT sans rien deviner, sous la forme qu'e4 lui donne (version 1) : la première faute de lecture est dite, avec son
+chemin, jamais la valeur ; ce que le fichier n'écrit pas (les totaux de la déclaration, la nature) ne se lit pas. Ce
+qu'e4 a figé s'écrit tel quel : le cadre B1/S1/M1, un avoir aux montants positifs sous 381 dans le 10.1, un agrégat de
+ventes négatif, AE au taux 0 (points 5, 16 et 21 de la conception, tranchés en amont). Les choix que les sources
+publiques ne tranchent pas sont des PARAMÈTRES sans défaut (`ChoixFrr`, un `@ts-expect-error` par choix omis) :
+l'émetteur (TG-3), le fuseau de TT-3, le code de l'option pour les débits (TT-80), un paiement négatif (TT-99, G7.07
+contre G1.16). La raison sociale du déclarant (TT-14), que le contenu ne fige pas, est donnée par l'appelant. Omis, parce
+que facultatifs et sans donnée : TT-2, TG-4 et TG-6, TT-85, TT-94 et TT-98, l'adresse de l'acheteur, TT-201, les lignes
+(TG-24, « pas attendu » d'un acheteur). Les règles sont portées par le code qui les applique, citées ; G1.53 se juge
+SANS sa tolérance d'un centime (une somme de centimes n'a pas d'arrondi : un écart dit un contenu qui n'est pas celui
+d'e4), et pour la TVA seulement en euros ; G1.07 au jour de Paris de la création du fichier ; G7.43 compare TT-3 TEL QU'IL
+S'ÉCRIT (dans le fuseau choisi) à la fin de la période, et G6.24 en suit. Une période refusée ne juge pas ce qui s'y range
+(une faute, un refus) ; un émetteur dont l'identité est déjà fautive ne reçoit pas un second refus. L'option pour les
+débits (TT-80) n'est refusée que sous TLB1, des biens : G1.67 la rend obligatoire pour les services sans l'interdire
+ailleurs, et TNT1 et TMA1 comptent aussi des services (G1.68). Un texte libre
+(raisons sociales, identifiant d'un fournisseur hors de l'Union, motif) qui porterait un caractère que XML 1.0 n'admet pas
+se refuse, plutôt que d'être changé en silence.
+
+**CE QUE LE MODULE DIT** (pur ; bloc `── DÉBUT/FIN COPIE fluxEreporting`, qui ne nomme hors de lui que cinq exports du
+bloc factureCii). `refusFichierFrr` : soixante refus dans un ordre fixé (`REFUS_FRR` : la déclaration, le contenu, les
+choix, l'en-tête, la période, chaque achat, les ventes, les paiements, les textes, l'absence d'opération), chacun sa
+règle et un message qui ne cite aucun texte ; `fichierFrr` : le XML, ou les refus ; `horodatageFrr`. G6.29 — des
+transactions OU des paiements : un fichier ne porte que le bloc de son objet, et un contenu qui porte des opérations d'un
+autre objet se refuse ; le schéma, lui, laisse passer le mélange (l'instrument le montre à chaque passage).
+
+**L'INSTRUMENT** (`outils/facturation/ereporting/valider.mjs`, sur le modèle de celui du CDAR) : l'archive vérifiée à son
+empreinte, les cinq XSD chacun à la sienne, extraits dans un dossier de travail effacé ; xmllint `--nonet` ; l'autocontrôle
+(un élément inconnu, un montant à virgule) arrête s'il en passe un ; six exemples fictifs — les achats d'octobre 2027 et
+leur rectificative, des ventes dont un avoir rend un jour négatif, des ventes sur option pour les débits, des paiements,
+un jour de paiements contre-passé — : 6 sur 6 valides, `valides.json` écrit. Éprouvé sur une COPIE hors du dépôt : 7
+variantes sur 7 (un montant à virgule, un élément inconnu, un émetteur absent dans un exemple — refusés, la liste non
+réécrite ; xmllint privé de `--schema`, une empreinte de XSD fausse, un document faux non fabricable — arrêt), plus une
+archive falsifiée d'un octet (arrêt sur l'empreinte).
+
+**UNE RÈGLE A UNE JUMELLE PAR FLUX.** L'annexe 7 écrit plusieurs fois la même règle, une par flux : G1.43 (BT-8, la
+facture, flux 1) et G1.44 (TT-24, l'e-reporting, flux 10) disent mot pour mot la même chose de l'option pour les débits.
+Le premier jet citait G1.43 pour un refus du flux 10 ; la colonne « RG applicable au F10 » tranche. Un test confronte
+désormais chaque règle qu'un refus cite aux soixante règles que cette colonne marque, recopiées de l'annexe.
+
+**ÉPROUVÉ.** 229 tests (`fluxEreporting.test.ts` 219, `fluxEreportingCopie.test.ts` 10), chacun sous la seconde. Les
+contenus des exemples sont CALCULÉS par e4 et figés comme e5b1 les fige (`contenuADeclarer`, relus en JSON) : la chaîne
+e4 → e5b1 → e6 est celle des exemples. Chaque donnée est confrontée au chemin de l'annexe 6 ; un cas par refus, qui le
+rend SEUL ; l'ordre épinglé et des fautes cumulées ; les bords (50 caractères, 150 en emojis, le 29 février 2000, le
+31/12/2099, 0 h 30 à Paris encore le 31 octobre en UTC, la date de facture du jour de création à Paris) ; les quatre
+fuseaux posés par le test ; les listes confrontées à l'annexe 7 et aux copies d'e2 et d'e5b1 ; les types d'e4 et de la
+base lus sans `as`. Le garde de copie compile le bloc SEUL derrière ceux de montantsFacture, statutTva et factureCii,
+l'exécute contre le module (une épreuve par export), ne trouve aucun nom heurté dans plateforme-agreee, et mord sur
+quatre défauts plantés. **Mutations** ciblées : 173 (la déclaration 9, les choix 18, l'en-tête 10, le contenu 18, la
+période 14, les achats 41, les ventes 9, les paiements 6, les textes 8, l'ordre et les messages 3, l'écriture 36, la
+règle citée 1), une sous-chaîne unique de la copie vierge chacune, les deux fichiers de test sans réécrire d'instantané :
+172 mordent ; trois ne mordaient qu'après trois tests ajoutés (un SIREN faux sans numéro de TVA, une période à l'envers,
+l'option sous TNT1 et TMA1). Une est ÉQUIVALENTE : l'année bissextile au calendrier julien (`annee % 4`), parce que
+toute date passe par les bornes 2000 à 2099 (G1.36) ou se compare à une période qui s'y tient, et que dans ces bornes
+la seule année séculaire, 2000, est bissextile pour les deux règles ; la règle grégorienne entière est gardée.
+
+**UN PIÈGE DE L'OUTIL D'ÉCRITURE.** L'outil qui écrit les fichiers décode les échappements `\uXXXX` d'un caractère
+IMPRIMABLE (pas ceux d'un caractère de commande ni d'une demi-paire) : la classe de caractères de XML 1.0 et un cas
+d'essai sont sortis avec des caractères littéraux (U+D7FF, U+E000, U+FFFD, U+FFFE). Rétablis par un script dont chaque
+barre oblique est `chr(92)` ; un balayage des fichiers neufs le confirme. C'est le piège déjà noté pour
+`deploy_edge_function`, sur l'écriture d'un fichier cette fois : à e9, la copie de ce bloc le rencontrera.
+
+**LA BARRIÈRE** (règles v19, dans la copie de l'agent, sur 5f51cbc) : `tsc -b` sans erreur ; `tsconfig.edge.json` 25
+erreurs, les mêmes qu'avant (aucun fichier de `supabase/` touché) ; lint 63 avertissements, l'ensemble même de la base,
+aucun dans les fichiers de l'étape ; build vert ; quatre fuseaux, 356 sur 356 (les deux fichiers de l'étape,
+`ereporting.test.ts`, `declarationsEreporting.test.ts`) ; la suite entière sous Paris, deux ouvriers : 315 fichiers,
+9 461 tests verts, aucun délai dépassé ; le plus long test de l'étape, seul, 268 ms.
+
+**UN SIREN TIRÉ AU JUGÉ.** Le premier jet donnait au second dossier fictif un SIREN choisi au hasard, valide par sa
+clé : il peut être celui d'une entreprise ou d'une collectivité réelle. Remplacé, avant la barrière, par le SIREN fictif
+des factures d'essai du dépôt (`src/test/facturesCii.ts`) ; les deux dossiers d'e6 portent ceux des jeux d'essai.
+
+**UN DÉFAUT VU EN PASSANT, HORS DE L'ÉTAPE.** Le numéro de TVA irlandais des jeux d'essai d'e2, d'e4 et d'e5b1
+(46 lignes dans six fichiers : `piecesHorsDeFrance.test.ts`, `ereporting.test.ts`, `declarationsEreporting.test.ts`, et
+les essais `piecesHorsDeFrance.sql`, `regimesEreporting.sql`, `declarationsEreporting.sql`) paraît être celui d'une
+entreprise réelle ; un jeu d'essai est fictif : à remplacer par un numéro fait de zéros, comme ceux d'e6.
+
+**CE QUI RESTE.** e6b, le bouton « Télécharger le fichier (XML) » de la fenêtre d'une déclaration, après les écrans
+d'e5c : les refus avant le clic (`refusFichierFrr`), l'ordre du fichier et de la déclaration (E6-Q8), le nom du fichier
+(l'objet et la période, jamais le dossier), les quatre choix une fois tranchés. e9, le dépôt par l'API de la plateforme
+du client : la copie du bloc dans plateforme-agreee, le garde de copie étendu à elle. Questions au cabinet : E6-Q1
+(l'émetteur), E6-Q2 (le fuseau), E6-Q3 (le code de l'option), E6-Q4 (un paiement négatif), E6-Q5 (la raison sociale non
+figée), E6-Q6 (une remplacée refusée), E6-Q7 (le motif des parts AE, K, G, O : BR-AE-10 et ses sœurs), E6-Q8 (le fichier
+avant la déclaration).
+
+### 11/10/2026 — L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ — LA CONCEPTION (MEG1, MEG2, MEG3)
+
+La note de conception de l'architecte (agent CONC-MEG1), telle qu'il l'a rendue, gardée ici parce que les étapes A1 à
+A11, B1 à B9 et C1 à C8 s'y appuient : ses sources, ses points NON VÉRIFIÉS et ses trente-cinq questions au cabinet
+(MEG1-Q1 à Q16, MEG2-Q1 à Q12, MEG3-Q1 à Q7), posées le 11/10/2026. Elle prolonge « L'ESPACE CLIENT DEVIENT LE LOGICIEL
+DE GESTION DU CLIENT : LA CONCEPTION » sans la refaire. Rien n'a été écrit dans le dépôt ni en base.
+
+
+Rédigée le 11/10/2026 par l'architecte (agent CONC-MEG1), pour le cabinet et pour la session qui orchestre.
+CONCEPTION SEULEMENT : aucun fichier du dépôt n'a été modifié, aucune migration, aucun déploiement, aucune Edge Function
+appelée. Dépôt lu dans une copie isolée au commit `f7b37da` (main du 11/10/2026, 17 h 10). Production lue en lecture
+seule : le catalogue (colonnes, contraintes, index, déclencheurs, policies, seaux du stockage) et des COMPTES de lignes —
+jamais un texte, un nom, un montant ni `piece_textes_ocr`. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues
+ni citées. Le logiciel de référence du cabinet n'est pas nommé ici ; sa structure, relevée sans nom ni chiffre, sert de
+liste de contrôle, jamais de modèle : on conçoit ce que le droit et les règles du projet exigent.
+
+**LA DEMANDE** (cabinet, 11/10/2026, « oui, conçois le premier groupe ») : ce qui manque À L'INTÉRIEUR des domaines déjà
+ouverts — ventes, facture électronique, banque : les articles, les règlements, les factures importées (et la
+numérotation qui continue), les contacts, les paramètres de facturation, l'encart « Facture électronique » de l'accueil.
+**PUIS SA PRÉCISION** (17 h 20) : « au minimum on peut faire comme eux, mais le but c'est d'aller plus loin ». D'où trois
+parties : **A** (le premier groupe), **B** (au moins la parité : achats, notes de frais, analyse, documents du cabinet),
+**C** (ce que l'application peut faire de mieux, parce que le client et son expert-comptable y travaillent sur les mêmes
+données). Chaque partie a ses étapes fusionnables seules, ses questions (MEG1-Q…, MEG2-Q…, MEG3-Q…) et ses points non
+vérifiés.
+
+Elle prolonge, sans la refaire, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION » (HISTORIQUE.md,
+09/10/2026 ; ses étapes faites P0 à P4c, P7, P9a, P9b en intégration ; P5 préparée). Les sources sont numérotées [S1]…
+et décrites à la fin.
+
+---
+
+#### 0. Le résumé en quinze lignes
+
+1. **Rien de A n'ouvre un domaine neuf** : tout se range sous la case « Ventes » (P1), tenue en base. Chaque table neuve
+   que le client lit a sa policy de lecture `…_lecture_ventes`, présentée au cabinet avant application, et n'est écrite
+   que par des fonctions `SECURITY DEFINER` dont les refus sont redits avant le clic.
+2. **Les articles** : un catalogue par dossier qui PRÉ-REMPLIT une ligne ; la ligne garde sa copie, jamais un renvoi
+   vivant ; l'unité, la référence et la provenance ne passent sur la facture (et dans le CII) qu'avec l'étape A7.
+3. **Les règlements** : la liste du registre d1 existe déjà en base et s'ouvre déjà au client « Ventes » : un écran, sans
+   migration ; un règlement pour plusieurs factures viendra par une fonction enveloppe, tout ou rien.
+4. **Les factures importées** : un troisième état, « importée », dans `factures_emises` — fermé par défaut, puisque le
+   code et les fonctions SQL relus testent l'état par égalité à `'validee'` —, une porte d'import unique, la preuve
+   (fichier d'origine et empreinte), jamais réimprimées ni transmises ; elles reçoivent des encaissements après la
+   bascule et des avoirs ; leur statut « Encaissée » ne se déclare pas d'ici.
+5. **La numérotation continue** quand le format de l'ancien logiciel se décrit par un modèle et respecte G1.05 ; la
+   suite importée de l'année doit être sans trou, et la première facture de l'application ne précède pas la dernière
+   importée.
+6. **UN POINT DE DROIT NEUF, qui touche EC-Q2** : la règle G1.45 des spécifications de la DGFiP exige, « en cas de mandat
+   de facturation », une racine de numéro propre au mandataire. L'hypothèse d'une seule série validée tour à tour par le
+   client et par le cabinet (P2) ne la donne pas (§A.3.6, MEG1-Q5).
+7. **Les contacts** : le fichier des clients du client pré-remplit facture et devis ; la facture garde sa copie, donc un
+   contact s'efface sans toucher aux factures ; le client en est le responsable de traitement (EC-D4) ; un dossier de
+   soins ne range pas de patients (le §8.7 du registre se rouvrirait).
+8. **Les paramètres de facturation** : l'identité légale reste au cabinet, les conditions commerciales au client
+   « Ventes » ; le RIB imprimé se propose et se confirme (fraude au faux RIB) ; tout ce qui s'imprime se FIGE à la
+   validation — aujourd'hui le numéro de TVA imprimé ne l'est pas.
+9. **L'encart « Facture électronique »** : l'état non secret des connexions passe par une fonction qui ne rend que des
+   booléens, un nom et des dates — jamais une adresse de connexion, un identifiant ni un secret — ; l'adresse de
+   réception et sa date de prise d'effet sont DÉCLARÉES (l'annuaire n'a d'API que pour les partenaires raccordés ; son
+   portail public les montre).
+10. **B ouvre des montants que le client ne voit pas** : trois cases neuves, « Achats », « Notes de frais », « Documents » ;
+    l'analyse n'a pas de case, elle montre ce que les autres ouvrent.
+11. **Le resserrement des pièces** est l'étape la plus délicate : tout accès lit aujourd'hui en base TOUTES les pièces, leurs
+    montants, leur texte OCR et leurs fichiers ; tenir « Achats » en base demande « ajouter, basculer, resserrer », fichiers
+    compris.
+12. **Rien du client ne s'écrit en comptabilité** : il dépose, propose, déclare ; le cabinet valide, catégorise, écrit.
+13. **C** : l'échéancier fiscal et social, l'état du dossier chez le cabinet, la facture électronique et l'e-reporting en un
+    coup d'œil, des indicateurs tirés de la comptabilité du cabinet dits « provisoires » ou « validés » ; écartés pour
+    l'instant : le paiement en ligne et la signature du devis par le client du client (des pages anonymes).
+14. **Vingt-huit étapes** (A1 à A11, B1 à B9, C1 à C8) et trois propositions écartées ; **trente-cinq questions**
+    (seize, douze, sept) ; **vingt-trois points non vérifiés** (treize, six, quatre) ; sept choses trouvées en passant.
+15. **D'abord** : MEG1-Q5 (la racine du mandataire) avant toute facture réelle validée par le cabinet ; puis A3 (les
+    règlements, sans migration) et A1-A2 (les articles).
+
+---
+
+#### 1. Ce qui existe — mesuré le 11/10/2026
+
+##### 1.1 La production (comptes seulement)
+
+125 migrations (la dernière `la_base_lit_le_plan_6`). 3 accès clients, AUCUN avec « Ventes » ni « Banque ». 6 factures,
+toutes validées (un bac à sable abandonné), 1 série de numérotation, 0 encaissement, 0 connexion à une plateforme
+agréée, 2 identifiants Super PDP (bacs à sable), 6 pièces reçues par une plateforme ou Super PDP, 0 note de frais. Trois
+seaux : `pieces` et `packs` privés, `cabinet-logos` PUBLIC — aucun des trois ne borne la taille ni le type des fichiers.
+
+##### 1.2 Les ventes, telles que la base les tient
+
+- `factures_emises` : le client (`tiers_nom`, `tiers_adresse`, `tiers_siret`, `tiers_siren`, `tiers_email`,
+  `type_client`, `tiers_adresse_electronique`, `code_service`, `numero_engagement`), l'émetteur figé à la création
+  (`emetteur_nom`, `emetteur_siret`, `emetteur_adresse`), les mentions (`nature_operation`, `date_prestation`, période,
+  livraison, `option_debits` figée à la validation), `mentions_legales` et `notes` (partagées), les montants au centime,
+  `created_by`, `valide_par` (P2). Aucune fiche de client : chaque facture recopie celui qu'on tape.
+- `facture_lignes` : `designation`, `quantite`, `prix_unitaire_ht`, `taux_tva`, `ordre`. Aucun article, aucune unité :
+  le CII écrit `C62` partout (`UNITE_GENERIQUE`, `lib/factureCii.ts`).
+- La numérotation : contrainte `factures_emises_numero_de_sa_serie` (`^[FA][0-9]{4}-[0-9]{4,}$`, l'année = celle de
+  l'émission), index unique `(dossier_id, numero)`, `facture_numerotation (dossier_id, annee, type)` sans policy,
+  `prochain_numero_facture` qui reprend du plus haut numéro émis de la forme `F<année>-` sous le verrou de la série,
+  appelée par `enregistrer_facture` seule. La garde `garder_factures_validees` : une facture ne naît validée que par la
+  restauration, ne se valide que par `enregistrer_facture` (réglage `jd.validation_facture`), ne se modifie ni ne se
+  supprime validée.
+- `enregistrer_facture` (P2-B, collée : son corps supprime les lignes qu'il remplace) et `supprimer_brouillon_facture`,
+  sous `gere_les_ventes`. Les devis (P5) sont préparés, non appliqués : lignes en `jsonb`, quatre clés réécrites telles que
+  lues.
+- Le registre des encaissements (d1) : `encaissements_factures` (date, montant, `moyen` parmi huit valeurs, mouvement,
+  contre-passation, `cree_par`, retrait) et ses parts par taux ; quatre fonctions ; la lecture ouverte au client
+  « Ventes » depuis P2 ; une fenêtre PAR FACTURE, aucune liste du dossier.
+- L'aperçu (`FactureApercu`) RECOMPOSE la facture à chaque impression : aucun PDF n'est gardé. Le numéro de TVA imprimé
+  suit le statut de TVA du dossier AU JOUR de l'impression (le code le dit : « la facture ne le fige pas »).
+- Les mentions par défaut (`mentionsLegalesParDefaut`) : la mention de TVA du statut, et « une pénalité égale à trois fois
+  le taux d'intérêt légal […] ainsi qu'une indemnité forfaitaire pour frais de recouvrement de 40 € ». Aucune mention
+  d'escompte ; aucune date d'échéance proposée ; aucun numéro de bon de commande pour un client privé
+  (`numero_engagement` n'existe que pour un organisme public, contrainte `factures_emises_organisme_public`).
+- Le CII part avec UNE note (`IncludedNote`, les mentions légales) sans code sujet, sans moyen de paiement (BG-16), sans
+  IBAN.
+
+##### 1.3 Ce que le client lit déjà en base (et que ses écrans ne montrent pas)
+
+Inchangé depuis la conception du 09/10/2026, sauf la banque (P7) : tout accès lit `pieces` (toutes colonnes, montants
+compris), `piece_textes_ocr`, `documents_divers`, `sous_dossiers`, `categories`, `tiers_categories`,
+`cotisations_declarees`, `references_annuelles`, `informations_dossier` (qu'il écrit aussi), `exercices_clotures`, et dans
+le seau `pieces` TOUS les fichiers du dossier. La restriction « pas de montants » y reste une règle d'écran. Les
+connexions (`connexions_plateformes`, `superpdp_credentials`, `connexions_bancaires`) n'ont AUCUNE policy.
+
+##### 1.4 Les écrans du client
+
+Accueil (tuiles, « Ce qu'il reste à envoyer », « À encaisser », « À déclarer »), Mes pièces, Mes ventes (factures et
+« Tes plateformes »), Ma banque, Mes informations, Ma simulation : six entrées, que la barre du bas tient à 390 px depuis
+P9a. Le client tutoie, ne voit jamais un geste que la base refuserait, et ne lit le vide que d'une liste lue en entier.
+
+##### 1.5 Ce que la structure de référence a et que l'application n'a pas
+
+Dans les domaines ouverts : les articles, la liste des règlements, les factures importées, les contacts, les paramètres,
+l'encart « Facture électronique ». Hors d'eux : les achats (à régler, réglés, échéances, « non lus »), les notes de frais
+(par salarié, kilomètres), l'analyse (chiffres clés, comparaison à N−1, créances et dettes, trésorerie, états, journal des
+évènements), les documents (dépôt, consultation). Rien n'y renvoie à un expert-comptable : c'est là que la partie C se
+place.
+
+---
+#### PARTIE A — LE PREMIER GROUPE, DANS LES DOMAINES OUVERTS (VENTES, FACTURE ÉLECTRONIQUE, BANQUE)
+
+Tout ce qui suit vit sous la case « Ventes » (et, pour un mouvement bancaire, « Banque »). Les règles d'hier valent
+telles quelles : une table que le client lit a sa policy `for select to authenticated` sur `client_du_dossier(…,
+'ventes')`, à côté de celle du cabinet ; AUCUNE policy d'écriture pour personne ; une fonction `SECURITY DEFINER` par
+geste, l'accès d'abord (`gere_les_ventes`, « Accès refusé à ce dossier. », 42501), les colonnes énumérées, des refus dans
+un ordre fixé que le module redit avant le clic ; l'auteur noté (`cree_par`…), sans clé vers les comptes ; une insertion
+de restauration réservée au super-administrateur ; la table au plan de sauvegarde derrière son drapeau tant que sa
+migration attend.
+
+##### A.1 Les articles
+
+**Le droit.** Rien n'impose un catalogue ; l'objet légal est la LIGNE imprimée : « la quantité, la dénomination précise,
+et le prix unitaire hors TVA » (C. com., art. L441-9, I [S6]) ; la désignation, la quantité, le prix unitaire hors taxe et
+le taux (CGI, ann. II, art. 242 nonies A, I [S2]). La norme EN 16931 nomme l'article (BT-153, obligatoire), sa
+description (BT-154), l'identifiant que lui donne le vendeur (BT-155), l'unité de la quantité facturée (BT-130 : codes
+des recommandations 20 et 21 de la CEE-ONU, règles BR-23 et BR-CL-23), le prix net (BT-146), la catégorie et le taux de
+TVA (BT-151, BT-152) [S12] ; la DGFiP borne les taux (G1.24) et les décimales (G1.15, G1.16) [S10].
+
+**Le modèle (étape A1).** Une table `articles` :
+
+| Colonne | Contrainte | Pourquoi |
+|---|---|---|
+| `id`, `dossier_id` | clé ; dossier en cascade | une table d'un dossier |
+| `reference` | facultative, 1 à 100 caractères, sans espace aux bords ; unique par dossier (contrainte TOTALE : deux nuls ne se heurtent pas) | BT-155 ; la recherche |
+| `designation` | non vide, 1 000 caractères au plus | BT-153 : la « dénomination précise » |
+| `description` | facultative, 4 000 au plus | BT-154, imprimée sous la désignation |
+| `unite` | une liste FERMÉE de codes de la recommandation 20 (unité `C62`, pièce `H87`, heure `HUR`, jour `DAY`, semaine `WEE`, mois `MON`, année `ANN`, kilogramme `KGM`, mètre `MTR`, mètre carré `MTK`, litre `LTR`, kilomètre `KMT`, forfait `LS`), `C62` par défaut | BT-130 ; une liste fermée évite un code que le validateur refuserait (A-NV1) |
+| `prix_unitaire_ht` | positif ou nul, six décimales au plus, sous dix milliards | G1.16 ; la borne technique de P5 |
+| `taux_tva` | un taux de G1.24 | le taux de l'opération QUAND le dossier est redevable ; la ligne applique le statut du jour (« L'usage ») |
+| `nature` | `biens` ou `services` | elle proposera la catégorie de la facture (`nature_operation`, 242 nonies A, I, 8° bis) et celle de l'e-reporting (TLB1 ou TPS1, G1.68) |
+| `retire_le`, `retire_par` | ensemble ou aucun | un article retiré sort des choix ; il ne se supprime pas |
+| `cree_par`, `cree_le`, `modifie_par`, `modifie_le` | sans clé vers les comptes | qui a fait quoi, lu par le cabinet (P4c) |
+
+Trois fonctions : `enregistrer_article(p_dossier_id, p_article_id, p_article jsonb)` — neuf refus dans cet ordre : l'accès ;
+l'article du dossier (P0002) ; un article retiré ne se modifie pas (le reprendre d'abord) ; la désignation ; la référence
+(forme, puis unicité, l'article qui la porte nommé) ; l'unité ; le prix ; le taux ; la nature — ; `retirer_article` et
+`reprendre_article`. AUCUNE suppression : un article retiré ne coûte rien, et aucun corps ne supprimant, la migration passe
+par `apply_migration`. Un article se MODIFIE (c'est un catalogue, pas une pièce légale) : rien de ce qu'il a pré-rempli
+ne bouge.
+
+Policies : `articles_lecture` (cabinet), `articles_lecture_ventes` (client « Ventes »), `articles_restauration`
+(insertion, super-administrateur). Sauvegarde : `RELATIONS`, `ORDRE_RESTAURATION` (après `dossiers`, avant
+`factures_emises`), `CHEMINS_DOSSIER`, `CLES_PRIMAIRES`, derrière `ARTICLES_EXPORTES`. Module pur `lib/articles.ts` : les
+refus dans l'ordre de la base, confrontés au texte exporté ; `ligneDepuisArticle(article, statut, article_exoneration)`.
+Essai `supabase/essais/articles.sql` (quatre profils, chaque refus par sa raison, aucune écriture directe en 42501, rien
+pour un accès sans « Ventes ») ; `rls.sql`, bloc « Les ventes du client » ; la phrase des cases de l'onglet Accès nomme
+les articles (`droitsAcces.test.ts` l'exige dès l'export).
+
+**L'usage (étape A2).** Dans le formulaire d'une facture (et d'un devis, avec P6), chaque ligne offre « Choisir un
+article » (la recherche commune : référence, désignation) qui remplit désignation (description comprise), quantité 1,
+prix et taux — le taux à 0 % avec la mention du statut pour un dossier en franchise ou exonéré, comme une ligne saisie
+aujourd'hui. La ligne reste LIBRE ensuite : la changer ne change pas l'article. « Enregistrer comme article » sur une
+ligne saisie à la main, et « Mettre l'article à ce prix », sont des gestes à part, jamais faits en passant.
+
+**Ce qu'une facture validée garde** : sa ligne, recopiée — la base ne lit jamais un article pour imprimer, transmettre ou
+compter une facture. L'unité, la référence et l'identifiant de l'article (une PROVENANCE, pour « le chiffre d'affaires
+par article » de la partie B) n'entrent sur la ligne qu'avec l'étape A7, qui recrée `enregistrer_facture` une fois pour
+toutes les mentions neuves (§A.5) ; avant elle, la ligne garde ses quatre champs et le CII son `C62`. Avec A7,
+`facture_lignes.article_id` porte une clé vers `articles` sans action (un article ne se supprime jamais ; un dossier
+supprimé emporte les deux dans la même instruction), et `unite` remplace `C62` dans le CII.
+
+**Ce que voit le client** : « Mes ventes › Articles » — la liste (référence, désignation, unité, prix HT, TVA, nature),
+la recherche, « Nouvel article », « Modifier », « Retirer », le filtre « Retirés ». **Le cabinet** : la même liste dans
+l'onglet Factures émises, chaque article créé ou modifié par le client marqué « par le client » (`lib/auteursVentes.ts`).
+
+##### A.2 Les règlements
+
+**Ce qui existe** : le registre d1, ses refus, ses plafonds, sa fenêtre par facture, ses pastilles et les tuiles de
+l'accueil ; le client « Ventes » le lit et l'écrit (P2, P3, P4a). Il manque la LISTE de tous les encaissements du dossier.
+
+**L'écran (étape A3, sans migration).** « Mes ventes › Règlements » (et, côté cabinet, une section de l'onglet Factures
+émises) : une ligne par encaissement ou contre-passation — date, facture (numéro), client (`tiers_nom` de la facture),
+moyen, montant (négatif pour une contre-passation), mouvement (avec « Banque » seulement, comme P4a : sans elle, « un
+mouvement que ton accès ne montre pas »), déclaration du statut « Encaissée » (déclarée, à déclarer, en retard, non due,
+« pas d'ici »), état (actif, retiré). Filtres : période, moyen, client, état, déclaration ; côté cabinet « par le
+client ». Totaux par moyen et par mois, calculés sur la liste FILTRÉE, jamais sur la recherche. Export CSV (BOM,
+`champCsv`) de la liste filtrée. Chaque ligne ouvre la fenêtre « Encaissements » de sa facture, qui fait déjà tout
+(enregistrer, retirer, contre-passer, déclarer hors application) sous ses refus et son verrou ; rien ne s'écrit depuis la
+liste elle-même. Un module pur `lib/reglements.ts` (les lignes, les filtres, les totaux, l'état de la déclaration par
+`pastilleDeclaration`), des lectures par `lireTout`, muettes sur une lecture partielle de l'une de leurs sources.
+
+**Un règlement pour plusieurs factures (étape A11, si MEG1-Q3 le veut).** Un virement qui règle F1, F2 et F3 s'enregistre
+aujourd'hui en trois fois ; une interruption au milieu laisse deux encaissements sur trois. Tout ou rien, donc une
+fonction : `enregistrer_reglement(p_dossier_id, p_reglement jsonb, p_parts jsonb)` appelle `enregistrer_encaissement`
+pour chaque part, dans l'ordre, dans SA transaction — un refus annule tout, et le message nomme la facture de la part
+refusée. Ses refus propres viennent d'abord : l'accès ; le règlement (date, moyen, montant au centime, le mouvement
+seulement avec « Banque ») ; les parts (au moins deux, des factures distinctes, leur somme égale au règlement) ; puis
+ceux d'`enregistrer_encaissement`, part par part. Le groupe se garde : une table `reglements` (date, moyen, mouvement, montant, auteur) et
+`encaissements_factures.reglement_id`, posé par un déclencheur AVANT INSERTION qui lit le réglage de transaction
+`jd.reglement` (le patron de `jd.validation_facture`) : `enregistrer_encaissement` n'est pas touchée, sa batterie non plus.
+Le module propose une répartition (les plus anciennes échéances d'abord), jamais appliquée seule.
+
+##### A.3 Les factures importées et la numérotation qui continue
+
+###### A.3.1 Ce que disent les textes
+
+| Texte | Ce qu'il dit | Conséquence |
+|---|---|---|
+| CGI, ann. II, art. 242 nonies A, I, 7° (version du 01/01/2025) [S2] | « Un numéro unique basé sur une séquence chronologique et continue » ; des séries distinctes quand les conditions d'exercice le justifient | la suite de l'année continue sans trou ni doublon, quel que soit l'outil |
+| BOI-TVA-DECLA-30-20-20-10, §80 à §130 [S3] | séries distinctes admises et justifiées (§80) ; pas deux factures de même numéro la même année, un préfixe par série conseillé (§90) ; exemples : plusieurs sites, catégories de clients, modes d'émission — autofacturation, facturation pour compte de tiers, électronique ou papier (§100) ; la séquence d'un mandataire est propre au mandant (§120, §130) | un CHANGEMENT DE LOGICIEL n'y figure pas parmi les justifications : continuer la série est le chemin sûr |
+| DGFiP, annexe 7 v1.9, G1.05 [S10] | le numéro : 35 caractères au plus, lettres et chiffres, espace, « - + _ / », jamais d'espace en tête, en fin ni doublé | un format repris qui ne s'y plie pas ne peut pas continuer dans une facture électronique |
+| DGFiP, annexe 7 v1.9, G1.45 (flux F1) [S10] | l'identifiant d'une facture — numéro (BT-1), année d'émission (BT-2), SIREN du vendeur (BT-30) — est unique, le contrôle « systématiquement bloquant » ; « En cas de mandat de facturation, le numéro de facture doit comporter une racine propre au mandataire pour éviter les doublons de facture avec celles de son mandant. » | un numéro déjà émis par l'ancien logiciel ne se réemploie jamais la même année ; et §A.3.6 |
+| LPF, art. L102 B (version du 01/01/2023 au 01/01/2027) [S11] | six ans de conservation ; un document établi ou reçu sous forme électronique se garde sous cette forme | l'ORIGINAL reste où il est (l'ancien logiciel, sa plateforme) : la copie importée n'est pas l'archive légale, et l'écran le dit |
+
+###### A.3.2 Où vivent-elles : trois options
+
+| Option | Pour | Contre |
+|---|---|---|
+| **(1) Dans `factures_emises`, sous un TROISIÈME ÉTAT « importée »** | le registre d1, l'avoir et les pastilles s'y ouvrent par des changements ciblés ; l'index unique `(dossier_id, numero)` interdit d'office qu'une facture de l'application reprenne un numéro importé ; `prochain_numero_facture` voit déjà les numéros importés de la forme `F<année>-` : une suite de même forme CONTINUE d'elle-même ; un seul endroit pour l'analyse (créances, N−1) | des contraintes d'une table gardée à remplacer (`drop constraint`, présenté) ; la garde à étendre ; chaque lecteur à vérifier |
+| (2) Une table à part, et le registre d1 rendu polymorphe (une seconde clé exclusive) | aucun lecteur d'aujourd'hui ne la voit | `enregistrer_encaissement` et ses refus, sa batterie de 4 000 saisies et le module d2 à reprendre ; l'avoir aussi ; deux index pour une seule unicité |
+| (3) Une table à part, sans encaissement | le plus simple | un client qui quitte l'ancien logiciel en cours d'année laisse ses créances dehors, et l'e-reporting de leurs paiements n'a plus d'outil |
+
+**RECOMMANDATION (MEG1-Q4) : (1).** Son coût est borné par une propriété mesurée : un troisième état est FERMÉ PAR DÉFAUT.
+La source relue teste l'état par égalité — `=== 'validee'` dans `ereporting.ts` (ventes, 10.3), `encaissementsFactures.ts`,
+`ventesJumelles.ts`, `encaissementsAffichage.ts`, `FacturesTab.tsx` — et aucune fonction SQL exportée ne teste
+`statut <> 'brouillon'` sur une facture (relu dans l'export) : une facture importée n'est ni transmise, ni réimprimée, ni
+déclarée en e-reporting des ventes, ni jumelle d'une pièce, tant qu'un changement CIBLÉ ne l'ouvre pas. L'étape A8 refait
+ce balayage sur l'état du jour (`pg_proc.prosrc` et la source TypeScript), et un garde de source le tient ensuite : toute
+comparaison de l'état d'une facture se fait par égalité à une valeur nommée ; une inégalité à `'brouillon'` est une faute.
+
+###### A.3.3 Le modèle (étape A8, migration à COLLER)
+
+- `factures_emises.statut` admet `importee` (la contrainte `factures_emises_statut_check` remplacée ;
+  `numero_de_la_validation` devient `(statut in ('validee','importee')) = (numero is not null)` ; `valide_par` et
+  `validated_at` restent ceux d'une facture validée — nuls pour une importée ; `option_debits` s'ouvre à l'importée
+  (`factures_emises_option_debits_validee` élargie), parce que l'e-reporting de ses paiements en dépend : l'option est
+  déclarée à l'import, ou prise du dossier au jour de la facture).
+- `factures_emises_numero_de_sa_serie` devient : une validée garde la forme de sa série (ou de son modèle, §A.3.5) ; une
+  importée porte un numéro de la forme G1.05.
+- `imports_factures` (le LOT) : dossier, format (`facturx`, `cii`, `ubl`, `pdf`, `csv`), fichier (chemin, empreinte
+  SHA-256, taille), nombre de factures, auteur et date, `bascule_le` (le jour à partir duquel l'application émet les
+  factures du dossier ; confirmé par le cabinet, MEG1-Q6).
+- `factures_importees` (une ligne par facture importée, clé = la facture) : le lot, le fichier propre de la facture s'il
+  en a un (PDF ou XML, chemin, empreinte), la ligne du CSV d'où elle vient, `encaisse_avant_reprise` (≥ 0, ≤ le TTC :
+  ce qui était encaissé au jour de la bascule), `transmise_par` (ce que l'importateur DÉCLARE : papier, PDF, plateforme
+  agréée — son nom —, inconnu).
+- Les LIGNES : celles du fichier structuré (Factur-X, CII, UBL, lues par `xmlDuFacturX` et `lireFactureXml`, sens
+  « vente », déjà éprouvés à la réception) ; sinon une ligne par taux (« Montant au taux de 20 % » : la base HT), ce qui
+  suffit au registre d1, qui répartit par taux. La fonction recalcule la TVA de chaque taux comme la norme le fait pour
+  une catégorie (base × taux, arrondi, BR-CO-17) et REFUSE un écart avec les montants déclarés, en le chiffrant : un
+  ancien logiciel qui arrondissait ligne à ligne se reprend par ses lignes, pas par ses totaux (A-NV5).
+- La porte unique : `importer_factures(p_dossier_id, p_lot jsonb, p_factures jsonb)` — tout ou rien sur le lot ; refus
+  dans l'ordre : l'accès (`gere_les_ventes`) ; le lot (format, empreinte, taille) ; puis, facture par facture, nommée par
+  son rang : le numéro (G1.05, et pas déjà dans le dossier — l'index le refuserait, la fonction le dit avant) ; la date
+  (2000-2099, G1.36 ; jamais après la bascule ni dans l'avenir) ; le type (facture ou avoir — un avoir importé cite sa
+  facture importée, par numéro, dans le même lot ou un lot d'avant) ; le client et son type (entreprise, organisme
+  public, particulier, étranger) ; la nature (biens, services, mixte) ; les lignes et les montants (au centime, TTC = HT +
+  TVA, l'écart par taux) ; `encaisse_avant_reprise`. Elle annonce chaque insertion à la garde par le réglage
+  `jd.import_facture`, comme `enregistrer_facture` annonce une validation.
+- La garde étend aux importées ce qu'elle tient pour les validées : elles ne naissent que par la porte d'import (ou la
+  restauration), ne se modifient ni ne se suppriment — sauf par `retirer_import(p_dossier_id, p_import_id)`, qui supprime
+  un LOT ENTIER tant qu'aucune de ses factures n'a d'encaissement ni d'avoir et que l'application n'a validé aucune
+  facture dans la série qu'il continue (sinon refusé : retirer un numéro déjà suivi creuserait un trou). Ce corps
+  supprime : la migration se COLLE avec sa ligne d'historique.
+- Le stockage : un seau privé `ventes` (chemin `<dossier>/imports/<lot>/…`), lu et écrit par `gere_les_ventes`, borné en
+  type (PDF, XML, CSV) et en taille. PAS le seau `pieces` : tout accès y lit tout (§1.3), et une facture de vente n'est pas
+  une pièce à valider.
+- Sauvegarde : les deux tables au plan (le lot avant ses factures), derrière `IMPORTS_EXPORTES` ; les fichiers vont au
+  pack, jamais à la sauvegarde (PLAN_DE_REPRISE.md) — le générateur de pack apprend le seau `ventes`.
+
+###### A.3.4 Ce qu'une facture importée peut, et ne peut pas, faire
+
+| Geste | Possible ? | Pourquoi, et ce qui change |
+|---|---|---|
+| Être lue, cherchée, comptée dans les créances et dans N−1 | OUI | les lecteurs l'ouvrent nommément (`estUneVente(f)` : validée ou importée) |
+| Être réimprimée, recevoir un aperçu | NON, jamais | l'application ne fabrique pas un document qu'elle n'a pas émis ; « Voir l'original » ouvre le fichier importé (`lib/apercu.ts`) ; sans fichier, l'écran le dit |
+| Être transmise (plateforme, Super PDP), relever son cycle de vie | NON | elle a été émise ailleurs ; les fonctions de transmission relisent la facture et la refusent déjà (`refusEmission` : « une facture validée seulement ») |
+| Recevoir un encaissement | OUI, daté de la bascule ou après | `enregistrer_encaissement` admet l'état « importée » (son refus 4 réécrit) et soustrait `encaisse_avant_reprise` du plafond, réparti au prorata des taux (la règle Q3 de d1) ; un encaissement daté d'avant la bascule est refusé : il est déjà dans `encaisse_avant_reprise`, et le déclarer deux fois en e-reporting serait l'erreur |
+| Déclarer son statut « Encaissée » | NON d'ici | d4 ne déclare que sur la plateforme qui a ACCEPTÉ une transmission de l'application ; l'écran dit « Déclare-le sur la plateforme qui a reçu la facture » (celle que l'import a déclarée), et ne le compte pas dans « À déclarer » |
+| Entrer dans l'e-reporting des VENTES (10.3) | NON | elle est d'avant la bascule, donc de l'outil d'avant — sous MEG1-Q7 (la bascule au premier jour d'une période) |
+| Entrer dans l'e-reporting des PAIEMENTS (10.4) | OUI, ceux enregistrés ici | le module ne filtre pas l'état de la facture (mesuré) ; seuls des encaissements d'après la bascule existent, par la règle ci-dessus |
+| Être corrigée par un avoir | OUI | l'avoir est un document NEUF de l'application ; `enregistrer_facture` admet une facture importée pour origine (son refus réécrit) et ne crédite pas plus que ce qu'elle porte ; le CII de l'avoir cite le numéro et la date d'origine (BT-25, BT-26) |
+| Compter en comptabilité | NON, comme toute facture émise | EC-Q3 ; une facture importée ne devient pas une pièce |
+
+Le corps d'`enregistrer_facture` supprime : l'ouvrir aux avoirs d'une importée se COLLE. Pour une seule collée, A7 et A8
+recréent `enregistrer_facture` ensemble si elles sont prêtes ensemble ; sinon, deux collées.
+
+###### A.3.5 La numérotation qui continue (étape A9)
+
+**La forme.** Un MODÈLE de numéro par dossier, par nature (facture, avoir) et — si MEG1-Q5 retient deux séries — par
+émetteur (le client, le cabinet mandataire) : un texte littéral et deux jetons, `{AAAA}`
+(l'année de l'émission) et `{N:k}` (le compteur, au moins k chiffres) — celui d'aujourd'hui s'écrit `F{AAAA}-{N:4}` et
+`A{AAAA}-{N:4}`. Il est REFUSÉ s'il ne produit pas des numéros de G1.05 jusqu'à 35 caractères, s'il n'a pas exactement un
+compteur, ou s'il remet le compteur à zéro chaque année SANS porter l'année (deux factures auraient le même numéro
+d'une année sur l'autre, et l'index unique du dossier, qui ne connaît pas l'année, les refuserait). Les avoirs ont leur
+série propre, ou partagent le compteur des factures, selon ce que faisait l'ancien logiciel.
+
+**La base.** Une table `modeles_numerotation` (dossier, nature, modèle, depuis, auteur) ; `numero_facture_formate` cède la
+place à un formatage par modèle ; `prochain_numero_facture` reprend du plus haut numéro émis QUI A LA FORME DU MODÈLE
+(expression régulière tirée du modèle, ancrée), importées comprises ; `facture_numerotation` garde sa clé (un compteur non
+annuel s'y range à l'année 0). La contrainte de forme ne peut pas lire une autre table : elle se relâche en « forme
+G1.05 », et c'est `enregistrer_facture`, seule à valider, qui formate (la garde le tient déjà). Remplacer la contrainte est
+un `drop constraint` : présenté au cabinet.
+
+**La continuité, jugée avant d'activer.** Quand le cabinet confirme la bascule :
+- les numéros importés de l'année dans ce modèle forment une suite SANS TROU, du premier au dernier (le premier vaut 1,
+  ou le numéro de départ que l'importateur déclare pour une série ouverte en cours d'année) ; chaque trou est NOMMÉ ;
+- aucune facture importée n'est datée après la bascule ;
+- l'application refusera ensuite de valider, dans ce modèle, une facture datée d'AVANT la dernière importée de la même
+  série (la séquence est chronologique) ;
+- un trou bloque la continuation (MEG1-Q5) : il s'importe — un numéro « annulé » dans l'ancien logiciel est une facture
+  qui existe et qu'un avoir a corrigée —, ou le cabinet le lève, motif écrit.
+
+**Un format qui ne se décrit pas** (des caractères hors G1.05, un compteur au milieu d'une date…) ne continue pas : une
+nouvelle série, de préfixe distinct (§90), de préférence au 1er janvier ; en cours d'année, seulement sur décision du
+cabinet, puisque le changement de logiciel n'est pas une justification que la doctrine cite (MEG1-Q5).
+
+**Le dossier qui n'a jamais facturé ailleurs** ne voit rien de tout cela : son modèle est celui d'aujourd'hui.
+
+###### A.3.6 La racine du mandataire (G1.45) — une question qui précède
+
+L'hypothèse retenue pour P2 (EC-Q2, non tranchée) : UNE série par dossier, que la facture soit validée par le client ou
+par le cabinet ; elle écartait deux séries parce que « rien ne les exige ». G1.45 l'exige : quand le cabinet valide, il
+émet la facture au nom et pour le compte du client — un mandat de facturation (BOI-TVA-DECLA-30-20-10-30, §90 à §210
+[S4]) — et la règle demande alors « une racine propre au mandataire ». Trois lectures :
+- (a) **le cabinet ne valide plus** : il prépare, le client valide ; il n'y a plus de mandat, une série suffit. Simple, mais
+  le cabinet ne dépanne plus un client absent ;
+- (b) **deux séries** : celle du client (`F…`) et celle du mandataire (`M…`, ou le préfixe que le cabinet choisit), chacune
+  continue ; `enregistrer_facture` choisit la série selon QUI valide (un accès « Ventes » ou le cabinet) ; la doctrine
+  admet cette série (§100 : « facturation pour compte de tiers ») ;
+- (c) **une série, la règle lue à son but** (« pour éviter les doublons ») : une seule suite ne produit jamais de doublon.
+  Lecture défendable, mais contraire à la lettre d'une règle que les plateformes appliquent.
+
+**RECOMMANDATION (MEG1-Q5) : (b)**, avec (a) comme usage courant — le client valide ses factures, la série du mandataire
+ne sert que quand le cabinet valide pour lui. Elle touche la numérotation (et peut-être `enregistrer_facture`, collée) :
+elle se range dans A9, ou AVANT si le cabinet doit valider une facture réelle d'ici là. Aucune facture réelle n'a été transmise
+(0 transmission en base) ; les 6 factures validées sont celles d'un bac à sable.
+
+##### A.4 Les contacts
+
+**Le droit.** Un contact nomme une personne — souvent une entreprise, parfois un particulier. Le RGPD [S16] : minimisation
+et limitation de la conservation (art. 5, 1, c et e) ; base légale — l'exécution du contrat pour un client (art. 6, 1, b),
+l'intérêt légitime pour un prospect à qui l'on fait un devis (art. 6, 1, f) ; une donnée de santé est d'une catégorie
+particulière (art. 9) ; le responsable répond des droits (art. 15 à 21) ; le sous-traitant agit sur contrat (art. 28). Le
+référentiel de la CNIL sur la gestion des activités commerciales [S13] retient, pour un prospect, trois ans après le
+dernier contact ; une facture se garde dix ans (C. com., art. L123-22 [S14]).
+
+**Le modèle (étape A4).** Une table `contacts`, écrite par des fonctions, lue par le cabinet et par « Ventes » :
+
+| Colonne | Contrainte | Pourquoi |
+|---|---|---|
+| `genre` | `client` seulement en A ; `fournisseur` s'ajoute avec les achats (B, MEG1-Q9) | un domaine à la fois |
+| `type_client` | les quatre types de la facture (entreprise, organisme public, particulier, étranger) | il commande les mentions, la facture électronique et l'e-reporting, comme sur la facture |
+| `nom`, `adresse` | non vide ; adresse en texte libre, comme `tiers_adresse` | ce que la facture recopie |
+| `siren`, `siret` | formes et clés (Luhn) vérifiées par la fonction ; le SIRET commence par le SIREN ; unicité TOTALE `(dossier_id, siret)` | le doublon d'un établissement se refuse, nommé |
+| `adresse_electronique`, `code_service` | forme de l'annuaire (G1.93, G1.95, G1.115), et seulement pour une entreprise ou un organisme public — les contraintes de `factures_emises` | la facture électronique |
+| `email` | facultatif, une adresse | l'envoi par e-mail ; la relance (C) |
+| `delai_paiement_jours` | facultatif, 0 à 60 pour une entreprise (C. com., art. L441-10, I [S7]) | l'échéance proposée |
+| `observations` | facultatif, 1 000 caractères ; libellé : « … ton cabinet et les accès « Ventes » le lisent » | le nom `notes` est réservé (`notesInternesEcritures.test.ts`) |
+| `retire_le`, `cree_par`, `cree_le`, `modifie_par`, `modifie_le` | comme les articles | |
+
+AUCUN téléphone, aucune date de naissance, aucune donnée sans usage pour facturer : la minimisation se tient par le
+modèle, pas par la consigne. Les fonctions : `enregistrer_contact` (refus : l'accès ; le contact du dossier ; retiré ; le
+nom ; le type ; les identifiants, dans l'ordre de la facture ; l'adresse électronique ; l'e-mail ; le délai ; la règle
+des soins ci-dessous), `retirer_contact`, `reprendre_contact`, et `effacer_contact` — l'effacement : la ligne perd toutes
+ses données (le nom devient « Contact effacé le … »), sans suppression dans un corps (donc `apply_migration`), et elle
+n'apparaît plus nulle part. Rien d'autre ne bouge : chaque facture et chaque devis gardent la COPIE du client qu'ils ont
+prise, et la facture garde ses dix ans. C'est le premier bénéfice de « une copie figée, jamais un renvoi vivant » : un
+droit à l'effacement s'exerce sans toucher à une pièce légale.
+
+**La règle des soins (MEG1-Q10).** Un dossier exonéré au titre des soins (CGI, art. 261, 4, 1°, `cgi_261_4_1`) ne range
+pas de « particulier » dans ses contacts : ce seraient des patients, et le registre (§8.7, HDS) tient aujourd'hui que
+« aucune donnée de santé n'a […] vocation à entrer dans l'application », condition que seule la consigne garantit. La
+fonction le refuse, nommément ; la facture et le devis d'un tel dossier le DISENT quand on choisit « particulier » (la
+facture le permet aujourd'hui sans un mot : « trouvé en passant », point 6).
+
+**L'usage.** Dans le formulaire d'une facture (et d'un devis), « Choisir un client » (recherche commune : nom, SIREN)
+remplit le client, son type, ses identifiants, son adresse électronique, son e-mail et l'échéance (date d'émission +
+délai) ; « Enregistrer ce client » sur un client saisi à la main est un geste à part. L'identifiant du contact entre sur
+la facture avec A7, en provenance, SANS CLÉ (comme `valide_par`) : une clé `set null` réécrirait une facture figée — la
+garde le refuserait — et un effacement ne doit rien toucher. « Importer mes contacts » (CSV de l'ancien logiciel) : un
+aperçu, ligne par ligne, avec les refus de la fonction redits ; rien ne s'écrit avant le clic, et tout ou rien.
+
+**Ce que voit le client** : « Mes ventes › Clients » — la liste, la recherche, la fiche (ses factures et ses devis, ce
+qu'il doit), « Effacer » confirmé (« ses factures gardent leur copie, dix ans »), « Clients sans activité depuis trois
+ans » (une LISTE, jamais une purge). **Le cabinet** : la même liste, « par le client ».
+
+##### A.5 Les paramètres de facturation
+
+###### A.5.1 Ce que la facture doit porter, et qui le règle
+
+| Mention | Texte | Qui la règle | Où elle vit |
+|---|---|---|---|
+| Nom, adresse, numéro d'identification (SIREN) de l'émetteur | 242 nonies A, I, 1° [S2] ; R123-237, 1° et 3° [S8] | le cabinet (existe : `dossiers`) | inchangé, figé à la création (`emetteur_*`) |
+| La dénomination d'un entrepreneur individuel suivie de « EI » | C. com., art. R526-27 (depuis le 15/05/2022) et R123-237, 9° [S8] [S9] | le cabinet (une identité légale) | `dossiers` : `denomination_imprimee` (neuve) ; la forme juridique du dossier, encore absente (ligne 33), en devient un préalable |
+| La mention « RCS » et la ville du greffe, l'état de liquidation, la qualité de locataire-gérant | R123-237, 2°, 4°, 6° [S8] | le cabinet | `dossiers` (neuves, facultatives : un professionnel libéral n'est pas au RCS) |
+| La forme et le capital d'une société | (cité par la doctrine courante ; texte non relu, A-NV9) | le cabinet | `dossiers` (neuves) |
+| Le numéro de TVA de l'émetteur | 242 nonies A, I, 2° | le cabinet (le statut de TVA ; la case du numéro d'un dossier non redevable, décision du 08/10/2026) | FIGÉ à la validation avec A7 (aujourd'hui recalculé à chaque impression) |
+| La date de règlement, les conditions d'escompte, le taux des pénalités, l'indemnité forfaitaire de 40 € | C. com., L441-9, I [S6] ; L441-10, II (BCE + 10 points ; plancher : trois fois le taux d'intérêt légal) [S7] ; D441-5 (40 €) | le client « Ventes » ou le cabinet, sous les bornes de la loi | `parametres_facturation` ; FIGÉ à la validation |
+| Le numéro du bon de commande « lorsqu'il a été préalablement établi par l'acheteur » | L441-9, I [S6] | celui qui facture | `numero_engagement` (BT-13) ouvert à tout acheteur (aujourd'hui : organisme public seul) |
+| Les coordonnées bancaires | aucune obligation ; BG-16/BT-84 de la norme si on les donne | PROPOSÉES par le client « Ventes », CONFIRMÉES par le cabinet (MEG1-Q12) | `parametres_facturation` ; FIGÉES à la validation |
+| Le logo, le pied de page | aucune obligation | le client « Ventes » ou le cabinet | `parametres_facturation` ; le logo figé par son empreinte |
+| « Facture établie par <cabinet> au nom et pour le compte de <client> » | BOI-TVA-DECLA-30-20-10-30, §200 et §210 (recommandée) [S4] | posée par la base quand le cabinet valide | `mandataire_nom`, FIGÉ à la validation (EC-Q2) |
+
+Ces mentions entre professionnels (L441-9) ne s'imposent pas à une facture à un particulier : l'écran ne les propose que
+pour une entreprise ou un organisme public, comme il ne réclame l'échéance que pour eux (`refusEmission`).
+
+###### A.5.2 Le modèle
+
+**`parametres_facturation`, VERSIONNÉE** (étape A5) : chaque changement est une ligne neuve qui REMPLACE la courante
+(`remplace_id`, une chaîne par dossier) — le patron des décisions de la révision. Pourquoi des versions plutôt qu'une ligne
+qu'on modifie : la facture validée fige de toute façon ce qu'elle imprime, mais l'histoire du RIB doit survivre à son
+changement (qui, quand, depuis quoi) — c'est elle qu'on relit après une fraude. Colonnes : `delai_paiement_jours`,
+`moyen_prefere` (les huit moyens du registre d1), `escompte` (300 caractères ; défaut « Pas d'escompte pour paiement
+anticipé. »), `penalites` (300 ; défaut « taux de la BCE majoré de 10 points (art. L441-10 du code de commerce) » —
+MEG1-Q13), `mentions_complementaires`, `pied_de_page`, `logo_chemin`, `logo_sha256`, `iban` (clé ISO 13616 vérifiée),
+`bic` (forme ISO 9362), `titulaire_compte`, `rib_etat` (`propose`, `confirme`), `rib_confirme_par`, `rib_confirme_le`,
+l'auteur et la date. Fonctions : `enregistrer_parametres_facturation` (refus : l'accès ; la version remplacée est encore
+la courante — sinon une autre saisie est passée entre-temps, nommée ; les longueurs ; le délai ; l'IBAN et le BIC ; le
+logo, un fichier du dossier dans le seau `ventes`) et `confirmer_rib` (le cabinet seul : `admin_du_dossier` ; refus : la
+version proposée n'est plus la courante, ou n'a pas de RIB à confirmer). Auto-référencée par `remplace_id`, la table se
+restaure par vagues (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`), comme les décisions de la révision.
+
+**LA FRAUDE AU FAUX RIB.** Un accès « Ventes » peut être une secrétaire, un compte volé, un prestataire : changer l'IBAN
+imprimé sur les factures détourne les paiements de tous les clients du client. D'où : un IBAN posé par un CLIENT reste
+« proposé » — les factures gardent l'IBAN confirmé d'avant (ou aucun) — tant que le cabinet ne l'a pas confirmé ; un IBAN
+posé par le cabinet est confirmé d'emblée, et noté ; TOUT changement se dit sur l'accueil du cabinet et à tous les accès
+« Ventes » et « Banque » du dossier (« Le RIB de tes factures a changé le … »). Si une connexion bancaire suit un compte
+dont l'agrégateur rend l'IBAN, l'écran dit quand le RIB imprimé n'est pas celui du compte suivi (A-NV8).
+
+**Le logo** : PNG ou JPEG, 500 Kio au plus, JAMAIS de SVG (un SVG porte du script) ; rangé dans le seau `ventes` sous
+`<dossier>/logos/<empreinte>.<ext>` — une version ne s'écrase jamais, et une facture garde celle qu'elle a imprimée.
+
+**L'identité légale** (étape A5, côté cabinet) : sur `dossiers`, `denomination_imprimee`, `rcs_ville`, et pour une
+société `forme_juridique` et `capital` — saisies par le cabinet dans « Informations du dossier », jamais par le client.
+Pour un entrepreneur individuel, la dénomination proposée est « <nom> EI » et l'écran dit pourquoi (R526-27) ; rien
+n'est imposé tant que la forme juridique du dossier n'est pas connue.
+
+###### A.5.3 Ce qu'une facture validée fige (étape A7, migration à COLLER)
+
+Aujourd'hui elle fige l'émetteur (nom, SIRET, adresse), ses mentions légales (un texte), ses montants et ses lignes, et
+l'option pour les débits. Elle ne fige PAS le numéro de TVA qu'elle imprime : `numeroTvaImprime` le recalcule du statut du
+dossier au jour de l'impression — une facture réimprimée après un changement de statut ne dit plus ce qu'elle disait. A7
+ajoute à `factures_emises`, toutes écrites par `enregistrer_facture` à la création ou à la validation et hors de la liste
+`v_modifiables` de la garde (donc figées d'office) :
+- `numero_tva_imprime` (posé à la validation) ;
+- `denomination_imprimee`, `mentions_identite` (RCS, forme, capital, EI : le texte imprimé) ;
+- `conditions_paiement` (le texte imprimé : échéance, moyen, escompte, pénalités, indemnité — seulement entre
+  professionnels) ;
+- `iban_imprime`, `bic_imprime`, `titulaire_imprime` (l'IBAN CONFIRMÉ du jour) ;
+- `logo_sha256` ;
+- `mandataire_nom` (le nom du cabinet quand c'est lui qui valide ; nul quand c'est un accès « Ventes ») ;
+- `contact_id` (provenance, sans clé) ; et sur `facture_lignes` : `unite`, `reference`, `article_id`.
+- `numero_engagement` s'ouvre à tout acheteur (la contrainte `factures_emises_organisme_public` remplacée : le code
+  service reste réservé à l'organisme public).
+
+Le CII (le bloc `factureCii`, recopié au caractère près dans `plateforme-agreee` et `superpdp-emit`) gagne : l'unité
+(BT-130) et la référence (BT-155) par ligne ; la référence de commande (BT-13) pour tout acheteur ; les instructions de
+paiement (BG-16 : le code du moyen BT-81, l'IBAN BT-84, le BIC BT-86) quand un IBAN est imprimé ; les conditions de
+paiement en texte (BT-20) ; l'escompte en note de code sujet `AAB` (G1.52) [S10]. Les exemples fictifs repassent au
+validateur officiel (`outils/facturation/valider.mjs`), les trois copies sont confrontées (`copiesFacturation.test.ts`),
+et les deux fonctions se redéploient (`verify_jwt` à vrai pour les deux). L'aperçu n'imprime plus que ce que la facture a
+figé. Les devis (P5) suivent le même chemin, dans `enregistrer_devis` et `facturer_devis` (sans suppression dans leur
+corps : `apply_migration`), si P5 est appliquée d'ici là.
+
+**Une facture validée avant A7** garde ses colonnes nulles : elle imprime ce qu'elle a toujours imprimé (et son numéro de
+TVA recalculé, dit comme tel) ; elle ne se corrige que par un avoir.
+
+##### A.6 L'encart « Facture électronique » de l'accueil
+
+**Ce qu'il dit.** « Facture électronique : active » quand une plateforme agréée OU Super PDP est reliée ET qu'une adresse
+de réception est déclarée, en vigueur au jour de Paris ; sinon « À compléter », et ce qui manque, nommé. Puis l'adresse de
+réception, « Reçues depuis le … » (la date de prise d'effet), la plateforme (son nom), et ce qui attend : les factures
+validées qui relèvent de la facture électronique et attendent leur transmission, celles qu'un acheteur a refusées, les
+encaissements à déclarer (les pastilles d'aujourd'hui).
+Chaque ligne mène à son écran (« Tes plateformes », les factures filtrées).
+
+**Ce que l'application ne sait pas aujourd'hui, et d'où elle le tiendra.** L'annuaire de la facturation électronique
+range, pour chaque entreprise, des lignes dont l'identifiant d'adressage (SIREN, SIREN_SIRET, SIREN_SIRET_routage,
+SIREN_suffixe) est « Ouvert », mais dont le matricule de la plateforme de réception et la date de prise d'effet sont
+« Restreint aux PA » (annexe 3 v1.8, flux F14 : DT-7-5-1, DT-7-6, DT-7-3-1 [S10]). Son API n'est ouverte qu'aux
+« partenaires habilités et raccordés » ; son PORTAIL, lui, est consultable « sans nécessité d'authentification », montre
+les informations d'adressage en vigueur et futures, et jamais les matricules (dossier général v3.2, §3.5.4 [S10]). D'où :
+l'adresse et sa date de prise d'effet sont DÉCLARÉES — par le cabinet ou le client « Ventes », vérifiées sur ce portail ou
+sur sa plateforme —, et l'encart le dit (« déclarée le … par … ; vérifiée sur l'annuaire le … »). « Vérifier sur
+l'annuaire » ouvre le portail public, sur un clic ; rien ne part seul. Si l'API d'une plateforme rend un jour la ligne
+d'annuaire de son client, la déclaration deviendra une lecture (A-NV10).
+
+**Le modèle (étape A6).**
+- `adresses_reception` (versionnée comme les paramètres) : l'identifiant d'adressage (forme de l'annuaire ; il commence
+  par le SIREN du dossier, vérifié par la fonction), le nom de la plateforme de réception (texte), la date de prise
+  d'effet, la date et la source de la vérification (`portail_annuaire`, `plateforme`, `declaration`), l'auteur. Lecture :
+  le cabinet et « Ventes » (et « Achats » avec B1 : la réception sert les achats). Écriture : `declarer_adresse_reception`
+  (refus : l'accès ; la forme de l'identifiant ; le SIREN du dossier en tête ; la date de prise d'effet, 2000-2099 ; la
+  version remplacée encore courante). Restaurée par vagues, comme les paramètres.
+- **L'état des connexions, SANS RIEN DE SECRET.** `connexions_plateformes` et `superpdp_credentials` n'ont aucune policy, et
+  n'en auront pas. Deux chemins :
+  - (a) appeler à l'ouverture de l'accueil les actions `statut` de `plateforme-agreee` et `status` de
+    `superpdp-credentials`, comme « Tes plateformes » (P4b) : rien de neuf côté serveur, mais deux invocations par
+    ouverture de l'accueil, et des réponses plus larges qu'il ne faut (la vue publique rend les adresses, `client_id`,
+    l'organisation, la portée — non secrets, mais inutiles ici) ;
+  - (b) **une fonction SQL `etat_facture_electronique(p_dossier_id)`**, `SECURITY DEFINER`, `stable`, `search_path` fixé :
+    l'accès d'abord (`gere_les_ventes`, 42501), puis un `jsonb` qui ne contient QUE des booléens, le nom de la plateforme
+    et des dates — reliée ou non, créée le, dernière récupération, statuts lus le ; Super PDP relié ou non, depuis le — et
+    l'adresse déclarée. Jamais `client_secret`, `client_id`, une URL, l'organisation ni la portée. C'est le patron de
+    `couverture_du_releve` (P7), qui lit pour un accès sans « Banque » une table qu'il ne lit pas, et n'en rend que des mois.
+  **RECOMMANDATION : (b)** pour l'encart ; « Tes plateformes » garde (a), qui a besoin de plus pour modifier. Preuves :
+  un essai `etatFactureElectronique.sql` — anonyme, compte rattaché à rien, client sans « Ventes », client d'un autre
+  dossier : refusés ; le client « Ventes » : l'état ; un secret, un identifiant et une adresse PLANTÉS dans la connexion
+  d'essai, cherchés dans le texte rendu : absents — et un test qui confronte la liste des clés rendues au texte exporté de
+  la fonction. L'advisor la comptera parmi les fonctions `SECURITY DEFINER` exécutables : bénigne, elle n'écrit rien.
+
+**Ce que voit le client** : l'encart dans la grille de l'accueil, avec « Ventes » ; sur téléphone, une tuile qui mène à
+« Mes ventes › Tes plateformes ». **Le cabinet** : le même état dans la Vue d'ensemble du dossier (C3 l'étend).
+
+##### A.7 Ce que la partie A ouvre au client — à présenter au cabinet avant chaque application
+
+| Étape | Ce qui s'ouvre au client « Ventes » | Ce qui change sans rien ouvrir |
+|---|---|---|
+| A1 | la lecture de `articles` (policy `articles_lecture_ventes`) ; trois fonctions | — |
+| A4 | la lecture de `contacts` ; quatre fonctions, dont l'effacement | — |
+| A5 | la lecture de `parametres_facturation` ; deux fonctions (la confirmation du RIB au cabinet seul) ; le seau `ventes` (lecture et dépôt sous `gere_les_ventes`, jamais de remplacement ni de suppression) | `dossiers` : quatre colonnes d'identité légale, écrites par le cabinet |
+| A6 | la lecture de `adresses_reception` ; `etat_facture_electronique`, qui lit pour lui deux tables sans policy et n'en rend que des booléens, un nom et des dates | — |
+| A7 | rien de neuf à lire (les colonnes neuves sont sur des tables déjà ouvertes) | la contrainte `factures_emises_organisme_public` remplacée (`drop constraint`, sans perte) |
+| A8 | la lecture de `imports_factures` et `factures_importees` ; la porte d'import ; le retrait d'un lot | `factures_emises` : un troisième état, quatre contraintes remplacées ; `enregistrer_encaissement` et `enregistrer_facture` acceptent une facture importée |
+| A9 | la lecture de `modeles_numerotation` | la contrainte de forme du numéro remplacée ; la bascule confirmée par le cabinet seul |
+| A11 | la lecture de `reglements` ; l'enveloppe | `encaissements_factures.reglement_id` et son déclencheur |
+
+Chaque bloc rejoint `rls.sql` (3 bis : sans « Ventes », aucune ligne de ces tables, même de son dossier ; 4 bis : avec
+elle, aucune écriture directe, 42501 nommément ; un contrôle POSITIF ; des mutations qui mordent : la case retirée, le
+prédicat remplacé par « membre ») ; la phrase des cases de l'onglet Accès les nomme, confrontée à l'export
+(`droitsAcces.test.ts`), et la table attendue des fonctions (`src/test/quiPeutQuoi.ts`) ne change pas — aucune Edge
+Function neuve ne s'ouvre au client en A.
+
+##### A.8 RGPD.md : ce que la partie A y change
+
+- **§1** : la troisième configuration, déjà écrite pour les devis (§8.9), s'étend aux contacts, aux factures importées et
+  aux paramètres : le client est responsable des données de SES clients ; le cabinet, qui lui fournit l'outil, est son
+  sous-traitant (art. 28), l'éditeur sous-traitant ultérieur. La clause tient dans la lettre de mission (EC-Q2, EC-D4 —
+  MEG1-Q11).
+- **§2** : trois lignes. « Fichier des clients du client (contacts) » — finalité : facturer et faire des devis ; bases :
+  contrat (client), intérêt légitime (prospect) ; personnes : clients et prospects du client, particuliers compris, JAMAIS
+  des patients ; données : identité, adresse, identifiants d'entreprise, adresse électronique de facturation, e-mail,
+  délai de paiement, observations ; durée : la relation, puis trois ans sans facture ni devis (proposé à l'effacement,
+  jamais seul). « Reprise de l'historique de facturation » — les factures émises avant la bascule, leur fichier et son
+  empreinte ; dix ans, comme une facture. « Paramètres de facturation » — l'IBAN et le titulaire du compte du client
+  (pour un entrepreneur individuel, une donnée personnelle), leur histoire, qui les a proposés et confirmés ; la vie du
+  dossier.
+- **§6** : les droits des clients du client s'exercent auprès du client ; l'application lui donne l'export d'une fiche et
+  l'effacement — sans toucher aux factures, qui gardent leur copie et leurs dix ans.
+- **§7** : le seau `ventes` borné en type et en taille ; le RIB confirmé par le cabinet ; l'état des connexions rendu sans
+  rien de secret.
+- **§8.7** : la règle des soins (un dossier de soins ne range pas de particulier), et le constat que la facture le permet
+  encore (« trouvé en passant », point 6).
+
+##### A.9 Les étapes de la partie A (chacune fusionnable seule)
+
+| Étape | Contenu | Base | Écrans | Edge Functions | Preuves | Dépend de |
+|---|---|---|---|---|---|---|
+| **A1 — Les articles, en base** | `articles`, trois fonctions, trois policies, plan de sauvegarde derrière `ARTICLES_EXPORTES` ; `lib/articles.ts` (refus dans l'ordre de la base) | oui, `apply_migration` ; policy présentée | non | non | `articles.sql` ; `rls.sql` ENTIER ; module et mutations ; trois contrôles de l'export | P2 ; MEG1-Q1 |
+| **A2 — Les articles, à l'écran** | « Mes ventes › Articles » ; « Choisir un article » et « Enregistrer comme article » dans la facture ; la liste du cabinet, « par le client » | non | oui | non | tests d'écran (case, lecture partielle, verrou, deux puis trois clics), `ecransAvantLecture`, garde des mots, banc | A1 |
+| **A3 — Les règlements** | « Mes ventes › Règlements » et sa section côté cabinet ; `lib/reglements.ts` ; export CSV | non | oui | non | module (filtres, totaux, déclaration), tests d'écran, banc | — |
+| **A4 — Les contacts** | `contacts`, quatre fonctions, la règle des soins, l'import CSV, « Mes ventes › Clients », « Choisir un client » | oui, `apply_migration` ; policy présentée | oui | non | `contacts.sql` (dont un dossier de soins) ; `rls.sql` ; module ; écrans ; RGPD.md | P2 ; MEG1-Q9, Q10, Q11 |
+| **A5 — Les paramètres de facturation** | `parametres_facturation` versionnée, le RIB proposé puis confirmé, le seau `ventes` (logos), l'identité légale sur `dossiers` ; l'écran du client et celui du cabinet ; ils PRÉ-REMPLISSENT (mentions, échéance) sans rien figer | oui, `apply_migration` ; policy et seau présentés | oui | non | `parametresFacturation.sql` (un client ne confirme pas un RIB) ; `rls.sql` ; le stockage relu au catalogue ; module | P2 ; MEG1-Q12, Q13, Q14 |
+| **A6 — L'encart « Facture électronique »** | `etat_facture_electronique`, `adresses_reception`, l'encart et la tuile, la carte du cabinet | oui, `apply_migration` ; présentée | oui | non | `etatFactureElectronique.sql` (secret, identifiant et adresse plantés : absents) ; tests d'écran ; banc | P4b ; MEG1-Q16 |
+| **A7 — La facture fige ses mentions** | `enregistrer_facture` recréée ; les colonnes figées du §A.5.3 ; la ligne (unité, référence, article) ; BT-13 pour tout acheteur ; le mandataire ; le CII ; l'aperçu ; les devis si P5 est en base | oui, COLLÉE (le corps supprime les lignes remplacées) ; une contrainte remplacée, présentée | oui (formulaire, aperçu) | `plateforme-agreee`, `superpdp-emit` redéployées | `factures.sql` et les six essais des ventes ; `facturesFigees.test.ts` ; `copiesFacturation.test.ts` ; validateur officiel sur les exemples ; restauration | A1, A4, A5 ; MEG1-Q2, Q5, Q15 |
+| **A8 — Les factures importées, en base** | l'état « importée » ; `imports_factures`, `factures_importees` ; la porte d'import ; la garde ; le retrait d'un lot ; l'encaissement et l'avoir ouverts | oui, COLLÉE (retrait d'un lot, `enregistrer_facture`) ; contraintes remplacées, présentées | non | non | `facturesImportees.sql` ; les six essais des ventes ; la batterie des encaissements (refus 4, plafond) ; restauration ; garde de source « l'état par égalité » | A5 ; MEG1-Q4, Q6, Q7, Q8 |
+| **A9 — La numérotation qui continue** | `modeles_numerotation` ; le formatage et la reprise par modèle ; la chronologie tenue par la garde ; le jugement de continuité ; la bascule confirmée ; la série du mandataire (MEG1-Q5) | oui (`apply_migration` si `enregistrer_facture` n'est pas touchée — à confirmer en préparant ; sinon COLLÉE) ; contrainte remplacée, présentée | la carte du cabinet | non | `numerotationContinue.sql` (suites, trous, chronologie, deux sessions qui valident ensemble) ; `factures.sql` ; restauration | A8 ; MEG1-Q5 |
+| **A10 — Les factures importées, à l'écran** | l'assistant (CSV, Factur-X, CII, UBL ; PDF et saisie), l'aperçu avant le clic, la liste, « Voir l'original », les encaissements, l'avoir, la continuité dite ; la pastille et la tuile « À encaisser » ouvertes à l'état « importée » — celles de la déclaration restent fermées | non | oui | non | tests d'écran (jamais d'aperçu ni de transmission offerts ; l'original s'ouvre) ; un CSV et un Factur-X FICTIFS ; banc | A8, A9 |
+| **A11 — Un règlement pour plusieurs factures** | `reglements`, `encaissements_factures.reglement_id`, le déclencheur, l'enveloppe ; la répartition proposée | oui, `apply_migration` | oui (Règlements) | non | `reglements.sql` (une part refusée annule tout) ; `encaissementsFactures.sql` rejoué | A3 ; MEG1-Q3 |
+
+**L'ordre recommandé** : A3 (aucune migration, le registre est déjà ouvert) → A1 → A2 → A6 → A4 → A5 → **MEG1-Q5 tranchée**
+→ A7 → A8 → A9 → A10 → A11. A7 réunit tout ce qui change la FORME d'une facture en une seule collée et un seul
+redéploiement ; A8 (et peut-être A9) recrée aussi `enregistrer_facture` : prêtes en même temps qu'A7, une seule collée
+suffit.
+EC-Q3 (la facture comme source de la recette) reste le préalable de tout usage réel de « Mes ventes ».
+
+##### A.10 Les questions au cabinet (partie A)
+
+Chacune se répond d'une ligne ; ma recommandation est donnée.
+
+- **MEG1-Q1 — Qui tient le catalogue d'articles ?** Le client « Ventes » et le cabinet, chaque article disant qui l'a créé
+  ou changé. *Recommandation : les deux.*
+- **MEG1-Q2 — L'unité, la référence et l'article d'origine passent-ils sur la facture (et dans la facture électronique) ?**
+  Cela demande la migration de la facture (A7). *Recommandation : oui, dans A7.*
+- **MEG1-Q3 — Un virement qui règle plusieurs factures s'enregistre-t-il en un geste (A11) ?** *Recommandation : après la
+  liste des règlements (A3), à la demande d'un premier client réel.*
+- **MEG1-Q4 — Les factures importées rejoignent-elles les factures émises, sous un état « importée » ?** Elles y reçoivent
+  encaissements et avoirs, et l'application ne peut plus réemployer un de leurs numéros. *Recommandation : oui.*
+- **MEG1-Q5 — La numérotation.** (1) Quand le cabinet valide une facture pour son client, la DGFiP demande une racine de
+  numéro propre au mandataire (G1.45) : deux séries par dossier, celle du client et celle du cabinet ? (2) Le client qui
+  quitte son ancien logiciel CONTINUE sa série (même format, compteur repris, suite sans trou vérifiée) ; un trou bloque
+  jusqu'à ce qu'il soit importé ou levé par vous. *Recommandation : oui aux deux ; le client valide lui-même ses factures,
+  la série du cabinet ne sert qu'à dépanner ; un format qui ne se décrit pas ouvre une nouvelle série, de préférence au
+  1er janvier.*
+- **MEG1-Q6 — Qui importe, qui décide la bascule ?** *Recommandation : le client « Ventes » et le cabinet importent ; la
+  date de bascule (à partir de laquelle l'application facture) se confirme par le cabinet seul.*
+- **MEG1-Q7 — La bascule et l'e-reporting.** À partir des opérations du 01/09/2027, une période déclarée à cheval sur deux
+  outils se déclare mal. *Recommandation : la bascule se fait le premier jour d'une période ; l'application le propose
+  toujours et l'exige à partir de cette date.*
+- **MEG1-Q8 — Ce qu'une facture importée peut faire.** Encaissements à partir de la bascule (l'encaissé d'avant se déclare
+  à l'import, en un montant) ; avoirs ; jamais d'aperçu, de transmission ni de déclaration « Encaissée » d'ici (l'écran
+  dit où la faire). *Recommandation : oui.*
+- **MEG1-Q9 — Les contacts : les clients seulement pour commencer, les fournisseurs avec les achats (partie B) ?**
+  *Recommandation : oui.*
+- **MEG1-Q10 — Un dossier de soins (exonéré, art. 261, 4, 1°) ne range aucun particulier dans ses contacts, et sa facture
+  le dit quand on choisit « particulier ».** Sinon des patients entrent en base, et la question de l'hébergement de
+  données de santé (registre, §8.7) se rouvre. *Recommandation : oui.*
+- **MEG1-Q11 — EC-D4 : les données des clients du client.** Le client en est responsable, vous agissez pour lui (une clause
+  dans la lettre de mission) ; un contact sans facture ni devis depuis trois ans vous est PROPOSÉ à l'effacement ; une
+  facture garde dix ans sa copie. *Recommandation : oui.*
+- **MEG1-Q12 — Le RIB imprimé sur les factures.** Le client « Ventes » le propose, vous le confirmez ; tout changement se dit
+  à vous et à tous les accès « Ventes » et « Banque ». C'est la parade à la fraude au faux RIB. *Recommandation : oui.*
+- **MEG1-Q13 — Les mentions de paiement par défaut, entre professionnels.** Pénalités au taux légal par défaut (BCE + 10
+  points) plutôt qu'au plancher contractuel (trois fois le taux d'intérêt légal, ce que propose l'application
+  aujourd'hui) ; « Pas d'escompte pour paiement anticipé » (aujourd'hui absent, et la loi le demande) ; échéance à
+  30 jours, jamais plus de 60. *Recommandation : oui.*
+- **MEG1-Q14 — L'identité légale imprimée** (la dénomination avec « EI » d'un entrepreneur individuel, la forme et le
+  capital d'une société, la ville du greffe) : vous la réglez, le client ne la change pas ; la forme juridique du dossier
+  (ligne 33) en devient un préalable. *Recommandation : oui.*
+- **MEG1-Q15 — EC-Q2, l'impression du mandataire.** Quand vous validez, la facture fige votre nom et imprime « Facture établie
+  par … au nom et pour le compte de … ». *Recommandation : oui, dans A7.*
+- **MEG1-Q16 — L'adresse de réception et sa date de début.** L'annuaire n'est lisible par API que des partenaires
+  raccordés : vous ou
+  le client la déclarez, vérifiée sur le portail public de l'annuaire, et l'encart le dit. *Recommandation : oui.*
+
+##### A.11 Les points NON VÉRIFIÉS (partie A)
+
+1. **A-NV1** — Que chaque code de la liste fermée des unités figure dans la liste de codes que le validateur des
+   artefacts EN 16931 applique à BT-130 (recommandations 20 et 21) : à juger sur des exemples fictifs en A7.
+2. **A-NV2** — Le code de moyen de paiement à écrire (58, virement SEPA, ou 30, virement) et l'accueil des instructions de
+   paiement (BG-16) par Super PDP et par une plateforme réelle : au premier essai réel.
+3. **A-NV3** — Ce que fait le détecteur d'`apply_migration` d'un `drop constraint` (déjà NON VÉRIFIÉ le 09/10/2026) : le plan
+   prévoit de coller au besoin.
+4. **A-NV4** — Que la lecture des pièces jointes par pdf.js (`xmlDuFacturX`) trouve le XML des Factur-X d'AUTRES
+   logiciels : éprouvée sur les exemples de l'application seulement.
+5. **A-NV5** — La part des factures d'un ancien logiciel qui arrondit la TVA ligne à ligne, et que le recalcul par taux
+   refuserait : inconnue sans fichier réel.
+6. **A-NV6** — La portée du contrôle d'unicité de G1.45 (« par rapport à une facture précédemment envoyée ») : par
+   plateforme, ou pour tout le dispositif (le PPF voit les données de facturation) ? Elle décide si un numéro de l'ancien
+   logiciel, réemployé, serait rejeté.
+7. **A-NV7** — G1.45 cite « BOI-TVA-DECLA-30-20-20-10 du 18/10/2023 » ; la version lue est en vigueur depuis le
+   18/10/2013 : une mise à jour de 2023 n'a pas été trouvée.
+8. **A-NV8** — Que l'agrégateur bancaire rende l'IBAN du compte suivi (`connexions_bancaires.comptes`), pour le confronter au
+   RIB imprimé.
+9. **A-NV9** — Le texte qui impose la forme et le capital d'une société sur ses factures (l'article R123-238 du code de
+   commerce, probablement) : non relu.
+10. **A-NV10** — Que l'API d'une plateforme agréée rende la ligne d'annuaire de son client (adresse, prise d'effet) : rien
+    de lu ; la déclaration en tient lieu.
+11. **A-NV11** — Le référentiel de la CNIL sur la gestion commerciale : lu par sa présentation publique (comme le
+    09/10/2026), le texte non ouvert.
+12. **A-NV12** — Comment l'administration traite une période d'e-reporting que deux outils auraient déclarée chacun en
+    partie (le sens de MEG1-Q7).
+13. **A-NV13** — Les articles L441-10 et D441-5 du code de commerce : lus par extraits, la version en vigueur au jour non
+    relue en entier.
+
+---
+
+#### PARTIE B — LA PARITÉ : ACHATS, NOTES DE FRAIS, ANALYSE, DOCUMENTS DU CABINET
+
+Ces domaines ouvrent au client des montants et des données que ses écrans ne lui montrent pas aujourd'hui — et que sa
+SESSION lit pourtant déjà en grande partie (§1.3). Chacun se tient donc comme « Ventes » et « Banque » : un DROIT par
+accès, posé par le cabinet, tenu en base ; chaque policy qui ouvre une lecture se présente au cabinet avant application ;
+et quand un écran d'aujourd'hui lit déjà la table, l'ordre de P7 : AJOUTER (ce qui sert l'écran sans le droit, et la
+lecture au droit), BASCULER (les écrans passent au neuf), puis seulement RESSERRER (retirer la lecture large) — une
+lecture que la RLS refuse rend zéro ligne sans erreur, et un écran d'avant croirait le dossier vide.
+
+##### B.0 Trois cases de plus, et une qui n'en est pas une
+
+| Case | Ce qu'elle ouvre | Pourquoi une case |
+|---|---|---|
+| **« Achats »** | les factures d'achat (pièces d'achat, leur fichier et leurs montants), leurs échéances, ce qui est réglé ou à régler, les fournisseurs ; la réception de ses factures par sa plateforme ; l'approbation et le remboursement des notes de frais | une secrétaire qui dépose n'a pas à lire les montants de tous les achats |
+| **« Notes de frais »** | saisir les siennes, voir où elles en sont | un salarié saisit ses frais sans voir ceux des autres ni les achats |
+| **« Documents »** | les documents que le cabinet met à disposition (la 2035, la liasse, les comptes, les attestations, la lettre de mission) | ils disent le revenu du dirigeant |
+| « Analyse » — PAS UNE CASE | chaque indicateur se montre si les cases de l'accès ouvrent ses sources : « Ventes » → chiffre d'affaires facturé, créances ; « Achats » → achats, dettes ; les deux → la marge ; « Banque » → la trésorerie | une case de plus ne protégerait rien : l'analyse ne lit que ce que les autres ouvrent |
+
+**Les demandes du cabinet** (« envoie-moi… ») restent ouvertes à TOUT accès : tout accès dépose. Le cabinet écrit leur
+texte sachant que tous les accès du dossier le lisent, et son libellé le dit.
+
+**En base (étape B1)** : `memberships.droit_achats`, `droit_frais`, `droit_documents` (booléens non nuls, faux) ;
+`client_du_dossier` connaît trois mots de plus ; `droits_sur_le_dossier` rend trois clés de plus (une case de plus ne
+ferme rien dans les Edge Functions : P3 l'a voulu) ; `poser_droits_acces(p_membership_id, p_droits jsonb)`, la seule
+écriture des droits (un droit absent est inchangé) — l'ancienne `changer_droits_acces` reste jusqu'à ce que l'écran l'ait
+quittée, puis son exécution est retirée (rien n'est supprimé). L'onglet Accès offre cinq cases ; la phrase qui dit ce que
+la base ouvre (`ceQueDisentLesCases`) devient une phrase PAR CASE — les quatre états de deux cases deviendraient les
+trente-deux de cinq —
+avec les effets croisés nommés (« Ventes » et « Banque » : le mouvement d'un encaissement ; « Achats » et « Banque » : le
+mouvement qui règle une facture d'achat), chacune confrontée à l'export. B1 n'ouvre RIEN : chaque case dit « ne change
+encore rien » tant que la migration de son domaine n'est pas dans l'export.
+
+**La navigation du téléphone** ne tient pas dix entrées. Proposition, que le banc à 390 px jugera : Accueil, Déposer,
+Ventes, Achats, et « … » (Banque, Analyse, Documents, Mes informations, Ma simulation) ; chaque entrée seulement si la
+case de la société affichée l'ouvre.
+
+##### B.1 Les achats
+
+**Ce qui existe.** Les pièces d'achat entrent par le dépôt du client, par e-mail, par la plateforme du client et par Super
+PDP (la réception est au CABINET : `lister`, `telecharger`, `retenir`, `repartir` de `plateforme-agreee` et
+`superpdp-sync`) ; elles arrivent « à valider » ; le cabinet les valide, les catégorise, les écrit ; leur paiement se
+DÉDUIT du relevé (rapprochement, règlement groupé — `paiementsDesPieces`) ou du lettrage. AUCUNE échéance n'est gardée
+(`pieces` n'a pas de colonne d'échéance) ; une pièce venue d'une plateforme garde son identité (numéro, date, SIREN du
+vendeur), une pièce déposée non.
+
+**Le droit.** Depuis le 01/09/2026, toute entreprise doit pouvoir RECEVOIR ses factures sous forme électronique (FAQ de la
+DGFiP [S15]) : le client les a sur sa plateforme ; l'application les fait entrer d'un clic. Le délai de paiement entre
+professionnels : soixante jours après l'émission, ou quarante-cinq jours fin de mois (C. com., art. L441-10, I [S7]).
+
+**Le modèle (étape B4).**
+- `pieces.date_echeance` (neuve, facultative) : lue sur la facture électronique reçue (BT-9) à l'import, sinon saisie par
+  le client « Achats » ou le cabinet par `fixer_echeance_piece` ; jamais devinée.
+- `paiements_declares` : « je l'ai payée le …, par … » — date, moyen, montant, auteur, retrait ; une PROPOSITION, comme un
+  justificatif proposé (P7) : elle n'écrit rien dans le relevé ni dans les écritures ; le cabinet la voit dans la fiche de
+  la pièce et au rapprochement, en tête des candidates.
+- `pieces_vues` : (pièce, compte, vue le), écrite par `marquer_vues` pour ses propres lignes seulement — « non lus » se dit
+  par accès et suit l'utilisateur d'un appareil à l'autre.
+- La réception ouverte au client « Achats » : dans `plateforme-agreee`, la table `QUI_PEUT_QUOI` connaît une valeur de
+  plus (« achats ») pour `lister`, `telecharger`, `retenir` — `repartir` (« Reprendre du début ») reste au cabinet ; le bloc
+  copié `droitsDeLAppelant` (quatre copies, gardé par `droitsDeLAppelantCopie.test.ts`) apprend la case, et `superpdp-sync`
+  le reçoit (cinquième copie). Ce que le client fait entrer arrive « à valider », comme ce qu'y fait entrer le cabinet ;
+  l'unicité d'un flux par dossier (`pieces_flux_unique`) empêche le doublon quand les deux cliquent.
+- Les fournisseurs : `contacts` de genre `fournisseur` (A4), PROPOSÉS depuis les pièces (la clé d'identité
+  `cleFournisseur`, le SIREN d'une facture électronique), jamais créés seuls.
+
+**Ce que voit le client « Achats »** : « Mes achats » — deux onglets, « À régler » et « Réglées » ; colonnes : l'état chez le
+cabinet (à valider, validée), le fournisseur, le numéro de facture (quand la facture électronique le porte), la date,
+l'échéance (en retard, à venir), le TTC, le règlement (« par le relevé le … », « déclarée payée par toi le … »,
+« à régler ») ; filtres : état, période d'émission, période de règlement, fournisseur ; « Déposer » (le dépôt
+d'aujourd'hui, par glisser) ; « Récupérer mes factures reçues » (sa plateforme, sur un clic) ; « Nouvelles depuis ta
+dernière visite ». Jamais la catégorie, le compte ni l'écriture.
+
+**Le resserrement des pièces (étape B6) — la plus délicate.** Tenir « Achats » en base, c'est qu'un accès sans la case ne
+lise plus les MONTANTS des achats. Or tout accès lit aujourd'hui toutes les pièces (`pieces_select`), leur texte OCR
+(qui porte les montants), et tous les fichiers du dossier dans le seau `pieces` (le PDF aussi les porte).
+- **Ajouter** : les lectures au droit (`pieces_lecture_achats` : pièces d'achat ; `pieces_lecture_frais` : les pièces de
+  SES notes de frais ; `pieces_lecture_banque` : les pièces de recette validées que « Ma simulation » lit déjà sous
+  « Banque ») ; et deux fonctions pour ce que l'Accueil et « Mes pièces » calculent SANS montant — `mes_depots(dossier)`
+  (ses dépôts : nom, date, type, état) et `couverture_des_pieces(dossier)` (les mois couverts, pour « ce qu'il reste à
+  envoyer ») — et une troisième pour la détection des doublons au dépôt, qui lit aujourd'hui l'empreinte du FICHIER
+  (`pieces.storage_hash`, `lib/extraction.ts`) et celle du TEXTE OCR (`doublon_au_depot(dossier, empreinte_fichier,
+  empreinte_texte)` : vrai ou faux). L'inventaire de TOUS les lecteurs de `pieces` côté client se dresse avant, comme P7
+  l'a fait des mouvements.
+- **Basculer** : `ClientUpload`, `ClientHome` et le dépôt passent à ces fonctions ; `ClientSimulation` et `ClientBanque`
+  gardent leurs lectures, désormais couvertes par leur droit.
+- **Resserrer** : la branche « membre » de `pieces_select` et de la lecture de `piece_textes_ocr` retirée ; la lecture du
+  seau `pieces` réduite à ses propres dépôts et aux fichiers que ses cases ouvrent — la policy du stockage joint `pieces`
+  et `documents_divers` par leur chemin (un index sur `storage_path` à poser).
+- Les autres tables que tout accès lit (`documents_divers`, `categories`, `cotisations_declarees`, `references_annuelles`…)
+  restent hors de B : chacune demandera le même examen (MEG2-Q2).
+
+##### B.2 Les notes de frais
+
+**Ce qui existe.** Une note de frais est une pièce (`type_piece = 'note_frais'`) : une dépense que le DIRIGEANT a payée de sa
+poche, écrite face au compte que le dossier choisit (108000, 455000 ou 467000 — `compte_notes_de_frais`) ; ses
+kilomètres, au forfait du barème, par véhicule et par an (`vehicules`, 625110 face au 108000). Aucune notion de salarié.
+
+**Le droit.** Pour l'exploitant, une dépense nécessitée par l'exercice de la profession (CGI, art. 93) ; le barème
+kilométrique et le forfait existent côté cabinet (« le forfait et les frais réels ne cohabitent pas »). Pour un salarié,
+le remboursement de frais professionnels échappe aux cotisations dans les limites des textes de la sécurité sociale :
+l'arrêté du 20/12/2002, qui renvoyait au barème fiscal pour les indemnités kilométriques (art. 4), a été ABROGÉ le
+07/09/2025, remplacé par l'arrêté du 04/09/2025 [S17] (non relu au Journal officiel : B-NV2). La TVA d'une dépense ne se
+récupère que sur une facture qui la porte (CGI, art. 271) : le cabinet en décide, comme aujourd'hui.
+
+**Le modèle (étape B7).** `notes_de_frais` : l'auteur (l'accès qui saisit), le bénéficiaire (lui-même, ou un salarié SANS
+accès que le dirigeant saisit), la date, la nature (repas, hébergement, transport, carburant, péage et stationnement,
+fournitures, kilomètres, autre), le motif (court), le TTC et la TVA déclarée ; pour des kilomètres : la distance, le
+véhicule (puissance fiscale, électrique) et le montant du barème de l'année, CALCULÉ (`baremeKilometrique.ts`) et VÉRIFIÉ
+en base (`bareme_kilometrique()`, comme le forfait) ; le justificatif (une pièce déposée par le chemin d'aujourd'hui) ;
+l'état — brouillon, soumise, approuvée, refusée (motif), remboursée (date, moyen) —, chaque passage daté et signé.
+Fonctions : `enregistrer_note_de_frais` et `soumettre` (son auteur, case « Notes de frais »), `approuver`, `refuser`,
+`rembourser` (case « Achats », ou le cabinet), `retirer` (un brouillon). Lectures : les siennes (« Notes de frais »), toutes
+(« Achats »), le cabinet.
+
+**Ce que le travail du client nourrit.** Une note APPROUVÉE fait apparaître sa pièce « à valider » chez le cabinet, ses
+champs PROPOSÉS (date, montant, nature → une catégorie proposée, jamais appliquée) ; le cabinet la valide, la range au
+compte de l'exploitant ou à celui des salariés (MEG2-Q7 : un rôle du plan comptable, ligne 43), et l'écrit. Les kilomètres
+de l'exploitant, additionnés sur l'année, sont PROPOSÉS au véhicule du cabinet (`km_professionnel`) — jamais écrits seuls.
+
+**Ce que voit le client** : « Mes notes de frais » — la liste (état, règlement, bénéficiaire, période), « Créer une note de
+frais » (une photo, puis le formulaire), « Mes kilomètres » (le montant du barème dit avant l'envoi, avec son année) ; avec
+« Achats » : celles de tous, « Approuver », « Refuser », « Rembourser ». Le montant moyen et les kilomètres de la période
+en tête, comme la référence.
+
+##### B.3 L'analyse
+
+**Les indicateurs** (étape B9, sans migration ; chaque chiffre seulement d'une liste LUE EN ENTIER, avec sa source dite) :
+
+| Indicateur | Source | Ouvert par | Ce que l'écran en dit |
+|---|---|---|---|
+| Chiffre d'affaires facturé HT, du mois et cumulé, comparé à N−1 | factures validées et importées (A8), avoirs déduits, à leur date d'émission | « Ventes » | « facturé dans l'application » (et « repris de ton ancien logiciel ») ; ce n'est PAS la recette de la 2035 tant qu'EC-Q3 n'est pas tranchée |
+| Ce que tes clients te doivent : en retard, à venir, total | reste à encaisser du registre d1, par échéance | « Ventes » | la créance d'une facture sans échéance se dit « sans échéance » |
+| Achats HT (ou TTC pour un dossier non redevable : `montantRetenu`) | pièces d'achat, validées et à valider, distinguées | « Achats » | « dont N pièces que ton cabinet n'a pas encore validées » |
+| Ce que tu dois à tes fournisseurs : en retard, à venir, total | achats non réglés (relevé ou paiement déclaré), par échéance | « Achats » | une pièce sans échéance se dit telle |
+| Marge HT | chiffre d'affaires facturé − achats HT | « Ventes » et « Achats » | une différence de deux sources, jamais un résultat comptable |
+| Solde de trésorerie | le solde LU : au dernier relevé contrôlé (P9a), ou à la banque (EC-Q5) | « Banque » | jamais une somme de mouvements |
+
+**Les états de synthèse** : le chiffre d'affaires par client, par article (la provenance d'A7), par mois ; les achats par
+fournisseur ; export CSV. **Le journal des évènements** : RECONSTITUÉ des colonnes d'auteur qui existent (facture créée,
+validée, transmise ; encaissement enregistré, retiré, déclaré ; statut relevé ; devis émis et sa réponse ; article,
+contact, paramètre changé ; justificatif proposé ; précision ; pièce déposée ; e-mail envoyé ; note de frais soumise,
+approuvée, remboursée), dans un module pur, muet sur une lecture partielle ; chacun ne voit que les évènements des
+domaines que ses cases ouvrent ; le cabinet voit tout (c'est la carte P10, « Espace client : ce qui a bougé »). Sa limite,
+dite : ce qui se supprime sans trace (un brouillon de facture) n'y paraît pas — une table d'évènements écrite par chaque
+fonction la lèverait (MEG2-Q11).
+
+##### B.4 Les documents du cabinet et ses demandes (ligne 52 de la feuille de route)
+
+**Ce qui existe.** La ligne 52, « Portail collaboratif et GED côté client » : « Manque l'échange structuré dans l'autre
+sens : documents définitifs mis à disposition, demandes du cabinet suivies, relances tracées. Le fil de commentaires par
+pièce en est l'amorce. » Aujourd'hui : `documents_divers` (déposés par le client ou le cabinet, LUS PAR TOUT ACCÈS, leurs
+fichiers dans le seau `pieces`, lus par tout accès) ; le fil d'une pièce et d'un mouvement ; « Demander au client » sur un
+mouvement (P9b) ; l'e-mail « Pièces à transmettre » (`relance_pieces`, au cabinet) ; « Ce qu'il reste à envoyer ».
+
+**Le modèle (étape B2).**
+- `documents_cabinet` : titre, nature (2035, liasse, comptes annuels, attestation, lettre de mission, courrier, autre),
+  exercice, fichier dans un seau NEUF `documents-cabinet` (`<dossier>/<id>/<nom>`, empreinte, taille), publié par et le,
+  retiré par et le. JAMAIS dans `documents_divers` ni dans le seau `pieces` : tout accès y lit tout. Lecture : le cabinet
+  et « Documents » ; écriture : le cabinet, par fonction. `lectures_documents` (document, compte, lu le), écrite par le
+  client à l'ouverture (`marquer_document_lu`) : la preuve de la mise à disposition.
+- `demandes_cabinet` : objet, détail (libellé : « tous les accès de ton client le lisent »), échéance, ce qui est attendu
+  (un fichier, une réponse, les deux), auteur et date, clôture (par, le, motif) ; l'état se DÉDUIT (ouverte, répondue, en
+  retard, close). `demandes_reponses` : l'auteur, un texte, la pièce ou le document déposé par le chemin d'aujourd'hui ;
+  une parole datée ne se réécrit pas. `relances_demandes` : le canal (e-mail, écran), qui, quand, l'e-mail envoyé
+  (`emails_envoyes`).
+- L'e-mail : `send-email` gagne le type `relance_demande` (au cabinet seul) ; la contrainte `emails_envoyes_type_check`
+  s'élargit avec celui des devis (P6) — un `drop constraint` sans perte, présenté une fois pour les deux.
+
+**Ce que voit le client** : « Documents » — « De ton cabinet » (« Nouveau » jusqu'à l'ouverture) et « Demandes » (les
+ouvertes d'abord, l'échéance, « Répondre » : déposer, écrire). **Le cabinet** : dans « Documents administratifs », « Mis à
+disposition » (et qui l'a lu, quand) et « Demandes » (créer, relancer — par e-mail sur un clic —, clore) ; une réponse
+qui porte un fichier arrive « à valider », comme tout dépôt.
+
+##### B.5 Ce qui reste au cabinet, et comment le travail du client nourrit le sien
+
+| Le client fait | Le cabinet reçoit | Le cabinet décide (seul) |
+|---|---|---|
+| dépose une pièce, récupère ses factures reçues | une pièce « à valider » | validation, catégorie, compte, TVA, écriture |
+| fixe une échéance, déclare un paiement | une échéance, une proposition | le rapprochement, le lettrage |
+| propose un justificatif sur un mouvement (P7) | la pièce en tête des candidates (P9b) | le rapprochement |
+| soumet une note de frais, l'approuve | la pièce « à valider », ses champs proposés, les kilomètres proposés | validation, compte, forfait ou frais réels |
+| facture, encaisse, déclare « Encaissée » hors application | les factures et le registre, « par le client » | la recette en comptabilité (EC-Q3), la CA3, l'e-reporting |
+| répond à une demande | la réponse, le fichier « à valider » | la clôture de la demande |
+
+Rien ne s'écrit en comptabilité depuis l'espace client ; rien n'y est validé ni importé à la place du cabinet ; tout ce
+qui arrive est daté, signé et « à valider ».
+
+##### B.6 Policies à présenter, et le registre
+
+À présenter avant chaque application : B2 (`documents_cabinet` et sa lecture « Documents », le seau neuf et ses policies,
+`demandes_*` lues par tout accès) ; B4 (les lectures « Achats » des tables neuves ; `QUI_PEUT_QUOI` élargi, cinq copies) ;
+B6 (les lectures au droit, puis le RESSERREMENT de `pieces`, `piece_textes_ocr` et du seau `pieces` — chaque lecteur
+d'aujourd'hui dressé avant, comme P7 l'a fait des mouvements) ; B7 (`notes_de_frais`). Chacune rejoint `rls.sql`
+(3 bis, 4 bis, contrôle positif, mutations) et sa phrase de l'onglet Accès.
+
+RGPD.md : « Notes de frais » (les salariés du client : nom, frais, motifs et distances — sans adresse de trajet ;
+obligation légale de justifier ; six ans, L102 B) ; « Documents mis à disposition et demandes du cabinet » (la lettre de
+mission, les comptes ; la durée de la mission, puis celle de la conservation des dossiers du cabinet, à fixer : MEG2-Q10) ;
+« Réception des factures d'achat » étendue au clic du client ; §7 : le resserrement des pièces.
+
+##### B.7 Les étapes de la partie B
+
+| Étape | Contenu | Base | Écrans | Edge Functions | Preuves | Dépend de |
+|---|---|---|---|---|---|---|
+| **B1 — Trois cases de plus** | colonnes, `client_du_dossier`, `droits_sur_le_dossier`, `poser_droits_acces` ; l'onglet Accès, la phrase par case ; `AuthContext` | oui, `apply_migration` | Accès client | non (une case de plus ne ferme rien) | `droitsAcces.sql` étendu ; `rls.sql` ; tests d'écran | MEG2-Q1 |
+| **B2 — Documents et demandes, en base** | `documents_cabinet`, `lectures_documents`, `demandes_cabinet`, `demandes_reponses`, `relances_demandes`, le seau | oui ; présentée | non | non | `documentsCabinet.sql` ; `rls.sql` ; stockage relu au catalogue | B1 |
+| **B3 — Documents et demandes, à l'écran** | « Documents » du client ; les sections du cabinet ; la relance par e-mail | la contrainte des types d'e-mail (avec P6) | oui | `send-email` redéployée | tests d'écran ; contrat HTTP de la relance (cabinet seul) ; banc | B2 |
+| **B4 — Les achats, en base** | `date_echeance`, `paiements_declares`, `pieces_vues`, leurs fonctions ; la réception ouverte à « Achats » | oui ; présentée | non | `plateforme-agreee`, `superpdp-sync` (et les trois autres porteurs du bloc) redéployées | `achatsClient.sql` ; contrats HTTP (la case, la réception au clic, « Reprendre » refusé) | B1 ; MEG2-Q3, Q4, Q5 |
+| **B5 — Les achats, à l'écran** | « Mes achats » ; la proposition de paiement dans la fiche d'une pièce du cabinet | non | oui | non | tests d'écran ; banc | B4 |
+| **B6 — Le resserrement des pièces** | ajouter (lectures au droit, trois fonctions), basculer (Accueil, Mes pièces, dépôt), resserrer (`pieces`, OCR, seau) | oui, en DEUX temps ; présentée | Accueil, Mes pièces | non | `rls.sql` (un bloc « Les achats du client ») ; l'inventaire des lecteurs ; banc | B4 ; MEG2-Q2 |
+| **B7 — Les notes de frais, en base** | `notes_de_frais`, six fonctions, le barème vérifié en base ; le rôle comptable des salariés (plan, ligne 43) | oui ; présentée | non | non | `notesDeFrais.sql` ; module (barème confronté à la table de la base) | B1 ; MEG2-Q6, Q7, Q8 |
+| **B8 — Les notes de frais, à l'écran** | « Mes notes de frais », l'approbation, le remboursement ; la pièce proposée au cabinet | non | oui | non | tests d'écran ; banc | B7 |
+| **B9 — L'analyse et le journal** | indicateurs, états, export, journal reconstitué ; la carte P10 | non | oui | non | modules purs (chaque chiffre d'une liste entière, muet sinon) ; tests d'écran | A3 ; B5 pour les achats |
+
+**L'ordre recommandé** : B1 → B2 → B3 (la ligne 52, la plus attendue et sans montant d'achat) → B9 sur « Ventes » et
+« Banque » seulement → B4 → B5 → B6 (le resserrement, une fois les écrans d'achat en ligne) → B9 complétée → B7 → B8.
+
+##### B.8 Les questions au cabinet (partie B)
+
+- **MEG2-Q1 — Trois cases de plus : « Achats », « Notes de frais », « Documents » ; l'analyse sans case.** *Recommandation :
+  oui.*
+- **MEG2-Q2 — Resserrer les pièces au droit « Achats »** : un accès sans la case ne lit plus que SES dépôts, sans montants
+  (fichiers et texte compris). C'est ce qui fait de la case une règle de base, pas d'écran. *Recommandation : oui, en trois
+  temps ; les autres tables lues par tout accès examinées une à une ensuite.*
+- **MEG2-Q3 — Le client « Achats » fait entrer lui-même ses factures reçues par sa plateforme** (elles arrivent « à valider
+  ») ; « Reprendre du début » reste à vous. *Recommandation : oui.*
+- **MEG2-Q4 — L'échéance d'une facture d'achat** : lue sur la facture électronique, saisie sinon (par lui ou par vous),
+  jamais devinée. *Recommandation : oui.*
+- **MEG2-Q5 — « Je l'ai payée »** déclaré par le client sur un achat que le relevé ne montre pas : une proposition, jamais
+  une écriture ni un rapprochement. *Recommandation : oui.*
+- **MEG2-Q6 — Les notes de frais** : chaque accès « Notes de frais » saisit les siennes ; l'accès « Achats » (le dirigeant)
+  approuve et rembourse ; un salarié sans accès est saisi par le dirigeant. *Recommandation : oui.*
+- **MEG2-Q7 — Le compte d'une note de frais d'un SALARIÉ** (421, 4286, 467… : votre pratique), un rôle du plan comptable du
+  dossier. *Recommandation : 421000 par défaut, réglable par dossier (ligne 43) — à confirmer par vous.*
+- **MEG2-Q8 — Les kilomètres d'un salarié** : le montant du barème fiscal est calculé, un dépassement est signalé, rien n'est
+  calculé en paie. *Recommandation : oui (la paie reste hors de l'application).*
+- **MEG2-Q9 — Les documents que vous mettez à disposition** réservés à la case « Documents », avec l'accusé de lecture ; vos
+  demandes visibles de tout accès. *Recommandation : oui.*
+- **MEG2-Q10 — Combien de temps garder les documents mis à disposition et les demandes** : la mission, puis la durée de
+  conservation des dossiers de votre cabinet. *Recommandation : à fixer par vous ; rien n'est purgé seul.*
+- **MEG2-Q11 — Le journal des évènements** reconstitué des colonnes d'auteur d'abord, une table d'évènements plus tard si un
+  manque gêne. *Recommandation : oui.*
+- **MEG2-Q12 — La barre du téléphone** : Accueil, Déposer, Ventes, Achats, « … ». *Recommandation : le banc décide.*
+
+##### B.9 Les points NON VÉRIFIÉS (partie B)
+
+1. **B-NV1** — Que la policy du stockage qui joint `pieces` par le chemin reste rapide sur un dossier réel (un index sur
+   `storage_path`, à mesurer avant le resserrement).
+2. **B-NV2** — L'arrêté du 04/09/2025 sur les frais professionnels (NOR TSSS2523915A) et la doctrine du BOSS : non lus au
+   Journal officiel ; ce qu'ils disent des indemnités kilométriques d'un salarié se relit avant B7.
+3. **B-NV3** — Que la facture électronique reçue porte son échéance (BT-9) dans la majorité des cas, et que
+   `lireFactureXml` la rende : à vérifier sur le lecteur.
+4. **B-NV4** — Que deux réceptions concurrentes (le client et le cabinet) sur la même plateforme ne se gênent pas au point
+   de reprise (`recherche_depuis`) : lu dans le code, pas éprouvé.
+5. **B-NV5** — La durée de conservation qui s'impose au cabinet pour ses dossiers de mission : non recherchée.
+6. **B-NV6** — Que le regroupement de la barre du bas (cinq entrées, « … » compris) reste lisible à 390 px : au banc.
+
+---
+
+#### PARTIE C — ALLER PLUS LOIN : CE QUE LES MÊMES DONNÉES PERMETTENT
+
+**Le principe.** La référence est un logiciel de gestion à côté de la comptabilité ; ici, le client et son
+expert-comptable travaillent sur les MÊMES pièces, le même relevé, les mêmes factures. L'application peut donc dire au
+client ce qu'aucun logiciel de gestion seul ne sait : où en est son dossier, ce qu'il va payer et quand, ce que ses
+chiffres valent selon son comptable. Trois règles ne bougent pas : un chiffre se dit avec sa source et son état
+(« provisoire », « révisé », « validé le … ») ; rien n'est automatique (aucun appel extérieur, aucun e-mail sans clic) ;
+le client ne lit jamais les écritures, la catégorie ni le travail du cabinet — il en lit ce que le cabinet choisit d'en
+montrer.
+
+| Proposition | Ce qu'elle apporte | Ce qu'elle coûte | Ce qu'elle suppose | Attendre ? |
+|---|---|---|---|---|
+| **C1 — L'échéancier fiscal et social du client** : les dates de l'année (TVA selon sa périodicité, CFE, CVAE, 2035 et liasse, cotisations, e-reporting à partir du 01/09/2027) et, quand ils sont CONNUS, les montants — la CA3 que le cabinet a préparée, l'échéancier des avis de cotisation lus —, sinon « à provisionner », dit comme une estimation | la peur de la surprise, première raison d'un client de TPE d'appeler son comptable | moyen : une fonction qui rend dates et montants connus, un module pur, une carte de l'accueil | `lib/echeancesFiscales.ts` (existe, jours ouvrés et fériés), `cotisations_declarees` (lue par tout accès aujourd'hui), `declarations_tva` et l'e-reporting (au cabinet : par la fonction) ; les dates pour tout accès, les montants sous « Banque » (comme la simulation) | non : la PREMIÈRE de C |
+| **C2 — L'état du dossier chez le cabinet** : par exercice, « pièces attendues » (ce qu'il reste à envoyer), « en révision » (les cycles), « validé le … », « 2035 enregistrée » | la confiance ; moins d'e-mails « où en êtes-vous ? » | faible : une fonction qui rend une PHASE par exercice, jamais un détail | `exercices_valides`, les cycles de la révision, la Checklist ; aucun montant : tout accès | non |
+| **C3 — La facture électronique et l'e-reporting en un coup d'œil** : l'encart A6, plus les factures à transmettre, refusées, aux statuts non relus depuis longtemps, les encaissements à déclarer et en retard ; la prochaine période d'e-reporting, « prête », « en attente de ton cabinet » ou « déclarée le … » | l'obligation dite avant qu'elle ne pèse | faible à moyen : la fonction d'A6 étendue | A6 ; `regimes_ereporting`, `declarations_ereporting` (au cabinet : par la fonction) ; « Ventes » | après A6 |
+| **C4 — Les chiffres du comptable, publiés** : le cabinet PUBLIE au client une situation datée — recettes, dépenses par poste de la 2035, résultat, TVA due, comparaison à N−1 —, figée, marquée « provisoire » ou « validée » (l'exercice validé), plutôt qu'un chiffre vivant qui bouge chaque jour | le client voit son résultat tel que son comptable le voit, au moment où le comptable l'a choisi | moyen : une table des situations publiées, une case « Comptes » (le revenu du dirigeant), une page | le moteur de la 2035 et la situation intermédiaire (Financement) ; la révision pour dire « révisé » | après B9 |
+| **C5 — Relancer ses clients** : les créances en retard (A3, B9) ; « Relancer » envoie un e-mail qui rappelle la facture (son montant, son échéance), sur un clic, plafonné, tracé ; les pénalités de retard (C. com., L441-10) et l'indemnité de 40 € CALCULÉES et montrées, jamais facturées seules | l'encaissement, le vrai souci de trésorerie d'une TPE | moyen : un type d'e-mail de plus (`send-email`, la contrainte des types — avec P6), une colonne « relancée le » dérivée du journal des e-mails | A3 ; le plafond d'e-mails de P3 ; le taux de la BCE du semestre (C-NV4) | après A3 |
+| **C6 — Le rapprochement proposé par l'encaissement** : quand le client enregistre un encaissement avec son mouvement (« Ventes » et « Banque »), le cabinet voit le rapprochement de ce mouvement PROPOSÉ (la recette de la facture), en tête des candidates | une saisie de moins pour le cabinet, une seule vérité pour les deux | moyen | EC-Q3 tranchée (la facture source de la recette) | après EC-Q3 |
+| **C7 — La double authentification** des accès qui portent une case : un second facteur (une application d'authentification), exigé par la base pour les tables de « Banque », « Achats » et « Documents » (le niveau d'assurance du jeton) | un mot de passe volé n'ouvre plus le relevé, les achats ni la 2035 | moyen : l'inscription du facteur, la reprise d'un facteur perdu, les policies | Supabase Auth (C-NV1) | avant d'ouvrir « Achats » et « Documents » à un client réel |
+| **C8 — La trésorerie à 90 jours** : le solde lu, plus ce que les clients doivent (par échéance), moins ce qui est dû aux fournisseurs, à l'État et à l'Urssaf (C1), plus le prévisionnel du cabinet — dit « prévision » | voir venir un découvert | élevé | C1, B4, P9a, le plan de trésorerie du cabinet | oui : après C1 et B5 |
+
+**Écartées pour l'instant**, et pourquoi :
+- **E1 — Le paiement en ligne d'une facture** (un lien de paiement) : un prestataire de paiement de plus (sous-traitant,
+  contrat), une page ou une redirection hors session, le rapprochement des virements du prestataire ; l'application n'a
+  AUCUN chemin anonyme (`App.tsx`), et c'est une propriété à garder.
+- **E2 — La signature du devis par le client du client** : une page anonyme, ou un compte pour un tiers ; le « Bon pour
+  accord » imprimé et la réponse saisie (P5) suffisent pour commencer.
+- **E3 — L'assistant IA ouvert au client** : son coût (le plafond est par cabinet), un conseil sans le comptable, et des
+  données du dossier envoyées au modèle sur le clic d'un client ; à rouvrir, borné à SES données et à des questions de
+  lecture, si le cabinet le veut.
+
+##### C.1 Les étapes de la partie C
+
+| Étape | Contenu | Base | Écrans | Edge Functions | Preuves | Dépend de |
+|---|---|---|---|---|---|---|
+| **C1 — L'échéancier** | `echeancier_du_dossier(dossier)` (dates pour tout accès, montants connus sous « Banque ») ; module pur ; carte de l'accueil et page | oui (une fonction) ; présentée | oui | non | essai (sans « Banque » : aucune somme) ; module (jours ouvrés, fériés, report) ; tests d'écran | — ; MEG3-Q1 |
+| **C2 — L'état du dossier** | `phase_des_exercices(dossier)` ; la carte | oui (une fonction) | oui | non | essai ; tests d'écran | — ; MEG3-Q6 |
+| **C3 — FE et e-reporting en un coup d'œil** | la fonction d'A6 étendue ; l'encart complété | oui | oui | non | essai (rien de secret, rien du cabinet au-delà des phases) | A6 |
+| **C4 — Les situations publiées** | `situations_publiees` (figées), la case « Comptes », la publication par le cabinet, la page du client | oui ; présentée | oui | non | `situationsPubliees.sql` ; `rls.sql` ; tests d'écran | B1, B9 ; MEG3-Q2 |
+| **C5 — Les relances** | le type d'e-mail, la liste des créances en retard, le calcul des pénalités montré | la contrainte des types d'e-mail | oui | `send-email` redéployée | contrats HTTP (plafond, client « Ventes », cabinet) ; module (pénalités au jour) | A3 ; MEG3-Q3 |
+| **C6 — Le rapprochement proposé** | la proposition dans la fiche d'un mouvement | selon EC-Q3 | oui | non | tests d'écran | EC-Q3 ; MEG3-Q7 |
+| **C7 — La double authentification** | l'inscription, la vérification, les policies au niveau d'assurance | oui ; présentée | oui | non | `rls.sql` (un jeton sans second facteur refusé) | MEG3-Q4 ; C-NV1 |
+| **C8 — La trésorerie à 90 jours** | un module pur, une page | non | oui | non | module ; tests d'écran | C1, B5 |
+
+**L'ordre recommandé** : C1 et C2 (peu chers, très attendus) → C3 (avec ou juste après A6) → C7 (avant que « Achats » et
+« Documents » servent un client réel) → C5 → C4 → C6 → C8.
+
+##### C.2 Les questions au cabinet (partie C)
+
+- **MEG3-Q1 — L'échéancier fiscal et social** : les dates pour tout accès, les montants connus sous « Banque » (comme la
+  simulation), une estimation toujours dite comme telle. *Recommandation : oui, en premier.*
+- **MEG3-Q2 — Vos chiffres montrés au client** : une situation que VOUS publiez, datée et figée, « provisoire » ou
+  « validée », plutôt que des chiffres vivants ; une case « Comptes ». *Recommandation : la publication.*
+- **MEG3-Q3 — Les relances des clients du client** : sur un clic du client « Ventes », plafonnées, tracées ; les pénalités
+  calculées et montrées, jamais facturées seules. *Recommandation : oui, après les règlements (A3).*
+- **MEG3-Q4 — La double authentification** exigée pour les accès qui portent « Banque », « Achats » ou « Documents ».
+  *Recommandation : oui, avant d'ouvrir les achats et les documents à un client réel (à vérifier sur l'offre gratuite).*
+- **MEG3-Q5 — Le paiement en ligne et la signature du devis par le client du client** : pas maintenant (des pages sans
+  connexion, un prestataire de paiement). *Recommandation : non pour l'instant.*
+- **MEG3-Q6 — L'état du dossier chez vous**, montré au client (pièces attendues, révision en cours, exercice validé, 2035
+  enregistrée), sans aucun chiffre. *Recommandation : oui.*
+- **MEG3-Q7 — Le rapprochement proposé par l'encaissement du client** : après EC-Q3. *Recommandation : oui, à ce moment-là.*
+
+##### C.3 Les points NON VÉRIFIÉS (partie C)
+
+1. **C-NV1** — La double authentification de Supabase Auth sur l'offre gratuite, et la lecture du niveau d'assurance du
+   jeton dans une policy (déjà NON VÉRIFIÉE le 09/10/2026).
+2. **C-NV2** — La fiabilité des montants de l'échéancier des cotisations (les avis sont lus « au mieux ») avant de les
+   montrer au client comme connus.
+3. **C-NV3** — Que le moteur de la 2035 et la situation intermédiaire produisent une situation publiable sans exposer
+   les tables du cabinet : à concevoir avec C4.
+4. **C-NV4** — La source du taux de refinancement de la BCE au 1er janvier et au 1er juillet (L441-10, II) : la fonction
+   `taux-change-bce` lit des cours de change, pas ce taux.
+
+---
+
+#### TROUVÉ EN PASSANT (pour la session : à ranger en étapes, ou à dire au cabinet)
+
+1. **G1.45 et EC-Q2** (annexe 7 v1.9 de la DGFiP) : « En cas de mandat de facturation, le numéro de facture doit comporter
+   une racine propre au mandataire ». L'hypothèse d'une seule série validée tour à tour par le client et par le cabinet
+   (P2, `enregistrer_facture`) ne la donne pas ; la conception du 09/10/2026 écartait deux séries parce que « rien ne les
+   exige ». Aucune facture réelle n'est en jeu (0 transmission). → MEG1-Q5, §A.3.6.
+2. **Le numéro de TVA imprimé d'une facture validée n'est pas figé** : `numeroTvaImprime` le recalcule du statut du dossier
+   au jour de l'impression (le commentaire de `FactureApercu` le dit) ; après un changement de statut, une réimpression ne
+   dit plus ce que disait l'original. → A7.
+3. **Aucun numéro de bon de commande pour un acheteur privé** : L441-9 le demande « lorsqu'il a été préalablement établi
+   par l'acheteur » ; `numero_engagement` (BT-13) est réservé à l'organisme public par la contrainte
+   `factures_emises_organisme_public`. → A7.
+4. **Les mentions de paiement par défaut** n'ont pas les conditions d'escompte (L441-9) et proposent le PLANCHER
+   contractuel des pénalités (trois fois le taux d'intérêt légal) sans dire que le taux légal par défaut est celui de la
+   BCE majoré de 10 points (L441-10, II). → MEG1-Q13.
+5. **La mention « EI »** (R123-237, 9° ; R526-27) : rien ne la propose sur la facture d'un entrepreneur individuel ; la
+   forme juridique du dossier n'est pas connue (ligne 33). → MEG1-Q14.
+6. **Une facture à un particulier dans un dossier de soins** nomme un patient en base (`factures_emises.tiers_nom`), contre
+   la condition du registre (§8.7 : « aucune donnée de santé »), que seule la consigne tient ; les devis (P5) et les
+   contacts la multiplieraient. → MEG1-Q10.
+7. **Les seaux du stockage ne bornent ni la taille ni le type** des fichiers ; `cabinet-logos`, PUBLIC, accepte un SVG (qui
+   peut porter du script, servi depuis le domaine du stockage). Bénin aujourd'hui (seul le chef y écrit) ; à borner au
+   prochain passage.
+
+---
+
+#### SOURCES
+
+- [S1] Les décisions du cabinet du 09/10/2026 (l'espace client devient le logiciel de gestion du client) et du 11/10/2026
+  (« conçois le premier groupe » ; « au
+  minimum on peut faire comme eux, mais le but c'est d'aller plus loin »), relayées par la session ; la structure du
+  logiciel de référence relevée par le cabinet (sans nom ni chiffre).
+- [S2] Légifrance, CGI, annexe II, art. 242 nonies A, version en vigueur depuis le 01/01/2025 (décret n° 2024-1195), lu par
+  citations courtes : I, 1°, 7°, 7° bis, 8° bis, 9°, 11° bis. https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000046086694/
+- [S3] BOFiP, BOI-TVA-DECLA-30-20-20-10, en vigueur depuis le 18/10/2013, §70 à §130 (rien sur un changement de logiciel).
+  https://bofip.impots.gouv.fr/bofip/140-PGP.html
+- [S4] BOFiP, BOI-TVA-DECLA-30-20-10-30, §90 à §210 (le mandat de facturation), cité d'après la conception du 09/10/2026,
+  non relu ici.
+- [S5] Légifrance, CGI, art. 289, cité d'après la conception du 09/10/2026, non relu ici.
+- [S6] Légifrance, code de commerce, art. L441-9, version du 26/04/2019 au 01/01/2027 (ord. n° 2019-359) : la date de
+  règlement, l'escompte, les pénalités, l'indemnité forfaitaire, le bon de commande.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038414397
+- [S7] Légifrance, code de commerce, art. L441-10 (le taux de la BCE majoré de 10 points, le plancher de trois fois le taux
+  d'intérêt légal, l'indemnité due par tout professionnel en retard) et art. D441-5 (40 €), lus par extraits (A-NV13).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038414392 ;
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043197457
+- [S8] Légifrance, code de commerce, art. R123-237, version en vigueur depuis le 15/05/2022 (décret n° 2022-725).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000017843957
+- [S9] Légifrance, code de commerce, art. R526-27, version en vigueur depuis le 15/05/2022 (décret n° 2022-725).
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000045697814
+- [S10] DGFiP, « Dossier de spécifications externes de la facturation électronique » v3.2 du 30/04/2026 : dossier général,
+  §3.5.3 et §3.5.4 (l'annuaire, sa consultation par API, EDI et portail) ; annexe 3 « Format sémantique FE annuaire »
+  v1.8 (flux F13 et F14 : DG-7, DT-7-3-1, DT-7-5-1, DT-7-6) ; annexe 7 « Règles de gestion » v1.9 (G1.05, G1.15, G1.16,
+  G1.24, G1.36, G1.42, G1.45, G1.52, G1.68, G1.93, G1.95, G1.115, G7.30). Lus dans l'archive déjà téléchargée par la session
+  (carnet `d3/spec`, `e6a/dl`).
+  https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/specification_externes_b2b/specifications-externes-v3.2.zip
+- [S11] Légifrance, livre des procédures fiscales, art. L102 B, version du 01/01/2023 au 01/01/2027, lu par extraits.
+  https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041471233/
+- [S12] Les artefacts de validation de la norme EN 16931 (CEN/TC 434, v1.3.16 — l'instrument de `outils/facturation/`) :
+  les termes BT-1, BT-2, BT-9, BT-13, BT-20, BT-25, BT-26, BT-30, BT-81, BT-84, BT-86, BT-130, BT-146, BT-151 à BT-155,
+  BG-16, et les règles BR-23, BR-CL-23, BR-CO-17 ; lus par le code qui les applique et la conception de la ligne 28.5, pas
+  par la norme elle-même.
+- [S13] CNIL, référentiel relatif à la gestion des activités commerciales, lu par sa présentation (comme le 09/10/2026).
+  https://www.cnil.fr/fr/gestion-commerciale-et-gestion-des-impayes-la-cnil-publie-deux-nouveaux-referentiels
+- [S14] Code de commerce, art. L123-22 (dix ans), cité d'après RGPD.md §8.9, non relu ici.
+- [S15] impots.gouv.fr, « Foire aux questions – Je découvre la facturation électronique », version du 01/09/2026, citée
+  d'après la conception de l'e-reporting (HISTORIQUE.md), non relue ici.
+- [S16] Règlement (UE) 2016/679 (RGPD), art. 5, 6, 9, 15 à 21, 28.
+- [S17] Légifrance, arrêté du 20/12/2002 relatif aux frais professionnels, art. 4 (en vigueur du 27/12/2002 au
+  07/09/2025, abrogé par l'arrêté du 04/09/2025, NOR TSSS2523915A, non lu au Journal officiel).
+  https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000006215973
+- [S18] CGI, art. 93 et 271, cités sans relecture.
+- [S19] HISTORIQUE.md : « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION » (et ses EC-Q1 à
+  EC-Q7) ; « LES VENTES DU CLIENT, EN BASE » et sa bascule ; « AVANT LES VENTES DU CLIENT » ; « LES FONCTIONS DE LA VENTE
+  ACCEPTENT LE CLIENT » ; « « MES VENTES › FACTURES » » ; « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL » ;
+  « « PAR LE CLIENT » CÔTÉ CABINET » ; « LES DEVIS, EN BASE » (EC-D1 à EC-D4) ; « « MA BANQUE » » (P9a) ; « LA FACTURE
+  ÉLECTRONIQUE S'ÉCRIT EN CII » ; « UNE FACTURE VALIDÉE SE FIGE EN BASE » (dans la migration `factures_validees_figees`).
+  RGPD.md §1, §2, §8.7, §8.9.
+- [S20] Feuille de route Notion, ligne 52, « Portail collaboratif et GED côté client » (lue le 11/10/2026).
+
+**Lu dans le dépôt** (commit `f7b37da`) : `src/lib/factures.ts`, `factureCii.ts` (le bloc copié, `donneesDeLaFacture`,
+`numeroTvaImprime`, `UNITE_GENERIQUE`), `devis.ts`, `ereporting.ts` (ventes et paiements), `factureX.ts`,
+`factureElectronique.ts` (exports), `sauvegarde.ts` (les listes du plan), `types.ts` (statuts, types), `echeancesFiscales.ts`,
+`resteAEnvoyer.ts`, `tuilesVentes.ts`, `ventesLecture.ts`, `ongletsDossier.ts` ; `src/pages/dossier/FactureFormModal.tsx`,
+`FactureApercu.tsx`, `FacturesTab.tsx` (les tests d'état) ; `src/pages/Client*.tsx` (les lectures de `pieces`) ;
+`src/components/Layout.tsx` (la barre du client) ; `supabase/functions/plateforme-agreee` (`vuePublique`,
+`QUI_PEUT_QUOI`), `superpdp-credentials` (`status`), `send-email` ; l'export du schéma (les migrations des factures, de leur
+garde, des droits, des ventes du client, de la banque du client) ; RGPD.md.
+**Lu en base** (lecture seule, 11/10/2026) : les colonnes de quatorze tables, les contraintes et index des factures, les
+déclencheurs, les policies des tables lues par le client et du stockage, les seaux, et des comptes de lignes.

@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report>
+  <ReportDocument>
+    <Id>e6a0f000-0000-4000-8000-000000000f01</Id>
+    <IssueDateTime>
+      <DateTimeString>20271105093000</DateTimeString>
+    </IssueDateTime>
+    <TypeCode>IN</TypeCode>
+    <Sender>
+      <Id schemeId="0238">9991</Id>
+      <Name>Plateforme Fictive</Name>
+      <RoleCode>WK</RoleCode>
+    </Sender>
+    <Issuer>
+      <Id schemeId="0002">123456782</Id>
+      <Name>Atelier Démo Conseil</Name>
+      <RoleCode>BY</RoleCode>
+    </Issuer>
+  </ReportDocument>
+  <TransactionsReport>
+    <ReportPeriod>
+      <StartDate>20271001</StartDate>
+      <EndDate>20271031</EndDate>
+    </ReportPeriod>
+    <Invoice>
+      <ID>INV-2027-0042</ID>
+      <IssueDate>20271005</IssueDate>
+      <TypeCode>380</TypeCode>
+      <CurrencyCode>EUR</CurrencyCode>
+      <BusinessProcess>
+        <ID>S1</ID>
+        <TypeID>urn.cpro.gouv.fr:1p0:ereporting</TypeID>
+      </BusinessProcess>
+      <Seller>
+        <CompanyId schemeId="0223">DE000000000</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">DE000000000</TaxRegistrationId>
+        <PostalAddress>
+          <CountryId>DE</CountryId>
+        </PostalAddress>
+      </Seller>
+      <Buyer>
+        <CompanyId schemeId="0002">123456782</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">FR11123456782</TaxRegistrationId>
+      </Buyer>
+      <MonetaryTotal>
+        <TaxExclusiveAmount>49.00</TaxExclusiveAmount>
+        <TaxAmount CurrencyCode="EUR">0.00</TaxAmount>
+      </MonetaryTotal>
+      <TaxSubTotal>
+        <TaxableAmount>49.00</TaxableAmount>
+        <TaxAmount>0.00</TaxAmount>
+        <TaxCategory>
+          <Code>AE</Code>
+          <Percent>0</Percent>
+        </TaxCategory>
+      </TaxSubTotal>
+    </Invoice>
+    <Invoice>
+      <ID>FT 2027/118</ID>
+      <IssueDate>20271010</IssueDate>
+      <TypeCode>380</TypeCode>
+      <CurrencyCode>EUR</CurrencyCode>
+      <BusinessProcess>
+        <ID>B1</ID>
+        <TypeID>urn.cpro.gouv.fr:1p0:ereporting</TypeID>
+      </BusinessProcess>
+      <Seller>
+        <CompanyId schemeId="0223">IT00000000000</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">IT00000000000</TaxRegistrationId>
+        <PostalAddress>
+          <CountryId>IT</CountryId>
+        </PostalAddress>
+      </Seller>
+      <Buyer>
+        <CompanyId schemeId="0002">123456782</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">FR11123456782</TaxRegistrationId>
+      </Buyer>
+      <Delivery>
+        <Date>20271012</Date>
+      </Delivery>
+      <MonetaryTotal>
+        <TaxExclusiveAmount>300.00</TaxExclusiveAmount>
+        <TaxAmount CurrencyCode="EUR">0.00</TaxAmount>
+      </MonetaryTotal>
+      <TaxSubTotal>
+        <TaxableAmount>300.00</TaxableAmount>
+        <TaxAmount>0.00</TaxAmount>
+        <TaxCategory>
+          <Code>K</Code>
+          <Percent>0</Percent>
+        </TaxCategory>
+      </TaxSubTotal>
+    </Invoice>
+    <Invoice>
+      <ID>AV-2027-0007</ID>
+      <IssueDate>20271020</IssueDate>
+      <TypeCode>381</TypeCode>
+      <CurrencyCode>EUR</CurrencyCode>
+      <BusinessProcess>
+        <ID>S1</ID>
+        <TypeID>urn.cpro.gouv.fr:1p0:ereporting</TypeID>
+      </BusinessProcess>
+      <ReferencedDocument>
+        <ID>INV-2027-0042</ID>
+        <IssueDate>20271005</IssueDate>
+      </ReferencedDocument>
+      <Seller>
+        <CompanyId schemeId="0223">DE000000000</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">DE000000000</TaxRegistrationId>
+        <PostalAddress>
+          <CountryId>DE</CountryId>
+        </PostalAddress>
+      </Seller>
+      <Buyer>
+        <CompanyId schemeId="0002">123456782</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">FR11123456782</TaxRegistrationId>
+      </Buyer>
+      <MonetaryTotal>
+        <TaxExclusiveAmount>9.00</TaxExclusiveAmount>
+        <TaxAmount CurrencyCode="EUR">0.00</TaxAmount>
+      </MonetaryTotal>
+      <TaxSubTotal>
+        <TaxableAmount>9.00</TaxableAmount>
+        <TaxAmount>0.00</TaxAmount>
+        <TaxCategory>
+          <Code>AE</Code>
+          <Percent>0</Percent>
+        </TaxCategory>
+      </TaxSubTotal>
+    </Invoice>
+    <Invoice>
+      <ID>BE-FORM-77</ID>
+      <IssueDate>20271025</IssueDate>
+      <TypeCode>380</TypeCode>
+      <CurrencyCode>EUR</CurrencyCode>
+      <BusinessProcess>
+        <ID>S1</ID>
+        <TypeID>urn.cpro.gouv.fr:1p0:ereporting</TypeID>
+      </BusinessProcess>
+      <Seller>
+        <CompanyId schemeId="0223">BE0000000000</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">BE0000000000</TaxRegistrationId>
+        <PostalAddress>
+          <CountryId>BE</CountryId>
+        </PostalAddress>
+      </Seller>
+      <Buyer>
+        <CompanyId schemeId="0002">123456782</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">FR11123456782</TaxRegistrationId>
+      </Buyer>
+      <MonetaryTotal>
+        <TaxExclusiveAmount>250.00</TaxExclusiveAmount>
+        <TaxAmount CurrencyCode="EUR">0.00</TaxAmount>
+      </MonetaryTotal>
+      <TaxSubTotal>
+        <TaxableAmount>250.00</TaxableAmount>
+        <TaxAmount>0.00</TaxAmount>
+        <TaxCategory>
+          <Code>E</Code>
+          <Percent>0</Percent>
+          <TaxExemptionReason>Exonération : enseignement (directive 2006/112/CE, art. 132, 1, i)</TaxExemptionReason>
+          <TaxExemptionReasonCode>VATEX-EU-132-1I</TaxExemptionReasonCode>
+        </TaxCategory>
+      </TaxSubTotal>
+    </Invoice>
+    <Invoice>
+      <ID>NDS-1029</ID>
+      <IssueDate>20271001</IssueDate>
+      <TypeCode>380</TypeCode>
+      <CurrencyCode>USD</CurrencyCode>
+      <BusinessProcess>
+        <ID>S1</ID>
+        <TypeID>urn.cpro.gouv.fr:1p0:ereporting</TypeID>
+      </BusinessProcess>
+      <Seller>
+        <CompanyId schemeId="0227">USNuage Demo Softw</CompanyId>
+        <PostalAddress>
+          <CountryId>US</CountryId>
+        </PostalAddress>
+      </Seller>
+      <Buyer>
+        <CompanyId schemeId="0002">123456782</CompanyId>
+        <TaxRegistrationId qualifyingId="VAT">FR11123456782</TaxRegistrationId>
+      </Buyer>
+      <InvoicePeriod>
+        <StartDate>20271001</StartDate>
+        <EndDate>20271031</EndDate>
+      </InvoicePeriod>
+      <MonetaryTotal>
+        <TaxExclusiveAmount>120.00</TaxExclusiveAmount>
+        <TaxAmount CurrencyCode="EUR">0.00</TaxAmount>
+      </MonetaryTotal>
+      <TaxSubTotal>
+        <TaxableAmount>120.00</TaxableAmount>
+        <TaxAmount>0.00</TaxAmount>
+        <TaxCategory>
+          <Code>AE</Code>
+          <Percent>0</Percent>
+        </TaxCategory>
+      </TaxSubTotal>
+    </Invoice>
+  </TransactionsReport>
+</Report>

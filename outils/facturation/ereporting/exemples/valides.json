@@ -1,0 +1,38 @@
+{
+  "schema": {
+    "archive": {
+      "publication": "DGFiP, Dossier de spécifications externes de la facturation électronique, v3.2 du 30/04/2026",
+      "url": "https://www.impots.gouv.fr/sites/default/files/media/1_metier/2_professionnel/EV/2_gestion/290_facturation_electronique/specification_externes_b2b/specifications-externes-v3.2.zip",
+      "octets": 6766301,
+      "sha256": "cd8f6e817e37f329e6f62a35aa131b78a51379bec953445b774fa8adbaaa3862"
+    },
+    "dossier": "3- XSD_v3.2/1 - E-reporting/",
+    "xsd": {
+      "ereporting.xsd": "b6e355094f08e9d90dd6bfaed42319ef490f4dc1a11b1b6b7473b9c35b27d546",
+      "report.xsd": "059cea2615bca67b07df167d3e5b65d8658477f8a12a8723d3fc227f35cb8403",
+      "transaction.xsd": "ab5139608ec5754227c37b471cdec3b7434dcb21340d9b8c8d98bfc60e6ec841",
+      "payment.xsd": "bf41d73aad46efdf8a26699f6dc7777f54051d8795f85faf1272cd2095b9a048",
+      "parametre.xsd": "5971f3f2080e7057a4034121703ebdf403dda0d8f0e41e33987dc432c8671bad"
+    }
+  },
+  "fichiers": {
+    "achats-rectificative.xml": {
+      "sha256": "b6898ea767cfa163dbb8757b825d0e6b44341b6891814e5782230a26356878d8"
+    },
+    "achats.xml": {
+      "sha256": "855c4d35d4105995c7f999d8c08dc4823bc8169ab06e3ecc2995720191e3d22a"
+    },
+    "paiements-contre-passation.xml": {
+      "sha256": "899149c033799472daef857e2753dd1b5a613e9bbcdbcaf0e30d85e4e3c1fd70"
+    },
+    "paiements.xml": {
+      "sha256": "40e4ad4efa3eaf1fb9bc8014abc96b579c00f98324508ec332aec79c353325e4"
+    },
+    "ventes-option-debits.xml": {
+      "sha256": "3336d5922655d6fd2b83b669f774605013f2b79f9432f3c866706fae37215182"
+    },
+    "ventes.xml": {
+      "sha256": "67b5599b8adf5bed33e942e6261594eb22eac67fe771f628f70079f2d35641a6"
+    }
+  }
+}
