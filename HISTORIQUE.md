@@ -20267,3 +20267,151 @@ des mouvements rapprochés en deux endroits (`paiementsDesPieces` et `partsDuRel
 partagé, relâché après la relecture de tout l'onglet ; les quatre lectures nouvelles passent par `lireTout`, et leurs
 motifs ne cachent que la section ; la feuille de style ne change que la liste des volets plein écran du téléphone. La
 barrière et le banc rejoués sur l'arbre intégré sont dans la demande de fusion.
+
+### 11/10/2026 — LA DÉCLARATION D'E-REPORTING HORS APPLICATION, EN BASE — LIGNE 28.5, ÉTAPE (E), CINQUIÈME TEMPS, SECONDE MOITIÉ (E5B1)
+
+(Migration `declarations_ereporting`, préparée sur une réplique et rendue à la session — version PROVISOIRE
+`20261011150000` au nom de son fichier d'export, à renommer à celle qu'`apply_migration` donnera ; 40 799 caractères,
+41 670 octets, empreinte `3deb437355c47f1e184baa9829e0e600` ; AUCUNE instruction de suppression — le mot n'y paraît que
+dans `on delete cascade`, `tg_op = 'DELETE'` et `before … delete` — : elle passe par `apply_migration`. À appliquer AVANT
+la fusion : le plan de sauvegarde lit ses deux tables. L'essai `supabase/essais/declarationsEreporting.sql` ;
+`src/lib/declarationsEreporting.ts`, `declarationsEreportingLecture.ts` et leurs tests ; `types.ts` ; `sauvegarde.ts` et
+son test, `restaurationEssai.test.ts`, `supabase/essais/restauration.sql` ; `encaissementsEcritures.test.ts` ; le
+contrôle 141 de `validationExercice.sql` ; les en-têtes de `rls.sql`, de `supabase/schema/README.md` et un paragraphe du
+§ 6 de PLAN_DE_REPRISE.md.) La première moitié de e5b, conçue avec e5a (« e5b — la suite, conçue », § 1 et § 3) : le
+cabinet dit ici ce qu'il a déclaré sur la plateforme du dossier, et la base GARDE le contenu que l'application avait
+calculé (e4), figé, avec son empreinte ; une pièce dont la fiche est déclarée ne se supprime plus ; le module dit les
+refus avant le clic et dit une période « à rectifier ». Q6 (un encaissement retiré après la déclaration de sa période)
+attend le cabinet (e5b2) ; aucun écran (phase C), aucune Edge Function, aucun fichier (e6), aucun appel réseau. Données
+mesurées en production le 11/10/2026 : 118 migrations, aucune des deux tables ; aucune déclaration n'est due avant les
+factures du 01/09/2027 : tout ce qui suit est LATENT.
+
+**SOURCES.** Spécifications externes de la DGFiP v3.2, dossier général, § 3.7.7 (note 127 : « Ce flux de transmission
+rectificatif annule et remplace l'ensemble des données agrégées et précédemment transmises au titre de cette période » ;
+note 131 et G8.05 : l'unicité d'une transmission tient à son identifiant, au déclarant et à la période) ; annexe 7 v1.9,
+G6.29 et G7.52 (un rôle de déclarant par fichier), G7.43 (une période finie avant le contrôle) ; BOI-TVA-DECLA-20-30-50,
+§ 10 (les factures du 01/09/2027 et après, pour une PME ou une micro-entreprise) ; BOI-TVA-DECLA-20-30-50-30, § 50 à § 80
+(décade, mois, bimestre ; pas de transmission sans opération) et CGI, ann. II, art. 242 nonies O ; BOI-TVA-DECLA-20-30-60,
+§ 30 (aucune donnée de paiement sur option pour les débits) ; la documentation de PostgreSQL, « JSON Types » (`jsonb` ne
+garde ni l'ordre des clés ni les blancs : c'est son texte qu'on empreinte). Les normes AFNOR XP Z12-012 et XP Z12-013
+n'ont été ni lues ni citées.
+
+**CE QUI A ÉTÉ DÉCIDÉ, ET ÉCARTÉ.** UNE table `declarations_ereporting` : l'objet (ventes, achats, paiements — il porte le
+rôle du déclarant), la période, le régime sous lequel elle a été jugée (`regime_id`, une clé sans action : il reste
+désigné si on le retire, E5-Q7), initiale (`IN`) ou rectificative (`RE`, `remplace_id`, unique), le canal `manuel`, la
+plateforme nommée par le cabinet, le contenu `jsonb` (un mégaoctet au plus), son EMPREINTE, le nombre d'opérations (> 0),
+l'état (`declaree`, `remplacee`), la note, l'auteur. Une seule active par dossier, objet et période (index unique
+partiel) ; une active n'en chevauche pas une autre du même objet (garde) ; une rectificative remplace la période ENTIÈRE
+et fait passer l'active à « remplacée » d'un seul tenant ; rien d'autre ne change, rien ne se supprime sauf avec le
+dossier. Une table `declarations_ereporting_sources`, écrite par la fonction depuis le contenu : la fiche d'un achat, la
+facture d'une vente, l'encaissement d'un paiement — SANS clé étrangère : l'histoire d'une déclaration remplacée survit à
+sa pièce. `declarer_ereporting_hors_application`, `SECURITY DEFINER`, trente refus dans un ordre fixé, l'accès d'abord,
+sous le verrou de l'e-reporting du dossier (`cle_ereporting`, celui de la confirmation et du retrait d'un régime) et les
+pièces citées verrouillées en partage. Hypothèses du cabinet prises comme leurs recommandations : E5-Q6 (la garde
+`garder_piece_declaree`, `SECURITY DEFINER` pour voir les déclarations quelle que soit la RLS de qui supprime, le patron
+de `garder_source_citee`) ; E5-Q7 (`retirer_regime_ereporting` ne change pas). Écartés : une empreinte en colonne GÉNÉRÉE
+— une restauration réinsère les lignes entières, et Postgres refuse d'écrire une colonne générée (428C9 ; mesuré sur
+`piece_textes_ocr.texte_md5`, voir plus bas) : la colonne est ordinaire et la garde la RECALCULE à l'insertion, porte de
+la restauration comprise ; une vérification du CALCUL en base (la conception : « le module calcule, la base vérifie la
+forme ») — la base juge les bornes, le régime, la cohérence du contenu avec ses paramètres, ses sources, jamais ses
+montants ; une fiche COURANTE exigée — la base garde ce qui a été déclaré, une version remplacée depuis se cite encore,
+et le module la dit « à rectifier ». Le refus « la période n'est pas finie » vient en DERNIER : avant le 2 septembre 2027
+aucune période ne se déclare, et les vingt-neuf autres se jouent ainsi en production dès aujourd'hui. La période d'e1 est
+portée en SQL (`periode_ereporting`, sur `make_date` et des intervalles d'une date, jamais `date_trunc`), et rend une
+TABLE plutôt que des paramètres de sortie : l'inventaire de l'export compte les arguments d'une fonction dans sa
+parenthèse, et en aurait vu quatre là où le catalogue en compte deux.
+
+**CE QUE LE MODULE DIT** (`lib/declarationsEreporting.ts`, pur). Les refus avant le clic, dans l'ordre et sous les mots de
+la fonction (`REFUS_DECLARATION`, `refusDeclaration`) — l'accès excepté, que l'écran ne peut pas dire ; la forme
+canonique d'un contenu (`formeCanonique`) : le texte que `jsonb` garde — les clés par longueur en OCTETS puis octet par
+octet, « , » et « : », les échappements d'`escape_json`, un nombre sans exposant (`numeric`) —, son empreinte et sa
+taille ; ce qu'il faut déclarer (`contenuADeclarer` : le contenu d'e4 précédé de sa version, de son objet et de ses
+bornes) ; la pièce que sa déclaration retient (`declarationQuiRetientLaPiece`) ; « à rectifier » (`etatDeLaDeclaration`) :
+opération par opération — ajoutée, retirée, changée, avec les champs et les sources qui changent ; la pièce d'un achat,
+le jour, la catégorie et l'option d'un agrégat de ventes, le jour d'un agrégat de paiements ; le déclarant — et les
+causes de la conception : le régime retiré, un écart repris depuis, une fiche posée, remplacée ou retirée depuis ; une
+cause suffit, une lecture partielle ou un calcul incomplet sans cause ne laissent rien affirmer.
+`lib/declarationsEreportingLecture.ts` lit les deux tables par `lireTout`, en entier ou drapeau baissé.
+
+**CE QUI A ÉTÉ MESURÉ.** Réplique (port 54331) égale à la production du moment (118 migrations, `a03b7f0b…`, neuf familles
+égales). L'essai (`declarationsEreporting.sql`, moteur de `regimesEreporting.sql`, deux parties) : à l'heure vraie 179
+verdicts, 0 faute, la partie B « SANS OBJET » ; l'horloge du serveur de la réplique avancée (une bibliothèque
+`LD_PRELOAD`, hors du dépôt) au 15/11/2027, au 29/02/2028 à midi et au 01/03/2028 à 00:30 à Paris : 210 verdicts, 0
+faute ; rien laissé en base. Hors du dépôt, sur la réplique seule : les suppressions (17 verdicts, 0 faute — une
+déclaration, une source ne se suppriment pas ; une pièce déclarée ne se supprime plus, ancienne version de sa fiche
+comprise ; celle que seule une remplacée cite, si ; une source d'un autre dossier ne retient rien ; le dossier emporte
+tout, quel que soit l'ordre de ses cascades) et sept courses de deux sessions (deux initiales, une déclaration puis la
+suppression de sa pièce et l'inverse, deux rectificatives, deux périodes qui citent la même pièce, le retrait d'un
+régime puis une déclaration et l'inverse) : 7/7, chacune a attendu 1,5 s. Mutations de la migration : 153, dont 150
+mordent (l'essai, les suppressions, les courses ; le jour à Paris joué à 00:30) et trois sont ÉQUIVALENTES : la contrainte
+de forme de l'empreinte (la garde impose déjà l'empreinte exacte), le chevauchement d'une remplacée (toute remplacée a
+une suite active de mêmes bornes), la date écrite comme un nombre (`->>` d'une valeur non textuelle n'a jamais la forme
+AAAA-MM-JJ). `rls.sql` entier : sans la migration 35 lignes, 72 tables, 0 en faute, 31 mutations sur 31 ; avec elle, les
+tables semées par les fonctions dans `test` et chez le client, 35 lignes, 74 tables, 0 en faute, 31 sur 31.
+`validationExercice.sql` : 151 sur 151 (le contrôle 141 attend 36 déclencheurs) ; sans la migration, le 141 seul tombe.
+`restauration.sql` : 74 tables recréées, 131 clés, 68 restaurées et IDENTIQUES, les déclarations en deux vagues, 0 écart ;
+une déclaration avant son régime, une source avant sa déclaration : arrêt sur la clé ; la réinsertion par la porte du
+super-administrateur, GARDES COMPRISES, du contenu relu en JSON : lignes identiques, et sans vagues la garde refuse.
+Export : 119 fichiers, 119 migrations, `fa2c86cf…` des deux côtés ; socle inchangé ; inventaire 1 834 objets (+61). Module :
+les refus confrontés au texte de la fonction et de la garde ; l'essai REJOUÉ appel par appel (119 appels : 11 acceptés,
+7 accès refusés, 101 refus, chacun des trente au moins une fois) ; la grille de `periodeDe` égale à celle que la base a
+rendue de `periode_ereporting` (contrôle 87, 5 478 jours) ; la forme canonique égale au texte et à l'empreinte relevés en
+base pour huit valeurs choisies pour leurs bords (clés de un à quatre octets, échappements, nombres de 5e-324 à 1,8e308) et
+pour les contenus que l'essai insère ; ce qu'e4 calcule (achats, ventes, paiements) passe les refus et traverse un
+aller-retour JSON. Mutations CIBLÉES du module et de sa lecture : 107, dont 100 mordaient d'emblée ; les sept
+survivants ont reçu leur test (une tabulation n'est pas un blanc pour `btrim` ; un seul jour partagé chevauche ; la
+remplacée désignée sous une autre forme ; une opération `null` ; la pièce, puis la fiche, d'un autre dossier ; le contenu
+d'e4 APRÈS l'enveloppe, pour qu'une clé en conflit se dise au refus 22 au lieu de s'effacer), et 107 sur 107 mordent.
+**UN TEST DE CASSE ÉTAIT VIDE** : `u(100)` s'écrit sans aucune lettre, et `toUpperCase()` le rendait inchangé — un
+identifiant d'essai qui éprouve la casse doit porter des lettres (`u(0xabcdef)`), ou des accolades.
+Barrière : `tsc -b` vert, les erreurs connues du compilateur des Edge Functions à l'identique, lint égal à la base (63
+avertissements, 0 erreur), build vert ; les 37 fichiers de test de l'étape et de ce qui lit ce qu'elle touche, sous les
+quatre fuseaux (1 470 tests chacun) ; la suite entière à Paris, 306 fichiers et 9 009 tests verts.
+
+**UN DÉFAUT TROUVÉ EN PASSANT, HORS DE L'ÉTAPE.** `piece_textes_ocr.texte_md5` est une colonne GÉNÉRÉE : la restauration
+de l'application (`sauvegardeDonnees.ts`) réinsère les lignes lues par `select('*')`, colonne comprise, et Postgres la
+refuse (428C9 « cannot insert a non-DEFAULT value into column », reproduit sur la réplique). `restauration.sql` ne le voit
+pas : ses tables d'essai sont créées `like … including defaults including constraints including indexes`, sans la
+génération. Proposé comme tâche à part.
+
+**UNE LIMITE, DITE.** La garde recalcule l'empreinte sur le texte du `jsonb` reçu. Un contenu produit par le module (ses
+nombres sont des doubles du navigateur) traverse une sauvegarde à l'identique ; un contenu FORGÉ hors de lui, dont un
+nombre ne se relit pas tel quel (« 1.50 » devient « 1.5 »), se garde, mais sa restauration par l'application serait
+refusée sur l'empreinte, nommément — reproduit sur la réplique. Une fonction qui refuserait un tel nombre est une
+question technique ouverte (voir les questions).
+
+**RESTE.** Les hypothèses E5-Q6 et E5-Q7 à confirmer ; Q6 (e5b2) ; les questions nouvelles (plusieurs plateformes pour
+une période, la rectificative à zéro opération, un changement de fréquence du régime d'une période déclarée, la borne
+d'un mégaoctet) ; la phase C (la carte et la fenêtre de l'onglet TVA) ; e6 (le fichier) ; e9 (le dépôt par l'API d'une
+plateforme, qui élargira les listes du canal et de l'état — une migration qui remplace deux contraintes).
+
+### 11/10/2026 — LA DÉCLARATION D'E-REPORTING HORS APPLICATION, APPLIQUÉE ET INTÉGRÉE — LIGNE 28.5, ÉTAPE (E5B1)
+
+(La migration relue par la session puis appliquée par `apply_migration`, sans confirmation demandée : version
+`20261011124310`, 119 migrations en production. Son texte enregistré rend l'empreinte du fichier, `3deb4373…` ; le
+fichier d'export a quitté la version provisoire pour celle-ci.)
+
+**LA RELECTURE.** La fonction contrôle l'accès au dossier annoncé avant toute lecture (`admin_du_dossier`, 42501), prend
+le verrou de l'e-reporting du dossier, et ne lit ensuite que ce dossier : le régime, la déclaration remplacée, les
+fiches et leurs pièces, les factures validées et les encaissements sont tous cherchés AVEC le dossier annoncé ; le
+client n'a aucune policy ; les gardes et la période en SQL ne s'exécutent par aucun rôle. `pg_input_is_valid` n'existe
+qu'à partir de PostgreSQL 16 : la production est en 17.6, vérifié avant l'application.
+
+**CE QUI A ÉTÉ JOUÉ, ET OÙ.** La réplique de l'étape portant la migration (`e5b_migree`) a été confrontée à la
+production APRÈS l'application : `signature.sql` égal sur les neuf familles (colonnes 756, contraintes 563, déclencheurs
+51, droits des fonctions 149, droits des tables 74, fonctions 149, index 211, policies 141, RLS 74). Sur une copie neuve
+de cette réplique, l'essai rejoué par la session : 179 verdicts, 0 faute (la partie B, qui demande une horloge au-delà
+du 01/11/2027, se dit SANS OBJET à l'heure vraie) ; `rls.sql` ENTIER sur la base semée par les fonctions (quatre
+déclarations, cinq sources, deux dossiers) : 35 lignes, 0 en faute, 31 mutations sur 31. L'export, en production :
+dérive 119 fichiers, 119 migrations, `29fedc2f…` des deux côtés ; socle inchangé (78, `91ae95ec…`) ; inventaire 1 834
+objets, `417e33d5…` des deux côtés. Advisors : 5 et 37 fonctions `SECURITY DEFINER` exécutables — la seule nouvelle,
+`declarer_ereporting_hors_application`, avec son contrôle d'accès en premier refus ; rien d'autre de neuf.
+
+**L'INTÉGRATION.** Le correctif s'applique tel quel au-dessus de l'ouverture confrontée (O33) et de l'écran de la revue
+analytique (R5c), qui touchaient d'autres lignes d'`encaissementsEcritures.test.ts`. Le défaut trouvé en passant
+(`piece_textes_ocr.texte_md5`, colonne générée que la restauration de l'application réinsère) est consigné dans
+CLAUDE.md et se traite à part. La barrière a vu un test du module passer les 5 s de Vitest sous UTC, rejoué seul et
+vert : il rejouait l'essai trois fois dans son corps, une par défaut planté (2,7 s seul, 5,8 s sous la charge des quatre
+passes ; les contenus d'un mégaoctet de l'essai s'y mettent en forme canonique à chaque rejeu). Les trois rejeux se
+paient désormais dans un crochet au délai déclaré, nul tant qu'il n'a rien rendu, comme les balayages des anciennes
+notes ; deux mutations le prouvent (un défaut introuvable dans l'essai, un crochet muet : rouge les deux fois).

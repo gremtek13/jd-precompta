@@ -355,6 +355,20 @@ dossier `test` semé par les fonctions de la base des lignes des deux étapes (q
 régimes, quatre écarts) : 66 tables restaurées, 66 identiques, 0 écart ; un seuil ou un écart réinsérés avant leur
 dossier arrêtent l'essai sur leur clé.
 
+Le 11/10/2026 (ligne 28.5, étape e5b1, migration `declarations_ereporting`, appliquée AVANT la fusion du correctif qui
+les met au plan : sans elle, toute sauvegarde échouerait sur deux tables absentes), les déclarations d'e-reporting faites
+hors de l'application et leurs sources entrent au plan, après le régime et l'écart et avant `exercices_valides` — 74
+tables, 77 avec les devis —, les déclarations par vagues (`remplace_id` : une rectificative après la déclaration
+qu'elle remplace, déjà « remplacée »). Leur auteur (`cree_par`) n'a pas de clé vers les comptes : il n'est pas parmi les
+prérequis du §3, 1. Une source désigne une fiche, une facture ou un encaissement SANS clé : l'histoire d'une déclaration
+remplacée survit à sa pièce, et sa source restaurée ne désigne alors plus rien — ce n'est pas un lien perdu. La garde
+d'une déclaration RECALCULE l'empreinte du contenu reçu : un contenu produit par l'application traverse la sauvegarde à
+l'identique ; un contenu forgé hors d'elle, dont un nombre ne se relit pas tel quel (« 1.50 »), se refuserait à la
+restauration, nommément. Sur la réplique de l'étape, le dossier `test` semé par les fonctions de la base (les achats de
+septembre 2027, l'initiale remplacée par une rectificative, et ceux d'octobre) : 68 tables restaurées, 68 identiques,
+0 écart ; une déclaration réinsérée avant son régime, ou une source avant sa déclaration, arrête l'essai sur sa clé ; et
+la réinsertion par la porte du super-administrateur, gardes comprises, du contenu relu en JSON : lignes identiques.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 

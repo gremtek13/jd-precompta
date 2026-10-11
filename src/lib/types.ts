@@ -1556,3 +1556,47 @@ export interface PieceEcarteeEreporting {
   retire_le: string | null
   retire_par: string | null
 }
+
+// LA DÉCLARATION D'E-REPORTING HORS APPLICATION ET SES SOURCES (ligne 28.5, étape e5b1 ; migration declarations_ereporting).
+// Une ligne dit : « le cabinet a déclaré cette période sur cette plateforme, avec ce contenu », figé, et son empreinte
+// SHA-256 calculée par la base. Une seule active (`declaree`) par dossier, objet et période ; une rectificative (`RE`)
+// remplace l'active, qui passe `remplacee` ; rien d'autre ne change. Les sources disent ce que le contenu déclare : la fiche
+// d'un achat, une facture validée, un encaissement. Le cabinet lit les deux tables, le client rien ; seule
+// `declarer_ereporting_hors_application` les écrit (src/lib/declarationsEreporting.ts).
+export type ObjetDeclarationEreporting = 'ventes' | 'achats' | 'paiements'
+export interface DeclarationEreportingHorsApplication {
+  // Sert d'identifiant de la transmission (TT-1).
+  id: string
+  dossier_id: string
+  objet: ObjetDeclarationEreporting
+  // AAAA-MM-JJ, bornes comprises : une période du régime sous lequel elle a été jugée.
+  periode_debut: string
+  periode_fin: string
+  // Le régime confirmé sous lequel la période a été jugée ; il peut avoir été retiré depuis (hypothèse E5-Q7).
+  regime_id: string
+  type_transmission: 'IN' | 'RE'
+  // La déclaration qu'une rectificative remplace ; nulle pour une initiale.
+  remplace_id: string | null
+  canal: 'manuel'
+  // La plateforme sur laquelle le cabinet a déclaré, telle qu'il la nomme (200 caractères au plus).
+  plateforme: string
+  // Le contenu figé (src/lib/declarationsEreporting.ts, `contenuADeclarer`) : un objet JSON d'un mégaoctet au plus.
+  contenu: Record<string, unknown>
+  // SHA-256 du texte du contenu, en hexadécimal, calculé par la base.
+  empreinte: string
+  nb_operations: number
+  etat: 'declaree' | 'remplacee'
+  note: string | null
+  // Repère d'audit, sans clé étrangère : qui a déclaré.
+  cree_par: string | null
+  cree_le: string
+}
+
+export interface SourceDeclarationEreporting {
+  declaration_id: string
+  dossier_id: string
+  genre: 'fiche' | 'facture' | 'encaissement'
+  // La fiche « hors de France », la facture émise ou l'encaissement — sans clé étrangère : l'histoire d'une déclaration
+  // remplacée survit à sa pièce.
+  source_id: string
+}
