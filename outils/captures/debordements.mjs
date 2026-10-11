@@ -629,6 +629,23 @@ const VISITES_CLIENT = [
   { chemin: '#/ma-simulation', nom: 'client/ma-simulation', nav: true },
 ]
 
+// « Ma banque » (espace client, étape P9), pour la seule passe `client-banque` : le relevé, puis le détail d'un mouvement
+// sur lequel le cabinet a posé une question (le fil, la précision à écrire, les pièces à envoyer), puis celui d'un
+// mouvement pour lequel une pièce est déjà envoyée.
+const VISITES_BANQUE_CLIENT = [
+  { chemin: '#/ma-banque', nom: 'client/ma-banque', nav: true },
+  ...[
+    { nom: 'client/ma-banque-question', libelle: 'VIR SEPA EMIS LOYER BUREAU SEPTEMBRE' },
+    { nom: 'client/ma-banque-envoi', libelle: 'CB RESTAURANT LE COMPTOIR DES HALLES' },
+  ].map(({ nom, libelle }) => ({
+    chemin: '#/ma-banque', nom, nav: true,
+    apres: async (page) => {
+      await page.locator('tr', { hasText: libelle }).getByRole('button', { name: 'Ouvrir', exact: true }).click()
+      await page.getByRole('button', { name: 'Envoyer la précision', exact: true }).waitFor({ timeout: 10000 })
+    },
+  })),
+]
+
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.
 function boutonDeFacture(page, numero, nom) {
   return page.locator('tr', { hasText: numero }).getByRole('button', { name: nom, exact: true })
@@ -691,7 +708,8 @@ await contexte.addInitScript(({ barre, panneau, client }) => {
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
-for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient ? VISITES_CLIENT : VISITES) {
+const visitesDuClient = passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
+for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient ? visitesDuClient : VISITES) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)
   if (panneauOuvert) {

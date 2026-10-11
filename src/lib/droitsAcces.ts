@@ -8,11 +8,12 @@
 // `supabase/essais/droitsAcces.sql`). Ce module dit ce que chaque droit ouvrira, lit les droits d'une ligne sans jamais en
 // accorder un par défaut, et compose l'appel d'une case cliquée.
 //
-// DEUX ÉCRANS DU CLIENT S'EN SERVENT, CHACUN DERRIÈRE LE DRAPEAU DE SA MIGRATION : « Ma simulation » suit la case « Banque »
-// dès que la couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`) ; « Mes ventes » (étape P4a) n'existe qu'avec
-// la case « Ventes » sur la société affichée, dès que les ventes du client sont en base (`VENTES_DU_CLIENT_EXPORTEES`,
-// lib/espaceVentes.ts). Le reste — l'écran « Banque », les devis — arrivera avec les étapes P5 à P9, chacune présentée au
-// cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie
+// TROIS ÉCRANS DU CLIENT S'EN SERVENT, CHACUN DERRIÈRE LE DRAPEAU DE SA MIGRATION : « Ma simulation » suit la case « Banque »
+// dès que la couverture du relevé est en base (étape P7, `COUVERTURE_EXPORTEE`) ; « Ma banque » (étape P9) n'existe qu'avec
+// la case « Banque » sur la société affichée, derrière le même drapeau (lib/banqueClient.ts, `maBanqueOuverte`) ; « Mes
+// ventes » (étape P4a) n'existe qu'avec la case « Ventes » sur la société affichée, dès que les ventes du client sont en
+// base (`VENTES_DU_CLIENT_EXPORTEES`, lib/espaceVentes.ts). Le reste — les devis, la connexion de sa banque par le client —
+// arrivera avec les étapes P5, P6 et P8, chacune présentée au cabinet avant d'ouvrir quoi que ce soit. Les phrases de l'onglet Accès le disent tel quel : une mise en garde se vérifie
 // contre ce que le code FAIT.
 //
 // LA BASE, ELLE, N'ATTEND PAS LES ÉCRANS : une policy ou une fonction ouverte à un droit vaut dès sa migration, pour la
@@ -127,11 +128,13 @@ export function changementApplique(rendu: unknown, domaine: Domaine, valeur: boo
 // se disent donc dans les deux états, et chaque constante est celle de l'état du drapeau : le jour où il passe à vrai,
 // l'onglet dit que « Banque » ouvre la simulation, sans qu'on ait à y penser.
 
+// Depuis l'étape P9, la case « Banque » ouvre aussi « Ma banque », derrière le même drapeau que la simulation.
 export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
   return simulationSousBanque
     ? 'Avec son accès, le client dépose ses pièces et ses documents, répond à tes précisions et tient à jour ses '
-      + 'informations ; avec la case « Banque », il voit aussi sa simulation (chiffre d’affaires et cotisations '
-      + 'estimés), qui se calcule sur sa banque. Les écritures, les catégories et les packs ne lui sont pas montrés.'
+      + 'informations ; avec la case « Banque », il voit aussi sa banque — les mouvements du relevé que tu as importé, '
+      + 'le solde de ses relevés contrôlés — et sa simulation (chiffre d’affaires et cotisations estimés), qui se calcule '
+      + 'sur sa banque. Les écritures, les catégories et les packs ne lui sont pas montrés.'
     : 'Avec son accès, le client dépose ses pièces et ses documents, répond à tes précisions, tient à jour ses '
       + 'informations et voit sa simulation (chiffre d’affaires et cotisations estimés). Les écritures, les catégories '
       + 'et les packs ne lui sont pas montrés.'
@@ -168,18 +171,26 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
     : ''
+  // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
-    ? ' « Banque » permet déjà au client de voir sa simulation et, par la base et sans écran encore, de lire le contrôle '
-      + 'de solde de ses relevés, de proposer ou de retirer une pièce comme justificatif d’un mouvement'
+    ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
+      + 'libellé, montant et ce qui les justifie — et le solde de ses relevés contrôlés ; il peut y proposer ou y retirer '
+      + 'une pièce comme justificatif d’un mouvement'
       + (ventesOuvertes
-        ? ', d’écrire des précisions sur un mouvement et, avec « Ventes », de désigner celui qui prouve un encaissement.'
-        : ' et d’écrire des précisions sur un mouvement.')
+        ? ', y écrire des précisions sur un mouvement et, avec « Ventes », désigner celui qui prouve un encaissement.'
+        : ' et y écrire des précisions sur un mouvement.')
+      + ' La case lui ouvre aussi sa simulation.'
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
   const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
-  const aVenir = ventesOuvertes
-    ? ' L’écran « Banque » de son espace viendra ensuite.'
-    : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.'
+  // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états.
+  const aVenir = simulationSousBanque
+    ? (ventesOuvertes
+      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+      : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
+    : (ventesOuvertes
+      ? ' L’écran « Banque » de son espace viendra ensuite.'
+      : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + banque + ventesFermees + aVenir
 }
 

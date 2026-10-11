@@ -74,7 +74,9 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     const phrase = screen.getByText(ceQueDisentLesCases(true, true))
     expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
-    expect(phrase.textContent).toContain('et, avec « Ventes », de désigner celui qui prouve un encaissement.')
+    expect(phrase.textContent).toContain('et, avec « Ventes », désigner celui qui prouve un encaissement.')
+    // Depuis l'étape P9, la banque a son écran : « Ma banque ».
+    expect(phrase.textContent).toContain('« Banque » ouvre au client « Ma banque »')
     expect(screen.queryByText(/cocher une case ne change pas|Cocher « Ventes » ne change pas/)).toBeNull()
   })
 })

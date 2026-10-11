@@ -20415,3 +20415,162 @@ vert : il rejouait l'essai trois fois dans son corps, une par défaut planté (2
 passes ; les contenus d'un mégaoctet de l'essai s'y mettent en forme canonique à chaque rejeu). Les trois rejeux se
 paient désormais dans un crochet au délai déclaré, nul tant qu'il n'a rien rendu, comme les balayages des anciennes
 notes ; deux mutations le prouvent (un défaut introuvable dans l'essai, un crochet muet : rouge les deux fois).
+
+### 11/10/2026 — « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » — ESPACE CLIENT, ÉTAPE P9 (PREMIÈRE MOITIÉ, P9a)
+
+Agent P9A (dev), base `64818f1`. Aucune migration, aucune policy, aucune fonction : l'écran ne lit que ce que P7 ouvre au
+client qui porte « Banque » (`lignes_bancaires`, `reglements_groupes`, `justificatifs_proposes`,
+`precisions_mouvements`, `controles_releves_bancaires`) et ce que tout accès lit (`pieces`), et n'écrit que par
+`proposer_justificatif`, `retirer_proposition`, `ecrire_precision_mouvement` — plus le dépôt d'une pièce, par le chemin
+d'aujourd'hui (`deposerFichier`).
+
+**Ce qui est fait.**
+- `src/lib/banqueClient.ts` (pur) : `maBanqueOuverte` ; l'état d'un mouvement pour le client — justifié par une pièce
+  (rapproché d'une pièce ou d'un virement groupé), justifié par le relevé (`mouvementJustifieParLeReleve`, virement
+  personnel compris), traité par le cabinet (rapproché sans lien lisible), rien à fournir (ignoré), justificatif envoyé
+  (une proposition non retirée), demandé par ton cabinet (le dernier message du fil vient du cabinet), sans justificatif
+  — muet sur une lecture partielle des mouvements, des propositions ou du fil ; les parts lues en partie ne taisent que les
+  pièces d'un virement groupé ; le solde LU au relevé (le plus récent contrôle cohérent ET daté ; à fin de période égale,
+  le dernier enregistré ; jamais une somme) ; la couverture (premier et dernier mois, mois sans mouvement entre eux) ; les
+  refus des trois fonctions, dans leur ordre et sous leurs mots, confrontés au texte exporté (`messagesSql`, `codesSql`,
+  `numerosSql`, `argumentsSql`, noms des paramètres), la précision jugée comme la base (`btrim` de ` \t\n\r` seulement,
+  `length()` en caractères : une émoticône compte pour un) ; la date d'un retrait au jour de Paris.
+- `src/pages/ClientBanque.tsx` : la route `/ma-banque`, l'entrée « Ma banque » (entre « Mes ventes » et « Mes
+  informations », §2.1 de la conception), la tuile de l'accueil (sur téléphone l'accueil cache la barre du bas) ; la
+  case relue à la base dans la vague des lectures ; le relevé de l'année la plus récente (ou toutes), filtre par état,
+  recherche commune, « N sur M » après les filtres ; le résumé de la période ; le détail d'un mouvement : ce qui le
+  justifie, les envois (« Retirer » sur les siens seulement), « Envoyer une pièce » — une pièce déjà déposée (une pièce
+  déjà envoyée pour ce mouvement grisée, avec la raison) ou déposer une nouvelle pièce, puis l'envoyer —, le fil et la
+  précision à écrire (compteur en caractères). Un verrou `useRef` pour les quatre gestes, relâché après la relecture ;
+  pendant elle, aucun geste n'est offert.
+- `src/lib/droitsAcces.ts` : les phrases de l'onglet Accès disaient « par la base et sans écran encore » et « l'écran
+  Banque viendra » — fausses désormais ; elles nomment « Ma banque », et ce qui reste à venir (la connexion de sa banque
+  par le client, P8).
+
+**Ce que le client ne voit pas d'avance, et pourquoi.** Le refus 4 de `proposer_justificatif` (un mouvement d'un exercice
+figé par la validation) ne se dit pas avant le clic côté client : `exercices_valides` est au cabinet seul
+(`admin_du_dossier`). Le module le sait dire quand l'appelant lit les exercices validés (le côté cabinet de P9) ; l'écran du
+client reçoit le refus de la base, qui ne nomme que l'exercice (« L'exercice 2025 est validé : un justificatif ne s'y
+propose plus. »). Aucune lecture que la base refuse au client n'a été nécessaire.
+
+**Choix de l'écran (sans question au cabinet).** Le client n'envoie une pièce que pour un mouvement que le cabinet n'a ni
+rapproché ni écarté (la base l'accepterait ailleurs) ; une pièce se montre par son nom et son jour de dépôt, comme dans
+« Mes pièces » — ni montant, ni tiers, ni catégorie ; un fichier que le dépôt classe en document (relevé, attestation) ne
+s'envoie pas, et l'écran le dit ; une pièce déposée dont l'envoi échoue reste déposée, et l'écran le dit.
+
+**Preuves.** 9214 tests, suite entière sous Paris verte ; les fichiers touchés sous les quatre fuseaux (358) ; 52 tests
+du module, 23 d'écran, 4 de routage ; 38 mutations ciblées, 36 tuées, 2 équivalentes ; banc 5322, passe `client-banque`
+(trois visites neuves, barre du bas à six entrées) à 390, 720, 1024, 1280 et 1440 px et passe `client` à 390 : 0
+débordement.
+
+**Reste.** P9b, le côté cabinet : la pièce proposée en tête de la fiche du mouvement, le fil, « Demander au client », le
+filtre « Proposés par le client ». EC-Q5 toujours sans réponse (le solde « à la banque » viendra avec P8).
+
+**LA RELECTURE, PAR LA SESSION.** Les trois portes de l'écran — la route, l'entrée de la barre, la tuile de l'accueil —
+passent la même garde, `maBanqueOuverte(COUVERTURE_EXPORTEE, case « Banque » de la société affichée)`, comme « Mes
+ventes ». Chaque table lue a sa policy de lecture pour le client qui porte la case, confrontée à l'export :
+`lignes_bancaires` et `reglements_groupes` (le resserrement de P7, `lectures_bancaires_au_droit_banque`),
+`controles_releves_bancaires_lecture_banque`, les lectures des deux registres (`banque_du_client`) ; `pieces` reste
+lisible par tout accès, et l'écran n'en sélectionne que l'identifiant, le dossier, le nom du fichier et le jour de dépôt.
+La catégorie, le compte de bilan et les autres liens d'un mouvement ne se lisent que pour savoir s'ils sont posés ; aucun
+ne s'affiche. Les fichiers partagés (la liste des écrans de `ecransAvantLecture.test.tsx`, le compte des consommateurs de
+`ecrituresVerifiees.test.ts`, le banc) ne changent que par ajout, et les données du banc ne servent qu'à la passe
+`client-banque` : les passes du cabinet ne voient rien de neuf. Intégré avec T2 (la restauration d'une colonne
+générée), dont les fichiers sont disjoints.
+
+### 11/10/2026 — UNE COLONNE GÉNÉRÉE NE SE RESTAURE PAS, ELLE SE RECALCULE — LE DÉFAUT RELEVÉ À L'ÉTAPE E5B1
+
+(Correctif T2, sans migration ni Edge Function ni écran ; base : `64818f18`, `main` portant e5b1.)
+
+**LE DÉFAUT.** `piece_textes_ocr.texte_md5`, l'empreinte du texte lu qui repère deux exports d'un même document, est une
+colonne GÉNÉRÉE (`generated always as (md5(regexp_replace(trim(texte), '\s+', ' ', 'g'))) stored`, migration
+20260919142532). La sauvegarde d'un dossier lit les lignes entières (`select('*')`) ; la restauration de l'application
+(`restaurerSauvegarde`) les réinsérait telles quelles, et PostgREST insère toute colonne que nomme une ligne du lot
+(postgrest-js 2.112.4 : le paramètre `columns` est l'UNION des clés des lignes). Postgres refuse : 428C9 « cannot insert
+a non-DEFAULT value into column "texte_md5" ». La restauration de tout dossier qui avait un texte lu s'arrêtait donc
+sur cette table, au rang 56, une cinquantaine de tables déjà écrites — à vider à la main avant de recommencer.
+`restauration.sql` ne le voyait pas : ses tables d'essai étaient créées `like … including defaults including
+constraints including indexes`, sans la génération, et il y recopiait la colonne sans peine.
+
+**CE QUE POSTGRES FAIT D'UNE COLONNE GÉNÉRÉE, MESURÉ** (réplique, transaction annulée) : une valeur explicite est
+refusée en 428C9 MÊME NULL, même la valeur que la base calculerait ; `insert … select *` l'est même à zéro ligne (le
+refus vient de la réécriture de la requête, avant l'exécution) ; `DEFAULT` et une liste de colonnes qui l'omet passent,
+l'empreinte recalculée (blancs normalisés). `like … including generated` porte la génération, `like` seul non.
+
+**L'ÉTAT RÉEL.** Le catalogue de la production (`pg_attribute`, aucune donnée de table lue) : dans `public`, UNE colonne
+générée, celle-ci, et AUCUNE colonne d'identité. Les autres colonnes générées de la base sont celles de Supabase
+(`auth.users.confirmed_at`, `auth.identities.email`, trois de `auth.scim_users`, `storage.objects.path_tokens`,
+`realtime.subscription.claims_role`, plus l'identité `realtime.subscription.id`) : hors de toute sauvegarde d'un
+dossier — mais `auth.users.confirmed_at` attendra le script qui recréerait un jour les comptes. L'export
+(`supabase/schema/`, 119 migrations et le socle) : une seule occurrence du mot `generated`, et aucun `identity`, `like`,
+`inherits`, `partition of`, `rename`, `drop column`, `drop expression` ni `set expression`.
+
+**LE CHOIX.** La colonne se DÉCLARE au plan de sauvegarde (`COLONNES_GENEREES`, `src/lib/sauvegarde.ts`, à côté des clés
+primaires) et se RETIRE de chaque ligne envoyée (`sansColonnesGenerees`), en un seul endroit : la sortie de
+`planReinsertion`, après le calcul des vagues et de la seconde passe — un test garde qu'aucune colonne générée n'est une
+clé ni un lien que le plan lit. La base la recalcule du texte restauré. La sauvegarde, elle, continue de la LIRE.
+Écartés : lire une liste de colonnes au lieu de `*` (une liste d'inclusion tenue à la main, qu'une colonne ajoutée
+demain quitterait sans un mot, et les sauvegardes déjà téléchargées porteraient encore la colonne) ; retirer la colonne
+dans `ecrireParLots` (un second endroit pour une règle que le plan, pur, dit déjà, et qu'aucun test n'atteindrait) ;
+faire de l'empreinte une colonne ordinaire recalculée par une garde, comme `declarations_ereporting.empreinte` (une
+migration, et la génération est juste : c'est la restauration qui doit s'y plier) ; `Prefer: missing=default`
+(`defaultToNull: false`) : sans effet, la colonne étant NOMMÉE par les lignes. Une sauvegarde téléchargée avant le
+correctif se restaure telle quelle.
+
+**LE GARDE PART DE TOUT.** `colonnesGenereesDuSchema` (src/test/schema.ts, à côté des clés et des relations) part du
+MOT : chaque occurrence de `generated` hors des lignes de commentaire doit appartenir à une colonne générée reconnue —
+déclarée dans un `create table`, ajoutée par `add column` —, et les instructions se rejouent dans l'ordre écrit
+(`drop expression`, `drop table` de toutes les tables nommées). Elle lève `FormeInconnue` sur une colonne d'identité, le
+mot dans un corps `$…$`, le mot ailleurs (une chaîne, une contrainte qui cite la forme), une table créée par `like` ou
+par héritage, un renommage ou un `drop` de colonne sur une table qui en porte une. `sauvegardeColonnesGenerees.test.ts`
+confronte `COLONNES_GENEREES` à l'export dans les deux sens, ses tables au plan ; plantés : une colonne retirée de la
+liste, une colonne inventée, une table hors du plan, une colonne générée qu'une migration ajouterait demain.
+
+**L'ESSAI LA MODÉLISE.** `restauration.sql` crée ses tables d'essai `including generated`, recopie la liste du code
+(`_generees`, confrontée par `restaurationEssai.test.ts`), et chaque insertion de sa boucle nomme ses colonnes par
+`_colonnes(table, préfixe)`, sans celles de la liste — sept insertions, aucune `select *` ; la ligne ARRET dit le code de
+l'erreur ; trois contrôles suivent le verdict : la liste est celle du catalogue dans les tables du plan, la colonne
+d'essai est générée comme dans la base, et chaque ligne restaurée y porte la valeur recalculée, égale à la source
+(« n sur n », et « rien n'est prouvé » sans ligne).
+
+**CE QUI A ÉTÉ JOUÉ.** Réplique (port 54331) : `t2_base`, copie de `e5b_migree`, `signature.sql` égal à la production du
+moment sur les neuf familles (119 migrations ; la dernière y porte la version provisoire 20261011150000). Le dossier
+`test` semé de trois pièces, d'un document et de trois textes lus, dont deux ne diffèrent que par leurs blancs. Le
+script d'avant : 68 tables IDENTIQUES — aveugle ; ses tables portant la génération sans le retrait : ARRET « sur
+piece_textes_ocr : 428C9 ». Le script corrigé : 74 tables recréées, 131 clés recopiées, 68 restaurées et IDENTIQUES
+(8 lignes), 0 écart, aucun arrêt, les trois empreintes recalculées égales à la source, cinq contrôles justes. Sur une
+copie de la base semée d'e5b1 (lue seulement), les mêmes textes, une facture et son avoir (la garde de l'avoir en
+brouillon écartée le temps de semer, puis remise ; signature égale ensuite) : 68 IDENTIQUES (78 lignes), les
+déclarations en deux vagues, les fiches « hors de France » en une, la double passe des avoirs, 0 écart. Plantés : la
+colonne retirée de `_generees` (ARRET 428C9, le contrôle du catalogue la nomme), la génération retirée des tables d'essai
+(ÉCART, « ordinaire », « 0 sur 3 »), une colonne inventée (ÉCART, le contrôle la nomme), les textes avant leurs pièces
+(ARRET 23503 : les clés mordent avec les listes de colonnes).
+
+**LES TESTS ET LES MUTATIONS.** Le faux client de `sauvegardeDonnees.test.ts` modélise la génération (un lot dont UNE
+ligne nomme la colonne, même NULL, est refusé en 428C9 ; sinon la colonne est calculée) : la ligne ENVOYÉE n'a pas
+l'empreinte, la ligne ÉCRITE a celle de la source, la sauvegarde reçue la garde, la relecture ne voit aucun écart.
+Mutations ciblées : 24 sur 24 mordent — 9 sur le retrait (le retrait supprimé rend exactement le défaut d'origine,
+« Restauration interrompue sur « piece_textes_ocr » : cannot insert a non-DEFAULT value into column "texte_md5" »), 15 sur
+la dérivation, dont deux survivaient d'abord (l'ordre écrit, la contrainte d'un `add`) : les jeux d'essai n'avaient ni
+une table supprimée puis recréée dans un même fichier, ni une contrainte qui cite la forme — ajoutés.
+
+**LA BARRIÈRE.** `tsc -b` vert ; les erreurs connues du compilateur des Edge Functions (25) et les avertissements du
+lint (63), à l'identique de la base ; build vert. Les 43 fichiers de test des modules touchés (dont tous les lecteurs de
+`src/test/schema.ts`) sous les quatre fuseaux : 1 788 tests chacun ; la suite entière à Paris : 310 fichiers, 9 155 tests
+verts (18 de plus). Fichiers : `src/lib/sauvegarde.ts` (+ test), `src/lib/sauvegardeDonnees.ts` (un commentaire) et son
+test, `src/lib/sauvegardeColonnesGenerees.test.ts` (nouveau), `src/test/schema.ts` (par ajout),
+`src/lib/restaurationEssai.test.ts`, `supabase/essais/restauration.sql`, PLAN_DE_REPRISE.md (§6, par ajout).
+
+**UNE OBSERVATION, HORS DU CORRECTIF.** postgrest-js insère par défaut avec `missing=null` (`defaultToNull`) : dans un
+lot dont une ligne nomme une colonne qu'une autre omet, la seconde reçoit NULL, pas la valeur par défaut. Le faux client,
+lui, donne la valeur par défaut. Le seul lot mêlé que la restauration fabrique est celui des notes internes recopiées
+des anciennes colonnes (sans `id`) à côté de notes déjà dans la sauvegarde (avec) — un cas qu'aucune sauvegarde réelle ne
+produit (la migration P0 a recopié toutes les notes, et plus rien n'écrit les anciennes colonnes), mais que le test
+« une note interne déjà dans la sauvegarde fait foi » joue sans le voir.
+
+**REJOUÉ PAR LA SESSION, À L'INTÉGRATION.** Le correctif relu (une liste déclarée, un filtre pur appliqué une fois, à la
+sortie du plan de réinsertion, après le calcul des vagues), puis `restauration.sql` de l'arbre intégré rejoué sur une
+copie neuve de `t2_semee` (le dossier `test` semé de trois textes lus) : code 0, 68 tables IDENTIQUES, 0 écart, les trois
+contrôles neufs justes (la liste égale au catalogue, la colonne d'essai générée comme dans la base, 3 empreintes
+recalculées sur 3 égales à la source), le schéma d'essai supprimé. Intégré avec « Ma banque » (P9a), dont les fichiers
+sont disjoints.

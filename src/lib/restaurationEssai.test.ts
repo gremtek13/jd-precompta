@@ -4,6 +4,7 @@ import { DEVIS_EXPORTES } from './devis'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
+  COLONNES_GENEREES,
   ORDRE_RESTAURATION,
   ORDRE_RESTAURATION_PREVU,
   PARENTS_HORS_PLAN_VOULUS,
@@ -27,6 +28,8 @@ interface PlanDeLEssai {
   ordre: { rang: number; table: string }[]
   chemins: Record<string, { acces: string; parent: string | null; colonne: string | null }>
   vagues: { table: string; colonne: string }[]
+  /** Les colonnes générées que le script retire de chaque insertion (`_generees`). */
+  generees: { table: string; colonne: string }[]
   /** Les tables dont le script réécrit le lien auto-référencé en deux passes. */
   deuxPasses: { table: string; colonne: string }[]
   /** Les accès que les branches du script savent traiter. */
@@ -47,6 +50,7 @@ function planDeLEssai(texte: string): PlanDeLEssai {
     chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
   }
   const vagues = [...bloc(texte, '_vagues').matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] }))
+  const generees = [...bloc(texte, '_generees').matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] }))
   const deuxPasses = [...texte.matchAll(/update essai_restauration\.(\w+) set (\w+) = null;/g)].map((m) => ({
     table: m[1],
     colonne: m[2],
@@ -55,7 +59,7 @@ function planDeLEssai(texte: string): PlanDeLEssai {
     ...[...texte.matchAll(/r\.acces = '(\w+)'/g)].map((m) => m[1]),
     ...[...texte.matchAll(/r\.acces in \(([^)]*)\)/g)].flatMap((m) => [...m[1].matchAll(/'(\w+)'/g)].map((n) => n[1])),
   ]
-  return { ordre, chemins, vagues, deuxPasses, accesTraites: [...new Set(accesTraites)].sort() }
+  return { ordre, chemins, vagues, generees, deuxPasses, accesTraites: [...new Set(accesTraites)].sort() }
 }
 
 function cheminAttendu(c: CheminDossier): { acces: string; parent: string | null; colonne: string | null } {
@@ -137,6 +141,10 @@ function ecartsAuCode(
     ecarts.push(`_vagues vaut ${JSON.stringify(plan.vagues)}, TABLES_AUTO_REFERENCEES_PAR_VAGUES `
       + JSON.stringify(TABLES_AUTO_REFERENCEES_PAR_VAGUES))
   }
+  const generees = Object.entries(COLONNES_GENEREES).flatMap(([table, colonnes]) => colonnes.map((colonne) => ({ table, colonne })))
+  if (JSON.stringify(plan.generees) !== JSON.stringify(generees)) {
+    ecarts.push(`_generees vaut ${JSON.stringify(plan.generees)}, COLONNES_GENEREES ${JSON.stringify(generees)}`)
+  }
   if (JSON.stringify(plan.deuxPasses) !== JSON.stringify(TABLES_AUTO_REFERENCEES)) {
     ecarts.push(`la seconde passe du script vise ${JSON.stringify(plan.deuxPasses)}, TABLES_AUTO_REFERENCEES `
       + JSON.stringify(TABLES_AUTO_REFERENCEES))
@@ -162,6 +170,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(courant.ordre).toHaveLength(ORDRE_RESTAURATION.length)
     expect(Object.keys(courant.chemins)).toHaveLength(Object.keys(CHEMINS_DOSSIER).length)
     expect(plan.vagues.length).toBeGreaterThan(0)
+    expect(plan.generees.length).toBeGreaterThan(0)
     expect(plan.deuxPasses.length).toBeGreaterThan(0)
   })
 
@@ -273,6 +282,13 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       expect(remplacer(",\n ('declarations_ereporting','remplace_id');", ';').join('\n')).toContain('_vagues vaut')
     })
 
+    it('une colonne générée oubliée, ou inventée', () => {
+      expect(remplacer("values\n ('piece_textes_ocr','texte_md5');", "values\n ('piece_textes_ocr','texte');").join('\n'))
+        .toContain('_generees vaut [{"table":"piece_textes_ocr","colonne":"texte"}]')
+      expect(remplacer("values\n ('piece_textes_ocr','texte_md5');", "values\n ('piece_textes_ocr','texte_md5'),('pieces','statut');").join('\n'))
+        .toContain('_generees vaut')
+    })
+
     it('une seconde passe qui viserait une autre colonne', () => {
       expect(remplacer('update essai_restauration.factures_emises set facture_origine_id = null;',
         'update essai_restauration.factures_emises set avoir_id = null;').join('\n')).toContain('la seconde passe du script vise')
@@ -351,5 +367,89 @@ describe('l’essai s’arrête, nommément, quand les clés étrangères ne se 
     expect(fautesDeLArret(texteDeLEssai.replace(temoin, '').replace('  end if;\n  for r in', `  end if;\n${temoin}  for r in`)).join('\n'))
       .toContain('le témoin')
     expect(plante(' where not exists (select 1 from essai_restauration._cles_recopiees)', ' where false')).toContain('EN FAUTE')
+  })
+})
+
+// L'ESSAI PORTE LA GÉNÉRATION, ET NE L'ÉCRIT JAMAIS (défaut relevé à l'étape e5b1, corrigé le 11/10/2026). Ses tables
+// d'essai étaient créées sans la génération des colonnes que la base calcule : il recopiait `piece_textes_ocr.texte_md5`
+// sans peine, pendant que la restauration de l'application, qui l'envoyait aussi, était refusée (428C9). Faute de base,
+// ce test lit dans le texte ce qui l'empêche : des tables d'essai qui portent la génération ; une liste de colonnes qui
+// retire celles de `_generees` ; une boucle de restauration dont CHAQUE insertion nomme ses colonnes par cette liste et
+// aucune ne recopie la ligne entière ; une ligne ARRET qui dit le code de l'erreur ; les trois contrôles du recalcul. Le
+// comportement, lui, s'éprouve sur une réplique (l'en-tête du script).
+function boucleDeRestauration(texte: string): string {
+  const coeur = texte.indexOf("if r.acces = 'le_dossier' then")
+  const debut = texte.lastIndexOf('do $$', coeur)
+  const fin = texte.indexOf('end $$;', coeur)
+  return coeur < 0 || debut < 0 || fin < 0 ? '' : texte.slice(debut, fin)
+}
+
+const CONTROLES_DE_LA_GENERATION = [
+  "'les colonnes générées de la base, au plan, sont celles que la restauration retire'",
+  "' : la table d''essai la calcule comme la base'",
+  "' : recalculée à la restauration, égale à la source'",
+  'count(*) filter (where e.%1$I is not distinct from s.%1$I)',
+]
+
+function fautesDeLaGeneration(texte: string): string[] {
+  const fautes: string[] = []
+  if (!/create table essai_restauration\.%I \(like public\.%I [^)]*\bincluding generated\)/.test(texte)) {
+    fautes.push('les tables d’essai ne portent pas la génération (`including generated`)')
+  }
+  const debutListe = texte.indexOf('create function essai_restauration._colonnes(')
+  const liste = debutListe < 0 ? '' : texte.slice(debutListe, texte.indexOf('$f$;', debutListe))
+  if (!liste.includes('a.attname not in (select g.colonne from essai_restauration._generees g where g.table_nom = t)')) {
+    fautes.push('la liste des colonnes ne retire pas celles de `_generees`')
+  }
+  const boucle = boucleDeRestauration(texte)
+  if (boucle === '') return [...fautes, 'la boucle de restauration est introuvable']
+  // Les tables de travail du script commencent par « _ » (`_verdict`) : seules les autres reçoivent une restauration.
+  const insertions = [...boucle.matchAll(/insert into essai_restauration\.(%I|(?!_)\w+)( \(%s\) select %s)?/g)]
+  // Le plancher qui distingue « aucune faute » d'« aveugle » : le dossier, le direct, les deux des vagues, les factures, le
+  // partagé, le parent.
+  if (insertions.length < 7) fautes.push(`la boucle ne compte que ${insertions.length} insertion(s) de la restauration`)
+  for (const m of insertions.filter((i) => i[2] === undefined)) {
+    fautes.push(`une insertion de la restauration ne nomme pas ses colonnes : « ${boucle.slice(m.index, m.index! + 70)} »`)
+  }
+  if (/select\s+(?:\w+\.)?\*|\(\w+\)\.\*/.test(boucle)) fautes.push('une insertion de la restauration recopie la ligne entière')
+  const colonnes = [...boucle.matchAll(/colonnes(_s)? := essai_restauration\._colonnes\(r\.table_nom, '(s\.)?'\);/g)]
+  if (colonnes.length !== 2 || colonnes.some((c) => (c[1] ?? '') !== (c[2] ? '_s' : ''))) {
+    fautes.push('la boucle ne tire pas ses deux listes de colonnes de `_colonnes`')
+  }
+  if (!boucle.includes("'ARRET', 'sur ' || r.table_nom || ' : ' || sqlstate || ' ' || sqlerrm")) {
+    fautes.push('la ligne ARRET ne dit pas le code de l’erreur')
+  }
+  for (const controle of CONTROLES_DE_LA_GENERATION) {
+    if (!texte.includes(controle)) fautes.push(`le contrôle du recalcul « ${controle} » manque`)
+  }
+  return fautes
+}
+
+describe('l’essai porte la génération, et ne l’écrit jamais', () => {
+  it('des tables qui calculent, une liste qui retire, des insertions qui la suivent, l’arrêt et les contrôles', () => {
+    expect(fautesDeLaGeneration(texteDeLEssai)).toEqual([])
+  })
+
+  it('un défaut planté se voit', () => {
+    const plante = (avant: string, apres: string) => {
+      expect(texteDeLEssai).toContain(avant)
+      return fautesDeLaGeneration(texteDeLEssai.replace(avant, apres)).join('\n')
+    }
+    expect(plante('including indexes including generated)', 'including indexes)')).toContain('ne portent pas la génération')
+    expect(plante('\n     and a.attname not in (select g.colonne from essai_restauration._generees g where g.table_nom = t)', ''))
+      .toContain('ne retire pas')
+    expect(plante("'insert into essai_restauration.%I (%s) select %s from public.%I where id = $1',\n        r.table_nom, colonnes, colonnes, r.table_nom)",
+      "'insert into essai_restauration.%I select * from public.%I where id = $1',\n        r.table_nom, r.table_nom)"))
+      .toMatch(/ne nomme pas ses colonnes(.|\n)*recopie la ligne entière/)
+    expect(plante("'insert into essai_restauration.factures_emises (%s) select %s from public.factures_emises s",
+      "'insert into essai_restauration.factures_emises select s.* from public.factures_emises s")).toContain('recopie la ligne entière')
+    expect(plante("colonnes_s := essai_restauration._colonnes(r.table_nom, 's.');", "colonnes_s := colonnes;"))
+      .toContain('deux listes de colonnes')
+    expect(plante("' : ' || sqlstate || ' ' || sqlerrm", "' : ' || sqlerrm")).toContain('le code de l’erreur')
+    for (const controle of CONTROLES_DE_LA_GENERATION) {
+      expect(plante(controle, "'un autre contrôle'")).toContain('manque')
+    }
+    expect(fautesDeLaGeneration(texteDeLEssai.replace("if r.acces = 'le_dossier' then", "if r.acces = 'dossier' then")))
+      .toEqual(['la boucle de restauration est introuvable'])
   })
 })

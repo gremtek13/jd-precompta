@@ -6,11 +6,12 @@
 -- lien vers une ligne absente. C'est ce que fait ce script.
 --
 -- Il ne touche à rien : il fabrique un schéma jetable qui porte les VRAIES contraintes (copiées de
--- `public` par pg_get_constraintdef), y restaure un dossier table par table dans l'ordre de
--- ORDRE_RESTAURATION, compare le résultat à la source par empreinte de contenu, puis se supprime.
+-- `public` par pg_get_constraintdef) et la génération des colonnes que la base calcule, y restaure un dossier table par
+-- table dans l'ordre de ORDRE_RESTAURATION, compare le résultat à la source par empreinte de contenu, puis se supprime.
 --
 -- LE PLAN EST CELUI DE `src/lib/sauvegarde.ts`, recopié et non résumé : l'ordre (`_ordre`), le chemin
--- de chaque table (`_chemins`) et les liens auto-référencés restaurés par vagues (`_vagues`).
+-- de chaque table (`_chemins`), les liens auto-référencés restaurés par vagues (`_vagues`) et les colonnes
+-- générées que la restauration n'écrit pas (`_generees`).
 -- `src/lib/restaurationEssai.test.ts` les confronte au code à chaque exécution de la suite : si les
 -- deux divergent, c'est l'essai qui ment — c'est le code qui restaure en production.
 --
@@ -21,6 +22,14 @@
 -- Postgres accepte, mais que les gardes de la révision et des encaissements refuseraient (l'ordre des
 -- lignes à l'intérieur d'une instruction n'est pas garanti) — `sauvegardeDonnees.test.ts` et les essais
 -- de ces mécanismes le gardent. L'avoir et sa facture d'origine gardent leurs deux passes.
+--
+-- LES COLONNES GÉNÉRÉES. Les tables d'essai portent la génération des colonnes que la base calcule (`including
+-- generated`) : comme la base d'arrivée, elles refusent qu'une insertion en nomme une (428C9), même NULL, et avant d'avoir
+-- lu une ligne. Chaque insertion de la restauration nomme donc ses colonnes — toutes, SAUF celles que le code retire
+-- (`_generees`, recopiée de COLONNES_GENEREES), comme `planReinsertion` les ôte de chaque ligne envoyée. Une colonne
+-- générée oubliée de la liste arrête l'essai sur sa table, le code de l'erreur dans la ligne ARRET ; les contrôles qui
+-- suivent le verdict disent que la liste est celle du catalogue, que la colonne d'essai est générée comme dans la base, et
+-- que chaque ligne restaurée y porte la valeur que la base vient de recalculer, égale à celle de la source.
 --
 -- OÙ IL SE JOUE : sur une réplique locale du schéma (HISTORIQUE.md, « LA RÉPLIQUE : LE PROCÉDÉ »), par
 -- psql, sur un dossier qu'on y a semé. Il crée et supprime un schéma : l'outil d'exécution de la
@@ -160,6 +169,20 @@
 -- clés, pas les gardes : la réinsertion par la porte du super-administrateur, gardes comprises (l'empreinte recalculée
 -- sur le contenu relu en JSON, la rectificative après ce qu'elle remplace), a été jouée à part sur la même réplique —
 -- lignes relues identiques ; la rectificative d'abord, la garde la refuse.
+--
+-- 11/10/2026, une colonne GÉNÉRÉE (défaut relevé à l'étape e5b1) : `piece_textes_ocr.texte_md5`, l'empreinte du texte
+-- lu, que la base calcule, faisait refuser (428C9) toute restauration par l'application d'un dossier qui avait un texte
+-- lu — et ce script ne le voyait pas, ses tables d'essai étant créées sans la génération : sur la réplique ci-dessous, il
+-- rendait 68 tables IDENTIQUES. Elles la portent, et il rejoue le retrait du code (`_generees`, `_colonnes`). Rejoué sur
+-- une réplique égale à la production à 119 migrations (signature.sql, neuf familles), le dossier `test` semé de trois
+-- pièces, d'un document et de trois textes lus, dont deux ne diffèrent que par leurs blancs : 74 tables recréées, 131
+-- clés recopiées, 68 restaurées et IDENTIQUES à la source (8 lignes), 0 écart, aucun arrêt, les trois empreintes
+-- recalculées égales à la source, les contrôles du catalogue des rôles justes. Puis sur une copie de la réplique semée de
+-- l'étape e5b1, les mêmes textes lus, une facture et son avoir en plus : 68 IDENTIQUES (78 lignes), les déclarations en
+-- deux vagues, la double passe des avoirs, 0 écart. Plantés — la colonne retirée de `_generees`, la génération retirée
+-- des tables d'essai, une colonne inventée dans la liste, les textes avant leurs pièces —, le script s'arrête sur
+-- `piece_textes_ocr` en 428C9, puis en ÉCART (empreintes vides), puis en ÉCART sur la colonne inventée, puis sur la clé
+-- (23503) ; chaque fois un contrôle le dit.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -177,8 +200,10 @@ create schema essai_restauration;
 create table essai_restauration._ordre (rang int primary key, table_nom text not null);
 create table essai_restauration._chemins (table_nom text primary key, acces text not null, parent text, colonne text);
 create table essai_restauration._vagues (table_nom text not null, colonne text not null);
+create table essai_restauration._generees (table_nom text not null, colonne text not null);
 
--- Recopiés de src/lib/sauvegarde.ts (ORDRE_RESTAURATION, CHEMINS_DOSSIER, TABLES_AUTO_REFERENCEES_PAR_VAGUES).
+-- Recopiés de src/lib/sauvegarde.ts (ORDRE_RESTAURATION, CHEMINS_DOSSIER, TABLES_AUTO_REFERENCEES_PAR_VAGUES,
+-- COLONNES_GENEREES).
 insert into essai_restauration._ordre (rang, table_nom) values
  (1,'cabinets'),(2,'super_admins'),(3,'taux_change_bce'),(4,'roles_comptables'),(5,'cabinet_admins'),
  (6,'dossiers'),(7,'plan_comptable_dossier'),(8,'a_nouveaux'),(9,'agent_conversations'),(10,'categories'),
@@ -237,6 +262,9 @@ insert into essai_restauration._vagues (table_nom, colonne) values
  ('revision_explications','remplace_id'),
  ('declarations_ereporting','remplace_id');
 
+insert into essai_restauration._generees (table_nom, colonne) values
+ ('piece_textes_ocr','texte_md5');
+
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme
 -- la marche (ORDRE_RESTAURATION_PREVU), leurs rangs calculés pour qu'aucune table d'hier ne change de place. Absentes de
@@ -257,7 +285,7 @@ do $$
 declare t text;
 begin
   for t in select table_nom from essai_restauration._ordre order by rang loop
-    execute format('create table essai_restauration.%I (like public.%I including defaults including constraints including indexes)', t, t);
+    execute format('create table essai_restauration.%I (like public.%I including defaults including constraints including indexes including generated)', t, t);
   end loop;
 end $$;
 
@@ -316,8 +344,19 @@ insert into essai_restauration.cabinets
   where id = (select cabinet_id from public.dossiers where id = (select dossier from essai_restauration._cible));
 insert into essai_restauration.roles_comptables select * from public.roles_comptables;
 
+-- Les colonnes qu'une insertion de la restauration nomme : toutes celles de la table, dans leur ordre, SAUF les colonnes
+-- générées que le code retire (`_generees`) — comme `planReinsertion`, qui les ôte de chaque ligne envoyée. Le préfixe
+-- qualifie chaque colonne de l'alias de la source quand l'instruction en a un (`s.`).
+create function essai_restauration._colonnes(t text, prefixe text) returns text language sql stable as $f$
+  select string_agg(prefixe || quote_ident(a.attname), ', ' order by a.attnum)
+    from pg_attribute a
+   where a.attrelid = format('public.%I', t)::regclass and a.attnum > 0 and not a.attisdropped
+     and a.attname not in (select g.colonne from essai_restauration._generees g where g.table_nom = t)
+$f$;
+
 do $$
 declare d uuid := (select dossier from essai_restauration._cible); r record; n bigint; ecrits bigint; vagues int; condition text;
+        colonnes text; colonnes_s text;
 begin
   for r in
     select o.rang, o.table_nom, c.acces, c.parent, c.colonne
@@ -326,9 +365,12 @@ begin
   loop
     if r.acces in ('global','cabinet') then continue; end if;
     vagues := 0;
+    colonnes := essai_restauration._colonnes(r.table_nom, '');
+    colonnes_s := essai_restauration._colonnes(r.table_nom, 's.');
 
     if r.acces = 'le_dossier' then
-      execute format('insert into essai_restauration.%I select * from public.%I where id = $1', r.table_nom, r.table_nom) using d;
+      execute format('insert into essai_restauration.%I (%s) select %s from public.%I where id = $1',
+        r.table_nom, colonnes, colonnes, r.table_nom) using d;
     elsif r.acces = 'direct' and exists (select 1 from essai_restauration._vagues v where v.table_nom = r.table_nom) then
       -- Par vagues (TABLES_AUTO_REFERENCEES_PAR_VAGUES) : une ligne part quand chacun de ses liens est vide, pointe hors
       -- de la sauvegarde ou pointe une ligne déjà écrite — une écriture par vague. Ce qui ne peut plus avancer (un cycle)
@@ -337,30 +379,33 @@ begin
                                || ' or s.%1$I in (select y.id from essai_restauration.%2$I y))', v.colonne, r.table_nom), ' and ')
         into condition from essai_restauration._vagues v where v.table_nom = r.table_nom;
       loop
-        execute format('insert into essai_restauration.%I select s.* from public.%I s where s.dossier_id = $1'
-                       || ' and s.id not in (select z.id from essai_restauration.%I z) and %s', r.table_nom, r.table_nom, r.table_nom, condition)
+        execute format('insert into essai_restauration.%I (%s) select %s from public.%I s where s.dossier_id = $1'
+                       || ' and s.id not in (select z.id from essai_restauration.%I z) and %s',
+          r.table_nom, colonnes, colonnes_s, r.table_nom, r.table_nom, condition)
           using d;
         get diagnostics ecrits = row_count;
         exit when ecrits = 0;
         vagues := vagues + 1;
       end loop;
-      execute format('insert into essai_restauration.%I select s.* from public.%I s where s.dossier_id = $1'
-                     || ' and s.id not in (select z.id from essai_restauration.%I z)', r.table_nom, r.table_nom, r.table_nom)
+      execute format('insert into essai_restauration.%I (%s) select %s from public.%I s where s.dossier_id = $1'
+                     || ' and s.id not in (select z.id from essai_restauration.%I z)', r.table_nom, colonnes, colonnes_s, r.table_nom, r.table_nom)
         using d;
     elsif r.acces = 'direct' then
       if r.table_nom = 'factures_emises' then
         -- Première des deux passes : le lien auto-référencé part vide (voir TABLES_AUTO_REFERENCEES).
-        insert into essai_restauration.factures_emises
-          select (f).* from (select f from public.factures_emises f where f.dossier_id = d) s(f);
+        execute format('insert into essai_restauration.factures_emises (%s) select %s from public.factures_emises s where s.dossier_id = $1',
+          colonnes, colonnes_s) using d;
         update essai_restauration.factures_emises set facture_origine_id = null;
       else
-        execute format('insert into essai_restauration.%I select * from public.%I where dossier_id = $1', r.table_nom, r.table_nom) using d;
+        execute format('insert into essai_restauration.%I (%s) select %s from public.%I where dossier_id = $1',
+          r.table_nom, colonnes, colonnes, r.table_nom) using d;
       end if;
     elsif r.acces = 'partage' then
-      execute format('insert into essai_restauration.%I select * from public.%I where dossier_id = $1 or dossier_id is null', r.table_nom, r.table_nom) using d;
+      execute format('insert into essai_restauration.%I (%s) select %s from public.%I where dossier_id = $1 or dossier_id is null',
+        r.table_nom, colonnes, colonnes, r.table_nom) using d;
     elsif r.acces = 'par_parent' then
-      execute format('insert into essai_restauration.%I select * from public.%I where %I in (select id from essai_restauration.%I)',
-        r.table_nom, r.table_nom, r.colonne, r.parent);
+      execute format('insert into essai_restauration.%I (%s) select %s from public.%I where %I in (select id from essai_restauration.%I)',
+        r.table_nom, colonnes, colonnes, r.table_nom, r.colonne, r.parent);
     end if;
 
     execute format('select count(*) from essai_restauration.%I', r.table_nom) into n;
@@ -368,7 +413,8 @@ begin
       n || ' lignes (' || r.acces || case when vagues > 0 then ', ' || vagues || ' vague(s)' else '' end || ')');
   end loop;
 exception when others then
-  insert into essai_restauration._verdict values ('ARRET', 'sur ' || r.table_nom || ' : ' || sqlerrm);
+  -- Le code de l'erreur avec son message : un refus se reconnaît à son code (428C9 : une colonne générée nommée).
+  insert into essai_restauration._verdict values ('ARRET', 'sur ' || r.table_nom || ' : ' || sqlstate || ' ' || sqlerrm);
 end $$;
 
 -- Seconde passe : les liens auto-référencés, une fois toutes les lignes en place.
@@ -436,6 +482,56 @@ begin
       case when inscrit then 'le même rôle, une fois inscrit au catalogue de la base d''arrivée'
            else 'un rôle que la base d''arrivée ne connaît pas' end,
       case when inscrit then 'ACCEPTÉ' else '23503' end, coalesce(code, '?'));
+  end loop;
+end $$;
+
+-- LES COLONNES GÉNÉRÉES (défaut relevé à l'étape e5b1, corrigé le 11/10/2026). La liste que le code retire (`_generees`)
+-- est celle des colonnes générées de la base dans les tables du plan, ni plus ni moins : l'une sans l'autre, l'essai
+-- prouverait une autre restauration que celle du code. Chaque colonne de la liste est générée dans sa table d'essai comme
+-- dans la base — la restauration s'est faite contre une table qui la CALCULE. Et chaque ligne restaurée y porte la valeur
+-- que la table d'essai vient de calculer, égale à celle de la source, jointe sur sa clé primaire : au moins une ligne, ou
+-- rien n'est prouvé, et le contrôle le dit.
+do $$
+declare g record; ecarts text; genre_base text; genre_essai text; jointure text; n bigint; egales bigint;
+begin
+  select string_agg(x, ', ' order by x) into ecarts from (
+    (select c.relname || '.' || a.attname as x
+       from pg_attribute a join pg_class c on c.oid = a.attrelid
+      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+        and a.attgenerated <> '' and c.relname in (select table_nom from essai_restauration._ordre)
+     except
+     select table_nom || '.' || colonne from essai_restauration._generees)
+    union all
+    (select table_nom || '.' || colonne from essai_restauration._generees
+     except
+     select c.relname || '.' || a.attname
+       from pg_attribute a join pg_class c on c.oid = a.attrelid
+      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and a.attnum > 0 and not a.attisdropped
+        and a.attgenerated <> '')) e;
+  insert into essai_restauration._controles values (
+    'les colonnes générées de la base, au plan, sont celles que la restauration retire', 'aucun écart',
+    coalesce('écart : ' || ecarts, 'aucun écart'));
+  for g in select table_nom, colonne from essai_restauration._generees order by table_nom, colonne loop
+    select case a.attgenerated::text when 's' then 'générée (stockée)' when '' then 'ordinaire' else 'générée (' || a.attgenerated::text || ')' end
+      into genre_base from pg_attribute a
+     where a.attrelid = to_regclass(format('public.%I', g.table_nom)) and a.attname = g.colonne and not a.attisdropped;
+    select case a.attgenerated::text when 's' then 'générée (stockée)' when '' then 'ordinaire' else 'générée (' || a.attgenerated::text || ')' end
+      into genre_essai from pg_attribute a
+     where a.attrelid = to_regclass(format('essai_restauration.%I', g.table_nom)) and a.attname = g.colonne and not a.attisdropped;
+    insert into essai_restauration._controles values (g.table_nom || '.' || g.colonne || ' : la table d''essai la calcule comme la base',
+      coalesce(genre_base, 'absente de la base'), coalesce(genre_essai, 'absente de la table d''essai'));
+    select string_agg(format('e.%1$I = s.%1$I', a.attname), ' and ' order by a.attnum) into jointure
+      from pg_constraint co join pg_attribute a on a.attrelid = co.conrelid and a.attnum = any (co.conkey)
+     where co.conrelid = to_regclass(format('public.%I', g.table_nom)) and co.contype = 'p';
+    n := 0; egales := 0;
+    if genre_essai is not null and jointure is not null then
+      execute format('select count(*), count(*) filter (where e.%1$I is not distinct from s.%1$I)'
+                     || ' from essai_restauration.%2$I e join public.%2$I s on %3$s', g.colonne, g.table_nom, jointure)
+        into n, egales;
+    end if;
+    insert into essai_restauration._controles values (g.table_nom || '.' || g.colonne || ' : recalculée à la restauration, égale à la source',
+      case when n > 0 then n || ' sur ' || n else 'au moins une ligne restaurée' end,
+      case when n > 0 then egales || ' sur ' || n else 'aucune ligne restaurée : rien n''est prouvé' end);
   end loop;
 end $$;
 

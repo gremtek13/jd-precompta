@@ -6,7 +6,7 @@ import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import ProgressRing from '../components/widgets/ProgressRing'
@@ -18,6 +18,7 @@ import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import TuilesVentesClient from './TuilesVentesClient'
+import { maBanqueOuverte } from '../lib/banqueClient'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -51,6 +52,9 @@ export default function ClientHome() {
   const dossierId = dossierActifId
   // « Mes ventes » ouvert sur la société affichée, comme la coque le décide pour son entrée (Layout.tsx) : ses tuiles aussi.
   const ventesOuvertes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)
+  // « Ma banque » (étape P9) : sa tuile, sous la même garde que son entrée — sur téléphone, l'accueil cache la barre du bas,
+  // et ses tuiles en tiennent lieu.
+  const banqueOuverte = maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
   const navigate = useNavigate()
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -290,6 +294,13 @@ export default function ClientHome() {
           <span className="tuile-libelle">Mes pièces</span>
           <span className="tuile-desc">Dépose des fichiers et vois ce qu'il manque encore à ton dossier.</span>
         </Link>
+        {banqueOuverte && (
+          <Link to="/ma-banque" className="tuile">
+            <span className="tuile-icone"><IconBanque width={24} height={24} /></span>
+            <span className="tuile-libelle">Ma banque</span>
+            <span className="tuile-desc">Tes mouvements, et la pièce que ton cabinet attend pour chacun.</span>
+          </Link>
+        )}
         <Link to="/mes-informations" className="tuile">
           <span className="tuile-icone"><IconInformations width={24} height={24} /></span>
           <span className="tuile-libelle">Mes informations</span>

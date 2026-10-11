@@ -608,6 +608,38 @@ export function identiteLigne(table: string, ligne: Record<string, unknown>): st
   return clePrimaire(table).map((colonne) => String(ligne[colonne])).join('\u0000')
 }
 
+// LES COLONNES GÉNÉRÉES — celles que la base CALCULE (`generated always as (…) stored`) —, lues de l'export du schéma et
+// du catalogue de la production le 11/10/2026 : une seule, l'empreinte du texte lu (migration 20260919142532).
+//
+// Postgres refuse qu'une insertion y écrive quoi que ce soit, la valeur qu'il aurait calculée comme NULL, et il le refuse
+// avant d'avoir lu une ligne (428C9, « cannot insert a non-DEFAULT value into column »). Or la sauvegarde lit des lignes
+// ENTIÈRES (`select('*')`), et PostgREST insère toute colonne que nomme une ligne du lot (l'union de leurs clés) :
+// jusqu'au 11/10/2026, la restauration d'un dossier qui avait un texte lu s'arrêtait sur `piece_textes_ocr`, une
+// cinquantaine de tables déjà écrites (défaut relevé à l'étape e5b1). Le plan de réinsertion RETIRE désormais ces
+// colonnes de chaque ligne qu'il envoie (`sansColonnesGenerees`), et la base les recalcule de ce qui est restauré.
+//
+// La sauvegarde, elle, continue de les LIRE, et c'est voulu : remplacer `*` par une liste de colonnes ferait une liste
+// d'inclusion tenue à la main, qu'une colonne ajoutée demain quitterait sans un mot ; les sauvegardes déjà écrites les
+// portent, et doivent se restaurer telles quelles ; et la valeur lue reste le témoin du recalcul, que l'essai de
+// restauration compare à celle de la base d'arrivée (`supabase/essais/restauration.sql`).
+//
+// `sauvegardeColonnesGenerees.test.ts` confronte cette liste à l'export du schéma, dans les deux sens, et vérifie
+// qu'aucune de ces colonnes n'est une clé ni un lien que le plan lit ; `restaurationEssai.test.ts`, à celle que l'essai
+// recopie.
+export const COLONNES_GENEREES: Readonly<Record<string, readonly string[]>> = {
+  piece_textes_ocr: ['texte_md5'],
+}
+
+/**
+ * Les lignes d'une table telles que la restauration les envoie : sans les colonnes que la base calcule. Des copies, et
+ * seulement pour une table qui en a — la sauvegarde reçue reste intacte (`liensPerdus` et la vérification la relisent).
+ */
+export function sansColonnesGenerees(table: string, lignes: Record<string, unknown>[]): Record<string, unknown>[] {
+  const generees = COLONNES_GENEREES[table] ?? []
+  if (generees.length === 0) return lignes
+  return lignes.map((ligne) => Object.fromEntries(Object.entries(ligne).filter(([colonne]) => !generees.includes(colonne))))
+}
+
 /** Une violation de l'ordre : un enfant placé avant son parent, ou une table absente de l'ordre. */
 export interface ViolationOrdre {
   enfant: string
@@ -1138,7 +1170,8 @@ export function identiteRestauree(table: string, ligne: Record<string, unknown>)
 // Le plan de réinsertion : dans quel ordre écrire, et ce qu'il faut repasser ensuite.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Une table à réinsérer, avec les lignes telles qu'elles doivent partir au PREMIER passage. */
+/** Une table à réinsérer, avec les lignes telles qu'elles doivent partir au PREMIER passage — sans les colonnes que la
+ *  base calcule (`COLONNES_GENEREES`). */
 export interface EtapeReinsertion {
   table: string
   lignes: Record<string, unknown>[]
@@ -1177,7 +1210,8 @@ export interface PlanReinsertion {
 // alors plus d'aucune taille de lot.
 //
 // Et ce qui s'écrit est la sauvegarde SANS les anciennes colonnes des notes internes, ses notes dans `notes_internes`
-// (voir `sansAnciennesNotes`) : la restauration n'écrit pas ce que plus aucun code n'écrit.
+// (voir `sansAnciennesNotes`) : la restauration n'écrit pas ce que plus aucun code n'écrit. Ni ce que la base calcule
+// (voir `COLONNES_GENEREES`) : chaque étape part sans ses colonnes générées.
 export function planReinsertion(
   sauvegarde: Contenu,
   ordre: readonly string[] = ORDRE_RESTAURATION,
@@ -1223,5 +1257,13 @@ export function planReinsertion(
     .filter((table) => !connues.has(table) && contenu[table].length > 0)
     .sort()
 
-  return { etapes, secondePasse, tablesIgnorees }
+  // Les colonnes générées se retirent ICI, une fois pour toutes les étapes — les vagues, la première passe des avoirs et
+  // les lignes ordinaires —, après le calcul des vagues et de la seconde passe, qui lisent l'identifiant et les liens de
+  // chaque ligne. Aucune colonne générée n'en est un (`sauvegardeColonnesGenerees.test.ts`) ; à cette place, le résultat
+  // n'en dépend pas.
+  return {
+    etapes: etapes.map(({ table, lignes }) => ({ table, lignes: sansColonnesGenerees(table, lignes) })),
+    secondePasse,
+    tablesIgnorees,
+  }
 }

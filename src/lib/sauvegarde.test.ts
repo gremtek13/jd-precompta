@@ -14,10 +14,12 @@ import {
   planReinsertion,
   referencesExternes,
   sansAnciennesNotes,
+  sansColonnesGenerees,
   tablesSansChemin,
   violationsOrdre,
   ANCIENNES_COLONNES_DES_NOTES,
   CHEMINS_DOSSIER,
+  COLONNES_GENEREES,
   LIENS_GARDES,
   ORDRE_RESTAURATION,
   PARENTS_HORS_PLAN_VOULUS,
@@ -844,6 +846,35 @@ describe('plan de réinsertion', () => {
     expect(liensPerdus({ dossiers: [{ id: 'd1' }], revision_justifications: [orpheline] })).toEqual([
       { table: 'revision_justifications', colonne: 'remplace_id', parent: 'revision_justifications', valeur: 'absente', effacable: false },
     ])
+  })
+
+  it('n’écrit jamais une colonne que la base calcule : l’empreinte du texte lu part sans elle, et la sauvegarde reste intacte', () => {
+    // Défaut relevé à l'étape e5b1 : `piece_textes_ocr.texte_md5` est GÉNÉRÉE, et Postgres refuse toute insertion qui la
+    // nomme (428C9), même NULL. La ligne part sans elle ; la base la recalcule du texte restauré.
+    const texte = { id: 't1', dossier_id: 'd1', piece_id: 'p1', document_id: null, texte: 'Texte lu', texte_md5: 'ab12', created_at: '2026-09-19T10:00:00Z' }
+    const sansEmpreinte = { id: 't2', dossier_id: 'd1', piece_id: null, document_id: 'doc1', texte: 'Autre texte lu' }
+    const piece = { id: 'p1', dossier_id: 'd1', nom_fichier: 'piece-1.pdf' }
+    const sauvegarde: Record<string, Record<string, unknown>[]> = { piece_textes_ocr: [texte, sansEmpreinte], pieces: [piece] }
+    const plan = planReinsertion(sauvegarde)
+    const ecrites = plan.etapes.find((e) => e.table === 'piece_textes_ocr')!.lignes
+    const { texte_md5: _empreinte, ...attendue } = texte
+    expect(ecrites).toEqual([attendue, sansEmpreinte])
+    // Aucune ligne du lot ne la nomme : PostgREST insère l'union des clés du lot.
+    expect(ecrites.some((l) => 'texte_md5' in l)).toBe(false)
+    // La sauvegarde reçue garde son empreinte — `liensPerdus` et la vérification la relisent telle quelle.
+    expect(sauvegarde.piece_textes_ocr[0].texte_md5).toBe('ab12')
+    // Une table sans colonne générée part telle quelle, lignes comprises.
+    expect(plan.etapes.find((e) => e.table === 'pieces')!.lignes[0]).toBe(piece)
+    expect(sansColonnesGenerees('pieces', sauvegarde.pieces)).toBe(sauvegarde.pieces)
+  })
+
+  it('retire les colonnes générées de TOUTES les lignes d’une table, et d’elles seules', () => {
+    const lignes = [{ id: 'a', texte: 'x', texte_md5: 'h1' }, { id: 'b', texte: 'y', texte_md5: null }, { id: 'c', texte: 'z' }]
+    expect(sansColonnesGenerees('piece_textes_ocr', lignes)).toEqual([{ id: 'a', texte: 'x' }, { id: 'b', texte: 'y' }, { id: 'c', texte: 'z' }])
+    expect(lignes[0]).toEqual({ id: 'a', texte: 'x', texte_md5: 'h1' })
+    // Une colonne du même nom dans une table où elle n'est pas générée n'est pas retirée.
+    expect(sansColonnesGenerees('pieces', [{ id: 'p', texte_md5: 'h' }])).toEqual([{ id: 'p', texte_md5: 'h' }])
+    expect(COLONNES_GENEREES).toEqual({ piece_textes_ocr: ['texte_md5'] })
   })
 
   it('couvre chaque table auto-référencée déclarée', () => {

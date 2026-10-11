@@ -85,11 +85,12 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'ou une réponse illisible rendent une lecture INCOMPLÈTE, que l’écran dit, jamais un relevé vide',
   },
   lireLeDroitBanque: {
-    nombre: 1,
+    // 2 depuis l'étape P9 : « Ma banque » relit aussi la case « Banque » à la base.
+    nombre: 2,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Ma ' +
-      'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus FERME la simulation, ' +
-      'avec son motif',
+      'simulation » (P7) et « Ma banque » (P9). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
+      'FERME l’écran, avec son motif',
   },
   lireLesDroitsVentes: {
     // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases.

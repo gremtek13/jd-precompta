@@ -128,21 +128,28 @@ describe('le module, la migration et les écrans disent la même chose', () => {
   // rendu. DEPUIS L'ÉTAPE P4a, « Mes ventes » lit la case « Ventes » — sa route et son entrée, derrière
   // `VENTES_DU_CLIENT_EXPORTEES` (lib/espaceVentes.ts, `mesVentesOuvertes`) —, et l'écran relit ses cases à la base. La phrase
   // de l'onglet suit les deux drapeaux (tests suivants).
-  it('les écrans du client sont ceux que la phrase décrit : « Ma simulation » lit « Banque », « Mes ventes » « Ventes », chacun derrière son drapeau', () => {
+  // DEPUIS L'ÉTAPE P9, « Ma banque » lit la case « Banque » — sa route, son entrée et sa tuile d'accueil, derrière
+  // `COUVERTURE_EXPORTEE` (lib/banqueClient.ts, `maBanqueOuverte`) —, et l'écran relit sa case à la base.
+  it('les écrans du client sont ceux que la phrase décrit : « Ma simulation » et « Ma banque » lisent « Banque », « Mes ventes » « Ventes », chacun derrière son drapeau', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
-      '/mes-ventes ClientVentes',
+      '/mes-ventes ClientVentes', '/ma-banque ClientBanque',
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
-    expect(ecransClient.sort()).toEqual(['ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx'])
+    expect(ecransClient.sort()).toEqual([
+      'ClientBanque.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
+    ])
     // DEPUIS L'ÉTAPE P4b, l'accueil lit la case « Ventes » pour ses tuiles « À encaisser » et « À déclarer » : la même garde
     // que la route, sur la société affichée, et rien d'autre ; les tuiles relisent leurs cases à la base.
     const accueil = readFileSync(resolve(process.cwd(), 'src/pages/ClientHome.tsx'), 'utf8')
     expect(accueil).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)')
-    expect(accueil).not.toMatch(/droit_ventes|droit_banque|\.banque\b/)
-    expect(accueil.match(/droitsSur\(/g)).toHaveLength(1)
+    // Et, depuis l'étape P9, la tuile « Ma banque » : la case « Banque » sous la garde de sa route, et rien d'autre.
+    expect(accueil).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
+    expect(accueil).not.toMatch(/droit_ventes|droit_banque/)
+    expect(accueil.match(/\.banque\b/g)).toHaveLength(1)
+    expect(accueil.match(/droitsSur\(/g)).toHaveLength(2)
     const tuiles = readFileSync(resolve(process.cwd(), 'src/pages/TuilesVentesClient.tsx'), 'utf8')
     expect(tuiles).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
     expect(tuiles).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
@@ -159,7 +166,16 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(app).toContain(`{${gardeVentes} && <Route path="/mes-ventes" element={<ClientVentes />} />}`)
     const layout = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
     expect(layout).toContain(gardeVentes)
-    expect(layout).not.toMatch(/droit_ventes|droit_banque|\.banque\b/)
+    expect(layout).not.toMatch(/droit_ventes|droit_banque/)
+    // « Ma banque » : la route et l'entrée lisent la case « Banque » de la société AFFICHÉE, derrière le drapeau, et rien
+    // d'autre ; l'écran relit sa case à la base.
+    const gardeBanque = 'maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)'
+    expect(app).toContain(`{${gardeBanque} && <Route path="/ma-banque" element={<ClientBanque />} />}`)
+    expect(layout).toContain(gardeBanque)
+    expect(layout.match(/\.banque\b/g)).toHaveLength(1)
+    const banque = readFileSync(resolve(process.cwd(), 'src/pages/ClientBanque.tsx'), 'utf8')
+    expect(banque).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    expect(banque).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
     const ventes = readFileSync(resolve(process.cwd(), 'src/pages/ClientVentes.tsx'), 'utf8')
     expect(ventes).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
     expect(ventes).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
@@ -171,7 +187,10 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(ceQueDonneUnAcces(false)).toContain('voit sa simulation')
     // Après : la simulation suit la case « Banque » (EC-Q1, décidée).
     expect(ceQueDonneUnAcces(true)).toContain('dépose ses pièces et ses documents')
-    expect(ceQueDonneUnAcces(true)).toContain('avec la case « Banque », il voit aussi sa simulation')
+    // Et, depuis l'étape P9, « Ma banque » sous la même case.
+    expect(ceQueDonneUnAcces(true)).toContain('avec la case « Banque », il voit aussi sa banque — les mouvements du relevé')
+    expect(ceQueDonneUnAcces(true)).toContain('et sa simulation (chiffre d’affaires et cotisations estimés)')
+    expect(ceQueDonneUnAcces(false)).not.toMatch(/sa banque —|relevé/)
     for (const etat of [false, true]) {
       // L'ancienne phrase promettait « aucun accès aux montants » : la simulation en montre. Elle ne doit pas revenir.
       expect(ceQueDonneUnAcces(etat)).not.toMatch(/montants|uniquement/)
@@ -214,8 +233,8 @@ const GESTES_AVEC_VENTES: Record<string, readonly string[]> = {
 }
 // Ce que « Banque » ouvre par la base depuis la migration banque_du_client (P7) : trois fonctions sous `gere_la_banque`.
 const GESTES_AVEC_BANQUE: Record<string, readonly string[]> = {
-  'de proposer ou de retirer une pièce comme justificatif d’un mouvement': ['proposer_justificatif', 'retirer_proposition'],
-  'd’écrire des précisions sur un mouvement': ['ecrire_precision_mouvement'],
+  'proposer ou y retirer une pièce comme justificatif d’un mouvement': ['proposer_justificatif', 'retirer_proposition'],
+  'y écrire des précisions sur un mouvement': ['ecrire_precision_mouvement'],
 }
 // Ce que « Ventes » ouvre dans les quatre fonctions de la vente (P3) : chaque geste nommé, et les actions qui le font. La
 // table attendue est confrontée au texte des fonctions par droitsDeLAppelantCopie.test.ts.
@@ -260,19 +279,22 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
       return
     }
     expect(suite).not.toContain('cocher une case ne change pas')
-    // Depuis l'étape P4a, « Mes ventes » existe avec les ventes ouvertes : seul l'écran « Banque » reste à venir.
-    expect(suite.endsWith(ventes
-      ? ' L’écran « Banque » de son espace viendra ensuite.'
-      : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')).toBe(true)
-    // La banque ouverte se dit « par la base et sans écran encore » : sa session lit et agit, aucun écran ne le montre. Les
-    // ventes, elles, ont « Mes ventes », la liaison des plateformes comprise depuis l'étape P4b : « sans écran » ne se dit
-    // plus que de la banque.
-    expect(suite.match(/par la base et sans écran encore/g)?.length ?? 0).toBe(Number(banque))
-    expect(suite.match(/sans écran/g)?.length ?? 0).toBe(Number(banque))
+    // Depuis l'étape P4a, « Mes ventes » existe avec les ventes ouvertes ; depuis l'étape P9, « Ma banque » avec la banque
+    // ouverte : seuls l'écran qui manque et la connexion de sa banque par le client (étape P8) restent à venir.
+    expect(suite.endsWith(banque
+      ? (ventes
+        ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+        : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
+      : (ventes
+        ? ' L’écran « Banque » de son espace viendra ensuite.'
+        : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.'))).toBe(true)
+    // Plus rien ne se dit « sans écran » : les ventes ont « Mes ventes » (P4a, P4b), la banque « Ma banque » (P9).
+    expect(suite).not.toMatch(/sans écran/)
 
     if (banque) {
-      expect(suite).toContain('« Banque » permet déjà au client de voir sa simulation')
-      expect(suite).toContain('de lire le contrôle de solde de ses relevés')
+      expect(suite).toContain('« Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé')
+      expect(suite).toContain('et le solde de ses relevés contrôlés')
+      expect(suite).toContain('La case lui ouvre aussi sa simulation.')
       for (const geste of Object.keys(GESTES_AVEC_BANQUE)) expect(suite).toContain(geste)
     } else {
       expect(suite).not.toMatch(/simulation|contrôle de solde|justificatif|précisions/)
@@ -287,7 +309,7 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
       expect(suite).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
       // Désigner le mouvement qui prouve un encaissement demande AUSSI « Banque » — seul effet de cette case sans P7.
       expect(suite).toContain(banque
-        ? 'et, avec « Ventes », de désigner celui qui prouve un encaissement.'
+        ? 'et, avec « Ventes », désigner celui qui prouve un encaissement.'
         : '« Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement '
           + 'du relevé qui prouve un encaissement.')
       expect(suite).not.toMatch(/ne change pas/)

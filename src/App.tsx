@@ -12,9 +12,12 @@ import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
 import ClientVentes from './pages/ClientVentes'
+import ClientBanque from './pages/ClientBanque'
 import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
+import { maBanqueOuverte } from './lib/banqueClient'
+import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
 import CabinetBrandingPage from './pages/CabinetBrandingPage'
@@ -104,6 +107,8 @@ function Gate() {
                 à plusieurs sociétés peut l'avoir sur l'une et pas sur l'autre. Sans elle, l'adresse renvoie à l'accueil, et
                 changer de société pour une qui ne la porte pas y ramène aussi ; la base refuse de toute façon (P2). */}
             {mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes) && <Route path="/mes-ventes" element={<ClientVentes />} />}
+            {/* « Ma banque » (espace client, étape P9) : de même, seulement si la société AFFICHÉE porte la case « Banque ». */}
+            {maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque) && <Route path="/ma-banque" element={<ClientBanque />} />}
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
         )}
