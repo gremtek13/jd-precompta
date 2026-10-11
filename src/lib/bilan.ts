@@ -801,3 +801,142 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
     resultat, ecart, renvois, points,
   }
 }
+
+// ── La colonne de l'exercice précédent ─────────────────────────────────────────────────────────────────────────
+//
+// « Chacun des postes du bilan et du compte de résultat comporte l'indication du montant relatif à l'exercice
+// précédent » (PCG, art. 811-3) ; le 2033-A-SD le porte en NET : une colonne « exercice N−1 » à l'actif, après le net de
+// l'exercice, et une au passif. Elle se calcule par le MÊME bilan, sur les données de N−1 et sous les mêmes règles —
+// aucune compensation, rien au jugé, l'équilibre au centime et son écart décomposé —, jamais en relisant l'ouverture de
+// N : un solde reporté ne dit ni le résultat de N−1 ni la rubrique de chaque tiers, et un écart de N−1 s'y perdrait.
+//
+// UNE COLONNE FAUSSE NE S'AFFICHE PAS. N−1 n'a pas de colonne quand son bilan ne s'établit pas — son ouverture attend la
+// validation de N−2, ou il précède la reprise du dossier et ses comptes sont dans le logiciel d'avant —, ni quand N est
+// le premier exercice du dossier (rien ne le précède dans l'application : une colonne de zéros affirmerait une activité
+// nulle). Le motif le dit, et la colonne de N n'en change pas. Hors de ces cas, N s'ouvre par le report de N−1 : la
+// colonne est celle d'un exercice VALIDÉ, figé en base.
+
+export type BilanEtabli = Extract<BilanDeLExercice, { etat: 'etabli' }>
+
+export interface MotifSansColonne {
+  code: MotifSansBilan['code'] | 'premier-exercice'
+  texte: string
+}
+
+export type ColonneDeLExercicePrecedent =
+  | { etat: 'etablie'; exercice: number; bilan: BilanEtabli }
+  | { etat: 'non-etablie'; exercice: number; motif: MotifSansColonne }
+
+/** La colonne N−1 du bilan de `d.exercice`, calculée sur les mêmes entrées (tout le dossier). */
+export function colonneDeLExercicePrecedent(d: EntreesDuBilan): ColonneDeLExercicePrecedent {
+  const exercice = d.exercice - 1
+  const bilan = bilanDeLExercice({ ...d, exercice })
+  if (bilan.etat === 'non-etabli') return { etat: 'non-etablie', exercice, motif: bilan.motif }
+  // N sans ouverture n'a rien avant lui — ni reprise, ni exercice validé, ni écriture : le bilan de N−1 serait fait de
+  // zéros, qui diraient une activité nulle là où l'application ne sait rien.
+  const ouvertureDeN = etatDeLOuverture(d.exercice, {
+    reprise: d.reprise, reportes: d.reportes, anneesValidees: d.anneesValidees, ecritures: d.ecritures,
+  })
+  if (ouvertureDeN.type === 'sans-objet') {
+    return {
+      etat: 'non-etablie', exercice,
+      motif: {
+        code: 'premier-exercice',
+        texte: `L’exercice ${d.exercice} est le premier du dossier : aucun exercice précédent n’est tenu dans l’application. `
+          + 'Si l’activité est plus ancienne, sa balance se reprend dans Informations du dossier (« Balance d’un autre logiciel »).',
+      },
+    }
+  }
+  return { etat: 'etablie', exercice, bilan }
+}
+
+// Ce qu'une rubrique porte dans un exercice : la règle de l'écran depuis la première brique, désormais la même pour les
+// deux colonnes. Le résultat de l'exercice se montre toujours, nul compris : c'est la ligne qu'on cherche d'abord.
+export const rubriqueActifPortee = (r: RubriqueActif) => r.brut !== 0 || r.amortissements !== 0
+export const rubriquePassifPortee = (r: RubriquePassif) => r.montant !== 0 || r.contributions.length > 0 || r.id === 'resultat'
+
+/** Une ligne de l'actif : ce que porte l'exercice (nul s'il n'a rien dans la rubrique) et le net de N−1 (nul de même). */
+export interface LigneDeLActif {
+  rubrique: DefinitionRubriqueActif
+  n: { brut: number; amortissements: number; net: number } | null
+  precedent: number | null
+}
+
+export interface LigneDuPassif {
+  rubrique: DefinitionRubriquePassif
+  n: number | null
+  precedent: number | null
+}
+
+/**
+ * Les rubriques à montrer, dans l'ordre du formulaire : celles que porte l'un ou l'autre exercice. Une rubrique que seul
+ * N−1 porte a sa ligne, vide pour N — et inversement. Sans colonne N−1 (`precedent` nul), ce sont celles de N seul.
+ */
+export function lignesDuBilan(n: BilanEtabli, precedent: BilanEtabli | null): { actif: LigneDeLActif[]; passif: LigneDuPassif[] } {
+  const actif: LigneDeLActif[] = []
+  RUBRIQUES_ACTIF.forEach((rubrique, i) => {
+    const deN = n.actif[i]
+    const deP = precedent ? precedent.actif[i] : null
+    const pourN = rubriqueActifPortee(deN) ? { brut: deN.brut, amortissements: deN.amortissements, net: deN.net } : null
+    const pourP = deP && rubriqueActifPortee(deP) ? deP.net : null
+    if (pourN || pourP !== null) actif.push({ rubrique, n: pourN, precedent: pourP })
+  })
+  const passif: LigneDuPassif[] = []
+  RUBRIQUES_PASSIF.forEach((rubrique, i) => {
+    const deN = n.passif[i]
+    const deP = precedent ? precedent.passif[i] : null
+    const pourN = rubriquePassifPortee(deN) ? deN.montant : null
+    const pourP = deP && rubriquePassifPortee(deP) ? deP.montant : null
+    if (pourN !== null || pourP !== null) passif.push({ rubrique, n: pourN, precedent: pourP })
+  })
+  return { actif, passif }
+}
+
+/** Un compte du détail : sa contribution à la rubrique dans chaque exercice, nulle quand il n'y est pas. */
+export interface CompteDuDetail {
+  compte: string
+  libelle: string
+  colonne: Contribution['colonne']
+  n: Contribution | null
+  precedent: Contribution | null
+}
+
+export interface RubriqueDuDetail {
+  id: IdRubriqueActif | IdRubriquePassif
+  libelle: string
+  comptes: CompteDuDetail[]
+}
+
+/**
+ * Le détail par compte des rubriques de N, rapproché de celui de N−1 : un compte présent d'un seul côté a sa ligne, vide
+ * de l'autre. Les deux listes sont celles d'un même côté du bilan, dans l'ordre du formulaire.
+ */
+export function detailDuBilan(
+  n: readonly (RubriqueActif | RubriquePassif)[],
+  precedent: readonly (RubriqueActif | RubriquePassif)[] | null,
+): RubriqueDuDetail[] {
+  const rubriques: RubriqueDuDetail[] = []
+  n.forEach((rubrique, i) => {
+    // Une clé par compte ET par colonne : dans une rubrique, un compte n'a qu'une colonne — un correctif (28, 29…) va aux
+    // amortissements, le compte qu'il corrige au brut —, et un compte de tiers partagé entre l'actif et le passif y est
+    // dans deux rubriques.
+    const comptes = new Map<string, CompteDuDetail>()
+    const ligne = (c: Contribution) => {
+      const cle = `${c.compte}|${c.colonne}`
+      let l = comptes.get(cle)
+      if (!l) {
+        l = { compte: c.compte, libelle: c.libelle, colonne: c.colonne, n: null, precedent: null }
+        comptes.set(cle, l)
+      }
+      return l
+    }
+    for (const c of rubrique.contributions) ligne(c).n = c
+    for (const c of precedent ? precedent[i].contributions : []) ligne(c).precedent = c
+    if (comptes.size === 0) return
+    rubriques.push({
+      id: rubrique.id, libelle: rubrique.libelle,
+      comptes: [...comptes.values()].sort((a, b) => parNumero(a.compte, b.compte) || parNumero(a.colonne, b.colonne)),
+    })
+  })
+  return rubriques
+}

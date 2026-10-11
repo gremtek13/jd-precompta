@@ -473,7 +473,7 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   dans Justificatifs et sa fiche, dite au bilan d'un import et dans « Encaissements » (ligne 28.6, 09/10/2026).
 - **Bilan** (ligne 33, première brique, 09/10/2026) : l'onglet Bilan range les soldes de l'exercice dans les
   rubriques et les cases du 2033-A-SD 2026, en centimes, sans rien écrire ; un BNC en trésorerie y voit ses comptes de
-  bilan, avec l'avis qu'il n'en établit pas (CGI, art. 99).
+  bilan, avec l'avis qu'il n'en établit pas (CGI, art. 99) ; la colonne de l'exercice précédent, en net (11/10/2026).
 - **Financement** : emprunts et échéancier, situation intermédiaire, plan de trésorerie, échéancier des dettes et
   ratios, prévisionnel à 3 ans ; suppléments ; comptes courants d'associés.
 - **Autres écrans** : immobilisations, cotisations sociales (lecture best-effort des avis), Clôture (dont la purge du
@@ -582,7 +582,7 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
   EC-D2 les mentions d'un métier, EC-D3 l'acompte, EC-D4 les données des clients du client) → « LES DEVIS, EN BASE ».
-- **Bilan** (ligne 33) : restent la colonne de l'exercice précédent, l'affectation du résultat d'une société, la forme
+- **Bilan** (ligne 33) : restent l'ouverture confrontée au bilan qui la précède, l'affectation du résultat d'une société, la forme
   juridique du dossier, l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf
   questions au cabinet → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
 - **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
@@ -893,7 +893,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le bilan se lit depuis les soldes** (`lib/bilan.ts`) : l'ouverture et les écritures de l'exercice ; rubriques du
   2033-A-SD (PCG, art. 822-1) ; aucune compensation (art. 112-2), le sens jugé compte par compte et tiers par tiers ;
   un compte qu'aucune rubrique ne nomme est « à classer », jamais rangé au jugé ; l'écart se juge au centime et se
-  décompose → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A ».
+  décompose. La colonne de l'exercice précédent (PCG, art. 811-3 ; en net, comme le 2033-A-SD) est le MÊME bilan
+  calculé sur N−1 (`colonneDeLExercicePrecedent`), jamais l'ouverture de N relue ; elle n'a aucun chiffre quand N−1
+  ne s'établit pas (ouverture en attente, antérieur à la reprise) ni quand N est le premier exercice, et l'en-tête
+  dit pourquoi ; une rubrique ou un compte d'un seul exercice a sa ligne, vide de l'autre (`lignesDuBilan`,
+  `detailDuBilan`) → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A », « LA COLONNE DE L'EXERCICE PRÉCÉDENT ».
 - **La révision des soldes** (ligne 41, R1) : une DÉCISION par solde d'un compte de bilan à la fin d'un exercice
   (justifié, accepté sur motif, anomalie), immuable : elle se REMPLACE (chaîne `remplace_id`) et, permanente, se REPREND
   l'exercice suivant. Seule `justifier_solde` l'écrit — treize refus dans un ordre fixé, sous le verrou de la
@@ -1252,7 +1256,10 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - **Délégation aux sous-agents** (`.claude/agents/`, demande du cabinet du 08/10/2026) : pour chaque demande, la session
   choisit d'elle-même le sous-agent adapté — `architecte` (Opus 5.5, effort maximal) pour tout ce qui touche la
   structure, la base, la sécurité ou la logique métier ; `dev` (Opus 5.5, effort élevé) pour les fonctionnalités ;
-  `retouches` (Sonnet 5.5) pour le cosmétique. En cas de doute, l'`architecte`. Elle dit au cabinet, en une ligne,
+  `retouches` (Sonnet 5.5) pour le cosmétique. En cas de doute, l'`architecte`. Demande du cabinet du 11/10/2026 :
+  quatre ou cinq agents au plus en même temps, et chacun sur le modèle le plus économe qui suffit à sa tâche — `dev`
+  en Sonnet (paramètre `model`) pour un écran dont la logique est déjà en module et qui ne touche ni aux droits ni aux
+  calculs, un agent Haiku ou un script pour une exécution mécanique. Elle dit au cabinet, en une ligne,
   quel agent elle utilise, et garde l'orchestration : commits, demandes de fusion, fusion, déploiements, Notion. Les
   exécutions mécaniques (barrière, essais, banc) peuvent aller à un agent économe, qui ne rend que les chiffres.
 - Avant toute modification de schéma ou de policy RLS, inspecter l'état réel en base (`list_tables`, `execute_sql`) —

@@ -277,6 +277,15 @@ const VISITES = [
   { dossier: 'd10', onglet: 'revision', nom: 'revision/à-justifier', apres: exercice('2025') },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/en-cours', apres: exercice('2026') },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
+  // La COLONNE DE L'EXERCICE PRÉCÉDENT (2025 validé ouvre 2026) : une colonne de plus à chaque tableau, et le détail par
+  // compte déplié, où chaque montant porte celui de 2025 entre parenthèses.
+  {
+    dossier: 'd9', onglet: 'bilan', nom: 'bilan/report-détail',
+    apres: async (page) => {
+      await exercice('2026')(page)
+      await page.getByText('Détail par compte').click()
+    },
+  },
   { dossier: 'd10', onglet: 'bilan', nom: 'bilan/en-attente', apres: exercice('2026') },
   {
     dossier: 'd1', onglet: 'bilan', nom: 'bilan/détail',
