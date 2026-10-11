@@ -274,6 +274,27 @@ const VISITES = [
       await page.getByRole('button', { name: 'Ouvrir le cycle Ensemble', exact: true }).click()
     },
   },
+  // LA REVUE ANALYTIQUE (étape R5, phase C) : la section de la kinésithérapeute — un seuil remplacé, son tableau face aux repères
+  // de 2024, les recettes mois par mois —, le panneau d'une ligne expliquée, puis celui d'une ligne « à revoir » (ses chiffres ont
+  // changé depuis son explication).
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/revue-ligne',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Ouvrir la ligne Total des recettes', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/revue-à-revoir',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Revoir la ligne Résultat', exact: true }).click()
+    },
+  },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/à-justifier', apres: exercice('2025') },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/en-cours', apres: exercice('2026') },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },

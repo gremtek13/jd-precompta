@@ -84,8 +84,9 @@ const ECRANS_DU_REGIME_ET_DES_ECARTS: readonly string[] = []
 // pour son panneau d'un cycle (`FicheCycle`, qui n'écrit rien lui-même).
 const ECRANS_DES_CYCLES: readonly string[] = ['src/pages/dossier/RevisionTab.tsx']
 
-// Les écrans qui appellent les deux fonctions de la revue analytique, nommément : aucun avant la phase C de l'étape R5.
-const ECRANS_DE_LA_REVUE_ANALYTIQUE: readonly string[] = []
+// Les écrans qui appellent les deux fonctions de la revue analytique, nommément : l'onglet Révision (étape R5, phase C), qui
+// écrit pour sa section (le seuil) et son panneau (`FicheExplication`, qui n'écrit rien lui-même).
+const ECRANS_DE_LA_REVUE_ANALYTIQUE: readonly string[] = ['src/pages/dossier/RevisionTab.tsx']
 
 // Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
 const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']

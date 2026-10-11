@@ -565,8 +565,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   la conclusion, le journal, la revue du chef —, en base et en module le 10/10/2026 (Q2, Q7 et Q11 prises comme
   hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes), et à l'écran le même jour (phase C) ; R5, la revue analytique —
   le seuil de signification fixé et motivé par le cabinet, l'explication d'une variation, la source de N−1 dite —, en
-  base et en module le 11/10/2026 (Q4, Q2, Q11 et Q7 prises comme hypothèses ; l'écran est sa phase C) → « LA REVUE
-  ANALYTIQUE, EN BASE » ; R6 attend Q1 → « LA BASE
+  base et en module le 11/10/2026 (Q4, Q2, Q11 et Q7 prises comme hypothèses), et à l'écran le même jour (phase C) →
+  « LA REVUE ANALYTIQUE, EN BASE », « L'ÉCRAN DE LA REVUE ANALYTIQUE » ; R6 attend Q1 → « LA BASE
   DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION »,
   « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
@@ -987,7 +987,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   d'une 2035 calculée tel que l'écran l'a montré ; seules `fixer_seuil_de_signification` et `expliquer_variation`
   écrivent, sous les verrous de la validation puis de la révision, les repères de N−1 verrouillés en partage ; leurs
   refus sont redits avant le clic, confrontés au texte exporté et rejoués sur l'essai (`revueAnalytiqueEssai.test.ts`)
-  → « LA REVUE ANALYTIQUE, EN BASE ».
+  → « LA REVUE ANALYTIQUE, EN BASE ». À l'écran (phase C, `lib/revueAnalytiqueEcran.ts`, pur) : une section de l'onglet
+  Révision lit `revision_seuils`, `revision_explications` et les deux tables de repères EN ENTIER — ratées, elle seule se
+  tait (ni tableau, ni état, ni geste) ; la 2035 de l'exercice est celle de Clôture (`declarationPourLaRevue`, jumelle
+  gardée par un test qui relit `ClotureTab`) ; le volet `explication` (`FicheExplication`) dit les refus du module avant
+  le clic ; un verrou `revueEnCours`, que la décision d'un solde et les gestes des cycles partagent, relâché après la
+  relecture ; une saisie RETIENT le seuil ou l'explication qu'elle remplace → « L'ÉCRAN DE LA REVUE ANALYTIQUE ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1260,7 +1265,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8977 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9079 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

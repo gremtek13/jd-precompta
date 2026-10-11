@@ -20207,3 +20207,63 @@ virgule décimale empêchait toute correspondance : « 108000, le bénéfice de 
 test qui la lisait n'avait qu'un élément. La liste se compose désormais élément par élément (`enumeration`), et un test
 d'écran (un exploitant : le 108 et le bénéfice réunis au 101000) l'exige — rouge sur l'ancienne écriture, vert sur la
 nouvelle.
+
+### 11/10/2026 — L'ÉCRAN DE LA REVUE ANALYTIQUE — LIGNE 41, ÉTAPE R5, PHASE C (R5c)
+
+(Aucune migration, aucune Edge Function, aucun appel extérieur. `lib/revueAnalytiqueEcran.ts` (neuf, pur) et son test ;
+`pages/dossier/RevueAnalytiqueSection.tsx` et `FicheExplication.tsx` (neufs) ; `RevisionTab.tsx` ; `RevisionTabRevueAnalytique.test.tsx`
+(neuf) ; `encaissementsEcritures.test.ts` (`ECRANS_DE_LA_REVUE_ANALYTIQUE` = l'onglet Révision, lui seul) ; `index.css` (le volet
+`explication` prend tout l'écran du téléphone, comme `cycle`) ; le banc (`fauxSupabase.ts` : un seuil remplacé, deux explications
+dont une « à revoir » et les repères de 2024 pour la kinésithérapeute ; `debordements.mjs` : deux visites.) La phase C de R5 : le
+module `lib/revueAnalytique.ts` calcule et refuse, l'écran lui donne ce qu'il a lu et montre ce qu'il rend ; aucune règle
+n'y est réécrite, aucun défaut du module n'a été relevé. Le banc : 0 débordement aux neuf passes du cabinet (1 440, 1 280,
+1 024, 720, 390 px et les quatre combinaisons de volets), les neuf visites de la révision comprises ; la suite entière sous Paris :
+306 fichiers, 9 053 tests.
+
+**LES LECTURES.** Quatre de plus dans `lireLaRevision` : `revision_seuils`, `revision_explications` (tous exercices : la chaîne de
+l'exercice précédent se reprend), `references_annuelles` (`annee, chiffre_affaires, resultat_net`) et `references_postes_annuels`
+(`annee, poste, montant`) — les seules colonnes que la base lit d'eux (la colonne `notes` d'un repère n'est pas lue). Elles ne cachent PAS
+l'onglet : leurs motifs vont à part (`motifsRevue`), la section les nomme et ne montre ni tableau, ni état, ni geste (le module,
+reçu un `lectureIncomplete`, n'affirme rien) ; les cycles de la révision des soldes demeurent. Tout le reste vient des lectures de
+la Vue d'ensemble, une fois : la 2035 de l'exercice est calculée comme Clôture la calcule (`declarationPourLaRevue` : le relevé
+rapproché seul, les paiements des pièces, les parts du relevé, les échéances de cotisation à leur paiement) — nulle en
+engagement, que la section dit — ; sa jumelle est gardée par un test qui relit les cinq expressions de `ClotureTab`. Les exercices
+validés viennent du contexte du dossier (lu en entier par `DossierDetail`, qui dit son échec).
+
+**LA SECTION** (« Revue analytique de N ») : le seuil courant (montant, motif, « fixé le …, par toi » ou l'identifiant court d'un
+autre compte) et son historique, le plus récent d'abord ; « Fixer le seuil » / « Remplacer le seuil » (montant et motif SAISIS ;
+`centimesDeLaSaisie` refuse trois décimales, un signe, un champ vide au lieu d'arrondir) ; l'avancement par état ; le tableau de la
+2035 (postes par nature, trois totaux) et celui des comptes — N, N−1, variation en euros et en pourcentage, source sous son
+libellé, état sous le sien, un geste par ligne (Expliquer / Revoir / Ouvrir) —, les recettes mois par mois, les dépenses sans
+pièce (avec seuil, celles qui le dépassent, les autres comptées ; sans seuil toutes ; repliées au-delà de 30). Un exercice en cours
+dit la phrase de la base et n'offre ni saisie ni geste ; aucune pastille ne dit « normal ».
+
+**LE PANNEAU** (volet `explication`, plein écran sur téléphone) : la ligne, ses deux montants, sa variation, sa source, son état et,
+« à revoir », POURQUOI (montant, précédent, source ou chaîne illisible) ; l'historique des explications, la courante repérée ;
+« Expliquer » / « Remplacer l'explication », grisé sous le refus du module dit sous ses mots. Une saisie en attente se garde
+(changer de ligne, fermer, ou un autre contenu du volet demandent confirmation).
+
+**L'ÉCRITURE.** `fixer_seuil_de_signification` et `expliquer_variation` seules, par `argumentsDeFixerSeuil` /
+`argumentsDExpliquerVariation`, dans `RevisionTab` ; erreur lue et dite (`messageErreur`) ; UN verrou `revueEnCours` (`useRef`, posé
+avant le `try`, relâché après la relecture de tout l'onglet, relue aussi sur refus), que la décision d'un solde et les trois
+gestes des cycles partagent dans les deux sens — les boutons des deux panneaux se grisent pendant une écriture de la revue ; une
+saisie RETIENT le seuil ou l'explication qu'elle remplace au premier mot, et le module redit avant le clic ce que la base
+refuserait si une autre a été donnée depuis. L'erreur d'une explication se dit sur sa ligne seulement.
+
+**PREUVES.** `revueAnalytiqueEcran.test.ts` (33 tests) et `RevisionTabRevueAnalytique.test.tsx` (69) : lectures partielles (chacune des
+quatre tables refusée, plusieurs), exercice en cours, engagement, 2035 validée illisible, précédent non validé, le seuil
+(refus avant le clic un à un, fixé puis remplacé, retenu), les explications (chaque argument, la nature d'un poste, un libellé
+commun à une recette et à une dépense), « à revoir » par le montant, le précédent, la source et la chaîne, trois clics dans le même
+rendu, le verrou jusqu'à la relecture, le verrou partagé avec les quatre autres gestes dans les deux ordres. **MUTATIONS** du
+câblage : 98 ; 92 mordent (dont 7 après des tests ajoutés : l'ordre des historiques, le repérage d'une ligne par sa NATURE, la
+garde du volet à l'arrivée d'un autre contenu, la fermeture refusée, l'erreur tardive d'une autre ligne, le verrou de la fonction
+des explications), 6 ÉQUIVALENTES : le garde de l'explication contre une décision ou un cycle en cours (le volet unique ne
+laisse pas les deux panneaux ouverts, et leurs boutons se grisent), `explicationModifiee` remis à zéro à l'ouverture (l'effet de
+montage le fait déjà), la condition `lectureIncomplete === null` de la section (le module rend alors `exercice` nul), et le filtre
+des mouvements rapprochés en deux endroits (`paiementsDesPieces` et `partsDuReleve` le refont). Barrière : voir le rapport.
+
+**L'INTÉGRATION** (la session). Le correctif s'applique tel quel au-dessus de l'ouverture confrontée (O33, demande
+#143), qu'il ne touche pas. Relu : les deux écritures passent par les fonctions de la base seules, sous le verrou
+partagé, relâché après la relecture de tout l'onglet ; les quatre lectures nouvelles passent par `lireTout`, et leurs
+motifs ne cachent que la section ; la feuille de style ne change que la liste des volets plein écran du téléphone. La
+barrière et le banc rejoués sur l'arbre intégré sont dans la demande de fusion.
