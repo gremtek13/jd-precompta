@@ -3,8 +3,8 @@
 //
 // L'onglet Factures du cabinet et ses fenêtres servent aussi « Mes ventes › Factures », réutilisés et non recopiés : une
 // seule propriété, OBLIGATOIRE, dit qui regarde. Les gestes sont les mêmes — la base (P2) et les fonctions de la vente (P3)
-// les ouvrent au client « Ventes » —, sauf ceux du cabinet (l'adresse du dossier, le statut de TVA, la liaison d'une
-// plateforme). Les MOTS changent : le client n'est jamais « le client » de son propre dossier, aucun onglet du cabinet ne
+// les ouvrent au client « Ventes » —, sauf ceux du cabinet (l'adresse du dossier, le statut de TVA, la réception des
+// factures d'achat ; la liaison d'une plateforme s'ouvre au client à l'étape P4b, sous EC-Q4). Les MOTS changent : le client n'est jamais « le client » de son propre dossier, aucun onglet du cabinet ne
 // lui est désigné, et on le tutoie (lib/resteAEnvoyer.ts : on tutoie le client, on vouvoie le cabinet).
 //
 // Ce module dit les mots. Les phrases des écrans ont leur variante écrite à côté d'elles ; celles des MODULES partagés ne
@@ -67,24 +67,42 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
     de: 'le statut de TVA du dossier, dont l’obligation dépend, n’est pas encore choisi (onglet TVA du dossier).',
     vers: 'ton statut de TVA, dont l’obligation dépend, n’est pas encore précisé par ton cabinet.',
   },
-  // lib/statutsLus.ts, `refusDuReleve` : l'identité ouverte au cabinet sur la plateforme est celle de l'entreprise du client.
+  // lib/statutsLus.ts, `refusDuReleve` : l'identité ouverte sur la plateforme est celle de l'entreprise du client, et depuis
+  // l'étape P4b il la relie lui-même, dans « Tes plateformes » (« Mes ventes »).
   {
     de: 'L’identifiant ou le secret enregistrés ne sont plus acceptés : demandez-en de nouveaux au client, puis saisissez-les '
       + 'par « Modifier » dans la fenêtre « Plateforme du client » (onglet Justificatifs).',
-    vers: 'L’identifiant ou le secret enregistrés ne sont plus acceptés : crée-en de nouveaux sur ta plateforme et '
-      + 'transmets-les à ton cabinet, qui relie ta plateforme.',
+    vers: 'L’identifiant ou le secret enregistrés ne sont plus acceptés : crée-en de nouveaux sur ta plateforme, puis '
+      + 'saisis-les par « Modifier » dans « Gérer ta plateforme » (« Tes plateformes »).',
   },
   {
     de: 'Demandez au client d’ouvrir au cabinet le droit de lire les flux de son entreprise sur sa plateforme.',
-    vers: 'Ouvre à ton cabinet, sur ta plateforme, le droit de lire les flux de ton entreprise.',
+    vers: 'Ouvre, sur ta plateforme, à l’accès relié ici le droit de lire les flux de ton entreprise.',
   },
   // lib/statutsLus.ts, `bilanDuReleve` et `verificationAvantDeclaration`.
   { de: 'Relancez la lecture pour la suite.', vers: 'Relance la lecture pour la suite.' },
   {
     de: ' Aucune plateforme n’est reliée au dossier pour les lire : reliez-la dans l’onglet Justificatifs (« Plateforme du client »).',
-    vers: ' Aucune plateforme n’est reliée à ta société pour les lire : c’est ton cabinet qui la relie.',
+    vers: ' Aucune plateforme n’est reliée à ta société pour les lire : relie-la dans « Tes plateformes », au-dessus de tes '
+      + 'factures.',
   },
   { de: 'n’ont pas encore été lus : lisez-les avant de déclarer', vers: 'n’ont pas encore été lus : lis-les avant de déclarer' },
+  // lib/receptionPlateforme.ts, `lireSynchronisationSuperPdp` : la section « Tes plateformes » lit l'état de Super PDP.
+  { de: 'La synchronisation Super PDP du dossier n’a pas pu être lue.', vers: 'L’état de Super PDP n’a pas pu être lu.' },
+  // Les refus de `plateforme-agreee` que les gestes de la liaison rendent (relier, tester, retirer, relire les statuts,
+  // étape P4b) : la fonction parle au cabinet, et elle ne change pas pour l'écran. Les phrases d'abord, puis les verbes au
+  // vouvoiement qu'elles portent — chacun lu dans la source de la fonction.
+  { de: 'L\'identifiant du cabinet chez la plateforme', vers: 'L\'identifiant chez ta plateforme' },
+  { de: 'l\'identité ouverte au cabinet n\'a ', vers: 'l\'identité enregistrée n\'a ' },
+  { de: 'Donnez à la plateforme', vers: 'Donne à ta plateforme' },
+  { de: 'ressaisissez', vers: 'ressaisis' },
+  { de: 'vérifiez', vers: 'vérifie' },
+  { de: 'laissez-la', vers: 'laisse-la' },
+  { de: 'Réessayez', vers: 'Réessaie' },
+  { de: 'réessayez', vers: 'réessaie' },
+  { de: 'relancez', vers: 'relance' },
+  { de: 'suivez-la', vers: 'suis-la' },
+  { de: 'rechargez', vers: 'recharge' },
   // lib/transmissionsFactures.ts (`libelleCanal`, `libelleCourtCanal`), lib/receptionPlateforme.ts et tout ce qui nomme la
   // plateforme agréée du TITULAIRE : pour lui, c'est la sienne.
   { de: 'la plateforme du client', vers: 'ta plateforme' },

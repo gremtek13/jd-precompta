@@ -384,7 +384,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   relevé, ni règlements, ni pièces, et le dit. Les mots du client : variantes à côté des phrases d'écran, `pourLEspace`
   pour celles des modules partagés (copies gardées : jamais changées à la source) ; garde des mots `MOTS_DU_CABINET`
   (aucun onglet, jamais « le client » pour le titulaire, tutoiement), éprouvé sur les mêmes états montés pour le cabinet
-  (`FacturesTabClient.test.tsx`) → « « MES VENTES › FACTURES » ».
+  (`FacturesTabClient.test.tsx`) → « « MES VENTES › FACTURES » ». Depuis P4b (11/10/2026, EC-Q4 prise comme hypothèse) :
+  « Tes plateformes » ouvre `PlateformeClientModal` et `SuperPdpModal` en mode client (même propriété `espace` : la
+  réception n'y existe pas, ni bouton ni texte, et le secret ne s'affiche jamais) ; les refus de `plateforme-agreee`,
+  rédigés pour le cabinet, se réécrivent à l'affichage (`REECRITURES_CLIENT`, chaque `de` lu dans la source de la
+  fonction) → « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -427,7 +431,8 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   leurs droits « Ventes » et « Banque » (09/10/2026, enregistrés, lus par `AuthContext` ; « Banque » ouvre la lecture du
   relevé et « Ma simulation » depuis P7, « Ventes » la lecture des ventes et leurs gestes par la base depuis P2, et
   dans les quatre fonctions de la vente depuis P3, 10/10/2026) ; « Mes ventes › Factures » (P4a, 11/10/2026) : l'onglet
-  Factures et ses fenêtres pour le client « Ventes » ; client
+  Factures et ses fenêtres pour le client « Ventes » ; la liaison de sa plateforme et de Super PDP, et les tuiles « À
+  encaisser » et « À déclarer » de son accueil (P4b, 11/10/2026) ; client
   à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -576,8 +581,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   APPLIQUÉES : LA BASCULE ». P3, les fonctions de la vente acceptent le client, le 10/10/2026 (EC-Q4 prise comme
   hypothèse ; la phrase des cases de l'onglet Accès dit ce qu'elles ouvrent) → « LES FONCTIONS DE LA VENTE ACCEPTENT LE
   CLIENT ». P4a, « Mes ventes › Factures », le 11/10/2026 (les gestes du cabinet retirés, la banque dite, les mots du
-  client) ; restent P4b (connexions du client, sous EC-Q4 ; tuiles de l'accueil) et P4c (« par le client », EC-Q2) →
-  « « MES VENTES › FACTURES » ». P5,
+  client) ; P4b, les connexions du client (EC-Q4 prise comme hypothèse) et les tuiles de son accueil, le 11/10/2026 ;
+  reste P4c (« par le client », EC-Q2) → « « MES VENTES › FACTURES » », « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON
+  ACCUEIL ». P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
   d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
   (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
@@ -691,6 +697,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   repart en chargement. `ecransAvantLecture.test.tsx` monte tous les écrans qui lisent la base sous un client qui ne rend
   rien (`src/test/clientRetenu.ts`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU », « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT
   D'AVOIR LU ».
+- **Une lecture que deux écrans comptent s'écrit une fois** (`lib/ventesLecture.ts` : les pastilles de l'onglet Factures
+  et les tuiles de l'accueil du client, comptées par `compterLesPastilles`) ; un compte ne se dit que de listes TOUTES
+  lues en entier → « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL ».
 - **Lecture → formulaire → écriture de tous les champs** : une lecture ratée n'offre AUCUN formulaire, sinon le premier
   « Enregistrer » écrase → « ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE ».
 - **PostgREST plafonne les lignes rendues sans le dire** : toute lecture de collection passe par `lireTout` (tranches,
@@ -1202,7 +1211,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 8661 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 8768 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

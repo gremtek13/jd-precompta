@@ -137,7 +137,16 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual(['ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx'])
-    for (const fichier of ['ClientHome.tsx', 'ClientInformations.tsx', 'ClientUpload.tsx'].map((f) => `src/pages/${f}`)) {
+    // DEPUIS L'ÉTAPE P4b, l'accueil lit la case « Ventes » pour ses tuiles « À encaisser » et « À déclarer » : la même garde
+    // que la route, sur la société affichée, et rien d'autre ; les tuiles relisent leurs cases à la base.
+    const accueil = readFileSync(resolve(process.cwd(), 'src/pages/ClientHome.tsx'), 'utf8')
+    expect(accueil).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)')
+    expect(accueil).not.toMatch(/droit_ventes|droit_banque|\.banque\b/)
+    expect(accueil.match(/droitsSur\(/g)).toHaveLength(1)
+    const tuiles = readFileSync(resolve(process.cwd(), 'src/pages/TuilesVentesClient.tsx'), 'utf8')
+    expect(tuiles).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    expect(tuiles).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
+    for (const fichier of ['ClientInformations.tsx', 'ClientUpload.tsx'].map((f) => `src/pages/${f}`)) {
       const texte = readFileSync(resolve(process.cwd(), fichier), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|droitsAcces/)
     }
@@ -212,12 +221,13 @@ const GESTES_AVEC_BANQUE: Record<string, readonly string[]> = {
 // table attendue est confrontée au texte des fonctions par droitsDeLAppelantCopie.test.ts.
 type FonctionDeLaVente = keyof typeof QUI_PEUT_QUOI_ATTENDU
 const GESTES_DES_FONCTIONS: Record<string, readonly (readonly [FonctionDeLaVente, string])[]> = {
-  // Voir leur état : « Mes ventes » le montre depuis l'étape P4a ; les relier reste sans écran (P4b, sous EC-Q4).
-  'y voir l’état de sa plateforme agréée et de Super PDP': [['plateforme-agreee', 'statut'], ['superpdp-credentials', 'status']],
-  'sans écran encore, relier lui-même sa plateforme agréée et Super PDP': [
+  // Les relier, et voir leur état : « Mes ventes » le montre depuis l'étape P4a, et les relie depuis P4b (« Tes
+  // plateformes », sous EC-Q4).
+  'y relier lui-même sa plateforme agréée et Super PDP': [
     ['plateforme-agreee', 'enregistrer'], ['plateforme-agreee', 'tester'], ['plateforme-agreee', 'retirer'],
     ['superpdp-credentials', 'save'], ['superpdp-credentials', 'remove'],
   ],
+  'et en voir l’état': [['plateforme-agreee', 'statut'], ['superpdp-credentials', 'status']],
   'y transmettre une facture et en suivre la transmission': [
     ['plateforme-agreee', 'deposer'], ['plateforme-agreee', 'suivre'], ['superpdp-emit', 'envoyer'],
     ['superpdp-emit', 'actualiser'],
@@ -255,8 +265,10 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
       ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')).toBe(true)
     // La banque ouverte se dit « par la base et sans écran encore » : sa session lit et agit, aucun écran ne le montre. Les
-    // ventes, elles, ont « Mes ventes ».
+    // ventes, elles, ont « Mes ventes », la liaison des plateformes comprise depuis l'étape P4b : « sans écran » ne se dit
+    // plus que de la banque.
     expect(suite.match(/par la base et sans écran encore/g)?.length ?? 0).toBe(Number(banque))
+    expect(suite.match(/sans écran/g)?.length ?? 0).toBe(Number(banque))
 
     if (banque) {
       expect(suite).toContain('« Banque » permet déjà au client de voir sa simulation')

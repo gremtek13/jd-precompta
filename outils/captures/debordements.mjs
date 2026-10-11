@@ -520,6 +520,36 @@ const VISITES = [
 // entrées (`nav`). La page ne se recharge pas d'une visite à l'autre : chacune ferme d'abord ce qui est ouvert.
 const VISITES_CLIENT = [
   { chemin: '#/mes-ventes', nom: 'client/mes-ventes', nav: true },
+  // L'étape P4b : l'accueil et ses tuiles « À encaisser » et « À déclarer », puis les fenêtres que « Tes plateformes »
+  // ouvre en mode client — la plateforme agréée de l'atelier (reliée), sa modification, et Super PDP (configuré).
+  // L'accueil sans `nav` : sur téléphone, il cache la barre du bas (ses tuiles en tiennent lieu, `app-nav-accueil-client`
+  // dans index.css), et la barre se mesure sur les autres écrans du client.
+  { chemin: '#/accueil', nom: 'client/accueil' },
+  {
+    chemin: '#/mes-ventes', nom: 'client/plateforme', fenetre: '.plateforme-client',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Gérer ta plateforme', exact: true }).click()
+      await page.getByRole('button', { name: 'Tester la connexion', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/plateforme-modifier', fenetre: '.plateforme-client',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Gérer ta plateforme', exact: true }).click()
+      await page.getByRole('button', { name: 'Modifier', exact: true }).click()
+      await page.getByRole('button', { name: 'Enregistrer', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/superpdp', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Gérer Super PDP', exact: true }).click()
+      await page.getByRole('button', { name: 'Changer les identifiants', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
   {
     chemin: '#/mes-ventes', nom: 'client/nouvelle', fenetre: FENETRE_FACTURE,
     apres: async (page) => {

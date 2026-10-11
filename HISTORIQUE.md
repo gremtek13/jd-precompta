@@ -19649,3 +19649,94 @@ barre d'onglets (262 tests) verts sous Paris, UTC, New York et Auckland ; la sui
 rend la comparaison possible : le net de chaque rubrique de N−1 contre l'ouverture de N), les dotations que le registre
 attend, les renvois 182, 184 et 195, le badge « provisoire » jusqu'à la validation, puis la forme juridique et
 l'affectation (une migration), l'inventaire, les stocks, le 2033-B et la liasse.
+
+### 11/10/2026 — LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL — ESPACE CLIENT, ÉTAPE P4b
+
+(Écrans seulement : aucune migration, aucune Edge Function. Neufs : `src/lib/tuilesVentes.ts`, `src/lib/ventesLecture.ts`,
+`src/pages/TuilesVentesClient.tsx`, `src/pages/dossier/ConnexionsClient.tsx` et leurs tests. Modifiés : ClientHome,
+FacturesTab, PlateformeClientModal, SuperPdpModal, PiecesTab (la propriété seule), TransmissionFactureModal (deux phrases),
+`lib/espaceVentes.ts`, `lib/droitsAcces.ts`, `index.css` (`.connexions-client`) ; les montages des tests existants des
+deux fenêtres reçoivent `espace="cabinet"` ; `droitsAcces.test.ts`, `espaceVentes.test.ts`, `FacturesTabClient.test.tsx`,
+`ecransAvantLecture.test.tsx`, `verrousEcritures.test.ts`, `ecrituresVerifiees.test.ts`,
+`encaissementsEcritures.test.ts` ; le banc `outils/captures/`.)
+Le deuxième tiers de P4 (« L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §2.2, §5.1, ligne
+P4 du §9), après P4a (« « MES VENTES › FACTURES » »). Hypothèse : EC-Q4 (« le client relie aussi sa plateforme »), pas
+encore tranchée, que P3 a déjà ouverte dans les fonctions (`src/test/quiPeutQuoi.ts`).
+
+**« TES PLATEFORMES ».** Dans « Mes ventes », au-dessus des factures, une section (`ConnexionsClient`) dit l'état de la
+plateforme agréée de la société (lue par l'onglet, action « statut ») et de Super PDP (`superpdp-credentials`, action
+« status ») : rien avant la réponse ; « aucune n'est reliée », « reliée » avec son nom et son hôte, « pas relié »,
+« relié » ; une lecture ratée se dit avec son motif réécrit, sans geste qui la remplace, et « Réessayer » relit. Chaque
+bouton ouvre la fenêtre du cabinet en mode client ; la fermer relit la connexion et Super PDP. Elle remplace la phrase
+d'attente de P4a (« c'est ton cabinet qui la relie ») ; « En savoir plus », la fenêtre de transmission (deux phrases) et la
+réécriture de `verificationAvantDeclaration` disent désormais « relie-la dans « Tes plateformes » ».
+
+**LES DEUX FENÊTRES, UNE PROPRIÉTÉ OBLIGATOIRE.** `espace` sur `PlateformeClientModal` et `SuperPdpModal`, en unions
+typées comme en P4a : `dossierSiret` et `onImported` (le contrôle et le rappel d'un import) n'existent qu'au cabinet — un
+mode client ne peut pas importer, le compilateur le refuse. Côté cabinet, rien ne change à l'écran (PiecesTab passe
+`espace="cabinet"`). En mode client : relier, modifier, tester, retirer, relire les statuts depuis le début (plateforme) ;
+enregistrer, changer et retirer les identifiants (Super PDP) — les actions « ventes » de la table. Ni « Chercher les
+nouvelles factures », ni « Reprendre du début », ni le point de reprise ni la dernière récupération, ni la liste ni le
+bilan d'un import, ni « Synchroniser maintenant », ni la mise en garde des deux chemins de réception (qui ne concerne que
+la réception), et rien n'est lu pour elle (ni la synchronisation Super PDP depuis la plateforme, ni la plateforme depuis
+Super PDP). Le texte d'introduction dit au client que son cabinet se sert de la même connexion pour recevoir ses
+factures. Le secret ne s'affiche jamais (la fonction ne le rend pas ; le champ se vide à l'enregistrement et s'ouvre vide
+à la modification) ; une adresse changée le fait ressaisir (P3), sous ses mots tutoyés.
+
+**UN VERROU POSÉ SUR SUPER PDP.** `SuperPdpModal.enregistrer` et `retirer` n'avaient pour verrou que l'état `saving` (et
+`retirer`, aucun) : deux clics du même rendu enregistraient deux fois. Un `useRef` (`ecritureEnCours`), posé avant le `try`,
+relâché après la relecture du statut, pour les deux — au cabinet aussi, sans rien changer d'autre. `verrousEcritures.test.ts`
+recompte : « mise à jour » 24 → 23, « suppression » 19 → 18.
+
+**LES MOTS.** Les phrases des fenêtres ont leur variante client à côté d'elles. Les refus de `plateforme-agreee` sont
+rédigés pour le cabinet (« Donnez », « ressaisissez », « vérifiez-la », « Réessayez », « relancez », « suivez-la »,
+« rechargez », « l'identifiant du cabinet », « l'identité ouverte au cabinet ») : `REECRITURES_CLIENT` les réécrit à
+l'affichage, chaque `de` lu dans la source de la fonction (`espaceVentes.test.ts`, nouvelle entrée de `PRODUITES`), et douze
+refus assemblés tels qu'ils s'affichent sont confrontés à leur lecture par le client. Le garde des mots joue huit états des
+deux fenêtres en mode client (`ConnexionsClient.test.tsx`) ; son défaut planté — les mêmes états montés pour le cabinet —
+trouve chaque fois au moins une forme. Les deux phrases de `refusDuReleve` disent où le client ressaisit son accès.
+
+**LA PHRASE DE L'ONGLET ACCÈS.** « … il peut aussi y relier lui-même sa plateforme agréée et Super PDP et en voir l'état,
+… » : plus aucun geste des ventes n'est « sans écran » ; `droitsAcces.test.ts` le confronte à la table attendue (les
+clés des gestes renommées) et exige que « sans écran » ne se dise plus que de la banque.
+
+**LES TUILES DE L'ACCUEIL.** Avec « Mes ventes » ouvert sur la société affichée (`mesVentesOuvertes`, la garde de la route,
+lue dans `ClientHome`), deux tuiles : « À encaisser » (les factures qui portent « À encaisser » ou « Encaissée en partie »,
+« dont N en partie ») et « À déclarer » (« À déclarer » ou « Déclaration en retard », « dont N en retard », pastille rouge),
+chacune vers « Mes ventes ». Les mêmes lectures que l'onglet : `lireLesVentesDuDossier` (lib/ventesLecture.ts), extraite
+de `FacturesTab.load`, requête pour requête ; les mêmes calculs : `compterLesPastilles` (lib/tuilesVentes.ts) appelle
+`pastilleEncaissement` et `pastilleDeclaration`. Plus strict que l'onglet : UNE liste partielle, et aucun chiffre — l'onglet
+montre une pastille dès que les listes dont ELLE dépend sont lues ; une facture qu'il n'aurait pas lue n'y paraît pas, et
+l'accueil dirait « 0 ». Les cases se relisent à la base (`lireLesDroitsVentes`) avec le statut de TVA de la société : sans
+« Ventes », rien ; droits ou société illisibles, partielle : une phrase, le motif, le lien vers « Mes ventes ». Pas encore
+revenu : deux squelettes. Clé par société.
+
+**LES PREUVES.** Tests neufs : `ConnexionsClient.test.tsx` (34 : la section dans six états, les deux fenêtres — gestes
+présents, réception absente, secret jamais affiché, deux puis trois clics sur « Enregistrer » —, le garde des mots et son
+défaut planté), `TuilesVentesClient.test.tsx` (14 : droit absent, en cours, quatre lectures partielles, droits et société
+illisibles, les nombres égaux aux pastilles de l'onglet monté sur le MÊME jeu — 2, dont 1 en partie ; 2, dont 1 en retard
+—, « 0 » d'une liste lue, la navigation, l'accueil avec et sans la case), `tuilesVentes.test.ts` (10), `ventesLecture.test.ts`
+(9). `ecransAvantLecture.test.tsx` monte quatre écrans de plus (les tuiles, la section, les deux fenêtres en mode client).
+Suite entière : 8 748 tests (un plancher recompté : `encaissementsEcritures.test.ts` voit les déclarations lues par
+`lib/ventesLecture.ts`, plus par l'onglet). TRENTE MUTATIONS CIBLÉES, vingt-huit vues ; deux équivalentes (`== null`
+derrière la branche `undefined` déjà prise ; la liste d'un import gardée par `auCabinet`, que seul « Chercher », absent
+du client, remplit). Banc : le cabinet, 0 aux neuf passes ; la passe `client` (visites neuves :
+l'accueil — sans contrôle de la barre du bas, que l'accueil cache sur téléphone —, la plateforme, sa modification, Super
+PDP), 0 à 1 440, 1 280, 1 024, 720 et 390 px, et `client-banque`, 0 à 1 440, 720 et 390 px ; aucune police refusée.
+Le premier tour signalait à 720 et 390 px « la navigation du client est cachée » sur l'accueil : la visite neuve
+contrôlait la barre du bas, que l'accueil cache VOLONTAIREMENT sur téléphone (`app-nav-accueil-client`, ses tuiles en
+tiennent lieu) — un faux positif, retiré de la visite ; le second tour, aux largeurs touchées, est à 0.
+
+**CE QUI RESTE.** EC-Q4 à trancher : s'il répond « le cabinet seul », la section et les modes client des deux fenêtres se
+retirent avec les lignes de `quiPeutQuoi` et des fonctions. P4c (« par le client » et le mandataire, EC-Q2). Le compte des
+e-mails n'a pas de tuile. « Le cabinet voit qui a relié » reste vrai de la seule création d'une connexion (`created_by`),
+pas de sa modification ni de Super PDP (P3, question au cabinet). Les refus de `superpdp-credentials` ne portent aucune
+forme du cabinet ; ceux d'une plateforme réelle (rendus tels quels) peuvent en porter. Le garde des mots ne connaît ni « au cabinet » ni
+« du cabinet » : les refus de la fonction qui les portent sont réécrits (`espaceVentes.test.ts` le vérifie), mais un
+texte neuf qui les porterait passerait le garde. Les réécritures de verbes isolés (« vérifiez », « réessayez »…) valent
+pour tout texte affiché au client, comme toute entrée de `REECRITURES_CLIENT`.
+
+**COMPLÉTÉ À L'INTÉGRATION (la session).** Le choix de l'accueil laissait un manque depuis P4a : sur téléphone, la barre
+du bas y est cachée et ses grandes tuiles mènent toutes à « Mes pièces » — « Mes ventes » ne s'atteignait que par un
+autre écran. Les deux tuiles, et le lien de leur phrase muette, y mènent désormais ; pendant le chargement (des
+squelettes) il n'y a encore rien, et sans la case « Ventes » relue en base, il n'y a rien à y voir.

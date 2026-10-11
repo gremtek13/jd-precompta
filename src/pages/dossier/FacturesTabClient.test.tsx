@@ -450,9 +450,15 @@ describe('FacturesTab en mode client — les gestes du cabinet retirés', () => 
     screen.getByText('Ton cabinet doit d’abord préciser ton statut de TVA : tes factures ne peuvent pas partir.')
   })
 
-  it('le client voit qu’aucune plateforme n’est reliée, et que son cabinet la relie ; le cabinet ne lit pas cette phrase', async () => {
+  // Depuis l'étape P4b, le client relie lui-même sa plateforme (EC-Q4) : « Tes plateformes » le lui offre, là où P4a disait
+  // que son cabinet la reliait.
+  it('le client voit qu’aucune plateforme n’est reliée, et la relie lui-même dans « Tes plateformes » ; le cabinet n’a pas cette section', async () => {
     await monter('client')
-    await screen.findByText('Aucune plateforme agréée n’est reliée à ta société : c’est ton cabinet qui la relie.')
+    const section = (await screen.findByRole('heading', { name: 'Tes plateformes' })).closest('section') as HTMLElement
+    await within(section).findByText(/^Ta plateforme agréée : aucune n’est reliée à ta société\./)
+    within(section).getByRole('button', { name: 'Relier ta plateforme' })
+    await within(section).findByRole('button', { name: 'Relier Super PDP' })
+    expect(screen.queryByText(/c’est ton cabinet qui la relie/)).toBeNull()
   })
 
   it('… sa plateforme reliée, il la voit et relève ses statuts', async () => {
@@ -467,6 +473,8 @@ describe('FacturesTab en mode client — les gestes du cabinet retirés', () => 
     await act(async () => {})
     expect(screen.queryByText(/Ton cabinet doit d’abord préciser/)).toBeNull()
     expect(screen.queryByText(/Aucune plateforme agréée n’est reliée à ta société/)).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Tes plateformes' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Relier|Gérer/ })).toBeNull()
   })
 })
 

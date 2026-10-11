@@ -148,8 +148,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // Avec les ventes ouvertes, la phrase dit aussi ce que « Ventes » ouvre dans les quatre fonctions de la vente (P3, qui
 // suit P2 et n'a pas de sens sans elle) : chaque action que leur table « qui peut quoi » ouvre à la case, et elle seule
 // (droitsAcces.test.ts la confronte à `src/test/quiPeutQuoi.ts`, que droitsDeLAppelantCopie.test.ts confronte aux sources).
-// Et, depuis l'étape P4a, l'écran qui les montre : « Mes ventes », derrière le même drapeau. Relier la plateforme y reste
-// sans écran (P4b, sous EC-Q4) : la phrase le dit de ce geste-là seulement.
+// Et, depuis l'étape P4a, l'écran qui les montre : « Mes ventes », derrière le même drapeau ; depuis P4b (sous EC-Q4),
+// relier la plateforme s'y fait aussi, dans « Tes plateformes » : plus aucun geste des ventes n'est « sans écran ».
 // Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
 // droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
 export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean): string {
@@ -163,10 +163,10 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
       + 'leur suivi, les statuts lus sur sa plateforme, ses encaissements et leurs déclarations, les e-mails qui les ont '
       + 'envoyés, avec ce que le cabinet y a écrit (notes et motifs) — et en fait les gestes : créer, modifier, valider ou '
       + 'supprimer un brouillon, créer un avoir, enregistrer, retirer, déclarer ou contre-passer un encaissement, '
-      + 'abandonner une transmission restée sans issue connue. Par les fonctions du serveur, il peut aussi y voir l’état '
-      + 'de sa plateforme agréée et de Super PDP, y transmettre une facture et en suivre la transmission, relever les '
-      + 'statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par jour au plus ; et, sans '
-      + 'écran encore, relier lui-même sa plateforme agréée et Super PDP.'
+      + 'abandonner une transmission restée sans issue connue. Par les fonctions du serveur, il peut aussi y relier '
+      + 'lui-même sa plateforme agréée et Super PDP et en voir l’état, y transmettre une facture et en suivre la '
+      + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
+      + 'jour au plus.'
     : ''
   const banque = simulationSousBanque
     ? ' « Banque » permet déjà au client de voir sa simulation et, par la base et sans écran encore, de lire le contrôle '

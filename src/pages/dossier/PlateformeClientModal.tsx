@@ -37,6 +37,7 @@ import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
 import { jumellesImportees, phrasesJumellesImportees } from '../../lib/ventesJumelles'
 import { lireJumellesDuDossier } from '../../lib/ventesJumellesLecture'
 import BilanReleveStatuts from './BilanReleveStatuts'
+import { pourLEspace } from '../../lib/espaceVentes'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT (ligne 28.5 de la feuille de route, étape b). Le
 // cabinet relie ici le dossier à la plateforme que son client a choisie — l'accès « client credentials » que le client
@@ -56,17 +57,29 @@ import BilanReleveStatuts from './BilanReleveStatuts'
 const sens = (f: FluxVu) => (f.sens === 'achat' ? 'Achat' : 'Vente')
 const nomDuFlux = (f: FluxVu) => f.nom ?? `Facture ${f.id}`
 
-interface Props {
+// QUI REGARDE (espace client, étape P4b, sous l'hypothèse EC-Q4) : le cabinet, depuis l'onglet Justificatifs, qui relie la
+// plateforme ET reçoit les factures d'achat ; ou le client qui porte la case « Ventes », depuis « Mes ventes », qui la relie,
+// la teste, la retire et relit les statuts de ses factures émises — les actions que `plateforme-agreee` ouvre à « Ventes »
+// (`src/test/quiPeutQuoi.ts`). La RÉCEPTION (lister, télécharger, importer, retenir, repartir) reste au cabinet : en mode
+// client elle n'existe pas, ni bouton ni texte, et le type le garantit — le SIRET qui la contrôle et le rappel d'un import
+// n'existent qu'au cabinet. Une propriété OBLIGATOIRE : un écran qui oublierait de dire qui regarde ne compile pas.
+type QuiRegarde =
+  | { espace: 'cabinet'; dossierSiret: string | null; onImported: () => void }
+  | { espace: 'client' }
+
+type Props = QuiRegarde & {
   dossierId: string
-  dossierSiret: string | null
   onClose: () => void
-  onImported: () => void
 }
 
-export default function PlateformeClientModal({ dossierId, dossierSiret, onClose, onImported }: Props) {
+export default function PlateformeClientModal(props: Props) {
+  const { dossierId, onClose, espace } = props
+  const auCabinet = props.espace === 'cabinet'
+  // Les erreurs rendues par la fonction peuvent porter des phrases du cabinet : le client les lit réécrites.
+  const motsDe = (texte: string) => pourLEspace(espace, texte)
   const { session } = useAuth()
   const userId = session?.user.id ?? null
-  const sirenDossier = sirenDuDossier(dossierSiret)
+  const sirenDossier = sirenDuDossier(props.espace === 'cabinet' ? props.dossierSiret : null)
 
   // `undefined` tant que la base n'a pas répondu ; `null`, aucune connexion.
   const [connexion, setConnexion] = useState<ConnexionPlateformeVue | null | undefined>(undefined)
@@ -106,9 +119,11 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
       if (r.erreur !== null) setErreurLecture(r.erreur)
       else setConnexion(r.donnees.connexion)
     })
-    lireSynchronisationSuperPdp(dossierId).then((r) => { if (!annule) setSuperPdp(r) })
+    // La synchronisation Super PDP ne compte que pour la RÉCEPTION (une facture reçue par les deux chemins entrerait deux
+    // fois) : le client ne reçoit rien d'ici, rien ne la lui lit.
+    if (auCabinet) lireSynchronisationSuperPdp(dossierId).then((r) => { if (!annule) setSuperPdp(r) })
     return () => { annule = true }
-  }, [dossierId])
+  }, [dossierId, auCabinet])
 
   async function sousVerrou(action: () => Promise<void>): Promise<void> {
     if (actionEnCours.current) return
@@ -136,11 +151,13 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
   async function dire(erreurAppel: string, drapeaux: DrapeauxPlateforme): Promise<void> {
     if (drapeaux.perimee) {
       oublierLaRecherche()
-      setErreur('La connexion a changé depuis : relancez la recherche.')
+      setErreur(auCabinet
+        ? 'La connexion a changé depuis : relancez la recherche.'
+        : 'La connexion a changé depuis : elle vient d’être relue, recommence.')
       await charger()
       return
     }
-    setErreur(erreurAppel)
+    setErreur(motsDe(erreurAppel))
   }
 
   function ouvrirFormulaire() {
@@ -175,7 +192,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
   const tester = () => sousVerrou(async () => {
     const r = await testerConnexionPlateforme(dossierId)
     if (r.erreur !== null) return dire(r.erreur, r.drapeaux)
-    setMessage('La plateforme répond et accepte l’accès du cabinet.')
+    setMessage(auCabinet ? 'La plateforme répond et accepte l’accès du cabinet.' : 'Ta plateforme répond et accepte l’accès enregistré.')
   })
 
   const chercher = () => sousVerrou(async () => {
@@ -215,7 +232,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
       setBilan(resultat)
       setVentesDuBilan(ventes)
       oublierLaRecherche()
-      if (importees.length > 0) onImported()
+      if (importees.length > 0 && props.espace === 'cabinet') props.onImported()
     } finally {
       setProgression(null)
     }
@@ -252,7 +269,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
     )) return
     void sousVerrou(async () => {
       const r = await releverEtNommer(dossierId, true)
-      if (r.erreur !== null) setErreur(r.erreur)
+      if (r.erreur !== null) setErreur(motsDe(r.erreur))
       else setReleve(r.resultat)
       await charger()
     })
@@ -260,10 +277,16 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
 
   const retirer = () => {
     if (actionEnCours.current) return
-    if (!window.confirm(
-      'Retirer la connexion à la plateforme du client ? Ses identifiants sont effacés de l’application et plus aucune '
-      + 'facture ne sera reçue par ce chemin ; les pièces déjà importées restent. L’accès que le client a ouvert au '
-      + 'cabinet sur sa plateforme, lui, reste ouvert : demandez-lui de le fermer.',
+    // La confirmation nomme ce qu'on perd, du point de vue de qui retire : le cabinet perd la réception ; le client, la
+    // transmission et le relevé des statuts d'ici — et son cabinet, la réception de ses achats par ce chemin.
+    if (!window.confirm(auCabinet
+      ? 'Retirer la connexion à la plateforme du client ? Ses identifiants sont effacés de l’application et plus aucune '
+        + 'facture ne sera reçue par ce chemin ; les pièces déjà importées restent. L’accès que le client a ouvert au '
+        + 'cabinet sur sa plateforme, lui, reste ouvert : demandez-lui de le fermer.'
+      : 'Retirer la connexion à ta plateforme ? Ses identifiants sont effacés de l’application : tes factures ne pourront '
+        + 'plus y être transmises d’ici, ni leurs statuts relevés, et ton cabinet n’en recevra plus tes factures. Celles '
+        + 'déjà transmises restent. L’accès créé sur ta plateforme, lui, reste ouvert : ferme-le sur ta plateforme si tu '
+        + 'n’en as plus besoin.',
     )) return
     void sousVerrou(async () => {
       const r = await retirerConnexionPlateforme(dossierId)
@@ -290,11 +313,21 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
   return (
     <div style={overlayStyle}>
       <div className="card plateforme-client" style={{ width: 'min(680px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h2 style={{ marginTop: 0 }}>Plateforme du client</h2>
-        <p className="muted" style={{ marginTop: -8 }}>
-          Les factures que le client reçoit et émet par sa plateforme agréée arrivent ici, chacune en pièce « à valider » :
-          rien n’est validé ni catégorisé sans vous.
-        </p>
+        <h2 style={{ marginTop: 0 }}>{auCabinet ? 'Plateforme du client' : 'Ta plateforme agréée'}</h2>
+        {auCabinet ? (
+          <p className="muted" style={{ marginTop: -8 }}>
+            Les factures que le client reçoit et émet par sa plateforme agréée arrivent ici, chacune en pièce « à valider » :
+            rien n’est validé ni catégorisé sans vous.
+          </p>
+        ) : (
+          // Ce que la liaison ouvre, au cabinet aussi : il se sert de la même connexion pour recevoir les factures d'achat
+          // (`lister`, réservé au cabinet). Le client le sait avant de relier.
+          <p className="muted" style={{ marginTop: -8 }}>
+            Relie ici la plateforme agréée par laquelle ta société émet et reçoit ses factures : tes factures validées
+            pourront y être transmises depuis « Mes ventes », et les statuts que tes clients y posent, relevés. Ton cabinet se
+            sert de la même connexion pour recevoir tes factures.
+          </p>
+        )}
 
         {superPdp?.configuree === true && (
           <p className="alerte-tva" style={{ margin: '0 0 12px' }}>
@@ -313,7 +346,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           // Une lecture refusée n'est pas « aucune plateforme reliée » : aucun formulaire n'est offert, qui
           // remplacerait une connexion qu'on n'a pas su lire.
           <div>
-            <p className="error-text">La connexion n’a pas pu être lue : {erreurLecture}</p>
+            <p className="error-text">La connexion n’a pas pu être lue : {motsDe(erreurLecture)}</p>
             <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => sousVerrou(charger)}>
               Réessayer
             </button>
@@ -321,7 +354,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
         )}
         {connexion === undefined && !erreurLecture && <p className="muted">Lecture de la connexion…</p>}
 
-        {connexion === null && !formulaire && !erreurLecture && (
+        {connexion === null && !formulaire && !erreurLecture && (auCabinet ? (
           <div>
             <p>Aucune plateforme n’est reliée à ce dossier.</p>
             <p className="muted" style={{ fontSize: '0.85rem' }}>
@@ -333,7 +366,19 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
               Relier la plateforme du client
             </button>
           </div>
-        )}
+        ) : (
+          <div>
+            <p>Aucune plateforme n’est reliée à ta société.</p>
+            <p className="muted" style={{ fontSize: '0.85rem' }}>
+              Sur ta plateforme agréée, crée un accès pour l’application : une application « client credentials » (un
+              identifiant et un secret). Ta plateforme te donne aussi les deux adresses à saisir ici, celle du service des
+              flux (API AFNOR) et celle des jetons.
+            </p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={ouvrirFormulaire}>
+              Relier ta plateforme
+            </button>
+          </div>
+        ))}
 
         {formulaire && (
           <form onSubmit={enregistrer}>
@@ -407,33 +452,41 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
                   <dd>{connexion.organisation_id}</dd>
                 </>
               )}
-              <dt>Recherche</dt>
-              <dd>
-                {connexion.recherche_depuis
-                  ? `reprend aux factures mises à jour après le ${formatDate(connexion.recherche_depuis)}`
-                  : 'part du début'}
-              </dd>
-              <dt>Dernière récupération</dt>
-              <dd>{connexion.derniere_recuperation ? formatDate(connexion.derniere_recuperation) : 'jamais'}</dd>
+              {/* La recherche des factures reçues est la réception : le cabinet seul. */}
+              {auCabinet && (
+                <>
+                  <dt>Recherche</dt>
+                  <dd>
+                    {connexion.recherche_depuis
+                      ? `reprend aux factures mises à jour après le ${formatDate(connexion.recherche_depuis)}`
+                      : 'part du début'}
+                  </dd>
+                  <dt>Dernière récupération</dt>
+                  <dd>{connexion.derniere_recuperation ? formatDate(connexion.derniere_recuperation) : 'jamais'}</dd>
+                </>
+              )}
               <dt>Statuts des factures émises</dt>
               <dd>
                 {connexion.cycle_vie_lu_le
-                  ? `lus jusqu’au bout le ${formatDate(connexion.cycle_vie_lu_le)} — l’onglet Factures les relève`
-                  : 'pas encore lus jusqu’au bout — l’onglet Factures les relève'}
+                  ? `lus jusqu’au bout le ${formatDate(connexion.cycle_vie_lu_le)}`
+                  : 'pas encore lus jusqu’au bout'}
+                {auCabinet ? ' — l’onglet Factures les relève' : ' — « Lire les statuts de la plateforme », au-dessus de tes factures, les relève'}
               </dd>
             </dl>
 
             <div className="plateforme-actions">
-              <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={chercher}>
-                Chercher les nouvelles factures
-              </button>
+              {auCabinet && (
+                <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={chercher}>
+                  Chercher les nouvelles factures
+                </button>
+              )}
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={tester}>
                 Tester la connexion
               </button>
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={ouvrirFormulaire}>
                 Modifier
               </button>
-              {connexion.recherche_depuis && (
+              {auCabinet && connexion.recherche_depuis && (
                 <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={repartir}>
                   Reprendre du début
                 </button>
@@ -448,7 +501,8 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           </div>
         )}
 
-        {liste && plan && (
+        {/* La réception, au cabinet seul : ni la liste ni le bilan d'un import ne se montrent au client. */}
+        {auCabinet && liste && plan && (
           <div className="plateforme-plan">
             <h3>{titreDuPlan(plan.aImporter.length)}</h3>
             {!liste.complete && (
@@ -491,7 +545,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           </div>
         )}
 
-        {bilan && compte && (
+        {auCabinet && bilan && compte && (
           <div className="plateforme-bilan">
             <h3>Import terminé</h3>
             <ul className="plateforme-liste">
@@ -523,7 +577,7 @@ export default function PlateformeClientModal({ dossierId, dossierSiret, onClose
           </div>
         )}
 
-        {releve && <BilanReleveStatuts resultat={releve} espace="cabinet" />}
+        {releve && <BilanReleveStatuts resultat={releve} espace={espace} />}
         {message && <p className="muted">{message}</p>}
         {erreur && <p className="error-text">{erreur}</p>}
 

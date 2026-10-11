@@ -103,14 +103,16 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
 type CategorieAutomatique = 'mise à jour' | 'suppression' | 'session'
 const CATEGORIES_AUTOMATIQUES: Record<CategorieAutomatique, { nombre: number; raison: string }> = {
   'mise à jour': {
-    nombre: 24,
+    // 23 depuis que `SuperPdpModal.enregistrer` porte son verrou (espace client, étape P4b : le client y enregistre aussi).
+    nombre: 23,
     raison: 'Ne fait que des `update` par clé et des `upsert` à clé déclarée (`onConflict`), ou une porte déclarée '
       + 'comme telle : deux envois du même rendu écrivent la même valeur, calculée dans la même fermeture.',
   },
   suppression: {
     // 20 depuis que `PiecesTab.deleteSelection` porte son verrou (les écritures du navigateur, 09/10/2026) ; 19 depuis
-    // que `FacturesTab.supprimer` porte le sien (espace client, étape P2 : la suppression d'un brouillon par la base).
-    nombre: 19,
+    // que `FacturesTab.supprimer` porte le sien (espace client, étape P2 : la suppression d'un brouillon par la base) ; 18
+    // depuis que `SuperPdpModal.retirer` partage le verrou de l'enregistrement (étape P4b).
+    nombre: 18,
     raison: 'Ne fait que supprimer (ou réécrire par clé) : le second envoi ne trouve plus rien, sans erreur.',
   },
   session: {

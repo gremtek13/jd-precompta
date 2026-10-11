@@ -19,6 +19,7 @@ import ClientInformations from './ClientInformations'
 import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
+import TuilesVentesClient from './TuilesVentesClient'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
 import EquipePage from './EquipePage'
@@ -32,6 +33,7 @@ import BilanTab from './dossier/BilanTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import ClotureTab from './dossier/ClotureTab'
 import ConnexionBancaireCard from './dossier/ConnexionBancaireCard'
+import ConnexionsClient from './dossier/ConnexionsClient'
 import CotisationsTab from './dossier/CotisationsTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EcrituresTab from './dossier/EcrituresTab'
@@ -194,6 +196,11 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientSimulation', fichier: 'pages/ClientSimulation.tsx', rendre: () => <MemoryRouter><ClientSimulation /></MemoryRouter> },
   // « Mes ventes » (espace client, étape P4a) : la société affichée et ses droits lus, puis l'onglet Factures en mode client.
   { nom: 'ClientVentes', fichier: 'pages/ClientVentes.tsx', rendre: () => <MemoryRouter><ClientVentes /></MemoryRouter> },
+  // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) : montées seules, l'accueil ne les monte qu'une
+  // fois ses propres lectures revenues.
+  { nom: 'TuilesVentesClient', fichier: 'pages/TuilesVentesClient.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><TuilesVentesClient dossierId="d1" /></div></MemoryRouter>
+  ) },
   { nom: 'DossiersList', fichier: 'pages/DossiersList.tsx', rendre: () => <Dossier1><DossiersList /></Dossier1> },
   { nom: 'DossierDetail', fichier: 'pages/DossierDetail.tsx', rendre: () => (
     <MemoryRouter initialEntries={['/dossiers/d1/checklist']}>
@@ -280,7 +287,7 @@ const ECRANS: Ecran[] = [
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" /></Dossier1> },
   { nom: 'PlateformeClientModal', fichier: 'pages/dossier/PlateformeClientModal.tsx', rendre: () => (
-    <Dossier1><PlateformeClientModal dossierId="d1" dossierSiret="12345678901234" onClose={rien} onImported={rien} /></Dossier1>
+    <Dossier1><PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret="12345678901234" onClose={rien} onImported={rien} /></Dossier1>
   ) },
   { nom: 'RevisionTab', fichier: 'pages/dossier/RevisionTab.tsx', rendre: () => (
     <Dossier1>
@@ -293,7 +300,17 @@ const ECRANS: Ecran[] = [
   { nom: 'StatistiquesTab (engagement)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
     <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modeComptable="engagement" /></Dossier1>
   ) },
-  { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },
+  { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal espace="cabinet" dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },
+  // Les connexions du client (étape P4b) : la section de « Mes ventes », et les deux fenêtres en mode client.
+  { nom: 'ConnexionsClient', fichier: 'pages/dossier/ConnexionsClient.tsx', rendre: () => (
+    <Dossier1><ConnexionsClient dossierId="d1" connexion={undefined} connexionErreur={null} relireConnexion={async () => {}} /></Dossier1>
+  ) },
+  { nom: 'PlateformeClientModal (client)', fichier: 'pages/dossier/PlateformeClientModal.tsx', rendre: () => (
+    <Dossier1><PlateformeClientModal espace="client" dossierId="d1" onClose={rien} /></Dossier1>
+  ) },
+  { nom: 'SuperPdpModal (client)', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => (
+    <Dossier1><SuperPdpModal espace="client" dossierId="d1" onClose={rien} /></Dossier1>
+  ) },
   { nom: 'SupplementsTab', fichier: 'pages/dossier/SupplementsTab.tsx', rendre: () => <Dossier1><SupplementsTab dossierId="d1" /></Dossier1> },
   { nom: 'TransmissionFactureModal', fichier: 'pages/dossier/TransmissionFactureModal.tsx', rendre: () => (
     <Dossier1><TransmissionFactureModal espace="cabinet" dossierId="d1" facture={facture()} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} onClose={rien} onUpdated={rien} /></Dossier1>

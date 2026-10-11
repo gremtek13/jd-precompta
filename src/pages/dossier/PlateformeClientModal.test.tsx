@@ -104,7 +104,7 @@ function bilan(o: Partial<BilanReception> = {}): BilanReception {
 const onImported = vi.fn()
 const onClose = vi.fn()
 const ouvrir = (siret: string | null = '12345678200010') =>
-  render(<PlateformeClientModal dossierId="d1" dossierSiret={siret} onClose={onClose} onImported={onImported} />)
+  render(<PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret={siret} onClose={onClose} onImported={onImported} />)
 
 beforeEach(() => {
   numero = 0
