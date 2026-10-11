@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 116 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 118 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -140,6 +140,29 @@ lignes d'une facture et un brouillon) : son texte enregistré porte 311 fins de 
 fichier, tiré de la base par la requête ci-dessus, en est la conversion en `\n` (17 549 caractères, saut de ligne final
 compris, empreinte `db69535853d481c652dbf271254280b1`).
 
+**Rejoué le 11/10/2026 après `revue_analytique`** (ligne 41, étape R5), sur la réplique de l'étape (égale à la production
+à 116 migrations, `signature.sql`, neuf familles), la migration appliquée avec sa ligne d'historique sous la version
+PROVISOIRE `20261011999999` — à remplacer, nom du fichier compris, par celle que l'historique de production lui donne,
+et le contrôle à rejouer en production : 117 fichiers, 117 migrations, empreinte globale
+`4322160e675f10466b2ebd6eb6cf56b2` des deux côtés, aucune divergence (sans elle : 116, `deea18c0…`, la production du
+jour). Le fichier est le texte appliqué, octet pour octet (40 480 caractères, 41 221 octets, saut de ligne final
+compris, aucun retour chariot, empreinte `0e4c83a7bd096f96cb03475565e8ff46`) : c'est l'empreinte que la ligne
+d'historique doit rendre.
+
+**Préparé le 11/10/2026, PAS ENCORE APPLIQUÉ : `regimes_ereporting_et_pieces_ecartees`** (ligne 28.5, étape e5a). Son
+fichier porte une version PROVISOIRE, `20261011120000` : `apply_migration` lui donnera la sienne, et le fichier se
+RENOMME à cette version avant la fusion — le texte ne change pas (31 067 caractères, 31 876 octets, saut de ligne final
+compris, aucun retour chariot, empreinte `d26bbb0cbef54284f7894b40f1952220`), l'empreinte globale si, la version y
+entrant. Sur la réplique de l'étape, égale à la production à 116 migrations (empreinte globale `deea18c0…`, ci-dessus)
+puis munie de celle-ci et de sa ligne d'historique à la version provisoire : 117 fichiers, 117 migrations, empreinte
+globale `efdcade0290bcb29b198bf9604f9582d` des deux côtés. Après l'application, le contrôle se rejoue contre la
+production, la version réelle au nom du fichier.
+
+**Rejoué le 11/10/2026 en production, les deux migrations appliquées** : `revue_analytique` sous la version
+`20261011090828`, puis `regimes_ereporting_et_pieces_ecartees` sous `20261011091325`, leurs fichiers renommés à ces
+versions, textes inchangés (`0e4c83a7…` et `d26bbb0c…`, les empreintes que rendent leurs lignes d'historique) :
+118 fichiers, 118 migrations, empreinte globale `a03b7f0b653a01f7a1e9e1c79a321546` des deux côtés, aucune divergence.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -247,6 +270,26 @@ migrations ne touchent aucune table du socle) ; l'inventaire compte 1 650 objets
 `transmissions_factures.cree_par`), une contrainte, neuf policies — les lectures au droit « Ventes » — et une fonction,
 `supprimer_brouillon_facture` ; les huit fonctions qu'elles réécrivent gardent leur nom, et l'inventaire, qui compare
 des noms, ne les voit pas changer.
+
+**Rejoués le 11/10/2026 après `revue_analytique`** (ligne 41, étape R5), sur la réplique de l'étape, son fichier réuni :
+le socle est inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés — la migration ne touche aucune
+table du socle) ; l'inventaire compte 1 712 objets, empreinte `326c3b413ea6b27f0dabd931a96685fb` des deux côtés (1 650,
+`a2c52236…`, sans elle). `revue_analytique` en ajoute 62 : vingt et une colonnes, vingt et une contraintes, quatre
+index, deux déclencheurs, quatre policies, huit fonctions et la RLS de ses deux tables. À rejouer en production après
+l'application.
+
+**Rejoués le 11/10/2026 sur la réplique de l'étape, pour `regimes_ereporting_et_pieces_ecartees`** (ligne 28.5, étape
+e5a, préparée, pas encore appliquée) : le socle est inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des
+deux côtés — la migration ne touche aucune table du socle, et le déclencheur qu'elle pose sur `pieces` vit dans son
+fichier) ; l'inventaire compte 1 711 objets, empreinte `5fffd292bf513892e264ba674d261f73` des deux
+côtés (la réplique sans la migration : 1 650, `a2c52236…`, la production d'aujourd'hui). La migration en ajoute 61 :
+vingt-deux colonnes, dix-sept contraintes, cinq index, trois déclencheurs, quatre policies, huit fonctions et la RLS de
+ses deux tables. Après l'application, les deux contrôles se rejouent contre la production.
+
+**Rejoués le 11/10/2026 en production, les deux migrations appliquées** : le socle est inchangé (78 instructions,
+`91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés) ; l'inventaire compte 1 773 objets, empreinte
+`4b6f605bfd59c002202749f83e4450ed` des deux côtés — les 1 650 de P2, plus les 62 de `revue_analytique` et les 61 de
+`regimes_ereporting_et_pieces_ecartees`.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

@@ -99,6 +99,9 @@ describe('les fréquences proposées', () => {
     const aConfirmer = { frequence: 'mois' as const, certitude: 'a_confirmer' as const, raison: 'les textes ne la disent pas' }
     expect(libelleFrequence(aConfirmer, false)).toBe('chaque mois (fréquence à confirmer)')
     expect(libelleFrequence(aConfirmer, true)).toBe('chaque mois (fréquence à confirmer : les textes ne la disent pas)')
+    // Confirmée par le cabinet (étape e5a) : elle ne se dit plus « à confirmer », même celle d'un dossier exonéré.
+    expect(libelleFrequence({ frequence: 'mois', certitude: 'confirmee', raison: null }, true)).toBe('chaque mois')
+    expect(libelleFrequence({ frequence: 'bimestre', certitude: 'confirmee', raison: 'ignorée' }, true)).toBe('tous les deux mois')
   })
 })
 

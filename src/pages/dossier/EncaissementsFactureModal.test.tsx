@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
 import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
+import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
   StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
@@ -187,6 +188,8 @@ function monter(o: {
   parts?: EncaissementFactureTaux[]; statutTva?: StatutTva | null; transmissions?: TransmissionFacture[]
   evenements?: FactureSuperpdpEvent[]; declarations?: TransmissionEncaissement[]; statuts?: StatutFactureRecu[]
   connexion?: unknown; pieces?: PieceEssai[]; reglements?: ReglementGroupe[]
+  // Les accès du dossier que l'onglet a lus (étape P4c) ; « en cours » par défaut : rien n'est dit « par le client ».
+  acces?: AccesDuDossier
 } = {}) {
   const f = o.facture ?? FACTURE
   // Des copies en objets nus : le faux client les modifie comme la base, et le jeu d'essai reste intact.
@@ -206,7 +209,7 @@ function monter(o: {
   }
   faux.connexion = o.connexion === undefined ? null : o.connexion
   return render(
-    <EncaissementsFactureModal espace="cabinet"
+    <EncaissementsFactureModal espace="cabinet" acces={o.acces ?? ACCES_EN_COURS}
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
       onClose={() => {}} onUpdated={onUpdated}
     />,
@@ -1163,5 +1166,93 @@ describe('EncaissementsFactureModal — les statuts lus sur la plateforme du cli
     expect(screen.queryByText(/^Les statuts lus sur la plateforme du client n'ont pas pu être lus en entier/)).toBeNull()
     expect(document.querySelectorAll('.statuts-lus li')).toHaveLength(1)
     screen.getByText(/^Statuts lus sur flux\.plateforme-demo\.fr le 01\/11\/2027 : aucun refus de l’acheteur/)
+  })
+})
+
+// ── « PAR LE CLIENT » (espace client, étape P4c) ───────────────────────────────────────────────────────────────────────
+//
+// Le cabinet reconnaît, parmi les accès du dossier que l'onglet a lus, le compte qui a enregistré un encaissement, l'a
+// contre-passé ou l'a déclaré. Seuls les comptes d'un accès, sur une liste lue en entier, sont reconnus ; un auteur nul ou
+// un accès retiré n'est personne, et rien ne dit « par le cabinet ». Le client, lui, ne lit aucun accès : rien ne s'y dit.
+describe('EncaissementsFactureModal — « par le client »', () => {
+  const LUS: AccesDuDossier = { etat: 'lus', comptes: ['u-client'] }
+  const MENTION = 'par le client'
+
+  it('dit « par le client » d’un encaissement et d’une contre-passation du client, avec ce que chacun est', async () => {
+    monterDeclarations({
+      acces: LUS,
+      encaissements: [
+        encaissement({ cree_par: 'u-client' }),
+        encaissement({ id: 'e2', date_encaissement: '2027-10-20', montant: 300, moyen: 'virement', cree_par: 'u-cabinet' }),
+        encaissement({ id: 'e9', date_encaissement: '2027-10-25', montant: -600, annule_id: 'e1', motif: 'Chèque revenu impayé', cree_par: 'u-client' }),
+      ],
+      parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 }), part({ encaissement_id: 'e2', montant: 250 }),
+        part({ encaissement_id: 'e2', taux: 0, montant: 50 }), part({ encaissement_id: 'e9', montant: -500 }),
+        part({ encaissement_id: 'e9', taux: 0, montant: -100 })],
+      declarations: [declaration({ cree_par: 'u-cabinet' })],
+    })
+    await screen.findByText('Annulation')
+    expect(screen.getAllByText(MENTION)).toHaveLength(2)
+    // Chaque mention sur SA ligne, sous son titre : l'encaissement du 05/10, la contre-passation du 25/10.
+    const mentionDe = async (date: string) => within((await screen.findByText(date)).closest('tr') as HTMLElement).getByText(MENTION)
+    expect((await mentionDe('05/10/2027')).getAttribute('title')).toBe('Encaissement enregistré par le client')
+    expect((await mentionDe('25/10/2027')).getAttribute('title')).toBe('Contre-passation enregistrée par le client')
+    // Celui du cabinet (e2) n'en porte pas, ni la déclaration du cabinet.
+    const e2 = (await screen.findByText('20/10/2027')).closest('tr') as HTMLElement
+    expect(within(e2).queryByText(MENTION)).toBeNull()
+    expect(screen.queryByText(/par le cabinet/i)).toBeNull()
+  })
+
+  it('dit « par le client » d’une déclaration inscrite par le client, sur sa ligne seulement', async () => {
+    monterDeclarations({ acces: LUS, declarations: [declaration({ cree_par: 'u-client' })] })
+    const declaree = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+    const mention = within(declaree).getByText(MENTION)
+    expect(mention.getAttribute('title')).toBe('Déclaration inscrite par le client')
+    expect(screen.getAllByText(MENTION)).toHaveLength(1)
+  })
+
+  it('une déclaration d’un accès retiré, ou sans auteur, n’est attribuée à personne', async () => {
+    for (const cree_par of ['u-ancien', null]) {
+      monterDeclarations({ acces: LUS, declarations: [declaration({ cree_par })], encaissements: [encaissement({ cree_par })] })
+      await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+      expect(screen.queryByText(MENTION)).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('aucune mention tant que les accès ne sont pas lus en entier : en cours, partiels', async () => {
+    for (const acces of [ACCES_EN_COURS, { etat: 'incomplets', motif: 'coupée' } satisfies AccesDuDossier]) {
+      monterDeclarations({
+        acces, encaissements: [encaissement({ cree_par: 'u-client' })], parts: [part()],
+        declarations: [declaration({ cree_par: 'u-client' })],
+      })
+      await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+      expect(screen.queryByText(MENTION)).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('dans l’espace du client, rien ne se dit, même de ce que le client a fait', async () => {
+    faux.tables = {
+      factures_emises: [{ ...FACTURE }],
+      facture_lignes: LIGNES_CII.map((l, i) => ({ ...l, id: `l${i + 1}`, facture_id: FACTURE.id })),
+      transmissions_factures: [{ ...acceptee() }],
+      facture_superpdp_events: [],
+      transmissions_encaissements: [{ ...declaration({ cree_par: 'u-client' }) }],
+      encaissements_factures: [{ ...encaissement({ cree_par: 'u-client' }) }],
+      encaissements_factures_taux: [{ ...part() }],
+      lignes_bancaires: [],
+      reglements_groupes: [],
+      pieces: [],
+      statuts_factures_recus: [],
+    }
+    faux.connexion = null
+    render(
+      <EncaissementsFactureModal espace="client" banque
+        dossierId="d1" facture={FACTURE} statutTva="redevable" onClose={() => {}} onUpdated={onUpdated}
+      />,
+    )
+    await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+    expect(screen.queryByText(MENTION)).toBeNull()
   })
 })

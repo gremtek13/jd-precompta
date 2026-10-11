@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import { facture as factureCii, ligne } from '../../test/facturesCii'
 import type { FactureEmise, StatutTva, TransmissionFacture } from '../../lib/types'
+import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
 
 // LA FENÊTRE QUI TRANSMET UNE FACTURE VALIDÉE (ligne 28.5, étape c4), par la plateforme du client ou par Super PDP.
 // Le doublon, ici, sort de l'application : une facture transmise deux fois à une plateforme agréée ne se reprend pas.
@@ -93,8 +94,14 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'transmissions_factures') {
           let compte = false
+          // Les colonnes demandées, et elles seules, comme PostgREST : une colonne oubliée dans le `select` manque à l'écran.
+          let colonnes: string[] | null = null
           const q: Record<string, unknown> = {
-            select: (_: string, options?: { head?: boolean }) => { compte = options?.head === true; return q },
+            select: (liste: string, options?: { head?: boolean }) => {
+              compte = options?.head === true
+              colonnes = liste === '*' ? null : liste.split(',').map((x) => x.trim())
+              return q
+            },
             eq: () => q, order: () => q,
             // Le compte des rejets de la facture qu'un avoir corrige : une lecture sans lignes, attendue telle quelle.
             then: (suite: (r: unknown) => unknown) => {
@@ -106,7 +113,11 @@ vi.mock('../../lib/supabase', async () => {
             faux.lecturesTransmissions += 1
             const reponse = faux.refusTransmissions
               ? { data: null, error: { message: faux.refusTransmissions }, count: null }
-              : { data: faux.transmissions, error: null, count: faux.transmissions.length }
+              : {
+                data: (faux.transmissions as Record<string, unknown>[])
+                  .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l)),
+                error: null, count: faux.transmissions.length,
+              }
             if (faux.lecturesTransmissions > 1 && faux.suspendreRelecture) {
               return new Promise((resolve) => { faux.libererRelecture = () => resolve(reponse) })
             }
@@ -145,8 +156,8 @@ const CONNEXION = {
 function transmission(o: Partial<TransmissionFacture> = {}): TransmissionFacture {
   return {
     id: 't1', dossier_id: 'd1', facture_id: 'f1', canal: 'plateforme', hote: 'flux.plateforme-demo.fr', flux_id: 'FLUX-1',
-    sha256: 'a'.repeat(64), etat: 'depose', detail: null, cree_le: '2026-10-08T08:00:00+00:00', maj_le: '2026-10-08T08:00:00+00:00',
-    ...o,
+    sha256: 'a'.repeat(64), etat: 'depose', detail: null, cree_par: null, cree_le: '2026-10-08T08:00:00+00:00',
+    maj_le: '2026-10-08T08:00:00+00:00', ...o,
   }
 }
 
@@ -158,6 +169,8 @@ function monter(o: {
   transmissions?: TransmissionFacture[]; refusTransmissions?: string; rejetsOrigine?: number; refusOrigine?: number
   statutTva?: StatutTva; numeroTvaAttribue?: boolean; retenirOrigine?: boolean; refusLusOrigine?: number
   statuts?: Record<string, unknown>[]; statutsMuetsApres?: number
+  // Les accès du dossier que l'onglet a lus (étape P4c) ; « en cours » par défaut : rien n'est dit « par le client ».
+  acces?: AccesDuDossier
 } = {}) {
   faux.lignes = o.lignes ?? [ligne()]
   faux.origine = o.origine ?? null
@@ -181,7 +194,7 @@ function monter(o: {
   faux.appels = []
   faux.resoudre = null
   render(
-    <TransmissionFactureModal espace="cabinet"
+    <TransmissionFactureModal espace="cabinet" acces={o.acces ?? ACCES_EN_COURS}
       dossierId="d1" facture={o.facture ?? FACTURE} statutTva={o.statutTva ?? 'redevable'} articleExoneration={null}
       numeroTvaAttribue={o.numeroTvaAttribue ?? false} onClose={() => {}} onUpdated={() => {}}
     />,
@@ -522,5 +535,64 @@ describe('TransmissionFactureModal — les statuts lus sur la plateforme du clie
     // Le compte porte sur la facture corrigée, et sur les deux codes qui l'annulent.
     expect(faux.filtresStatuts).toContain('facture_id=f1')
     expect(faux.filtresStatuts).toContain('code in 210,213')
+  })
+})
+
+// « PAR LE CLIENT » (espace client, étape P4c) : le cabinet reconnaît, parmi les accès du dossier que l'onglet a lus, le compte
+// qui a déposé une transmission. Seuls les comptes d'un accès, sur une liste lue en entier, sont reconnus ; le client, lui,
+// n'en lit aucun.
+describe('TransmissionFactureModal — « par le client »', () => {
+  const LUS: AccesDuDossier = { etat: 'lus', comptes: ['u-client'] }
+  const MENTION = 'par le client'
+
+  it('dit « par le client » d’une transmission déposée par un accès client, et rien d’une autre', async () => {
+    monter({
+      acces: LUS,
+      transmissions: [
+        transmission({ id: 't1', etat: 'echec', flux_id: null, cree_par: 'u-client', cree_le: '2026-10-08T08:00:00+00:00' }),
+        transmission({ id: 't2', etat: 'echec', flux_id: null, cree_par: 'u-cabinet', cree_le: '2026-10-09T08:00:00+00:00' }),
+        transmission({ id: 't3', etat: 'echec', flux_id: null, cree_par: null, cree_le: '2026-10-10T08:00:00+00:00' }),
+        transmission({ id: 't4', etat: 'echec', flux_id: null, cree_par: 'u-ancien', cree_le: '2026-10-11T08:00:00+00:00' }),
+      ],
+    })
+    await deposer()
+    const mentions = screen.getAllByText(MENTION)
+    expect(mentions).toHaveLength(1)
+    expect(mentions[0].getAttribute('title')).toBe('Transmission déposée par le client')
+    // Sur la ligne de la transmission du client, et sur elle seule.
+    const ligneDuClient = mentions[0].closest('tr') as HTMLElement
+    expect(ligneDuClient.textContent).toContain('08/10/2026')
+    expect(screen.queryByText(/par le cabinet/i)).toBeNull()
+  })
+
+  it('aucune mention tant que les accès ne sont pas lus en entier : en cours, partiels', async () => {
+    for (const acces of [ACCES_EN_COURS, { etat: 'incomplets', motif: 'coupée' } satisfies AccesDuDossier]) {
+      monter({ acces, transmissions: [transmission({ etat: 'echec', flux_id: null, cree_par: 'u-client' })] })
+      await deposer()
+      expect(screen.queryByText(MENTION)).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('dans l’espace du client, rien ne se dit, même d’une transmission qu’il a déposée', async () => {
+    faux.lignes = [ligne()]
+    faux.origine = null
+    faux.transmissions = [transmission({ etat: 'echec', flux_id: null, cree_par: 'u-client' })]
+    faux.connexion = CONNEXION
+    faux.statuts = []
+    render(
+      <TransmissionFactureModal espace="client"
+        dossierId="d1" facture={FACTURE} statutTva="redevable" articleExoneration={null}
+        numeroTvaAttribue={false} onClose={() => {}} onUpdated={() => {}}
+      />,
+    )
+    await screen.findByText(/Transmissions/)
+    expect(screen.queryByText(MENTION)).toBeNull()
+  })
+
+  it('lit la colonne de l’auteur dans la liste de la fenêtre', async () => {
+    monter({ acces: LUS, transmissions: [transmission({ etat: 'echec', flux_id: null, cree_par: 'u-client' })] })
+    await deposer()
+    expect(screen.getAllByText(MENTION)).toHaveLength(1)
   })
 })

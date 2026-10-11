@@ -989,9 +989,10 @@ export interface FactureEmise {
   // QUI A VALIDÉ (espace client, étape P2 ; migration ventes_du_client, en base depuis le 10/10/2026) : le compte — du
   // cabinet, ou du client qui porte le droit « Ventes » — qu'`enregistrer_facture` écrit dans la transaction qui
   // numérote, figé avec la facture. Nul sur un brouillon, et sur une facture validée avant la migration : on ne devine pas
-  // qui l'a validée. FACULTATIF encore : aucun écran ne le lit, et une sauvegarde écrite avant la migration n'a pas la
-  // colonne. Il deviendra obligatoire avec le premier écran qui le lit (étape P4).
-  valide_par?: string | null
+  // qui l'a validée. OBLIGATOIRE depuis l'étape P4c, qui le lit : l'onglet Factures du cabinet dit « par le client »
+  // d'une facture validée par un compte qui porte un accès client du dossier (lib/auteursVentes.ts). La colonne est en
+  // base et dans l'export depuis P2 : la sauvegarde et la restauration la portent déjà (`select('*')`).
+  valide_par: string | null
 }
 
 // Les mentions de la facture électronique, à part du reste : le module qui les juge et l'écran qui les saisit
@@ -1026,9 +1027,9 @@ export interface TransmissionFacture {
   maj_le: string
   // Le compte qui a réservé la transmission (espace client, étape P2 ; migration ventes_du_client, en base depuis le
   // 10/10/2026), que les fonctions qui déposent écriront (étape P3) ; nul pour une transmission d'avant ; il ne change
-  // plus (la garde de la table). FACULTATIF, et absent des listes de colonnes que les écrans lisent : rien ne l'écrit
-  // encore, et une sauvegarde écrite avant la migration n'a pas la colonne. Il y entrera, obligatoire, avec l'étape qui
-  // l'écrit ou le lit (P3, P4).
+  // plus (la garde de la table). FACULTATIF : seule la liste de la fenêtre « Transmettre » le lit (étape P4c, « par le
+  // client »), la liste de l'onglet Factures ne le demande pas, et une sauvegarde écrite avant la migration n'a pas la
+  // colonne.
   cree_par?: string | null
 }
 
@@ -1464,4 +1465,94 @@ export interface DevisNumerotation {
   dossier_id: string
   annee: number
   dernier_numero: number
+}
+
+// Le seuil de signification d'un exercice (`revision_seuils`, ligne 41, étape R5) : un MONTANT fixé et motivé par le
+// cabinet (hypothèse Q4) — « montant au-delà duquel les décisions économiques ou le jugement fondé sur les comptes sont
+// susceptibles d'être influencés » (glossaire agréé par l'arrêté du 30/05/2024). Il ne se modifie jamais : un autre le
+// REMPLACE (`remplace_id`), et le seuil courant est celui qu'aucun ne remplace. Seule `fixer_seuil_de_signification`
+// l'écrit depuis le navigateur ; le client n'en voit rien.
+export interface RevisionSeuil {
+  id: string
+  dossier_id: string
+  annee: number
+  // Positif, au centime.
+  seuil: number
+  // Pourquoi ce montant ; 4 000 caractères au plus.
+  motif: string
+  remplace_id: string | null
+  // Repère d'audit, sans clé étrangère : qui a fixé le seuil.
+  auteur: string
+  cree_le: string
+}
+
+// L'explication d'une variation de la revue analytique (`revision_explications`, étape R5), sur une LIGNE : un poste de la
+// 2035 avec sa nature, un total de la 2035 (`recettes`, `depenses`, `resultat`), ou un compte des classes 1 à 7. Elle
+// porte les montants qu'elle commente — l'exercice, et le précédent avec sa source : l'exercice validé (`validee`), un
+// repère annuel de l'onglet Estimation (`reference`), ou rien (`aucune`) — et devient « à revoir » quand ils ne sont plus
+// ceux du jour (lib/revueAnalytique.ts). Elle ne se modifie jamais : une autre la REMPLACE (`remplace_id`). Seule
+// `expliquer_variation` l'écrit depuis le navigateur ; le client n'en voit rien.
+export type ObjetExplicationRevue = 'poste_2035' | 'total_2035' | 'compte'
+export type SourcePrecedentRevue = 'validee' | 'reference' | 'aucune'
+export interface RevisionExplication {
+  id: string
+  dossier_id: string
+  annee: number
+  objet_type: ObjetExplicationRevue
+  // Le nom du poste (500 caractères au plus), le total, ou le numéro du compte.
+  objet: string
+  // La nature d'un poste ; nulle pour un total ou un compte.
+  nature: 'recette' | 'depense' | null
+  // Au centime : une ligne de la 2035 telle qu'elle la porte, le solde d'un compte débit positif.
+  montant: number
+  // Nul exactement quand la source est `aucune`.
+  montant_precedent: number | null
+  source_precedent: SourcePrecedentRevue
+  // 4 000 caractères au plus.
+  explication: string
+  remplace_id: string | null
+  // Repère d'audit, sans clé étrangère : qui a expliqué.
+  auteur: string
+  cree_le: string
+}
+
+// LE RÉGIME D'E-REPORTING D'UN DOSSIER, DATÉ, ET LA PIÈCE ÉCARTÉE APRÈS VÉRIFICATION (ligne 28.5, étape e5a ; migration
+// regimes_ereporting_et_pieces_ecartees). Un régime dit : « à partir de `depuis`, le dossier déclare sous ce statut et à
+// cette fréquence », tel que le cabinet le confirme ; il se retire, jamais ne se modifie. Le régime en vigueur un jour est
+// le régime actif au plus grand `depuis` avant ce jour ou ce jour-là (src/lib/regimesEreporting.ts). La périodicité et
+// l'option pour les débits ne regardent qu'un redevable : nulle et fausse ailleurs. Le cabinet lit les deux tables, le
+// client rien ; seules leurs quatre fonctions les écrivent.
+export type FrequenceTransactionsEreporting = 'decade' | 'mois' | 'bimestre'
+export type FrequencePaiementsEreporting = 'mois' | 'bimestre'
+export interface RegimeEreporting {
+  id: string
+  dossier_id: string
+  // AAAA-MM-JJ : le premier jour où ce régime vaut.
+  depuis: string
+  statut_tva: StatutTva
+  article_exoneration: ArticleExoneration | null
+  tva_periodicite: PeriodiciteTva | null
+  tva_sur_debits: boolean
+  frequence_transactions: FrequenceTransactionsEreporting
+  // Nulle sur option pour la TVA sur les débits : aucun paiement ne se déclare.
+  frequence_paiements: FrequencePaiementsEreporting | null
+  note: string | null
+  // Repères d'audit, sans clé étrangère : qui a confirmé, qui a retiré, et quand.
+  cree_par: string | null
+  cree_le: string
+  retire_le: string | null
+  retire_par: string | null
+}
+
+// Une pièce d'achat ou une note de frais que le cabinet a vérifiée et écartée de l'e-reporting des achats, avec ce que la
+// vérification a établi. Une seule active par pièce ; elle se retire (la pièce redevient à vérifier), jamais ne se modifie.
+export interface PieceEcarteeEreporting {
+  id: string
+  dossier_id: string
+  piece_id: string
+  motif: string
+  cree_par: string | null
+  cree_le: string
+  retire_le: string | null
+  retire_par: string | null
 }

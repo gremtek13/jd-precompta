@@ -189,6 +189,8 @@ function poser(j: Jeu = {}) {
     reglements_groupes: [],
     pieces: [],
     dossiers: [],
+    // Les accès du dossier, que le cabinet seul lit pour reconnaître le client (étape P4c) : aucun ici.
+    memberships: [],
   }
 }
 

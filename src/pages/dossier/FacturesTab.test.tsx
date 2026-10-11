@@ -158,6 +158,8 @@ vi.mock('../../lib/supabase', async () => {
               .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l))
             return (barriere ?? Promise.resolve()).then(() => ({ data: rendu, error: null, count: toutes.length })).then(suite)
           }
+          // Les accès du dossier (étape P4c, « par le client ») ont leurs propres cas : FacturesTabParLeClient.test.tsx.
+          if (table === 'memberships') return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
           if (suppression) {
             faux.suppressions.push(idVise)
             faux.voies.push('directe')
@@ -200,7 +202,7 @@ function facture(o: Partial<FactureEmise> = {}): FactureEmise {
     montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, mentions_legales: null, notes: null,
     emetteur_nom: 'Cabinet de test', emetteur_siret: '12345678901234', emetteur_adresse: null,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-    created_by: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, ...o,
+    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: '2026-03-10T09:05:00Z', ...MENTIONS_VIDES, ...o,
   }
 }
 

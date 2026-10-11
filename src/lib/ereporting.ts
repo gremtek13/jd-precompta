@@ -8,9 +8,13 @@ import {
 } from './periodesEreporting'
 import { ficheCourante, refusFicheHorsDeFrance, TYPES_DE_PIECE_DECRITS } from './piecesHorsDeFrance'
 import { saisieDeLaFiche, signauxHorsDeFrance, ventilationDe } from './propositionsHorsDeFrance'
+import {
+  dossierSousLeRegime, libelleDuRegime, piecesEcarteesActives, regimeDeLaPeriode, type LigneDeRegime, type RegimeDeLaPeriode,
+} from './regimesEreporting'
 import type {
   CodeTvaHorsDeFrance, Dossier, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
-  NatureAchatHorsDeFrance, Piece, PieceHorsDeFrance, PieceHorsDeFranceTaux, SchemaIdentifiantFournisseur, StatutTva,
+  NatureAchatHorsDeFrance, Piece, PieceEcarteeEreporting, PieceHorsDeFrance, PieceHorsDeFranceTaux,
+  SchemaIdentifiantFournisseur, StatutTva,
 } from './types'
 
 // LE CONTENU DES DÉCLARATIONS D'E-REPORTING D'UNE PÉRIODE, POUR UN DOSSIER (ligne 28.5, étape e, quatrième temps e4 ;
@@ -38,10 +42,11 @@ import type {
 // une affirmation (conception, § 4.2) ; et rien ne se déclare à blanc (BOI-TVA-DECLA-20-30-50-30, § 80 ; e1).
 //
 // LA PÉRIODE ET SON ÉCHÉANCE VIENNENT D'E1 (lib/periodesEreporting.ts), jamais recalculées ici : la fréquence de chaque
-// objet par `obligationsEreporting`, les bornes et l'échéance par `periodeDe`. LE STATUT DE TVA DU DOSSIER DÉCIDE DE CE
-// QUI ENTRE (lib/statutTva.ts) : les opérations exonérées par les art. 261 à 261 E du CGI sortent de l'e-reporting
-// (art. 290, I ; BOI-TVA-DECLA-20-30-50-10, § 20), un dossier exonéré déclare donc ses achats à l'étranger et pas ses
-// soins ; un franchisé déclare ses ventes sans TVA. Au 01/01/2027, le CIBS reprend ces règles (art. L. 216-55 et
+// objet par `obligationsEreporting` — celle que le cabinet a CONFIRMÉE quand un régime confirmé couvre la période (e5a) —,
+// les bornes et l'échéance par `periodeDe`. LE STATUT DE TVA DE LA PÉRIODE DÉCIDE DE CE QUI ENTRE (lib/statutTva.ts) :
+// celui du régime confirmé qui couvre son premier jour, sinon celui d'aujourd'hui, proposé. Les opérations exonérées par
+// les art. 261 à 261 E du CGI sortent de l'e-reporting (art. 290, I ; BOI-TVA-DECLA-20-30-50-10, § 20), un dossier
+// exonéré déclare donc ses achats à l'étranger et pas ses soins ; un franchisé déclare ses ventes sans TVA. Au 01/01/2027, le CIBS reprend ces règles (art. L. 216-55 et
 // L. 216-56) ; l'art. 290 reste en vigueur jusqu'aux mesures réglementaires qui le reprendront. AUCUN ARTICLE N'EST CITÉ
 // DANS LES MESSAGES : ils disent la règle, et ne vieillissent pas avec la numérotation.
 //
@@ -50,14 +55,20 @@ import type {
 // le dossier, les bornes de la période et le jour à Paris. Toutes les entrées sont OBLIGATOIRES : une valeur par défaut
 // serait une réponse qu'on n'a pas lue. Les montants sont en centimes entiers ; les dates, civiles (AAAA-MM-JJ).
 //
-// CE QUE LA BASE NE GARDE PAS, ET QUE LE CONTENU DEMANDE (points d'arrêt, pour e5 ou pour le cabinet) :
-//   - le régime d'e-reporting CONFIRMÉ par le cabinet (Q4) : `regimeConfirme`, sans lequel la déclaration se refuse ;
-//   - l'HISTOIRE du statut de TVA : la base ne garde que celui d'aujourd'hui. Une période d'un autre régime se refuse
-//     (`periode_hors_regime`), et une facture que le régime passé contredit aussi (`taux_positif`, `zero_sans_article`) —
-//     jamais une période calculée sous un régime qu'elle n'avait pas ;
-//   - la pièce candidate que le cabinet a VÉRIFIÉE et écartée (elle ressemble à un achat à l'étranger et n'en est pas
-//     un, ou il a tranché de ne pas la déclarer) : `piecesEcartees`. Sans ce moyen, une candidate ne se résout que par
-//     une fiche — et une pièce qui porte une TVA n'en reçoit pas (hypothèse Q7 d'e2).
+// CE QUE LA BASE GARDE DEPUIS L'ÉTAPE e5a (migration `regimes_ereporting_et_pieces_ecartees`, lib/regimesEreporting.ts),
+// ET QUE LE CONTENU LIT — les points d'arrêt d'e4 :
+//   - le régime d'e-reporting CONFIRMÉ par le cabinet (Q4) et son HISTOIRE, qui est aussi celle du statut de TVA :
+//     `ContexteDeclaration.regimes`, lus en entier. Une période se juge sous le régime confirmé qui couvre son premier
+//     jour (`regimeDeLaPeriode`) — son statut, son article, ses fréquences —, jamais sous un régime qu'elle n'avait pas ;
+//     sans régime confirmé qui la couvre, sous le statut d'aujourd'hui, PROPOSÉ (`regime_a_confirmer`). Une période à
+//     cheval sur deux régimes se refuse (`regime_change_dans_la_periode` : les sources publiques ne disent pas comment
+//     elle se déclare, NON VÉRIFIÉ), et un statut de l'onglet TVA qui n'est plus celui du régime en vigueur fait
+//     reconfirmer toute période qui finit depuis le début de ce régime (`regime_a_reconfirmer`) ;
+//   - la pièce candidate que le cabinet a VÉRIFIÉE et ÉCARTÉE (elle ressemble à un achat à l'étranger et n'en est pas un,
+//     ou il a tranché de ne pas la déclarer) : `SourcesDesAchats.ecarts`, l'écart actif d'une pièce SANS fiche — une
+//     fiche posée après l'écart l'emporte.
+// Ce qu'elle ne garde pas encore (e5b) : la déclaration faite, son contenu figé, sa rectification ; l'histoire de la case
+// « numéro de TVA attribué » d'un dossier en franchise ou exonéré, lue telle qu'elle est aujourd'hui.
 
 // ── Les hypothèses, nommées ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -91,8 +102,8 @@ export const HYPOTHESES_DE_LA_CONCEPTION: { readonly rangement: Rangement; reado
 
 // ── Ce que l'appelant lit ───────────────────────────────────────────────────────────────────────────────────────────
 
-/** Le dossier, tel que la déclaration le lit : son identité (le SIREN du déclarant, G6.26) et son régime de TVA
- * d'AUJOURD'HUI — la base n'en garde pas d'autre. */
+/** Le dossier, tel qu'il est aujourd'hui : son identité (le SIREN du déclarant, G6.26), et le statut de TVA de l'onglet
+ * TVA — celui sous lequel se PROPOSE une période qu'aucun régime confirmé ne couvre (`ContexteDeclaration.regimes`). */
 export type DossierEreporting = Pick<Dossier,
   'id' | 'siret' | 'statut_tva' | 'article_exoneration' | 'numero_tva_attribue' | 'tva_periodicite' | 'tva_sur_debits'>
 
@@ -119,14 +130,18 @@ export type EncaissementLu = Pick<EncaissementFacture,
 
 export type PartLue = Pick<EncaissementFactureTaux, 'encaissement_id' | 'dossier_id' | 'taux' | 'montant'>
 
+/** Un écart d'une pièce (`pieces_ecartees_ereporting`, e5a) : actif tant qu'il n'est pas retiré. */
+export type EcartLu = Pick<PieceEcarteeEreporting, 'id' | 'dossier_id' | 'piece_id' | 'retire_le'>
+
 /** Ce que les trois déclarations partagent. */
 export interface ContexteDeclaration {
   /** Les bornes de la période demandée, AAAA-MM-JJ : celles d'une période d'e1 (`calendrierEreporting`). */
   periode: { debut: string; fin: string }
   dossier: DossierEreporting
-  /** Le rythme d'e-reporting que l'application propose, confirmé par le cabinet tel que le dossier l'a déclaré à sa
-   * plateforme (Q4 ; impots.gouv.fr, 22/09/2026) — la base ne garde pas encore cette confirmation. */
-  regimeConfirme: boolean
+  /** Les régimes d'e-reporting que le cabinet a confirmés, tels que le dossier les a déclarés à sa plateforme (Q4 ;
+   * impots.gouv.fr, 22/09/2026) — `regimes_ereporting`, retirés compris, lus EN ENTIER : leur histoire est celle du statut
+   * de TVA, et la période se juge sous celui qui couvre son premier jour. */
+  regimes: Lecture<LigneDeRegime>
   /** Aujourd'hui À PARIS (`aujourdHuiAParis`) : une période ne se déclare qu'une fois finie (G7.43). */
   aujourdHui: string
 }
@@ -140,12 +155,12 @@ export interface SourcesDesAchats {
   /** Les textes lus sur les documents du dossier : au moins ceux des pièces d'achat sans fiche que la période peut
    * concerner (datées de la période, ou sans date). Un texte absent est un texte que la pièce n'a pas. */
   textes: Lecture<TexteDePiece>
+  /** Les écarts du dossier, retirés compris : une candidate dont l'écart est actif n'attend plus. */
+  ecarts: Lecture<EcartLu>
 }
 
 export interface ChoixDesAchats {
   rangement: Rangement
-  /** Les pièces que le cabinet a vérifiées et écartées — la base ne garde pas encore ce geste : un ensemble vide. */
-  piecesEcartees: ReadonlySet<string>
 }
 
 export interface SourcesDesVentes {
@@ -199,12 +214,18 @@ export const RAISONS_ECARTEES: Readonly<Record<RaisonEcartee, string>> = {
 
 export interface DeclarationEreporting<C> {
   objet: ObjetEreporting
-  /** Ce qu'e1 dit de l'obligation du dossier pour cet objet (due, le cas échéant…). */
+  /** Ce qu'e1 dit de l'obligation du dossier pour cet objet (due, le cas échéant…), sous le statut de la période ; « à
+   * préciser » quand on ne le sait pas — régimes lus en partie, ou deux régimes qui ne disent pas la même chose. */
   obligation: EtatObligation
-  /** La fréquence qu'e1 propose, avec sa certitude ; nulle tant que le statut de TVA est à préciser. */
+  /** La fréquence de la période : confirmée par le cabinet (`certitude: 'confirmee'`) sous un régime confirmé, proposée
+   * par e1 avec sa certitude sinon ; nulle quand le statut de TVA est à préciser, la période à cheval sur deux régimes, ou
+   * les régimes lus en partie. */
   frequence: FrequenceProposee | null
-  /** La période d'e1 — bornes, échéance, prudence, libellé ; nulle quand le régime du dossier ne la donne pas. */
+  /** La période d'e1 — bornes, échéance, prudence, libellé ; nulle quand le régime de la période ne la donne pas. */
   periode: PeriodeEreporting | null
+  /** Le régime sous lequel la période se juge (`regimeDeLaPeriode`) : confirmé, à confirmer (le statut d'aujourd'hui,
+   * proposé), à cheval sur deux régimes, à reconfirmer ; nul quand les régimes n'ont pas été lus en entier. */
+  regime: RegimeDeLaPeriode<LigneDeRegime> | null
   etat: EtatDeclarationEreporting
   /** Dans l'ordre de `REFUS_EREPORTING` ; vide : la déclaration peut se faire. */
   refus: RefusEreporting[]
@@ -309,15 +330,26 @@ export interface ContenuPaiements {
 
 // ── Les refus, dans leur ordre ──────────────────────────────────────────────────────────────────────────────────────
 //
-// L'ORDRE DIT CE QUI EMPÊCHE D'ABORD : le statut de TVA inconnu, puis ce que le dossier ne doit pas (des paiements sur
-// option pour les débits : e1 ne leur donne aucune fréquence), puis la période elle-même — des bornes d'un autre régime,
-// une fin avant l'obligation —, puis une lecture partielle ; dans ces cas rien d'autre ne se juge. Viennent ensuite ce
-// qui empêche de la déclarer aujourd'hui (pas finie, régime à confirmer), l'identité du déclarant, et ce que chaque
-// opération laisse sans réponse ; enfin l'absence d'opération. Dans une même opération, le premier refus de cet ordre est le sien ; un
+// L'ORDRE DIT CE QUI EMPÊCHE D'ABORD : le régime de la période — des régimes confirmés lus en partie, une période à cheval
+// sur deux régimes : on ne sait pas sous lequel la juger —, le statut de TVA inconnu, puis ce que le dossier ne doit pas
+// (des paiements sur option pour les débits : e1 ne leur donne aucune fréquence), puis la période elle-même — des bornes
+// qui ne sont pas une période de son régime, une fin avant l'obligation —, puis une lecture partielle ; dans ces cas rien
+// d'autre ne se juge. Viennent ensuite ce qui empêche de la déclarer aujourd'hui (pas finie, régime à confirmer ou à
+// reconfirmer), l'identité du déclarant, et ce que chaque opération laisse sans réponse ; enfin l'absence d'opération. Dans une même opération, le premier refus de cet ordre est le sien ; un
 // motif CERTAIN de l'écarter (une facture antérieure à l'obligation, une opération exonérée, une livraison de biens)
 // l'emporte sur une donnée inconnue — l'ordre d'`obligationEncaissee` (d2). e5 et e6 diront ces refus avant le clic ; la
 // fonction de base d'e5 se confrontera à ceux qu'elle jugera elle-même.
 export const REFUS_EREPORTING = [
+  {
+    cle: 'regimes_illisibles',
+    modele: 'La lecture des régimes confirmés du dossier n’est pas revenue entière (%) : le régime de la période ne se sait '
+      + 'pas, et rien ne se juge.',
+  },
+  {
+    cle: 'regime_change_dans_la_periode',
+    modele: 'Le régime du dossier change dans la période, le % — de « % » à « % » : une période à cheval sur deux régimes ne '
+      + 'se déclare pas ici, les sources publiques ne disant pas comment. À trancher par le cabinet.',
+  },
   {
     cle: 'statut_a_preciser',
     modele: 'Le statut de TVA du dossier est à préciser (onglet TVA) : le rythme de ses déclarations et ce qui y entre en dépendent.',
@@ -327,11 +359,7 @@ export const REFUS_EREPORTING = [
     modele: 'Sur option pour les débits, la TVA de ses prestations est due à la facture : le dossier n’a pas de données de '
       + 'paiement à transmettre.',
   },
-  {
-    cle: 'periode_hors_regime',
-    modele: 'Du % au % n’est pas une période de ses déclarations : sous son régime de TVA d’aujourd’hui, elles se font %. '
-      + 'Une période se déclare sous le régime qu’elle avait, que l’application ne garde pas encore.',
-  },
+  { cle: 'periode_hors_regime', modele: 'Du % au % n’est pas une période de ses déclarations : sous %, elles se font %.' },
   {
     cle: 'avant_l_obligation',
     modele: 'La période finit le %, avant le 1er septembre 2027 : l’e-reporting d’une PME ou d’une micro-entreprise commence '
@@ -344,8 +372,15 @@ export const REFUS_EREPORTING = [
   { cle: 'periode_en_cours', modele: 'La période n’est pas finie : elle se déclare à partir du %, au plus tard le %.' },
   {
     cle: 'regime_a_confirmer',
-    modele: 'Le rythme de ses déclarations — % — est proposé par l’application : le cabinet le confirme, tel que le dossier '
-      + 'l’a déclaré à sa plateforme, avant toute déclaration.',
+    modele: 'Aucun régime confirmé ne couvre le début de la période : le rythme de ses déclarations — % — est celui que '
+      + 'l’application propose sous son statut de TVA d’aujourd’hui. Le cabinet confirme le régime, tel que le dossier l’a '
+      + 'déclaré à sa plateforme, avant toute déclaration.',
+  },
+  {
+    cle: 'regime_a_reconfirmer',
+    modele: 'Le statut de TVA du dossier (onglet TVA) n’est plus celui du régime confirmé à partir du % (%) : la période en a '
+      + 'peut-être déjà changé. Le cabinet confirme le régime à partir du jour du changement, ou corrige le statut, avant '
+      + 'de la déclarer.',
   },
   {
     cle: 'siren_invalide',
@@ -436,50 +471,93 @@ const dansLaPeriode = (date: string, p: PeriodeEreporting) => date >= p.debut &&
 const parDateEtId = <T extends { date: string; id: string }>(a: T, b: T) =>
   a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 
+/** Le dossier sous le régime de sa période, quand son statut de TVA est connu. */
+type DossierJuge = DossierEreporting & { statut_tva: StatutTva }
+
 type Jugement =
   | { arret: true; declaration: DeclarationEreporting<never> }
-  | { arret: false; periode: PeriodeEreporting; frequence: FrequenceProposee; obligation: EtatObligation; refus: RefusEreporting[] }
+  | {
+    arret: false; periode: PeriodeEreporting; frequence: FrequenceProposee; obligation: EtatObligation; refus: RefusEreporting[]
+    dossier: DossierJuge; regime: RegimeDeLaPeriode<LigneDeRegime>
+  }
+
+/** Ce qu'e1 dit de l'obligation d'un dossier, pour un objet. */
+const obligationDe = (d: Pick<DossierEreporting, 'statut_tva' | 'article_exoneration' | 'tva_periodicite' | 'tva_sur_debits'>,
+  objet: ObjetEreporting) => obligationsEreporting(d.statut_tva, d.article_exoneration, d.tva_periodicite, d.tva_sur_debits)[objet]
 
 /**
- * Ce qui se juge de la période seule, et des lectures : la période d'e1 sous le régime du dossier, ou pourquoi il n'y en
- * a pas — le statut à préciser, des paiements sur option pour les débits (hors du champ), des bornes d'un autre régime —,
- * une période finie avant l'obligation (hors du champ), une lecture partielle — autant d'arrêts —, puis ce qui empêche
- * seulement de la déclarer aujourd'hui (pas finie, régime à confirmer).
+ * Ce qui se juge de la période seule, et des lectures : le régime sous lequel elle se juge (`regimeDeLaPeriode` : le régime
+ * confirmé qui couvre son premier jour, sinon le statut d'aujourd'hui, proposé), ou pourquoi on ne le sait pas — des
+ * régimes lus en partie, une période à cheval sur deux régimes —, puis la période d'e1 sous ce régime, ou pourquoi il n'y
+ * en a pas — le statut à préciser, des paiements sur option pour les débits (hors du champ), des bornes qui ne sont pas
+ * une de ses périodes —, une période finie avant l'obligation (hors du champ), une lecture partielle — autant d'arrêts —,
+ * puis ce qui empêche seulement de la déclarer aujourd'hui (pas finie, régime à confirmer ou à reconfirmer).
  */
 function jugerLaPeriode(objet: ObjetEreporting, c: ContexteDeclaration, lectures: Record<string, Lecture<unknown>>): Jugement {
-  const d = c.dossier
-  const obligation = obligationsEreporting(d.statut_tva, d.article_exoneration, d.tva_periodicite, d.tva_sur_debits)[objet]
-  const arret = (etat: EtatDeclarationEreporting, refus: RefusEreporting[], frequence: FrequenceProposee | null,
-    periode: PeriodeEreporting | null): Jugement => ({
+  const arret = (etat: EtatDeclarationEreporting, refus: RefusEreporting[], obligation: EtatObligation,
+    frequence: FrequenceProposee | null, periode: PeriodeEreporting | null, regime: RegimeDeLaPeriode<LigneDeRegime> | null): Jugement => ({
     arret: true,
-    declaration: { objet, obligation: obligation.etat, frequence, periode, etat, refus, contenu: null, ecartees: [] },
+    declaration: { objet, obligation, frequence, periode, regime, etat, refus, contenu: null, ecartees: [] },
   })
+  // Le statut inconnu : ce qu'e1 en dit — les achats dus, le reste à préciser.
+  const inconnue = obligationDe({ ...c.dossier, statut_tva: null, article_exoneration: null }, objet).etat
 
-  if (d.statut_tva == null) return arret('incomplete', [refusDe('statut_a_preciser', [], [])], null, null)
-  // Rien n'est dû : e1 ne propose alors aucune fréquence, et aucune période n'est à juger.
-  if (obligation.etat === 'non_due') return arret('hors_du_champ', [refusDe('paiements_sur_debits', [], [])], null, null)
-  // Un statut connu et une obligation due, en partie ou le cas échéant : e1 propose toujours une fréquence.
-  const frequence = obligation.frequence as FrequenceProposee
+  // Sans l'histoire entière, le régime de la période ne se sait pas : rien ne se juge.
+  if (!c.regimes.complete) {
+    return arret('incomplete', [refusDe('regimes_illisibles', [c.regimes.motif ?? 'sans motif rendu'], [{ genre: 'lecture', id: 'regimes' }])],
+      inconnue, null, null, null)
+  }
+  const regime = regimeDeLaPeriode(c.regimes.lignes, c.periode, c.dossier, c.aujourdHui)
+  if (regime.etat === 'a_cheval') {
+    const avant = obligationDe(dossierSousLeRegime(c.dossier, regime.avant), objet).etat
+    const apres = obligationDe(dossierSousLeRegime(c.dossier, regime.apres), objet).etat
+    return arret('incomplete', [refusDe('regime_change_dans_la_periode',
+      [formatDate(regime.apres.depuis), libelleDuRegime(regime.avant), libelleDuRegime(regime.apres)], [])],
+    avant === apres ? avant : inconnue, null, null, regime)
+  }
+  // Confirmé, ou à reconfirmer : le régime en vigueur au premier jour — le même jusqu'à la fin, sinon elle serait à cheval.
+  const confirme = regime.etat === 'a_confirmer' ? null : regime.regime
+  const d = confirme == null ? c.dossier : dossierSousLeRegime(c.dossier, confirme)
+  const obligation = obligationDe(d, objet)
+
+  const statut = d.statut_tva
+  if (statut == null) return arret('incomplete', [refusDe('statut_a_preciser', [], [])], obligation.etat, null, null, regime)
+  // Confirmée, la fréquence est celle que le dossier a déclarée à sa plateforme ; proposée, celle d'e1. Rien n'est dû (des
+  // paiements sur option pour les débits) : aucune fréquence, et aucune période n'est à juger.
+  const confirmee = confirme == null ? null : objet === 'paiements' ? confirme.frequence_paiements : confirme.frequence_transactions
+  const frequence: FrequenceProposee | null = confirme == null ? obligation.frequence
+    : confirmee == null ? null : { frequence: confirmee, certitude: 'confirmee', raison: null }
+  if (obligation.etat === 'non_due' || frequence == null) {
+    return arret('hors_du_champ', [refusDe('paiements_sur_debits', [], [])], obligation.etat, null, null, regime)
+  }
   const periode = periodeDe(c.periode.debut, frequence.frequence)
   if (periode == null || periode.debut !== c.periode.debut || periode.fin !== c.periode.fin) {
+    const sous = confirme == null
+      ? 'son statut de TVA d’aujourd’hui (aucun régime confirmé ne couvre le début de la période)'
+      : `le régime confirmé à partir du ${formatDate(confirme.depuis)}`
     return arret('incomplete', [refusDe('periode_hors_regime',
-      [formatDate(c.periode.debut), formatDate(c.periode.fin), libelleFrequence(frequence, false)], [])], frequence, null)
+      [formatDate(c.periode.debut), formatDate(c.periode.fin), sous, libelleFrequence(frequence, false)], [])],
+    obligation.etat, frequence, null, regime)
   }
   if (periode.fin < DEBUT_EREPORTING_PME) {
-    return arret('hors_du_champ', [refusDe('avant_l_obligation', [formatDate(periode.fin)], [])], frequence, periode)
+    return arret('hors_du_champ', [refusDe('avant_l_obligation', [formatDate(periode.fin)], [])], obligation.etat, frequence, periode, regime)
   }
   const partielles = Object.entries(lectures).filter(([, l]) => !l.complete)
   if (partielles.length > 0) {
     return arret('incomplete', partielles.map(([nom, l]) => refusDe('lecture_incomplete',
-      [NOMS_DES_LECTURES[nom] ?? nom, l.motif ?? 'sans motif rendu'], [{ genre: 'lecture', id: nom }])), frequence, periode)
+      [NOMS_DES_LECTURES[nom] ?? nom, l.motif ?? 'sans motif rendu'], [{ genre: 'lecture', id: nom }])),
+    obligation.etat, frequence, periode, regime)
   }
 
   const refus: RefusEreporting[] = []
   if (c.aujourdHui <= periode.fin) {
     refus.push(refusDe('periode_en_cours', [formatDate(ajouterJours(periode.fin, 1)), formatDate(periode.echeance)], []))
   }
-  if (!c.regimeConfirme) refus.push(refusDe('regime_a_confirmer', [libelleFrequence(frequence, true)], []))
-  return { arret: false, periode, frequence, obligation: obligation.etat, refus }
+  if (regime.etat === 'a_confirmer') refus.push(refusDe('regime_a_confirmer', [libelleFrequence(frequence, true)], []))
+  if (regime.etat === 'a_reconfirmer') {
+    refus.push(refusDe('regime_a_reconfirmer', [formatDate(regime.enVigueur.depuis), libelleDuRegime(regime.enVigueur)], []))
+  }
+  return { arret: false, periode, frequence, obligation: obligation.etat, refus, dossier: { ...d, statut_tva: statut }, regime }
 }
 
 const NOMS_DES_LECTURES: Readonly<Record<string, string>> = {
@@ -487,6 +565,7 @@ const NOMS_DES_LECTURES: Readonly<Record<string, string>> = {
   fiches: 'des fiches « fournisseur établi hors de France »',
   taux: 'de la ventilation des fiches',
   textes: 'des textes lus sur les documents',
+  ecarts: 'des pièces écartées par le cabinet',
   factures: 'des factures émises',
   lignes: 'des lignes des factures',
   encaissements: 'des encaissements',
@@ -502,11 +581,13 @@ function sirenDuDossier(d: DossierEreporting): string | null {
 /**
  * L'état d'une déclaration jugée jusqu'au bout. Le contenu décide : incomplète dès qu'une opération ou l'identité du
  * déclarant laisse une donnée sans réponse ; sinon à déclarer s'il y a une opération, rien à déclarer s'il n'y en a pas.
- * Une période pas finie, un régime à confirmer n'en changent pas l'état : ils empêchent seulement de la déclarer
- * aujourd'hui, et `refus` le dit.
+ * Une période pas finie, un régime à confirmer ou à reconfirmer n'en changent pas l'état : ils empêchent seulement de la
+ * déclarer aujourd'hui, et `refus` le dit.
  */
+const SANS_EFFET_SUR_L_ETAT: readonly CleRefusEreporting[] = ['periode_en_cours', 'regime_a_confirmer', 'regime_a_reconfirmer', 'rien_a_declarer']
+
 function etatDuContenu(refus: readonly RefusEreporting[], nombreOperations: number): EtatDeclarationEreporting {
-  const bloquants = refus.filter((r) => r.cle !== 'periode_en_cours' && r.cle !== 'regime_a_confirmer' && r.cle !== 'rien_a_declarer')
+  const bloquants = refus.filter((r) => !SANS_EFFET_SUR_L_ETAT.includes(r.cle))
   if (bloquants.length > 0) return 'incomplete'
   return nombreOperations > 0 ? 'a_declarer' : 'rien_a_declarer'
 }
@@ -574,8 +655,9 @@ export function dateQuiRangeLAchat(
  * qu'elle est aujourd'hui (la base ne revoit pas une fiche quand sa pièce change — l'écran d'e3 fait de même), le gel mis
  * à part. Une pièce d'achat SANS fiche que les signaux d'e3 désignent (une autre devise, un numéro de TVA de l'Union ou une
  * mention d'autoliquidation lus, un fournisseur déjà décrit), datée de la période ou sans date, attend : la déclaration
- * est incomplète tant que le cabinet ne l'a ni décrite ni écartée. Le dossier y est l'acheteur : son SIREN et son numéro
- * de TVA, exigé (G2.33 ; hypothèse Q3 de la conception).
+ * est incomplète tant que le cabinet ne l'a ni décrite ni écartée (`ecarter_piece_ereporting`, e5a ; un écart retiré la
+ * refait attendre). Le dossier y est l'acheteur : son SIREN et son numéro de TVA, exigé (G2.33 ; hypothèse Q3 de la
+ * conception) — celui que son régime de la période lui donne.
  */
 export function declarationDesAchats(
   c: ContexteDeclaration, sources: SourcesDesAchats, choix: ChoixDesAchats,
@@ -585,6 +667,7 @@ export function declarationDesAchats(
   const { periode } = jugement
   const dossierId = c.dossier.id
   const pieces = sources.pieces.lignes.filter((p) => p.dossier_id === dossierId)
+  const piecesEcartees = piecesEcarteesActives(sources.ecarts.lignes, dossierId)
   const fiches = sources.fiches.lignes.filter((f) => f.dossier_id === dossierId)
   const taux = sources.taux.lignes.filter((t) => t.dossier_id === dossierId)
   const refus: RefusEreporting[] = []
@@ -654,7 +737,7 @@ export function declarationDesAchats(
     const signaux = signauxHorsDeFrance({ piece, texte: textes.get(piece.id) ?? null, lecture: { fiches, taux }, pieces })
     if (signaux.length === 0) continue
     const source: SourceEreporting = { genre: 'piece', id: piece.id }
-    if (choix.piecesEcartees.has(piece.id)) {
+    if (piecesEcartees.has(piece.id)) {
       ecartees.push({ source, raison: 'ecartee_par_le_cabinet' })
       continue
     }
@@ -665,14 +748,14 @@ export function declarationDesAchats(
     }
   }
 
-  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('achats', c.dossier, refus, achats.length, true)])
+  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('achats', jugement.dossier, refus, achats.length, true)])
   const totaux = new Map<string, number>()
   for (const a of achats) totaux.set(a.devise, (totaux.get(a.devise) ?? 0) + (a.typeDocument === '381' ? -a.htCentimes : a.htCentimes))
   return {
-    objet: 'achats', obligation: jugement.obligation, frequence: jugement.frequence, periode,
+    objet: 'achats', obligation: jugement.obligation, frequence: jugement.frequence, periode, regime: jugement.regime,
     etat: etatDuContenu(tous, achats.length), refus: tous, ecartees,
     contenu: {
-      role: 'BY', siren: sirenDuDossier(c.dossier), numeroTva: numeroTvaDuDossier(c.dossier), achats,
+      role: 'BY', siren: sirenDuDossier(c.dossier), numeroTva: numeroTvaDuDossier(jugement.dossier), achats,
       nombreOperations: achats.length,
       totauxParDevise: [...totaux].sort(([a], [b]) => (a < b ? -1 : 1)).map(([devise, htCentimes]) => ({ devise, htCentimes })),
     },
@@ -732,7 +815,7 @@ export function declarationDesVentes(
   const jugement = jugerLaPeriode('ventes', c, { ...sources })
   if (jugement.arret) return jugement.declaration
   const { periode } = jugement
-  const statut = c.dossier.statut_tva as StatutTva
+  const { statut_tva: statut, article_exoneration: article } = jugement.dossier
   const refus: RefusEreporting[] = []
   const ecartees: OperationEcartee[] = []
   const agregats = new Map<string, TransactionsDuJour>()
@@ -756,7 +839,7 @@ export function declarationDesVentes(
       refus.push(refusDe('lectures_discordantes', ['une facture', 'ses lignes'], [source]))
       continue
     }
-    const jugements = groupes.map((g) => ({ groupe: g, jugement: jugerLeTaux(g.taux, statut, c.dossier.article_exoneration) }))
+    const jugements = groupes.map((g) => ({ groupe: g, jugement: jugerLeTaux(g.taux, statut, article) }))
     // Un motif certain de ne rien déclarer l'emporte sur une donnée inconnue : toutes ses lignes sont exonérées.
     if (jugements.every((j) => j.jugement === 'exonere')) {
       ecartees.push({ source, raison: 'operation_exoneree' })
@@ -800,9 +883,9 @@ export function declarationDesVentes(
     .map((a) => ({ ...a, parTaux: a.parTaux.sort((x, y) => y.taux - x.taux) }))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.categorie < b.categorie ? -1 : a.categorie > b.categorie ? 1
       : Number(a.optionDebits) - Number(b.optionDebits)))
-  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('ventes', c.dossier, refus, nombreOperations, false)])
+  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('ventes', jugement.dossier, refus, nombreOperations, false)])
   return {
-    objet: 'ventes', obligation: jugement.obligation, frequence: jugement.frequence, periode,
+    objet: 'ventes', obligation: jugement.obligation, frequence: jugement.frequence, periode, regime: jugement.regime,
     etat: etatDuContenu(tous, nombreOperations), refus: tous, ecartees,
     contenu: {
       role: 'SE', siren: sirenDuDossier(c.dossier), transactions, nombreOperations,
@@ -844,7 +927,7 @@ export function declarationDesPaiements(
   const jugement = jugerLaPeriode('paiements', c, { ...sources })
   if (jugement.arret) return jugement.declaration
   const { periode } = jugement
-  const statut = c.dossier.statut_tva as StatutTva
+  const { statut_tva: statut, article_exoneration: article } = jugement.dossier
   const dossierId = c.dossier.id
   const encaissements = sources.encaissements.lignes.filter((e) => e.dossier_id === dossierId)
   const parts = sources.parts.lignes.filter((p) => p.dossier_id === dossierId)
@@ -899,7 +982,7 @@ export function declarationDesPaiements(
       refus.push(refusDe('lectures_discordantes', ['un encaissement', 'sa répartition par taux entière'], [source]))
       continue
     }
-    const jugements = siennes.map((p) => ({ part: p, jugement: jugerLeTaux(p.taux, statut, c.dossier.article_exoneration) }))
+    const jugements = siennes.map((p) => ({ part: p, jugement: jugerLeTaux(p.taux, statut, article) }))
     if (jugements.every((j) => j.jugement === 'exonere')) {
       ecartees.push({ source, raison: 'operation_exoneree' })
       continue
@@ -934,9 +1017,9 @@ export function declarationDesPaiements(
   const paiements = [...agregats.values()]
     .map((a) => ({ ...a, parTaux: a.parTaux.sort((x, y) => y.taux - x.taux) }))
     .sort((a, b) => (a.date < b.date ? -1 : 1))
-  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('paiements', c.dossier, refus, nombreOperations, false)])
+  const tous = dansLOrdre([...jugement.refus, ...refus, ...refusDuContenu('paiements', jugement.dossier, refus, nombreOperations, false)])
   return {
-    objet: 'paiements', obligation: jugement.obligation, frequence: jugement.frequence, periode,
+    objet: 'paiements', obligation: jugement.obligation, frequence: jugement.frequence, periode, regime: jugement.regime,
     etat: etatDuContenu(tous, nombreOperations), refus: tous, ecartees,
     contenu: {
       role: 'SE', siren: sirenDuDossier(c.dossier), paiements, nombreOperations,

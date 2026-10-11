@@ -800,7 +800,7 @@ const FACTURES_D1: FactureEmise[] = [
     mentions_legales: MENTIONS_LEGALES_D1, notes: 'Séance non remboursée par l’Assurance maladie : règlement à réception.',
     ...EMETTEUR_D1,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-    created_by: 'u1', created_at: '2026-09-24T16:10:00Z', validated_at: null,
+    created_by: 'u-claire', valide_par: null, created_at: '2026-09-24T16:10:00Z', validated_at: null,
     type_client: 'non_assujetti', tiers_siren: null, tiers_adresse_electronique: null, code_service: null, numero_engagement: null,
     nature_operation: 'services', date_prestation: '2026-09-22', periode_debut: null, periode_fin: null,
     livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: null,
@@ -815,7 +815,7 @@ const FACTURES_D1: FactureEmise[] = [
     mentions_legales: MENTIONS_LEGALES_D1, notes: null,
     ...EMETTEUR_D1,
     superpdp_invoice_id: 4242, superpdp_dernier_statut: 'fr:205', tiers_email: 'comptabilite@residence-cedres.example',
-    created_by: 'u1', created_at: '2026-09-18T08:30:00Z', validated_at: '2026-09-18T08:55:00Z',
+    created_by: 'u1', valide_par: 'u1', created_at: '2026-09-18T08:30:00Z', validated_at: '2026-09-18T08:55:00Z',
     type_client: 'assujetti', tiers_siren: '777123456', tiers_adresse_electronique: '777123456',
     code_service: null, numero_engagement: null,
     nature_operation: 'services', date_prestation: '2026-08-31', periode_debut: null, periode_fin: null,
@@ -832,7 +832,7 @@ const FACTURES_D1: FactureEmise[] = [
     mentions_legales: MENTIONS_LEGALES_D1, notes: null,
     ...EMETTEUR_D1,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: 'achats@ch-deux-vallees.example',
-    created_by: 'u1', created_at: '2026-09-05T08:40:00Z', validated_at: '2026-09-05T08:52:00Z',
+    created_by: 'u1', valide_par: 'u1', created_at: '2026-09-05T08:40:00Z', validated_at: '2026-09-05T08:52:00Z',
     type_client: 'organisme_public', tiers_siren: '250100021',
     tiers_adresse_electronique: '250100021_25010002100014_SSIAD-DEUX-VALLEES',
     code_service: 'SSIAD-DV-0042', numero_engagement: 'EJ2026-004517',
@@ -911,7 +911,8 @@ const FACTURES_D7: FactureEmise[] = [{
   mentions_legales: PENALITES_DE_RETARD, notes: null,
   emetteur_nom: 'Atelier Bernard Conseil', emetteur_siret: '98765432400019', emetteur_adresse: '4 rue des Tanneurs\n69002 Lyon',
   superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-  created_by: 'u1', created_at: '2026-09-22T09:20:00Z', validated_at: '2026-09-22T09:41:00Z',
+  // Validée par le titulaire de l'atelier (un accès client de d7, plus bas) : l'onglet Factures du cabinet dit « par le client ».
+  created_by: 'u-bernard', valide_par: 'u-bernard', created_at: '2026-09-22T09:20:00Z', validated_at: '2026-09-22T09:41:00Z',
   type_client: 'assujetti', tiers_siren: '555123454', tiers_adresse_electronique: '555123454',
   code_service: null, numero_engagement: null,
   nature_operation: 'mixte', date_prestation: '2026-09-18', periode_debut: null, periode_fin: null,
@@ -969,15 +970,15 @@ const LIGNES_DE_F8: FactureLigne[] = lignesDeFacture('f8', LIGNES_F8)
 
 const TRANSMISSIONS_D7: TransmissionFacture[] = [{
   id: 'tr8', dossier_id: 'd7', facture_id: 'f8', canal: 'plateforme', hote: 'flux.plateforme-beta.example', flux_id: 'fx-beta-208',
-  sha256: 'd'.repeat(64), etat: 'accepte', detail: null, cree_le: '2026-09-24T09:15:00Z', maj_le: '2026-09-24T09:40:00Z',
+  sha256: 'd'.repeat(64), etat: 'accepte', detail: null, cree_par: 'u-bernard', cree_le: '2026-09-24T09:15:00Z', maj_le: '2026-09-24T09:40:00Z',
 }]
 
 const ENCAISSEMENTS_F8: EncaissementFacture[] = [
-  encaissementDuBanc({ id: 'enc3', facture_id: 'f8', date_encaissement: '2026-09-28', montant: 600, cree_le: '2026-09-28T16:00:00Z' }),
+  encaissementDuBanc({ id: 'enc3', facture_id: 'f8', date_encaissement: '2026-09-28', montant: 600, cree_par: 'u-bernard', cree_le: '2026-09-28T16:00:00Z' }),
   encaissementDuBanc({
     id: 'enc4', facture_id: 'f8', date_encaissement: '2026-10-02', montant: -600, annule_id: 'enc3',
     motif: 'Virement rendu au client : la même somme avait été réglée deux fois, par virement et par chèque.',
-    cree_le: '2026-10-02T11:00:00Z',
+    cree_par: 'u-bernard', cree_le: '2026-10-02T11:00:00Z',
   }),
   encaissementDuBanc({ id: 'enc5', facture_id: 'f8', date_encaissement: '2026-10-01', montant: 900 }),
   encaissementDuBanc({ id: 'enc6', facture_id: 'f8', date_encaissement: '2026-10-06', montant: 300, moyen: 'cheque', cree_le: '2026-10-06T10:00:00Z' }),
@@ -992,7 +993,7 @@ const declarationDuBanc = (o: Partial<TransmissionEncaissement> & Pick<Transmiss
 })
 const DECLARATIONS_ENCAISSEMENTS_D7: TransmissionEncaissement[] = [
   declarationDuBanc({
-    id: 'te3', encaissement_id: 'enc3',
+    id: 'te3', encaissement_id: 'enc3', cree_par: 'u-bernard',
     note: 'Saisi sur flux.plateforme-beta.example par Mme Bernard le 29/09/2026 à 10 h 12, référence de la plateforme STAT-212-0004417',
   }),
   declarationDuBanc({ id: 'te5', encaissement_id: 'enc5', note: 'Saisi par le client lui-même', cree_le: '2026-10-02T08:30:00Z', maj_le: '2026-10-02T08:30:00Z' }),
@@ -1211,6 +1212,8 @@ const TABLES: Record<string, Ligne[]> = {
     ...(CLIENT_DU_BANC
       ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
       : []),
+    // Le titulaire de l'atelier (d7) : l'accès que l'onglet Factures du cabinet reconnaît comme « le client » (étape P4c).
+    { id: 'm-bernard-d7', user_id: 'u-bernard', dossier_id: 'd7', role: 'client', email: 'bernard@atelier-exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-06T09:00:00Z' },
     ...(CLIENT_DU_BANC && VENTES_DU_BANC
       ? [{ id: 'm-u1-d7', user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
       : []),

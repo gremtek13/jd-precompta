@@ -568,6 +568,48 @@ describe('restauration', () => {
     expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 
+  it('écrit les seuils et les explications de la revue analytique par vagues, et les relit à l’identique (étape R5)', async () => {
+    // Ligne 41, étape R5 : immuables, un seuil et une explication ne partent pas à NULL pour se compléter, et leur garde lit
+    // celui qu'ils remplacent. L'ordre de la sauvegarde n'y change rien.
+    base.tables.revision_seuils = [
+      { id: 's2', dossier_id: DOSSIER, annee: 2025, seuil: 2000, remplace_id: 's1' },
+      { id: 's1', dossier_id: DOSSIER, annee: 2025, seuil: 1500.5, remplace_id: null },
+    ]
+    base.tables.revision_explications = [
+      { id: 'x2', dossier_id: DOSSIER, annee: 2025, objet_type: 'compte', objet: '706000', nature: null, remplace_id: 'x1' },
+      { id: 'x1', dossier_id: DOSSIER, annee: 2025, objet_type: 'compte', objet: '706000', nature: null, remplace_id: null },
+      { id: 'y1', dossier_id: DOSSIER, annee: 2025, objet_type: 'total_2035', objet: 'resultat', nature: null, remplace_id: null },
+    ]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    expect(sauvegarde.contenu.revision_seuils).toHaveLength(2)
+    expect(sauvegarde.contenu.revision_explications).toHaveLength(3)
+    expect(sauvegarde.manifeste.liensPerdus).toEqual([])
+    baseVide()
+
+    const resultat = await restaurerSauvegarde(sauvegarde)
+    expect(ecritures.filter((e) => e.table === 'revision_seuils').map((e) => e.nb)).toEqual([1, 1])
+    expect(ecritures.filter((e) => e.table === 'revision_explications').map((e) => e.nb)).toEqual([2, 1])
+    expect(base.tables.revision_seuils.map((l) => l.id)).toEqual(['s1', 's2'])
+    expect(base.tables.revision_explications.map((l) => l.id)).toEqual(['x1', 'y1', 'x2'])
+    expect(resultat.lignesParTable.revision_seuils).toBe(2)
+    expect(resultat.lignesParTable.revision_explications).toBe(3)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+
+  it('refuse, avant d’écrire, une explication dont celle qu’elle remplace manque à la sauvegarde', async () => {
+    baseVide()
+    const sauvegarde = {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, cabinet_id: CABINET }],
+        revision_explications: [{ id: 'x2', dossier_id: DOSSIER, annee: 2025, remplace_id: 'x-absente' }],
+      },
+    }
+    await expect(restaurerSauvegarde(sauvegarde))
+      .rejects.toThrow('revision_explications.remplace_id pointe revision_explications « x-absente », absent de la sauvegarde.')
+    expect(ecritures).toEqual([])
+  })
+
   it('refuse, avant d’écrire, une revue dont la conclusion manque à la sauvegarde', async () => {
     baseVide()
     const sauvegarde = {

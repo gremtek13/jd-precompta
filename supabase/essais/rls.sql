@@ -271,6 +271,39 @@
 -- production, la copie et ce fichier rendent les mêmes verdicts, à l'octet. Aucun accès de la production ne porte
 -- « Ventes » : ce que les fonctions des ventes refusent et acceptent, profil par profil, est éprouvé par
 -- `ventesClient.sql`, joué en production le même jour.
+--
+-- 11/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 41, étape R5 : préparée, non appliquée). La migration
+-- `revue_analytique` crée `revision_seuils` et `revision_explications` — lecture sous `admin_du_dossier`, insertion de
+-- restauration réservée au super-administrateur, aucune autre policy, deux gardes — et aucune ligne de ce fichier ne
+-- change : la boucle sur `pg_class` les prend. Joué ENTIER par psql sur une réplique égale à la production à 116
+-- migrations (`signature.sql`, neuf familles), munie du talon du stockage et du semis fictif de l'étape P2, la migration
+-- appliquée et les lignes de l'étape semées par ses fonctions dans le dossier `test` (quatre seuils, cinq explications) :
+-- 35 lignes de verdict (70 tables du schéma, dont 61 portant un `dossier_id`, + 3 buckets, 4 profils), 0 en faute, et
+-- 31 mutations sur 31 qui mordent ; M3 voit sept tables hors des dossiers du client, cinq sans les lignes de l'étape.
+-- Sans la migration, la même réplique rend le passage de P2, ci-dessus. Le passage en production suivra l'application et
+-- se notera ici. Ce que les policies, les gardes et les deux fonctions refusent et acceptent, profil par profil et par
+-- leur raison, est éprouvé par `revueAnalytique.sql`.
+--
+-- 11/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 28.5, étape e5a : migration
+-- `regimes_ereporting_et_pieces_ecartees`, préparée, non appliquée), qui crée `regimes_ereporting` et
+-- `pieces_ecartees_ereporting` — lecture sous `admin_du_dossier`, insertion de restauration réservée au
+-- super-administrateur, aucune autre policy, aucune branche client — ; ce fichier n'y change rien que cet en-tête. Joué
+-- ENTIER par psql sur la réplique de l'étape (signature.sql : les neuf familles égales à la production à 116
+-- migrations) : sans la migration, 35 lignes de verdict (68 tables du schéma, dont 59 portant un `dossier_id`), 0 en
+-- faute, 31 mutations sur 31 qui mordent ; avec elle, les deux tables semées PAR LES FONCTIONS dans le dossier `test`
+-- (deux régimes, dont un retiré, et un écart) et dans celui du client (un régime, un écart), 35 lignes (70 tables, dont
+-- 61 portant un `dossier_id`), 0 en faute, 31 sur 31 — M1 et M3 y voient les deux tables de plus (18 et 7 tables en
+-- faute, pour 16 et 5), que les invariants 1 et 3 refusent à l'anonyme et au client. Le passage en production suivra
+-- l'application de la migration et se notera ici. Ce que leurs policies, leurs gardes et leurs fonctions refusent et
+-- acceptent, profil par profil, est éprouvé par `regimesEreporting.sql`.
+--
+-- 11/10/2026 — LES DEUX MIGRATIONS APPLIQUÉES EN PRODUCTION, `revue_analytique` (20261011090828) puis
+-- `regimes_ereporting_et_pieces_ecartees` (20261011091325) : 118 migrations. Joué ENTIER par psql sur une réplique dont
+-- `signature.sql` égale la production à 118 migrations (neuf familles), les deux migrations l'une sur l'autre et les
+-- tables des deux étapes vides : 35 lignes de verdict (72 tables du schéma, dont 63 portant un `dossier_id`, + 3 buckets,
+-- 4 profils), 0 en faute, et 31 mutations sur 31 qui mordent (M1 : 16 tables, M3 : 5). Sur la même réplique,
+-- `revueAnalytique.sql` rend 228 verdicts et `regimesEreporting.sql` 186, sans une faute, chacun laissant la base comme
+-- il l'a trouvée.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

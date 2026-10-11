@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   HYPOTHESES_DE_LA_CONCEPTION, RAISONS_ECARTEES, REFUS_EREPORTING, dateQuiRangeLAchat, dateQuiRangeLaVente,
   declarationDesAchats, declarationDesPaiements, declarationDesVentes,
-  type ContexteDeclaration, type DossierEreporting, type EncaissementLu, type FactureLue, type Lecture, type LigneLue,
-  type PartLue, type PieceLue, type SourcesDesAchats, type SourcesDesPaiements, type SourcesDesVentes, type TexteDePiece,
+  type ContexteDeclaration, type DossierEreporting, type EcartLu, type EncaissementLu, type FactureLue, type Lecture,
+  type LigneLue, type PartLue, type PieceLue, type SourcesDesAchats, type SourcesDesPaiements, type SourcesDesVentes,
+  type TexteDePiece,
 } from './ereporting'
-import type { PieceHorsDeFrance, PieceHorsDeFranceTaux } from './types'
+import type { PieceHorsDeFrance, PieceHorsDeFranceTaux, RegimeEreporting } from './types'
 
 // LE CONTENU DES DÉCLARATIONS D'E-REPORTING (ligne 28.5, étape e4). CHAQUE ATTENDU EST ÉCRIT À LA MAIN, depuis la source
 // que cite la ligne de commentaire qui le précède — jamais recopié du module. Les sources :
@@ -22,7 +23,10 @@ import type { PieceHorsDeFrance, PieceHorsDeFranceTaux } from './types'
 //   [E2]   la fonction `enregistrer_fiche_hors_de_france` (migration pieces_hors_de_france) : les mots de ses refus ;
 //   [E3]   HISTORIQUE.md, « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN » : les signaux, la fiche rejugée ;
 //   [D1]   HISTORIQUE.md, « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE » : retraits, contre-passations, montants nets ;
-//   [CO]   HISTORIQUE.md, « L'E-REPORTING : LA CONCEPTION » (§ 2.3, § 4.2, § 4.3, § 4.6 ; points 6, 7, 9, 21 ; Q3 à Q8).
+//   [CO]   HISTORIQUE.md, « L'E-REPORTING : LA CONCEPTION » (§ 2.3, § 4.2, § 4.3, § 4.6 ; points 6, 7, 9, 21 ; Q3 à Q8) ;
+//   [E5]   la migration regimes_ereporting_et_pieces_ecartees (étape e5a) : le régime confirmé, daté, et son histoire ; la
+//          pièce écartée ; impots.gouv.fr, actualité du 22/09/2026 : « communiquer à leur plateforme agréée leur régime
+//          de TVA et tout changement de régime ».
 // Un numéro de TVA français : « FR » + (12 + 3 × (SIREN mod 97)) mod 97 + SIREN (CLAUDE.md) — pour le SIREN fictif
 // 123456782 : 123456782 mod 97 = 32, 12 + 96 = 108, 108 mod 97 = 11, soit FR11123456782.
 
@@ -42,8 +46,27 @@ function dossier(o: Partial<DossierEreporting> = {}): DossierEreporting {
   }
 }
 
+// LE RÉGIME QUE LE CABINET A CONFIRMÉ pour un dossier [E5], depuis le 1er janvier 2026 — avant toutes les périodes de ce
+// fichier —, aux fréquences que les textes donnent à son statut : [M] § 50 (par décade au réel mensuel), § 60 (chaque mois
+// au réel trimestriel), § 70 (tous les deux mois en franchise) ; [P] § 30 (aucun paiement sur option pour les débits),
+// § 170, § 180 ; un dossier exonéré chaque mois (hypothèse Q4). Un statut à préciser ne se confirme pas.
+function regimeDu(d: DossierEreporting, o: Partial<RegimeEreporting> = {}): RegimeEreporting {
+  if (d.statut_tva == null) throw new Error('Un statut à préciser ne se confirme pas.')
+  const redevable = d.statut_tva === 'redevable'
+  return {
+    id: 'r1', dossier_id: d.id, depuis: '2026-01-01', statut_tva: d.statut_tva, article_exoneration: d.article_exoneration,
+    tva_periodicite: redevable ? d.tva_periodicite : null, tva_sur_debits: redevable && d.tva_sur_debits,
+    frequence_transactions: d.statut_tva === 'franchise' ? 'bimestre' : redevable && d.tva_periodicite === 'mensuelle' ? 'decade' : 'mois',
+    frequence_paiements: d.statut_tva === 'franchise' ? 'bimestre' : redevable && d.tva_sur_debits ? null : 'mois',
+    note: null, cree_par: 'u1', cree_le: '2026-01-02T10:00:00Z', retire_le: null, retire_par: null, ...o,
+  }
+}
+
+// Par défaut, le dossier déclare sous un régime confirmé, celui de son statut d'aujourd'hui : ce que la plupart des cas
+// supposent. Un cas sans régime confirmé le dit (`regimes: lu([])`).
 function contexte(o: Partial<ContexteDeclaration> = {}): ContexteDeclaration {
-  return { periode: OCTOBRE, dossier: dossier(), regimeConfirme: true, aujourdHui: LE_5_NOVEMBRE, ...o }
+  const d = o.dossier ?? dossier()
+  return { periode: OCTOBRE, aujourdHui: LE_5_NOVEMBRE, regimes: lu(d.statut_tva == null ? [] : [regimeDu(d)]), ...o, dossier: d }
 }
 
 const lu = <T>(lignes: T[]): Lecture<T> => ({ lignes, complete: true, motif: null })
@@ -72,12 +95,16 @@ function taux(o: Partial<PieceHorsDeFranceTaux> = {}): PieceHorsDeFranceTaux {
 }
 
 function achats(o: Partial<SourcesDesAchats> = {}): SourcesDesAchats {
-  return { pieces: lu([piece()]), fiches: lu([fiche()]), taux: lu([taux()]), textes: lu<TexteDePiece>([]), ...o }
+  return { pieces: lu([piece()]), fiches: lu([fiche()]), taux: lu([taux()]), textes: lu<TexteDePiece>([]), ecarts: lu<EcartLu>([]), ...o }
 }
 
-const AUCUNE = new Set<string>()
-const parFacture = { rangement: 'date_de_la_facture', piecesEcartees: AUCUNE } as const
-const parRealisation = { rangement: 'date_de_realisation', piecesEcartees: AUCUNE } as const
+// Un écart que le cabinet a posé sur une pièce [E5] : actif tant qu'il n'est pas retiré.
+function ecart(o: Partial<EcartLu> = {}): EcartLu {
+  return { id: 'x1', dossier_id: 'd1', piece_id: 'p9', retire_le: null, ...o }
+}
+
+const parFacture = { rangement: 'date_de_la_facture' } as const
+const parRealisation = { rangement: 'date_de_realisation' } as const
 
 // Une séance facturée à un particulier : 100 € HT à 20 %, des services, sans option pour les débits.
 function facture(o: Partial<FactureLue> = {}): FactureLue {
@@ -127,10 +154,11 @@ describe('les hypothèses de la conception, nommées', () => {
 })
 
 describe('les refus, dans leur ordre', () => {
-  it('suivent l’ordre fixé : le statut, le champ et la période, les lectures, aujourd’hui, le déclarant, les opérations, le vide', () => {
+  it('suivent l’ordre fixé : le régime, le statut, le champ et la période, les lectures, aujourd’hui, le déclarant, les opérations, le vide', () => {
     expect(REFUS_EREPORTING.map((r) => r.cle)).toEqual([
+      'regimes_illisibles', 'regime_change_dans_la_periode',
       'statut_a_preciser', 'paiements_sur_debits', 'periode_hors_regime', 'avant_l_obligation', 'lecture_incomplete',
-      'periode_en_cours', 'regime_a_confirmer', 'siren_invalide', 'numero_tva_absent', 'lectures_discordantes',
+      'periode_en_cours', 'regime_a_confirmer', 'regime_a_reconfirmer', 'siren_invalide', 'numero_tva_absent', 'lectures_discordantes',
       'fiche_a_revoir', 'achat_a_verifier', 'achat_avec_tva', 'destinataire_inconnu', 'facture_internationale',
       'nature_inconnue', 'facture_mixte', 'option_inconnue', 'montants_incoherents', 'taux_positif', 'zero_sans_article',
       'rien_a_declarer',
@@ -166,15 +194,20 @@ describe('la période vient d’e1', () => {
     expect(declarationDesVentes(c, ventes(), parFacture).obligation).toBe('a_preciser')
   })
 
-  it('rend la période d’e1 : ses bornes, son échéance, son libellé', () => {
-    // [M] § 60 et § 90 : au réel trimestriel, le mois, à déclarer au plus tard le 10 du mois suivant.
+  it('rend la période d’e1 : ses bornes, son échéance, son libellé — et le régime confirmé qui la couvre', () => {
+    // [M] § 60 et § 90 : au réel trimestriel, le mois, à déclarer au plus tard le 10 du mois suivant ; [E5] : la fréquence
+    // que le cabinet a confirmée.
     const d = declarationDesVentes(contexte(), ventes(), parFacture)
     expect(d.periode).toMatchObject({ frequence: 'mois', debut: '2027-10-01', fin: '2027-10-31', echeance: '2027-11-10', libelle: 'octobre 2027' })
-    expect(d.frequence).toEqual({ frequence: 'mois', certitude: 'ecrite', raison: null })
+    expect(d.frequence).toEqual({ frequence: 'mois', certitude: 'confirmee', raison: null })
     expect(d.obligation).toBe('due')
+    expect(d.regime).toEqual({ etat: 'confirme', regime: regimeDu(dossier()) })
+    // Sans régime confirmé, la fréquence est celle qu'e1 propose, écrite par les textes.
+    expect(declarationDesVentes(contexte({ regimes: lu([]) }), ventes(), parFacture).frequence)
+      .toEqual({ frequence: 'mois', certitude: 'ecrite', raison: null })
   })
 
-  it('refuse des bornes qui ne sont pas une période du régime d’aujourd’hui', () => {
+  it('refuse des bornes qui ne sont pas une période de son régime', () => {
     // [M] § 50 : au réel mensuel, les transactions par décade ; [P] § 170 : les paiements chaque mois.
     const mensuel = contexte({ dossier: dossier({ tva_periodicite: 'mensuelle' }) })
     const ventesDuMois = declarationDesVentes(mensuel, ventes(), parFacture)
@@ -182,19 +215,24 @@ describe('la période vient d’e1', () => {
     expect(ventesDuMois.contenu).toBeNull()
     expect(ventesDuMois.refus).toEqual([{
       cle: 'periode_hors_regime', sources: [],
-      message: 'Du 01/10/2027 au 31/10/2027 n’est pas une période de ses déclarations : sous son régime de TVA d’aujourd’hui, '
-        + 'elles se font par décade. Une période se déclare sous le régime qu’elle avait, que l’application ne garde pas encore.',
+      message: 'Du 01/10/2027 au 31/10/2027 n’est pas une période de ses déclarations : sous le régime confirmé à partir du '
+        + '01/01/2026, elles se font par décade.',
     }])
-    // La fréquence d'e1 se rend avec le refus : c'est elle que l'écran propose à la place.
-    expect(ventesDuMois.frequence).toEqual({ frequence: 'decade', certitude: 'ecrite', raison: null })
+    // La fréquence se rend avec le refus : c'est elle que l'écran propose à la place.
+    expect(ventesDuMois.frequence).toEqual({ frequence: 'decade', certitude: 'confirmee', raison: null })
     expect(ventesDuMois.periode).toBeNull()
+    expect(ventesDuMois.regime?.etat).toBe('confirme')
     expect(cles(declarationDesAchats(mensuel, achats(), parFacture))).toEqual(['periode_hors_regime'])
     expect(declarationDesPaiements(mensuel, paiements(), parDecaissement).etat).toBe('a_declarer')
-    // [E1] : la fréquence d'un exonéré se dit « à confirmer », sans sa raison dans ce refus.
-    const exonere = contexte({ periode: SEPTEMBRE_OCTOBRE, dossier: dossier({ statut_tva: 'exonere' }) })
+    // Sans régime confirmé, sous le statut d'aujourd'hui : [E1], la fréquence d'un exonéré se dit « à confirmer », sans sa
+    // raison dans ce refus ; confirmée, non.
+    const exonere = contexte({ periode: SEPTEMBRE_OCTOBRE, dossier: dossier({ statut_tva: 'exonere' }), regimes: lu([]) })
     expect(declarationDesAchats(exonere, achats(), parFacture).refus[0].message).toBe('Du 01/09/2027 au 31/10/2027 n’est pas '
-      + 'une période de ses déclarations : sous son régime de TVA d’aujourd’hui, elles se font chaque mois (fréquence à '
-      + 'confirmer). Une période se déclare sous le régime qu’elle avait, que l’application ne garde pas encore.')
+      + 'une période de ses déclarations : sous son statut de TVA d’aujourd’hui (aucun régime confirmé ne couvre le début de '
+      + 'la période), elles se font chaque mois (fréquence à confirmer).')
+    const exonereConfirme = contexte({ periode: SEPTEMBRE_OCTOBRE, dossier: dossier({ statut_tva: 'exonere' }) })
+    expect(declarationDesAchats(exonereConfirme, achats(), parFacture).refus[0].message).toBe('Du 01/09/2027 au 31/10/2027 '
+      + 'n’est pas une période de ses déclarations : sous le régime confirmé à partir du 01/01/2026, elles se font chaque mois.')
     const decade = declarationDesVentes({ ...mensuel, periode: { debut: '2027-10-01', fin: '2027-10-10' } }, ventes(), parFacture)
     expect(decade.etat).toBe('a_declarer')
     // [M] § 90 et [E1] : la première décade se déclare au plus tard le 20.
@@ -265,21 +303,30 @@ describe('la période vient d’e1', () => {
   })
 
   it('refuse un régime que le cabinet n’a pas confirmé, sans changer l’état', () => {
-    // [CO] § 4.3 : « régime d'e-reporting à confirmer » ; [E1] : la fréquence d'un exonéré, à confirmer.
-    const d = declarationDesVentes(contexte({ regimeConfirme: false }), ventes(), parFacture)
-    expect(d.etat).toBe('a_declarer')
-    expect(d.refus).toEqual([{
-      cle: 'regime_a_confirmer', sources: [],
-      message: 'Le rythme de ses déclarations — chaque mois — est proposé par l’application : le cabinet le confirme, tel '
-        + 'que le dossier l’a déclaré à sa plateforme, avant toute déclaration.',
-    }])
-    const exonere = contexte({ regimeConfirme: false, dossier: dossier({ statut_tva: 'exonere', numero_tva_attribue: true }) })
+    // [CO] § 4.3 : « régime d'e-reporting à confirmer » ; [E1] : la fréquence d'un exonéré, à confirmer ; [E5] : un régime
+    // confirmé APRÈS le premier jour de la période ne la couvre pas, un régime retiré non plus.
+    const message = 'Aucun régime confirmé ne couvre le début de la période : le rythme de ses déclarations — chaque mois — '
+      + 'est celui que l’application propose sous son statut de TVA d’aujourd’hui. Le cabinet confirme le régime, tel que '
+      + 'le dossier l’a déclaré à sa plateforme, avant toute déclaration.'
+    for (const regimes of [lu<RegimeEreporting>([]), lu([regimeDu(dossier(), { depuis: '2027-10-02' })]),
+      lu([regimeDu(dossier(), { retire_le: '2027-01-05T10:00:00Z' })]), lu([regimeDu(dossier(), { dossier_id: 'd2' })])]) {
+      const d = declarationDesVentes(contexte({ regimes }), ventes(), parFacture)
+      expect(d.etat).toBe('a_declarer')
+      expect(d.refus).toEqual([{ cle: 'regime_a_confirmer', sources: [], message }])
+      expect(d.regime).toEqual({ etat: 'a_confirmer' })
+    }
+    const exonere = contexte({ regimes: lu([]), dossier: dossier({ statut_tva: 'exonere', numero_tva_attribue: true }) })
     const a = declarationDesAchats(exonere, achats(), parFacture)
-    expect(a.refus[0].message).toBe('Le rythme de ses déclarations — chaque mois (fréquence à confirmer : les textes ne la '
-      + 'disent pas pour un dossier exonéré ; celle du réel normal trimestriel est proposée, à confirmer avec son service des '
-      + 'impôts) — est proposé par l’application : le cabinet le confirme, tel que le dossier l’a déclaré à sa plateforme, '
-      + 'avant toute déclaration.')
+    expect(a.refus[0].message).toBe('Aucun régime confirmé ne couvre le début de la période : le rythme de ses déclarations '
+      + '— chaque mois (fréquence à confirmer : les textes ne la disent pas pour un dossier exonéré ; celle du réel normal '
+      + 'trimestriel est proposée, à confirmer avec son service des impôts) — est celui que l’application propose sous son '
+      + 'statut de TVA d’aujourd’hui. Le cabinet confirme le régime, tel que le dossier l’a déclaré à sa plateforme, avant '
+      + 'toute déclaration.')
     expect(a.frequence?.certitude).toBe('a_confirmer')
+    // Le même dossier, son régime confirmé : ni refus, ni « à confirmer ».
+    const confirme = declarationDesAchats(contexte({ dossier: exonere.dossier }), achats(), parFacture)
+    expect(cles(confirme)).toEqual([])
+    expect(confirme.frequence).toEqual({ frequence: 'mois', certitude: 'confirmee', raison: null })
   })
 })
 
@@ -296,6 +343,8 @@ describe('une lecture partielle ne déclare rien, ni ne dit le vide', () => {
       ['taux', () => declarationDesAchats(contexte(), achats({ taux: luEnPartie([], motif) }), parFacture), 'de la ventilation des fiches'],
       ['textes', () => declarationDesAchats(contexte(), achats({ textes: luEnPartie([], motif) }), parFacture),
         'des textes lus sur les documents'],
+      ['ecarts', () => declarationDesAchats(contexte(), achats({ ecarts: luEnPartie([], motif) }), parFacture),
+        'des pièces écartées par le cabinet'],
       ['factures', () => declarationDesVentes(contexte(), ventes({ factures: luEnPartie([], motif) }), parFacture), 'des factures émises'],
       ['lignes', () => declarationDesVentes(contexte(), ventes({ lignes: luEnPartie([], motif) }), parFacture), 'des lignes des factures'],
       ['factures', () => declarationDesPaiements(contexte(), paiements({ factures: luEnPartie([], motif) }), parDecaissement),
@@ -513,11 +562,34 @@ describe('les achats : une pièce candidate attend sa fiche', () => {
       .toEqual(['achat_a_verifier'])
   })
 
-  it('n’attend plus une fois écartée par le cabinet', () => {
-    const d = declarationDesAchats(contexte(), achats({ pieces: lu([usd()]), fiches: lu([]), taux: lu([]) }),
-      { rangement: 'date_de_la_facture', piecesEcartees: new Set(['p9']) })
+  it('n’attend plus une fois écartée par le cabinet, et attend de nouveau quand l’écart est retiré', () => {
+    // [E5] : l'écart actif d'une pièce, posé par `ecarter_piece_ereporting` ; retiré, la pièce redevient à vérifier.
+    const sans = { pieces: lu([usd()]), fiches: lu<PieceHorsDeFrance>([]), taux: lu<PieceHorsDeFranceTaux>([]) }
+    const d = declarationDesAchats(contexte(), achats({ ...sans, ecarts: lu([ecart()]) }), parFacture)
     expect(d.etat).toBe('rien_a_declarer')
     expect(d.ecartees).toEqual([{ source: { genre: 'piece', id: 'p9' }, raison: 'ecartee_par_le_cabinet' }])
+    const retire = declarationDesAchats(contexte(), achats({ ...sans, ecarts: lu([ecart({ retire_le: '2027-10-20T10:00:00Z' })]) }), parFacture)
+    expect(cles(retire)).toEqual(['achat_a_verifier'])
+    // Retiré puis posé de nouveau : de nouveau écartée.
+    expect(declarationDesAchats(contexte(), achats({ ...sans, ecarts: lu([ecart({ retire_le: '2027-10-20T10:00:00Z' }), ecart({ id: 'x2' })]) }),
+      parFacture).etat).toBe('rien_a_declarer')
+    // L'écart d'un autre dossier, ou d'une autre pièce, ne l'écarte pas.
+    expect(cles(declarationDesAchats(contexte(), achats({ ...sans, ecarts: lu([ecart({ dossier_id: 'd2' })]) }), parFacture)))
+      .toEqual(['achat_a_verifier'])
+    expect(cles(declarationDesAchats(contexte(), achats({ ...sans, ecarts: lu([ecart({ piece_id: 'p8' })]) }), parFacture)))
+      .toEqual(['achat_a_verifier'])
+    // Une pièce mise de côté pour sa TVA (hypothèse Q7 d'e2) s'écarte aussi : c'est ce que le cabinet a tranché.
+    const avecTva = { ...sans, pieces: lu([usd({ montant_tva: 12.5 })]) }
+    expect(cles(declarationDesAchats(contexte(), achats(avecTva), parFacture))).toEqual(['achat_avec_tva'])
+    expect(declarationDesAchats(contexte(), achats({ ...avecTva, ecarts: lu([ecart()]) }), parFacture).etat).toBe('rien_a_declarer')
+  })
+
+  it('une fiche posée après l’écart l’emporte : la pièce décrite se déclare, l’écart ne la regarde plus', () => {
+    // [E5] : le contenu ne consulte un écart que pour une pièce sans aucune fiche.
+    const d = declarationDesAchats(contexte(), achats({ ecarts: lu([ecart({ piece_id: 'p1' })]) }), parFacture)
+    expect(d.etat).toBe('a_declarer')
+    expect(d.contenu?.achats.map((a) => a.pieceId)).toEqual(['p1'])
+    expect(d.ecartees).toEqual([])
   })
 
   it('attend dans toute période quand elle n’a pas de date, dans la sienne seulement sinon', () => {
@@ -1089,7 +1161,7 @@ describe('les refus se disent dans l’ordre fixé, opération par opération da
       ]),
       lignes: lu(['v1', 'v2', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9'].map((id) => ligne({ facture_id: id })).concat(ligne({ facture_id: 'v3', taux_tva: 0 }))),
     })
-    const d = declarationDesVentes(contexte({ aujourdHui: '2027-10-31', regimeConfirme: false, dossier: dossier({ siret: null }) }), s, parFacture)
+    const d = declarationDesVentes(contexte({ aujourdHui: '2027-10-31', regimes: lu([]), dossier: dossier({ siret: null }) }), s, parFacture)
     expect(cles(d)).toEqual([
       'periode_en_cours', 'regime_a_confirmer', 'siren_invalide', 'destinataire_inconnu', 'destinataire_inconnu',
       'facture_internationale', 'nature_inconnue', 'facture_mixte', 'option_inconnue', 'montants_incoherents', 'zero_sans_article',
@@ -1123,10 +1195,14 @@ describe('les refus se disent dans l’ordre fixé, opération par opération da
   })
 })
 
-// ── Une période qui chevauche un changement de statut ───────────────────────────────────────────────────────────────
+// ── Le régime de la période, et son histoire (étape e5a) ────────────────────────────────────────────────────────────
 
-describe('une période qui chevauche un changement de statut de TVA', () => {
-  // Un dossier sorti de la franchise à la mi-octobre 2027, redevable depuis : la base ne garde que son statut d'AUJOURD'HUI.
+describe('le régime de la période, et son histoire', () => {
+  // Un dossier en franchise depuis 2026, sorti de la franchise : redevable au réel trimestriel depuis — l'onglet TVA ne
+  // dit que son statut d'AUJOURD'HUI, redevable ; [E5] : la base garde l'histoire que le cabinet a confirmée.
+  const enFranchise = regimeDu(dossier({ statut_tva: 'franchise' }), { id: 'r1' })
+  const redevable = (depuis: string) => regimeDu(dossier(), { id: 'r2', depuis })
+  const histoire = (depuis: string) => lu([enFranchise, redevable(depuis)])
   const franchiseDeSeptembre = facture({ id: 'v1', date_emission: '2027-10-04', montant_tva: 0, montant_ttc: 100 })
   const taxeeDeFinOctobre = facture({ id: 'v2', date_emission: '2027-10-25' })
   const s = ventes({
@@ -1134,26 +1210,161 @@ describe('une période qui chevauche un changement de statut de TVA', () => {
     lignes: lu([ligne({ facture_id: 'v1', taux_tva: 0 }), ligne({ facture_id: 'v2' })]),
   })
 
-  it('le bimestre de la franchise n’est pas une période du régime d’aujourd’hui', () => {
-    const aujourdhui = contexte({ periode: SEPTEMBRE_OCTOBRE })
-    for (const d of [declarationDesVentes(aujourdhui, s, parFacture), declarationDesAchats(aujourdhui, achats(), parFacture),
-      declarationDesPaiements(aujourdhui, paiements(), parDecaissement)]) {
-      expect(cles(d)).toEqual(['periode_hors_regime'])
-      expect(d.contenu).toBeNull()
-    }
+  it('une période passée se juge sous SON régime : le bimestre de la franchise, même redevable aujourd’hui', () => {
+    // [M] § 70 : en franchise, le bimestre civil ; [CO] point 7 : un franchisé déclare ses ventes au taux 0.
+    const c = contexte({ periode: SEPTEMBRE_OCTOBRE, aujourdHui: '2027-12-05', regimes: histoire('2027-11-01') })
+    const d = declarationDesVentes(c, s, parFacture)
+    expect(d.regime).toEqual({ etat: 'confirme', regime: enFranchise })
+    expect(d.frequence).toEqual({ frequence: 'bimestre', certitude: 'confirmee', raison: null })
+    expect(d.periode).toMatchObject({ debut: '2027-09-01', fin: '2027-10-31' })
+    // Sous la franchise, la facture taxée contredit son statut ; celle sans TVA se déclare.
+    expect(cles(d)).toEqual(['taux_positif'])
+    expect(d.refus[0].sources).toEqual([{ genre: 'facture', id: 'v2' }])
+    expect(d.refus[0].message).toContain('Une facture d’un dossier en franchise en base porte une ligne à 20 % :')
+    expect(d.contenu?.transactions.map((t) => t.factures)).toEqual([['v1']])
+    expect(d.etat).toBe('incomplete')
+    // Le mois d'octobre n'est pas une période de la franchise — c'est ce que le statut d'aujourd'hui aurait cru.
+    expect(declarationDesVentes({ ...c, periode: OCTOBRE }, s, parFacture).refus).toEqual([{
+      cle: 'periode_hors_regime', sources: [],
+      message: 'Du 01/10/2027 au 31/10/2027 n’est pas une période de ses déclarations : sous le régime confirmé à partir du '
+        + '01/01/2026, elles se font tous les deux mois.',
+    }])
+    // Novembre, sous le régime redevable.
+    const novembre = declarationDesVentes({ ...c, periode: NOVEMBRE },
+      ventes({ factures: lu([facture({ date_emission: '2027-11-08' })]) }), parFacture)
+    expect(novembre.regime).toEqual({ etat: 'confirme', regime: redevable('2027-11-01') })
+    expect(novembre.frequence).toEqual({ frequence: 'mois', certitude: 'confirmee', raison: null })
+    expect(novembre.etat).toBe('a_declarer')
   })
 
-  it('sous le régime passé, la facture taxée contredit la franchise ; sous celui d’aujourd’hui, la facture sans TVA', () => {
-    const commeAvant = declarationDesVentes(contexte({ periode: SEPTEMBRE_OCTOBRE, dossier: dossier({ statut_tva: 'franchise' }) }), s, parFacture)
-    expect(cles(commeAvant)).toEqual(['taux_positif'])
-    expect(commeAvant.refus[0].sources).toEqual([{ genre: 'facture', id: 'v2' }])
-    expect(commeAvant.contenu?.transactions.map((t) => t.factures)).toEqual([['v1']])
-    const commeAujourdhui = declarationDesVentes(contexte(), s, parFacture)
-    expect(cles(commeAujourdhui)).toEqual(['zero_sans_article'])
-    expect(commeAujourdhui.refus[0].sources).toEqual([{ genre: 'facture', id: 'v1' }])
-    // Jamais déclarée sous un régime qu'elle n'avait pas : les deux périodes sont incomplètes.
-    expect(commeAvant.etat).toBe('incomplete')
-    expect(commeAujourdhui.etat).toBe('incomplete')
+  it('une période à cheval sur deux régimes se refuse, pour les trois déclarations', () => {
+    // [E5] : un changement de régime le 15 octobre 2027 ; les sources publiques ne disent pas comment se déclare une
+    // période à cheval sur deux régimes (NON VÉRIFIÉ) : le cabinet tranchera.
+    const c = contexte({ periode: SEPTEMBRE_OCTOBRE, aujourdHui: '2027-12-05', regimes: histoire('2027-10-15') })
+    const message = 'Le régime du dossier change dans la période, le 15/10/2027 — de « en franchise en base, tous les deux '
+      + 'mois » à « redevable, chaque mois » : une période à cheval sur deux régimes ne se déclare pas ici, les sources '
+      + 'publiques ne disant pas comment. À trancher par le cabinet.'
+    for (const d of [declarationDesVentes(c, s, parFacture), declarationDesAchats(c, achats(), parFacture),
+      declarationDesPaiements(c, paiements(), parDecaissement)]) {
+      expect(d.etat).toBe('incomplete')
+      expect(d.refus).toEqual([{ cle: 'regime_change_dans_la_periode', sources: [], message }])
+      expect([d.frequence, d.periode, d.contenu]).toEqual([null, null, null])
+      expect(d.regime).toEqual({ etat: 'a_cheval', avant: enFranchise, apres: redevable('2027-10-15') })
+    }
+    // Octobre, la première période du nouveau régime, l'est aussi ; novembre ne l'est plus. Le jour du changement, dernier
+    // jour de la période, la met à cheval ; le lendemain, non.
+    expect(cles(declarationDesVentes({ ...c, periode: OCTOBRE }, s, parFacture))).toEqual(['regime_change_dans_la_periode'])
+    expect(declarationDesVentes({ ...c, periode: NOVEMBRE }, ventes(), parFacture).regime?.etat).toBe('confirme')
+    expect(cles(declarationDesVentes({ ...c, regimes: histoire('2027-10-31') }, s, parFacture))).toEqual(['regime_change_dans_la_periode'])
+    expect(declarationDesVentes({ ...c, regimes: histoire('2027-11-01') }, s, parFacture).regime?.etat).toBe('confirme')
+    // Le premier jour de la période est sous le nouveau régime : elle n'est pas à cheval.
+    expect(declarationDesVentes({ ...c, regimes: histoire('2027-09-01'), periode: OCTOBRE }, s, parFacture).regime)
+      .toEqual({ etat: 'confirme', regime: redevable('2027-09-01') })
+  })
+
+  it('à cheval, l’obligation est celle des deux régimes quand ils disent la même, à préciser sinon', () => {
+    // [P] § 30 : sur option pour les débits, aucun paiement ne se déclare ; en franchise, si.
+    const surDebits = regimeDu(dossier({ tva_sur_debits: true }), { id: 'r2', depuis: '2027-10-15' })
+    const c = contexte({ periode: SEPTEMBRE_OCTOBRE, aujourdHui: '2027-12-05', regimes: lu([enFranchise, surDebits]) })
+    expect(declarationDesVentes(c, s, parFacture).obligation).toBe('due')
+    expect(declarationDesAchats(c, achats(), parFacture).obligation).toBe('due')
+    expect(declarationDesPaiements(c, paiements(), parDecaissement).obligation).toBe('a_preciser')
+  })
+
+  it('un régime confirmé de nouveau à l’identique n’est pas un changement ; un régime retiré non plus', () => {
+    const franchise = dossier({ statut_tva: 'franchise' })
+    const reconfirme = regimeDu(franchise, { id: 'r3', depuis: '2027-10-15', note: 'Reconfirmé avec le service des impôts.' })
+    const c = contexte({ periode: SEPTEMBRE_OCTOBRE, aujourdHui: '2027-12-05', dossier: franchise, regimes: lu([enFranchise, reconfirme]) })
+    const d = declarationDesVentes(c, s, parFacture)
+    expect(d.regime).toEqual({ etat: 'confirme', regime: enFranchise })
+    expect(cles(d)).toEqual(['taux_positif'])
+    const retire = { ...redevable('2027-10-15'), retire_le: '2027-10-20T10:00:00Z' }
+    expect(declarationDesVentes({ ...c, regimes: lu([enFranchise, retire]) }, s, parFacture).regime).toEqual({ etat: 'confirme', regime: enFranchise })
+  })
+
+  it('un statut de l’onglet TVA qui n’est plus celui du régime en vigueur fait reconfirmer, sans changer l’état', () => {
+    // [E5] : le dossier est passé en franchise dans l'onglet TVA, et le cabinet n'a rien confirmé — depuis quand ?
+    const c = contexte({ dossier: dossier({ statut_tva: 'franchise' }), regimes: lu([regimeDu(dossier())]) })
+    const d = declarationDesVentes(c, ventes(), parFacture)
+    expect(d.regime).toEqual({ etat: 'a_reconfirmer', regime: regimeDu(dossier()), enVigueur: regimeDu(dossier()) })
+    // Elle se juge sous le régime confirmé — le mois d'un redevable trimestriel, la facture taxée retenue —, et ne se
+    // déclare pas avant d'être reconfirmée.
+    expect(d.etat).toBe('a_declarer')
+    expect(d.frequence).toEqual({ frequence: 'mois', certitude: 'confirmee', raison: null })
+    expect(d.contenu?.tvaCentimes).toBe(2000)
+    expect(d.refus).toEqual([{
+      cle: 'regime_a_reconfirmer', sources: [],
+      message: 'Le statut de TVA du dossier (onglet TVA) n’est plus celui du régime confirmé à partir du 01/01/2026 '
+        + '(redevable, chaque mois) : la période en a peut-être déjà changé. Le cabinet confirme le régime à partir du jour du '
+        + 'changement, ou corrige le statut, avant de la déclarer.',
+    }])
+    // Ses paiements aussi : la part à 20 % d'un redevable se déclare — sous la franchise d'aujourd'hui, elle contredirait
+    // le statut ([P] § 170 ; [CO] point 7).
+    const p = declarationDesPaiements(c, paiements(), parDecaissement)
+    expect([p.etat, cles(p), p.contenu?.montantCentimes]).toEqual(['a_declarer', ['regime_a_reconfirmer'], 12000])
+    // Le numéro de TVA de l'acheteur est celui que le régime de la période lui donne ([A7] G2.33) : redevable alors.
+    const a = declarationDesAchats(c, achats(), parFacture)
+    expect(a.contenu?.numeroTva).toBe(NUMERO_TVA)
+    expect(cles(a)).toEqual(['regime_a_reconfirmer'])
+    // Sous la franchise confirmée — le bimestre — et sans la case de l'onglet TVA, il manque.
+    const franchise = dossier({ statut_tva: 'franchise' })
+    expect(cles(declarationDesAchats(contexte({ dossier: franchise, periode: SEPTEMBRE_OCTOBRE }), achats(), parFacture)))
+      .toEqual(['numero_tva_absent'])
+  })
+
+  it('à reconfirmer, la période se juge sous le régime de son premier jour, et le refus nomme celui d’aujourd’hui', () => {
+    // Regardée le 10 octobre : la franchise est en vigueur, l'onglet TVA dit redevable ; novembre est sous le régime du 15.
+    const c = contexte({ periode: NOVEMBRE, aujourdHui: '2027-10-10', regimes: histoire('2027-10-15') })
+    const d = declarationDesVentes(c, ventes({ factures: lu<FactureLue>([]), lignes: lu<LigneLue>([]) }), parFacture)
+    expect(d.regime).toEqual({ etat: 'a_reconfirmer', regime: redevable('2027-10-15'), enVigueur: enFranchise })
+    expect(d.frequence).toEqual({ frequence: 'mois', certitude: 'confirmee', raison: null })
+    expect(cles(d)).toEqual(['periode_en_cours', 'regime_a_reconfirmer', 'rien_a_declarer'])
+    expect(d.refus[1].message).toContain('n’est plus celui du régime confirmé à partir du 01/01/2026 (en franchise en base, '
+      + 'tous les deux mois)')
+  })
+
+  it('les paiements d’un régime confirmé sur option pour les débits sont hors du champ, quel que soit l’onglet TVA', () => {
+    // [P] § 30 ; l'onglet TVA dit aujourd'hui « sans option » : le régime de la période l'emporte, et se reconfirme.
+    const c = contexte({ regimes: lu([regimeDu(dossier({ tva_sur_debits: true }))]) })
+    const d = declarationDesPaiements(c, paiements(), parDecaissement)
+    expect(d.etat).toBe('hors_du_champ')
+    expect(cles(d)).toEqual(['paiements_sur_debits'])
+    expect(d.obligation).toBe('non_due')
+    expect(d.frequence).toBeNull()
+    expect(d.regime?.etat).toBe('a_reconfirmer')
+  })
+
+  it('la fréquence confirmée l’emporte sur celle qu’e1 propose', () => {
+    // [E5] : la table admet libre la fréquence d'un dossier exonéré (point 3 de la conception) : une autre réponse du
+    // cabinet à Q4 — tous les deux mois — se déclarerait sous elle.
+    const exonere = dossier({ statut_tva: 'exonere', numero_tva_attribue: true })
+    const regimes = lu([regimeDu(exonere, { frequence_transactions: 'bimestre', frequence_paiements: 'bimestre' })])
+    const d = declarationDesAchats(contexte({ periode: SEPTEMBRE_OCTOBRE, dossier: exonere, regimes }), achats(), parFacture)
+    expect(d.frequence).toEqual({ frequence: 'bimestre', certitude: 'confirmee', raison: null })
+    expect(d.periode).toMatchObject({ debut: '2027-09-01', fin: '2027-10-31' })
+    expect(d.etat).toBe('a_declarer')
+    expect(cles(declarationDesAchats(contexte({ dossier: exonere, regimes }), achats(), parFacture))).toEqual(['periode_hors_regime'])
+  })
+
+  it('des régimes lus en partie : rien ne se juge, avant même le statut', () => {
+    const motif = '1 ligne(s) lue(s) sur 2 annoncée(s)'
+    const c = contexte({ dossier: dossier({ statut_tva: null }), regimes: luEnPartie([], motif) })
+    for (const d of [declarationDesVentes(c, ventes(), parFacture), declarationDesAchats(c, achats(), parFacture),
+      declarationDesPaiements(c, paiements(), parDecaissement)]) {
+      expect(d.etat).toBe('incomplete')
+      expect(d.refus).toEqual([{
+        cle: 'regimes_illisibles', sources: [{ genre: 'lecture', id: 'regimes' }],
+        message: `La lecture des régimes confirmés du dossier n’est pas revenue entière (${motif}) : le régime de la période `
+          + 'ne se sait pas, et rien ne se juge.',
+      }])
+      expect([d.frequence, d.periode, d.regime, d.contenu]).toEqual([null, null, null, null])
+    }
+    // [E1] : sans statut connu, les achats restent dus, le reste est à préciser.
+    expect(declarationDesAchats(c, achats(), parFacture).obligation).toBe('due')
+    expect(declarationDesVentes(c, ventes(), parFacture).obligation).toBe('a_preciser')
+    expect(declarationDesPaiements(c, paiements(), parDecaissement).obligation).toBe('a_preciser')
+    expect(declarationDesVentes(contexte({ regimes: { lignes: [], complete: false, motif: null } }), ventes(), parFacture)
+      .refus[0].message).toContain('(sans motif rendu)')
   })
 })
 

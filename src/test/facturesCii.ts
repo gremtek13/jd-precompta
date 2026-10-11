@@ -62,6 +62,7 @@ export function facture(lignes: LigneCii[], o: Partial<FactureEmise> = {}): Fact
     superpdp_dernier_statut: null,
     tiers_email: null,
     created_by: null,
+    valide_par: null,
     created_at: '2026-09-15T08:00:00Z',
     validated_at: '2026-09-15T08:05:00Z',
     ...MENTIONS_VIDES,
