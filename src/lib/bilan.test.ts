@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  bilanDeLExercice, regleDuCompte, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type BilanDeLExercice, type Destination,
+  bilanDeLExercice, colonneDeLExercicePrecedent, detailDuBilan, lignesDuBilan, regleDuCompte, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type BilanDeLExercice, type Destination,
   type EntreesDuBilan, type IdRubriqueActif, type IdRubriquePassif,
 } from './bilan'
 import type { ModeleComptable } from './engagement'
@@ -525,6 +525,251 @@ describe('bilanDeLExercice — un bilan qui serait faux ne s’établit pas', ()
       expect(b.motif.texte).toBe('L’exercice 2025 précède la reprise du dossier, ouvert le 01/01/2026 : ses comptes sont ceux '
         + 'du logiciel précédent, et son bilan aussi.')
     }
+  })
+})
+
+// LA COLONNE DE L'EXERCICE PRÉCÉDENT, confrontée elle aussi à des bilans calculés à la main : le bilan de N−1 sur ses
+// propres données, les lignes que porte l'un ou l'autre exercice, le détail rapproché compte par compte, et les cas où la
+// colonne ne s'établit pas — sans que la colonne de N en change.
+describe('colonneDeLExercicePrecedent — la colonne N−1, calculée à la main', () => {
+  // 2025, premier exercice d'une société, validé ; 2026 s'ouvre par son report.
+  const en2025 = [
+    ...ecrire('2025-01-02', [['512000', 'D', 10_000], ['101000', 'C', 10_000]]),
+    ...ecrire('2025-03-01', [['218200', 'D', 6_000], ['404000', 'C', 6_000]], { piece_id: 'q1' }),
+    ...ecrire('2025-03-10', [['404000', 'D', 6_000], ['512000', 'C', 6_000]], { piece_id: 'q1', ligne_bancaire_id: 'n1' }),
+    ...ecrire('2025-05-01', [['411000', 'D', 1_200], ['706000', 'C', 1_000], ['445710', 'C', 200]], { piece_id: 'q2' }),
+    ...ecrire('2025-06-01', [['606000', 'D', 300], ['512000', 'C', 300]], { ligne_bancaire_id: 'n2' }),
+    ...ecrire('2025-12-31', [['681100', 'D', 1_000], ['281820', 'C', 1_000]]),
+  ]
+  // Les soldes de 2025 : 512 10 000 − 6 000 − 300 = 3 700 D ; 218200 6 000 D ; 281820 1 000 C ; 404 soldé ; 411 1 200 D
+  // (Limamed) ; 445710 200 C ; 101 10 000 C. Résultat : 1 000 − 300 − 1 000 = −300, une perte.
+  // Le report que la validation de 2025 écrit : les comptes de bilan, et la perte au 129000.
+  const report = reportes('2026-01-01', [
+    ['512000', 'D', 3_700], ['218200', 'D', 6_000], ['281820', 'C', 1_000], ['411000', 'D', 1_200], ['445710', 'C', 200],
+    ['101000', 'C', 10_000], ['129000', 'D', 300],
+  ])
+  const en2026 = [
+    ...ecrire('2026-02-01', [['512000', 'D', 1_200], ['411000', 'C', 1_200]], { piece_id: 'q2', ligne_bancaire_id: 'n3' }),
+    ...ecrire('2026-03-01', [['445710', 'D', 200], ['512000', 'C', 200]], { ligne_bancaire_id: 'n4' }),
+    ...ecrire('2026-04-01', [['411000', 'D', 600], ['706000', 'C', 600]], { piece_id: 'q3' }),
+    ...ecrire('2026-06-01', [['512000', 'D', 5_000], ['164000', 'C', 5_000]], { ligne_bancaire_id: 'n5' }),
+    ...ecrire('2026-12-31', [['681100', 'D', 1_000], ['281820', 'C', 1_000]]),
+  ]
+  // Les soldes de 2026 : 512 3 700 + 1 200 − 200 + 5 000 = 9 700 D ; 218200 6 000 D ; 281820 2 000 C ; 411 600 D (Mikemed,
+  // Limamed soldé) ; 445710 soldé ; 164 5 000 C ; 101 10 000 C ; 129 300 D. Résultat : 600 − 1 000 = −400.
+  const dossier = entrees({
+    ecritures: [...en2025, ...en2026], reportes: report, anneesValidees: [2025],
+    pieces: [piece('q1', 'Kilopro'), piece('q2', 'Limamed'), piece('q3', 'Mikemed')],
+  })
+
+  it('le bilan de N−1 se calcule sur ses propres données, sous les mêmes règles', () => {
+    const colonne = colonneDeLExercicePrecedent(dossier)
+    expect(colonne.etat).toBe('etablie')
+    if (colonne.etat !== 'etablie') return
+    expect(colonne.exercice).toBe(2025)
+    const p = colonne.bilan
+    // Actif 2025 : immobilisations corporelles 6 000 brut, 1 000 amortis, 5 000 net ; clients 1 200 ; disponibilités
+    // 3 700 → 9 900 net. Passif 2025 : capital 10 000, résultat −300, dettes fiscales et sociales 200 → 9 900.
+    expect(nonNuls(p)).toEqual({
+      actif: [['corporelles', 600_000, 100_000, 500_000], ['clients', 120_000, 0, 120_000], ['disponibilites', 370_000, 0, 370_000]],
+      passif: [['capital', 1_000_000], ['resultat', -30_000], ['dettes-fiscales-sociales', 20_000]],
+    })
+    expect(p.totauxActif.immobilise.net).toBe(500_000)
+    expect(p.totauxActif.circulant.net).toBe(490_000)
+    expect(p.totauxActif.net).toBe(990_000)
+    expect(p.totauxPassif).toEqual({ capitauxPropres: 970_000, provisions: 0, dettes: 20_000, aClasser: 0, total: 990_000 })
+    expect(p.ecart).toBe(0)
+    expect(p.provisoire).toBe(false)
+    expect(p.ouverture).toEqual({ type: 'sans-objet' })
+    // Et la colonne de N est celle que le bilan de 2026 calcule seul, sans rien de 2025 : actif 4 000 + 600 + 9 700 =
+    // 14 300 ; passif 10 000 − 400 − 300 + 5 000 = 14 300.
+    const n = etabli(bilanDeLExercice(dossier))
+    expect(nonNuls(n)).toEqual({
+      actif: [['corporelles', 600_000, 200_000, 400_000], ['clients', 60_000, 0, 60_000], ['disponibilites', 970_000, 0, 970_000]],
+      passif: [['capital', 1_000_000], ['resultat', -40_000], ['resultats-en-attente', -30_000], ['emprunts', 500_000]],
+    })
+    expect(n.totauxActif.net).toBe(1_430_000)
+    expect(n.ecart).toBe(0)
+  })
+
+  it('une rubrique que porte un seul des deux exercices a sa ligne, vide de l’autre, dans l’ordre du formulaire', () => {
+    const colonne = colonneDeLExercicePrecedent(dossier)
+    if (colonne.etat !== 'etablie') throw new Error('colonne non établie')
+    const lignes = lignesDuBilan(etabli(bilanDeLExercice(dossier)), colonne.bilan)
+    expect(lignes.actif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual([
+      ['corporelles', { brut: 600_000, amortissements: 200_000, net: 400_000 }, 500_000],
+      ['clients', { brut: 60_000, amortissements: 0, net: 60_000 }, 120_000],
+      ['disponibilites', { brut: 970_000, amortissements: 0, net: 970_000 }, 370_000],
+    ])
+    // L'emprunt de 2026 et la perte de 2025 en attente d'affectation n'ont rien en 2025 ; la TVA collectée de 2025, payée
+    // en 2026, n'a rien en 2026. Le résultat a toujours sa ligne.
+    expect(lignes.passif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual([
+      ['capital', 1_000_000, 1_000_000],
+      ['resultat', -40_000, -30_000],
+      ['resultats-en-attente', -30_000, null],
+      ['emprunts', 500_000, null],
+      ['dettes-fiscales-sociales', null, 20_000],
+    ])
+    // Sans colonne N−1, les lignes sont celles de N seul — et elles portent les mêmes montants.
+    const seules = lignesDuBilan(etabli(bilanDeLExercice(dossier)), null)
+    expect(seules.actif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual(lignes.actif.map((l) => [l.rubrique.id, l.n, null]))
+    expect(seules.passif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual([
+      ['capital', 1_000_000, null], ['resultat', -40_000, null], ['resultats-en-attente', -30_000, null], ['emprunts', 500_000, null],
+    ])
+  })
+
+  it('le détail rapproche chaque compte de son montant de N−1, un compte d’un seul côté gardant sa ligne', () => {
+    const colonne = colonneDeLExercicePrecedent(dossier)
+    if (colonne.etat !== 'etablie') throw new Error('colonne non établie')
+    const n = etabli(bilanDeLExercice(dossier))
+    const resume = (rs: ReturnType<typeof detailDuBilan>) => rs.map((r) => [
+      r.id, r.comptes.map((c) => [c.compte, c.colonne, c.n?.centimes ?? null, c.precedent?.centimes ?? null]),
+    ])
+    expect(resume(detailDuBilan(n.actif, colonne.bilan.actif))).toEqual([
+      ['corporelles', [['218200', 'brut', 600_000, 600_000], ['281820', 'amortissements', 200_000, 100_000]]],
+      ['clients', [['411000', 'brut', 60_000, 120_000]]],
+      ['disponibilites', [['512000', 'brut', 970_000, 370_000]]],
+    ])
+    expect(resume(detailDuBilan(n.passif, colonne.bilan.passif))).toEqual([
+      ['capital', [['101000', 'montant', 1_000_000, 1_000_000]]],
+      ['resultats-en-attente', [['129000', 'montant', -30_000, null]]],
+      ['emprunts', [['164000', 'montant', 500_000, null]]],
+      ['dettes-fiscales-sociales', [['445710', 'montant', null, 20_000]]],
+    ])
+    // Le tiers de chaque exercice reste le sien : Mikemed en 2026, Limamed en 2025.
+    const clients = detailDuBilan(n.actif, colonne.bilan.actif).find((r) => r.id === 'clients')!.comptes[0]
+    expect(clients.n?.tiers?.map((t) => t.libelle)).toEqual(['Mikemed'])
+    expect(clients.precedent?.tiers?.map((t) => t.libelle)).toEqual(['Limamed'])
+    // Sans colonne N−1, le détail est celui de N seul.
+    expect(resume(detailDuBilan(n.passif, null))).toEqual([
+      ['capital', [['101000', 'montant', 1_000_000, null]]],
+      ['resultats-en-attente', [['129000', 'montant', -30_000, null]]],
+      ['emprunts', [['164000', 'montant', 500_000, null]]],
+    ])
+  })
+
+  it('un exercice précédent qui ne s’équilibre pas garde son écart et sa cause, sans toucher à N', () => {
+    // 2025 : un apport de 1 000, puis une charge de 100 payée 90 — dix euros de plus au débit. Actif : disponibilités
+    // 1 000 − 90 = 910. Passif : capital 1 000, résultat −100 → 900. Écart : 910 − 900 = 10, l'actif dépasse.
+    const ecritures = [
+      ...ecrire('2025-01-02', [['512000', 'D', 1_000], ['101000', 'C', 1_000]]),
+      ...ecrire('2025-04-01', [['606000', 'D', 100], ['512000', 'C', 90]]),
+    ]
+    // Un report équilibré (défensif : la base ne valide pas un exercice déséquilibré) : 2026 s'équilibre.
+    const ouverture = reportes('2026-01-01', [['512000', 'D', 910], ['101000', 'C', 1_000], ['129000', 'D', 90]])
+    const d = entrees({ ecritures, reportes: ouverture, anneesValidees: [2025] })
+    const colonne = colonneDeLExercicePrecedent(d)
+    if (colonne.etat !== 'etablie') throw new Error('colonne non établie')
+    expect(colonne.bilan.ecart).toBe(1_000)
+    // Les espaces insécables de `formatMoney` ramenées à des espaces.
+    const [premier] = colonne.bilan.points
+    expect({ ...premier, texte: premier.texte.replace(/\s/g, ' ') }).toEqual({
+      code: 'desequilibre', gravite: 'erreur', comptes: [],
+      texte: 'Le bilan ne s’équilibre pas : l’actif dépasse passif de 10,00 €. Les écritures de l’exercice et son ouverture '
+        + 'ne s’équilibrent pas : 10,00 € de plus au débit — l’onglet Écritures dit lesquelles.',
+    })
+    expect(etabli(bilanDeLExercice(d)).ecart).toBe(0)
+  })
+
+  it('un exercice précédent qui n’est pas clos donne une colonne provisoire', () => {
+    const colonne = colonneDeLExercicePrecedent({ ...dossier, aujourdHui: '2025-12-31' })
+    expect(colonne.etat === 'etablie' && colonne.bilan.provisoire).toBe(true)
+    const close = colonneDeLExercicePrecedent({ ...dossier, aujourdHui: '2026-01-01' })
+    expect(close.etat === 'etablie' && close.bilan.provisoire).toBe(false)
+  })
+
+  it('une rubrique portée par ses seuls amortissements, ou par des comptes qui se compensent, a sa ligne ; un compte de N−1 seul garde son rang', () => {
+    // 2025 : un apport de 1 000 ; un dépôt de garantie de 200 ; 10 remis à l'encaissement (511) ; 50 de recettes ; une
+    // dotation de 50 sur un bien qui n'est pas au brouillon — un amortissement sans son compte.
+    const ecritures = [
+      ...ecrire('2025-01-02', [['512000', 'D', 1_000], ['101000', 'C', 1_000]]),
+      ...ecrire('2025-02-01', [['275000', 'D', 200], ['512000', 'C', 200]]),
+      ...ecrire('2025-03-01', [['511000', 'D', 10], ['512000', 'C', 10]]),
+      ...ecrire('2025-06-01', [['512000', 'D', 50], ['706000', 'C', 50]]),
+      ...ecrire('2025-12-31', [['681100', 'D', 50], ['281820', 'C', 50]]),
+      // 2026 : le dépôt est rendu, la remise encaissée.
+      ...ecrire('2026-02-01', [['512000', 'D', 200], ['275000', 'C', 200]]),
+      ...ecrire('2026-03-01', [['512000', 'D', 10], ['511000', 'C', 10]]),
+    ]
+    // 2025 : 512 1 000 − 200 − 10 + 50 = 840 D ; 511 10 D ; 275 200 D ; 281820 50 C ; 101 1 000 C ; résultat 50 − 50 = 0.
+    // Le report, fictif, porte aussi un bénéfice et une perte antérieurs de 300 qui se compensent (120 et 129).
+    const report = reportes('2026-01-01', [
+      ['512000', 'D', 840], ['511000', 'D', 10], ['275000', 'D', 200], ['281820', 'C', 50], ['101000', 'C', 1_000],
+      ['120000', 'C', 300], ['129000', 'D', 300],
+    ])
+    const d = entrees({ ecritures, reportes: report, anneesValidees: [2025] })
+    const colonne = colonneDeLExercicePrecedent(d)
+    if (colonne.etat !== 'etablie') throw new Error('colonne non établie')
+    const n = etabli(bilanDeLExercice(d))
+    const lignes = lignesDuBilan(n, colonne.bilan)
+    // Actif 2026 : corporelles 0 brut, 50 amortis, −50 net ; le dépôt rendu n'a plus rien ; disponibilités 840 + 200 + 10
+    // = 1 050, 511 soldé. 2025 : corporelles −50 net, financières 200, disponibilités 840 + 10 = 850.
+    expect(lignes.actif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual([
+      ['corporelles', { brut: 0, amortissements: 5_000, net: -5_000 }, -5_000],
+      ['financieres', null, 20_000],
+      ['disponibilites', { brut: 105_000, amortissements: 0, net: 105_000 }, 85_000],
+    ])
+    // Passif : capital 1 000 et résultat nul les deux années ; en 2026, 120 et 129 se compensent dans la rubrique en
+    // attente d'affectation, qui a sa ligne à zéro.
+    expect(lignes.passif.map((l) => [l.rubrique.id, l.n, l.precedent])).toEqual([
+      ['capital', 100_000, 100_000], ['resultat', 0, 0], ['resultats-en-attente', 0, null],
+    ])
+    // 511000, de 2025 seul, se range avant 512000, des deux exercices : par numéro, pas par exercice.
+    const disponibilites = detailDuBilan(n.actif, colonne.bilan.actif).find((r) => r.id === 'disponibilites')!
+    expect(disponibilites.comptes.map((c) => [c.compte, c.n?.centimes ?? null, c.precedent?.centimes ?? null])).toEqual([
+      ['511000', null, 1_000], ['512000', 105_000, 84_000],
+    ])
+  })
+})
+
+describe('colonneDeLExercicePrecedent — une colonne qui serait fausse ne s’établit pas', () => {
+  it('le premier exercice du dossier n’a pas d’exercice précédent : aucune colonne de zéros', () => {
+    const ecritures = ecrire('2026-01-02', [['512000', 'D', 500], ['101000', 'C', 500]])
+    // Le bilan de 2025 seul s'établirait — vide, premier exercice — et dirait une activité nulle.
+    expect(bilanDeLExercice(entrees({ ecritures, exercice: 2025 })).etat).toBe('etabli')
+    expect(colonneDeLExercicePrecedent(entrees({ ecritures }))).toEqual({
+      etat: 'non-etablie', exercice: 2025,
+      motif: {
+        code: 'premier-exercice',
+        texte: 'L’exercice 2026 est le premier du dossier : aucun exercice précédent n’est tenu dans l’application. Si '
+          + 'l’activité est plus ancienne, sa balance se reprend dans Informations du dossier (« Balance d’un autre logiciel »).',
+      },
+    })
+  })
+
+  it('un exercice ouvert par la reprise d’une balance : N−1 est dans le logiciel précédent', () => {
+    const d = entrees({ reprise: reprise('2026-01-01', [['512000', 'D', 10], ['101000', 'C', 10]]) })
+    expect(etabli(bilanDeLExercice(d)).ouverture.type).toBe('reprise')
+    expect(colonneDeLExercicePrecedent(d)).toEqual({
+      etat: 'non-etablie', exercice: 2025,
+      motif: {
+        code: 'avant-la-reprise',
+        texte: 'L’exercice 2025 précède la reprise du dossier, ouvert le 01/01/2026 : ses comptes sont ceux du logiciel '
+          + 'précédent, et son bilan aussi.',
+      },
+    })
+  })
+
+  it('un exercice précédent dont l’ouverture attend la validation de N−2 : il le dit, et N reste établi', () => {
+    // Défensif : la base ne valide pas 2025 tant que 2024 attend, mais le module ne le suppose pas.
+    const ecritures = [
+      ...ecrire('2024-06-01', [['512000', 'D', 100], ['101000', 'C', 100]]),
+      ...ecrire('2025-06-01', [['606000', 'D', 40], ['512000', 'C', 40]]),
+    ]
+    const ouverture = reportes('2026-01-01', [['512000', 'D', 60], ['101000', 'C', 100], ['129000', 'D', 40]])
+    const d = entrees({ ecritures, reportes: ouverture, anneesValidees: [2025] })
+    // 2026 : disponibilités 60 ; capital 100, perte de 2025 en attente −40 → 60.
+    const n = etabli(bilanDeLExercice(d))
+    expect(n.totauxActif.net).toBe(6_000)
+    expect(n.ecart).toBe(0)
+    expect(colonneDeLExercicePrecedent(d)).toEqual({
+      etat: 'non-etablie', exercice: 2025,
+      motif: {
+        code: 'ouverture-en-attente',
+        texte: 'L’exercice 2025 n’a pas encore d’ouverture : elle s’écrira à la validation de l’exercice 2024 (Clôture). '
+          + 'Jusque-là, ses comptes de bilan partiraient de zéro, et son bilan serait faux.',
+      },
+    })
   })
 })
 

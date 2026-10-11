@@ -19596,3 +19596,56 @@ par le client, écrit par la base (« … par le client »), s'affiche tel quel.
 client n'en voit rien » des encaissements, de leurs déclarations et des statuts lus sur la plateforme : vrai avant P2, que
 la case « Ventes » ouvre en lecture ; ils disent désormais que le client qui porte « Ventes » les lit. Le premier nomme
 aussi `annuler_encaissement`, qui écrit la contre-passation au même registre.
+
+### 11/10/2026 — LA COLONNE DE L'EXERCICE PRÉCÉDENT — LIGNE 33, DEUXIÈME BRIQUE DU BILAN
+
+(`src/lib/bilan.ts` et `bilan.test.ts`, `src/pages/dossier/BilanTab.tsx` et `BilanTab.test.tsx`,
+`outils/captures/debordements.mjs`. Aucune migration, aucune lecture de plus, rien d'écrit en base.) **Pourquoi.** « Chacun
+des postes du bilan […] comporte l'indication du montant relatif à l'exercice précédent » (PCG, art. 811-3) ; le
+2033-A-SD le porte en NET, une colonne à l'actif et une au passif. C'était la première chose que la première brique
+laissait « dite plutôt que promise ».
+
+**La conception.** La colonne est le MÊME bilan (`bilanDeLExercice`) calculé sur l'exercice N−1 et ses données, sous les
+mêmes règles — aucune compensation, rien au jugé, l'équilibre au centime et son écart décomposé (`colonneDeLExercicePrecedent`).
+Elle ne se tire jamais de l'ouverture de N : un solde reporté ne dit ni le résultat de N−1 (versé au 120 ou au 129), ni la
+rubrique de chaque tiers, et un écart de N−1 s'y perdrait. **Trois cas sans colonne, et l'en-tête dit pourquoi** :
+l'ouverture de N−1 attend la validation de N−2, N−1 précède la reprise du dossier (le motif du module, mot pour mot), ou N
+est le premier exercice du dossier — son ouverture est « sans objet » : le bilan de N−1 s'établirait, fait de zéros, et
+affirmerait une activité nulle là où l'application ne sait rien. **Une observation qui borne le cas** : quand N s'établit
+et que N−1 a des données, N s'ouvre forcément par le report de N−1 (`etatDeLOuverture`) — la colonne est donc toujours
+celle d'un exercice VALIDÉ, figé en base ; N ouvert par une reprise a toujours un N−1 antérieur à la reprise. La règle
+« une rubrique se montre si elle porte quelque chose » quitte l'écran pour le module (`rubriqueActifPortee`,
+`rubriquePassifPortee`, inchangée) : une rubrique ou un compte que porte un seul des deux exercices a sa ligne, vide de
+l'autre (`lignesDuBilan`, `detailDuBilan` — clé compte et colonne, rangée par numéro, pas par exercice).
+
+**L'écran.** Les lectures sont celles de N (tout le brouillon, les à-nouveaux, les soldes reportés, par `lireTout`) :
+N−1 ne relit rien, et changer d'exercice ne relance aucune requête (compté par le faux client). Les tableaux gagnent
+« Net N−1 » et « Montant N−1 » (cellules nommées pour le repli en fiches), les en-têtes de N se datent alors ; une case
+vide pour l'exercice qui n'a rien. L'en-tête dit « Exercice précédent (N−1) » : équilibré ou l'écart en rouge avec sa
+cause, « provisoire » si N−1 n'est pas clos, ses autres points repliés ; ou « pas de colonne » et le motif. Le détail par
+compte porte « (N−1 : … ) » à chaque compte, « — » pour l'exercice où il n'est pas, et le résultat de N−1. Sur une lecture
+partielle, avant la lecture, ou quand N lui-même ne s'établit pas : aucun chiffre ni phrase de N−1. Aucun bouton.
+
+**Les preuves.** `bilan.test.ts` (+9) : une société dont 2025, premier exercice, est validé — le bilan de 2025 calculé à la
+main, compte par compte (immobilisation amortie, client, TVA, perte), celui de 2026 inchangé ; les lignes rapprochées (un
+emprunt et une perte en attente de 2026 seuls, une TVA de 2025 seule) ; le détail (les tiers de chaque exercice restent
+les siens) ; un N−1 déséquilibré dont l'écart et sa cause se disent sans toucher à N ; un N−1 provisoire ; une rubrique
+portée par ses seuls amortissements, une autre par deux comptes qui se compensent, un compte de N−1 seul rangé avant un
+compte des deux ; puis les trois colonnes qui ne s'établissent pas. `BilanTab.test.tsx` (+11) : la colonne lue (chaque
+cellule, les totaux, les en-têtes, le nom des cellules repliées, la phrase d'équilibre, le détail) et rien d'un autre
+dossier — dont la reprise ferait de 2025 un exercice antérieur à la reprise et dont le report grossirait la colonne —,
+pas encore lue, partielle (chacune des cinq tables), qui ne s'établit pas (reprise, premier exercice), N non établi,
+l'exercice de l'en-tête suivi sans relire. **Mutations : 45, 45 mordent** (19 module, 26 écran), aucune par un délai.
+**Le banc** : une visite de plus, « bilan/report-détail » (d9, 2026 : la colonne 2025, le détail déplié) ; aux neuf exécutions (390, 720, 1 024, 1 280, 1 440 px et les quatre combinaisons extrêmes des volets), 0 débordement,
+0 mot coupé (99 à 100 visites par exécution), aucune police refusée ; quatre vues photographiées et relues (1 440 px
+clair, le détail en sombre, 720 et 390 px — repliées en fiches, « Net 2025 » nommé), Manrope chargée, aucune erreur de
+page.
+**La barrière** : `tsc -b` sans erreur ; `tsc -p tsconfig.edge.json` aux 25 erreurs connues ; `npm run lint` aux 63
+avertissements connus, aucun dans le bilan ; `npm run build` vert ; les fichiers du bilan, du garde des écrans et de la
+barre d'onglets (262 tests) verts sous Paris, UTC, New York et Auckland ; la suite entière sous Paris
+(`--maxWorkers=2`, charge de 0,3 à 1,4) : 8 591 tests verts sur 8 591, 289 fichiers, aucun délai.
+
+**Ce qui reste** (inchangé, sinon) : l'ouverture confrontée au bilan qui la précède (PCG, art. 112-2 — la colonne N−1
+rend la comparaison possible : le net de chaque rubrique de N−1 contre l'ouverture de N), les dotations que le registre
+attend, les renvois 182, 184 et 195, le badge « provisoire » jusqu'à la validation, puis la forme juridique et
+l'affectation (une migration), l'inventaire, les stocks, le 2033-B et la liasse.

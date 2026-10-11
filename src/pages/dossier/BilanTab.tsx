@@ -3,8 +3,9 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import {
-  bilanDeLExercice, CASES_DES_TOTAUX, type BilanDeLExercice, type Contribution, type PointDuBilan, type RubriqueActif,
-  type RubriquePassif,
+  bilanDeLExercice, CASES_DES_TOTAUX, colonneDeLExercicePrecedent, detailDuBilan, lignesDuBilan, type BilanEtabli,
+  type ColonneDeLExercicePrecedent, type CompteDuDetail, type LigneDeLActif, type LigneDuPassif, type PointDuBilan,
+  type RubriqueActif, type RubriqueDuDetail, type RubriquePassif,
 } from '../../lib/bilan'
 import { LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import type { EtatDeLOuverture } from '../../lib/reportDesSoldes'
@@ -22,6 +23,10 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // rendrait faux sans que rien ne le trahisse — et un bilan déséquilibré par la lecture se lirait comme une
 // comptabilité fausse. Avant la première réponse, « Chargement… » ; sur une lecture partielle, le bandeau de ce qui
 // manque, et aucun chiffre.
+//
+// LA COLONNE DE L'EXERCICE PRÉCÉDENT (N−1, en net, comme le 2033-A-SD la porte) se calcule par le même module sur les
+// mêmes lectures (`colonneDeLExercicePrecedent`) : quand son bilan ne s'établit pas, l'en-tête dit pourquoi et aucun
+// chiffre de N−1 ne paraît, ni dans les tableaux ni dans le détail.
 
 const euros = (centimes: number) => formatMoney(centimes / 100)
 // Les montants à droite, comme dans tout tableau de chiffres ; replié en fiche, le tableau les remet à gauche de
@@ -32,7 +37,7 @@ const MONTANT = { textAlign: 'right' } as const
 const CASES = { fontSize: '0.75rem' } as const
 const NUMERO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' } as const
 
-type Etabli = Extract<BilanDeLExercice, { etat: 'etabli' }>
+type Etabli = BilanEtabli
 
 // Ce que l'écran dit de l'ouverture de l'exercice, d'où partent ses comptes de bilan.
 function phraseDeLOuverture(etat: EtatDeLOuverture): string | null {
@@ -55,18 +60,25 @@ const BADGE_DU_POINT: Record<PointDuBilan['gravite'], { classe: string; mot: str
   information: { classe: 'badge badge-neutral', mot: 'à savoir' },
 }
 
-// Une ligne du détail : le compte, son libellé, son montant dans le sens de la rubrique, et ce qui le distingue.
-function LigneDuDetail({ c }: { c: Contribution }) {
+// Le montant d'un exercice où le compte (ou la rubrique) ne porte rien : la case reste vide, comme sur le formulaire.
+const VIDE = '—'
+
+// Une ligne du détail : le compte, son libellé, son montant dans le sens de la rubrique, et ce qui le distingue ; puis,
+// quand la colonne de l'exercice précédent s'établit, son montant de N−1 — un compte présent d'un seul côté a sa ligne,
+// vide de l'autre. Le sens inhabituel et les tiers sont ceux de N : la ligne parle de l'exercice affiché.
+function LigneDuDetail({ c, precedent }: { c: CompteDuDetail; precedent: number | null }) {
   const colonne = c.colonne === 'amortissements' ? ' (amortissements et dépréciations)' : ''
+  const raison = c.n?.raison ?? c.precedent?.raison ?? null
   return (
     <li>
       <span style={NUMERO}>{c.compte}</span>
-      {` ${c.libelle}${colonne} : ${euros(c.centimes)}`}
-      {c.inhabituel && <span className="muted">{' — solde de l’autre sens que le sien'}</span>}
-      {c.raison && <span className="muted">{` — ${c.raison}`}</span>}
-      {c.tiers && (
+      {` ${c.libelle}${colonne} : ${c.n ? euros(c.n.centimes) : VIDE}`}
+      {precedent !== null && <span className="muted">{` (${precedent} : ${c.precedent ? euros(c.precedent.centimes) : VIDE})`}</span>}
+      {c.n?.inhabituel && <span className="muted">{' — solde de l’autre sens que le sien'}</span>}
+      {raison && <span className="muted">{` — ${raison}`}</span>}
+      {c.n?.tiers && (
         <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
-          {c.tiers.map((t) => (
+          {c.n.tiers.map((t) => (
             <li key={t.auxiliaire ?? '(sans détail)'}>
               {t.auxiliaire ? `${t.libelle} (${t.auxiliaire})` : t.libelle}{` : ${euros(t.centimes)}`}
             </li>
@@ -77,14 +89,14 @@ function LigneDuDetail({ c }: { c: Contribution }) {
   )
 }
 
-function DetailParCompte({ rubriques }: { rubriques: (RubriqueActif | RubriquePassif)[] }) {
+function DetailParCompte({ rubriques, precedent }: { rubriques: RubriqueDuDetail[]; precedent: number | null }) {
   return (
     <ul style={{ margin: '0 0 12px', paddingLeft: 20 }}>
-      {rubriques.filter((r) => r.contributions.length > 0).map((r) => (
+      {rubriques.map((r) => (
         <li key={r.id}>
           <strong>{r.libelle}</strong>
           <ul style={{ margin: '4px 0 10px', paddingLeft: 20 }}>
-            {r.contributions.map((c, n) => <LigneDuDetail key={`${c.compte}-${c.colonne}-${n}`} c={c} />)}
+            {r.comptes.map((c) => <LigneDuDetail key={`${c.compte}-${c.colonne}`} c={c} precedent={precedent} />)}
           </ul>
         </li>
       ))}
@@ -102,37 +114,63 @@ function CelluleRubrique({ libelle, cases }: { libelle: string; cases: string | 
   )
 }
 
-function TableauActif({ bilan }: { bilan: Etabli }) {
-  const lignes = (masse: RubriqueActif['masse']) => bilan.actif.filter((r) => r.masse === masse && (r.brut !== 0 || r.amortissements !== 0))
+// Les deux tableaux reçoivent le bilan de N et, quand elle s'établit, celui de N−1 : sans lui, ni colonne ni chiffre de
+// l'exercice précédent. Les lignes viennent du module (`lignesDuBilan`) : une rubrique que porte l'un des deux exercices,
+// vide de l'autre.
+function TableauActif({ bilan, precedent }: { bilan: Etabli; precedent: Etabli | null }) {
+  const { actif } = lignesDuBilan(bilan, precedent)
+  const lignes = (masse: RubriqueActif['masse']) => actif.filter((l) => l.rubrique.masse === masse)
   const t = bilan.totauxActif
-  const montants = (s: { brut: number; amortissements: number; net: number }, amortissementsVides: boolean) => (
+  const tp = precedent?.totauxActif ?? null
+  const montants = (s: { brut: number; amortissements: number; net: number } | null, amortissementsVides: boolean) => (
     <>
-      <td data-libelle="Brut" style={MONTANT}>{euros(s.brut)}</td>
-      <td data-libelle="Amort. et dépréc." style={MONTANT}>{amortissementsVides && s.amortissements === 0 ? '' : euros(s.amortissements)}</td>
-      <td data-libelle="Net" style={MONTANT}>{euros(s.net)}</td>
+      <td data-libelle="Brut" style={MONTANT}>{s ? euros(s.brut) : ''}</td>
+      <td data-libelle="Amort. et dépréc." style={MONTANT}>
+        {!s || (amortissementsVides && s.amortissements === 0) ? '' : euros(s.amortissements)}
+      </td>
+      <td data-libelle="Net" style={MONTANT}>{s ? euros(s.net) : ''}</td>
     </>
   )
-  const ligne = (r: RubriqueActif) => (
-    <tr key={r.id}>
-      <CelluleRubrique libelle={r.libelle} cases={r.cases ? `cases ${r.cases.brut} et ${r.cases.amortissements}` : null} />
-      {montants(r, true)}
+  const netPrecedent = (net: number | null) => precedent && (
+    <td data-libelle={`Net ${precedent.exercice}`} style={MONTANT}>{net === null ? '' : euros(net)}</td>
+  )
+  const ligne = (l: LigneDeLActif) => (
+    <tr key={l.rubrique.id}>
+      <CelluleRubrique
+        libelle={l.rubrique.libelle}
+        cases={l.rubrique.cases ? `cases ${l.rubrique.cases.brut} et ${l.rubrique.cases.amortissements}` : null}
+      />
+      {montants(l.n, true)}
+      {netPrecedent(l.precedent)}
     </tr>
   )
-  const sousTotal = (libelle: string, cases: { brut: string; amortissements: string }, s: { brut: number; amortissements: number; net: number }) => (
+  const sousTotal = (
+    libelle: string,
+    cases: { brut: string; amortissements: string },
+    s: { brut: number; amortissements: number; net: number },
+    sp: { net: number } | null,
+  ) => (
     <tr style={{ fontWeight: 700 }}>
       <CelluleRubrique libelle={libelle} cases={`cases ${cases.brut} et ${cases.amortissements}`} />
       {montants(s, false)}
+      {netPrecedent(sp ? sp.net : null)}
     </tr>
   )
   return (
     <div className="table-scroll tableau-adaptable">
       <table className="table-empilable-etroite">
-        <thead><tr><th>Actif</th><th>Brut</th><th>Amort. et dépréc.</th><th>Net</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Actif</th><th>Brut</th><th>Amort. et dépréc.</th>
+            <th>{precedent ? `Net ${bilan.exercice}` : 'Net'}</th>
+            {precedent && <th>{`Net ${precedent.exercice}`}</th>}
+          </tr>
+        </thead>
         <tbody>
           {lignes('immobilise').map(ligne)}
-          {sousTotal('Actif immobilisé (total I)', CASES_DES_TOTAUX.actifImmobilise, t.immobilise)}
+          {sousTotal('Actif immobilisé (total I)', CASES_DES_TOTAUX.actifImmobilise, t.immobilise, tp?.immobilise ?? null)}
           {lignes('circulant').map(ligne)}
-          {sousTotal('Actif circulant (total II)', CASES_DES_TOTAUX.actifCirculant, t.circulant)}
+          {sousTotal('Actif circulant (total II)', CASES_DES_TOTAUX.actifCirculant, t.circulant, tp?.circulant ?? null)}
           {lignes('a-classer').map(ligne)}
         </tbody>
         <tfoot>
@@ -142,6 +180,7 @@ function TableauActif({ bilan }: { bilan: Etabli }) {
               cases={`cases ${CASES_DES_TOTAUX.totalActif.brut} et ${CASES_DES_TOTAUX.totalActif.amortissements}`}
             />
             {montants(t, false)}
+            {netPrecedent(tp ? tp.net : null)}
           </tr>
         </tfoot>
       </table>
@@ -149,42 +188,109 @@ function TableauActif({ bilan }: { bilan: Etabli }) {
   )
 }
 
-function TableauPassif({ bilan }: { bilan: Etabli }) {
-  // Le résultat se montre toujours, nul compris : c'est la ligne qu'on cherche d'abord dans un bilan.
-  const lignes = (masse: RubriquePassif['masse']) =>
-    bilan.passif.filter((r) => r.masse === masse && (r.montant !== 0 || r.contributions.length > 0 || r.id === 'resultat'))
+function TableauPassif({ bilan, precedent }: { bilan: Etabli; precedent: Etabli | null }) {
+  const { passif } = lignesDuBilan(bilan, precedent)
+  const lignes = (masse: RubriquePassif['masse']) => passif.filter((l) => l.rubrique.masse === masse)
   const t = bilan.totauxPassif
-  const ligne = (r: RubriquePassif) => (
-    <tr key={r.id}>
-      <CelluleRubrique libelle={r.libelle} cases={r.case ? `case ${r.case}` : null} />
-      <td data-libelle="Montant" style={MONTANT}>{euros(r.montant)}</td>
+  const tp = precedent?.totauxPassif ?? null
+  const cellules = (montant: number | null, montantPrecedent: number | null) => (
+    <>
+      <td data-libelle="Montant" style={MONTANT}>{montant === null ? '' : euros(montant)}</td>
+      {precedent && (
+        <td data-libelle={`Montant ${precedent.exercice}`} style={MONTANT}>
+          {montantPrecedent === null ? '' : euros(montantPrecedent)}
+        </td>
+      )}
+    </>
+  )
+  const ligne = (l: LigneDuPassif) => (
+    <tr key={l.rubrique.id}>
+      <CelluleRubrique libelle={l.rubrique.libelle} cases={l.rubrique.case ? `case ${l.rubrique.case}` : null} />
+      {cellules(l.n, l.precedent)}
     </tr>
   )
-  const sousTotal = (libelle: string, laCase: string, montant: number) => (
+  const sousTotal = (libelle: string, laCase: string, montant: number, montantPrecedent: number | null) => (
     <tr style={{ fontWeight: 700 }}>
       <CelluleRubrique libelle={libelle} cases={`case ${laCase}`} />
-      <td data-libelle="Montant" style={MONTANT}>{euros(montant)}</td>
+      {cellules(montant, montantPrecedent)}
     </tr>
   )
   return (
     <div className="table-scroll tableau-adaptable">
       <table className="table-empilable-etroite">
-        <thead><tr><th>Passif</th><th>Montant</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Passif</th>
+            <th>{precedent ? `Montant ${bilan.exercice}` : 'Montant'}</th>
+            {precedent && <th>{`Montant ${precedent.exercice}`}</th>}
+          </tr>
+        </thead>
         <tbody>
           {lignes('capitaux-propres').map(ligne)}
-          {sousTotal('Capitaux propres (total I)', CASES_DES_TOTAUX.capitauxPropres, t.capitauxPropres)}
+          {sousTotal('Capitaux propres (total I)', CASES_DES_TOTAUX.capitauxPropres, t.capitauxPropres, tp?.capitauxPropres ?? null)}
           {lignes('provisions').map(ligne)}
           {lignes('dettes').map(ligne)}
-          {sousTotal('Dettes (total III)', CASES_DES_TOTAUX.dettes, t.dettes)}
+          {sousTotal('Dettes (total III)', CASES_DES_TOTAUX.dettes, t.dettes, tp?.dettes ?? null)}
           {lignes('a-classer').map(ligne)}
         </tbody>
         <tfoot>
           <tr>
             <CelluleRubrique libelle="Total général" cases={`case ${CASES_DES_TOTAUX.totalPassif}`} />
-            <td data-libelle="Montant" style={MONTANT}>{euros(t.total)}</td>
+            {cellules(t.total, tp ? tp.total : null)}
           </tr>
         </tfoot>
       </table>
+    </div>
+  )
+}
+
+// Ce que l'écran dit de la colonne de l'exercice précédent : son équilibre et ce qui l'explique quand elle s'établit,
+// sinon pourquoi elle n'a aucun chiffre. Rien n'y agit : le bouton vers Clôture de l'en-tête ne vaut que pour
+// l'exercice affiché.
+function ExercicePrecedent({ colonne }: { colonne: ColonneDeLExercicePrecedent }) {
+  if (colonne.etat === 'non-etablie') {
+    return (
+      <p className="muted" style={{ margin: '12px 0 0' }}>
+        {`Exercice précédent (${colonne.exercice}) : pas de colonne. ${colonne.motif.texte}`}
+      </p>
+    )
+  }
+  const b = colonne.bilan
+  // L'écart de N−1 se dit avec ce qui le cause (`desequilibre`, `hors-classes`) ; le reste de ce qu'il dit de lui-même
+  // se replie, pour que l'en-tête parle d'abord de l'exercice affiché.
+  const erreurs = b.points.filter((p) => p.gravite === 'erreur')
+  const aRevoir = b.points.filter((p) => p.gravite === 'attention')
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ margin: 0 }}>
+        {`Exercice précédent (${colonne.exercice}) : `}
+        {b.ecart === 0
+          ? <span className="badge badge-ok">équilibré</span>
+          : <span className="badge badge-danger">{`écart de ${euros(Math.abs(b.ecart))}`}</span>}
+        {b.provisoire && <>{' '}<span className="badge badge-warning">provisoire</span></>}
+        {` Actif net ${euros(b.totauxActif.net)}, passif ${euros(b.totauxPassif.total)}.`}
+      </p>
+      {erreurs.length > 0 && (
+        <ul style={{ margin: '8px 0 0', paddingLeft: 20, display: 'grid', gap: 8 }}>
+          {erreurs.map((p) => (
+            <li key={p.code}>
+              <span className={BADGE_DU_POINT.erreur.classe}>{BADGE_DU_POINT.erreur.mot}</span>{` ${p.texte}`}
+            </li>
+          ))}
+        </ul>
+      )}
+      {aRevoir.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary>{`Ce que le bilan de ${colonne.exercice} a encore à revoir (${aRevoir.length})`}</summary>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20, display: 'grid', gap: 8 }}>
+            {aRevoir.map((p) => (
+              <li key={p.code}>
+                <span className={BADGE_DU_POINT.attention.classe}>{BADGE_DU_POINT.attention.mot}</span>{` ${p.texte}`}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }
@@ -257,12 +363,16 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
 
   // « Aujourd'hui » se lit au rendu, jamais au chargement du module : la page ne se recharge pas d'un jour à l'autre.
   const aujourdHui = aujourdHuiAParis()
-  const bilan = useMemo(() => {
-    if (!lectures || lectures.motifs.length > 0 || typeof annee !== 'number') return null
-    return bilanDeLExercice({
+  // L'exercice précédent se calcule sur les MÊMES lectures : tout le brouillon, les à-nouveaux et les soldes reportés
+  // sont déjà lus en entier, et changer d'exercice ne relit rien. Il n'existe que si l'exercice affiché a son bilan.
+  const { bilan, precedent } = useMemo(() => {
+    if (!lectures || lectures.motifs.length > 0 || typeof annee !== 'number') return { bilan: null, precedent: null }
+    const entrees = {
       exercice: annee, ecritures: lectures.ecritures, categories: lectures.categories, reprise: lectures.aNouveaux,
       reportes: lectures.reportes, anneesValidees, pieces: lectures.pieces, modele, aujourdHui,
-    })
+    }
+    const deN = bilanDeLExercice(entrees)
+    return { bilan: deN, precedent: deN.etat === 'etabli' ? colonneDeLExercicePrecedent(entrees) : null }
   }, [lectures, annee, anneesValidees, modele, aujourdHui])
 
   if (!lectures) {
@@ -307,6 +417,9 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
   }
 
   const ouverture = phraseDeLOuverture(bilan.ouverture)
+  // Le bilan de l'exercice précédent, quand sa colonne s'établit ; sinon aucun chiffre de N−1, nulle part.
+  const bilanPrecedent = precedent?.etat === 'etablie' ? precedent.bilan : null
+  const anneePrecedente = bilanPrecedent ? bilanPrecedent.exercice : null
   // « Trésorerie (BNC, 2035) » au milieu d'une phrase : la première lettre seule s'abaisse, les sigles restent.
   const libelleDuMode = LIBELLES_MODE[modele.mode]
   const mode = libelleDuMode.charAt(0).toLowerCase() + libelleDuMode.slice(1)
@@ -348,14 +461,15 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
             ))}
           </ul>
         )}
+        {precedent && <ExercicePrecedent colonne={precedent} />}
       </div>
 
       <div className="card" style={{ padding: 0, marginTop: 20 }}>
-        <TableauActif bilan={bilan} />
+        <TableauActif bilan={bilan} precedent={bilanPrecedent} />
       </div>
 
       <div className="card" style={{ padding: 0, marginTop: 20 }}>
-        <TableauPassif bilan={bilan} />
+        <TableauPassif bilan={bilan} precedent={bilanPrecedent} />
       </div>
 
       {(bilan.renvois.dontTva !== 0 || bilan.renvois.dontComptesCourantsDebiteurs !== 0) && (
@@ -373,11 +487,13 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
       <details className="card" style={{ marginTop: 20 }}>
         <summary>Détail par compte</summary>
         <h4>Actif</h4>
-        <DetailParCompte rubriques={bilan.actif} />
+        <DetailParCompte rubriques={detailDuBilan(bilan.actif, bilanPrecedent?.actif ?? null)} precedent={anneePrecedente} />
         <h4>Passif</h4>
-        <DetailParCompte rubriques={bilan.passif} />
+        <DetailParCompte rubriques={detailDuBilan(bilan.passif, bilanPrecedent?.passif ?? null)} precedent={anneePrecedente} />
         <p className="muted" style={{ marginBottom: 0 }}>
-          {`Résultat de l’exercice : ${euros(bilan.resultat)}, la différence des comptes de produits (classe 7) et de charges (classe 6) de l’exercice.`}
+          {`Résultat de l’exercice : ${euros(bilan.resultat)}`}
+          {bilanPrecedent ? ` (${bilanPrecedent.exercice} : ${euros(bilanPrecedent.resultat)})` : ''}
+          {', la différence des comptes de produits (classe 7) et de charges (classe 6) de l’exercice.'}
         </p>
       </details>
 
@@ -400,7 +516,7 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
             C’est le bilan du brouillon tel qu’il est : la Vue d’ensemble et l’onglet Écritures disent ce qui reste à faire avant
             de le lire comme définitif — une écriture à régénérer, une dotation à écrire, un mouvement à rapprocher.
           </li>
-          <li>La colonne de l’exercice précédent et les renvois sur les échéances, à moins ou à plus d’un an, viendront avec la liasse.</li>
+          <li>Les renvois sur les échéances, à moins ou à plus d’un an, viendront avec la liasse.</li>
         </ul>
       </div>
     </>
