@@ -522,8 +522,8 @@ begin
       || ' | CREATE TRIGGER pieces_hors_de_france_taux_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.pieces_hors_de_france_taux FOR EACH ROW EXECUTE FUNCTION garder_fiche_hors_de_france_taux() O'],
     array['valeur', '155. les clés : la fiche part avec sa pièce et son dossier, sa ventilation avec elle', 'postgres', $q$select string_agg(c.conrelid::regclass::text || '.' || a.attname || '>' || c.confrelid::regclass::text || ':' || c.confdeltype::text, ',' order by c.conrelid::regclass::text collate "C", a.attname collate "C") from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1] where c.contype = 'f' and c.conrelid in ('public.pieces_hors_de_france'::regclass, 'public.pieces_hors_de_france_taux'::regclass)$q$, '',
       'pieces_hors_de_france.dossier_id>dossiers:c,pieces_hors_de_france.piece_id>pieces:c,pieces_hors_de_france.remplace_id>pieces_hors_de_france:a,pieces_hors_de_france_taux.dossier_id>dossiers:c,pieces_hors_de_france_taux.fiche_id>pieces_hors_de_france:c'],
-    array['valeur', '156. les fonctions qui nomment la fiche : celles de la migration, et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ 'pieces_hors_de_france'$q$, '',
-      'cle_hors_de_france,enregistrer_fiche_hors_de_france,garder_fiche_hors_de_france,garder_fiche_hors_de_france_taux,garder_piece_hors_de_france,retirer_fiche_hors_de_france']
+    array['valeur', '156. les fonctions qui nomment la fiche : celles de la migration, celles de l''e-reporting qui la lisent (e5a, e5b1), et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ 'pieces_hors_de_france'$q$, '',
+      'cle_hors_de_france,declarer_ereporting_hors_application,ecarter_piece_ereporting,enregistrer_fiche_hors_de_france,garder_fiche_hors_de_france,garder_fiche_hors_de_france_taux,garder_piece_declaree,garder_piece_hors_de_france,retirer_fiche_hors_de_france']
   ];
 
   begin

@@ -173,7 +173,7 @@ supabase/
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
-                    regimesEreporting, declarationsEreporting ;
+                    laBaseLitLePlan, regimesEreporting, declarationsEreporting ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -635,8 +635,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 - **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
   lu par la base, figé à la première écriture ; étapes PC1 à PC9, douze questions au cabinet → « LE PLAN COMPTABLE
   PERSONNALISABLE : LA CONCEPTION » ; PC1, le catalogue des rôles et le plan d'un dossier, en base le 10/10/2026 —
-  NEUTRE : rien ne le lit avant PC2, aucune policy ne l'écrit avant PC4, le plan de chaque dossier est vide (Q3 et Q5
-  prises comme hypothèses) → « LE CATALOGUE DES RÔLES ET LE PLAN D'UN DOSSIER, EN BASE ».
+  NEUTRE : aucune policy ne l'écrit avant PC4, le plan de chaque dossier est vide (Q3 et Q5 prises comme hypothèses) →
+  « LE CATALOGUE DES RÔLES ET LE PLAN D'UN DOSSIER, EN BASE » ; PC2, la base lit le plan, en base le 11/10/2026 (six
+  migrations : la première par l'outil, les cinq autres collées par le cabinet) — NEUTRE : les quatorze fonctions de la
+  § 2.3 lisent chaque compte de rôle dans le plan, vide, donc à son défaut ; reste PC3, l'application → « LA BASE LIT
+  LE PLAN, SANS RIEN CHANGER », « LA BASE LIT LE PLAN, APPLIQUÉE ET INTÉGRÉE ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -1038,12 +1041,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le plan comptable d'un dossier** (`plan_comptable_dossier`, ligne 43, PC1) : un rôle sans ligne prend le défaut du
   catalogue (`roles_comptables`, 26 rôles = les constantes de `comptes.ts`, confrontés à la migration et épinglés par
   `planComptable.test.ts`) ; `compte_du_role` (lève sur un rôle inconnu), `compte_du_dirigeant` (le `case` que cinq
-  fonctions recopient, prouvé contre leur texte) et `plan_du_dossier` le lisent ; le client n'en voit rien ; aucune
+  fonctions recopiaient) et `plan_du_dossier` le lisent ; le client n'en voit rien ; aucune
   policy d'écriture, et la garde n'admet que la restauration par le super-administrateur dans un dossier sans écriture,
   à-nouveau ni solde reporté (six chiffres — Q5 —, sous une racine du rôle, préfixe des seuls tiers). Le catalogue est
   hors de toute sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la restauration lit dans la base d'arrivée chaque rôle qu'un
   plan désigne avant d'écrire, et réinsère le plan juste après son dossier → « LE CATALOGUE DES RÔLES ET LE PLAN D'UN
-  DOSSIER, EN BASE ».
+  DOSSIER, EN BASE ». Depuis PC2 (11/10/2026), les quatorze fonctions qui écrivent ou vérifient un compte de rôle le
+  lisent par `compte_du_role` ou `compte_du_dirigeant`, jamais en dur, dans le plan du dossier DE L'APPEL ; les douze
+  qui écrivent prennent d'abord le verrou PARTAGÉ du dossier, à la clé de `cle_validation` écrite en ligne (leur
+  appelant n'exécute pas `cle_validation`) ; `laBaseLitLePlan.sql` (le plan décalé posé par la restauration, dans des
+  dossiers jetables), `planComptable.test.ts` (la forme, lue dans le texte exporté) et les confrontations aux clés de
+  rôle (dont `liquidationTva.test.ts`) le gardent → « LA BASE LIT LE PLAN, SANS RIEN CHANGER ».
 - **Montant retenu** : le HT pour un assujetti, le TTC pour un exonéré (`lib/montantRetenu.ts`, statut en paramètre
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de
@@ -1322,7 +1330,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9232 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9494 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

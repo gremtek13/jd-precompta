@@ -11,8 +11,9 @@ import {
 } from './comptes'
 import type { ANouveau, CompteNotesDeFrais, EcritureBrouillon, LettrageManuel, Piece } from './types'
 import { ajouterJours } from './format'
+import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
-import { fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // Une écriture du brouillon et une pièce, TYPÉES SANS `as` : le compilateur vérifie chaque colonne contre la table, et une colonne
 // ajoutée demain fait échouer ce fichier tant qu'elle n'y est pas.
@@ -660,8 +661,8 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
   // Chaque refus déclenché par un cas qui ne déclenche que lui et ceux qui le suivent : l'ordre des premiers refus
   // rencontrés doit être l'ordre des `raise` de `lettrer_pieces`.
   it('les refus partagés avec la base sont les siens, dans le même ordre', () => {
-    const texte = fichiersDuSchema().map((f) => f.texte).find((t) => t.includes('create function public.lettrer_pieces('))!
-    const sql = texte.slice(texte.indexOf('create function public.lettrer_pieces('), texte.indexOf('comment on function public.lettrer_pieces'))
+    // La DERNIÈRE définition, celle que la base exécute.
+    const sql = derniereDefinitionSql('lettrer_pieces')
     const sansApostrophes = (x: string) => x.replace(/''/g, "'").replace(/’/g, "'")
     const solde = engagement(piece({ id: 's', tiers: 'Transmedical', montant_ttc: 50 }), ACHATS, [{ id: 'm1', date: '2026-04-01', montant: -50 }])
     const cas: [string | null, string][] = [
@@ -683,11 +684,16 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
     }
   })
 
+  // La contrainte de la table nomme les comptes (l'étape PC4 la remplacera) ; la fonction, depuis l'étape PC2 (ligne 43),
+  // lit dans le plan du dossier les cinq rôles dont ces comptes sont les défauts.
   it('lettre les mêmes comptes que la base : ni plus, ni moins', () => {
     const texte = fichiersDuSchema().map((f) => f.texte).find((t) => t.includes('create table public.lettrages_manuels'))!
-    const listes = [...texte.matchAll(/compte (?:not )?in \(([^)]*)\)/g)].map((m) => new Set(m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
-    expect(listes.length).toBe(2)
-    for (const liste of listes) expect(liste).toEqual(new Set(COMPTES_LETTRABLES))
+    const listes = [...texte.matchAll(/compte in \(([^)]*)\)/g)].map((m) => new Set(m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
+    expect(listes.length).toBe(1)
+    expect(listes[0]).toEqual(new Set(COMPTES_LETTRABLES))
+    const roles = [...derniereDefinitionSql('lettrer_pieces').matchAll(/public\.compte_du_role\(p_dossier_id, '(\w+)'\)/g)].map((m) => m[1])
+    expect(roles).toHaveLength(5)
+    expect(new Set(roles.map((role) => PLAN_PAR_DEFAUT[role as CleRoleComptable]))).toEqual(new Set(COMPTES_LETTRABLES))
   })
 })
 

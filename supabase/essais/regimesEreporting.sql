@@ -442,8 +442,8 @@ begin
       || ' | CREATE TRIGGER regimes_ereporting_gardes BEFORE DELETE OR UPDATE ON public.regimes_ereporting FOR EACH ROW EXECUTE FUNCTION garder_regime_ereporting() O'],
     array['valeur', '155. les clés : le régime part avec son dossier, l''écart avec sa pièce et son dossier', 'postgres', $q$select string_agg(c.conrelid::regclass::text || '.' || a.attname || '>' || c.confrelid::regclass::text || ':' || c.confdeltype::text, ',' order by c.conrelid::regclass::text collate "C", a.attname collate "C") from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1] where c.contype = 'f' and c.conrelid in ('public.regimes_ereporting'::regclass, 'public.pieces_ecartees_ereporting'::regclass)$q$, '',
       'pieces_ecartees_ereporting.dossier_id>dossiers:c,pieces_ecartees_ereporting.piece_id>pieces:c,regimes_ereporting.dossier_id>dossiers:c'],
-    array['valeur', '156. les fonctions qui nomment les deux tables : celles de la migration, et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ '(regimes_ereporting|pieces_ecartees_ereporting)'$q$, '',
-      'confirmer_regime_ereporting,ecarter_piece_ereporting,garder_piece_ecartee,reprendre_piece_ereporting,retirer_regime_ereporting']
+    array['valeur', '156. les fonctions qui nomment les deux tables : celles de la migration, celles de la déclaration hors application (e5b1), et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ '(regimes_ereporting|pieces_ecartees_ereporting)'$q$, '',
+      'confirmer_regime_ereporting,declarer_ereporting_hors_application,ecarter_piece_ereporting,garder_declaration_ereporting,garder_piece_ecartee,reprendre_piece_ereporting,retirer_regime_ereporting']
   ];
 
   begin

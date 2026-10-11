@@ -5,6 +5,7 @@ import {
   planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature, valeurSaisie,
 } from './amortissements'
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
@@ -253,13 +254,17 @@ describe('refusDotation — les refus de la base, dits avant le clic, dans son o
 
   // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
   const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
+  // La DERNIÈRE définition, celle que la base exécute — la première lue jusqu'ici aurait gardé le 681100 en dur après
+  // l'étape PC2 (ligne 43), qui le lit dans le plan du dossier par la CLÉ de son rôle.
   it('dit les phrases que la fonction SQL exportée lève', () => {
-    const sql = sansApostrophes(fichiersDuSchema().find((f) => f.texte.includes('function public.ecrire_dotation_amortissement('))!.texte)
+    const sql = sansApostrophes(derniereDefinitionSql('ecrire_dotation_amortissement'))
     for (const phrase of [
       'La dotation d’un exercice à venir ne s’écrit pas encore.', REFUS_DOTATION_SANS_NATURE,
       'La nature de ce bien est introuvable.', 'de ce bien est validée : elle ne se remplace plus.',
     ]) expect(sql).toContain(sansApostrophes(phrase))
-    expect(sql).toContain(`('${COMPTE_DOTATIONS_AMORTISSEMENTS}', 'debit', v_montant)`)
+    expect(sql).toContain("v_compte_dotations := public.compte_du_role(v_immo.dossier_id, 'dotations_amortissements');")
+    expect(PLAN_PAR_DEFAUT.dotations_amortissements).toBe(COMPTE_DOTATIONS_AMORTISSEMENTS)
+    expect(sql).toContain("(v_compte_dotations, 'debit', v_montant)")
     expect(sql).toContain('v_compte_amortissement := public.compte_amortissement(v_compte_immobilisation);')
   })
 })

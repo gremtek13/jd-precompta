@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { libelleDuResultat } from './aNouveaux'
 import type { MouvementBancaire } from './affectationBanque'
-import { COMPTE_CAPITAL_INDIVIDUEL, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE } from './comptes'
+import { COMPTE_CAPITAL_INDIVIDUEL, COMPTE_EXPLOITANT, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { formaterFec, genererFec, numeroterFec, numerotationValidee } from './fec'
 import { calculerBalance } from './ecritures'
 import { pisteAudit } from './pisteAudit'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import {
   aNouveauDuReport, etatDeLOuverture, exploitantIndividuel, LIBELLE_CAPITAL_INDIVIDUEL, LIBELLE_RESULTATS_EN_ATTENTE,
   MOTIFS_DU_REPORT, mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, sourceDuReport,
@@ -429,18 +430,28 @@ describe('une entreprise individuelle', () => {
 // LES LITTÉRAUX DE LA MIGRATION. La table ci-dessus prouve que les deux calculs s'accordent sur des cas ; ceci garde
 // que les MOTS soient les mêmes — un compte ou un libellé changé dans la migration suivante d'un seul côté ne ferait
 // échouer la table qu'au prochain relevé. On lit la DERNIÈRE définition de chaque fonction, celle que la base exécute.
+// Depuis l'étape PC2 (ligne 43, `la_base_lit_le_plan_1`), ses comptes s'y lisent dans le plan du dossier par la CLÉ de
+// leur rôle : la confrontation porte sur la clé, et le défaut de la clé est la constante d'ici.
 describe('les littéraux sont ceux de la base', () => {
   const sansApostrophes = (s: string) => s.replace(/''/g, "'")
 
-  it('soldes_a_reporter : les motifs, les comptes et les libellés', () => {
+  it('soldes_a_reporter : les motifs, les rôles des comptes et les libellés', () => {
     const sql = sansApostrophes(derniereDefinitionSql('soldes_a_reporter'))
     expect(sql).toContain(`s.compte ~ '${MOTIFS_DU_REPORT.resultat.source}'`)
     expect(sql).toContain(`md.individuel and s.compte ~ '${MOTIFS_DU_REPORT.capitauxDeLExploitant.source}'`)
-    expect(sql).toContain(`case when md.individuel then '${COMPTE_CAPITAL_INDIVIDUEL}' when r.net < 0 then '${COMPTE_RESULTAT_BENEFICE}' else '${COMPTE_RESULTAT_PERTE}' end`)
-    expect(sql).toContain(`then '${COMPTE_CAPITAL_INDIVIDUEL}'\n        else s.compte`)
+    expect(sql).toContain("public.compte_du_role(d.id, 'capital_individuel') as capital,")
+    expect(sql).toContain("public.compte_du_role(d.id, 'resultat_benefice') as benefice,")
+    expect(sql).toContain("public.compte_du_role(d.id, 'resultat_perte') as perte")
+    expect([PLAN_PAR_DEFAUT.capital_individuel, PLAN_PAR_DEFAUT.resultat_benefice, PLAN_PAR_DEFAUT.resultat_perte])
+      .toEqual([COMPTE_CAPITAL_INDIVIDUEL, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE])
+    expect(sql).toContain('case when md.individuel then md.capital when r.net < 0 then md.benefice else md.perte end')
+    expect(sql).toContain('then md.capital\n        else s.compte')
+    expect(sql).toContain('c.cible = case when c.resultat < 0 then (select benefice from modele) else (select perte from modele) end then')
     expect(sql).toContain(`'${LIBELLE_RESULTATS_EN_ATTENTE}'`)
-    expect(sql).toContain(`case when c.cible = '${COMPTE_CAPITAL_INDIVIDUEL}' then '${LIBELLE_CAPITAL_INDIVIDUEL}' end`)
-    expect(sql).toContain("(d.mode_comptable = 'tresorerie' or d.compte_notes_de_frais = '108000') as individuel")
+    expect(sql).toContain(`case when c.cible = (select capital from modele) then '${LIBELLE_CAPITAL_INDIVIDUEL}' end`)
+    // « Individuel » : un dossier en trésorerie, ou dont le dirigeant est le compte du rôle de l'exploitant.
+    expect(sql).toContain("(d.mode_comptable = 'tresorerie'\n            or d.compte_notes_de_frais = public.compte_du_role(d.id, 'exploitant')) as individuel")
+    expect(PLAN_PAR_DEFAUT.exploitant).toBe(COMPTE_EXPLOITANT)
   })
 
   it('le libellé du résultat est le format de la base, rempli', () => {

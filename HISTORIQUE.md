@@ -20715,3 +20715,219 @@ le reste (§6).
 **EN PASSANT.** Les autres insertions en lot de l'application (génération et règlement des écritures, deux imports du
 relevé, connexion bancaire, cotisations, historique de Super PDP, taux de la BCE) envoient des lignes uniformes, ou
 n'omettent que des colonnes sans valeur par défaut : rien à corriger ; aucun garde ne le tient pour elles.
+
+### 10/10/2026 — LA BASE LIT LE PLAN, SANS RIEN CHANGER — LIGNE 43, ÉTAPE PC2 (PRÉPARÉE, NON APPLIQUÉE)
+
+(Six migrations préparées hors du dépôt — l'export ne porte que ce qui est appliqué —, `la_base_lit_le_plan_1` à `_6` :
+19 227, 18 851, 15 265, 14 971, 14 847 et 15 058 caractères, empreintes `85768e0bc4bd533ef5c3b59aae9f46e5`,
+`ef3bce0a83d4f9cd1387f361a8f02708`, `128da93937ca6e1445ee8e4f666e2b91`, `23816b86acc4795cd97dfb1427bc0098`,
+`7e7fa53fbe16b2fbe3576969992af0fd` et `1f8947d5c2a5b644ca2ad4beb43c3a58` ; la première pour `apply_migration` (aucune
+suppression dans son texte), les cinq autres à COLLER, chacune dans une transaction avec sa ligne d'historique, en blocs
+de 30 371 à 38 379 caractères. Avant le collage : l'essai neuf `supabase/essais/laBaseLitLePlan.sql`, `planComptable.sql`
+adapté, `planComptable.test.ts` (l'essai confronté au module ; les quatorze corps sur lesquels les blocs sont écrits).
+Après, une fois la production vérifiée : les six fichiers d'export, les confrontations SQL ↔ TypeScript passées aux clés
+de rôle — sept fichiers de test, et une confrontation neuve pour la TVA —, la forme de l'essai exigée du texte exporté,
+le README de l'export.) La deuxième étape du plan comptable personnalisable (« LE PLAN COMPTABLE PERSONNALISABLE : LA
+CONCEPTION », § 2.3, § 3.5, § 3.6, et la ligne PC2 du découpage) : les quatorze fonctions qui nommaient un compte de
+rôle en dur le lisent dans le plan du dossier. Étape NEUTRE : le plan de chaque dossier est vide par construction (aucune policy ne l'écrit), chaque rôle s'y
+lit à son défaut, qui EST la constante d'aujourd'hui. Sources : règlement ANC n° 2014-03 consolidé au 1er janvier 2026,
+art. 1011-5 (« l'entité établit un plan de comptes ») et 1131-1 ; documentation de PostgreSQL, « Advisory Locks » (un
+verrou partagé et un verrou exclusif sur la même clé s'excluent ; un verrou pris par la même session ne l'attend pas).
+
+**MESURÉ EN PRODUCTION LE 10/10/2026** (lecture seule ; la production a bougé pendant le travail : 114, 115 puis 116
+migrations — `ventes_du_client`, puis `ventes_du_client_facturation`, collée à 13 h 06 UTC). L'inventaire refait PAR LA
+VALEUR (tout littéral de six chiffres, puis tout littéral qui porte un chiffre, dans les fonctions du schéma public) :
+LES MÊMES QUATORZE qu'au 09/10, les mêmes comptes, les mêmes dix corps qui suppriment ; aucune des fonctions entrées
+depuis ne nomme un compte de rôle. Une de plus se dit : `refus_compte_de_bilan` nomme le 580000 dans DEUX MESSAGES
+(« s'écrit au 580000, virements internes ») — un texte, que l'interprète de `compteDeBilan.test.ts` confronte à
+`refusCompteDeBilan` ; le changer changerait ce que la base rend : laissé à PC3/PC4. Les 999990, 999999, 000000 et
+100000 de six fonctions sont des bornes, pas des comptes. AUCUNE DÉRIVE : les quatorze corps de production égaux à leur
+dernière définition de l'export, longueur et empreinte (quatre y portent des `\r\n`, collés depuis un téléphone) ; ni
+P2 ni B ne touchent l'une d'elles. `authenticated` exécute `pg_advisory_xact_lock_shared` et `hashtextextended`, PAS
+`cle_validation` ; le plan est vide ; le chef de l'essai est super-administrateur.
+
+**LES QUATORZE, RÉÉCRITES** par remplacements ciblés sur leur dernière définition, chacun exigé une fois, le reste au
+caractère près. Le compte de chaque rôle se lit UNE fois, dans une variable, juste après le verrou ; le dirigeant par
+`compte_du_dirigeant` à la place du `case`. LE VERROU : partagé, à la clé de `cle_validation` ÉCRITE EN LIGNE
+(`hashtextextended('jd.validation_exercice:' || dossier::text, 0)`), pris après le contrôle d'accès et avant la première
+lecture du plan — treize des quatorze s'exécutent aux droits de l'appelant, qui n'exécute pas `cle_validation`. Écartés :
+une fonction `SECURITY DEFINER` qui prendrait le verrou (une porte de plus, ouverte à tout compte connecté sur tout
+dossier, et un avertissement de plus) ; rendre `cle_validation` exécutable (un droit élargi). Le paiement personnel
+d'une cotisation (DEFINER) prenait déjà ce verrou avant de lire le dirigeant. Les deux lectrices (`liquidation_attendue`,
+`soldes_a_reporter`) ne le prennent pas : seules leurs appelantes écrivent, sous le leur (`ecrire_liquidation_tva`
+partagé, `valider_exercice` exclusif). `lettrer_pieces` garde la liste d'aujourd'hui, cinq rôles (les trois tiers, 455,
+467), sans dépendre du dirigeant — ce serait PC4 ; la CSG-CRDS d'une cotisation va au rôle `exploitant` ; « individuel »,
+dans le report, est un dossier en trésorerie ou dont le dirigeant est le compte du rôle `exploitant` (§ 3.6). Les sept
+commentaires de fonction qui nommaient un compte nomment le rôle et son défaut.
+
+**SIX MIGRATIONS, PAS UNE.** Un seul texte ne tenait pas dans un bloc de 40 000 caractères, cinq non plus (un bloc à
+46 035) : six, par mécanisme — 1 par l'outil (le paiement personnel, le lettrage, le report des soldes : aucune
+suppression) ; à coller, 2 l'affectation et la ventilation, 3 le compte de bilan et l'échéance d'emprunt, 4 la TVA (le
+paiement d'une déclaration, sa liquidation, et `liquidation_attendue`, qui suit son appelante), 5 la cotisation et le
+virement personnel, 6 la dotation et le forfait. Chaque texte commence par sa GARDE : PC1 en base, le plan vide, la
+migration précédente en base (son nom dans l'historique ET chacune de ses fonctions à son corps d'après), chaque corps
+remplacé égal à celui de la préparation (fins de ligne ramenées à `\n`) ; « déjà en base » quand tous sont à leur corps
+d'après. La version de la ligne d'historique : la seconde UTC, ou la plus haute version plus un — deux blocs collés dans
+la même seconde se heurtaient sur la clé, vu en les rejouant à la suite.
+
+**LA NEUTRALITÉ, SUR UNE RÉPLIQUE** (une grappe UTF8 ; sa `signature.sql` égale la production sur ses neuf familles, à
+114, à 115 puis à 116 migrations, et son historique a l'empreinte globale de celui de la production, `deea18c0…` à 116).
+Les blocs, collés comme le cabinet les colle — dans l'ordre, et en `\r\n` comme depuis un téléphone — : l'historique garde
+chaque texte, les corps sont les mêmes dans les deux cas ; le 3 avant le 2, le 1 deux fois, une fonction réécrite
+entre-temps, une ligne au plan : refusés, rien changé. Après les six, SEULE la famille « fonctions » change (128,
+`2ff77cdc…`) : droits, policies, contraintes, index, déclencheurs, RLS et colonnes inchangés. Les 37 essais du dépôt
+(rls.sql entier et restauration.sql compris), avant et après : 34 identiques au caractère, deux une fois masqués les
+identifiants qu'ils tirent, et `planComptable.sql` dans sa version de PC1, dont les contrôles 8, 9 et 44 lisaient le
+`case` dans le texte des cinq fonctions (adapté : il accepte l'une ou l'autre forme, une seule par fonction, tant que
+`pc2_exigee` est faux, et dit le 9 et le 44 sans objet quand plus aucune ne recopie le `case`). `rls.sql` : 35 lignes, 0
+en faute sur 68 tables, 31 mutations sur 31, avant comme après. Les fautes d'avant restent les fautes d'après
+(validationExercice 141, R4 ; restauration.sql bute sur une table de R4 qu'il ne connaît pas encore).
+
+**CE QUI MANQUAIT POUR QU'UNE MUTATION MORDE.** Au plan par défaut, le défaut d'un rôle EST le compte d'avant : un compte
+remis en dur, un rôle lu pour un autre de même défaut ou le plan d'un autre dossier ne changent rien, et aucun essai de
+mécanisme ne peut les voir. L'essai neuf `laBaseLitLePlan.sql` : la FORME, lue dans le catalogue (1 à 7 — les quatorze
+lisent le plan ; aucun défaut du catalogue entre apostrophes ; chacune nomme exactement ses rôles et le dirigeant par
+`compte_du_dirigeant` ; les douze qui écrivent prennent le verrou partagé de LEUR dossier, à la clé lue dans le corps de
+`cle_validation`, avant la première lecture ; les lectrices sans verrou ; sécurité, volatilité, langage et réglages ;
+chaque lecture du plan porte le dossier de l'appel) ; LE PLAN LU, sous le plan fictif décalé (`PLAN_DECALE`) posé par la
+seule porte ouverte, la restauration par le super-administrateur dans un dossier sans écriture — chaque fois un dossier
+jetable, créé dans la sous-transaction du contrôle (10 à 63 : chaque
+fonction accepte l'écriture aux comptes du plan et l'écrit telle quelle, refuse celle aux comptes d'avant sous ses mots —
+le dirigeant 108100 nommé par trois refus —, les lectrices rendent les comptes du plan) ; rien laissé (99). Avant les
+migrations, une fonction qui ne lit pas encore le plan s'y dit EN ATTENTE (`pc2_exigee` faux), sans faute : 54 lignes,
+0 en faute dont 46 en attente, puis 34, 25, 19, 10, 5 et 0 bloc après bloc ; après, 54 lignes, 0 en faute.
+**DEUX CENT DOUZE MUTATIONS DE LA MIGRATION**, en onze familles (un rôle lu pour un autre, le plan d'un autre dossier,
+un compte remis en dur à chaque lecture puis à l'usage, sous une forme que le texte ne trahit pas, le `case` recopié, une
+variable pour une autre, le verrou retiré, déplacé, à une autre clé, d'un autre dossier, exclusif, de session, la
+forme), chacune posée seule sur un clone de la réplique migrée : au premier passage, deux survivantes — un trou de
+l'essai (l'arrondi EN CHARGE lu pour un autre dossier : aucune étape n'exerçait un écart en charge sous le plan ; comblé
+par le contrôle 7 et l'étape 48) et une ÉQUIVALENTE, à ne pas réenquêter : échanger les deux rôles d'arrondi
+d'`ecrire_liquidation_tva`, dont les variables ne servent qu'ensemble, dans `where compte in (…)`, rend le même ensemble
+sous tout plan. Au second : 211 sur 212 vues par l'essai neuf, la dernière l'équivalente ; les essais des mécanismes,
+au plan par défaut, n'en voient que 42.
+
+**LE VERROU, À DEUX SESSIONS** (une course : A tient le verrou exclusif du dossier, B appelle la fonction avec une écriture
+qu'elle refusera, sous un délai de 500 ms). Après les migrations, les douze qui écrivent attendent A (55P03) ; avant,
+les onze aux droits de l'appelant rendaient aussitôt leur refus (22023) — le paiement personnel attendait déjà. Le verrou
+retiré, à une autre clé ou d'un autre dossier se voit aussi à la course ; exclusif, de session ou déplacé après la
+lecture, seulement à la forme (contrôle 4). Aucun interblocage neuf avec la validation : elle prend son verrou exclusif
+d'abord et ne pose aucun verrou de ligne sur un mouvement ; une écriture attend désormais AVANT de comparer, là où elle
+attendait au premier déclencheur.
+
+**LES CONTRÔLES DE L'EXPORT**, sur la réplique, les six fichiers posés sous les versions que leurs blocs y ont prises :
+dérive 122 = 122 ; socle 78 instructions et inventaire 1 650 objets aux mêmes empreintes avant et après — les six ne
+remplacent que quatorze corps de fonction et sept commentaires.
+
+**TROUVÉ EN PASSANT : UNE RÉPLIQUE PEUT PERDRE SES COMMENTAIRES SANS QUE RIEN NE LE DISE.** Ni `signature.sql` (ses neuf
+familles), ni le socle, ni l'inventaire ne lisent `pg_description`, et la réplique, égale à la production sur les neuf
+familles, ne portait que 38 des 74 commentaires des fonctions du schéma public, 29 des 103 des tables et des colonnes,
+et un seul des quatorze. Sans effet sur la neutralité — un commentaire ne change aucun comportement —, mais les sept
+commentaires que le collage remplace n'avaient pas été vus en place. Vérifié à part : en production, les quatorze sont
+ceux du dernier `comment on function` de l'export (empreintes égales), et sept exactement nomment un compte — ceux
+que la migration réécrit ; sur un clone où ils sont posés, après les six blocs, ces sept portent le texte de leur
+migration et les sept autres n'ont pas bougé (`create or replace function` garde le commentaire) ; les en-têtes des
+quatorze (arguments, résultat, sécurité, volatilité, réglages, langage, parallélisme) sont ceux de la production avant
+et après. Une dixième famille dans `signature.sql` est à décider, hors de PC2 : elle changerait ce que toutes les
+répliques comparent.
+
+**LE DÉPÔT, EN DEUX TEMPS.** Avant le collage : l'essai neuf, `planComptable.sql` adapté, et `planComptable.test.ts` — le
+plan décalé de l'essai est celui du module, les rôles qu'il attend sont au catalogue, `pc2_exigee` (dans les deux
+essais) est vrai si et seulement si l'export porte les six migrations, et, tant qu'il ne les porte pas, chacune des
+quatorze y a le corps sur lequel les blocs sont écrits (une migration qui en changerait une avant le collage ferait
+virer le test : les blocs seraient à refaire). Après : les six fichiers d'export (versions provisoires
+`2026101099990<n>`, que `finir_apres.py` remplace par celles de la production, avec les chiffres du README) ; les
+confrontations aux CLÉS de rôle — `reportDesSoldes`, `echeanceEmprunt`, `amortissements`, `compteDeBilan`, `lettrage`,
+`cotisationRapprochee`, et `cotisationPersonnelle`, la huitième, née après la conception ; `baremeKilometrique.test.ts`
+n'a rien à y passer (il ne confronte que la table du barème) ; et, dans `planComptable.test.ts`, la forme de l'essai
+exigée du texte exporté, attentes lues dans l'essai. **TROUVÉ EN PASSANT** : deux confrontations lisaient la PREMIÈRE
+définition de leur fonction (`amortissements`, par un `find` ; `lettrage`, par `create function`) et auraient gardé le
+681100 et la liste des comptes après PC2 ; deux autres lisaient le fichier entier (`echeanceEmprunt`,
+`cotisationRapprochee`), où la voisine du même fichier lit la banque sous les mêmes mots : un rôle muté chez l'une
+passait. Toutes lisent désormais la dernière définition, elle seule. Les mêmes 212 mutants posés dans le fichier
+d'export de leur migration : 204 font virer une confrontation au premier passage ; les huit restants ont fait ajouter la
+confrontation qui manquait aux trois fonctions de la TVA (`liquidationTva.test.ts` : la composition de
+`liquidation_attendue` évaluée rôle par rôle et comparée à `ecritureDeLaLiquidation`, les deux arrondis, le sens du
+paiement — aucune n'existait) et la lecture de la forme (sécurité, volatilité, langage, `search_path`) ; il n'en reste
+qu'un, la banque de la ventilation lue dans la variable de la TVA, qu'aucun texte ne trahit et que les essais en base
+voient. **L'ESSAI NEUF NE DÉPEND D'AUCUN DOSSIER RÉEL** : écrit d'abord sur `test` (ses mouvements, son modèle, l'absence
+de ses écritures, qu'exige la garde du plan), il serait devenu impossible à la première écriture du cabinet dans `test`,
+vérification du collage comprise ; ses contrôles jouent désormais dans un dossier jetable, créé dans leur
+sous-transaction avec ses deux mouvements. Sur un clone où `test` porte deux écritures, l'ancienne version s'arrêtait en
+`ESSAI_IMPOSSIBLE`, la nouvelle rend 54 lignes, 0 en faute ; la campagne en base, rejouée sur elle (troisième passage),
+rend les mêmes verdicts mutant par mutant — les étapes qui tombent, les essais qui les voient, les codes de la course — :
+211 sur 212, la dernière l'équivalente.
+
+**CE QUI RESTE.** Le collage, dans l'ordre (1 par l'outil, puis 2 à 6), et sa vérification : l'empreinte de chaque ligne
+d'historique, les quatorze corps, la signature (seule la famille « fonctions » change), `laBaseLitLePlan.sql` strict et
+`planComptable.sql` en production, `rls.sql`, les trois contrôles de l'export ; puis `apres.patch`. Les deux messages de
+`refus_compte_de_bilan` qui nomment le 580000, les deux contraintes qui nomment des comptes
+(`dossiers_compte_notes_de_frais_check`, `lettrages_manuels_compte`) : PC3 et PC4. Le retour arrière : recoller les
+quatorze corps d'avant (leur dernière définition de l'export), sans perte tant qu'aucun plan n'est réglé.
+
+### 11/10/2026 — LA BASE LIT LE PLAN, APPLIQUÉE ET INTÉGRÉE — LIGNE 43, ÉTAPE PC2
+
+(Les six migrations préparées la veille — « LA BASE LIT LE PLAN, SANS RIEN CHANGER » — en production : la première par
+`apply_migration`, version `20261011155133`, les cinq autres collées par le cabinet dans l'éditeur SQL, chacune avec sa
+ligne d'historique, versions `20261011155350`, `20261011155411`, `20261011155424`, `20261011155436` et
+`20261011155446` — 125 migrations. Les fichiers d'export ont quitté les versions provisoires pour celles-ci, textes
+inchangés.)
+
+**LA PRODUCTION, RELUE APRÈS LE COLLAGE (lecture seule).** Chaque texte enregistré rend, fins de ligne ramenées à `\n`,
+l'empreinte de son fichier (`85768e0b…`, `ef3bce0a…`, `128da939…`, `23816b86…`, `7e7fa53f…`, `1f8947d5…`) ; et, sans
+aucune conversion, le premier EST le fichier, les cinq collés SONT le fichier dont chaque fin de ligne est devenue
+`\r\n` (381, 295, 279, 286 et 294) — vérifié par leurs md5 bruts. Les quatorze corps, ramenés à `\n`, sont ceux de la
+préparation, 14 sur 14 ; les sept commentaires réécrits et les sept autres, ceux qu'elle attendait. `signature.sql` :
+seule la famille « fonctions » a changé depuis 119 (149, `814d8be2…`). Le plan est vide ; les fonctions
+`SECURITY DEFINER` exécutables restent 5 et 37, et parmi les quatorze seul le paiement personnel d'une cotisation l'est,
+comme avant.
+
+**LE DÉPÔT.** Préparés sur 4957030, les deux correctifs de PC2 s'appliquent sur `main` (5f51cbc) : le premier tel quel ;
+le second aussi, sauf son paragraphe du README de l'export, écrit dans le contexte de R4, que R5, e5a et e5b1 ont
+recouvert de leurs paragraphes — reposé à la main aux valeurs de la production : l'en-tête à 125 migrations, un
+paragraphe de dérive, un paragraphe du socle et de l'inventaire. Dans le dépôt rien d'autre n'a bougé depuis 4957030
+parmi les dix-neuf fichiers de PC2. Les trois contrôles de l'export, contre la production : dérive 125 fichiers,
+125 migrations, `d0d719528f34fe7e1ce0443426113829` des deux côtés ; socle 78 instructions, `91ae95ec…` ; inventaire
+1 834 objets, `417e33d5…` — ces deux derniers inchangés : les six ne créent rien.
+
+**UNE RÉPLIQUE À 125, OCTET POUR OCTET.** Une copie neuve de la réplique de T2 (la production à 119, ses neuf familles),
+la version d'e5b1 remise à celle de la production — cette lignée la portait encore sous sa version provisoire, et son
+historique n'aurait pas été celui de la production (`fa2c86cf…` au lieu de `29fedc2f…`) —, le semis fictif de PC2, puis
+les six TEXTES DE PRODUCTION, octet pour octet (la première telle quelle, les cinq autres en `\r\n`), chacun avec sa
+ligne d'historique : `signature.sql` égale à la production sur les neuf familles, historique `d0d71952…`. Appliqués en
+super-utilisateur, comme le collage : sous le rôle propriétaire de la réplique, la garde de la deuxième ne lit pas
+l'historique (« permission denied for schema supabase_migrations ») ; `create or replace function` garde propriétaire
+et droits, et les six ne créent aucun objet.
+
+**LA NEUTRALITÉ, REJOUÉE À 125.** Les 42 essais du dépôt intégré, plus les variantes transitoires de `laBaseLitLePlan`
+et `planComptable`, chacun d'un seul tenant, sur la réplique semée sans les six puis avec : 38 sorties identiques au
+caractère, deux une fois masqués les identifiants que l'essai tire (`transmissionsFactures`, `ventesClient`), et les
+quatre que PC2 a changées exprès — `planComptable` (contrôle 8 : les cinq lisent le dirigeant par
+`compte_du_dirigeant` ; 9 et la mutation 44, sans objet ; strict, 1 faute avant, 0 après) et `laBaseLitLePlan` (avant,
+46 EN ATTENTE en transitoire, 46 fautes en strict ; après, 54 lignes, 0 en faute, la même sortie dans les deux
+variantes). `rls.sql` ENTIER : 35 lignes, 0 en faute, 31 mutations sur 31, avant comme après. `restauration.sql`, le
+dossier `test` muni de trois textes OCR fictifs (sans eux, l'empreinte recalculée n'avait rien à prouver) : 131 clés,
+68 tables identiques, cinq contrôles sur cinq, avant comme après, au caractère. La course du verrou : les douze
+écrivaines attendent une validation en cours (55P03) ; avant les six, les onze aux droits de l'appelant rendaient
+aussitôt leur refus — comme à 116.
+
+**TROUVÉ EN PASSANT, HORS DE PC2.** Le contrôle 156 de `piecesHorsDeFrance.sql` et de `regimesEreporting.sql` (« les
+fonctions qui nomment la fiche — ou les deux tables — : celles de la migration, et elles seules ») est en faute, avant
+comme après les six : sa liste date d'e2 et d'e5a, et `ecarter_piece_ereporting` (e5a) puis
+`declarer_ereporting_hors_application`, `garder_piece_declaree` et `garder_declaration_ereporting` (e5b1) nomment ces
+tables. Une attente en retard sur le catalogue, comme le contrôle 141 de la validation avant elle : personne n'avait
+rejoué ces deux fichiers depuis. Corrigé par la session dans la même demande : chaque liste suit le catalogue de la
+production (neuf fonctions nomment la fiche, sept les deux tables), et le libellé dit d'où viennent les nouvelles ;
+rejoués sur une réplique à 125, 197 et 186 verdicts, 0 en faute.
+
+**JOUÉS EN PRODUCTION, LE 11/10/2026.** Par un agent dédié, autorisé à ces deux essais et à rien d'autre, chacun d'un
+seul appel, son texte recopié puis comparé au fichier (même empreinte) avant l'envoi : `laBaseLitLePlan.sql` (strict)
+rend 54 lignes, la ligne 0 — 69 359 caractères, `9fe63d1f…`, le fichier entier — et 53 verdicts, tous vrais, aucun EN
+ATTENTE ; le contrôle 99 compte les mêmes lignes avant et après. `planComptable.sql` rend 59 lignes, la ligne 0 —
+47 786 caractères, `90678d4b…`, le fichier sans ses commentaires — et 58 contrôles, tous vrais (8 : les cinq fonctions
+lisent `compte_du_dirigeant` ; 9 et 44 SANS OBJET ; 0/26/1/0/3/0/0 lignes avant comme après). Les préalables relus
+après, par l'agent puis par la session, n'ont pas bougé : aucun identifiant d'essai, aucune ligne de plan, 125
+migrations. Le « 54 / 0 » de la procédure comptait la ligne 0, et son « 55 lignes » la ligne « DO » de psql : l'essai
+rend 53 verdicts.
+
+**CE QUI RESTE.** PC3, l'application lit le plan. Le retour arrière reste celui de la préparation : recoller les quatorze corps d'avant, sans
+perte tant qu'aucun plan n'est réglé (PC4).

@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 119 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 125 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -179,6 +179,15 @@ version `20261011124310`, sans confirmation demandée ; son fichier a quitté la
 inchangé (`3deb4373…`, l'empreinte que rend sa ligne d'historique) : 119 fichiers, 119 migrations, empreinte globale
 `29fedc2f680740d16956cecb0393b57c` des deux côtés, aucune divergence.
 
+**Rejoué le 11/10/2026 après `la_base_lit_le_plan_1` à `_6`** (ligne 43, étape PC2), contre la production : la première
+appliquée par `apply_migration` (version `20261011155133`), les cinq autres collées par le cabinet dans l'éditeur SQL,
+chacune avec sa ligne d'historique (versions `20261011155350` à `20261011155446`) ; leurs fichiers portent ces versions :
+125 fichiers, 125 migrations, empreinte globale `d0d719528f34fe7e1ce0443426113829` des deux côtés, aucune divergence. Les
+six fichiers sont les textes enregistrés, fins de ligne ramenées à `\n` (19 227, 18 851, 15 265, 14 971, 14 847 et
+15 058 caractères, saut de ligne final compris ; empreintes `85768e0b…`, `ef3bce0a…`, `128da939…`, `23816b86…`,
+`7e7fa53f…` et `1f8947d5…`) : le premier l'est octet pour octet ; les cinq collés portent dans l'historique une fin de
+ligne `\r\n` à chacune de leurs lignes (381, 295, 279, 286 et 294).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -317,6 +326,12 @@ et une contraintes, cinq index, trois déclencheurs, quatre policies, cinq fonct
 période d'e1 en SQL (`periode_ereporting`) rend une table et non des paramètres de sortie : l'inventaire, qui compte les
 arguments d'une fonction dans sa parenthèse, en aurait compté quatre là où le catalogue en compte deux. En production,
 après l'application : les mêmes valeurs, socle 78 `91ae95ec…` et inventaire 1 834 `417e33d5…` des deux côtés.
+
+**Rejoués le 11/10/2026 contre la production après `la_base_lit_le_plan_1` à `_6`** (ligne 43, étape PC2) : le socle est
+inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés) et l'inventaire aussi (1 834 objets,
+`417e33d59ae5172b0c4b6ab2f0e5a72a` des deux côtés). Les six migrations ne créent rien : elles remplacent quatorze corps de
+fonction, sous les mêmes noms et les mêmes arguments, et sept commentaires de fonction (qu'aucun des trois contrôles ne
+lit) — seule la famille « fonctions » de `signature.sql` change.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

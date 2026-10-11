@@ -7,8 +7,10 @@
 --   - le catalogue est celui des constantes d'aujourd'hui (son empreinte, que src/lib/planComptable.test.ts recalcule
 --     depuis `ROLES_COMPTABLES`), et le plan de chaque dossier est VIDE : aucun dossier ne règle rien ;
 --   - LA NEUTRALITÉ : pour chaque dossier, `compte_du_role` rend le défaut de chaque rôle, et `compte_du_dirigeant` rend
---     ce que rend le `case` des cinq fonctions qui le recopient — LU DANS LEUR TEXTE en base et évalué tel quel, sur
---     chaque dossier et dans les six configurations du modèle comptable ;
+--     ce que rendait le `case` des cinq fonctions qui le recopiaient — LU DANS LEUR TEXTE en base et évalué tel quel,
+--     sur chaque dossier et dans les six configurations du modèle comptable. Depuis l'étape PC2, ces cinq fonctions
+--     lisent `compte_du_dirigeant` elles-mêmes (contrôle 8 ; `pc2_exigee` est vrai : le `case` recopié est une faute) ;
+--     le contrôle 9 et sa mutation 44 sont sans objet, et supabase/essais/laBaseLitLePlan.sql prouve la lecture ;
 --   - LA LECTURE, par les six profils de la conception (§5.3) — anonyme, compte rattaché à rien, client du dossier,
 --     membre du cabinet non affecté, membre affecté, chef — : le catalogue pour tout compte connecté, le plan pour le
 --     cabinet à qui le dossier est ouvert, RIEN pour le client, pas même `plan_du_dossier` de son propre dossier ;
@@ -44,6 +46,15 @@
 -- emporte le plan ; un rôle cité, que la clé étrangère retient) et une course de deux sessions (la restauration attend
 -- l'écriture en vol, puis la refuse) — essais locaux de la session, hors du dépôt ; les quarante-trois mutations de la
 -- migration mordent toutes, et deux du contrôle 19 (ses deux `where` atteignent leurs lignes).
+--
+-- ADAPTÉ LE 10/10/2026 À L'ÉTAPE PC2 (les migrations `la_base_lit_le_plan_1` à `_6`) : les contrôles 8, 9 et 44 lisent
+-- chacune des cinq sous sa forme du moment — le `case` recopié ou `compte_du_dirigeant` —, sans faute entre deux
+-- collages. Sur une réplique égale à la production : 59 lignes, 0 en faute, avant les six migrations comme après.
+--
+-- REJOUÉ EN PRODUCTION LE 11/10/2026, après les six migrations (125) : 58 contrôles sur 58 (59 lignes avec la ligne 0),
+-- le contrôle 8 voit les cinq fonctions lire `compte_du_dirigeant`, 9 et 44 SANS OBJET ; 0/26/1/0/3/0/0 lignes avant
+-- comme après, les modèles comptables inchangés. Le texte reçu : ce fichier sans ses lignes de commentaire, saut de
+-- ligne final compris (47 786 caractères, empreinte 90678d4b…).
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -51,9 +62,15 @@ declare
   -- L'empreinte du catalogue : une ligne par rôle, « rôle|racines|compte|libellé|préfixe|ordre », dans l'ordre du
   -- catalogue. src/lib/planComptable.test.ts la recalcule depuis `ROLES_COMPTABLES` et la lit ici.
   empreinte_catalogue constant text := '5b9073a0b9331a823cfb6526927183ca';
-  -- Le `case` que cinq fonctions recopient : le compte du dirigeant, 108000 en trésorerie.
+  -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
+  -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
+  -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
+  pc2_exigee constant boolean := true;
+  cinq constant text := 'classer_virement_personnel,ecrire_forfait_kilometrique,ecrire_mouvement_compte_bilan,'
+                        || 'enregistrer_paiement_personnel_cotisation,ventiler_mouvement_bancaire';
   forme_du_case constant text :=
     '(case when (?:\w+\.)?mode_comptable = ''engagement'' then (?:\w+\.)?compte_notes_de_frais else ''108000'' end)';
+  avec_case int;
 
   dossier_client uuid; dossier_libre uuid; cabinet uuid;
   plans_avant int; roles_avant int; admins_avant int; assignations_avant int; ecritures_avant int; anouveaux_avant int;
@@ -147,15 +164,24 @@ begin
     'observe', coalesce(code_recu, 'ACCEPTÉ') || ' ' || coalesce(message, ''),
     'ok', coalesce(code_recu = '22023' and message = 'Rôle comptable inconnu : « role_qui_n_existe_pas ».', false));
 
-  select string_agg(p.proname, ',' order by p.proname),
-         count(*) filter (where (regexp_match(p.prosrc, forme_du_case))[1] is null),
-         count(*) filter (where (select count(*) from regexp_matches(p.prosrc, 'else ''108000'' end', 'g')) <> 1)
-    into obs, n, m
-    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosrc ~ 'else ''108000'' end';
-  verdicts := verdicts || jsonb_build_object('controle', '8. cinq fonctions recopient le case du dirigeant, une fois chacune et sous la même forme',
-    'observe', coalesce(obs, 'aucune') || ' ; ' || coalesce(n, 0) || ' hors forme, ' || coalesce(m, 0) || ' à plusieurs case',
-    'ok', coalesce(obs = 'classer_virement_personnel,ecrire_forfait_kilometrique,ecrire_mouvement_compte_bilan,'
-                      || 'enregistrer_paiement_personnel_cotisation,ventiler_mouvement_bancaire' and n = 0 and m = 0, false));
+  -- La forme de chacune : le `case` recopié (avant l'étape PC2) ou `compte_du_dirigeant` (après), jamais les deux.
+  select string_agg(p.proname || ':' || case when p.prosrc ~ 'else ''108000'' end' then 'case' else 'compte_du_dirigeant' end,
+                    ',' order by p.proname),
+         string_agg(p.proname, ',' order by p.proname),
+         count(*) filter (where p.prosrc ~ 'else ''108000'' end'
+                            and ((regexp_match(p.prosrc, forme_du_case))[1] is null
+                                 or (select count(*) from regexp_matches(p.prosrc, 'else ''108000'' end', 'g')) <> 1)),
+         count(*) filter (where p.prosrc ~ 'public\.compte_du_dirigeant\('
+                            and (select count(*) from regexp_matches(p.prosrc, 'public\.compte_du_dirigeant\(', 'g')) <> 1),
+         count(*) filter (where p.prosrc ~ 'else ''108000'' end' and p.prosrc ~ 'public\.compte_du_dirigeant\('),
+         count(*) filter (where p.prosrc ~ 'else ''108000'' end')
+    into obs, texte, n, m, k, avec_case
+    from pg_proc p where p.pronamespace = 'public'::regnamespace
+     and (p.prosrc ~ 'else ''108000'' end' or p.prosrc ~ 'public\.compte_du_dirigeant\(');
+  verdicts := verdicts || jsonb_build_object('controle', '8. les cinq fonctions qui lisent le compte du dirigeant le lisent une fois chacune, par le case recopié (avant l''étape PC2) ou par compte_du_dirigeant (après), jamais les deux',
+    'observe', coalesce(obs, 'aucune') || ' ; ' || coalesce(n, 0) || ' case hors forme ou répété, ' || coalesce(m, 0)
+      || ' compte_du_dirigeant répété, ' || coalesce(k, 0) || ' aux deux formes',
+    'ok', coalesce(texte = cinq and n = 0 and m = 0 and k = 0 and (avec_case = 0 or not pc2_exigee), false));
 
   -- Le `case` de chaque fonction, lu dans son texte et évalué tel quel sur chaque dossier, puis sur le dossier libre dans
   -- les six configurations (trésorerie ou engagement, et chacun des trois comptes du dirigeant).
@@ -179,9 +205,11 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '9. compte_du_dirigeant rend ce que rend le case de chacune des cinq fonctions, sur chaque dossier et dans les six configurations',
+  verdicts := verdicts || jsonb_build_object('controle',
+      case when avec_case = 0 then '9. SANS OBJET : aucune des cinq ne recopie plus le case, elles lisent compte_du_dirigeant (contrôle 8)'
+           else '9. compte_du_dirigeant rend ce que rend le case de chacune des fonctions qui le recopient encore, sur chaque dossier et dans les six configurations' end,
     'observe', ecarts || ' écart(s) sur ' || total || ', ' || coalesce(code_recu, '?') || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
-    'ok', coalesce(ecarts = 0 and total >= 5 * 2 + 5 * 6 and code_recu = 'P0001', false));
+    'ok', coalesce(ecarts = 0 and total >= avec_case * 2 + avec_case * 6 and code_recu = 'P0001', false));
 
   verdicts := verdicts || jsonb_build_object('controle', '10. compte_du_dirigeant d''un dossier inconnu est nul, comme le select … into des cinq fonctions',
     'observe', coalesce(public.compte_du_dirigeant(gen_random_uuid()), 'nul'),
@@ -662,8 +690,10 @@ begin
       if public.compte_du_dirigeant(d.id) is distinct from attendu then ecarts := ecarts + 1; end if;
     end loop;
   end loop;
-  verdicts := verdicts || jsonb_build_object('controle', '44. MUTATION — le contrôle 9 avec un case faux : il doit trouver des écarts',
-    'observe', ecarts || ' écart(s)', 'ok', ecarts > 0);
+  verdicts := verdicts || jsonb_build_object('controle',
+      case when avec_case = 0 then '44. SANS OBJET : la mutation du contrôle 9, qui n''a plus de case à confronter'
+           else '44. MUTATION — le contrôle 9 avec un case faux : il doit trouver des écarts' end,
+    'observe', ecarts || ' écart(s)', 'ok', ecarts > 0 or avec_case = 0);
 
   -- 45. Le contrôle 15 avec l'affectation au dossier libre : le membre voit la ligne.
   n := null;

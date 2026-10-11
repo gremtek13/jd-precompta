@@ -10,6 +10,7 @@ import {
 import { remplirModele } from './encaissementsFactures'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { CompteNotesDeFrais, CotisationDeclaree, EcritureBrouillon } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -227,14 +228,19 @@ describe('enregistrer_paiement_personnel_cotisation — le module dit ce que la 
     })
   })
 
-  // Les numéros de compte, les sens et les bornes : la base les vérifie EXACTEMENT, et un compte renommé d'un seul côté
-  // ferait refuser chaque déclaration, sans que rien dise pourquoi.
+  // Les comptes, les sens et les bornes : la base les vérifie EXACTEMENT, et un compte renommé d'un seul côté ferait
+  // refuser chaque déclaration, sans que rien dise pourquoi. Depuis l'étape PC2 (ligne 43), la cotisation se lit dans le
+  // plan du dossier par la CLÉ de son rôle, et le dirigeant par `compte_du_dirigeant` — le case d'avant, le 108000 lu
+  // dans le plan (planComptable.test.ts les confronte).
   it('les comptes, les sens et les bornes sont ceux de la fonction', () => {
     const sql = sqlDeLaDeclaration()
-    expect(sql).toContain(`('${COMPTE_COTISATIONS_EXPLOITANT}', v_sens_charge, v_net),`)
+    expect(sql).toContain("v_compte_cotisations := public.compte_du_role(p_dossier_id, 'cotisations_exploitant');")
+    expect(PLAN_PAR_DEFAUT.cotisations_exploitant).toBe(COMPTE_COTISATIONS_EXPLOITANT)
+    expect(sql).toContain('(v_compte_cotisations, v_sens_charge, v_net),')
     expect(sql).toContain('(v_compte, v_sens_dirigeant, v_net)')
     expect(sql).toContain('where a.centimes > 0')
-    expect(sql).toContain(`case when d.mode_comptable = 'engagement' then d.compte_notes_de_frais else '${COMPTE_EXPLOITANT}' end`)
+    expect(sql).toContain('select d.mode_comptable, public.compte_du_dirigeant(d.id)\n    into v_mode, v_compte from public.dossiers d where d.id = p_dossier_id;')
+    expect(PLAN_PAR_DEFAUT.exploitant).toBe(COMPTE_EXPLOITANT)
     expect(sql).toContain("v_sens_charge := case when v_montant > 0 then 'debit' else 'credit' end")
     expect(sql).toContain("v_sens_dirigeant := case when v_montant > 0 then 'credit' else 'debit' end")
     expect(sql).toContain('v_montant := coalesce(v_cotisation.montant_verse, v_cotisation.montant_appele);')
