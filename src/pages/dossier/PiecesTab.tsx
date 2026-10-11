@@ -14,7 +14,7 @@ import { paiementsDesPieces, piecesPayees, type LignePayante, type PartReglee } 
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
-import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
+import type { Categorie, Piece, PieceCommentaire, PieceEcarteeEreporting, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import { chargerCommentaires, commentairesParCible, dernierCommentaire } from '../../lib/commentaires'
 import FichePiece from './FichePiece'
 import PanneauDroit from '../../components/PanneauDroit'
@@ -34,6 +34,10 @@ import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type Marque
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
+import { lireEcarts } from '../../lib/regimesEreportingLecture'
+import { lireDeclarationsEreporting, type LectureDesDeclarations } from '../../lib/declarationsEreportingLecture'
+import { pieceDeclaree } from '../../lib/ereportingEcran'
+import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
@@ -144,6 +148,15 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   const relireFichesHorsDeFrance = useCallback(async () => {
     setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
   }, [dossierId])
+  // LES PIÈCES ÉCARTÉES DE L'E-REPORTING (étape e5c), retirées comprises : la fiche d'une pièce candidate les écrit et les
+  // reprend. Nulles avant leur première lecture ; relues seules après un écart.
+  const [ecartsEreporting, setEcartsEreporting] = useState<LectureComplete<PieceEcarteeEreporting> | null>(null)
+  const relireEcartsEreporting = useCallback(async () => {
+    setEcartsEreporting(await lireEcarts(dossierId))
+  }, [dossierId])
+  // LES DÉCLARATIONS D'E-REPORTING ET LEURS SOURCES (étape e5c) : une pièce dont la fiche est déclarée ne se supprime plus
+  // (hypothèse E5-Q6) — la fiche et la suppression le disent avant le clic. Nulles avant leur première lecture.
+  const [declarationsEreporting, setDeclarationsEreporting] = useState<LectureDesDeclarations | null>(null)
 
   async function load() {
     setLoading(true)
@@ -229,6 +242,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     setVentesEmises(await lireVentesEmises(dossierId))
     setCitations(await lireCitationsDeLaRevision(dossierId))
     setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
+    setEcartsEreporting(await lireEcarts(dossierId))
+    setDeclarationsEreporting(await lireDeclarationsEreporting(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
@@ -512,7 +527,21 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
       const refus = refusDeSuppression({ pieceId: p.id }, citations)
       return refus === null ? [] : [{ piece: p, refus }]
     })
-    const aSupprimer = nonFigees.filter((p) => !citees.some((c) => c.piece.id === p.id))
+    // UNE PIÈCE DONT LA FICHE EST DÉCLARÉE NE SE SUPPRIME PLUS NON PLUS (hypothèse E5-Q6, `garder_piece_declaree`) : écartée de
+    // la sélection, chacune nommée avec la phrase de la base — la période d'e-reporting qui la porte. Lues en partie, les
+    // fiches et les déclarations ne disent rien d'elle : la confirmation le dit plutôt que de se taire.
+    const declarees = nonFigees.flatMap((p) => {
+      if (citees.some((c) => c.piece.id === p.id)) return []
+      const d = pieceDeclaree(p.id, fichesHorsDeFrance, declarationsEreporting)
+      return d?.sait ? [{ piece: p, refus: d.message }] : []
+    })
+    const aSupprimer = nonFigees.filter((p) => !citees.some((c) => c.piece.id === p.id) && !declarees.some((d) => d.piece.id === p.id))
+    const declarationsInconnues = aSupprimer.length > 0 && pieceDeclaree(aSupprimer[0].id, fichesHorsDeFrance, declarationsEreporting)?.sait === false
+    const listeDesDeclarees = declarees.slice(0, 5).map((d) => `• ${d.piece.nom_fichier} — ${d.refus}`).join('\n')
+      + (declarees.length > 5 ? `\n… et ${declarees.length - 5} autre(s)` : '')
+    const avertissementDeclarees = declarees.length === 0 ? ''
+      : `\n\n${declarees.length === 1 ? 'Une pièce de la sélection reste' : `${declarees.length} pièces de la sélection restent`}, `
+        + `déclarée${declarees.length > 1 ? 's' : ''} à l’e-reporting :\n${listeDesDeclarees}`
     const avertissementFigees = nbFigees === 0 ? ''
       : nbFigees === 1 ? '\n\nUne pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste.'
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
@@ -529,14 +558,17 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
           + ' Une erreur trouvée après la validation se corrige sur l’exercice suivant.',
         citees.length === 0 ? null : citees.length === 1 && nbFigees === 0 ? citees[0].refus
           : `Citée${citees.length > 1 ? 's' : ''} par la révision des soldes, ${citees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesCitees}`,
+        declarees.length === 0 ? null : declarees.length === 1 && nbFigees === 0 && citees.length === 0 ? declarees[0].refus
+          : `Déclarée${declarees.length > 1 ? 's' : ''} à l’e-reporting, ${declarees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesDeclarees}`,
       ].filter((ligne) => ligne !== null).join('\n\n'))
       return
     }
     // Les fiches « hors de France » partent avec leurs pièces (clé en cascade) : la confirmation les nomme.
     const fichesEmportees = fichesEmporteesParLaSuppression(aSupprimer.map((p) => p.id), fichesHorsDeFrance)
     if (!window.confirm(
-      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}`
-      + (fichesEmportees ? `\n\n${fichesEmportees}` : ''),
+      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}${avertissementDeclarees}`
+      + (fichesEmportees ? `\n\n${fichesEmportees}` : '')
+      + (declarationsInconnues ? `\n\n${pieceDeclaree(aSupprimer[0].id, fichesHorsDeFrance, declarationsEreporting)?.message ?? ''}` : ''),
     )) return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
@@ -1046,6 +1078,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
               anneeFigeante: figees.get(editing.id) ?? null,
               gelIncomplet: figeesIncompletes,
               pieces: lectureIncomplete === null ? pieces : null,
+              ecarts: ecartsEreporting,
+              relireEcarts: relireEcartsEreporting,
+              declarations: declarationsEreporting,
             }}
             onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
             onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}

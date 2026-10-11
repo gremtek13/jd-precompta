@@ -39,6 +39,8 @@ import CotisationsTab from './dossier/CotisationsTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
+import EreportingCard from './dossier/EreportingCard'
+import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
 import FactureApercu from './dossier/FactureApercu'
 import FactureAvoirModal from './dossier/FactureAvoirModal'
@@ -62,6 +64,7 @@ import VehiculesCard from './dossier/VehiculesCard'
 import VirementsTab from './dossier/VirementsTab'
 import VoletSocialCard from './dossier/VoletSocialCard'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
+import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
 
 // LE VIDE EST UNE AFFIRMATION, ET AUCUN ÉCRAN NE LA FAIT AVANT D'AVOIR LU (CLAUDE.md, « Lectures et écritures »).
 //
@@ -158,11 +161,17 @@ function piece(o: Partial<Piece> = {}): Piece {
 }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
+// Le dossier que la carte et la fenêtre de l'e-reporting reçoivent de l'onglet TVA (étape e5c) : un redevable fictif.
+const DOSSIER_EREPORTING = {
+  id: 'd1', siret: '12345678901234', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
+  tva_periodicite: 'trimestrielle', tva_sur_debits: false,
+} as const
 const rien = () => {}
 // La fiche « hors de France » d'une pièce reçoit les fiches du dossier de l'onglet des pièces (monté ici, qui les lit) :
 // montée seule, elle les reçoit lues — un dossier sans fiche. Elle lit elle-même le texte de la pièce, que ce garde retient.
 const FICHES_RECUES: DonneesHorsDeFrance = {
   lecture: { fiches: [], taux: [], motif: null }, relire: async () => {}, anneeFigeante: null, gelIncomplet: null, pieces: [],
+  ...ECARTS_ET_DECLARATIONS_VIDES,
 }
 
 // Ce qu'un onglet reçoit de la page du dossier : le volet de droite, les exercices validés, l'exercice choisi.
@@ -246,6 +255,13 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
     <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+  ) },
+  // La carte de l'e-reporting de l'onglet TVA (étape e5c) : elle lit les régimes, et ouvre la fenêtre sur un clic.
+  { nom: 'EreportingCard', fichier: 'pages/dossier/EreportingCard.tsx', rendre: () => (
+    <Dossier1><EreportingCard dossierId="d1" dossier={DOSSIER_EREPORTING} /></Dossier1>
+  ) },
+  { nom: 'EreportingModal', fichier: 'pages/dossier/EreportingModal.tsx', rendre: () => (
+    <Dossier1><EreportingModal dossierId="d1" dossier={DOSSIER_EREPORTING} onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EstimationTab', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'FactureApercu', fichier: 'pages/dossier/FactureApercu.tsx', rendre: () => (

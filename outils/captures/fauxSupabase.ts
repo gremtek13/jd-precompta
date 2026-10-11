@@ -28,10 +28,12 @@ import { paiementsDesPieces } from '../../src/lib/rattachement'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
+import * as ER from '../../src/test/ereportingEcran'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
-  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, StatutFactureRecu, TransmissionEncaissement, TransmissionFacture,
+  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, PieceEcarteeEreporting, PieceHorsDeFrance, PieceHorsDeFranceTaux,
+  RegimeEreporting, StatutFactureRecu, TransmissionEncaissement, TransmissionFacture,
   VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
 
@@ -1245,6 +1247,90 @@ const BANQUE_DU_CLIENT_D7 = CLIENT_DU_BANC && VENTES_DU_BANC === 'banque'
   }
   : { lignes: [], propositions: [], precisions: [], controles: [] }
 
+// ── L'E-REPORTING DE L'ATELIER (ligne 28.5, étape e5c) ───────────────────────────────────────────────────────────────
+//
+// Le monde fictif des tests de l'écran (`src/test/ereportingEcran.ts`), posé sur l'atelier (d7, redevable, trimestriel) :
+// un régime confirmé « chaque mois » depuis le 1er janvier 2026 (et un premier, retiré, qui reste dans l'historique) ; pour
+// octobre 2027, un achat à un éditeur établi en Irlande, DÉCLARÉ le 2 novembre puis dont la fiche a une version plus récente
+// (« À rectifier »), une vente à un particulier déclarée et à jour, son encaissement à déclarer ; une pièce en dollars
+// ÉCARTÉE, et, pour novembre, une pièce en dollars que rien n'a jugée (un candidat). Les déclarations sont CALCULÉES par
+// le module de l'écran sur le monde d'avant la nouvelle version de la fiche, comme la base les aurait gardées. Ces dates
+// sont de 2027 : les visites qui ouvrent la fenêtre posent l'horloge au 5 novembre 2027 (`debordements.mjs`). Tous FICTIFS.
+const DOSSIER_EREPORTING = ER.dossier({ id: 'd7', siret: '98765432400019' })
+const REGIMES_EREPORTING: RegimeEreporting[] = [
+  ER.regime({
+    id: ER.R2, dossier_id: 'd7', depuis: '2025-09-01', note: 'Saisi avec la mauvaise date de départ.',
+    cree_le: '2026-01-02T09:00:00Z', retire_le: '2026-01-03T10:00:00Z', retire_par: 'u1',
+  }),
+  ER.regime({ id: ER.R1, dossier_id: 'd7', depuis: '2026-01-01', cree_le: '2026-01-03T10:30:00Z' }),
+]
+const LIGNES_E1: LigneSaisie[] = [
+  { designation: 'Séance de conseil en organisation — particulier', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 },
+]
+const FACTURE_E1: FactureEmise = {
+  ...FACTURES_D7[0],
+  id: ER.V1, numero: 'F2027-0001', date_emission: '2027-10-08', date_echeance: '2027-11-07',
+  ...calculerTotaux(LIGNES_E1),
+  tiers_nom: 'Particulier Fictif', tiers_adresse: '1 rue des Essais\n69001 Lyon', tiers_siret: null, tiers_siren: null,
+  tiers_adresse_electronique: null, type_client: 'non_assujetti', nature_operation: 'services', date_prestation: '2027-10-08',
+  created_at: '2027-10-08T09:00:00Z', validated_at: '2027-10-08T09:10:00Z',
+}
+const ENCAISSEMENT_E1: EncaissementFacture = encaissementDuBanc({
+  id: ER.E1, facture_id: ER.V1, date_encaissement: '2027-10-15', montant: 120, cree_le: '2027-10-15T09:00:00Z',
+})
+const PART_E1: EncaissementFactureTaux = { encaissement_id: ER.E1, dossier_id: 'd7', taux: 20, montant: 120 }
+
+const pieceEreporting = (o: Ligne): Ligne => ({
+  ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
+  dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,
+})
+const PIECES_EREPORTING: Ligne[] = [
+  pieceEreporting({ id: ER.P1, nom_fichier: 'facture-logiciel.pdf', storage_path: 'd7/facture-logiciel.pdf' }),
+  // Écartée : un fournisseur en dollars qui s’est révélé établi en France.
+  pieceEreporting({
+    id: ER.P9, date_piece: '2027-10-20', tiers: 'Atelier Fictif Sàrl', devise: 'USD', montant_ttc: 90, montant_devise: 97,
+    taux_change: 0.927835, conversion_source: 'bce', nom_fichier: 'atelier-fictif.pdf', storage_path: 'd7/atelier-fictif.pdf',
+  }),
+  // Candidate : en dollars, sans fiche ni écart, en novembre.
+  pieceEreporting({
+    id: ER.P2, date_piece: '2027-11-02', tiers: 'Nuage Studio Inc', devise: 'USD', montant_ttc: 200, montant_devise: 216,
+    taux_change: 0.925926, conversion_source: 'bce', nom_fichier: 'nuage-studio.pdf', storage_path: 'd7/nuage-studio.pdf',
+  }),
+]
+const FICHES_EREPORTING: PieceHorsDeFrance[] = [
+  ER.fiche({ id: ER.F1, dossier_id: 'd7', piece_id: ER.P1 }),
+  // La version plus récente (après la déclaration du 2 novembre) : le numéro corrigé.
+  ER.fiche({ id: ER.F2, dossier_id: 'd7', piece_id: ER.P1, remplace_id: ER.F1, numero: 'INV-1-CORR', cree_le: '2027-11-03T09:00:00Z' }),
+]
+const TAUX_EREPORTING: PieceHorsDeFranceTaux[] = [
+  ER.taux({ fiche_id: ER.F1, dossier_id: 'd7' }),
+  ER.taux({ fiche_id: ER.F2, dossier_id: 'd7' }),
+]
+const ECART_EREPORTING: PieceEcarteeEreporting = ER.ecart({ id: ER.X1, dossier_id: 'd7', piece_id: ER.P9 })
+
+// Le monde tel qu'il était le 2 novembre, avant la deuxième version de la fiche : c'est lui que les déclarations ont lu.
+const MONDE_DU_2_NOVEMBRE = ER.sources({
+  regimes: ER.lu([REGIMES_EREPORTING[1]]),
+  pieces: ER.lu([ER.piece({ id: ER.P1, dossier_id: 'd7' })]),
+  fiches: ER.lu([FICHES_EREPORTING[0]]),
+  taux: ER.lu([TAUX_EREPORTING[0]]),
+  factures: ER.lu([ER.facture({ id: ER.V1, dossier_id: 'd7' })]),
+  lignes: ER.lu([ER.ligne({ facture_id: ER.V1 })]),
+  encaissements: ER.lu([ER.encaissement({ id: ER.E1, dossier_id: 'd7', facture_id: ER.V1 })]),
+  parts: ER.lu([ER.part({ encaissement_id: ER.E1, dossier_id: 'd7' })]),
+})
+const DECLARATION_DES_ACHATS = ER.declaree('achats', ER.OCTOBRE, MONDE_DU_2_NOVEMBRE, { id: ER.D1 }, DOSSIER_EREPORTING)
+const DECLARATION_DES_VENTES = ER.declaree('ventes', ER.OCTOBRE, MONDE_DU_2_NOVEMBRE, { id: ER.D2, cree_le: '2027-11-02T09:05:00Z' }, DOSSIER_EREPORTING)
+
+const EREPORTING_D7 = {
+  regimes: REGIMES_EREPORTING.map((r) => ({ ...r })),
+  ecarts: [{ ...ECART_EREPORTING }],
+  declarations: [DECLARATION_DES_ACHATS.declaration, DECLARATION_DES_VENTES.declaration].map((d) => ({ ...d })),
+  sources: [...DECLARATION_DES_ACHATS.sources, ...DECLARATION_DES_VENTES.sources].map((s) => ({ ...s })),
+  fiches: FICHES_EREPORTING.map((f) => ({ ...f })),
+  taux: TAUX_EREPORTING.map((t) => ({ ...t })),
+}
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1288,7 +1374,7 @@ const TABLES: Record<string, Ligne[]> = {
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
-  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces],
+  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces, ...PIECES_EREPORTING],
   ecritures_brouillon: [
     // L'ACQUISITION de l'ordinateur du cabinet, telle que la génération l'écrit (lib/ecritures.ts) : sa facture sur
     // le compte de sa nature, au TTC — le dossier est exonéré —, à sa date, son paiement n'étant pas rapproché. Le
@@ -1425,8 +1511,13 @@ const TABLES: Record<string, Ligne[]> = {
     texte: 'STUDIO LUMIÈRE LISBOA LDA\nVAT PT 123 456 789\nInvoice number: FT-2026/118\nReportage photographique — septembre 2026\n'
       + 'VAT reverse charge — Article 196 of Directive 2006/112/EC\nTotal EUR 250.00',
   }],
-  pieces_hors_de_france: FICHES_HORS_DE_FRANCE,
-  pieces_hors_de_france_taux: TAUX_HORS_DE_FRANCE,
+  pieces_hors_de_france: [...FICHES_HORS_DE_FRANCE, ...EREPORTING_D7.fiches],
+  pieces_hors_de_france_taux: [...TAUX_HORS_DE_FRANCE, ...EREPORTING_D7.taux],
+  // L'e-reporting de l'atelier (étape e5c, voir `EREPORTING_D7`).
+  regimes_ereporting: EREPORTING_D7.regimes,
+  pieces_ecartees_ereporting: EREPORTING_D7.ecarts,
+  declarations_ereporting: EREPORTING_D7.declarations,
+  declarations_ereporting_sources: EREPORTING_D7.sources,
   // Le volet social de l'exercice que Clôture affiche, déjà saisi : c'est ce qui fait paraître les
   // rubriques et l'estimation des cotisations dans les captures, au lieu d'un formulaire vide.
   volet_social_pamc: [{
@@ -1511,13 +1602,13 @@ const TABLES: Record<string, Ligne[]> = {
   // typées sur l'application, rendues au faux client en lignes nues.
   // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
   // Puis F2026-0009, refusée par l'acheteur sur la plateforme du client, et les statuts lus de l'atelier (étape d7).
-  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9].map((f) => ({ ...f })),
-  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9].map((l) => ({ ...l })),
+  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1].map((f) => ({ ...f })),
+  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1)].map((l) => ({ ...l })),
   statuts_factures_recus: STATUTS_D7.map((s) => ({ ...s })),
   transmissions_factures: [...TRANSMISSIONS_D1, ...TRANSMISSIONS_D7].map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
-  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8].map((e) => ({ ...e })),
-  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8].map((p) => ({ ...p })),
+  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1].map((e) => ({ ...e })),
+  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1].map((p) => ({ ...p })),
   transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
 }
 

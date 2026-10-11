@@ -14,7 +14,15 @@ import {
   ficheEnMots, nomDuPays, prefixeAttendu, propositionsDeLaFiche, saisieDeLaFiche, schemaDuPays, signauxHorsDeFrance,
   ventilationDe, versionsDeLaPiece, type LectureFichesHorsDeFrance, type Proposition,
 } from '../../lib/propositionsHorsDeFrance'
-import type { CodeTvaHorsDeFrance, NatureAchatHorsDeFrance, Piece, PieceHorsDeFrance, PieceHorsDeFranceTaux } from '../../lib/types'
+import { confirmationDeLEcart, confirmationDeLaReprise } from '../../lib/ereportingEcran'
+import type { LectureDesDeclarations } from '../../lib/declarationsEreportingLecture'
+import {
+  argumentsDeLEcart, argumentsDeLaReprise, ecartActif, refusEcartPiece, refusRepriseEcart,
+} from '../../lib/regimesEreporting'
+import type { LectureComplete } from '../../lib/lectureComplete'
+import type {
+  CodeTvaHorsDeFrance, NatureAchatHorsDeFrance, Piece, PieceEcarteeEreporting, PieceHorsDeFrance, PieceHorsDeFranceTaux,
+} from '../../lib/types'
 
 // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » D'UNE PIÈCE D'ACHAT, dans la fiche de la pièce (ligne 28.5, e-reporting,
 // étape e3 ; la base : e2, lib/piecesHorsDeFrance.ts). Tout assujetti établi en France — exonéré et franchisé compris —
@@ -46,6 +54,14 @@ export interface DonneesHorsDeFrance {
   gelIncomplet: string | null
   /** Les pièces du dossier, pour reprendre la fiche d'un même fournisseur ; null quand leur liste est lue en partie. */
   pieces: readonly Pick<Piece, 'id' | 'tiers' | 'date_piece'>[] | null
+  /** LES PIÈCES ÉCARTÉES de l'e-reporting du dossier, retirées comprises, lues EN ENTIER (étape e5c) ; null avant leur
+   * première lecture. Écartée, une pièce candidate n'attend plus sa fiche ; reprise, elle redevient à vérifier. */
+  ecarts: LectureComplete<PieceEcarteeEreporting> | null
+  /** Relit les écarts du dossier (l'onglet qui les a lus) : rendue quand la lecture est revenue. */
+  relireEcarts: () => Promise<void>
+  /** Les déclarations d'e-reporting du dossier et leurs sources (étape e5c) : une pièce dont la fiche est déclarée ne se
+   * supprime plus (hypothèse E5-Q6). Lue par l'écran appelant ; la fiche de la pièce ne s'en sert pas. */
+  declarations: LectureDesDeclarations | null
 }
 
 interface Props {
@@ -198,7 +214,7 @@ function valeurProposee(p: Proposition, devise: string): string {
 type TexteLu = { etat: 'attente' } | { etat: 'lu'; texte: string | null } | { etat: 'illisible'; message: string }
 
 export default function FicheHorsDeFrance({ dossierId, piece, pieceModifiee, donnees, sansTexteLu, onModifiee }: Props) {
-  const { lecture, relire, anneeFigeante, gelIncomplet, pieces } = donnees
+  const { lecture, relire, anneeFigeante, gelIncomplet, pieces, ecarts, relireEcarts } = donnees
   const decrite = TYPES_DE_PIECE_DECRITS.includes(piece.type_piece)
   const [formulaire, setFormulaire] = useState<{ courant: Formulaire; initial: string } | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -208,6 +224,9 @@ export default function FicheHorsDeFrance({ dossierId, piece, pieceModifiee, don
   // par la base sur une fiche que l'écran n'a pas relue.
   const ecritureFicheEnCours = useRef(false)
   const relectureFichesEnCours = useRef(false)
+  // Le motif de l'écart de l'e-reporting en cours de saisie (étape e5c) ; nul quand aucune saisie n'est ouverte. Les gestes
+  // de l'écart partagent le verrou de la fiche : un seul verrou pour les quatre écritures de la section.
+  const [motifDeLEcart, setMotifDeLEcart] = useState<string | null>(null)
 
   // LE TEXTE LU SUR LE DOCUMENT (déjà stocké au dépôt), de quoi dire les signaux et proposer des champs : une ligne de
   // notre base, lue à l'ouverture d'une pièce d'achat, jamais un appel à un service. Sa lecture refusée se DIT : elle
@@ -227,7 +246,9 @@ export default function FicheHorsDeFrance({ dossierId, piece, pieceModifiee, don
   const texte: TexteLu = sansTexteLu ? { etat: 'lu', texte: null } : texteLu
   const texteConnu = texte.etat === 'lu' ? texte.texte : null
 
-  const modifiee = formulaire !== null && JSON.stringify(formulaire.courant) !== formulaire.initial
+  // Un motif commencé est une saisie non enregistrée, comme la fiche : la garde du volet la protège.
+  const modifiee = (formulaire !== null && JSON.stringify(formulaire.courant) !== formulaire.initial)
+    || (motifDeLEcart !== null && motifDeLEcart.trim() !== '')
   useEffect(() => { onModifiee?.(modifiee) }, [modifiee, onModifiee])
   useEffect(() => () => onModifiee?.(false), [onModifiee])
 
@@ -373,6 +394,55 @@ export default function FicheHorsDeFrance({ dossierId, piece, pieceModifiee, don
     }
   }
 
+  // LES ÉCARTS DE L'E-REPORTING (étape e5c) : une pièce qui ressemble à un achat à l'étranger et n'en est pas un — ou que le
+  // cabinet a tranché de ne pas déclarer — s'ÉCARTE, avec ce que la vérification a établi, et la période ne l'attend plus ;
+  // un écart se REPREND (la pièce redevient à vérifier). Ce que les deux fonctions refuseraient se dit avant le clic
+  // (lib/regimesEreporting.ts) ; elles partagent le verrou de la fiche, relâché après la relecture des écarts.
+  const ecartsLus = ecarts !== null && ecarts.complete ? ecarts : null
+  const nomDeLaPiece = piece.tiers?.trim() || piece.nom_fichier
+  const motifEnvoye = motifDeLEcart === null || motifDeLEcart.trim() === '' ? null : motifDeLEcart.trim()
+  const refusDeLEcart = ecartsLus && motifDeLEcart !== null
+    ? refusEcartPiece(piece, motifEnvoye, { fiches: fichesDuDossier, ecarts: ecartsLus.lignes })
+    : null
+
+  async function ecarter() {
+    if (ecritureFicheEnCours.current || ecartsLus === null || motifDeLEcart === null) return
+    // Ce que la base refuserait a déjà grisé le bouton : un clic n'arrive ici que sur une saisie qu'elle accepterait.
+    if (refusEcartPiece(piece, motifEnvoye, { fiches: fichesDuDossier, ecarts: ecartsLus.lignes }) !== null) return
+    if (!window.confirm(confirmationDeLEcart(nomDeLaPiece, motifEnvoye as string))) return
+    ecritureFicheEnCours.current = true
+    setOccupe(true)
+    setErreur(null)
+    try {
+      const { error } = await supabase.rpc('ecarter_piece_ereporting', argumentsDeLEcart(dossierId, piece.id, motifEnvoye))
+      if (error) setErreur(messageErreur(error, 'La pièce n’a pas pu être écartée de l’e-reporting.'))
+      else setMotifDeLEcart(null)
+      // Relus dans les deux cas, AVANT de relâcher le verrou : écartée, la pièce ne se propose plus ; refusée, la base a
+      // peut-être vu ce que l'écran n'avait pas lu.
+      await relireEcarts()
+    } finally {
+      ecritureFicheEnCours.current = false
+      setOccupe(false)
+    }
+  }
+
+  async function reprendreLEcart() {
+    const actif = ecartsLus ? ecartActif(ecartsLus.lignes, piece.id) : null
+    if (ecritureFicheEnCours.current || actif === null || refusRepriseEcart(actif) !== null) return
+    if (!window.confirm(confirmationDeLaReprise(nomDeLaPiece))) return
+    ecritureFicheEnCours.current = true
+    setOccupe(true)
+    setErreur(null)
+    try {
+      const { error } = await supabase.rpc('reprendre_piece_ereporting', argumentsDeLaReprise(dossierId, actif.id))
+      if (error) setErreur(messageErreur(error, 'L’écart n’a pas pu être retiré.'))
+      await relireEcarts()
+    } finally {
+      ecritureFicheEnCours.current = false
+      setOccupe(false)
+    }
+  }
+
   // Un Entrée dans un champ de la fiche soumettrait le formulaire de la PIÈCE qui l'entoure — et la validerait.
   function sansSoumission(e: KeyboardEvent<HTMLElement>) {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault()
@@ -498,6 +568,67 @@ export default function FicheHorsDeFrance({ dossierId, piece, pieceModifiee, don
           ))}
         </div>
       )}
+
+      {decrite && (() => {
+        // L'écart de l'e-reporting de cette pièce, dit seulement d'une lecture revenue ENTIÈRE ; une candidate (aucune fiche,
+        // un signal) peut s'écarter. Une fiche posée après l'écart l'emporte : l'écart reste, sans effet (hypothèse E5-Q5).
+        const actif = ecartsLus ? ecartActif(ecartsLus.lignes, piece.id) : null
+        const candidate = courante === null && signaux.length > 0
+        if (ecarts !== null && !ecarts.complete && candidate) {
+          return (
+            <p className="fiche-hdf-refus">
+              Les pièces écartées de l’e-reporting n’ont pas pu être lues en entier ({ecarts.motif}) : cette pièce ne s’écarte ni
+              ne se reprend d’ici.
+            </p>
+          )
+        }
+        if (actif) {
+          return (
+            <div className="fiche-hdf-ecart">
+              <p>
+                <strong>Écartée de l’e-reporting</strong> le {formatDate(actif.cree_le)} : « {actif.motif} ».
+                {courante !== null
+                  ? ' Cette pièce a une fiche : c’est elle qui compte, l’écart est sans effet tant qu’elle existe.'
+                  : ' La période ne l’attend plus.'}
+              </p>
+              <div className="fiche-hdf-actions">
+                <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => void reprendreLEcart()}>
+                  {occupe ? 'Reprise…' : 'Reprendre la pièce'}
+                </button>
+              </div>
+            </div>
+          )
+        }
+        if (ecartsLus === null || !candidate) return null
+        return motifDeLEcart === null ? (
+          <div className="fiche-hdf-actions">
+            <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => setMotifDeLEcart('')}>
+              Écarter de l’e-reporting…
+            </button>
+          </div>
+        ) : (
+          <div className="fiche-hdf-saisie">
+            <p className="muted">
+              Cette pièce ressemble à un achat à un fournisseur établi hors de France, et la période l’attend. Si ce n’en est pas un —
+              ou si vous avez tranché de ne pas la déclarer —, écartez-la en disant ce que votre vérification a établi : la période ne
+              l’attendra plus. L’écart se reprend.
+            </p>
+            <div className="field">
+              <label htmlFor="hdf-motif-ecart">Ce que la vérification a établi</label>
+              <textarea id="hdf-motif-ecart" rows={2} value={motifDeLEcart} onChange={(e) => setMotifDeLEcart(e.target.value)} />
+            </div>
+            {refusDeLEcart && <p className={refusDeLEcart.cle === 'motif_absent' ? 'muted' : 'fiche-hdf-refus'}>{refusDeLEcart.message}</p>}
+            <div className="fiche-hdf-actions">
+              <button type="button" className="btn btn-primary btn-sm" disabled={occupe || refusDeLEcart !== null} onClick={() => void ecarter()}>
+                {occupe ? 'Écart…' : 'Écarter la pièce'}
+              </button>
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => { setMotifDeLEcart(null); setErreur(null) }}>
+                Abandonner
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {f && formulaire && (
         <div className="fiche-hdf-saisie">

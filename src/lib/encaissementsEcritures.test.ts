@@ -86,11 +86,19 @@ const FONCTIONS_DU_REGIME_ET_DES_ECARTS = [
 export const TABLES_DES_DECLARATIONS_EREPORTING = ['declarations_ereporting', 'declarations_ereporting_sources'] as const
 const FONCTIONS_DES_DECLARATIONS_EREPORTING = ['declarer_ereporting_hors_application'] as const
 
-// Les écrans qui appellent la fonction de la déclaration d'e-reporting, nommément : aucun avant la phase C d'e5b.
-const ECRANS_DES_DECLARATIONS_EREPORTING: readonly string[] = []
+// Les écrans qui appellent la fonction de la déclaration d'e-reporting, nommément : la fenêtre de l'e-reporting (étape e5c,
+// phase C), ouverte de la carte de l'onglet TVA.
+const ECRANS_DES_DECLARATIONS_EREPORTING: readonly string[] = ['src/pages/dossier/EreportingModal.tsx']
 
-// Les écrans qui appellent les quatre fonctions du régime et des écarts, nommément : aucun avant la phase C d'e5.
-const ECRANS_DU_REGIME_ET_DES_ECARTS: readonly string[] = []
+// Les écrans qui appellent les quatre fonctions du régime et des écarts, nommément et PAR FONCTION (étape e5c, phase C) : la
+// fenêtre de l'e-reporting confirme et retire un régime ; la fiche d'une pièce écarte une pièce candidate — là où les
+// signaux d'e3 la désignent — et la reprend.
+const ECRANS_DU_REGIME_ET_DES_ECARTS: Readonly<Record<(typeof FONCTIONS_DU_REGIME_ET_DES_ECARTS)[number], readonly string[]>> = {
+  confirmer_regime_ereporting: ['src/pages/dossier/EreportingModal.tsx'],
+  retirer_regime_ereporting: ['src/pages/dossier/EreportingModal.tsx'],
+  ecarter_piece_ereporting: ['src/pages/dossier/FicheHorsDeFrance.tsx'],
+  reprendre_piece_ereporting: ['src/pages/dossier/FicheHorsDeFrance.tsx'],
+}
 
 // Les écrans qui appellent les trois fonctions des cycles, nommément : l'onglet Révision (étape R4, phase C), qui écrit
 // pour son panneau d'un cycle (`FicheCycle`, qui n'écrit rien lui-même).
@@ -514,7 +522,7 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     const appelle = (texte: string, fonction: string) =>
       new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
     for (const fonction of FONCTIONS_DU_REGIME_ET_DES_ECARTS) {
-      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DU_REGIME_ET_DES_ECARTS)
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DU_REGIME_ET_DES_ECARTS[fonction])
       expect(appelle(`await supabase.rpc(\n  '${fonction}', argumentsDeLEcart(d, p, m))`, fonction)).toBe(true)
       expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
     }
@@ -551,7 +559,7 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     }
   })
 
-  it('la fonction de la déclaration ne s’appelle que des écrans qui s’inscrivent nommément : aucun avant la phase C', () => {
+  it('la fonction de la déclaration ne s’appelle que des écrans qui s’inscrivent nommément', () => {
     const appelle = (texte: string, fonction: string) =>
       new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
     for (const fonction of FONCTIONS_DES_DECLARATIONS_EREPORTING) {

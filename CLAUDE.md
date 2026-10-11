@@ -186,7 +186,9 @@ HISTORIQUE.md     le détail de ce que ce fichier résume (lu à la demande).
 outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par Vite avec un faux Supabase à
                   données fictives, photographiée par Playwright (mode d'emploi en tête de vitrine.mjs ; images
                   dans sorties/, ignoré par git). debordements.mjs mesure les débordements et rend un code
-                  d'erreur ; installable.mjs demande à Chromium si l'application est installable.
+                  d'erreur ; installable.mjs demande à Chromium si l'application est installable. Le monde
+                  d'e-reporting de l'atelier (d7) est daté de 2027 : ses visites `ereporting/*` posent l'horloge
+                  au 5 novembre 2027 et restent EN FIN de `VISITES`.
 outils/cotisations/  oracle.mjs : les cas de référence des cotisations Urssaf, calculés par le moteur des
                   simulateurs de l'Urssaf (installé à la demande, jamais en dépendance).
 outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*.xml, fictives) par le schéma CII
@@ -558,7 +560,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   pièce — et neuf questions au cabinet (Q4, E5-Q1 à E5-Q7, Q6) ; e5b1, la déclaration hors application — le contenu
   d'e4 figé et son empreinte, l'initiale et la rectificative, la pièce que sa fiche déclarée retient —, en base et en
   module le 11/10/2026 (E5-Q6 et E5-Q7 prises comme hypothèses ; Q6 attend le cabinet, e5b2 ; quatre questions
-  nouvelles, E5B-Q1 à Q4) → « L'E-REPORTING : LA CONCEPTION », « L'E-REPORTING :
+  nouvelles, E5B-Q1 à Q4) ; e5c, les écrans — la carte de l'onglet TVA et sa fenêtre, l'écart d'une pièce dans sa fiche,
+  la pièce déclarée qui ne se supprime plus —, le 11/10/2026 (E5-Q2, E5-Q3, E5-Q5, E5-Q6, E5-Q7 et Q4 prises comme les
+  recommandations ; la rectificative à zéro opération dite et jamais offerte) ; restent e5b2 (Q6), e6 (le fichier) et
+  la suite → « L'E-REPORTING : LA CONCEPTION », « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE
+  PIÈCE », « L'E-REPORTING :
   L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À
   L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
   BASE », « LA DÉCLARATION D'E-REPORTING HORS APPLICATION, EN BASE ».
@@ -731,6 +737,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   recharge-t-il derrière ? Presque toujours dans `src/`, presque jamais dans une Edge Function
   (`edgeFunctionsEcritures.test.ts` : quatre portes `.from(`, `.rpc(`, `.auth.`, `.storage.`, résultat pris ou jeté à la
   tête de chaîne).
+- **Un lot d'insertion nomme l'UNION des clés de ses lignes** (postgrest-js, `columns=`), et le service met NULL dans ce
+  qu'une ligne omet (`defaultToNull` vrai par défaut) : la restauration n'envoie que des lots dont les lignes nomment les
+  mêmes colonnes (`lotsDEcriture` ; `undefined` n'est pas nommé), et son faux client écrit comme le service (NULL, 23502
+  sur une clé NULL) → « UN LOT D'INSERTION NE MÊLE PLUS DES LIGNES DE FORMES DIFFÉRENTES ».
 - **Une écriture du navigateur lit son erreur et la DIT** (`ecrituresVerifiees.test.ts`, depuis toute la source de
   `src/`) : tables, tout `.rpc(`, tout `functions.invoke` (argument de type compris), stockage et comptes qui écrivent ;
   résultat destructuré avec `error`, gardé entier, ou passé à un consommateur nommé — rendu, jeté ou non reconnu est
@@ -1261,6 +1271,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `garder_piece_declaree`) ; un régime retiré reste désigné (E5-Q7). Le module redit les refus, REJOUE l'essai appel
   par appel et dit « à rectifier » par opération, jamais sur une lecture partielle → « LA DÉCLARATION D'E-REPORTING
   HORS APPLICATION, EN BASE ».
+- **Les écrans de l'e-reporting** (`pages/dossier/EreportingCard.tsx`, `EreportingModal.tsx`, `lib/ereportingEcran.ts`
+  pur, `lib/ereportingLecture.ts`, e5c) : la carte lit les régimes seuls ; la fenêtre lit douze tables EN ENTIER
+  (`lireTout`) et, sur une lecture absente, partielle ou qui lève, ne dit ni n'offre rien et nomme ce qui manque ; les
+  textes lus ne sont que ceux des achats qui peuvent entrer dans une période, par lots ; les refus des cinq fonctions
+  se disent avant le clic par les modules, jamais réécrits ; un verrou par écran, relâché après la relecture, relue
+  aussi sur un refus ; la déclaration dit ce qu'elle garde et nomme ce qu'elle déclare ; rien ne part vers une
+  plateforme. Écarter et reprendre se font dans la FICHE de la pièce (candidate : sans fiche, un signal) ; une pièce dont
+  la fiche est déclarée ne se supprime plus et la suppression le dit (E5-Q6) ; le CSV est le détail de la période, pas le
+  fichier de la plateforme (e6) → « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE PIÈCE ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.

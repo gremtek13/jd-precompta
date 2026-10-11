@@ -10,6 +10,7 @@ import type { Predicat } from '../../test/filtresPostgrest'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
+import { regime as regimeDEreporting } from '../../test/ereportingEcran'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET lib/liquidationTva.ts, ET SE TESTE LÀ. Ce qui se joue ici est ce
 // qu'aucun test des modules ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
@@ -22,6 +23,8 @@ const faux = vi.hoisted(() => ({
   // Tables dont la lecture s'arrête avant le compte annoncé : `lireTout` la déclare incomplète.
   tronquees: new Set<string>(),
   lectures: 0,
+  // Les tables lues, dans l'ordre : la carte de l'e-reporting lit les régimes (étape e5c), la CA3 le reste.
+  tablesLues: [] as string[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
   // Non nul : l'appel à la base attend qu'on le libère, pour éprouver le verrou.
@@ -56,6 +59,7 @@ vi.mock('../../lib/supabase', async () => {
           range: (d: number, f: number) => { debut = d; fin = f; return lecture },
           then: (suite: (r: unknown) => unknown) => {
             faux.lectures++
+            faux.tablesLues.push(table)
             const reponse = () => {
               const lignes = filtrer(faux.tables[table] ?? [], predicats)
               return {
@@ -239,6 +243,7 @@ beforeEach(() => {
   dossierCourant()
   faux.tronquees = new Set()
   faux.lectures = 0
+  faux.tablesLues = []
   faux.rpcs = []
   faux.misesAJour = []
   faux.suspendue = null
@@ -253,10 +258,10 @@ afterEach(() => {
 })
 
 describe('l’onglet TVA', () => {
-  it('ne lit rien et le dit, sur un dossier qui n’est pas assujetti', async () => {
+  it('ne lit rien de la CA3 et le dit, sur un dossier qui n’est pas assujetti : seule la carte de l’e-reporting lit ses régimes', async () => {
     await afficher({ assujetti: false })
     expect(screen.getByText('Déclaration de TVA')).toBeTruthy()
-    expect(faux.lectures).toBe(0)
+    expect(faux.tablesLues).toEqual(['regimes_ereporting'])
   })
 
   // LE TEXTE FAUX NE REVIENT PAS (ligne 28.5, étape e1) : l'onglet disait d'un franchisé ou d'un exonéré qu'il « n’a pas de
@@ -274,7 +279,9 @@ describe('l’onglet TVA', () => {
     expect(screen.queryAllByText('Pas de déclaration de TVA')).toHaveLength(0)
     // La carte de la facturation électronique, sous elle, dit l'e-reporting de ses achats.
     expect(screen.getByText('Transmettre ses achats à l’étranger (e-reporting)')).toBeTruthy()
-    expect(faux.lectures).toBe(0)
+    // Et la carte de l'e-reporting, dans cette branche aussi, lit ses régimes — rien de la CA3.
+    expect(screen.getByRole('heading', { name: 'E-reporting' })).toBeTruthy()
+    expect(faux.tablesLues).toEqual(['regimes_ereporting'])
   })
 
   // LE STATUT DE TVA SE RÈGLE ICI (ligne 28.5) — le badge « TVA » de l'en-tête y mène. Changé, il change l'onglet
@@ -289,6 +296,43 @@ describe('l’onglet TVA', () => {
     expect(screen.getByText('Déclaration de TVA')).toBeTruthy()
     expect(screen.getByText(/^En franchise en base, le dossier ne facture pas de TVA et n’en déclare pas sur ses ventes\./)).toBeTruthy()
     expect(screen.queryAllByText('CA3 — 1er trimestre 2027')).toHaveLength(0)
+  })
+
+  // LA CARTE DE L'E-REPORTING (étape e5c) vit dans les DEUX branches, et sait qu'un statut ou un régime vient d'être changé ici
+  // (hypothèse E5-Q2) : le régime confirmé que l'onglet contredit se dit « à reconfirmer », et la phrase le dit au changement.
+  describe('la carte de l’e-reporting', () => {
+    it('un redevable la porte aussi, après la carte de la facturation électronique', async () => {
+      await afficher()
+      expect(screen.getByRole('heading', { name: 'E-reporting' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Régime, périodes et déclarations' })).toBeTruthy()
+    })
+
+    it('un statut changé dans l’onglet : le régime confirmé est à reconfirmer, et la carte dit que le statut vient d’être changé', async () => {
+      faux.tables.regimes_ereporting = [regimeDEreporting({ dossier_id: 'd' })]
+      await afficher()
+      expect(screen.queryByText(/vient d’être changé/)).toBeNull()
+      expect(document.querySelector('.alerte-tva')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Changer le statut' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Franchise en base (art. 293 B du CGI)' }))
+      await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+      expect(screen.getByText(/^Le statut de TVA vient d’être changé\. Le statut de TVA du dossier n’est plus celui du régime confirmé/)).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Confirmer le régime…' })).toBeTruthy()
+    })
+
+    it('une périodicité changée dans l’onglet : même chose, le régime de la CA3 fait partie du régime confirmé', async () => {
+      faux.tables.regimes_ereporting = [regimeDEreporting({ dossier_id: 'd' })]
+      await afficher()
+      await act(async () => { fireEvent.change(screen.getByLabelText('Déclaration CA3'), { target: { value: 'mensuelle' } }) })
+      expect(screen.getByText(/^Le statut de TVA vient d’être changé\. Le statut de TVA du dossier n’est plus celui du régime confirmé/)).toBeTruthy()
+    })
+
+    it('un régime refusé par la base ne dit rien de changé', async () => {
+      faux.tables.regimes_ereporting = [regimeDEreporting({ dossier_id: 'd' })]
+      faux.miseAJourRefusee = true
+      await afficher()
+      await act(async () => { fireEvent.change(screen.getByLabelText('Déclaration CA3'), { target: { value: 'mensuelle' } }) })
+      expect(screen.queryByText(/vient d’être changé/)).toBeNull()
+    })
   })
 
   // La case du numéro de TVA (décision du cabinet du 08/10/2026) : l'onglet la passe à la carte du statut, avec le SIRET

@@ -440,7 +440,7 @@ const COLONNES_PISTE = [
 
 // Le séparateur point-virgule et la virgule décimale sont la convention française d'Excel — un
 // tableur qui ouvre ce fichier doit montrer des colonnes, pas une seule colonne de texte.
-function champCsv(valeur: string): string {
+export function champCsv(valeur: string): string {
   // Un libellé venu de l'OCR contient des sauts de ligne et des guillemets ; sans neutralisation ils
   // coupent la ligne en deux et le fichier devient structurellement faux (même piège que le FEC).
   const propre = valeur.replace(/[\r\n]+/g, ' ').trim()

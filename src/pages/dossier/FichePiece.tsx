@@ -21,6 +21,7 @@ import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib
 import { PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { enregistrerNoteInterne, lireNoteInterne, noteModifiee, type LectureNoteInterne } from '../../lib/notesInternes'
 import { ficheEmporteeParLaSuppression } from '../../lib/propositionsHorsDeFrance'
+import { pieceDeclaree } from '../../lib/ereportingEcran'
 import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './FicheHorsDeFrance'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
@@ -95,6 +96,11 @@ interface Props {
 
 export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance }: Props) {
   const fige = piece !== null && figeePar !== null
+  // LA PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING ne se supprime plus (hypothèse E5-Q6, `garder_piece_declaree`) : la
+  // fiche le dit sous les mots de la base et n'offre pas « Supprimer ». Les fiches ou les déclarations lues en partie ne
+  // disent rien d'elle : la confirmation de la suppression le dit (`declaree.sait === false`).
+  const declaree = piece !== null ? pieceDeclaree(piece.id, horsDeFrance.lecture, horsDeFrance.declarations) : null
+  const declareePar = declaree?.sait ? declaree.message : null
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -582,11 +588,16 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       setError(citeePar)
       return
     }
+    if (declareePar) {
+      setError(declareePar)
+      return
+    }
     // La fiche « hors de France » part avec la pièce (clé en cascade), toutes versions comprises : la confirmation la nomme.
     const ficheEmportee = ficheEmporteeParLaSuppression(piece.id, horsDeFrance.lecture)
     if (!window.confirm(
       `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`
-      + (ficheEmportee ? `\n\n${ficheEmportee}` : ''),
+      + (ficheEmportee ? `\n\n${ficheEmportee}` : '')
+      + (declaree && !declaree.sait ? `\n\n${declaree.message}` : ''),
     )) return
     setDeleting(true)
     setError(null)
@@ -701,6 +712,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </p>
           )}
           {citeePar && <p className="fiche-piece-figee">{citeePar}</p>}
+          {declareePar && <p className="fiche-piece-figee">{declareePar}</p>}
           {venteEmise && (
             <div className="fiche-piece-vente">
               <span className={`badge ${PASTILLE_DE_LA_MARQUE[venteEmise.genre]}`}>{venteEmise.libelle}</span>
@@ -990,7 +1002,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         </div>
 
         <div className="fiche-piece-pied">
-          {piece && !fige && !citeePar ? (
+          {piece && !fige && !citeePar && !declareePar ? (
             <button type="button" className="btn btn-danger btn-sm" disabled={occupee} onClick={handleDelete}>
               {deleting ? 'Suppression…' : 'Supprimer'}
             </button>

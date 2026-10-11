@@ -71,6 +71,14 @@ découvre avant.
    contourne en écrivant NULL**. Il faut donc recréer les comptes AVEC LEURS IDENTIFIANTS D'ORIGINE
    (les UUID), sinon la restauration s'arrête sur les accès clients, les affectations d'équipe et
    l'historique des packs. Le manifeste de chaque sauvegarde liste les UUID attendus.
+
+   **Et pas en recopiant leurs lignes** (relevé le 11/10/2026) : `auth.users.confirmed_at` est une colonne GÉNÉRÉE
+   (`least(email_confirmed_at, phone_confirmed_at)`, lue au catalogue de la production), et Postgres refuse toute
+   insertion qui lui donne une valeur autre que DEFAULT — NULL compris — en 428C9, avant d'écrire une ligne : un
+   `insert … select *` depuis une copie d'`auth.users`, ou une ligne recopiée telle quelle, s'arrête là. Une recopie par
+   SQL omet la colonne de sa liste, et la base la recalcule ; l'API d'administration (`auth.admin.createUser`) ne l'écrit
+   pas, et prend l'`id` d'origine selon le client installé (`AdminUserAttributes.id`, `@supabase/auth-js` 2.112.4) — à
+   éprouver avec le reste (§6). C'est le piège que la restauration avait avec `piece_textes_ocr.texte_md5` (§6).
 2. **La ligne du cabinet** (`cabinets`). Une sauvegarde est par dossier ; elle suppose son cabinet
    déjà présent. Le manifeste donne son identifiant, et la restauration refuse de commencer s'il
    manque. Et le catalogue des rôles comptables (`roles_comptables`, ligne 43) : une sauvegarde de dossier
