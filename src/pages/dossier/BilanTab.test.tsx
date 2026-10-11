@@ -531,3 +531,123 @@ describe('BilanTab — la colonne de l’exercice précédent', () => {
     expect(screen.queryByText(/Exercice précédent/)).toBeNull()
   })
 })
+
+// L'OUVERTURE CONFRONTÉE À LA CLÔTURE DE N−1. Le calcul est jugé dans `ouvertureConfrontee.test.ts` ; ici, ce que
+// l'écran en montre : la ligne de l'en-tête, le détail des écarts sous chaque rubrique, rien avant d'avoir lu ni sur une
+// lecture partielle, et aucune lecture de plus.
+describe('BilanTab — l’ouverture confrontée à la clôture de l’exercice précédent', () => {
+  const ligneOuverture = () => texteNormalise(screen.getByText(/^Ouverture :/).closest('p') as HTMLElement)
+  const lignesDesEcarts = () => [...document.querySelectorAll('.card li')].map(texteNormalise)
+
+  it('concordante : la ligne le dit, avec la règle du report, sans lecture de plus', async () => {
+    societeValidee()
+    let relacher = () => {}
+    faux.attente = new Promise<void>((r) => { relacher = r })
+    rendre({ valides: [2025] })
+    expect(screen.queryByText(/^Ouverture :/)).toBeNull()
+    await act(async () => { relacher() })
+    expect(ligneOuverture()).toBe('Ouverture : concordante L’ouverture de 2026 reprend la clôture de 2025, compte par '
+      + 'compte et rubrique par rubrique, au centime (code de commerce, art. L123-19 ; PCG, art. 112-2). Le report garde '
+      + 'le résultat de l’exercice 2025 avant répartition, au 120000 pour un bénéfice, au 129000 pour une perte (PCG, '
+      + 'art. 112-2) : son affectation ne s’écrit pas encore dans l’application.')
+    expect(faux.appels).toBe(5)
+  })
+
+  it('un écart d’un centime : la rubrique, puis le compte, chacun de ses deux côtés', async () => {
+    societeValidee()
+    faux.tables.soldes_reportes = (faux.tables.soldes_reportes as SoldeReporte[]).map((s) => (
+      s.dossier_id === 'd1' && (s.compte === '512000' || s.compte === '101000') ? { ...s, montant: s.montant + 0.01 } : s))
+    rendre({ valides: [2025] })
+    await act(async () => {})
+    expect(ligneOuverture()).toMatch(
+      /^Ouverture : en écart L’ouverture de 2026 ne reprend pas la clôture de 2025 : 2 comptes et 2 rubriques du bilan en écart\./)
+    const lignes = lignesDesEcarts()
+    expect(lignes).toContain('512000 Report : ouverture 3 200,01 € au débit, clôture de 2025 3 200,00 € au débit — 0,01 € de plus '
+      + 'au débit à l’ouverture ; des deux côtés, d’un montant différent.')
+    expect(lignes.find((l) => l.startsWith('Disponibilités'))).toMatch(
+      /^Disponibilités \(actif\) : ouverture 3 200,01 €, clôture de 2025 3 200,00 € — 0,01 € de plus à l’ouverture\.512000/)
+    expect(lignes.find((l) => l.startsWith('Capital social ou individuel'))).toMatch(
+      /^Capital social ou individuel \(passif\) : ouverture 10 000,01 €, clôture de 2025 10 000,00 € — 0,01 € de plus à l’ouverture\.101000/)
+    // Le bilan de 2026 lui-même reste là.
+    expect(screen.getAllByRole('table')).toHaveLength(2)
+  })
+
+  it('deux écarts qui se compensent dans une rubrique se disent à part, avec ce que le report réunit', async () => {
+    societeValidee()
+    // La perte de 2025 reportée au 120000 au lieu du 129000 : la rubrique « résultats en attente » concorde.
+    faux.tables.soldes_reportes = (faux.tables.soldes_reportes as SoldeReporte[]).map((s) => (
+      s.compte === '129000' ? { ...s, compte: '120000' } : s))
+    rendre({ valides: [2025] })
+    await act(async () => {})
+    expect(ligneOuverture()).toMatch(/: 2 comptes en écart\./)
+    const lignes = lignesDesEcarts()
+    expect(lignes.find((l) => l.startsWith('Les rubriques concordent'))).toBeTruthy()
+    expect(lignes).toContain('120000 Report : ouverture 300,00 € au débit, clôture de 2025 aucun solde — 300,00 € de plus au débit à '
+      + 'l’ouverture ; à l’ouverture seulement.')
+    expect(lignes.find((l) => l.startsWith('129000 '))).toMatch(/: ouverture aucun solde, clôture de 2025 300,00 € au débit — 300,00 € de plus au crédit à l’ouverture ; à la clôture seulement\. À la clôture, le report y réunit la perte de 2025 \(300,00 €\)\.$/)
+  })
+
+  it('un exploitant : le report réunit le 108 et le bénéfice au 101000, et la liste le dit jusqu’au bout', async () => {
+    // 2025 : capital 10 000, une recette de 2 000, un prélèvement de 500. Clôture : banque 11 500 D ; le report verse
+    // au 101000 le capital, le 108 et le bénéfice, 11 500 C. L'ouverture de 2026 porte un centime de trop au 101000.
+    faux.tables = {
+      ecritures_brouillon: [
+        ...ecrire('2025-01-02', [['512000', 'D', 10_000], ['101000', 'C', 10_000]]),
+        ...ecrire('2025-02-01', [['512000', 'D', 2_000], ['706000', 'C', 2_000]], { ligne_bancaire_id: 'x1' }),
+        ...ecrire('2025-03-01', [['108000', 'D', 500], ['512000', 'C', 500]], { ligne_bancaire_id: 'x2' }),
+      ],
+      pieces: [], categories: [], a_nouveaux: [],
+      soldes_reportes: [
+        soldeReporte({ id: 'e1', compte: '512000', sens: 'debit', montant: 11_500 }),
+        soldeReporte({ id: 'e2', compte: '101000', sens: 'credit', montant: 11_500.01 }),
+      ],
+    }
+    rendre({ modele: EXPLOITANT, valides: [2025] })
+    await act(async () => {})
+    const ligne = lignesDesEcarts().find((l) => l.startsWith('101000 '))
+    // Le montant du bénéfice porte une virgule : la liste garde son « et » avant le dernier élément.
+    expect(ligne).toMatch(/ À la clôture, le report y réunit 108000 et le bénéfice de 2025 \(2 000,00 €\)\.$/)
+  })
+
+  it('rien à confronter : le premier exercice du dossier', async () => {
+    societeValidee()
+    rendre({ valides: [2025] })
+    await act(async () => {})
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Choisir 2025' })) })
+    expect(texteNormalise(screen.getByText(/^Ouverture :/))).toBe('Ouverture : rien à confronter. L’exercice 2025 est le premier '
+      + 'du dossier : il s’ouvre sans solde, et aucun exercice précédent n’est tenu dans l’application.')
+  })
+
+  it('rien à confronter : un exercice ouvert par une balance reprise', async () => {
+    faux.tables = {
+      ecritures_brouillon: ecrire('2026-03-01', [['606000', 'D', 100], ['512000', 'C', 100]]),
+      a_nouveaux: [
+        aNouveau({ compte: '512000', sens: 'debit', montant: 1_000 }),
+        aNouveau({ compte: '101000', compte_origine: '101000', libelle: 'Capital', sens: 'credit', montant: 1_000 }),
+      ],
+      categories: [], pieces: [], soldes_reportes: [],
+    }
+    rendre()
+    await act(async () => {})
+    expect(texteNormalise(screen.getByText(/^Ouverture :/))).toMatch(
+      /^Ouverture : rien à confronter\. L’exercice 2026 s’ouvre par la balance reprise le 01\/01\/2026 : l’exercice 2025 est tenu dans le logiciel précédent/)
+  })
+
+  it.each(['soldes_reportes', 'ecritures_brouillon', 'a_nouveaux'])('une lecture partielle de %s ne dit rien de l’ouverture', async (table) => {
+    societeValidee()
+    faux.refusees.add(table)
+    rendre({ valides: [2025] })
+    await act(async () => {})
+    expect(screen.getByText(/Le bilan ne s’établit pas sur une lecture incomplète/)).toBeTruthy()
+    expect(screen.queryByText(/^Ouverture :/)).toBeNull()
+    expect(screen.queryByText(/concordante|en écart/)).toBeNull()
+  })
+
+  it('un exercice dont l’ouverture attend la validation du précédent ne dit rien de la confrontation', async () => {
+    societeValidee()
+    rendre({ valides: [] })
+    await act(async () => {})
+    expect(screen.getByText(/L’exercice 2026 n’a pas encore d’ouverture/)).toBeTruthy()
+    expect(screen.queryByText(/^Ouverture :/)).toBeNull()
+  })
+})

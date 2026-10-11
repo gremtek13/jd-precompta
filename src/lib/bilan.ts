@@ -418,6 +418,12 @@ export type BilanDeLExercice =
     /** Les renvois du formulaire que le bilan sait calculer, en centimes. */
     renvois: { dontTva: number; dontComptesCourantsDebiteurs: number }
     points: PointDuBilan[]
+    /**
+     * Le solde de clôture de chaque compte que l'exercice lit (son ouverture et ses écritures), débit − crédit en
+     * centimes, classes 6 et 7 et hors classes comprises, soldés compris, dans l'ordre des numéros : ce que le report
+     * des soldes lirait (lib/ouvertureConfrontee.ts).
+     */
+    soldes: { compte: string; libelle: string; centimes: number }[]
   }
 
 const centimesDe = (l: { sens: SensEcriture; montant: number }) => (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100)
@@ -799,6 +805,7 @@ export function bilanDeLExercice(d: EntreesDuBilan): BilanDeLExercice {
     etat: 'etabli', exercice, dateCloture, individuel, ouverture, provisoire,
     actif: rubriquesActif, passif: rubriquesPassif, totauxActif, totauxPassif,
     resultat, ecart, renvois, points,
+    soldes: [...soldes.keys()].sort(parNumero).map((compte) => ({ compte, libelle: libelleDe(compte), centimes: soldes.get(compte)! })),
   }
 }
 
