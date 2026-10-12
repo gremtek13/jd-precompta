@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InformationsTab from './InformationsTab'
 import type { ModeleComptable } from '../../lib/engagement'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // LA SUPPRESSION D'UN DOSSIER EST LE GESTE LE PLUS IRRÉVERSIBLE DE L'APPLICATION, et c'est celui
 // auquel se ramène une demande d'effacement — les données de patients sont dans les FICHIERS, pas
@@ -135,7 +136,7 @@ async function supprimer(nom: string) {
   await act(async () => { confirmer.click() })
 }
 
-function monter(modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }) {
+function monter(modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }) {
   return render(
     <InformationsTab
       dossierId="d1"
@@ -333,7 +334,7 @@ describe('informations du client : on n’écrase jamais ce qu’on n’a pas su
 
 describe('la carte Véhicules reçoit le modèle comptable du dossier', () => {
   it('lui passe celui de l’onglet, dont dépend le compte que son forfait crédite', async () => {
-    monter({ mode: 'engagement', compteNotesDeFrais: '467000' })
+    monter({ mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT })
     expect(await screen.findByText('Véhicules — engagement — 467000')).toBeTruthy()
   })
 })

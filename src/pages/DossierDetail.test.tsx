@@ -45,10 +45,36 @@ const faux = vi.hoisted(() => ({
   retenuesValides: {} as Record<string, Promise<void>>,
   erreurValides: null as string | null,
   lecturesValides: 0,
+  // Le plan comptable de chaque dossier (`plan_du_dossier`, ligne 43, étape PC3) : celui qui est posé, sinon le défaut de
+  // chaque rôle ; sa lecture retenue ou refusée à la demande, des rôles retirés de la réponse, et le nombre de lectures.
+  plans: {} as Record<string, Record<string, string>>,
+  retenuesPlan: {} as Record<string, Promise<void>>,
+  erreurPlan: null as string | null,
+  rolesAbsents: [] as string[],
+  lecturesPlan: 0,
 }))
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
+    // Le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue, comme la base le rend.
+    rpc: (nom: string, args: { p_dossier_id: string }) => {
+      const identifiant = args.p_dossier_id
+      faux.lecturesPlan++
+      return (faux.retenuesPlan[identifiant] ?? Promise.resolve())
+        .then(() => import('../lib/planComptable'))
+        .then(({ ROLES_COMPTABLES }) => {
+          if (nom !== 'plan_du_dossier') return { data: null, error: { message: `fonction inconnue du faux client : ${nom}` } }
+          if (faux.erreurPlan) return { data: null, error: { message: faux.erreurPlan } }
+          const plan = faux.plans[identifiant]
+          return {
+            data: ROLES_COMPTABLES.filter((r) => !faux.rolesAbsents.includes(r.role)).map((r) => ({
+              role: r.role, compte: plan?.[r.role] ?? r.compteDefaut, libelle: r.libelleDefaut,
+              prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: plan ? 'dossier' : 'application',
+            })),
+            error: null,
+          }
+        })
+    },
     from: (table: string) => {
       let unique = false
       let maj = false
@@ -121,7 +147,9 @@ vi.mock('../lib/supabase', () => ({
 vi.mock('./dossier/ChecklistTab', async () => {
   const { useExercicesValides } = await import('../context/ExercicesValidesContext')
   return {
-    default: function DoubleVueDEnsemble({ assujettiTva, statutTva }: { assujettiTva: boolean; statutTva: string | null }) {
+    default: function DoubleVueDEnsemble({ assujettiTva, statutTva, modele }: {
+      assujettiTva: boolean; statutTva: string | null; modele: { plan: { banque: string } }
+    }) {
       const { frontiere } = useExercicesValides()
       return (
         <>
@@ -129,6 +157,7 @@ vi.mock('./dossier/ChecklistTab', async () => {
           <p>Vue d’ensemble — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
           <p>Vue d’ensemble — statut {statutTva ?? 'à préciser'}</p>
           <p>Vue d’ensemble — frontière {frontiere ?? 'aucune'}</p>
+          <p>Vue d’ensemble — banque {modele.plan.banque}</p>
         </>
       )
     },
@@ -237,10 +266,11 @@ vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
 // PERSONNEL s'écrit face au compte du dirigeant (lib/cotisationPersonnelle.ts) : l'onglet reçoit le modèle ENTIER.
 // Doublé pour montrer ce qu'il REÇOIT.
 vi.mock('./dossier/CotisationsTab', () => ({
-  default: ({ modele }: { modele: { mode: string; compteNotesDeFrais: string } }) => (
+  default: ({ modele }: { modele: { mode: string; compteNotesDeFrais: string; plan: { banque: string; exploitant: string } } }) => (
     <>
       <p>Cotisations — modèle {modele.mode}</p>
       <p>Cotisations — dirigeant {modele.compteNotesDeFrais}</p>
+      <p>Cotisations — plan : banque {modele.plan.banque}, exploitant {modele.plan.exploitant}</p>
     </>
   ),
 }))
@@ -388,6 +418,11 @@ beforeEach(() => {
   faux.retenuesValides = {}
   faux.erreurValides = null
   faux.lecturesValides = 0
+  faux.plans = {}
+  faux.retenuesPlan = {}
+  faux.erreurPlan = null
+  faux.rolesAbsents = []
+  faux.lecturesPlan = 0
 })
 
 describe('Page d’un dossier — l’assistant dans le panneau de droite', () => {
@@ -816,5 +851,91 @@ describe('Page d’un dossier — les exercices validés', () => {
     const arbre = screen.getByRole('region', { name: 'Dossier ouvert' })
     await act(async () => { fireEvent.click(within(arbre).getByRole('link', { name: "Vue d'ensemble" })) })
     expect(screen.getByText('Vue d’ensemble — frontière 2025-12-31')).toBeTruthy()
+  })
+})
+
+// LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : lu avec le dossier, par `plan_du_dossier`, il entre dans le modèle
+// comptable que chaque onglet reçoit ; entier ou rien — absent, refusé, incomplet ou illisible, aucun onglet ne se monte et
+// la page le dit ; et le compte du dirigeant n'entre au modèle que validé par lui.
+describe('Page d’un dossier — le plan comptable', () => {
+  // Un plan où chaque rôle se tient sur un autre compte que son défaut (lib/planComptable.ts, `PLAN_DECALE`) : le dirigeant
+  // du dossier d1 y est donc au 455100, plus au 455000.
+  const decale = async () => (await import('../lib/planComptable')).PLAN_DECALE
+
+  it('lu avec le dossier, il atteint les onglets par le modèle — le plan du dossier, pas le défaut', async () => {
+    faux.plans = { d1: { ...(await decale()) } }
+    faux.dossiers.d1.compte_notes_de_frais = '455100' as never
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText('Cotisations — plan : banque 512100, exploitant 108100')).toBeTruthy()
+    expect(screen.getByText('Cotisations — dirigeant 455100')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/cotisations')
+    expect(screen.getByText('Cotisations — plan : banque 512000, exploitant 108000')).toBeTruthy()
+  })
+
+  it('pendant sa lecture, aucun onglet ne se monte ; revenu, l’onglet reçoit le plan', async () => {
+    const p = retenue()
+    faux.retenuesPlan.d1 = p.promesse
+    await afficher('/dossiers/d1/cotisations')
+    expect(titre()).toBe('Cabinet Hélène')
+    expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
+    expect(screen.getByLabelText('Chargement')).toBeTruthy()
+
+    await act(async () => { p.relacher() })
+    expect(await screen.findByText('Cotisations — plan : banque 512000, exploitant 108000')).toBeTruthy()
+  })
+
+  it('refusé, il le dit et les écrans ne s’affichent pas ; « Réessayer » le relit', async () => {
+    faux.erreurPlan = 'refus simulé'
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText(/Le plan comptable de ce dossier n’a pas pu être lu \(plan comptable refusé : refus simulé\)/)).toBeTruthy()
+    expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
+    expect(titre()).toBe('Cabinet Hélène')
+    const lectures = faux.lecturesPlan
+
+    faux.erreurPlan = null
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Réessayer' })) })
+    expect(faux.lecturesPlan).toBe(lectures + 1)
+    expect(screen.getByText('Cotisations — plan : banque 512000, exploitant 108000')).toBeTruthy()
+  })
+
+  it('incomplet — un rôle du catalogue absent —, il le dit : un rôle non lu ne s’écrit pas à son défaut', async () => {
+    faux.rolesAbsents = ['banque', 'tva_collectee']
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText(/plan comptable incomplet : 2 rôle\(s\) sur 26 absent\(s\) \(banque, tva_collectee\)/)).toBeTruthy()
+    expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
+  })
+
+  it('un compte hors des racines de son rôle le rend illisible', async () => {
+    faux.plans = { d1: { banque: '411000' } }
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText(/plan comptable illisible : « 411000 » n’est pas un compte du rôle « banque »/)).toBeTruthy()
+    expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
+  })
+
+  it('le compte du dirigeant n’entre au modèle que s’il est celui d’un des trois rôles du plan', async () => {
+    // Le plan du dossier tient son associé au 455100 : le 455000 enregistré n'est le compte d'aucun dirigeant.
+    faux.plans = { d1: { ...(await decale()) } }
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText(/Le compte du dirigeant de ce dossier \(455000\) n’est le compte d’aucun des trois rôles que son plan comptable lui ouvre \(455100, 108100, 467100\)\. Ses écrans ne s’affichent pas/)).toBeTruthy()
+    expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
+  })
+
+  it('pendant la lecture du plan du dossier suivant, aucun onglet ne garde celui du précédent', async () => {
+    // Un plan qui ne règle que la banque : gardé à tort, il ferait un modèle valide pour le dossier suivant, dont le
+    // dirigeant est au compte par défaut — et ses onglets composeraient à la banque du précédent.
+    faux.plans = { d1: { banque: '512100' } }
+    await afficher('/dossiers/d1/cotisations')
+    expect(screen.getByText('Cotisations — plan : banque 512100, exploitant 108000')).toBeTruthy()
+
+    const p = retenue()
+    faux.retenuesPlan.d2 = p.promesse
+    // La barre latérale mène à la Vue d'ensemble du dossier suivant : elle aussi reçoit le modèle, donc le plan.
+    await allerAuDossier('Bravo Santé')
+    expect(screen.queryAllByText(/^(Cotisations — plan|Vue d’ensemble — banque)/)).toHaveLength(0)
+
+    await act(async () => { p.relacher() })
+    expect(await screen.findByText('Vue d’ensemble — banque 512000')).toBeTruthy()
   })
 })

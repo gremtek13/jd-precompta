@@ -4,7 +4,7 @@ import { join, relative } from 'node:path'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { etat, libererTout, reinitialiser } from '../test/clientRetenu'
+import { etat, libererRetenues, libererTout, reinitialiser } from '../test/clientRetenu'
 import { MENTIONS_VIDES } from '../test/factures'
 import type { Dossier, FactureEmise, Piece } from '../lib/types'
 import type { ModeleComptable } from '../lib/engagement'
@@ -65,6 +65,7 @@ import VirementsTab from './dossier/VirementsTab'
 import VoletSocialCard from './dossier/VoletSocialCard'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
+import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
 
 // LE VIDE EST UNE AFFIRMATION, ET AUCUN ÉCRAN NE LA FAIT AVANT D'AVOIR LU (CLAUDE.md, « Lectures et écritures »).
 //
@@ -160,7 +161,7 @@ function piece(o: Partial<Piece> = {}): Piece {
   }
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
 // Le dossier que la carte et la fenêtre de l'e-reporting reçoivent de l'onglet TVA (étape e5c) : un redevable fictif.
 const DOSSIER_EREPORTING = {
   id: 'd1', siret: '12345678901234', statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false,
@@ -231,13 +232,13 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'AccesTab', fichier: 'pages/dossier/AccesTab.tsx', rendre: () => <Dossier1><AccesTab dossierId="d1" dossierNom="Dossier fictif" codeEmail="abc123" /></Dossier1> },
   { nom: 'AssistantTab', fichier: 'pages/dossier/AssistantTab.tsx', rendre: () => <Dossier1><AssistantTab dossierId="d1" dossierNom="Dossier fictif" onFermer={rien} /></Dossier1> },
-  { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" /></Dossier1> },
+  { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} /></Dossier1> },
   { nom: 'BilanTab (trésorerie)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
     <Dossier1><BilanTab dossierId="d1" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'BilanTab (engagement)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
-    <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000' }} onNavigate={rien} /></Dossier1>
+    <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ChecklistTab', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
     <Dossier1><ChecklistTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
@@ -248,7 +249,7 @@ const ECRANS: Ecran[] = [
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
     <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
   ) },
-  { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000' }} /></Dossier1> },
+  { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} /></Dossier1> },
   { nom: 'DocumentsTab', fichier: 'pages/dossier/DocumentsTab.tsx', rendre: () => <Dossier1><DocumentsTab dossierId="d1" /></Dossier1> },
   { nom: 'EcrituresTab', fichier: 'pages/dossier/EcrituresTab.tsx', rendre: () => (
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} onModeleUpdated={rien} /></Dossier1>
@@ -300,7 +301,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><FicheHorsDeFrance dossierId="d1" piece={piece()} pieceModifiee={false} donnees={FICHES_RECUES} sansTexteLu={false} /></Dossier1>
   ) },
   { nom: 'FinancementTab', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
-  { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} /></Dossier1> },
+  { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
     <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} modele={TRESORERIE} onIdentiteUpdated={rien} /></Dossier1>
   ) },
@@ -338,7 +339,7 @@ const ECRANS: Ecran[] = [
   { nom: 'TvaTab', fichier: 'pages/dossier/TvaTab.tsx', rendre: () => (
     <Dossier1>
       <TvaTab
-        dossierId="d1" assujettiTva statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} siret={null}
+        dossierId="d1" plan={PLAN_PAR_DEFAUT} assujettiTva statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} siret={null}
         onStatutUpdated={rien} periodicite="trimestrielle" surDebits={false} onRegimeUpdated={rien}
       />
     </Dossier1>
@@ -476,6 +477,15 @@ beforeAll(() => {
 })
 afterEach(() => { cleanup() })
 afterAll(() => { vi.useRealTimers() })
+
+// LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte
+// aucun onglet sans lui. Lu « vide », il serait incomplet, et la page dirait sa lecture ratée au lieu de monter ses onglets :
+// le faux client rend le plan par défaut, un rôle par ligne, comme la base pour un dossier qui n'en règle aucun.
+beforeAll(() => {
+  etat.rendusRpc['rpc:plan_du_dossier'] = ROLES_COMPTABLES.map((r) => ({
+    role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
+  }))
+})
 
 describe('aucun écran n’affirme le vide avant d’avoir lu', () => {
   it('la liste des écrans part de tous les fichiers qui lisent la base', () => {
@@ -652,7 +662,8 @@ const LECTURES_PAR_FONCTION = new Set([
 // Les fonctions SQL qui LISENT, appelées au montage : la couverture du relevé (l'Accueil et « Mes pièces » du client) et
 // les droits de l'appelant (« Ma simulation »), espace client, étape P7. Le faux client note tout `rpc` comme une écriture
 // possible ; celles-ci n'écrivent rien.
-const LECTURES_PAR_RPC = new Set(['rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier'])
+// Et le plan comptable d'un dossier (`plan_du_dossier`, ligne 43, étape PC3), que la page du dossier lit avec lui.
+const LECTURES_PAR_RPC = new Set(['rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier'])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
 const REFERMER = /^(Annuler|Fermer.*|×|Réduire.*)$/
@@ -818,5 +829,66 @@ describe('aucun geste n’écrit avant que ses listes soient lues', () => {
     expect(bilan.tentes).toBeGreaterThanOrEqual(PLANCHER_GESTES)
     expect(bilan.ecransTentes).toBeGreaterThanOrEqual(PLANCHER_ECRANS)
     expect([...bilan.vusDeLaBanque].some((n) => /^button « Importer 2 ligne\(s\)/.test(n))).toBe(true)
+  })
+})
+
+// LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : aucun onglet ne se monte avant lui — donc aucun geste d'un onglet
+// n'écrit, et aucune écriture ne se compose, avant qu'il soit lu. Le dossier, ses exercices validés et ses années
+// reviennent ; le plan, retenu, revient le DERNIER. La Vue d'ensemble (l'onglet de l'adresse) se reconnaît à ce qu'elle
+// lit et que la page ne lit pas : les échéances de cotisation.
+describe('le plan comptable du dossier : aucun onglet, donc aucun geste, avant sa lecture', () => {
+  const page = () => ECRANS.find((e) => e.nom === 'DossierDetail')!
+  const ONGLET_MONTE = 'cotisations_declarees'
+  // Les gestes de l'en-tête que ce garde ne tente pas : la détection de la profession appelle l'API SIRENE, et l'assistant
+  // vit hors des onglets (son plan est l'étape PC3b) ; les autres mènent à un onglet, sans rien écrire.
+  const HORS_DES_ONGLETS = /Détecter la profession|Assistant/
+
+  beforeAll(() => {
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+  })
+  afterAll(() => { vi.restoreAllMocks() })
+
+  async function monterSansLePlan() {
+    reinitialiser('retenir')
+    etat.lignesUniques = { dossiers: dossier() }
+    etat.toujoursRetenues = new Set(['rpc:plan_du_dossier'])
+    render(<>{page().rendre()}</>)
+    await laisserPasser()
+    await act(async () => { libererTout('vide') })
+    await laisserPasser()
+  }
+
+  it('DossierDetail : plan retenu, aucun onglet ni geste qui écrive ; revenu, l’onglet se monte et lit', async () => {
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await monterSansLePlan()
+    expect(etat.demandes.has('rpc:plan_du_dossier'), 'le plan se demande avec le dossier').toBe(true)
+    expect(etat.demandes.has(ONGLET_MONTE), 'aucun onglet ne se monte sans le plan').toBe(false)
+    expect(document.querySelector('[aria-busy="true"]'), 'la page attend, en squelettes').not.toBeNull()
+    let tentes = 0
+    for (const el of gestesOfferts().filter((g) => !HORS_DES_ONGLETS.test(nomDuGeste(g)))) {
+      remplirLesChamps()
+      await tenter(el)
+      tentes++
+    }
+    expect(tentes, 'les gestes de l’en-tête et du parcours ont été tentés').toBeGreaterThan(0)
+    expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e)), 'une écriture avant le plan').toEqual([])
+    expect(etat.demandes.has(ONGLET_MONTE), 'aucun geste ne monte un onglet sans le plan').toBe(false)
+
+    await act(async () => { libererRetenues() })
+    await laisserPasser()
+    expect(etat.demandes.has(ONGLET_MONTE), 'le plan revenu, l’onglet se monte et lit').toBe(true)
+    journal.mockRestore()
+  })
+
+  it('DossierDetail : plan refusé, la page le dit et ne monte aucun onglet', async () => {
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await monterSansLePlan()
+    await act(async () => { libererTout('refus'); libererRetenues() })
+    await laisserPasser()
+    expect(document.body.textContent).toMatch(/Le plan comptable de ce dossier n’a pas pu être lu \(plan comptable refusé : lecture refusée par le faux client\)/)
+    expect(etat.demandes.has(ONGLET_MONTE)).toBe(false)
+    expect(attendEncore(), 'le refus lève l’attente').toBe(false)
+    journal.mockRestore()
   })
 })

@@ -7,6 +7,7 @@ import { montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './contro
 import { formatMoney } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN ET DES MOUVEMENTS
 // IGNORÉS (06/10/2026, ligne 26.7).
@@ -76,7 +77,7 @@ const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
 
 // L'écriture juste d'un mouvement sur son compte, telle que src/lib la compose.
 const conforme = (l: LigneBancaire, compte = l.compte_bilan!, date = l.date): EcritureBrouillon[] =>
-  ecritureDuCompteDeBilan(l, compte)
+  ecritureDuCompteDeBilan(l, compte, PLAN_PAR_DEFAUT)
     .map((e, i) => ecriture({ id: `${l.id}-${i}`, ligne_bancaire_id: l.id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
 
 const sansLibelle = (e: Ecriture[]) => e.map(({ compte, sens, montant }) => ({ compte, sens, montant }))
@@ -140,11 +141,11 @@ describe('agent-comptable / bloc COMPTE DE BILAN (copie déployée)', () => {
     for (const montant of [-1000, 750, -0.07, 1234.56, -0.3]) {
       for (const compte of [COMPTE_VIREMENTS_INTERNES, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, '274100', '455000']) {
         expect(deployee.ecritureDuCompteDeBilan({ montant }, compte), `${montant} / ${compte}`)
-          .toEqual(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant }), compte)))
+          .toEqual(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant }), compte, PLAN_PAR_DEFAUT)))
       }
     }
     // Le compte choisi face à la banque, dans le sens du mouvement, et rien d'autre — pas de TVA.
-    expect(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant: -1000 }), COMPTE_VIREMENTS_INTERNES))).toEqual([
+    expect(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant: -1000 }), COMPTE_VIREMENTS_INTERNES, PLAN_PAR_DEFAUT))).toEqual([
       { compte: COMPTE_VIREMENTS_INTERNES, sens: 'debit', montant: 1000 },
       { compte: COMPTE_BANQUE, sens: 'credit', montant: 1000 },
     ])
@@ -153,15 +154,15 @@ describe('agent-comptable / bloc COMPTE DE BILAN (copie déployée)', () => {
   it('rend les mêmes mouvements dont l’écriture ne suit plus le compte, sous chaque frontière', () => {
     for (const f of FRONTIERES) {
       expect(ids(deployee.mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)), `frontière ${f}`)
-        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)))
+        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, PLAN_PAR_DEFAUT)))
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, un autre compte, un autre montant, un autre sens, une
     // autre date, une ligne de trop, celle d'une pièce qui ne compte pas — et ce qui n'est pas un mouvement écrit sur
     // un compte de bilan. Et la frontière : le jour même du mouvement le fige, le 9 mars reste ouvert sous une
     // frontière au 5.
-    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, null)))
+    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, null, PLAN_PAR_DEFAUT)))
       .toEqual(['absente', 'autre-compte', 'autre-montant', 'autre-sens', 'autre-date', 'ligne-de-trop', 'apres', 'piece'])
-    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, '2026-03-05'))).toEqual(['apres'])
+    expect(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, '2026-03-05', PLAN_PAR_DEFAUT))).toEqual(['apres'])
   })
 
   it('rend les mêmes mouvements ignorés, sous chaque ouverture et chaque frontière', () => {
@@ -247,7 +248,7 @@ describe('le garde-fou du bloc COMPTE DE BILAN sait encore échouer', () => {
   const memesDesynchronises = (copie: Copie) => {
     for (const f of FRONTIERES) {
       expect(ids(copie.mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)))
-        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f)))
+        .toEqual(ids(mouvementsSurUnCompteDeBilanDesynchronises(ECRITURES, LIGNES, f, PLAN_PAR_DEFAUT)))
     }
   }
   const memesIgnores = (copie: Copie) => {
@@ -277,7 +278,7 @@ describe('le garde-fou du bloc COMPTE DE BILAN sait encore échouer', () => {
   it('attrape une écriture qui porterait de la TVA', () => {
     const derivee = planter(['  return ecritureDuMouvement(ligne, compte, null)\n', '  return ecritureDuMouvement(ligne, compte, 20)\n'])
     echoue(() => expect(derivee.ecritureDuCompteDeBilan({ montant: 1200 }, '274100'))
-      .toEqual(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant: 1200 }), '274100'))))
+      .toEqual(sansLibelle(ecritureDuCompteDeBilan(ligne({ montant: 1200 }), '274100', PLAN_PAR_DEFAUT))))
   })
 
   it('attrape une copie qui compte un virement personnel parmi les mouvements ignorés', () => {

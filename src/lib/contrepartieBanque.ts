@@ -1,18 +1,16 @@
 import { supabase } from './supabase'
-import {
-  COMPTE_BANQUE, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS,
-} from './comptes'
 import { ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
+import type { PlanComptable } from './planComptable'
 import { partsDesPaiements, type PaiementDePiece } from './rattachement'
 import type { Piece } from './types'
 
 // Les comptes qu'une note de frais porte sans que ce soit sa CHARGE : la banque d'un paiement, sa TVA, et la
-// contrepartie au compte de l'exploitant.
-const COMPTES_HORS_CHARGE: ReadonlySet<string> = new Set([
-  COMPTE_BANQUE, COMPTE_EXPLOITANT, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS,
-])
+// contrepartie au compte de l'exploitant — ceux du PLAN du dossier.
+function comptesHorsCharge(plan: PlanComptable): ReadonlySet<string> {
+  return new Set([plan.banque, plan.exploitant, plan.tva_deductible, plan.tva_immobilisations])
+}
 
 // Les deux seules opérations d'écritures qui parlent à Supabase, tenues à l'écart de `ecritures.ts`
 // pour que celui-ci reste purement calculatoire. Ce n'est pas qu'une question de rangement : un
@@ -47,9 +45,15 @@ const COMPTES_HORS_CHARGE: ReadonlySet<string> = new Set([
 //
 // `paiement` : le mouvement entier d'un rapprochement simple, ou la PART d'un virement qui règle
 // plusieurs pièces (lib/reglementGroupe.ts) — la contrepartie porte ce qu'il paie de CETTE pièce.
+//
+// LES COMPTES SONT CEUX DU PLAN DU DOSSIER, que le modèle porte (lib/planComptable.ts) : la banque qu'elle écrit, et
+// celles qu'elle RETROUVE — la banque d'un autre paiement, le compte de l'exploitant d'une note de frais, la dette d'un
+// bien. Retrouvées sur un numéro par défaut, dans un dossier qui en tient un autre, elles se tairaient : la
+// contrepartie de l'exploitant ne serait jamais retirée, et la pièce resterait redatée à tort.
 export async function synchroniserContrepartieBanque(
   dossierId: string, piece: Piece, paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>, modele: ModeleComptable,
 ) {
+  const { plan } = modele
   const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
     .select('id, compte, ligne_bancaire_id')
@@ -64,8 +68,8 @@ export async function synchroniserContrepartieBanque(
     // Le règlement solde le compte de tiers que la FACTURE a crédité : 404000 pour la facture d'un bien
     // immobilisé, que l'écriture générée porte déjà — le lire là évite de relire le registre ici, et un
     // règlement au 401 laisserait au 404 une dette payée.
-    const immobilisation = existantes.some((e) => !e.ligne_bancaire_id && e.compte === COMPTE_FOURNISSEURS_IMMOBILISATIONS)
-    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais, immobilisation)
+    const immobilisation = existantes.some((e) => !e.ligne_bancaire_id && e.compte === plan.fournisseurs_immobilisations)
+    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais, immobilisation, plan)
     if (reglement.length === 0) return
     const { error } = await supabase.from('ecritures_brouillon').insert(reglement)
     if (error) throw error
@@ -80,8 +84,8 @@ export async function synchroniserContrepartieBanque(
   // IDEMPOTENTE PAR MOUVEMENT, et non plus par pièce : elle sortait dès que la pièce portait UNE
   // contrepartie, donc une pièce payée en deux fois — un acompte puis un virement groupé — ne recevait
   // jamais la seconde, et son écriture restait déséquilibrée.
-  if (existantes.some((e) => e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === paiement.id)) return
-  const contrepartie = ligneContrepartieBanque(dossierId, piece, paiement)
+  if (existantes.some((e) => e.compte === plan.banque && e.ligne_bancaire_id === paiement.id)) return
+  const contrepartie = ligneContrepartieBanque(dossierId, piece, paiement, plan)
   if (!contrepartie) return
 
   // L'ÉCRITURE PASSE À LA DATE DU PAIEMENT, comme la 2035 compte la pièce (lib/rattachement.ts) :
@@ -94,7 +98,7 @@ export async function synchroniserContrepartieBanque(
   // AVANT la contrepartie, et c'est l'ordre qui garde les messages vrais : si la date échoue, rien
   // n'est écrit ; si la contrepartie échoue ensuite, l'écriture est à la bonne date et l'appelant dit
   // bien que la contrepartie n'a pas été créée.
-  const autrePaiement = existantes.some((e) => e.compte === COMPTE_BANQUE)
+  const autrePaiement = existantes.some((e) => e.compte === plan.banque)
   if (!autrePaiement && partsDesPaiements(piece, [paiement]).reste === 0) {
     // Une NOTE DE FRAIS que ce virement rembourse en entier n'est plus due au dirigeant : sa contrepartie au compte
     // de l'exploitant (`ligneContrepartieDirigeant`) part AVANT la redate — redatée, elle resterait à côté de la
@@ -102,14 +106,15 @@ export async function synchroniserContrepartieBanque(
     // place, comme la charge : le contrôle des écritures demande alors « Régénérer », qui la recalcule. Seulement
     // quand la charge est AILLEURS : rangée dans une catégorie au 108000, la note y porte sa charge et n'a pas de
     // contrepartie à part (`estContrepartieDirigeant`) — la retirer effacerait la dépense.
-    const chargeAilleurs = existantes.some((e) => !COMPTES_HORS_CHARGE.has(e.compte))
-    if (piece.type_piece === 'note_frais' && chargeAilleurs && existantes.some((e) => e.compte === COMPTE_EXPLOITANT)) {
+    const horsCharge = comptesHorsCharge(plan)
+    const chargeAilleurs = existantes.some((e) => !horsCharge.has(e.compte))
+    if (piece.type_piece === 'note_frais' && chargeAilleurs && existantes.some((e) => e.compte === plan.exploitant)) {
       const { error: dirigeantError } = await supabase.from('ecritures_brouillon')
-        .delete().eq('piece_id', piece.id).eq('compte', COMPTE_EXPLOITANT)
+        .delete().eq('piece_id', piece.id).eq('compte', plan.exploitant)
       if (dirigeantError) throw dirigeantError
     }
     const { error: dateError } = await supabase.from('ecritures_brouillon')
-      .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+      .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', plan.banque)
     if (dateError) throw dateError
   }
 
@@ -156,7 +161,7 @@ export async function rendreAuxDatesDeFacture(
   if (modele.mode === 'engagement') return
   for (const piece of pieces) {
     const { count, error: lectureError } = await supabase.from('ecritures_brouillon')
-      .select('id', { count: 'exact', head: true }).eq('piece_id', piece.id).eq('compte', COMPTE_BANQUE)
+      .select('id', { count: 'exact', head: true }).eq('piece_id', piece.id).eq('compte', modele.plan.banque)
     if (lectureError) throw lectureError
     // Un compte que la base n'a pas rendu ne dit pas « plus aucun paiement » : on ne redate rien plutôt
     // que de ramener à sa facture une pièce qu'un paiement date peut-être encore.

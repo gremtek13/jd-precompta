@@ -1,9 +1,9 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
-import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
 import { euroCommeLaBase, remplirModele } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
+import type { PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
 import { estFigee } from './validationExercice'
@@ -132,11 +132,13 @@ export function refusMontantsDuPaiementPersonnel(
 // L'écriture d'une échéance rapprochée, une ligne par compte NON NUL : la base ne compte pas une ligne à
 // zéro euro (une échéance faite toute de CSG-CRDS) et refuse l'écriture qui en porterait une. LE SENS
 // VIENT DU SIGNE DU MOUVEMENT : un prélèvement débite le 646000 et crédite la banque, un remboursement
-// l'inverse. Calculée en centimes, pour que les lignes s'équilibrent exactement.
+// l'inverse. Calculée en centimes, pour que les lignes s'équilibrent exactement. La banque, les cotisations de
+// l'exploitant et son compte (la CSG-CRDS) sont ceux du PLAN du dossier, que `rapprocher_cotisation` relit au même plan.
 export function ecritureDeLaCotisation(
   ligne: MouvementBancaire,
   cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>,
   mode: ModeComptable,
+  plan: PlanComptable,
 ): LigneEcritureMouvement[] {
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const total = centimes(Math.abs(ligne.montant))
@@ -144,9 +146,9 @@ export function ecritureDeLaCotisation(
   const sortie = ligne.montant < 0
   const sensCompte = sortie ? 'debit' : 'credit'
   const lignes: LigneEcritureMouvement[] = [
-    { compte: COMPTE_BANQUE, sens: sortie ? 'credit' : 'debit', montant: total / 100, libelle },
-    { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: sensCompte, montant: (total - csg) / 100, libelle },
-    { compte: COMPTE_EXPLOITANT, sens: sensCompte, montant: csg / 100, libelle },
+    { compte: plan.banque, sens: sortie ? 'credit' : 'debit', montant: total / 100, libelle },
+    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100, libelle },
+    { compte: plan.exploitant, sens: sensCompte, montant: csg / 100, libelle },
   ]
   return lignes.filter((l) => l.montant > 0)
 }
@@ -273,12 +275,14 @@ export function cotisationsAEcrire<L extends MouvementBancaire>(
   cotisations: readonly CotisationDeclaree[],
   mode: ModeComptable,
   frontiere: string | null,
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): RapprochementCotisation<L>[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
     !estFigee(ligne.date, frontiere)
     && !refusRapprochementCotisation(ligne, cotisation, mode)
-    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))
+    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode, plan), ligne.date))
 }
 
 export interface RapprochementCotisationRefuse<L extends MouvementBancaire = MouvementBancaire> extends RapprochementCotisation<L> {

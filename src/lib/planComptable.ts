@@ -12,8 +12,12 @@
 // changer le défaut d'un rôle existant changerait, sans un mot, les comptes de tout dossier qui ne le règle pas.
 //
 // LA BASE LE LIT depuis l'étape PC2 : les quatorze fonctions qui écrivent ou vérifient un compte de rôle le prennent par
-// `compte_du_role` et `compte_du_dirigeant`. L'APPLICATION ne le lit pas encore : les modules et les écrans prendront le
-// plan du dossier en paramètre à l'étape PC3.
+// `compte_du_role` et `compte_du_dirigeant`. L'APPLICATION LE LIT depuis l'étape PC3 : la page d'un dossier lit son plan
+// effectif avec lui (`plan_du_dossier`, `lireLePlanDuDossier` ci-dessous), et toute écriture qu'elle compose y prend ses
+// comptes — par le modèle comptable du dossier (lib/engagement.ts), qui le porte, ou par un paramètre `plan` obligatoire.
+// Sous le plan vide d'aujourd'hui, chaque rôle s'y lit à son défaut : rien ne change pour personne.
+
+import { messageErreur } from './messageErreur'
 
 /** Un rôle du catalogue, tel que `roles_comptables` le porte. */
 export interface DefinitionRoleComptable {
@@ -141,4 +145,95 @@ export function sousUneRacineDuRole(role: CleRoleComptable, compte: string): boo
 /** Deux numéros qui ne diffèrent que par leurs zéros de fin désignent le même compte global (PCG, art. 1131-2). */
 export function memeCompteAuxZerosPres(a: string, b: string): boolean {
   return a.replace(/0+$/, '') === b.replace(/0+$/, '')
+}
+
+// ── Le plan lu avec le dossier (étape PC3) ────────────────────────────────────────────────────────────────────────────
+
+/** Ce que rend la fonction `plan_du_dossier` de la base : une ligne par rôle (rôle, compte, libellé, préfixe, origine). */
+export interface ReponseDuPlan {
+  data: unknown
+  error: unknown
+}
+
+/** Le plan d'un dossier tel que l'application le lit : entier, ou rien, avec le motif. */
+export type LectureDuPlan = { plan: PlanComptable; motif: null } | { plan: null; motif: string }
+
+/**
+ * Le plan effectif d'un dossier, depuis la réponse de `plan_du_dossier` (migration plan_comptable_des_dossiers) : la
+ * fonction de la base qui dit, rôle par rôle, la ligne que le dossier règle, sinon le défaut du catalogue — le même
+ * `coalesce` que `compte_du_role`, que les quatorze fonctions qui vérifient une écriture lisent depuis l'étape PC2.
+ * L'application compose donc avec le plan que la base vérifiera, jamais avec une copie.
+ *
+ * LE PLAN EST ENTIER OU IL N'EST PAS : une écriture composée sur un rôle qu'on n'a pas lu partirait à son défaut, peut-être
+ * un autre compte que celui du dossier. Un refus, une réponse illisible, un rôle du catalogue de l'application absent (la
+ * réponse vide comprise : le vide ne s'affirme pas), un rôle deux fois, un compte hors de la forme que la garde du plan
+ * exige ou hors des racines de son rôle ne rendent AUCUN plan, et leur motif. Un rôle que la base connaît et que
+ * l'application ignore (un catalogue plus récent qu'elle) est sans conséquence : elle n'y écrit pas.
+ *
+ * Deux rôles ne peuvent pas y partager un compte : chacun se tient sous ses racines, et aucune racine du catalogue n'en
+ * commence une autre (`planComptable.test.ts`).
+ */
+export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
+  if (reponse.error) {
+    return { plan: null, motif: `plan comptable refusé : ${messageErreur(reponse.error, 'raison inconnue')}` }
+  }
+  if (!Array.isArray(reponse.data)) return { plan: null, motif: 'plan comptable illisible' }
+  const lus = new Map<string, string>()
+  for (const ligne of reponse.data as unknown[]) {
+    if (ligne === null || typeof ligne !== 'object') return { plan: null, motif: 'plan comptable illisible' }
+    const { role, compte } = ligne as Record<string, unknown>
+    if (typeof role !== 'string' || typeof compte !== 'string') return { plan: null, motif: 'plan comptable illisible' }
+    if (lus.has(role)) return { plan: null, motif: `plan comptable illisible : le rôle « ${role} » y paraît deux fois` }
+    lus.set(role, compte)
+  }
+  const absents = ROLES_COMPTABLES.filter((r) => !lus.has(r.role)).map((r) => r.role)
+  if (absents.length > 0) {
+    return {
+      plan: null,
+      motif: `plan comptable incomplet : ${absents.length} rôle(s) sur ${ROLES_COMPTABLES.length} absent(s) (${absents.join(', ')})`,
+    }
+  }
+  for (const { role } of ROLES_COMPTABLES) {
+    const compte = lus.get(role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !sousUneRacineDuRole(role, compte)) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${role} »` }
+    }
+  }
+  const plan = Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
+  return { plan: Object.freeze(plan), motif: null }
+}
+
+/**
+ * Le plan tel que la page d'un dossier le lit : `lireLePlanDuDossier(supabase.rpc('plan_du_dossier', { p_dossier_id }))`.
+ * La requête est ATTENDUE ici, et son erreur lue (ecrituresVerifiees.test.ts compte tout `.rpc(` comme une écriture
+ * possible, et nomme ce consommateur) ; une requête qui lève tombe du côté signalé, comme un refus — jamais un plan par
+ * défaut supposé. Ce module reste pur : il reçoit la requête, il n'importe pas le client.
+ */
+export async function lireLePlanDuDossier(requete: PromiseLike<ReponseDuPlan>): Promise<LectureDuPlan> {
+  try {
+    return planDeLaReponse(await requete)
+  } catch (erreur) {
+    return planDeLaReponse({ data: null, error: erreur })
+  }
+}
+
+// ── Le compte du dirigeant (conception, § 3.6) ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Les rôles qu'un dossier en ENGAGEMENT peut choisir pour son dirigeant (`dossiers.compte_notes_de_frais`) : le compte
+ * courant d'associé, le compte de l'exploitant, ou le 467 d'un dirigeant non associé (PCG, art. 1211-10 et 1214-46). En
+ * trésorerie, le dirigeant est toujours le rôle `exploitant`.
+ */
+export const ROLES_DU_DIRIGEANT = ['associe', 'exploitant', 'autres_debiteurs_crediteurs'] as const satisfies readonly CleRoleComptable[]
+
+export type RoleDuDirigeant = (typeof ROLES_DU_DIRIGEANT)[number]
+
+/**
+ * Le rôle du dirigeant dont `compte` est le compte DANS CE PLAN, ou null. Le compte du dirigeant d'un dossier n'est plus
+ * l'un de trois numéros écrits dans l'application : c'est le compte de l'un de ces trois rôles du plan du dossier, et un
+ * compte qu'aucun ne porte n'est pas un compte du dirigeant (lib/engagement.ts, `modeleDuDossier`). La base le borne
+ * encore aux trois défauts (`dossiers_compte_notes_de_frais_check`) : l'étape PC4 remplacera cette contrainte (Q4).
+ */
+export function roleDuDirigeant(plan: PlanComptable, compte: string): RoleDuDirigeant | null {
+  return ROLES_DU_DIRIGEANT.find((role) => plan[role] === compte) ?? null
 }

@@ -1,5 +1,5 @@
 import { mouvementsAffectes, type MouvementBancaire, type NatureCompte } from './affectationBanque'
-import { partsDesEcheances } from './echeanceEmprunt'
+import { partsDesEcheances, type RoleDeLEcheance } from './echeanceEmprunt'
 import type { Categorie, VentilationBancaire } from './types'
 import { partsDesVentilations } from './ventilationBanque'
 
@@ -37,10 +37,14 @@ export interface PartDuReleve {
   poste: string | null
   // Nulle quand le compte d'une catégorie n'est plus un compte de résultat (voir `MouvementAffecte`).
   nature: NatureCompte | null
-  // Le compte où l'écriture du mouvement porte cette part : celui de la catégorie, ou 661100 et 616800 pour
-  // une échéance d'emprunt. C'est sur lui que la concordance de la 2035 avec les écritures retrouve la part
-  // (lib/concordance2035.ts). Nul pour une catégorie sans compte.
+  // Le compte où l'écriture du mouvement porte cette part : celui de la catégorie. C'est sur lui que la concordance de
+  // la 2035 avec les écritures retrouve la part (lib/concordance2035.ts). Nul pour une catégorie sans compte, et pour
+  // une échéance d'emprunt, dont le compte est celui d'un RÔLE du plan du dossier (`role`).
   compte: string | null
+  // Pour une échéance d'emprunt, le rôle du compte où son écriture porte la part — ses intérêts ou son assurance —,
+  // que la 2035 lit au plan du dossier (661100 et 616800 par défaut) ; nul ailleurs. Les parts se calculent aussi sans
+  // le plan (l'estimation, la simulation du client, qui ne le lit pas), et seule la 2035 y cherche un compte.
+  role: RoleDeLEcheance | null
   // Le taux de TVA qui s'applique à la part (voir `MouvementAffecte.taux`) : nul pour une dépense, une
   // échéance d'emprunt, et sur un dossier non assujetti. La CA3 le lit ici (lib/declarationTva.ts).
   taux: number | null
@@ -66,6 +70,7 @@ export function partsDuReleve(
     poste: m.categorie.poste_2035,
     nature: m.nature,
     compte: m.categorie.compte_comptable,
+    role: null,
     taux: m.taux,
     montantPoste: m.montantPoste,
     montantReleve: m.ligne.montant,
@@ -76,7 +81,8 @@ export function partsDuReleve(
     libelle: p.libelle,
     poste: p.poste,
     nature: 'depense',
-    compte: p.compte,
+    compte: null,
+    role: p.role,
     taux: null,
     montantPoste: p.montantPoste,
     // Une dépense payée : une sortie du relevé.
@@ -89,6 +95,7 @@ export function partsDuReleve(
     poste: p.categorie.poste_2035,
     nature: p.nature,
     compte: p.categorie.compte_comptable,
+    role: null,
     taux: p.taux,
     montantPoste: p.montantPoste,
     montantReleve: p.montant,

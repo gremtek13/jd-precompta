@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS } from '../../lib/comptes'
 import {
   SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresAGenerer, ecrituresSansObjet, lignesOuvertes, lignesPourPiece, piecesAComptabiliser,
   soldeCompte,
 } from '../../lib/ecritures'
 import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } from '../../lib/ecritures'
-import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
+import { comptesDuDirigeant, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
 import { etatsDesLettragesManuels, lettrages, piecesLettreesALaMain } from '../../lib/lettrage'
@@ -439,8 +438,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   // Sur les biens et services (445660) ET sur les immobilisations (445620) : la TVA de l'acquisition d'un bien
   // se déduit comme l'autre — en ligne 19 de la CA3 plutôt qu'en ligne 20.
-  const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit') + soldeCompte(ecrituresFiltrees, COMPTE_TVA_IMMOBILISATIONS, 'debit')
-  const tvaCollectee = soldeCompte(ecrituresFiltrees, COMPTE_TVA_COLLECTEE, 'credit')
+  // Les comptes de TVA du PLAN du dossier, ceux où la génération écrit (lib/montantRetenu.ts, `compteTvaDe`).
+  const tvaDeductible = soldeCompte(ecrituresFiltrees, modele.plan.tva_deductible, 'debit')
+    + soldeCompte(ecrituresFiltrees, modele.plan.tva_immobilisations, 'debit')
+  const tvaCollectee = soldeCompte(ecrituresFiltrees, modele.plan.tva_collectee, 'credit')
 
   // Trois contrôles d'intégrité du brouillon (voir lib/ecritures.ts) — volontairement indépendants du
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
@@ -453,7 +454,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
-  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere)
+  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere, modele.plan)
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -489,7 +490,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
   // sa TVA (voir lib/affectationBanque.ts).
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva), frontiere)
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva), frontiere, modele.plan)
   // Les mouvements ventilés dont l'écriture n'est plus celle que leurs parts produiraient — le compte d'une
   // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
   // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
@@ -497,14 +498,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus leur compte — DÉFENSIF : la base écrit le
   // compte et l'écriture ensemble (voir lib/compteDeBilan.ts). Un contrôle qui parle trop se corrige ; celui qui se tait
   // ne se voit pas.
-  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere)
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan)
   // Les déclarations de TVA dont la liquidation ne suit plus ce qu'elles ont enregistré, et les mouvements qui en paient
   // une dont l'écriture ne suit plus leur montant — DÉFENSIF tous deux : la base les écrit ensemble (lib/liquidationTva.ts).
   // Une déclaration lue se juge sur elle-même, quelles que soient les autres : sur une lecture partielle, celles qui
   // manquent ne sont simplement pas jugées — le bandeau le dit —, et le paiement d'une déclaration non lue ne se réécrit
   // pas, son écriture se composant avec elle.
-  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere)
-  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignesBancaires, frontiere)
+  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere, modele.plan)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignesBancaires, frontiere, modele.plan)
   const declarationById = (id: string | null) => (id ? declarationsTva.find((d) => d.id === id) ?? null : null)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
@@ -640,7 +641,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('affecter_mouvement_bancaire', {
         p_ligne_bancaire_id: m.ligne.id,
         p_categorie_id: m.categorie.id,
-        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux),
+        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, modele.plan),
         p_taux_tva: m.taux,
       })
       if (rpcError) throw rpcError
@@ -703,7 +704,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
         p_ligne_bancaire_id: ligne.id,
         p_compte: compte,
-        p_ecritures: ecritureDuCompteDeBilan(ligne, compte),
+        p_ecritures: ecritureDuCompteDeBilan(ligne, compte, modele.plan),
       })
       if (rpcError) throw rpcError
       await load()
@@ -727,7 +728,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     try {
       const { error: rpcError } = await supabase.rpc('ecrire_liquidation_tva', {
         p_declaration_id: declaration.id,
-        p_ecriture: ecritureDeLaLiquidation(declaration),
+        p_ecriture: ecritureDeLaLiquidation(declaration, modele.plan),
       })
       if (rpcError) throw rpcError
       await load()
@@ -753,7 +754,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('rapprocher_declaration_tva', {
         p_ligne_bancaire_id: ligne.id,
         p_declaration_id: declaration.id,
-        p_ecriture: ecritureDuPaiementTva(ligne),
+        p_ecriture: ecritureDuPaiementTva(ligne, modele.plan),
       })
       if (rpcError) throw rpcError
       await load()
@@ -792,7 +793,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   }
   // Le compte du dirigeant, dit dans les deux modèles : en trésorerie aussi, ce qu'il a payé de sa poche et ses
   // virements personnels passent par un compte qui n'est ni une charge ni une recette (lib/virementPersonnel.ts).
-  const compteDirigeant = COMPTES_NOTES_DE_FRAIS.find((c) => c.compte === compteDuDirigeant(modele))!
+  const comptesPossibles = comptesDuDirigeant(modele.plan)
+  // Toujours l'un des trois : le modèle n'admet qu'un compte du dirigeant validé par le plan (`modeleDuDossier`).
+  const compteDirigeant = comptesPossibles.find((c) => c.compte === compteDuDirigeant(modele))!
 
   // Retire du brouillon TOUTES les lignes d'une pièce, contrepartie banque comprise — et c'est la
   // seule forme correcte. N'ôter que la charge laisserait la ligne banque SEULE dans son groupe,
@@ -893,7 +896,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               <div style={{ marginTop: 14 }}>
                 <strong>Note de frais payée personnellement par le dirigeant</strong>
                 <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {COMPTES_NOTES_DE_FRAIS.map((c) => (
+                  {comptesPossibles.map((c) => (
                     <li key={c.compte}>
                       <button
                         type="button"
@@ -1332,8 +1335,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             Paiements de TVA à réécrire <span className="badge badge-danger">à traiter</span>
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            L’écriture de ces mouvements n’est plus celle que leur montant commande : la TVA à décaisser (445510) face à la
-            banque pour un prélèvement, le remboursement demandé (445830) pour un encaissement. La base écrit le
+            L’écriture de ces mouvements n’est plus celle que leur montant commande : la TVA à décaisser ({modele.plan.tva_a_decaisser}) face à la
+            banque pour un prélèvement, le remboursement demandé ({modele.plan.remboursement_tva_demande}) pour un encaissement. La base écrit le
             rapprochement et l’écriture ensemble, donc cet écart ne devrait pas exister. « Réécrire » la reprend.
           </p>
           <div className="table-scroll tableau-adaptable">

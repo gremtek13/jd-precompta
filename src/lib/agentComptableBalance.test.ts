@@ -3,6 +3,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { calculerBalance } from './ecritures'
 import { anneeDe } from './format'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 import { etatDeLOuverture, exploitantIndividuel, ouvertureDeLExercice, type EtatDeLOuverture } from './reportDesSoldes'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
@@ -399,7 +400,7 @@ describe('agent-comptable — les outils lisent les à-nouveaux et les soldes re
     for (const mode of ['tresorerie', 'engagement'] as const) {
       for (const compteNotesDeFrais of ['455000', '108000', '467000'] as const) {
         expect(societe({ mode_comptable: mode, compte_notes_de_frais: compteNotesDeFrais }), `${mode}, ${compteNotesDeFrais}`)
-          .toBe(!exploitantIndividuel({ mode, compteNotesDeFrais }))
+          .toBe(!exploitantIndividuel({ mode, compteNotesDeFrais, plan: PLAN_PAR_DEFAUT }))
       }
     }
   })

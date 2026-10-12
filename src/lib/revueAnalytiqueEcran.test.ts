@@ -13,13 +13,14 @@ import {
 import type { ModeleComptable } from './engagement'
 import type { Categorie, Piece } from './types'
 import { ligne } from '../test/revision'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // CE QUE L'ÉCRAN DE LA REVUE ANALYTIQUE DONNE AU MODULE ET CE QU'IL EN MONTRE (ligne 41, étape R5, phase C). Le calcul, les états
 // et les refus sont éprouvés à part (revueAnalytique.test.ts, confrontés au texte des fonctions et rejoués sur l'essai) : ici,
 // l'assemblage des données — la 2035 telle que Clôture la calcule — et les mots.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
 
 const categories = [
   { id: 'c-loyer', dossier_id: null, code: 'LOYER', libelle: 'Loyer', ordre: 1, compte_comptable: '613200', poste_2035: 'Loyers' },
@@ -51,7 +52,7 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
     const rapprochees = lignes.filter((l) => l.statut === 'rapprochee')
     const attendu = calculerDeclaration2035(
       2025, pieces, categories, [], cotisationsComptees([], rapprochees, 'tresorerie'), [], false,
-      paiementsDesPieces(rapprochees, []), partsDuReleve(rapprochees, categories, [], false), [],
+      paiementsDesPieces(rapprochees, []), partsDuReleve(rapprochees, categories, [], false), [], PLAN_PAR_DEFAUT,
     )
     const lue = declarationPourLaRevue(2025, TRESORERIE, false, d)
     expect(lue).toEqual(attendu)
@@ -85,7 +86,7 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
       'paiementsDesPieces(lignesBancaires, reglements)',
       'partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)',
       'cotisationsComptees(cotisations, lignesBancaires, modeComptable)',
-      'calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva)',
+      'calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan)',
     ]) expect(source, expression).toContain(expression)
   })
 })

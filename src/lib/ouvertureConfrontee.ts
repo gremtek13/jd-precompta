@@ -152,7 +152,7 @@ export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'p
     d.modele, p,
   )
   // Le résultat de N−1 se lit sur son bilan (positif, un bénéfice) ; `compteDuResultat` attend débit − crédit.
-  const versLeResultat = compteDuResultat(individuel, -cloture.resultat)
+  const versLeResultat = compteDuResultat(individuel, -cloture.resultat, d.modele.plan)
   const aLaCloture = new Map<string, { centimes: number; libelle: string }>()
   for (const s of report.soldes) aLaCloture.set(s.compte, { centimes: centimes(s.sens, s.montant), libelle: s.libelle })
   const aLOuverture = new Map<string, { centimes: number; libelle: string }>()
@@ -169,7 +169,7 @@ export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'p
     if (o === c) continue
     const reunis = cloture.soldes
       .filter((s) => s.centimes !== 0 && !/^[67]/.test(s.compte) && s.compte !== compte
-        && compteQuiRecoit(s.compte, individuel, versLeResultat) === compte)
+        && compteQuiRecoit(s.compte, individuel, versLeResultat, d.modele.plan) === compte)
       .map((s) => s.compte)
     const resultat = compte === versLeResultat && cloture.resultat !== 0 ? cloture.resultat : null
     ecartsDeCompte.push({
@@ -191,7 +191,7 @@ export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'p
     const comptes = new Set<string>()
     for (const c of ouverture) if (enEcart.has(c.compte)) comptes.add(c.compte)
     for (const c of aClore) {
-      const vers = compteQuiRecoit(c.compte, individuel, versLeResultat)
+      const vers = compteQuiRecoit(c.compte, individuel, versLeResultat, d.modele.plan)
       if (enEcart.has(vers)) comptes.add(vers)
     }
     if (recoitLeResultat && enEcart.has(versLeResultat)) comptes.add(versLeResultat)

@@ -11,6 +11,7 @@ import { DOCUMENT_STATUTS, HASH_DE_LA_CITATION, PIECE_BAIL, PIECE_LIBRE, entreeP
 import type { ModeleComptable } from '../../lib/engagement'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { EntreeDossierPermanent, ExerciceValide, Piece } from '../../lib/types'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // LE DOSSIER PERMANENT DANS L'ONGLET RÉVISION (ligne 41, étape R7, phase C). Le module (lib/dossierPermanent.ts) est éprouvé à
 // part : refus confrontés au texte des deux fonctions et rejoués sur l'essai de la base. CE QUI SE JOUE ICI, c'est ce
@@ -83,7 +84,7 @@ vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async 
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: AUTEUR } }, estChef: false }) }))
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
 const AUTRE_HASH = 'f'.repeat(64)
 
 function piece(o: Partial<Piece>): Piece {

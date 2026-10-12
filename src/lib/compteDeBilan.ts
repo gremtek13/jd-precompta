@@ -1,11 +1,10 @@
 import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
-import {
-  COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_VIREMENTS_INTERNES, libelleCompteTenu, libelleDuPlanComptable,
-} from './comptes'
+import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { ModeleComptable } from './engagement'
+import type { PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon, LigneBancaire, ModeComptable } from './types'
 import { estFigee } from './validationExercice'
@@ -39,24 +38,27 @@ export interface CompteDeBilanPropose {
   aide: string
 }
 
-// LES DEUX COMPTES PROPOSÉS. Le 580000 se solde, dans un plan tenu en entier, quand l'autre compte enregistre le même
-// virement en sens inverse ; l'application ne tient qu'un relevé, donc il garde ici le solde de ce qui a été versé
-// sur l'autre compte, que le relevé de cet autre compte justifie.
-export const COMPTES_DE_BILAN_PROPOSES: readonly CompteDeBilanPropose[] = [
-  {
-    compte: COMPTE_VIREMENTS_INTERNES,
-    libelle: 'Virement entre comptes',
-    aide: 'Vers un autre compte du professionnel — un compte d’épargne, un second compte bancaire — ou depuis lui. '
-      + 'L’autre compte n’est pas tenu dans l’application : le 580000 garde le solde de ce qui y a été versé, '
-      + 'que son propre relevé justifie.',
-  },
-  {
-    compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES,
-    libelle: 'Dépôt de garantie',
-    aide: 'Versé pour le bail du cabinet ou un matériel loué, ou rendu à la sortie : une créance du professionnel, '
-      + 'ni charge ni recette.',
-  },
-]
+// LES DEUX COMPTES PROPOSÉS, ceux du PLAN du dossier (580000 et 275000 par défaut). Le compte des virements internes se
+// solde, dans un plan tenu en entier, quand l'autre compte enregistre le même virement en sens inverse ; l'application
+// ne tient qu'un relevé, donc il garde ici le solde de ce qui a été versé sur l'autre compte, que le relevé de cet autre
+// compte justifie.
+export function comptesDeBilanProposes(plan: PlanComptable): readonly CompteDeBilanPropose[] {
+  return [
+    {
+      compte: plan.virements_internes,
+      libelle: 'Virement entre comptes',
+      aide: 'Vers un autre compte du professionnel — un compte d’épargne, un second compte bancaire — ou depuis lui. '
+        + `L’autre compte n’est pas tenu dans l’application : le ${plan.virements_internes} garde le solde de ce qui y a `
+        + 'été versé, que son propre relevé justifie.',
+    },
+    {
+      compte: plan.depots_cautionnements_verses,
+      libelle: 'Dépôt de garantie',
+      aide: 'Versé pour le bail du cabinet ou un matériel loué, ou rendu à la sortie : une créance du professionnel, '
+        + 'ni charge ni recette.',
+    },
+  ]
+}
 
 // Le libellé d'un compte de bilan pour l'écran : celui que l'application lui donne quand elle le tient, sinon celui du
 // plan comptable — le même que la balance et le FEC, à la balance reprise près, qui peut le nommer plus précisément.
@@ -187,9 +189,10 @@ export function refusCompteDeBilanDuMouvement(
   return refusMouvementCompteDeBilan(ligne) ?? refusCompteDeBilan(compte, modele.mode, compteDuDirigeant(modele))
 }
 
-// L'écriture d'un mouvement sur un compte de bilan : ce compte face à la banque, dans le sens du mouvement, sans TVA.
-export function ecritureDuCompteDeBilan(ligne: MouvementBancaire, compte: string): LigneEcritureMouvement[] {
-  return ecritureDuMouvement(ligne, compte, null)
+// L'écriture d'un mouvement sur un compte de bilan : ce compte face à la banque du plan du dossier, dans le sens du
+// mouvement, sans TVA.
+export function ecritureDuCompteDeBilan(ligne: MouvementBancaire, compte: string, plan: PlanComptable): LigneEcritureMouvement[] {
+  return ecritureDuMouvement(ligne, compte, null, plan)
 }
 
 // LES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN DONT L'ÉCRITURE N'EST PLUS CELLE QUE LEUR COMPTE PRODUIRAIT : absente,
@@ -202,13 +205,15 @@ export function mouvementsSurUnCompteDeBilanDesynchronises<L extends MouvementBa
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly L[],
   frontiere: string | null,
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     !!l.compte_bilan
     && l.statut === 'rapprochee'
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuCompteDeBilan(l, l.compte_bilan, plan), l.date))
 }
 
 // LES MOUVEMENTS ÉCRITS SUR UN COMPTE DE BILAN NE SONT PAS UN RYTHME D'ACTIVITÉ. Un virement vers le compte d'épargne,

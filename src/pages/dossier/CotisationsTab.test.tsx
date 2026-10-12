@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
@@ -183,7 +184,7 @@ const ecritureJuste = (id = 'l-1', montant = 420, date = '2026-03-06') => [
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 const monter = (mode: ModeComptable = 'tresorerie', valides: readonly number[] = []) => render(
-  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={{ mode, compteNotesDeFrais: '455000' }} /></AvecExercicesValides>,
+  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={{ mode, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} /></AvecExercicesValides>,
 )
 
 beforeEach(() => {
@@ -962,5 +963,30 @@ describe('CotisationsTab — le verrou du dépôt d’un avis d’appel', () => 
 
     expect(faux.envois).toHaveLength(2)
     await waitFor(() => expect(faux.extractions).toBe(1))
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : l'échéance se compose aux comptes de la banque, des cotisations et de
+// l'exploitant DU PLAN — ceux que `rapprocher_cotisation` relit au même plan depuis l'étape PC2 —, et la carte les nomme.
+describe('CotisationsTab — sous le plan du dossier', () => {
+  it('écrit l’échéance aux comptes du plan, et la carte les nomme', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-1', montant_csg_crds: 40.5 })]
+    faux.lignes = [ligne({ id: 'l-1' })]
+    render(
+      <AvecExercicesValides annees={[]}>
+        <CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }} />
+      </AvecExercicesValides>,
+    )
+
+    await screen.findByText('1 échéance payée dont l’écriture manque ou n’est plus à jour')
+    expect(screen.getByText(/Le bouton écrit chacune au compte 646100, sa CSG-CRDS au 108100, face à\s+la banque\./)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Écrire cette échéance' }).click() })
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '512100', sens: 'credit', montant: 420, libelle: 'PRLV URSSAF' },
+      { compte: '646100', sens: 'debit', montant: 379.5, libelle: 'PRLV URSSAF' },
+      { compte: '108100', sens: 'debit', montant: 40.5, libelle: 'PRLV URSSAF' },
+    ])
+    // Relue, l'écriture composée au plan est celle que l'échéance attend : la carte disparaît.
+    await waitFor(() => expect(screen.queryByText(/dont l’écriture manque/)).toBeNull())
   })
 })

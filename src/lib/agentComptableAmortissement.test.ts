@@ -7,6 +7,7 @@ import {
 } from './amortissements'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES DOTATIONS AUX AMORTISSEMENTS (01/10/2026, ligne 26.6, étape b).
 //
@@ -156,7 +157,7 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
     for (const ouverture of [null, '2026-01-01']) {
       for (const anneeCourante of [2025, 2026, 2027]) {
         for (const f of FRONTIERES) {
-          const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f)
+          const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f, PLAN_PAR_DEFAUT)
           const copie = deployee.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f)
           expect(etats(copie), `${ouverture} / ${anneeCourante} / ${f}`).toEqual(etats(attendu))
           expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${ouverture} / ${anneeCourante} / ${f}`)
@@ -165,11 +166,11 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
       }
     }
     // Et la frontière décide : un exercice validé ne réclame plus sa dotation, même validée et divergente.
-    const reclamees = (f: string | null) => etats(dotationsEnDefaut(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, f), 2026))
+    const reclamees = (f: string | null) => etats(dotationsEnDefaut(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, f, PLAN_PAR_DEFAUT), 2026))
     expect(reclamees(null).some(([, annee]) => annee === 2025)).toBe(true)
     expect(reclamees('2025-12-31').some(([, annee]) => (annee as number) <= 2025)).toBe(false)
     // Et le registre exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
-    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null).map((d) => d.etat))
+    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null, PLAN_PAR_DEFAUT).map((d) => d.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrite', 'validee'])
   })
 
@@ -259,7 +260,7 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     }
   }
   const memeRegistre = (copie: Copie, anneeCourante = 2026, ouverture: string | null = null, frontiere: string | null = null) => {
-    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere)
+    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere, PLAN_PAR_DEFAUT)
     const rendu = copie.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.dotationsEnDefaut(rendu, anneeCourante))).toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))

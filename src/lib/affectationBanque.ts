@@ -1,6 +1,6 @@
 import { libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
+import type { PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
 import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
@@ -110,10 +110,14 @@ export interface LigneEcritureMouvement {
 // AVEC UN TAUX, la catégorie prend le hors taxe et la TVA collectée (445710) le reste, du même côté
 // qu'elle : trois lignes, la banque au TTC. Sans taux — ou à zéro —, deux lignes, comme toujours. Le
 // taux est celui qui s'APPLIQUE (`tauxApplicable`), pas forcément celui qu'on a gardé.
+//
+// La banque et la TVA collectée sont celles du PLAN du dossier (lib/planComptable.ts) : la base les relit au même
+// plan (`affecter_mouvement_bancaire`, `compte_du_role`) et refuse une écriture composée sur un autre compte.
 export function ecritureDuMouvement(
   ligne: MouvementBancaire,
   compteCategorie: string,
   taux: number | null,
+  plan: PlanComptable,
 ): LigneEcritureMouvement[] {
   const { ht, tva } = horsTaxeEtTva(ligne.montant, taux)
   const entree = ligne.montant >= 0
@@ -123,8 +127,8 @@ export function ecritureDuMouvement(
   const libelle = libelleExploitable(ligne) || ligne.libelle
   return [
     { compte: compteCategorie, sens: sensCompte, montant: ht, libelle },
-    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva, libelle } as const] : []),
-    { compte: COMPTE_BANQUE, sens: entree ? 'debit' : 'credit', montant: Math.abs(ligne.montant), libelle },
+    ...(tva > 0 ? [{ compte: plan.tva_collectee, sens: sensCompte, montant: tva, libelle } as const] : []),
+    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant: Math.abs(ligne.montant), libelle },
   ]
 }
 
@@ -261,12 +265,14 @@ export function mouvementsAffectesDesynchronises(
   ecritures: readonly EcritureBrouillon[],
   affectes: readonly MouvementAffecte[],
   frontiere: string | null,
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux, plan), m.ligne.date)
   })
 }
 

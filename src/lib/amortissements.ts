@@ -1,4 +1,4 @@
-import { COMPTE_DOTATIONS_AMORTISSEMENTS } from './comptes'
+import type { PlanComptable } from './planComptable'
 import { anneeDe, jourDe, moisDe } from './format'
 import { montantRetenu } from './montantRetenu'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from './types'
@@ -182,18 +182,21 @@ export interface LigneEcritureDotation {
 }
 
 // L'écriture d'une dotation : le 681100 au débit, le compte d'amortissement du bien au crédit, au 31
-// décembre. RIEN quand la dotation est nulle — l'appel à la base retire alors celle qui aurait été écrite.
+// décembre. RIEN quand la dotation est nulle — l'appel à la base retire alors celle qui aurait été écrite. Le compte des
+// dotations est celui du PLAN du dossier, que `ecrire_dotation_amortissement` relit au même plan ; celui de
+// l'amortissement suit le compte du bien et ne se règle jamais (PCG, art. 1131-3).
 export function ecritureDeLaDotation(
   bien: BienAmortissable & Pick<Immobilisation, 'libelle'>,
   compteImmobilisation: string,
   annee: number,
   ouverture: string | null,
+  plan: PlanComptable,
 ): LigneEcritureDotation[] {
   const montant = dotationAEcrire(bien, annee, ouverture)
   if (montant <= 0) return []
   const libelle = `Dotation ${annee} — ${bien.libelle}`
   return [
-    { compte: COMPTE_DOTATIONS_AMORTISSEMENTS, sens: 'debit', montant, libelle },
+    { compte: plan.dotations_amortissements, sens: 'debit', montant, libelle },
     { compte: compteAmortissement(compteImmobilisation), sens: 'credit', montant, libelle },
   ]
 }
@@ -287,6 +290,8 @@ export function dotationsDuRegistre(
   ouverture: string | null,
   anneeCourante: number,
   frontiere: string | null,
+  // Le plan du dossier : la dotation attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): DotationDuRegistre[] {
   const natureParId = new Map(natures.map((n) => [n.id, n]))
   const ecrituresParBien = new Map<string, EcritureBrouillon[]>()
@@ -308,7 +313,7 @@ export function dotationsDuRegistre(
       const montant = dotationAEcrire(bien, annee, ouverture)
       if (montant <= 0 && presentes.length === 0) continue
       const refus = refusDotation(bien, annee, anneeCourante, presentes, nature, ouverture)
-      const attendues = montant <= 0 ? [] : nature ? ecritureDeLaDotation(bien, nature.compte_immobilisation, annee, ouverture) : null
+      const attendues = montant <= 0 ? [] : nature ? ecritureDeLaDotation(bien, nature.compte_immobilisation, annee, ouverture, plan) : null
       let etat: EtatDotation
       if (presentes.length === 0) etat = 'a_ecrire'
       else if (attendues && dotationConforme(presentes, attendues, annee)) etat = 'ecrite'

@@ -19,6 +19,7 @@ import type {
 import { demandeDeValidation } from './validationExercice'
 import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -114,7 +115,7 @@ type Surcharges = Partial<Omit<DonneesDeValidation, 'declaration' | 'concordance
 // Les données de validation de 2025, la 2035 et la concordance recalculées sur les données passées.
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
-    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000' }, assujettiTva: false,
+    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
@@ -124,7 +125,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const paiements = paiementsDesPieces(base.lignes, base.reglements)
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
-    base.assujettiTva, paiements, [], base.declarationsTva,
+    base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT,
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -291,7 +292,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
   // juge que sur sa part ouverte (lib/ecritures.ts) : la facture validée, sur l'ancien compte de sa catégorie, ne se
   // réécrira plus, et la dire « à régénérer » refuserait la validation pour toujours.
   it('ne juge une pièce coupée par l’exercice validé que sur sa part ouverte', () => {
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
     const facture = piece('p1', { date_piece: '2025-12-20', created_at: '2025-12-21T09:00:00Z' })
     const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
     // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
@@ -413,7 +414,7 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
     const janvier = ligne('l2', { piece_id: 'p2', date: '2026-01-05', montant: -60 })
     expect(ids(donnees({ piecesValidees: [P1, decembre], lignes: [L1, janvier] }))).not.toContain('ecritures-a-generer')
     expect(ids(donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000' }, piecesValidees: [decembre], lignes: [janvier], ecritures: [],
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }, piecesValidees: [decembre], lignes: [janvier], ecritures: [],
     }))).toContain('ecritures-a-generer')
   })
 })
@@ -667,7 +668,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
   it('« ventes-en-double » : deux pièces validées pour une facture bloquent, en engagement comme en trésorerie ; une seule, rien', () => {
     const jumelle = (id: string, o: Partial<Piece> = {}) =>
       piece(id, { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242, ...o })
-    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000' }, { mode: 'engagement', compteNotesDeFrais: '455000' }] as const) {
+    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }] as const) {
       const deux = prealable(donnees({ modele, piecesValidees: [P1, jumelle('v1'), jumelle('v2')], facturesEmises: [factureEmise()] }), 'ventes-en-double')
       expect(deux, modele.mode).toMatchObject({ nb: 1, bloquant: true, cible: 'pieces' })
       expect(ids(donnees({ modele, piecesValidees: [P1, jumelle('v1')], facturesEmises: [factureEmise()] })), modele.mode).not.toContain('ventes-en-double')
@@ -695,7 +696,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
   // En engagement, le reste d'une facture payée en partie est une dette qui court au 401 : rien à refuser.
   it('« pieces-payees-en-partie » se tait en engagement', () => {
     const d = donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000' },
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
       piecesValidees: [P1, piece('p2', { date_piece: '2025-05-02', montant_ttc: 500 })],
       lignes: [L1, ligne('l2', { piece_id: 'p2', date: '2025-05-04', montant: -50 })],
     })
@@ -734,7 +735,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
 // poche de l'exploitant restait en écart, sans geste pour le lever.
 describe('prealablesDeValidation — une échéance payée depuis le compte personnel', () => {
   const payee: CotisationDeclaree = { ...echeance('c1', '2025-05-05', 500), montant_csg_crds: 48.5, paiement_personnel_le: '2025-05-10' }
-  const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000' })
+  const ecrite = ecritureDuPaiementPersonnel(payee, { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT })
     .map((l, i) => ecriture(`pp${i}`, { piece_id: null, cotisation_id: 'c1', date: '2025-05-10', ...l }))
 
   // La 2035 et la concordance recalculées AVEC les échéances, comme les écrans les calculent (`cotisationsComptees`).
@@ -742,7 +743,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const d = donnees(o)
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
-      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [],
+      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT,
     )
     const concordance = concordance2035(
       declaration, d.ecritures, { piecesValidees: new Set(d.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set() }, null,
@@ -812,7 +813,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     expect(ids(donnees({ cotisations: [{ ...echeance('ck', '2025-03-05', 900), montant_csg_crds: 90 }] }))).not.toContain('csg-non-saisie')
     expect(ids(donnees({ cotisations: [echeance('ck', '2026-03-05', 900)] }))).not.toContain('csg-non-saisie')
     // Un dossier tenu en engagement n'a pas de 2035, ni de ligne 25 où la CSG-CRDS serait déduite à tort.
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
     expect(ids(donnees({ modele: engagement, cotisations: [echeance('ck', '2025-03-05', 900)] }))).not.toContain('csg-non-saisie')
   })
 
@@ -825,13 +826,13 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     // Sans barème cette année-là, la dotation se déduit : rien à dire.
     expect(ids(donnees(registre))).not.toContain('vehicule-amorti-sous-bareme')
     // Ni en engagement, où il n'y a pas de 2035 à figer.
-    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
     expect(ids(donnees({ ...registre, modele: engagement, vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('vehicule-amorti-sous-bareme')
   })
 
   it('ne juge rien de la 2035 en engagement, qui n’en produit pas', () => {
     const presents = ids(donnees({
-      modele: { mode: 'engagement', compteNotesDeFrais: '455000' },
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
       categories: [{ ...ACHATS, poste_2035: 'Frais de véhicules' }], vehicules: [vehicule('v1', 2025, 5000)],
       cotisations: [echeance('ck', '2025-03-05', 900)],
     }))

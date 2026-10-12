@@ -9,6 +9,7 @@ import { rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { dateAParis } from './format'
 import { estFigee, frontiereDeValidation } from './validationExercice'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
@@ -140,8 +141,8 @@ const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon =>
     libelle: 'FOURNISSEUR', sens: 'debit', montant: 100, statut: 'proposee', ligne_bancaire_id: null, ...o,
   }) as EcritureBrouillon
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Les frontières de validation sous lesquelles `memeResultat` compare les deux copies : aucune ; la veille de la date
 // de pièce de la batterie, et ce jour même ; celles qui coupent ses paiements (20 mars, 2 et 15 avril, 2 mai) ; la fin
@@ -516,7 +517,7 @@ function brouillonEngagement(
   p: Piece, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
   o: { assujettiTva?: boolean; compteNotesDeFrais?: CompteNotesDeFrais; cible?: CibleComptable } = {},
 ): EcritureBrouillon[] {
-  return lignesEngagementPourPiece('d1', p, o.cible ?? cible(COMPTE_ACHATS), o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements)
+  return lignesEngagementPourPiece('d1', p, o.cible ?? cible(COMPTE_ACHATS), o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements, PLAN_PAR_DEFAUT)
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 
@@ -565,7 +566,7 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
     const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
     const au455 = brouillonEngagement(ndf, [])
     expect(memeResultat(au455, [ndf], [], deployee, true, [], ENGAGEMENT).piecesDesynchronisees).toEqual([])
-    const autreCompte: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000' }
+    const autreCompte: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
     expect(memeResultat(au455, [ndf], [], deployee, true, [], autreCompte).piecesDesynchronisees).toEqual(['p1'])
   })
 
@@ -793,7 +794,7 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
   ]
   const cibles = [cible(COMPTE_ACHATS), bien('218300'), cible('108000'), cible('706000')]
   const modeles: ModeleComptable[] = [
-    TRESORERIE, ENGAGEMENT, { mode: 'engagement', compteNotesDeFrais: '108000' }, { mode: 'engagement', compteNotesDeFrais: '467000' },
+    TRESORERIE, ENGAGEMENT, { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT },
   ]
   const sorties: string[][] = []
   for (const p of pieces) {

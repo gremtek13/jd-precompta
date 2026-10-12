@@ -31,7 +31,7 @@ export function part(o: Partial<PartDuReleve> & { ligneId?: string; date?: strin
   const { ligneId = 'l', date = '2025-01-01', montantDuMouvement = -1, ...reste } = o
   return {
     ligne: ligne({ id: ligneId, date, montant: montantDuMouvement }), origine: 'affectation', libelle: 'Catégorie fictive',
-    poste: 'Poste fictif', nature: 'depense', compte: '627000', taux: null, montantPoste: 1, montantReleve: montantDuMouvement,
+    poste: 'Poste fictif', nature: 'depense', compte: '627000', role: null, taux: null, montantPoste: 1, montantReleve: montantDuMouvement,
     ...reste,
   }
 }

@@ -2,6 +2,7 @@ import { act, render, screen, within, fireEvent, waitFor } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 
@@ -189,7 +190,7 @@ function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: Ecrit
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 const monter = (assujettiTva = false, valides: readonly number[] = []) => render(
-  <AvecExercicesValides annees={valides}><ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={assujettiTva} /></AvecExercicesValides>,
+  <AvecExercicesValides annees={valides}><ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={assujettiTva} plan={PLAN_PAR_DEFAUT} /></AvecExercicesValides>,
 )
 
 // L'HORLOGE EST FIXÉE au 1er octobre 2026 : l'exercice en cours décide de ce qui s'écrit, et de ce que la
@@ -996,5 +997,25 @@ describe('ImmobilisationsTab — les natures attendent leur lecture', () => {
     const natures = within(await screen.findByRole('table', { name: 'Natures' }))
     expect(natures.getByText('Matériel informatique')).toBeTruthy()
     expect(within(carteNatures).queryAllByText('Chargement…')).toHaveLength(0)
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : la dotation se compose au compte des dotations DU PLAN — celui que
+// `ecrire_dotation_amortissement` relit au même plan depuis l'étape PC2 —, et la carte nomme ce compte-là.
+describe('ImmobilisationsTab — sous le plan du dossier', () => {
+  it('compose chaque dotation au compte du plan, et la carte le nomme', async () => {
+    poser([immobilisation()])
+    render(<AvecExercicesValides annees={[]}><ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={false} plan={PLAN_DECALE} /></AvecExercicesValides>)
+
+    await screen.findByText('Dotations aux amortissements à écrire (2)')
+    expect(screen.getByText(/le compte 681110 au débit/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Écrire les 2' }))
+
+    // Relue, la dotation écrite au compte du plan est celle que le registre attend : la carte se retire.
+    await waitFor(() => expect(screen.queryByText(/Dotations aux amortissements à écrire/)).toBeNull())
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '681110', sens: 'debit', montant: 1200, libelle: 'Dotation 2025 — Ordinateur' },
+      { compte: '281830', sens: 'credit', montant: 1200, libelle: 'Dotation 2025 — Ordinateur' },
+    ])
   })
 })

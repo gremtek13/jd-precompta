@@ -595,7 +595,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const { error } = await supabase.rpc('rapprocher_cotisation', {
       p_ligne_bancaire_id: ligne.id,
       p_cotisation_id: cotisation.id,
-      p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode),
+      p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, modele.plan),
     })
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -670,7 +670,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const { error } = await supabase.rpc('affecter_mouvement_bancaire', {
       p_ligne_bancaire_id: ligne.id,
       p_categorie_id: categorie.id,
-      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable, taux),
+      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable, taux, modele.plan),
       p_taux_tva: taux,
     })
     if (error) { window.alert(`L'affectation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
@@ -723,7 +723,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const { error } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
       p_ligne_bancaire_id: ligne.id,
       p_compte: compte,
-      p_ecritures: ecritureDuCompteDeBilan(ligne, compte),
+      p_ecritures: ecritureDuCompteDeBilan(ligne, compte, modele.plan),
     })
     if (error) { window.alert(`Le mouvement n'a pas pu être écrit au compte ${compte} : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -749,7 +749,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const { error } = await supabase.rpc('rapprocher_declaration_tva', {
       p_ligne_bancaire_id: ligne.id,
       p_declaration_id: declaration.id,
-      p_ecriture: ecritureDuPaiementTva(ligne),
+      p_ecriture: ecritureDuPaiementTva(ligne, modele.plan),
     })
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -778,7 +778,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       p_echeance: d.echeance,
       p_interets: d.interets,
       p_assurance: d.assurance,
-      p_ecritures: ecritureDeLEcheance(ligne, d),
+      p_ecritures: ecritureDeLEcheance(ligne, d, modele.plan),
     })
     if (error) { window.alert(`Le rapprochement de l'emprunt n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
@@ -1118,7 +1118,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // si l'un d'eux n'est plus à traiter. Sous le verrou partagé des écritures de l'écran.
   async function affecterSelonLesRegles() {
     if (planRegles.propositions.length === 0 || lotReglesSuspendu) return
-    const envois = envoisDuLot(planRegles.propositions)
+    const envois = envoisDuLot(planRegles.propositions, modele.plan)
     const total = planRegles.propositions.length
     await sousVerrou(setAffectationLotEnCours, async () => {
       let faits = 0
@@ -1207,7 +1207,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             const { error } = await supabase.rpc('rapprocher_cotisation', {
               p_ligne_bancaire_id: ligne.id,
               p_cotisation_id: cotisation.id,
-              p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode),
+              p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode, modele.plan),
             })
             return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
           }
@@ -2002,6 +2002,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           <FicheMouvement
             key={ligneOuverte.id}
             ligne={ligneOuverte}
+            plan={modele.plan}
             figeePar={dateFigee(ligneOuverte.date, anneesValidees)}
             pieces={pieces}
             piecesValidees={piecesValidees}

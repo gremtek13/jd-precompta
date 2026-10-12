@@ -98,28 +98,28 @@ const centimesAuSens = (lignes: readonly LigneEcritureMouvement[], sens: 'debit'
 
 describe('ecritureDeLaLiquidation — les écritures que la base a acceptées', () => {
   it('une période à payer : la TVA collectée au débit, la déductible et la TVA à payer au crédit, l’arrondi au 758000', () => {
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q1)))).toEqual(parCompte(ECRITURE_Q1))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q1, PLAN_PAR_DEFAUT)))).toEqual(parCompte(ECRITURE_Q1))
   })
 
   it('une période en crédit dont une part est remboursée : le crédit reporté au 445670, le remboursement au 445830', () => {
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q2)))).toEqual(parCompte(ECRITURE_Q2))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q2, PLAN_PAR_DEFAUT)))).toEqual(parCompte(ECRITURE_Q2))
   })
 
   it('une période qui reçoit un crédit le retire du 445670', () => {
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q3)))).toEqual(parCompte(ECRITURE_Q3))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(Q3, PLAN_PAR_DEFAUT)))).toEqual(parCompte(ECRITURE_Q3))
   })
 
   it('s’équilibre, et porte le nom de sa période', () => {
     for (const d of [Q1, Q2, Q3]) {
-      const lignes = ecritureDeLaLiquidation(d)
+      const lignes = ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)
       expect(centimesAuSens(lignes, 'debit')).toBe(centimesAuSens(lignes, 'credit'))
     }
-    expect(new Set(ecritureDeLaLiquidation(Q1).map((l) => l.libelle))).toEqual(new Set(['CA3 1er trimestre 2026']))
+    expect(new Set(ecritureDeLaLiquidation(Q1, PLAN_PAR_DEFAUT).map((l) => l.libelle))).toEqual(new Set(['CA3 1er trimestre 2026']))
   })
 
   it('un arrondi qui fait payer plus que les comptes va au débit du 658000', () => {
     const d = { ...Q1, tva_collectee: 99.20 }
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d)))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '445710', sens: 'debit', montant: 99.20 },
       { compte: '445660', sens: 'credit', montant: 20.60 },
       { compte: '445510', sens: 'credit', montant: 79 },
@@ -132,13 +132,13 @@ describe('ecritureDeLaLiquidation — les écritures que la base a acceptées', 
   // générateur d'avant le 09/10/2026, aucune sous `tirage` — et c'était le seul test qui tuait `solde > 1` au lieu de
   // `solde > 0`.
   it('un arrondi d’un centime a sa ligne, au débit du 658000 comme au crédit du 758000', () => {
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.59 })))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.59 }, PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '445710', sens: 'debit', montant: 99.59 },
       { compte: '445660', sens: 'credit', montant: 20.60 },
       { compte: '445510', sens: 'credit', montant: 79 },
       { compte: '658000', sens: 'debit', montant: 0.01 },
     ]))
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.61 })))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation({ ...Q1, tva_collectee: 99.61 }, PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '445710', sens: 'debit', montant: 99.61 },
       { compte: '445660', sens: 'credit', montant: 20.60 },
       { compte: '445510', sens: 'credit', montant: 79 },
@@ -153,7 +153,7 @@ describe('ecritureDeLaLiquidation — les écritures que la base a acceptées', 
       tva_deductible_immobilisations: 40.10,
       cases: { l16: 0, l19: 40, l20: 0, l21: 20, l22: 0, l23: 60, l25: 60, l26: 0, l27: 60, l28: 0, l32: 0 },
     }
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d)))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '445710', sens: 'credit', montant: 20 },
       { compte: '445620', sens: 'credit', montant: 40.10 },
       { compte: '445670', sens: 'debit', montant: 60 },
@@ -162,17 +162,17 @@ describe('ecritureDeLaLiquidation — les écritures que la base a acceptées', 
   })
 
   it('rien pour une déclaration saisie à la main, ni pour une période néant', () => {
-    expect(ecritureDeLaLiquidation({ ...Q1, cases: null, tva_collectee: null, tva_deductible: null, tva_deductible_immobilisations: null })).toEqual([])
+    expect(ecritureDeLaLiquidation({ ...Q1, cases: null, tva_collectee: null, tva_deductible: null, tva_deductible_immobilisations: null }, PLAN_PAR_DEFAUT)).toEqual([])
     expect(ecritureDeLaLiquidation({
       ...Q1, tva_collectee: 0, tva_deductible: 0,
       cases: { l16: 0, l19: 0, l20: 0, l21: 0, l22: 0, l23: 0, l25: 0, l26: 0, l27: 0, l28: 0, l32: 0 },
-    })).toEqual([])
+    }, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   // Les centimes sont tenus en entiers : 0,1 + 0,2 n'y fait pas 0,30000000000000004.
   it('compose ses montants au centime, sans dérive de virgule flottante', () => {
     const d = { ...Q1, tva_collectee: 0.1 + 0.2 + 100, tva_deductible: 20.6 }
-    const lignes = ecritureDeLaLiquidation(d)
+    const lignes = ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)
     expect(lignes.find((l) => l.compte === '445710')?.montant).toBe(100.30)
     expect(lignes.find((l) => l.compte === '758000')?.montant).toBe(0.70)
   })
@@ -279,7 +279,7 @@ describe('la CA3 préparée par l’application se tient comme la base l’exige
       const remboursement = ca3.cases.l25 > 0 ? Math.floor(ca3.cases.l25 / 2) : 0
       const avecRemboursement = calculerCa3Remboursee(ca3, remboursement)
       const demande: DemandeDeDeclaration = { periode: T1_2027, ca3: avecRemboursement, remboursement, tvaDeclaree: null, credit: null }
-      const p = parametresEnregistrement('d1', demande, null)
+      const p = parametresEnregistrement('d1', demande, null, PLAN_PAR_DEFAUT)
       expect(verifieCommeLaBase(p), `graine ${graine}`).toEqual([])
       const lignes = p.p_ecriture as LigneEcritureMouvement[]
       expect(centimesAuSens(lignes, 'debit'), `graine ${graine}`).toBe(centimesAuSens(lignes, 'credit'))
@@ -435,7 +435,7 @@ describe('seSaisitALaMain', () => {
 describe('parametresEnregistrement', () => {
   it('une CA3 préparée : sa TVA nette, sa ligne 22, sa ligne 26, ses cases, ses montants exacts et sa liquidation', () => {
     const credit = ca3({ ...EN_CREDIT, l26: 300, l27: 50 }, { collectee: 50.20, deductible: 399.70, immobilisations: 0 })
-    const p = parametresEnregistrement('d1', demande({ ca3: credit, remboursement: 300 }), '2026-04-15')
+    const p = parametresEnregistrement('d1', demande({ ca3: credit, remboursement: 300 }), '2026-04-15', PLAN_PAR_DEFAUT)
     expect(p).toMatchObject({
       p_dossier_id: 'd1', p_periode_debut: '2026-01-01', p_periode_fin: '2026-03-31', p_tva_declaree: -350,
       p_credit_anterieur: 0, p_remboursement_demande: 300, p_date_declaration: '2026-04-15',
@@ -446,7 +446,7 @@ describe('parametresEnregistrement', () => {
   })
 
   it('une saisie à la main : les montants tapés, sans cases, ni montants exacts, ni écriture', () => {
-    const p = parametresEnregistrement('d1', demande({ ca3: null, tvaDeclaree: 120.5, credit: 20, remboursement: 0 }), null)
+    const p = parametresEnregistrement('d1', demande({ ca3: null, tvaDeclaree: 120.5, credit: 20, remboursement: 0 }), null, PLAN_PAR_DEFAUT)
     expect(p).toEqual({
       p_dossier_id: 'd1', p_periode_debut: '2026-01-01', p_periode_fin: '2026-03-31', p_tva_declaree: 120.5,
       p_credit_anterieur: 20, p_remboursement_demande: 0, p_date_declaration: null, p_cases: null,
@@ -471,21 +471,21 @@ describe('seuilRemboursement — 760 € en cours d’année, 150 € au 31 déc
 
 describe('ecritureDuPaiementTva', () => {
   it('un prélèvement débite la TVA à décaisser face à la banque — l’écriture que la base a acceptée', () => {
-    expect(parCompte(sansLibelle(ecritureDuPaiementTva(mouvement())))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDuPaiementTva(mouvement(), PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '445510', sens: 'debit', montant: 79 },
       { compte: '512000', sens: 'credit', montant: 79 },
     ]))
   })
 
   it('un remboursement reçu crédite le remboursement demandé', () => {
-    expect(parCompte(sansLibelle(ecritureDuPaiementTva(mouvement({ montant: 300 }))))).toEqual(parCompte([
+    expect(parCompte(sansLibelle(ecritureDuPaiementTva(mouvement({ montant: 300 }), PLAN_PAR_DEFAUT)))).toEqual(parCompte([
       { compte: '512000', sens: 'debit', montant: 300 },
       { compte: '445830', sens: 'credit', montant: 300 },
     ]))
   })
 
   it('porte le libellé complet du relevé quand l’import n’a gardé que le générique', () => {
-    const lignes = ecritureDuPaiementTva(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA DGFIP TVA 1T' }))
+    const lignes = ecritureDuPaiementTva(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA DGFIP TVA 1T' }), PLAN_PAR_DEFAUT)
     expect(new Set(lignes.map((l) => l.libelle))).toEqual(new Set(['PRLV SEPA DGFIP TVA 1T']))
   })
 })
@@ -522,7 +522,7 @@ describe('la liquidation et le paiement de la base, rôle par rôle', () => {
     soldes.push({ compte: arrondi > 0 ? PLAN_PAR_DEFAUT.arrondi_charge : PLAN_PAR_DEFAUT.arrondi_produit, solde: arrondi })
     const deLaBase = soldes.filter((x) => x.solde !== 0)
       .map((x) => ({ compte: x.compte, sens: x.solde > 0 ? 'debit' : 'credit', montant: Math.round(Math.abs(x.solde) * 100) / 100 }))
-    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d)))).toEqual(parCompte(deLaBase))
+    expect(parCompte(sansLibelle(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)))).toEqual(parCompte(deLaBase))
   })
 
   it('ecrire_liquidation_tva : l’écart se lit aux deux comptes d’arrondi du plan, au-delà du même seuil', () => {
@@ -540,7 +540,7 @@ describe('la liquidation et le paiement de la base, rôle par rôle', () => {
       + "    case when v_ligne.montant < 0 then 'tva_a_decaisser' else 'remboursement_tva_demande' end);")
     expect(sql).toContain("select v_banque as compte, case when v_ligne.montant > 0 then 'debit' else 'credit' end as sens,")
     expect(sql).toContain("select v_compte, case when v_ligne.montant > 0 then 'credit' else 'debit' end, abs(v_ligne.montant)")
-    const compteDe = (montant: number) => ecritureDuPaiementTva(mouvement({ montant })).find((l) => l.compte !== PLAN_PAR_DEFAUT.banque)?.compte
+    const compteDe = (montant: number) => ecritureDuPaiementTva(mouvement({ montant }), PLAN_PAR_DEFAUT).find((l) => l.compte !== PLAN_PAR_DEFAUT.banque)?.compte
     expect(compteDe(-79)).toBe(PLAN_PAR_DEFAUT.tva_a_decaisser)
     expect(compteDe(300)).toBe(PLAN_PAR_DEFAUT.remboursement_tva_demande)
   })
@@ -873,28 +873,28 @@ describe('liquidationsDesynchronisees — défensif', () => {
   const juste = liquidation(ECRITURE_Q1 as { compte: string; sens: 'debit' | 'credit'; montant: number }[])
 
   it('rien à redire d’une liquidation juste', () => {
-    expect(liquidationsDesynchronisees(juste, [Q1_ENREGISTREE], null)).toEqual([])
+    expect(liquidationsDesynchronisees(juste, [Q1_ENREGISTREE], null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('une liquidation absente, d’un autre montant, à une autre date', () => {
-    expect(liquidationsDesynchronisees([], [Q1_ENREGISTREE], null)).toEqual([Q1_ENREGISTREE])
-    expect(liquidationsDesynchronisees(juste.map((e) => (e.compte === '758000' ? { ...e, montant: 1.80 } : e)), [Q1_ENREGISTREE], null))
+    expect(liquidationsDesynchronisees([], [Q1_ENREGISTREE], null, PLAN_PAR_DEFAUT)).toEqual([Q1_ENREGISTREE])
+    expect(liquidationsDesynchronisees(juste.map((e) => (e.compte === '758000' ? { ...e, montant: 1.80 } : e)), [Q1_ENREGISTREE], null, PLAN_PAR_DEFAUT))
       .toEqual([Q1_ENREGISTREE])
-    expect(liquidationsDesynchronisees(juste.map((e) => ({ ...e, date: '2026-04-01' })), [Q1_ENREGISTREE], null)).toEqual([Q1_ENREGISTREE])
+    expect(liquidationsDesynchronisees(juste.map((e) => ({ ...e, date: '2026-04-01' })), [Q1_ENREGISTREE], null, PLAN_PAR_DEFAUT)).toEqual([Q1_ENREGISTREE])
   })
 
   it('une liquidation sur une déclaration saisie à la main', () => {
     const aLaMain = declaration({ id: 'q1' })
-    expect(liquidationsDesynchronisees(juste, [aLaMain], null)).toEqual([aLaMain])
-    expect(liquidationsDesynchronisees([], [aLaMain], null)).toEqual([])
+    expect(liquidationsDesynchronisees(juste, [aLaMain], null, PLAN_PAR_DEFAUT)).toEqual([aLaMain])
+    expect(liquidationsDesynchronisees([], [aLaMain], null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('ne juge plus une déclaration d’un exercice validé', () => {
-    expect(liquidationsDesynchronisees([], [Q1_ENREGISTREE], '2026-12-31')).toEqual([])
+    expect(liquidationsDesynchronisees([], [Q1_ENREGISTREE], '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('les écritures d’une autre déclaration ne comptent pas', () => {
-    expect(liquidationsDesynchronisees(juste.map((e) => ({ ...e, declaration_tva_id: 'q2' })), [Q1_ENREGISTREE], null)).toEqual([Q1_ENREGISTREE])
+    expect(liquidationsDesynchronisees(juste.map((e) => ({ ...e, declaration_tva_id: 'q2' })), [Q1_ENREGISTREE], null, PLAN_PAR_DEFAUT)).toEqual([Q1_ENREGISTREE])
   })
 })
 
@@ -906,16 +906,16 @@ describe('paiementsTvaDesynchronises — défensif', () => {
   ]
 
   it('rien à redire d’un paiement juste', () => {
-    expect(paiementsTvaDesynchronises(juste, [paie], null)).toEqual([])
+    expect(paiementsTvaDesynchronises(juste, [paie], null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('une écriture absente ou sur un autre compte', () => {
-    expect(paiementsTvaDesynchronises([], [paie], null)).toEqual([paie])
-    expect(paiementsTvaDesynchronises([juste[0], { ...juste[1], compte: '445660' }], [paie], null)).toEqual([paie])
+    expect(paiementsTvaDesynchronises([], [paie], null, PLAN_PAR_DEFAUT)).toEqual([paie])
+    expect(paiementsTvaDesynchronises([juste[0], { ...juste[1], compte: '445660' }], [paie], null, PLAN_PAR_DEFAUT)).toEqual([paie])
   })
 
   it('ni un mouvement d’un exercice validé, ni un mouvement qui ne paie aucune déclaration', () => {
-    expect(paiementsTvaDesynchronises([], [paie], '2026-12-31')).toEqual([])
-    expect(paiementsTvaDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'k' })], null)).toEqual([])
+    expect(paiementsTvaDesynchronises([], [paie], '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
+    expect(paiementsTvaDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'k' })], null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 })

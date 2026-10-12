@@ -33,6 +33,7 @@ import {
   type SuiviDeDeclaration,
 } from '../../lib/liquidationTva'
 import { libelleCompteTenu } from '../../lib/comptes'
+import type { PlanComptable } from '../../lib/planComptable'
 import { estFigee } from '../../lib/validationExercice'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
@@ -66,6 +67,9 @@ import EreportingCard from './EreportingCard'
 
 interface Props {
   dossierId: string
+  // Le plan comptable du dossier (lib/planComptable.ts) : la liquidation d'une déclaration se compose à ses comptes, et
+  // ce que l'écran en dit les nomme.
+  plan: PlanComptable
   assujettiTva: boolean
   // Le statut de TVA du dossier, qui fait foi — `assujettiTva` en est déduit (lib/statutTva.ts). Il se règle ici.
   statutTva: StatutTva | null
@@ -211,7 +215,7 @@ function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire
 }
 
 export default function TvaTab({
-  dossierId, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits,
+  dossierId, plan, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits,
   onRegimeUpdated,
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
@@ -374,7 +378,7 @@ export default function TvaTab({
     assujettiTva, aujourdhui: aujourdHuiAParis(), declarations, ouverture, anneesValidees,
   })
   const liquidee = aLaMain ? null : declarationDeLaCa3(ca3, periode)
-  const liquidation = liquidee ? ecritureDeLaLiquidation(liquidee) : []
+  const liquidation = liquidee ? ecritureDeLaLiquidation(liquidee, plan) : []
   const arrondi = liquidee ? arrondiDeLaLiquidation(liquidee) : 0
   // Le remboursement que la déclaration demandera : borné au crédit de la période pour une CA3 préparée.
   const remboursementDemande = aLaMain ? (remboursementLu ?? 0) : ca3.cases.l26
@@ -392,7 +396,7 @@ export default function TvaTab({
     setEcritureEnCours(true)
     setErreur(null)
     try {
-      const { error } = await supabase.rpc('enregistrer_declaration_tva', parametresEnregistrement(dossierId, demande, dateDepot || null))
+      const { error } = await supabase.rpc('enregistrer_declaration_tva', parametresEnregistrement(dossierId, demande, dateDepot || null, plan))
       if (error) throw error
       // Les montants saisis pour cette période ont servi : la prochaine visite repart du calcul.
       const oublier = (s: Record<string, string>) => {
@@ -630,7 +634,7 @@ export default function TvaTab({
             <h3 style={{ marginBottom: 4 }}>Déclaration {dePeriode(periode.libelle)}</h3>
             <p className="muted" style={{ marginTop: 0 }}>
               Cette période précède l’ouverture du dossier ({formatDate(ouverture)}) : sa TVA est dans les
-              à-nouveaux, au 445510 ou au 445670. Sa déclaration se saisit telle qu’elle a été déposée, sans
+              à-nouveaux, au {plan.tva_a_decaisser} ou au {plan.credit_tva_a_reporter}. Sa déclaration se saisit telle qu’elle a été déposée, sans
               liquidation : elle sert à rapprocher son paiement ou son remboursement dans Banque, et à reporter
               son crédit sur la déclaration suivante.
             </p>
@@ -935,7 +939,9 @@ export default function TvaTab({
             {arrondi !== 0 && (
               <p className="muted" style={{ marginTop: 4 }}>
                 L’arrondi à l’euro des lignes de la CA3 fait {formatMoney(Math.abs(arrondi))}
-                {arrondi > 0 ? ' de charge (658000), que la 2035 compte en frais divers de gestion.' : ' de produit (758000), que la 2035 compte en gains divers.'}
+                {arrondi > 0
+                  ? ` de charge (${plan.arrondi_charge}), que la 2035 compte en frais divers de gestion.`
+                  : ` de produit (${plan.arrondi_produit}), que la 2035 compte en gains divers.`}
               </p>
             )}
             {piecesHorsDeLaDeclaration > 0 && (

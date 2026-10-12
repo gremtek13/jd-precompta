@@ -8,6 +8,7 @@ import type { DossierTab } from '../../lib/ongletsDossier'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // LE CALCUL EST DANS `lib/bilan.ts`, CONFRONTÉ À DES BILANS FAITS À LA MAIN. CE QUI SE JOUE ICI, c'est ce qu'aucun calcul
 // pur ne voit : que l'écran lise TOUT le dossier et rien d'un autre (les filtres sont appliqués par le faux client), qu'il
@@ -81,8 +82,8 @@ function ecrire(date: string, lignes: Ligne[], o: Partial<EcritureBrouillon> = {
   return lignes.map(([compte, sens, montant]) => ecriture({ date, compte, montant, sens: sens === 'D' ? 'debit' : 'credit', ...o }))
 }
 
-const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
-const EXPLOITANT: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const EXPLOITANT: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Le dossier fictif d'une société : un client qui doit 2 400, un autre qui a payé 300 sans facture, un fournisseur
 // débiteur de 500, une banque créditrice de 1 400 (le cas calculé à la main dans bilan.test.ts).

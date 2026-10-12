@@ -1,4 +1,5 @@
 import type { Emprunt } from '../lib/emprunts'
+import { PLAN_PAR_DEFAUT } from '../lib/planComptable'
 import type { DonneesDeLaRevision } from '../lib/revision'
 import type { DocumentPourRevision, PiecePourRevision } from '../lib/revisionPreuves'
 import type {
@@ -115,7 +116,7 @@ export function citation(o: Partial<RevisionPreuve>): RevisionPreuve {
 /** Ce qu'un écran aurait lu d'un dossier vide, exercice 2025 terminé, en trésorerie, non redevable. */
 export function donnees(o: Partial<DonneesDeLaRevision>): DonneesDeLaRevision {
   return {
-    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000' }, assujettiTva: false,
+    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
     periodiciteTva: 'trimestrielle', ecritures: [], reprise: [], reportes: [], exercicesValides: [], verificationPrecedent: null,
     lignes: [], controlesReleves: [], pieces: [], documents: [], immobilisations: [], natures: [], emprunts: [],
     declarationsTva: [], lectureIncomplete: null, categories: [], decisions: [], preuves: [], ...o,

@@ -11,10 +11,11 @@ import type { AcquisitionDuBien } from './amortissements'
 import type { ModeleComptable } from './engagement'
 import { paiementsDesPieces } from './rattachement'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 const ACHATS = '606100'
 // Le modèle de tous les dossiers d'avant l'engagement : les contrôles de trésorerie s'y lisent tels quels.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 const VENTES = '706000'
 // La cible d'une pièce ordinaire : le compte de sa catégorie. Celle de la facture d'un bien immobilisé
 // porte le compte de sa nature et `immobilisation` (lib/ecritures.ts, `CibleComptable`).
@@ -40,46 +41,46 @@ const REPRIS: AcquisitionDuBien = { compte: null, motif: 'repris' }
 
 describe('lignesChargeProduitPourPiece', () => {
   it('passe un achat au débit et une vente au crédit', () => {
-    expect(lignesChargeProduitPourPiece('d1', piece(), cible(ACHATS), true, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', piece(), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: ACHATS, sens: 'debit', montant: 120 }),
     ])
-    expect(lignesChargeProduitPourPiece('d1', piece({ type_piece: 'vente' }), cible(VENTES), true, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', piece({ type_piece: 'vente' }), cible(VENTES), true, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: VENTES, sens: 'credit', montant: 120 }),
     ])
   })
 
   it('sépare la TVA sur son propre compte, collectée ou déductible', () => {
-    const achat = lignesChargeProduitPourPiece('d1', piece({ montant_ttc: 120, montant_tva: 20 }), cible(ACHATS), true, [])
+    const achat = lignesChargeProduitPourPiece('d1', piece({ montant_ttc: 120, montant_tva: 20 }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)
     expect(achat).toHaveLength(2)
     expect(achat[0]).toMatchObject({ compte: ACHATS, montant: 100, sens: 'debit' }) // HT déduit du TTC
     expect(achat[1]).toMatchObject({ compte: COMPTE_TVA_DEDUCTIBLE, montant: 20, sens: 'debit' })
 
-    const vente = lignesChargeProduitPourPiece('d1', piece({ type_piece: 'vente', montant_ttc: 120, montant_tva: 20 }), cible(VENTES), true, [])
+    const vente = lignesChargeProduitPourPiece('d1', piece({ type_piece: 'vente', montant_ttc: 120, montant_tva: 20 }), cible(VENTES), true, [], PLAN_PAR_DEFAUT)
     expect(vente[1]).toMatchObject({ compte: COMPTE_TVA_COLLECTEE, sens: 'credit' })
   })
 
   it('préfère le HT saisi au HT recalculé', () => {
-    const lignes = lignesChargeProduitPourPiece('d1', piece({ montant_ht: 99, montant_ttc: 120, montant_tva: 20 }), cible(ACHATS), true, [])
+    const lignes = lignesChargeProduitPourPiece('d1', piece({ montant_ht: 99, montant_ttc: 120, montant_tva: 20 }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)
     expect(lignes[0].montant).toBe(99)
   })
 
   it('inverse le sens d’un montant négatif plutôt que de porter un montant négatif', () => {
     // Un avoir ou un remboursement. Garder un montant négatif au débit fausserait le contrôle
     // débit = crédit : un groupe doublé dans le mauvais sens paraîtrait équilibré.
-    const avoir = lignesChargeProduitPourPiece('d1', piece({ montant_ttc: -50 }), cible(ACHATS), true, [])
+    const avoir = lignesChargeProduitPourPiece('d1', piece({ montant_ttc: -50 }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)
     expect(avoir[0]).toMatchObject({ sens: 'credit', montant: 50 })
     expect(avoir.every((l) => l.montant >= 0)).toBe(true)
   })
 
   it('date par la pièce, sinon par son dépôt', () => {
-    expect(lignesChargeProduitPourPiece('d1', piece({ date_piece: '2026-01-05' }), cible(ACHATS), true, [])[0].date).toBe('2026-01-05')
-    const sansDate = lignesChargeProduitPourPiece('d1', piece({ date_piece: null }), cible(ACHATS), true, [])[0].date
+    expect(lignesChargeProduitPourPiece('d1', piece({ date_piece: '2026-01-05' }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].date).toBe('2026-01-05')
+    const sansDate = lignesChargeProduitPourPiece('d1', piece({ date_piece: null }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].date
     expect(sansDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it('libelle par le tiers, sinon par le nom du fichier', () => {
-    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: 'EDF' }), cible(ACHATS), true, [])[0].libelle).toBe('EDF')
-    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: null }), cible(ACHATS), true, [])[0].libelle).toBe('facture.pdf')
+    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: 'EDF' }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].libelle).toBe('EDF')
+    expect(lignesChargeProduitPourPiece('d1', piece({ tiers: null }), cible(ACHATS), true, [], PLAN_PAR_DEFAUT)[0].libelle).toBe('facture.pdf')
   })
 })
 
@@ -106,7 +107,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
   const decembre = piece({ date_piece: '2025-12-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
 
   it('date toutes les lignes au paiement quand le rapprochement le connaît', () => {
-    const lignes = lignesChargeProduitPourPiece('d1', decembre, cible(ACHATS), true, [paiement()])
+    const lignes = lignesChargeProduitPourPiece('d1', decembre, cible(ACHATS), true, [paiement()], PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.compte, l.date, l.montant])).toEqual([
       [ACHATS, '2026-01-05', 100],
       [COMPTE_TVA_DEDUCTIBLE, '2026-01-05', 20],
@@ -116,7 +117,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
   it('répartit une pièce réglée en partie entre la facture et le paiement, au centime', () => {
     // 100 € dont 16,67 de TVA, 33,33 € rapprochés : deux tiers restent à la date de facture.
     const p = piece({ date_piece: '2025-12-20', montant_ht: 83.33, montant_tva: 16.67, montant_ttc: 100 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -33.33 })])
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -33.33 })], PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.date, l.compte, l.montant])).toEqual([
       ['2025-12-20', ACHATS, 55.56],
       ['2025-12-20', COMPTE_TVA_DEDUCTIBLE, 11.11],
@@ -133,7 +134,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
     // 83,33 + 16,67, payée pour moitié : chaque moitié arrondie seule donnerait 41,67 + 41,67 et
     // 8,34 + 8,34, soit un centime de trop par compte. Le dernier morceau prend le reste.
     const p = piece({ date_piece: '2025-12-20', montant_ht: 83.33, montant_tva: 16.67, montant_ttc: 100 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -50 })])
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -50 })], PLAN_PAR_DEFAUT)
     const parCompte = (compte: string) => Math.round(lignes.filter((l) => l.compte === compte).reduce((s, l) => s + l.montant, 0) * 100) / 100
     expect(parCompte(ACHATS)).toBe(83.33)
     expect(parCompte(COMPTE_TVA_DEDUCTIBLE)).toBe(16.67)
@@ -160,7 +161,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
   // l'insertion d'un seul tenant de la génération emporterait tout le lot avec elle.
   it('n’écrit pas de charge nulle — un hors taxe lu à zéro ne laisse que sa TVA', () => {
     const p = piece({ montant_ht: 0, montant_tva: 20, montant_ttc: 20 })
-    expect(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
     ])
     expect(lignesPourPiece('d1', p, cible(ACHATS), true, [], ENGAGEMENT).every((l) => l.montant > 0)).toBe(true)
@@ -168,14 +169,14 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
 
   it('ne fait pas de ligne de TVA vide quand sa part s’arrondit à zéro', () => {
     const p = piece({ date_piece: '2025-12-20', montant_ht: 1, montant_tva: 0.01, montant_ttc: 1.01 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -0.5 })])
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -0.5 })], PLAN_PAR_DEFAUT)
     expect(lignes.every((l) => l.montant > 0)).toBe(true)
     expect(lignes.filter((l) => l.date === '2026-01-05').map((l) => l.compte)).toEqual([ACHATS])
   })
 
   it('date au dépôt la part que rien ne date', () => {
     const p = piece({ date_piece: null, created_at: '2025-12-21T10:00:00Z', montant_ttc: 120 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -60 })])
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -60 })], PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.date, l.montant])).toEqual([['2026-01-05', 60], ['2025-12-21', 60]])
   })
 })
@@ -187,13 +188,13 @@ describe('un dossier exonéré ne ventile pas la TVA', () => {
   const avecTva = { montant_ht: 100, montant_tva: 20, montant_ttc: 120 }
 
   it('porte la charge TTC sur une seule ligne, sans 445660', () => {
-    expect(lignesChargeProduitPourPiece('d1', piece(avecTva), cible(ACHATS), false, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', piece(avecTva), cible(ACHATS), false, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: ACHATS, sens: 'debit', montant: 120 }),
     ])
   })
 
   it('porte une recette TTC sur une seule ligne, sans 445710', () => {
-    expect(lignesChargeProduitPourPiece('d1', piece({ ...avecTva, type_piece: 'vente' }), cible(VENTES), false, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', piece({ ...avecTva, type_piece: 'vente' }), cible(VENTES), false, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: VENTES, sens: 'credit', montant: 120 }),
     ])
   })
@@ -223,7 +224,7 @@ describe('un dossier exonéré ne ventile pas la TVA', () => {
       piece({ id: 'v1', type_piece: 'vente', ...avecTva }),
       piece({ id: 'r1', montant_ht: -50, montant_tva: -10, montant_ttc: -60 }),
     ]
-    const lignes = pieces.flatMap((p) => lignesChargeProduitPourPiece('d1', p, cible(p.type_piece === 'vente' ? VENTES : ACHATS), assujetti, []))
+    const lignes = pieces.flatMap((p) => lignesChargeProduitPourPiece('d1', p, cible(p.type_piece === 'vente' ? VENTES : ACHATS), assujetti, [], PLAN_PAR_DEFAUT))
       .map((l, i) => ecriture({ ...l, id: `g${i}` }))
     const aComptabiliser = pieces.map((p) => ({ piece: p, compte: p.type_piece === 'vente' ? VENTES : ACHATS, immobilisation: false }))
     expect(analyserEcritures(lignes, aComptabiliser, assujetti, new Map(), TRESORERIE, null).piecesDesynchronisees).toEqual([])
@@ -686,7 +687,7 @@ describe('ecrituresSansObjet', () => {
     // Un bien SANS NATURE : son compte d'immobilisation n'est pas connu, donc rien ne sait réécrire la
     // pièce — l'écriture n'a plus d'objet. Avec une nature, c'est « à régénérer » (test suivant).
     const sansNature = new Map([['immo', SANS_NATURE]])
-    expect(ecrituresSansObjet(lignes, [p], cats, sansNature, null)).toEqual([
+    expect(ecrituresSansObjet(lignes, [p], cats, sansNature, null, PLAN_PAR_DEFAUT)).toEqual([
       // La contrepartie banque est exclue : elle reflète un mouvement RÉEL, qui a bien eu lieu.
       { piece: p, motif: 'bien_sans_nature', nbLignes: 2, montant: 120 },
     ])
@@ -704,7 +705,7 @@ describe('ecrituresSansObjet', () => {
     ]
     const p = piece({ id: 'immo', montant_tva: 20 })
     const avecNature = new Map([['immo', acq('218300')]])
-    expect(ecrituresSansObjet(lignes, [p], cats, avecNature, null)).toEqual([])
+    expect(ecrituresSansObjet(lignes, [p], cats, avecNature, null, PLAN_PAR_DEFAUT)).toEqual([])
     expect(analyserEcritures(lignes, piecesAComptabiliser([p], cats, avecNature), true, new Map(), TRESORERIE, null).piecesDesynchronisees)
       .toEqual([p])
   })
@@ -722,7 +723,7 @@ describe('ecrituresSansObjet', () => {
     const charge = acquisition.map((e) => (e.compte === '218300' ? { ...e, compte: ACHATS } : e))
     const repris = new Map([['immo', REPRIS]])
     for (const lignes of [acquisition, charge]) {
-      expect(ecrituresSansObjet(lignes, [p], cats, repris, null)).toEqual([{ piece: p, motif: 'bien_repris', nbLignes: 2, montant: 120 }])
+      expect(ecrituresSansObjet(lignes, [p], cats, repris, null, PLAN_PAR_DEFAUT)).toEqual([{ piece: p, motif: 'bien_repris', nbLignes: 2, montant: 120 }])
       // Et rien ne propose de la régénérer : elle n'est plus à comptabiliser.
       expect(analyserEcritures(lignes, piecesAComptabiliser([p], cats, repris), true, new Map(), TRESORERIE, null).piecesDesynchronisees).toEqual([])
     }
@@ -731,7 +732,7 @@ describe('ecrituresSansObjet', () => {
   it('dit « sans montant » d’un bien dont le TTC a été effacé, pas « immobilisée »', () => {
     const p = piece({ id: 'immo', montant_ttc: null })
     const lignes = [ecriture({ piece_id: 'immo', compte: '218300' })]
-    expect(ecrituresSansObjet(lignes, [p], cats, new Map([['immo', acq('218300')]]), null)[0]?.motif).toBe('sans_montant')
+    expect(ecrituresSansObjet(lignes, [p], cats, new Map([['immo', acq('218300')]]), null, PLAN_PAR_DEFAUT)[0]?.motif).toBe('sans_montant')
   })
 
   it('nomme le motif plutôt que de laisser deviner', () => {
@@ -743,7 +744,7 @@ describe('ecrituresSansObjet', () => {
     for (const [modif, motif] of cas) {
       const p = piece(modif)
       const lignes = [ecriture({ piece_id: p.id, compte: ACHATS })]
-      expect(ecrituresSansObjet(lignes, [p], cats, new Map(), null)[0]?.motif, motif).toBe(motif)
+      expect(ecrituresSansObjet(lignes, [p], cats, new Map(), null, PLAN_PAR_DEFAUT)[0]?.motif, motif).toBe(motif)
     }
   })
 
@@ -759,18 +760,18 @@ describe('ecrituresSansObjet', () => {
     // - `piece_id` nul : le lien a été effacé par un ON DELETE SET NULL, et c'est le domaine de
     //   rupturesPisteAudit (lib/pisteAudit.ts). Le dire deux fois ferait compter le même défaut
     //   deux fois en Checklist.
-    expect(ecrituresSansObjet([ecriture({ piece_id: 'ailleurs', compte: ACHATS })], [], cats, new Map(), null)).toEqual([])
-    expect(ecrituresSansObjet([ecriture({ piece_id: null, compte: ACHATS })], [piece()], cats, new Map(), null)).toEqual([])
+    expect(ecrituresSansObjet([ecriture({ piece_id: 'ailleurs', compte: ACHATS })], [], cats, new Map(), null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(ecrituresSansObjet([ecriture({ piece_id: null, compte: ACHATS })], [piece()], cats, new Map(), null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('se tait sur une pièce parfaitement comptabilisable', () => {
     const p = piece()
-    expect(ecrituresSansObjet([ecriture({ piece_id: p.id })], [p], cats, new Map(), null)).toEqual([])
+    expect(ecrituresSansObjet([ecriture({ piece_id: p.id })], [p], cats, new Map(), null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 })
 
 // ═══ Engagement (lib/engagement.ts) ═══════════════════════════════════════════════════════════════
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Les lignes que la génération écrit, telles que la base les rend : c'est contre elles que le contrôle
 // doit se taire — un contrôle vérifié sur des lignes écrites à la main pourrait l'être sur des lignes
@@ -783,7 +784,7 @@ describe('lignesPourPiece — la génération suit le modèle du dossier', () =>
     const p = piece({ montant_ttc: 120, montant_tva: 20 })
     const payee = payes(paiement())
     expect(lignesPourPiece('d1', p, cible(ACHATS), true, payee, TRESORERIE)).toEqual([
-      ...lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payee),
+      ...lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payee, PLAN_PAR_DEFAUT),
       {
         dossier_id: 'd1', piece_id: p.id, ligne_bancaire_id: 'l1', date: '2026-01-05', libelle: 'facture.pdf',
         statut: 'proposee', compte: COMPTE_BANQUE, montant: 120, sens: 'credit',
@@ -794,7 +795,7 @@ describe('lignesPourPiece — la génération suit le modèle du dossier', () =>
   it('produit en engagement la facture à sa date et un règlement par mouvement', () => {
     const p = piece({ montant_ttc: 120, montant_tva: 20 })
     expect(lignesPourPiece('d1', p, cible(ACHATS), true, payes(paiement()), ENGAGEMENT))
-      .toEqual(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', [paiement()]))
+      .toEqual(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', [paiement()], PLAN_PAR_DEFAUT))
   })
 })
 
@@ -812,13 +813,13 @@ describe('ligneContrepartieBanque et la génération en trésorerie — une cont
 
   it('porte le montant de CE paiement — la part, jamais le virement entier —, à sa date et dans le sens de son signe', () => {
     const part = paiements.get('p1')!.find((m) => m.id === 'g')!
-    expect(ligneContrepartieBanque('d1', p, part)).toEqual({
+    expect(ligneContrepartieBanque('d1', p, part, PLAN_PAR_DEFAUT)).toEqual({
       dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: 'g', date: '2026-02-12', libelle: 'Fournisseur',
       statut: 'proposee', compte: COMPTE_BANQUE, montant: 700, sens: 'credit',
     })
     // Une entrée l'augmente au débit : l'avoir déduit d'un virement groupé, un remboursement.
-    expect(ligneContrepartieBanque('d1', p, { id: 'g', date: '2026-02-12', montant: 100 })).toMatchObject({ sens: 'debit', montant: 100 })
-    expect(ligneContrepartieBanque('d1', p, { id: 'z', date: '2026-02-12', montant: 0 })).toBeNull()
+    expect(ligneContrepartieBanque('d1', p, { id: 'g', date: '2026-02-12', montant: 100 }, PLAN_PAR_DEFAUT)).toMatchObject({ sens: 'debit', montant: 100 })
+    expect(ligneContrepartieBanque('d1', p, { id: 'z', date: '2026-02-12', montant: 0 }, PLAN_PAR_DEFAUT)).toBeNull()
   })
 
   it('génère une contrepartie par paiement, et une écriture qui s’équilibre', () => {
@@ -880,7 +881,7 @@ describe('ligneContrepartieBanque et la génération en trésorerie — une cont
   })
 
   it('ne dit « en attente de rapprochement » qu’une pièce qu’aucun paiement ne règle', () => {
-    const chargeSeule = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), false, []))
+    const chargeSeule = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), false, [], PLAN_PAR_DEFAUT))
     // Payée, la pièce sans contrepartie n'attend pas un rapprochement — elle l'a : son écriture est à
     // régénérer.
     const payee = analyserEcritures(chargeSeule, [{ piece: p, compte: ACHATS, immobilisation: false }], false, paiements, TRESORERIE, null)
@@ -896,7 +897,7 @@ describe('analyserEcritures — en engagement', () => {
   const p = piece({ id: 'p1', date_piece: '2025-12-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
   const aComptabiliser = [{ piece: p, compte: ACHATS, immobilisation: false }]
   const genere = (piecePassee: Piece = p, mouvements: LigneBancaire[] = [paiement()]) =>
-    enBase(lignesEngagementPourPiece('d1', piecePassee, cible(ACHATS), true, '455000', mouvements))
+    enBase(lignesEngagementPourPiece('d1', piecePassee, cible(ACHATS), true, '455000', mouvements, PLAN_PAR_DEFAUT))
 
   it('se tait sur une facture et son règlement tels que la génération les écrit', () => {
     const analyse = analyserEcritures(genere(), aComptabiliser, true, paiementsDesPieces([paiement()], []), ENGAGEMENT, null)
@@ -952,7 +953,7 @@ describe('analyserEcritures — en engagement', () => {
     const groupe = paiement({ id: 'g', piece_id: null, reglement_groupe: true, montant: -200 })
     const avant = paiementsDesPieces([groupe], [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -80 }])
     const apres = paiementsDesPieces([groupe], [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -100 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -100 }])
-    const lignes = enBase(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', avant.get('p1')!))
+    const lignes = enBase(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', avant.get('p1')!, PLAN_PAR_DEFAUT))
     expect(analyserEcritures(lignes, aComptabiliser, true, avant, ENGAGEMENT, null).piecesDesynchronisees).toEqual([])
     expect(analyserEcritures(lignes, aComptabiliser, true, apres, ENGAGEMENT, null).piecesDesynchronisees).toEqual([p])
   })
@@ -977,8 +978,8 @@ describe('analyserEcritures — en engagement', () => {
   it('signale un règlement resté sur l’ancien compte de tiers, même quand la facture est à jour', () => {
     const noteDeFrais = { ...p, type_piece: 'note_frais' as const }
     const lignes = [
-      ...enBase(lignesFactureEngagement('d1', noteDeFrais, cible(ACHATS), true, '455000')),
-      ...enBase(lignesReglementEngagement('d1', p, paiement(), '455000', false)).map((l) => ({ ...l, id: `r-${l.id}` })),
+      ...enBase(lignesFactureEngagement('d1', noteDeFrais, cible(ACHATS), true, '455000', PLAN_PAR_DEFAUT)),
+      ...enBase(lignesReglementEngagement('d1', p, paiement(), '455000', false, PLAN_PAR_DEFAUT)).map((l) => ({ ...l, id: `r-${l.id}` })),
     ]
     const analyse = analyserEcritures(lignes, [{ piece: noteDeFrais, compte: ACHATS, immobilisation: false }], true, paiementsDesPieces([paiement()], []), ENGAGEMENT, null)
     expect(analyse.piecesDesynchronisees).toEqual([noteDeFrais])
@@ -1026,7 +1027,7 @@ describe('analyserEcritures — en engagement', () => {
 
   it('exige le bon modèle : lu dans l’autre, chaque brouillon juste paraît périmé', () => {
     // C'est pour ça que le modèle n'a pas de valeur par défaut.
-    const tresorerie = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement()]))
+    const tresorerie = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement()], PLAN_PAR_DEFAUT))
     expect(analyserEcritures(tresorerie, aComptabiliser, true, paiementsDesPieces([paiement()], []), ENGAGEMENT, null).piecesDesynchronisees).toEqual([p])
     expect(analyserEcritures(genere(), aComptabiliser, true, paiementsDesPieces([paiement()], []), TRESORERIE, null).piecesDesynchronisees).toEqual([p])
   })
@@ -1035,8 +1036,8 @@ describe('analyserEcritures — en engagement', () => {
 describe('ecrituresSansObjet — en engagement', () => {
   it('compte la charge et la TVA d’une facture immobilisée sans nature, pas sa dette ni ses règlements', () => {
     const p = piece({ id: 'immo', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    const lignes = enBase(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', [paiement({ piece_id: 'immo' })]))
-    expect(ecrituresSansObjet(lignes, [p], [categorie()], new Map([['immo', SANS_NATURE]]), null)).toEqual([
+    const lignes = enBase(lignesEngagementPourPiece('d1', p, cible(ACHATS), true, '455000', [paiement({ piece_id: 'immo' })], PLAN_PAR_DEFAUT))
+    expect(ecrituresSansObjet(lignes, [p], [categorie()], new Map([['immo', SANS_NATURE]]), null, PLAN_PAR_DEFAUT)).toEqual([
       { piece: p, motif: 'bien_sans_nature', nbLignes: 2, montant: 120 },
     ])
   })
@@ -1063,21 +1064,21 @@ describe("l'écriture d'acquisition d'un bien", () => {
   const reglement = paiement({ montant: -1200 })
 
   it('passe le hors taxe au compte du bien et la TVA au 445620, pour un dossier assujetti', () => {
-    expect(lignesChargeProduitPourPiece('d1', facture, bien('218300'), true, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', facture, bien('218300'), true, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: '218300', sens: 'debit', montant: 1000, date: '2026-03-10' }),
       expect.objectContaining({ compte: '445620', sens: 'debit', montant: 200, date: '2026-03-10' }),
     ])
   })
 
   it('passe le TTC au compte du bien pour un dossier exonéré, qui ne récupère pas la TVA', () => {
-    expect(lignesChargeProduitPourPiece('d1', facture, bien('218300'), false, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', facture, bien('218300'), false, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: '218300', sens: 'debit', montant: 1200 }),
     ])
   })
 
   it('inverse les sens d’un avoir sur immobilisation, la TVA comprise', () => {
     const avoir = piece({ montant_ht: -100, montant_tva: -20, montant_ttc: -120 })
-    expect(lignesChargeProduitPourPiece('d1', avoir, bien('218300'), true, [])).toEqual([
+    expect(lignesChargeProduitPourPiece('d1', avoir, bien('218300'), true, [], PLAN_PAR_DEFAUT)).toEqual([
       expect.objectContaining({ compte: '218300', sens: 'credit', montant: 100 }),
       expect.objectContaining({ compte: '445620', sens: 'credit', montant: 20 }),
     ])
@@ -1123,7 +1124,7 @@ describe("l'écriture d'acquisition d'un bien", () => {
     const analyse = analyserEcritures(acquisition, aComptabiliser, assujetti, paiements, modele, null)
     expect(analyse.piecesDesynchronisees).toEqual([])
     expect(analyse.groupesDesequilibres).toEqual([])
-    expect(ecrituresSansObjet(acquisition, [facture], cats, biens, null)).toEqual([])
+    expect(ecrituresSansObjet(acquisition, [facture], cats, biens, null, PLAN_PAR_DEFAUT)).toEqual([])
 
     const enCharge = enBase(lignesPourPiece('d1', facture, cible(ACHATS), assujetti, payes(reglement), modele))
     expect(analyserEcritures(enCharge, aComptabiliser, assujetti, paiements, modele, null).piecesDesynchronisees).toEqual([facture])
@@ -1167,7 +1168,7 @@ describe("l'écriture d'acquisition d'un bien", () => {
   it('compte ce que l’acquisition d’un bien repris porte en trop, sans la dette au 404000 qui la solde', () => {
     const acquisition = enBase(lignesPourPiece('d1', facture, bien('218300'), true, [], ENGAGEMENT))
     expect(acquisition.map((e) => e.compte)).toEqual(['218300', '445620', '404000'])
-    expect(ecrituresSansObjet(acquisition, [facture], [categorie()], new Map([['p1', { compte: null, motif: 'repris' as const }]]), null))
+    expect(ecrituresSansObjet(acquisition, [facture], [categorie()], new Map([['p1', { compte: null, motif: 'repris' as const }]]), null, PLAN_PAR_DEFAUT))
       .toEqual([expect.objectContaining({ motif: 'bien_repris', nbLignes: 2, montant: 1200 })])
   })
 
@@ -1294,10 +1295,10 @@ describe('la frontière de validation — une part figée ne se compare plus et 
     // Cas DÉFENSIF pour la part validée : la catégorie d'une pièce figée ne change plus, la base la fige avec elle.
     const sansCategorie = piece({ id: 'p1', date_piece: '2025-03-10', categorie_id: null })
     const validee = [ecriture({ id: 'v', date: '2025-03-10', statut: 'validee' })]
-    expect(ecrituresSansObjet(validee, [sansCategorie], [categorie()], new Map(), FRONTIERE)).toEqual([])
-    expect(ecrituresSansObjet(validee, [sansCategorie], [categorie()], new Map(), null)).toEqual([expect.objectContaining({ motif: 'sans_categorie' })])
+    expect(ecrituresSansObjet(validee, [sansCategorie], [categorie()], new Map(), FRONTIERE, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(ecrituresSansObjet(validee, [sansCategorie], [categorie()], new Map(), null, PLAN_PAR_DEFAUT)).toEqual([expect.objectContaining({ motif: 'sans_categorie' })])
     // La part ouverte d'une pièce coupée se signale encore, et seule elle est comptée.
-    expect(ecrituresSansObjet(ecrite(ACHATS), [{ ...coupee, categorie_id: null }], [categorie()], new Map(), FRONTIERE))
+    expect(ecrituresSansObjet(ecrite(ACHATS), [{ ...coupee, categorie_id: null }], [categorie()], new Map(), FRONTIERE, PLAN_PAR_DEFAUT))
       .toEqual([expect.objectContaining({ motif: 'sans_categorie', nbLignes: 1, montant: 600 })])
   })
 
@@ -1445,7 +1446,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
 
   it('rien pour une pièce qui n’est pas une note de frais, ni en engagement', () => {
     expect(lignesPourPiece('d1', note({ type_piece: 'achat' }), cible(FRAIS), false, [], TRESORERIE).map((l) => l.compte)).toEqual([FRAIS])
-    expect(ligneContrepartieDirigeant('d1', note({ type_piece: 'achat' }), [{ sens: 'debit', montant: 40 }], [])).toBeNull()
+    expect(ligneContrepartieDirigeant('d1', note({ type_piece: 'achat' }), [{ sens: 'debit', montant: 40 }], [], PLAN_PAR_DEFAUT)).toBeNull()
     // En engagement, la dette au dirigeant passe déjà par le compte choisi pour le dossier (lib/engagement.ts).
     expect(lignesPourPiece('d1', note(), cible(FRAIS), false, [], ENGAGEMENT).map((l) => l.compte)).toEqual([FRAIS, '455000'])
   })
@@ -1468,7 +1469,7 @@ describe('la note de frais en trésorerie — face au compte de l’exploitant',
     // L'écriture générée AVANT : la charge seule. Elle n'attend aucun rapprochement — elle est à régénérer.
     it('l’écriture d’avant, sans sa contrepartie, est à régénérer, pas « en attente de rapprochement »', () => {
       const p = note()
-      const charge = enBase(lignesChargeProduitPourPiece('d1', p, cible(FRAIS), false, []))
+      const charge = enBase(lignesChargeProduitPourPiece('d1', p, cible(FRAIS), false, [], PLAN_PAR_DEFAUT))
       expect(analyse(charge, p)).toEqual({ nbSansContrepartie: 0, piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [p] })
     })
 

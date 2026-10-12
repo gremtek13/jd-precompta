@@ -4,7 +4,6 @@ import {
 } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
@@ -134,7 +133,8 @@ export function refusVentilation(
 // écriture déséquilibrée d'un centime.
 //
 // UNE PART DE RECETTE TAXÉE prend deux lignes, du même côté : sa catégorie au hors taxe, la TVA collectée
-// (445710) à côté. Le taux est celui qui S'APPLIQUE (`tauxApplicable`) : un taux resté d'avant que le
+// (445710) à côté. La banque, la TVA collectée et le compte du dirigeant sont ceux du PLAN du dossier, que le modèle
+// porte (lib/engagement.ts). Le taux est celui qui S'APPLIQUE (`tauxApplicable`) : un taux resté d'avant que le
 // dossier cesse d'être assujetti ne s'écrit plus — et l'écriture qui le porte encore est à réécrire.
 //
 // NUL quand une part ne peut pas s'écrire : sa catégorie est absente de la liste fournie, ou n'a plus de
@@ -165,9 +165,9 @@ export function ecritureDeLaVentilation(
     const sens = p.montant > 0 ? 'credit' : 'debit'
     const { ht, tva } = horsTaxeEtTva(p.montant, taux)
     lignes.push({ compte, sens, montant: ht, libelle })
-    if (tva > 0) lignes.push({ compte: COMPTE_TVA_COLLECTEE, sens, montant: tva, libelle })
+    if (tva > 0) lignes.push({ compte: modele.plan.tva_collectee, sens, montant: tva, libelle })
   }
-  lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? 'debit' : 'credit', montant: Math.abs(centimes(ligne.montant)) / 100, libelle })
+  lignes.push({ compte: modele.plan.banque, sens: ligne.montant > 0 ? 'debit' : 'credit', montant: Math.abs(centimes(ligne.montant)) / 100, libelle })
   return lignes
 }
 

@@ -229,7 +229,7 @@ describe('refusMontantsDuPaiementPersonnel — ce que les montants de l’éché
 
 describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotisation et sa CSG-CRDS en face', () => {
   it('en trésorerie, la CSG-CRDS passe au 108000 et le reste au 646000', () => {
-    expect(ecritureDeLaCotisation(mouvement(), cotisation(), 'tresorerie')).toEqual([
+    expect(ecritureDeLaCotisation(mouvement(), cotisation(), 'tresorerie', PLAN_PAR_DEFAUT)).toEqual([
       { compte: COMPTE_BANQUE, sens: 'credit', montant: 500, libelle: 'PRLV URSSAF' },
       { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: 'debit', montant: 451.5, libelle: 'PRLV URSSAF' },
       { compte: COMPTE_EXPLOITANT, sens: 'debit', montant: 48.5, libelle: 'PRLV URSSAF' },
@@ -237,22 +237,22 @@ describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotis
   })
 
   it('en engagement, tout va au 646000', () => {
-    expect(ecritureDeLaCotisation(mouvement(), cotisation(), 'engagement')).toEqual([
+    expect(ecritureDeLaCotisation(mouvement(), cotisation(), 'engagement', PLAN_PAR_DEFAUT)).toEqual([
       { compte: COMPTE_BANQUE, sens: 'credit', montant: 500, libelle: 'PRLV URSSAF' },
       { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: 'debit', montant: 500, libelle: 'PRLV URSSAF' },
     ])
   })
 
   it('sans CSG-CRDS saisie, deux lignes : une ligne à zéro n’en est pas une', () => {
-    expect(ecritureDeLaCotisation(mouvement(), cotisation({ montant_csg_crds: null }), 'tresorerie').map((l) => [l.compte, l.montant]))
+    expect(ecritureDeLaCotisation(mouvement(), cotisation({ montant_csg_crds: null }), 'tresorerie', PLAN_PAR_DEFAUT).map((l) => [l.compte, l.montant]))
       .toEqual([[COMPTE_BANQUE, 500], [COMPTE_COTISATIONS_EXPLOITANT, 500]])
     // Une échéance faite toute de CSG-CRDS : le 646000 vaudrait zéro, il n'est pas écrit.
-    expect(ecritureDeLaCotisation(mouvement(), cotisation({ montant_csg_crds: 500 }), 'tresorerie').map((l) => [l.compte, l.montant]))
+    expect(ecritureDeLaCotisation(mouvement(), cotisation({ montant_csg_crds: 500 }), 'tresorerie', PLAN_PAR_DEFAUT).map((l) => [l.compte, l.montant]))
       .toEqual([[COMPTE_BANQUE, 500], [COMPTE_EXPLOITANT, 500]])
   })
 
   it('un remboursement crédite le 646000 et le 108000 : le sens vient du mouvement', () => {
-    const ecrite = ecritureDeLaCotisation(mouvement({ montant: 120 }), cotisation({ montant_appele: -120, montant_csg_crds: -11.64 }), 'tresorerie')
+    const ecrite = ecritureDeLaCotisation(mouvement({ montant: 120 }), cotisation({ montant_appele: -120, montant_csg_crds: -11.64 }), 'tresorerie', PLAN_PAR_DEFAUT)
     expect(ecrite.map((l) => [l.compte, l.sens, l.montant])).toEqual([
       [COMPTE_BANQUE, 'debit', 120],
       [COMPTE_COTISATIONS_EXPLOITANT, 'credit', 108.36],
@@ -262,7 +262,7 @@ describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotis
 
   it('compte en centimes : la différence tombe juste, et l’écriture s’équilibre', () => {
     // 0,30 − 0,10 vaut 0,19999999999999998 en flottants : la base refuserait la ligne.
-    const petite = ecritureDeLaCotisation(mouvement({ montant: -0.3 }), cotisation({ montant_csg_crds: 0.1 }), 'tresorerie')
+    const petite = ecritureDeLaCotisation(mouvement({ montant: -0.3 }), cotisation({ montant_csg_crds: 0.1 }), 'tresorerie', PLAN_PAR_DEFAUT)
     expect(petite.find((l) => l.compte === COMPTE_COTISATIONS_EXPLOITANT)?.montant).toBe(0.2)
     // Seulement ce que le refus laisse passer : une CSG-CRDS plus grande que le mouvement n'est jamais écrite.
     let essais = 0
@@ -272,7 +272,7 @@ describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotis
         const c = cotisation({ montant_csg_crds: csg, montant_appele: montant < 0 ? 100 : -100 })
         if (refusRapprochementCotisation(ligne, c, 'tresorerie')) continue
         essais++
-        const lignes = ecritureDeLaCotisation(ligne, c, 'tresorerie')
+        const lignes = ecritureDeLaCotisation(ligne, c, 'tresorerie', PLAN_PAR_DEFAUT)
         const debit = lignes.filter((l) => l.sens === 'debit').reduce((s, l) => s + Math.round(l.montant * 100), 0)
         const credit = lignes.filter((l) => l.sens === 'credit').reduce((s, l) => s + Math.round(l.montant * 100), 0)
         expect(debit).toBe(credit)
@@ -284,7 +284,7 @@ describe('ecritureDeLaCotisation — la banque au montant du mouvement, la cotis
   })
 
   it('reprend le libellé brut quand le libellé est générique', () => {
-    const lignes = ecritureDeLaCotisation(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA URSSAF 012345' }), cotisation(), 'tresorerie')
+    const lignes = ecritureDeLaCotisation(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA URSSAF 012345' }), cotisation(), 'tresorerie', PLAN_PAR_DEFAUT)
     expect(new Set(lignes.map((l) => l.libelle))).toEqual(new Set(['PRLV SEPA URSSAF 012345']))
   })
 
@@ -417,52 +417,52 @@ describe('cotisationsComptees — la date et le montant auxquels une échéance 
 
 describe('cotisationsAEcrire — les échéances payées dont l’écriture manque ou a changé', () => {
   it('un rapprochement sans écriture : celui d’avant le 01/10/2026', () => {
-    const aEcrire = cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', null)
+    const aEcrire = cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)
     expect(aEcrire.map((r) => [r.ligne.id, r.cotisation.id])).toEqual([['l1', 'c1']])
   })
 
   it('se tait sur une écriture conforme, dans n’importe quel ordre', () => {
-    expect(cotisationsAEcrire([...ECRITE].reverse(), [rapproche()], [cotisation()], 'tresorerie', null)).toEqual([])
+    expect(cotisationsAEcrire([...ECRITE].reverse(), [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('une CSG-CRDS saisie après le rapprochement : l’écriture n’est plus celle qu’il produirait', () => {
     const ancienne = [ecriture({ id: 'e1' }), ecriture({ id: 'e2', compte: COMPTE_COTISATIONS_EXPLOITANT, sens: 'debit', montant: 500 })]
-    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
+    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toHaveLength(1)
     // La même écriture est juste en engagement, où la CSG-CRDS reste au 646000.
-    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'engagement', null)).toEqual([])
+    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'engagement', null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('une ligne datée autrement que le mouvement', () => {
     const autreDate = ECRITE.map((e) => (e.id === 'e3' ? { ...e, date: '2025-12-05' } : e))
-    expect(cotisationsAEcrire(autreDate, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
+    expect(cotisationsAEcrire(autreDate, [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 
   // L'écriture ENTIÈRE à la date de l'échéance, cohérente avec elle-même : seule la comparaison à la date
   // du MOUVEMENT la voit. Une comparaison qui prendrait la date de la première ligne présente se tairait.
   it('toute l’écriture datée à l’échéance plutôt qu’au prélèvement', () => {
     const aLEcheance = ECRITE.map((e) => ({ ...e, date: '2025-12-05' }))
-    expect(cotisationsAEcrire(aLEcheance, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
+    expect(cotisationsAEcrire(aLEcheance, [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 
   it('ignore les écritures d’une pièce sur le même mouvement : elles appartiennent à la pièce', () => {
     const avecPiece = [...ECRITE, ecriture({ id: 'p', piece_id: 'p1', compte: '606100', sens: 'debit', montant: 12 })]
-    expect(cotisationsAEcrire(avecPiece, [rapproche()], [cotisation()], 'tresorerie', null)).toEqual([])
+    expect(cotisationsAEcrire(avecPiece, [rapproche()], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('ne rend ni un rapprochement qui ne peut pas s’écrire, ni une échéance qu’on n’a pas lue', () => {
-    expect(cotisationsAEcrire([], [rapproche({ montant: 500 })], [cotisation()], 'tresorerie', null)).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche()], [], 'tresorerie', null)).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche({ statut: 'ignoree' })], [cotisation()], 'tresorerie', null)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ montant: 500 })], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche()], [], 'tresorerie', null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ statut: 'ignoree' })], [cotisation()], 'tresorerie', null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   // NI UN PAIEMENT D'UN EXERCICE FIGÉ PAR LA VALIDATION : la base n'y écrit plus. L'exercice est celui du MOUVEMENT — une
   // échéance de décembre prélevée en janvier s'écrit dans l'exercice suivant —, frontière comprise.
   it('ne rend pas un paiement d’un exercice validé, jugé à la date du mouvement, frontière comprise', () => {
     // L'échéance du 05/12/2025, prélevée le 06/01/2026 : 2025 validé n'y change rien.
-    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2025-12-31')).toHaveLength(1)
-    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2026-12-31')).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche({ date: '2025-12-31' })], [cotisation()], 'tresorerie', '2025-12-31')).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche({ date: '2026-01-01' })], [cotisation()], 'tresorerie', '2025-12-31')).toHaveLength(1)
+    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2025-12-31', PLAN_PAR_DEFAUT)).toHaveLength(1)
+    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ date: '2025-12-31' })], [cotisation()], 'tresorerie', '2025-12-31', PLAN_PAR_DEFAUT)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ date: '2026-01-01' })], [cotisation()], 'tresorerie', '2025-12-31', PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 })
 

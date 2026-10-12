@@ -12,6 +12,7 @@ import type { DossierTab } from '../../components/DossierParcours'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import type { FacturePourJumelle } from '../../lib/ventesJumelles'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -193,8 +194,8 @@ function poser(pieces: {
   faux.relevesIllisibles = false
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
 // `statutTva` : par défaut celui qu'implique `assujettiTva` — un dossier non assujetti des jeux d'essai est exonéré,

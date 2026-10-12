@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import { EXPLICATIONS_MODE, modeleDuDossier } from '../lib/engagement'
+import { lireLePlanDuDossier, type LectureDuPlan } from '../lib/planComptable'
 import { STATUTS_TVA, libelleCourtStatutTva, resumeObligations } from '../lib/statutTva'
 import type { Dossier, ExerciceValide } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
@@ -87,6 +88,13 @@ export default function DossierDetail() {
   const [valides, setValides] = useState<{ id: string; exercices: ExerciceValide[]; erreur: string | null } | null>(null)
   const exercicesValides = valides && valides.id === id ? valides.exercices : null
   const erreurValides = valides && valides.id === id ? valides.erreur : null
+  // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3), lu comme son identité : avec l'identifiant pour lequel il l'a été.
+  // Toute écriture que les onglets composent prend ses comptes dans ce plan (par le modèle comptable, qui le porte) : sans
+  // lui, ils n'en composeraient aucune juste — un plan lu en partie ferait écrire un rôle à son défaut, peut-être un autre
+  // compte que celui du dossier, que la base refuserait. Lu, refusé, illisible ou incomplet, il est entier ou il n'est pas.
+  const [planLu, setPlanLu] = useState<{ id: string; lecture: LectureDuPlan } | null>(null)
+  const plan = planLu && planLu.id === id ? planLu.lecture.plan : null
+  const erreurPlan = planLu && planLu.id === id ? planLu.lecture.motif : null
   // Un exercice validé reste au sélecteur de l'en-tête même quand rien ne le porte plus : un exercice vide se
   // valide, et il doit rester où le retrouver.
   const anneesDisponibles = annees && annees.id === id && exercicesValides
@@ -96,11 +104,18 @@ export default function DossierDetail() {
   // montent qu'une fois l'identité et les années du dossier de l'URL connues, jamais l'une sans
   // l'autre : les années arrivent souvent AVANT l'identité, et l'en-tête se rend aussi pendant
   // l'attente, hors de ce fournisseur, où le sélecteur lèverait et emporterait toute la page.
-  const pret = !erreurDossier && !erreurValides && dossier !== null && anneesDisponibles !== null
   // Le modèle comptable du dossier (lib/engagement.ts), lu sur la ligne du dossier et JAMAIS supposé :
   // les onglets qui en dépendent ne se montent pas sans lui, plutôt que de retomber sur la trésorerie
   // — un dossier en engagement lu en trésorerie ferait signaler « à régénérer » toutes ses écritures.
-  const modele = dossier ? modeleDuDossier(dossier) : null
+  // Il porte le plan du dossier, et le compte du dirigeant n'y entre que validé par ce plan : un compte qu'aucun des
+  // trois rôles du dirigeant ne porte est un refus, dit comme une lecture ratée.
+  const lectureDuModele = dossier && plan ? modeleDuDossier(dossier, plan) : null
+  const modele = lectureDuModele?.modele ?? null
+  const erreurModele = lectureDuModele?.refus ?? null
+  // Aucun onglet ne se monte avant le plan : aucun geste n'écrit avant qu'il soit lu, et chaque onglet qui compose une
+  // écriture le reçoit, entier.
+  const pret = !erreurDossier && !erreurValides && !erreurPlan && !erreurModele && dossier !== null
+    && anneesDisponibles !== null && modele !== null
 
   // Change ce dossier-là et lui seul : une réponse qui revient après qu'on a changé de dossier ne
   // doit pas écrire l'ancien sur le nouveau.
@@ -149,6 +164,17 @@ export default function DossierDetail() {
     lireExercicesValides(id).then((lus) => { if (!annule) setValides(lus) })
     return () => { annule = true }
   }, [id, essaiDossier, lireExercicesValides])
+
+  // Le plan effectif du dossier, par la fonction de la base qui le dit à ses fonctions d'écriture (`plan_du_dossier`) :
+  // l'application compose avec le plan que la base vérifiera. « Réessayer » le relit avec l'identité.
+  useEffect(() => {
+    if (!id) return
+    let annule = false
+    lireLePlanDuDossier(supabase.rpc('plan_du_dossier', { p_dossier_id: id })).then((lecture) => {
+      if (!annule) setPlanLu({ id, lecture })
+    })
+    return () => { annule = true }
+  }, [id, essaiDossier])
 
   // Après une validation (Clôture) : chaque onglet doit voir la nouvelle frontière.
   const relireExercicesValides = useCallback(async () => {
@@ -288,14 +314,18 @@ export default function DossierDetail() {
       {/* Les onglets ne se montent qu'avec l'identité du dossier de l'URL : plusieurs la RECOPIENT au
           montage (le formulaire d'Informations, par exemple), et montés trop tôt ils garderaient un
           SIRET vide — ou celui du dossier précédent — que le premier « Enregistrer » écrirait. */}
-      {erreurDossier || erreurValides ? (
+      {erreurDossier || erreurValides || erreurPlan || erreurModele ? (
         <>
           {cockpit}
           <div className="card">
             <p className="error-text" style={{ marginTop: 0 }}>
               {erreurDossier
                 ? `Ce dossier n’a pas pu être lu (${erreurDossier}). Ses écrans ne s’affichent pas : ils partiraient d’une identité vide — un SIRET vide sur une facture, par exemple.`
-                : `Les exercices validés de ce dossier n’ont pas pu être lus (${erreurValides}). Ses écrans ne s’affichent pas : ils proposeraient de modifier ce qu’une validation a figé.`}
+                : erreurValides
+                  ? `Les exercices validés de ce dossier n’ont pas pu être lus (${erreurValides}). Ses écrans ne s’affichent pas : ils proposeraient de modifier ce qu’une validation a figé.`
+                  : erreurPlan
+                    ? `Le plan comptable de ce dossier n’a pas pu être lu (${erreurPlan}). Ses écrans ne s’affichent pas : aucune écriture ne se compose sans lui, et un compte deviné pourrait ne pas être celui du dossier.`
+                    : `${erreurModele} Ses écrans ne s’affichent pas : une note de frais du dirigeant s’écrirait sur un compte que son plan ne tient pas.`}
             </p>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setEssaiDossier((n) => n + 1)}>
               Réessayer
@@ -369,9 +399,10 @@ export default function DossierDetail() {
                 onNavigate={allerA}
               />
             )}
-            {tab === 'tva' && dossier && (
+            {tab === 'tva' && dossier && modele && (
               <TvaTab
                 dossierId={id}
+                plan={modele.plan}
                 assujettiTva={dossier.assujetti_tva}
                 statutTva={dossier.statut_tva}
                 articleExoneration={dossier.article_exoneration}
@@ -383,7 +414,9 @@ export default function DossierDetail() {
                 onRegimeUpdated={(modification) => modifierDossier(id, modification)}
               />
             )}
-            {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+            {tab === 'immobilisations' && modele && (
+              <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} plan={modele.plan} />
+            )}
             {tab === 'cotisations' && modele && <CotisationsTab dossierId={id} modele={modele} />}
             {tab === 'cloture' && dossier && modele && (
               <ClotureTab

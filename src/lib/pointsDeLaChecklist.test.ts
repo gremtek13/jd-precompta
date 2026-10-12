@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { DeclarationTva, InformationsDossier, LigneBancaire } from './types'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
 // l'écran en affiche, mot pour mot. Ici, ce que le module seul décide : il ne lit pas l'horloge — le premier jour du mois
@@ -18,7 +19,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
 }
 
 const CONTEXTE: ContexteDeLaChecklist = {
-  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000' },
+  assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT },
   frontiere: null, anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
 }
 

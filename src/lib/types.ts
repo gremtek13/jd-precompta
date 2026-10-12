@@ -637,9 +637,12 @@ export type StatutTva = 'redevable' | 'franchise' | 'exonere'
 export type ArticleExoneration = 'cgi_261_4_1' | 'cgi_261_4_4_a' | 'cgi_261_4_4_b' | 'cgi_261_c_2'
 
 export type ModeComptable = 'tresorerie' | 'engagement'
-// 455 : compte courant d'un dirigeant associé d'une société ; 108 : compte de l'exploitant d'une
-// entreprise individuelle ; 467 : divers comptes débiteurs et produits à recevoir. Voir lib/engagement.ts.
-export type CompteNotesDeFrais = '455000' | '108000' | '467000'
+// Le compte du dirigeant d'un dossier : celui de l'un des rôles `associe` (455, compte courant d'un dirigeant associé
+// d'une société), `exploitant` (108, l'exploitant d'une entreprise individuelle) ou `autres_debiteurs_crediteurs` (467,
+// divers comptes débiteurs et produits à recevoir) DU PLAN DU DOSSIER — validé par lui (`modeleDuDossier`,
+// lib/engagement.ts ; `roleDuDirigeant`, lib/planComptable.ts), et non plus l'un de trois numéros écrits ici (ligne 43,
+// étape PC3). La base le borne encore aux trois défauts (`dossiers_compte_notes_de_frais_check`) jusqu'à l'étape PC4.
+export type CompteNotesDeFrais = string
 
 export interface DeclarationTva {
   id: string

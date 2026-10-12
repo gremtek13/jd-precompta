@@ -43,7 +43,7 @@ function engagement(
   compteNotesDeFrais: CompteNotesDeFrais = '455000',
 ): EcritureBrouillon[] {
   const creation = new Map(paiements.map((m) => [m.id, m.creeLe ?? `${m.date}T10:00:00Z`]))
-  return lignesEngagementPourPiece('d1', p, cible, false, compteNotesDeFrais, paiements)
+  return lignesEngagementPourPiece('d1', p, cible, false, compteNotesDeFrais, paiements, PLAN_PAR_DEFAUT)
     .map((l: LigneAGenerer, i) => ecriture({
       ...l, id: `${p.id}-${i}`,
       created_at: l.ligne_bancaire_id ? creation.get(l.ligne_bancaire_id)! : `${l.date}T09:00:00Z`,

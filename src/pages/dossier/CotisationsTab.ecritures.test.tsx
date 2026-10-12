@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // ATTACHER OU DÉTACHER L'AVIS D'UNE ÉCHÉANCE JETAIT LE RÉSULTAT DE LA MISE À JOUR (09/10/2026,
 // `ecrituresVerifiees.test.ts`) : refusée, la relecture laissait l'échéance sans son document — ou avec —, sans un mot,
@@ -79,7 +80,7 @@ function avis(o: Partial<DocumentDivers> = {}): DocumentDivers {
 }
 
 const monter = () => render(
-  <AvecExercicesValides annees={[]}><CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: '108000' }} /></AvecExercicesValides>,
+  <AvecExercicesValides annees={[]}><CotisationsTab dossierId="dossier-de-test" modele={{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }} /></AvecExercicesValides>,
 )
 
 beforeEach(() => {

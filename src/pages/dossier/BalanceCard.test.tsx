@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BalanceCard from './BalanceCard'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // Ce que ces tests gardent est le CÂBLAGE, pas la lecture ni le calcul : `balanceImport.ts` et
 // `aNouveaux.ts` sont couverts à part. Ce qui ne peut se voir qu'ici :
@@ -118,7 +119,7 @@ const ANNEE = new Date().getFullYear()
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 async function monter(valides: readonly number[] = []) {
-  render(<AvecExercicesValides annees={valides}><BalanceCard dossierId="dossier-de-test" /></AvecExercicesValides>)
+  render(<AvecExercicesValides annees={valides}><BalanceCard dossierId="dossier-de-test" plan={PLAN_PAR_DEFAUT} /></AvecExercicesValides>)
   // L'ouverture existante est lue au montage : l'enregistrement l'attend.
   await screen.findByText(/Aucun à-nouveau enregistré|Ouverture enregistrée|Les à-nouveaux du dossier n'ont pas pu/)
 }
@@ -402,5 +403,19 @@ describe('BalanceCard — une ouverture figée par un exercice validé', () => {
 
     expect(screen.queryByRole('button', { name: 'Enregistrer les à-nouveaux' })).toBeNull()
     expect(screen.getByText(PHRASE)).toBeTruthy()
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : la reprise range la banque de la balance sur la banque DU PLAN et ouvre le
+// résultat d'avant sur ses comptes ; la carte nomme ces comptes-là, et aucun compte par défaut.
+describe('BalanceCard — sous le plan du dossier', () => {
+  it('range la banque sur celle du plan, et le dit', async () => {
+    render(<AvecExercicesValides annees={[]}><BalanceCard dossierId="dossier-de-test" plan={PLAN_DECALE} /></AvecExercicesValides>)
+    await screen.findByText(/Aucun à-nouveau enregistré|Ouverture enregistrée|Les à-nouveaux du dossier n'ont pas pu/)
+    await deposer(fichier(octetsUtf8(AVANT_CLOTURE)))
+
+    expect(screen.getByText(/Un compte de banque est repris sur le compte banque de l’application \(512100\)/)).toBeTruthy()
+    expect(document.body.textContent).toMatch(/512100/)
+    expect(document.body.textContent).not.toMatch(/512000|120000|108000|164000/)
   })
 })

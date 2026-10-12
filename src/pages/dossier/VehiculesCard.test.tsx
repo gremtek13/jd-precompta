@@ -6,6 +6,7 @@ import type { EcritureBrouillon, VehiculeDossier } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // Premier test d'ÉCRAN du dépôt. Il existe parce que les défauts qu'il vise ne sont visibles dans
 // aucun test de src/lib : la logique appelée derrière était juste dans les deux cas.
@@ -140,8 +141,8 @@ function forfait(montant: number, o: Partial<EcritureBrouillon> = {}, compte = '
   ]
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '467000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 function monter(annee: number | 'toutes', modele = TRESORERIE, valides: readonly number[] = []) {
@@ -533,5 +534,21 @@ describe('un exercice validé fige son cadre 7', () => {
     expect(screen.queryByText(/son cadre 7 ne change plus/)).toBeNull()
     await act(async () => { fireEvent.change(km, { target: { value: '12500' } }) })
     expect(faux.modifiees.at(-1)).toEqual({ km_professionnel: 12500 })
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : le forfait se compose au compte des indemnités et au compte du dirigeant DU
+// PLAN — ceux qu'`ecrire_forfait_kilometrique` relit au même plan depuis l'étape PC2 —, et la carte nomme le premier.
+describe('VehiculesCard — sous le plan du dossier', () => {
+  it('compose le forfait aux comptes du plan, et la carte nomme le compte des indemnités', async () => {
+    faux.vehicules = [vehicule()]
+    monter(2025, { mode: 'engagement', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE })
+    const bouton = await screen.findByRole('button', { name: 'Écrire ce forfait' })
+    expect(screen.getByText(/les indemnités au compte 625111, face au compte du dirigeant/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    const lignes = faux.rpcs[0].args.p_ecritures as { compte: string; sens: string }[]
+    expect(lignes.map((l) => [l.compte, l.sens])).toEqual([['625111', 'debit'], ['455100', 'credit']])
+    // Relu, le forfait écrit aux comptes du plan est celui que le cadre 7 attend.
+    await waitFor(() => expect(screen.queryByRole('table', { name: 'Forfaits à écrire' })).toBeNull())
   })
 })

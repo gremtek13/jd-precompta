@@ -146,27 +146,27 @@ describe('ecritureDeLEcheance — une ligne par compte non nul, face à la banqu
   const lignes = (l: ReturnType<typeof ecritureDeLEcheance>) => l.map((x) => `${x.compte}:${x.sens}:${x.montant}`).sort()
 
   it('une échéance : le capital au 164, les intérêts au 661, l’assurance au 616, la banque au crédit', () => {
-    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 21.03 }))).toEqual([
+    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 21.03 }, PLAN_PAR_DEFAUT))).toEqual([
       '164000:debit:482.97', '512000:credit:540', '616800:debit:21.03', '661100:debit:36',
     ])
   })
 
   it('le libellé du relevé sur chaque ligne, pour retrouver le mouvement', () => {
-    for (const l of ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 0 })) {
+    for (const l of ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 0 }, PLAN_PAR_DEFAUT)) {
       expect(l.libelle).toBe('PRLV ECHEANCE PRET')
     }
   })
 
   it('sans assurance, sans capital : les lignes à zéro n’existent pas — la base les refuserait', () => {
-    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 0 })))
+    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 36, assurance: 0 }, PLAN_PAR_DEFAUT)))
       .toEqual(['164000:debit:504', '512000:credit:540', '661100:debit:36'])
-    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 540, assurance: 0 })))
+    expect(lignes(ecritureDeLEcheance(mouvement(), { echeance: 1, interets: 540, assurance: 0 }, PLAN_PAR_DEFAUT)))
       .toEqual(['512000:credit:540', '661100:debit:540'])
   })
 
   it('s’équilibre au centime, là où l’addition des flottants ne le ferait pas', () => {
     const m = mouvement({ montant: -300.3 })
-    const e = ecritureDeLEcheance(m, { echeance: 1, interets: 0.1, assurance: 0.2 })
+    const e = ecritureDeLEcheance(m, { echeance: 1, interets: 0.1, assurance: 0.2 }, PLAN_PAR_DEFAUT)
     expect(capitalDeLEcheance(m, { echeance: 1, interets: 0.1, assurance: 0.2 })).toBe(300)
     const debit = e.filter((l) => l.sens === 'debit').reduce((s, l) => s + Math.round(l.montant * 100), 0)
     const credit = e.filter((l) => l.sens === 'credit').reduce((s, l) => s + Math.round(l.montant * 100), 0)
@@ -176,7 +176,7 @@ describe('ecritureDeLEcheance — une ligne par compte non nul, face à la banqu
   it('un déblocage : la banque au débit, le 164 au crédit', () => {
     const deblocage = mouvement({ montant: 12000 })
     expect(estDeblocage(deblocage)).toBe(true)
-    expect(lignes(ecritureDeLEcheance(deblocage, { echeance: null, interets: 0, assurance: 0 })))
+    expect(lignes(ecritureDeLEcheance(deblocage, { echeance: null, interets: 0, assurance: 0 }, PLAN_PAR_DEFAUT)))
       .toEqual(['164000:credit:12000', '512000:debit:12000'])
   })
 })
@@ -437,8 +437,8 @@ describe('echeancesDesynchronisees — l’écriture que le découpage produirai
   ]
 
   it('se tait quand l’écriture est celle attendue, et sur un mouvement sans emprunt', () => {
-    expect(echeancesDesynchronisees(justes, [rapproche()])).toEqual([])
-    expect(echeancesDesynchronisees([], [mouvement()])).toEqual([])
+    expect(echeancesDesynchronisees(justes, [rapproche()], PLAN_PAR_DEFAUT)).toEqual([])
+    expect(echeancesDesynchronisees([], [mouvement()], PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('signale une écriture absente, amputée, d’un autre montant ou à une autre date', () => {
@@ -448,11 +448,11 @@ describe('echeancesDesynchronisees — l’écriture que le découpage produirai
       justes.map((e) => (e.compte === '661100' ? { ...e, montant: 30 } : e)),
       justes.map((e) => ({ ...e, date: '2025-02-07' })),
     ]
-    for (const ecritures of cas) expect(echeancesDesynchronisees(ecritures, [rapproche()]).map((l) => l.id)).toEqual(['l1'])
+    for (const ecritures of cas) expect(echeancesDesynchronisees(ecritures, [rapproche()], PLAN_PAR_DEFAUT).map((l) => l.id)).toEqual(['l1'])
   })
 
   it('les lignes d’une pièce qui désignent le même mouvement n’en sont pas', () => {
     const avecPiece = [...justes, ecriture({ id: 'e5', piece_id: 'p1', compte: '606100', sens: 'debit', montant: 10 })]
-    expect(echeancesDesynchronisees(avecPiece, [rapproche()])).toEqual([])
+    expect(echeancesDesynchronisees(avecPiece, [rapproche()], PLAN_PAR_DEFAUT)).toEqual([])
   })
 })

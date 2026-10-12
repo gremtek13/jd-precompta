@@ -13,7 +13,12 @@ import {
   PLAN_PAR_DEFAUT,
   PREFIXES_DECALES,
   ROLES_COMPTABLES,
+  ROLES_DU_DIRIGEANT,
+  lireLePlanDuDossier,
+  planDeLaReponse,
+  roleDuDirigeant,
   type CleRoleComptable,
+  type ReponseDuPlan,
 } from './planComptable'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
@@ -495,5 +500,91 @@ describe('le lecteur des n-uplets', () => {
     expect(nUplets(" ('a''b', null, 12), ('c', 'd', -3);", 0)).toEqual([["a'b", null, 12], ['c', 'd', -3]])
     expect(() => nUplets("('a', vrai)", 0)).toThrow('valeur illisible')
     expect(() => nUplets("('a' 'b')", 0)).toThrow('n-uplet mal formé')
+  })
+})
+
+// LE PLAN LU AVEC LE DOSSIER (étape PC3) : la réponse de `plan_du_dossier` devient le plan de toute l'application, ENTIER
+// ou rien, avec le motif ; rien n'y est supposé, ni le défaut d'un rôle qui manque, ni un plan sur une requête qui lève.
+describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
+  // La réponse de la base : un rôle par ligne, dans l'ordre du catalogue, le compte du plan sinon le défaut.
+  const lignes = (plan: Readonly<Record<string, string>>) => ROLES_COMPTABLES.map((r) => ({
+    role: r.role, compte: plan[r.role], libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut,
+    origine: plan === PLAN_PAR_DEFAUT ? 'application' : 'dossier',
+  }))
+
+  it('rend le plan d’un dossier qui n’en règle aucun — le défaut — et celui d’un dossier qui en règle un, figés', () => {
+    const parDefaut = planDeLaReponse({ data: lignes(PLAN_PAR_DEFAUT), error: null })
+    expect(parDefaut).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+    expect(Object.isFrozen(parDefaut.plan)).toBe(true)
+    expect(planDeLaReponse({ data: lignes(PLAN_DECALE), error: null })).toEqual({ plan: PLAN_DECALE, motif: null })
+  })
+
+  it('ignore un rôle que la base connaît et que l’application ignore : elle n’y écrit pas', () => {
+    const plus = [...lignes(PLAN_PAR_DEFAUT), { role: 'role_a_venir', compte: '999999', libelle: null, prefixe_auxiliaire: null, origine: 'application' }]
+    expect(planDeLaReponse({ data: plus, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+  })
+
+  it('refusée, ne rend aucun plan et dit le refus — l’erreur de PostgREST est un objet nu', () => {
+    expect(planDeLaReponse({ data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }))
+      .toEqual({ plan: null, motif: 'plan comptable refusé : Accès refusé à ce dossier.' })
+    expect(planDeLaReponse({ data: lignes(PLAN_PAR_DEFAUT), error: { code: '42501' } }))
+      .toEqual({ plan: null, motif: 'plan comptable refusé : raison inconnue' })
+  })
+
+  it('illisible — pas une liste, une ligne qui n’est pas un objet, un rôle ou un compte qui n’est pas un texte —, rien', () => {
+    const illisibles: unknown[] = [null, {}, 'plan', [null], [42], [{ role: 'banque' }], [{ role: 1, compte: '512000' }], [{ role: 'banque', compte: 512000 }]]
+    for (const data of illisibles) {
+      expect(planDeLaReponse({ data, error: null }), JSON.stringify(data)).toEqual({ plan: null, motif: 'plan comptable illisible' })
+    }
+  })
+
+  it('un rôle deux fois le rend illisible, même au même compte', () => {
+    expect(planDeLaReponse({ data: [...lignes(PLAN_PAR_DEFAUT), { role: 'banque', compte: '512000' }], error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable illisible : le rôle « banque » y paraît deux fois' })
+  })
+
+  it('vide ou incomplet, il le dit : le vide ne s’affirme pas, et un rôle non lu ne s’écrit pas à son défaut', () => {
+    expect(planDeLaReponse({ data: [], error: null }))
+      .toEqual({ plan: null, motif: `plan comptable incomplet : 26 rôle(s) sur 26 absent(s) (${ROLES.join(', ')})` })
+    const sansDeux = lignes(PLAN_PAR_DEFAUT).filter((l) => l.role !== 'emprunt' && l.role !== 'banque')
+    expect(planDeLaReponse({ data: sansDeux, error: null }))
+      .toEqual({ plan: null, motif: 'plan comptable incomplet : 2 rôle(s) sur 26 absent(s) (banque, emprunt)' })
+  })
+
+  it('un compte hors de la forme de la garde, ou hors des racines de son rôle, le rend illisible', () => {
+    for (const compte of ['51200', '5120000', '512A00', ' 512000', '411000', '']) {
+      expect(planDeLaReponse({ data: lignes({ ...PLAN_PAR_DEFAUT, banque: compte }), error: null }), compte)
+        .toEqual({ plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « banque »` })
+    }
+  })
+
+  it('attend la requête (un objet qui n’a qu’un `then`) ; une requête qui lève tombe du côté du refus', async () => {
+    const reponse: ReponseDuPlan = { data: lignes(PLAN_DECALE), error: null }
+    const requete: PromiseLike<ReponseDuPlan> = { then: (ok, ko) => Promise.resolve(reponse).then(ok, ko) }
+    expect(await lireLePlanDuDossier(requete)).toEqual({ plan: PLAN_DECALE, motif: null })
+    expect(await lireLePlanDuDossier(Promise.reject(new Error('réseau coupé'))))
+      .toEqual({ plan: null, motif: 'plan comptable refusé : réseau coupé' })
+  })
+
+  it('aucune racine du catalogue n’en commence une autre : deux rôles d’un plan lu ne partagent jamais un compte', () => {
+    for (const a of ROLES_COMPTABLES) {
+      for (const b of ROLES_COMPTABLES) {
+        if (a.role === b.role) continue
+        for (const ra of a.racines) for (const rb of b.racines) expect(rb.startsWith(ra), `${a.role} ${ra} / ${b.role} ${rb}`).toBe(false)
+      }
+    }
+  })
+})
+
+describe('le compte du dirigeant se juge dans le plan (conception, § 3.6)', () => {
+  it('est le compte de l’associé, de l’exploitant ou du 467 DU PLAN, et lui seul', () => {
+    expect(ROLES_DU_DIRIGEANT).toEqual(['associe', 'exploitant', 'autres_debiteurs_crediteurs'])
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      for (const role of ROLES_DU_DIRIGEANT) expect(roleDuDirigeant(plan, plan[role]), role).toBe(role)
+      expect(roleDuDirigeant(plan, plan.fournisseurs)).toBeNull()
+      expect(roleDuDirigeant(plan, '468000')).toBeNull()
+    }
+    // Le défaut n'est pas le compte du dirigeant d'un dossier dont le plan en tient un autre.
+    expect(roleDuDirigeant(PLAN_DECALE, PLAN_PAR_DEFAUT.associe)).toBeNull()
   })
 })
