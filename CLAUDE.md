@@ -198,6 +198,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
                   l'UN/CEFACT, que cdarEncaissee.test.ts confronte. ereporting/valider.mjs : de même pour les fichiers
                   d'e-reporting (ereporting/exemples/*.xml, fictifs) et les cinq XSD du flux 10 de l'archive officielle
                   v3.2 de la DGFiP (archive et XSD à leur empreinte), que fluxEreporting.test.ts confronte.
+outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers fictifs que l'expert-comptable
+                  du cabinet recalcule — `donnees.ts`, seule source ; le calcul de nos chiffres FIGÉ sur c506932, ni
+                  compilé ni joué par la suite ; nos chiffres jamais commités, seule leur empreinte (README) ; les
+                  scripts du document → « LES DOSSIERS DE RÉFÉRENCE ».
 ```
 
 ## Conventions de développement
@@ -531,6 +535,9 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
+- **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis le 12/10/2026 (2035, CA3,
+  amortissements, bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence →
+  « LES DOSSIERS DE RÉFÉRENCE ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
   de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
   confirmer sur une première déclaration réelle.
@@ -671,8 +678,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   NEUTRE : aucune policy ne l'écrit avant PC4, le plan de chaque dossier est vide (Q3 et Q5 prises comme hypothèses) →
   « LE CATALOGUE DES RÔLES ET LE PLAN D'UN DOSSIER, EN BASE » ; PC2, la base lit le plan, en base le 11/10/2026 (six
   migrations : la première par l'outil, les cinq autres collées par le cabinet) — NEUTRE : les quatorze fonctions de la
-  § 2.3 lisent chaque compte de rôle dans le plan, vide, donc à son défaut ; reste PC3, l'application → « LA BASE LIT
-  LE PLAN, SANS RIEN CHANGER », « LA BASE LIT LE PLAN, APPLIQUÉE ET INTÉGRÉE ».
+  § 2.3 lisent chaque compte de rôle dans le plan, vide, donc à son défaut → « LA BASE LIT LE PLAN, SANS RIEN CHANGER »,
+  « LA BASE LIT LE PLAN, APPLIQUÉE ET INTÉGRÉE » ; PC3a, l'application lit le plan, le 12/10/2026 — NEUTRE : lu avec le
+  dossier, entier ou rien, il atteint chaque écriture composée (§ 2.1) et chaque contrôle qui la recompose ; restent la
+  § 2.4 et la § 2.5 (13 fichiers, 63 emplois comptés par `comptesEnDur.test.ts`) et les libellés du plan (§ 3.9), puis
+  PC3b, l'assistant (121) ; une question au cabinet (PC3-Q1) → « L'APPLICATION LIT LE PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -1112,6 +1122,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   appelant n'exécute pas `cle_validation`) ; `laBaseLitLePlan.sql` (le plan décalé posé par la restauration, dans des
   dossiers jetables), `planComptable.test.ts` (la forme, lue dans le texte exporté) et les confrontations aux clés de
   rôle (dont `liquidationTva.test.ts`) le gardent → « LA BASE LIT LE PLAN, SANS RIEN CHANGER ».
+  Depuis PC3a (12/10/2026), la page d'un dossier le lit avec lui (`plan_du_dossier`, `lireLePlanDuDossier`, gardé avec
+  l'identifiant lu) : absent, refusé, illisible ou incomplet, aucun onglet ne se monte et elle le dit. Le modèle
+  comptable le porte (`ModeleComptable.plan`) ; une composition qui ne reçoit pas le modèle reçoit `plan`, obligatoire ;
+  `CompteNotesDeFrais` est le compte de l'un des trois rôles du dirigeant DU PLAN (`modeleDuDossier(dossier, plan)` rend
+  le refus sinon ; la contrainte de la base jusqu'à PC4). `compositionsAuPlan.test.ts` joue chaque composition sous
+  `PLAN_DECALE` (aucun compte par défaut ; ramenée au défaut, la même au caractère près ; les 26 rôles exercés), et
+  `comptesEnDur.test.ts` refuse un compte de rôle écrit en dur hors du catalogue — numéro, constante, alias ou plan par
+  défaut —, exceptions comptées → « L'APPLICATION LIT LE PLAN ».
 - **Montant retenu** : le HT pour un assujetti, le TTC pour un exonéré (`lib/montantRetenu.ts`, statut en paramètre
   obligatoire) → « HT OU TTC ».
 - **La 2035 compte une pièce à la date de son PAIEMENT** (`lib/rattachement.ts`) ; les paiements d'une pièce viennent de
@@ -1405,7 +1423,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 015 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 093 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

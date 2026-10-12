@@ -22568,3 +22568,159 @@ chacun ; build vert ; le banc (port 5311) : 0 débordement aux neuf passes, aucu
 
 **RESTE.** R7C-Q3, inchangée : Justificatifs et Documents lisent les entrées du dossier permanent en entier, texte compris, pour
 n'en garder que la nature ; un `select` plus étroit demande un paramètre à `lireLeDossierPermanent`.
+
+### 12/10/2026 — L'APPLICATION LIT LE PLAN — LIGNE 43, ÉTAPE PC3a
+
+Agent PC3a (architecte), base `c506932`. Aucune migration, aucune policy, aucune fonction, aucune Edge Function :
+l'application lit le plan que la base lit depuis PC2 (`plan_du_dossier`, relue au catalogue de production en lecture
+seule : `stable`, sans `security definer`, exécutable par `authenticated` et non par `anon`, corps égal à l'export,
+523 caractères). L'assistant (`agent-comptable`) n'est pas touché : c'est PC3b. Étape NEUTRE : sous le plan vide, chaque
+écriture composée est celle d'avant, au caractère près.
+
+**LE PÉRIMÈTRE.** La consigne bornait l'étape à « ce qu'une session relit d'une traite » et désignait la coupe : le
+point 1 (le plan lu) et la § 2.1 (les écritures composées), puis la § 2.4 et la § 2.5. Livré : le point 1, la § 2.1
+entière — avec les contrôles qui recomposent ces écritures (désynchronisations, écritures sans objet, Checklist,
+préalables de la validation, preuves de la révision, revue analytique), la contrepartie banque (ses filtres de mise à
+jour, de comptage et de suppression, § 2.4) et les messages des écrans qui composent (TvaTab, CotisationsTab,
+BalanceCard, ImmobilisationsTab, VehiculesCard, FicheMouvement, EcrituresTab, § 2.5) —, soit 38 fichiers hors tests,
++631 −356. Le reste de la § 2.4 et de la § 2.5 demande d'abord de porter les LIBELLÉS et les PRÉFIXES du plan
+(conception, § 3.9), et bute sur la contrainte `lettrages_manuels_compte` : une seconde vague, comptée ci-dessous.
+
+**LES DÉCISIONS.**
+- Le plan se lit par `plan_du_dossier`, avec le dossier, dans `DossierDetail`, gardé AVEC l'identifiant pour lequel il
+  l'a été (comme les exercices validés) : entier ou rien (`planDeLaReponse`) — un refus, une réponse illisible, un rôle
+  du catalogue absent (la réponse vide comprise), un rôle deux fois, un compte hors de la forme de la garde ou des
+  racines de son rôle ne rendent AUCUN plan, et la page le dit, sans monter d'onglet, avec « Réessayer » ; un rôle que la
+  base connaît et l'application non est ignoré. Écarté : `plan_comptable_dossier` et `roles_comptables` lus par
+  `lireTout` (deux lectures, et le `coalesce` de `compte_du_role` recopié en TypeScript).
+- Le plan entre dans `ModeleComptable` (`{ mode, compteNotesDeFrais, plan }`), paramètre déjà obligatoire de toute
+  composition et de tout contrôle qui dépend du dossier ; une fonction qui compose sans le modèle reçoit
+  `plan: PlanComptable`, obligatoire (44 omissions sous `@ts-expect-error`). Écarté : un paramètre `plan` ajouté partout
+  (≈ 700 appels de tests réécrits pour la même garantie). Les parts d'une échéance d'emprunt portent leur RÔLE (et non
+  plus le 661100 / 616800) : elles se calculent aussi sans le plan (estimation, simulation du client), et seule la 2035
+  y lit un compte. La liquidation de la TVA compose ses soldes par rôle ; l'arrondi ne dépend d'aucun compte.
+- `CompteNotesDeFrais` devient un compte VALIDÉ PAR LE PLAN : `modeleDuDossier(dossier, plan)` rend `{ modele, refus }`,
+  et refuse un compte qui n'est celui d'aucun des rôles `associe`, `exploitant`, `autres_debiteurs_crediteurs` du plan
+  (`roleDuDirigeant`) — la page le dit comme une lecture ratée. Le choix d'Écritures propose les trois comptes DU PLAN
+  (`comptesDuDirigeant(plan)`, sous les mots du cabinet). La base borne encore ce compte aux trois défauts
+  (`dossiers_compte_notes_de_frais_check`) : PC4 la remplacera (Q4).
+
+**LES PREUVES.**
+- `src/test/compositionsAuPlan.ts` : 37 cas — chaque composition de la § 2.1 et chaque contrôle qui la recompose — sur
+  des jeux FICTIFS tirés du plan qu'on leur donne (le brouillon d'un contrôle compris) ; `compositionsAuPlan.test.ts` les
+  joue sous le plan par défaut et sous `PLAN_DECALE` : sous le second, aucun compte par défaut, et chaque compte décalé
+  ramené à son défaut rend, au caractère près, ce que rend le premier ; chaque cas nomme les rôles qu'il exerce (les 26
+  le sont) ; un contrôle porte un témoin (sans son brouillon, ou lu sous un autre plan) qui rend autre chose.
+- LA NEUTRALITÉ : les tests existants n'ont reçu que le plan par défaut en argument (aucune valeur attendue changée, hors
+  la forme de `modeleDuDossier` et les trois ensembles devenus fonctions) ; et, hors du dépôt, les 37 cas joués par le
+  code d'aujourd'hui ET par celui de la base (copie extraite par `git archive`, le même fichier de cas posé à côté, trois
+  API changées calées) : 36 identiques au caractère près, et 13 de leurs témoins ; le 37e — le compte du dirigeant
+  validé — nouveau, et différent comme il doit.
+- `src/lib/comptesEnDur.test.ts` : un relevé par l'analyseur de TypeScript de toute la source (`src/` hors tests,
+  `supabase/`), quatre formes — un NUMÉRO de rôle (texte, gabarit, JSX, expression régulière ; un nombre est un
+  montant), une CONSTANTE de lib/comptes.ts (nommée ou par espace de noms), un ALIAS local, un DÉFAUT
+  (`PLAN_PAR_DEFAUT`, `PLAN_DECALE`, `compteDefaut`) ; 17 exceptions, chacune sa raison et son nombre exact ; un défaut
+  planté sous chaque forme, rien dans un commentaire.
+- Les écrans sous `PLAN_DECALE` : Immobilisations, Balance, TVA, Véhicules, Cotisations, Écritures (trois), Banque (deux)
+  — l'écriture envoyée à la base et le message affiché portent les comptes du plan ; la contrepartie banque (trois,
+  dont la suppression de la contrepartie de l'exploitant, filtrée sur SON compte) ; la page d'un dossier (sept : plan
+  lu, retenu, refusé et relu, incomplet, illisible, dirigeant refusé, plan du dossier précédent jamais gardé) ;
+  `ecransAvantLecture.test.tsx` (deux : plan retenu, aucun onglet ni geste qui écrive ; plan refusé, dit).
+- Gardes déclarés par AJOUT : `ecrituresVerifiees` (consommateur `lireLePlanDuDossier`, 1), `verrousEcritures` (porte
+  `rpc:plan_du_dossier`, lecture). Les gardes de copie de l'assistant restent verts, sans relâche.
+
+**LES MUTATIONS.** 24 ciblées, 24 mordent : la lecture (incomplet, forme, doublon, requête qui lève, refus, dirigeant au
+défaut, modèle sans refus), la page (plan du dossier précédent gardé — elle SURVIVAIT d'abord : le plan décalé du
+dossier précédent faisait refuser le dirigeant du suivant, et masquait la faute ; le test garde désormais un plan qui ne
+règle que la banque —, refus tu, « Réessayer » qui ne relit pas, onglets sans modèle), les compositions (banque du
+paiement de la TVA, tiers des écritures sans objet, contrepartie de l'exploitant, TVA des biens lue au défaut, compte
+des intérêts nommé, part d'une échéance sans rôle, arrondi de la liquidation, forfait, banque de la reprise) et le
+relevé lui-même (JSX, import renommé, alias, plan par défaut).
+
+**LA BARRIÈRE.** `tsc -b` 0 ; `tsc -p tsconfig.edge.json` 25 (celles de la base) ; lint 63 avertissements (les mêmes, fichier et
+règle) ; build vert ; 85 fichiers de test (les miens, ceux des modules touchés, les gardes de l'assistant et des écritures) sous
+Paris, UTC, New York et Auckland : 3 898 sur 3 898 ; la suite entière sous Paris : 332 fichiers, 10 093 tests sur 10 093
+(235 s), sans délai dépassé. Banc des débordements au port 5324 : 9 passes (1 440, 1 280, 1 024, 720 et 390 px, et les quatre
+combinaisons des volets), 0 débordement chacune, aucune police refusée.
+
+**L'INTÉGRATION.** Le correctif (111 fichiers) s'applique sans conflit sur `c506932`, et l'archive des dossiers de référence s'y
+ajoute (commit suivant). Ce qui pouvait fermer TOUTES les pages de dossier s'est vérifié en production, en lecture seule, avant
+de fusionner : `plan_du_dossier`, appelée sous l'identité du chef de cabinet (aussi super-administrateur), rend les 26 rôles
+pour chacun des quatre dossiers — aucun plan réglé : les défauts du catalogue, dont trois sans libellé (`capital_individuel`,
+`resultat_benefice`, `resultat_perte`), que la lecture de l'application ne regarde pas — ; cette réponse, passée par
+`planDeLaReponse` dans un test jetable (jamais commité), donne `PLAN_PAR_DEFAUT` exactement, et `modeleDuDossier` donne aux
+quatre dossiers (trésorerie, dirigeant au 455000) leur modèle sans refus. La barrière sur l'arbre intégré : `tsc -b` vert ; les
+25 erreurs connues des Edge Functions ; lint, 63 avertissements et aucune erreur ; la suite entière sous les quatre fuseaux, 332
+fichiers et 10 093 tests, verts chacun, aucun délai dépassé ; build vert (`index-DuRxouiB.js`). Le banc (port 5311) : 0
+débordement aux neuf passes, aucune police refusée.
+
+**CE QUI RESTE.**
+- De PC3a, compté par `comptesEnDur.test.ts` (13 fichiers, 63 emplois) : ce que l'application LIT par le numéro (§ 2.4 —
+  `FinancementTab`, `tableauPilotage`, `ouvertureBanque`, `pisteAudit`, `lettrage` et ses lecteurs `lettragesLecture` et
+  `StatistiquesTab`, `ComptesDeTiersCard`, `bilan`, `revisionCycles`, `revisionPreuves`, l'auxiliaire du FEC) et les
+  explications qui n'accompagnent aucune écriture composée (§ 2.5 — `ValidationExerciceCard`, `ConcordanceCard`,
+  `ouvertureConfrontee`) ; et les LIBELLÉS par numéro (`LIBELLES_COMPTES`, `libelleCompteTenu` : sous un plan réglé, un
+  compte de rôle n'aurait plus de libellé — § 3.9, le libellé et le préfixe du plan à porter avec lui). Sous le plan
+  vide, tout cela reste juste ; il doit être rendu au plan AVANT que PC4 en permette un.
+- PC3b : l'assistant, 121 emplois (67 numéros, 54 de ses constantes), et ses treize gardes.
+- PC4 : `dossiers_compte_notes_de_frais_check`, `lettrages_manuels_compte` et les deux messages de `refus_compte_de_bilan`
+  (« au 580000 », que `compteDeBilan.ts` recopie mot pour mot).
+- PC3-Q1 (pour PC4) : le compte du dirigeant n'entre au modèle que s'il est celui d'un des trois rôles du dirigeant DU
+  PLAN. Quand PC4 permettra de régler le plan, un dossier dont le dirigeant est au 455000 et dont le plan passerait
+  l'associé au 455100 verrait ses écrans refusés tant que `compte_notes_de_frais` désigne l'ancien compte. Recommandation :
+  la fonction qui règle le plan déplace `compte_notes_de_frais` dans la même transaction (le plan est figé dès la
+  première écriture : rien n'est encore écrit sur l'ancien). Le cabinet est-il d'accord ?
+- La reprise d'une balance range la TVA déductible et la TVA collectée « à des zéros près » du compte DU PLAN : sous un
+  plan qui tiendrait la TVA déductible au 445661, un 44566 nu de la balance s'ouvrirait sous son numéro, et la carte le
+  dit (`compteQueLApplicationEcrit`) — ce que la conception prévoit (§ 3.8, point 2 : « un autre sous-compte sous la
+  racine d'un rôle s'ouvre tel quel, et l'écran dit que l'application n'y écrira pas »).
+
+### 12/10/2026 — LES DOSSIERS DE RÉFÉRENCE : UN ORACLE EXTÉRIEUR POUR LES RÈGLES MÉTIER — LIGNE 23.3
+
+(Sans migration, sans policy, sans Edge Function, sans changement de l'application. Base : `c506932`. Demande du cabinet du
+12/10/2026, après sa question : d'où viennent les valeurs attendues des tests des règles métier ? Fichiers :
+`outils/references/`, `.gitignore`.)
+
+**LA QUESTION.** Seules les cotisations Urssaf (le moteur de l'Urssaf, `outils/cotisations/oracle.mjs`) et les formats de la
+facture électronique (schémas et Schematron officiels) étaient jugés par un tiers. Les autres valeurs attendues ont été
+calculées à la main d'après les textes, par la session ou ses agents ; les tests de parité (SQL contre TypeScript) et de
+neutralité partent de notre propre code ; aucune 2035 ni aucune CA3 complète n'avait été confrontée à un calcul extérieur, et le
+FEC n'est jamais passé par Test Compta Demat. Le cabinet fait recalculer quatre dossiers par son expert-comptable.
+
+**LES QUATRE DOSSIERS.** Fictifs de bout en bout. A, la 2035 de 2025 d'une infirmière libérale en trésorerie, exonérée (art.
+261-4-1°) : 142 lignes de relevé, 13 pièces dont un avoir et quatre immobilisations, 25 échéances de cotisations dont une
+régularisation, un prêt, le barème kilométrique. B, la CA3 de mars 2026 d'un consultant au réel normal, TVA sur les
+encaissements, crédit antérieur de 180 € : deux avoirs, un acompte, un ordinateur immobilisé, un repas à 10 %. C, le plan
+d'amortissement des six biens de A. D, le bilan 2033-A d'une SELARL à l'IS depuis une balance après inventaire de 36 lignes (401
+et 411 par tiers, un client créditeur, un trop-versé chez un fournisseur, un découvert). Chaque opération est écrite deux fois :
+en mots, ce que l'expert lit, et dans la forme où l'application la tient, avec les dix catégories communes, faute d'écran pour
+en créer une propre au dossier (PC7) — un écart dira aussi ce que les catégories ne permettent pas.
+
+**NOS CHIFFRES, SCELLÉS.** Calculés par les moteurs de l'application dans l'ordre où les écrans les appellent
+(`calculerDeclaration2035` et `valeursDesCases` comme Clôture, `calculerCa3` comme l'onglet TVA, `planAmortissement`,
+`bilanDeLExercice` sur une ouverture et les écritures de 2025 reconstituées depuis la balance, chaque solde de clôture vérifié),
+sur `c506932`. Ils ne sont ni montrés à l'expert ni commités (le dépôt est public) ; leur empreinte SHA-256,
+`43765e348ef7dd217bcd1b2d074e769c89c1f71090655f1806fa8f294f75f4dc`, l'est (README de `outils/references/`). Rejoués par la
+marche à suivre du README dans une copie neuve, sous Paris puis sous Auckland : la même empreinte. Le calcul reste figé sur
+`c506932` (ni compilé ni joué par la suite) : c'est ce qui le rend rejouable quand les moteurs changent (PC3a change déjà leurs
+signatures).
+
+**LE DOCUMENT.** Une page (claude.ai, privée), un PDF de 21 pages et un classeur de 18 onglets (les données importables, quatre
+onglets « Réponses » aux cellules jaunes), tirés de `donnees.json` seul. `fuite.mjs` y cherche chacune des 306 valeurs de nos
+résultats : 57 retrouvées, toutes des faits du dossier (une ligne de balance, la valeur d'un bien, un montant de pièce) ; aucune
+somme, aucune rubrique calculée. Trois fautes vues en le relisant : le « dont » des sous-cases redit (le libellé de
+l'application le porte déjà) ; la ligature « fi » mal rendue par un lecteur de PDF — les ligatures sont désactivées, ce qui
+garde aussi la recherche dans le texte ; un numéro de pièce coupé à son tiret. Les espaces avant « : ; % € » et entre les
+milliers ne se coupent plus. Régénérée depuis le dépôt, la page est identique, octet pour octet, à celle remise.
+
+**PDF.JS : UN RÉSULTAT NÉGATIF, À NE PAS RÉENQUÊTER.** Pour relire le PDF, ses pages ont été dessinées par le pdf.js installé
+(6.2.108) dans le Chromium 141 de l'environnement. Sa version « moderne », celle que chargent `pdfText.ts`, `remplir2035.ts` et
+`factureX.ts`, appelle `Map.prototype.getOrInsertComputed` (quinze fois dans son travailleur) et `Math.sumPrecise` (seize) sans
+prothèse, et ce Chromium n'a ni l'une ni l'autre ; la version « legacy », que les tests chargent, porte les prothèses. Le dessin
+d'une page y lève (`getOptionalContentConfig`), mais l'application ne dessine jamais de page : elle lit le texte et les pièces
+jointes, et ce Chromium les lit sans prothèse — les 21 pages, 39 976 caractères, les pièces jointes ; l'erreur de
+`Math.sumPrecise`, dans la conversion des polices, est rattrapée par pdf.js (un avertissement). Pas de défaut, rien à changer ;
+`pages.mjs` pose la prothèse pour son seul usage.
+
+**RESTE.** Les chiffres de l'expert, chaque écart analysé, puis ses chiffres en cas de référence de la suite, appelant les
+moteurs d'alors sur `donnees.ts` — qui rejoindra `src/` à ce moment-là.
