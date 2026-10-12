@@ -273,7 +273,13 @@ incompréhensible trois étapes plus loin.
    faire honnêtement : un fichier abîmé, un dossier déjà présent, un cabinet absent, un lien
    pointant une ligne manquante.
 6. **Les fichiers** — reverser le contenu des packs dans le seau `pieces`, aux chemins que portent
-   les lignes restaurées (`pieces.storage_path`).
+   les lignes restaurées (`pieces.storage_path`). Depuis la migration `bornes_du_stockage` (ligne
+   22.6), rejouée à l'étape 2, le seau n'admet qu'une liste de types et une taille : un fichier
+   redéposé par le tableau de bord y part sous le type que lui donne le système qui le dépose, et
+   un CSV de Windows (`application/vnd.ms-excel`) ou l'original XML d'une facture reçue d'une
+   plateforme (`text/xml`) y serait refusé. Lever les bornes le temps de reverser (le retour
+   arrière écrit en tête de la migration), reverser, puis rejouer la migration et
+   `supabase/essais/bornesStockage.sql`.
 7. **Les secrets, le domaine d'envoi et le webhook de réception** (§3.3, §3.4 et l'inventaire des
    variables en fin de §3).
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
