@@ -23,6 +23,10 @@ import {
   type LigneDeLaRevue, type ReperesAnnuels,
 } from '../../lib/revueAnalytique'
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
+import {
+  argumentsDeConsigner, argumentsDeRetirer, entreesDuDossierPermanent, type ContexteDuDossierPermanent, type SaisieDuDossierPermanent,
+} from '../../lib/dossierPermanent'
+import { lireLeDossierPermanent } from '../../lib/dossierPermanentLecture'
 import type {
   AvisRevueRevision, ControleReleveBancaire, NatureNoteRevision, PeriodiciteTva,
   RevisionConclusion, RevisionExplication, RevisionJustification, RevisionNote, RevisionPreuve, RevisionRevue, RevisionSeuil,
@@ -40,6 +44,8 @@ import FicheSolde from './FicheSolde'
 import FicheCycle, { type GesteDuCycle } from './FicheCycle'
 import FicheExplication from './FicheExplication'
 import RevueAnalytiqueSection, { type MotifDeLectureDeLaRevue } from './RevueAnalytiqueSection'
+import DossierPermanentSection, { type LectureDuDossierPermanent } from './DossierPermanentSection'
+import FicheDossierPermanent from './FicheDossierPermanent'
 
 // LA RÉVISION DES SOLDES DE BILAN D'UN EXERCICE (ligne 41, étape R3 ; conception du 09/10/2026, HISTORIQUE.md, « LA
 // RÉVISION DES COMPTES : LA CONCEPTION », § 4.1 à 4.3). Chaque solde de bilan au 31 décembre se JUSTIFIE par une pièce,
@@ -73,6 +79,13 @@ import RevueAnalytiqueSection, { type MotifDeLectureDeLaRevue } from './RevueAna
 // explications et les repères annuels) et n'écrit que par `fixer_seuil_de_signification` et `expliquer_variation` SEULES,
 // sous un verrou `useRef` relâché après la relecture. Les quatre lectures propres à la revue, ratées, ne cachent pas
 // l'onglet : la section dit pourquoi et ne montre rien.
+//
+// LE DOSSIER PERMANENT (étape R7, phase C ; conception, § 1.2, 3.3 et 3.7) : une section qui vaut pour TOUS les exercices
+// (`DossierPermanentSection`) — les entrées courantes rangées dans l'ordre de A9, leur validité, ce que leur citation prouve
+// encore, l'historique, les entrées retirées, et ce que la norme propose sans qu'aucune entrée le porte (une information) — et
+// son panneau (`FicheDossierPermanent`, volet `dossier-permanent`). Sa lecture est à part : ratée ou partielle, elle seule se
+// tait. Une entrée se consigne et se retire par `consigner_au_dossier_permanent` et `retirer_du_dossier_permanent` SEULES, sous
+// un verrou `useRef` relâché après la relecture, relue aussi sur un refus.
 
 interface MotifDeLecture { quoi: string; accord: AccordLecture; motif: string }
 
@@ -97,6 +110,19 @@ interface LectureDeLaRevision {
   motifs: MotifDeLecture[]
   // Les motifs des quatre lectures de la revue analytique, À PART : ils ne cachent que sa section.
   motifsRevue: MotifDeLectureDeLaRevue[]
+  // Le dossier permanent (étape R7), tous exercices, À PART : sa lecture ratée ou partielle ne cache que sa section.
+  permanent: LectureDuDossierPermanent
+}
+
+// Le dossier permanent, lu EN ENTIER ; une lecture qui lève tombe du côté signalé — la section se tait et le dit.
+async function lireLePermanent(dossierId: string): Promise<LectureDuDossierPermanent> {
+  try {
+    const lecture = await lireLeDossierPermanent(dossierId)
+    return { lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif }
+  } catch (erreur) {
+    console.error(erreur)
+    return { lignes: [], complete: false, motif: 'la lecture a échoué' }
+  }
 }
 
 // Tout ce que la révision lit du dossier : les lectures de la Vue d'ensemble — ses points s'y rangent, et le module y
@@ -107,7 +133,7 @@ interface LectureDeLaRevision {
 async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   const [
     checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
-    lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes,
+    lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
   ] = await Promise.all([
     lireLaChecklist(dossierId),
     lireTout<SoldeReporte>((debut, fin) =>
@@ -163,6 +189,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
       supabase.from('references_postes_annuels').select('annee, poste, montant', { count: 'exact' })
         .eq('dossier_id', dossierId).order('annee').order('poste').order('id').range(debut, fin),
     ),
+    lireLePermanent(dossierId),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -205,6 +232,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     reperes: { annuels: lectureReperes.lignes, postes: lectureReperesDesPostes.lignes },
     motifs,
     motifsRevue,
+    permanent,
   }
 }
 
@@ -297,6 +325,25 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   )
   useGardePanneau('explication', ligneOuverte ? confirmerAbandonDeLExplication : null)
 
+  // LE DOSSIER PERMANENT : un verrou d'exécution pour ses deux fonctions, posé avant le `try` et relâché APRÈS la relecture — un
+  // second clic du même rendu enverrait une seconde version (que la base refuserait, refus 8) ou un second retrait (refus 3 ou
+  // 4) sans que l'écran ait rien relu. Il s'attend avec les trois autres verrous de l'onglet. Seul le dossier permanent est
+  // relu : rien de ce que la révision lit ne dépend de lui.
+  const permanentEnCours = useRef(false)
+  const [permanentOccupe, setPermanentOccupe] = useState(false)
+  const [erreurPermanent, setErreurPermanent] = useState<{ geste: 'consigner' | 'retirer'; entreeId: string | null; message: string } | null>(null)
+  const panneauPermanent = usePanneauDroit('dossier-permanent')
+  // Le panneau ouvert : une entrée nouvelle, ou la nouvelle version de l'entrée dont voici la PREMIÈRE version (la chaîne
+  // garde son identité quand une version s'ajoute).
+  const [permanentOuvert, setPermanentOuvert] = useState<{ premiere: string | null } | null>(null)
+  const permanentModifie = useRef(false)
+  const noterModificationDuPermanent = useCallback((modifie: boolean) => { permanentModifie.current = modifie }, [])
+  const confirmerAbandonDuPermanent = useCallback(
+    () => !permanentModifie.current || window.confirm('L’entrée en cours de saisie n’est pas enregistrée. L’abandonner ?'),
+    [],
+  )
+  useGardePanneau('dossier-permanent', permanentOuvert ? confirmerAbandonDuPermanent : null)
+
   useEffect(() => {
     let annule = false
     void lireLaRevision(dossierId).then((lue) => { if (!annule) setLecture(lue) })
@@ -304,7 +351,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }, [dossierId])
 
   async function decider(decision: DecisionComposee) {
-    if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || typeof annee !== 'number') return
+    if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     decisionEnCours.current = true
     setEnCours(true)
@@ -326,7 +373,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function conclure(cycle: CycleRevision, composee: ConclusionComposee): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return false
     // Posé AVANT le `try` et avant le premier `await`.
     cycleEnCours.current = true
     setCycleOccupe(true)
@@ -350,7 +397,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function noter(cycle: CycleRevision, nature: NatureNoteRevision, texte: string): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return false
     cycleEnCours.current = true
     setCycleOccupe(true)
     setErreurCycle(null)
@@ -371,7 +418,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function revoir(cycle: CycleRevision, conclusionId: string, avis: AvisRevueRevision, observation: string | null): Promise<boolean> {
-    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || typeof annee !== 'number') return false
+    if (cycleEnCours.current || decisionEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return false
     cycleEnCours.current = true
     setCycleOccupe(true)
     setErreurCycle(null)
@@ -392,7 +439,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function fixerSeuil(centimes: number, motif: string, remplaceId: string | null): Promise<boolean> {
-    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || typeof annee !== 'number') return false
+    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || permanentEnCours.current || typeof annee !== 'number') return false
     // Posé AVANT le `try` et avant le premier `await`.
     revueEnCours.current = true
     setRevueOccupee(true)
@@ -416,7 +463,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   }
 
   async function expliquer(ligne: LigneDeLaRevue, explication: string, remplaceId: string | null): Promise<boolean> {
-    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || typeof annee !== 'number') return false
+    if (revueEnCours.current || decisionEnCours.current || cycleEnCours.current || permanentEnCours.current || typeof annee !== 'number') return false
     revueEnCours.current = true
     setRevueOccupee(true)
     setErreurRevue(null)
@@ -439,6 +486,54 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       setRevueOccupee(false)
     }
     return ecrite
+  }
+
+  async function consigner(saisie: SaisieDuDossierPermanent, remplaceId: string | null): Promise<boolean> {
+    if (permanentEnCours.current || decisionEnCours.current || cycleEnCours.current || revueEnCours.current) return false
+    // Posé AVANT le `try` et avant le premier `await`.
+    permanentEnCours.current = true
+    setPermanentOccupe(true)
+    setErreurPermanent(null)
+    let ecrite = false
+    try {
+      const { error } = await supabase.rpc('consigner_au_dossier_permanent', argumentsDeConsigner(dossierId, saisie, remplaceId))
+      if (error) {
+        setErreurPermanent({ geste: 'consigner', entreeId: null, message: messageErreur(error, 'L’entrée n’a pas pu être consignée.') })
+      } else {
+        ecrite = true
+        permanentModifie.current = false
+      }
+      // Relu dans les deux cas, AVANT de relâcher le verrou : écrite, l'entrée devient la courante ; refusée, la base a peut-être
+      // vu ce que l'écran n'avait pas lu (une autre version consignée, l'entrée retirée depuis).
+      const relu = await lireLePermanent(dossierId)
+      setLecture((avant) => (avant === null ? avant : { ...avant, permanent: relu }))
+    } finally {
+      permanentEnCours.current = false
+      setPermanentOccupe(false)
+    }
+    return ecrite
+  }
+
+  async function retirerDuPermanent(entreeId: string): Promise<boolean> {
+    if (permanentEnCours.current || decisionEnCours.current || cycleEnCours.current || revueEnCours.current) return false
+    permanentEnCours.current = true
+    setPermanentOccupe(true)
+    setErreurPermanent(null)
+    let retiree = false
+    try {
+      const { error } = await supabase.rpc('retirer_du_dossier_permanent', argumentsDeRetirer(dossierId, entreeId))
+      if (error) {
+        setErreurPermanent({ geste: 'retirer', entreeId, message: messageErreur(error, 'L’entrée n’a pas pu être retirée.') })
+      } else {
+        retiree = true
+      }
+      const relu = await lireLePermanent(dossierId)
+      setLecture((avant) => (avant === null ? avant : { ...avant, permanent: relu }))
+    } finally {
+      permanentEnCours.current = false
+      setPermanentOccupe(false)
+    }
+    return retiree
   }
 
   async function verifierEmpreinte(anneeVerifiee: number) {
@@ -480,6 +575,18 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   function fermerCycle() {
     if (panneauCycle.fermer()) setCycleOuvert(null)
+  }
+
+  function ouvrirLePermanent(premiere: string | null) {
+    if (panneauPermanent.ouvert && permanentOuvert !== null && permanentOuvert.premiere !== premiere && !confirmerAbandonDuPermanent()) return
+    if (!panneauPermanent.ouvrir()) return
+    permanentModifie.current = false
+    setErreurPermanent(null)
+    setPermanentOuvert({ premiere })
+  }
+
+  function fermerLePermanent() {
+    if (panneauPermanent.fermer()) setPermanentOuvert(null)
   }
 
   function ouvrirLaLigne(cle: CleDeLigne) {
@@ -606,6 +713,18 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     }
   }
 
+  // LE DOSSIER PERMANENT : ce qu'il faut pour dire les refus des deux fonctions — l'accès comme pour les soldes (hypothèse Q2),
+  // les entrées lues EN ENTIER, les pièces et les documents du dossier (la lecture de l'onglet s'est arrêtée à ses bandeaux
+  // si l'une des deux manquait). Une lecture du dossier permanent partielle ne donne ni chaîne, ni panneau.
+  const contexteDuPermanent: ContexteDuDossierPermanent = {
+    accesAuDossier: true, entrees: lecture.permanent.lignes, pieces: pieces.map((x) => x.id), documents: lecture.documents.map((x) => x.id),
+  }
+  const entreesDuPermanent = lecture.permanent.complete ? entreesDuDossierPermanent(lecture.permanent.lignes) : null
+  const panneauDuPermanent = permanentOuvert !== null && panneauPermanent.ouvert && entreesDuPermanent !== null && entreesDuPermanent.lisible
+    ? permanentOuvert : null
+  const entreeDuPanneau = panneauDuPermanent === null || panneauDuPermanent.premiere === null ? null
+    : entreesDuPermanent?.entrees.find((x) => x.versions[0].id === panneauDuPermanent.premiere) ?? null
+
   const compteAffiche = compteOuvert !== null && panneau.ouvert ? revision.comptes.find((c) => c.compte === compteOuvert) ?? null : null
   const raisonSansDecision = revision.message ?? null
 
@@ -690,12 +809,29 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         enEngagement={modele.mode === 'engagement'}
         contexteDuSeuil={contexteDuSeuil}
         utilisateur={session?.user.id ?? null}
-        occupe={revueOccupee || enCours || cycleOccupe}
+        occupe={revueOccupee || enCours || cycleOccupe || permanentOccupe}
         erreur={erreurRevue !== null && erreurRevue.geste === 'seuil' ? erreurRevue.message : null}
         ligneOuverte={ligneExpliquee === null ? null : ligneExpliquee.cle}
         libelleDuMouvement={(ligneId) => lecture.checklist.lignes.find((l) => l.id === ligneId)?.libelle ?? null}
         onFixerSeuil={fixerSeuil}
         onOuvrirLaLigne={ouvrirLaLigne}
+      />
+
+      <DossierPermanentSection
+        annee={annee}
+        dossierId={dossierId}
+        lecture={lecture.permanent}
+        pieces={pieces}
+        documents={lecture.documents}
+        contexte={contexteDuPermanent}
+        utilisateur={session?.user.id ?? null}
+        occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
+        erreur={erreurPermanent !== null && erreurPermanent.geste === 'retirer' && erreurPermanent.entreeId !== null
+          ? { entreeId: erreurPermanent.entreeId, message: erreurPermanent.message } : null}
+        ouverte={panneauDuPermanent === null ? null : panneauDuPermanent.premiere ?? 'nouvelle'}
+        onConsigner={() => ouvrirLePermanent(null)}
+        onNouvelleVersion={(entree) => ouvrirLePermanent(entree.versions[0].id)}
+        onRetirer={(entree) => retirerDuPermanent(entree.courante.id)}
       />
 
       {(revision.horsDuMotif.length > 0 || revision.controlesHorsCycle.length > 0 || revision.controlesInconnus.length > 0) && (
@@ -736,7 +872,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             valideLe={valide?.valide_le ?? null}
             utilisateur={session?.user.id ?? null}
             nommer={nommer}
-            occupe={enCours || cycleOccupe || revueOccupee}
+            occupe={enCours || cycleOccupe || revueOccupee || permanentOccupe}
             erreur={erreurDecision !== null && erreurDecision.compte === compteAffiche.compte ? erreurDecision.message : null}
             onDecider={decider}
             onModifiee={noterModification}
@@ -757,13 +893,33 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             exercice={cycles.exercice}
             contexte={contexteDesCycles}
             utilisateur={session?.user.id ?? null}
-            occupe={cycleOccupe || enCours || revueOccupee}
+            occupe={cycleOccupe || enCours || revueOccupee || permanentOccupe}
             erreur={erreurCycle !== null && erreurCycle.cycle === cycleAffiche.cycle ? erreurCycle : null}
             onConclure={(composee) => conclure(cycleAffiche.cycle, composee)}
             onNoter={(nature, texte) => noter(cycleAffiche.cycle, nature, texte)}
             onRevoir={(conclusionId, avis, observation) => revoir(cycleAffiche.cycle, conclusionId, avis, observation)}
             onModifiee={noterModificationDuCycle}
             onFermer={fermerCycle}
+          />
+        </PanneauDroit>
+      )}
+
+      {panneauDuPermanent !== null && (panneauDuPermanent.premiere === null || entreeDuPanneau !== null) && (
+        <PanneauDroit nom="dossier-permanent">
+          {/* `key` : une saisie par entrée (la chaîne garde son identité quand une version s'ajoute) ; une entrée écrite ferme le
+              panneau, et la version remplacée est RETENUE à l'ouverture — le module dit avant le clic qu'une autre a été prise. */}
+          <FicheDossierPermanent
+            key={panneauDuPermanent.premiere ?? 'nouvelle'}
+            dossierId={dossierId}
+            entree={entreeDuPanneau}
+            contexte={contexteDuPermanent}
+            pieces={pieces}
+            documents={lecture.documents}
+            occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
+            erreur={erreurPermanent !== null && erreurPermanent.geste === 'consigner' ? erreurPermanent.message : null}
+            onConsigner={consigner}
+            onModifiee={noterModificationDuPermanent}
+            onFermer={fermerLePermanent}
           />
         </PanneauDroit>
       )}
@@ -779,7 +935,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             ligne={ligneExpliquee}
             contexte={contexteDeLExplication}
             utilisateur={session?.user.id ?? null}
-            occupe={revueOccupee || enCours || cycleOccupe}
+            occupe={revueOccupee || enCours || cycleOccupe || permanentOccupe}
             erreur={erreurRevue !== null && erreurRevue.geste === 'explication' && erreurRevue.ligne === identifiantDeLaLigne(ligneExpliquee.cle)
               ? erreurRevue.message : null}
             onExpliquer={expliquer}

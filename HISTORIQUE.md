@@ -22450,3 +22450,69 @@ et `dossierPermanent.sql` disent l'application et ce qui a été joué où. CLAU
 PLAN_DE_REPRISE.md (§ 6, un paragraphe). La barrière sur l'arbre intégré : `tsc -b` vert ; les 25 erreurs connues du
 compilateur des Edge Functions, à l'identique ; lint, 63 avertissements et aucune erreur, comme `main` ; la suite
 entière sous les quatre fuseaux, 328 fichiers et 9 874 tests, verts chacun ; build vert.
+
+### 12/10/2026 — L'ÉCRAN DU DOSSIER PERMANENT DE LA RÉVISION — LIGNE 41, ÉTAPE R7, PHASE C (R7c)
+
+(Sans migration, sans policy, sans Edge Function. Base : `883203e`. Fichiers : `lib/citationsRevisionLecture.ts`,
+`lib/dossierPermanentEcran.ts` (pur), `pages/dossier/DossierPermanentSection.tsx`, `FicheDossierPermanent.tsx`,
+`RevisionTab.tsx`, `PiecesTab.tsx`, `DocumentsTab.tsx`, `index.css`, `test/dossierPermanent.ts`, leurs tests, le banc.)
+
+**D'ABORD, LA RÈGLE DES SOURCES CITÉES.** `lireCitationsDeLaRevision` lit aussi `lireLeDossierPermanent` ; `refusDeSuppression`
+passe par `refusDuRetraitDUneSourceCitee` (la révision d'un solde d'abord, mot pour mot ; puis la nature de l'entrée qui cite,
+jamais son titre : la lecture ne garde que nature, pièce et document). Le motif d'une lecture partielle se dit à part
+(`motifRevision` sous les mots d'hier, `motifDossierPermanent` sous un second bandeau) et `motif` (l'un ou l'autre) suspend
+« C'est une facture ». Les amorces des phrases (« cité(e)s par la révision des soldes ») nomment qui cite (`quiCite`, `citantDe`) :
+inchangées pour la révision seule, « le dossier permanent » ou les deux sinon ; le badge de Documents de même.
+
+**PUIS L'ÉCRAN.** Section « Dossier permanent » de l'onglet Révision, tous exercices : entrées courantes dans l'ordre de A9,
+validité (et « ne couvre pas 20XX »), état de la citation en mots (`PASTILLE_DE_LA_CITATION`), historique et retirées en replis, les
+trois éléments de A9 sans entrée en vigueur dits comme une information ; « Consigner une entrée », « Nouvelle version » (part de la
+courante, retient celle qu'elle remplace à l'ouverture), « Retirer » (confirmé : ne se remplace plus, reste à l'historique, ce
+qu'elle cite reste gardé). Lecture à part : seule la section se tait sur une lecture refusée, partielle, qui lève ou illisible.
+Verrou `permanentEnCours`, partagé avec les trois autres de l'onglet dans les deux sens, relâché après la relecture du dossier
+permanent seul, relue aussi sur un refus. Le panneau se ferme sur une écriture réussie, sa garde de sortie retient une saisie.
+
+**CE QUE LA MISE AU POINT A MONTRÉ.**
+- Une ligne de check (`.check-ligne`) réserve la place d'une pastille et d'un seul bouton : deux boutons et une citation
+  débordaient de 3 à 27 px à 390 px (70 fautes au banc, 7 par visite de la révision). Classe à part, `.entree-permanente` (texte,
+  puis gestes dessous) : 0.
+- Un texte fait de blancs part nul (`argumentsDeConsigner`) : l'écran dit donc « une entrée dit quelque chose », jamais « que des
+  blancs » (le refus 4 n'est atteignable que hors écran). Un champ de date admet cinq chiffres d'année, que la fonction ne lirait
+  pas : l'écran le dit et grise le bouton plutôt que d'envoyer une entrée sans sa borne.
+- `encaissementsEcritures.test.ts` nommait « aucun écran avant la phase C » : l'onglet Révision y est inscrit.
+
+**CE QUI A ÉTÉ MESURÉ.** Barrière : `tsc -b` vert ; erreurs du compilateur des Edge Functions, 25, à l'identique ; lint 63
+avertissements, 0 erreur, comme la base ; build vert ; suite entière à Paris, 330 fichiers et 9 946 tests verts (base : 9 874 sur
+328 fichiers) ; les 9 fichiers de l'étape sous les quatre fuseaux, 406 tests chacun. Banc (port 5325) : 0 débordement aux huit
+passes (1 440, 1 280, 1 024, 720, 390, trois combinaisons de volets), trois visites neuves (la section, « Consigner une entrée »
+avec sa recherche, la « Nouvelle version » d'un titre long) sur le dossier d9, entrées fictives ajoutées au faux Supabase. Mutations
+CIBLÉES : 51 ; 49 mordent ; deux ÉQUIVALENTES — la garde de `convertirEnPiece` sur `motif` plutôt que `motifRevision` (le bouton,
+grisé sous la même condition, n'est jamais cliquable quand elle vaut) et « Retirer » grisé sous `refusDeRetirer` (aucune entrée
+affichée n'est retirée, remplacée ni hors dossier : le refus ne s'y atteint que sur une lecture périmée, que la relecture
+corrige) ; un survivant (le retrait d'une entrée de plusieurs versions) a reçu son test.
+
+**RESTE.** R8 (les fichiers du cabinet), R9 (ce que la finalisation fige) ; les questions de la conception (R7-Q1 à R7-Q6) ;
+R7C-Q1 (la section n'existe que sous un exercice choisi, comme tout l'onglet), R7C-Q2 (une nouvelle version part de la
+courante), R7C-Q3 (Justificatifs et Documents lisent désormais les entrées en entier, texte compris, pour n'en garder que la
+nature ; un `select` plus étroit demande un paramètre à `lireLeDossierPermanent`).
+
+**ET, DANS LA MÊME DEMANDE, UN NUMÉRO DE TVA RÉEL SORT DES JEUX D'ESSAI.** Les jeux des étapes e2, e4 et e5b1 (trois
+essais SQL et quatre fichiers de test) portaient, 47 fois, le numéro de TVA irlandais d'une entreprise réelle, bien
+connue. Il est remplacé par `IE7777777T` : il a la STRUCTURE que VIES donne aux numéros irlandais, la seule que
+l'application vérifie, mais sa lettre de contrôle est fausse (7777777 appelle la lettre O) — il ne peut être celui
+d'aucune entreprise. Les trois essais rejoués sur la réplique égale à la production, avant et après : 197, 179 et 186
+verdicts, sans une faute, identiques ligne à ligne, à une près, qui fait écho au numéro lui-même.
+
+**L'INTÉGRATION, ET DEUX QUESTIONS APPROFONDIES.** Le correctif s'applique sans conflit sur `883203e`. La barrière sur
+l'arbre intégré : `tsc -b` vert ; les 25 erreurs connues du compilateur des Edge Functions, à l'identique ; lint, 63
+avertissements et aucune erreur, comme `main` ; la suite entière sous les quatre fuseaux, 330 fichiers et 9 946 tests,
+verts chacun ; build vert ; le banc (port 5311) : 0 débordement aux neuf passes, aucune police refusée. À la demande du
+cabinet, R7C-Q1 et R7C-Q2 ont été approfondies dans le code le même jour. R7C-Q1 : sur un dossier NEUF, sans pièce ni
+mouvement daté, l'exercice par défaut est « toutes » et l'en-tête n'offre aucun sélecteur — la section est inaccessible,
+alors que la lettre de mission précède les travaux ; elle se tait aussi sur toute lecture partielle de l'onglet, même
+étrangère au dossier permanent. Recommandation : la section s'affiche quel que soit l'exercice, ce qui est en vigueur
+AUJOURD'HUI quand aucun n'est choisi, sous ses seules lectures. R7C-Q2 : une nouvelle version identique s'enregistre (le
+bouton ne dépend que des refus), et la citation reprise ne montre pas son état — enregistrée, elle relève l'empreinte du
+jour, et une entrée dont le fichier a changé paraît « intacte », le changement ne se lisant plus que dans l'historique.
+Recommandation : garder le préremplissage, griser l'enregistrement tant que rien ne diffère, montrer l'état de la
+citation et dire, avant le clic, qu'un fichier changé sera cité tel qu'il est aujourd'hui.

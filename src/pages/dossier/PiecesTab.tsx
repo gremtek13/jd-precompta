@@ -32,7 +32,7 @@ import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
-import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
 import { lireEcarts } from '../../lib/regimesEreportingLecture'
 import { lireDeclarationsEreporting, type LectureDesDeclarations } from '../../lib/declarationsEreportingLecture'
@@ -547,9 +547,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
     const listeDesCitees = citees.slice(0, 5).map((c) => `• ${c.piece.nom_fichier} — ${c.refus}`).join('\n')
       + (citees.length > 5 ? `\n… et ${citees.length - 5} autre(s)` : '')
+    // Citée par la révision des soldes, comme hier ; par le dossier permanent, ou par les deux, quand c'est lui qui cite.
+    const citant = citantDe(citees.map((c) => quiCite({ pieceId: c.piece.id }, citations)))
     const avertissementCitees = citees.length === 0 ? ''
       : `\n\n${citees.length === 1 ? 'Une pièce de la sélection reste' : `${citees.length} pièces de la sélection restent`}, `
-        + `citée${citees.length > 1 ? 's' : ''} par la révision des soldes :\n${listeDesCitees}`
+        + `citée${citees.length > 1 ? 's' : ''} par ${citant} :\n${listeDesCitees}`
     if (aSupprimer.length === 0) {
       window.alert([
         nbFigees === 0 ? null : (nbFigees === 1
@@ -557,7 +559,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
           : 'Ces pièces justifient une écriture validée : elles ne se suppriment plus.')
           + ' Une erreur trouvée après la validation se corrige sur l’exercice suivant.',
         citees.length === 0 ? null : citees.length === 1 && nbFigees === 0 ? citees[0].refus
-          : `Citée${citees.length > 1 ? 's' : ''} par la révision des soldes, ${citees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesCitees}`,
+          : `Citée${citees.length > 1 ? 's' : ''} par ${citant}, ${citees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesCitees}`,
         declarees.length === 0 ? null : declarees.length === 1 && nbFigees === 0 && citees.length === 0 ? declarees[0].refus
           : `Déclarée${declarees.length > 1 ? 's' : ''} à l’e-reporting, ${declarees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesDeclarees}`,
       ].filter((ligne) => ligne !== null).join('\n\n'))
@@ -704,10 +706,19 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
       />
       <BandeauLecturePartielle
         quoi="Les décisions de la révision des soldes et leurs preuves"
-        motif={citations?.motif ?? null}
+        motif={citations?.motifRevision ?? null}
         consequence={
           'Une pièce citée par la révision peut donc paraître supprimable : la base refusera alors de la supprimer, et ' +
           'dira pourquoi.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les entrées du dossier permanent"
+        motif={citations?.motifDossierPermanent ?? null}
+        accord="lues"
+        consequence={
+          'Une pièce citée par le dossier permanent peut donc paraître supprimable : la base refusera alors de la supprimer, ' +
+          'et dira pourquoi.'
         }
       />
       <BandeauLecturePartielle

@@ -523,6 +523,31 @@ describe('aucun écran n’affirme le vide avant d’avoir lu', () => {
   }
 })
 
+// LE DOSSIER PERMANENT DE LA RÉVISION (ligne 41, étape R7, phase C) : ni « Consigner une entrée », ni « Nouvelle version », ni
+// « Retirer » avant que sa lecture soit revenue — la section n'existe pas tant que l'onglet attend — ; revenue, la section
+// s'ouvre sur « Consigner une entrée » seul, et aucune des deux fonctions n'a été appelée. Ajouté à côté du garde de l'onglet
+// Révision, qui monte l'écran entier : les deux tables de l'étape, la lecture du dossier permanent comprise, y sont retenues.
+describe('le dossier permanent n’offre aucun geste avant que sa lecture soit revenue', () => {
+  const GESTES_DU_DOSSIER_PERMANENT = /Consigner une entrée|Nouvelle version|^Retirer/
+  const boutons = () => [...document.querySelectorAll('button')].map((b) => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim())
+
+  it('RevisionTab : retenu, aucun de ses gestes ; revenu, « Consigner une entrée » seul, et rien d’écrit', async () => {
+    const ecran = ECRANS.find((e) => e.nom === 'RevisionTab')
+    expect(ecran, 'l’onglet Révision est monté par le garde').toBeDefined()
+    reinitialiser('retenir')
+    etat.lignesUniques = { dossiers: dossier() }
+    await monter(ecran as Ecran)
+    expect(etat.demandes.has('dossier_permanent'), 'la lecture du dossier permanent est demandée au montage').toBe(true)
+    expect(boutons().filter((b) => GESTES_DU_DOSSIER_PERMANENT.test(b))).toEqual([])
+    expect(document.querySelector('section[aria-label="Dossier permanent"]')).toBeNull()
+
+    await act(async () => { libererTout('vide') })
+    await laisserPasser()
+    expect(boutons().filter((b) => GESTES_DU_DOSSIER_PERMANENT.test(b))).toEqual(['Consigner une entrée'])
+    expect(etat.ecritures.filter((e) => /permanent/.test(e))).toEqual([])
+  })
+})
+
 // UNE LISTE PAS ENCORE REVENUE NE COMMANDE AUCUNE ÉCRITURE (CLAUDE.md, « Lectures et écritures »). La sœur de la lecture
 // partielle : pendant la première lecture d'un écran, ses listes sont vides FAUTE D'AVOIR ÉTÉ LUES, et un geste qui écrit
 // en s'appuyant sur elles — un dédoublonnage, une règle appliquée — écrit un doublon en base. L'import d'un relevé

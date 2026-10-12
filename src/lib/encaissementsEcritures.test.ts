@@ -96,8 +96,9 @@ const FONCTIONS_DES_DECLARATIONS_EREPORTING = ['declarer_ereporting_hors_applica
 export const TABLES_DU_DOSSIER_PERMANENT = ['dossier_permanent'] as const
 const FONCTIONS_DU_DOSSIER_PERMANENT = ['consigner_au_dossier_permanent', 'retirer_du_dossier_permanent'] as const
 
-// Les écrans qui appellent les deux fonctions du dossier permanent, nommément : aucun avant la phase C de R7.
-const ECRANS_DU_DOSSIER_PERMANENT: readonly string[] = []
+// Les écrans qui appellent les deux fonctions du dossier permanent, nommément : l'onglet Révision (étape R7, phase C), qui
+// écrit pour sa section (le retrait) et son panneau (`FicheDossierPermanent`, qui n'écrit rien lui-même).
+const ECRANS_DU_DOSSIER_PERMANENT: readonly string[] = ['src/pages/dossier/RevisionTab.tsx']
 
 // Les écrans qui appellent la fonction de la déclaration d'e-reporting, nommément : la fenêtre de l'e-reporting (étape e5c,
 // phase C), ouverte de la carte de l'onglet TVA.
@@ -620,7 +621,7 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     }
   })
 
-  it('les deux fonctions du dossier permanent ne s’appellent que des écrans qui s’inscrivent nommément : aucun avant la phase C', () => {
+  it('les deux fonctions du dossier permanent ne s’appellent que des écrans qui s’inscrivent nommément : l’onglet Révision (phase C)', () => {
     const appelle = (texte: string, fonction: string) =>
       new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
     for (const fonction of FONCTIONS_DU_DOSSIER_PERMANENT) {

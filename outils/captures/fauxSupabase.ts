@@ -1347,6 +1347,41 @@ const ENVOIS_DU_CLIENT_D1 = CLIENT_DU_BANC
     ],
   }
 
+// LE DOSSIER PERMANENT de la kinésithérapeute (ligne 41, étape R7, phase C) : la lettre de mission en deux versions (la seconde,
+// au titre LONG, prolonge la première), un bail qui cite une facture dont l'empreinte a disparu, une description sans date, un
+// contrat d'emprunt retiré, et une entrée sans citation à la validité close. La description de l'organisation comptable manque :
+// l'information « rien n'est en vigueur » s'affiche. Des textes FICTIFS, sans nom de tiers ni donnée de patient.
+const DOSSIER_PERMANENT_D9: Ligne[] = [
+  {
+    id: 'dp-d9-1', dossier_id: 'd9', nature: 'lettre_mission', titre: 'Lettre de mission', texte: 'Mission de présentation des comptes annuels.',
+    piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: '2025-01-01', valable_jusqu_au: '2025-12-31',
+    remplace_id: null, auteur: 'u1', cree_le: '2025-01-10T09:00:00Z', retire_le: null, retire_par: null,
+  },
+  {
+    id: 'dp-d9-2', dossier_id: 'd9', nature: 'lettre_mission',
+    titre: 'Lettre de mission reconduite pour les exercices 2026 à 2028, avenant sur les honoraires et la périodicité des rendez-vous',
+    texte: 'Mission de présentation des comptes annuels, reconduite tacitement.\nLes honoraires et le calendrier des échanges sont ceux de l’avenant joint.',
+    piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: '2026-01-01', valable_jusqu_au: '2028-12-31',
+    remplace_id: 'dp-d9-1', auteur: 'u2', cree_le: '2026-01-12T09:00:00Z', retire_le: null, retire_par: null,
+  },
+  {
+    id: 'dp-d9-3', dossier_id: 'd9', nature: 'bail', titre: 'Bail des locaux du cabinet', texte: null,
+    piece_id: 'k1', document_id: null, fichier_id: null, empreinte: 'a'.repeat(64), valable_du: '2024-07-01', valable_jusqu_au: '2033-06-30',
+    remplace_id: null, auteur: 'u1', cree_le: '2026-02-03T09:00:00Z', retire_le: null, retire_par: null,
+  },
+  {
+    id: 'dp-d9-4', dossier_id: 'd9', nature: 'description', titre: 'Activité libérale de rééducation',
+    texte: 'Exercice individuel en cabinet, patientèle conventionnée, déplacements à domicile.',
+    piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: null, valable_jusqu_au: null,
+    remplace_id: null, auteur: 'u1', cree_le: '2026-02-04T09:00:00Z', retire_le: null, retire_par: null,
+  },
+  {
+    id: 'dp-d9-5', dossier_id: 'd9', nature: 'contrat_emprunt', titre: 'Emprunt du matériel de rééducation', texte: 'Remboursé par anticipation.',
+    piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: '2021-03-01', valable_jusqu_au: '2024-02-28',
+    remplace_id: null, auteur: 'u1', cree_le: '2026-02-05T09:00:00Z', retire_le: '2026-03-02T09:00:00Z', retire_par: 'u1',
+  },
+]
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1626,6 +1661,7 @@ const TABLES: Record<string, Ligne[]> = {
   encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1].map((e) => ({ ...e })),
   encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1].map((p) => ({ ...p })),
   transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
+  dossier_permanent: DOSSIER_PERMANENT_D9.map((e) => ({ ...e })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

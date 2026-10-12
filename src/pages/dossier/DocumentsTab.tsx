@@ -15,11 +15,16 @@ import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
 import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
-import { lireCitationsDeLaRevision, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 
-// « C'est une facture » sur une lecture des citations de la révision partielle, ou pas encore revenue.
-const CONVERSION_SUSPENDUE = 'Les décisions de la révision des soldes n’ont pas été lues en entier : rien ne dit que ce document '
-  + 'n’y est pas cité, et la base refuserait alors de le retirer après la création de la pièce. Recharge la page.'
+// « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
+// d'abord, sous les mots d'hier ; le dossier permanent, seul en défaut, se nomme.
+function conversionSuspendue(citations: LectureDesCitations | null): string {
+  const seulLeDossierPermanent = citations !== null && citations.motifRevision === null && citations.motifDossierPermanent !== null
+  return `${seulLeDossierPermanent ? 'Les entrées du dossier permanent n’ont' : 'Les décisions de la révision des soldes n’ont'} `
+    + 'pas été lues en entier : rien ne dit que ce document n’y est pas cité, et la base refuserait alors de le retirer '
+    + 'après la création de la pièce. Recharge la page.'
+}
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -301,14 +306,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     const cibles = selection.filter((d) => !cites.some((c) => c.document.id === d.id))
     const listeDesCites = cites.slice(0, 5).map((c) => `• ${c.document.nom_fichier} — ${c.refus}`).join('\n')
       + (cites.length > 5 ? `\n… et ${cites.length - 5} autre(s)` : '')
+    // La révision des soldes, comme hier ; le dossier permanent, ou les deux, quand c'est lui qui cite.
+    const citant = citantDe(cites.map((c) => quiCite({ documentId: c.document.id }, citations)))
     if (cibles.length === 0) {
       setError(cites.length === 1 ? cites[0].refus
-        : `Ces ${cites.length} documents sont cités par la révision des soldes : ils ne se suppriment plus.\n${listeDesCites}`)
+        : `Ces ${cites.length} documents sont cités par ${citant} : ils ne se suppriment plus.\n${listeDesCites}`)
       return
     }
     const avertissementCites = cites.length === 0 ? ''
       : `\n\n${cites.length === 1 ? 'Un document de la sélection reste' : `${cites.length} documents de la sélection restent`}, `
-        + `cité${cites.length > 1 ? 's' : ''} par la révision des soldes :\n${listeDesCites}`
+        + `cité${cites.length > 1 ? 's' : ''} par ${citant} :\n${listeDesCites}`
     if (!window.confirm(confirmationSuppression(cibles.length) + avertissementCites)) return
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
@@ -349,7 +356,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       return
     }
     if (citations === null || citations.motif !== null) {
-      setError(CONVERSION_SUSPENDUE)
+      setError(conversionSuspendue(citations))
       return
     }
     conversionsEnCours.current.add(doc.id)
@@ -498,10 +505,19 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
       <BandeauLecturePartielle
         quoi="Les décisions de la révision des soldes et leurs preuves"
-        motif={citations?.motif ?? null}
+        motif={citations?.motifRevision ?? null}
         consequence={
           'Un document cité par la révision peut donc paraître supprimable : la base refusera alors de le supprimer, et ' +
           'dira pourquoi. « C’est une facture » attend : sur un document cité, la pièce naîtrait et le document resterait.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les entrées du dossier permanent"
+        motif={citations?.motifDossierPermanent ?? null}
+        consequence={
+          'Un document cité par le dossier permanent peut donc paraître supprimable : la base refusera alors de le ' +
+          'supprimer, et dira pourquoi. « C’est une facture » attend : sur un document cité, la pièce naîtrait et le ' +
+          'document resterait.'
         }
       />
 
@@ -571,7 +587,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                           </span>
                         )}
                         {refusDeSuppression({ documentId: d.id }, citations) && (
-                          <span className="badge badge-neutral" style={{ marginLeft: 8, fontSize: '0.7rem' }}>Cité par la révision</span>
+                          <span className="badge badge-neutral" style={{ marginLeft: 8, fontSize: '0.7rem' }}>
+                            {quiCite({ documentId: d.id }, citations) === 'dossier-permanent' ? 'Cité par le dossier permanent' : 'Cité par la révision'}
+                          </span>
                         )}
                         {avecTexteOcr.has(d.id) && (
                           <button
@@ -606,7 +624,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                           <button
                             className="btn btn-outline btn-sm"
                             disabled={citations === null || citations.motif !== null}
-                            title={citations === null || citations.motif !== null ? CONVERSION_SUSPENDUE : undefined}
+                            title={citations === null || citations.motif !== null ? conversionSuspendue(citations) : undefined}
                             onClick={() => convertirEnPiece(d)}
                           >
                             C'est une facture

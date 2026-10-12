@@ -609,9 +609,10 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   « LA REVUE ANALYTIQUE, EN BASE », « L'ÉCRAN DE LA REVUE ANALYTIQUE » ; R7, le dossier permanent — une entrée par
   élément de A9 (lettre de mission, description de l'entité, organisation comptable, statuts, baux et contrats), datée,
   valable pour une période, citant au plus une pièce ou un document, qui se remplace ou se retire et ne se modifie
-  jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 prises comme hypothèses ; R7-Q1 à R7-Q6 au cabinet ; aucun écran) →
-  « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE » ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA
-  RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
+  jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 prises comme hypothèses ; R7-Q1 à R7-Q6 au cabinet), et à l'écran le
+  même jour (phase C ; R7C-Q1 à R7C-Q3 au cabinet) → « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE », « L'ÉCRAN DU
+  DOSSIER PERMANENT DE LA RÉVISION » ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION »,
+  « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -1074,9 +1075,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   révision ; la garde prend le verrou de la révision PAR SA CLÉ (sous la RLS, un `FOR SHARE` sans policy de mise à jour
   ne rend aucune ligne). Une source citée ne se supprime plus ni ne change de dossier : `garder_source_citee` dit la
   révision d'un solde d'abord, mot pour mot, puis le dossier permanent par la NATURE, jamais le titre. Le module redit
-  les refus avant le clic, confronté au texte exporté et rejouant l'essai ; avant tout écran (phase C), ce qui dit déjà
-  la règle de R1 avant le clic (`lib/citationsRevisionLecture.ts` et ses écrans) devra lire aussi ces citations → « LE
-  DOSSIER PERMANENT DE LA RÉVISION, EN BASE ».
+  les refus avant le clic, confronté au texte exporté et rejouant l'essai → « LE DOSSIER PERMANENT DE LA RÉVISION, EN
+  BASE ». À l'écran (phase C) : une section de l'onglet Révision, valable pour tous les exercices
+  (`DossierPermanentSection`, volet `dossier-permanent` — `FicheDossierPermanent` —, mots et rangement purs dans
+  `lib/dossierPermanentEcran.ts`) : les entrées courantes dans l'ordre de A9, leur validité, l'état de leur citation en
+  mots, l'historique et les retirées repliés, et ce que A9 propose sans entrée pour l'exercice, dit comme une
+  INFORMATION ; lue à part, la section seule se tait sur une lecture absente, partielle ou qui lève ; écriture par les
+  deux fonctions seules sous `permanentEnCours`, que les trois autres verrous de l'onglet partagent, relâché après la
+  relecture, relue aussi sur un refus ; une nouvelle version RETIENT celle qu'elle remplace. La règle des sources citées
+  (`lib/citationsRevisionLecture.ts`) lit aussi le dossier permanent : Justificatifs, Documents et « C'est une facture »
+  disent le refus de `garder_source_citee` tout entier, un bandeau par lecture partielle → « L'ÉCRAN DU DOSSIER
+  PERMANENT DE LA RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1389,7 +1398,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9874 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9946 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

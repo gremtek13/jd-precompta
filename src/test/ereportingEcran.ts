@@ -69,7 +69,7 @@ export function fiche(o: Partial<PieceHorsDeFrance> = {}): PieceHorsDeFrance {
   return {
     id: F1, dossier_id: 'd1', piece_id: P1, remplace_id: null, numero: 'INV-1', date_facture: '2027-10-05',
     type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE',
-    schema_identifiant: '0223', identifiant: 'IE6388047V', nature: 'services', autoliquidation: true, date_operation: null,
+    schema_identifiant: '0223', identifiant: 'IE7777777T', nature: 'services', autoliquidation: true, date_operation: null,
     periode_debut: null, periode_fin: null, cree_par: 'u1', cree_le: '2027-10-06T10:00:00Z', retire_le: null, retire_par: null,
     ...o,
   }
