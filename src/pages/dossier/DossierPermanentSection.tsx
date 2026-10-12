@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
-import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import { formatDate } from '../../lib/format'
 import {
-  LIBELLES_DES_NATURES, argumentsDeRetirer, elementsSansEntree, entreesDuDossierPermanent, etatDeLaCitation, refusDeRetirer, vautPourLExercice,
+  LIBELLES_DES_NATURES, argumentsDeRetirer, entreesDuDossierPermanent, etatDeLaCitation, refusDeRetirer,
   type ContexteDuDossierPermanent, type EntreeDuDossierPermanent,
 } from '../../lib/dossierPermanent'
 import {
-  EXPLICATION_DE_LA_CITATION, PASTILLE_DE_LA_CITATION, entreesParNature, entreesRetirees, informationSurUnElementSansEntree,
-  libelleDeLaNature, validiteEnMots, versionsDuPlusRecentAuPlusAncien,
+  EXPLICATION_DE_LA_CITATION, PASTILLE_DE_LA_CITATION, elementsSansEntreeAuRegard, entreesParNature, entreesRetirees, horsDuRegard,
+  informationSurUnElementSansEntree, libelleDeLaNature, motNeCouvrePas, validiteEnMots, versionsDuPlusRecentAuPlusAncien,
 } from '../../lib/dossierPermanentEcran'
 import { parQui } from '../../lib/revueAnalytiqueEcran'
 import type { DocumentPourRevision } from '../../lib/revisionPreuves'
@@ -20,10 +20,13 @@ import type { EntreeDossierPermanent, Piece } from '../../lib/types'
 // faute — ce que la norme propose et qu'aucune entrée ne porte pour l'exercice regardé.
 //
 // Le dossier permanent vaut pour PLUSIEURS exercices : la section ne le range par aucun. L'exercice regardé ne sert qu'à dire
-// ce qui manque, et à repérer l'entrée dont la validité ne le touche pas.
+// ce qui manque, et à repérer l'entrée dont la validité ne le touche pas. SANS EXERCICE CHOISI (`annee` nul : « toutes », « sans
+// date », ou un dossier neuf qui n'offre aucun exercice), elle le dit pour AUJOURD'HUI : `jour`, le jour à Paris, que l'onglet lit
+// au rendu — la section ne lit pas l'horloge — ; la lettre de mission précède les travaux, elle ne doit pas attendre une pièce.
 //
-// SUR UNE LECTURE ABSENTE, PARTIELLE OU ILLISIBLE, la section dit pourquoi et ne montre rien, ne déduit rien et n'offre aucun
-// geste : un état déduit d'une liste tronquée mentirait, et une consignation ou un retrait est une écriture que la base ne
+// SUR UNE LECTURE ABSENTE, PARTIELLE OU ILLISIBLE — la sienne, ou celle des pièces et des documents qu'elle nomme —, la section
+// dit pourquoi et ne montre rien, ne déduit rien et n'offre aucun geste ; la lecture d'autre chose (relevés, revue, cycles…) ne la
+// regarde pas : un état déduit d'une liste tronquée mentirait, et une consignation ou un retrait est une écriture que la base ne
 // défait pas. La section ne lit ni n'écrit rien : l'onglet Révision lui donne ce qu'il a lu et écrit par
 // `consigner_au_dossier_permanent` et `retirer_du_dossier_permanent` SEULES, sous son verrou.
 
@@ -33,11 +36,23 @@ export interface LectureDuDossierPermanent {
   motif: string | null
 }
 
+// Une des lectures dont la section dépend (les pièces, les documents), quand elle n'est pas entière.
+export interface MotifDeSource {
+  quoi: string
+  accord: AccordLecture
+  motif: string
+}
+
 export interface PropsDossierPermanent {
-  annee: number
+  // L'exercice choisi, ou nul : la section regarde alors `jour`.
+  annee: number | null
+  // Aujourd'hui à Paris (AAAA-MM-JJ), lu au RENDU par l'onglet.
+  jour: string
   lecture: LectureDuDossierPermanent
+  // Les lectures des pièces et des documents qui ne sont pas entières : vide, la section a tout lu.
+  motifsDesSources: readonly MotifDeSource[]
   // Les pièces et les documents du dossier, lus en entier : de quoi nommer ce qu'une entrée cite et dire si son empreinte tient.
-  // L'onglet ne montre rien de la révision quand l'une des deux lectures est partielle : la section les reçoit entières.
+  // Reçus entiers : `motifsDesSources` dit le contraire, et la section se tait alors.
   pieces: readonly Pick<Piece, 'id' | 'nom_fichier' | 'storage_hash'>[]
   documents: readonly Pick<DocumentPourRevision, 'id' | 'nom_fichier' | 'storage_hash'>[]
   contexte: ContexteDuDossierPermanent
@@ -58,11 +73,12 @@ export interface PropsDossierPermanent {
 const minuscules = (id: string) => id.toLowerCase()
 
 export default function DossierPermanentSection(p: PropsDossierPermanent) {
+  const sourcesLues = p.motifsDesSources.length === 0
   const lues = useMemo(() => (p.lecture.complete ? entreesDuDossierPermanent(p.lecture.lignes) : null), [p.lecture])
   const piecesParId = useMemo(() => new Map(p.pieces.map((x) => [minuscules(x.id), x])), [p.pieces])
   const documentsParId = useMemo(() => new Map(p.documents.map((x) => [minuscules(x.id), x])), [p.documents])
-  const affichable = lues !== null && lues.lisible
-  const sansEntree = lues === null ? null : elementsSansEntree(lues, p.lecture.complete, p.annee)
+  const affichable = sourcesLues && lues !== null && lues.lisible
+  const sansEntree = !affichable || lues === null ? null : elementsSansEntreeAuRegard(lues, p.lecture.complete, p.annee, p.jour)
   const courantes = affichable ? entreesParNature(lues.entrees) : []
   const retirees = affichable ? entreesRetirees(lues.entrees) : []
 
@@ -82,17 +98,28 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
       <h3 style={{ marginTop: 0 }}>Dossier permanent</h3>
       <p className="muted">
         Ce que le cabinet sait durablement du dossier et de sa mission, valable pour plusieurs exercices (NP 2300, § 16 et A9) :
-        il ne dépend pas de l’exercice choisi. Une entrée ne se modifie pas : une nouvelle version la remplace, et l’historique
+        il ne dépend pas de l’exercice choisi, ni de ce que la révision des soldes a lu d’autre. Une entrée ne se modifie pas : une nouvelle version la remplace, et l’historique
         reste. Une entrée retirée ne se remplace plus.
       </p>
 
+      {p.motifsDesSources.map((m) => (
+        <BandeauLecturePartielle
+          key={m.quoi}
+          quoi={m.quoi}
+          accord={m.accord}
+          motif={m.motif}
+          // Le motif technique est déjà dit, en clair, au-dessus (la partie annuelle se tait pour la même lecture) : ici, en infobulle.
+          technique={false}
+          consequence="Le dossier permanent ne dit rien tant que cette lecture est incomplète — ni entrée, ni état de citation, ni élément absent — et n’offre ni consignation, ni nouvelle version, ni retrait : il ne saurait pas nommer ce qu’une entrée cite. Recharge la page."
+        />
+      ))}
       <BandeauLecturePartielle
         quoi="Les entrées du dossier permanent"
         accord="lues"
         motif={p.lecture.complete ? null : p.lecture.motif ?? 'lecture incomplète'}
         consequence="Le dossier permanent ne dit rien d’une lecture incomplète — ni entrée, ni état de citation, ni élément absent — et n’offre ni consignation, ni nouvelle version, ni retrait. Recharge la page."
       />
-      {lues !== null && !lues.lisible && (
+      {sourcesLues && lues !== null && !lues.lisible && (
         <p className="error-text">
           Les versions du dossier permanent ne forment pas des chaînes lisibles (une version absente de la lecture, deux suites à une
           même version, une suite à une entrée retirée). Le dossier permanent n’affirme rien et n’offre aucun geste tant qu’elle ne se
@@ -117,6 +144,7 @@ export default function DossierPermanentSection(p: PropsDossierPermanent) {
                   key={e.versions[0].id}
                   entree={e}
                   annee={p.annee}
+                  jour={p.jour}
                   utilisateur={p.utilisateur}
                   contexte={p.contexte}
                   dossierId={p.dossierId}
@@ -186,9 +214,10 @@ function Citation({ version, piecesParId, documentsParId }: { version: EntreeDos
   )
 }
 
-function EntreeCourante({ entree: e, annee, utilisateur, contexte, dossierId, piecesParId, documentsParId, occupe, ouverte, erreur, onNouvelleVersion, onRetirer }: {
+function EntreeCourante({ entree: e, annee, jour, utilisateur, contexte, dossierId, piecesParId, documentsParId, occupe, ouverte, erreur, onNouvelleVersion, onRetirer }: {
   entree: EntreeDuDossierPermanent
-  annee: number
+  annee: number | null
+  jour: string
   utilisateur: string | null
   contexte: ContexteDuDossierPermanent
   dossierId: string
@@ -201,13 +230,13 @@ function EntreeCourante({ entree: e, annee, utilisateur, contexte, dossierId, pi
   const v = e.courante
   // Le retrait passe ce qu'il enverrait au module : refusé, le bouton est grisé et le refus se lit sous les mots de la base.
   const refusDuRetrait = refusDeRetirer(argumentsDeRetirer(dossierId, v.id), contexte)
-  const hors = !vautPourLExercice(v, annee)
+  const hors = horsDuRegard(v, annee, jour)
   return (
     <div className="entree-permanente" aria-current={ouverte ? 'true' : undefined}>
       <div className="check-ligne-corps">
         <div className="check-ligne-libelle">{v.titre}</div>
         <div className="check-ligne-detail">
-          {`${validiteEnMots(v)}${hors ? ` — ne couvre pas ${annee}` : ''} · ${e.versions.length > 1 ? `version ${e.versions.length}, ` : ''}consignée le ${formatDate(v.cree_le)}, ${parQui(v.auteur, utilisateur)}`}
+          {`${validiteEnMots(v)}${hors ? ` — ${motNeCouvrePas(annee)}` : ''} · ${e.versions.length > 1 ? `version ${e.versions.length}, ` : ''}consignée le ${formatDate(v.cree_le)}, ${parQui(v.auteur, utilisateur)}`}
         </div>
         <Citation version={v} piecesParId={piecesParId} documentsParId={documentsParId} />
         {v.texte !== null && (

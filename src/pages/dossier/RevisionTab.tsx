@@ -45,6 +45,7 @@ import FicheCycle, { type GesteDuCycle } from './FicheCycle'
 import FicheExplication from './FicheExplication'
 import RevueAnalytiqueSection, { type MotifDeLectureDeLaRevue } from './RevueAnalytiqueSection'
 import DossierPermanentSection, { type LectureDuDossierPermanent } from './DossierPermanentSection'
+import { anneesDActivite } from '../../lib/dossierPermanentEcran'
 import FicheDossierPermanent from './FicheDossierPermanent'
 
 // LA RÉVISION DES SOLDES DE BILAN D'UN EXERCICE (ligne 41, étape R3 ; conception du 09/10/2026, HISTORIQUE.md, « LA
@@ -112,6 +113,10 @@ interface LectureDeLaRevision {
   motifsRevue: MotifDeLectureDeLaRevue[]
   // Le dossier permanent (étape R7), tous exercices, À PART : sa lecture ratée ou partielle ne cache que sa section.
   permanent: LectureDuDossierPermanent
+  // Ce que la section lit D'AUTRE que ses entrées — les pièces et les documents, de quoi nommer une citation et dire son état —
+  // quand l'une des deux lectures n'est pas entière. Elle seule se tait alors : les relevés, la revue analytique ou les cycles
+  // lus en partie ne la regardent pas.
+  motifsDuPermanent: MotifDeLecture[]
 }
 
 // Le dossier permanent, lu EN ENTIER ; une lecture qui lève tombe du côté signalé — la section se tait et le dit.
@@ -211,6 +216,9 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   if (lectureConclusions.motif) motifs.push({ quoi: 'Les conclusions des cycles', accord: 'lues', motif: lectureConclusions.motif })
   if (lectureJournal.motif) motifs.push({ quoi: 'Le journal des cycles', accord: 'lu', motif: lectureJournal.motif })
   if (lectureRevues.motif) motifs.push({ quoi: 'Les revues des cycles', accord: 'lues', motif: lectureRevues.motif })
+  const motifsDuPermanent: MotifDeLecture[] = []
+  if (checklist.piecesIncompletes) motifsDuPermanent.push({ quoi: 'Les pièces du dossier', accord: 'lues', motif: checklist.piecesIncompletes })
+  if (lectureDocuments.motif) motifsDuPermanent.push({ quoi: 'Les documents du dossier', accord: 'lus', motif: lectureDocuments.motif })
   const motifsRevue: MotifDeLectureDeLaRevue[] = []
   if (lectureSeuils.motif) motifsRevue.push({ quoi: 'Les seuils de signification', accord: 'lus', motif: lectureSeuils.motif })
   if (lectureExplications.motif) motifsRevue.push({ quoi: 'Les explications de la revue analytique', accord: 'lues', motif: lectureExplications.motif })
@@ -233,6 +241,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     motifs,
     motifsRevue,
     permanent,
+    motifsDuPermanent,
   }
 }
 
@@ -604,26 +613,113 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   if (!lecture) {
     return <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
   }
+  // LE DOSSIER PERMANENT ne dépend ni de l'exercice choisi ni de ce que la partie annuelle a lu : il se prépare AVANT les retours
+  // anticipés de la partie annuelle, qui le rendent tous. Seules ses lectures comptent — ses entrées, les pièces et les documents.
+  // « Aujourd'hui » se lit ici, au rendu : sans exercice choisi, la section regarde le jour, et la page ne se recharge pas d'un
+  // jour à l'autre.
+  const pieces = [...lecture.checklist.piecesValidees, ...lecture.checklist.piecesAValider]
+  const anneeChoisie = typeof annee === 'number' ? annee : null
+  // Ce que la base refuserait à la section, dit avant le clic : l'accès comme pour les soldes (hypothèse Q2), les entrées lues EN
+  // ENTIER, les pièces et les documents du dossier. Une lecture du dossier permanent partielle ne donne ni chaîne, ni panneau.
+  const contexteDuPermanent: ContexteDuDossierPermanent = {
+    accesAuDossier: true, entrees: lecture.permanent.lignes, pieces: pieces.map((x) => x.id), documents: lecture.documents.map((x) => x.id),
+  }
+  const sourcesDuPermanentLues = lecture.motifsDuPermanent.length === 0
+  const entreesDuPermanent = lecture.permanent.complete ? entreesDuDossierPermanent(lecture.permanent.lignes) : null
+  const panneauDuPermanent = permanentOuvert !== null && panneauPermanent.ouvert && sourcesDuPermanentLues
+    && entreesDuPermanent !== null && entreesDuPermanent.lisible
+    ? permanentOuvert : null
+  const entreeDuPanneau = panneauDuPermanent === null || panneauDuPermanent.premiere === null ? null
+    : entreesDuPermanent?.entrees.find((x) => x.versions[0].id === panneauDuPermanent.premiere) ?? null
+  const sectionDuPermanent = (
+    <DossierPermanentSection
+      annee={anneeChoisie}
+      jour={aujourdHuiAParis()}
+      dossierId={dossierId}
+      lecture={lecture.permanent}
+      motifsDesSources={lecture.motifsDuPermanent}
+      pieces={pieces}
+      documents={lecture.documents}
+      contexte={contexteDuPermanent}
+      utilisateur={session?.user.id ?? null}
+      occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
+      erreur={erreurPermanent !== null && erreurPermanent.geste === 'retirer' && erreurPermanent.entreeId !== null
+        ? { entreeId: erreurPermanent.entreeId, message: erreurPermanent.message } : null}
+      ouverte={panneauDuPermanent === null ? null : panneauDuPermanent.premiere ?? 'nouvelle'}
+      onConsigner={() => ouvrirLePermanent(null)}
+      onNouvelleVersion={(entree) => ouvrirLePermanent(entree.versions[0].id)}
+      onRetirer={(entree) => retirerDuPermanent(entree.courante.id)}
+    />
+  )
+  const voletDuPermanent = panneauDuPermanent !== null && (panneauDuPermanent.premiere === null || entreeDuPanneau !== null) && (
+    <PanneauDroit nom="dossier-permanent">
+      {/* `key` : une saisie par entrée (la chaîne garde son identité quand une version s'ajoute) ; une entrée écrite ferme le
+          panneau, et la version remplacée est RETENUE à l'ouverture — le module dit avant le clic qu'une autre a été prise. */}
+      <FicheDossierPermanent
+        key={panneauDuPermanent.premiere ?? 'nouvelle'}
+        dossierId={dossierId}
+        entree={entreeDuPanneau}
+        contexte={contexteDuPermanent}
+        pieces={pieces}
+        documents={lecture.documents}
+        occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
+        erreur={erreurPermanent !== null && erreurPermanent.geste === 'consigner' ? erreurPermanent.message : null}
+        onConsigner={consigner}
+        onModifiee={noterModificationDuPermanent}
+        onFermer={fermerLePermanent}
+      />
+    </PanneauDroit>
+  )
+
   if (lecture.motifs.length > 0) {
     return (
-      <div className="card">
-        {lecture.motifs.map((m) => (
-          <BandeauLecturePartielle
-            key={m.quoi}
-            quoi={m.quoi}
-            accord={m.accord}
-            motif={m.motif}
-            consequence="La révision ne dit rien d’une lecture incomplète — ni l’état d’un solde ou d’un cycle, ni sa preuve —, et n’offre aucune décision, conclusion, note ni revue. Recharge la page."
-          />
-        ))}
-      </div>
+      <>
+        <div className="card">
+          {lecture.motifs.map((m) => (
+            <BandeauLecturePartielle
+              key={m.quoi}
+              quoi={m.quoi}
+              accord={m.accord}
+              motif={m.motif}
+              consequence="La révision ne dit rien d’une lecture incomplète — ni l’état d’un solde ou d’un cycle, ni sa preuve —, et n’offre aucune décision, conclusion, note ni revue. Recharge la page."
+            />
+          ))}
+        </div>
+        {sectionDuPermanent}
+        {voletDuPermanent}
+      </>
     )
   }
   if (typeof annee !== 'number') {
+    // Les années que l'en-tête du dossier offrirait : aucune, et il n'a pas de sélecteur à proposer — c'est un dossier neuf.
+    const aucuneAnnee = anneesDActivite({
+      pieces, lignes: lecture.checklist.lignes, ecritures: lecture.checklist.ecritures, anneesValidees: exercices.map((e) => e.annee),
+    }).length === 0
     return (
-      <div className="card">
-        <p style={{ margin: 0 }}>La révision porte sur les soldes d’un exercice au 31 décembre : choisis-en un en tête du dossier.</p>
-      </div>
+      <>
+        <div className="card">
+          {aucuneAnnee ? (
+            <>
+              <p style={{ margin: 0 }}>
+                Aucun exercice n’est encore à réviser : la révision des soldes attendra la première pièce datée ou le premier mouvement
+                daté du dossier.
+              </p>
+              <p className="muted" style={{ margin: '8px 0 0' }}>
+                Le dossier permanent, lui, se consigne dès maintenant, ci-dessous : la lettre de mission précède les travaux.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: 0 }}>La révision porte sur les soldes d’un exercice au 31 décembre : choisis-en un en tête du dossier.</p>
+              <p className="muted" style={{ margin: '8px 0 0' }}>
+                Le dossier permanent, lui, ne dépend pas de l’exercice : il se consigne ci-dessous.
+              </p>
+            </>
+          )}
+        </div>
+        {sectionDuPermanent}
+        {voletDuPermanent}
+      </>
     )
   }
 
@@ -635,7 +731,6 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante: anneeDesPoints, moisEcoules,
     premierJourDuMois: premierJourDuMoisCourant(),
   })
-  const pieces = [...lecture.checklist.piecesValidees, ...lecture.checklist.piecesAValider]
   const donnees: DonneesDeLaRevision = {
     annee, anneeCourante, modele, assujettiTva, periodiciteTva,
     ecritures: lecture.checklist.ecritures, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
@@ -712,18 +807,6 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       case 'solde-reporte': return lecture?.reportes.find((s) => s.id === reference.id)?.libelle ?? null
     }
   }
-
-  // LE DOSSIER PERMANENT : ce qu'il faut pour dire les refus des deux fonctions — l'accès comme pour les soldes (hypothèse Q2),
-  // les entrées lues EN ENTIER, les pièces et les documents du dossier (la lecture de l'onglet s'est arrêtée à ses bandeaux
-  // si l'une des deux manquait). Une lecture du dossier permanent partielle ne donne ni chaîne, ni panneau.
-  const contexteDuPermanent: ContexteDuDossierPermanent = {
-    accesAuDossier: true, entrees: lecture.permanent.lignes, pieces: pieces.map((x) => x.id), documents: lecture.documents.map((x) => x.id),
-  }
-  const entreesDuPermanent = lecture.permanent.complete ? entreesDuDossierPermanent(lecture.permanent.lignes) : null
-  const panneauDuPermanent = permanentOuvert !== null && panneauPermanent.ouvert && entreesDuPermanent !== null && entreesDuPermanent.lisible
-    ? permanentOuvert : null
-  const entreeDuPanneau = panneauDuPermanent === null || panneauDuPermanent.premiere === null ? null
-    : entreesDuPermanent?.entrees.find((x) => x.versions[0].id === panneauDuPermanent.premiere) ?? null
 
   const compteAffiche = compteOuvert !== null && panneau.ouvert ? revision.comptes.find((c) => c.compte === compteOuvert) ?? null : null
   const raisonSansDecision = revision.message ?? null
@@ -817,22 +900,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         onOuvrirLaLigne={ouvrirLaLigne}
       />
 
-      <DossierPermanentSection
-        annee={annee}
-        dossierId={dossierId}
-        lecture={lecture.permanent}
-        pieces={pieces}
-        documents={lecture.documents}
-        contexte={contexteDuPermanent}
-        utilisateur={session?.user.id ?? null}
-        occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
-        erreur={erreurPermanent !== null && erreurPermanent.geste === 'retirer' && erreurPermanent.entreeId !== null
-          ? { entreeId: erreurPermanent.entreeId, message: erreurPermanent.message } : null}
-        ouverte={panneauDuPermanent === null ? null : panneauDuPermanent.premiere ?? 'nouvelle'}
-        onConsigner={() => ouvrirLePermanent(null)}
-        onNouvelleVersion={(entree) => ouvrirLePermanent(entree.versions[0].id)}
-        onRetirer={(entree) => retirerDuPermanent(entree.courante.id)}
-      />
+      {sectionDuPermanent}
 
       {(revision.horsDuMotif.length > 0 || revision.controlesHorsCycle.length > 0 || revision.controlesInconnus.length > 0) && (
         <section className="card" style={{ marginTop: 20 }}>
@@ -904,25 +972,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         </PanneauDroit>
       )}
 
-      {panneauDuPermanent !== null && (panneauDuPermanent.premiere === null || entreeDuPanneau !== null) && (
-        <PanneauDroit nom="dossier-permanent">
-          {/* `key` : une saisie par entrée (la chaîne garde son identité quand une version s'ajoute) ; une entrée écrite ferme le
-              panneau, et la version remplacée est RETENUE à l'ouverture — le module dit avant le clic qu'une autre a été prise. */}
-          <FicheDossierPermanent
-            key={panneauDuPermanent.premiere ?? 'nouvelle'}
-            dossierId={dossierId}
-            entree={entreeDuPanneau}
-            contexte={contexteDuPermanent}
-            pieces={pieces}
-            documents={lecture.documents}
-            occupe={permanentOccupe || revueOccupee || enCours || cycleOccupe}
-            erreur={erreurPermanent !== null && erreurPermanent.geste === 'consigner' ? erreurPermanent.message : null}
-            onConsigner={consigner}
-            onModifiee={noterModificationDuPermanent}
-            onFermer={fermerLePermanent}
-          />
-        </PanneauDroit>
-      )}
+      {voletDuPermanent}
 
       {ligneExpliquee && (
         <PanneauDroit nom="explication">

@@ -22516,3 +22516,55 @@ bouton ne dépend que des refus), et la citation reprise ne montre pas son état
 jour, et une entrée dont le fichier a changé paraît « intacte », le changement ne se lisant plus que dans l'historique.
 Recommandation : garder le préremplissage, griser l'enregistrement tant que rien ne diffère, montrer l'état de la
 citation et dire, avant le clic, qu'un fichier changé sera cité tel qu'il est aujourd'hui.
+
+### 12/10/2026 — LES DEUX RETOUCHES DU DOSSIER PERMANENT — LIGNE 41, ÉTAPE R7, PHASE C (R7C2)
+
+(Sans migration, sans policy, sans Edge Function. Base : `62e96e4`. Décision du cabinet du 12/10/2026 : l'option B de R7C-Q1 et
+celle de R7C-Q2. Fichiers : `lib/checklistLecture.ts`, `lib/dossierPermanentEcran.ts` (pur), `pages/dossier/DossierPermanentSection.tsx`,
+`FicheDossierPermanent.tsx`, `RevisionTab.tsx`, leurs tests, `ecransAvantLecture.test.tsx`, le banc.)
+
+**R7C-Q1, LA SECTION QUEL QUE SOIT L'EXERCICE.** `RevisionTab` prépare la section et son volet AVANT les retours anticipés de la
+partie annuelle, et les rend tous : lecture annuelle partielle (la section demeure), exercice « toutes » ou « sans date » (la
+partie annuelle dit « choisis-en un en tête du dossier » comme avant, puis la section), dossier NEUF (aucune année d'une pièce,
+d'un mouvement, d'une écriture ni d'un exercice validé : `anneesDActivite`, la liste que l'en-tête offrirait) — « Aucun exercice
+n'est encore à réviser… le dossier permanent, lui, se consigne dès maintenant ». La section n'attend que SES lectures : les
+entrées, les pièces et les documents ; `lireLaChecklist` rend le motif des seules pièces (`piecesIncompletes`, la
+`lectureIncomplete` mêle seize collections), l'onglet en tire `motifsDuPermanent`, et la section dit pourquoi elle se tait (un
+bandeau par lecture, motif en infobulle : la carte du dessus le donne déjà en clair). Sans exercice, la section regarde
+AUJOURD'HUI : `jour` = `aujourdHuiAParis()` lu au rendu, `vautLeJour` (bornes comprises), `horsDuRegard`, `motNeCouvrePas`,
+`elementsSansEntreeAuRegard` — avec un exercice choisi, c'est `vautPourLExercice` et `elementsSansEntree` du module, inchangés.
+
+**R7C-Q2, LE PRÉREMPLISSAGE ET SES TROIS GARDE-FOUS.** « Enregistrer la nouvelle version » est grisé tant que rien ne diffère de la
+courante (le mot : « Rien n'a changé… » ; le refus du module, plus grave, se dit d'abord) ; le volet montre l'état de la citation
+reprise (`etatDeLaCitation`, mots et explication de l'écran) et dit qu'une citation choisie ici verra son empreinte relevée à
+l'enregistrement ; « changée » ou « disparue », il le dit avant le clic (la nouvelle version citera le fichier d'aujourd'hui,
+l'entrée paraîtra intacte — « sans empreinte » pour la disparue —, seul l'historique gardera la trace) et l'enregistrement
+demande une confirmation qui le redit. Le rappel « ce qui n'est pas modifié — dates de validité comprises — est repris tel quel »
+est dans la note du volet.
+
+**CE QUI A ÉTÉ MESURÉ.** Barrière : `tsc -b` vert ; Edge Functions 25 erreurs connues, à l'identique ; lint 63 avertissements, 0
+erreur, comme la base ; build vert ; suite entière à Paris, 330 fichiers et 10 010 tests verts (base : 9 946) ; les quatre
+fichiers touchés sous les quatre fuseaux, 294 tests chacun. Banc (port 5325) : 0 débordement aux neuf passes, aucune police
+refusée, trois visites neuves (la section sous « Toutes », la « Nouvelle version » d'un contrat dont la citation a changé, la
+même une fois le titre modifié). Mutations CIBLÉES : 30 ; 28 mordent ; deux ÉQUIVALENTES — « Rien n'a changé » dit aussi d'une
+entrée NOUVELLE (un formulaire valide y diffère toujours du formulaire vide : le refus du module parle d'abord) et le panneau
+ouvert malgré une lecture des sources partielle (les sources ne se relisent jamais seules, et le geste qui l'ouvre est absent).
+
+**R7C2-Q1, TRANCHÉE « OUI » LE MÊME JOUR.** Le rendu posait une question : rafraîchir une citation « changée » sans rien changer
+d'autre était impossible — le bouton restait grisé tant que rien ne différait, et la citation retirée puis choisie de nouveau
+est la même. Le cabinet a suivi la recommandation : citer de nouveau un fichier qui a changé, ou qui n'a plus d'empreinte,
+relève l'empreinte d'aujourd'hui, et c'est en soi un changement. `FicheDossierPermanent` ne dit donc plus « Rien n'a changé »
+sur une citation reprise « changée » ou « disparue » : le bouton s'active, et l'enregistrement passe par la confirmation déjà
+prévue, qui redit que seul l'historique gardera la trace. L'exception s'arrête à ces deux états : une citation « sans
+empreinte » laisse le bouton grisé tant que rien ne diffère. Cinq tests de plus : le bouton dégrisé, puis la confirmation
+refusée (rien ne part) et acceptée (la version part telle quelle, citant la même pièce et remplaçant la courante), pour la
+citation changée et pour la disparue ; la frontière « sans empreinte ». Quatre mutations ciblées, les quatre mordent :
+l'exception ôtée, élargie à tout état de la citation, réduite à la seule « changée », la confirmation ôtée.
+
+**L'INTÉGRATION.** Le correctif s'applique sans conflit sur `62e96e4`, et la retouche de R7C2-Q1 s'y ajoute. La barrière sur
+l'arbre intégré : `tsc -b` vert ; les 25 erreurs connues du compilateur des Edge Functions, à l'identique ; lint, 63
+avertissements et aucune erreur, comme `main` ; la suite entière sous les quatre fuseaux, 330 fichiers et 10 015 tests, verts
+chacun ; build vert ; le banc (port 5311) : 0 débordement aux neuf passes, aucune police refusée.
+
+**RESTE.** R7C-Q3, inchangée : Justificatifs et Documents lisent les entrées du dossier permanent en entier, texte compris, pour
+n'en garder que la nature ; un `select` plus étroit demande un paramètre à `lireLeDossierPermanent`.

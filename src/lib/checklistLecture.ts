@@ -25,6 +25,9 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   // Non nul quand l'une des collections dont dépend un point n'a pas pu être lue en entier : les points portent alors
   // sur une partie du dossier, et leur SILENCE ne prouve plus rien.
   lectureIncomplete: string | null
+  // Le motif des seules PIÈCES (validées et à valider) quand leur lecture n'est pas entière : la section « Dossier permanent » de la
+  // révision ne dépend que d'elles, des documents et de ses entrées — une autre collection tronquée ne doit pas la taire.
+  piecesIncompletes: string | null
   // Exercices que le cabinet a marqués clos : une lecture refusée laisse la liste VIDE, donc on continue de réclamer.
   clotureInconnue: string | null
   // L'ouverture reprise d'un autre logiciel, telle que lue : la révision en tire l'ouverture de ses exercices.
@@ -160,6 +163,10 @@ export async function lireLaChecklist(dossierId: string): Promise<LectureDeLaChe
       lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
       lectureVehicules, lectureLettrages, lectureDeclarations, lectureFacturesEmises, lectureTransmissions,
     ].find((l) => !l.complete)?.motif ?? null,
+    piecesIncompletes: (() => {
+      const partielle = [lectureValidees, lectureAValider].find((l) => !l.complete)
+      return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
+    })(),
     facturesEmises: lectureFacturesEmises.lignes,
     transmissions: lectureTransmissions.lignes,
     jumellesPartielles: [lectureValidees, lectureAValider, lectureFacturesEmises, lectureTransmissions].some((l) => !l.complete),
