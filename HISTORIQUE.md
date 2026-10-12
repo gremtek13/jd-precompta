@@ -22724,3 +22724,106 @@ jointes, et ce Chromium les lit sans prothèse — les 21 pages, 39 976 caractè
 
 **RESTE.** Les chiffres de l'expert, chaque écart analysé, puis ses chiffres en cas de référence de la suite, appelant les
 moteurs d'alors sur `donnees.ts` — qui rejoindra `src/` à ce moment-là.
+
+### 12/10/2026 — LES BORNES DES SEAUX DU STOCKAGE — LIGNE 22.6
+
+(Une migration PRÉPARÉE, pas appliquée : `supabase/schema/20261012200000_bornes_du_stockage.sql`, version provisoire. Aucune
+policy, aucune fonction SQL. Une Edge Function modifiée, à déployer AVANT la migration : `receive-email`. Base : `e4cbdbf`.
+Fichiers : `lib/bornesStockage.ts` (nouveau, pur), `lib/messageErreur.ts`, `lib/depot.ts`, `lib/importFichiers.ts`,
+`lib/receptionPlateforme.ts`, `lib/packGenerator.ts`, `lib/extraction.ts` (deux renvois), `pages/ClientUpload.tsx`,
+`pages/CabinetBrandingPage.tsx`, `pages/dossier/AjouterDocumentsModal.tsx`, `ImportDossierModal.tsx`, `FichePiece.tsx`,
+`CotisationsTab.tsx`, `supabase/functions/receive-email/index.ts`, `supabase/essais/bornesStockage.sql` (nouveau),
+`supabase/schema/README.md` (un paragraphe), leurs tests, `src/test/contratsFonctions.ts` (trois scénarios),
+`src/test/bornesStockage.ts` (nouveau).)
+
+**LE CONSTAT.** Les trois seaux — `pieces` et `packs` privés, `cabinet-logos` PUBLIC — n'avaient ni `file_size_limit` ni
+`allowed_mime_types`, et le choix du logo d'un cabinet acceptait un SVG, qui peut porter du script servi depuis le domaine du
+stockage. Le danger de la correction était l'inverse du défaut : une borne trop étroite refuserait en production un dépôt qui
+marche aujourd'hui. D'où l'inventaire d'abord.
+
+**L'INVENTAIRE.** La production (lecture seule, comptes seulement) : `pieces` 146 objets — 134 PDF (le plus gros 1,2 Mo), 6
+`text/plain` (les résumés de Super PDP), 2 JPEG, 2 CSV, 1 PNG (1,4 Mo, le plus gros), 1 témoin de l'essai RLS sans
+métadonnées ; `packs` 1 ZIP et 1 classeur ; `cabinet-logos` 1 PNG de 26 Kio et 1 témoin. La source : onze dépôts, et
+aucun `update`, `move`, `copy` ni dépôt signé — `deposerFichier` (Mes pièces, l'appareil photo de l'accueil, Ma banque),
+`importerFichierDossier` (les deux fenêtres d'import), la fiche d'une pièce, l'avis d'une cotisation, l'original et la version
+lisible d'une facture reçue d'une plateforme, l'archive et le récapitulatif d'un pack, le logo, `receive-email`,
+`superpdp-sync`. Quatre ne contrôlaient rien : le glisser-déposer de Mes pièces et l'appareil photo (`image/*`) laissaient
+partir n'importe quel fichier ; la fiche d'une pièce, l'avis et le logo ne s'en tenaient qu'à l'`accept` du champ, que
+« Tous les fichiers » contourne ; `receive-email` déposait toute pièce jointe sous le type que DÉCLARAIT son expéditeur.
+
+**DEUX FAITS QUI DÉCIDENT, ET QU'AUCUNE DOCUMENTATION NE DONNE.** Dans le SDK installé (storage-js 2.112.4,
+`uploadOrUpdate`) : un `Blob` part en multipart et l'option `contentType` y est IGNORÉE — la partie porte le type du Blob,
+`application/octet-stream` s'il est vide. Dans le serveur de stockage (source publique supabase/storage, lue sans rien en
+copier) : le type jugé est celui de la partie (ou l'en-tête entier d'un corps brut), ramené à `type/sous-type` ; la taille,
+min(seau, plafond global) — égale acceptée, un octet de plus refusé (413) ; un type refusé, 415. Or le type d'un `File`
+est celui que le système déduit de l'extension : un CSV y est `text/csv`, `application/vnd.ms-excel` (Windows avec Excel),
+`text/comma-separated-values` (Android) ou rien. `bornesStockageClient.test.ts` joue les deux faits sur le SDK installé.
+
+**LA DÉCISION : LE TYPE ENVOYÉ, C'EST L'APPLICATION QUI LE DÉCIDE.** Écartés : admettre au seau toutes les variantes des
+systèmes (une liste ouverte, jamais « exacte ») et `*/*` (aucune borne). `lib/bornesStockage.ts` juge chaque dépôt AVANT
+l'envoi et rend un Blob RÉÉTIQUETÉ : `preparerPiece` (extension pdf, jpg, jpeg, png ou csv, sinon signature PDF, JPEG ou PNG —
+exactement l'ancien `estFichierSupporte`, désormais appliqué à tous les chemins), `preparerLogo` (PNG, JPEG, WebP lus à leur
+SIGNATURE seule : le seau est public et sert le type qu'on lui dit ; un SVG renommé .png ne passe pas, l'extension du chemin
+vient du type), `preparerContenu` (ce que l'application construit, type donné et vérifié par le compilateur). Les bornes :
+pièces PDF, JPEG, PNG, CSV et `text/plain` (les originaux XML des plateformes, les résumés de Super PDP), 20 Mio — HYPOTHÈSE
+S226-Q1 ; packs ZIP et XLSX, 50 Mio, le plafond du plan gratuit (un pack plus lourd ne passait déjà pas) ; logos 500 Kio. Le
+refus se dit en français avec le poids et la borne (à l'octet quand une décimale les confondrait) ; un 413 ou un 415 que le
+stockage rendrait quand même se dit en français par `messageErreur` (`__isStorageError`, `status`, `code`).
+
+**CE QUI A CHANGÉ À L'ÉCRAN.** Mes pièces (dont le glisser-déposer), la photo de l'accueil et Ma banque disent chaque refus avec
+le nom du fichier ; les deux fenêtres d'import écartent au choix et comptent sans nom (« 2 ignoré(s) : 1 au format non pris en
+charge ; 1 au-delà de 20 Mo (25 Mo) ») — et un lot dont rien n'est retenu le dit, quand il se taisait ; la fiche d'une pièce
+et l'avis d'une cotisation refusent sous le champ ; la charte n'offre plus le SVG ; l'onglet Packs dit le refus d'un pack trop
+lourd. La borne se dit avant le choix dans Mes pièces, la fenêtre d'ajout et la charte. `receive-email` porte une copie au
+caractère près du bloc des pièces (`bornesDesPiecesCopie.test.ts`) et écarte, journalisée sans son nom, une pièce jointe hors
+des bornes.
+
+**LA MIGRATION, PRÉPARÉE.** Un bloc qui exige les trois seaux, puis trois `update storage.buckets … where id = …`. Le rôle des
+migrations contourne la RLS de `storage.buckets` et a le droit d'écrire les deux colonnes, que les déclencheurs
+`protect_bucket_control_*` ne gardent pas. Retour arrière : `update storage.buckets set file_size_limit = null,
+allowed_mime_types = null where id in ('pieces', 'packs', 'cabinet-logos');`. ORDRE : le déploiement de l'application et de
+`receive-email` d'abord, puis la migration, puis `supabase/essais/bornesStockage.sql` — joué avant (lecture seule) : les trois
+seaux EN FAUTE, « taille aucune » ; l'état d'après simulé : `ok` ; un SVG ajouté : EN FAUTE.
+
+**LES GARDES.** `bornesStockage.test.ts` : frontières (égale acceptée, un octet de plus refusé, par seau, et sur un vrai
+fichier de 20 Mio), chaque type admis accepté et ses voisins refusés, le type du navigateur ignoré, la valeur du module = celle
+de la migration = celle de l'essai. `depotsDansLesSeaux.test.ts` lit l'ARBRE TypeScript de toute la source (`src/` hors tests
+et `supabase/functions/`) : tout dépôt a un seau littéral et un corps d'une forme reconnue, et l'union des types envoyés par
+seau EST la liste de la migration ; une forme non reconnue est une faute ; une exception comptée (`superpdp-sync`, type
+littéral, quelques Kio) ; quatorze défauts plantés. Le banc HTTP des Edge Functions joue trois scénarios de plus pour
+`receive-email` : un format refusé et un poids refusé (rien de déposé, l'écart journalisé sans le nom), le type déclaré
+ignoré (le corps déposé est un Blob `image/png` quand l'expéditeur annonçait `application/octet-stream`).
+
+**CE QUI A ÉTÉ MESURÉ.** Barrière : `tsc -b` vert ; Edge Functions 25 erreurs connues, à l'identique de la base ; lint 63
+avertissements, 0 erreur, à l'identique ; build vert ; suite entière à Paris, 337 fichiers et 10 241 tests verts ; les 24
+fichiers de test touchés sous les quatre fuseaux, 1 066 tests chacun. Mutations CIBLÉES : 37, les 37 mordent (la frontière `>=`,
+la signature ôtée, un PNG à quatre octets, un corps sans type, le type de `preparerContenu` non jugé, la borne à une décimale,
+`text/plain` ou 1 Mio de moins au module, un WebP sans « WEBP », le format jugé après la taille, `messageErreur` sans la
+traduction ou prenant tout 413, chaque site qui déposerait le fichier brut ou ne refuserait plus, le SVG rendu au champ,
+l'extension du logo tirée du nom, la version lisible jugée après l'original, les trois mutations de receive-email, trois du
+garde, deux de la migration, une de l'essai). Banc (port 5325) : 0 débordement aux onze passes (les neuf du cabinet et les deux
+du client), aucune police refusée.
+
+**L'INTÉGRATION.** Le correctif (36 fichiers) s'applique sans conflit sur `e4cbdbf` et a été relu fichier par fichier : les onze
+dépôts, la copie de `receive-email`, les écrans, la migration (aucune suppression, aucune policy, ni `alter` ni `drop`) et son
+essai. Deux retouches de la session. Le README du schéma disait que le fichier de la migration se renommerait « avant la
+fusion » ; ici l'ordre est inverse, la migration vient APRÈS la fusion et le déploiement, et le fichier se renommera dans la
+demande qui suit son application. PLAN_DE_REPRISE.md (§4, point 6) dit désormais qu'un fichier reversé par le tableau de bord
+part sous le type de son système, et qu'on lève les bornes le temps de reverser (le retour arrière en tête de la migration),
+puis qu'on rejoue la migration et son essai. Ce qui change pour un utilisateur sans qu'aucun objet de la production ne le
+montre : un HEIC, un GIF, un WebP, un TIFF, un document Word ou un tableur glissés dans « Mes pièces » sont refusés avec leur
+nom, au lieu d'être déposés — sans pouvoir être lus, sauf le TIFF, que la lecture automatique sait lire ; une photo HEIF de
+certains téléphones Android aussi (S226-Q2 en couvre la décision). La barrière sur l'arbre intégré : `tsc -b` vert ; les 25
+erreurs connues des Edge Functions ; lint, 63 avertissements et aucune erreur ; la suite entière sous les quatre fuseaux, 337
+fichiers et 10 241 tests, verts chacun, aucun délai dépassé ; build vert (`index-DH__pjNJ.js`). Le banc (port 5311) : 0
+débordement aux onze passes — les neuf du cabinet, et celles du client à 390 et 1 440 px, qui passent par « Mes pièces » et
+l'accueil —, aucune police refusée.
+
+L'ORDRE DE MISE EN LIGNE. La fusion (l'application) ; puis `receive-email` redéployée (`verify_jwt` faux), la copie déployée
+comparée au dépôt avant d'écraser, l'aller-retour après, et un appel sans signature qui doit rendre 400 ; puis un délai, parce
+qu'un onglet ouvert sur l'ancienne application enverrait encore le type du navigateur et qu'un CSV de Windows serait refusé, en
+anglais ; puis la migration, après la réponse du cabinet à S226-Q1, et `supabase/essais/bornesStockage.sql`.
+
+**RESTE.** S226-Q1 (la taille d'une pièce), S226-Q2 (les formats hors de la liste) et S226-Q3 (dire au cabinet une pièce jointe
+écartée) ; l'application de la migration, après les déploiements et un délai ; le plafond global du projet (Storage › Settings)
+à relire au tableau de bord — il doit valoir au moins 50 Mo.
