@@ -271,13 +271,18 @@ describe('RevisionTab, dossier permanent — rien avant d’avoir lu, rien sur u
     expect(screen.getByRole('region', { name: 'Cycle Ensemble' })).toBeDefined()
   })
 
-  it('une table de la Vue d’ensemble refusée (les pièces) cache toute la révision, le dossier permanent avec elle', async () => {
+  it('une table de la Vue d’ensemble refusée (les pièces) cache la révision ; la section, qui en dépend, se tait et le dit à son tour', async () => {
     dossier2025([entree()])
     faux.refusees.add('pieces')
     rendre()
     expect(await screen.findByText(/pas pu être lues en entier/)).toBeDefined()
-    expect(screen.queryByRole('region', { name: 'Dossier permanent' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Consigner une entrée' })).toBeNull()
+    await attendreLaSection()
+    // La section ne nomme plus ce qu'une entrée cite sans les pièces : ni entrée, ni état, ni élément absent, ni geste.
+    expect(within(section()).getByText(/Les pièces du dossier n'ont pas pu être affichées en entier/)).toBeDefined()
+    expect(within(section()).getByText(/Le dossier permanent ne dit rien tant que cette lecture est incomplète/)).toBeDefined()
+    expect(within(section()).queryByRole('button')).toBeNull()
+    expect(within(section()).queryByText(/Lettre de mission|Aucune entrée n’est consignée|À titre d’information/)).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Cycle Ensemble' })).toBeNull()
   })
 
   it('une chaîne de versions qui ne se relit pas n’affirme rien et n’offre aucun geste', async () => {
@@ -632,8 +637,9 @@ describe('RevisionTab, dossier permanent — nouvelle version', () => {
     expect((champ(/^Texte/) as HTMLTextAreaElement).value).toBe('Trois ans.')
     expect((champ('Valable du') as HTMLInputElement).value).toBe('2024-07-01')
     expect(texte(volet())).toContain('bail-fictif.pdf')
-    // Rien n'a changé : la nouvelle version n'est pas une saisie à abandonner.
-    expect(bontonDeLaSaisie().disabled).toBe(false)
+    // Rien n'a changé : la nouvelle version n'est pas une saisie à abandonner, et — rien ne différant de la courante — elle ne
+    // s'enregistre pas (R7C-Q2).
+    expect(bontonDeLaSaisie().disabled).toBe(true)
 
     fireEvent.change(champ('Titre'), { target: { value: 'Bail commercial, avenant 1' } })
     fireEvent.change(champ('Nature'), { target: { value: 'contrat' } })
@@ -889,5 +895,577 @@ describe('RevisionTab, dossier permanent — un seul geste à la fois dans l’o
     const retirer = bouton(section(), 'Retirer Bail')
     await act(async () => { consigner.click(); retirer.click() })
     expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+  })
+})
+
+// ── R7C-Q1, option B : la section s'affiche QUEL QUE SOIT l'exercice (décision du cabinet du 12/10/2026) ───────────────────────
+
+// Un dossier NEUF : ni pièce, ni mouvement, ni écriture — l'en-tête du dossier n'offre aucun exercice à choisir.
+function dossierNeuf(entrees: EntreeDossierPermanent[] = []) {
+  dossier2025(entrees)
+  faux.tables.pieces = []
+  faux.tables.documents_divers = []
+}
+
+describe('RevisionTab, dossier permanent — sans exercice choisi', () => {
+  it.each<[string, ValeurAnnee]>([['toutes', 'toutes'], ['sans date', 'sans_date']])(
+    '« %s » : la partie annuelle demande un exercice, et la section s’offre avec tous ses gestes',
+    async (_nom, annee) => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial', piece_id: PIECE_BAIL, empreinte: HASH_DE_LA_CITATION })])
+      rendre({ annee })
+      expect(await screen.findByText(/choisis-en un en tête du dossier/)).toBeDefined()
+      expect(screen.getByText(/Le dossier permanent, lui, ne dépend pas de l’exercice/)).toBeDefined()
+      // Rien de la partie annuelle.
+      expect(screen.queryByRole('region', { name: 'Cycle Ensemble' })).toBeNull()
+      expect(screen.queryByText('Soldes à justifier')).toBeNull()
+      // La section, elle, est là, avec ses trois gestes.
+      await attendreLaSection()
+      expect(bouton(section(), 'Consigner une entrée').disabled).toBe(false)
+      expect(bouton(section(), 'Nouvelle version de Bail commercial').disabled).toBe(false)
+      expect(bouton(section(), 'Retirer Bail commercial')).toBeDefined()
+      expect(texte(ligneDe('Bail commercial'))).toContain('empreinte intacte')
+    },
+  )
+
+  it('consigne une entrée sans exercice : la même fonction, les mêmes arguments, la liste relue', async () => {
+    dossier2025([])
+    rendre({ annee: 'toutes' })
+    await attendreLaSection()
+    await ouvrirLaConsignation()
+    saisir('lettre_mission', 'Lettre de mission', 'Mission de présentation des comptes.')
+    await act(async () => { bontonDeLaSaisie().click() })
+    expect(faux.appels).toEqual([{
+      nom: 'consigner_au_dossier_permanent',
+      args: {
+        p_dossier_id: DOSSIER, p_nature: 'lettre_mission', p_titre: 'Lettre de mission', p_texte: 'Mission de présentation des comptes.',
+        p_citation: null, p_valable_du: null, p_valable_jusqu_au: null, p_remplace_id: null,
+      },
+    }])
+    expect(within(section()).getByText('Lettre de mission', { selector: '.check-ligne-libelle' })).toBeDefined()
+    expect(faux.lectures.dossier_permanent).toBe(2)
+  })
+
+  it('remplace et retire sans exercice, sous les mêmes confirmations', async () => {
+    dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial', texte: 'Trois ans.' })])
+    rendre({ annee: 'toutes' })
+    await attendreLaSection()
+    await act(async () => { fireEvent.click(bouton(section(), 'Nouvelle version de Bail commercial')) })
+    fireEvent.change(champ('Titre'), { target: { value: 'Bail commercial, avenant' } })
+    await act(async () => { bontonDeLaSaisie().click() })
+    expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+    expect(faux.appels[0].args.p_remplace_id).toBe(idDEntree(1))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { fireEvent.click(bouton(section(), 'Retirer Bail commercial, avenant')) })
+    expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent', 'retirer_du_dossier_permanent'])
+  })
+
+  it('un dossier NEUF, sans aucune année à choisir, le dit autrement — et la section s’offre dès maintenant', async () => {
+    dossierNeuf()
+    rendre({ annee: 'toutes', exercices: [] })
+    expect(await screen.findByText(/Aucun exercice n’est encore à réviser/)).toBeDefined()
+    expect(screen.getByText(/la révision des soldes attendra la première pièce datée ou le premier mouvement\s+daté du dossier/)).toBeDefined()
+    expect(screen.getByText(/Le dossier permanent, lui, se consigne dès maintenant, ci-dessous/)).toBeDefined()
+    expect(screen.queryByText(/choisis-en un en tête du dossier/)).toBeNull()
+    await attendreLaSection()
+    expect(within(section()).getByText('Aucune entrée n’est consignée au dossier permanent.')).toBeDefined()
+    await ouvrirLaConsignation()
+    saisir('lettre_mission', 'Lettre de mission', 'Mission.')
+    await act(async () => { bontonDeLaSaisie().click() })
+    expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+    expect(within(section()).getByText('Lettre de mission', { selector: '.check-ligne-libelle' })).toBeDefined()
+  })
+
+  it('un exercice déjà validé est une année à choisir, même sur un dossier sans pièce : l’ancien message demeure', async () => {
+    dossierNeuf()
+    rendre({ annee: 'toutes', exercices: [exerciceValide(2024)] })
+    expect(await screen.findByText(/choisis-en un en tête du dossier/)).toBeDefined()
+    expect(screen.queryByText(/Aucun exercice n’est encore à réviser/)).toBeNull()
+  })
+
+  it('un mouvement daté est une année à choisir', async () => {
+    dossierNeuf()
+    faux.tables.lignes_bancaires = [{ id: 'l1', dossier_id: DOSSIER, date: '2025-02-03', libelle: 'MOUVEMENT FICTIF', montant: -10 }]
+    rendre({ annee: 'toutes', exercices: [] })
+    expect(await screen.findByText(/choisis-en un en tête du dossier/)).toBeDefined()
+  })
+
+  it('rien n’est dit ni offert avant le retour des lectures, exercice choisi ou non', async () => {
+    dossierNeuf([entree()])
+    let liberer = () => {}
+    faux.attente = new Promise<void>((r) => { liberer = r })
+    rendre({ annee: 'toutes', exercices: [] })
+    expect(screen.getByText('Chargement…')).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Dossier permanent' })).toBeNull()
+    expect(screen.queryByText(/Aucun exercice n’est encore à réviser|choisis-en un/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Consigner une entrée/ })).toBeNull()
+    await act(async () => { liberer() })
+    await attendreLaSection()
+    expect(bouton(section(), 'Consigner une entrée')).toBeDefined()
+  })
+
+  describe('la section n’attend que ses lectures', () => {
+    it.each(['lignes_bancaires', 'categories', 'controles_releves_bancaires', 'soldes_reportes', 'revision_justifications', 'revision_conclusions', 'revision_seuils'])(
+      'la table %s refusée fait taire la partie annuelle, jamais la section (sans exercice)', async (table) => {
+        dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial' })])
+        faux.refusees.add(table)
+        rendre({ annee: 'toutes' })
+        await attendreLaSection()
+        expect(bouton(section(), 'Consigner une entrée').disabled).toBe(false)
+        expect(bouton(section(), 'Nouvelle version de Bail commercial')).toBeDefined()
+        expect(screen.queryByRole('region', { name: 'Cycle Ensemble' })).toBeNull()
+      },
+    )
+
+    it('de même avec un exercice choisi : une table étrangère refusée, la section demeure pendant que la révision se tait', async () => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial' })])
+      faux.refusees.add('lignes_bancaires')
+      rendre({ annee: 2025 })
+      await attendreLaSection()
+      expect(screen.getByText(/Les données du dossier n'ont pas pu être lues en entier/)).toBeDefined()
+      expect(bouton(section(), 'Consigner une entrée').disabled).toBe(false)
+      expect(screen.queryByRole('region', { name: 'Cycle Ensemble' })).toBeNull()
+    })
+
+    it('une table étrangère refusée n’empêche ni de consigner ni de relire', async () => {
+      dossier2025([])
+      faux.refusees.add('revision_conclusions')
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      await ouvrirLaConsignation()
+      saisir('statuts', 'Statuts', 'Texte.')
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+      expect(within(section()).getByText('Statuts', { selector: '.check-ligne-libelle' })).toBeDefined()
+    })
+
+    it.each([
+      ['pieces', /Les pièces du dossier n'ont pas pu être affichées en entier/],
+      ['documents_divers', /Les documents du dossier n'ont pas pu être affichés en entier/],
+    ] as const)('la table %s, refusée, fait taire la section seule — qui dit pourquoi, sans exercice aussi', async (table, mot) => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial' })])
+      faux.refusees.add(table)
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(within(section()).getByText(mot)).toBeDefined()
+      expect(within(section()).queryByRole('button')).toBeNull()
+      expect(within(section()).queryByText(/Bail commercial|Aucune entrée n’est consignée|À titre d’information/)).toBeNull()
+    })
+
+    it('les pièces au plafond du serveur (lecture partielle sans refus) : la section se tait aussi', async () => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'bail', titre: 'Bail commercial' })])
+      faux.plafonds.pieces = 1
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(within(section()).getByText(/Les pièces du dossier n'ont pas pu être affichées en entier/)).toBeDefined()
+      expect(within(section()).queryByRole('button')).toBeNull()
+    })
+
+    it('le dossier permanent refusé, sans exercice : la section seule le dit, la partie annuelle demande un exercice', async () => {
+      dossier2025([entree()])
+      faux.refusees.add('dossier_permanent')
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(within(section()).getByText(/Les entrées du dossier permanent n'ont pas pu être lues en entier/)).toBeDefined()
+      expect(within(section()).queryByRole('button')).toBeNull()
+      expect(screen.getByText(/choisis-en un en tête du dossier/)).toBeDefined()
+    })
+  })
+
+  describe('le jour d’aujourd’hui, à Paris, lu au rendu', () => {
+    const entrees = () => [
+      entree({ id: idDEntree(1), nature: 'lettre_mission', titre: 'Finie hier', valable_du: null, valable_jusqu_au: '2026-03-14' }),
+      entree({ id: idDEntree(2), nature: 'description', titre: 'Un seul jour', valable_du: '2026-03-15', valable_jusqu_au: '2026-03-15' }),
+      entree({ id: idDEntree(3), nature: 'organisation_comptable', titre: 'Commence demain', valable_du: '2026-03-16', valable_jusqu_au: null }),
+      entree({ id: idDEntree(4), nature: 'bail', titre: 'Sans terme', valable_du: null, valable_jusqu_au: null }),
+    ]
+
+    it('dit « ne couvre pas aujourd’hui », bornes comprises, et ce que A9 propose sans entrée en vigueur aujourd’hui', async () => {
+      dossier2025(entrees())
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(texte(ligneDe('Finie hier'))).toContain('— ne couvre pas aujourd’hui')
+      expect(texte(ligneDe('Un seul jour'))).not.toContain('ne couvre pas')
+      expect(texte(ligneDe('Commence demain'))).toContain('— ne couvre pas aujourd’hui')
+      expect(texte(ligneDe('Sans terme'))).not.toContain('ne couvre pas')
+      const info = within(section()).getByText('À titre d’information').parentElement as HTMLElement
+      expect(texte(info)).toContain('Aucune lettre de mission n’est en vigueur aujourd’hui.')
+      expect(texte(info)).toContain('Aucune présentation de l’organisation comptable n’est en vigueur aujourd’hui.')
+      expect(texte(info)).not.toContain('description de l’entité')
+      expect(texte(section())).not.toMatch(/en vigueur en \d{4}/)
+      expect(texte(section())).not.toMatch(/ne couvre pas \d{4}/)
+    })
+
+    it('le jour est celui de PARIS : minuit passé à Paris, le jour d’UTC est encore la veille', async () => {
+      dossier2025(entrees())
+      // 23 h 30 UTC le 14 mars = 0 h 30 à Paris le 15 : « Finie hier » (jusqu'au 14) ne couvre plus le jour.
+      vi.setSystemTime(new Date('2026-03-14T23:30:00Z'))
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(texte(ligneDe('Finie hier'))).toContain('ne couvre pas aujourd’hui')
+      expect(texte(ligneDe('Un seul jour'))).not.toContain('ne couvre pas')
+    })
+
+    it('se relit à CHAQUE rendu : la page ne se recharge pas d’un jour à l’autre', async () => {
+      dossier2025(entrees())
+      vi.setSystemTime(new Date('2026-03-15T10:00:00Z'))
+      rendre({ annee: 'toutes' })
+      await attendreLaSection()
+      expect(texte(ligneDe('Un seul jour'))).not.toContain('ne couvre pas')
+      expect(texte(ligneDe('Commence demain'))).toContain('ne couvre pas aujourd’hui')
+      // Le lendemain, un rendu de plus (l'ouverture du panneau) : le jour change, sans rechargement.
+      vi.setSystemTime(new Date('2026-03-16T10:00:00Z'))
+      await ouvrirLaConsignation()
+      expect(texte(ligneDe('Un seul jour'))).toContain('ne couvre pas aujourd’hui')
+      expect(texte(ligneDe('Commence demain'))).not.toContain('ne couvre pas')
+    })
+
+    it('avec un exercice choisi, rien ne change : l’exercice, jamais le jour', async () => {
+      dossier2025(entrees())
+      rendre({ annee: 2025 })
+      await attendreLaSection()
+      expect(texte(ligneDe('Finie hier'))).not.toContain('ne couvre pas')
+      expect(texte(ligneDe('Commence demain'))).toContain('— ne couvre pas 2025')
+      expect(texte(section())).toContain('Aucune présentation de l’organisation comptable n’est en vigueur en 2025.')
+      expect(texte(section())).not.toContain('aujourd’hui')
+    })
+  })
+})
+
+// ── R7C-Q2, option B : une nouvelle version garde son préremplissage, avec trois garde-fous ────────────────────────────────────
+
+describe('RevisionTab, dossier permanent — les garde-fous d’une nouvelle version', () => {
+  const bail = (o: Partial<EntreeDossierPermanent> = {}) => entree({
+    id: idDEntree(1), nature: 'bail', titre: 'Bail commercial', texte: 'Trois ans.', piece_id: PIECE_BAIL, empreinte: HASH_DE_LA_CITATION,
+    valable_du: '2024-07-01', valable_jusqu_au: '2033-06-30', ...o,
+  })
+  const ouvrir = async (titre = 'Bail commercial') => {
+    await attendreLaSection()
+    await act(async () => { fireEvent.click(bouton(section(), `Nouvelle version de ${titre}`)) })
+  }
+  const modifier = () => fireEvent.change(champ('Titre'), { target: { value: 'Bail commercial, avenant 1' } })
+  const changerLaPiece = (hash: string | null) => {
+    const cible = (faux.tables.pieces as Piece[]).find((x) => x.id === PIECE_BAIL)
+    if (cible) cible.storage_hash = hash
+  }
+  const chercher = (terme: string) => fireEvent.change(within(volet()).getByPlaceholderText(/Chercher un justificatif/), { target: { value: terme } })
+
+  describe('« Enregistrer la nouvelle version » reste grisé tant que rien ne diffère', () => {
+    it('grisé à l’ouverture, avec la raison ; dégrisé par un changement ; grisé de nouveau quand on le défait', async () => {
+      dossier2025([bail()])
+      rendre()
+      await ouvrir()
+      expect(bontonDeLaSaisie().disabled).toBe(true)
+      expect(bontonDeLaSaisie().title).toBe('Rien n’a changé depuis la version courante : une nouvelle version identique ne remplacerait rien.')
+      expect(texte(volet())).toContain('« Enregistrer la nouvelle version » : Rien n’a changé depuis la version courante')
+      modifier()
+      expect(bontonDeLaSaisie().disabled).toBe(false)
+      expect(bontonDeLaSaisie().title).toBe('')
+      expect(texte(volet())).not.toContain('Rien n’a changé')
+      fireEvent.change(champ('Titre'), { target: { value: 'Bail commercial' } })
+      expect(bontonDeLaSaisie().disabled).toBe(true)
+      // Cliquer un bouton grisé n'écrit rien.
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(faux.appels).toEqual([])
+    })
+
+    it.each<[string, () => void]>([
+      ['la nature', () => fireEvent.change(champ('Nature'), { target: { value: 'contrat' } })],
+      ['le titre', () => fireEvent.change(champ('Titre'), { target: { value: 'Autre titre' } })],
+      ['le texte', () => fireEvent.change(champ(/^Texte/), { target: { value: 'Cinq ans.' } })],
+      ['le début de validité', () => fireEvent.change(champ('Valable du'), { target: { value: '2024-08-01' } })],
+      ['la fin de validité', () => fireEvent.change(champ('Valable jusqu’au'), { target: { value: '2034-06-30' } })],
+    ])('dégrisé par un changement de %s', async (_quoi, changer) => {
+      dossier2025([bail()])
+      rendre()
+      await ouvrir()
+      expect(bontonDeLaSaisie().disabled).toBe(true)
+      changer()
+      expect(bontonDeLaSaisie().disabled).toBe(false)
+    })
+
+    it('dégrisé par un changement de citation (retirée), grisé de nouveau si on la remet', async () => {
+      dossier2025([bail()])
+      rendre()
+      await ouvrir()
+      await act(async () => { bouton(volet(), 'Retirer la citation').click() })
+      expect(bontonDeLaSaisie().disabled).toBe(false)
+      chercher('bail')
+      await act(async () => { bouton(volet(), 'Citer bail-fictif.pdf').click() })
+      expect(bontonDeLaSaisie().disabled).toBe(true)
+    })
+
+    // R7C2-Q1 (décision du cabinet du 12/10/2026) : citer de nouveau un fichier changé, ou qui n'a plus d'empreinte, relève
+    // l'empreinte d'aujourd'hui — c'est en soi un changement, et la confirmation le garde.
+    it.each<[string, string | null]>([
+      ['changée', AUTRE_HASH],
+      ['disparue', null],
+    ])('une citation reprise %s suffit à le dégriser, sans autre changement (R7C2-Q1)', async (_etat, hash) => {
+      dossier2025([bail()])
+      changerLaPiece(hash)
+      rendre()
+      await ouvrir()
+      expect(bontonDeLaSaisie().disabled).toBe(false)
+      expect(bontonDeLaSaisie().title).toBe('')
+      expect(texte(volet())).not.toContain('Rien n’a changé')
+    })
+
+    it('l’exception s’arrête là : une citation reprise « sans empreinte » le laisse grisé tant que rien ne diffère', async () => {
+      dossier2025([bail({ empreinte: null })])
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).toContain('sans empreinte')
+      expect(bontonDeLaSaisie().disabled).toBe(true)
+      expect(bontonDeLaSaisie().title).toBe('Rien n’a changé depuis la version courante : une nouvelle version identique ne remplacerait rien.')
+    })
+
+    it('« Consigner l’entrée » d’une entrée NOUVELLE n’est pas concernée', async () => {
+      dossier2025([])
+      rendre()
+      await attendreLaSection()
+      await ouvrirLaConsignation()
+      saisir('lettre_mission', 'Lettre', 'Texte.')
+      expect(bontonDeLaSaisie().textContent).toBe('Consigner l’entrée')
+      expect(bontonDeLaSaisie().disabled).toBe(false)
+      expect(texte(volet())).not.toContain('Rien n’a changé')
+    })
+
+    it('le rappel : ce qui n’est pas modifié — dates de validité comprises — est repris tel quel', async () => {
+      dossier2025([bail()])
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).toContain('ce qui n’est pas modifié — dates de validité comprises — est repris tel quel')
+    })
+  })
+
+  describe('le volet MONTRE l’état de la citation reprise', () => {
+    it('intacte : les mots et l’explication, aucun avertissement, aucune confirmation à l’enregistrement', async () => {
+      dossier2025([bail()])
+      rendre()
+      await ouvrir()
+      const note = texte(volet())
+      expect(note).toContain('Citation reprise de la version courante')
+      expect(note).toContain('empreinte intacte')
+      expect(note).toContain('Le fichier cité porte encore l’empreinte relevée le jour de la citation.')
+      expect(volet().querySelector('.error-text')).toBeNull()
+      modifier()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).not.toHaveBeenCalled()
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+    })
+
+    it('sans empreinte à la citation : dit en mots, sans avertissement ni confirmation', async () => {
+      dossier2025([bail({ empreinte: null })])
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).toContain('sans empreinte')
+      expect(texte(volet())).toContain('Le fichier n’avait pas d’empreinte le jour de la citation : rien ne se vérifie.')
+      expect(volet().querySelector('.error-text')).toBeNull()
+      modifier()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).not.toHaveBeenCalled()
+    })
+
+    it('introuvable : dit en mots, avec le refus 9 du module, et sans la confirmation du fichier changé', async () => {
+      dossier2025([bail({ piece_id: 'bbbbbbbb-0000-4000-8000-0000000000ff' })])
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).toContain('introuvable dans ce qui a été lu')
+      expect(texte(volet())).toContain('Le fichier cité n’est pas dans ce que l’écran a lu : il a pu être retiré du dossier.')
+      expect(texte(volet())).not.toContain('Cette nouvelle version citera le fichier tel qu’il est aujourd’hui')
+    })
+
+    it('un document cité : son état se lit de même', async () => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'statuts', titre: 'Statuts', document_id: DOCUMENT_STATUTS, empreinte: HASH_DE_LA_CITATION })])
+      rendre()
+      await ouvrir('Statuts')
+      expect(texte(volet())).toContain('empreinte intacte')
+    })
+
+    it('une entrée qui ne cite rien n’a pas d’état de citation', async () => {
+      dossier2025([bail({ piece_id: null, empreinte: null })])
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).not.toContain('Citation reprise')
+    })
+
+    it('une citation choisie dans le volet dit que son empreinte sera relevée à l’enregistrement', async () => {
+      dossier2025([])
+      rendre()
+      await attendreLaSection()
+      await ouvrirLaConsignation()
+      expect(texte(volet())).not.toContain('sera relevée à l’enregistrement.')
+      chercher('avenant')
+      await act(async () => { bouton(volet(), 'Citer avenant-fictif.pdf').click() })
+      expect(texte(volet())).toContain('Citation choisie ici : l’empreinte du fichier sera relevée à l’enregistrement.')
+      await act(async () => { bouton(volet(), 'Retirer la citation').click() })
+      expect(texte(volet())).not.toContain('Citation choisie ici')
+    })
+
+    it('la citation reprise puis remplacée par une autre : l’état de la reprise disparaît, la nouvelle se dit, rien à confirmer', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await ouvrir()
+      expect(texte(volet())).toContain('fichier changé depuis la citation')
+      await act(async () => { bouton(volet(), 'Retirer la citation').click() })
+      expect(texte(volet())).not.toContain('Citation reprise')
+      expect(volet().querySelector('.error-text')).toBeNull()
+      chercher('avenant')
+      await act(async () => { bouton(volet(), 'Citer avenant-fictif.pdf').click() })
+      expect(texte(volet())).toContain('Citation choisie ici : l’empreinte du fichier sera relevée à l’enregistrement.')
+      expect(volet().querySelector('.error-text')).toBeNull()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).not.toHaveBeenCalled()
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+    })
+  })
+
+  describe('une citation « changée » ou « disparue » se dit AVANT le clic, puis se confirme', () => {
+    it('changée : le volet le dit en clair avant tout clic, sans confirmation tant qu’on n’enregistre pas', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      rendre()
+      await ouvrir()
+      const note = texte(volet())
+      expect(note).toContain('fichier changé depuis la citation')
+      expect(note).toContain('Le fichier cité n’est plus celui qui a été cité : son empreinte a changé depuis.')
+      expect(note).toContain('Cette nouvelle version citera le fichier tel qu’il est aujourd’hui')
+      expect(note).toContain('l’entrée paraîtra intacte')
+      expect(note).toContain('seul l’historique gardera la trace du changement')
+      expect(volet().querySelector('.error-text')).not.toBeNull()
+      expect(confirmation).not.toHaveBeenCalled()
+    })
+
+    it('changée : l’enregistrement demande une confirmation qui le redit ; refusée, rien ne part et la saisie reste', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await ouvrir()
+      modifier()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      const demande = String(confirmation.mock.calls[0][0])
+      expect(demande).toContain('« Bail commercial »')
+      expect(demande).toContain('Cette nouvelle version citera le fichier tel qu’il est aujourd’hui')
+      expect(demande).toContain('l’entrée paraîtra intacte')
+      expect(demande).toContain('seul l’historique gardera la trace du changement')
+      expect(faux.appels).toEqual([])
+      expect((champ('Titre') as HTMLInputElement).value).toBe('Bail commercial, avenant 1')
+    })
+
+    it('changée : confirmée, la nouvelle version part, citant la même pièce, et le panneau se ferme', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await ouvrir()
+      modifier()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(faux.appels).toHaveLength(1)
+      expect(faux.appels[0].args).toMatchObject({ p_citation: { piece_id: PIECE_BAIL }, p_remplace_id: idDEntree(1), p_titre: 'Bail commercial, avenant 1' })
+      // La base a relevé l'empreinte d'aujourd'hui : l'entrée paraît intacte, et l'historique garde l'ancienne version changée.
+      expect(texte(ligneDe('Bail commercial, avenant 1'))).toContain('empreinte intacte')
+      expect(screen.queryByLabelText('Nature')).toBeNull()
+    })
+
+    it.each<[string, string | null]>([
+      ['changée', AUTRE_HASH],
+      ['disparue', null],
+    ])('%s, SANS autre changement : refusée, la confirmation n’envoie rien ; acceptée, la version part telle quelle (R7C2-Q1)', async (_etat, hash) => {
+      dossier2025([bail()])
+      changerLaPiece(hash)
+      rendre()
+      await ouvrir()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      expect(faux.appels).toEqual([])
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).toHaveBeenCalledTimes(2)
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+      expect(faux.appels[0].args).toEqual({
+        p_dossier_id: DOSSIER, p_nature: 'bail', p_titre: 'Bail commercial', p_texte: 'Trois ans.', p_citation: { piece_id: PIECE_BAIL },
+        p_valable_du: '2024-07-01', p_valable_jusqu_au: '2033-06-30', p_remplace_id: idDEntree(1),
+      })
+      expect(screen.queryByLabelText('Nature')).toBeNull()
+    })
+
+    it('disparue : dit et confirmé de même, en disant que le fichier n’a plus d’empreinte', async () => {
+      dossier2025([bail()])
+      changerLaPiece(null)
+      rendre()
+      await ouvrir()
+      const note = texte(volet())
+      expect(note).toContain('empreinte disparue')
+      expect(note).toContain('Le fichier cité n’a plus d’empreinte : rien ne dit qu’il est resté le même.')
+      expect(note).toContain('Cette nouvelle version citera le fichier tel qu’il est aujourd’hui')
+      expect(note).toContain('seul l’historique gardera la trace de sa disparition')
+      modifier()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      expect(String(confirmation.mock.calls[0][0])).toContain('seul l’historique gardera la trace de sa disparition')
+      expect(faux.appels).toEqual([])
+    })
+
+    it('un document dont l’empreinte a changé : de même', async () => {
+      dossier2025([entree({ id: idDEntree(1), nature: 'statuts', titre: 'Statuts', document_id: DOCUMENT_STATUTS, empreinte: HASH_DE_LA_CITATION })])
+      const documents = faux.tables.documents_divers as { id: string; storage_hash: string | null }[]
+      documents[0].storage_hash = AUTRE_HASH
+      rendre()
+      await ouvrir('Statuts')
+      expect(texte(volet())).toContain('fichier changé depuis la citation')
+      fireEvent.change(champ('Titre'), { target: { value: 'Statuts à jour' } })
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      expect(faux.appels).toEqual([])
+    })
+
+    it('retirer la citation avant d’enregistrer : plus d’avertissement ni de confirmation', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await ouvrir()
+      await act(async () => { bouton(volet(), 'Retirer la citation').click() })
+      expect(volet().querySelector('.error-text')).toBeNull()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).not.toHaveBeenCalled()
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+      expect(faux.appels[0].args.p_citation).toBeNull()
+    })
+
+    it('deux clics dans le MÊME instant sur une citation changée : une seule écriture', async () => {
+      dossier2025([bail()])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await ouvrir()
+      modifier()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const b = bontonDeLaSaisie()
+      await act(async () => { b.click(); b.click() })
+      expect(faux.appels.filter((a) => a.nom === 'consigner_au_dossier_permanent')).toHaveLength(1)
+    })
+
+    it('une nouvelle ENTRÉE qui cite une pièce ne demande rien : il n’y a pas de version courante à effacer', async () => {
+      dossier2025([])
+      changerLaPiece(AUTRE_HASH)
+      rendre()
+      await attendreLaSection()
+      await ouvrirLaConsignation()
+      saisir('bail', 'Bail', 'Texte.')
+      chercher('bail')
+      await act(async () => { bouton(volet(), 'Citer bail-fictif.pdf').click() })
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await act(async () => { bontonDeLaSaisie().click() })
+      expect(confirmation).not.toHaveBeenCalled()
+      expect(faux.appels.map((a) => a.nom)).toEqual(['consigner_au_dossier_permanent'])
+    })
   })
 })

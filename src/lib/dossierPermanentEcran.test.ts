@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  EXPLICATION_DE_LA_CITATION, PASTILLE_DE_LA_CITATION, entreesParNature, entreesRetirees, informationSurUnElementSansEntree,
-  libelleDeLaNature, validiteEnMots, versionsDuPlusRecentAuPlusAncien,
+  EXPLICATION_DE_LA_CITATION, PASTILLE_DE_LA_CITATION, anneesDActivite, elementsSansEntreeAuRegard, entreesParNature, entreesRetirees,
+  horsDuRegard, informationSurUnElementSansEntree, libelleDeLaNature, motNeCouvrePas, validiteEnMots, vautLeJour,
+  versionsDuPlusRecentAuPlusAncien,
 } from './dossierPermanentEcran'
-import { ELEMENTS_PROPOSES_PAR_A9, NATURES_DU_DOSSIER_PERMANENT, entreesDuDossierPermanent } from './dossierPermanent'
+import { ELEMENTS_PROPOSES_PAR_A9, NATURES_DU_DOSSIER_PERMANENT, elementsSansEntree, entreesDuDossierPermanent } from './dossierPermanent'
 import type { EtatDeLaCitation } from './revision'
 import { entreePermanente, idDEntree } from '../test/dossierPermanent'
 
@@ -128,5 +129,123 @@ describe('ce qu’une citation prouve encore, en mots', () => {
 
   it('ne dit « intacte » que de l’état qui l’est : aucun autre état n’a la pastille de la réussite', () => {
     expect(etats.filter((e) => PASTILLE_DE_LA_CITATION[e].classe === 'badge-ok')).toEqual(['intacte'])
+  })
+})
+
+// ── SANS EXERCICE CHOISI (R7C-Q1, option B) : la section regarde AUJOURD'HUI ─────────────────────────────────────────────────
+
+describe('vautLeJour', () => {
+  // Les bornes sont comprises ; une borne nulle ne borne rien.
+  it('juge un jour contre les deux bornes, comprises', () => {
+    const v = { valable_du: '2026-03-15', valable_jusqu_au: '2026-03-20' }
+    expect(vautLeJour(v, '2026-03-14')).toBe(false)
+    expect(vautLeJour(v, '2026-03-15')).toBe(true)
+    expect(vautLeJour(v, '2026-03-18')).toBe(true)
+    expect(vautLeJour(v, '2026-03-20')).toBe(true)
+    expect(vautLeJour(v, '2026-03-21')).toBe(false)
+  })
+
+  it('une borne nulle ne borne rien', () => {
+    expect(vautLeJour({ valable_du: null, valable_jusqu_au: null }, '1999-01-01')).toBe(true)
+    expect(vautLeJour({ valable_du: '2026-03-15', valable_jusqu_au: null }, '2026-03-14')).toBe(false)
+    expect(vautLeJour({ valable_du: '2026-03-15', valable_jusqu_au: null }, '2099-12-31')).toBe(true)
+    expect(vautLeJour({ valable_du: null, valable_jusqu_au: '2026-03-15' }, '2026-03-15')).toBe(true)
+    expect(vautLeJour({ valable_du: null, valable_jusqu_au: '2026-03-15' }, '2026-03-16')).toBe(false)
+  })
+
+  it('un seul jour de validité vaut ce jour-là, et lui seul', () => {
+    const v = { valable_du: '2026-03-15', valable_jusqu_au: '2026-03-15' }
+    expect([ '2026-03-14', '2026-03-15', '2026-03-16' ].map((j) => vautLeJour(v, j))).toEqual([false, true, false])
+  })
+})
+
+describe('horsDuRegard et motNeCouvrePas', () => {
+  const v = { valable_du: '2026-01-01', valable_jusqu_au: '2026-06-30' }
+
+  it('avec un exercice choisi, c’est l’exercice qui juge — jamais le jour', () => {
+    expect(horsDuRegard(v, 2026, '2030-01-01')).toBe(false)
+    expect(horsDuRegard(v, 2025, '2026-03-01')).toBe(true)
+    expect(horsDuRegard(v, 2027, '2026-03-01')).toBe(true)
+    expect(motNeCouvrePas(2025)).toBe('ne couvre pas 2025')
+  })
+
+  it('sans exercice, c’est le jour qui juge', () => {
+    expect(horsDuRegard(v, null, '2026-03-01')).toBe(false)
+    expect(horsDuRegard(v, null, '2026-06-30')).toBe(false)
+    expect(horsDuRegard(v, null, '2026-07-01')).toBe(true)
+    expect(horsDuRegard(v, null, '2025-12-31')).toBe(true)
+    expect(motNeCouvrePas(null)).toBe('ne couvre pas aujourd’hui')
+  })
+})
+
+describe('elementsSansEntreeAuRegard', () => {
+  const lettre = entreePermanente({ id: idDEntree(1), nature: 'lettre_mission', valable_du: '2026-03-15', valable_jusqu_au: '2026-03-20' })
+  const lues = entreesDuDossierPermanent([lettre])
+
+  it('avec un exercice choisi, c’est la règle du module, mot pour mot', () => {
+    expect(elementsSansEntreeAuRegard(lues, true, 2026, '2031-01-01')).toEqual(elementsSansEntree(lues, true, 2026))
+    expect(elementsSansEntreeAuRegard(lues, true, 2025, '2026-03-16')).toEqual(elementsSansEntree(lues, true, 2025))
+  })
+
+  it('sans exercice, ce que A9 propose et qu’aucune entrée non retirée ne porte AUJOURD’HUI, bornes comprises', () => {
+    expect(elementsSansEntreeAuRegard(lues, true, null, '2026-03-14')).toEqual(['lettre_mission', 'description', 'organisation_comptable'])
+    expect(elementsSansEntreeAuRegard(lues, true, null, '2026-03-15')).toEqual(['description', 'organisation_comptable'])
+    expect(elementsSansEntreeAuRegard(lues, true, null, '2026-03-20')).toEqual(['description', 'organisation_comptable'])
+    expect(elementsSansEntreeAuRegard(lues, true, null, '2026-03-21')).toEqual(['lettre_mission', 'description', 'organisation_comptable'])
+  })
+
+  it('une entrée retirée ne porte rien, un autre élément que ceux de A9 ne compte pas', () => {
+    const retiree = entreesDuDossierPermanent([{ ...lettre, retire_le: '2026-03-16T10:00:00+00:00', retire_par: 'u1' }])
+    expect(elementsSansEntreeAuRegard(retiree, true, null, '2026-03-16')).toEqual(['lettre_mission', 'description', 'organisation_comptable'])
+    const bail = entreesDuDossierPermanent([entreePermanente({ id: idDEntree(2), nature: 'bail', valable_du: null, valable_jusqu_au: null })])
+    expect(elementsSansEntreeAuRegard(bail, true, null, '2026-03-16')).toEqual(['lettre_mission', 'description', 'organisation_comptable'])
+  })
+
+  it('rien ne s’affirme d’une lecture partielle ni d’une chaîne illisible', () => {
+    expect(elementsSansEntreeAuRegard(lues, false, null, '2026-03-16')).toBeNull()
+    const illisible = entreesDuDossierPermanent([entreePermanente({ id: idDEntree(2), remplace_id: idDEntree(1) })])
+    expect(illisible.lisible).toBe(false)
+    expect(elementsSansEntreeAuRegard(illisible, true, null, '2026-03-16')).toBeNull()
+  })
+
+  it('ne lit pas l’horloge : le même jour donné, la même réponse', () => {
+    const a = elementsSansEntreeAuRegard(lues, true, null, '2026-03-16')
+    const b = elementsSansEntreeAuRegard(lues, true, null, '2026-03-16')
+    expect(a).toEqual(b)
+  })
+})
+
+describe('informationSurUnElementSansEntree, sans exercice', () => {
+  it('dit « aujourd’hui » au lieu d’une année, avec les mêmes mots', () => {
+    expect(informationSurUnElementSansEntree('lettre_mission', null)).toBe('Aucune lettre de mission n’est en vigueur aujourd’hui.')
+    expect(informationSurUnElementSansEntree('description', null)).toBe('Aucune description de l’entité et de son activité n’est en vigueur aujourd’hui.')
+    expect(informationSurUnElementSansEntree('organisation_comptable', null)).toBe('Aucune présentation de l’organisation comptable n’est en vigueur aujourd’hui.')
+    for (const nature of NATURES_DU_DOSSIER_PERMANENT.filter((n) => !ELEMENTS_PROPOSES_PAR_A9.includes(n))) {
+      expect(informationSurUnElementSansEntree(nature, null)).toMatch(/^Aucun élément de nature .* n’est en vigueur aujourd’hui\.$/)
+    }
+  })
+})
+
+describe('anneesDActivite', () => {
+  it('réunit les années d’une pièce, d’un mouvement, d’une écriture datés et d’un exercice validé, de la plus récente à la plus ancienne', () => {
+    expect(anneesDActivite({
+      pieces: [{ date_piece: '2024-05-02' }, { date_piece: null }],
+      lignes: [{ date: '2026-01-03' }, { date: '2024-12-31' }],
+      ecritures: [{ date: '2025-06-30' }],
+      anneesValidees: [2023, 2024],
+    })).toEqual([2026, 2025, 2024, 2023])
+  })
+
+  it('un dossier neuf n’a aucune année à choisir', () => {
+    expect(anneesDActivite({ pieces: [], lignes: [], ecritures: [], anneesValidees: [] })).toEqual([])
+    // Une pièce sans date ne donne pas d'exercice.
+    expect(anneesDActivite({ pieces: [{ date_piece: null }], lignes: [], ecritures: [], anneesValidees: [] })).toEqual([])
+  })
+
+  it('chaque source suffit à elle seule', () => {
+    expect(anneesDActivite({ pieces: [{ date_piece: '2025-01-01' }], lignes: [], ecritures: [], anneesValidees: [] })).toEqual([2025])
+    expect(anneesDActivite({ pieces: [], lignes: [{ date: '2025-01-01' }], ecritures: [], anneesValidees: [] })).toEqual([2025])
+    expect(anneesDActivite({ pieces: [], lignes: [], ecritures: [{ date: '2025-01-01' }], anneesValidees: [] })).toEqual([2025])
+    expect(anneesDActivite({ pieces: [], lignes: [], ecritures: [], anneesValidees: [2025] })).toEqual([2025])
   })
 })

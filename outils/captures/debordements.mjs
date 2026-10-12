@@ -321,6 +321,37 @@ const VISITES = [
       await page.getByRole('button', { name: /^Nouvelle version de Lettre de mission reconduite/ }).click()
     },
   },
+  // R7C2 : le dossier permanent sous « Toutes » (aucun exercice choisi : la partie annuelle demande d'en choisir un, la section
+  // s'offre et regarde AUJOURD'HUI), puis la « Nouvelle version » du contrat dont la citation a CHANGÉ (l'état de la citation, le
+  // dire avant le clic, le bouton grisé tant que rien ne diffère), puis le même volet une fois le titre modifié.
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent-toutes',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('tab', { name: 'Toutes', exact: true }).first().click()
+      await page.waitForTimeout(400)
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent-version-changee',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('tab', { name: 'Toutes', exact: true }).first().click()
+      await page.getByRole('button', { name: /^Nouvelle version de Contrat d’assurance/ }).click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent-version-changee-modifiee',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('tab', { name: 'Toutes', exact: true }).first().click()
+      await page.getByRole('button', { name: /^Nouvelle version de Contrat d’assurance/ }).click()
+      await page.getByLabel('Titre').fill('Contrat d’assurance de responsabilité civile professionnelle, avenant de 2026')
+    },
+  },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
   // La COLONNE DE L'EXERCICE PRÉCÉDENT (2025 validé ouvre 2026) : une colonne de plus à chaque tableau, et le détail par
   // compte déplié, où chaque montant porte celui de 2025 entre parenthèses.

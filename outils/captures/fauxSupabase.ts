@@ -695,7 +695,8 @@ const SOURCES_D9: SourcesDeValidation = {
   prefixe: 'k-e',
   pieces: [
     pieceDe('d9', 'k1', '2025-01-05', 'SCI Les Platanes', 700, 'c6'),
-    pieceDe('d9', 'k2', '2025-04-02', 'Assurance Pro Santé', 380, 'c4'),
+    // Une empreinte relevée à la main (R7C2) : la citation du contrat d'assurance du dossier permanent a CHANGÉ depuis (voir plus bas).
+    { ...pieceDe('d9', 'k2', '2025-04-02', 'Assurance Pro Santé', 380, 'c4'), storage_hash: 'b'.repeat(64) },
     pieceDe('d9', 'k3', '2025-10-01', 'Informatique Pro', 1500, 'c7'),
     pieceDe('d9', 'k4', '2026-01-05', 'SCI Les Platanes', 700, 'c6'),
   ],
@@ -1379,6 +1380,14 @@ const DOSSIER_PERMANENT_D9: Ligne[] = [
     id: 'dp-d9-5', dossier_id: 'd9', nature: 'contrat_emprunt', titre: 'Emprunt du matériel de rééducation', texte: 'Remboursé par anticipation.',
     piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: '2021-03-01', valable_jusqu_au: '2024-02-28',
     remplace_id: null, auteur: 'u1', cree_le: '2026-02-05T09:00:00Z', retire_le: '2026-03-02T09:00:00Z', retire_par: 'u1',
+  },
+  // R7C2 : un contrat dont la facture citée a CHANGÉ depuis la citation (l'empreinte du jour n'est plus celle qui fut relevée) —
+  // le volet de sa « Nouvelle version » le dit avant le clic, et l'enregistrement le fait confirmer. Titre long : il éprouve aussi
+  // les largeurs.
+  {
+    id: 'dp-d9-6', dossier_id: 'd9', nature: 'contrat', titre: 'Contrat d’assurance de responsabilité civile professionnelle, avenant de 2025',
+    texte: 'Garantie reconduite chaque année.', piece_id: 'k2', document_id: null, fichier_id: null, empreinte: 'c'.repeat(64),
+    valable_du: '2025-04-02', valable_jusqu_au: null, remplace_id: null, auteur: 'u1', cree_le: '2026-02-06T09:00:00Z', retire_le: null, retire_par: null,
   },
 ]
 

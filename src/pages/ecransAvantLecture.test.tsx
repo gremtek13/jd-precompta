@@ -546,6 +546,39 @@ describe('le dossier permanent n’offre aucun geste avant que sa lecture soit r
     expect(boutons().filter((b) => GESTES_DU_DOSSIER_PERMANENT.test(b))).toEqual(['Consigner une entrée'])
     expect(etat.ecritures.filter((e) => /permanent/.test(e))).toEqual([])
   })
+
+  // R7C-Q1 (12/10/2026) : la section s'offre quel que soit l'exercice — et, sur un dossier neuf, quand AUCUNE année n'est à
+  // choisir. Elle n'attend que ses lectures, mais elle n'en est pas moins muette tant que l'onglet n'a pas lu : sans exercice
+  // choisi non plus, ni geste, ni phrase sur l'exercice avant le retour des lectures.
+  it('RevisionTab sans exercice choisi : retenu, ni geste ni phrase ; revenu, la section seule, et rien d’écrit', async () => {
+    reinitialiser('retenir')
+    etat.lignesUniques = { dossiers: dossier() }
+    await monter({
+      nom: 'RevisionTab (sans exercice)', fichier: 'pages/dossier/RevisionTab.tsx',
+      rendre: () => (
+        <MemoryRouter>
+          <FournisseurPanneauDroit>
+            <ExercicesValidesProvider exercices={[]} relire={async () => {}}>
+              <AnneeProvider defaut="toutes">
+                <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} onNavigate={rien} />
+              </AnneeProvider>
+            </ExercicesValidesProvider>
+            <EmplacementPanneauDroit />
+          </FournisseurPanneauDroit>
+        </MemoryRouter>
+      ),
+    })
+    expect(etat.demandes.has('dossier_permanent'), 'la lecture du dossier permanent est demandée au montage').toBe(true)
+    expect(boutons().filter((b) => GESTES_DU_DOSSIER_PERMANENT.test(b))).toEqual([])
+    expect(document.querySelector('section[aria-label="Dossier permanent"]')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Aucun exercice n’est encore à réviser|choisis-en un en tête du dossier/)
+
+    await act(async () => { libererTout('vide') })
+    await laisserPasser()
+    expect(boutons().filter((b) => GESTES_DU_DOSSIER_PERMANENT.test(b))).toEqual(['Consigner une entrée'])
+    expect(document.body.textContent).toMatch(/Aucun exercice n’est encore à réviser/)
+    expect(etat.ecritures.filter((e) => /permanent/.test(e))).toEqual([])
+  })
 })
 
 // UNE LISTE PAS ENCORE REVENUE NE COMMANDE AUCUNE ÉCRITURE (CLAUDE.md, « Lectures et écritures »). La sœur de la lecture

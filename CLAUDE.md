@@ -610,9 +610,11 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   élément de A9 (lettre de mission, description de l'entité, organisation comptable, statuts, baux et contrats), datée,
   valable pour une période, citant au plus une pièce ou un document, qui se remplace ou se retire et ne se modifie
   jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 prises comme hypothèses ; R7-Q1 à R7-Q6 au cabinet), et à l'écran le
-  même jour (phase C ; R7C-Q1 à R7C-Q3 au cabinet) → « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE », « L'ÉCRAN DU
-  DOSSIER PERMANENT DE LA RÉVISION » ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION »,
-  « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
+  même jour (phase C), puis ses deux retouches (R7C-Q1 et R7C-Q2 tranchées « option B » par le cabinet le 12/10/2026,
+  R7C2-Q1 « oui » le même jour ; R7C-Q3 reste ouverte) → « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE », « L'ÉCRAN DU
+  DOSSIER PERMANENT DE LA RÉVISION », « LES DEUX RETOUCHES DU DOSSIER PERMANENT » ; R6 attend Q1 → « LA BASE DES SOLDES
+  RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES
+  CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -1076,16 +1078,21 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ne rend aucune ligne). Une source citée ne se supprime plus ni ne change de dossier : `garder_source_citee` dit la
   révision d'un solde d'abord, mot pour mot, puis le dossier permanent par la NATURE, jamais le titre. Le module redit
   les refus avant le clic, confronté au texte exporté et rejouant l'essai → « LE DOSSIER PERMANENT DE LA RÉVISION, EN
-  BASE ». À l'écran (phase C) : une section de l'onglet Révision, valable pour tous les exercices
+  BASE ». À l'écran (phase C) : une section de l'onglet Révision, valable QUEL QUE SOIT l'exercice
   (`DossierPermanentSection`, volet `dossier-permanent` — `FicheDossierPermanent` —, mots et rangement purs dans
   `lib/dossierPermanentEcran.ts`) : les entrées courantes dans l'ordre de A9, leur validité, l'état de leur citation en
-  mots, l'historique et les retirées repliés, et ce que A9 propose sans entrée pour l'exercice, dit comme une
-  INFORMATION ; lue à part, la section seule se tait sur une lecture absente, partielle ou qui lève ; écriture par les
+  mots, l'historique et les retirées repliés, et ce que A9 propose sans entrée, dit comme une INFORMATION — pour
+  l'exercice choisi ou, sans exercice (« toutes », « sans date », dossier neuf sans aucune année), pour AUJOURD'HUI à
+  Paris, lu au rendu (`vautLeJour`, bornes comprises) ; elle ne dépend que de SES lectures (les entrées, les pièces et
+  les documents : `motifsDuPermanent`), et une autre lecture partielle de l'onglet ne la tait plus ; écriture par les
   deux fonctions seules sous `permanentEnCours`, que les trois autres verrous de l'onglet partagent, relâché après la
-  relecture, relue aussi sur un refus ; une nouvelle version RETIENT celle qu'elle remplace. La règle des sources citées
-  (`lib/citationsRevisionLecture.ts`) lit aussi le dossier permanent : Justificatifs, Documents et « C'est une facture »
-  disent le refus de `garder_source_citee` tout entier, un bandeau par lecture partielle → « L'ÉCRAN DU DOSSIER
-  PERMANENT DE LA RÉVISION ».
+  relecture, relue aussi sur un refus. Une nouvelle version RETIENT celle qu'elle remplace, part de la courante, montre
+  l'état de la citation reprise et reste grisée tant que rien ne diffère ; une citation reprise « changée » ou
+  « disparue » suffit à la dégriser (R7C2-Q1), se dit avant le clic et fait confirmer l'enregistrement (la nouvelle
+  version cite le fichier d'aujourd'hui : seul l'historique garde la trace) → « LES DEUX RETOUCHES DU DOSSIER
+  PERMANENT ». La règle des sources citées (`lib/citationsRevisionLecture.ts`) lit aussi le dossier permanent :
+  Justificatifs, Documents et « C'est une facture » disent le refus de `garder_source_citee` tout entier, un bandeau par
+  lecture partielle → « L'ÉCRAN DU DOSSIER PERMANENT DE LA RÉVISION ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1398,7 +1405,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9946 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 015 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

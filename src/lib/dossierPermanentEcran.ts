@@ -1,15 +1,17 @@
 import type { EtatDeLaCitation } from './revision'
 import {
-  LIBELLES_DES_NATURES, NATURES_DU_DOSSIER_PERMANENT, type EntreeDuDossierPermanent,
+  ELEMENTS_PROPOSES_PAR_A9, LIBELLES_DES_NATURES, NATURES_DU_DOSSIER_PERMANENT, elementsSansEntree, vautPourLExercice,
+  type EntreeDuDossierPermanent, type EntreesLues,
 } from './dossierPermanent'
-import { formatDate } from './format'
+import { anneeDe, formatDate } from './format'
 import type { NatureDossierPermanent } from './types'
 import type { Pastille } from './revisionLibelles'
 
 // LES MOTS ET LE RANGEMENT DE L'ÉCRAN DU DOSSIER PERMANENT (ligne 41, étape R7, phase C ; pur). Le module
 // (lib/dossierPermanent.ts) lit les chaînes de versions, dit les refus et ce qu'une citation prouve encore ; ce fichier ne
 // fait que RANGER et DIRE ce qu'il rend, pour que la section de l'onglet Révision et son volet disent la même chose de la
-// même entrée. Il ne lit rien, ne lit pas l'horloge, et n'écrit aucune règle de la base.
+// même entrée. Il ne lit rien, ne lit pas l'horloge (le jour d'aujourd'hui lui est DONNÉ, lu au rendu par l'écran), et n'écrit
+// aucune règle de la base.
 
 /** Ce qu'une citation prouve encore, en mots : le texte garde sa couleur, l'état se lit à la pastille. */
 export const PASTILLE_DE_LA_CITATION: Readonly<Record<EtatDeLaCitation, Pastille>> = {
@@ -78,13 +80,71 @@ export function versionsDuPlusRecentAuPlusAncien(e: EntreeDuDossierPermanent): E
 
 /**
  * Ce que A9 propose et qu'aucune entrée ne porte pour l'exercice, dit comme une INFORMATION : la norme dit que le dossier
- * « peut contenir » ces éléments, elle ne les impose pas — ni le texte ni le bouton n'en font une faute.
+ * « peut contenir » ces éléments, elle ne les impose pas — ni le texte ni le bouton n'en font une faute. Sans exercice choisi
+ * (`annee` nul), la phrase se dit pour aujourd'hui.
  */
-export function informationSurUnElementSansEntree(nature: NatureDossierPermanent, annee: number): string {
+export function informationSurUnElementSansEntree(nature: NatureDossierPermanent, annee: number | null): string {
+  const quand = annee === null ? 'aujourd’hui' : `en ${annee}`
   switch (nature) {
-    case 'lettre_mission': return `Aucune lettre de mission n’est en vigueur en ${annee}.`
-    case 'description': return `Aucune description de l’entité et de son activité n’est en vigueur en ${annee}.`
-    case 'organisation_comptable': return `Aucune présentation de l’organisation comptable n’est en vigueur en ${annee}.`
-    default: return `Aucun élément de nature « ${LIBELLES_DES_NATURES[nature]} » n’est en vigueur en ${annee}.`
+    case 'lettre_mission': return `Aucune lettre de mission n’est en vigueur ${quand}.`
+    case 'description': return `Aucune description de l’entité et de son activité n’est en vigueur ${quand}.`
+    case 'organisation_comptable': return `Aucune présentation de l’organisation comptable n’est en vigueur ${quand}.`
+    default: return `Aucun élément de nature « ${LIBELLES_DES_NATURES[nature]} » n’est en vigueur ${quand}.`
   }
+}
+
+// SANS EXERCICE CHOISI (« toutes », « sans date », ou un dossier neuf dont l'en-tête n'offre aucun exercice), la section regarde
+// AUJOURD'HUI : le jour à Paris, que l'écran lit au rendu et donne. La règle d'un exercice reste celle du module
+// (`vautPourLExercice`, `elementsSansEntree`) ; ce qui suit ne dit que la même chose pour un JOUR, bornes comprises.
+
+/** Une version vaut-elle le jour donné (AAAA-MM-JJ) ? Les bornes sont comprises, une borne nulle ne borne rien. */
+export function vautLeJour(v: { valable_du: string | null; valable_jusqu_au: string | null }, jour: string): boolean {
+  return (v.valable_du === null || v.valable_du <= jour) && (v.valable_jusqu_au === null || v.valable_jusqu_au >= jour)
+}
+
+/** La version ne couvre-t-elle pas ce que la section regarde : l'exercice choisi, ou — sans exercice — le jour donné ? */
+export function horsDuRegard(
+  v: { valable_du: string | null; valable_jusqu_au: string | null },
+  annee: number | null,
+  jour: string,
+): boolean {
+  return annee === null ? !vautLeJour(v, jour) : !vautPourLExercice(v, annee)
+}
+
+/** « ne couvre pas 2025 » ; sans exercice, « ne couvre pas aujourd’hui ». */
+export function motNeCouvrePas(annee: number | null): string {
+  return annee === null ? 'ne couvre pas aujourd’hui' : `ne couvre pas ${annee}`
+}
+
+/**
+ * Les éléments que A9 propose et qu'aucune entrée non retirée ne porte pour ce que la section regarde (l'exercice choisi, ou le
+ * jour) ; nul quand rien ne s'affirme (lecture partielle, chaîne illisible).
+ */
+export function elementsSansEntreeAuRegard(
+  lues: EntreesLues,
+  complete: boolean,
+  annee: number | null,
+  jour: string,
+): NatureDossierPermanent[] | null {
+  if (annee !== null) return elementsSansEntree(lues, complete, annee)
+  if (!complete || !lues.lisible) return null
+  return ELEMENTS_PROPOSES_PAR_A9.filter((n) => !lues.entrees.some((e) => !e.retiree && e.courante.nature === n && vautLeJour(e.courante, jour)))
+}
+
+/**
+ * Les années où le dossier a de l'activité, de la plus récente à la plus ancienne : celles d'une pièce, d'un mouvement ou d'une
+ * écriture datés, et des exercices validés — la liste que l'en-tête du dossier offre en sélecteur. Vide, l'en-tête n'offre aucun
+ * exercice à choisir.
+ */
+export function anneesDActivite(sources: {
+  pieces: readonly { date_piece: string | null }[]
+  lignes: readonly { date: string }[]
+  ecritures: readonly { date: string }[]
+  anneesValidees: readonly number[]
+}): number[] {
+  const annees = new Set<number>(sources.anneesValidees)
+  for (const p of sources.pieces) if (p.date_piece) annees.add(anneeDe(p.date_piece))
+  for (const l of sources.lignes) annees.add(anneeDe(l.date))
+  for (const e of sources.ecritures) annees.add(anneeDe(e.date))
+  return [...annees].sort((a, b) => b - a)
 }
