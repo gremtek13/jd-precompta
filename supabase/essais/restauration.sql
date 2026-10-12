@@ -183,6 +183,23 @@
 -- des tables d'essai, une colonne inventée dans la liste, les textes avant leurs pièces —, le script s'arrête sur
 -- `piece_textes_ocr` en 428C9, puis en ÉCART (empreintes vides), puis en ÉCART sur la colonne inventée, puis sur la clé
 -- (23503) ; chaque fois un contrôle le dit.
+--
+-- 11/10/2026, ligne 41, étape R7 (migration `dossier_permanent`, appliquée le 12/10/2026 sous la version
+-- `20261012070920`, avant la fusion de ce fichier) : `dossier_permanent` entre au plan (75 tables, 78 avec les devis),
+-- après les déclarations d'e-reporting et avant `exercices_valides`, ses versions par vagues (`remplace_id` : une
+-- version après celle qu'elle remplace) ; seul le rang d'`exercices_valides` change. La pièce ou le document qu'une
+-- entrée cite est un lien SANS CLÉ, que sa garde lit (`LIENS_GARDES`) : il est plus haut dans l'ordre, et ce script ne
+-- le voit pas. Rejoué sur la réplique de l'étape, égale à la production à 125 migrations plus celle-ci (signature.sql,
+-- neuf familles), le dossier `test` semé PAR LES FONCTIONS d'une lettre de mission en trois versions, d'un bail et d'un
+-- contrat qui citent une pièce, de statuts qui citent un document puis retirés et d'une description, et de deux textes
+-- lus : 75 tables recréées, 133 clés recopiées, 69 restaurées et IDENTIQUES à la source (68 lignes, dont les sept
+-- entrées en trois vagues), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la colonne générée justes
+-- (2 sur 2). Planté — une entrée avant son dossier —, le script s'arrête sur sa clé (23503). Sur une base qui n'a pas
+-- la migration, il s'arrête dès la création de ses tables d'essai, en nommant la table absente. La réinsertion par la
+-- porte du super-administrateur, gardes comprises, a été jouée à part sur la même réplique, sur un dossier jetable :
+-- six entrées en trois vagues, dont une retirée et trois citations, relues identiques après la cascade du dossier et
+-- l'aller-retour JSON ; la suite d'abord, la garde la refuse (« … en remplace une de son dossier. ») ; l'entrée avant
+-- la pièce qu'elle cite aussi (« … cite une pièce de son dossier. ») ; un autre compte, la policy de restauration.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -219,7 +236,8 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (56,'piece_textes_ocr'),(57,'notes_internes'),(58,'pieces_hors_de_france'),(59,'pieces_hors_de_france_taux'),(60,'ecritures_brouillon'),
  (61,'revision_justifications'),(62,'revision_preuves'),(63,'revision_conclusions'),(64,'revision_notes'),(65,'revision_revues'),
  (66,'revision_seuils'),(67,'revision_explications'),(68,'justificatifs_proposes'),(69,'precisions_mouvements'),(70,'regimes_ereporting'),
- (71,'pieces_ecartees_ereporting'),(72,'declarations_ereporting'),(73,'declarations_ereporting_sources'),(74,'exercices_valides');
+ (71,'pieces_ecartees_ereporting'),(72,'declarations_ereporting'),(73,'declarations_ereporting_sources'),(74,'dossier_permanent'),
+ (75,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -228,6 +246,7 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('cotisations_declarees','direct',null,null),('declarations_tva','direct',null,null),('documents_divers','direct',null,null),
  ('declarations_ereporting','direct',null,null),('declarations_ereporting_sources','direct',null,null),
  ('dossier_assignations','direct',null,null),('dossiers','le_dossier',null,null),('ecritures_brouillon','direct',null,null),
+ ('dossier_permanent','direct',null,null),
  ('emails_envoyes','direct',null,null),('emprunts','direct',null,null),('encaissements_factures','direct',null,null),
  ('encaissements_factures_taux','direct',null,null),('exercices_clotures','direct',null,null),('exercices_valides','direct',null,null),
  ('facture_lignes','par_parent','factures_emises','facture_id'),('facture_numerotation','direct',null,null),('facture_superpdp_events','direct',null,null),
@@ -260,7 +279,8 @@ insert into essai_restauration._vagues (table_nom, colonne) values
  ('revision_conclusions','remplace_id'),
  ('revision_seuils','remplace_id'),
  ('revision_explications','remplace_id'),
- ('declarations_ereporting','remplace_id');
+ ('declarations_ereporting','remplace_id'),
+ ('dossier_permanent','remplace_id');
 
 insert into essai_restauration._generees (table_nom, colonne) values
  ('piece_textes_ocr','texte_md5');

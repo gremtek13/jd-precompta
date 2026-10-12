@@ -22,6 +22,7 @@ import {
   COLONNES_GENEREES,
   LIENS_GARDES,
   ORDRE_RESTAURATION,
+  ORDRE_RESTAURATION_PREVU,
   PARENTS_HORS_PLAN_VOULUS,
   PREREQUIS_AUTH,
   RELATIONS,
@@ -128,7 +129,7 @@ describe('ordre de restauration', () => {
     expect(parVagues).toEqual([
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
       'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
-      'revision_explications.remplace_id', 'declarations_ereporting.remplace_id',
+      'revision_explications.remplace_id', 'declarations_ereporting.remplace_id', 'dossier_permanent.remplace_id',
     ])
   })
 
@@ -245,6 +246,60 @@ describe('ordre de restauration', () => {
     expect(plan.etapes.filter((e) => e.table === 'declarations_ereporting').map((e) => e.lignes.map((l) => l.id)))
       .toEqual([['in', 'autre'], ['re1'], ['re2']])
     expect(plan.secondePasse).toEqual([])
+  })
+
+  it('écrit le dossier permanent après les pièces et les documents qu’il cite, par vagues (étape R7)', () => {
+    // La garde d'une entrée lit, à l'insertion, la version qu'elle remplace (`remplace_id`, par vagues) et la pièce ou le
+    // document qu'elle cite, sans clé (`LIENS_GARDES`). Rien de ce qu'une validation fige : elle précède les devis et
+    // `exercices_valides`, et ne déplace le rang d'aucune autre table d'hier.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    for (const lue of ['pieces', 'documents_divers']) expect(rang(lue), lue).toBeLessThan(rang('dossier_permanent'))
+    expect(ORDRE_RESTAURATION[rang('dossier_permanent') - 1]).toBe('declarations_ereporting_sources')
+    expect(rang('dossier_permanent')).toBeLessThan(rang('exercices_valides'))
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1]).toBe('devis_numerotation')
+    expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
+    expect(RELATIONS.filter((r) => r.enfant === 'dossier_permanent')
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
+      .toEqual([
+        'dossier_permanent.dossier_id>dossiers:cascade',
+        'dossier_permanent.remplace_id>dossier_permanent:bloque',
+      ])
+    expect(LIENS_GARDES.filter((l) => l.enfant === 'dossier_permanent').map((l) => `${l.colonne}>${l.parent}:${l.aLaSuppression}`))
+      .toEqual(['document_id>documents_divers:bloque', 'piece_id>pieces:bloque'])
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toContainEqual({ table: 'dossier_permanent', colonne: 'remplace_id' })
+    expect(CHEMINS_DOSSIER.dossier_permanent).toEqual({ acces: 'direct' })
+    expect(clePrimaire('dossier_permanent')).toEqual(['id'])
+  })
+
+  it('réinsère les versions d’une entrée du dossier permanent maillon après maillon, retirée comprise', () => {
+    // La première version d'abord, puis chaque suivante dans la vague qui suit l'écriture de celle qu'elle remplace ; une
+    // entrée retirée n'a pas de suite et part avec la vague de sa chaîne, telle qu'elle a été retirée.
+    const ligne = (id: string, remplace: string | null, retire_le: string | null = null) =>
+      ({ id, dossier_id: 'd', remplace_id: remplace, retire_le })
+    const plan = planReinsertion({
+      dossier_permanent: [ligne('v3', 'v2', '2026-10-01T10:00:00+00:00'), ligne('v1', null), ligne('v2', 'v1'), ligne('seule', null)],
+    })
+    expect(plan.etapes.filter((e) => e.table === 'dossier_permanent').map((e) => e.lignes.map((l) => l.id)))
+      .toEqual([['v1', 'seule'], ['v2'], ['v3']])
+    expect(plan.secondePasse).toEqual([])
+  })
+
+  it('attrape une source citée par le dossier permanent, absente de la sauvegarde, que rien ne permet d’effacer', () => {
+    // Une entrée ne se modifie pas, et celle qui ne dit rien d'autre que sa citation ne dirait plus rien : le lien perdu
+    // ne se sacrifie pas. Une entrée sans citation ne réclame rien.
+    const perdus = liensPerdus({
+      dossiers: [{ id: 'd1' }],
+      pieces: [{ id: 'p1', dossier_id: 'd1' }],
+      documents_divers: [],
+      dossier_permanent: [
+        { id: 'e1', dossier_id: 'd1', remplace_id: null, piece_id: 'p1', document_id: null, fichier_id: null },
+        { id: 'e2', dossier_id: 'd1', remplace_id: 'e1', piece_id: null, document_id: 'doc-disparu', fichier_id: null },
+        { id: 'e3', dossier_id: 'd1', remplace_id: null, piece_id: null, document_id: null, fichier_id: null },
+      ],
+    })
+    expect(perdus).toEqual([
+      { table: 'dossier_permanent', colonne: 'document_id', parent: 'documents_divers', valeur: 'doc-disparu', effacable: false },
+    ])
   })
 
   it('signale une preuve placée avant la pièce qu’elle cite, que le graphe des clés ne voit pas', () => {
@@ -503,8 +558,13 @@ describe('liens perdus après restauration', () => {
     const garde = derniereDefinitionSql('garder_revision_preuve')
     expect(garde).toContain('from public.pieces p where p.id = new.piece_id and p.dossier_id = new.dossier_id for share')
     expect(garde).toContain('from public.documents_divers d where d.id = new.document_id and d.dossier_id = new.dossier_id for share')
+    // Le dossier permanent (étape R7) : sa garde lit de même la pièce ou le document cité, dans son dossier, sans clé.
+    const permanent = derniereDefinitionSql('garder_dossier_permanent')
+    expect(permanent).toContain('from public.pieces p where p.id = new.piece_id and p.dossier_id = new.dossier_id for share')
+    expect(permanent).toContain('from public.documents_divers d where d.id = new.document_id and d.dossier_id = new.dossier_id for share')
     expect(LIENS_GARDES.map((l) => `${l.enfant}.${l.colonne}>${l.parent}`)).toEqual([
       'revision_preuves.document_id>documents_divers', 'revision_preuves.piece_id>pieces',
+      'dossier_permanent.document_id>documents_divers', 'dossier_permanent.piece_id>pieces',
     ])
     const cles = new Set(RELATIONS.map((r) => `${r.enfant}.${r.colonne}`))
     for (const lien of LIENS_GARDES) expect(cles.has(`${lien.enfant}.${lien.colonne}`), lien.colonne).toBe(false)

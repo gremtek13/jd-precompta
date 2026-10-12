@@ -388,6 +388,20 @@ rejoue le retrait. Sur une réplique égale à la production à 119 migrations, 
 68 tables restaurées, 68 identiques, 0 écart, les trois empreintes recalculées égales à la source ; sans le retrait,
 l'essai s'arrête sur `piece_textes_ocr`, en 428C9.
 
+Le 11/10/2026 (ligne 41, étape R7, migration `dossier_permanent`, appliquée le 12/10/2026, AVANT la fusion du correctif
+qui la met au plan : sans elle, toute sauvegarde échouerait sur une table absente), le dossier permanent de la révision
+entre au plan, après les déclarations d'e-reporting et avant `exercices_valides` — 75 tables, 78 avec les devis —, ses
+versions par vagues (`remplace_id` : une version après celle qu'elle remplace). Ses auteurs (`auteur`, `retire_par`)
+n'ont pas de clé vers les comptes : ils ne sont pas parmi les prérequis du §3, 1. Une entrée cite au plus une pièce ou
+un document du dossier SANS clé : sa garde exige la source dans le dossier à l'insertion — elle est plus haut dans
+l'ordre —, et une source absente de la sauvegarde est un lien perdu que rien ne permet d'effacer (`LIENS_GARDES`). Une
+entrée retirée se réinsère telle qu'elle a été retirée. Sur la réplique de l'étape, le dossier `test` semé par les
+fonctions de la base (une lettre de mission en trois versions, un bail et un contrat qui citent une pièce, des statuts
+qui citent un document puis retirés, une description) : 69 tables restaurées, 69 identiques, 0 écart ; une entrée
+réinsérée avant son dossier arrête l'essai sur sa clé ; et la réinsertion par la porte du super-administrateur, gardes
+comprises, des lignes relues en JSON sur un dossier jetable : lignes identiques ; la suite d'abord, ou l'entrée avant la
+pièce qu'elle cite, la garde refuse.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 
