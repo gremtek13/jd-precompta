@@ -297,6 +297,30 @@ const VISITES = [
   },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/à-justifier', apres: exercice('2025') },
   { dossier: 'd10', onglet: 'revision', nom: 'revision/en-cours', apres: exercice('2026') },
+  // LE DOSSIER PERMANENT (étape R7, phase C) : la section de la kinésithérapeute — une lettre de mission en deux versions au titre
+  // LONG, un bail dont la citation a perdu son empreinte, une description sans date, un contrat retiré, l'information sur
+  // l'organisation comptable —, puis les deux volets : « Consigner une entrée » (avec la recherche d'une pièce à citer) et la
+  // « Nouvelle version » de la lettre au long titre.
+  { dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent', apres: exercice('2025') },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent-consigner',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Consigner une entrée', exact: true }).click()
+      await page.getByPlaceholder('Chercher un justificatif, un document…').fill('SCI')
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'revision', nom: 'revision/dossier-permanent-version',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: /^Nouvelle version de Lettre de mission reconduite/ }).click()
+    },
+  },
   { dossier: 'd9', onglet: 'bilan', nom: 'bilan/report', apres: exercice('2026') },
   // La COLONNE DE L'EXERCICE PRÉCÉDENT (2025 validé ouvre 2026) : une colonne de plus à chaque tableau, et le détail par
   // compte déplié, où chaque montant porte celui de 2025 entre parenthèses.

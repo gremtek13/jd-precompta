@@ -45,7 +45,7 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
   // Les décisions de la révision et leurs preuves aussi (ligne 41, étape R3) : celles d'un autre dossier ne citent rien ici.
-  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves'])
+  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves', 'dossier_permanent'])
   return {
   supabase: {
     from: (table: string) => {
@@ -1216,6 +1216,122 @@ describe('PiecesTab — une pièce citée par la révision des soldes', () => {
     faux.muetApres = { revision_preuves: 0 }
     monter('toutes')
     expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves n'ont pas pu être lues en entier/)).toBeTruthy()
+  })
+})
+
+// LE DOSSIER PERMANENT CITE AUSSI (ligne 41, étape R7 ; `garder_source_citee` remplacée) : une pièce citée par une entrée du
+// dossier permanent — même remplacée, même retirée — ne se supprime plus. La révision d'un solde se dit d'abord, mot pour
+// mot comme avant ; puis la NATURE de l'entrée qui cite, jamais son titre.
+describe('PiecesTab — une pièce citée par le dossier permanent', () => {
+  const PHRASE = 'Cette pièce est citée par le dossier permanent (lettre de mission) : elle ne se supprime plus, sauf avec son dossier.'
+  const PHRASE_REVISION = 'Cette pièce est citée par la révision du solde du compte 164000 (exercice 2025) : elle ne se supprime plus, sauf avec son dossier.'
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const deux = () => [
+    piece({ id: 'p-citee', tiers: 'ALPHA', statut: 'validee', nom_fichier: 'lettre-de-mission.pdf' }),
+    piece({ id: 'p-libre', tiers: 'BETA', statut: 'validee' }),
+  ]
+  function entree(champs: Record<string, unknown>) {
+    return {
+      id: 'e-1', dossier_id: 'dossier-de-test', nature: 'lettre_mission', titre: 'Titre secret de la lettre', texte: null,
+      piece_id: 'p-citee', document_id: null, fichier_id: null, empreinte: null, valable_du: null, valable_jusqu_au: null,
+      remplace_id: null, retire_le: null, cree_le: '2026-01-01T00:00:00Z', ...champs,
+    }
+  }
+  function citerParLaRevision() {
+    faux.parTable.revision_justifications = [{ id: 'j-1', dossier_id: 'dossier-de-test', annee: 2025, compte: '164000' }]
+    faux.parTable.revision_preuves = [{ id: 'rp-1', dossier_id: 'dossier-de-test', justification_id: 'j-1', piece_id: 'p-citee', document_id: null }]
+  }
+
+  it('la fiche d’une pièce citée le dit sous les mots de la base, sans le titre, et n’offre pas « Supprimer »', async () => {
+    poser(deux())
+    faux.parTable.dossier_permanent = [entree({})]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+    expect(screen.queryByText(/Titre secret/)).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Valider' })).toBeTruthy()
+
+    await ouvrir('BETA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une version remplacée ou une entrée retirée garde sa source', async () => {
+    poser(deux())
+    faux.parTable.dossier_permanent = [
+      entree({}),
+      entree({ id: 'e-2', piece_id: null, texte: 'La suite', remplace_id: 'e-1', retire_le: '2026-02-01T00:00:00Z' }),
+    ]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+  })
+
+  it('une entrée d’un AUTRE dossier ne garde rien ici', async () => {
+    poser(deux())
+    faux.parTable.dossier_permanent = [entree({ dossier_id: 'autre-dossier' })]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('la révision d’un solde se dit D’ABORD, mot pour mot, quand les deux citent', async () => {
+    poser(deux())
+    citerParLaRevision()
+    faux.parTable.dossier_permanent = [entree({})]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE_REVISION)).toBeTruthy()
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+  })
+
+  it('une sélection écarte la pièce citée, et la confirmation la NOMME : « citée par le dossier permanent »', async () => {
+    poser(deux())
+    faux.parTable.dossier_permanent = [entree({})]
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message.endsWith(`Une pièce de la sélection reste, citée par le dossier permanent :\n• lettre-de-mission.pdf — ${PHRASE}`)).toBe(true)
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('deux pièces citées, l’une par la révision et l’autre par le dossier permanent : le message nomme les deux', async () => {
+    poser(deux())
+    citerParLaRevision()
+    faux.parTable.dossier_permanent = [entree({ piece_id: 'p-libre' })]
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(alerte).toMatch(/^Citées par la révision des soldes et le dossier permanent, elles ne se suppriment plus :/)
+    expect(alerte).toContain(PHRASE_REVISION)
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('lues en partie, les entrées le disent à part, et la révision d’un solde garde ses mots', async () => {
+    poser(deux())
+    faux.parTable.dossier_permanent = [entree({}), entree({ id: 'e-3', piece_id: null, texte: 'Autre' })]
+    faux.muetApres = { dossier_permanent: 1 }
+    monter('toutes')
+    expect(await screen.findByText(/^Les entrées du dossier permanent n'ont pas pu être lues en entier \(1 ligne\(s\) lue\(s\) sur 2 annoncée\(s\)\)\. Une pièce citée par le dossier permanent peut donc paraître supprimable/)).toBeTruthy()
+    expect(screen.queryByText(/Les décisions de la révision des soldes et leurs preuves/)).toBeNull()
   })
 })
 

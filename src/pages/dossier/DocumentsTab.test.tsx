@@ -37,6 +37,10 @@ const faux = vi.hoisted(() => ({
   decisions: [] as Record<string, unknown>[],
   preuves: [] as Record<string, unknown>[],
   revisionRefusee: false,
+  // LE DOSSIER PERMANENT (ligne 41, étape R7) : ses entrées, lues EN ENTIER ; `dossierPermanentRefuse` rend leur lecture
+  // incomplète, sans toucher à celle de la révision d'un solde.
+  entrees: [] as Record<string, unknown>[],
+  dossierPermanentRefuse: false,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -80,6 +84,11 @@ vi.mock('../../lib/supabase', async () => {
       if (table === 'revision_justifications' || table === 'revision_preuves') {
         if (faux.revisionRefusee) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null })
         const lignes = filtrer(table === 'revision_justifications' ? faux.decisions : faux.preuves, predicats)
+        return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length })
+      }
+      if (table === 'dossier_permanent') {
+        if (faux.dossierPermanentRefuse) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null })
+        const lignes = filtrer(faux.entrees, predicats)
         return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length })
       }
       if (table === 'documents_divers') {
@@ -165,6 +174,8 @@ function reinitialiser() {
   faux.decisions = []
   faux.preuves = []
   faux.revisionRefusee = false
+  faux.entrees = []
+  faux.dossierPermanentRefuse = false
 }
 
 afterEach(() => { vi.restoreAllMocks() })
@@ -574,5 +585,124 @@ describe('DocumentsTab — un document cité par la révision', () => {
     expect((screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement).disabled).toBe(false)
     expect(faux.inserts).toEqual([])
+  })
+})
+
+// LE DOSSIER PERMANENT CITE AUSSI (ligne 41, étape R7 ; `garder_source_citee` remplacée) : un document cité par une entrée
+// — même remplacée, même retirée — ne se supprime plus et ne devient pas pièce. La révision d'un solde se dit d'abord,
+// mot pour mot comme avant ; puis la NATURE de l'entrée qui cite, jamais son titre.
+describe('DocumentsTab — un document cité par le dossier permanent', () => {
+  const PHRASE_PERMANENT = 'Ce document est cité par le dossier permanent (bail) : il ne se supprime plus, sauf avec son dossier.'
+  const PHRASE_REVISION = 'Ce document est cité par la révision du solde du compte 512000 (exercice 2025) : il ne se supprime plus, sauf avec son dossier.'
+
+  function entree(champs: Record<string, unknown>) {
+    return {
+      id: 'e-1', dossier_id: 'dossier-de-test', nature: 'bail', titre: 'Titre secret du bail', texte: null,
+      piece_id: null, document_id: null, fichier_id: null, empreinte: null, valable_du: null, valable_jusqu_au: null,
+      remplace_id: null, retire_le: null, cree_le: '2026-01-01T00:00:00Z', ...champs,
+    }
+  }
+
+  function deuxDocuments(): DocumentDivers[] {
+    return [1, 2].map((n) => documentDeTest({
+      id: `doc-${n}`, nom_fichier: `releve-${n}.pdf`, storage_path: `dossier-de-test/releve-${n}.pdf`,
+    }))
+  }
+
+  it('dit la phrase de la base sur la ligne, sans le titre, et n’offre ni « Supprimer » ni « C’est une facture »', async () => {
+    reinitialiser()
+    faux.entrees = [entree({ document_id: 'document-a-convertir' })]
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText(PHRASE_PERMANENT)).toBeDefined()
+    expect(screen.getByText('Cité par le dossier permanent')).toBeDefined()
+    expect(screen.queryByText(/Titre secret/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    expect(screen.queryByRole('button', { name: "C'est une facture" })).toBeNull()
+    expect(faux.inserts).toEqual([])
+    expect(faux.suppressions).toBe(0)
+  })
+
+  it('une entrée RETIRÉE ou REMPLACÉE garde sa source : elle reste citée', async () => {
+    reinitialiser()
+    faux.entrees = [
+      entree({ id: 'e-1', document_id: 'document-a-convertir', remplace_id: null, retire_le: null }),
+      entree({ id: 'e-2', nature: 'contrat', document_id: null, texte: 'La suite', remplace_id: 'e-1', retire_le: '2026-02-01T00:00:00Z' }),
+    ]
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText(PHRASE_PERMANENT)).toBeDefined()
+  })
+
+  it('une entrée d’un AUTRE dossier ne compte pas : les deux gestes restent offerts', async () => {
+    reinitialiser()
+    faux.entrees = [entree({ dossier_id: 'autre-dossier', document_id: 'document-a-convertir' })]
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByRole('button', { name: "C'est une facture" })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Supprimer' })).toBeDefined()
+    expect(screen.queryByText(PHRASE_PERMANENT)).toBeNull()
+  })
+
+  it('la révision d’un solde se dit D’ABORD, mot pour mot, quand les deux citent', async () => {
+    reinitialiser()
+    faux.decisions = [{ id: 'j-2025', dossier_id: 'dossier-de-test', annee: 2025, compte: '512000' }]
+    faux.preuves = [{ id: 'rp-1', dossier_id: 'dossier-de-test', justification_id: 'j-2025', piece_id: null, document_id: 'document-a-convertir' }]
+    faux.entrees = [entree({ document_id: 'document-a-convertir' })]
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText(PHRASE_REVISION)).toBeDefined()
+    expect(screen.queryByText(PHRASE_PERMANENT)).toBeNull()
+    expect(screen.getByText('Cité par la révision')).toBeDefined()
+  })
+
+  it('la sélection le NOMME : « cité par le dossier permanent », et ne supprime que l’autre', async () => {
+    reinitialiser()
+    faux.documents = deuxDocuments()
+    faux.entrees = [entree({ document_id: 'doc-2' })]
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
+    await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
+
+    const texte = String(confirmer.mock.calls[0]?.[0])
+    expect(texte).toContain(`Un document de la sélection reste, cité par le dossier permanent :\n• releve-2.pdf — ${PHRASE_PERMANENT}`)
+    expect(faux.suppressions).toBe(1)
+    expect(faux.retraits).toEqual([['dossier-de-test/releve-1.pdf']])
+  })
+
+  it('cités par la révision ET par le dossier permanent, le message nomme les deux', async () => {
+    reinitialiser()
+    faux.documents = deuxDocuments()
+    faux.decisions = [{ id: 'j-2025', dossier_id: 'dossier-de-test', annee: 2025, compte: '512000' }]
+    faux.preuves = [{ id: 'rp-1', dossier_id: 'dossier-de-test', justification_id: 'j-2025', piece_id: null, document_id: 'doc-1' }]
+    faux.entrees = [entree({ document_id: 'doc-2' })]
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
+    await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
+    // Rien à supprimer : les deux sont cités, le message le dit sans demander de confirmation.
+    expect(confirmer).not.toHaveBeenCalled()
+    expect(screen.getByText(/^Ces 2 documents sont cités par la révision des soldes et le dossier permanent : ils ne se suppriment plus\./)).toBeDefined()
+    expect(faux.suppressions).toBe(0)
+  })
+
+  it('lues en partie, les entrées le disent à part : « C’est une facture » attend, avec ses mots', async () => {
+    reinitialiser()
+    faux.dossierPermanentRefuse = true
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText(/Les entrées du dossier permanent n'ont pas pu être lues en entier/)).toBeDefined()
+    expect(screen.queryByText(/Les décisions de la révision des soldes et leurs preuves/)).toBeNull()
+    const bouton = screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(true)
+    expect(bouton.title).toMatch(/^Les entrées du dossier permanent n’ont pas été lues en entier/)
+    expect((screen.getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(faux.inserts).toEqual([])
+  })
+
+  it('la révision d’un solde en défaut garde ses mots d’hier, et le dossier permanent n’en dit rien', async () => {
+    reinitialiser()
+    faux.revisionRefusee = true
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves n'ont pas pu être lues en entier/)).toBeDefined()
+    expect(screen.queryByText(/Les entrées du dossier permanent/)).toBeNull()
+    expect((screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement).title)
+      .toMatch(/^Les décisions de la révision des soldes n’ont pas été lues en entier/)
   })
 })

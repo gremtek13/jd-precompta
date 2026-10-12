@@ -604,7 +604,7 @@ describe('le contenu qu’e4 calcule passe les refus de la fonction, et traverse
   const ficheE4: PieceHorsDeFrance = {
     id: F1, dossier_id: D, piece_id: P1, remplace_id: null, numero: 'INV-1', date_facture: '2027-10-05', type_document: '380',
     facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE', schema_identifiant: '0223',
-    identifiant: 'IE6388047V', nature: 'services', autoliquidation: true, date_operation: null, periode_debut: null,
+    identifiant: 'IE7777777T', nature: 'services', autoliquidation: true, date_operation: null, periode_debut: null,
     periode_fin: null, cree_par: 'u1', cree_le: '2027-10-06T10:00:00Z', retire_le: null, retire_par: null,
   }
   const tauxE4: PieceHorsDeFranceTaux = { fiche_id: F1, dossier_id: D, code_tva: 'AE', taux: 0, base: 120, tva: 0, motif_code: null, motif_texte: null }
@@ -957,7 +957,7 @@ const APRES = '2027-11-06T10:00:00Z'
 function achatDeclare(o: Partial<AchatDeclare> = {}): AchatDeclare {
   return {
     ficheId: F1, pieceId: P1, date: '2027-10-05', numero: 'INV-1', dateFacture: '2027-10-05', typeDocument: '380', origine: null,
-    devise: 'EUR', pays: 'IE', schema: '0223', identifiant: 'IE6388047V', nature: 'services', cadre: 'S1', autoliquidation: true,
+    devise: 'EUR', pays: 'IE', schema: '0223', identifiant: 'IE7777777T', nature: 'services', cadre: 'S1', autoliquidation: true,
     dateOperation: null, periodeDebut: null, periodeFin: null,
     lignes: [{ code: 'AE', taux: 0, baseCentimes: 12000, tvaCentimes: 0, motifCode: null, motifTexte: null }],
     htCentimes: 12000, tvaEurosCentimes: 0, ...o,

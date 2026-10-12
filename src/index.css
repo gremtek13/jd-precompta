@@ -1508,6 +1508,10 @@ a.nav-menu-item { text-decoration: none; }
 .check-ligne { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--color-border); }
 .check-ligne:first-child { border-top: none; padding-top: 4px; }
 .check-ligne-corps { flex: 1; min-width: 0; }
+/* Une entrée du dossier permanent (onglet Révision) : le texte, puis ses gestes SOUS lui, quelle que soit la largeur — une ligne de
+   check réserve la place d'une pastille à gauche et d'un seul bouton à droite, que deux boutons et une citation débordaient. */
+.entree-permanente { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--color-border); min-width: 0; }
+.entree-permanente:first-of-type { border-top: none; padding-top: 4px; }
 .check-ligne-libelle { font-weight: 600; font-size: 0.9rem; }
 .check-ligne-detail { font-size: 0.8rem; color: var(--color-text-light); margin-top: 1px; }
 /* Dans une carte étroite, le bouton d'une ligne de check passe sous son libellé, comme sur téléphone : à côté, il ne
@@ -1777,10 +1781,10 @@ a.nav-menu-item { text-decoration: none; }
      leurs signaux et le choix à la main —, ni le panneau « justifier » d'un solde de bilan (la preuve,
      l'historique, la décision), ni celui d'un cycle de la révision (le programme, la conclusion, le
      journal, la revue), ni celui d'une ligne de la revue analytique (ses montants, l'historique de ses
-     explications, la saisie). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
+     explications, la saisie), ni celui d'une entrée du dossier permanent (la saisie, la citation, la validité). Elles recouvrent la barre du bas, comme la fenêtre qu'elles
      remplacent — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
   .panneau-droit[data-occupant="piece"], .panneau-droit[data-occupant="mouvement"], .panneau-droit[data-occupant="solde"],
-  .panneau-droit[data-occupant="cycle"], .panneau-droit[data-occupant="explication"] {
+  .panneau-droit[data-occupant="cycle"], .panneau-droit[data-occupant="explication"], .panneau-droit[data-occupant="dossier-permanent"] {
     top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom));
     left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
   }

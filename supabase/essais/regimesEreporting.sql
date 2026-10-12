@@ -103,7 +103,7 @@ begin
     array['jeu', 'pièce du dossier du client, et pièce de A', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, date_piece, montant_ttc, devise) values
       ('{PC}', '{DC}', '{DC}/essai-e5a-pc.pdf', 'essai-e5a-pc.pdf', 'achat', '2026-03-10', 10, 'EUR'),
       ('{PX}', '{A}', '{A}/essai-e5a-px.pdf', 'essai-e5a-px.pdf', 'achat', '2026-03-10', 25, 'EUR')$q$, '', ''],
-    array['fait', '0. le jeu : la fiche courante de P2', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P2}', null, 'INV-P2', '2026-03-11', '380', null, null, 'IE', '0223', 'IE6388047V', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":80,"tva":0}]'::jsonb)$q$, 'OK', ''],
+    array['fait', '0. le jeu : la fiche courante de P2', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P2}', null, 'INV-P2', '2026-03-11', '380', null, null, 'IE', '0223', 'IE7777777T', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":80,"tva":0}]'::jsonb)$q$, 'OK', ''],
     array['fait', '0. le jeu : la fiche de P3', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P3}', null, 'INV-P3', '2026-03-12', '380', null, null, 'DE', '0223', 'DE123456789', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":60,"tva":0}]'::jsonb)$q$, 'OK', ''],
     array['retenir', 'F3', 'postgres', $q$select id::text from pieces_hors_de_france where piece_id = '{P3}'$q$, '', ''],
     array['fait', '0. le jeu : la fiche de P3, retirée', 'chef', $q$select retirer_fiche_hors_de_france('{T}', '{F3}')$q$, 'OK', ''],
@@ -404,7 +404,7 @@ begin
       '23514', 'Cette pièce a été écartée de l''e-reporting : elle ne change plus de dossier.'],
     array['controle', '101c. une pièce jamais écartée, si', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P6}'$q$, 'OK', ''],
     array['controle', '101d. une écriture de la pièce qui reprend son dossier sans le changer passe', 'postgres', $q$update pieces set dossier_id = dossier_id, date_piece = '2026-03-09' where id = '{P1}'$q$, 'OK', ''],
-    array['controle', '102. une fiche posée après l''écart l''emporte : la fonction d''e2 ne lit pas les écarts', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P1}', null, 'INV-P1', '2026-03-10', '380', null, null, 'IE', '0223', 'IE6388047V', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":120,"tva":0}]'::jsonb)$q$, 'OK', ''],
+    array['controle', '102. une fiche posée après l''écart l''emporte : la fonction d''e2 ne lit pas les écarts', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P1}', null, 'INV-P1', '2026-03-10', '380', null, null, 'IE', '0223', 'IE7777777T', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":120,"tva":0}]'::jsonb)$q$, 'OK', ''],
 
     -- ══ 105 à 112. Qui lit ══════════
     array['fait', '105. le chef confirme un régime et écarte une pièce dans le dossier du client', 'chef', $q$select confirmer_regime_ereporting('{DC}', '2026-01-01', 'exonere', null, null, false, 'mois', 'mois', null), ecarter_piece_ereporting('{DC}', '{PC}', 'Vérifiée.')$q$, 'OK', ''],

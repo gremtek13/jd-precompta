@@ -39,7 +39,7 @@ function ligne(o: Partial<LigneVentilation> = {}): LigneVentilation {
 function saisie(o: Partial<SaisieFiche> = {}): SaisieFiche {
   return {
     numero: 'INV-1', date_facture: '2026-03-10', type_document: '380', facture_origine_numero: null, facture_origine_date: null,
-    pays: 'IE', schema_identifiant: '0223', identifiant: 'IE6388047V', nature: 'services', autoliquidation: true,
+    pays: 'IE', schema_identifiant: '0223', identifiant: 'IE7777777T', nature: 'services', autoliquidation: true,
     date_operation: null, periode_debut: null, periode_fin: null, taux: [ligne()], ...o,
   }
 }
@@ -52,7 +52,7 @@ function fiche(o: Partial<PieceHorsDeFrance> = {}): PieceHorsDeFrance {
   return {
     id: 'f1', dossier_id: 'd1', piece_id: 'p1', remplace_id: null, numero: 'INV-1', date_facture: '2026-03-10',
     type_document: '380', facture_origine_numero: null, facture_origine_date: null, devise: 'EUR', pays: 'IE',
-    schema_identifiant: '0223', identifiant: 'IE6388047V', nature: 'services', autoliquidation: true, date_operation: null,
+    schema_identifiant: '0223', identifiant: 'IE7777777T', nature: 'services', autoliquidation: true, date_operation: null,
     periode_debut: null, periode_fin: null, cree_par: 'u1', cree_le: '2026-03-11T10:00:00Z', retire_le: null, retire_par: null,
     ...o,
   }
@@ -867,7 +867,7 @@ describe('la fiche courante, le préfixe, le montant', () => {
     expect(argumentsDeLaFiche('d1', 'p1', null, saisie({ periode_debut: '2026-03-01', periode_fin: '2026-03-31' }))).toEqual({
       p_dossier_id: 'd1', p_piece_id: 'p1', p_remplace_id: null, p_numero: 'INV-1', p_date_facture: '2026-03-10',
       p_type_document: '380', p_facture_origine_numero: null, p_facture_origine_date: null, p_pays: 'IE',
-      p_schema_identifiant: '0223', p_identifiant: 'IE6388047V', p_nature: 'services', p_autoliquidation: true,
+      p_schema_identifiant: '0223', p_identifiant: 'IE7777777T', p_nature: 'services', p_autoliquidation: true,
       p_date_operation: null, p_periode_debut: '2026-03-01', p_periode_fin: '2026-03-31', p_taux: [ligne()],
     })
     expect(argumentsDuRetrait('d1', 'f1')).toEqual({ p_dossier_id: 'd1', p_fiche_id: 'f1' })
