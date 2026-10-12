@@ -23,6 +23,7 @@ import { enregistrerNoteInterne, lireNoteInterne, noteModifiee, type LectureNote
 import { ficheEmporteeParLaSuppression } from '../../lib/propositionsHorsDeFrance'
 import { pieceDeclaree } from '../../lib/ereportingEcran'
 import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './FicheHorsDeFrance'
+import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -106,6 +107,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
   const { monCabinetId } = useAuth()
   const [file, setFile] = useState<File | null>(null)
+  // Les bornes du seau des pièces (ligne 22.6), jugées dès le choix du fichier : le refus se dit tout de suite, avec le
+  // poids et la borne, et le fichier n'est pas retenu. `choixDuFichier` est le choix en cours d'examen : la réponse pour
+  // un fichier déjà remplacé par un autre choix ne décide plus rien.
+  const choixDuFichier = useRef<File | null>(null)
+  const [refusFichier, setRefusFichier] = useState<string | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
   const [typePiece, setTypePiece] = useState<TypePiece>(piece?.type_piece ?? 'achat')
@@ -379,10 +385,38 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
+  // Le fichier est retenu tout de suite, comme avant ; s'il dépasse les bornes, il est retiré dès la réponse et le refus
+  // se dit sous le champ. Une lecture ratée ici se journalise : l'enregistrement le rejuge et dit son erreur.
+  async function choisirFichier(champ: HTMLInputElement) {
+    const choisi = champ.files?.[0] ?? null
+    choixDuFichier.current = choisi
+    setFile(choisi)
+    setConfiance(null)
+    setExtractionError(null)
+    setRefusFichier(null)
+    if (!choisi) return
+    let refus
+    try {
+      refus = await refusDUnePiece(choisi)
+    } catch (e) {
+      console.warn('[FichePiece] le fichier choisi n’a pas pu être lu ; l’enregistrement le rejugera :', messageErreur(e, 'illisible'))
+      return
+    }
+    if (!refus || choixDuFichier.current !== choisi) return
+    choixDuFichier.current = null
+    setFile(null)
+    champ.value = ''
+    setRefusFichier(`Ce fichier n’est pas pris : ${refus.message}.`)
+  }
+
+  // Rejugé ici, avant l'envoi : un enregistrement parti avant la réponse du choix ne dépose pas un fichier que le seau
+  // refuserait — et c'est d'ici que part le corps RÉÉTIQUETÉ du type qu'il admet (lib/bornesStockage.ts).
   async function uploadFile(): Promise<string | null> {
     if (!file) return piece?.storage_path ?? null
+    const pret = await preparerPiece(file)
+    if ('refus' in pret) throw new Error(`Ce fichier n’est pas pris : ${pret.refus.message}.`)
     const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
-    const { error } = await supabase.storage.from('pieces').upload(path, file)
+    const { error } = await supabase.storage.from('pieces').upload(path, pret.corps)
     if (error) throw error
     return path
   }
@@ -762,8 +796,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             <>
               <div className="field">
                 <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
-                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
+                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { void choisirFichier(e.target) }} />
                 {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
+                {refusFichier && <span className="error-text">{refusFichier}</span>}
               </div>
 
               <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

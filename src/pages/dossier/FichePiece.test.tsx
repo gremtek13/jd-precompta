@@ -29,6 +29,8 @@ const HORS_DE_FRANCE: DonneesHorsDeFrance = {
 const faux = vi.hoisted(() => ({
   inserts: [] as unknown[],
   uploads: [] as string[],
+  // Le type que porte chaque corps déposé : c'est lui que le stockage juge (lib/bornesStockage.ts, ligne 22.6).
+  typesDeposes: [] as string[],
   suppressions: [] as unknown[],
   // La promesse du premier `insert` reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle un
   // second envoi arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
@@ -116,8 +118,9 @@ vi.mock('../../lib/supabase', () => ({
     },
     storage: {
       from: () => ({
-        upload: (chemin: string) => {
+        upload: (chemin: string, corps?: Blob) => {
           faux.uploads.push(chemin)
+          faux.typesDeposes.push(corps?.type ?? '(aucun corps)')
           return Promise.resolve({ error: null })
         },
         createSignedUrl: (chemin: string) => {
@@ -164,6 +167,7 @@ vi.mock('../../lib/extraction', () => ({
 function monter() {
   faux.inserts = []
   faux.uploads = []
+  faux.typesDeposes = []
   faux.resoudreInsert = null
   render(
     <FichePiece
@@ -1079,5 +1083,47 @@ describe('FichePiece — la pièce dont la fiche est déclarée à l’e-reporti
     vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
     await act(async () => { screen.getByRole('button', { name: 'Supprimer' }).click() })
     expect(message).not.toContain('e-reporting')
+  })
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6). Le champ « Fichier » ne proposait que des PDF et des images, mais
+// n'importe quel fichier passait par « Tous les fichiers », de n'importe quel poids. Le choix se juge tout de suite :
+// hors des bornes, le refus se dit sous le champ, avec le poids et la borne, et le fichier n'est pas retenu ; dans les
+// bornes, il part sous le type que l'application décide.
+describe('FichePiece — les bornes du seau', () => {
+  function monterSansFichier() {
+    monter()
+    // `monter` choisit un PDF : on en choisit un autre, comme l'opérateur qui se reprend.
+    return document.querySelector('#file') as HTMLInputElement
+  }
+
+  it('un fichier trop lourd : refusé dès le choix, dit sous le champ, et rien ne part', async () => {
+    const champ = monterSansFichier()
+    const lourd = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 22 * 1024 * 1024 })
+    await act(async () => { fireEvent.change(champ, { target: { files: [lourd] } }) })
+
+    expect(champ.parentElement?.querySelector('.error-text')?.textContent)
+      .toBe('Ce fichier n’est pas pris : il pèse 22\u00a0Mo, au-delà des 20\u00a0Mo qu’une pièce peut peser.')
+    await act(async () => { screen.getByRole('button', { name: 'Valider' }).click() })
+    expect(screen.getByText('Merci de déposer un fichier.')).toBeTruthy()
+    expect(faux.uploads).toEqual([])
+    expect(faux.inserts).toEqual([])
+  })
+
+  it('un format que le seau n’admet pas, choisi par « Tous les fichiers »', async () => {
+    const champ = monterSansFichier()
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['PK'], 'devis.docx')] } }) })
+    expect(champ.parentElement?.querySelector('.error-text')?.textContent)
+      .toBe('Ce fichier n’est pas pris : format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV).')
+    expect(champ.getAttribute('accept')).toBe('.pdf,.jpg,.jpeg,.png')
+  })
+
+  it('un fichier dans les bornes part sous le type décidé, pas sous celui du navigateur', async () => {
+    const champ = monterSansFichier()
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF-1.7'], 'facture.PDF', { type: '' })] } }) })
+    expect(champ.parentElement?.querySelector('.error-text')).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Valider' }).click() })
+    expect(faux.typesDeposes).toEqual(['application/pdf'])
   })
 })

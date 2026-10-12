@@ -7,6 +7,7 @@ import { montantsPourPiece } from './tauxChange'
 import { messageErreur } from './messageErreur'
 import { ouvrirApercu } from './apercu'
 import { retirerFichiers } from './stockage'
+import { preparerPiece } from './bornesStockage'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -44,6 +45,11 @@ export type ResultatDepot =
 // est requis, et non optionnel avec un Set vide par défaut, pour qu'aucun appelant ne retombe dans
 // ce trou sans l'avoir décidé.
 export async function deposerFichier(dossierId: string, file: File, hashsDuLot: Set<string>): Promise<ResultatDepot> {
+  // LES BORNES DU SEAU D'ABORD (ligne 22.6), avant toute lecture et tout envoi : le glisser-déposer de « Mes pièces » et
+  // l'appareil photo (`image/*`) laissaient partir n'importe quel fichier, de n'importe quel poids. Le refus est dit au
+  // client avec le poids et la borne ; le fichier part RÉÉTIQUETÉ du type que le seau admet (voir lib/bornesStockage.ts).
+  const pret = await preparerPiece(file)
+  if ('refus' in pret) return { statut: 'erreur', message: pret.refus.message }
   const hash = await hashFichier(file)
   if (hashsDuLot.has(hash)) return { statut: 'doublon' }
   // Réservation immédiate : aucun `await` entre le test et l'ajout, donc rien ne peut s'intercaler
@@ -56,7 +62,7 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
     if (await fichierDejaPresent(dossierId, hash)) return { statut: 'doublon' }
 
     const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
-    const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
+    const { error: uploadError } = await supabase.storage.from('pieces').upload(path, pret.corps)
     if (uploadError) throw uploadError
 
     // Le fichier est dans le stockage mais rien ne pointe encore dessus : si l'insertion échoue, on

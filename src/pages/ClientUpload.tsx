@@ -15,6 +15,7 @@ import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/comm
 import type { CibleCommentaire } from '../lib/commentaires'
 import { lireTout } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
+import { poids, TAILLE_MAX_PIECE } from '../lib/bornesStockage'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -319,7 +320,8 @@ export default function ClientUpload() {
       >
         <p style={{ margin: '8px 0', fontWeight: 600 }}>Glisse tes fichiers ici</p>
         <p className="muted" style={{ margin: '0 0 14px' }}>
-          Factures, reçus, notes de frais, relevés bancaires (CSV), appels de cotisation — plusieurs fichiers à la fois.
+          Factures, reçus, notes de frais, relevés bancaires (CSV), appels de cotisation — plusieurs fichiers à la fois,
+          {' '}{poids(TAILLE_MAX_PIECE)} au plus chacun.
         </p>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <label className="btn btn-primary" style={{ cursor: 'pointer' }} onClick={(e) => e.stopPropagation()}>

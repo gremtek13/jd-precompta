@@ -5,34 +5,20 @@ import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orie
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { retirerFichiers } from './stockage'
+import { preparerPiece } from './bornesStockage'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
 // (ImportDossierModal) et l'ajout ponctuel d'un ou plusieurs fichiers (AjouterDocumentsModal) : même
 // détection de format supporté, même déduplication par contenu, même tri automatique facture (→
 // Pièces) / relevé-cotisation-attestation (→ Documents). Seule la résolution du sous-dossier diffère
 // selon l'appelant (structure de dossiers importée, ou un sous-dossier unique choisi pour tout le lot).
-
-const EXTENSIONS_SUPPORTEES = ['pdf', 'jpg', 'jpeg', 'png', 'csv']
+//
+// Ce que l'import ACCEPTE — l'extension pdf, jpg, jpeg, png ou csv, sinon la signature d'un PDF, d'un JPEG ou d'un
+// PNG — et la taille qu'il admet vivent dans lib/bornesStockage.ts (ligne 22.6) : ce sont les bornes du seau `pieces`,
+// les mêmes pour tous les chemins qui y déposent. Les fenêtres les disent dès le choix des fichiers (`refusDUnePiece`).
 
 export function extensionDe(nom: string): string {
   return nom.toLowerCase().split('.').pop() ?? ''
-}
-
-// Un fichier réel (export sans suffixe, renommage manuel...) peut ne pas avoir d'extension du tout —
-// dans ce cas .split('.').pop() renvoie le nom entier, qui ne matche jamais la liste supportée et le
-// fichier serait ignoré à tort même si c'est bien un PDF/JPEG/PNG valide. On regarde la signature des
-// premiers octets avant de rejeter, plutôt que de se fier uniquement au nom.
-async function sniffeSignature(file: File): Promise<boolean> {
-  const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer())
-  const estPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 // %PDF
-  const estJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-  const estPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
-  return estPdf || estJpeg || estPng
-}
-
-export async function estFichierSupporte(file: File): Promise<boolean> {
-  if (EXTENSIONS_SUPPORTEES.includes(extensionDe(file.name))) return true
-  return sniffeSignature(file)
 }
 
 // Empreintes déjà présentes dans ce dossier (Pièces + Documents) — sert à ignorer un fichier déjà
@@ -89,6 +75,11 @@ export async function importerFichierDossier(params: {
 }): Promise<ResultatImportFichier> {
   const { dossierId, file, sousDossierId, hashsConnus, userId, onProgress } = params
 
+  // Les fenêtres écartent déjà ce que le seau refuserait, au choix des fichiers ; jugé ici aussi, avant tout envoi, pour
+  // tout appelant — et c'est d'ici que part le corps RÉÉTIQUETÉ du type que le seau admet.
+  const pret = await preparerPiece(file)
+  if ('refus' in pret) return { statut: 'erreur', message: `Non importé : ${pret.refus.message}` }
+
   const hash = await hashFichier(file)
   if (hashsConnus.has(hash)) {
     return { statut: 'doublon', message: 'Déjà présent dans ce dossier — ignoré' }
@@ -96,7 +87,7 @@ export async function importerFichierDossier(params: {
 
   onProgress?.('upload')
   const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
-  const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
+  const { error: uploadError } = await supabase.storage.from('pieces').upload(path, pret.corps)
   if (uploadError) throw uploadError
 
   // Le fichier est dans le stockage mais rien ne pointe encore dessus : si l'insertion échoue, on le

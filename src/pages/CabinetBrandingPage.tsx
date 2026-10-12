@@ -7,6 +7,7 @@ import type { Cabinet } from '../lib/types'
 import { messageErreur } from '../lib/messageErreur'
 import { retirerFichiers } from '../lib/stockage'
 import { POLICES_CABINET } from '../lib/polices'
+import { extensionDuLogo, poids, preparerLogo, refusDUnLogo, TAILLE_MAX } from '../lib/bornesStockage'
 
 // Polices proposées, pas de champ libre : chacune est servie par l'application elle-même
 // (lib/polices.ts), donc un nom hors de la liste ne se chargerait pas. La police par défaut est
@@ -30,6 +31,9 @@ export default function CabinetBrandingPage() {
   const [couleur, setCouleur] = useState(COULEUR_DEFAUT)
   const [police, setPolice] = useState('')
   const [logoFile, setLogoFile] = useState<File | null>(null)
+  // Le logo choisi dont la réponse des bornes est attendue : celle d'un logo déjà remplacé par un autre choix ne décide
+  // plus rien (ligne 22.6).
+  const choixDuLogo = useRef<File | null>(null)
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   // Verrou d'exécution de l'enregistrement, en `useRef` : `setSaving(true)` ne prend effet qu'au rendu suivant, donc deux
@@ -76,8 +80,30 @@ export default function CabinetBrandingPage() {
     }
   }, [logoFile, cabinet?.logo_storage_path])
 
-  function choisirLogo(e: ChangeEvent<HTMLInputElement>) {
-    setLogoFile(e.target.files?.[0] ?? null)
+  // LE SEAU DES LOGOS EST PUBLIC (ligne 22.6) : il sert chaque fichier sous le type qu'on lui a dit, à quiconque a
+  // l'adresse. Un SVG, qui peut porter du script, n'y entre plus — ni par ce champ, ni par son contrôle : un logo est un
+  // PNG, un JPEG ou un WebP reconnu à ses premiers octets (pas à son nom), de 500 Kio au plus (lib/bornesStockage.ts). Le
+  // fichier est retenu tout de suite pour l'aperçu, et retiré dès la réponse s'il dépasse les bornes ; une lecture ratée
+  // se journalise, l'enregistrement le rejuge.
+  async function choisirLogo(e: ChangeEvent<HTMLInputElement>) {
+    const champ = e.target
+    const choisi = champ.files?.[0] ?? null
+    choixDuLogo.current = choisi
+    setLogoFile(choisi)
+    setError(null)
+    if (!choisi) return
+    let refus
+    try {
+      refus = await refusDUnLogo(choisi)
+    } catch (err) {
+      console.warn('[CabinetBranding] le logo choisi n’a pas pu être lu ; l’enregistrement le rejugera :', messageErreur(err, 'illisible'))
+      return
+    }
+    if (!refus || choixDuLogo.current !== choisi) return
+    choixDuLogo.current = null
+    setLogoFile(null)
+    champ.value = ''
+    setError(`Ce logo n’est pas pris : ${refus.message}.`)
   }
 
   async function enregistrer(e: FormEvent) {
@@ -99,9 +125,12 @@ export default function CabinetBrandingPage() {
     try {
       let logoStoragePath = cabinet?.logo_storage_path ?? null
       if (logoFile) {
-        const extension = logoFile.name.split('.').pop() || 'png'
-        const chemin = `${monCabinetId}/logo-${Date.now()}.${extension}`
-        const { error: uploadError } = await supabase.storage.from('cabinet-logos').upload(chemin, logoFile)
+        // Rejugé avant l'envoi : le corps part RÉÉTIQUETÉ du type que sa signature prouve, et l'extension du chemin est
+        // celle de ce type — jamais celle du nom du fichier.
+        const pret = await preparerLogo(logoFile)
+        if ('refus' in pret) throw new Error(`Ce logo n’est pas pris : ${pret.refus.message}.`)
+        const chemin = `${monCabinetId}/logo-${Date.now()}.${extensionDuLogo(pret.type)}`
+        const { error: uploadError } = await supabase.storage.from('cabinet-logos').upload(chemin, pret.corps)
         if (uploadError) throw uploadError
         // L'ancien logo n'est pas gardé — un seul logo actif à la fois, pas d'archive à faire le
         // ménage dessus plus tard. Best-effort : un échec de suppression ne bloque pas le nouveau.
@@ -208,7 +237,8 @@ export default function CabinetBrandingPage() {
                 />
               </div>
             )}
-            <input id="logo" type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={choisirLogo} />
+            <input id="logo" type="file" accept=".png,.jpg,.jpeg,.webp" onChange={(e) => { void choisirLogo(e) }} />
+            <span className="muted" style={{ fontSize: '0.82rem' }}>PNG, JPEG ou WebP, {poids(TAILLE_MAX['cabinet-logos'])} au plus.</span>
             {cabinet?.logo_storage_path && !logoFile && (
               <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={retirerLogo} disabled={saving}>
                 Retirer le logo

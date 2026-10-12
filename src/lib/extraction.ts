@@ -144,7 +144,7 @@ export async function normalizeForExtraction(source: Blob, name: string): Promis
 
 // Ce que Textract sait lire — la PRÉCONDITION d'`extractPiece`, nommée une fois pour toutes.
 //
-// À ne pas confondre avec `EXTENSIONS_SUPPORTEES` (importFichiers.ts), qui répond à une tout autre
+// À ne pas confondre avec `typeDUnePiece` (bornesStockage.ts, ligne 22.6), qui répond à une tout autre
 // question : « l'application accepte-t-elle ce fichier ? ». Un CSV y figure, et à juste titre — c'est
 // un relevé bancaire parfaitement légitime. Mais Textract ne lit ni CSV ni texte brut : il répond
 // `UnsupportedDocumentException` (HTTP 400). Les deux questions se ressemblent assez pour qu'on
@@ -164,7 +164,7 @@ export async function normalizeForExtraction(source: Blob, name: string): Promis
 //
 // UN FICHIER SANS EXTENSION EST ENVOYÉ QUAND MÊME, et c'est délibéré : on ne sait pas ce qu'il
 // contient, et refuser de l'essayer ferait taire l'extraction sur un PDF valide simplement renommé —
-// c'est précisément le cas que `sniffeSignature` protège à l'import. Le coût des deux erreurs n'est
+// c'est précisément le cas que la signature (`typeDUnePiece`) protège à l'import. Le coût des deux erreurs n'est
 // pas le même : ne pas extraire un fichier lisible se perd en silence, tandis qu'un résidu dans la
 // relecture reste sous les yeux de l'opérateur, qui peut en faire quelque chose.
 const FORMATS_TEXTRACT = ['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff']

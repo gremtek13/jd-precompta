@@ -153,8 +153,10 @@ vi.mock('./supabase', async () => {
       }),
       storage: {
         from: () => ({
-          upload: async (chemin: string, blob: Blob, options?: { contentType?: string }) => {
-            journal.uploads.push({ chemin, type: options?.contentType, taille: blob.size })
+          // Le type noté est celui du CORPS : storage-js envoie un Blob en multipart et y ignore l'option `contentType`
+          // (bornesStockageClient.test.ts) — c'est ce type-là que le stockage juge contre les bornes du seau.
+          upload: async (chemin: string, blob: Blob) => {
+            journal.uploads.push({ chemin, type: blob.type, taille: blob.size })
             return { error: [...etat.uploadRefuse].some((m) => chemin.includes(m)) ? { message: 'stockage plein' } : null }
           },
           remove: async (chemins: string[]) => {
@@ -720,6 +722,21 @@ describe('importerFlux', () => {
       expect(issue).toMatchObject({ statut: 'echec', definitif: false, message: 'Le document reçu ne correspond pas à la facture demandée.' })
     }
     expect(journal.uploads).toEqual([])
+  })
+
+  it('une version lisible plus lourde que la borne du seau : rien n’est déposé, la facture se retentera', async () => {
+    // La plateforme (plateforme-agreee) ne rend pas plus de 10 Mio : cette borne-ci ne mord que si le cabinet descend
+    // celle d'une pièce en dessous. Elle se juge pour les DEUX fichiers avant d'en déposer un.
+    const lourde: Document = { octets: new Uint8Array(20 * 1024 * 1024 + 1), nature: 'pdf' }
+    lourde.octets.set(utf8('%PDF-1.7'))
+    const f = deposer(flux({ nom: 'FA-7.xml' }), xml(cii()), lourde)
+    const issue = await importerFlux(ctx(), f)
+    expect(issue).toEqual({
+      statut: 'echec', flux: f, definitif: false,
+      message: 'Sa version lisible n’est pas déposée : il pèse 20\u202f971\u202f521\u00a0octets, au-delà des 20\u202f971\u202f520\u00a0octets qu’une pièce peut peser.',
+    })
+    expect(journal.uploads).toEqual([])
+    expect(journal.inserts).toEqual([])
   })
 
   it('Factur-X : le XML vient du PDF, et le PDF se lit tel quel', async () => {

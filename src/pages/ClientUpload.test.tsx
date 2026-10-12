@@ -403,3 +403,48 @@ describe('ClientUpload — la recherche', () => {
     screen.getByText('1 sur 2')
   })
 })
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6), jouées par le VRAI dépôt (lib/depot.ts) : le glisser-déposer et
+// l'appareil photo laissaient partir n'importe quel fichier, de n'importe quel poids. Un fichier hors des bornes est dit
+// au client avec son nom, ce qu'il pèse et la borne — avant tout envoi : le faux client de ce fichier n'a pas de
+// stockage, un envoi y lèverait et dirait autre chose.
+describe('ClientUpload — les bornes du seau', () => {
+  async function deposerReellement() {
+    const reel = await vi.importActual<typeof import('../lib/depot')>('../lib/depot')
+    faux.deposer.mockImplementation(reel.deposerFichier)
+  }
+
+  it('dit chaque fichier refusé, son nom, son poids et la borne — dans le même lot', async () => {
+    poser()
+    await deposerReellement()
+    const { container } = await monter()
+    const heic = new File([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])], 'IMG_0042.HEIC', { type: 'image/heic' })
+    const lourd = new File(['%PDF-1.7'], 'scan-complet.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 25 * 1024 * 1024 })
+    const champ = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [heic, lourd] } }) })
+
+    // Lu dans `textContent` : `getByText` ramène l'insécable à une espace. Les deux fichiers partent en parallèle,
+    // leurs refus arrivent dans l'ordre de leurs réponses.
+    const erreur = await waitFor(() => {
+      const texte = container.querySelector('.error-text')?.textContent ?? ''
+      expect(texte).toContain('IMG_0042.HEIC : format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV).')
+      return texte
+    })
+    expect(erreur).toContain('scan-complet.pdf : il pèse 25 Mo, au-delà des 20 Mo qu’une pièce peut peser.')
+  })
+
+  it('un fichier glissé d’un format refusé est dit, comme un fichier choisi', async () => {
+    poser()
+    await deposerReellement()
+    const { container } = await monter()
+    const zone = screen.getByText('Glisse tes fichiers ici').closest('.card') as HTMLElement
+    const tableur = new File(['PK'], 'compte.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    await act(async () => { fireEvent.drop(zone, { dataTransfer: { files: [tableur] } }) })
+
+    await screen.findByText('compte.xlsx : format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV).')
+    expect(container.querySelector('input[type="file"][multiple]')?.getAttribute('accept')).toBe('.pdf,.jpg,.jpeg,.png,.csv')
+    // La borne se dit avant le choix, sous la zone de dépôt.
+    expect(zone.textContent).toContain('plusieurs fichiers à la fois, 20 Mo au plus chacun.')
+  })
+})

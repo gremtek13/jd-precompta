@@ -36,15 +36,23 @@ const faux = vi.hoisted(() => ({
   dossierActifId: 'd1' as string | null,
   depot: null as unknown,
   depots: [] as string[],
+  // Le VRAI dépôt à la place de la doublure : les bornes du seau des pièces (ligne 22.6) se jugent avant tout envoi.
+  depotReel: false,
 }))
 
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({ dossierActifId: faux.dossierActifId, session: { user: { id: 'u-client' }, access_token: 'jeton-fictif' } }),
 }))
 
-vi.mock('../lib/depot', () => ({
-  deposerFichier: async (_dossierId: string, fichier: File) => { faux.depots.push(fichier.name); return faux.depot },
-}))
+vi.mock('../lib/depot', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('../lib/depot')>()
+  return {
+    deposerFichier: async (dossierId: string, fichier: File, lot: Set<string>) => {
+      faux.depots.push(fichier.name)
+      return faux.depotReel ? reel.deposerFichier(dossierId, fichier, lot) : faux.depot
+    },
+  }
+})
 
 vi.mock('../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
@@ -468,6 +476,24 @@ describe('les gestes, par les trois fonctions et sous un verrou', () => {
     expect(screen.getByRole('status').textContent).toBe('Ta pièce est déposée dans ton dossier, mais elle n’a pas été envoyée pour ce mouvement : '
       + 'L\'exercice 2025 est validé : un justificatif ne s\'y propose plus.')
     expect(motsDuCabinet(texte())).toEqual([])
+  })
+
+  it('une pièce hors des bornes du seau : rien n’est déposé ni proposé, et l’écran dit son poids et la borne', async () => {
+    await monter()
+    await ouvrir('PRLV FICTIF TELECOM')
+    faux.depotReel = true
+    try {
+      const champ = document.querySelector('input[type="file"]') as HTMLInputElement
+      expect(champ.getAttribute('accept')).toBe('.pdf,.jpg,.jpeg,.png')
+      const lourde = new File(['%PDF-1.7'], 'facture-scannee.pdf', { type: 'application/pdf' })
+      Object.defineProperty(lourde, 'size', { value: 22 * 1024 * 1024 })
+      await act(async () => { fireEvent.change(champ, { target: { files: [lourde] } }) })
+      expect(faux.rpcs).toEqual([])
+      expect(screen.getByRole('status').textContent)
+        .toBe('Ton fichier n’a pas été déposé : il pèse 22\u00a0Mo, au-delà des 20\u00a0Mo qu’une pièce peut peser')
+    } finally {
+      faux.depotReel = false
+    }
   })
 
   it('deux dépôts dans le même act : un seul part', async () => {
