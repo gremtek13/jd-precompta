@@ -65,6 +65,11 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
       + 'au montage de « Ma simulation » (P7).',
   },
+  'rpc:plan_du_dossier': {
+    nature: 'lecture',
+    raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '
+      + '`plan_comptable_des_dossiers`, ligne 43, étape PC1), lu avec le dossier par `DossierDetail` (étape PC3).',
+  },
   'fonction:superpdp-credentials:status': {
     nature: 'lecture',
     raison: 'L’action « status » ne lit que `superpdp_credentials` en base : aucun appel à Super PDP.',

@@ -4,6 +4,7 @@ import CotisationsTab from './CotisationsTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import { aNouveau, cotisation, ecriture, ecritureJuste, faux, ligne, reinitialiser } from '../../test/cotisationsPaiementPersonnel'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // L'ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL, À L'ÉCRAN (ligne 26.6, phase C).
 //
@@ -17,7 +18,7 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 vi.mock('../../lib/supabase', async () => ({ supabase: (await import('../../test/cotisationsPaiementPersonnel')).supabaseFaux() }))
 vi.mock('../../lib/extraction', async () => (await import('../../test/cotisationsPaiementPersonnel')).extractionFausse())
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 const monter = (modele: ModeleComptable = TRESORERIE, valides: readonly number[] = []) => render(
   <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modele={modele} /></AvecExercicesValides>,
@@ -156,7 +157,7 @@ describe('CotisationsTab — le geste « Payée depuis le compte personnel »', 
 
   it('en engagement, l’écriture se passe face au compte choisi pour le dirigeant', async () => {
     faux.cotisations = [cotisation()]
-    monter({ mode: 'engagement', compteNotesDeFrais: '467000' })
+    monter({ mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT })
     await ouvrirLaFenetre()
     await saisirLaDate('2026-03-10')
 

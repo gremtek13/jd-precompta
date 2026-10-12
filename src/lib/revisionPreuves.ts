@@ -610,7 +610,7 @@ function preuveDuRegistreAmortissements(compte: string, soldeCentimes: number, d
     const reprise = dateDeLaReprise(d)
     const ids = new Set(biens.map((b) => b.id))
     const enDefaut = dotationsDuRegistre(d.immobilisations, d.natures, d.ecritures, reprise, d.anneeCourante,
-      frontiereDeValidation(d.exercicesValides.map((e) => e.annee)))
+      frontiereDeValidation(d.exercicesValides.map((e) => e.annee)), d.modele.plan)
       .filter((x) => x.annee === d.annee && ids.has(x.immobilisation.id) && x.etat !== 'ecrite')
     if (enDefaut.length > 0) {
       faits.push(fait('dotations-en-defaut',
@@ -758,14 +758,14 @@ function preuveDesDeclarations(compte: string, soldeCentimes: number, d: Donnees
       }
     }
     const frontiere = frontiereDeValidation(d.exercicesValides.map((e) => e.annee))
-    const liquidations = liquidationsDesynchronisees(d.ecritures, declarees.filter((x) => x.periode_fin >= `${d.annee}-01-01`), frontiere)
+    const liquidations = liquidationsDesynchronisees(d.ecritures, declarees.filter((x) => x.periode_fin >= `${d.annee}-01-01`), frontiere, d.modele.plan)
     if (liquidations.length > 0) {
       faits.push(fait('liquidations-a-reecrire',
         `${pluriel(liquidations.length, 'déclaration', 'déclarations')} de l’exercice dont l’écriture de liquidation manque ou ne suit plus la déclaration.`,
         null, liquidations.length))
       causes++
     }
-    const paiements = paiementsTvaDesynchronises(d.ecritures, d.lignes.filter((l) => l.date >= `${d.annee}-01-01` && l.date <= fin), frontiere)
+    const paiements = paiementsTvaDesynchronises(d.ecritures, d.lignes.filter((l) => l.date >= `${d.annee}-01-01` && l.date <= fin), frontiere, d.modele.plan)
     if (paiements.length > 0) {
       faits.push(fait('paiements-a-reecrire',
         `${pluriel(paiements.length, 'paiement ou remboursement', 'paiements ou remboursements')} de TVA de l’exercice dont l’écriture ne suit plus le mouvement.`,

@@ -2,7 +2,6 @@ import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
-import { COMPTE_EXPLOITANT } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon } from './types'
@@ -28,12 +27,12 @@ import { estFigee } from './validationExercice'
 
 // LE COMPTE DU DIRIGEANT SE LIT DANS LE MODÈLE DU DOSSIER. En trésorerie — une entreprise individuelle
 // aux bénéfices non commerciaux —, c'est le compte de l'exploitant, 108, qui retrace ses apports et ses
-// prélèvements personnels. En engagement, c'est le compte que le cabinet a choisi pour le dirigeant, le
+// prélèvements personnels : celui que le PLAN du dossier donne au rôle `exploitant` (lib/planComptable.ts). En engagement, c'est le compte que le cabinet a choisi pour le dirigeant, le
 // même que celui de ses notes de frais (455 pour un associé de société, 108 pour un exploitant, 467 sinon) :
 // deux comptes pour la même personne partageraient ce qu'on lui doit en deux moitiés. La base fait le
 // même choix, et refuse une écriture sur un autre compte.
 export function compteDuDirigeant(modele: ModeleComptable): string {
-  return modele.mode === 'engagement' ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT
+  return modele.mode === 'engagement' ? modele.compteNotesDeFrais : modele.plan.exploitant
 }
 
 // Pourquoi ce mouvement ne peut pas être classé en virement personnel, dit AVANT d'écrire. La base
@@ -54,7 +53,7 @@ export function refusVirementPersonnel(ligne: MouvementBancaire): string | null 
 
 // Sans TVA : un virement personnel n'est ni une recette ni une dépense, il ne collecte ni ne déduit rien.
 export function ecritureDuVirementPersonnel(ligne: MouvementBancaire, modele: ModeleComptable): LigneEcritureMouvement[] {
-  return ecritureDuMouvement(ligne, compteDuDirigeant(modele), null)
+  return ecritureDuMouvement(ligne, compteDuDirigeant(modele), null, modele.plan)
 }
 
 // LES VIREMENTS PERSONNELS À ÉCRIRE : ceux dont l'écriture n'est pas celle que le classement produirait

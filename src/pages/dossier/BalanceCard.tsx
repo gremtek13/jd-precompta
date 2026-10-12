@@ -7,6 +7,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
+import type { PlanComptable } from '../../lib/planComptable'
 import type { ANouveau } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
@@ -48,7 +49,9 @@ function decoder(octets: ArrayBuffer): string {
 
 const pluriel = (n: number, mot: string, marque = 's') => `${n} ${mot}${n > 1 ? marque : ''}`
 
-export default function BalanceCard({ dossierId }: { dossierId: string }) {
+// `plan` : le plan comptable du dossier (lib/planComptable.ts) — la reprise y range la banque et la TVA, et y ouvre le
+// résultat d'avant.
+export default function BalanceCard({ dossierId, plan }: { dossierId: string; plan: PlanComptable }) {
   const [nomFichier, setNomFichier] = useState<string | null>(null)
   const [empreinte, setEmpreinte] = useState<string | null>(null)
   const [lecture, setLecture] = useState<ResultatLectureBalance | null>(null)
@@ -119,7 +122,7 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
 
   // Seulement sur une balance reconnue ET équilibrée : sur un fichier amputé, préparer des à-nouveaux
   // reviendrait à ouvrir un dossier sur des soldes dont on sait qu'ils sont faux.
-  const preparation = lecture?.colonnes && controle?.equilibree ? preparerANouveaux(lecture.lignes, exercice) : null
+  const preparation = lecture?.colonnes && controle?.equilibree ? preparerANouveaux(lecture.lignes, exercice, plan) : null
   const anneeCourante = new Date().getFullYear()
   const exercicesProposes = [anneeCourante - 3, anneeCourante - 2, anneeCourante - 1, anneeCourante, anneeCourante + 1]
 
@@ -339,7 +342,7 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
               <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
                 Seuls les comptes de bilan s’ouvrent. Le résultat de l’exercice précédent est repris en
                 120 ou 129, en attente d’affectation : l’application ne décide pas de son affectation.
-                Un compte de banque est repris sur le compte banque de l’application (512000).
+                Un compte de banque est repris sur le compte banque de l’application ({plan.banque}).
               </p>
               <div className="field" style={{ maxWidth: 220 }}>
                 <label htmlFor="an-exercice">Exercice ouvert</label>

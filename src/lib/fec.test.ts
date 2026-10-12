@@ -9,6 +9,7 @@ import { lignesPourPiece, type LigneAGenerer } from './ecritures'
 import { defautsDeNumerotation } from './validationExercice'
 import { lettrages, type LettrageDeLigne } from './lettrage'
 import { ecritureDeLaLiquidation, ecritureDuPaiementTva, type DeclarationLiquidable } from './liquidationTva'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -242,8 +243,8 @@ describe('genererFec — numérotation et dates', () => {
 // paiement, chacune à sa date : sous un seul numéro, elle faisait une écriture à plusieurs dates, que l'outil de la DGFiP
 // range parmi ses anomalies. Les brouillons ci-dessous sont ceux que la génération écrit (`lignesPourPiece`).
 describe('genererFec — une écriture ne porte qu’une date (l’outil de la DGFiP)', () => {
-  const TRESORERIE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const }
-  const ENGAGEMENT = { mode: 'engagement' as const, compteNotesDeFrais: '455000' as const }
+  const TRESORERIE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT }
+  const ENGAGEMENT = { mode: 'engagement' as const, compteNotesDeFrais: '455000' as const, plan: PLAN_PAR_DEFAUT }
   const paiement = (id: string, date: string, montant: number) => ({ id, date, montant, origine: 'rapprochement' as const })
   const enBase = (prefixe: string) => (l: LigneAGenerer, i: number): EcritureBrouillon =>
     ligne(l.piece_id!, { ...l, id: `${prefixe}${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null })
@@ -954,7 +955,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     tva_deductible_immobilisations: 0,
     cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
   }
-  const liquidation = ecritureDeLaLiquidation(q1).map((l, i) => ligne('', {
+  const liquidation = ecritureDeLaLiquidation(q1, PLAN_PAR_DEFAUT).map((l, i) => ligne('', {
     id: `q1-${i}`, piece_id: null, declaration_tva_id: 'q1', date: '2026-03-31', ...l,
   }))
   const prelevement: LigneBancaire = {
@@ -964,7 +965,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,
     source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z',
   }
-  const paiement = ecritureDuPaiementTva(prelevement).map((l, i) => ligne('', {
+  const paiement = ecritureDuPaiementTva(prelevement, PLAN_PAR_DEFAUT).map((l, i) => ligne('', {
     id: `p-${i}`, piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', ...l,
   }))
 
@@ -1018,7 +1019,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
     ecritureDuPaiementPersonnel(c, modele).map((l, i) => ligne('', {
       id: `${c.id}-${i}`, piece_id: null, cotisation_id: c.id, date: c.paiement_personnel_le!, ...l,
     }))
-  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
   it('la porte au journal OD, au jour du paiement, le relevé du compte personnel pour pièce', () => {
     const fec = genererFec(paiement(echeance, TRESO), [], [], [], 'tresorerie', [], SANS_LETTRAGE)
@@ -1032,7 +1033,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
   })
 
   it('en engagement, face au compte du dirigeant, sans compte auxiliaire', () => {
-    const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
     const rows = colonnes(genererFec(paiement(echeance, ENGAGEMENT), [], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
     expect(rows.map((r) => [r[0], r[4], r[6], r[7], r[8], r[11], r[12]])).toEqual([
       ['OD', '646000', '', '', 'Compte personnel du 10/03/2026', '1000,00', '0,00'],
@@ -1136,7 +1137,7 @@ describe('numeroterFec — la note de frais en trésorerie', () => {
   it('fait une écriture équilibrée au journal des achats, le 108000 nommé, sans compte auxiliaire', () => {
     const note = piece('note', { type_piece: 'note_frais', tiers: 'Restaurant', montant_ttc: 42.5, nom_fichier: 'ticket.jpg' })
     const enBase = (l: LigneAGenerer, i: number): EcritureBrouillon => ligne('note', { ...l, id: `n${i}`, ligne_bancaire_id: null })
-    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000' })
+    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT })
       .map(enBase)
     const n = numeroterFec(brouillon, [note], [], [], 'tresorerie', [])
     expect(n.lignes.map((l) => [l.journal, l.numero, l.ecriture.compte, l.ecriture.sens, l.ecriture.montant, l.compteLib, l.compAuxNum])).toEqual([

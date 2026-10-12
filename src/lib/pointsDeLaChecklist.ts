@@ -200,7 +200,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const etatsLettrages = etatsDesLettragesManuels(ecritures, toutesPieces, lettragesManuels, modele.mode)
   const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
-  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere)
+  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere, modele.plan)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
@@ -208,7 +208,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même
   // famille que les pièces « à régénérer », invisible de la même façon.
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere)
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere, modele.plan)
   // Des encaissements affectés en recette SANS TAUX alors que le dossier est assujetti — affectés avant
   // qu'il le devienne : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
   // Pas d'un exercice validé : la base refuse de les réaffecter (lib/validationExercice.ts).
@@ -227,7 +227,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // celle du rapprochement — rapprochées avant qu'il s'écrive, ou une CSG-CRDS saisie depuis
   // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie. Pas d'un
   // exercice validé : la base refuse d'y écrire.
-  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode, frontiere)
+  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode, frontiere, modele.plan)
   // Un rapprochement d'échéance qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel, posé
   // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture. Pas d'un exercice validé : ni le
   // mouvement ni l'échéance n'y changent plus.
@@ -241,7 +241,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const echeancesManquantes = couverture ? echeancesNonRapprochees(emprunts, lignes, couverture.debut, couverture.fin) : []
   // L'écriture d'une échéance rapprochée qui n'est plus celle de son découpage : défensif, la base les
   // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.
-  const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes)
+  const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes, modele.plan)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
   // La facture d'un bien n'y compte pas : elle s'écrit sur le compte de sa nature, et la 2035 l'écarte.
@@ -300,7 +300,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const montantsIgnores = montantsDesMouvementsIgnores(ignoresHorsFec)
   // Un mouvement écrit sur un compte de bilan dont l'écriture ne suit plus le compte. Défensif : la base écrit le compte
   // et l'écriture ensemble (lib/compteDeBilan.ts).
-  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignes, frontiere)
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignes, frontiere, modele.plan)
   // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026) : sous le seuil la
   // pièce est ALIGNÉE au rapprochement et il n'y a rien à dire ; au-dessus, un écart large est
   // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
@@ -318,7 +318,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // à-nouveaux : lue à moitié, le point se tait plutôt que de réclamer un exercice repris.
   const dotationsManquantes = ouvertureIncomplete !== null
     ? []
-    : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante, frontiere), anneeCourante)
+    : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante, frontiere, modele.plan), anneeCourante)
   const exercicesDesDotations = [...new Set(dotationsManquantes.map((d) => d.annee))].sort((a, b) => a - b)
   // Les forfaits kilométriques qui manquent au brouillon, sur la même règle (lib/forfaitKilometrique.ts) : celui
   // d'un exercice FINI qui n'est pas écrit, et celui qui ne suit plus le cadre 7. La 2035 compte le forfait en
@@ -333,8 +333,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // ensemble —, et les périodes dont la déclaration manque, une fois son échéance passée. Celles-ci sur les exercices où
   // le dossier a une activité, hors des exercices validés et des périodes reprises : elles se taisent sur une lecture
   // partielle des déclarations ou de l'ouverture, qui ferait réclamer une période déclarée ou reprise.
-  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere)
-  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignes, frontiere)
+  const liquidationsPerimees = liquidationsDesynchronisees(ecritures, declarationsTva, frontiere, modele.plan)
+  const paiementsTvaPerimes = paiementsTvaDesynchronises(ecritures, lignes, frontiere, modele.plan)
   const anneesActives = [
     ...lignes.map((l) => anneeDe(l.date)),
     ...piecesValidees.flatMap((p) => (p.date_piece ? [anneeDe(p.date_piece)] : [])),

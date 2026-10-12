@@ -4,8 +4,8 @@ import {
 } from './affectationBanque'
 import { ecartEnJours, libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
-import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT } from './comptes'
 import { genererEcheancier, type Emprunt, type LigneEcheancier } from './emprunts'
+import type { CleRoleComptable, PlanComptable } from './planComptable'
 import { ajouterJours, formatDate } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon } from './types'
@@ -127,21 +127,22 @@ export function capitalDeLEcheance(ligne: Pick<MouvementBancaire, 'montant'>, d:
 // L'écriture d'une échéance ou d'un déblocage, une ligne par compte NON NUL : la base ne compte pas une
 // ligne à zéro euro (une échéance sans assurance, un différé qui ne rembourse aucun capital) et refuse
 // l'écriture qui en porterait une. LE SENS VIENT DU SIGNE DU MOUVEMENT, comme pour une affectation : une
-// sortie crédite la banque, un déblocage la débite.
-export function ecritureDeLEcheance(ligne: MouvementBancaire, d: DecoupageEcheance): LigneEcritureMouvement[] {
+// sortie crédite la banque, un déblocage la débite. Les quatre comptes — l'emprunt, ses intérêts, son assurance, la
+// banque — sont ceux du PLAN du dossier, que `rapprocher_echeance_emprunt` relit au même plan.
+export function ecritureDeLEcheance(ligne: MouvementBancaire, d: DecoupageEcheance, plan: PlanComptable): LigneEcritureMouvement[] {
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const total = centimes(Math.abs(ligne.montant)) / 100
   if (estDeblocage(ligne)) {
     return [
-      { compte: COMPTE_EMPRUNT, sens: 'credit', montant: total, libelle },
-      { compte: COMPTE_BANQUE, sens: 'debit', montant: total, libelle },
+      { compte: plan.emprunt, sens: 'credit', montant: total, libelle },
+      { compte: plan.banque, sens: 'debit', montant: total, libelle },
     ]
   }
   const lignes: LigneEcritureMouvement[] = [
-    { compte: COMPTE_EMPRUNT, sens: 'debit', montant: capitalDeLEcheance(ligne, d), libelle },
-    { compte: COMPTE_INTERETS_EMPRUNT, sens: 'debit', montant: centimes(d.interets) / 100, libelle },
-    { compte: COMPTE_ASSURANCE_EMPRUNT, sens: 'debit', montant: centimes(d.assurance) / 100, libelle },
-    { compte: COMPTE_BANQUE, sens: 'credit', montant: total, libelle },
+    { compte: plan.emprunt, sens: 'debit', montant: capitalDeLEcheance(ligne, d), libelle },
+    { compte: plan.interets_emprunt, sens: 'debit', montant: centimes(d.interets) / 100, libelle },
+    { compte: plan.assurance_emprunt, sens: 'debit', montant: centimes(d.assurance) / 100, libelle },
+    { compte: plan.banque, sens: 'credit', montant: total, libelle },
   ]
   return lignes.filter((l) => l.montant > 0)
 }
@@ -286,10 +287,16 @@ export interface PartEcheance {
   ligne: MouvementBancaire
   libelle: string
   poste: string
-  // Le compte où l'écriture de l'échéance porte cette part : 661100 pour les intérêts, 616800 pour l'assurance.
-  compte: string
+  // Le RÔLE du compte où l'écriture de l'échéance porte cette part — les intérêts ou l'assurance de l'emprunt — : son
+  // compte est celui du plan du dossier (661100 et 616800 par défaut), que la 2035 y lit pour la concordance
+  // (lib/declaration2035.ts). Un rôle et non un compte : ces parts comptent aussi dans des calculs qui n'ont pas le plan
+  // — l'estimation, la situation, la simulation du client, qui ne le lit pas —, et aucun n'y regarde le compte.
+  role: RoleDeLEcheance
   montantPoste: number
 }
+
+/** Les deux rôles qu'une échéance d'emprunt porte en charge. */
+export type RoleDeLEcheance = Extract<CleRoleComptable, 'interets_emprunt' | 'assurance_emprunt'>
 
 export function partsDesEcheances(lignes: readonly MouvementBancaire[]): PartEcheance[] {
   const parts: PartEcheance[] = []
@@ -298,10 +305,10 @@ export function partsDesEcheances(lignes: readonly MouvementBancaire[]): PartEch
     const interets = ligne.emprunt_interets ?? 0
     const assurance = ligne.emprunt_assurance ?? 0
     if (interets > 0) {
-      parts.push({ ligne, libelle: LIBELLE_INTERETS_EMPRUNT, poste: POSTE_INTERETS_EMPRUNT, compte: COMPTE_INTERETS_EMPRUNT, montantPoste: interets })
+      parts.push({ ligne, libelle: LIBELLE_INTERETS_EMPRUNT, poste: POSTE_INTERETS_EMPRUNT, role: 'interets_emprunt', montantPoste: interets })
     }
     if (assurance > 0) {
-      parts.push({ ligne, libelle: LIBELLE_ASSURANCE_EMPRUNT, poste: POSTE_ASSURANCE_EMPRUNT, compte: COMPTE_ASSURANCE_EMPRUNT, montantPoste: assurance })
+      parts.push({ ligne, libelle: LIBELLE_ASSURANCE_EMPRUNT, poste: POSTE_ASSURANCE_EMPRUNT, role: 'assurance_emprunt', montantPoste: assurance })
     }
   }
   return parts
@@ -385,11 +392,13 @@ export function couvertureDuReleve(
 export function echeancesDesynchronisees(
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly MouvementBancaire[],
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): MouvementBancaire[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((ligne) => {
     const d = decoupageDuMouvement(ligne)
     if (!d) return false
-    return !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLEcheance(ligne, d), ligne.date)
+    return !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLEcheance(ligne, d, plan), ligne.date)
   })
 }

@@ -67,6 +67,7 @@ export function declarationPourLaRevue(
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
     annee, d.piecesValidees, d.categories, d.immobilisations, comptees, d.vehicules, assujettiTva, paiements, parts, d.declarationsTva,
+    modele.plan,
   )
 }
 

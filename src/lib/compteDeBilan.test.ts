@@ -5,7 +5,7 @@ import {
   COMPTE_BANQUE, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_VIREMENTS_INTERNES, libelleDuPlanComptable,
 } from './comptes'
 import {
-  COMPTES_DE_BILAN_PROPOSES, REFUS_COMPTE_DE_BILAN_CLASSE, ecritureDuCompteDeBilan, idsMouvementsSurUnCompteDeBilan,
+  comptesDeBilanProposes, REFUS_COMPTE_DE_BILAN_CLASSE, ecritureDuCompteDeBilan, idsMouvementsSurUnCompteDeBilan,
   libelleDuCompteDeBilan, lireCompteSaisi, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilan,
   refusCompteDeBilanDuMouvement, refusMouvementCompteDeBilan,
 } from './compteDeBilan'
@@ -21,8 +21,8 @@ import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
@@ -180,7 +180,7 @@ describe('refusCompteDeBilan — le même ordre et les mêmes raisons que la fon
   })
 
   it('accepte les deux comptes proposés, dans les deux modèles et pour tout dirigeant', () => {
-    for (const { compte } of COMPTES_DE_BILAN_PROPOSES) {
+    for (const { compte } of comptesDeBilanProposes(PLAN_PAR_DEFAUT)) {
       for (const mode of MODES) for (const dirigeant of DIRIGEANTS) expect(refusCompteDeBilan(compte, mode, dirigeant)).toBeNull()
     }
   })
@@ -270,7 +270,7 @@ describe('refusMouvementCompteDeBilan — le mouvement, avant le compte, dans l�
 
 describe('ecritureDuCompteDeBilan — le compte choisi face à la banque, dans le sens du mouvement', () => {
   it('un virement vers l’épargne débite le 580000 et crédite la banque', () => {
-    expect(ecritureDuCompteDeBilan(mouvement(), COMPTE_VIREMENTS_INTERNES)).toEqual([
+    expect(ecritureDuCompteDeBilan(mouvement(), COMPTE_VIREMENTS_INTERNES, PLAN_PAR_DEFAUT)).toEqual([
       { compte: COMPTE_VIREMENTS_INTERNES, sens: 'debit', montant: 2000, libelle: 'VIR EPARGNE' },
       { compte: COMPTE_BANQUE, sens: 'credit', montant: 2000, libelle: 'VIR EPARGNE' },
     ])
@@ -278,7 +278,7 @@ describe('ecritureDuCompteDeBilan — le compte choisi face à la banque, dans l
 
   it('un dépôt de garantie rendu crédite le 275000 et débite la banque', () => {
     const rendu = mouvement({ montant: 1200, libelle: 'VIR RESTITUTION DEPOT' })
-    expect(ecritureDuCompteDeBilan(rendu, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES)).toEqual([
+    expect(ecritureDuCompteDeBilan(rendu, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, PLAN_PAR_DEFAUT)).toEqual([
       { compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, sens: 'credit', montant: 1200, libelle: 'VIR RESTITUTION DEPOT' },
       { compte: COMPTE_BANQUE, sens: 'debit', montant: 1200, libelle: 'VIR RESTITUTION DEPOT' },
     ])
@@ -304,31 +304,31 @@ describe('mouvementsSurUnCompteDeBilanDesynchronises — défensif : l’écritu
   ]
 
   it('se tait sur l’écriture que la base a écrite', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises(juste, [ecrit], null)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises(juste, [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('dit l’écriture absente, sur un autre compte, d’un autre montant, dans l’autre sens ou à une autre date', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], null)).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([ecrit])
     for (const o of [
       { compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES }, { montant: 1999.9 }, { sens: 'credit' as const }, { date: '2026-03-13' },
     ]) {
       const fausse = [ecriture({ id: 'e1', ...o }), juste[1]]
-      expect(mouvementsSurUnCompteDeBilanDesynchronises(fausse, [ecrit], null), JSON.stringify(o)).toEqual([ecrit])
+      expect(mouvementsSurUnCompteDeBilanDesynchronises(fausse, [ecrit], null, PLAN_PAR_DEFAUT), JSON.stringify(o)).toEqual([ecrit])
     }
   })
 
   it('ne regarde que les mouvements écrits sur un compte de bilan, hors d’un exercice validé', () => {
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [mouvement()], null)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [mouvement()], null, PLAN_PAR_DEFAUT)).toEqual([])
     // Rapprochés d'autre chose — une catégorie, une pièce —, ils ont leur propre contrôle : sans compte de bilan, il n'y
     // a pas d'écriture attendue ici, et les juger les dirait tous « à réécrire ».
     const affecte = mouvement({ id: 'l2', statut: 'rapprochee', categorie_id: 'cat' })
     const dUnePieceRapprochee = mouvement({ id: 'l3', statut: 'rapprochee', piece_id: 'p1' })
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [affecte, dUnePieceRapprochee], null)).toEqual([])
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-12-31')).toEqual([])
-    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-03-11')).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [affecte, dUnePieceRapprochee], null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-12-31', PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-03-11', PLAN_PAR_DEFAUT)).toEqual([ecrit])
     // L'écriture d'une pièce qui désigne le même mouvement n'est pas la sienne.
     const dUnePiece = juste.map((e) => ({ ...e, piece_id: 'p1' }))
-    expect(mouvementsSurUnCompteDeBilanDesynchronises(dUnePiece, [ecrit], null)).toEqual([ecrit])
+    expect(mouvementsSurUnCompteDeBilanDesynchronises(dUnePiece, [ecrit], null, PLAN_PAR_DEFAUT)).toEqual([ecrit])
   })
 })
 

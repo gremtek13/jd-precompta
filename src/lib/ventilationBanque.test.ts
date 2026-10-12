@@ -9,9 +9,10 @@ import {
   recettesVentileesSansTaux, refusVentilation, resteAVentiler, ventilationsIncoherentes, type PartSaisie,
 } from './ventilationBanque'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // TYPÉS sans `as` : le compilateur confronte chaque champ au type, donc à la table.
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {

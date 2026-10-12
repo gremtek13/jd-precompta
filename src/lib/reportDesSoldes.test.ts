@@ -17,10 +17,10 @@ import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { tirage } from '../test/encaissementsBatterie'
 import { derniereDefinitionSql } from '../test/schema'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
-const SOCIETE_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000' }
-const EI_ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const SOCIETE_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
+const EI_ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
 
 type Ligne = [compte: string, libelle: string, sens: SensEcriture, montant: number]
 
@@ -415,7 +415,7 @@ describe('le résultat', () => {
 describe('une entreprise individuelle', () => {
   it('est un dossier dont le compte du dirigeant est le 108 — la règle de la base', () => {
     expect(exploitantIndividuel(TRESORERIE)).toBe(true)
-    expect(exploitantIndividuel({ mode: 'tresorerie', compteNotesDeFrais: '467000' })).toBe(true)
+    expect(exploitantIndividuel({ mode: 'tresorerie', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT })).toBe(true)
     expect(exploitantIndividuel(EI_ENGAGEMENT)).toBe(true)
     expect(exploitantIndividuel(SOCIETE)).toBe(false)
     expect(exploitantIndividuel(SOCIETE_467)).toBe(false)

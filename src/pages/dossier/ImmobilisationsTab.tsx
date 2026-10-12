@@ -8,6 +8,7 @@ import {
   type DotationDuRegistre, type EtatDotation,
 } from '../../lib/amortissements'
 import { immobilisationSansJustificatif } from '../../lib/controles'
+import type { PlanComptable } from '../../lib/planComptable'
 import type { ANouveau, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -71,7 +72,8 @@ interface BienEnEdition {
 // Rien ne s'écrit sans ce clic. L'amortissement est celui de la règle fiscale — prorata temporis depuis la
 // mise en service, le reliquat après la durée —, et la colonne « Dotation » le montre : elle affichait
 // jusqu'au 01/10/2026 l'annuité pleine dès l'acquisition, sous une réserve qui disait de la reprendre.
-export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
+// `plan` : le plan comptable du dossier (lib/planComptable.ts) — chaque dotation se compose sur son compte des dotations.
+export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { dossierId: string; assujettiTva: boolean; plan: PlanComptable }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
@@ -231,7 +233,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   //
   // Celles d'un exercice figé par la validation ne sont ni à écrire ni à réclamer : la base n'y écrit plus. Le tableau
   // d'amortissement de chaque bien dit ce qu'il en est (`etatDeLExercice`).
-  const dotations = dotationsDuRegistre(immobilisations, natures, ecrituresDotations, ouverture, anneeCourante, frontiere)
+  const dotations = dotationsDuRegistre(immobilisations, natures, ecrituresDotations, ouverture, anneeCourante, frontiere, plan)
   const aTraiter = dotations.filter((d) => !d.figee && d.etat !== 'ecrite')
   const aEcrire = aTraiter.filter((d) => d.etat !== 'validee' && !d.refus)
   // Ce que la Checklist réclame : un exercice révolu sans sa dotation, ou une dotation qui ne suit plus le
@@ -648,7 +650,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
             )}
           </div>
           <p className="muted">
-            Chaque dotation s’écrit au 31 décembre de son exercice : le compte 681100 au débit, le compte
+            Chaque dotation s’écrit au 31 décembre de son exercice : le compte {plan.dotations_amortissements} au débit, le compte
             d’amortissement du bien au crédit — celui que sa nature donne. Elle compte prorata temporis depuis la
             mise en service, et le FEC la porte au journal des opérations diverses. Celle de l’exercice en cours
             peut s’écrire dès aujourd’hui ; la Checklist ne la réclame qu’une fois l’exercice fini. Un exercice

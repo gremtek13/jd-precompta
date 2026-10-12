@@ -9,6 +9,7 @@ import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { lignesChargeProduitPourPiece } from './ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -30,7 +31,7 @@ const calcul = (o: {
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [],
   // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
   cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
-  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [],
+  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -64,7 +65,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [])
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT)
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -264,7 +265,7 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     const encaissement = paiement({ id: 'm', piece_id: null, categorie_id: 'c-honoraires-recus', date: '2025-04-02', montant: 300 })
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
-      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [],
+      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT,
     )
     expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
     expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Honoraires', 80, 1]])
@@ -764,7 +765,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
     const gains = [...categories, { id: 'c-gains', poste_2035: POSTE_ARRONDIS_TVA_PRODUIT } as Categorie]
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'g', type_piece: 'vente', categorie_id: 'c-gains', montant_ht: 10, montant_ttc: 10 })], gains, [], [], [], true,
-      paiementsDesPieces([], []), [], [declaration()],
+      paiementsDesPieces([], []), [], [declaration()], PLAN_PAR_DEFAUT,
     )
     expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0 }])
   })
@@ -869,7 +870,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
     o.annee ?? 2025, o.pieces ?? [], categoriesComptables, o.immos ?? [],
     cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
     paiementsDesPieces(o.paiements ?? [], []),
-    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [],
+    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [], PLAN_PAR_DEFAUT,
   )
   // Par poste ET par nature : une vente rangée dans la catégorie des achats est une contribution « recette » au
   // poste Achats, et la ligne des dépenses Achats ne la porte pas.
@@ -970,7 +971,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
       paiement({ id: `${p.id}-jan`, piece_id: p.id, date: '2026-01-10', montant: -70 }),
     ])
     const ecrites = pieces.flatMap((p) => lignesChargeProduitPourPiece(
-      'd1', p, { compte: '606100', immobilisation: false }, true, paiementsDesPieces(paiements, []).get(p.id) ?? [],
+      'd1', p, { compte: '606100', immobilisation: false }, true, paiementsDesPieces(paiements, []).get(p.id) ?? [], PLAN_PAR_DEFAUT,
     )).filter((l) => l.compte === '606100')
     const ecritEn = (annee: number) => Math.round(ecrites.filter((l) => l.date.startsWith(String(annee))).reduce((s, l) => s + l.montant, 0) * 100) / 100
     expect(calculComptable({ annee: 2025, pieces, paiements }).totalDepenses).toBe(83.34)
@@ -999,7 +1000,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
   const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
-    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [],
+    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT,
   )
 
   it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
@@ -1025,7 +1026,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
-    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [])
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT)
     expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
     expect(d.resultat).toBe(300)
   })

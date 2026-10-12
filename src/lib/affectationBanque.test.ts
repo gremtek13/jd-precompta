@@ -6,6 +6,7 @@ import {
 } from './affectationBanque'
 import type { Categorie, EcritureBrouillon } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
@@ -124,31 +125,31 @@ describe('sensInhabituel — l’encaissement rangé en « Honoraires »', () =>
 
 describe('ecritureDuMouvement — le compte de la catégorie face à la banque', () => {
   it('un débit : la charge au débit, la banque au crédit, au montant du mouvement', () => {
-    expect(ecritureDuMouvement(mouvement(), '627000', null)).toEqual([
+    expect(ecritureDuMouvement(mouvement(), '627000', null, PLAN_PAR_DEFAUT)).toEqual([
       { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
       { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
     ])
   })
 
   it('un encaissement : la banque au débit, le produit au crédit', () => {
-    expect(ecritureDuMouvement(mouvement({ montant: 1234.56, libelle: 'VIR CPAM' }), '706000', null)).toEqual([
+    expect(ecritureDuMouvement(mouvement({ montant: 1234.56, libelle: 'VIR CPAM' }), '706000', null, PLAN_PAR_DEFAUT)).toEqual([
       { compte: '706000', sens: 'credit', montant: 1234.56, libelle: 'VIR CPAM' },
       { compte: '512000', sens: 'debit', montant: 1234.56, libelle: 'VIR CPAM' },
     ])
   })
 
   it('le sens vient du SIGNE, pas de la nature : un remboursement reçu crédite la charge', () => {
-    const [charge] = ecritureDuMouvement(mouvement({ montant: 30 }), '627000', null)
+    const [charge] = ecritureDuMouvement(mouvement({ montant: 30 }), '627000', null, PLAN_PAR_DEFAUT)
     expect(charge).toMatchObject({ compte: '627000', sens: 'credit', montant: 30 })
   })
 
   it('reprend la ligne brute quand l’import n’a gardé que le libellé générique', () => {
-    const lignes = ecritureDuMouvement(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: '12/03 PRLV SEPA BANQUE' }), '627000', null)
+    const lignes = ecritureDuMouvement(mouvement({ libelle: 'Mouvement bancaire', libelle_brut: '12/03 PRLV SEPA BANQUE' }), '627000', null, PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => l.libelle)).toEqual(['12/03 PRLV SEPA BANQUE', '12/03 PRLV SEPA BANQUE'])
   })
 
   it('une recette taxée : la banque au TTC, la recette au hors taxe, la TVA collectée à côté', () => {
-    expect(ecritureDuMouvement(mouvement({ montant: 492.6, libelle: 'VIR CLIENT' }), '706000', 20)).toEqual([
+    expect(ecritureDuMouvement(mouvement({ montant: 492.6, libelle: 'VIR CLIENT' }), '706000', 20, PLAN_PAR_DEFAUT)).toEqual([
       { compte: '706000', sens: 'credit', montant: 410.5, libelle: 'VIR CLIENT' },
       { compte: '445710', sens: 'credit', montant: 82.1, libelle: 'VIR CLIENT' },
       { compte: '512000', sens: 'debit', montant: 492.6, libelle: 'VIR CLIENT' },
@@ -156,7 +157,7 @@ describe('ecritureDuMouvement — le compte de la catégorie face à la banque',
   })
 
   it('un remboursement versé sur une recette taxée diminue la TVA collectée', () => {
-    expect(ecritureDuMouvement(mouvement({ montant: -60 }), '706000', 20).map((l) => [l.compte, l.sens, l.montant])).toEqual([
+    expect(ecritureDuMouvement(mouvement({ montant: -60 }), '706000', 20, PLAN_PAR_DEFAUT).map((l) => [l.compte, l.sens, l.montant])).toEqual([
       ['706000', 'debit', 50],
       ['445710', 'debit', 10],
       ['512000', 'credit', 60],
@@ -164,14 +165,14 @@ describe('ecritureDuMouvement — le compte de la catégorie face à la banque',
   })
 
   it('exonérée ou sans taux : deux lignes, jamais une TVA à zéro', () => {
-    expect(ecritureDuMouvement(mouvement({ montant: 120 }), '706000', 0)).toHaveLength(2)
+    expect(ecritureDuMouvement(mouvement({ montant: 120 }), '706000', 0, PLAN_PAR_DEFAUT)).toHaveLength(2)
     // Un centime à 5,5 % ne porte aucune TVA au centime : pas de ligne à zéro, que la base refuserait.
-    expect(ecritureDuMouvement(mouvement({ montant: 0.09 }), '706000', 5.5)).toHaveLength(2)
+    expect(ecritureDuMouvement(mouvement({ montant: 0.09 }), '706000', 5.5, PLAN_PAR_DEFAUT)).toHaveLength(2)
   })
 
   it('s’équilibre toujours, au centime exact', () => {
     for (const [montant, taux] of [[-0.01, null], [-8.5, null], [30, null], [1234.56, null], [492.6, 20], [99.99, 20], [12.34, 5.5], [-60, 8.5], [105.5, 10]] as const) {
-      const lignes = ecritureDuMouvement(mouvement({ montant }), montant > 0 ? '706000' : '627000', taux)
+      const lignes = ecritureDuMouvement(mouvement({ montant }), montant > 0 ? '706000' : '627000', taux, PLAN_PAR_DEFAUT)
       const solde = lignes.reduce((s, l) => s + Math.round(l.montant * 100) * (l.sens === 'debit' ? 1 : -1), 0)
       expect(solde, `${montant} à ${taux} %`).toBe(0)
       for (const l of lignes) expect(l.montant).toBe(Math.round(l.montant * 100) / 100)
@@ -283,8 +284,8 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
   ]
 
   it('se tait quand l’écriture est celle attendue, dans n’importe quel ordre', () => {
-    expect(mouvementsAffectesDesynchronises(justes, affecte, null)).toEqual([])
-    expect(mouvementsAffectesDesynchronises([...justes].reverse(), affecte, null)).toEqual([])
+    expect(mouvementsAffectesDesynchronises(justes, affecte, null, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsAffectesDesynchronises([...justes].reverse(), affecte, null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('signale une écriture absente, sur un autre compte, dans l’autre sens ou à une autre date', () => {
@@ -297,7 +298,7 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
       [...justes, ecriture({ id: 'e3', compte: '627000' })],
     ]
     for (const ecritures of casPerimes) {
-      expect(mouvementsAffectesDesynchronises(ecritures, affecte, null)).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(ecritures, affecte, null, PLAN_PAR_DEFAUT)).toHaveLength(1)
     }
   })
 
@@ -307,12 +308,12 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
       [categorie({ compte_comptable: '627100' })],
       false,
     )
-    expect(mouvementsAffectesDesynchronises(justes, recategorise, null)).toHaveLength(1)
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, null, PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 
   it('les écritures d’une pièce ne comptent pas pour le mouvement, même quand elles le désignent', () => {
     const contrepartieDUnePiece = ecriture({ id: 'e9', piece_id: 'p1', compte: '512000', sens: 'credit' })
-    expect(mouvementsAffectesDesynchronises([...justes, contrepartieDUnePiece], affecte, null)).toEqual([])
+    expect(mouvementsAffectesDesynchronises([...justes, contrepartieDUnePiece], affecte, null, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   // UN MOUVEMENT D'UN EXERCICE VALIDÉ NE SE JUGE PLUS (lib/validationExercice.ts) : son écriture est validée, la base
@@ -324,15 +325,15 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
       false,
     )
     // Le mouvement du 12 mars 2025 : figé par la validation de 2025, et par une frontière posée le jour même.
-    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-12-31')).toEqual([])
-    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-12')).toEqual([])
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-12-31', PLAN_PAR_DEFAUT)).toEqual([])
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-12', PLAN_PAR_DEFAUT)).toEqual([])
     // La veille, il ne l'est pas : il se juge comme avant.
-    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-11')).toHaveLength(1)
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-11', PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 
   it('une catégorie sans nature rend l’écriture périmée, quelle qu’elle soit', () => {
     const bilan = mouvementsAffectes([mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' })], [categorie({ compte_comptable: '108000' })], false)
-    expect(mouvementsAffectesDesynchronises(justes, bilan, null)).toHaveLength(1)
+    expect(mouvementsAffectesDesynchronises(justes, bilan, null, PLAN_PAR_DEFAUT)).toHaveLength(1)
   })
 
   describe('une recette taxée', () => {
@@ -348,17 +349,17 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
     ]
 
     it('se tait sur les trois lignes attendues', () => {
-      expect(mouvementsAffectesDesynchronises(taxee, mouvementsAffectes([recette], [RECETTES], true), null)).toEqual([])
+      expect(mouvementsAffectesDesynchronises(taxee, mouvementsAffectes([recette], [RECETTES], true), null, PLAN_PAR_DEFAUT)).toEqual([])
     })
 
     it('signale la recette écrite au TTC alors qu’elle porte son taux', () => {
-      expect(mouvementsAffectesDesynchronises(auTtc, mouvementsAffectes([recette], [RECETTES], true), null)).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(auTtc, mouvementsAffectes([recette], [RECETTES], true), null, PLAN_PAR_DEFAUT)).toHaveLength(1)
     })
 
     it('un dossier qui a cessé d’être assujetti attend l’écriture sans TVA : « Réaffecter » la réécrit', () => {
       const affectes = mouvementsAffectes([recette], [RECETTES], false)
-      expect(mouvementsAffectesDesynchronises(taxee, affectes, null)).toHaveLength(1)
-      expect(mouvementsAffectesDesynchronises(auTtc, affectes, null)).toEqual([])
+      expect(mouvementsAffectesDesynchronises(taxee, affectes, null, PLAN_PAR_DEFAUT)).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(auTtc, affectes, null, PLAN_PAR_DEFAUT)).toEqual([])
     })
   })
 })

@@ -6,6 +6,7 @@ import type { Immobilisation } from '../../lib/types'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -121,8 +122,8 @@ vi.mock('../../lib/supabase', async () => {
 // dessin, que `gabarit2035.test.ts` éprouve sur le vrai PDF.
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef, isSuperAdmin: faux.superAdmin }) }))
 
-const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000' } as const
-const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000' } as const
+const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT } as const
+const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } as const
 
 vi.mock('../../lib/remplir2035', () => ({
   remplir2035: (

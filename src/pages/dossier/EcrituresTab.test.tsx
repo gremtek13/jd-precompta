@@ -6,6 +6,7 @@ import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Predicat } from '../../test/filtresPostgrest'
 import EcrituresTab from './EcrituresTab'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
 // ici ne reste pas à l'écran : il part chez un vérificateur. Ce test vise donc les trois choses
@@ -284,8 +285,8 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   } as Record<string, unknown[]>
 }
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Le modèle vit dans la page du dossier, qui le remet à l'onglet après l'enregistrement : ce porteur
 // joue ce rôle, sans quoi un changement de modèle ne se verrait jamais à l'écran.
@@ -299,7 +300,7 @@ function Onglet({ assujettiTva, modeleInitial, annee, valides }: {
         dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva}
         modele={modele}
         onModeleUpdated={(m) => setModele((avant) => ({
-          mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais,
+          mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais, plan: avant.plan,
         }))}
       />
     </ContexteDossier>
@@ -3013,5 +3014,43 @@ describe('EcrituresTab — rien ne se compte ni ne s’exporte avant la lecture 
     await act(async () => { faux.relacher?.() })
     expect(await screen.findByText(/1 écriture proposée/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(false)
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : la génération compose aux comptes DU PLAN, les totaux de TVA se lisent sur
+// eux, et le dirigeant se choisit parmi les trois comptes que le plan lui ouvre.
+describe('EcrituresTab — sous le plan du dossier', () => {
+  const NATURE = { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' }
+  const BIEN = { id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: 'n1' }
+  const facture = () => piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+
+  it('génère l’acquisition d’un bien avec la TVA du plan', async () => {
+    poser({ pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE] })
+    monter(true, DECALE)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.montant])).toEqual([['218300', 100], ['445621', 20]])
+  })
+
+  it('lit le brouillon composé au plan comme à jour, et sa TVA dans les totaux', async () => {
+    poser({
+      pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE],
+      ecritures_brouillon: [ecriture({ id: 'e1', compte: '218300', montant: 100 }), ecriture({ id: 'e2', compte: '445621', montant: 20 })],
+    })
+    monter(true, DECALE)
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+    expect(screen.getByText('TVA déductible (achats)').parentElement?.textContent).toMatch(/20,00\s€/)
+  })
+
+  it('propose au dirigeant les trois comptes du plan, et enregistre celui qu’on choisit', async () => {
+    // La base borne encore le compte du dirigeant aux trois défauts (`dossiers_compte_notes_de_frais_check`) : un plan
+    // réglé ne viendra qu'avec l'étape PC4, qui remplacera cette contrainte (Q4).
+    poser({})
+    monter(false, { ...DECALE, mode: 'engagement' })
+    const exploitant = await screen.findByRole('button', { name: /^108 – Compte de l’exploitant/ })
+    await act(async () => { exploitant.click() })
+    expect(faux.misesAJour.at(-1)).toEqual({ table: 'dossiers', valeurs: { compte_notes_de_frais: '108100' } })
   })
 })

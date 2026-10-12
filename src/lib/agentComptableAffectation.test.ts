@@ -9,6 +9,7 @@ import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
 //
@@ -132,11 +133,11 @@ function memeResultat(
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
   for (const f of FRONTIERES) {
     expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la, f)), `mouvementsAffectesDesynchronises a dérivé (frontière ${f})`)
-      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f)))
+      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f, PLAN_PAR_DEFAUT)))
     expect(ids(copie.recettesAffecteesSansTaux(la, assujetti, f)), `recettesAffecteesSansTaux a dérivé (frontière ${f})`)
       .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, f)))
   }
-  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere)) }
+  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere, PLAN_PAR_DEFAUT)) }
 }
 
 // Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le
@@ -301,8 +302,8 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
 
 // LES VIREMENTS PERSONNELS (src/lib/virementPersonnel.ts) : la Checklist compte ceux dont l'écriture
 // manque — ceux classés avant que ce classement s'écrive —, et l'assistant doit dire la même chose.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
 const perso = (o: Partial<LigneBancaire>): LigneBancaire =>
   ligne({ statut: 'ignoree', categorie_id: null, prelevement_personnel: true, montant: -500, ...o })
 const VIREMENTS: LigneBancaire[] = [

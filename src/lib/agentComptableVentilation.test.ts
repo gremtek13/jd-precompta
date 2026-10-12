@@ -9,6 +9,7 @@ import {
   ventilationsIncoherentes,
 } from './ventilationBanque'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS VENTILÉS (30/09/2026, ligne 26.6).
 //
@@ -64,9 +65,9 @@ function extraire(source: string): Copie {
 
 const deployee = extraire(sourceDeployee())
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
-const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT_455: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT_467: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT }
 const MODELES = [TRESORERIE, ENGAGEMENT_455, ENGAGEMENT_467]
 
 const categorie = (o: Partial<Categorie>): Categorie => ({

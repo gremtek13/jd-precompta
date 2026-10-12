@@ -13,6 +13,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import type { LigneBancaire, Piece } from '../../lib/types'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // L'ONGLET DE LA RÉVISION (ligne 41, étape R3). Le module (lib/revision.ts, R2) est éprouvé à part : états, preuves,
 // refus confrontés au texte de `justifier_solde` et rejoués sur l'essai de la base. CE QUI SE JOUE ICI, c'est ce qu'aucun
@@ -84,7 +85,7 @@ vi.mock('../../lib/controlesReleves', () => ({
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'u1' } }, estChef: faux.estChef }) }))
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
 const HASH = 'e'.repeat(64)
 // Des identifiants d'uuid : la base refuse une preuve qui n'en cite pas un (refus 12), et l'écran le dit avant elle.
 const P_RELEVE = '00000000-0000-4000-8000-0000000000a1'

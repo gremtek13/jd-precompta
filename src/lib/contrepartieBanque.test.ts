@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMPTE_BANQUE, COMPTE_FOURNISSEURS } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { LigneBancaire, Piece } from './types'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // Le client Supabase est simulé plutôt que le module découpé : ces deux fonctions *sont* des appels à
 // la base, il n'y a pas de calcul pur à extraire. Le faux client reproduit le chaînage réellement
@@ -417,5 +418,34 @@ describe('rendreAuxDatesDeFacture', () => {
     await rendreAuxDatesDeFacture([piece()], ENGAGEMENT)
     expect(filtresComptes).toEqual([])
     expect(misesAJour).toEqual([])
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3 ; conception, § 2.4 et § 5.4) : la contrepartie s'écrit à la banque DU PLAN, et
+// les lignes qu'elle RETROUVE se cherchent sur les comptes du plan. Filtrée sur le 108000, la suppression de la
+// contrepartie de l'exploitant ne supprimerait rien, en silence, dans un dossier dont l'exploitant est au 108100.
+describe('la contrepartie banque sous le plan du dossier', () => {
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+
+  it('retire la contrepartie de l’exploitant du plan, redate hors de sa banque, et écrit sur elle', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108100' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), DECALE)
+    expect(ordre).toEqual(['delete', 'update', 'insert'])
+    expect(filtresSuppression).toEqual(['piece_id=p1', 'compte=108100'])
+    expect(misesAJour.map((m) => m.filtres)).toEqual([['piece_id=p1', 'compte!=512100']])
+    expect(insere).toMatchObject({ compte: '512100', sens: 'credit', montant: 120 })
+  })
+
+  it('compte les contreparties qui restent à la pièce sur la banque du plan', async () => {
+    reponses.compte = { count: 1, error: null }
+    await retirerContrepartieBanque('l1', 'p1', piece(), DECALE)
+    expect(filtresComptes).toEqual([['piece_id=p1', 'compte=512100']])
+    expect(misesAJour).toEqual([])
+  })
+
+  it('reconnaît en engagement la facture d’un bien à la dette du plan, et règle sur elle', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '218300', ligne_bancaire_id: null }, { id: 'e2', compte: '404100', ligne_bancaire_id: null }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), { ...DECALE, mode: 'engagement' })
+    expect((insere as { compte: string; sens: string }[]).map((l) => [l.compte, l.sens])).toEqual([['404100', 'debit'], ['512100', 'credit']])
   })
 })

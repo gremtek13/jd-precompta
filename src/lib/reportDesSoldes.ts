@@ -1,8 +1,8 @@
 import { libelleDuResultat } from './aNouveaux'
-import { COMPTE_CAPITAL_INDIVIDUEL, COMPTE_EXPLOITANT, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { NumerotationFec } from './fec'
 import { anneeDe } from './format'
+import type { PlanComptable } from './planComptable'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { compteDuDirigeant } from './virementPersonnel'
 
@@ -46,9 +46,10 @@ export function sourceDuReport(exercice: number): string {
 
 // UNE ENTREPRISE INDIVIDUELLE est un dossier dont le compte du dirigeant est le compte de l'exploitant : tout dossier
 // en trésorerie (un BNC est une entreprise individuelle), et un dossier en engagement qui a choisi le 108 pour son
-// dirigeant. La base fait le même choix (`mode_comptable = 'tresorerie' or compte_notes_de_frais = '108000'`).
+// dirigeant. La base fait le même choix (`mode_comptable = 'tresorerie' or compte_notes_de_frais = compte_du_role(…,
+// 'exploitant')`, depuis l'étape PC2) : le compte de l'exploitant est celui du PLAN du dossier.
 export function exploitantIndividuel(modele: ModeleComptable): boolean {
-  return compteDuDirigeant(modele) === COMPTE_EXPLOITANT
+  return compteDuDirigeant(modele) === modele.plan.exploitant
 }
 
 // Les trois motifs de la base, à l'identique : ce qui fait le résultat, ce qui passe au capital individuel, et ce qui
@@ -130,15 +131,18 @@ export interface ReportDesSoldes {
 // l'ouverture au bilan qui la précède (lib/ouvertureConfrontee.ts) dise quels comptes de la clôture un compte de
 // l'ouverture réunit, sous la MÊME écriture de la règle que le report.
 
-/** Le compte qui reçoit le résultat d'un exercice (`resultat` : débit − crédit des classes 6 et 7, en centimes). */
-export function compteDuResultat(individuel: boolean, resultat: number): string {
-  return individuel ? COMPTE_CAPITAL_INDIVIDUEL : resultat < 0 ? COMPTE_RESULTAT_BENEFICE : COMPTE_RESULTAT_PERTE
+/**
+ * Le compte qui reçoit le résultat d'un exercice (`resultat` : débit − crédit des classes 6 et 7, en centimes) : le capital
+ * individuel, le bénéfice ou la perte du PLAN du dossier, que `soldes_a_reporter` lit au même plan.
+ */
+export function compteDuResultat(individuel: boolean, resultat: number, plan: PlanComptable): string {
+  return individuel ? plan.capital_individuel : resultat < 0 ? plan.resultat_benefice : plan.resultat_perte
 }
 
 /** Le compte de l'ouverture où le report verse le solde de clôture de `compte`. */
-export function compteQuiRecoit(compte: string, individuel: boolean, versLeResultat: string): string {
+export function compteQuiRecoit(compte: string, individuel: boolean, versLeResultat: string, plan: PlanComptable): string {
   return COMPTE_DE_RESULTAT.test(compte) ? versLeResultat
-    : individuel && CAPITAUX_DE_L_EXPLOITANT.test(compte) ? COMPTE_CAPITAL_INDIVIDUEL
+    : individuel && CAPITAUX_DE_L_EXPLOITANT.test(compte) ? plan.capital_individuel
       : compte
 }
 
@@ -147,6 +151,7 @@ export function soldesAReporter(
   modele: ModeleComptable,
   exercice: number,
 ): ReportDesSoldes {
+  const { plan } = modele
   const individuel = exploitantIndividuel(modele)
   const parCompte = new Map<string, { libelle: string | null; net: number }>()
   for (const m of mouvements) {
@@ -159,8 +164,8 @@ export function soldesAReporter(
   // Débit − crédit des comptes de résultat : négatif, un bénéfice.
   let resultat = 0
   for (const [compte, s] of parCompte) if (COMPTE_DE_RESULTAT.test(compte)) resultat += s.net
-  const versLeResultat = compteDuResultat(individuel, resultat)
-  const cibleDe = (compte: string) => compteQuiRecoit(compte, individuel, versLeResultat)
+  const versLeResultat = compteDuResultat(individuel, resultat, plan)
+  const cibleDe = (compte: string) => compteQuiRecoit(compte, individuel, versLeResultat, plan)
 
   const parCible = new Map<string, { net: number; libelle: string | null; soldeAnterieur: boolean }>()
   for (const [compte, s] of parCompte) {
@@ -186,7 +191,7 @@ export function soldesAReporter(
       ? (g.soldeAnterieur ? LIBELLE_RESULTATS_EN_ATTENTE : libelleDuResultat(exercice, resultat < 0))
       // Le numéro du compte, en dernier recours : un compte qui reçoit un solde a toujours un libellé dans la
       // numérotation (`libellesDesComptes`, lib/fec.ts) — la base, elle, refuserait d'écrire un solde sans libellé.
-      : g.libelle ?? (compte === COMPTE_CAPITAL_INDIVIDUEL ? LIBELLE_CAPITAL_INDIVIDUEL : compte)
+      : g.libelle ?? (compte === plan.capital_individuel ? LIBELLE_CAPITAL_INDIVIDUEL : compte)
     soldes.push({ compte, libelle, sens: g.net > 0 ? 'debit' : 'credit', montant: Math.abs(g.net) / 100 })
     if (!COMPTE_REPORTABLE.test(compte)) horsClasses.push(compte)
     ecartCentimes += g.net

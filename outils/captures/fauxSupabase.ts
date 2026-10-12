@@ -25,6 +25,7 @@ import { calculerTotaux } from '../../src/lib/montantsFacture'
 import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
+import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../../src/lib/planComptable'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
@@ -374,7 +375,7 @@ function declarationD7(id: string, debut: string, fin: string, depot: string) {
       id, dossier_id: 'd7', ...liquidee, tva_declaree: ca3.netPeriode, credit_anterieur: ca3.cases.l22,
       remboursement_demande: ca3.cases.l26, date_declaration: depot, notes: null, created_at: creeLe,
     },
-    ecritures: ecritureDeLaLiquidation(liquidee).map((ligne, i): Ligne => ({
+    ecritures: ecritureDeLaLiquidation(liquidee, PLAN_PAR_DEFAUT).map((ligne, i): Ligne => ({
       id: `${id}-${i + 1}`, dossier_id: 'd7', piece_id: null, ligne_bancaire_id: null, declaration_tva_id: id, date: fin,
       ...ligne, statut: 'proposee', created_at: creeLe,
     })),
@@ -400,7 +401,7 @@ const TVA_LIQUIDEE_D7 = {
   ],
   ecritures: [
     ...DECLARATIONS_D7.flatMap((d) => d.ecritures),
-    ...ecritureDuPaiementTva(PRELEVEMENT_TVA_D7 as unknown as MouvementBancaire).map((ligne, i): Ligne => ({
+    ...ecritureDuPaiementTva(PRELEVEMENT_TVA_D7 as unknown as MouvementBancaire, PLAN_PAR_DEFAUT).map((ligne, i): Ligne => ({
       id: `pt-${i + 1}`, dossier_id: 'd7', piece_id: null, ligne_bancaire_id: 't9', date: PRELEVEMENT_TVA_D7.date,
       ...ligne, statut: 'proposee', created_at: MAINTENANT,
     })),
@@ -570,7 +571,7 @@ const natures: Ligne[] = [
 // captures montreraient viendrait du banc, pas de l'application. Si la base refusait une de ces écritures, la
 // Clôture le dirait aussi — c'est la même règle des deux côtés.
 
-const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '455000' } as const
+const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } as const
 
 function pieceDe(dossier: string, id: string, date: string, tiers: string, ttc: number, categorie: string): Ligne {
   return { ...piece(id, date, tiers, ttc, 0, categorie, 'validee'), dossier_id: dossier, storage_path: `${dossier}/${id}.pdf` }
@@ -612,8 +613,8 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
   const parMouvement = rapprochees.flatMap((m) => {
     const categorie = categories.find((c) => c.id === m.categorie_id)
     const cotisation = s.cotisations.find((c) => c.id === m.cotisation_id) as unknown as CotisationDeclaree | undefined
-    const lignesDuMouvement = categorie ? ecritureDuMouvement(m, String(categorie.compte_comptable), null)
-      : cotisation ? ecritureDeLaCotisation(m, cotisation, TRESORERIE.mode)
+    const lignesDuMouvement = categorie ? ecritureDuMouvement(m, String(categorie.compte_comptable), null, PLAN_PAR_DEFAUT)
+      : cotisation ? ecritureDeLaCotisation(m, cotisation, TRESORERIE.mode, PLAN_PAR_DEFAUT)
         : []
     return lignesDuMouvement.map((l) => ecriture({ ...l, date: m.date }, { ligne_bancaire_id: m.id }))
   })
@@ -622,7 +623,7 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
   const dotations = s.immobilisations.flatMap((b) => {
     const bien = b as unknown as Immobilisation
     const compte = String(natures.find((x) => x.id === bien.nature_id)?.compte_immobilisation)
-    return s.dotations.flatMap((annee) => ecritureDeLaDotation(bien, compte, annee, null)
+    return s.dotations.flatMap((annee) => ecritureDeLaDotation(bien, compte, annee, null, PLAN_PAR_DEFAUT)
       .map((l) => ecriture({ ...l, date: `${annee}-12-31` }, { immobilisation_id: bien.id })))
   })
   const forfaits = s.vehicules.flatMap((v) => {
@@ -663,6 +664,7 @@ function valider(
     s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
     // Ni l'un ni l'autre dossier n'est assujetti : aucune déclaration de TVA, donc aucun arrondi de liquidation.
     [],
+    PLAN_PAR_DEFAUT,
   )
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!
@@ -1845,6 +1847,16 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       banque: !CLIENT_DU_BANC || acces?.droit_banque === true,
     }
     return { data: droits, error: null }
+  }
+  // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
+  // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base.
+  if (nom === 'plan_du_dossier') {
+    return {
+      data: ROLES_COMPTABLES.map((r) => ({
+        role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
+      })),
+      error: null,
+    }
   }
   return { data: nom === 'verifier_exercice_valide', error: null }
 }

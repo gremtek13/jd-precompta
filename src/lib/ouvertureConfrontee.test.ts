@@ -4,13 +4,14 @@ import type { ModeleComptable } from './engagement'
 import { confronterLOuverture, type ConfrontationDeLOuverture } from './ouvertureConfrontee'
 import type { ANouveau, EcritureBrouillon, Piece, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // LA CONFRONTATION SE JUGE SUR DES CLÔTURES CALCULÉES À LA MAIN : chaque cas pose les écritures de N−1, fait le calcul
 // de sa clôture en commentaire, compte par compte, puis pose des soldes reportés — justes, ou faux d'une façon
 // choisie — et attend les écarts écrits en toutes lettres, en centimes.
 
-const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
-const EXPLOITANT_BNC: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const EXPLOITANT_BNC: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 let numero = 0
 type Ligne = [compte: string, sens: 'D' | 'C', euros: number]

@@ -32,8 +32,8 @@ const ESSAI_RETRAIT = readFileSync(new URL('../../supabase/essais/retraitPaiemen
 // `RETRAIT_EXPORTE` du module égal à ce que porte l'export — et avec lui le bouton « Retirer ce paiement » de l'onglet
 // Cotisations : un seul drapeau pour les deux.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 const AUJOURD_HUI = '2026-10-09'
 
 function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
@@ -156,7 +156,7 @@ function jeuDeLEssai(essai: string): Map<string, { cotisation: CotisationDeclare
         montant_verse: nombre(c.montant_verse), montant_csg_crds: nombre(c.montant_csg_crds),
       }),
       modele: d
-        ? { mode: d.mode_comptable as ModeleComptable['mode'], compteNotesDeFrais: d.compte_notes_de_frais as CompteNotesDeFrais }
+        ? { mode: d.mode_comptable as ModeleComptable['mode'], compteNotesDeFrais: d.compte_notes_de_frais as CompteNotesDeFrais, plan: PLAN_PAR_DEFAUT }
         : TRESORERIE,
     })
   }
@@ -414,7 +414,7 @@ describe('ecritureDuPaiementPersonnel — la cotisation hors CSG-CRDS au 646000,
 
   it('en engagement : toute l’échéance au 646000, face au compte choisi pour le dirigeant', () => {
     for (const compteNotesDeFrais of ['455000', '467000', '108000'] as const) {
-      const lignes = ecritureDuPaiementPersonnel(cotisation(), { mode: 'engagement', compteNotesDeFrais })
+      const lignes = ecritureDuPaiementPersonnel(cotisation(), { mode: 'engagement', compteNotesDeFrais, plan: PLAN_PAR_DEFAUT })
       expect(lignes.map(({ compte, sens, montant }) => [compte, sens, montant])).toEqual([
         [COMPTE_COTISATIONS_EXPLOITANT, 'debit', 1000],
         [compteNotesDeFrais, 'credit', 1000],
@@ -511,7 +511,7 @@ describe('confirmationPaiementPersonnel — nomme ce qui s’écrit', () => {
 
   // En engagement, la 2035 n'est pas produite : la confirmation ne la promet pas.
   it('en engagement, le compte du dirigeant du dossier et l’exercice, sans 2035', () => {
-    const texte = confirmationPaiementPersonnel(cotisation(), '2026-03-10', { mode: 'engagement', compteNotesDeFrais: '467000' })
+    const texte = confirmationPaiementPersonnel(cotisation(), '2026-03-10', { mode: 'engagement', compteNotesDeFrais: '467000', plan: PLAN_PAR_DEFAUT })
     expect(texte).toContain(`Le brouillon reçoit ${formatMoney(1000)} au débit du 646000, face au 467000, à cette date.`)
     expect(texte).toContain("L'échéance compte ce jour-là dans l'exercice 2026.")
     expect(texte).not.toContain('2035')

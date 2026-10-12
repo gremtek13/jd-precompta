@@ -5,6 +5,7 @@ import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // « MA BANQUE », CÔTÉ CABINET (espace client, étape P9b) : ce que le client a envoyé pour un mouvement, dans sa fiche et
 // dans l'onglet Banque. Ce que ces cas gardent et qu'aucun calcul pur ne voit : la pièce proposée EN TÊTE de la fiche,
@@ -189,7 +190,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 function rendre(valides: readonly number[] = []) {
   return render(

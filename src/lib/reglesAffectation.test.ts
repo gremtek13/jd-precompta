@@ -6,6 +6,7 @@ import {
   planAffectationParRegles, refusMotif, regleApplicable, sensDuMouvement, TAILLE_ENVOI_AFFECTATION, totauxParCategorie,
 } from './reglesAffectation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
@@ -390,9 +391,9 @@ describe('envoisDuLot — ce qui part vers la base', () => {
     const plan = planAffectationParRegles([ligne({ id: 'a' }), ligne({ id: 'b', libelle: 'VIR CPAM', montant: 48.2 })],
       [regle(), regle({ id: 'r2', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' })],
       [HONORAIRES, RECETTES], false, aucunJustificatif)
-    expect(envoisDuLot(plan.propositions)).toEqual([[
-      { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600', null) },
-      { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000', null) },
+    expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)).toEqual([[
+      { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600', null, PLAN_PAR_DEFAUT) },
+      { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000', null, PLAN_PAR_DEFAUT) },
     ]])
   })
 
@@ -400,7 +401,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
     const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })],
       [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })],
       [RECETTES], true, aucunJustificatif)
-    const [[envoi]] = envoisDuLot(plan.propositions)
+    const [[envoi]] = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)
     expect(envoi.taux_tva).toBe(20)
     expect(envoi.ecritures.map((e) => [e.compte, e.sens, e.montant])).toEqual([
       ['706000', 'credit', 100],
@@ -412,7 +413,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
   it('découpe le lot en envois de la taille demandée, sans rien perdre ni doubler', () => {
     const lignes = Array.from({ length: 5 }, (_, i) => ligne({ id: `l${i}` }))
     const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif)
-    const envois = envoisDuLot(plan.propositions, 2)
+    const envois = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT, 2)
     expect(envois.map((e) => e.map((a) => a.ligne_bancaire_id))).toEqual([['l0', 'l1'], ['l2', 'l3'], ['l4']])
   })
 
@@ -420,7 +421,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
     expect(TAILLE_ENVOI_AFFECTATION).toBe(100)
     const lignes = Array.from({ length: 250 }, (_, i) => ligne({ id: `l${i}` }))
     const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif)
-    expect(envoisDuLot(plan.propositions).map((e) => e.length)).toEqual([100, 100, 50])
+    expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT).map((e) => e.length)).toEqual([100, 100, 50])
   })
 })
 

@@ -1,13 +1,9 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
 import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
-import {
-  COMPTE_ARRONDIS_CHARGE, COMPTE_ARRONDIS_PRODUIT, COMPTE_BANQUE, COMPTE_CREDIT_TVA_A_REPORTER,
-  COMPTE_REMBOURSEMENT_TVA_DEMANDE, COMPTE_TVA_A_DECAISSER, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
-  COMPTE_TVA_IMMOBILISATIONS,
-} from './comptes'
 import { dePeriode, libellePeriode, periodesDeLAnnee, type DeclarationCa3, type PeriodeTva } from './declarationTva'
 import { dernierJourDuMois, formatDate, formatMoney } from './format'
+import type { CleRoleComptable, PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { dateFigee, estFigee } from './validationExercice'
@@ -49,35 +45,38 @@ export type DeclarationLiquidable = Pick<
 
 const centimes = (euros: number) => Math.round(euros * 100)
 
-// Le solde que la liquidation porte à chaque compte, en centimes, positif au débit — la composition de
-// `liquidation_attendue`, ligne pour ligne. Null pour une déclaration saisie à la main.
-function soldesDeLaLiquidation(d: DeclarationLiquidable): [string, number][] | null {
+// Le solde que la liquidation porte au compte de chaque RÔLE, en centimes, positif au débit — la composition de
+// `liquidation_attendue`, ligne pour ligne, qui lit chaque compte au plan du dossier depuis l'étape PC2. Null pour une
+// déclaration saisie à la main. Le compte ne se pose qu'à l'écriture (`ecritureDeLaLiquidation`) : l'arrondi, qui ne
+// dépend d'aucun compte, se lit ici sans plan.
+function soldesDeLaLiquidation(d: DeclarationLiquidable): [CleRoleComptable, number][] | null {
   if (!d.cases || d.tva_collectee == null || d.tva_deductible == null || d.tva_deductible_immobilisations == null) return null
   const ligne = (cle: string) => centimes(Number(d.cases?.[cle] ?? 0))
-  const soldes: [string, number][] = [
-    [COMPTE_TVA_COLLECTEE, centimes(d.tva_collectee)],
-    [COMPTE_TVA_DEDUCTIBLE, -centimes(d.tva_deductible)],
-    [COMPTE_TVA_IMMOBILISATIONS, -centimes(d.tva_deductible_immobilisations)],
-    [COMPTE_CREDIT_TVA_A_REPORTER, ligne('l27') - ligne('l22')],
-    [COMPTE_TVA_A_DECAISSER, -ligne('l28')],
-    [COMPTE_REMBOURSEMENT_TVA_DEMANDE, ligne('l26')],
+  const soldes: [CleRoleComptable, number][] = [
+    ['tva_collectee', centimes(d.tva_collectee)],
+    ['tva_deductible', -centimes(d.tva_deductible)],
+    ['tva_immobilisations', -centimes(d.tva_deductible_immobilisations)],
+    ['credit_tva_a_reporter', ligne('l27') - ligne('l22')],
+    ['tva_a_decaisser', -ligne('l28')],
+    ['remboursement_tva_demande', ligne('l26')],
   ]
   // `0 - …` et non `-…` : un arrondi nul reste un zéro positif.
   const arrondi = 0 - soldes.reduce((s, [, solde]) => s + solde, 0)
-  return [...soldes, [arrondi > 0 ? COMPTE_ARRONDIS_CHARGE : COMPTE_ARRONDIS_PRODUIT, arrondi]]
+  return [...soldes, [arrondi > 0 ? 'arrondi_charge' : 'arrondi_produit', arrondi]]
 }
 
 // L'ÉCRITURE DE LIQUIDATION d'une déclaration, au dernier jour de sa période : chaque compte reçoit son solde, la TVA
 // collectée au débit du 445710, la TVA déductible au crédit du 445660 et du 445620, le crédit de TVA au 445670, la
 // TVA à payer au crédit du 445510, le remboursement demandé au débit du 445830, l'arrondi au 658000 ou au 758000.
-// Rien pour une déclaration saisie à la main, ni pour un solde nul.
-export function ecritureDeLaLiquidation(d: DeclarationLiquidable): LigneEcritureMouvement[] {
+// Rien pour une déclaration saisie à la main, ni pour un solde nul. Chaque compte est celui de son rôle dans le PLAN du
+// dossier (445710, 445660… par défaut).
+export function ecritureDeLaLiquidation(d: DeclarationLiquidable, plan: PlanComptable): LigneEcritureMouvement[] {
   const soldes = soldesDeLaLiquidation(d)
   if (!soldes) return []
   const libelle = `CA3 ${libellePeriode(d.periode_debut, d.periode_fin)}`
   return soldes
     .filter(([, solde]) => solde !== 0)
-    .map(([compte, solde]) => ({ compte, sens: solde > 0 ? 'debit' : 'credit', montant: Math.abs(solde) / 100, libelle }))
+    .map(([role, solde]) => ({ compte: plan[role], sens: solde > 0 ? 'debit' : 'credit', montant: Math.abs(solde) / 100, libelle }))
 }
 
 // L'arrondi de la liquidation, en euros, signé comme son solde : positif, une charge au 658000 — la déclaration fait
@@ -101,15 +100,17 @@ export function aPayerDe(d: Pick<DeclarationTva, 'cases' | 'tva_declaree' | 'cre
 
 // L'écriture d'un mouvement rapproché d'une déclaration : un prélèvement débite la TVA à décaisser (445510) face à la
 // banque, un remboursement reçu crédite le remboursement demandé (445830) — au montant, à la date et dans le sens du
-// mouvement, sans TVA.
-export function ecritureDuPaiementTva(ligne: Pick<LigneBancaire, 'montant' | 'libelle' | 'libelle_brut'>): LigneEcritureMouvement[] {
+// mouvement, sans TVA. Les comptes sont ceux du PLAN du dossier, que `rapprocher_declaration_tva` relit au même plan.
+export function ecritureDuPaiementTva(
+  ligne: Pick<LigneBancaire, 'montant' | 'libelle' | 'libelle_brut'>, plan: PlanComptable,
+): LigneEcritureMouvement[] {
   const entree = ligne.montant > 0
   const montant = Math.abs(ligne.montant)
   const libelle = libelleExploitable(ligne) || ligne.libelle
   return [
-    { compte: COMPTE_BANQUE, sens: entree ? 'debit' : 'credit', montant, libelle },
+    { compte: plan.banque, sens: entree ? 'debit' : 'credit', montant, libelle },
     {
-      compte: entree ? COMPTE_REMBOURSEMENT_TVA_DEMANDE : COMPTE_TVA_A_DECAISSER,
+      compte: entree ? plan.remboursement_tva_demande : plan.tva_a_decaisser,
       sens: entree ? 'credit' : 'debit',
       montant,
       libelle,
@@ -252,6 +253,8 @@ export function parametresEnregistrement(
   dossierId: string,
   demande: DemandeDeDeclaration,
   dateDeclaration: string | null,
+  // Le plan du dossier : la liquidation se compose à ses comptes, que `enregistrer_declaration_tva` relit au même plan.
+  plan: PlanComptable,
 ): Record<string, unknown> {
   const { debut, fin } = demande.periode
   if (demande.ca3) {
@@ -268,7 +271,7 @@ export function parametresEnregistrement(
       p_tva_collectee: declaration.tva_collectee,
       p_tva_deductible: declaration.tva_deductible,
       p_tva_deductible_immobilisations: declaration.tva_deductible_immobilisations,
-      p_ecriture: ecritureDeLaLiquidation(declaration),
+      p_ecriture: ecritureDeLaLiquidation(declaration, plan),
     }
   }
   return {
@@ -525,6 +528,8 @@ export function liquidationsDesynchronisees<D extends DeclarationLiquidable & Pi
   ecritures: readonly EcritureBrouillon[],
   declarations: readonly D[],
   frontiere: string | null,
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): D[] {
   const parDeclaration = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
@@ -533,7 +538,7 @@ export function liquidationsDesynchronisees<D extends DeclarationLiquidable & Pi
   }
   return declarations.filter((d) =>
     !estFigee(d.periode_fin, frontiere)
-    && !ecritureConforme(parDeclaration.get(d.id) ?? [], ecritureDeLaLiquidation(d), d.periode_fin))
+    && !ecritureConforme(parDeclaration.get(d.id) ?? [], ecritureDeLaLiquidation(d, plan), d.periode_fin))
 }
 
 // LES MOUVEMENTS RAPPROCHÉS D'UNE DÉCLARATION DONT L'ÉCRITURE N'EST PLUS CELLE QUE LEUR MONTANT COMMANDE. DÉFENSIF,
@@ -543,11 +548,13 @@ export function paiementsTvaDesynchronises<L extends MouvementBancaire>(
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly L[],
   frontiere: string | null,
+  // Le plan du dossier : l'écriture attendue se recompose à ses comptes.
+  plan: PlanComptable,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     !!l.declaration_tva_id
     && l.statut === 'rapprochee'
     && !estFigee(l.date, frontiere)
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l, plan), l.date))
 }

@@ -437,7 +437,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans

@@ -3,6 +3,7 @@ import {
 } from './appariementBanque'
 import { ecritureDuMouvement, natureDuCompte, refusAffectation, type LigneEcritureMouvement } from './affectationBanque'
 import { recollerSiglesPointes } from './format'
+import type { PlanComptable } from './planComptable'
 import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
 
@@ -340,9 +341,13 @@ export interface AffectationEnvoyee {
 // l'écran dit combien sont passés avant un refus.
 export const TAILLE_ENVOI_AFFECTATION = 100
 
-/** Les envois du lot, dans l'ordre des propositions — l'écriture de chacune composée ici, testée. */
+/**
+ * Les envois du lot, dans l'ordre des propositions — l'écriture de chacune composée ici, testée, aux comptes du PLAN du
+ * dossier, que `affecter_mouvement_bancaire` relit au même plan.
+ */
 export function envoisDuLot(
   propositions: readonly PropositionRegle[],
+  plan: PlanComptable,
   taille: number = TAILLE_ENVOI_AFFECTATION,
 ): AffectationEnvoyee[][] {
   // Une proposition a passé `refusAffectation`, donc sa catégorie a un compte de résultat ; le filtre ne
@@ -352,7 +357,7 @@ export function envoisDuLot(
         ligne_bancaire_id: p.ligne.id,
         categorie_id: p.categorie.id,
         taux_tva: p.taux,
-        ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable, p.taux),
+        ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable, p.taux, plan),
       }]
     : [])
   const envois: AffectationEnvoyee[][] = []

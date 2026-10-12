@@ -299,7 +299,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
         Cadre 7 du 2035-B. Le total des indemnités se reporte ligne 23 du 2035-A (case BJ, frais de
         véhicules). Le kilométrage est propre à chaque exercice : l'option pour le forfait se prend
         au 1<sup>er</sup> janvier et vaut pour l'année entière. Le forfait de chaque véhicule s'écrit au
-        brouillon au 31 décembre : les indemnités au compte 625110, face au compte du dirigeant
+        brouillon au 31 décembre : les indemnités au compte {modele.plan.indemnites_kilometriques}, face au compte du dirigeant
         ({compteDuDirigeant(modele)}) — c'est lui qui a supporté les frais du véhicule.
       </p>
 

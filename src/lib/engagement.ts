@@ -1,9 +1,7 @@
-import {
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_BANQUE, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
-  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS,
-} from './comptes'
+import { COMPTE_CLIENTS, COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
 import { cleFournisseur, dateLocaleDe } from './format'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
+import { ROLES_DU_DIRIGEANT, roleDuDirigeant, type PlanComptable, type RoleDuDirigeant } from './planComptable'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece } from './types'
 
@@ -33,13 +31,38 @@ import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece }
 export interface ModeleComptable {
   mode: ModeComptable
   // Le compte d'une note de frais payée par le dirigeant, en engagement. En trésorerie il n'y a rien à
-  // choisir : ce qu'il a payé de sa poche passe au 108000 de l'exploitant (`compteDuDirigeant`,
-  // lib/virementPersonnel.ts ; `ligneContrepartieDirigeant`, lib/ecritures.ts).
+  // choisir : ce qu'il a payé de sa poche passe au compte de l'exploitant (`compteDuDirigeant`,
+  // lib/virementPersonnel.ts ; `ligneContrepartieDirigeant`, lib/ecritures.ts). Un compte VALIDÉ PAR LE PLAN :
+  // celui de l'un des trois rôles du dirigeant (`modeleDuDossier`).
   compteNotesDeFrais: CompteNotesDeFrais
+  // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : le compte de chacun de ses rôles, lu avec lui
+  // (`plan_du_dossier`, lib/planComptable.ts). Il décide, comme le modèle, de ce qu'une écriture DOIT contenir :
+  // toute écriture que l'application compose y prend la banque, la TVA, les tiers, le dirigeant… — jamais une
+  // constante —, et tout contrôle qui recompose une écriture pour la juger le lit aussi. Obligatoire : un modèle sans
+  // plan ne se construit pas, et une écriture composée sans lui partirait aux comptes par défaut, que la base refuserait
+  // d'un dossier qui en règle d'autres.
+  plan: PlanComptable
 }
 
-export function modeleDuDossier(dossier: Pick<Dossier, 'mode_comptable' | 'compte_notes_de_frais'>): ModeleComptable {
-  return { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais }
+/** Le modèle comptable d'un dossier, ou le refus qui l'empêche, dit en clair. */
+export type ModeleDuDossier = { modele: ModeleComptable; refus: null } | { modele: null; refus: string }
+
+// LE COMPTE DU DIRIGEANT EST VALIDÉ PAR LE PLAN (conception, § 3.6) : `compte_notes_de_frais` désigne le compte de l'un des
+// rôles `associe`, `exploitant` ou `autres_debiteurs_crediteurs` du plan du dossier — dans les deux modèles, puisqu'un
+// dossier en trésorerie le garde pour le jour où il passerait en engagement. Un compte qu'aucun ne porte n'est le compte
+// d'aucun dirigeant : la note de frais s'y écrirait sur un compte que le plan ne tient pas. La base le borne encore aux
+// trois défauts (`dossiers_compte_notes_de_frais_check`) ; l'étape PC4, qui rendra le plan réglable, la remplacera (Q4).
+export function modeleDuDossier(
+  dossier: Pick<Dossier, 'mode_comptable' | 'compte_notes_de_frais'>, plan: PlanComptable,
+): ModeleDuDossier {
+  if (roleDuDirigeant(plan, dossier.compte_notes_de_frais) === null) {
+    return {
+      modele: null,
+      refus: `Le compte du dirigeant de ce dossier (${dossier.compte_notes_de_frais}) n’est le compte d’aucun des trois rôles `
+        + `que son plan comptable lui ouvre (${ROLES_DU_DIRIGEANT.map((role) => plan[role]).join(', ')}).`,
+    }
+  }
+  return { modele: { mode: dossier.mode_comptable, compteNotesDeFrais: dossier.compte_notes_de_frais, plan }, refus: null }
 }
 
 export const LIBELLES_MODE: Readonly<Record<ModeComptable, string>> = {
@@ -61,9 +84,11 @@ export const EXPLICATIONS_MODE: Readonly<Record<ModeComptable, string>> = {
 // depuis son compte bancaire, qui rembourse le dirigeant — jamais « la banque » ; le 108 retrace les
 // apports et les prélèvements personnels de l'exploitant, qui peut reprendre de la trésorerie — rien
 // n'y dit qu'« il n'est rien remboursé » ; et le 467 n'est jamais présenté comme un compte d'attente.
-export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libelle: string; explication: string }[] = [
+// Ils nomment la RACINE du rôle, vraie sous tout plan ; le compte que le choix écrit est celui du plan du dossier
+// (`comptesDuDirigeant`).
+const CHOIX_DU_DIRIGEANT: readonly { role: RoleDuDirigeant; libelle: string; explication: string }[] = [
   {
-    compte: '455000',
+    role: 'associe',
     libelle: '455 – Compte courant d’associé (recommandé pour une société dont le dirigeant est associé)',
     explication:
       'Société (SARL, SAS, SELARL…) dont le dirigeant est associé. Exemple : 100 € de frais → débit du compte '
@@ -71,7 +96,7 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
       + 'bancaire : débit 455, crédit 512 Banque.',
   },
   {
-    compte: '108000',
+    role: 'exploitant',
     libelle: '108 – Compte de l’exploitant (entreprise individuelle)',
     explication:
       'Le compte approprié lorsque l’exploitant règle personnellement une dépense professionnelle. '
@@ -79,38 +104,47 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
       + 'et ses prélèvements personnels.',
   },
   {
-    compte: '467000',
+    role: 'autres_debiteurs_crediteurs',
     libelle: '467 – Divers comptes débiteurs et produits à recevoir',
     explication:
       'Pour une personne qui n’est pas associée, ou lorsqu’aucun compte plus spécifique ne convient.',
   },
 ]
 
-// Les comptes de tiers de l'engagement, et les comptes du dirigeant. En trésorerie, deux écritures portent le
-// 108 de l'exploitant : celle d'un virement personnel, qui n'a pas de pièce — aucun contrôle qui lit cette
-// liste ne regarde une écriture sans pièce (lib/virementPersonnel.ts) —, et la contrepartie d'une NOTE DE
+/** Les trois comptes que le dirigeant peut prendre, ceux du PLAN du dossier, sous les mots du cabinet. */
+export function comptesDuDirigeant(
+  plan: PlanComptable,
+): readonly { role: RoleDuDirigeant; compte: CompteNotesDeFrais; libelle: string; explication: string }[] {
+  return CHOIX_DU_DIRIGEANT.map((choix) => ({ ...choix, compte: plan[choix.role] }))
+}
+
+// Les comptes de tiers de l'engagement, et les comptes du dirigeant — ceux du plan du dossier. En trésorerie, deux
+// écritures portent le compte de l'exploitant : celle d'un virement personnel, qui n'a pas de pièce — aucun contrôle qui
+// lit cette liste ne regarde une écriture sans pièce (lib/virementPersonnel.ts) —, et la contrepartie d'une NOTE DE
 // FRAIS que le dirigeant a payée de sa poche (`ligneContrepartieDirigeant`, lib/ecritures.ts). Celle-là solde
 // la charge de sa pièce exactement comme la ligne de tiers d'une facture d'engagement, et `ecrituresSansObjet`
 // l'écarte pour la même raison. Seule une catégorie dont le compte serait l'un d'eux — un achat classé en
 // prélèvement personnel au 108 — y porterait la CHARGE d'une pièce, que `ecrituresSansObjet` écarterait aussi :
 // aucune n'existe en base (mesuré le 05/10/2026).
-export const COMPTES_DE_TIERS: ReadonlySet<string> = new Set([
-  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS,
-])
+export function comptesDeTiers(plan: PlanComptable): ReadonlySet<string> {
+  return new Set([
+    plan.fournisseurs, plan.fournisseurs_immobilisations, plan.clients, plan.associe, plan.exploitant,
+    plan.autres_debiteurs_crediteurs,
+  ])
+}
 
-// Le compte de tiers d'une pièce : 411 pour une vente, le compte du dossier pour une note de frais,
-// 404 pour la facture d'un bien IMMOBILISÉ — la dette envers le vendeur d'une immobilisation, que le bilan
-// sépare des dettes fournisseurs —, 401 pour tout le reste : un achat, et une pièce « autre », qui passe
-// en charge comme en trésorerie. Une note de frais immobilisée reste au compte du dirigeant : c'est lui
-// qui a payé. Sans valeur par défaut pour `immobilisation` : l'oublier ferait solder au 401 la facture
-// d'un bien écrite au 404.
+// Le compte de tiers d'une pièce : le compte des clients pour une vente, le compte du dossier pour une note de frais,
+// celui des fournisseurs d'immobilisations pour la facture d'un bien IMMOBILISÉ — la dette envers le vendeur d'une
+// immobilisation, que le bilan sépare des dettes fournisseurs —, celui des fournisseurs pour tout le reste : un achat, et
+// une pièce « autre », qui passe en charge comme en trésorerie. Chacun pris dans le PLAN du dossier. Une note de frais
+// immobilisée reste au compte du dirigeant : c'est lui qui a payé. Sans valeur par défaut pour `immobilisation` :
+// l'oublier ferait solder au 401 la facture d'un bien écrite au 404.
 export function compteDeTiers(
-  piece: Pick<Piece, 'type_piece'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean,
+  piece: Pick<Piece, 'type_piece'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean, plan: PlanComptable,
 ): string {
-  if (piece.type_piece === 'vente') return COMPTE_CLIENTS
+  if (piece.type_piece === 'vente') return plan.clients
   if (piece.type_piece === 'note_frais') return compteNotesDeFrais
-  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS
+  return immobilisation ? plan.fournisseurs_immobilisations : plan.fournisseurs
 }
 
 type Sens = 'debit' | 'credit'
@@ -130,6 +164,7 @@ function ligne(base: Omit<LigneAGenerer, 'sens' | 'compte' | 'montant'>, sensNor
 // l'écriture ne s'équilibre pas, et le contrôle des écritures le dit plutôt que de le masquer.
 export function lignesFactureEngagement(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: CompteNotesDeFrais,
+  plan: PlanComptable,
 ): LigneAGenerer[] {
   const sensPiece: Sens = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const base = {
@@ -140,8 +175,8 @@ export function lignesFactureEngagement(
   const ttc = piece.montant_ttc!
   const tva = tvaVentilee(piece, assujettiTva)
   const lignes = [ligne(base, sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
-  if (tva) lignes.push(ligne(base, sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
-  lignes.push(ligne(base, inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
+  if (tva) lignes.push(ligne(base, sensPiece, compteTvaDe(piece, cible.immobilisation, plan), tva))
+  lignes.push(ligne(base, inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation, plan), ttc))
   // Une ligne nulle ne s'écrit pas : la base la refuse, et l'insertion d'un seul tenant de la génération emporterait
   // tout le lot avec elle.
   return lignes.filter((l) => l.montant !== 0)
@@ -156,6 +191,7 @@ export function lignesFactureEngagement(
 export function lignesReglementEngagement(
   dossierId: string, piece: Pick<Piece, 'id' | 'type_piece' | 'tiers' | 'nom_fichier'>,
   mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean,
+  plan: PlanComptable,
 ): LigneAGenerer[] {
   if (!mouvement.montant) return []
   const base = {
@@ -165,8 +201,8 @@ export function lignesReglementEngagement(
   const sensBanque: Sens = mouvement.montant > 0 ? 'debit' : 'credit'
   const montant = Math.abs(mouvement.montant)
   return [
-    { ...base, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation), sens: inverse(sensBanque), montant },
-    { ...base, compte: COMPTE_BANQUE, sens: sensBanque, montant },
+    { ...base, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation, plan), sens: inverse(sensBanque), montant },
+    { ...base, compte: plan.banque, sens: sensBanque, montant },
   ]
 }
 
@@ -177,12 +213,13 @@ export function lignesReglementEngagement(
 export function lignesEngagementPourPiece(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
   compteNotesDeFrais: CompteNotesDeFrais, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
+  plan: PlanComptable,
 ): LigneAGenerer[] {
   return [
-    ...lignesFactureEngagement(dossierId, piece, cible, assujettiTva, compteNotesDeFrais),
+    ...lignesFactureEngagement(dossierId, piece, cible, assujettiTva, compteNotesDeFrais, plan),
     ...[...mouvements]
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais, cible.immobilisation)),
+      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais, cible.immobilisation, plan)),
   ]
 }
 

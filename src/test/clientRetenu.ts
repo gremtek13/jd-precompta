@@ -25,6 +25,15 @@ export const etat = {
   // requête PostgREST — une chaîne construite et jamais attendue n'envoie rien. Un `rpc` ou une fonction n'écrivent pas
   // toujours : celui qui compte les juge par leur nom et leur action.
   ecritures: [] as string[],
+  // Ce que rend, en mode « vide », une fonction SQL nommée (`rpc:nom`) : une liste vide sinon. Le plan comptable d'un
+  // dossier (`rpc:plan_du_dossier`, ligne 43, étape PC3) est entier ou n'est pas : lu vide, la page du dossier dit sa
+  // lecture ratée au lieu de monter ses onglets — le garde n'y verrait plus rien. Posé une fois par le fichier de test,
+  // comme une base qui sait répondre à cette fonction : `reinitialiser` ne le retire pas.
+  rendusRpc: {} as Record<string, unknown>,
+  // Les cibles qui restent retenues quand `libererTout` libère le reste — une lecture qu'on veut voir arriver la
+  // DERNIÈRE ; `libererRetenues` les rend ensuite, au mode du moment.
+  toujoursRetenues: new Set<string>(),
+  retenuesALaDemande: [] as (() => void)[],
 }
 
 export function reinitialiser(mode: ModeReponse) {
@@ -32,12 +41,21 @@ export function reinitialiser(mode: ModeReponse) {
   etat.enAttente = []
   etat.demandes = new Set()
   etat.ecritures = []
+  etat.toujoursRetenues = new Set()
+  etat.retenuesALaDemande = []
 }
 
 // Libère les réponses retenues, en mode « vide » ou « refus » : celles qu'elles déclenchent répondent aussitôt.
 export function libererTout(mode: Exclude<ModeReponse, 'retenir'> = 'vide'): number {
   etat.mode = mode
   const liberees = etat.enAttente.splice(0)
+  for (const rendre of liberees) rendre()
+  return liberees.length
+}
+
+// Libère les cibles de `toujoursRetenues`, au mode du moment.
+export function libererRetenues(): number {
+  const liberees = etat.retenuesALaDemande.splice(0)
   for (const rendre of liberees) rendre()
   return liberees.length
 }
@@ -70,6 +88,7 @@ function reponse(c: Chaine): unknown {
   if (c.cible === 'auth:getUser') return { data: { user: null }, error: null }
   if (c.chemin.includes('.createSignedUrl')) return { data: null, error: { message: 'aucun fichier dans le faux client' } }
   if (c.uneLigne) return { data: etat.lignesUniques[c.cible] ?? null, error: null, count: null, status: 200 }
+  if (c.cible in etat.rendusRpc) return { data: etat.rendusRpc[c.cible], error: null, count: null, status: 200 }
   return { data: [], error: null, count: 0, status: 200 }
 }
 
@@ -84,7 +103,8 @@ function chaine(c: Chaine): unknown {
           const ecriture = ecritureDe(c)
           if (ecriture) etat.ecritures.push(ecriture)
           const rendre = () => { suite(reponse(c)) }
-          if (etat.mode === 'retenir') etat.enAttente.push(rendre)
+          if (etat.toujoursRetenues.has(c.cible)) etat.retenuesALaDemande.push(rendre)
+          else if (etat.mode === 'retenir') etat.enAttente.push(rendre)
           else void Promise.resolve().then(rendre)
         }
       }

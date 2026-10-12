@@ -12,6 +12,7 @@ import type { Emprunt } from '../../lib/emprunts'
 import { REFUS_PAIEMENT_TVA_CLASSE } from '../../lib/liquidationTva'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { NON_VALIDEE } from '../../test/ecritures'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -493,8 +494,8 @@ function reinitialiser() {
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
 // `usePanneauDroit` lève (voir lib/panneauDroit.ts) — un bouton qui n'ouvrirait rien ne doit pas
 // passer pour un bouton qui marche.
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
 function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false, valides: readonly number[] = []) {
@@ -5486,5 +5487,56 @@ describe('BanqueTab — le retrait d’une règle « toujours ignorer »', () =>
     await waitFor(() => expect(screen.queryByText('assurance fictive')).toBeNull())
     expect(alerte).not.toHaveBeenCalled()
     expect(faux.reglesIgnorees).toEqual([])
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : la fiche d'un mouvement compose ses écritures aux comptes DU PLAN — ceux que
+// les fonctions de la base relisent au même plan depuis l'étape PC2 — et nomme ces comptes-là.
+describe('BanqueTab — sous le plan du dossier', () => {
+  const DECALE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: PLAN_DECALE.associe, plan: PLAN_DECALE }
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+
+  it('propose l’échéance d’un emprunt aux comptes du plan, et l’écrit sur eux', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.emprunts = [EMPRUNT]
+    faux.lignes = [ligneDeTest({ libelle: 'PRLV ECHEANCE PRET', montant: -540, date: '2025-02-06' })]
+    rendre(DECALE)
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect((within(volet()).getByLabelText('Intérêts (661110)') as HTMLInputElement).value).toBe('36.00')
+    expect((within(volet()).getByLabelText('Assurance (616810)') as HTMLInputElement).value).toBe('21.03')
+    expect(within(volet()).getAllByText(/au compte 164100/).length).toBeGreaterThan(0)
+    expect(volet().textContent).not.toMatch(/164000|661100|616800|512000/)
+
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '164100', sens: 'debit', montant: 482.97, libelle: 'PRLV ECHEANCE PRET' },
+      { compte: '661110', sens: 'debit', montant: 36, libelle: 'PRLV ECHEANCE PRET' },
+      { compte: '616810', sens: 'debit', montant: 21.03, libelle: 'PRLV ECHEANCE PRET' },
+      { compte: '512100', sens: 'credit', montant: 540, libelle: 'PRLV ECHEANCE PRET' },
+    ])
+  })
+
+  it('affecte une recette taxée avec la TVA collectée du plan, et la nomme', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.categories = [categorieDeTest({
+      id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10, compte_comptable: '706000', poste_2035: 'Recettes',
+    })]
+    faux.lignes = [ligneDeTest({ libelle: 'VIR CPAM', montant: 120 })]
+    rendre(DECALE, true)
+    await ouvrir('VIR CPAM')
+    fireEvent.change(within(volet()).getByLabelText('Catégorie'), { target: { value: 'cat-recettes' } })
+    fireEvent.change(within(volet()).getByLabelText('Taux de TVA de cette recette'), { target: { value: '20' } })
+    expect(within(volet()).getByText(/Recette au hors taxe : 100,00.*TVA collectée \(445711\) : 20,00/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '706000', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
+      { compte: '445711', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
+      { compte: '512100', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+    ])
   })
 })

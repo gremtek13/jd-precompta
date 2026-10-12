@@ -3,6 +3,7 @@ import { compteDeLApplication, compteQueLApplicationEcrit, dateOuverture, ouvert
 import type { LigneBalance } from './balanceImport'
 import type { ANouveau } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 const ligne = (compte: string, debit: number, credit: number, libelle = ''): LigneBalance => ({ compte, libelle, debit, credit })
 
@@ -22,22 +23,22 @@ const BALANCE_2025: LigneBalance[] = [
 describe('compteDeLApplication', () => {
   it('ramène tout compte de banque au compte banque de l’application', () => {
     for (const numero of ['512', '5120', '5121', '51210000', '512000', '5124']) {
-      expect(compteDeLApplication(numero)).toBe('512000')
+      expect(compteDeLApplication(numero, PLAN_PAR_DEFAUT)).toBe('512000')
     }
   })
 
   it('reconnaît un compte de TVA écrit sur une autre longueur, et lui seul', () => {
-    expect(compteDeLApplication('44566')).toBe('445660')
-    expect(compteDeLApplication('4456600')).toBe('445660')
-    expect(compteDeLApplication('44571000')).toBe('445710')
+    expect(compteDeLApplication('44566', PLAN_PAR_DEFAUT)).toBe('445660')
+    expect(compteDeLApplication('4456600', PLAN_PAR_DEFAUT)).toBe('445660')
+    expect(compteDeLApplication('44571000', PLAN_PAR_DEFAUT)).toBe('445710')
     // Mêmes premiers chiffres, autre compte : 4456 n'est pas 44566, 4457 n'est pas 44571.
-    expect(compteDeLApplication('4456')).toBe('4456')
-    expect(compteDeLApplication('4457')).toBe('4457')
+    expect(compteDeLApplication('4456', PLAN_PAR_DEFAUT)).toBe('4456')
+    expect(compteDeLApplication('4457', PLAN_PAR_DEFAUT)).toBe('4457')
   })
 
   it('laisse tout autre compte sous le numéro de la balance', () => {
     for (const numero of ['2183', '28183', '164', '108', '5300', '401000']) {
-      expect(compteDeLApplication(numero)).toBe(numero)
+      expect(compteDeLApplication(numero, PLAN_PAR_DEFAUT)).toBe(numero)
     }
   })
 })
@@ -53,25 +54,25 @@ describe('compteQueLApplicationEcrit', () => {
       ['4010000', '401000'], ['404', '404000'], ['41100000', '411000'], ['108', '108000'], ['4550000', '455000'],
       ['467', '467000'], ['164', '164000'], ['1640000', '164000'], ['1010000', '101000'], ['120', '120000'],
       ['1290000', '129000'], ['2750', '275000'], ['58', '580000'],
-    ]) expect(compteQueLApplicationEcrit(balance), balance).toBe(application)
+    ]) expect(compteQueLApplicationEcrit(balance, PLAN_PAR_DEFAUT), balance).toBe(application)
   })
 
   it('nomme le compte de l’application pour un autre sous-compte de la racine d’un rôle', () => {
-    expect(compteQueLApplicationEcrit('164100')).toBe('164000')
-    expect(compteQueLApplicationEcrit('445661')).toBe('445660')
-    expect(compteQueLApplicationEcrit('445711')).toBe('445710')
-    expect(compteQueLApplicationEcrit('401100')).toBe('401000')
-    expect(compteQueLApplicationEcrit('1081')).toBe('108000')
+    expect(compteQueLApplicationEcrit('164100', PLAN_PAR_DEFAUT)).toBe('164000')
+    expect(compteQueLApplicationEcrit('445661', PLAN_PAR_DEFAUT)).toBe('445660')
+    expect(compteQueLApplicationEcrit('445711', PLAN_PAR_DEFAUT)).toBe('445710')
+    expect(compteQueLApplicationEcrit('401100', PLAN_PAR_DEFAUT)).toBe('401000')
+    expect(compteQueLApplicationEcrit('1081', PLAN_PAR_DEFAUT)).toBe('108000')
   })
 
   // Le compte du bien et celui de son amortissement, sur six chiffres sans leurs zéros de fin — et un sixième chiffre
   // significatif qui se garde, comme `compteAmortissement` le garde.
   it('nomme la forme à six chiffres d’un compte de bien ou d’amortissement', () => {
-    expect(compteQueLApplicationEcrit('2183')).toBe('218300')
-    expect(compteQueLApplicationEcrit('2183000')).toBe('218300')
-    expect(compteQueLApplicationEcrit('28183')).toBe('281830')
-    expect(compteQueLApplicationEcrit('2818300')).toBe('281830')
-    expect(compteQueLApplicationEcrit('2805')).toBe('280500')
+    expect(compteQueLApplicationEcrit('2183', PLAN_PAR_DEFAUT)).toBe('218300')
+    expect(compteQueLApplicationEcrit('2183000', PLAN_PAR_DEFAUT)).toBe('218300')
+    expect(compteQueLApplicationEcrit('28183', PLAN_PAR_DEFAUT)).toBe('281830')
+    expect(compteQueLApplicationEcrit('2818300', PLAN_PAR_DEFAUT)).toBe('281830')
+    expect(compteQueLApplicationEcrit('2805', PLAN_PAR_DEFAUT)).toBe('280500')
   })
 
   it('se tait sur un compte que l’application écrit sous ce numéro, sur un compte rangé, et sur un autre compte', () => {
@@ -83,7 +84,7 @@ describe('compteQueLApplicationEcrit', () => {
       '4456', '445700', '12',
       // Aucun rôle : l'application n'y écrit pas d'elle-même.
       '1681', '2611', '4386', '271000', '5300',
-    ]) expect(compteQueLApplicationEcrit(numero), numero).toBeNull()
+    ]) expect(compteQueLApplicationEcrit(numero, PLAN_PAR_DEFAUT), numero).toBeNull()
   })
 })
 
@@ -95,7 +96,7 @@ describe('preparerANouveaux', () => {
       ligne('164100', 0, 2000, 'Emprunt'),
       ligne('44566', 100, 0, 'TVA déductible'),
       ligne('401000', 0, 700, 'Fournisseurs'),
-    ], 2026)
+    ], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.nonRanges).toEqual([
       { compteOrigine: '4455100', libelle: 'TVA à décaisser', compte: '445510' },
@@ -107,12 +108,12 @@ describe('preparerANouveaux', () => {
   })
 
   it('ne dit rien d’une balance tenue sur les comptes de l’application', () => {
-    const p = preparerANouveaux([ligne('512000', 900, 0), ligne('445510', 0, 200), ligne('108000', 0, 700)], 2026)
+    const p = preparerANouveaux([ligne('512000', 900, 0), ligne('445510', 0, 200), ligne('108000', 0, 700)], 2026, PLAN_PAR_DEFAUT)
     expect(p.nonRanges).toEqual([])
   })
 
   it('ouvre les seuls comptes de bilan, et reprend le résultat en 120 en attente d’affectation', () => {
-    const p = preparerANouveaux(BALANCE_2025, 2026)
+    const p = preparerANouveaux(BALANCE_2025, 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.lignes.map((l) => [l.compte, l.compteOrigine, l.sens, l.montant])).toEqual([
       ['2183', '2183', 'debit', 3000],
@@ -128,7 +129,7 @@ describe('preparerANouveaux', () => {
   })
 
   it('n’ouvre JAMAIS une charge ni un produit : ils appartiennent à l’exercice qui les a portés', () => {
-    const comptes = preparerANouveaux(BALANCE_2025, 2026).lignes.map((l) => l.compte)
+    const comptes = preparerANouveaux(BALANCE_2025, 2026, PLAN_PAR_DEFAUT).lignes.map((l) => l.compte)
     expect(comptes.some((c) => c.startsWith('6') || c.startsWith('7'))).toBe(false)
   })
 
@@ -137,7 +138,7 @@ describe('preparerANouveaux', () => {
       ligne('512', 1000, 0, 'Banque'),
       ligne('108', 0, 6000, 'Compte de l’exploitant'),
       ligne('606100', 9000, 0), ligne('706000', 0, 4000),
-    ], 2026)
+    ], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.resultat).toEqual({
       compte: '129000', compteOrigine: null, sens: 'debit', montant: 5000,
@@ -149,7 +150,7 @@ describe('preparerANouveaux', () => {
     const p = preparerANouveaux([
       ligne('512', 4000, 0, 'Banque'),
       ligne('120000', 0, 4000, 'Résultat de l’exercice'),
-    ], 2026)
+    ], 2026, PLAN_PAR_DEFAUT)
     expect(p.resultat).toBeNull()
     expect(p.lignes).toEqual([
       { compte: '512000', compteOrigine: '512', libelle: 'Banque', sens: 'debit', montant: 4000 },
@@ -158,7 +159,7 @@ describe('preparerANouveaux', () => {
   })
 
   it('compte les comptes soldés sans les ouvrir', () => {
-    expect(preparerANouveaux(BALANCE_2025, 2026).soldes).toBe(1)
+    expect(preparerANouveaux(BALANCE_2025, 2026, PLAN_PAR_DEFAUT).soldes).toBe(1)
   })
 
   it('dit quels comptes changent de numéro, et garde une ligne par compte de la balance', () => {
@@ -169,7 +170,7 @@ describe('preparerANouveaux', () => {
       ligne('51220000', 500, 0, 'Crédit Agricole'),
       ligne('44566', 200, 0, 'TVA déductible'),
       ligne('108', 0, 3700, 'Compte de l’exploitant'),
-    ], 2026)
+    ], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.rapproches).toEqual([
       { compteOrigine: '51210000', libelle: 'Banque Populaire', compte: '512000' },
@@ -180,7 +181,7 @@ describe('preparerANouveaux', () => {
   })
 
   it('écarte une classe 8 soldée, et le dit', () => {
-    const p = preparerANouveaux([...BALANCE_2025, ligne('801', 100, 0), ligne('802', 0, 100)], 2026)
+    const p = preparerANouveaux([...BALANCE_2025, ligne('801', 100, 0), ligne('802', 0, 100)], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.classe8).toBe(2)
     expect(p.lignes.some((l) => l.compte.startsWith('8'))).toBe(false)
@@ -192,23 +193,23 @@ describe('preparerANouveaux', () => {
     const p = preparerANouveaux([
       ligne('512', 5000, 0), ligne('108', 0, 5000),
       ligne('891', 5000, 5000), ligne('890', 0, 700), ligne('512100', 700, 0),
-    ], 2026)
+    ], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toMatch(/classe 8 de cette balance ne sont pas soldés \(700,00\s€\)/)
   })
 
   it('REFUSE un écart d’un centime, que la lecture de la balance tolère', () => {
-    const p = preparerANouveaux([ligne('512', 100.01, 0), ligne('108', 0, 100)], 2026)
+    const p = preparerANouveaux([ligne('512', 100.01, 0), ligne('108', 0, 100)], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toMatch(/ne s’équilibrent pas au centime \(écart de 0,01\s€\)/)
   })
 
   it('compte en centimes : 0,10 + 0,20 font bien 0,30', () => {
-    const p = preparerANouveaux([ligne('2183', 0.1, 0), ligne('2184', 0.2, 0), ligne('108', 0, 0.3)], 2026)
+    const p = preparerANouveaux([ligne('2183', 0.1, 0), ligne('2184', 0.2, 0), ligne('108', 0, 0.3)], 2026, PLAN_PAR_DEFAUT)
     expect(p.refus).toBeNull()
     expect(p.totalDebit).toBe(0.3)
   })
 
   it('dit qu’il n’y a rien à reprendre plutôt que d’enregistrer zéro ligne', () => {
-    const p = preparerANouveaux([ligne('512', 100, 100), ligne('108', 50, 50)], 2026)
+    const p = preparerANouveaux([ligne('512', 100, 100), ligne('108', 50, 50)], 2026, PLAN_PAR_DEFAUT)
     expect(p.lignes).toEqual([])
     expect(p.refus).toBe('Aucun solde à reprendre : tous les comptes de bilan de cette balance sont soldés.')
   })

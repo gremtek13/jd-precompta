@@ -1,5 +1,6 @@
-import { COMPTE_BANQUE, COMPTE_EXPLOITANT, libelleCompteTenu, libelleDuPlanComptable } from './comptes'
-import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
+import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
+import { comptesDeTiers, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
+import type { PlanComptable } from './planComptable'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
@@ -79,6 +80,8 @@ export interface CibleComptable {
 export function lignesChargeProduitPourPiece(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
   paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[],
+  // Le plan du dossier (lib/planComptable.ts) : le compte de TVA de la pièce est celui de son rôle.
+  plan: PlanComptable,
 ): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
@@ -114,7 +117,7 @@ export function lignesChargeProduitPourPiece(
     const lignes = f.centimes !== 0 ? [ligne(f.date, cible.compte, f.centimes / 100)] : []
     // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
     // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
-    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
+    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation, plan), tvas[i].centimes / 100))
     return lignes
   })
 }
@@ -131,11 +134,12 @@ export function lignesChargeProduitPourPiece(
 export function ligneContrepartieBanque(
   dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
   paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>,
+  plan: PlanComptable,
 ): LigneAGenerer | null {
   if (!paiement.montant) return null
   return {
     dossier_id: dossierId, piece_id: piece.id, ligne_bancaire_id: paiement.id, date: paiement.date,
-    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: COMPTE_BANQUE,
+    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.banque,
     montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
   }
 }
@@ -159,6 +163,8 @@ export function ligneContrepartieBanque(
 export function ligneContrepartieDirigeant(
   dossierId: string, piece: Piece, autres: readonly Pick<LigneAGenerer, 'sens' | 'montant'>[],
   paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[],
+  // Le plan du dossier : le compte de l'exploitant est celui de son rôle (108000 par défaut).
+  plan: PlanComptable,
 ): LigneAGenerer | null {
   const part = rattachementsTresorerie(piece, paiements).find((r) => r.source === 'note_de_frais')
   // Remboursée par la banque — en entier, ou à l'écart d'alignement près —, la note n'a plus de part à elle.
@@ -167,7 +173,7 @@ export function ligneContrepartieDirigeant(
   if (solde === 0) return null
   return {
     dossier_id: dossierId, piece_id: piece.id, date: part.date ?? dateLocaleDe(piece.created_at),
-    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: COMPTE_EXPLOITANT,
+    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.exploitant,
     montant: Math.abs(solde) / 100, sens: solde > 0 ? 'credit' : 'debit',
   }
 }
@@ -177,8 +183,10 @@ export function ligneContrepartieDirigeant(
 // pas de contrepartie à part — sa charge est déjà au compte du dirigeant, et l'écrire aussi en face annulerait l'une
 // par l'autre : elle suit la règle de toute pièce, la banque de son paiement. La génération et le contrôle
 // répondent par ce seul prédicat, sans quoi l'un écrirait ce que l'autre déclare « à régénérer ».
-function estContrepartieDirigeant(p: Pick<Piece, 'type_piece'>, cible: Pick<CibleComptable, 'compte'>, e: Pick<EcritureBrouillon, 'compte'>): boolean {
-  return p.type_piece === 'note_frais' && e.compte === COMPTE_EXPLOITANT && cible.compte !== COMPTE_EXPLOITANT
+function estContrepartieDirigeant(
+  p: Pick<Piece, 'type_piece'>, cible: Pick<CibleComptable, 'compte'>, e: Pick<EcritureBrouillon, 'compte'>, plan: PlanComptable,
+): boolean {
+  return p.type_piece === 'note_frais' && e.compte === plan.exploitant && cible.compte !== plan.exploitant
 }
 
 // Ce qu'une pièce produit au brouillon selon le MODÈLE COMPTABLE du dossier — le seul point d'entrée de
@@ -195,21 +203,21 @@ export function lignesPourPiece(
   paiements: readonly PaiementDePiece[], modele: ModeleComptable,
 ): LigneAGenerer[] {
   if (modele.mode === 'engagement') {
-    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements)
+    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements, modele.plan)
   }
-  return lignesTresoreriePourPiece(dossierId, piece, cible, assujettiTva, paiements)
+  return lignesTresoreriePourPiece(dossierId, piece, cible, assujettiTva, paiements, modele.plan)
 }
 
 function lignesTresoreriePourPiece(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
-  paiements: readonly PaiementDePiece[],
+  paiements: readonly PaiementDePiece[], plan: PlanComptable,
 ): LigneAGenerer[] {
   const autres = [
-    ...lignesChargeProduitPourPiece(dossierId, piece, cible, assujettiTva, paiements),
-    ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p) ?? []),
+    ...lignesChargeProduitPourPiece(dossierId, piece, cible, assujettiTva, paiements, plan),
+    ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p, plan) ?? []),
   ]
-  const dirigeant = ligneContrepartieDirigeant(dossierId, piece, autres, paiements)
-  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant) ? [...autres, dirigeant] : autres
+  const dirigeant = ligneContrepartieDirigeant(dossierId, piece, autres, paiements, plan)
+  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant, plan) ? [...autres, dirigeant] : autres
 }
 
 // Les dates que les lignes d'une pièce DOIVENT porter, ou null quand l'une d'elles serait le repli sur
@@ -360,20 +368,23 @@ export function ecrituresSansObjet(
   categories: Categorie[],
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
   frontiere: string | null,
+  // Le plan du dossier : la banque et les comptes de tiers qu'on écarte sont les siens.
+  plan: PlanComptable,
 ): EcritureSansObjet[] {
+  const tiers = comptesDeTiers(plan)
   const parPiece = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (estFigee(e.date, frontiere)) continue
     // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et un mouvement bancaire est
     // RÉEL : ni la contrepartie banque (trésorerie) ni l'écriture de règlement (engagement, les deux
     // lignes qui désignent leur mouvement) ne disparaissent parce que la pièce a changé de nature.
-    if (!e.piece_id || e.compte === COMPTE_BANQUE || e.ligne_bancaire_id) continue
+    if (!e.piece_id || e.compte === plan.banque || e.ligne_bancaire_id) continue
     // En engagement, la ligne de tiers de la facture (401, 411, compte de la note de frais) SOLDE la
     // charge dans son écriture : elle ne compte rien en trop, et la garder ferait rendre zéro à
     // `montant` — une facture immobilisée annoncée « 0,00 € compté au brouillon ». En trésorerie, la
     // contrepartie d'une note de frais au 108000 (`ligneContrepartieDirigeant`) la solde de même, et s'écarte
     // pour la même raison ; celle d'un virement personnel, sans pièce, est écartée plus haut.
-    if (COMPTES_DE_TIERS.has(e.compte)) continue
+    if (tiers.has(e.compte)) continue
     parPiece.set(e.piece_id, [...(parPiece.get(e.piece_id) ?? []), e])
   }
   const sansObjet: EcritureSansObjet[] = []
@@ -436,11 +447,12 @@ export function analyserEcritures(
   // prendre pour une contrepartie ferait dire « déséquilibrée » une pièce qui attend son paiement. Hors du jeu, le
   // type d'une pièce n'est pas connu : la banque seule fait foi, comme avant.
   const tresorerie = modele.mode === 'tresorerie'
+  const { plan } = modele
   const notesDeFrais = new Set(aComptabiliser
-    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: COMPTE_EXPLOITANT }))
+    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: plan.exploitant }, plan))
     .map(({ piece }) => piece.id))
   const contrepartie = (pieceId: string, r: EcritureBrouillon) =>
-    r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
+    r.compte === plan.banque || (notesDeFrais.has(pieceId) && r.compte === plan.exploitant)
   const piecesSansContrepartie = [...piecesParGroupe.entries()]
     .filter(([pieceId, rows]) => !notesDeFrais.has(pieceId) && !rows.some((r) => contrepartie(pieceId, r)) && !paiements.has(pieceId))
     .map(([pieceId]) => pieceId)
@@ -468,8 +480,8 @@ export function analyserEcritures(
       }
     }
     return modele.mode === 'engagement'
-      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
-      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
+      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais, plan)
+      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece, plan)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
@@ -598,11 +610,11 @@ function banqueSuitLesPaiements(lignesBanque: readonly EcritureBrouillon[], paie
 // ses paiements.
 function tresorerieDesynchronisee(
   p: Piece, cible: CibleComptable, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[],
+  paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
 ): boolean {
   // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
   // compare à part, à la fin.
-  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieDirigeant(p, cible, e))
+  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieDirigeant(p, cible, e, plan))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge, en revanche, en
   // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
   if (lignes.length === 0) return groupe.length > 0
@@ -621,7 +633,7 @@ function tresorerieDesynchronisee(
   // Et le compte de TVA est celui que la génération écrit (`compteTvaDe`) : la facture d'un bien passe en
   // 445620, celle d'une charge en 445660 — une pièce immobilisée après coup change de compte de TVA autant
   // que de compte de charge.
-  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
   const surUnAutreCompte = lignes.some((e) => e.compte !== cible.compte && e.compte !== compteTva)
   if (surUnAutreCompte) return true
   // ET LA VENTILATION DE LA TVA, QUE LE TOTAL NE PEUT PAS VOIR — le panneau annonçait pourtant
@@ -682,7 +694,7 @@ function tresorerieDesynchronisee(
     return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
   const presentes = soldesParDate(lignes)
-  const generees = soldesParDate(lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece))
+  const generees = soldesParDate(lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan))
   if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
   const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
@@ -690,7 +702,7 @@ function tresorerieDesynchronisee(
   // premier paiement —, donc une pièce payée en deux fois, ou réglée en partie par un virement groupé,
   // gardait une écriture déséquilibrée que rien ne savait compléter. « Régénérer » réécrit désormais la
   // banque avec la charge, depuis les paiements.
-  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true
+  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true
   // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT — celle que la génération écrit, ni une de plus
   // ni une de moins : absente d'une écriture générée avant, elle laisse la pièce déséquilibrée et la validation de
   // son exercice impossible ; restée après un remboursement rapproché, elle compterait deux fois ce que la banque
@@ -698,9 +710,9 @@ function tresorerieDesynchronisee(
   // le fuseau de qui génère (voir la date ci-dessus).
   const cle = (l: Pick<EcritureBrouillon, 'date' | 'sens' | 'montant'>) =>
     [p.date_piece ? l.date : '', l.sens, Math.round(l.montant * 100)].join('|')
-  const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e)).map(cle).sort()
-  const dirigeantAttendu = lignesTresoreriePourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece)
-    .filter((l) => estContrepartieDirigeant(p, cible, l)).map(cle).sort()
+  const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e, plan)).map(cle).sort()
+  const dirigeantAttendu = lignesTresoreriePourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan)
+    .filter((l) => estContrepartieDirigeant(p, cible, l, plan)).map(cle).sort()
   return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
 }
 
@@ -713,18 +725,18 @@ function tresorerieDesynchronisee(
 // règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
   p: Piece, cible: CibleComptable, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: CompteNotesDeFrais,
+  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: CompteNotesDeFrais, plan: PlanComptable,
 ): boolean {
-  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
+  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== plan.banque)
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
   // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture, en revanche, en
   // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
   if (facture.length === 0) return reglements.length > 0
-  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation)
+  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation, plan)
   const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
   const sensTiers: 'debit' | 'credit' = sensPiece === 'debit' ? 'credit' : 'debit'
   const signe = (e: EcritureBrouillon, sens: 'debit' | 'credit') => (e.sens === sens ? e.montant : -e.montant)
-  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const compteTva = compteTvaDe(p, cible.immobilisation, plan)
   const estTva = (e: EcritureBrouillon) => e.compte === compteTva
 
   if (facture.some((e) => e.compte !== cible.compte && e.compte !== tiers && !estTva(e))) return true
@@ -744,8 +756,8 @@ function engagementDesynchronise(
   const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
-  if (reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)) return true
-  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
+  if (reglements.some((e) => e.compte !== plan.banque && e.compte !== tiers)) return true
+  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === plan.banque), paiementsPiece)
 }
 
 // En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement

@@ -1,13 +1,10 @@
 import { dotationDeLExercice } from './amortissements'
 import { anneeDe } from './format'
 import { indemniteKilometriqueCentimes, totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
-import {
-  COMPTE_ARRONDIS_CHARGE, COMPTE_ARRONDIS_PRODUIT, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_DOTATIONS_AMORTISSEMENTS,
-  COMPTE_INDEMNITES_KILOMETRIQUES,
-} from './comptes'
 import { arrondiDeLaLiquidation } from './liquidationTva'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
+import type { PlanComptable } from './planComptable'
 import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
@@ -287,6 +284,12 @@ export function calculerDeclaration2035(
   // finit leur période. Sans valeur par défaut, comme le reste : les oublier laisserait au FEC un 658000 ou un 758000
   // que la 2035 ne compte pas, et la concordance le dirait sans que rien ne l'explique.
   declarationsTva: readonly DeclarationTva[],
+  // Le plan du dossier (lib/planComptable.ts). La 2035 se remplit par LIGNE, jamais par numéro de compte, et aucun de ses
+  // montants n'en dépend ; mais chaque contribution dit le compte où son écriture la porte — les dotations, les
+  // cotisations, les arrondis de la TVA, le forfait kilométrique, les intérêts et l'assurance d'un emprunt sont des
+  // RÔLES —, et c'est sur lui que la concordance retrouve les écritures (lib/concordance2035.ts). Sans valeur par
+  // défaut : un plan oublié ferait chercher les écritures d'un dossier qui en règle d'autres sur les comptes par défaut.
+  plan: PlanComptable,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -402,7 +405,7 @@ export function calculerDeclaration2035(
       source: { type: 'mouvement', id: p.ligne.id, ligne: p.ligne },
       poste: p.poste,
       nature: p.nature,
-      compte: p.compte,
+      compte: p.role ? plan[p.role] : p.compte,
       centimes: enCentimes(p.montantPoste),
     }, 0, p.ligne.id)
   }
@@ -415,7 +418,7 @@ export function calculerDeclaration2035(
       source: { type: 'bien', id: immobilisation.id, immobilisation },
       poste: POSTE_AMORTISSEMENTS,
       nature: 'depense',
-      compte: COMPTE_DOTATIONS_AMORTISSEMENTS,
+      compte: plan.dotations_amortissements,
       centimes: enCentimes(dotation),
     }, 0)
   }
@@ -446,7 +449,7 @@ export function calculerDeclaration2035(
       },
       poste: POSTE_COTISATIONS,
       nature: 'depense',
-      compte: COMPTE_COTISATIONS_EXPLOITANT,
+      compte: plan.cotisations_exploitant,
       centimes,
     }, 0)
   }
@@ -468,7 +471,7 @@ export function calculerDeclaration2035(
       source: { type: 'declaration', id: declaration.id, declaration },
       poste: centimes > 0 ? POSTE_ARRONDIS_TVA_CHARGE : POSTE_ARRONDIS_TVA_PRODUIT,
       nature: centimes > 0 ? 'depense' : 'recette',
-      compte: centimes > 0 ? COMPTE_ARRONDIS_CHARGE : COMPTE_ARRONDIS_PRODUIT,
+      compte: centimes > 0 ? plan.arrondi_charge : plan.arrondi_produit,
       centimes: Math.abs(centimes),
     }, 0)
   }
@@ -488,7 +491,7 @@ export function calculerDeclaration2035(
       source: { type: 'vehicule', id: vehicule.id, vehicule },
       poste: POSTE_INDEMNITES_KM,
       nature: 'depense',
-      compte: COMPTE_INDEMNITES_KILOMETRIQUES,
+      compte: plan.indemnites_kilometriques,
       centimes: Number(centimes),
     }, 0)
   }

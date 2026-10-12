@@ -18,6 +18,7 @@ import type {
   VentilationBancaire,
 } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -25,7 +26,7 @@ import { NON_VALIDEE } from '../test/ecritures'
 // qu'une comptabilité écrite par l'application concorde avec sa 2035, au centime. Chaque test suivant y
 // défait une seule chose, et l'écart doit nommer cette chose-là.
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 const categories = [
   { id: 'c-achats', libelle: 'Achats', compte_comptable: '606100', poste_2035: 'Achats' },
@@ -104,11 +105,11 @@ function dossier(o: { assujetti?: boolean } = {}) {
       lignesPourPiece('d1', p, { compte: categories.find((c) => c.id === p.categorie_id)!.compte_comptable!, immobilisation: false }, assujetti, paiements.get(p.id) ?? [], TRESORERIE),
       {},
     )),
-    ...brouillon(ecritureDuMouvement(frais, '627000', null), { ligne_bancaire_id: 'l-frais', date: frais.date }),
-    ...brouillon(ecritureDeLEcheance(echeance, { echeance: 2, interets: 36, assurance: 21.03 }), { ligne_bancaire_id: 'l-emprunt', date: echeance.date }),
+    ...brouillon(ecritureDuMouvement(frais, '627000', null, PLAN_PAR_DEFAUT), { ligne_bancaire_id: 'l-frais', date: frais.date }),
+    ...brouillon(ecritureDeLEcheance(echeance, { echeance: 2, interets: 36, assurance: 21.03 }, PLAN_PAR_DEFAUT), { ligne_bancaire_id: 'l-emprunt', date: echeance.date }),
     ...brouillon(ecritureDeLaVentilation(abonnement, ventilations, categories, TRESORERIE, assujetti)!, { ligne_bancaire_id: 'l-tel', date: abonnement.date }),
-    ...brouillon(ecritureDeLaCotisation(prelevement, appel, 'tresorerie'), { ligne_bancaire_id: 'l-cotis', date: prelevement.date }),
-    ...brouillon(ecritureDeLaDotation(bien, '218300', 2025, null), { immobilisation_id: 'i', date: '2025-12-31' }),
+    ...brouillon(ecritureDeLaCotisation(prelevement, appel, 'tresorerie', PLAN_PAR_DEFAUT), { ligne_bancaire_id: 'l-cotis', date: prelevement.date }),
+    ...brouillon(ecritureDeLaDotation(bien, '218300', 2025, null, PLAN_PAR_DEFAUT), { immobilisation_id: 'i', date: '2025-12-31' }),
     ...brouillon(ecritureDuForfait(vehicule, TRESORERIE, null)!, { vehicule_id: 'v', declaration_tva_id: null, date: '2025-12-31' }),
   ]
   return { pieces: [facture, recette], lignes, ventilations, cotisations: [appel], ecritures, assujetti }
@@ -124,7 +125,7 @@ function concordance(d: Dossier, o: {
   const declaration = calculerDeclaration2035(
     o.annee ?? 2025, d.pieces, categories, immobilisations,
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
-    paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [],
+    paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
   )
   return concordance2035(
     declaration, d.ecritures,
@@ -197,7 +198,7 @@ describe('concordance2035 — l’arrondi d’une liquidation de TVA', () => {
     cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
     tva_collectee: 100.40, tva_deductible: 20.60, tva_deductible_immobilisations: 0,
   }
-  const liquidation = (d: DeclarationTva) => brouillon(ecritureDeLaLiquidation(d), { declaration_tva_id: d.id, date: d.periode_fin })
+  const liquidation = (d: DeclarationTva) => brouillon(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT), { declaration_tva_id: d.id, date: d.periode_fin })
 
   it('concorde quand la liquidation est écrite : un produit au 758000, compté en gains divers', () => {
     const d = dossier({ assujetti: true })
@@ -602,7 +603,7 @@ describe('ouAgir', () => {
 
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
-    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [],
+    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT,
   )
 
   it('dit un compte que deux postes de cases différentes partagent', () => {

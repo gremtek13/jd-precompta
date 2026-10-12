@@ -100,6 +100,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '(P4a) et ses tuiles de l’accueil (P4b). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
       'réponse illisible, ne rend AUCUN droit, et l’écran n’offre alors aucun geste, ni les tuiles aucun chiffre, avec son motif',
   },
+  lireLePlanDuDossier: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `plan_du_dossier` LIT le plan comptable effectif d’un dossier (ligne 43, étape PC3), ' +
+      'avec le dossier, dans `DossierDetail`. `lib/planComptable.ts` attend la requête et lit son erreur : un refus, une ' +
+      'réponse illisible ou incomplète ne rendent AUCUN plan, et la page ne monte alors aucun onglet — donc ne compose ' +
+      'aucune écriture —, avec son motif',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {

@@ -7,6 +7,7 @@ import {
 } from './liquidationTva'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
+import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DE LA TVA LIQUIDÉE ET PAYÉE (06/10/2026, ligne 26.8).
 //
@@ -121,9 +122,9 @@ const ids = (a: { id: string }[]) => a.map((l) => l.id)
 
 // L'écriture juste d'une liquidation ou d'un paiement, telle que src/lib la compose.
 const liquidation = (d: DeclarationTva, date = d.periode_fin, id = d.id): EcritureBrouillon[] =>
-  ecritureDeLaLiquidation(d).map((e, i) => ecriture({ id: `${id}-${i}`, declaration_tva_id: id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
+  ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT).map((e, i) => ecriture({ id: `${id}-${i}`, declaration_tva_id: id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
 const paiement = (l: LigneBancaire, date = l.date): EcritureBrouillon[] =>
-  ecritureDuPaiementTva(l).map((e, i) => ecriture({ id: `${l.id}-${i}`, ligne_bancaire_id: l.id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
+  ecritureDuPaiementTva(l, PLAN_PAR_DEFAUT).map((e, i) => ecriture({ id: `${l.id}-${i}`, ligne_bancaire_id: l.id, date, compte: e.compte, sens: e.sens, montant: e.montant }))
 
 // Des liquidations — juste, absente, d'un autre montant, à une autre date, avec une ligne de trop, posée sur une
 // déclaration saisie à la main — et ce qui n'en est pas : la période néant, qui n'a rien à écrire, et les écritures
@@ -205,28 +206,28 @@ describe('agent-comptable / bloc LIQUIDATION TVA (copie déployée)', () => {
 
   it('compose la même liquidation, ligne à ligne', () => {
     for (const d of [Q1, Q2, Q3, CHARGE, IMMO, NEANT, A_LA_MAIN]) {
-      expect(deployee.ecritureDeLaLiquidation(d), d.id).toEqual(sansLibelle(ecritureDeLaLiquidation(d)))
+      expect(deployee.ecritureDeLaLiquidation(d), d.id).toEqual(sansLibelle(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)))
     }
     // La batterie exerce bien chaque compte : la TVA collectée des deux côtés, les deux déductibles, le crédit reporté
     // des deux côtés, la TVA à payer, le remboursement demandé, et l'arrondi au 658000 comme au 758000.
-    const comptes = new Set([Q1, Q2, Q3, CHARGE, IMMO].flatMap((d) => ecritureDeLaLiquidation(d).map((e) => `${e.compte}:${e.sens}`)))
+    const comptes = new Set([Q1, Q2, Q3, CHARGE, IMMO].flatMap((d) => ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT).map((e) => `${e.compte}:${e.sens}`)))
     expect([...comptes].sort()).toEqual([
       '445510:credit', '445620:credit', '445660:credit', '445670:credit', '445670:debit', '445710:credit', '445710:debit',
       '445830:debit', '658000:debit', '758000:credit',
     ])
     // Rien pour une période néant ni pour une déclaration saisie à la main.
-    expect(ecritureDeLaLiquidation(NEANT)).toEqual([])
-    expect(ecritureDeLaLiquidation(A_LA_MAIN)).toEqual([])
+    expect(ecritureDeLaLiquidation(NEANT, PLAN_PAR_DEFAUT)).toEqual([])
+    expect(ecritureDeLaLiquidation(A_LA_MAIN, PLAN_PAR_DEFAUT)).toEqual([])
   })
 
   it('compose le même paiement et le même remboursement', () => {
     for (const montant of [-79, 300, -0.07, -1234.56, 0.3]) {
-      expect(deployee.ecritureDuPaiementTva({ montant }), String(montant)).toEqual(sansLibelle(ecritureDuPaiementTva(ligne({ montant }))))
+      expect(deployee.ecritureDuPaiementTva({ montant }), String(montant)).toEqual(sansLibelle(ecritureDuPaiementTva(ligne({ montant }), PLAN_PAR_DEFAUT)))
     }
-    expect(sansLibelle(ecritureDuPaiementTva(ligne({ montant: -79 })))).toEqual([
+    expect(sansLibelle(ecritureDuPaiementTva(ligne({ montant: -79 }), PLAN_PAR_DEFAUT))).toEqual([
       { compte: '512000', sens: 'credit', montant: 79 }, { compte: '445510', sens: 'debit', montant: 79 },
     ])
-    expect(sansLibelle(ecritureDuPaiementTva(ligne({ montant: 300 })))).toEqual([
+    expect(sansLibelle(ecritureDuPaiementTva(ligne({ montant: 300 }), PLAN_PAR_DEFAUT))).toEqual([
       { compte: '512000', sens: 'debit', montant: 300 }, { compte: '445830', sens: 'credit', montant: 300 },
     ])
   })
@@ -234,25 +235,25 @@ describe('agent-comptable / bloc LIQUIDATION TVA (copie déployée)', () => {
   it('rend les mêmes liquidations à réécrire, sous chaque frontière', () => {
     for (const f of FRONTIERES) {
       expect(ids(deployee.liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f)), `frontière ${f}`)
-        .toEqual(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f)))
+        .toEqual(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f, PLAN_PAR_DEFAUT)))
     }
     // La batterie exerce bien ce qui décide : la liquidation absente, un autre montant, une autre date, une ligne de
     // trop, une liquidation posée sur une déclaration saisie à la main — et ce qui n'est pas à réécrire. Et la
     // frontière : le dernier jour de la période la fige, la veille non.
-    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, null)))
+    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, null, PLAN_PAR_DEFAUT)))
       .toEqual(['absente', 'montant', 'date', 'trop', 'main-avec', 'apres'])
-    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, '2026-03-30'))).toEqual(['absente', 'montant', 'date', 'apres'])
-    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, '2026-03-31'))).toEqual(['absente', 'montant', 'apres'])
+    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, '2026-03-30', PLAN_PAR_DEFAUT))).toEqual(['absente', 'montant', 'date', 'apres'])
+    expect(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, '2026-03-31', PLAN_PAR_DEFAUT))).toEqual(['absente', 'montant', 'apres'])
   })
 
   it('rend les mêmes paiements à réécrire, sous chaque frontière', () => {
     for (const f of FRONTIERES) {
       expect(ids(deployee.paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)), `frontière ${f}`)
-        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)))
+        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, PLAN_PAR_DEFAUT)))
     }
-    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, null)))
+    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, null, PLAN_PAR_DEFAUT)))
       .toEqual(['absente', 'montant', 'sens', 'compte', 'date', 'piece', 'apres'])
-    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, '2026-06-30'))).toEqual(['apres'])
+    expect(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, '2026-06-30', PLAN_PAR_DEFAUT))).toEqual(['apres'])
   })
 
   it('découpe l’année en les mêmes périodes, avec le même nom', () => {
@@ -354,19 +355,19 @@ describe('le garde-fou du bloc LIQUIDATION TVA sait encore échouer', () => {
   }
   const memesLiquidations = (copie: Copie) => {
     for (const d of [Q1, Q2, Q3, CHARGE, IMMO, NEANT, A_LA_MAIN]) {
-      expect(copie.ecritureDeLaLiquidation(d)).toEqual(sansLibelle(ecritureDeLaLiquidation(d)))
+      expect(copie.ecritureDeLaLiquidation(d)).toEqual(sansLibelle(ecritureDeLaLiquidation(d, PLAN_PAR_DEFAUT)))
     }
   }
   const memesLiquidationsAReecrire = (copie: Copie) => {
     for (const f of FRONTIERES) {
       expect(ids(copie.liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f)))
-        .toEqual(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f)))
+        .toEqual(ids(liquidationsDesynchronisees(ECRITURES_LIQUIDATIONS, DECLARATIONS, f, PLAN_PAR_DEFAUT)))
     }
   }
   const memesPaiements = (copie: Copie) => {
     for (const f of FRONTIERES) {
       expect(ids(copie.paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)))
-        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f)))
+        .toEqual(ids(paiementsTvaDesynchronises(ECRITURES_PAIEMENTS, LIGNES, f, PLAN_PAR_DEFAUT)))
     }
   }
   const memesPeriodes = (copie: Copie) => {
@@ -420,7 +421,7 @@ describe('le garde-fou du bloc LIQUIDATION TVA sait encore échouer', () => {
 
   it('attrape un prélèvement écrit dans le sens d’un remboursement', () => {
     const derivee = planter(['    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant },\n    { compte: entree ? COMPTE_REMBOURSEMENT_TVA_DEMANDE', '    { compte: COMPTE_BANQUE, sens: entree ? "credit" : "debit", montant },\n    { compte: entree ? COMPTE_REMBOURSEMENT_TVA_DEMANDE'])
-    echoue(() => expect(derivee.ecritureDuPaiementTva({ montant: -79 })).toEqual(sansLibelle(ecritureDuPaiementTva(ligne({ montant: -79 })))))
+    echoue(() => expect(derivee.ecritureDuPaiementTva({ montant: -79 })).toEqual(sansLibelle(ecritureDuPaiementTva(ligne({ montant: -79 }), PLAN_PAR_DEFAUT))))
   })
 
   it('attrape une copie qui juge un mouvement qui n’est plus rapproché', () => {

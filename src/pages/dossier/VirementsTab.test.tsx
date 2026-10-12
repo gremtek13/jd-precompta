@@ -5,6 +5,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { EcritureBrouillon, LigneBancaire } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // LE « TOTAL PRÉLEVÉ » SOMMAIT DES VALEURS ABSOLUES.
 //
@@ -130,8 +131,8 @@ const ecritureJuste = (id: string, montant = 1000, date = '2025-06-02') => [
   ecriture({ id: `${id}-b`, ligne_bancaire_id: id, compte: '512000', sens: 'credit', montant, date }),
 ]
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
-const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 // `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
 const monter = (modele: ModeleComptable = TRESORERIE, valides: readonly number[] = []) => render(

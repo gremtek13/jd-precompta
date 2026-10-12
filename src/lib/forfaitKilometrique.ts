@@ -1,6 +1,5 @@
 import { dotationDeLExercice } from './amortissements'
 import { indemniteKilometriqueCentimes, motifNonCalcule, vehiculeDuDossier } from './baremeKilometrique'
-import { COMPTE_INDEMNITES_KILOMETRIQUES } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, VehiculeDossier } from './types'
 import { estFigee } from './validationExercice'
@@ -60,7 +59,8 @@ export interface LigneEcritureForfait {
 
 // L'écriture du forfait : le 625110 au débit, le compte du dirigeant au crédit, du même montant. RIEN
 // quand le forfait est nul (zéro kilomètre, exercice repris) — l'appel à la base retire alors celui qui
-// aurait été écrit ; null quand le barème ne le calcule pas, et rien ne se compose sur un montant deviné.
+// aurait été écrit ; null quand le barème ne le calcule pas, et rien ne se compose sur un montant deviné. Les deux
+// comptes sont ceux du PLAN du dossier, que le modèle porte, et que `ecrire_forfait_kilometrique` relit au même plan.
 export function ecritureDuForfait(
   vehicule: VehiculeDossier,
   modele: ModeleComptable,
@@ -72,7 +72,7 @@ export function ecritureDuForfait(
   const montant = Number(centimes) / 100
   const libelle = `Indemnités kilométriques ${vehicule.annee} — ${nomDuVehicule(vehicule)}`
   return [
-    { compte: COMPTE_INDEMNITES_KILOMETRIQUES, sens: 'debit', montant, libelle },
+    { compte: modele.plan.indemnites_kilometriques, sens: 'debit', montant, libelle },
     { compte: compteDuDirigeant(modele), sens: 'credit', montant, libelle },
   ]
 }

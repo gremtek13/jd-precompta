@@ -3,7 +3,11 @@ import {
   COMPTE_ARRONDIS_CHARGE, COMPTE_ARRONDIS_PRODUIT, COMPTE_AUTRES_DEBITEURS_CREDITEURS, libelleCompteTenu, libelleDuPlanComptable,
 } from './comptes'
 import { compteAmortissement } from './amortissements'
-import { COMPTES_NOTES_DE_FRAIS } from './engagement'
+import { comptesDuDirigeant } from './engagement'
+import { PLAN_PAR_DEFAUT } from './planComptable'
+
+// Les trois comptes du dirigeant sous le plan par défaut : ceux que le choix d'Écritures propose aujourd'hui.
+const COMPTES_NOTES_DE_FRAIS = comptesDuDirigeant(PLAN_PAR_DEFAUT)
 
 // LES INTITULÉS DU PLAN COMPTABLE DE 2026. Le CompteLib d'un compte du plan est « l'intitulé complet du compte tel qu'il
 // est défini dans la nomenclature » (BOI-CF-IOR-60-40-20, §150) ; l'application écrivait encore, jusque dans le FEC, ceux

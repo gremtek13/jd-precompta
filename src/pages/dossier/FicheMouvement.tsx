@@ -9,7 +9,7 @@ import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
 } from '../../lib/reglesAffectation'
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesPar } from '../../lib/controles'
-import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_EXPLOITANT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
+import { LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { fichierAMontrer } from '../../lib/fichiersPiece'
 import {
@@ -19,6 +19,7 @@ import {
 } from '../../lib/echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
+import type { PlanComptable } from '../../lib/planComptable'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
 import { nomDeLaPiece, refusSecondPaiement, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
@@ -28,7 +29,7 @@ import type {
 } from '../../lib/types'
 import { ecritureDeLaCotisation, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import {
-  COMPTES_DE_BILAN_PROPOSES, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilan, refusMouvementCompteDeBilan,
+  comptesDeBilanProposes, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilan, refusMouvementCompteDeBilan,
 } from '../../lib/compteDeBilan'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
 import { dePeriode, libellePeriode } from '../../lib/declarationTva'
@@ -127,6 +128,9 @@ export interface RecurrenceMouvement {
 
 interface FicheMouvementProps {
   ligne: LigneBancaire
+  // Le plan comptable du dossier (lib/planComptable.ts) : l'écriture d'une échéance de cotisation se compose à ses
+  // comptes, et les comptes que la fiche nomme sont ceux de ses rôles.
+  plan: PlanComptable
   // L'exercice validé qui fige ce mouvement, dit avec les mots de la base (lib/validationExercice.ts, `dateFigee`) —
   // nul quand rien ne le fige. Figé, il ne se rapproche, ne se classe et ne se modifie plus (`garder_mouvement_valide`) :
   // la fiche le dit, ne propose plus aucun geste, et tait ce qui réclamerait un geste impossible.
@@ -401,8 +405,10 @@ const auCentimeSaisi = (n: number) => n.toFixed(2)
 // intérêts et son assurance, le capital recalculé à chaque frappe. Rendu à deux endroits de la fiche
 // (proposé en tête, ou replié sous « Sans justificatif ») et sur un mouvement déjà rapproché, pour
 // corriger le découpage : un seul composant, pour que les trois disent la même chose.
-function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, onRapprocherEmprunt }: {
+function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, onRapprocherEmprunt, plan }: {
   ligne: LigneBancaire
+  // Le plan comptable du dossier : les comptes que la fiche nomme sont ceux de ses rôles.
+  plan: PlanComptable
   emprunts: Emprunt[]
   lignes: LigneBancaire[]
   plausible: EmpruntPlausible | null
@@ -490,8 +496,8 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
       </div>
       {emprunt && deblocage && (
         <p className="fiche-mouvement-note">
-          Les fonds d’un emprunt ne sont pas une recette : ils s’écrivent au crédit du compte {COMPTE_EMPRUNT}
-          {' '}({LIBELLES_COMPTES[COMPTE_EMPRUNT]}), face à la banque. Capital de l’emprunt : {formatMoney(emprunt.capital_initial)}.
+          Les fonds d’un emprunt ne sont pas une recette : ils s’écrivent au crédit du compte {plan.emprunt}
+          {' '}({LIBELLES_COMPTES[plan.emprunt] ?? plan.emprunt}), face à la banque. Capital de l’emprunt : {formatMoney(emprunt.capital_initial)}.
         </p>
       )}
       {emprunt && !deblocage && (
@@ -510,7 +516,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
               />
             </div>
             <div className="field">
-              <label htmlFor={`emprunt-interets-${ligne.id}`}>Intérêts ({COMPTE_INTERETS_EMPRUNT})</label>
+              <label htmlFor={`emprunt-interets-${ligne.id}`}>Intérêts ({plan.interets_emprunt})</label>
               <input
                 id={`emprunt-interets-${ligne.id}`}
                 type="number" min={0} step={0.01}
@@ -519,7 +525,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
               />
             </div>
             <div className="field">
-              <label htmlFor={`emprunt-assurance-${ligne.id}`}>Assurance ({COMPTE_ASSURANCE_EMPRUNT})</label>
+              <label htmlFor={`emprunt-assurance-${ligne.id}`}>Assurance ({plan.assurance_emprunt})</label>
               <input
                 id={`emprunt-assurance-${ligne.id}`}
                 type="number" min={0} step={0.01}
@@ -540,7 +546,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
           )}
           {!refus && (
             <p className="fiche-mouvement-note">
-              Capital remboursé : <strong>{formatMoney(capitalDeLEcheance(ligne, decoupage))}</strong> au compte {COMPTE_EMPRUNT},
+              Capital remboursé : <strong>{formatMoney(capitalDeLEcheance(ligne, decoupage))}</strong> au compte {plan.emprunt},
               ni charge ni recette. Seuls les intérêts et l’assurance comptent dans la 2035.
             </p>
           )}
@@ -562,7 +568,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, figeePar, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
+  ligne, plan, figeePar, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -675,7 +681,8 @@ export default function FicheMouvement({
   // Rien de tapé n'est pas un refus : le bouton attend, sans message en rouge.
   const refusSaisie = saisieCompte.refus ?? (saisieCompte.compte ? refusCompteDeBilan(saisieCompte.compte, modeComptable, compteDirigeant) : null)
   const libelleSaisi = saisieCompte.compte ? libelleDuCompteDeBilan(saisieCompte.compte) : null
-  const compteDeBilanPropose = surCompteDeBilan ? COMPTES_DE_BILAN_PROPOSES.find((c) => c.compte === ligne.compte_bilan) ?? null : null
+  const comptesProposes = comptesDeBilanProposes(plan)
+  const compteDeBilanPropose = surCompteDeBilan ? comptesProposes.find((c) => c.compte === ligne.compte_bilan) ?? null : null
   const libelleCompteDeBilan = ligne.compte_bilan ? libelleDuCompteDeBilan(ligne.compte_bilan) : null
 
   // LE PAIEMENT D'UNE DÉCLARATION DE TVA (lib/liquidationTva.ts). Proposée : celle dont ce mouvement règle EXACTEMENT le
@@ -707,8 +714,8 @@ export default function FicheMouvement({
     return releveIncomplet || suivi.paye === 0 ? `${periode} — ${aPayer}` : `${periode} — ${aPayer}, payé ${formatMoney(suivi.paye)}`
   }
   const noteEcritureTva = encaissement
-    ? 'Ni charge ni recette : le remboursement solde le crédit de TVA dont il a été demandé le remboursement (445830), face à la banque.'
-    : 'Ni charge ni recette : le prélèvement solde la TVA à décaisser (445510), face à la banque.'
+    ? `Ni charge ni recette : le remboursement solde le crédit de TVA dont il a été demandé le remboursement (${plan.remboursement_tva_demande}), face à la banque.`
+    : `Ni charge ni recette : le prélèvement solde la TVA à décaisser (${plan.tva_a_decaisser}), face à la banque.`
 
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
@@ -780,9 +787,9 @@ export default function FicheMouvement({
   // s'écrit pas.
   const refusEcheance = (c: CotisationDeclaree) => refusRapprochementCotisation(ligne, c, modeComptable)
   const refusEcheancePayee = cotisationPayee ? refusEcheance(cotisationPayee) : null
-  // Comment elle s'écrit, hors banque : la cotisation au 646000, sa CSG-CRDS au 108000 en trésorerie.
+  // Comment elle s'écrit, hors banque : la cotisation au 646000, sa CSG-CRDS au 108000 en trésorerie — ceux du plan.
   const ecritureEcheancePayee = cotisationPayee && !refusEcheancePayee
-    ? ecritureDeLaCotisation(ligne, cotisationPayee, modeComptable).filter((l) => l.compte !== COMPTE_BANQUE)
+    ? ecritureDeLaCotisation(ligne, cotisationPayee, modeComptable, plan).filter((l) => l.compte !== plan.banque)
     : []
   // Seconde copie de la pastille de la liste, gardée par son propre test : le panneau est l'écran où
   // l'on ARBITRE, donc celui où l'écart doit se lire. Jugé sur le total payé de chaque pièce.
@@ -896,7 +903,7 @@ export default function FicheMouvement({
               {tauxManquant
                 ? 'Le dossier est assujetti à la TVA, et le relevé ne dit pas celle d’une recette : choisis son taux. Rien n’est deviné.'
                 : ventilationTva
-                  ? `Recette au hors taxe : ${formatMoney(ventilationTva.ht)} · TVA collectée (445710) : ${formatMoney(ventilationTva.tva)}. Elle entre dans la CA3 à la date du mouvement.`
+                  ? `Recette au hors taxe : ${formatMoney(ventilationTva.ht)} · TVA collectée (${plan.tva_collectee}) : ${formatMoney(ventilationTva.tva)}. Elle entre dans la CA3 à la date du mouvement.`
                   : 'Sans TVA : la recette entière, en E2 de la CA3 (opérations non imposables).'}
             </p>
           </div>
@@ -978,7 +985,7 @@ export default function FicheMouvement({
       <>
         {refusDuMouvementSurBilan && <p className="fiche-mouvement-alerte">{refusDuMouvementSurBilan}</p>}
         <div className="fiche-mouvement-boutons">
-          {COMPTES_DE_BILAN_PROPOSES.map((c) => (
+          {comptesProposes.map((c) => (
             <button
               key={c.compte}
               type="button"
@@ -1351,11 +1358,11 @@ export default function FicheMouvement({
             <h3>{plausible.echeance ? 'Échéance d’emprunt proposée' : 'Déblocage d’emprunt proposé'}</h3>
             <p className="fiche-mouvement-note">
               {plausible.echeance
-                ? `Ce paiement ressemble à l’échéance n° ${plausible.echeance.numero} de « ${plausible.emprunt.nom} » : le capital va au compte ${COMPTE_EMPRUNT}, les intérêts au ${COMPTE_INTERETS_EMPRUNT}, l’assurance au ${COMPTE_ASSURANCE_EMPRUNT}. Vérifie le découpage avant de rapprocher.`
+                ? `Ce paiement ressemble à l’échéance n° ${plausible.echeance.numero} de « ${plausible.emprunt.nom} » : le capital va au compte ${plan.emprunt}, les intérêts au ${plan.interets_emprunt}, l’assurance au ${plan.assurance_emprunt}. Vérifie le découpage avant de rapprocher.`
                 : `Cet encaissement ressemble au déblocage de « ${plausible.emprunt.nom} ».`}
             </p>
             <FormulaireEmprunt
-              ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={plausible} occupe={occupe}
+              ligne={ligne} plan={plan} emprunts={emprunts} lignes={lignes} plausible={plausible} occupe={occupe}
               verbe={plausible.echeance ? 'Rapprocher de cette échéance' : 'Rapprocher du déblocage'}
               onRapprocherEmprunt={onRapprocherEmprunt}
             />
@@ -1615,7 +1622,7 @@ export default function FicheMouvement({
             <h3>{deblocage ? 'Déblocage d’emprunt' : 'Échéance d’emprunt'}</h3>
             {empruntDeplie ? (
               <FormulaireEmprunt
-                ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
+                ligne={ligne} plan={plan} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
                 verbe={deblocage ? 'Rapprocher du déblocage' : 'Rapprocher de cette échéance'}
                 onRapprocherEmprunt={onRapprocherEmprunt}
               />
@@ -1655,14 +1662,14 @@ export default function FicheMouvement({
                 <dl className="decoupage-emprunt">
                   {deblocage ? (
                     <>
-                      <dt>Emprunt ({COMPTE_EMPRUNT})</dt><dd>{formatMoney(ligne.montant)}</dd>
+                      <dt>Emprunt ({plan.emprunt})</dt><dd>{formatMoney(ligne.montant)}</dd>
                     </>
                   ) : (
                     <>
-                      <dt>Capital remboursé ({COMPTE_EMPRUNT})</dt>
+                      <dt>Capital remboursé ({plan.emprunt})</dt>
                       <dd>{formatMoney(capitalDeLEcheance(ligne, decoupageDuMouvement(ligne) ?? { echeance: null, interets: 0, assurance: 0 }))}</dd>
-                      <dt>Intérêts ({COMPTE_INTERETS_EMPRUNT})</dt><dd>{formatMoney(ligne.emprunt_interets ?? 0)}</dd>
-                      <dt>Assurance ({COMPTE_ASSURANCE_EMPRUNT})</dt><dd>{formatMoney(ligne.emprunt_assurance ?? 0)}</dd>
+                      <dt>Intérêts ({plan.interets_emprunt})</dt><dd>{formatMoney(ligne.emprunt_interets ?? 0)}</dd>
+                      <dt>Assurance ({plan.assurance_emprunt})</dt><dd>{formatMoney(ligne.emprunt_assurance ?? 0)}</dd>
                     </>
                   )}
                 </dl>
@@ -1679,7 +1686,7 @@ export default function FicheMouvement({
             </p>
             {empruntLie && !deblocage && !fige && (correctionDepliee ? (
               <FormulaireEmprunt
-                ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
+                ligne={ligne} plan={plan} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
                 verbe="Enregistrer le découpage"
                 onRapprocherEmprunt={onRapprocherEmprunt}
               />
@@ -1960,7 +1967,7 @@ export default function FicheMouvement({
             {ecritureEcheancePayee.length > 0 && (
               <p className="fiche-mouvement-note">
                 S’écrit face à la banque :{' '}
-                {ecritureEcheancePayee.map((l) => `${formatMoney(l.montant)} au ${l.compte} — ${LIBELLES_COMPTES[l.compte] ?? l.compte}${l.compte === COMPTE_EXPLOITANT ? ' (sa CSG-CRDS)' : ''}`).join(' ; ')}.
+                {ecritureEcheancePayee.map((l) => `${formatMoney(l.montant)} au ${l.compte} — ${LIBELLES_COMPTES[l.compte] ?? l.compte}${l.compte === plan.exploitant ? ' (sa CSG-CRDS)' : ''}`).join(' ; ')}.
                 {!fige && ' « Annuler le rapprochement » retire aussi son écriture ; l’onglet Cotisations dit si elle manque, et l’écrit.'}
               </p>
             )}

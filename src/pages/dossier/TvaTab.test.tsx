@@ -11,6 +11,7 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { regime as regimeDEreporting } from '../../test/ereportingEcran'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from '../../lib/planComptable'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET lib/liquidationTva.ts, ET SE TESTE LÀ. Ce qui se joue ici est ce
 // qu'aucun test des modules ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
@@ -188,8 +189,10 @@ const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 function Hote({
   periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, numero = false, siret = null, valides = [],
-  espion,
+  espion, plan = PLAN_PAR_DEFAUT,
 }: {
+  // Le plan comptable du dossier (ligne 43, étape PC3) : le défaut, sauf mention contraire.
+  plan?: PlanComptable
   periodicite?: PeriodiciteTva
   surDebits?: boolean
   assujetti?: boolean
@@ -214,6 +217,7 @@ function Hote({
     <AvecExercicesValides annees={valides}>
       <TvaTab
         dossierId="d"
+        plan={plan}
         assujettiTva={tva.assujetti_tva}
         statutTva={tva.statut_tva}
         articleExoneration={tva.article_exoneration}
@@ -920,5 +924,28 @@ describe('l’onglet TVA — les déclarations attendent leur lecture', () => {
     await act(async () => { liberer() })
     await waitFor(() => expect(within(carte).getAllByRole('table')).toHaveLength(1))
     expect(carte.querySelectorAll('.skeleton')).toHaveLength(0)
+  })
+})
+
+// LE PLAN DU DOSSIER (ligne 43, étape PC3) : la liquidation se compose aux comptes de TVA et d'arrondi DU PLAN — ceux
+// qu'`enregistrer_declaration_tva` relit au même plan depuis l'étape PC2 —, et l'écran les nomme.
+describe('TvaTab — sous le plan du dossier', () => {
+  it('montre et enregistre la liquidation aux comptes du plan, et nomme l’arrondi à son compte', async () => {
+    faux.tables.pieces = [piece({ montant_ht: 1000.40, montant_tva: 200.08, montant_ttc: 1200.48 }), ...faux.tables.pieces.slice(1)]
+    faux.tables.lignes_bancaires = [paiement('vente', 1200.48, '2027-02-20'), paiement('achat', -300, '2027-03-05')]
+    await afficher({ plan: PLAN_DECALE })
+    const ecriture = screen.getByText(/Écriture de liquidation, au 31\/03\/2027/).closest('table') as HTMLElement
+    for (const compte of ['445711', '445661', '445511', '758100']) expect(within(ecriture).getByText(compte)).toBeTruthy()
+    expect(ecriture.textContent).not.toMatch(/445710|445660|445510|758000/)
+    expect(screen.getByText(/L’arrondi à l’euro des lignes de la CA3 fait 0,08\s€ de produit \(758100\)/)).toBeTruthy()
+
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    const libelle = 'CA3 1er trimestre 2027'
+    expect(faux.rpcs[0].args.p_ecriture).toEqual([
+      { compte: '445711', sens: 'debit', montant: 200.08, libelle },
+      { compte: '445661', sens: 'credit', montant: 50, libelle },
+      { compte: '445511', sens: 'credit', montant: 150, libelle },
+      { compte: '758100', sens: 'credit', montant: 0.08, libelle },
+    ])
   })
 })

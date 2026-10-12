@@ -402,7 +402,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'ecritures-sans-objet', cible: 'ecritures',
-    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions, frontiere)
+    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions, frontiere, d.modele.plan)
       .filter((s) => (ecrituresParPiece.get(s.piece.id) ?? []).some((e) => dansLExercice(e.date))).length,
     message: "écriture(s) que la pièce ne justifie plus : retirer l'écriture ou corriger la pièce.",
   })
@@ -470,7 +470,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
   const affectes = mouvementsAffectes(d.lignes, d.categories, d.assujettiTva)
   bloque({
-    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
+    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere, d.modele.plan).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
     message: "mouvement(s) affecté(s) dont l'écriture ne suit plus la catégorie : les réaffecter.",
   })
   bloque({
@@ -490,7 +490,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "mouvement(s) ventilé(s) dont les parts ne font plus le mouvement : modifier ou annuler ces ventilations.",
   })
   bloque({
-    id: 'comptes-de-bilan-perimes', nb: mouvementsSurUnCompteDeBilanDesynchronises(d.ecritures, d.lignes, frontiere).filter(mouvementDeLExercice).length,
+    id: 'comptes-de-bilan-perimes', nb: mouvementsSurUnCompteDeBilanDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan).filter(mouvementDeLExercice).length,
     cible: 'ecritures',
     message: "mouvement(s) écrit(s) sur un compte de bilan dont l'écriture ne suit plus le compte : les réécrire.",
   })
@@ -500,12 +500,12 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // période, le paiement dans celui de son mouvement.
   bloque({
     id: 'liquidations-tva-perimees', cible: 'ecritures',
-    nb: liquidationsDesynchronisees(d.ecritures, d.declarationsTva.filter((x) => dansLExercice(x.periode_fin)), frontiere).length,
+    nb: liquidationsDesynchronisees(d.ecritures, d.declarationsTva.filter((x) => dansLExercice(x.periode_fin)), frontiere, d.modele.plan).length,
     message: "déclaration(s) de TVA de l'exercice dont l'écriture de liquidation manque ou ne suit plus la déclaration : la réécrire.",
   })
   bloque({
     id: 'paiements-tva-perimes', cible: 'ecritures',
-    nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere).filter(mouvementDeLExercice).length,
+    nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere, d.modele.plan).filter(mouvementDeLExercice).length,
     message: "paiement(s) ou remboursement(s) de TVA dont l'écriture ne suit plus le mouvement : les réécrire.",
   })
   bloque({
@@ -513,11 +513,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "virement(s) personnel(s) sans écriture — absents du FEC : les écrire.",
   })
   bloque({
-    id: 'echeances-emprunt-perimees', nb: echeancesDesynchronisees(d.ecritures, d.lignes).filter(mouvementDeLExercice).length, cible: 'banque',
+    id: 'echeances-emprunt-perimees', nb: echeancesDesynchronisees(d.ecritures, d.lignes, d.modele.plan).filter(mouvementDeLExercice).length, cible: 'banque',
     message: "échéance(s) d'emprunt dont l'écriture ne suit plus le découpage : les rapprocher de nouveau.",
   })
   bloque({
-    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode, frontiere).filter((c) => mouvementDeLExercice(c.ligne)).length,
+    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode, frontiere, d.modele.plan).filter((c) => mouvementDeLExercice(c.ligne)).length,
     cible: 'cotisations',
     message: "échéance(s) de cotisation payée(s) dont l'écriture manque ou n'est plus à jour : les écrire.",
   })
@@ -566,7 +566,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'dotations-a-ecrire', cible: 'immobilisations',
-    nb: dotationsEnDefaut(dotationsDuRegistre(d.immobilisations, d.natures, d.ecritures, ouvertureDate, d.anneeCourante, frontiere), d.anneeCourante)
+    nb: dotationsEnDefaut(dotationsDuRegistre(d.immobilisations, d.natures, d.ecritures, ouvertureDate, d.anneeCourante, frontiere, d.modele.plan), d.anneeCourante)
       .filter((x) => x.annee === d.annee).length,
     message: "dotation(s) aux amortissements de l'exercice à écrire, ou qui ne suivent plus le registre : les écrire.",
   })

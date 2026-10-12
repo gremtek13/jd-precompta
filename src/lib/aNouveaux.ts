@@ -1,11 +1,7 @@
 import { classeDuCompte, type LigneBalance } from './balanceImport'
-import {
-  COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_BANQUE, COMPTE_CAPITAL_INDIVIDUEL, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE,
-  COMPTE_CREDIT_TVA_A_REPORTER, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_EMPRUNT, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS,
-  COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_REMBOURSEMENT_TVA_DEMANDE, COMPTE_RESULTAT_BENEFICE, COMPTE_RESULTAT_PERTE,
-  COMPTE_TVA_A_DECAISSER, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS, COMPTE_VIREMENTS_INTERNES,
-} from './comptes'
+import { COMPTE_BANQUE } from './comptes'
 import { formatMoney } from './format'
+import type { CleRoleComptable, PlanComptable } from './planComptable'
 import type { OuvertureBanque } from './planTresorerie'
 import type { ANouveau } from './types'
 
@@ -72,17 +68,18 @@ export interface PreparationANouveaux {
   refus: string | null
 }
 
-const COMPTES_DE_L_APPLICATION = [COMPTE_BANQUE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_COLLECTEE]
-
 // Les chiffres qui comptent d'un numéro de compte : les zéros de fin ne sont qu'une longueur
 // d'affichage, propre à chaque logiciel (44566, 445660 et 44566000 sont le même compte).
 const significatif = (compte: string) => compte.replace(/0+$/, '')
 
-/** Le compte de l'application sous lequel reprendre un compte lu dans une balance. */
-export function compteDeLApplication(numero: string): string {
+/**
+ * Le compte de l'application sous lequel reprendre un compte lu dans une balance : tout 512… sur la banque du PLAN du
+ * dossier, et, à des zéros près, sa TVA déductible et sa TVA collectée (lib/planComptable.ts).
+ */
+export function compteDeLApplication(numero: string, plan: PlanComptable): string {
   const compte = numero.trim()
-  if (compte.startsWith('512')) return COMPTE_BANQUE
-  return COMPTES_DE_L_APPLICATION.find((c) => significatif(c) === significatif(compte)) ?? compte
+  if (compte.startsWith('512')) return plan.banque
+  return [plan.banque, plan.tva_deductible, plan.tva_collectee].find((c) => significatif(c) === significatif(compte)) ?? compte
 }
 
 // LES AUTRES COMPTES QUE L'APPLICATION ÉCRIT ELLE-MÊME, sous la racine que le plan comptable leur donne (PCG 2026, art.
@@ -92,26 +89,26 @@ export function compteDeLApplication(numero: string): string {
 // 4455100 de la balance s'ouvre sous ce numéro, quand le paiement de la TVA écrit au 445510, et le compte ne se solde
 // jamais ; un 164100 garde le capital restant, quand les échéances écrivent au 164000. Ranger ces comptes est une étape de
 // la ligne 43 (le plan comptable du dossier, proposé depuis la balance) : d'ici là, l'écran le DIT, sans rien changer à ce
-// qui s'écrit.
-const COMPTES_DE_ROLE: readonly { racine: string; compte: string }[] = [
-  { racine: '44551', compte: COMPTE_TVA_A_DECAISSER },
-  { racine: '44562', compte: COMPTE_TVA_IMMOBILISATIONS },
-  { racine: '44566', compte: COMPTE_TVA_DEDUCTIBLE },
-  { racine: '44567', compte: COMPTE_CREDIT_TVA_A_REPORTER },
-  { racine: '44571', compte: COMPTE_TVA_COLLECTEE },
-  { racine: '44583', compte: COMPTE_REMBOURSEMENT_TVA_DEMANDE },
-  { racine: '401', compte: COMPTE_FOURNISSEURS },
-  { racine: '404', compte: COMPTE_FOURNISSEURS_IMMOBILISATIONS },
-  { racine: '411', compte: COMPTE_CLIENTS },
-  { racine: '108', compte: COMPTE_EXPLOITANT },
-  { racine: '455', compte: COMPTE_COURANT_ASSOCIE },
-  { racine: '467', compte: COMPTE_AUTRES_DEBITEURS_CREDITEURS },
-  { racine: '164', compte: COMPTE_EMPRUNT },
-  { racine: '101', compte: COMPTE_CAPITAL_INDIVIDUEL },
-  { racine: '120', compte: COMPTE_RESULTAT_BENEFICE },
-  { racine: '129', compte: COMPTE_RESULTAT_PERTE },
-  { racine: '275', compte: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES },
-  { racine: '58', compte: COMPTE_VIREMENTS_INTERNES },
+// qui s'écrit. Le compte d'un rôle est celui du PLAN du dossier.
+const COMPTES_DE_ROLE: readonly { racine: string; role: CleRoleComptable }[] = [
+  { racine: '44551', role: 'tva_a_decaisser' },
+  { racine: '44562', role: 'tva_immobilisations' },
+  { racine: '44566', role: 'tva_deductible' },
+  { racine: '44567', role: 'credit_tva_a_reporter' },
+  { racine: '44571', role: 'tva_collectee' },
+  { racine: '44583', role: 'remboursement_tva_demande' },
+  { racine: '401', role: 'fournisseurs' },
+  { racine: '404', role: 'fournisseurs_immobilisations' },
+  { racine: '411', role: 'clients' },
+  { racine: '108', role: 'exploitant' },
+  { racine: '455', role: 'associe' },
+  { racine: '467', role: 'autres_debiteurs_crediteurs' },
+  { racine: '164', role: 'emprunt' },
+  { racine: '101', role: 'capital_individuel' },
+  { racine: '120', role: 'resultat_benefice' },
+  { racine: '129', role: 'resultat_perte' },
+  { racine: '275', role: 'depots_cautionnements_verses' },
+  { racine: '58', role: 'virements_internes' },
 ]
 
 // Les comptes d'immobilisation et d'amortissement, que l'application écrit sur le compte de la nature d'un bien et sur
@@ -124,11 +121,11 @@ const FAMILLES_DES_BIENS = /^(20|21|28)/
  * que sous ce numéro ; nul sinon. Le compte d'un rôle pour un compte sous sa racine, la forme à six chiffres pour un compte
  * de bien. La banque, la TVA déductible et la TVA collectée « à des zéros près » sont déjà rangées par la reprise.
  */
-export function compteQueLApplicationEcrit(numero: string): string | null {
+export function compteQueLApplicationEcrit(numero: string, plan: PlanComptable): string | null {
   const compte = numero.trim()
-  if (compteDeLApplication(compte) !== compte) return null
+  if (compteDeLApplication(compte, plan) !== compte) return null
   const role = COMPTES_DE_ROLE.find((r) => compte.startsWith(r.racine))
-  const ecrit = role ? role.compte
+  const ecrit = role ? plan[role.role]
     : FAMILLES_DES_BIENS.test(compte) ? significatif(compte).padEnd(6, '0')
       : null
   return ecrit != null && ecrit !== compte ? ecrit : null
@@ -150,7 +147,8 @@ export function dateOuverture(exercice: number): string {
   return `${exercice}-01-01`
 }
 
-export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuvert: number): PreparationANouveaux {
+// Le plan du dossier décide où la reprise range la banque et la TVA, et sur quels comptes elle ouvre le résultat d'avant.
+export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable): PreparationANouveaux {
   const lignes: LigneANouveau[] = []
   const rapproches: PreparationANouveaux['rapproches'] = []
   const nonRanges: PreparationANouveaux['nonRanges'] = []
@@ -180,9 +178,9 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
       continue
     }
     const origine = l.compte.trim()
-    const compte = compteDeLApplication(origine)
+    const compte = compteDeLApplication(origine, plan)
     if (compte !== origine) rapproches.push({ compteOrigine: origine, libelle: l.libelle, compte })
-    const ecrit = compteQueLApplicationEcrit(origine)
+    const ecrit = compteQueLApplicationEcrit(origine, plan)
     if (ecrit) nonRanges.push({ compteOrigine: origine, libelle: l.libelle, compte: ecrit })
     lignes.push({
       compte,
@@ -194,7 +192,7 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
   }
 
   const ligneResultat: LigneANouveau | null = resultat === 0 ? null : {
-    compte: resultat < 0 ? COMPTE_RESULTAT_BENEFICE : COMPTE_RESULTAT_PERTE,
+    compte: resultat < 0 ? plan.resultat_benefice : plan.resultat_perte,
     compteOrigine: null,
     libelle: libelleDuResultat(exerciceOuvert - 1, resultat < 0),
     sens: resultat < 0 ? 'credit' : 'debit',

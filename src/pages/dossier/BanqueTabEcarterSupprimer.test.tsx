@@ -5,6 +5,7 @@ import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
 // « ÉCARTER CETTE PROPOSITION » et « SUPPRIMER CE MESSAGE » (espace client, étape P9b2), dans la fiche d'un mouvement. Ce que
 // ces cas gardent et qu'aucun calcul pur ne voit : le bouton sur la pièce que le CLIENT a proposée (pas sur une pièce du
@@ -193,7 +194,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
 function rendre() {
   return render(

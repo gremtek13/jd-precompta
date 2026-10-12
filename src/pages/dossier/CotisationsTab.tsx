@@ -238,7 +238,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         const { error: erreurEcriture } = await supabase.rpc('rapprocher_cotisation', {
           p_ligne_bancaire_id: ligne.id,
           p_cotisation_id: cotisation.id,
-          p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modeComptable),
+          p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modeComptable, modele.plan),
         })
         if (erreurEcriture) echecs.push(messageErreur(erreurEcriture, 'raison inconnue'))
       }
@@ -485,8 +485,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne « Paiement » dit pourtant
   // ce qu'il en est de CHAQUE échéance, figée comprise (`idsSansEcritureJuste`) : une échéance figée sans écriture
   // manque au FEC de son exercice, et le dire vaut mieux que de le taire — sans la compter dans un geste refusé.
-  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, frontiere)
-  const idsSansEcritureJuste = new Set(cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, null).map((r) => r.cotisation.id))
+  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, frontiere, modele.plan)
+  const idsSansEcritureJuste = new Set(cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, null, modele.plan).map((r) => r.cotisation.id))
   const lignesEcrites = new Set(ecritures.map((e) => e.ligne_bancaire_id))
   // Un rapprochement qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel : sa raison, montrée
   // sur la ligne. Le geste est d'annuler ce rapprochement dans l'onglet Banque. Lu sans la frontière : c'est un fait,
@@ -736,7 +736,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
             Une échéance rapprochée de son prélèvement avant que ce rapprochement s’écrive n’a pas d’écriture :
             elle manque au FEC, et la trésorerie de l’application ne retrouve pas le relevé. Une CSG-CRDS saisie
             depuis change aussi l’écriture. Le bouton écrit chacune
-            {modeComptable === 'tresorerie' ? ' au compte 646000, sa CSG-CRDS au 108000,' : ' au compte 646000,'} face à
+            {modeComptable === 'tresorerie'
+              ? ` au compte ${modele.plan.cotisations_exploitant}, sa CSG-CRDS au ${modele.plan.exploitant},`
+              : ` au compte ${modele.plan.cotisations_exploitant},`} face à
             la banque.
           </p>
           <button

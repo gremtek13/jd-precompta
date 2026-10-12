@@ -1,5 +1,4 @@
 import { ecritureConforme, type LigneEcritureMouvement } from './affectationBanque'
-import { COMPTE_COTISATIONS_EXPLOITANT } from './comptes'
 import {
   csgDeLEcriture, montantDeLEcheance, REFUS_MONTANTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel,
 } from './cotisationRapprochee'
@@ -130,7 +129,8 @@ export function libelleDuPaiementPersonnel(cotisation: Pick<CotisationDeclaree, 
 // et crédite le compte du dirigeant (un apport) ; un remboursement reçu sur le compte personnel les crédite et débite à
 // l'inverse (un prélèvement). En trésorerie, une échéance faite toute de CSG-CRDS ne laisse rien à écrire : la base
 // n'attend alors aucune ligne. C'est la composition que la base refait (`enregistrer_paiement_personnel_cotisation`) ;
-// elle refuse toute autre.
+// elle refuse toute autre. Les cotisations de l'exploitant et le compte du dirigeant sont ceux du PLAN du dossier, que le
+// modèle porte, et que la base relit au même plan.
 export function ecritureDuPaiementPersonnel(
   cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds'>,
   modele: ModeleComptable,
@@ -141,7 +141,7 @@ export function ecritureDuPaiementPersonnel(
   const appel = montant > 0
   const libelle = libelleDuPaiementPersonnel(cotisation)
   return [
-    { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: appel ? 'debit' : 'credit', montant: net / 100, libelle },
+    { compte: modele.plan.cotisations_exploitant, sens: appel ? 'debit' : 'credit', montant: net / 100, libelle },
     { compte: compteDuDirigeant(modele), sens: appel ? 'credit' : 'debit', montant: net / 100, libelle },
   ]
 }
