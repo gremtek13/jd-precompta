@@ -279,7 +279,8 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       expect(remplacer(",\n ('revision_conclusions','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
       expect(remplacer(",\n ('revision_seuils','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
       expect(remplacer(",\n ('revision_explications','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
-      expect(remplacer(",\n ('declarations_ereporting','remplace_id');", ';').join('\n')).toContain('_vagues vaut')
+      expect(remplacer(",\n ('declarations_ereporting','remplace_id'),", ',').join('\n')).toContain('_vagues vaut')
+      expect(remplacer(",\n ('dossier_permanent','remplace_id');", ';').join('\n')).toContain('_vagues vaut')
     })
 
     it('une colonne générée oubliée, ou inventée', () => {

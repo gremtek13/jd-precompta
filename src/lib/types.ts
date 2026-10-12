@@ -1600,3 +1600,37 @@ export interface SourceDeclarationEreporting {
   // remplacée survit à sa pièce.
   source_id: string
 }
+
+// Une entrée du dossier permanent d'un dossier (`dossier_permanent`, ligne 41, étape R7) : la lettre de mission, la
+// description de l'entité, son organisation comptable, ses statuts, un bail, un contrat… (NP 2300, A9), datée, signée,
+// valable pour une période, citant au plus une pièce ou un document du dossier par son empreinte. Elle ne se modifie
+// jamais : une nouvelle version la REMPLACE (`remplace_id`), et la version courante se RETIRE (`retire_le`), une fois ; une
+// entrée retirée ne se remplace plus. Le cabinet la lit ; seules `consigner_au_dossier_permanent` et
+// `retirer_du_dossier_permanent` l'écrivent depuis le navigateur (src/lib/dossierPermanent.ts) ; le client n'en voit rien.
+export type NatureDossierPermanent =
+  | 'lettre_mission' | 'description' | 'organisation_comptable' | 'statuts' | 'bail' | 'contrat_emprunt' | 'contrat' | 'autre'
+export interface EntreeDossierPermanent {
+  id: string
+  dossier_id: string
+  nature: NatureDossierPermanent
+  // 500 caractères au plus.
+  titre: string
+  // 8 000 caractères au plus ; nul quand la pièce ou le document cité suffit.
+  texte: string | null
+  // Au plus une source : une pièce ou un document du dossier — un fichier du cabinet à l'étape R8.
+  piece_id: string | null
+  document_id: string | null
+  fichier_id: string | null
+  // Le SHA-256 de la source, recopié au moment de la citation ; nul quand elle n'en portait pas.
+  empreinte: string | null
+  // AAAA-MM-JJ, bornes comprises ; nul : depuis toujours, ou sans terme.
+  valable_du: string | null
+  valable_jusqu_au: string | null
+  remplace_id: string | null
+  // Repère d'audit, sans clé étrangère : qui a consigné.
+  auteur: string
+  cree_le: string
+  // Le retrait de la version courante, une fois : quand et par qui.
+  retire_le: string | null
+  retire_par: string | null
+}

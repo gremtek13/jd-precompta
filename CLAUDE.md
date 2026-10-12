@@ -173,7 +173,7 @@ supabase/
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
-                    laBaseLitLePlan, regimesEreporting, declarationsEreporting ;
+                    laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -606,9 +606,12 @@ outils/facturation/  valider.mjs : fait juger les factures d'exemple (exemples/*
   hypothèses, comme en R1 ; Q5 et Q6 laissées ouvertes), et à l'écran le même jour (phase C) ; R5, la revue analytique —
   le seuil de signification fixé et motivé par le cabinet, l'explication d'une variation, la source de N−1 dite —, en
   base et en module le 11/10/2026 (Q4, Q2, Q11 et Q7 prises comme hypothèses), et à l'écran le même jour (phase C) →
-  « LA REVUE ANALYTIQUE, EN BASE », « L'ÉCRAN DE LA REVUE ANALYTIQUE » ; R6 attend Q1 → « LA BASE
-  DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION »,
-  « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
+  « LA REVUE ANALYTIQUE, EN BASE », « L'ÉCRAN DE LA REVUE ANALYTIQUE » ; R7, le dossier permanent — une entrée par
+  élément de A9 (lettre de mission, description de l'entité, organisation comptable, statuts, baux et contrats), datée,
+  valable pour une période, citant au plus une pièce ou un document, qui se remplace ou se retire et ne se modifie
+  jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 prises comme hypothèses ; R7-Q1 à R7-Q6 au cabinet ; aucun écran) →
+  « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE » ; R6 attend Q1 → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA
+  RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
@@ -695,25 +698,24 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 37 fonctions au 11/10/2026) : vérifiés bénins par
-  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`, `enregistrer_encaissement`,
-  `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`, `justifier_solde`,
-  `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`, `changer_droits_acces`,
-  `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`, `retirer_proposition`,
-  `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`, `supprimer_brouillon_facture`,
-  `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`, `retirer_regime_ereporting`,
-  `ecarter_piece_ereporting`, `reprendre_piece_ereporting` et `declarer_ereporting_hors_application` écrivent, chacune
-  avec son propre contrôle d'accès (les
-  trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet du dossier —
-  `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de
-  celui de la transmission pour l'abandon ; les deux de R5, les quatre d'e5a et celle d'e5b1 : `admin_du_dossier` du
-  dossier annoncé, avant toute lecture ; `garder_piece_ecartee` et `garder_piece_declaree`, gardes `SECURITY DEFINER`,
-  ne sont exécutées par aucun rôle) ;
-  `client_du_dossier`,
-  `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant
-  (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ;
-  plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`.
-  Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
+- `anon_/authenticated_security_definer_function_executable` (5 et 39 fonctions au 12/10/2026) : vérifiés bénins par
+  impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
+  `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
+  `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
+  `changer_droits_acces`, `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france`, `proposer_justificatif`,
+  `retirer_proposition`, `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`,
+  `supprimer_brouillon_facture`, `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`,
+  `retirer_regime_ereporting`, `ecarter_piece_ereporting`, `reprendre_piece_ereporting`,
+  `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent` et `retirer_du_dossier_permanent` écrivent,
+  chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et
+  noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes :
+  `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ; les deux de R5, les quatre
+  d'e5a, celle d'e5b1 et les deux de R7 : `admin_du_dossier` du dossier annoncé, avant toute lecture ;
+  `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`, gardes `SECURITY DEFINER`, ne sont exécutées
+  par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que
+  les droits de l'appelant (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès
+  (`banqueClient.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il
+  faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -1062,6 +1064,19 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   gardée par un test qui relit `ClotureTab`) ; le volet `explication` (`FicheExplication`) dit les refus du module avant
   le clic ; un verrou `revueEnCours`, que la décision d'un solde et les gestes des cycles partagent, relâché après la
   relecture ; une saisie RETIENT le seuil ou l'explication qu'elle remplace → « L'ÉCRAN DE LA REVUE ANALYTIQUE ».
+- **Le dossier permanent** (ligne 41, R7 ; `dossier_permanent`, `lib/dossierPermanent.ts`, pur ;
+  `lib/dossierPermanentLecture.ts`) : ce qui vaut pour plusieurs exercices (NP 2300, § 16 et A9 ; décret n° 2012-432,
+  art. 151) — huit natures, un titre, un texte, AU PLUS une pièce ou un document du dossier, cité en jsonb et par son
+  empreinte recopiée (`fichier_id` refusé jusqu'à R8), une validité bornes comprises. Il n'appartient à aucun exercice :
+  il s'écrit à tout moment (Q11 sans objet). Une entrée ne se modifie pas : une version la REMPLACE (`remplace_id`), la
+  courante se RETIRE, une fois, et une retirée ne se remplace plus. Seules `consigner_au_dossier_permanent` (neuf rangs)
+  et `retirer_du_dossier_permanent` (quatre) écrivent, sous le verrou partagé de la validation puis celui de la
+  révision ; la garde prend le verrou de la révision PAR SA CLÉ (sous la RLS, un `FOR SHARE` sans policy de mise à jour
+  ne rend aucune ligne). Une source citée ne se supprime plus ni ne change de dossier : `garder_source_citee` dit la
+  révision d'un solde d'abord, mot pour mot, puis le dossier permanent par la NATURE, jamais le titre. Le module redit
+  les refus avant le clic, confronté au texte exporté et rejouant l'essai ; avant tout écran (phase C), ce qui dit déjà
+  la règle de R1 avant le clic (`lib/citationsRevisionLecture.ts` et ses écrans) devra lire aussi ces citations → « LE
+  DOSSIER PERMANENT DE LA RÉVISION, EN BASE ».
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026, et sous ses intitulés** (règlement ANC n° 2014-03
   consolidé : le 108 et le résultat d'une entreprise individuelle passent au 101 selon l'art. 1211-10, ex-941-10) ; une
   migration déjà appliquée garde l'ancien numéro ; 467, 468, 658 et 758 ont changé d'intitulé depuis 2019
@@ -1374,7 +1389,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 9809 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 9874 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

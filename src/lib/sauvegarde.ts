@@ -64,6 +64,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'documents_divers', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'documents_divers', parent: 'sous_dossiers', colonne: 'sous_dossier_id', aLaSuppression: 'bloque' },
   { enfant: 'dossier_assignations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'dossier_permanent', parent: 'dossier_permanent', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'dossier_permanent', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'dossiers', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_brouillon', parent: 'declarations_tva', colonne: 'declaration_tva_id', aLaSuppression: 'bloque' },
@@ -188,9 +190,16 @@ export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => au
 // restauration, ils comptent comme des clés sans action : la source doit être écrite AVANT la preuve, et une source
 // absente de la sauvegarde est un lien perdu, que rien ne permet d'effacer (une preuve cite exactement une source).
 // `sauvegarde.test.ts` les confronte au texte de la garde, et à l'absence de clé dans l'export.
+//
+// Une entrée du dossier permanent (étape R7, migration `dossier_permanent`) cite de même AU PLUS une pièce ou un document
+// de son dossier, sans clé : `garder_dossier_permanent` le vérifie à l'insertion, la même `garder_source_citee` garde la
+// source ensuite. Un lien perdu ne s'efface pas non plus : une entrée ne se modifie pas, et celle qui ne dit rien d'autre
+// que sa citation ne dirait plus rien.
 export const LIENS_GARDES: readonly Relation[] = [
   { enfant: 'revision_preuves', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'bloque' },
   { enfant: 'revision_preuves', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
+  { enfant: 'dossier_permanent', parent: 'documents_divers', colonne: 'document_id', aLaSuppression: 'bloque' },
+  { enfant: 'dossier_permanent', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
 ]
 
 /** Tout ce que la restauration doit respecter : les clés étrangères, et les liens qu'une garde tient. */
@@ -274,6 +283,13 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // déclaration : elles ne sont pas des `LIENS_GARDES`. À cette place, elles ne déplacent que le rang de
 // `exercices_valides` dans l'essai de restauration. `sauvegarde.test.ts` garde cet ordre.
 //
+// Le dossier permanent de la révision (ligne 41, étape R7, migration `dossier_permanent`) suit les déclarations
+// d'e-reporting : son seul parent est le dossier, et sa garde lit, à l'insertion, la version qu'une entrée remplace — par
+// VAGUES (`remplace_id`) — et la pièce ou le document qu'elle cite, sans clé (`LIENS_GARDES`) : ils sont plus haut.
+// Aucune validation ne le fige ; une entrée retirée se réinsère telle qu'elle a été retirée, par la policy du
+// super-administrateur. À cette place, il ne déplace que le rang des devis et de `exercices_valides` dans l'essai de
+// restauration. `sauvegarde.test.ts` garde cet ordre.
+//
 // Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
 // parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
 // le rang d'aucune table d'hier dans l'essai de restauration. La série d'abord (aucune policy : la sauvegarde n'en lit
@@ -354,6 +370,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'pieces_ecartees_ereporting',
   'declarations_ereporting',
   'declarations_ereporting_sources',
+  'dossier_permanent',
   'devis_numerotation',
   'devis',
   'devis_factures',
@@ -415,6 +432,10 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   // de la même période (`remplace_id`) ; immuable hors du passage de l'active à « remplacée », elle ne part pas à NULL, et
   // sa garde exige une cible déjà écrite et déjà « remplacée ».
   { table: 'declarations_ereporting', colonne: 'remplace_id' },
+  // Le dossier permanent de la révision (ligne 41, étape R7) : une version en remplace une autre de son dossier
+  // (`remplace_id`) ; immuable hors de son retrait, elle ne part pas à NULL, et sa garde lit la version remplacée — qu'elle
+  // exige non retirée : une entrée retirée n'a pas de suite dans une sauvegarde.
+  { table: 'dossier_permanent', colonne: 'remplace_id' },
 ]
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
@@ -769,6 +790,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   devis_numerotation: { acces: 'direct' },
   documents_divers: { acces: 'direct' },
   dossier_assignations: { acces: 'direct' },
+  dossier_permanent: { acces: 'direct' },
   ecritures_brouillon: { acces: 'direct' },
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },

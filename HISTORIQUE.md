@@ -22272,3 +22272,181 @@ des confirmations, la coupe des premiers mots, la dernière question en attente,
 identifiants passés, les filtres `id` et `dossier_id`, la relecture de la ligne supprimée, les alertes, les relectures
 après un refus, l'ordre des arguments, le retrait du verrou. Intégré avec P9b et e6 dans une seule demande de fusion
 (demande du cabinet du 11/10/2026 : ralentir, moins de barrières et de CI).
+
+### 11/10/2026 — LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE — LIGNE 41, ÉTAPE R7
+
+(Migration `dossier_permanent`, préparée et éprouvée sur une réplique, rendue à la session — version PROVISOIRE
+`20261011999999` au nom de son fichier d'export, à renommer à celle qu'`apply_migration` donnera ; 29 953 caractères,
+30 591 octets, saut de ligne final compris, aucun retour chariot, empreinte `7931ad9634eb96e27e0f308dffdd73a7` ; AUCUNE
+instruction de suppression — le mot n'y paraît que dans `on delete cascade`, `tg_op = 'DELETE'` et `before insert or
+update or delete` — : elle passe par `apply_migration`. À appliquer AVANT la fusion : le plan de sauvegarde lit sa
+table. L'essai `supabase/essais/dossierPermanent.sql` ; `src/lib/dossierPermanent.ts`, `dossierPermanentLecture.ts` et
+leurs tests (dont `dossierPermanentEssai.test.ts`, qui rejoue l'essai) ; `types.ts` ; `sauvegarde.ts` et son test,
+`restaurationEssai.test.ts`, `supabase/essais/restauration.sql` ; `encaissementsEcritures.test.ts` ; le contrôle 141 de
+`validationExercice.sql` ; les en-têtes de `rls.sql` et de `supabase/schema/README.md`. Un paragraphe du § 6 de
+PLAN_DE_REPRISE.md est rendu à part : le correctif de T3, en intégration, touche ce fichier.) La septième étape de la
+révision (« LA RÉVISION DES COMPTES : LA CONCEPTION », § 1.2, 3.3 et 3.7) : ce que le cabinet sait durablement d'un
+dossier et de sa mission, valable pour plusieurs exercices. Aucun écran (phase C), aucune Edge Function, aucun appel
+réseau. Données mesurées en production le 11/10/2026 : 125 migrations (`d0d71952…`), aucun exercice validé ; aucun écran
+n'appelle les deux fonctions avant la phase C : tout ce qui suit est LATENT.
+
+**SOURCES**, relues sur Légifrance le 11/10/2026. NP 2300 (arrêté du 01/09/2016), § 16 : « L'expert-comptable constitue
+un dossier de travail contenant la documentation de ses travaux » ; le dossier « comprend » « les informations utiles
+sur l'entité pour la mission en cours et les missions ultérieures » ; A9 : il « peut contenir » « un exemplaire de la
+lettre de mission », « des documents juridiques de l'entité et contrats importants », « la description de l'entité et de
+son activité », « la présentation de l'organisation comptable », « sans préjudice d'autres éléments » — la liste est
+INDICATIVE, et le point 3 des NON VÉRIFIÉS de la conception est levé. Décret n° 2012-432, art. 151 (version en vigueur
+depuis le 01/01/2023, décret n° 2022-1732) : les professionnels « passent avec leur client ou adhérent un contrat écrit
+définissant leur mission », qui « peut prendre la forme d'une lettre de mission ». Les normes AFNOR n'ont été ni lues ni
+citées.
+
+**CE QUI A ÉTÉ DÉCIDÉ, ET ÉCARTÉ.** UNE table `dossier_permanent` : une ENTRÉE par élément — huit natures fermées (les
+quatre de A9, plus `statuts`, `bail`, `contrat_emprunt`, `contrat`, `autre`), un titre (500 caractères), un texte
+(8 000, facultatif), AU PLUS une pièce ou un document du dossier cité, son EMPREINTE recopiée au moment de la citation,
+une période de validité (bornes comprises, de 1900 à 2100 ; nulle, elle ne borne rien), l'auteur. Écartée : une table
+par nature (le même cycle de vie, la même garde, les mêmes citations, et un seul endroit pour l'empreinte de R9).
+Écartée : une table enfant des preuves comme à R1 — une entrée est UN élément ; plusieurs contrats, plusieurs entrées.
+La CITATION est un objet `jsonb` (`{"piece_id": …}` ou `{"document_id": …}`) plutôt que deux paramètres : R8 y admettra
+`fichier_id` en remplaçant la fonction, sans changer sa signature ; la colonne `fichier_id` est là, sans clé, et la
+garde la refuse jusque-là (la forme de `revision_preuves`). Une entrée NE SE MODIFIE PAS : une nouvelle version la
+REMPLACE (chaîne `remplace_id`, une suite au plus), et — ce que la conception ne disait pas — la version courante se
+RETIRE, une fois (la forme de la fiche « hors de France », e2) ; une entrée retirée ne se remplace plus, et c'est un
+écart à e2 (R7-Q1). Le dossier permanent n'appartient à AUCUN exercice : il s'écrit à tout moment — la lettre de mission
+précède les travaux —, aucune validation ne le fige, la règle des exercices terminés (Q11) ne le concerne pas, et ce que
+la finalisation (R9) en figera se décidera avec elle (Q6) — aucun rang de refus réservé.
+`consigner_au_dossier_permanent` (neuf rangs) et `retirer_du_dossier_permanent` (quatre), `SECURITY DEFINER`, l'accès
+d'abord, sous le verrou partagé de la validation puis le verrou exclusif de la révision (l'ordre de R1, R4, R5).
+`garder_source_citee` est REMPLACÉE plutôt que doublée d'une seconde garde sur `pieces` et `documents_divers` : une
+règle (Q8) à un seul endroit ; la révision d'un solde s'y dit d'abord, mot pour mot comme avant (le module de R1 et ses
+écrans gardent leurs mots), puis le dossier permanent par la NATURE de l'entrée qui cite — la première dans l'ordre de
+A9 —, JAMAIS par son titre : un texte saisi ne part pas dans un message d'erreur qu'un journal peut garder. Hypothèses
+prises comme les recommandations : Q2 (`admin_du_dossier`), Q7 (la cascade du dossier), Q8, Q9 (les fichiers du cabinet
+à R8 ; d'ici là, le texte, que le client ne lit pas). Q5 (la mission) n'est pas présumée.
+
+**CE QUE LE MODULE DIT** (`lib/dossierPermanent.ts`, pur). Les refus avant le clic, dans l'ordre et sous les mots des
+deux fonctions (`refusDeConsigner`, `refusDeRetirer`), l'accès compris (un paramètre que l'écran tient de la session) ;
+la citation telle que la base la lit (`lireLaCitation`) ; ce que l'écran envoie (`argumentsDeConsigner` : des blancs
+partent nuls, une date qui n'existe pas ne part pas) ; la chaîne de chaque entrée, sa version courante, son retrait, et
+une lecture qui ne se croit pas (`entreesDuDossierPermanent`, `lisible`) ; les entrées en vigueur pour un exercice
+(`entreesDeLExercice`, nul sur une lecture partielle) ; ce que A9 propose et qu'aucune entrée ne porte — une
+INFORMATION, jamais une faute (`elementsSansEntree`) ; ce qu'une citation prouve encore (`etatDeLaCitation` : intacte,
+changée, disparue, sans empreinte, introuvable) ; ce que `garder_source_citee` refuserait d'une source
+(`refusDuRetraitDUneSourceCitee` : la révision d'un solde, puis le dossier permanent). `lib/dossierPermanentLecture.ts`
+lit la table par `lireTout`.
+
+**CE QUE LA MISE AU POINT A MONTRÉ.**
+- **Une condition `IF` de PL/pgSQL s'arrête au premier `then`** : un `case … then` dans la condition la coupait, et la
+  migration tombait en « syntax error at end of input ». Entre parenthèses, et le commentaire le dit.
+- **Sous la RLS, `FOR SHARE` et `FOR KEY SHARE` ne rendent AUCUNE ligne d'une table sans policy de mise à jour** — sondé
+  sur la réplique : zéro ligne pour le super-administrateur. La garde d'une entrée ne peut donc pas verrouiller la
+  version qu'elle remplace. Sa première forme lisait sans verrou, et une course le montrait : un retrait par la fonction
+  et une insertion DIRECTE (la porte de la restauration) qui remplace la même entrée passaient tous deux — une entrée
+  retirée AVEC une suite. La garde prend désormais le verrou de la révision du dossier PAR SA CLÉ
+  (`hashtextextended('jd.revision_des_comptes:' || dossier, 0)`, le corps de `cle_revision`, que l'appelant d'une garde
+  n'exécute pas ; `pg_advisory_xact_lock` et `hashtextextended` exécutables par `authenticated` en production, relu)
+  avant de lire, sur un retrait et sur une version ; le test du module confronte la clé au corps de `cle_revision`.
+- Dans l'essai : une entrée sans texte qui cite deux sources tombait sur `dit_quelque_chose` avant `une_citation` (un
+  texte l'isole) ; `pg_get_constraintdef` rend les blancs du `btrim` en caractères de contrôle (le contrôle les
+  réécrit).
+- Les mutations (ci-dessous) ont ajouté deux contrôles à l'essai (119b, 85d) et trois tests au module, et retiré du
+  module une condition que la joignabilité des versions couvrait déjà.
+- `lecturesSignalees.test.ts` ne reconnaissait pas `return lireTout(…)` (« forme non reconnue », comptée en faute) : la
+  lecture lie son résultat et rend le drapeau et le motif nommément.
+
+**CE QUI A ÉTÉ MESURÉ.** Réplique (port 54331) égale à la production du moment (125 migrations, `d0d71952…`, neuf
+familles égales, relues en fin d'étape). L'essai (`dossierPermanent.sql`, moteur de `regimesEreporting.sql`) : 189
+verdicts, 0 faute (dont 119b et 85d, ajoutés par les mutations), sur la réplique munie de la migration, semée ou non ;
+sans elle, il s'arrête en nommant la table ; rien laissé en base. Hors du dépôt, sur la réplique seule : les
+suppressions (15 verdicts, 0 faute — une entrée ne se supprime pas, même retirée ; aucune policy de suppression ; une
+pièce citée par une entrée retirée, par une version remplacée, par la courante ne se supprime pas, pour le propriétaire,
+le chef ou un membre ; un document non plus ; la révision d'un solde se dit d'abord ; une sélection qui contient une
+pièce citée tombe entière ; la cascade du dossier emporte entrées, pièces et documents) et dix-huit courses de deux
+sessions, chacune sur une base neuve (deux versions d'une même entrée, retrait et version dans les deux sens — par la
+fonction ou en direct —, citation et suppression ou changement de dossier dans les deux sens — par la fonction ou en
+direct —, validation et consignation dans les deux sens, révision exclusive, verrou partagé sans attente) : 18/18.
+`rls.sql` entier : sans la migration 35 lignes, 74 tables, 0 en faute, 31 mutations sur 31 ; avec elle, la table semée
+par les fonctions dans `test` et chez le client, 35 lignes, 75 tables (75, 75 et 66 vérifications aux invariants 1, 2 et
+3), 0 en faute, 31 sur 31 (M1 et M3 : 18 et 7 tables). `validationExercice.sql` : 151 sur 151 (le 141 attend 37
+déclencheurs) ; sans la migration, le 141 seul tombe. `restauration.sql` : 75 tables recréées, 133 clés, 69 restaurées
+et IDENTIQUES (68 lignes, les sept entrées en trois vagues), 0 écart, la colonne générée 2 sur 2 ; une entrée avant son
+dossier : arrêt sur la clé ; la réinsertion par la porte du super-administrateur, GARDES COMPRISES, sur un dossier
+jetable : six entrées en trois vagues, relues identiques après la cascade et l'aller-retour JSON ; la suite d'abord, ou
+l'entrée avant la pièce qu'elle cite : la garde refuse ; un autre compte : la policy. Les 39 autres essais SQL du dépôt
+(hors `rls`, `restauration`, `signature`, `socle`, `inventaire`), sans puis avec la migration : identiques, le 141 de
+`validationExercice` excepté (les fautes d'avant — 156 de `piecesHorsDeFrance` et de `regimesEreporting`, 8, 9 et 44 de
+`planComptable`, qui attend le correctif de PC2 — des deux côtés, et `devis`, `notesInternes` impossibles des deux
+côtés). Export : 126 fichiers (les six de PC2 réunis), 126 migrations, `e927392a…` des deux côtés ; socle inchangé (78,
+`91ae95ec…`) ; inventaire 1 875 objets (+41), `ae3d8044…` des deux côtés. Mutations de la migration, chacune sur une
+base neuve, jugée par l'essai, les suppressions ou les courses : 82 ; au premier passage, 78 mordaient — dont un mutant
+mal écrit (la branche client nommait `client_du_dossier`, qui prend deux arguments ; réécrit sur `memberships`, il mord)
+— ; deux survivants ont reçu leur contrôle (119b : une mise à jour qui ne change rien ; 85d : retirer dans un dossier
+qui n'existe pas, même pour le super-administrateur) ; deux sont ÉQUIVALENTS : le verrou de la révision pris EN PARTAGE
+par la consignation (la garde le reprend exclusif sur toute nouvelle version, et personne ne le prend en partage ; la
+seule différence serait un interblocage de deux nouvelles versions d'une même entrée parties au même instant, qu'aucune
+course ne reproduit) et le refus d'une autre clé dans la citation (la valeur ne se lit que sous `piece_id` ou
+`document_id` : une autre clé seule rend une chaîne vide, que le motif de l'identifiant refuse au même rang, sous le
+même message) : 80 sur 82. Mutations CIBLÉES du module et de sa lecture : 80 ; 73 mordaient d'emblée ; trois survivants
+ont reçu leur test (une entrée de deux versions dont la courante est retirée ; une version qui change la nature ; le
+message d'un document supprimé, relevé sur la réplique) ; deux étaient ÉQUIVALENTS — deux conditions de `lisible` que la
+joignabilité des versions couvrait déjà — et la condition a quitté le module ; la lecture réécrite, ses cinq mutants
+mordent : 78 sur 78. Le retour arrière (écrit à part, DESTRUCTIF, non appliqué) rend sur la réplique une signature égale
+à la production à 125 migrations, neuf familles sur neuf, `garder_source_citee` au corps de R1 (`5e5ad420…`). Barrière :
+`tsc -b` vert ; les 25 erreurs connues du compilateur des Edge Functions, à l'identique ; lint égal à la base (63
+avertissements, 0 erreur) ; build vert ; les 32 fichiers de test de l'étape et de ce qu'elle touche ou que ses fichiers
+lisent, sous les quatre fuseaux (776 tests chacun) ; la suite entière à Paris, 316 fichiers et 9 297 tests verts.
+
+**RESTE, ET CE QUI ATTEND LE CABINET.** Les hypothèses Q2, Q7, Q8 et Q9, comme aux étapes précédentes ; six questions
+nouvelles (R7-Q1 à R7-Q6, ci-dessous) ; la phase C — l'onglet, et, AVANT lui, la lecture des citations du dossier
+permanent par ce qui dit déjà la règle de R1 avant le clic (`lib/citationsRevisionLecture.ts`, Justificatifs, la fiche
+d'une pièce, Documents, « C'est une facture » refusé avant de créer la pièce) : d'ici là la table est vide en
+production, rien n'y est cité, et la base reste juge ; R8 (les fichiers du cabinet), R9 (ce que la finalisation fige).
+La vigilance anti-blanchiment (point 16 des NON VÉRIFIÉS) touche le dossier permanent et relève d'un autre chantier.
+- **R7-Q1** — Une entrée retirée ne se remplace plus (une nouvelle se consigne), contrairement à la fiche « hors de
+  France ». Recommandation : garder.
+- **R7-Q2** — Une nouvelle version peut changer la nature de l'entrée (corriger une nature mal choisie).
+  Recommandation : l'admettre.
+- **R7-Q3** — Un titre de 500 caractères, un texte de 8 000. Recommandation : garder ; le détail va dans la pièce citée.
+- **R7-Q4** — La validité est facultative (« depuis toujours », « sans terme »), bornée de 1900 à 2100. Une lettre de
+  mission doit-elle porter une date de début ? Recommandation : facultative, l'écran la proposera.
+- **R7-Q5** — Le dossier permanent reste modifiable après la validation d'un exercice (il n'appartient à aucun) ; R9
+  décidera ce que la finalisation en fige (Q6). Recommandation : garder jusqu'à R9.
+- **R7-Q6** — Une lettre de mission absente : une information (A9 « peut contenir »), ou un préalable de la validation
+  (le contrat écrit de l'art. 151) ? Recommandation : une information, jusqu'à la réponse à Q1.
+
+### 12/10/2026 — LE DOSSIER PERMANENT DE LA RÉVISION, APPLIQUÉ ET INTÉGRÉ — LIGNE 41, ÉTAPE R7
+
+(L'entrée précédente rend compte de la préparation. Celle-ci, de l'application et de l'intégration, sur `main` à
+`c44457c`.)
+
+**L'APPLICATION.** La production relue d'abord (signature.sql et l'historique) : 125 migrations, les neuf familles
+égales à celles de la réplique de l'étape avant la migration. Puis `apply_migration`, sans confirmation demandée :
+version `20261012070920`, 126 migrations ; la ligne d'historique rend `7931ad9634eb96e27e0f308dffdd73a7` (29 953
+caractères), l'empreinte du fichier. Après : les neuf familles égales, à l'octet, à celles de la réplique munie de la
+migration — colonnes 772, contraintes 578, déclencheurs 52, fonctions 152, droits des fonctions 152, droits des tables
+75, index 216, policies 143, RLS 75 — et `garder_source_citee` à son nouveau corps (3 029 caractères, `cc60dc7c…`).
+L'export : le fichier quitte la version provisoire `20261011999999` pour `20261012070920`, texte inchangé ; dérive 126
+fichiers, 126 migrations, `133cb02effac27af65c391846c60be79` des deux côtés ; socle 78 instructions, `91ae95ec…` ;
+inventaire 1 875 objets, `ae3d8044…`, des deux côtés. Advisors : 5 fonctions `SECURITY DEFINER` exécutables par
+l'anonyme (inchangé) et 39 par un compte connecté — les deux de plus sont `consigner_au_dossier_permanent` et
+`retirer_du_dossier_permanent`, chacune avec son contrôle `admin_du_dossier` du dossier annoncé avant toute lecture ;
+les deux gardes n'y paraissent pas.
+
+**LES ESSAIS EN PRODUCTION.** `dossierPermanent.sql` est parti sans ses lignes de commentaire (68 349 caractères,
+`6147a5b1…`) : la copie ne porte plus aucun trait de bordure, la recopie la plus fautive qu'on connaisse. Sur la
+réplique d'abord — arrêtée par le redémarrage du conteneur, relancée à l'heure vraie —, la copie et le fichier rendent
+les mêmes 189 lignes, sans une faute, sur la base munie de la migration, semée ou non. En production, d'un seul appel,
+par un agent économe chargé de cette seule exécution : 189 lignes, la ligne 0 et 188 verdicts, tous vrais ; la base a
+reçu la copie au caractère près, saut de ligne final compris ; le contrôle 199 compte les mêmes lignes avant et après.
+`rls.sql` et `validationExercice.sql` n'ont pas été rejoués en production : la signature de la production est celle de
+la réplique sur laquelle ils ont rendu leurs verdicts (35 lignes, 0 en faute, 31 mutations sur 31 ; 151 contrôles sur
+151, le 141 à 37 déclencheurs) — comme pour R5 et e5a, et leurs en-têtes le disent.
+
+**L'INTÉGRATION.** Le correctif, préparé sur une base plus ancienne, s'applique en trois voies sur `c44457c` :
+`encaissementsEcritures.test.ts` sans conflit ; `supabase/schema/README.md` en deux conflits, chacun entre un paragraphe
+de PC2 et celui de R7, posés à la fin des mêmes sections — les deux gardés, PC2 d'abord, celui de R7 réécrit à l'état
+appliqué, et l'en-tête passe à 126 migrations. Les en-têtes de `validationExercice.sql`, `restauration.sql`, `rls.sql`
+et `dossierPermanent.sql` disent l'application et ce qui a été joué où. CLAUDE.md (le chantier en cours, une puce de
+« Comptabilité », les advisors, la liste des essais), RGPD.md (une ligne du registre, « en base le 12/10/2026 »),
+PLAN_DE_REPRISE.md (§ 6, un paragraphe). La barrière sur l'arbre intégré : `tsc -b` vert ; les 25 erreurs connues du
+compilateur des Edge Functions, à l'identique ; lint, 63 avertissements et aucune erreur, comme `main` ; la suite
+entière sous les quatre fuseaux, 328 fichiers et 9 874 tests, verts chacun ; build vert.

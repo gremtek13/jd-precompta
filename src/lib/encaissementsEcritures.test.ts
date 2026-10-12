@@ -67,6 +67,14 @@ import { ORDRE_RESTAURATION, TABLES_AUTO_REFERENCEES, TABLES_AUTO_REFERENCEES_PA
 // régime et la période vérifiés, sous verrou — ; la policy laisse la porte de la restauration au super-administrateur.
 // Aucun écran ne l'appelle avant la phase C, et aucune Edge Function ne les nomme avant le fichier (e6).
 //
+// LE DOSSIER PERMANENT DE LA RÉVISION NON PLUS (ligne 41, étape R7) : `dossier_permanent` garde ce que le cabinet sait
+// durablement du dossier — la lettre de mission, la description de l'entité, son organisation comptable, ses statuts,
+// baux et contrats —, chaque entrée immuable, remplacée par une nouvelle version ou retirée, et la pièce ou le document
+// qu'elle cite gardé contre la suppression. Seules `consigner_au_dossier_permanent` (neuf rangs de refus, sous verrou) et
+// `retirer_du_dossier_permanent` l'écrivent ; la policy laisse la porte de la restauration au super-administrateur, le
+// chef du cabinet en production. Aucun écran ne les appelle avant la phase C de l'étape, et aucune Edge Function ne les
+// nomme.
+//
 // LA DOCTRINE DES SCANNERS (CLAUDE.md) : il part de TOUT `src/` (et des Edge Functions), lit l'EXPRESSION et non la
 // ligne — une chaîne s'arrête au `.from(` suivant, les retours à la ligne ne la coupent pas —, ne saute aucune forme
 // qu'il ne reconnaît pas : une table qu'il ne sait pas nommer est une faute, sauf exception qui porte sa raison ET son
@@ -85,6 +93,11 @@ const FONCTIONS_DU_REGIME_ET_DES_ECARTS = [
 ] as const
 export const TABLES_DES_DECLARATIONS_EREPORTING = ['declarations_ereporting', 'declarations_ereporting_sources'] as const
 const FONCTIONS_DES_DECLARATIONS_EREPORTING = ['declarer_ereporting_hors_application'] as const
+export const TABLES_DU_DOSSIER_PERMANENT = ['dossier_permanent'] as const
+const FONCTIONS_DU_DOSSIER_PERMANENT = ['consigner_au_dossier_permanent', 'retirer_du_dossier_permanent'] as const
+
+// Les écrans qui appellent les deux fonctions du dossier permanent, nommément : aucun avant la phase C de R7.
+const ECRANS_DU_DOSSIER_PERMANENT: readonly string[] = []
 
 // Les écrans qui appellent la fonction de la déclaration d'e-reporting, nommément : la fenêtre de l'e-reporting (étape e5c,
 // phase C), ouverte de la carte de l'onglet TVA.
@@ -294,6 +307,14 @@ export function ecrituresDesDeclarationsEreporting(
   exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
 ): string[] {
   return ecrituresDesTables(sources, TABLES_DES_DECLARATIONS_EREPORTING, exceptions, 'seule sa fonction les écrit')
+}
+
+/** Le dossier permanent de la révision (ligne 41, étape R7) : sa table, dans `src/` et les Edge Functions. */
+export function ecrituresDuDossierPermanent(
+  sources: readonly Source[],
+  exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+): string[] {
+  return ecrituresDesTables(sources, TABLES_DU_DOSSIER_PERMANENT, exceptions, 'seules ses deux fonctions l’écrivent')
 }
 
 /** Le registre : ses deux tables, dans `src/` et les Edge Functions. */
@@ -587,6 +608,45 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
     }
   })
 
+  it('aucune écriture directe du dossier permanent, hors de la restauration (ligne 41, étape R7)', () => {
+    expect(ecrituresDuDossierPermanent(sources)).toEqual([])
+  })
+
+  it('aucune Edge Function ne nomme le dossier permanent : ni sa table, ni ses fonctions', () => {
+    const fonctions = sources.filter((s) => s.chemin.startsWith('supabase/functions/'))
+    expect(fonctions.length).toBeGreaterThan(0)
+    for (const nom of [...TABLES_DU_DOSSIER_PERMANENT, ...FONCTIONS_DU_DOSSIER_PERMANENT]) {
+      expect(fonctions.filter((f) => f.texte.includes(nom)).map((f) => f.chemin), nom).toEqual([])
+    }
+  })
+
+  it('les deux fonctions du dossier permanent ne s’appellent que des écrans qui s’inscrivent nommément : aucun avant la phase C', () => {
+    const appelle = (texte: string, fonction: string) =>
+      new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(texte))
+    for (const fonction of FONCTIONS_DU_DOSSIER_PERMANENT) {
+      expect(sources.filter((s) => appelle(s.texte, fonction)).map((s) => s.chemin), fonction).toEqual(ECRANS_DU_DOSSIER_PERMANENT)
+      expect(appelle(`await supabase.rpc(\n  '${fonction}', argumentsDeConsigner(d, s, r))`, fonction)).toBe(true)
+      expect(appelle(`// supabase.rpc('${fonction}', x)`, fonction)).toBe(false)
+    }
+  })
+
+  it('la restauration rejoue le dossier permanent par l’insertion — ses versions par vagues —, après ce qu’il cite', () => {
+    expect(TABLES_AUTO_REFERENCEES.map((t) => t.table)).not.toContain('dossier_permanent')
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table === 'dossier_permanent'))
+      .toEqual([{ table: 'dossier_permanent', colonne: 'remplace_id' }])
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(rang('pieces')).toBeLessThan(rang('dossier_permanent'))
+    expect(rang('documents_divers')).toBeLessThan(rang('dossier_permanent'))
+    expect(rang('dossier_permanent')).toBeLessThan(rang('exercices_valides'))
+  })
+
+  it('le scanner voit passer la lecture du dossier permanent (lib/dossierPermanentLecture.ts)', () => {
+    for (const t of TABLES_DU_DOSSIER_PERMANENT) {
+      expect(sites.filter((s) => s.tables?.includes(t)).map((s) => [s.chemin, s.ecriture]), t)
+        .toEqual([['src/lib/dossierPermanentLecture.ts', null]])
+    }
+  })
+
   // LE PLANCHER : sans lui, « aucune faute » serait aussi ce que rend un scanner devenu aveugle — un motif de `.from(`
   // cassé, un dossier qu'on ne parcourt plus.
   it('voit encore quelque chose', () => {
@@ -772,6 +832,23 @@ describe('le scanner, éprouvé par des défauts plantés', () => {
     expect(ecrituresDesDeclarations([{ chemin: 'src/faux.ts', texte: `await supabase.from('declarations_ereporting').insert(x)` }], {}))
       .toEqual([])
     expect(jugerD(`await supabase.from('transmissions_encaissements').insert(x)`)).toEqual([])
+  })
+
+  it('attrape une écriture directe du dossier permanent, dans src/ comme dans une Edge Function', () => {
+    const jugerP = (texte: string, chemin = 'src/faux.ts') => ecrituresDuDossierPermanent([{ chemin, texte }], {})
+    expect(jugerP(`
+      await supabase
+        .from('dossier_permanent')
+        .insert({ dossier_id: d, nature: 'bail', titre, texte })`))
+      .toEqual(['src/faux.ts:3 — .insert() sur dossier_permanent : seules ses deux fonctions l’écrivent'])
+    expect(jugerP(`await supabase.from('dossier_permanent').update({ retire_le: maintenant }).eq('id', id)`)).toHaveLength(1)
+    expect(jugerP(`const T = 'dossier_permanent'\nawait supabase.from(T).delete().eq('id', id)`)).toHaveLength(1)
+    expect(jugerP(`await admin.from('dossier_permanent').upsert(x)`, 'supabase/functions/f/index.ts')).toHaveLength(1)
+    expect(jugerP(`await supabase.from('dossier_permanent').select('*', { count: 'exact' })`)).toEqual([])
+    // La révision d'un solde ne prend pas le dossier permanent pour une de ses tables, ni l'inverse.
+    expect(ecrituresDeLaRevision([{ chemin: 'src/faux.ts', texte: `await supabase.from('dossier_permanent').insert(x)` }], {}))
+      .toEqual([])
+    expect(jugerP(`await supabase.from('revision_preuves').insert(x)`)).toEqual([])
   })
 
   it('ne crie pas sur une lecture, ni sur une écriture d’une autre table qui suit la lecture', () => {

@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 125 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 126 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -188,6 +188,15 @@ six fichiers sont les textes enregistrés, fins de ligne ramenées à `\n` (19 2
 `7e7fa53f…` et `1f8947d5…`) : le premier l'est octet pour octet ; les cinq collés portent dans l'historique une fin de
 ligne `\r\n` à chacune de leurs lignes (381, 295, 279, 286 et 294).
 
+**Rejoué le 12/10/2026 après `dossier_permanent`** (ligne 41, étape R7), appliquée par la session sous la version
+`20261012070920`, sans confirmation demandée (`delete` n'y paraît que dans `on delete cascade`, `tg_op = 'DELETE'` et
+`before insert or update or delete`) ; son fichier a quitté la version PROVISOIRE `20261011999999` pour celle-ci, texte
+inchangé (29 953 caractères, 30 591 octets, saut de ligne final compris, aucun retour chariot, empreinte
+`7931ad9634eb96e27e0f308dffdd73a7`, celle que rend sa ligne d'historique) : 126 fichiers, 126 migrations, empreinte
+globale `133cb02effac27af65c391846c60be79` des deux côtés, aucune divergence. Sur la réplique de l'étape, égale à la
+production à 125 migrations (`d0d71952…`, ci-dessus) puis munie de celle-ci à la version provisoire : 126 fichiers, 126
+migrations, empreinte globale `e927392aa7fc199d665b3dcbb62ac296` des deux côtés.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
@@ -332,6 +341,18 @@ inchangé (78 instructions, `91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés)
 `417e33d59ae5172b0c4b6ab2f0e5a72a` des deux côtés). Les six migrations ne créent rien : elles remplacent quatorze corps de
 fonction, sous les mêmes noms et les mêmes arguments, et sept commentaires de fonction (qu'aucun des trois contrôles ne
 lit) — seule la famille « fonctions » de `signature.sql` change.
+
+**Rejoués le 11/10/2026 sur la réplique de l'étape, pour `dossier_permanent`** (ligne 41, étape R7), les six fichiers de PC2 réunis à l'export : le socle est inchangé (78 instructions,
+`91ae95ec73c3b7bdc9f4307b5443144f` des deux côtés — la migration ne touche aucune table du socle ; la fonction qu'elle
+remplace, `garder_source_citee`, et les déclencheurs de l'étape R1 sur `pieces` et `documents_divers` vivent dans leur
+fichier) ; l'inventaire compte 1 875 objets, empreinte `ae3d8044360b924ddd75867c967236e6` des deux côtés (la réplique
+sans la migration : 1 834, `417e33d5…`, la production d'aujourd'hui). La migration en ajoute 41 : seize colonnes, quinze
+contraintes, trois index, un déclencheur, deux policies, trois fonctions et la RLS de sa table ; `garder_source_citee`,
+remplacée sous le même nom, n'en ajoute aucun. L'inventaire de la base compte les policies du stockage : sur une
+réplique qui n'en a pas le talon, il rend 8 objets de moins des deux côtés de la migration. Après l'application, les
+deux contrôles se rejouent contre la production. En production, après
+l'application (12/10/2026, version `20261012070920`) : les mêmes valeurs, socle 78 `91ae95ec…` et inventaire 1 875
+`ae3d8044…` des deux côtés.
 
 ## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 

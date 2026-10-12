@@ -318,6 +318,26 @@
 -- 16 et 5), que les invariants 1 et 3 refusent à l'anonyme et au client. Le passage en production suivra l'application
 -- de la migration et se notera ici. Ce que leurs policies, leurs gardes et leur fonction refusent et acceptent, profil
 -- par profil, est éprouvé par `declarationsEreporting.sql`.
+--
+-- 11/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 41, étape R7 : migration `dossier_permanent`, préparée, non
+-- appliquée), qui crée `dossier_permanent` — lecture sous `admin_du_dossier`, insertion de restauration réservée au
+-- super-administrateur, aucune autre policy, aucune branche client — ; ce fichier n'y change rien que cet en-tête. Joué
+-- ENTIER par psql sur la réplique de l'étape (signature.sql : les neuf familles égales à la production à 125
+-- migrations) : sans la migration, 35 lignes de verdict (74 tables, dont 65 portant un `dossier_id`), 0 en faute,
+-- 31 mutations sur 31 qui mordent ; avec elle, la table semée PAR LES FONCTIONS dans le dossier `test` (une lettre de
+-- mission en trois versions, un bail et un contrat qui citent une pièce, des statuts qui citent un document puis
+-- retirés, une description) et dans celui du client (deux entrées), 35 lignes (75 tables, dont 66 portant un
+-- `dossier_id` ; 75, 75 et 66 vérifications aux invariants 1, 2 et 3, pour 74, 74 et 65), 0 en faute, 31 sur 31 — M1
+-- et M3 y voient deux tables de plus (18 et 7 en faute, pour 16 et 5) : la table nouvelle, et `documents_divers`, vide
+-- avant d'être semée pour être citée. Le passage en production suivra l'application de la migration et se notera ici.
+-- Ce que sa policy, sa garde et ses deux fonctions refusent et acceptent, profil par profil, est éprouvé par
+-- `dossierPermanent.sql`.
+--
+-- 12/10/2026 — LA MIGRATION APPLIQUÉE EN PRODUCTION, `dossier_permanent` (`20261012070920`) : 126 migrations. La
+-- signature de la production (signature.sql, neuf familles) est, à l'octet, celle de la réplique munie de la migration
+-- sur laquelle ce fichier a rendu, ENTIER, les verdicts ci-dessus (35 lignes, 0 en faute, 31 mutations sur 31) : il n'a
+-- pas été rejoué en production, où la table est vide. `dossierPermanent.sql`, lui, y a été joué le même jour : 188
+-- verdicts sur 188.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
