@@ -1,8 +1,9 @@
 import { useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { chargerHashsExistants, estFichierSupporte, importerFichierDossier } from '../../lib/importFichiers'
+import { chargerHashsExistants, importerFichierDossier } from '../../lib/importFichiers'
 import type { SousDossier } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { bilanDesRefus, poids, refusDUnePiece, TAILLE_MAX_PIECE, type RefusDuDepot } from '../../lib/bornesStockage'
 
 type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'doublon' | 'erreur'
 
@@ -26,22 +27,26 @@ interface Props {
 // depuis l'un ou l'autre écran.
 export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose, onImported }: Props) {
   const [fichiers, setFichiers] = useState<FichierAjout[]>([])
-  const [nbIgnores, setNbIgnores] = useState(0)
+  // Les fichiers écartés au choix, sans leur nom : leur raison (le format, ou le poids face à la borne du seau).
+  const [ignores, setIgnores] = useState<RefusDuDepot[]>([])
   const [sousDossierId, setSousDossierId] = useState('')
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
+  // Ce que le seau des pièces refuserait — un format qu'il n'admet pas, un fichier plus lourd que sa borne — est écarté
+  // DÈS LE CHOIX, avant tout envoi, et compté avec sa raison (lib/bornesStockage.ts, ligne 22.6).
   async function ajouterFichiers(liste: FileList | File[]) {
     const acceptes: FichierAjout[] = []
-    let ignores = 0
+    const refuses: RefusDuDepot[] = []
     for (const file of Array.from(liste)) {
-      if (await estFichierSupporte(file)) acceptes.push({ file, statut: 'attente' })
-      else ignores++
+      const refus = await refusDUnePiece(file)
+      if (refus) refuses.push(refus)
+      else acceptes.push({ file, statut: 'attente' })
     }
     setFichiers((prev) => [...prev, ...acceptes])
-    if (ignores > 0) setNbIgnores((prev) => prev + ignores)
+    if (refuses.length > 0) setIgnores((prev) => [...prev, ...refuses])
     setDone(false)
   }
 
@@ -165,16 +170,20 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
           >
-            📎 Dépose des fichiers ici, ou clique pour choisir (PDF, JPG, PNG, CSV)
+            📎 Dépose des fichiers ici, ou clique pour choisir (PDF, JPG, PNG, CSV — {poids(TAILLE_MAX_PIECE)} au plus par fichier)
             <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.csv" style={{ display: 'none' }} onChange={handleFileInput} />
           </label>
+        )}
+
+        {fichiers.length === 0 && ignores.length > 0 && (
+          <p className="muted" style={{ marginTop: 12, marginBottom: 4 }}>Aucun fichier retenu — {bilanDesRefus('pieces', ignores)}.</p>
         )}
 
         {fichiers.length > 0 && (
           <>
             <p className="muted" style={{ marginTop: 12, marginBottom: 4 }}>
               {fichiers.length} fichier(s)
-              {nbIgnores > 0 && ` — ${nbIgnores} ignoré(s) (format non pris en charge)`}
+              {ignores.length > 0 && ` — ${bilanDesRefus('pieces', ignores)}`}
               {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà présent(s), ${nbErreur} en erreur`}
             </p>
 

@@ -28,6 +28,7 @@ import { ouvrirApercu } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee } from '../../lib/validationExercice'
+import { preparerPiece } from '../../lib/bornesStockage'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -339,13 +340,20 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     setEcheancesProposees([])
     setDiagCotisation(undefined)
     try {
+      // Les bornes du seau des pièces (ligne 22.6) avant toute lecture et tout envoi : le refus se dit avec le poids et
+      // la borne, et l'avis part RÉÉTIQUETÉ du type que le seau admet (lib/bornesStockage.ts).
+      const pret = await preparerPiece(file)
+      if ('refus' in pret) {
+        setError(`Ce fichier n’est pas déposé : ${pret.refus.message}.`)
+        return
+      }
       const hash = await hashFichier(file)
       if (await fichierDejaPresent(dossierId, hash)) {
         setError('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents) — pas réajouté.')
         return
       }
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
-      const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
+      const { error: uploadError } = await supabase.storage.from('pieces').upload(path, pret.corps)
       if (uploadError) throw uploadError
       const { error: insertError } = await supabase.from('documents_divers').insert({
         dossier_id: dossierId,

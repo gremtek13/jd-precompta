@@ -132,6 +132,44 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 }
 // ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COPIE bornesDesPieces ──────────────────────────────────────────────────────────────────────────────────────
+// LA BORNE D'UNE PIÈCE ET LE TYPE SOUS LEQUEL ELLE SE DÉPOSE (ligne 22.6). L'original vit dans src/lib/bornesStockage.ts ;
+// il est copié À L'IDENTIQUE dans receive-email, auto-portée, et bornesDesPiecesCopie.test.ts compare la copie au
+// caractère près et l'exécute contre l'original.
+
+/**
+ * HYPOTHÈSE S226-Q1, à confirmer par le cabinet : la plus grande pièce déposée, 20 Mio (20 971 520 octets) — la borne
+ * que receive-email appliquait déjà aux pièces jointes. Au-dessus du plus gros fichier d'aujourd'hui (1,4 Mo) et d'une
+ * photo de téléphone (3 à 15 Mo), en dessous du plafond du plan gratuit (50 Mo) ; la lecture automatique, elle, s'arrête
+ * à 10 Mio (extract-piece). Une valeur à changer ici, dans la migration `bornes_du_stockage` et dans cette copie.
+ */
+export const TAILLE_MAX_PIECE = 20 * 1024 * 1024
+
+/** Le type d'une pièce d'après son extension : celles que l'application accepte depuis toujours. */
+const TYPES_PAR_EXTENSION: ReadonlyMap<string, string> = new Map([
+  ['pdf', 'application/pdf'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['png', 'image/png'], ['csv', 'text/csv'],
+])
+
+/** Le type d'une pièce d'après ses premiers octets, quand son nom ne le dit pas : PDF, JPEG ou PNG. */
+function typeParSignature(o: Uint8Array): string | null {
+  if (o[0] === 0x25 && o[1] === 0x50 && o[2] === 0x44 && o[3] === 0x46) return 'application/pdf'
+  if (o[0] === 0xff && o[1] === 0xd8 && o[2] === 0xff) return 'image/jpeg'
+  if (o[0] === 0x89 && o[1] === 0x50 && o[2] === 0x4e && o[3] === 0x47) return 'image/png'
+  return null
+}
+
+/**
+ * Le type sous lequel une pièce se dépose, ou null si l'application ne la prend pas : son extension d'abord, comme
+ * l'import l'a toujours fait ; sinon sa signature — un PDF renommé sans extension reste un PDF. Le type que déclare le
+ * navigateur ou l'expéditeur d'un e-mail ne compte pas.
+ */
+export function typeDUnePiece(nom: string, debut: Uint8Array): string | null {
+  const point = nom.lastIndexOf('.')
+  const parExtension = point < 0 ? undefined : TYPES_PAR_EXTENSION.get(nom.slice(point + 1).toLowerCase())
+  return parExtension ?? typeParSignature(debut)
+}
+// ── FIN COPIE bornesDesPieces ────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 })
@@ -223,7 +261,20 @@ Deno.serve(async (req: Request) => {
         continue
       }
       const bytes = new Uint8Array(await res.arrayBuffer())
-      if (bytes.byteLength === 0 || bytes.byteLength > 20 * 1024 * 1024) continue
+      if (bytes.byteLength === 0) continue
+      // LES BORNES DU SEAU DES PIÈCES (ligne 22.6), celles que l'application applique à tout dépôt : le type se décide
+      // sur le nom et les premiers octets — jamais sur celui que DÉCLARE l'expéditeur, qui partait tel quel au stockage
+      // —, et une pièce jointe hors des bornes est écartée avant tout envoi, journalisée sans son nom.
+      const nomFichier = fichier.filename || `piece-${fichier.id}`
+      const type = typeDUnePiece(nomFichier, bytes.subarray(0, 16))
+      if (type === null) {
+        console.warn(`Pièce jointe écartée, format non pris en charge (PDF, JPEG, PNG ou CSV) : ${fichier.id}`)
+        continue
+      }
+      if (bytes.byteLength > TAILLE_MAX_PIECE) {
+        console.warn(`Pièce jointe écartée, ${bytes.byteLength} octets au-delà de la borne de ${TAILLE_MAX_PIECE} : ${fichier.id}`)
+        continue
+      }
 
       // Même détection de doublon que les autres points d'entrée (import manuel, en masse) — un
       // transfert automatique peut renvoyer plusieurs fois le même e-mail (relance client, règle de
@@ -254,12 +305,13 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
-      const nomFichier = fichier.filename || `piece-${fichier.id}`
       const path = `${dossier.id}/${Date.now()}-${slugify(nomFichier)}`
 
+      // Un Blob du type décidé ci-dessus : c'est lui que le stockage juge (supabase-js envoie un Blob en multipart, la
+      // partie portant son type).
       const { error: uploadError } = await supabase.storage
         .from("pieces")
-        .upload(path, bytes, { contentType: fichier.content_type || "application/octet-stream" })
+        .upload(path, new Blob([bytes], { type }))
       if (uploadError) {
         console.error("Upload storage échoué:", fichier.id, uploadError)
         continue

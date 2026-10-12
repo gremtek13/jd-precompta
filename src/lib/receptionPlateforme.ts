@@ -22,6 +22,7 @@ import { xmlDuFacturX } from './factureX'
 import { numeroAdmis } from './factureCii'
 import type { CodeStatutRecu, EcartStatutRecu } from './cdarRecu'
 import type { Piece } from './types'
+import { preparerContenu } from './bornesStockage'
 
 // LA RÉCEPTION DES FACTURES PAR LA PLATEFORME AGRÉÉE DU CLIENT, CÔTÉ APPLICATION (ligne 28.5 de la feuille de route,
 // étape b). La fonction serveur `plateforme-agreee` parle à la plateforme et REND ce qu'elle lit — la liste des
@@ -515,14 +516,24 @@ export async function importerFlux(ctx: ContexteImport, flux: FluxVu): Promise<I
   // Un original XML se dépose en TEXTE : ouvert depuis le stockage, il s'affiche tel qu'il est au lieu d'être
   // interprété par le navigateur (une feuille de style XSLT déclarée dedans y serait exécutée).
   const type = original.nature === 'xml' ? 'text/plain; charset=utf-8' : 'application/pdf'
-  const { error: erreurDepot } = await supabase.storage.from('pieces')
-    .upload(chemin, new Blob([original.octets], { type }), { contentType: type, upsert: false })
+  // Les bornes du seau des pièces (ligne 22.6), jugées pour les DEUX fichiers avant d'en déposer un : une version lisible
+  // refusée après l'original laisserait un original à retirer. Le type est porté par le Blob lui-même — le SDK ignore
+  // l'option `contentType` d'un Blob (lib/bornesStockage.ts). Pas définitif : la facture se retentera à la récupération
+  // suivante, sous la borne qu'on aura peut-être relevée.
+  const depotOriginal = preparerContenu('pieces', original.octets, type)
+  const depotLisible = lisible ? preparerContenu('pieces', lisible, 'application/pdf') : null
+  if ('refus' in depotOriginal) {
+    return { statut: 'echec', flux, definitif: false, message: `La facture n’est pas déposée : ${depotOriginal.refus.message}.` }
+  }
+  if (depotLisible && 'refus' in depotLisible) {
+    return { statut: 'echec', flux, definitif: false, message: `Sa version lisible n’est pas déposée : ${depotLisible.refus.message}.` }
+  }
+  const { error: erreurDepot } = await supabase.storage.from('pieces').upload(chemin, depotOriginal.corps, { upsert: false })
   if (erreurDepot) {
     return { statut: 'echec', flux, definitif: false, message: messageErreur(erreurDepot, 'La facture n’a pas pu être déposée.') }
   }
-  if (lisible && cheminLisible) {
-    const { error: erreurLisible } = await supabase.storage.from('pieces')
-      .upload(cheminLisible, new Blob([lisible], { type: 'application/pdf' }), { contentType: 'application/pdf', upsert: false })
+  if (depotLisible && cheminLisible) {
+    const { error: erreurLisible } = await supabase.storage.from('pieces').upload(cheminLisible, depotLisible.corps, { upsert: false })
     if (erreurLisible) {
       await retirerFichiers('pieces', [chemin], 'receptionPlateforme')
       return { statut: 'echec', flux, definitif: false, message: messageErreur(erreurLisible, 'Sa version lisible n’a pas pu être déposée.') }

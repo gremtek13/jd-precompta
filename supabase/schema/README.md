@@ -197,6 +197,18 @@ globale `133cb02effac27af65c391846c60be79` des deux côtés, aucune divergence. 
 production à 125 migrations (`d0d71952…`, ci-dessus) puis munie de celle-ci à la version provisoire : 126 fichiers, 126
 migrations, empreinte globale `e927392aa7fc199d665b3dcbb62ac296` des deux côtés.
 
+**Préparé le 12/10/2026, PAS ENCORE APPLIQUÉ : `bornes_du_stockage`** (ligne 22.6). Son fichier porte une version
+PROVISOIRE, `20261012200000` : `apply_migration` lui donnera la sienne, et le fichier se RENOMME à cette version dans la
+demande qui suit l'application — elle vient APRÈS la fusion, l'ordre est inverse de celui des autres migrations
+préparées —, sans que le texte change (2 653 caractères, 2 698 octets, saut de ligne final compris, aucun retour
+chariot, empreinte `c5b7acf5e028ff621d4b0813c49768da`). Aucune instruction de suppression : un bloc qui exige les trois
+seaux, puis trois `update storage.buckets … where id = …` (la taille et les types de chacun) ; le rôle des migrations
+(`postgres`) contourne la RLS de `storage.buckets` et a le droit d'écrire ces deux colonnes, que les déclencheurs
+`protect_bucket_control_*` ne gardent pas (ils ne gardent que le cycle de vie). Elle s'applique APRÈS le déploiement de
+l'application et de `receive-email` qui portent les mêmes bornes. Ni le socle ni l'inventaire ne lisent les seaux :
+`supabase/essais/bornesStockage.sql` les juge, après l'application. Jusqu'à elle, l'export compte un fichier de plus que
+l'historique de la production (127 pour 126).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

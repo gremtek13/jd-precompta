@@ -1,8 +1,9 @@
 import { useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
-import { chargerHashsExistants, estFichierSupporte, importerFichierDossier } from '../../lib/importFichiers'
+import { chargerHashsExistants, importerFichierDossier } from '../../lib/importFichiers'
 import type { SousDossier } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { bilanDesRefus, poids, refusDUnePiece, TAILLE_MAX_PIECE, type RefusDuDepot } from '../../lib/bornesStockage'
 
 type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'doublon' | 'erreur'
 
@@ -40,7 +41,8 @@ interface Props {
 // l'extraction automatique reste à vérifier avant validation, comme pour un ajout à l'unité.
 export default function ImportDossierModal({ dossierId, sousDossiers, onClose, onImported }: Props) {
   const [fichiers, setFichiers] = useState<FichierImport[]>([])
-  const [ignores, setIgnores] = useState<string[]>([])
+  // Les fichiers écartés au choix du dossier, sans leur nom : leur raison (le format, ou le poids face à la borne).
+  const [ignores, setIgnores] = useState<RefusDuDepot[]>([])
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -53,14 +55,17 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   // Un ref s'écrit et se lit de façon synchrone : le second clic voit le verrou déjà posé.
   const enCours = useRef(false)
 
+  // Ce que le seau des pièces refuserait — un format qu'il n'admet pas, un fichier plus lourd que sa borne — est écarté
+  // DÈS LE CHOIX du dossier, avant tout envoi, et compté avec sa raison (lib/bornesStockage.ts, ligne 22.6).
   async function handleFolderChange(e: ChangeEvent<HTMLInputElement>) {
     const liste = Array.from(e.target.files ?? [])
     const retenus: FichierImport[] = []
-    const rejetes: string[] = []
+    const rejetes: RefusDuDepot[] = []
     for (const file of liste) {
       const relatif = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-      if (!(await estFichierSupporte(file))) {
-        rejetes.push(relatif)
+      const refus = await refusDUnePiece(file)
+      if (refus) {
+        rejetes.push(refus)
         continue
       }
       retenus.push({ file, cheminDossier: cheminSousDossier(relatif), statut: 'attente' })
@@ -163,7 +168,8 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
             si le tri automatique s'est trompé. Un CSV est classé directement en relevé bancaire
             (Textract ne sait pas le lire), à importer ensuite depuis l'onglet Banque. Un fichier déjà
             importé dans ce dossier (même contenu, même si le nom a changé) est repéré et ignoré, pas
-            dupliqué.
+            dupliqué. Un autre format, ou un fichier de plus de {poids(TAILLE_MAX_PIECE)}, est écarté dès le choix du
+            dossier, et compté.
           </p>
         </details>
 
@@ -180,11 +186,15 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
           </div>
         )}
 
+        {fichiers.length === 0 && ignores.length > 0 && (
+          <p className="muted" style={{ marginTop: -4 }}>Aucun fichier à importer dans ce dossier — {bilanDesRefus('pieces', ignores)}.</p>
+        )}
+
         {fichiers.length > 0 && (
           <>
             <p className="muted" style={{ marginTop: -4 }}>
               {fichiers.length} fichier(s) à importer
-              {ignores.length > 0 && ` — ${ignores.length} ignoré(s) (format non pris en charge)`}
+              {ignores.length > 0 && ` — ${bilanDesRefus('pieces', ignores)}`}
               {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà importé(s), ${nbErreur} en erreur`}
             </p>
 

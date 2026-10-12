@@ -14,6 +14,8 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 // d'avant a laissées sans écriture, et retire une échéance par la base — qui remet à traiter le
 // mouvement qui la paie et retire son écriture. Aucun test de `src/lib` ne voit ce câblage.
 const faux = vi.hoisted(() => ({
+  // Le type que porte chaque corps envoyé au stockage : c'est lui que le seau juge (lib/bornesStockage.ts, ligne 22.6).
+  typesEnvoyes: [] as string[],
   cotisations: [] as CotisationDeclaree[],
   lignes: [] as LigneBancaire[],
   ecritures: [] as EcritureBrouillon[],
@@ -132,8 +134,9 @@ vi.mock('../../lib/supabase', async () => {
       },
       storage: {
         from: () => ({
-          upload: (chemin: string) => {
+          upload: (chemin: string, corps?: Blob) => {
             faux.envois.push(chemin)
+            faux.typesEnvoyes.push(corps?.type ?? '(aucun corps)')
             return (faux.porteEnvoi ?? Promise.resolve()).then(() => ({ error: faux.erreurEnvoi }))
           },
         }),
@@ -205,6 +208,7 @@ beforeEach(() => {
   faux.porteInsertion = null
   faux.erreurInsertion = null
   faux.envois = []
+  faux.typesEnvoyes = []
   faux.porteEnvoi = null
   faux.erreurEnvoi = null
   faux.extractions = 0
@@ -963,6 +967,35 @@ describe('CotisationsTab — le verrou du dépôt d’un avis d’appel', () => 
 
     expect(faux.envois).toHaveLength(2)
     await waitFor(() => expect(faux.extractions).toBe(1))
+  })
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6) : un avis d'appel se dépose dans le seau des pièces, sous ses bornes. Hors
+// d'elles, le refus se dit avec le poids et la borne, et rien ne part ni ne s'écrit ; dans les bornes, l'avis part sous
+// le type que l'application décide.
+describe('CotisationsTab — les bornes du seau', () => {
+  const champDeDepot = () => document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+
+  it('un avis trop lourd : refusé, dit, et ni envoyé, ni enregistré, ni lu', async () => {
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    const lourd = new File(['%PDF'], 'avis-annuel.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 24 * 1024 * 1024 })
+
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [lourd] } }) })
+
+    expect(document.querySelector('.error-text')?.textContent)
+      .toBe('Ce fichier n’est pas déposé : il pèse 24\u00a0Mo, au-delà des 20\u00a0Mo qu’une pièce peut peser.')
+    expect(faux.envois).toEqual([])
+    expect(faux.insertions.filter((i) => i.table === 'documents_divers')).toEqual([])
+    expect(faux.extractions).toBe(0)
+  })
+
+  it('un avis dans les bornes part sous le type décidé', async () => {
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [new File(['jpeg'], 'avis.jpg', { type: '' })] } }) })
+    expect(faux.typesEnvoyes).toEqual(['image/jpeg'])
   })
 })
 

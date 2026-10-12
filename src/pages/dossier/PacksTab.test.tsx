@@ -43,12 +43,15 @@ const faux = vi.hoisted(() => ({
   // Les lignes `packs` écrites, et le refus que le test peut leur opposer.
   insertionsPacks: [] as unknown[],
   erreurInsertion: null as { message: string } | null,
+  // Ce que la génération lève, quand le test la fait refuser — le refus des bornes du seau des packs (ligne 22.6).
+  refusGeneration: null as Error | null,
 }))
 
 vi.mock('../../lib/packGenerator', () => ({
   generatePack: async () => {
     faux.generations += 1
     await faux.porteGeneration
+    if (faux.refusGeneration) throw faux.refusGeneration
     return { nbPieces: 4, totalTtc: 400, storagePathZip: 'd1/p/nouveau.zip', storagePathExcel: 'd1/p/nouveau.xlsx', manquantes: [], sansDate: [] }
   },
 }))
@@ -147,6 +150,7 @@ beforeEach(() => {
   faux.porteGeneration = null
   faux.insertionsPacks = []
   faux.erreurInsertion = null
+  faux.refusGeneration = null
   faux.enAttente = []
   faux.periodesDemandees = []
   faux.packs = []
@@ -407,6 +411,22 @@ describe('PacksTab — le verrou de la génération d’un pack', () => {
     expect(faux.generations).toBe(1)
     await liberer()
     expect(faux.insertionsPacks).toHaveLength(1)
+  })
+
+  // Un pack plus lourd que la borne de son seau (le plafond du plan gratuit) : generatePack le refuse avant tout envoi
+  // (packGeneratorBornes.test.ts), et l'écran dit son refus — le poids, la borne, le geste —, n'écrit aucun pack et
+  // laisse réessayer sur une autre période.
+  it('dit le refus d’un pack trop lourd, n’en écrit aucun, et laisse réessayer', async () => {
+    faux.refusGeneration = new Error('Le pack n’est pas enregistré : il pèse 63\u00a0Mo, au-delà des 50\u00a0Mo qu’un pack peut peser — choisis une période plus courte.')
+    const bouton = await pretAGenerer()
+
+    await act(async () => { bouton.click() })
+    expect(document.querySelector('.error-text')?.textContent)
+      .toBe('Le pack n’est pas enregistré : il pèse 63\u00a0Mo, au-delà des 50\u00a0Mo qu’un pack peut peser — choisis une période plus courte.')
+    expect(faux.insertionsPacks).toEqual([])
+    faux.refusGeneration = null
+    await act(async () => { bouton.click() })
+    expect(faux.generations).toBe(2)
   })
 
   it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {

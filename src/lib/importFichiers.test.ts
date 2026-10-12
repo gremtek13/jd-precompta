@@ -18,6 +18,8 @@ const etat = {
   compteAnnonce: null as number | null,
 }
 const journal: { action: string; cible: string }[] = []
+// Ce que l'import envoie au stockage : le type que porte le corps est celui que le seau juge (lib/bornesStockage.ts).
+const corpsDeposes: Blob[] = []
 
 vi.mock('./supabase', () => {
   const lecture = (table: 'pieces' | 'documents') => {
@@ -76,8 +78,9 @@ vi.mock('./supabase', () => {
       }),
       storage: {
         from: () => ({
-          upload: (chemin: string) => {
+          upload: (chemin: string, corps: Blob) => {
             journal.push({ action: 'upload', cible: chemin })
+            corpsDeposes.push(corps)
             return Promise.resolve({ error: etat.uploadError })
           },
           remove: (chemins: string[]) => {
@@ -102,7 +105,7 @@ vi.mock('./extraction', async (importOriginal) => {
   }
 })
 
-const { chargerHashsExistants, importerFichierDossier, estFichierSupporte, extensionDe } = await import('./importFichiers')
+const { chargerHashsExistants, importerFichierDossier, extensionDe } = await import('./importFichiers')
 
 const fichier = (nom: string, octets: number[] = [0x25, 0x50, 0x44, 0x46]) =>
   new File([new Uint8Array(octets)], nom, { type: 'application/pdf' })
@@ -121,19 +124,45 @@ beforeEach(() => {
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
   etat.extractionLeve = false
   journal.length = 0
+  corpsDeposes.length = 0
 })
 
-describe('extensionDe et estFichierSupporte', () => {
-  it('reconnaît un format à son extension', async () => {
+describe('extensionDe', () => {
+  it('reconnaît un format à son extension', () => {
     expect(extensionDe('Facture.PDF')).toBe('pdf')
-    expect(await estFichierSupporte(fichier('releve.csv', [1, 2, 3]))).toBe(true)
   })
+})
 
-  it('accepte un fichier sans extension en lisant sa signature', async () => {
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6) : ce que l'import acceptait — l'extension pdf, jpg, jpeg, png ou csv, sinon
+// la signature — reste ce qu'il accepte ; il le juge AVANT tout envoi, avec la taille, et dépose un corps du type décidé.
+describe('importerFichierDossier — les bornes du seau', () => {
+  it('accepte un fichier sans extension en lisant sa signature, et le dépose en PDF', async () => {
     // `split('.').pop()` rend le nom entier quand il n'y a pas de point : se fier à l'extension
     // seule rejetterait un PDF valide simplement renommé.
-    expect(await estFichierSupporte(fichier('scan_sans_extension'))).toBe(true)
-    expect(await estFichierSupporte(fichier('scan_sans_extension', [0, 0, 0, 0]))).toBe(false)
+    const resultat = await importerFichierDossier({ dossierId: 'd1', file: fichier('scan_sans_extension'), sousDossierId: null, hashsConnus: new Set(), userId: 'u1' })
+    expect(resultat.statut).toBe('ok')
+    expect(corpsDeposes.map((c) => c.type)).toEqual(['application/pdf'])
+  })
+
+  it('refuse un format que le seau n’admet pas, sans rien lire ni rien envoyer', async () => {
+    const resultat = await importerFichierDossier({ dossierId: 'd1', file: fichier('scan_sans_extension', [0, 0, 0, 0]), sousDossierId: null, hashsConnus: new Set(), userId: 'u1' })
+    expect(resultat).toEqual({ statut: 'erreur', message: 'Non importé : format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV)' })
+    expect(journal).toEqual([])
+  })
+
+  it('refuse un fichier plus lourd que la borne, en disant son poids', async () => {
+    const lourd = fichier('scan.pdf')
+    Object.defineProperty(lourd, 'size', { value: 25 * 1024 * 1024 })
+    const resultat = await importerFichierDossier({ dossierId: 'd1', file: lourd, sousDossierId: null, hashsConnus: new Set(), userId: 'u1' })
+    expect(resultat).toEqual({ statut: 'erreur', message: 'Non importé : il pèse 25\u00a0Mo, au-delà des 20\u00a0Mo qu’une pièce peut peser' })
+    expect(journal).toEqual([])
+  })
+
+  it('dépose un CSV en text/csv, quel que soit le type que le navigateur lui a mis', async () => {
+    const csv = new File(['date;montant'], 'export.csv', { type: 'application/vnd.ms-excel' })
+    const resultat = await importerFichierDossier({ dossierId: 'd1', file: csv, sousDossierId: null, hashsConnus: new Set(), userId: 'u1' })
+    expect(resultat.statut).toBe('ok')
+    expect(corpsDeposes.map((c) => c.type)).toEqual(['text/csv'])
   })
 })
 

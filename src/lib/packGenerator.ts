@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { nomUnique, slugify } from './format'
 import type { Categorie, Piece } from './types'
+import { preparerContenu } from './bornesStockage'
 
 const FOLDER_BY_TYPE: Record<string, string> = {
   achat: '01_Achats',
@@ -251,13 +252,21 @@ export async function generatePack(
   const { nbPieces, totalTtc, excelBlob, manquantes, sansDate } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
   const zipBlob = await zip.generateAsync({ type: 'blob' })
 
+  // Les bornes du seau des packs (ligne 22.6), jugées pour les DEUX fichiers avant d'en déposer un : un récapitulatif
+  // refusé après l'archive laisserait une archive que rien ne désigne. Un pack plus lourd que la borne (le plafond du
+  // plan gratuit) ne passait déjà pas : il est dit ici, en français, avant l'envoi.
+  const zipPret = preparerContenu('packs', zipBlob, 'application/zip')
+  const excelPret = preparerContenu('packs', excelBlob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  if ('refus' in zipPret) throw new Error(`Le pack n’est pas enregistré : ${zipPret.refus.message} — choisis une période plus courte.`)
+  if ('refus' in excelPret) throw new Error(`Le pack n’est pas enregistré : son récapitulatif ne passe pas (${excelPret.refus.message}).`)
+
   const basePath = `${dossierId}/${periodeDebut}_${periodeFin}-${Date.now()}`
   const zipPath = `${basePath}/Pack_${slugify(dossierNom)}_${periodeDebut}_${periodeFin}.zip`
   const excelPath = `${basePath}/Recap.xlsx`
 
-  const { error: zipUploadError } = await supabase.storage.from('packs').upload(zipPath, zipBlob)
+  const { error: zipUploadError } = await supabase.storage.from('packs').upload(zipPath, zipPret.corps)
   if (zipUploadError) throw zipUploadError
-  const { error: excelUploadError } = await supabase.storage.from('packs').upload(excelPath, excelBlob)
+  const { error: excelUploadError } = await supabase.storage.from('packs').upload(excelPath, excelPret.corps)
   if (excelUploadError) throw excelUploadError
 
   return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath, manquantes, sansDate }

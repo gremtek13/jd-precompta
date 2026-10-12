@@ -13,6 +13,8 @@ import type { Cabinet } from '../lib/types'
 const faux = vi.hoisted(() => ({
   cabinet: null as unknown,
   envois: [] as string[],
+  // Le type que porte chaque corps envoyé au seau public : c'est lui qu'il sert (lib/bornesStockage.ts, ligne 22.6).
+  typesEnvoyes: [] as string[],
   // La réponse d'un envoi au seau attend `porteEnvoi` quand le test la pose : la fenêtre pendant laquelle un second
   // envoi arrive.
   porteEnvoi: null as Promise<void> | null,
@@ -37,8 +39,9 @@ vi.mock('../lib/supabase', () => ({
     },
     storage: {
       from: () => ({
-        upload: (chemin: string) => {
+        upload: (chemin: string, corps?: Blob) => {
           faux.envois.push(chemin)
+          faux.typesEnvoyes.push(corps?.type ?? '(aucun corps)')
           return (faux.porteEnvoi ?? Promise.resolve()).then(() => ({ error: faux.erreurEnvoi }))
         },
         remove: (chemins: string[]) => {
@@ -69,6 +72,7 @@ beforeEach(() => {
   URL.revokeObjectURL = () => {}
   faux.cabinet = cabinet()
   faux.envois = []
+  faux.typesEnvoyes = []
   faux.porteEnvoi = null
   faux.erreurEnvoi = null
   faux.misesAJour = []
@@ -87,10 +91,13 @@ function retenirLEnvoi(): () => Promise<void> {
   }
 }
 
+// Les huit octets qui ouvrent tout PNG : le logo se juge à sa signature, plus à son nom (ligne 22.6).
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d])
+
 // La charte lue, un nouveau logo choisi : l'enregistrement l'enverra au seau.
 async function choisirUnLogo() {
   await act(async () => { render(<CabinetBrandingPage />) })
-  const logo = new File(['png'], 'logo.png', { type: 'image/png' })
+  const logo = new File([PNG], 'logo.png', { type: 'image/png' })
   await act(async () => { fireEvent.change(screen.getByLabelText('Logo'), { target: { files: [logo] } }) })
   const bouton = screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
   return { bouton, formulaire: bouton.closest('form')! }
@@ -137,5 +144,49 @@ describe('CabinetBrandingPage — le verrou de l’enregistrement de la charte',
 
     expect(faux.envois).toHaveLength(2)
     expect(faux.misesAJour).toHaveLength(1)
+  })
+})
+
+// LE SEAU DES LOGOS EST PUBLIC (ligne 22.6) : il sert chaque fichier sous le type qu'on lui a dit, à quiconque a
+// l'adresse. Le champ ne propose plus le SVG, qui peut porter du script ; un logo se juge à ses premiers octets — un SVG
+// renommé .png est refusé, un PNG nommé .svg part en PNG, sous un chemin .png — et à son poids (500 Kio).
+describe('CabinetBrandingPage — les bornes du seau public des logos', () => {
+  const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+
+  async function choisir(fichier: File) {
+    await act(async () => { render(<CabinetBrandingPage />) })
+    await act(async () => { fireEvent.change(screen.getByLabelText('Logo'), { target: { files: [fichier] } }) })
+  }
+
+  it('le champ ne propose plus le SVG, et dit les formats et la borne', async () => {
+    await act(async () => { render(<CabinetBrandingPage />) })
+    expect(screen.getByLabelText('Logo').getAttribute('accept')).toBe('.png,.jpg,.jpeg,.webp')
+    expect(screen.getByText(/PNG, JPEG ou WebP/).textContent).toBe('PNG, JPEG ou WebP, 500\u00a0Ko au plus.')
+  })
+
+  it('un SVG, même renommé .png, est refusé au choix, et rien ne part à l’enregistrement', async () => {
+    await choisir(new File([SVG], 'logo.png', { type: 'image/png' }))
+    expect(document.querySelector('.error-text')?.textContent)
+      .toBe('Ce logo n’est pas pris : format non pris en charge (un logo se dépose en PNG, JPEG ou WebP).')
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.envois).toEqual([])
+    // La charte s'enregistre sans toucher au logo en place.
+    expect(faux.misesAJour).toEqual([expect.objectContaining({ logo_storage_path: 'cab1/logo-ancien.png' })])
+  })
+
+  it('un logo trop lourd est refusé, avec son poids et la borne', async () => {
+    const lourd = new File([PNG], 'logo.png', { type: 'image/png' })
+    Object.defineProperty(lourd, 'size', { value: 800 * 1024 })
+    await choisir(lourd)
+    expect(document.querySelector('.error-text')?.textContent)
+      .toBe('Ce logo n’est pas pris : il pèse 800\u00a0Ko, au-delà des 500\u00a0Ko qu’un logo peut peser.')
+  })
+
+  it('un PNG nommé .svg part en PNG, sous un chemin .png', async () => {
+    await choisir(new File([PNG], 'logo.svg', { type: 'image/svg+xml' }))
+    expect(document.querySelector('.error-text')).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.envois).toEqual([expect.stringMatching(/^cab1\/logo-\d+\.png$/)])
+    expect(faux.typesEnvoyes).toEqual(['image/png'])
   })
 })

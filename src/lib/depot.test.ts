@@ -25,6 +25,8 @@ const etat = {
 // `type` note le sens de la pièce écrite : « rangé dans Pièces » ne suffit plus à décrire un dépôt
 // correct depuis qu'un justificatif de recette peut y entrer à l'envers.
 const journal: { action: string; cible: string; type?: string }[] = []
+// Ce que le dépôt envoie au stockage : le type que porte le corps est celui que le seau juge (lib/bornesStockage.ts).
+const corpsDeposes: Blob[] = []
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -64,8 +66,9 @@ vi.mock('./supabase', () => ({
     },
     storage: {
       from: () => ({
-        upload: (chemin: string) => {
+        upload: (chemin: string, corps: Blob) => {
           journal.push({ action: 'upload', cible: chemin })
+          corpsDeposes.push(corps)
           return Promise.resolve({ error: etat.uploadError })
         },
         remove: (chemins: string[]) => {
@@ -117,6 +120,41 @@ beforeEach(() => {
   etat.extractionLeve = false
   etat.utilisateur = 'u1'
   journal.length = 0
+  corpsDeposes.length = 0
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6). Le glisser-déposer de « Mes pièces » et l'appareil photo (`image/*`)
+// laissaient partir n'importe quel fichier : le dépôt les juge désormais AVANT toute lecture et tout envoi, et dit le
+// refus avec le poids et la borne.
+describe('deposerFichier — les bornes du seau', () => {
+  it('refuse un format que le seau n’admet pas, sans rien lire ni rien envoyer', async () => {
+    const heic = new File([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])], 'IMG_0042.HEIC', { type: 'image/heic' })
+    const lot = new Set<string>()
+    expect(await deposerFichier('d1', heic, lot)).toEqual({
+      statut: 'erreur', message: 'format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV)',
+    })
+    expect(journal).toEqual([])
+    // Rien n'est réservé dans le lot : le refus n'engage aucune empreinte.
+    expect(lot.size).toBe(0)
+  })
+
+  it('refuse un fichier plus lourd que la borne — à la borne, il part', async () => {
+    const trop = fichier('scan.pdf')
+    Object.defineProperty(trop, 'size', { value: 20 * 1024 * 1024 + 1 })
+    expect(await deposerFichier('d1', trop, new Set())).toEqual({
+      statut: 'erreur', message: 'il pèse 20\u202f971\u202f521\u00a0octets, au-delà des 20\u202f971\u202f520\u00a0octets qu’une pièce peut peser',
+    })
+    expect(journal).toEqual([])
+    const juste = fichier('scan.pdf')
+    Object.defineProperty(juste, 'size', { value: 20 * 1024 * 1024 })
+    expect((await deposerFichier('d1', juste, new Set())).statut).toBe('ok')
+  })
+
+  it('dépose le corps sous le type décidé, pas sous celui du navigateur', async () => {
+    await deposerFichier('d1', new File(['date;montant'], 'releve.csv', { type: 'text/comma-separated-values' }), new Set())
+    await deposerFichier('d1', new File(['jpeg'], 'photo.jpg', { type: '' }), new Set())
+    expect(corpsDeposes.map((c) => c.type)).toEqual(['text/csv', 'image/jpeg'])
+  })
 })
 
 describe('deposerFichier', () => {

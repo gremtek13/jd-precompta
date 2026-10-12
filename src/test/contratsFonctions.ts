@@ -430,7 +430,7 @@ const HOTE_PIECES_JOINTES = 'pieces-jointes.resend.invalid'
 const OBJET = 'Objet Kraltinvor Brimesque'
 const EXPEDITEUR = 'brumoxe-lindavar@exemple.invalid'
 
-function evenementRecu(options: { a?: string; type?: string; pieces?: number } = {}): string {
+function evenementRecu(options: { a?: string; type?: string; pieces?: number; fichier?: { nom: string; type: string } } = {}): string {
   // Mis en forme, comme un webhook réel : une signature vérifiée sur un corps RELU (`JSON.parse` puis `JSON.stringify`)
   // ne tiendrait plus, et c'est ce que ce corps permet de voir.
   return JSON.stringify({
@@ -441,7 +441,8 @@ function evenementRecu(options: { a?: string; type?: string; pieces?: number } =
       from: EXPEDITEUR,
       subject: OBJET,
       attachments: Array.from({ length: options.pieces ?? 1 }, (_, i) => ({
-        id: `pj-${i}`, filename: `facture-${i}.png`, content_type: 'image/png', content_disposition: 'attachment',
+        id: `pj-${i}`, filename: options.fichier?.nom ?? `facture-${i}.png`, content_type: options.fichier?.type ?? 'image/png',
+        content_disposition: 'attachment',
       })),
     },
   }, null, 2)
@@ -460,10 +461,10 @@ function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: 
 }
 
 /** Resend rend la pièce jointe à une adresse, le projet sert la vraie extract-piece, Textract et le modèle répondent. */
-function boiteAuxLettres(monde: Monde, voisine: (slug: string) => FonctionChargee, options: { lecture?: 'refusee' } = {}) {
+function boiteAuxLettres(monde: Monde, voisine: (slug: string) => FonctionChargee, options: { lecture?: 'refusee'; octets?: Uint8Array<ArrayBuffer> } = {}) {
   lecture(monde)
   monde.resend.pieceJointe = (demande) => ({ data: { download_url: `https://${HOTE_PIECES_JOINTES}/${String(demande.id)}` }, error: null })
-  monde.hotes[HOTE_PIECES_JOINTES] = () => new Response(PNG)
+  monde.hotes[HOTE_PIECES_JOINTES] = () => new Response(options.octets ?? PNG)
   const extractPiece = voisine('extract-piece')
   const projet = projetSurLeReseau([extractPiece])
   monde.hotes[HOTE_PROJET] = async (requete) => {
@@ -478,6 +479,17 @@ const ETAPES_DEPOT = [
   'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces',
   `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`,
 ]
+
+// Les bornes du seau des pièces (ligne 22.6) : un nom de pièce jointe inventé, qu'aucun journal ne doit porter, et le
+// début d'un document Word — un format que le seau n'admet pas.
+const NOM_HORS_FORMAT = 'Brimvoltek-Quarzel.docx'
+const DOCX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0, 0x06, 0])
+const ECARTEE = ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`]
+
+/** Le journal porte-t-il cette phrase ? Une faute sinon. */
+function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
+  return m.journaux.some((j) => motif.test(j.texte)) ? [] : [`${quoi} non journalisé`]
+}
 
 const RECEIVE_EMAIL: ContratFonction = {
   slug: 'receive-email',
@@ -588,6 +600,44 @@ const RECEIVE_EMAIL: ContratFonction = {
       requete: requeteWebhook(evenementRecu({ a: 'inconnu@precompta.jdarnis.fr' })),
       attendu: { statut: 200, aucuneDepense: true },
       defautConnu: 'objetAuJournal',
+    },
+    {
+      nom: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: DOCX }); m.sensibles.push(NOM_HORS_FORMAT) },
+      requete: requeteWebhook(evenementRecu({
+        fichier: { nom: NOM_HORS_FORMAT, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+      })),
+      attendu: {
+        statut: 200, depenses: ECARTEE,
+        verifier: (_r, m) => journalise(m, /Pièce jointe écartée, format non pris en charge \(PDF, JPEG, PNG ou CSV\) : pj-0/, 'l’écart du format'),
+      },
+    },
+    {
+      nom: 'une pièce jointe plus lourde que la borne d’une pièce : écartée avant tout dépôt',
+      preparer: (m, voisine) => {
+        const lourde = new Uint8Array(20 * 1024 * 1024 + 1)
+        lourde.set(PNG)
+        boiteAuxLettres(m, voisine, { octets: lourde })
+      },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200, depenses: ECARTEE,
+        verifier: (_r, m) => journalise(m, /Pièce jointe écartée, 20971521 octets au-delà de la borne de 20971520 : pj-0/, 'l’écart du poids'),
+      },
+    },
+    {
+      nom: 'le type que déclare l’expéditeur ne compte pas : la pièce jointe part sous celui que disent son nom et ses octets',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine),
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'facture-0.png', type: 'application/octet-stream' } })),
+      attendu: {
+        statut: 200,
+        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces'],
+        verifier: (_r, m) => {
+          const corps = [...m.fichiers.values()]
+          return corps.length === 1 && corps[0] instanceof Blob && corps[0].type === 'image/png'
+            ? [] : [`corps déposé : ${corps.map((c) => (c instanceof Blob ? `Blob ${c.type}` : typeof c)).join(', ')}`]
+        },
+      },
     },
   ],
 }

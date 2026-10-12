@@ -24,17 +24,23 @@ const faux = vi.hoisted(() => ({
   depots: 0,
   porteDepot: null as Promise<void> | null,
   resultatDepot: { statut: 'ok', cible: { type: 'piece', id: 'p-nouvelle' } } as ResultatDepot,
+  depotReel: false,
 }))
 
 // Le pipeline du dépôt (empreinte, envoi, lecture, insertion) est gardé par ses propres tests : on compte ici ce que
 // l'écran lui DEMANDE.
-vi.mock('../lib/depot', () => ({
-  deposerFichier: async () => {
-    faux.depots += 1
-    await faux.porteDepot
-    return faux.resultatDepot
-  },
-}))
+// `depotReel` y substitue le VRAI dépôt : les bornes du seau des pièces (ligne 22.6) se jugent avant tout envoi.
+vi.mock('../lib/depot', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('../lib/depot')>()
+  return {
+    deposerFichier: async (...args: Parameters<typeof reel.deposerFichier>) => {
+      faux.depots += 1
+      if (faux.depotReel) return reel.deposerFichier(...args)
+      await faux.porteDepot
+      return faux.resultatDepot
+    },
+  }
+})
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -224,5 +230,42 @@ describe('ClientHome — le verrou de la prise de photo', () => {
     await act(async () => { fireEvent.change(champ(), { target: { files: [photo()] } }) })
 
     expect(faux.depots).toBe(2)
+  })
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6), jouées par le VRAI dépôt : `accept="image/*"` laisse choisir, depuis un
+// ordinateur, une image que le seau n'admet pas (HEIC, GIF, SVG…) ou une photo trop lourde. Le refus se dit avant tout
+// envoi — le faux client de ce fichier n'a pas de stockage —, et l'accueil reste où il est.
+describe('ClientHome — les bornes du seau', () => {
+  beforeEach(() => {
+    poser()
+    faux.depots = 0
+    faux.depotReel = true
+  })
+  afterEach(() => { faux.depotReel = false })
+  const champ = () => document.querySelector('input[type=file][accept="image/*"]') as HTMLInputElement
+
+  it('une image que le seau n’admet pas : refusée, dite, et l’écran ne part pas vers « Mes pièces »', async () => {
+    const { container } = monter()
+    await screen.findByText('Prendre une photo')
+    const svg = new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'dessin.svg', { type: 'image/svg+xml' })
+
+    await act(async () => { fireEvent.change(champ(), { target: { files: [svg] } }) })
+
+    expect(container.querySelector('.error-text')?.textContent)
+      .toBe('dessin.svg : format non pris en charge (une pièce se dépose en PDF, JPEG, PNG ou CSV).')
+    expect(screen.getByText('Prendre une photo')).toBeTruthy()
+  })
+
+  it('une photo trop lourde : son poids et la borne', async () => {
+    const { container } = monter()
+    await screen.findByText('Prendre une photo')
+    const lourde = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], 'IMG_0001.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(lourde, 'size', { value: 31 * 1024 * 1024 })
+
+    await act(async () => { fireEvent.change(champ(), { target: { files: [lourde] } }) })
+
+    expect(container.querySelector('.error-text')?.textContent)
+      .toBe('IMG_0001.jpg : il pèse 31 Mo, au-delà des 20 Mo qu’une pièce peut peser.')
   })
 })

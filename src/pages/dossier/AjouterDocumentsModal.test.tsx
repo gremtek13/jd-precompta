@@ -27,8 +27,8 @@ const faux = vi.hoisted(() => ({
   rejeterHashs: null as null | ((e: unknown) => void),
 }))
 
+// Ce que la fenêtre écarte au choix se juge par les VRAIES bornes du seau (lib/bornesStockage.ts, ligne 22.6).
 vi.mock('../../lib/importFichiers', () => ({
-  estFichierSupporte: () => Promise.resolve(true),
   chargerHashsExistants: (...args: unknown[]) => {
     faux.chargerHashs(...args)
     // Laissée en attente : c'est la fenêtre réelle pendant laquelle le second clic arrive.
@@ -142,5 +142,44 @@ describe('AjouterDocumentsModal — le verrou d’import', () => {
     // de `messageErreur` : ce repli n'apparaît que si `erreur` est renseigné, donc le viser
     // laisserait passer un paragraphe affiché en permanence avec un message vide (mutation M8).
     expect(screen.queryByText(/Aucun fichier n'a été importé/)).toBeNull()
+  })
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6). Ce que le seau refuserait est écarté AU CHOIX, avant tout envoi, et le
+// bilan le dit sans nom de fichier : combien, et pourquoi — le format, ou le poids de chacun face à la borne. Jusqu'ici un
+// lot dont rien n'était retenu ne disait RIEN : la ligne du bilan ne s'affichait qu'avec au moins un fichier retenu.
+describe('AjouterDocumentsModal — les bornes du seau', () => {
+  const HEIC = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
+
+  async function choisir(fichiers: File[]) {
+    faux.importer.mockClear()
+    render(<AjouterDocumentsModal dossierId="dossier-de-test" sousDossiers={[]} onClose={() => {}} onImported={() => {}} />)
+    const champ = document.querySelector('input[type=file]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: fichiers } }) })
+  }
+
+  it('écarte au choix ce que le seau refuserait, compte chaque raison, et n’importe que le reste', async () => {
+    const lourd = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 25 * 1024 * 1024 })
+    await choisir([new File([HEIC], 'photo.heic'), lourd, new File(['%PDF-1.7'], 'facture.pdf', { type: 'application/pdf' })])
+
+    const bilan = [...document.querySelectorAll('p.muted')].map((p) => p.textContent).find((t) => t?.startsWith('1 fichier(s)'))
+    expect(bilan).toBe('1 fichier(s) — 2 ignoré(s) : 1 au format non pris en charge ; 1 au-delà de 20\u00a0Mo (25\u00a0Mo)')
+    expect(screen.queryByText('photo.heic')).toBeNull()
+    expect(screen.queryByText('scan.pdf')).toBeNull()
+    expect(screen.getByText('facture.pdf')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Importer 1 fichier(s)' })).toBeTruthy()
+  })
+
+  it('un lot dont rien n’est retenu le dit, au lieu de se taire', async () => {
+    await choisir([new File(['<svg/>'], 'logo.svg', { type: 'image/svg+xml' })])
+    expect(screen.getByText(/Aucun fichier retenu/).textContent).toBe('Aucun fichier retenu — 1 ignoré(s) : 1 au format non pris en charge.')
+    expect(screen.queryByRole('button', { name: /Importer/ })).toBeNull()
+  })
+
+  it('la zone de dépôt dit la borne avant le choix, et le champ ne propose que les formats du seau', async () => {
+    render(<AjouterDocumentsModal dossierId="dossier-de-test" sousDossiers={[]} onClose={() => {}} onImported={() => {}} />)
+    expect(document.querySelector('.dropzone')?.textContent).toContain('(PDF, JPG, PNG, CSV — 20\u00a0Mo au plus par fichier)')
+    expect(document.querySelector('input[type=file]')?.getAttribute('accept')).toBe('.pdf,.jpg,.jpeg,.png,.csv')
   })
 })

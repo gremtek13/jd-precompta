@@ -16,8 +16,8 @@ const faux = vi.hoisted(() => ({
   rejeterHashs: null as null | ((e: unknown) => void),
 }))
 
+// Ce que la fenêtre écarte au choix se juge par les VRAIES bornes du seau (lib/bornesStockage.ts, ligne 22.6).
 vi.mock('../../lib/importFichiers', () => ({
-  estFichierSupporte: () => Promise.resolve(true),
   chargerHashsExistants: (...args: unknown[]) => {
     faux.chargerHashs(...args)
     // Laissée en attente : c'est la fenêtre réelle pendant laquelle le second clic arrive.
@@ -124,5 +124,35 @@ describe('ImportDossierModal — un échec avant la boucle', () => {
 
     expect(screen.getByText(/1 importé\(s\), 0 déjà importé\(s\), 0 en erreur/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Fermer' })).toBeTruthy()
+  })
+})
+
+// LES BORNES DU SEAU DES PIÈCES (ligne 22.6), au choix du dossier : un export de logiciel, un document Word ou une photo
+// HEIC rangés dans le dossier choisi sont écartés avant tout envoi, et comptés avec leur raison, sans leur nom.
+describe('ImportDossierModal — les bornes du seau', () => {
+  function monterLaFenetre() {
+    faux.importer.mockClear()
+    render(<ImportDossierModal dossierId="dossier-de-test" sousDossiers={[]} onClose={() => {}} onImported={() => {}} />)
+    return document.getElementById('dossier') as HTMLInputElement
+  }
+
+  it('compte ce qui est écarté, et ne retient que le reste', async () => {
+    const champ = monterLaFenetre()
+    const lourd = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' })
+    Object.defineProperty(lourd, 'size', { value: 21 * 1024 * 1024 })
+    await act(async () => {
+      fireEvent.change(champ, { target: { files: [new File(['PK'], 'notes.docx'), lourd, new File(['x'], 'releve.csv')] } })
+    })
+    expect([...document.querySelectorAll('p.muted')].map((p) => p.textContent).find((t) => t?.startsWith('1 fichier(s)')))
+      .toBe('1 fichier(s) à importer — 2 ignoré(s) : 1 au format non pris en charge ; 1 au-delà de 20\u00a0Mo (21\u00a0Mo)')
+    expect(screen.queryByText('notes.docx')).toBeNull()
+    expect(screen.getByText('releve.csv')).toBeTruthy()
+  })
+
+  it('un dossier dont rien n’est retenu le dit', async () => {
+    const champ = monterLaFenetre()
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['GIF89a'], 'animation.gif')] } }) })
+    expect(screen.getByText(/Aucun fichier à importer/).textContent)
+      .toBe('Aucun fichier à importer dans ce dossier — 1 ignoré(s) : 1 au format non pris en charge.')
   })
 })

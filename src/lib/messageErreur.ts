@@ -31,10 +31,31 @@ export function messageErreur(erreur: unknown, repli = 'Une erreur est survenue.
   // Un `throw 'texte'` est rare mais légal, et son texte vaut mieux que n'importe quel repli.
   if (typeof erreur === 'string') return erreur.trim() ? erreur : repli
   if (erreur && typeof erreur === 'object') {
+    const stockage = refusDuStockage(erreur)
+    if (stockage) return stockage
     const message = (erreur as { message?: unknown }).message
     // Un message vide n'apprend rien et laisse l'écran sans explication : le repli, lui, en donne
     // au moins une. Même garde que dans `extraireErreurFonction`.
     if (typeof message === 'string' && message.trim()) return message
   }
   return repli
+}
+
+// LES DEUX REFUS DES BORNES D'UN SEAU (ligne 22.6), dits en français. L'application vérifie les bornes AVANT l'envoi
+// (lib/bornesStockage.ts) ; le stockage ne les oppose donc qu'à un écart entre elle et la migration, ou sous un plafond
+// global du projet plus bas que la borne d'un seau. Il rend alors une phrase anglaise — « The object exceeded the maximum
+// allowed size », « mime type … is not supported » (supabase/storage, `ERRORS.EntityTooLarge`, `ERRORS.InvalidMimeType`) —
+// que storage-js (2.112.4, `handleError`) porte sur une `StorageApiError` : `status` 413 ou 415, `code` `EntityTooLarge`
+// ou `InvalidMimeType`. Lu sur ce que la valeur PORTE (`__isStorageError`, posé par le constructeur du SDK), jamais sur
+// sa classe ; un 413 d'une passerelle, sans corps JSON, arrive sur la même classe avec le seul statut.
+function refusDuStockage(erreur: object): string | null {
+  const e = erreur as { __isStorageError?: unknown; status?: unknown; statusCode?: unknown; code?: unknown }
+  if (e.__isStorageError !== true) return null
+  if (e.code === 'EntityTooLarge' || e.status === 413 || e.statusCode === '413') {
+    return 'Le stockage refuse ce fichier : il dépasse la taille admise pour ce dépôt'
+  }
+  if (e.code === 'InvalidMimeType' || e.status === 415 || e.statusCode === '415') {
+    return 'Le stockage refuse ce fichier : son format n’est pas admis pour ce dépôt'
+  }
+  return null
 }

@@ -1,0 +1,116 @@
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
+import { beforeAll, describe, expect, it } from 'vitest'
+import * as module from './bornesStockage'
+import { diagnosticsSepares, executerModule } from '../test/compilationSeparee'
+
+// LA COPIE DU BLOC bornesDesPieces DANS receive-email (ligne 22.6). La fonction est auto-portée : elle décide du type
+// d'une pièce jointe et de sa borne par une COPIE du bloc de src/lib/bornesStockage.ts. Une copie qui dériverait
+// déposerait ce que l'application refuse — ou, la migration appliquée, se ferait refuser par le stockage une pièce
+// jointe que l'application accepte, et la perdrait. Quatre questions (CLAUDE.md, « Une Edge Function auto-portée
+// duplique du code ») :
+//   1. La copie est-elle AU CARACTÈRE PRÈS le bloc de src/lib ?
+//   2. Le bloc se suffit-il, compilé seul ?
+//   3. EXÉCUTÉE seule, rend-elle ce que rend le module — une référence extérieure à la copie —, sur une grille de noms et
+//      de premiers octets ?
+//   4. La fonction s'en SERT-elle, sans rien garder de l'ancien dépôt (le type déclaré par l'expéditeur, la borne en
+//      dur) ? Et le garde mord-il ?
+
+const MODULE = readFileSync(new URL('./bornesStockage.ts', import.meta.url), 'utf8')
+const FONCTION = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
+const DEBUT = '// ── DÉBUT COPIE bornesDesPieces '
+const FIN = '// ── FIN COPIE bornesDesPieces '
+
+function blocDe(source: string, ou: string): string {
+  const d = source.indexOf(DEBUT)
+  const f = source.indexOf(FIN)
+  expect(d, `bornes du bloc bornesDesPieces introuvables dans ${ou}`).toBeGreaterThan(-1)
+  expect(source.indexOf(DEBUT, d + 1), `le bloc bornesDesPieces est présent deux fois dans ${ou}`).toBe(-1)
+  expect(f, `le bloc bornesDesPieces n'est pas refermé dans ${ou}`).toBeGreaterThan(d)
+  return source.slice(d, source.indexOf('\n', f) + 1)
+}
+
+const ORIGINE = blocDe(MODULE, 'bornesStockage.ts')
+
+type Copie = Pick<typeof module, 'typeDUnePiece' | 'TAILLE_MAX_PIECE'>
+
+const COMPILES = {
+  origine: ORIGINE,
+  emprunte: ORIGINE.replace('return parExtension ?? typeParSignature(debut)', 'return parExtension ?? typeDuNavigateur(debut)'),
+}
+
+// ── La grille ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const NOMS = [
+  'a.pdf', 'a.PDF', 'a.jpg', 'a.jpeg', 'a.JPEG', 'a.png', 'a.csv', 'a.CSV', '.csv', 'a', 'a.', 'a.pdf.part', 'a.tif',
+  'a.tiff', 'a.heic', 'a.svg', 'a.txt', 'a.xml', 'a.docx', 'a.xlsx', 'a.zip', 'a.constructor', 'a.__proto__', 'piece-pj-0',
+]
+const DEBUTS: number[][] = [
+  [], [0x25, 0x50, 0x44, 0x46], [0x25, 0x50, 0x44], [0xff, 0xd8, 0xff], [0xff, 0xd8], [0x89, 0x50, 0x4e, 0x47],
+  [0x89, 0x50, 0x4e, 0x48], [0x47, 0x49, 0x46, 0x38], [0x49, 0x49, 0x2a, 0], [0x3c, 0x73, 0x76, 0x67],
+  [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50], [0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70],
+]
+
+const lire = (m: Copie) => [m.TAILLE_MAX_PIECE, ...NOMS.flatMap((nom) => DEBUTS.map((d) => m.typeDUnePiece(nom, new Uint8Array(d))))]
+
+describe('la copie du bloc bornesDesPieces dans receive-email', () => {
+  let compiles: Record<keyof typeof COMPILES, string[]>
+  beforeAll(() => {
+    compiles = diagnosticsSepares(COMPILES, {
+      target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, strict: true, noEmit: true, noUnusedLocals: true,
+      noUnusedParameters: true, lib: ['lib.es2022.d.ts'], types: [],
+    })
+  }, 60_000)
+
+  it('receive-email : au caractère près le bloc de src/lib/bornesStockage.ts', () => {
+    expect(blocDe(FONCTION, 'receive-email')).toBe(ORIGINE)
+  })
+
+  it('le bloc commence et finit à ses bornes : rien de ce que le module importe n’y entre', () => {
+    expect(ORIGINE.startsWith(DEBUT)).toBe(true)
+    expect(ORIGINE).not.toMatch(/^import /m)
+  })
+
+  it('se compile seul, sans rien emprunter — et le garde voit un emprunt', () => {
+    expect(compiles.origine).toEqual([])
+    expect(compiles.emprunte.join('\n')).toMatch(/typeDuNavigateur/)
+  })
+
+  it('exécutée seule, la copie rend ce que rend le module, sur toute la grille', () => {
+    expect(lire(executerModule<Copie>(blocDe(FONCTION, 'receive-email')))).toEqual(lire(module))
+  })
+
+  it('la grille n’est pas aveugle : chaque type d’une pièce, et des refus', () => {
+    const lus = lire(module).slice(1)
+    expect(new Set(lus.filter((t) => t !== null))).toEqual(new Set(module.TYPES_DES_FICHIERS_DE_PIECE))
+    expect(lus.filter((t) => t === null).length).toBeGreaterThan(50)
+  })
+
+  it('receive-email s’en sert : le type décidé et la borne, avant le dépôt — et plus rien de l’ancien', () => {
+    const horsBloc = FONCTION.replace(ORIGINE, '')
+    expect(horsBloc).toMatch(/const type = typeDUnePiece\(nomFichier, bytes\.subarray\(0, 16\)\)/)
+    expect(horsBloc).toMatch(/if \(type === null\) \{/)
+    expect(horsBloc).toMatch(/if \(bytes\.byteLength > TAILLE_MAX_PIECE\) \{/)
+    expect(horsBloc).toMatch(/\.upload\(path, new Blob\(\[bytes\], \{ type \}\)\)/)
+    // Ni le type que déclare l'expéditeur, ni la borne écrite en dur.
+    expect(horsBloc).not.toMatch(/content_type/)
+    expect(horsBloc).not.toMatch(/20 \* 1024 \* 1024/)
+    for (const nom of ['typeDUnePiece', 'typeParSignature', 'TYPES_PAR_EXTENSION', 'TAILLE_MAX_PIECE']) {
+      expect(horsBloc, nom).not.toMatch(new RegExp(`(?:function|const|let|var) ${nom}\\b`))
+    }
+    // Les deux jugements AVANT le dépôt.
+    const depot = horsBloc.indexOf('.upload(path')
+    expect(horsBloc.indexOf('typeDUnePiece(nomFichier')).toBeLessThan(depot)
+    expect(horsBloc.indexOf('> TAILLE_MAX_PIECE')).toBeLessThan(depot)
+  })
+
+  it('le garde mord : un caractère changé dans la copie, ou une extension de plus, se voit — en texte et à l’exécution', () => {
+    const copie = blocDe(FONCTION, 'receive-email')
+    const tiff = copie.replace("['csv', 'text/csv'],", "['csv', 'text/csv'], ['tif', 'image/tiff'],")
+    expect(tiff).not.toBe(ORIGINE)
+    expect(lire(executerModule<Copie>(tiff))).not.toEqual(lire(module))
+    const borne = copie.replace('export const TAILLE_MAX_PIECE = 20 * 1024 * 1024', 'export const TAILLE_MAX_PIECE = 25 * 1024 * 1024')
+    expect(borne).not.toBe(copie)
+    expect(lire(executerModule<Copie>(borne))).not.toEqual(lire(module))
+  })
+})
