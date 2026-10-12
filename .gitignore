@@ -30,5 +30,8 @@ supabase/.temp/
 # Captures produites par outils/captures/vitrine.mjs — des images, pas des sources.
 outils/captures/sorties/
 
+# Le document des dossiers de référence et ce qu'il faut pour le refaire — jamais nos chiffres (outils/references/README.md).
+outils/references/sortie/
+
 # Copies isolées du dépôt que les agents de la session créent pour travailler sans gêner le reste.
 .claude/worktrees/
