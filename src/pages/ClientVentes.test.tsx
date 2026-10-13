@@ -105,7 +105,8 @@ describe('ClientVentes — la société lue, puis l’onglet Factures en mode cl
       'Onglet Factures — client — banque false — Atelier fictif — redevable — 1 rue Fictive, 75001 Paris — numéro false — débits true',
     )
     screen.getByRole('heading', { name: 'Mes ventes' })
-    screen.getByRole('heading', { name: 'Factures' })
+    // « Factures » et « Règlements » sont nommés par le sélecteur de l'onglet (étape A3), plus par un titre de la page.
+    expect(screen.queryByRole('heading', { name: 'Factures' })).toBeNull()
   })
 
   it('« Banque » telle que la BASE la voit : vraie, elle passe à l’onglet', async () => {

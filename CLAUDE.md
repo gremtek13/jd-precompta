@@ -432,6 +432,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   seule, sous `sousVerrou`, `LIBELLE_QUESTION_MOUVEMENT`) ; le filtre « Proposés par le client » ne change que la liste
   affichée. Propositions et fil se lisent ENSEMBLE, remis « en cours » à chaque lecture : partiels ou pas revenus, rien
   n'est dit ni offert → « « MA BANQUE » CÔTÉ CABINET », « ÉCARTER UNE PROPOSITION, SUPPRIMER UN MESSAGE ».
+- **« Règlements » (A3, 13/10/2026)** : une vue de l'onglet Factures, à côté de « Factures » (sélecteur `segmented`, la
+  vue par défaut restant « Factures ») — au cabinet dans l'onglet, au client « Ventes » dans « Mes ventes » ; une ligne
+  par encaissement ou contre-passation (`lib/reglements.ts`, pur), la contre-passation NÉGATIVE, le retiré marqué ; sa
+  déclaration dite par `pastilleDeclaration` appelée sur CET encaissement seul, puis `encaissementsDeclares`,
+  `obligationEncaissee` et `refusDeclaration` — aucune règle recopiée ; lue par `lireLesVentesDuDossier` (le registre
+  avec `moyen`, `cree_par`, `cree_le`) et le relevé, comme la fenêtre le lit, avec « Banque » seulement
+  (`lib/reglementsLecture.ts`) ; une source lue en partie : ni ligne, ni total, ni export ; totaux par moyen et par mois
+  et CSV sur les lignes FILTRÉES ; « par le client » au cabinet, sur des accès lus en entier ; chaque ligne ouvre
+  « Encaissements » de SA facture, rien ne s'écrit d'ici ; revenir à « Factures » relit l'onglet → « « MES VENTES ›
+  RÈGLEMENTS » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -480,6 +490,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   mouvement, le solde lu, et proposer une pièce, retirer sa proposition, écrire une précision ; « Ma banque » côté
   cabinet — la pièce proposée en tête de la fiche d'un mouvement, le fil et « Demander au client », le filtre « Proposés
   par le client » (P9b, 11/10/2026), écarter la pièce proposée et supprimer un message du fil (P9b2, 11/10/2026) ;
+  « Règlements » (A3, 13/10/2026) : la liste de tous les encaissements d'un dossier, ses filtres, ses totaux par moyen
+  et par mois, son export CSV, au cabinet et au client « Ventes » ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -682,7 +694,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   la parité — achats, notes de frais, analyse, documents du cabinet, trois cases neuves (« Achats », « Notes de frais »,
   « Documents »), le resserrement des pièces (B1 à B9) ; « aller plus loin » — l'échéancier, l'état du dossier, les
   situations publiées (C1 à C8) ; trente-cinq questions au cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT :
-  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
+  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (quatre questions au cabinet, A3-Q1 à
+  A3-Q4) → « « MES VENTES › RÈGLEMENTS » ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1462,7 +1475,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 280 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 345 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

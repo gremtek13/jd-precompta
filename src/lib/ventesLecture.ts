@@ -1,10 +1,8 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
-import type {
-  DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
-} from './encaissementsFactures'
+import type { DeclarationLue, EvenementSuperpdpLu, LigneDeFacture, PartLue } from './encaissementsFactures'
 import { COLONNES_STATUT_LU, type StatutLu } from './statutsLus'
-import type { ListesDesVentes } from './tuilesVentes'
+import type { EncaissementDesVentes, ListesDesVentes } from './tuilesVentes'
 import type { FactureEmise, TransmissionFacture } from './types'
 
 // CE QUE L'ONGLET FACTURES LIT D'UN DOSSIER POUR SES PASTILLES, et ce que l'accueil du client compte (espace client, étape
@@ -27,7 +25,8 @@ export async function lireLesVentesDuDossier(dossierId: string): Promise<ListesD
       .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
   )
   // Les lignes de TOUTES les factures du dossier — par leur facture, la table n'ayant pas de dossier —, ses
-  // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte. Puis les
+  // encaissements et leurs parts, retirés compris : `resteAEncaisser` décide lui-même de ce qui compte — avec leur moyen,
+  // leur auteur et leur enregistrement, que la liste des règlements dit (étape A3) sans relire le registre. Puis les
   // déclarations du dossier, échouées et rejetées comprises, et l'historique de Super PDP de ses factures (par leur
   // facture, comme les lignes) : `pastilleDeclaration` décide lui-même de ce qui est déclaré, et de ce qui ne le sera pas.
   const [lignes, encaisses, parts, declares, evenements, statuts] = await Promise.all([
@@ -36,9 +35,9 @@ export async function lireLesVentesDuDossier(dossierId: string): Promise<ListesD
         .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
         .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
     ),
-    lireTout<EncaissementPourContrePassation>((debut, fin) =>
+    lireTout<EncaissementDesVentes>((debut, fin) =>
       supabase.from('encaissements_factures')
-        .select('id, dossier_id, facture_id, date_encaissement, montant, ligne_bancaire_id, annule_id, retire_le', { count: 'exact' })
+        .select('id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_par, cree_le, retire_le', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
     lireTout<PartLue>((debut, fin) =>

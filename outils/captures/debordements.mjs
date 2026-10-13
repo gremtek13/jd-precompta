@@ -608,6 +608,17 @@ const VISITES = [
       await page.getByRole('checkbox', { name: 'Proposés par le client' }).check()
     },
   },
+  // « RÈGLEMENTS » (espace client, étape A3) : la vue de l'onglet Factures de l'atelier — ses filtres, ses totaux par moyen et
+  // par mois, et la liste de tous ses encaissements (neuf colonnes repliées en fiches), la contre-passation négative, le
+  // retiré, la déclaration et son détail long. On attend le tableau, le dernier à paraître, une fois tout lu.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/règlements',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Règlements', exact: true }).click()
+      await page.getByRole('table', { name: 'Règlements' }).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -761,6 +772,16 @@ const VISITES_CLIENT = [
   },
   { chemin: '#/mes-pieces', nom: 'client/mes-pieces', nav: true },
   { chemin: '#/ma-simulation', nom: 'client/ma-simulation', nav: true },
+  // « Mes ventes › Règlements » (étape A3) : la même vue, aux mots du client ; sans « Banque », le mouvement du virement
+  // de F2026-0008 se dit sans être nommé.
+  {
+    chemin: '#/mes-ventes', nom: 'client/règlements', nav: true,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Règlements', exact: true }).click()
+      await page.getByRole('table', { name: 'Règlements' }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 // « Ma banque » (espace client, étape P9), pour la seule passe `client-banque` : le relevé, puis le détail d'un mouvement

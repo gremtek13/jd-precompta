@@ -1283,6 +1283,16 @@ const ENCAISSEMENT_E1: EncaissementFacture = encaissementDuBanc({
 })
 const PART_E1: EncaissementFactureTaux = { encaissement_id: ER.E1, dossier_id: 'd7', taux: 20, montant: 120 }
 
+// « RÈGLEMENTS » (espace client, étape A3) : la liste de tous les encaissements de l'atelier lit ceux d'au-dessus — le
+// chèque retiré de F2026-0007, la contre-passation de F2026-0008, les déclarés, le paiement d'un particulier de 2027 — et
+// celui-ci, un virement qui DÉSIGNE un mouvement du relevé : le cabinet le voit nommé, le client sans « Banque » lit la
+// phrase de la fenêtre à sa place. Daté du 4 octobre, entre la contre-passation et le chèque à déclarer : les visites qui
+// cliquent le premier ou le dernier « Déclaré sur la plateforme » de F2026-0008 visent toujours les mêmes lignes.
+const ENCAISSEMENT_A3: EncaissementFacture = encaissementDuBanc({
+  id: 'enc7', facture_id: 'f8', date_encaissement: '2026-10-04', montant: 300, ligne_bancaire_id: 't7', cree_le: '2026-10-04T09:00:00Z',
+})
+const PART_A3: EncaissementFactureTaux = { encaissement_id: 'enc7', dossier_id: 'd7', taux: 20, montant: 300 }
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,
@@ -1669,8 +1679,8 @@ const TABLES: Record<string, Ligne[]> = {
   statuts_factures_recus: STATUTS_D7.map((s) => ({ ...s })),
   transmissions_factures: [...TRANSMISSIONS_D1, ...TRANSMISSIONS_D7].map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
-  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1].map((e) => ({ ...e })),
-  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1].map((p) => ({ ...p })),
+  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1, ENCAISSEMENT_A3].map((e) => ({ ...e })),
+  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1, PART_A3].map((p) => ({ ...p })),
   transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
   dossier_permanent: DOSSIER_PERMANENT_D9.map((e) => ({ ...e })),
   // Les pièces jointes que la réception par e-mail a écartées pour le cabinet infirmier (ligne 22.7) : un format refusé et
