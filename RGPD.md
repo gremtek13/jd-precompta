@@ -366,6 +366,10 @@ Ce qui est **prouvé**, pas seulement affirmé :
   migration appliquée (`20261013174021`) : le même essai, 81 verdicts, 0 en faute ; `signature.sql`, seules les
   fonctions et leurs droits changés. Le jour est celui de Paris, calculé par la base ; « Mes pièces » le montre depuis
   la bascule de l'application (`ECARTEES_DU_CLIENT_EXPORTEES`).
+  Depuis la ligne 22.93 (13/10/2026), « Mes pièces » montre aussi au client l'adresse de collecte de son dossier — le
+  `code_email` de SA ligne de `dossiers` (son nom en tirets et six caractères de l'identifiant), que la policy de lecture
+  de `dossiers` lui ouvrait déjà ; rien de plus n'est ouvert en base, aucune donnée nouvelle ne sort, et la lecture ne
+  part qu'avec la société affichée.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

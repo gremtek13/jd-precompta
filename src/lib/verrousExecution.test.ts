@@ -41,8 +41,9 @@ import { describe, expect, it } from 'vitest'
  */
 const EXCEPTIONS: Record<string, string> = {
   // Posé au démontage, levé au montage (le mode strict de React monte deux fois) : une copie revenue après la fermeture
-  // de l'onglet n'arme plus le minuteur du « Copié ✓ ». Rien ne l'attend ni ne le prend avant un travail.
-  'src/pages/dossier/AccesTab.tsx [demonte]': '« l’écran est démonté » : ce n’est pas un verrou d’exécution',
+  // de l'écran n'arme plus le minuteur du « Copié ✓ ». Rien ne l'attend ni ne le prend avant un travail. Depuis la ligne
+  // 22.93 le crochet est partagé par l'onglet Accès et « Mes pièces » (lib/copieDuTexte.ts) : l'exception le suit.
+  'src/lib/copieDuTexte.ts [demonte]': '« l’écran est démonté » : ce n’est pas un verrou d’exécution',
 }
 
 function sourcesDeProduction(dossier: string, trouvees: string[] = []): string[] {

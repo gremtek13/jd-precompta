@@ -98,6 +98,18 @@ const dossiers: Ligne[] = [
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))
 
+// Le code e-mail d'un vrai dossier est son nom en tirets suivi de six caractères de son identifiant (`generate_code_email`) :
+// l'adresse de collecte que « Mes pièces » montre au client (ligne 22.93) est donc LONGUE, et le banc doit la mesurer telle.
+// Le cabinet infirmier a la sienne, réaliste ; l'atelier, une adresse extrême (un nom de société très long) pour éprouver le
+// retour à la ligne d'un mot de plus de 24 caractères. Ajouté après coup : la ligne ci-dessus donne aux autres leur identifiant.
+for (const [id, code] of [
+  ['d1', 'cabinet-infirmier-moreau-1a2b3c'],
+  ['d7', 'societe-civile-de-moyens-des-cabinets-infirmiers-de-la-vallee-9f8e7d'],
+]) {
+  const dossier = dossiers.find((d) => d.id === id)
+  if (dossier) dossier.code_email = code
+}
+
 // Les postes sont ceux que le formulaire connaît (lib/cases2035.ts), comme un cabinet les saisit — sauf
 // l'électricité, laissée sur un poste qu'aucune case ne reçoit : c'est elle qui fait paraître « Postes sans
 // case du formulaire » dans la Clôture du cabinet infirmier, et le préalable qui en refuse la validation.

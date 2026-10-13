@@ -519,7 +519,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026) ; la pièce jointe que la
   réception par e-mail écarte (format, poids), n'a pas pu déposer (ligne 22.8) ou reçoit vide (ligne 22.91), dite au
   cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026) ; et dite au client dans
-  « Mes pièces » — le jour, la raison et le poids, 90 jours durant (ligne 22.9, 13/10/2026).
+  « Mes pièces » — le jour, la raison et le poids, 90 jours durant (ligne 22.9, 13/10/2026) ; « Mes pièces » montre
+  aussi au client l'adresse de collecte de son dossier, avec ce qu'elle accepte et « Copier l'adresse », et la carte des
+  pièces jointes écartées la nomme (ligne 22.93, 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -601,15 +603,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'accord du cabinet, S229-Q1), et les éléments de l'e-mail qui ne sont pas des pièces jointes, comptés au journal sans
   nom pour chaque e-mail d'un dossier connu, même à zéro (S228-Q4, S229-Q2, ligne 22.92), le 13/10/2026. « Mes pièces »
   le dit au client — le jour, la raison et le poids, 90 jours durant —, et l'onglet Accès nomme les quatre raisons (Q6,
-  S229-Q5, ligne 22.9, le 13/10/2026 ; la lecture présentée au cabinet puis appliquée sur son accord, S228B-Q1 à Q4).
-  Restent la décision sur ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune
-  de ses reprises pendant un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans
-  nom seulement si une décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces
-  jointes se normalise dans une étape à part (S229-Q4) —, et deux étapes à part, décidées par le cabinet le 13/10/2026 :
-  l'adresse de collecte dans « Mes pièces » (S228B-Q5), puis une ligne sur l'accueil du client qui y renvoie (S228B-Q6)
-  → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON
-  D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « LE CLIENT VOIT UNE
-  PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » ».
+  S229-Q5, ligne 22.9, le 13/10/2026 ; la lecture présentée au cabinet puis appliquée sur son accord, S228B-Q1 à Q4) ;
+  il y lit aussi l'adresse de collecte de son dossier (S228B-Q5, ligne 22.93, le 13/10/2026). Restent la décision sur
+  ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune de ses reprises pendant
+  un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans nom seulement si une
+  décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces jointes se normalise
+  dans une étape à part (S229-Q4) —, et une étape à part, décidée par le cabinet le 13/10/2026 : une ligne sur l'accueil
+  du client qui renvoie à « Mes pièces » (S228B-Q6, ligne 22.94) → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL
+  SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
+  QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » »,
+  « « MES PIÈCES » MONTRE L'ADRESSE DE COLLECTE DU DOSSIER ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -904,9 +907,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   comprise), par disposition et famille de type DÉCLARÉ — un compte, jamais une décision de dépôt —, sans nom, sans
   identifiant, sans disposition ni type recopiés (ligne 22.92). L'écran dit qu'un dépôt échoué n'est pas du fait du
   client, son poids s'il est connu — rien d'inventé sinon —, et de le renvoyer tel quel ; d'une pièce jointe arrivée
-  vide, que le client vérifie son fichier avant de la renvoyer → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE
-  DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
-  QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
+  vide, que le client vérifie son fichier avant de la renvoyer ; l'adresse de collecte ne se compose que dans
+  `lib/adresseCollecte.ts` — un test refuse le domaine ailleurs dans `src/` — ; « Mes pièces » lit `code_email` de la
+  société AFFICHÉE (la policy de lecture de `dossiers` l'ouvrait déjà), à part et gardé avec le dossier : rien avant le
+  retour, une lecture ratée dite sans adresse, jamais une adresse devinée ; le « Copié ✓ » est le crochet
+  `lib/copieDuTexte.ts`, partagé avec l'onglet Accès → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU
+  CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA QUATRIÈME
+  RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « « MES PIÈCES » MONTRE L'ADRESSE DE COLLECTE DU DOSSIER ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
 - **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
@@ -1514,7 +1521,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 435 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 469 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

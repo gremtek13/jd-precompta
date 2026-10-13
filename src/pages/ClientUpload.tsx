@@ -18,6 +18,11 @@ import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/
 import { poids, TAILLE_MAX_PIECE } from '../lib/bornesStockage'
 import { ECARTEES_DU_CLIENT_EXPORTEES, lireLesEcarteesDuClient } from '../lib/piecesJointesEcarteesClient'
 import type { PieceJointeEcarteeDuClient } from '../lib/types'
+import {
+  ADRESSE_COPIEE, ADRESSE_ILLISIBLE, ceQueAccepteLAdresse, COPIE_REFUSEE, COPIER_L_ADRESSE, ENVOI_PAR_EMAIL, lireLAdresseDeCollecte,
+  type LectureAdresseCollecte,
+} from '../lib/adresseCollecte'
+import { useCopieDuTexte } from '../lib/copieDuTexte'
 import PiecesJointesEcarteesClient from './PiecesJointesEcarteesClient'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -101,6 +106,24 @@ export default function ClientUpload() {
     let annule = false
     lireLesEcarteesDuClient(supabase.rpc('pieces_jointes_ecartees_du_client', { p_dossier_id: dossierId }))
       .then((lecture) => { if (!annule) setEcarteesLues({ dossierId, lecture }) })
+    return () => { annule = true }
+  }, [dossierId])
+
+  // L'adresse e-mail de collecte du dossier (ligne 22.93), lue À PART : sa lecture ratée ne rend aucune autre liste fausse, et
+  // elle ne dit que l'adresse. Gardée AVEC le dossier pour lequel elle a été faite — nulle tant qu'elle n'est pas revenue :
+  // avant son retour rien n'est affirmé, et l'adresse d'une société ne s'affiche jamais sous une autre. Une lecture ratée,
+  // ou un dossier sans code : pas d'adresse, et la carte retombe sur « la même adresse » — jamais une adresse devinée.
+  const [adresseLue, setAdresseLue] = useState<{ dossierId: string; lecture: LectureAdresseCollecte } | null>(null)
+  const lectureAdresse = adresseLue !== null && adresseLue.dossierId === dossierId ? adresseLue.lecture : null
+  const adresseCollecte = lectureAdresse?.adresse ?? null
+  const { copie: adresseCopiee, refusee: copieRefusee, copier: copierAdresse } = useCopieDuTexte(adresseCollecte)
+
+  // Une lecture plus lente que le changement de société n'écrit pas : le drapeau d'annulation.
+  useEffect(() => {
+    if (!dossierId) return
+    let annule = false
+    lireLAdresseDeCollecte(supabase.from('dossiers').select('code_email').eq('id', dossierId).maybeSingle())
+      .then((lecture) => { if (!annule) setAdresseLue({ dossierId, lecture }) })
     return () => { annule = true }
   }, [dossierId])
 
@@ -298,7 +321,7 @@ export default function ClientUpload() {
         consequence="Recharge la page : il manque peut-être des messages sous tes documents."
       />
 
-      {ECARTEES_DU_CLIENT_EXPORTEES && <PiecesJointesEcarteesClient lecture={ecartees} />}
+      {ECARTEES_DU_CLIENT_EXPORTEES && <PiecesJointesEcarteesClient lecture={ecartees} adresse={adresseCollecte} />}
 
       <h3>Ce qu'il reste à envoyer</h3>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>
@@ -368,7 +391,23 @@ export default function ClientUpload() {
             />
           </label>
         </div>
+        {adresseCollecte && (
+          <div className="adresse-collecte-client">
+            <p className="muted">{ENVOI_PAR_EMAIL}</p>
+            <div className="adresse-collecte-ligne">
+              <code className="adresse-collecte">{adresseCollecte}</code>
+              <button type="button" className="btn btn-outline btn-sm" onClick={copierAdresse}>
+                {adresseCopiee ? ADRESSE_COPIEE : COPIER_L_ADRESSE}
+              </button>
+            </div>
+            {copieRefusee && <p className="muted" role="status">{COPIE_REFUSEE}</p>}
+            <p className="muted">{ceQueAccepteLAdresse()}</p>
+          </div>
+        )}
       </div>
+      {lectureAdresse !== null && lectureAdresse.adresse === null && lectureAdresse.motif !== null && (
+        <p className="error-text" title={lectureAdresse.motif} style={{ marginTop: -8, marginBottom: 14 }}>{ADRESSE_ILLISIBLE}</p>
+      )}
 
       {error && <p className="error-text" style={{ marginBottom: 14 }}>{error}</p>}
 
