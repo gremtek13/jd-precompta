@@ -53,6 +53,26 @@ const DEBUTS: number[][] = [
 
 const lire = (m: Copie) => [m.TAILLE_MAX_PIECE, ...NOMS.flatMap((nom) => DEBUTS.map((d) => m.typeDUnePiece(nom, new Uint8Array(d))))]
 
+// LE TYPE QUE DÉCLARE L'EXPÉDITEUR ne décide d'aucun dépôt. Depuis la ligne 22.92, receive-email le LIT pour un compte :
+// celui des éléments de l'e-mail qui ne sont pas des pièces jointes, par famille de type déclaré, et ce compte ne va
+// qu'au journal. Le type déclaré n'est donc admis que dans le corps de `compteDesElementsIntegres`, et ce corps n'est
+// appelé qu'une fois, dans une ligne de journal ; partout ailleurs, il reste interdit.
+const COMPTE = 'function compteDesElementsIntegres('
+const APPEL_DU_COMPTE = 'console.log(`[receive-email] dossier ${dossier.id} : ${compteDesElementsIntegres(attachments ?? [])}`)'
+
+/** Ce que la fonction fait du type déclaré hors du bloc copié : la liste des fautes, vide quand il ne sert qu'au compte. */
+function typeDeclareHorsDuCompte(fonction: string): string[] {
+  const horsBloc = fonction.replace(ORIGINE, '')
+  const debut = horsBloc.indexOf(COMPTE)
+  if (debut < 0) return horsBloc.includes('content_type') ? ['le type déclaré lu hors de tout compte'] : []
+  const corps = horsBloc.slice(debut, horsBloc.indexOf('\n}\n', debut) + 3)
+  const fautes: string[] = []
+  if (horsBloc.replace(corps, '').includes('content_type')) fautes.push('le type déclaré lu hors du compte')
+  if (horsBloc.split('compteDesElementsIntegres(').length - 1 !== 2) fautes.push('le compte appelé ailleurs qu’une fois')
+  if (!horsBloc.includes(APPEL_DU_COMPTE)) fautes.push('le compte qui ne va pas au journal')
+  return fautes
+}
+
 describe('la copie du bloc bornesDesPieces dans receive-email', () => {
   let compiles: Record<keyof typeof COMPILES, string[]>
   beforeAll(() => {
@@ -92,8 +112,8 @@ describe('la copie du bloc bornesDesPieces dans receive-email', () => {
     expect(horsBloc).toMatch(/if \(type === null\) \{/)
     expect(horsBloc).toMatch(/if \(bytes\.byteLength > TAILLE_MAX_PIECE\) \{/)
     expect(horsBloc).toMatch(/\.upload\(path, new Blob\(\[bytes\], \{ type \}\)\)/)
-    // Ni le type que déclare l'expéditeur, ni la borne écrite en dur.
-    expect(horsBloc).not.toMatch(/content_type/)
+    // Ni le type que déclare l'expéditeur — hors du seul compte au journal (ligne 22.92) —, ni la borne écrite en dur.
+    expect(typeDeclareHorsDuCompte(FONCTION)).toEqual([])
     expect(horsBloc).not.toMatch(/20 \* 1024 \* 1024/)
     for (const nom of ['typeDUnePiece', 'typeParSignature', 'TYPES_PAR_EXTENSION', 'TAILLE_MAX_PIECE']) {
       expect(horsBloc, nom).not.toMatch(new RegExp(`(?:function|const|let|var) ${nom}\\b`))
@@ -112,5 +132,18 @@ describe('la copie du bloc bornesDesPieces dans receive-email', () => {
     const borne = copie.replace('export const TAILLE_MAX_PIECE = 20 * 1024 * 1024', 'export const TAILLE_MAX_PIECE = 25 * 1024 * 1024')
     expect(borne).not.toBe(copie)
     expect(lire(executerModule<Copie>(borne))).not.toEqual(lire(module))
+  })
+
+  it('le garde du type déclaré mord : lu pour un dépôt, ou le compte tiré hors du journal, se voit', () => {
+    const pourLeDepot = FONCTION.replace('const type = typeDUnePiece(nomFichier, bytes.subarray(0, 16))',
+      'const type = fichier.content_type ?? typeDUnePiece(nomFichier, bytes.subarray(0, 16))')
+    expect(pourLeDepot).not.toBe(FONCTION)
+    expect(typeDeclareHorsDuCompte(pourLeDepot)).toEqual(['le type déclaré lu hors du compte'])
+    const horsDuJournal = FONCTION.replace(APPEL_DU_COMPTE, 'const compte = compteDesElementsIntegres(attachments ?? [])')
+    expect(horsDuJournal).not.toBe(FONCTION)
+    expect(typeDeclareHorsDuCompte(horsDuJournal)).toEqual(['le compte qui ne va pas au journal'])
+    const deuxFois = FONCTION.replace('  let nbImportees = 0\n', '  const encore = compteDesElementsIntegres(fichiers)\n  let nbImportees = 0\n')
+    expect(deuxFois).not.toBe(FONCTION)
+    expect(typeDeclareHorsDuCompte(deuxFois)).toEqual(['le compte appelé ailleurs qu’une fois'])
   })
 })

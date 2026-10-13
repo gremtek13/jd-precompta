@@ -1639,7 +1639,8 @@ export interface EntreeDossierPermanent {
 }
 
 // Une pièce jointe que la réception par e-mail a écartée (`pieces_jointes_ecartees`, ligne 22.7) : son format n'est pas
-// celui d'une pièce (PDF, JPEG, PNG, CSV), ou elle pèse plus que la borne d'une pièce. receive-email l'écrit à la clé
+// celui d'une pièce (PDF, JPEG, PNG, CSV), ou elle pèse plus que la borne d'une pièce ; ou son dépôt a échoué (ligne
+// 22.8) ; ou elle est arrivée vide (ligne 22.91). receive-email l'écrit à la clé
 // secrète, une fois par pièce jointe (l'empreinte des identifiants Resend) ; jamais le nom du fichier, son extension,
 // l'expéditeur ni l'objet. Le cabinet la lit et la marque vue par `marquer_pieces_jointes_vues` seule
 // (src/lib/piecesJointesEcartees.ts) ; le client n'en voit rien.
@@ -1648,10 +1649,12 @@ export interface PieceJointeEcartee {
   dossier_id: string
   // L'instant où receive-email l'a reçue et écartée, posé par la base.
   recue_le: string
-  // `depot` (ligne 22.8, migration `pieces_jointes_ecartees_depot`) : le dépôt a échoué.
-  raison: 'format' | 'taille' | 'depot'
-  // Le poids de la pièce jointe, en octets (plus de zéro) ; inconnu (null) pour un dépôt échoué avant toute lecture, et
-  // pour lui seul (`pieces_jointes_ecartees_poids_connu`).
+  // `depot` (ligne 22.8, migration `pieces_jointes_ecartees_depot`) : le dépôt a échoué ; `vide` (ligne 22.91, migration
+  // `pieces_jointes_ecartees_vide`) : arrivée vide.
+  raison: 'format' | 'taille' | 'depot' | 'vide'
+  // Le poids de la pièce jointe, en octets : zéro pour une pièce jointe arrivée vide, et pour elle seule ; plus de zéro
+  // pour toute autre (`pieces_jointes_ecartees_octets`) ; inconnu (null) pour un dépôt échoué avant toute lecture, et pour
+  // lui seul (`pieces_jointes_ecartees_poids_connu`).
   octets: number | null
   // SHA-256 des identifiants Resend de l'e-mail et de la pièce jointe : la clé d'idempotence, avec le dossier.
   empreinte: string

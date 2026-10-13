@@ -448,6 +448,10 @@ function evenementRecu(options: {
   // Une pièce jointe par fichier, chacune son nom et le type que déclare l'expéditeur (ligne 22.7) : `pieces` et `fichier`
   // ne servent alors pas.
   fichiers?: { nom: string; type: string }[]
+  // Les éléments de l'e-mail qui ne sont PAS des pièces jointes (ligne 22.92), rangés après elles, comme la documentation
+  // publique de l'événement les décrit (`id`, `filename`, `content_type`, `content_disposition`, `content_id`) : une
+  // disposition `undefined` est une clé ABSENTE du corps, `null` une clé nulle.
+  integres?: readonly ElementIntegre[]
 } = {}): string {
   const fichiers = options.fichiers ?? Array.from({ length: options.pieces ?? 1 }, (_, i) => ({
     nom: options.fichier?.nom ?? `facture-${i}.png`, type: options.fichier?.type ?? 'image/png',
@@ -461,12 +465,20 @@ function evenementRecu(options: {
       to: [options.a ?? 'Dossier <dossier-fictif@precompta.jdarnis.fr>'],
       from: EXPEDITEUR,
       subject: OBJET,
-      attachments: fichiers.map((f, i) => ({
-        id: `pj-${i}`, filename: f.nom, content_type: f.type, content_disposition: 'attachment',
-      })),
+      attachments: [
+        ...fichiers.map((f, i) => ({
+          id: `pj-${i}`, filename: f.nom, content_type: f.type, content_disposition: 'attachment',
+        })),
+        ...(options.integres ?? []).map((f, i) => ({
+          id: `integre-${i}`, filename: f.nom, content_type: f.type, content_disposition: f.disposition, content_id: `cid-${i}`,
+        })),
+      ],
     },
   }, null, 2)
 }
+
+/** Un élément de l'e-mail qui n'est pas une pièce jointe (ligne 22.92) : son nom, son type déclaré, sa disposition. */
+interface ElementIntegre { nom: string; type?: string; disposition?: string | null }
 
 /** La requête de Resend, signée au moment où elle part — l'horodatage se lit alors, jamais au chargement du module. */
 function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: string; ilYaSecondes?: number; entetes?: boolean } = {}) {
@@ -528,6 +540,54 @@ const NOM_NOTE = 'Trelvandor-Mirquaze.txt'
 const CONTENU_NOTE = 'Contenu Vrelmondaxe Quarzibul du harnais'
 const NOTE = new TextEncoder().encode(CONTENU_NOTE)
 const LOURDE = 20 * 1024 * 1024 + 1
+// Une pièce jointe arrivée vide (ligne 22.91) : son nom inventé, qu'aucun journal ni aucune trace ne doit porter.
+const NOM_VIDE = 'Glorvandine-Stebulaire.pdf'
+const VIDE = new Uint8Array(0)
+
+// LES ÉLÉMENTS DE L'E-MAIL QUI NE SONT PAS DES PIÈCES JOINTES (ligne 22.92) : des noms inventés, qu'aucun journal ne doit
+// porter — l'un recopié dans le type déclaré (`name=`), un autre dans la disposition (`filename=`), comme un en-tête MIME
+// les porte —, une casse que le compte doit lire (`INLINE`, `IMAGE/JPEG`), une disposition absente, une nulle.
+const NOM_INTEGRE_PDF = 'Vortelinde-Crambusque.pdf'
+const NOM_INTEGRE_IMAGE = 'Quintabrel-Ozimande.png'
+const NOM_INTEGRE_LOGO = 'Brelquintor-Vaspadune.jpg'
+const NOM_AUTRE_DISPOSITION = 'Pelmorvaze-Truncalis.pdf'
+const NOM_INVITATION = 'Dramolen-Fistragule.ics'
+const NOM_SANS_TYPE = 'Cuvelbrane-Ostimache.bin'
+const NOMS_INTEGRES = [NOM_INTEGRE_PDF, NOM_INTEGRE_IMAGE, NOM_INTEGRE_LOGO, NOM_AUTRE_DISPOSITION, NOM_INVITATION, NOM_SANS_TYPE]
+const INTEGRES: readonly ElementIntegre[] = [
+  { nom: NOM_INTEGRE_PDF, type: `application/pdf; name="${NOM_INTEGRE_PDF}"`, disposition: 'inline' },
+  { nom: NOM_INTEGRE_IMAGE, type: 'image/png', disposition: 'inline' },
+  { nom: NOM_INTEGRE_LOGO, type: 'IMAGE/JPEG', disposition: 'INLINE' },
+  { nom: NOM_AUTRE_DISPOSITION, type: 'application/pdf', disposition: `attachment; filename="${NOM_AUTRE_DISPOSITION}"` },
+  { nom: NOM_INVITATION, type: 'text/calendar' },
+  { nom: NOM_SANS_TYPE, disposition: null },
+]
+const COMPTE_DES_INTEGRES = "6 élément(s) de l'e-mail hors pièces jointes, non déposé(s) — inline 3 (PDF 1, image 2, autre 0) ; "
+  + 'autre disposition 1 (PDF 1, image 0, autre 0) ; sans disposition 2 (PDF 0, image 0, autre 2)'
+const COMPTE_A_ZERO = "0 élément(s) de l'e-mail hors pièces jointes, non déposé(s) — inline 0 (PDF 0, image 0, autre 0) ; "
+  + 'autre disposition 0 (PDF 0, image 0, autre 0) ; sans disposition 0 (PDF 0, image 0, autre 0)'
+const ENTETE_DU_COMPTE = '[receive-email] dossier '
+
+/**
+ * La ligne du compte des éléments qui ne sont pas des pièces jointes (ligne 22.92) : UNE, pour le dossier, qui dit
+ * `attendu` mot pour mot — sans nom (le juge commun le cherche dans tout le journal, `sensibles`), ni identifiant de
+ * l'e-mail ou d'un élément, ni objet, ni expéditeur. Et l'objet de l'e-mail sur la seule ligne de bilan qui le portait
+ * déjà (le défaut connu `objetAuJournal`, décision du cabinet) : pas une ligne de plus.
+ */
+function compteAuJournal(m: Monde, attendu: string): string[] {
+  const fautes: string[] = []
+  const comptes = m.journaux.filter((j) => j.texte.startsWith(ENTETE_DU_COMPTE))
+  if (comptes.length !== 1) fautes.push(`${comptes.length} ligne(s) de compte au journal au lieu d’une`)
+  const ligne = comptes[0]?.texte
+  if (ligne !== undefined && ligne !== `${ENTETE_DU_COMPTE}${D} : ${attendu}`) fautes.push(`compte au journal : ${ligne.slice(0, 300)}`)
+  for (const v of [EMAIL_ID, OBJET, EXPEDITEUR, 'integre-', 'cid-']) {
+    if (ligne?.includes(v)) fautes.push(`la ligne du compte porte « ${v.slice(0, 8)}… »`)
+  }
+  const avecObjet = m.journaux.filter((j) => j.texte.includes(OBJET)).length
+  if (avecObjet !== 1) fautes.push(`${avecObjet} ligne(s) du journal portent l’objet de l’e-mail, au lieu de la seule ligne de bilan`)
+  if (m.journaux.some((j) => j.texte.includes(EXPEDITEUR))) fautes.push('l’expéditeur au journal')
+  return fautes
+}
 
 /** Le journal porte-t-il cette phrase ? Une faute sinon. */
 function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
@@ -540,10 +600,11 @@ function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
  * extension, ni son contenu, ni l'expéditeur, ni l'objet, ni les identifiants que Resend donne à l'e-mail et à la pièce
  * jointe (gardés tels quels, ils désigneraient un e-mail relisible chez Resend). Un dépôt qui a échoué (ligne 22.8) porte
  * le poids lu, ou un poids INCONNU (`null`) quand rien n'a été lu — jamais un poids deviné : le faux PostgREST ne tient
- * pas les contraintes CHECK de la table, c'est ce juge qui exige la valeur exacte.
+ * pas les contraintes CHECK de la table, c'est ce juge qui exige la valeur exacte. Une pièce jointe arrivée vide (ligne
+ * 22.91) porte le poids zéro, et lui seul.
  */
 function ecartsConsignes(
-  m: Monde, attendus: { raison: 'format' | 'taille' | 'depot'; octets: number | null }[], interdits: readonly string[],
+  m: Monde, attendus: { raison: 'format' | 'taille' | 'depot' | 'vide'; octets: number | null }[], interdits: readonly string[],
 ): string[] {
   const traces = lignes(m, 'pieces_jointes_ecartees')
   const fautes: string[] = []
@@ -970,16 +1031,106 @@ const RECEIVE_EMAIL: ContratFonction = {
         ],
       },
     },
+    // LA PIÈCE JOINTE ARRIVÉE VIDE (ligne 22.91) : consignée sous sa raison, au poids zéro, une fois — ni déposée, ni lue
+    // —, journalisée sans son nom ; mêlée aux autres, chacune sa trace ; refusée par la base (la migration pas encore
+    // appliquée), journalisée, et la suivante se traite.
     {
-      nom: 'une pièce jointe vide (0 octet) : sautée, journalisée sans son nom, rien de consigné ni de déposé',
-      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: new Uint8Array(0) }); m.sensibles.push(NOM_PERDU) },
-      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_PERDU, type: 'application/pdf' } })),
+      nom: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: VIDE }); m.sensibles.push(NOM_VIDE) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_VIDE, type: 'application/pdf' } })),
       attendu: {
-        statut: 200, depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`],
+        statut: 200, depenses: ecartee('pj-0'),
         verifier: (_r, m) => [
-          ...journalise(m, /Pièce jointe vide \(0 octet\), sautée : pj-0/, 'la pièce jointe vide'),
-          ...ecartsConsignes(m, [], [NOM_PERDU]),
+          ...journalise(m, /Pièce jointe écartée, arrivée vide \(0 octet\) : pj-0/, 'la pièce jointe vide'),
+          ...ecartsConsignes(m, [{ raison: 'vide', octets: 0 }], [NOM_VIDE, 'pdf']),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
         ],
+      },
+    },
+    {
+      nom: 'Resend rejoue le webhook d’une pièce jointe arrivée vide : rien de plus ne se consigne, sans erreur',
+      dejaRecue: true,
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: VIDE }); m.sensibles.push(NOM_VIDE) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_VIDE, type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'vide', octets: 0 }], [NOM_VIDE, 'pdf']),
+          ...(m.journaux.some((j) => /NON consignée/.test(j.texte)) ? ['le rejeu a journalisé une erreur'] : []),
+        ],
+      },
+    },
+    {
+      nom: 'une pièce jointe vide, une hors format et une bonne dans le même e-mail : chacune sa trace, et la bonne se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-0': VIDE, 'pj-1': DOCX } })
+        m.sensibles.push(NOM_VIDE, NOM_HORS_FORMAT)
+      },
+      requete: requeteWebhook(evenementRecu({
+        fichiers: [{ nom: NOM_VIDE, type: 'application/pdf' }, { nom: NOM_HORS_FORMAT, type: 'application/msword' }, { nom: 'facture-2.png', type: 'image/png' }],
+      })),
+      attendu: {
+        statut: 200, depenses: [...ecartee('pj-0'), ...ecartee('pj-1'), ...deposee('pj-2')],
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'vide', octets: 0 }, { raison: 'format', octets: DOCX.byteLength }], [NOM_VIDE, NOM_HORS_FORMAT, 'docx']),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    {
+      nom: 'la base refuse la trace d’une pièce jointe vide (sa migration pas encore appliquée) : le refus est journalisé sans nom, et la suivante se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-0': VIDE } })
+        m.sensibles.push(NOM_VIDE)
+        m.pannes.push({
+          table: 'pieces_jointes_ecartees', operation: 'upsert', fois: 1,
+          erreur: { code: '23514', message: 'new row for relation "pieces_jointes_ecartees" violates check constraint "pieces_jointes_ecartees_octets"' },
+        })
+      },
+      requete: requeteWebhook(evenementRecu({ fichiers: [{ nom: NOM_VIDE, type: 'application/pdf' }, { nom: 'facture-1.png', type: 'image/png' }] })),
+      attendu: {
+        statut: 200, depenses: [...ecartee('pj-0'), ...deposee('pj-1')],
+        verifier: (_r, m) => [
+          ...journalise(m, /pièce jointe écartée NON consignée \(vide, 0 octets\) : new row for relation "pieces_jointes_ecartees" violates check constraint "pieces_jointes_ecartees_octets"/, 'le refus de la trace'),
+          ...ecartsConsignes(m, [], [NOM_VIDE]),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    // LES ÉLÉMENTS DE L'E-MAIL QUI NE SONT PAS DES PIÈCES JOINTES (ligne 22.92) : comptés au journal, une ligne par e-mail
+    // d'un dossier connu, par disposition et famille de type déclaré, sans nom ; jamais lus chez Resend, téléchargés,
+    // déposés ni consignés ; et les pièces jointes traitées comme avant.
+    {
+      nom: 'des éléments intégrés au corps de l’e-mail : comptés au journal sans nom, ni lus ni déposés ; la pièce jointe se dépose comme avant',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine); m.sensibles.push(...NOMS_INTEGRES) },
+      requete: requeteWebhook(evenementRecu({ integres: INTEGRES })),
+      attendu: {
+        statut: 200, depenses: deposee('pj-0'),
+        verifier: (_r, m) => [
+          ...compteAuJournal(m, COMPTE_DES_INTEGRES),
+          ...ecartsConsignes(m, [], NOMS_INTEGRES),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    {
+      nom: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
+      preparer: (m) => { m.sensibles.push(...NOMS_INTEGRES) },
+      requete: requeteWebhook(evenementRecu({ pieces: 0, integres: INTEGRES })),
+      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => compteAuJournal(m, COMPTE_DES_INTEGRES) },
+    },
+    {
+      nom: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
+      requete: requeteWebhook(evenementRecu({ pieces: 0 })),
+      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => compteAuJournal(m, COMPTE_A_ZERO) },
+    },
+    {
+      nom: 'une adresse que nul dossier ne porte, avec des éléments intégrés : rien de compté — le compte est celui d’un dossier connu',
+      preparer: (m) => { m.sensibles.push(...NOMS_INTEGRES) },
+      requete: requeteWebhook(evenementRecu({ a: 'inconnu@precompta.jdarnis.fr', integres: INTEGRES })),
+      attendu: {
+        statut: 200, aucuneDepense: true,
+        verifier: (_r, m) => (m.journaux.some((j) => j.texte.includes('hors pièces jointes')) ? ['un compte au journal pour une adresse inconnue'] : []),
       },
     },
   ],

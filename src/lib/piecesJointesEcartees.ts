@@ -10,7 +10,9 @@ import type { PieceJointeEcartee } from './types'
 // la consigne dans `pieces_jointes_ecartees` — le dossier, l'instant, la raison, le poids, jamais le nom. Depuis la ligne
 // 22.8 (décision du cabinet du 13/10/2026, S227-Q3), elle y consigne aussi celle dont le DÉPÔT A ÉCHOUÉ — Resend ne l'a
 // pas rendue, son téléchargement, la recherche de doublon, le stockage ou l'insertion ont échoué, une exception — : ce
-// n'est pas du fait du client, et son poids est inconnu (null) quand rien n'a été lu. Ce module dit,
+// n'est pas du fait du client, et son poids est inconnu (null) quand rien n'a été lu. Depuis la ligne 22.91 (décision du
+// cabinet du 13/10/2026, S228-Q2), celle qui est ARRIVÉE VIDE (0 octet) : il n'y avait rien à déposer, et le client doit
+// vérifier son fichier avant de la renvoyer. Ce module dit,
 // pour l'onglet Justificatifs : combien, quand, pourquoi, et ce que le cabinet peut faire ; il range les lignes non vues
 // avant les vues, et redit avant le clic les refus de `marquer_pieces_jointes_vues` (migration
 // `pieces_jointes_ecartees`), dans leur ordre et sous leurs mots — `piecesJointesEcartees.test.ts` les confronte au texte
@@ -43,9 +45,13 @@ export function rangerLesEcarts(
  * Pourquoi elle n'a pas été déposée, avec son poids — comme un dépôt refusé se dit (src/lib/bornesStockage.ts) : le
  * format, ou le poids face à la borne, à l'octet quand une décimale les confondrait ; ou le dépôt qui a échoué (ligne
  * 22.8) : lue, son format et son poids allaient, et son poids se dit ; pas lue, rien ne se dit d'elle que son poids
- * inconnu — ni un poids, ni un format. Jamais de nom : la base n'en garde aucun.
+ * inconnu — ni un poids, ni un format ; ou arrivée vide (ligne 22.91), son poids de zéro. Jamais de nom : la base n'en
+ * garde aucun.
  */
 export function phraseDeLaRaison(e: Pick<PieceJointeEcartee, 'raison' | 'octets'>): string {
+  // Le poids d'une pièce jointe arrivée vide est zéro, et la base ne l'admet que d'elle (`pieces_jointes_ecartees_octets`) :
+  // un autre poids, qu'elle refuse, ne se dit pas, et zéro ne s'invente pas non plus.
+  if (e.raison === 'vide') return e.octets === 0 ? `arrivée vide (${poids(0)})` : 'arrivée vide'
   if (e.raison === 'depot') {
     return e.octets === null
       ? 'le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)'
@@ -79,30 +85,42 @@ export function titreDuSignalement(n: number): string {
 /**
  * Ce que le cabinet peut faire des pièces jointes signalées : le client croit les avoir envoyées. Refusée à son format ou
  * à son poids, elle se renvoie autrement ; son dépôt échoué (ligne 22.8), elle se renvoie TELLE QUELLE — ce n'est pas du
- * fait du client. Signalées ensemble, chacune garde sa consigne.
+ * fait du client ; arrivée vide (ligne 22.91), le client VÉRIFIE SON FICHIER avant de la renvoyer — la renvoyer telle
+ * quelle la ferait arriver vide de nouveau. Signalées ensemble, chacune garde sa consigne.
  */
 export function ceQueLeCabinetPeutFaire(lignes: readonly Pick<PieceJointeEcartee, 'raison'>[]): string {
   const echouees = lignes.filter((l) => l.raison === 'depot').length
-  const refusees = lignes.length - echouees
+  const vides = lignes.filter((l) => l.raison === 'vide').length
+  const refusees = lignes.length - echouees - vides
   const borne = poids(TAILLE_MAX_PIECE)
   const ou = 'à l’adresse de collecte du dossier ou dans « Mes pièces »'
-  if (echouees === 0) {
+  if (echouees === 0 && vides === 0) {
     return refusees === 1
       ? `Le client croit l’avoir envoyée : demande-lui de la renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} — ${ou}.`
       : `Le client croit les avoir envoyées : demande-lui de les renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} chacune — ${ou}.`
   }
-  if (refusees === 0) {
+  if (refusees === 0 && vides === 0) {
     return echouees === 1
       ? `Le client croit l’avoir envoyée, et ce n’est pas de son fait si elle n’est pas arrivée : demande-lui de la renvoyer telle quelle — ${ou}.`
       : `Le client croit les avoir envoyées, et ce n’est pas de son fait si elles ne sont pas arrivées : demande-lui de les renvoyer telles quelles — ${ou}.`
   }
-  const autrement = refusees === 1
+  if (refusees === 0 && echouees === 0) {
+    return vides === 1
+      ? `Le client croit l’avoir envoyée, mais elle est arrivée vide : demande-lui de vérifier son fichier (qu’il s’ouvre et ne soit pas vide), puis de la renvoyer — ${ou}.`
+      : `Le client croit les avoir envoyées, mais elles sont arrivées vides : demande-lui de vérifier ses fichiers (qu’ils s’ouvrent et ne soient pas vides), puis de les renvoyer — ${ou}.`
+  }
+  // Mêlées : chacune sa consigne, dans une seule phrase — celles à renvoyer d'abord, puis celles à vérifier.
+  const autrement = refusees === 0 ? null : refusees === 1
     ? `celle refusée à son format ou à son poids en PDF, JPEG, PNG ou CSV, et sous ${borne}`
     : `celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous ${borne} chacune`
-  const telleQuelle = echouees === 1
-    ? 'telle quelle celle dont le dépôt a échoué'
-    : 'telles quelles celles dont le dépôt a échoué'
-  return `Le client croit les avoir envoyées : demande-lui de renvoyer ${autrement}, et ${telleQuelle} (ce n’est pas de son fait) — ${ou}.`
+  const telleQuelle = echouees === 0 ? null : echouees === 1
+    ? 'telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait)'
+    : 'telles quelles celles dont le dépôt a échoué (ce n’est pas de son fait)'
+  const aVerifier = vides === 0 ? null : vides === 1
+    ? 'de vérifier le fichier de celle arrivée vide (qu’il s’ouvre et ne soit pas vide) avant de la renvoyer'
+    : 'de vérifier les fichiers de celles arrivées vides (qu’ils s’ouvrent et ne soient pas vides) avant de les renvoyer'
+  const aRenvoyer = [autrement, telleQuelle].filter((c) => c !== null).join(', et ')
+  return `Le client croit les avoir envoyées : demande-lui ${[`de renvoyer ${aRenvoyer}`, aVerifier].filter((c) => c !== null).join(', et ')} — ${ou}.`
 }
 
 /** Ce que « Marquer comme vue » change, dit à côté du bouton. */

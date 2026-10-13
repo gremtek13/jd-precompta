@@ -122,9 +122,13 @@ async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleS
 // s'écrivent sous la raison `depot`, avec le poids de la pièce jointe s'il a été lu, INCONNU (null) sinon — jamais
 // deviné : la migration `pieces_jointes_ecartees_depot` ne l'admet que pour cette raison. Une pièce jointe déjà au
 // dossier (même empreinte) n'est pas une perte : rien ne s'écrit.
+//
+// LA PIÈCE JOINTE ARRIVÉE VIDE (ligne 22.91 ; décision du cabinet du 13/10/2026, S228-Q2). Une pièce jointe de 0 octet
+// n'était que sautée : elle s'écrit sous la raison `vide`, au poids ZÉRO — la migration `pieces_jointes_ecartees_vide`
+// n'admet zéro que pour elle, et ne l'admet pas d'un autre poids.
 async function noterLaPieceJointeEcartee(
   supabase: ReturnType<typeof createClient>, dossierId: string, emailId: string, pieceJointeId: string,
-  raison: "format" | "taille" | "depot", octets: number | null,
+  raison: "format" | "taille" | "depot" | "vide", octets: number | null,
 ): Promise<void> {
   let erreur: string | null
   try {
@@ -139,6 +143,54 @@ async function noterLaPieceJointeEcartee(
   if (erreur !== null) {
     console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets === null ? "poids inconnu" : `${octets} octets`}) : ${erreur}`)
   }
+}
+
+// LES ÉLÉMENTS DE L'E-MAIL QUI NE SONT PAS DES PIÈCES JOINTES, COMPTÉS AU JOURNAL (ligne 22.92 ; décision du cabinet du
+// 13/10/2026, S228-Q4). Resend range dans `attachments` tout fichier que porte l'e-mail, chacun avec sa disposition et
+// son type DÉCLARÉ (documentation publique de l'événement `email.received` : resend.com/docs/webhooks/emails/received,
+// dont l'exemple porte une image « inline ») ; la boucle de dépôt ne prend que
+// les vraies pièces jointes (`"attachment"`), et les autres partaient sans aucune trace — or un PDF « inline » peut être
+// une facture que le client croit avoir envoyée. Avant de décider, le cabinet veut les COMPTER sur les e-mails réels :
+// leur nombre, par disposition (inline, une autre, aucune) et par famille de type DÉCLARÉ (PDF, image, autre). Ce type
+// n'est ici qu'un compte, jamais une décision de dépôt — celle-ci se prend sur le nom et les octets (bornes des seaux,
+// ligne 22.6). Rien n'est lu chez Resend, téléchargé, déposé ni écrit en base pour eux ; et la ligne ne porte ni leur
+// nom, ni leur identifiant, ni leur disposition ou leur type tels quels — un en-tête MIME peut porter le nom du fichier
+// (`name=`, `filename=`) — : des comptes seulement.
+type DispositionComptee = "inline" | "autre" | "aucune"
+type FamilleComptee = "pdf" | "image" | "autre"
+
+function dispositionComptee(brute: unknown): DispositionComptee {
+  if (brute === undefined || brute === null || brute === "") return "aucune"
+  if (typeof brute !== "string") return "autre"
+  return brute.split(";")[0].trim().toLowerCase() === "inline" ? "inline" : "autre"
+}
+
+function familleComptee(brut: unknown): FamilleComptee {
+  if (typeof brut !== "string") return "autre"
+  const type = brut.split(";")[0].trim().toLowerCase()
+  if (type === "application/pdf") return "pdf"
+  return type.startsWith("image/") ? "image" : "autre"
+}
+
+/** Ce que le journal dit des éléments de `attachments` qui ne sont pas des pièces jointes : des comptes, sans nom. */
+function compteDesElementsIntegres(elements: readonly unknown[]): string {
+  const comptes: Record<DispositionComptee, Record<FamilleComptee, number>> = {
+    inline: { pdf: 0, image: 0, autre: 0 }, autre: { pdf: 0, image: 0, autre: 0 }, aucune: { pdf: 0, image: 0, autre: 0 },
+  }
+  let total = 0
+  for (const element of elements) {
+    const e = (element !== null && typeof element === "object" ? element : {}) as Record<string, unknown>
+    // Le complément EXACT du filtre des pièces jointes : tout ce qui n'est pas `"attachment"`, l'absence comprise.
+    if (e.content_disposition === "attachment") continue
+    comptes[dispositionComptee(e.content_disposition)][familleComptee(e.content_type)] += 1
+    total += 1
+  }
+  const dits = (d: DispositionComptee) => {
+    const c = comptes[d]
+    return `${c.pdf + c.image + c.autre} (PDF ${c.pdf}, image ${c.image}, autre ${c.autre})`
+  }
+  return `${total} élément(s) de l'e-mail hors pièces jointes, non déposé(s) — inline ${dits("inline")} ; `
+    + `autre disposition ${dits("autre")} ; sans disposition ${dits("aucune")}`
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -278,6 +330,9 @@ Deno.serve(async (req: Request) => {
   // Seules les vraies pièces jointes nous intéressent — pas les images intégrées à une signature
   // (logo...), qui arrivent avec content_disposition "inline".
   const fichiers = (attachments ?? []).filter((a) => a.content_disposition === "attachment")
+  // Les autres se COMPTENT, sans nom (ligne 22.92), avant toute pièce jointe : le compte reste au journal même si la
+  // boucle s'arrête en route.
+  console.log(`[receive-email] dossier ${dossier.id} : ${compteDesElementsIntegres(attachments ?? [])}`)
 
   let nbImportees = 0
   for (const fichier of fichiers) {
@@ -303,11 +358,14 @@ Deno.serve(async (req: Request) => {
       }
       const bytes = new Uint8Array(await res.arrayBuffer())
       octets = bytes.byteLength
-      // UNE PIÈCE JOINTE VIDE (0 octet) est sautée, pas écartée : il n'y a rien à déposer, et ni « son format et son
-      // poids allaient » ni « renvoie-la telle quelle » ne seraient vrais d'elle — la dire au cabinet, et sous quelle
-      // raison, est une question au cabinet (S228-Q2). Elle se journalise, sans son nom : elle n'y laissait rien.
+      // UNE PIÈCE JOINTE ARRIVÉE VIDE (0 octet ; ligne 22.91) : il n'y a rien à déposer ni à lire — ni le stockage ni
+      // extract-piece ne la voient —, mais le client croit l'avoir envoyée. Elle se consigne pour le cabinet sous sa
+      // raison, au poids zéro, une fois (la clé de toute pièce jointe écartée), et se journalise sans son nom. Ni « son
+      // format et son poids allaient » ni « renvoie-la telle quelle » ne sont vrais d'elle : l'écran demande au client de
+      // vérifier son fichier.
       if (bytes.byteLength === 0) {
-        console.warn(`Pièce jointe vide (0 octet), sautée : ${fichier.id}`)
+        console.warn(`Pièce jointe écartée, arrivée vide (0 octet) : ${fichier.id}`)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "vide", 0)
         continue
       }
       // LES BORNES DU SEAU DES PIÈCES (ligne 22.6), celles que l'application applique à tout dépôt : le type se décide
