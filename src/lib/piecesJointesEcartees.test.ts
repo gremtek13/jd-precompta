@@ -26,6 +26,12 @@ if (NOMS_DU_DEPOT.length !== 1) {
   throw new Error(`la migration pieces_jointes_ecartees_depot doit être UNE dans l'export : ${NOMS_DU_DEPOT.length} trouvée(s)`)
 }
 const MIGRATION_DEPOT = readFileSync(new URL(NOMS_DU_DEPOT[0], SCHEMA), 'utf8')
+// La quatrième raison et le poids de zéro (ligne 22.91), de même par son nom.
+const NOMS_DU_VIDE = readdirSync(SCHEMA).filter((nom) => /^\d{14}_pieces_jointes_ecartees_vide\.sql$/.test(nom))
+if (NOMS_DU_VIDE.length !== 1) {
+  throw new Error(`la migration pieces_jointes_ecartees_vide doit être UNE dans l'export : ${NOMS_DU_VIDE.length} trouvée(s)`)
+}
+const MIGRATION_VIDE = readFileSync(new URL(NOMS_DU_VIDE[0], SCHEMA), 'utf8')
 const RECEIVE_EMAIL = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
 
 const D = 'd1'
@@ -135,6 +141,60 @@ describe('le dépôt qui a échoué (ligne 22.8) : pas du fait du client, son po
   })
 })
 
+describe('la pièce jointe arrivée vide (ligne 22.91) : son poids de zéro, et la consigne de vérifier son fichier', () => {
+  const NBSP = ' '
+  const ou = 'à l’adresse de collecte du dossier ou dans « Mes pièces »'
+  const vide = (o: Partial<PieceJointeEcartee> = {}) => ecart({ raison: 'vide', octets: 0, ...o })
+  const depot = (o: Partial<PieceJointeEcartee> = {}) => ecart({ raison: 'depot', octets: null, ...o })
+
+  it('« arrivée vide (0 octet) » ; un autre poids, que la base refuse, ne se dit pas, et zéro ne s’invente pas', () => {
+    expect(phraseDeLaRaison({ raison: 'vide', octets: 0 })).toBe(`arrivée vide (0${NBSP}octet)`)
+    expect(phraseDeLaRaison({ raison: 'vide', octets: null })).toBe('arrivée vide')
+    expect(phraseDeLaRaison({ raison: 'vide', octets: 4120 })).toBe('arrivée vide')
+    // Les trois autres raisons, inchangées.
+    expect(phraseDeLaRaison({ raison: 'format', octets: 4120 })).toBe(`format non pris en charge (4${NBSP}Ko)`)
+    expect(phraseDeLaRaison({ raison: 'taille', octets: 27_000_000 })).toBe(`au-delà des 20${NBSP}Mo qu’une pièce peut peser (25,7${NBSP}Mo)`)
+    expect(phraseDeLaRaison({ raison: 'depot', octets: null })).toBe('le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)')
+  })
+
+  it('seule : vérifier son fichier, puis la renvoyer — jamais « telle quelle », ni les formats ni la borne', () => {
+    const une = ceQueLeCabinetPeutFaire([vide()])
+    expect(une).toBe(`Le client croit l’avoir envoyée, mais elle est arrivée vide : demande-lui de vérifier son fichier (qu’il s’ouvre et ne soit pas vide), puis de la renvoyer — ${ou}.`)
+    const deux = ceQueLeCabinetPeutFaire([vide(), vide({ id: 'x2' })])
+    expect(deux).toBe(`Le client croit les avoir envoyées, mais elles sont arrivées vides : demande-lui de vérifier ses fichiers (qu’ils s’ouvrent et ne soient pas vides), puis de les renvoyer — ${ou}.`)
+    for (const c of [une, deux]) expect(c).not.toMatch(/telles? quelles?|PDF|Mo|de son fait/)
+  })
+
+  it('mêlée aux autres raisons : chacune sa consigne, celles à renvoyer d’abord, puis celles à vérifier', () => {
+    expect(ceQueLeCabinetPeutFaire([ecart(), vide()])).toBe(
+      `Le client croit les avoir envoyées : demande-lui de renvoyer celle refusée à son format ou à son poids en PDF, JPEG, PNG ou CSV, et sous 20${NBSP}Mo, `
+      + `et de vérifier le fichier de celle arrivée vide (qu’il s’ouvre et ne soit pas vide) avant de la renvoyer — ${ou}.`)
+    expect(ceQueLeCabinetPeutFaire([depot(), vide(), vide({ id: 'x2' })])).toBe(
+      'Le client croit les avoir envoyées : demande-lui de renvoyer telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait), '
+      + `et de vérifier les fichiers de celles arrivées vides (qu’ils s’ouvrent et ne soient pas vides) avant de les renvoyer — ${ou}.`)
+    expect(ceQueLeCabinetPeutFaire([ecart(), ecart({ raison: 'taille', octets: TAILLE_MAX_PIECE + 1 }), depot(), vide()])).toBe(
+      `Le client croit les avoir envoyées : demande-lui de renvoyer celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous 20${NBSP}Mo chacune, `
+      + 'et telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait), '
+      + `et de vérifier le fichier de celle arrivée vide (qu’il s’ouvre et ne soit pas vide) avant de la renvoyer — ${ou}.`)
+    // Sans pièce jointe vide, la phrase d'avant, au caractère près.
+    expect(ceQueLeCabinetPeutFaire([ecart(), depot()])).toBe(
+      `Le client croit les avoir envoyées : demande-lui de renvoyer celle refusée à son format ou à son poids en PDF, JPEG, PNG ou CSV, et sous 20${NBSP}Mo, `
+      + `et telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait) — ${ou}.`)
+  })
+
+  it('comptée dans le titre, rangée et dite dans l’historique comme les autres', () => {
+    expect(titreDuSignalement([vide(), ecart({ id: 'x2' })].length)).toBe('2 pièces jointes reçues par e-mail n’ont pas été déposées')
+    expect(phraseDeLaLigneVue(vide({ vue_le: '2026-10-13T07:00:00+00:00', vue_par: 'u1' })))
+      .toBe(`le 12/10/2026 à 14 h 03 — arrivée vide (0${NBSP}octet) ; vue le 13/10/2026`)
+    const { aSignaler, dejaVues } = rangerLesEcarts(D, [
+      ecart({ id: 'f' }), vide({ id: 'v', recue_le: '2026-10-13T06:00:00+00:00' }),
+      vide({ id: 'v-vue', vue_le: '2026-10-13T07:00:00+00:00', vue_par: 'u1' }),
+    ])
+    expect(aSignaler.map((e) => e.id)).toEqual(['v', 'f'])
+    expect(dejaVues.map((e) => e.id)).toEqual(['v-vue'])
+  })
+})
+
 describe('les refus de « Marquer comme vue », dits avant le clic', () => {
   it('rien ne se marque avant la lecture, ni sur une lecture partielle', () => {
     expect(refusDeMarquerVues({ dossierId: D, lecture: null, ids: ['x1'] })).toBe(SANS_LISTE_EN_COURS)
@@ -166,29 +226,43 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     expect(RECEIVE_EMAIL).toContain('.from("pieces_jointes_ecartees")')
   })
 
-  it('les trois raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8', () => {
+  it('les quatre raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8, puis par celle de 22.91', () => {
     expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille'\)\)/)
     expect(MIGRATION_DEPOT).toMatch(/drop constraint pieces_jointes_ecartees_raison;/)
-    const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_DEPOT)
+    expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot'\)\)/)
+    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_raison;/)
+    const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_VIDE)
     const raisonsDeLaBase = [...(enVigueur?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
-    expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot'])
+    expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot', 'vide'])
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
     expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase].sort())
-    for (const r of raisonsDeLaBase) expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: TAILLE_MAX_PIECE + 1024 })).not.toBe('')
+    // Chaque raison de la base a sa phrase, et une consigne à elle.
+    for (const r of raisonsDeLaBase) {
+      expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: r === 'vide' ? 0 : TAILLE_MAX_PIECE + 1024 })).not.toBe('')
+    }
+    const consignes = raisonsDeLaBase.map((r) => ceQueLeCabinetPeutFaire([{ raison: r as PieceJointeEcartee['raison'] }]))
+    expect(new Set(consignes.slice(0, 2)).size).toBe(1)
+    expect(new Set(consignes.slice(1)).size).toBe(3)
   })
 
-  it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après', () => {
+  it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après ; zéro pour la vide', () => {
     // La base : le poids admis inconnu pour la raison `depot` seule, zéro refusé partout (la contrainte de 22.7 tient).
     expect(MIGRATION_DEPOT).toMatch(/alter column octets drop not null;/)
     expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_poids_connu check \(octets is not null or raison = 'depot'\);/)
     expect(MIGRATION_DEPOT).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_octets\b/)
     expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_octets check \(octets > 0\)/)
-    // La fonction : chaque appel, dans l'ordre du fichier — deux pertes avant toute lecture, au poids inconnu ; le format
-    // et la taille, au poids téléchargé ; quatre pertes après la lecture, au poids lu (l'exception aussi : inconnu si
-    // elle est venue avant).
+    // Puis (ligne 22.91) la règle du poids, raison par raison, sous le même nom : zéro pour la vide et pour elle seule ; la
+    // contrainte du poids connu n'est pas touchée — le null reste réservé au dépôt échoué.
+    expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_octets;/)
+    expect(MIGRATION_VIDE).toMatch(
+      /add constraint pieces_jointes_ecartees_octets check \(case when raison = 'vide' then octets = 0 else octets > 0 end\);/)
+    expect(MIGRATION_VIDE).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_poids_connu\b/)
+    // La fonction : chaque appel, dans l'ordre du fichier — deux pertes avant toute lecture, au poids inconnu ; la vide, au
+    // poids zéro, sitôt téléchargée ; le format et la taille, au poids téléchargé ; quatre pertes après la lecture, au
+    // poids lu (l'exception aussi : inconnu si elle est venue avant).
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
     expect(appels.map((m) => `${m[1]}:${m[2]}`)).toEqual([
-      'depot:null', 'depot:null', 'format:bytes.byteLength', 'taille:bytes.byteLength',
+      'depot:null', 'depot:null', 'vide:0', 'format:bytes.byteLength', 'taille:bytes.byteLength',
       'depot:octets', 'depot:octets', 'depot:octets', 'depot:octets',
     ])
     const lu = RECEIVE_EMAIL.indexOf('      octets = bytes.byteLength\n')

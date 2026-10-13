@@ -196,6 +196,44 @@ describe('le dépôt qui a échoué (ligne 22.8) : dit, compté, son poids quand
   })
 })
 
+describe('la pièce jointe arrivée vide (ligne 22.91) : dite, comptée, et la consigne de vérifier son fichier', () => {
+  const VIDE = () => ecart({ id: 'x6', raison: 'vide', octets: 0, empreinte: 'f'.repeat(64), recue_le: '2026-10-12T16:45:00+00:00' })
+  const PERDUE = () => ecart({ id: 'x4', raison: 'depot', octets: null, empreinte: 'd'.repeat(64), recue_le: '2026-10-12T15:30:00+00:00' })
+
+  it('mêlée aux trois autres raisons : chacune sa phrase, le titre les compte toutes, chacune sa consigne, et la marque les prend toutes', async () => {
+    faux.lignes = [ecart(), LOURDE(), PERDUE(), VIDE(), VUE()]
+    const vue = await monter()
+    const section = screen.getByRole('region', { name: 'Pièces jointes écartées à la réception par e-mail' })
+    expect(section.querySelector('h3')?.textContent).toBe('4 pièces jointes reçues par e-mail n’ont pas été déposées')
+    const items = [...section.querySelectorAll('.pieces-jointes-ecartees-liste li')].map((li) => li.textContent)
+    expect(items).toEqual([
+      'le 12/10/2026 à 18 h 45 — arrivée vide (0 octet)',
+      'le 12/10/2026 à 17 h 30 — le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)',
+      'le 12/10/2026 à 14 h 03 — format non pris en charge (4 Ko)',
+      'le 11/10/2026 à 10 h 00 — au-delà des 20 Mo qu’une pièce peut peser (25,7 Mo)',
+    ])
+    // `texte` ramène les blancs, insécables compris, à une espace.
+    expect(texte(vue)).toContain('demande-lui de renvoyer celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous 20 Mo chacune, '
+      + 'et telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait), '
+      + 'et de vérifier le fichier de celle arrivée vide (qu’il s’ouvre et ne soit pas vide) avant de la renvoyer — à l’adresse de collecte du dossier ou dans « Mes pièces ».')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Marquer comme vues' })) })
+    await laisser()
+    expect(faux.rpcs.map((r) => r.args.p_ids)).toEqual([['x6', 'x4', 'x1', 'x2']])
+    expect(document.querySelector('details summary')?.textContent).toBe('5 pièces jointes écartées déjà vues')
+    expect(document.querySelector('details')?.textContent).toContain('arrivée vide (0 octet) ; vue le 13/10/2026')
+  })
+
+  it('seule : la consigne de vérifier son fichier, au singulier — ni « telle quelle », ni les formats, ni la borne', async () => {
+    faux.lignes = [VIDE()]
+    const vue = await monter()
+    expect(screen.getByRole('heading').textContent).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')
+    expect(vue.container.querySelector('.pieces-jointes-ecartees-liste li')?.textContent).toBe('le 12/10/2026 à 18 h 45 — arrivée vide (0 octet)')
+    expect(texte(vue)).toContain('Le client croit l’avoir envoyée, mais elle est arrivée vide : demande-lui de vérifier son fichier (qu’il s’ouvre et ne soit pas vide), puis de la renvoyer')
+    expect(texte(vue)).not.toMatch(/telle quelle|PDF, JPEG, PNG ou CSV|de son fait/)
+    expect(screen.getByRole('button', { name: 'Marquer comme vue' })).toBeTruthy()
+  })
+})
+
 describe('lue en partie, refusée ou levée : le bandeau, sans compte ni geste', () => {
   it('partielle', async () => {
     faux.muetApres = 1

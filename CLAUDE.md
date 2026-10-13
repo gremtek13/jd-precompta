@@ -102,7 +102,8 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
     et à `receive-email`, qui présente la clé secrète dans l'en-tête `apikey`.
   - `receive-email` (webhook Resend, par dossier) : une pièce jointe hors des bornes d'une pièce (format, poids) y est
     écartée et consignée dans `pieces_jointes_ecartees`, une fois (l'empreinte des identifiants Resend), sans nom, comme
-    celle qu'elle perd en chemin (« le dépôt a échoué », ligne 22.8) ;
+    celle qu'elle perd en chemin (« le dépôt a échoué », ligne 22.8) et celle qui arrive vide (ligne 22.91) ; les autres
+    éléments de l'e-mail (« inline »…) ne se déposent pas : une ligne de journal les compte, sans nom (ligne 22.92) ;
     `send-email` (facture : le cabinet et le client « Ventes », trente e-mails par dossier et par jour de Paris pour un
     client, comptés avant Resend ; relance : le cabinet seul ; domaine `precompta.jdarnis.fr`).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; `superpdp-emit` transmet le CII de
@@ -507,8 +508,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   (26/09/2026) ; la fiche « fournisseur établi hors de France » d'un achat : voir, saisir une version, retirer, avec ses
   propositions (e-reporting, e3, 10/10/2026) ; les bornes du stockage — format et taille jugés avant tout
   dépôt et posés en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026) ; la pièce
-  jointe que la réception par e-mail écarte (format, poids) ou n'a pas pu déposer (ligne 22.8, 13/10/2026), dite au
-  cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026).
+  jointe que la réception par e-mail écarte (format, poids), n'a pas pu déposer (ligne 22.8) ou reçoit vide (ligne
+  22.91), dite au cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -586,11 +587,17 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   seulement s'ils font du bruit et si le cabinet la choisit (Q5). « Le dépôt a échoué » (Q3, ligne 22.8), le
   13/10/2026 : la troisième raison, en base (`pieces_jointes_ecartees_depot`, sur l'accord du cabinet, S228-Q1), dans
   `receive-email` et à l'écran ; un rejeu qui réussit après un dépôt échoué ne change rien, le cabinet marque l'alerte
-  vue (S228-Q3). Restent trois étapes : la pièce jointe vide, dite sous une quatrième raison, « vide » (S228-Q2) ; les
-  images intégrées au corps d'un e-mail, comptées d'abord au journal, sans nom, puis décidées (S228-Q4) ; le dire au
-  client dans « Mes pièces », la lecture qui lui serait ouverte présentée au cabinet avant d'être appliquée (Q6, ligne
-  22.9) → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME
-  RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
+  vue (S228-Q3). La pièce jointe arrivée vide, sous une quatrième raison, « vide » (S228-Q2, ligne 22.91 ; en base sur
+  l'accord du cabinet, S229-Q1), et les éléments de l'e-mail qui ne sont pas des pièces jointes, comptés au journal sans
+  nom pour chaque e-mail d'un dossier connu, même à zéro (S228-Q4, S229-Q2, ligne 22.92), le 13/10/2026. Restent la
+  décision sur ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune de ses
+  reprises pendant un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans nom
+  seulement si une décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces
+  jointes se normalise dans une étape à part (S229-Q4) —, et le dire au client dans « Mes pièces », la lecture qui lui
+  serait ouverte présentée au cabinet avant d'être appliquée, la phrase de l'onglet Accès sur la collecte complétée du
+  dépôt échoué et de la pièce jointe vide (Q6, S229-Q5, ligne 22.9) → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR
+  E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE :
+  LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -874,12 +881,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `marquageEnCours` relâché après la relecture. Toute autre perte — Resend ne la rend pas, son téléchargement, la
   recherche de doublon, le stockage ou l'insertion échouent, une exception — s'écrit sous la raison `depot` (ligne
   22.8), au poids lu, ou INCONNU (null) quand rien n'a été lu : la base n'admet le poids inconnu que pour elle
-  (`pieces_jointes_ecartees_poids_connu`) et refuse zéro partout ; un doublon n'est pas une perte ; une pièce jointe
-  vide reste sautée, journalisée sans nom, jusqu'à sa raison « vide » (S228-Q2). Le journal ne porte ni le détail d'un
-  refus de PostgREST (il recopie la ligne : nom du fichier, tiers, montants) ni le chemin d'un orphelin. L'écran dit
-  qu'un dépôt échoué n'est pas du fait du client, son poids s'il est connu — rien d'inventé sinon —, et de le renvoyer
-  tel quel → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA
-  TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
+  (`pieces_jointes_ecartees_poids_connu`) ; un doublon n'est pas une perte. Une pièce jointe ARRIVÉE VIDE s'écrit sous
+  la raison `vide`, au poids zéro, que la base n'admet que d'elle (`pieces_jointes_ecartees_octets`, raison par raison,
+  ligne 22.91), sans être ni déposée ni lue. Le journal ne porte ni le détail d'un refus de PostgREST (il recopie la
+  ligne : nom du fichier, tiers, montants) ni le chemin d'un orphelin ; il COMPTE, une ligne par e-mail d'un dossier
+  connu, les éléments de `attachments` qui ne sont pas des pièces jointes (disposition autre qu'`attachment`, absente
+  comprise), par disposition et famille de type DÉCLARÉ — un compte, jamais une décision de dépôt —, sans nom, sans
+  identifiant, sans disposition ni type recopiés (ligne 22.92). L'écran dit qu'un dépôt échoué n'est pas du fait du
+  client, son poids s'il est connu — rien d'inventé sinon —, et de le renvoyer tel quel ; d'une pièce jointe arrivée
+  vide, que le client vérifie son fichier avant de la renvoyer → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL
+  SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
+  QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
 - **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
@@ -1487,7 +1499,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 375 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 404 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

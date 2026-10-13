@@ -23079,9 +23079,9 @@ celui que l'agent a mesuré (0 débordement à la reprise, passes du client comp
 ### 13/10/2026 — « LE DÉPÔT A ÉCHOUÉ » : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE — LIGNE 22.8
 
 (La migration `pieces_jointes_ecartees_depot`, appliquée le 13/10/2026 sous la version `20261013103407`, AVANT la
-fusion ; `receive-email` se redéploie APRÈS la mise en ligne de l'application. Préparée par l'agent S228a sur `08e457a`,
-intégrée sur `08e457a`. Fichiers : `supabase/schema/20261013103407_pieces_jointes_ecartees_depot.sql` (nouveau),
-`supabase/functions/receive-email/index.ts`, `supabase/essais/piecesJointesEcartees.sql`,
+fusion ; `receive-email` redéployée en version 14 APRÈS la mise en ligne de l'application. Préparée par l'agent S228a
+sur `08e457a`, intégrée sur `08e457a`. Fichiers : `supabase/schema/20261013103407_pieces_jointes_ecartees_depot.sql`
+(nouveau), `supabase/functions/receive-email/index.ts`, `supabase/essais/piecesJointesEcartees.sql`,
 `lib/piecesJointesEcartees.ts`, `pages/dossier/PiecesJointesEcartees.tsx`, `lib/types.ts`, leurs tests,
 `src/test/contratsFonctions.ts` et `edgeFunctionsHttp.test.ts` (les contrats et les défauts plantés), `RGPD.md`, le
 README du schéma, `outils/captures/fauxSupabase.ts`.)
@@ -23168,3 +23168,137 @@ se dira sous une quatrième raison, « vide » — arrivée vide, demander au cl
 à part (S228-Q2) ; un rejeu qui réussit après un dépôt échoué ne change rien, le cabinet marque l'alerte vue (S228-Q3 :
 rien à écrire) ; les images intégrées au corps d'un e-mail se comptent d'abord au journal, sans nom, puis se décident,
 dans une étape à part (S228-Q4). Reste aussi le dire au client dans « Mes pièces » (S227-Q6, ligne 22.9).
+
+**LA MISE EN LIGNE ET LE REDÉPLOIEMENT, LE 13/10/2026.** Fusionnée par #158 (`ef9008f`) quand `verifier` a été vert sur
+ses deux passes ; le site sert `index-DQ3C3ote.js`, le paquet de la barrière (déploiement 38387592548). PUIS SEULEMENT
+`receive-email` redéployée en version 14, `verify_jwt` faux comme `config.toml` et la version 13 : la version 13 en
+place égale au dépôt d'avant (aller-retour, 0 différence sur 401 lignes), lue avant l'écrasement ; le texte ENVOYÉ, relu
+dans le journal de la session, égal au dépôt (438 lignes, 24 455 caractères) ; l'aller-retour, 0 différence sur 438
+lignes ; un POST sans signature rend 400 « En-têtes de signature manquants », un GET 405 : c'est la fonction qui répond.
+Aucun e-mail réel envoyé ni reçu par la session. La feuille de route : la ligne 22.8 à « Fait », les lignes 22.91 (la
+pièce jointe vide) et 22.92 (les images intégrées) créées, les barres recomptées (134 chantiers livrés sur 180, 74 % ;
+pour un dossier BNC, 134 sur 167, 80 %).
+
+### 13/10/2026 — ARRIVÉE VIDE : LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE, ET LES ÉLÉMENTS INTÉGRÉS COMPTÉS AU JOURNAL — LIGNES 22.91 ET 22.92
+
+(La migration `pieces_jointes_ecartees_vide`, préparée sous la version PROVISOIRE `20261013230000`, appliquée sur
+l'accord du cabinet (S229-Q1) AVANT la fusion, sous la version `20261013121915` ; `receive-email` se redéploie APRÈS la
+mise en ligne de l'application. Préparée par l'agent S229 sur `ef9008f`. Fichiers :
+`supabase/schema/20261013121915_pieces_jointes_ecartees_vide.sql` (nouveau),
+`supabase/functions/receive-email/index.ts`, `supabase/essais/piecesJointesEcartees.sql`,
+`lib/piecesJointesEcartees.ts`, `pages/dossier/PiecesJointesEcartees.tsx` (un commentaire), `lib/types.ts`, leurs tests,
+`src/test/contratsFonctions.ts` et `edgeFunctionsHttp.test.ts` (les contrats et les défauts plantés),
+`bornesDesPiecesCopie.test.ts` (le garde du type déclaré, resserré), `RGPD.md`, le README du schéma,
+`outils/captures/fauxSupabase.ts` — ces quatre derniers et `types.ts` partagés, modifiés par ajout.)
+
+**LE CONSTAT.** Deux pertes restaient muettes dans `receive-email` après la ligne 22.8. Une pièce jointe de 0 octet
+était SAUTÉE : seul le journal le disait, un temps. Et les éléments de `attachments` dont la disposition n'est pas
+`attachment` — une image intégrée au corps, un logo de signature, mais aussi, peut-être, un PDF « inline » que le client
+croit avoir envoyé — partaient sans aucune trace. Décisions du cabinet du 13/10/2026 (« oui pour tout ») : la pièce
+jointe vide se dit au cabinet sous une quatrième raison, « vide » — arrivée vide, demander au client de vérifier son
+fichier (S228-Q2, ligne 22.91) ; les éléments intégrés se COMPTENT d'abord au journal, sans nom, puis le cabinet décide
+sur les comptes réels (S228-Q4, ligne 22.92).
+
+**LA BASE (22.91).** La raison `vide` s'ajoute (la contrainte `pieces_jointes_ecartees_raison` remplacée sous le même
+nom). Son poids est CONNU, zéro, et zéro n'est admis que pour elle : la contrainte `pieces_jointes_ecartees_octets`
+(plus de zéro) est remplacée sous le même nom par sa règle raison par raison, `case when raison = 'vide' then octets = 0
+else octets > 0 end` — un poids positif ou négatif refusé à une pièce jointe vide, zéro refusé au format, à la taille et
+au dépôt échoué. Le null reste réservé au dépôt échoué par `pieces_jointes_ecartees_poids_connu`, INCHANGÉE (le `case`
+laisse passer un null, comme toute contrainte CHECK : c'est elle qui le refuse à la vide). Écartées : `octets > 0 or
+raison = 'vide'`, qui laisse passer un poids positif pour la vide — une mutation de l'essai la fait tomber ; une seconde
+contrainte à côté de la première, deux règles du poids là où une suffit, et un objet de plus à l'inventaire ; `octets >=
+0` partout. La garde (`is distinct from` sur toutes les colonnes reçues), `marquer_pieces_jointes_vues` (qui ne lit ni
+la raison ni le poids), les policies, les droits et la clé d'idempotence ne changent pas : `signature.sql` ne voit
+bouger que la famille des contraintes (586, deux définitions). Destructive au sens des règles du dépôt — deux `drop
+constraint`, chacune reposée aussitôt sous son nom —, sans perte : la table est vide en production, et toute ligne
+valable avant le reste après. Le retour arrière, donné à part, verrouille la table, refuse tant qu'une ligne `vide`
+existe en en disant le nombre, ne la supprime jamais, et rend aussi les commentaires d'avant.
+
+**LA FONCTION.** (22.91) Une pièce jointe de 0 octet s'écrit sous la raison `vide`, au poids zéro, par
+`noterLaPieceJointeEcartee`, une fois (la même clé que toute pièce jointe écartée), journalisée sans nom (« Pièce jointe
+écartée, arrivée vide (0 octet) : » et l'identifiant Resend de la pièce jointe, comme les autres raisons) ; ni le
+stockage ni extract-piece ne la voient. (22.92) Pour chaque e-mail d'un dossier connu, AVANT la boucle des pièces
+jointes (le compte reste au journal si elle s'arrête en route), une ligne compte les éléments de `attachments` qui ne
+sont pas des pièces jointes — le complément EXACT du filtre, `content_disposition !== "attachment"`, l'absence comprise
+—, croisés par disposition (inline, une autre, aucune) et par famille de type DÉCLARÉ (PDF, image, autre) :
+« [receive-email] dossier <uuid> : 6 élément(s) de l'e-mail hors pièces jointes, non déposé(s) — inline 3 (PDF 1, image
+2, autre 0) ; autre disposition 1 (PDF 1, image 0, autre 0) ; sans disposition 2 (PDF 0, image 0, autre 2) ». La
+disposition et le type se lisent en minuscules, avant le premier `;`, et ne se recopient JAMAIS : un en-tête MIME peut
+porter le nom du fichier (`name=`, `filename=`). Le type déclaré n'y est qu'un compte, jamais une décision de dépôt (les
+bornes des seaux, ligne 22.6). Rien n'est lu chez Resend, téléchargé, déposé ni écrit en base pour eux, et le traitement
+des pièces jointes ne change pas ; la ligne de bilan qui porte l'objet de l'e-mail (défaut connu, décision du cabinet)
+reste telle quelle — la nouvelle ne porte ni objet, ni expéditeur, ni identifiant d'e-mail ou d'élément. Les champs sont
+ceux de la documentation publique de Resend, événement `email.received` (`id`, `filename`, `content_type`,
+`content_disposition`, `content_id` ; l'exemple porte une image « inline »). Une adresse que nul dossier ne porte ne
+compte rien. Le garde de la ligne 22.6 (`bornesDesPiecesCopie.test.ts`) interdisait le type déclaré partout hors du bloc
+copié : il l'admet désormais dans le seul corps de `compteDesElementsIntegres`, appelé une fois, dans la ligne de
+journal — lu pour un dépôt, tiré hors du journal ou appelé deux fois, il se voit (trois défauts plantés).
+
+**L'ÉCRAN.** « arrivée vide (0 octet) » ; un autre poids, que la base refuse, ne se dit pas, et zéro ne s'invente pas.
+La consigne : seule, « Le client croit l'avoir envoyée, mais elle est arrivée vide : demande-lui de vérifier son fichier
+(qu'il s'ouvre et ne soit pas vide), puis de la renvoyer — à l'adresse de collecte du dossier ou dans « Mes pièces ». »
+(et son pluriel) — jamais « telle quelle », qui la ferait arriver vide de nouveau ; mêlée aux autres raisons, une
+phrase, celles à renvoyer d'abord puis celles à vérifier (« … et de vérifier le fichier de celle arrivée vide (…) avant
+de la renvoyer ») ; sans pièce jointe vide, les phrases d'avant au caractère près. Le titre les compte toutes ; la
+marque « vue » les prend toutes ; l'historique la dit.
+
+**CE QUI A ÉTÉ MESURÉ.** Réplique (grappe 54331) : `s229_base` et `s229_semee`, copies de `s228a_migree` et
+`s228a_semee_migree`, la ligne d'historique de 22.8 portée à sa version réelle — égales à la production du 13/10/2026
+sur les neuf familles de `signature.sql` et sur l'historique (129, `a33646ec…`). L'essai étendu (57 verdicts : 6 étendu,
+7 reformulé, 7c, 33c, 36c, 37c, 48 et 49 neufs) : sans la migration, exactement 6, 7c, 33c, 36c, 37c et 49 en faute ;
+avec elle, 0, vide et semée ; sans elle ni celle de 22.8, les 12 que l'en-tête de l'essai nomme. La copie sans
+commentaires (60 892 caractères, `291560dc…`), jouée d'un seul tenant sur la réplique migrée : 57, 0, la ligne 0 rendant
+le texte au caractère près. Mutations de la migration : 16 sur 16 vues. Retour arrière : refus nommé et rien de changé
+avec une ligne `vide` ; passé sans elle, signature égale à la production d'avant, commentaires d'avant. `rls.sql` non
+rejoué : aucune policy, fonction, droit ni déclencheur touché. `restauration.sql`, le dossier `test` portant une ligne
+de chaque raison dont deux vides (l'une marquée vue) : 134 clés, 70 tables IDENTIQUES, 0 écart. Contrôles de l'export :
+dérive 130 = 130 (`adf8d494…`, version provisoire), socle 78 inchangé, inventaire 1 897 inchangé (`a33f2032…`). Bloc « à
+coller » éprouvé. Contrats HTTP : un scénario refait (la vide), sept neufs ; quinze défauts plantés neufs et une ancre
+de S228a remise à jour, tous vus (receive-email : 77 tests). Mutations du code : 27 sur 27 (16 de receive-email jugées
+par ses contrats seuls). Barrière : `tsc -b` 0 ; Edge 25 erreurs, les mêmes qu'à la base ; lint 63 avertissements, les
+mêmes ; quatre fuseaux, 15 fichiers, 1 059 tests ; suite entière (Paris) 343 fichiers, 10 404 tests ; construction verte
+(`index-BQ0AnL3T.js`). Banc (port 5329) : neuf passes, 0 débordement, polices 0 ; captures claire et téléphone de
+Justificatifs relues (la carte mêlant les quatre raisons). Correctif : 14 fichiers, `git apply --check` vert contre
+`ef9008f`.
+
+**L'ORDRE DE MISE EN LIGNE.** La migration d'abord (avant la fusion, sur l'accord du cabinet) ; puis la fusion et
+l'application en ligne ; puis SEULEMENT le redéploiement de `receive-email` (`verify_jwt` faux) : l'application d'avant
+dirait une ligne `vide` « au-delà des 20 Mo qu'une pièce peut peser (0 octet) », et la compterait parmi les refusées.
+Déployée avant la migration par erreur, la fonction ne perdrait rien de plus qu'aujourd'hui : la trace d'une vide,
+refusée par la contrainte, se journalise « NON consignée », et la pièce jointe suivante se traite (un scénario des
+contrats).
+
+**LES QUESTIONS AU CABINET.** S229-Q1, l'accord sur la migration (deux `drop constraint` reposées sous leur nom, aucune
+donnée retirée ; recommandé : oui). S229-Q2, la ligne du compte écrite pour chaque e-mail d'un dossier connu, même à
+zéro — le dénominateur des comptes réels (recommandé : oui ; sinon, seulement quand le compte n'est pas nul). S229-Q3,
+la durée des comptes : le plan gratuit ne garde les journaux qu'un jour (page des tarifs de Supabase, « Log retention
+(API & Database) » : Free 1 day, Pro 7 days) — recommandé : que la session les relève à chacune de ses reprises pendant
+un mois d'observation, puis, seulement si une décision demande plus de recul, une étape à part qui écrit les comptes en
+base, sans nom. S229-Q4, « autre disposition » peut cacher de vraies pièces jointes que le filtre strict (`===
+"attachment"`) écarte — une casse (`Attachment`), un paramètre (`attachment; filename=…`) — : recommandé, si ce compte
+n'est pas nul sur les e-mails réels, normaliser le filtre dans une étape à part. S229-Q5, la phrase de l'onglet Accès
+sur la collecte (« une autre est écartée, et l'onglet Justificatifs le dit ») ne nomme ni le dépôt échoué ni la pièce
+jointe vide : recommandé, la compléter avec l'étape 22.9.
+
+**LES RÉPONSES DU CABINET, LE 13/10/2026 (« comme recommandé »).** S229-Q1 : oui — la migration est appliquée
+(ci-dessous). S229-Q2 : oui — la ligne du compte s'écrit pour chaque e-mail d'un dossier connu, même à zéro ; c'est ce
+que fait la fonction. S229-Q3 : rien de plus pour l'instant ; au premier client réel, la session relève les comptes à
+chacune de ses reprises pendant un mois (`query_logs`, motif « hors pièces jointes ») ; une table des comptes, sans nom,
+seulement si une décision demande plus de recul. S229-Q4 : si « autre disposition » n'est pas nul sur les e-mails réels,
+le filtre des pièces jointes se normalise dans une étape à part. S229-Q5 : la phrase de l'onglet Accès sur la collecte
+se complète avec l'étape 22.9.
+
+**L'INTÉGRATION ET LA BASE EN PRODUCTION, LE 13/10/2026.** Le correctif relu, appliqué sur `ef9008f` (14 fichiers). La
+migration appliquée par la session (`apply_migration`), sans confirmation demandée, sous la version `20261013121915` :
+sa ligne d'historique rend l'empreinte du fichier (`3e879990…`, fins de ligne ramenées à `\n`), 130 migrations ; le
+fichier renommé à cette version, texte inchangé. En production : l'essai sans ses lignes de commentaire
+(60 892 caractères, `291560dc…`, reçus tels quels — la ligne 0 le rend), 57 verdicts, 0 en faute, mutations comprises,
+rien n'est resté en base ; `signature.sql`, seules les contraintes ont changé (586, `8b1d3543…`), les huit autres
+familles égales à celles d'avant ; dérive 130 = 130 (`cd7850e3…`), socle 78 (`91ae95ec…`) et inventaire 1 897
+(`a33f2032…`) inchangés, égaux des deux côtés ; advisors inchangés (5 et 40). Barrière sur l'arbre intégré :
+`tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 404 tests chacun ;
+construction verte (`index-BQ0AnL3T.js`). Le redéploiement de `receive-email`, qui suit la mise en ligne de
+l'application, se consigne au commit suivant.
+
+**RESTE.** La décision sur les éléments intégrés, sur les comptes réels (S229-Q3, Q4) ; le dire au client dans « Mes
+pièces », avec la phrase de l'onglet Accès sur la collecte (ligne 22.9, S229-Q5).

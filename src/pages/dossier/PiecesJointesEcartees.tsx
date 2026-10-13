@@ -13,7 +13,8 @@ import type { PieceJointeEcartee } from '../../lib/types'
 // LES PIÈCES JOINTES ÉCARTÉES À LA RÉCEPTION PAR E-MAIL, DANS L'ONGLET JUSTIFICATIFS (ligne 22.7). C'est là que le cabinet
 // travaille les pièces reçues — celles de l'adresse de collecte y arrivent « à valider » — : c'est donc là qu'il voit
 // celles qui ne sont PAS arrivées, et pourquoi (src/lib/piecesJointesEcartees.ts) : refusées à leur format ou à leur
-// poids, ou leur dépôt échoué (ligne 22.8), qui n'est pas du fait du client. L'onglet Accès, où se lit l'adresse,
+// poids, leur dépôt échoué (ligne 22.8), qui n'est pas du fait du client, ou arrivées vides (ligne 22.91), dont le client
+// doit vérifier le fichier. L'onglet Accès, où se lit l'adresse,
 // ne se visite qu'à la mise en place ; un point de la Vue d'ensemble entraînerait les cycles de la révision et les
 // préalables de la validation, pour un fait qui ne touche aucun compte.
 //

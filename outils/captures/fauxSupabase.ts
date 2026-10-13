@@ -1692,6 +1692,8 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'pje-3', dossier_id: 'd1', recue_le: '2026-09-02T09:10:00Z', raison: 'format', octets: 3_871, empreinte: '3'.repeat(64), vue_le: '2026-09-03T08:00:00Z', vue_par: 'u1' },
     // Puis un dépôt qui a échoué avant toute lecture (ligne 22.8) : sa raison, et aucun poids — rien n'a été lu.
     { id: 'pje-4', dossier_id: 'd1', recue_le: '2026-09-25T10:15:00Z', raison: 'depot', octets: null, empreinte: '4'.repeat(64), vue_le: null, vue_par: null },
+    // Puis une pièce jointe arrivée vide (ligne 22.91) : sa raison, et son poids de zéro.
+    { id: 'pje-5', dossier_id: 'd1', recue_le: '2026-09-25T16:40:00Z', raison: 'vide', octets: 0, empreinte: '5'.repeat(64), vue_le: null, vue_par: null },
   ],
 }
 

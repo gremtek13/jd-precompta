@@ -1,7 +1,8 @@
 -- LES PIÈCES JOINTES ÉCARTÉES À LA RÉCEPTION PAR E-MAIL, ÉPROUVÉES EN BASE (ligne 22.7, migration
--- `pieces_jointes_ecartees` ; ligne 22.8, migration `pieces_jointes_ecartees_depot`) — à rejouer par `execute_sql` après
--- toute migration qui touche `pieces_jointes_ecartees`, ses contraintes, ses policies, sa garde,
--- `marquer_pieces_jointes_vues`, `admin_du_dossier`, `is_super_admin` ou `memberships`.
+-- `pieces_jointes_ecartees` ; ligne 22.8, migration `pieces_jointes_ecartees_depot` ; ligne 22.91, migration
+-- `pieces_jointes_ecartees_vide`) — à rejouer par `execute_sql` après toute migration qui touche
+-- `pieces_jointes_ecartees`, ses contraintes, ses policies, sa garde, `marquer_pieces_jointes_vues`, `admin_du_dossier`,
+-- `is_super_admin` ou `memberships`.
 --
 -- Ce qui se prouve ici, par impersonation — anonyme, compte rattaché à rien, client du dossier, chef du cabinet
 -- (super-administrateur, le seul de la base), et deux profils d'essai : un membre du cabinet affecté à un AUTRE dossier
@@ -25,16 +26,31 @@
 --     poids de zéro se refuse quelle que soit la raison ; receive-email l'écrit une fois, et le rejeu de la même pièce
 --     jointe — lue cette fois — n'écrit rien ; la garde refuse qu'un poids inconnu se pose après coup ou que la raison
 --     change, et la marque « vue » s'y pose (contrôles 6, 7b, 33b, 36b, 37b, 46 et 47) ;
+--   - ARRIVÉE VIDE (ligne 22.91) : la raison `vide` s'admet, au poids ZÉRO — et zéro n'est admis que pour elle : le format,
+--     la taille et le dépôt échoué le refusent ; un poids positif, négatif ou inconnu se refuse pour elle, par la
+--     contrainte du poids ou par celle du poids connu ; receive-email l'écrit une fois, et le rejeu de la même pièce
+--     jointe — la même, ou d'une autre raison — n'écrit rien ; la garde refuse qu'un poids se pose après coup, que la
+--     raison change ou que le poids devienne inconnu, et la marque « vue » s'y pose (contrôles 6, 7c, 33c, 36c, 37c, 48 et
+--     49) ;
 --   - et que RIEN ne reste en base.
 --
--- SANS LA MIGRATION `pieces_jointes_ecartees_depot`, les contrôles 6, 7b, 33b, 36b, 37b, 46 et 47 sont en faute, et eux
--- seuls : la base refuse alors la raison `depot` et tout poids inconnu.
+-- SANS LA MIGRATION `pieces_jointes_ecartees_vide` (celle de 22.8 appliquée), les contrôles 6, 7c, 33c, 36c, 37c et 49 sont
+-- en faute, et eux seuls : la base refuse alors la raison `vide` et tout poids de zéro. SANS NI L'UNE NI L'AUTRE, s'y
+-- ajoutent les contrôles 7b, 33b, 36b, 37b, 46 et 47 : la base refuse aussi la raison `depot` et tout poids inconnu.
 --
 -- ÉPROUVÉ LE 13/10/2026 (ligne 22.8) sur une réplique égale à la production à 128 migrations (neuf familles de
 -- signature.sql, et l'historique), vide et semée : sans la migration, 51 verdicts dont exactement ces 7 en faute ; avec
 -- elle, 51 verdicts, 0 en faute. Treize mutations de la migration — le poids inconnu admis pour le format ou la taille,
 -- la contrainte du poids connu retirée ou écrite `octets > 0 or …` (un null y passe), le null refusé partout, la raison
 -- oubliée, mal écrite ou une de plus, zéro admis, la garde sans le poids, sans la raison ou par `<>` — : 13 vues.
+--
+-- ÉPROUVÉ LE 13/10/2026 (ligne 22.91) sur une réplique égale à la production à 129 migrations (neuf familles de
+-- signature.sql, et l'historique), vide et semée : sans la migration, 57 verdicts dont exactement ces 6 en faute ; avec
+-- elle, 57 verdicts, 0 en faute ; sans elle ni celle de 22.8, 57 verdicts dont les 12 dits plus haut. Seize mutations de
+-- la migration — zéro admis pour le format, la taille ou le dépôt échoué ; un poids positif, négatif ou inconnu admis
+-- pour la vide ; la règle écrite `octets > 0 or raison = 'vide'` ou `raison <> 'vide' or octets = 0` ; son remplacement
+-- oublié, ou la contrainte retirée sans être reposée ; la raison oubliée, mal écrite ou une de plus ; la garde sans le
+-- poids, sans la raison ou par `<>` — : 16 vues.
 --
 -- Chaque contrôle s'annule dans sa sous-transaction (`ANNULATION_ESSAI`, P0001), le verdict étant posé dans une VARIABLE
 -- avant le `raise` — le mécanisme de rls.sql. Les lignes d'essai y sont posées par le propriétaire de la base, sous des
@@ -43,7 +59,7 @@
 -- table. Il ne porte AUCUNE instruction de suppression : aucune policy n'en ouvre (contrôle 2), et ce qu'une suppression
 -- rencontre se joue sur une réplique.
 --
--- LES MUTATIONS (contrôles 40 à 47) rejouent un contrôle avec un profil, une clé, un droit ou une raison délibérément
+-- LES MUTATIONS (contrôles 40 à 49) rejouent un contrôle avec un profil, une clé, un droit ou une raison délibérément
 -- faux : chacune doit MORDRE, sans quoi le contrôle qu'elle vise ne regarde rien.
 do $$
 declare
@@ -55,13 +71,13 @@ declare
   ligne_autre uuid := 'e5a70000-0000-4000-8000-000000000a02';
   ligne_neuve uuid := 'e5a70000-0000-4000-8000-000000000a03';
   inconnue uuid := 'e5a70000-0000-4000-8000-000000000a09';
-  e1 text := repeat('a', 64); e2 text := repeat('b', 64); e3 text := repeat('c', 64);
+  e1 text := repeat('a', 64); e2 text := repeat('b', 64); e3 text := repeat('c', 64); e4 text := repeat('9', 64);
   -- Le refus de la garde, mot pour mot : un refus de la garde se distingue ainsi de celui d'une contrainte, même code.
   refus_garde constant text := 'Une pièce jointe écartée ne change pas : seule sa marque « vue » se pose, une fois.';
 
   dossier_client uuid; dossier_autre uuid; cabinet uuid;
   lignes_avant int; admins_avant int; assignations_avant int;
-  n int; m int; rendu int; vue timestamptz; par uuid; champ text;
+  n int; m int; k int; rendu int; vue timestamptz; par uuid; champ text;
   code_recu text; message text; obs text; verdicts jsonb := '[]'::jsonb;
 begin
   select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client order by mb.dossier_id limit 1;
@@ -127,15 +143,16 @@ begin
   n := null; code_recu := null; message := null;
   begin
     insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values
-      (dossier_client, 'format', 12, e1), (dossier_client, 'taille', 20971521, e2), (dossier_client, 'depot', 12, e3);
+      (dossier_client, 'format', 12, e1), (dossier_client, 'taille', 20971521, e2), (dossier_client, 'depot', 12, e3),
+      (dossier_client, 'vide', 0, e4);
     get diagnostics n = row_count;
     insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'autre', 12, repeat('d', 64));
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '6. la raison est « format », « taille » ou « depot » (le dépôt a échoué), rien d''autre',
+  verdicts := verdicts || jsonb_build_object('controle', '6. la raison est « format », « taille », « depot » (le dépôt a échoué) ou « vide » (arrivée vide), rien d''autre',
     'observe', coalesce(n::text, '?') || ' ligne(s) admise(s), puis ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
-    'ok', coalesce(n = 3 and code_recu = '23514' and message like '%pieces_jointes_ecartees_raison%', false));
+    'ok', coalesce(n = 4 and code_recu = '23514' and message like '%pieces_jointes_ecartees_raison%', false));
 
   code_recu := null; message := null;
   begin
@@ -143,7 +160,7 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '7. un poids de zéro se refuse : une pièce jointe vide n''est pas écartée, elle est sautée',
+  verdicts := verdicts || jsonb_build_object('controle', '7. un poids de zéro se refuse au format : seule une pièce jointe arrivée vide pèse zéro (contrôle 7c)',
     'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     'ok', coalesce(code_recu = '23514' and message like '%pieces_jointes_ecartees_octets%', false));
 
@@ -177,6 +194,34 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '7b. un dépôt échoué admet un poids inconnu (null) ou positif, et lui seul : le format et la taille sans poids se refusent, zéro aussi',
     'observe', coalesce(n::text, '?') || ' ligne(s) « depot » admise(s), puis ' || coalesce(nullif(obs, ''), coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
     'ok', coalesce(n = 2 and obs = 'format:23514:poids_connu taille:23514:poids_connu depot-zero:23514:octets' and code_recu = 'P0001', false));
+
+  -- 7c. Une pièce jointe ARRIVÉE VIDE (ligne 22.91) pèse zéro, et elle seule : zéro s'admet pour elle ; un poids positif ou
+  -- négatif se refuse pour elle par la contrainte du poids, un poids inconnu par celle du poids connu ; zéro se refuse à la
+  -- taille et au dépôt échoué (au format : contrôle 7). Chaque refus est exigé par le NOM de sa contrainte, et chaque
+  -- essai a sa propre empreinte : un essai admis à tort se lit tel, sans gêner le suivant.
+  n := null; obs := ''; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'vide', 0, e1);
+    get diagnostics n = row_count;
+    foreach champ in array array['vide:4120', 'vide:-1', 'vide:null', 'taille:0', 'depot:0'] loop
+      begin
+        insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte)
+          values (dossier_client, split_part(champ, ':', 1), nullif(split_part(champ, ':', 2), 'null')::bigint, md5(champ) || md5(champ));
+        obs := obs || champ || ':passe ';
+      exception when others then
+        obs := obs || champ || ':' || sqlstate || ':'
+          || case when sqlerrm like '%pieces_jointes_ecartees_poids_connu%' then 'poids_connu'
+                  when sqlerrm like '%pieces_jointes_ecartees_octets%' then 'octets' else sqlerrm end || ' ';
+      end;
+    end loop;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '7c. une pièce jointe arrivée vide pèse zéro, et elle seule : zéro admis pour elle ; un poids positif, négatif ou inconnu refusé pour elle ; zéro refusé à la taille et au dépôt échoué',
+    'observe', coalesce(n::text, '?') || ' ligne(s) « vide » admise(s), puis '
+      || coalesce(nullif(rtrim(obs), ''), coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+    'ok', coalesce(n = 1 and rtrim(obs) = 'vide:4120:23514:octets vide:-1:23514:octets vide:null:23514:poids_connu taille:0:23514:octets depot:0:23514:octets'
+      and code_recu = 'P0001', false));
 
   code_recu := null; message := null; n := null;
   begin
@@ -583,6 +628,26 @@ begin
       || ', ligne ' || coalesce(obs, '?') || ', ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     'ok', coalesce(rendu = 1 and vue is not null and par = chef and obs = 'depot:inconnu' and code_recu = 'P0001', false));
 
+  -- 33c. La même marque sur une pièce jointe arrivée vide (ligne 22.91) : la fonction ne lit ni la raison ni le poids.
+  rendu := null; vue := null; par := null; obs := null; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'vide', 0, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    rendu := marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    reset role;
+    select e.vue_le, e.vue_par, e.raison || ':' || coalesce(e.octets::text, 'inconnu') into vue, par, obs
+      from pieces_jointes_ecartees e where e.id = ligne_client;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '33c. le chef marque vue une pièce jointe arrivée vide : la marque se pose, la raison et le poids (zéro) restent tels que reçus',
+    'observe', coalesce(rendu::text, '?') || ' marquée(s), par ' || coalesce(case when par = chef then 'le chef' else par::text end, 'personne')
+      || ', ligne ' || coalesce(obs, '?') || ', ' || coalesce(code_recu, '?')
+      || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+    'ok', coalesce(rendu = 1 and vue is not null and par = chef and obs = 'vide:0' and code_recu = 'P0001', false));
+
   rendu := null; vue := null; par := null;
   begin
     insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte, vue_le, vue_par) values
@@ -697,6 +762,38 @@ begin
     'ok', coalesce(obs = 'octets=4120:garde raison=''format'':garde raison=''format'',octets=4120:garde vue:passe revue:garde'
       and code_recu = 'P0001', false));
 
+  -- 36c. La garde sur une pièce jointe arrivée vide (ligne 22.91) : un poids posé après coup, la raison changée — seule, ou
+  -- avec un poids, ce qui ferait une ligne « format » valable —, le poids rendu inconnu, chacun AVEC une marque valable, se
+  -- refusent par la GARDE (son message, pas celui d'une contrainte) ; la marque seule passe, et ne se repose pas.
+  obs := ''; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'vide', 0, e1);
+    foreach champ in array array['octets = 4120', 'raison = ''depot''', 'raison = ''format'', octets = 4120', 'octets = null'] loop
+      begin
+        execute format('update pieces_jointes_ecartees set %s, vue_le = now(), vue_par = %L where id = %L', champ, chef, ligne_client);
+        obs := obs || replace(champ, ' ', '') || ':passe ';
+      exception when others then
+        obs := obs || replace(champ, ' ', '') || ':' || case when sqlerrm = refus_garde then 'garde' else sqlstate || ' ' || sqlerrm end || ' ';
+      end;
+    end loop;
+    begin
+      update pieces_jointes_ecartees set vue_le = now(), vue_par = chef where id = ligne_client;
+      obs := obs || 'vue:passe ';
+    exception when others then obs := obs || 'vue:' || sqlstate || ' ';
+    end;
+    begin
+      update pieces_jointes_ecartees set vue_le = now() + interval '1 hour' where id = ligne_client;
+      obs := obs || 'revue:passe';
+    exception when others then obs := obs || 'revue:' || case when sqlerrm = refus_garde then 'garde' else sqlstate end;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '36c. la garde sur une pièce jointe arrivée vide : ni poids posé après coup, ni raison changée, ni poids rendu inconnu ; seule la marque « vue » se pose, une fois',
+    'observe', coalesce(nullif(obs, ''), coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+    'ok', coalesce(obs = 'octets=4120:garde raison=''depot'':garde raison=''format'',octets=4120:garde octets=null:garde vue:passe revue:garde'
+      and code_recu = 'P0001', false));
+
   -- ══ 37. Le rôle des Edge Functions : receive-email écrit à la clé secrète ═══════════════════════════════════
   -- Son écriture telle que PostgREST la passe (`on conflict … do nothing`), puis son rejeu — la même pièce jointe,
   -- d'autres valeurs : rien ne s'écrit, sans erreur, et la ligne reste telle qu'elle a été reçue — ; puis une mise à
@@ -755,7 +852,41 @@ begin
       || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
     'ok', coalesce(n = 1 and m = 0 and rendu = 1 and obs = 'garde' and code_recu = 'P0001', false));
 
-  -- ══ 40 à 45. Les mutations ═════════════════════════════════════════════════════════════════════════════════
+  -- 37c. La pièce jointe arrivée vide, telle que receive-email l'écrit à la clé secrète (ligne 22.91) : au poids zéro, une
+  -- fois ; le rejeu de la même pièce jointe — vide de nouveau, ou dont le téléchargement a échoué cette fois — n'écrit
+  -- rien, sans erreur, et la ligne reste telle qu'elle a été reçue ; un poids posé après coup, AVEC une marque valable,
+  -- se refuse par la garde, à ce rôle aussi.
+  n := null; m := null; rendu := null; obs := null; code_recu := null; message := null;
+  begin
+    set local role service_role;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'vide', 0, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics n = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'vide', 0, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics m = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'depot', null, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics k = row_count;
+    m := m + k;
+    select count(*) into rendu from pieces_jointes_ecartees
+     where dossier_id = dossier_client and empreinte = e1 and raison = 'vide' and octets = 0 and vue_le is null;
+    begin
+      update pieces_jointes_ecartees set octets = 4120, vue_le = now(), vue_par = chef where dossier_id = dossier_client and empreinte = e1;
+      obs := 'passe';
+    exception when others then obs := case when sqlerrm = refus_garde then 'garde' else sqlstate || ' ' || sqlerrm end;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '37c. receive-email écrit une pièce jointe arrivée vide au poids zéro, une fois — ses deux rejeux, vide de nouveau ou au téléchargement échoué, n''écrivent rien — et la garde la tient',
+    'observe', coalesce(n::text, '?') || ' puis ' || coalesce(m::text, '?') || ' ligne(s) écrite(s), ' || coalesce(rendu::text, '?')
+      || ' telle que reçue, poids posé après coup : ' || coalesce(obs, '?') || ', ' || coalesce(code_recu, '?')
+      || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+    'ok', coalesce(n = 1 and m = 0 and rendu = 1 and obs = 'garde' and code_recu = 'P0001', false));
+
+  -- ══ 40 à 49. Les mutations ═════════════════════════════════════════════════════════════════════════════════
   -- 40. Le contrôle 15 joué sous le chef : il doit voir la ligne du dossier du client.
   n := null;
   begin
@@ -878,6 +1009,30 @@ begin
     'observe', coalesce(n::text, '?') || ' puis ' || coalesce(m::text, '?') || ' ligne(s), ' || coalesce(code_recu, '?')
       || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
     'ok', coalesce(n = 1 and m = 1 and code_recu = 'P0001', false));
+
+  -- 48. Le premier refus du contrôle 7c — une pièce jointe vide au poids positif — rejoué avec la raison « format » :
+  -- l'écriture passe. C'est la raison qui décide que le poids est zéro, rien d'autre.
+  n := null; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 4120, e3);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '48. MUTATION — le refus du contrôle 7c (une pièce jointe vide au poids positif) rejoué avec la raison « format » : l''écriture doit passer',
+    'observe', coalesce(n::text, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), 'ok', coalesce(n = 1, false));
+
+  -- 49. Le refus du contrôle 7 — le format au poids zéro — rejoué avec la raison « vide » : l'écriture passe. C'est la
+  -- raison qui décide si le poids peut être zéro.
+  n := null; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'vide', 0, e1);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '49. MUTATION — le refus du contrôle 7 (le format au poids zéro) rejoué avec la raison « vide » : l''écriture doit passer',
+    'observe', coalesce(n::text, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), 'ok', coalesce(n = 1, false));
 
   -- ══ 50. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
   verdicts := verdicts || jsonb_build_object('controle', '50. rien n''est resté en base',

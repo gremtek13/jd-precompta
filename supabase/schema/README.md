@@ -243,6 +243,18 @@ poids) et les contraintes (586) ont changé. L'essai `supabase/essais/piecesJoin
 sans ses lignes de commentaire (52 511 caractères, reçus tels quels), rend ses verdicts justes, mutations comprises, et
 rien n'est resté en base.
 
+**Rejoué le 13/10/2026 après `pieces_jointes_ecartees_vide`** (ligne 22.91), appliquée par la session sous la version
+`20261013121915` sur l'accord du cabinet (S229-Q1), sans confirmation demandée (le détecteur de l'outil n'a retenu aucun
+de ses deux `drop constraint`), AVANT la fusion du correctif qui écrit et lit la raison `vide` ; son fichier a quitté la
+version PROVISOIRE `20261013230000` pour celle-ci, texte inchangé (4 574 caractères, empreinte
+`3e8799909379f895988dc4a81aed470c`, celle que rend sa ligne d'historique) : 130 fichiers, 130 migrations, empreinte
+globale `cd7850e31b6d20f5859bc851f5d8dfa3` des deux côtés, aucune divergence. Le socle (78 instructions, `91ae95ec…`) et
+l'inventaire (1 897 objets, `a33f2032…`) sont inchangés, égaux des deux côtés : les deux contraintes remplacées gardent
+leur nom. `signature.sql` rend en production ce que l'étape avait relevé sur sa réplique après la migration : seule la
+famille des contraintes a changé (586, `8b1d3543…`), les huit autres égales à celles d'avant. L'essai
+`supabase/essais/piecesJointesEcartees.sql`, rejoué en production sans ses lignes de commentaire (60 892 caractères,
+reçus tels quels), rend ses 57 verdicts justes, mutations comprises, et rien n'est resté en base.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

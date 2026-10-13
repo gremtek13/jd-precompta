@@ -498,11 +498,103 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   },
   {
     slug: 'receive-email', quoi: 'la pièce jointe vide consignée comme un dépôt échoué',
+    // Depuis la ligne 22.91, la pièce jointe vide se consigne sous sa raison : l'ancre est son appel.
+    remplacements: [['fichier.id, "vide", 0)', 'fichier.id, "depot", null)']],
+    scenario: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+  },
+  // LA PIÈCE JOINTE ARRIVÉE VIDE (ligne 22.91) : redevenue muette, consignée au poids inconnu, déposée après sa trace,
+  // nommée au journal, ou instable au rejeu.
+  {
+    slug: 'receive-email', quoi: 'la pièce jointe vide redevenue sautée, sans trace',
+    remplacements: [['        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "vide", 0)\n', '']],
+    scenario: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+  },
+  {
+    slug: 'receive-email', quoi: 'la pièce jointe vide consignée au poids inconnu',
+    remplacements: [['fichier.id, "vide", 0)', 'fichier.id, "vide", null)']],
+    scenario: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+  },
+  {
+    slug: 'receive-email', quoi: 'la pièce jointe vide déposée et lue après sa trace (la boucle continue)',
+    remplacements: [['fichier.id, "vide", 0)\n        continue\n', 'fichier.id, "vide", 0)\n']],
+    scenario: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+  },
+  {
+    slug: 'receive-email', quoi: 'le nom de la pièce jointe vide au journal',
+    remplacements: [['arrivée vide (0 octet) : ${fichier.id}`)', 'arrivée vide (0 octet) : ${fichier.id} ${fichier.filename}`)']],
+    scenario: 'une pièce jointe arrivée vide (0 octet) : consignée « vide » au poids zéro, journalisée sans son nom, ni déposée ni lue',
+  },
+  {
+    slug: 'receive-email', quoi: 'la clé d’idempotence instable, au rejeu d’une pièce jointe vide',
+    remplacements: [['JSON.stringify([emailId, pieceJointeId])', 'JSON.stringify([emailId, pieceJointeId, crypto.randomUUID()])']],
+    scenario: 'Resend rejoue le webhook d’une pièce jointe arrivée vide : rien de plus ne se consigne, sans erreur',
+  },
+  // LES ÉLÉMENTS QUI NE SONT PAS DES PIÈCES JOINTES, COMPTÉS AU JOURNAL (ligne 22.92) : un compte qui oublie les PDF
+  // « inline » ou lit le type sans sa casse ni ses paramètres, qui range l'absence en « autre » ou compte les vraies
+  // pièces jointes ; un nom, un type tel quel ou l'objet de l'e-mail au journal ; la ligne disparue, ou écrite pour une
+  // adresse inconnue ; et les éléments intégrés téléchargés par un filtre élargi.
+  {
+    slug: 'receive-email', quoi: 'le compte oublie les PDF « inline »',
+    remplacements: [['if (type === "application/pdf") return "pdf"', 'if (type === "application/x-pdf") return "pdf"']],
+    scenario: 'des éléments intégrés au corps de l’e-mail : comptés au journal sans nom, ni lus ni déposés ; la pièce jointe se dépose comme avant',
+  },
+  {
+    slug: 'receive-email', quoi: 'le type déclaré lu sans sa casse ni ses paramètres',
+    remplacements: [['const type = brut.split(";")[0].trim().toLowerCase()', 'const type = brut']],
+    scenario: 'des éléments intégrés au corps de l’e-mail : comptés au journal sans nom, ni lus ni déposés ; la pièce jointe se dépose comme avant',
+  },
+  {
+    slug: 'receive-email', quoi: 'la disposition absente rangée en « autre »',
+    remplacements: [['if (brute === undefined || brute === null || brute === "") return "aucune"', 'if (brute === null) return "aucune"']],
+    scenario: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte pris sur toutes les pièces jointes (les vraies comptées)',
+    remplacements: [['    if (e.content_disposition === "attachment") continue\n', '']],
+    scenario: 'des éléments intégrés au corps de l’e-mail : comptés au journal sans nom, ni lus ni déposés ; la pièce jointe se dépose comme avant',
+  },
+  {
+    slug: 'receive-email', quoi: 'un nom de fichier au journal du compte',
     remplacements: [[
-      '        console.warn(`Pièce jointe vide (0 octet), sautée : ${fichier.id}`)\n',
-      '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)\n',
+      '${compteDesElementsIntegres(attachments ?? [])}`)',
+      '${compteDesElementsIntegres(attachments ?? [])} ${(attachments ?? []).map((a) => a.filename).join(", ")}`)',
     ]],
-    scenario: 'une pièce jointe vide (0 octet) : sautée, journalisée sans son nom, rien de consigné ni de déposé',
+    scenario: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
+  },
+  {
+    slug: 'receive-email', quoi: 'le type déclaré recopié tel quel au journal (il porte le nom du fichier)',
+    remplacements: [[
+      '${compteDesElementsIntegres(attachments ?? [])}`)',
+      '${compteDesElementsIntegres(attachments ?? [])} ${(attachments ?? []).map((a) => a.content_type).join(", ")}`)',
+    ]],
+    scenario: 'des éléments intégrés au corps de l’e-mail : comptés au journal sans nom, ni lus ni déposés ; la pièce jointe se dépose comme avant',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’objet de l’e-mail ajouté à la ligne du compte',
+    remplacements: [['${compteDesElementsIntegres(attachments ?? [])}`)', '${compteDesElementsIntegres(attachments ?? [])} ("${subject}")`)']],
+    scenario: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
+  },
+  {
+    slug: 'receive-email', quoi: 'la ligne du compte disparue',
+    remplacements: [['  console.log(`[receive-email] dossier ${dossier.id} : ${compteDesElementsIntegres(attachments ?? [])}`)\n', '']],
+    scenario: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte écrit pour une adresse inconnue',
+    remplacements: [[
+      '    console.warn(`Aucun dossier pour "${codeEmail}" (e-mail ${email_id}, de ${from}, sujet "${subject}")`)\n',
+      '    console.warn(`Aucun dossier pour "${codeEmail}" (e-mail ${email_id}, de ${from}, sujet "${subject}")`)\n'
+      + '    console.log(`[receive-email] dossier inconnu : ${compteDesElementsIntegres(attachments ?? [])}`)\n',
+    ]],
+    scenario: 'une adresse que nul dossier ne porte, avec des éléments intégrés : rien de compté — le compte est celui d’un dossier connu',
+  },
+  {
+    slug: 'receive-email', quoi: 'les éléments intégrés téléchargés (le filtre des pièces jointes élargi)',
+    remplacements: [[
+      '(attachments ?? []).filter((a) => a.content_disposition === "attachment")',
+      '(attachments ?? []).filter((a) => a.content_disposition !== "inline")',
+    ]],
+    scenario: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
   },
 ]
 
