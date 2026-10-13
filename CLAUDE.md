@@ -100,9 +100,10 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs par un modèle ; réservée à un compte RATTACHÉ au cabinet
     et à `receive-email`, qui présente la clé secrète dans l'en-tête `apikey`.
-  - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
-    e-mails par dossier et par jour de Paris pour un client, comptés avant Resend ; relance : le cabinet seul ; domaine
-    `precompta.jdarnis.fr`).
+  - `receive-email` (webhook Resend, par dossier) : une pièce jointe hors des bornes d'une pièce (format, poids) y est
+    écartée et consignée dans `pieces_jointes_ecartees`, une fois (l'empreinte des identifiants Resend), sans nom ;
+    `send-email` (facture : le cabinet et le client « Ventes », trente e-mails par dossier et par jour de Paris pour un
+    client, comptés avant Resend ; relance : le cabinet seul ; domaine `precompta.jdarnis.fr`).
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; `superpdp-emit` transmet le CII de
     l'application, jugé avant tout appel, sous une transmission réservée ; le client « Ventes » relie Super PDP (EC-Q4,
     hypothèse) et transmet, la réception (`superpdp-sync`) reste au cabinet.
@@ -173,7 +174,8 @@ supabase/
                     abandonTransmission, encaissementsFactures, transmissionsEncaissements, statutsFacturesRecus,
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
-                    laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent ;
+                    laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
+                    piecesJointesEcartees ;
                     bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
                     `bornes_du_stockage`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
@@ -491,7 +493,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   internes du cabinet dans leur propre table, hors de portée du client (09/10/2026) ; proposition de catégorie
   (26/09/2026) ; la fiche « fournisseur établi hors de France » d'un achat : voir, saisir une version, retirer, avec ses
   propositions (e-reporting, e3, 10/10/2026) ; les bornes du stockage — format et taille jugés avant tout
-  dépôt et posés en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026).
+  dépôt et posés en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026) ; la pièce
+  jointe que la réception par e-mail écarte (format, poids), dite au cabinet en tête de Justificatifs, sans nom, et
+  marquée vue par lui (ligne 22.7, 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -562,11 +566,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
-- **Une pièce jointe écartée à la réception par e-mail** (S226-Q3, décision du cabinet du 13/10/2026 : la dire au
-  cabinet, sans nom de fichier) : aujourd'hui seul le journal de `receive-email` la note (format hors de la liste, poids
-  au-delà de la borne) ; une étape à part — une table, sa migration, l'écran. Les commentaires « HYPOTHÈSE S226-Q1 » de
-  `lib/bornesStockage.ts` et de sa copie dans `receive-email` se mettent à jour avec elle (la copie redéployée) → « LES
-  BORNES DES SEAUX DU STOCKAGE, EN BASE ».
+- **Les pièces jointes écartées** (ligne 22.7, S226-Q3) : en base, dans `receive-email` et à l'écran le 13/10/2026 —
+  S227-Q1 (la porte de la restauration au super-administrateur) et S227-Q2 (le geste « vue ») prises comme les
+  recommandations ; restent quatre questions au cabinet : d'autres pertes silencieuses d'une pièce jointe (S227-Q3), la
+  durée de conservation (Q4), les fichiers qui ne sont jamais des pièces (Q5), le dire au client (Q6) → « UNE PIÈCE
+  JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -719,7 +723,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 39 fonctions au 12/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 40 fonctions au 13/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -727,16 +731,17 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `retirer_proposition`, `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`,
   `supprimer_brouillon_facture`, `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`,
   `retirer_regime_ereporting`, `ecarter_piece_ereporting`, `reprendre_piece_ereporting`,
-  `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent` et `retirer_du_dossier_permanent` écrivent,
-  chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et
-  noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes :
-  `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ; les deux de R5, les quatre
-  d'e5a, celle d'e5b1 et les deux de R7 : `admin_du_dossier` du dossier annoncé, avant toute lecture ;
-  `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`, gardes `SECURITY DEFINER`, ne sont exécutées
-  par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et `droits_sur_le_dossier` ne lisent que
-  les droits de l'appelant (`droitsAcces.sql`), `couverture_du_releve` que les mois du relevé d'un dossier où il a accès
-  (`banqueClient.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il
-  faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
+  `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent`, `retirer_du_dossier_permanent` et
+  `marquer_pieces_jointes_vues` écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
+  du dossier annoncé pour conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ;
+  depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ;
+  les deux de R5, les quatre d'e5a, celle d'e5b1, les deux de R7 et celle de la ligne 22.7 : `admin_du_dossier` du
+  dossier annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`,
+  gardes `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`,
+  `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant (`droitsAcces.sql`),
+  `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ; plus aucun rôle
+  n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction
+  `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -837,6 +842,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `depotsDansLesSeaux.test.ts` lit l'arbre de toute la source et exige que chaque dépôt envoie un type que la migration
   admet pour son seau — ni plus, ni moins ; un refus 413 ou 415 du stockage se dit en français (`messageErreur`) → « LES
   BORNES DES SEAUX DU STOCKAGE », « LES BORNES DES SEAUX DU STOCKAGE, EN BASE ».
+- **Une pièce jointe écartée se dit** (ligne 22.7, `pieces_jointes_ecartees`) : `receive-email` l'écrit à la clé secrète
+  par un `upsert` qui ne fait rien sur la clé (le dossier, l'empreinte SHA-256 des identifiants Resend) — un rejeu de
+  Resend n'écrit rien de plus, et un identifiant Resend gardé tel quel désignerait un e-mail relisible ; jamais le nom,
+  l'extension, l'expéditeur ni l'objet ; son refus se journalise et la pièce jointe suivante se traite. Lecture
+  `admin_du_dossier`, aucune branche client ; insertion de RESTAURATION au super-administrateur (sans elle, la
+  restauration d'un dossier qui en a s'arrêterait) ; « vue » par `marquer_pieces_jointes_vues` seule (l'accès d'abord),
+  une fois, la garde n'admettant que ce passage. L'écran (`PiecesJointesEcartees`, en tête de Justificatifs) : l'attente
+  dite avant la lecture, rien sur un vide lu en entier, le bandeau sur une lecture partielle, le geste sous
+  `marquageEnCours` relâché après la relecture → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU
+  CABINET ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
 - **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
@@ -892,10 +907,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   DE SÉCURITÉ DU DÉPÔT ».
 
 - **Chaque Edge Function s'appelle en HTTP dans la suite** (ligne 23, `src/test/fonctionsEdge.ts`) : sa VRAIE source,
-  transpilée, devant un monde factice qui journalise tout (`Deno.serve` capturé, clés fabriquées, base aux filtres et aux
-  clés du schéma exporté, authentification, AWS, Resend, réseau fermé, `verify_jwt` lu dans `config.toml`) ;
-  `contratsFonctions.ts` en joue les contrats (préflight mesuré sur le SDK, refus sans droit et AUCUNE dépense avant, corps
-  mal formés, plafonds, ni secret ni valeur de pièce au journal) ; `edgeFunctionsHttp.test.ts` part de TOUT et compte
+  transpilée, devant un monde factice qui journalise tout (`Deno.serve` capturé, clés fabriquées, base aux filtres et
+  aux clés du schéma exporté, authentification, AWS, Resend, réseau fermé, `verify_jwt` lu dans `config.toml`) ;
+  `contratsFonctions.ts` en joue les contrats (préflight mesuré sur le SDK, refus sans droit et AUCUNE dépense avant,
+  corps mal formés, plafonds, ni secret ni valeur de pièce au journal ; un scénario se REJOUE — `dejaRecue`, la même
+  requête reçue une fois avant, comme un webhook que Resend rejoue) ; `edgeFunctionsHttp.test.ts` part de TOUT et compte
   les défauts connus au nombre près (`DEFAUTS_CONNUS`) → « LES EDGE FUNCTIONS S'APPELLENT EN HTTP ».
 
 ### Scanners de source : la doctrine
@@ -1443,7 +1459,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 241 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 280 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

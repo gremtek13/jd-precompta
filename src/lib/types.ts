@@ -1637,3 +1637,23 @@ export interface EntreeDossierPermanent {
   retire_le: string | null
   retire_par: string | null
 }
+
+// Une pièce jointe que la réception par e-mail a écartée (`pieces_jointes_ecartees`, ligne 22.7) : son format n'est pas
+// celui d'une pièce (PDF, JPEG, PNG, CSV), ou elle pèse plus que la borne d'une pièce. receive-email l'écrit à la clé
+// secrète, une fois par pièce jointe (l'empreinte des identifiants Resend) ; jamais le nom du fichier, son extension,
+// l'expéditeur ni l'objet. Le cabinet la lit et la marque vue par `marquer_pieces_jointes_vues` seule
+// (src/lib/piecesJointesEcartees.ts) ; le client n'en voit rien.
+export interface PieceJointeEcartee {
+  id: string
+  dossier_id: string
+  // L'instant où receive-email l'a reçue et écartée, posé par la base.
+  recue_le: string
+  raison: 'format' | 'taille'
+  // Le poids de la pièce jointe, en octets (plus de zéro).
+  octets: number
+  // SHA-256 des identifiants Resend de l'e-mail et de la pièce jointe : la clé d'idempotence, avec le dossier.
+  empreinte: string
+  // La marque du cabinet, une fois : quand et par qui ; nulles toutes deux tant qu'elle n'est pas vue.
+  vue_le: string | null
+  vue_par: string | null
+}

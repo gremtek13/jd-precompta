@@ -2160,3 +2160,25 @@ a.nav-menu-item { text-decoration: none; }
 .cellule-declaration { font-size: 0.82rem; }
 .cellule-declaration div { overflow-wrap: anywhere; }
 .note-declaration { font-style: italic; }
+
+/* Les pièces jointes écartées à la réception par e-mail (ligne 22.7), en tête de l'onglet Justificatifs : une carte teintée
+   d'avertissement — une pièce attendue n'est pas arrivée —, discrète malgré tout, puisqu'elle informe et n'empêche rien.
+   Ses phrases passent à la ligne, le bouton et sa note aussi plutôt que de déborder ; l'historique des déjà vues se replie,
+   et reste seul, discret, quand rien n'est plus à signaler. */
+.pieces-jointes-ecartees {
+  margin-bottom: 14px; padding: 14px 16px;
+  border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-light) 55%, var(--color-surface));
+}
+.pieces-jointes-ecartees > h3 { margin: 0 0 8px; font-size: 0.95rem; overflow-wrap: anywhere; }
+.pieces-jointes-ecartees > p { margin: 0 0 10px; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.pieces-jointes-ecartees-liste { margin: 0 0 10px; padding-left: 18px; font-size: 0.86rem; line-height: 1.5; overflow-wrap: anywhere; }
+.pieces-jointes-ecartees-quand { font-variant-numeric: tabular-nums; }
+.pieces-jointes-ecartees-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.pieces-jointes-ecartees-actions .muted { flex: 1 1 260px; font-size: 0.8rem; line-height: 1.4; }
+.pieces-jointes-ecartees-vues { margin-top: 10px; font-size: 0.82rem; }
+.pieces-jointes-ecartees-vues summary { cursor: pointer; color: var(--color-text-light); }
+.pieces-jointes-ecartees-vues ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.45; overflow-wrap: anywhere; }
+.pieces-jointes-ecartees-seules { margin-bottom: 14px; }
+.pieces-jointes-ecartees-attente { margin: 0 0 10px; font-size: 0.8rem; }
+.pieces-jointes-ecartees-seules > .pieces-jointes-ecartees-vues { margin-top: 0; }

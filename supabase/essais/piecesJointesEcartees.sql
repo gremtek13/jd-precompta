@@ -1,0 +1,749 @@
+-- LES PIÈCES JOINTES ÉCARTÉES À LA RÉCEPTION PAR E-MAIL, ÉPROUVÉES EN BASE (ligne 22.7, migration
+-- `pieces_jointes_ecartees`) — à rejouer par `execute_sql` après toute migration qui touche `pieces_jointes_ecartees`,
+-- ses policies, sa garde, `marquer_pieces_jointes_vues`, `admin_du_dossier`, `is_super_admin` ou `memberships`.
+--
+-- Ce qui se prouve ici, par impersonation — anonyme, compte rattaché à rien, client du dossier, chef du cabinet
+-- (super-administrateur, le seul de la base), et deux profils d'essai : un membre du cabinet affecté à un AUTRE dossier
+-- que celui du client, un chef du cabinet qui n'est pas super-administrateur :
+--   - la table ne garde ni le nom du fichier, ni son extension, ni l'expéditeur, ni l'objet : huit colonnes, nommées ;
+--   - la même pièce jointe ne s'écrit qu'une fois par dossier — la clé (dossier, empreinte) refuse le doublon (23505), et
+--     l'écriture de receive-email (`on conflict … do nothing`) n'en ajoute pas ;
+--   - personne ne lit sans session ni sans rattachement ; le client ne lit RIEN, pas même ce qui vient de son dossier ;
+--     le cabinet du dossier lit (les contrôles POSITIFS : sans eux, les refus seraient satisfaits par une table que plus
+--     personne n'atteint) ; un membre affecté à un autre dossier ne lit que celui-là ;
+--   - personne n'écrit directement, sauf le super-administrateur par la porte de la restauration ; personne ne met à jour
+--     directement, pas même lui ;
+--   - `marquer_pieces_jointes_vues` refuse dans son ordre — l'accès au dossier annoncé d'abord (42501, « Accès refusé à
+--     ce dossier. »), puis aucune pièce jointe désignée (22023), puis une pièce jointe qui n'est pas de ce dossier (P0002)
+--     — chaque refus exigé par son CODE ET SA RAISON ; elle marque ce qu'on lui désigne, une fois : la première marque tient ;
+--   - la garde n'admet à la mise à jour que le passage de « non vue » à « vue » ;
+--   - le rôle des Edge Functions — receive-email, à la clé secrète — écrit comme elle (`on conflict … do nothing`), une
+--     fois, et la garde le tient aussi : la clé secrète passe la RLS, pas un déclencheur ;
+--   - et que RIEN ne reste en base.
+--
+-- Chaque contrôle s'annule dans sa sous-transaction (`ANNULATION_ESSAI`, P0001), le verdict étant posé dans une VARIABLE
+-- avant le `raise` — le mécanisme de rls.sql. Les lignes d'essai y sont posées par le propriétaire de la base, sous des
+-- identifiants fixes qui n'existent pas. Les verdicts voyagent dans un réglage LOCAL à la transaction
+-- (`essai.pieces_jointes_ecartees`), que la requête finale lit : le fichier se joue d'un seul appel et ne crée aucune
+-- table. Il ne porte AUCUNE instruction de suppression : aucune policy n'en ouvre (contrôle 2), et ce qu'une suppression
+-- rencontre se joue sur une réplique.
+--
+-- LES MUTATIONS (contrôles 40 à 45) rejouent un contrôle avec un profil, une clé ou un droit délibérément faux : chacune
+-- doit MORDRE, sans quoi le contrôle qu'elle vise ne regarde rien.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  -- Les deux lignes d'essai, sous des identifiants fixes : l'une dans le dossier du client, l'autre dans un autre dossier
+  -- du même cabinet.
+  ligne_client uuid := 'e5a70000-0000-4000-8000-000000000a01';
+  ligne_autre uuid := 'e5a70000-0000-4000-8000-000000000a02';
+  ligne_neuve uuid := 'e5a70000-0000-4000-8000-000000000a03';
+  inconnue uuid := 'e5a70000-0000-4000-8000-000000000a09';
+  e1 text := repeat('a', 64); e2 text := repeat('b', 64); e3 text := repeat('c', 64);
+
+  dossier_client uuid; dossier_autre uuid; cabinet uuid;
+  lignes_avant int; admins_avant int; assignations_avant int;
+  n int; m int; rendu int; vue timestamptz; par uuid; champ text;
+  code_recu text; message text; obs text; verdicts jsonb := '[]'::jsonb;
+begin
+  select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client order by mb.dossier_id limit 1;
+  select d.cabinet_id into cabinet from dossiers d where d.id = dossier_client;
+  select d.id into dossier_autre from dossiers d where d.cabinet_id = cabinet and d.id <> dossier_client
+    and not exists (select 1 from memberships mb where mb.user_id = client and mb.dossier_id = d.id) order by d.id limit 1;
+  if dossier_client is null or cabinet is null or dossier_autre is null
+     or exists (select 1 from cabinet_admins where user_id = client) or exists (select 1 from super_admins where user_id = client)
+     or not exists (select 1 from super_admins where user_id = chef)
+     or not exists (select 1 from cabinet_admins where user_id = chef and cabinet_id = cabinet and role = 'comptable_en_chef')
+     or exists (select 1 from pieces_jointes_ecartees where id in (ligne_client, ligne_autre, ligne_neuve, inconnue)) then
+    raise exception 'ESSAI_IMPOSSIBLE : jeu de départ introuvable, compte client déjà rattaché au cabinet, ou identifiant d''essai pris';
+  end if;
+  select count(*) into lignes_avant from pieces_jointes_ecartees;
+  select count(*) into admins_avant from cabinet_admins;
+  select count(*) into assignations_avant from dossier_assignations;
+
+  -- ══ 1 à 5. Le catalogue ═══════════════════════════════════════════════════════════════════════════════════
+  select string_agg(column_name, ',' order by column_name) into obs from information_schema.columns
+   where table_schema = 'public' and table_name = 'pieces_jointes_ecartees';
+  verdicts := verdicts || jsonb_build_object('controle', '1. huit colonnes, nommées : ni nom de fichier, ni extension, ni expéditeur, ni objet',
+    'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'dossier_id,empreinte,id,octets,raison,recue_le,vue_le,vue_par', false));
+
+  select count(*) into n from pg_policy po
+   where po.polrelid = 'public.pieces_jointes_ecartees'::regclass and po.polroles = array['authenticated'::regrole]::oid[] and (
+     (po.polcmd = 'r' and pg_get_expr(po.polqual, po.polrelid) = 'admin_du_dossier(dossier_id)' and po.polwithcheck is null)
+     or (po.polcmd = 'a' and po.polqual is null and pg_get_expr(po.polwithcheck, po.polrelid) = 'is_super_admin()'));
+  select count(*) into m from pg_policy po where po.polrelid = 'public.pieces_jointes_ecartees'::regclass;
+  select string_agg(po.polname, ', ' order by po.polname) into obs from pg_policy po
+   where po.polrelid = 'public.pieces_jointes_ecartees'::regclass
+     and (coalesce(pg_get_expr(po.polqual, po.polrelid), '') || coalesce(pg_get_expr(po.polwithcheck, po.polrelid), ''))
+         ~ '(memberships|client_du_dossier|gere_les_ventes|gere_la_banque|droits_sur_le_dossier)';
+  verdicts := verdicts || jsonb_build_object('controle', '2. deux policies : la lecture aux connectés sur admin_du_dossier, l''insertion de restauration au super-administrateur ; aucune branche client, ni mise à jour ni suppression ; RLS active',
+    'observe', m || ' policy(s), ' || n || ' conforme(s), branche client : ' || coalesce(obs, 'aucune') || ', RLS '
+      || (select relrowsecurity from pg_class where oid = 'public.pieces_jointes_ecartees'::regclass),
+    'ok', coalesce(m = 2 and n = 2 and obs is null and (select relrowsecurity from pg_class where oid = 'public.pieces_jointes_ecartees'::regclass), false));
+
+  select count(*) into n from pg_constraint k join pg_index i on i.indexrelid = k.conindid
+   where k.conrelid = 'public.pieces_jointes_ecartees'::regclass and k.contype = 'u' and i.indpred is null
+     and k.conkey = array[(select attnum from pg_attribute where attrelid = k.conrelid and attname = 'dossier_id'),
+                          (select attnum from pg_attribute where attrelid = k.conrelid and attname = 'empreinte')]::smallint[];
+  verdicts := verdicts || jsonb_build_object('controle', '3. la clé d''idempotence : une unicité TOTALE sur (dossier_id, empreinte)',
+    'observe', n || ' contrainte(s)', 'ok', n = 1);
+
+  select string_agg(p.proname || ':' || p.prosecdef || ':' || coalesce(array_to_string(p.proconfig, ','), '') || ':' || coalesce((
+           select string_agg(q.g, '+' order by q.g) from (
+             select case when a.grantee = 0 then 'public' else pg_get_userbyid(a.grantee) end as g
+             from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+             where a.privilege_type = 'EXECUTE' and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('anon', 'authenticated'))) q), 'personne'),
+         ' ; ' order by p.proname) into obs
+   from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('marquer_pieces_jointes_vues', 'garder_piece_jointe_ecartee');
+  verdicts := verdicts || jsonb_build_object('controle', '4. la fonction est SECURITY DEFINER, son chemin fixé, exécutable par les connectés seuls ; la garde, par personne',
+    'observe', coalesce(obs, 'aucune'),
+    'ok', coalesce(obs = 'garder_piece_jointe_ecartee:false:search_path="":personne ; marquer_pieces_jointes_vues:true:search_path=public:authenticated', false));
+
+  select position('admin_du_dossier' in p.prosrc), position('pieces_jointes_ecartees' in p.prosrc) into n, m
+    from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'marquer_pieces_jointes_vues';
+  verdicts := verdicts || jsonb_build_object('controle', '5. la fonction vérifie l''accès avant de lire la table',
+    'observe', 'accès au caractère ' || coalesce(n::text, '?') || ', première lecture au ' || coalesce(m::text, '?'),
+    'ok', coalesce(n > 0 and m > n, false));
+
+  -- ══ 6 à 12. Les contraintes et la clé ═════════════════════════════════════════════════════════════════════
+  n := null; code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1), (dossier_client, 'taille', 20971521, e2);
+    get diagnostics n = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'autre', 12, e3);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '6. la raison est « format » ou « taille », rien d''autre',
+    'observe', coalesce(n::text, '?') || ' ligne(s) admise(s), puis ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(n = 2 and code_recu = '23514' and message like '%pieces_jointes_ecartees_raison%', false));
+
+  code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 0, e1);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '7. un poids nul se refuse : une pièce jointe vide n''est pas écartée, elle est sautée',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '23514' and message like '%pieces_jointes_ecartees_octets%', false));
+
+  code_recu := null; message := null; n := null;
+  begin
+    begin
+      insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, upper(e1));
+    exception when others then n := case when sqlstate = '23514' then 1 else 0 end;
+    end;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, left(e1, 63));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '8. l''empreinte est un SHA-256 en hexadécimal minuscule, de 64 caractères',
+    'observe', 'majuscules ' || coalesce(n::text, '?') || ', 63 caractères : ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(n = 1 and code_recu = '23514' and message like '%pieces_jointes_ecartees_empreinte%', false));
+
+  code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, vue_le) values (dossier_client, 'format', 12, e1, now());
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '9. une marque « vue » sans son auteur se refuse',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '23514' and message like '%pieces_jointes_ecartees_vue%', false));
+
+  code_recu := null; message := null; n := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1);
+    get diagnostics n = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'taille', 99999999, e1);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '10. la même pièce jointe (même dossier, même empreinte) ne s''écrit pas deux fois',
+    'observe', coalesce(n::text, '?') || ' puis ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(n = 1 and code_recu = '23505' and message like '%pieces_jointes_ecartees_une_fois%', false));
+
+  n := null; m := null; rendu := null; code_recu := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics n = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics m = row_count;
+    select count(*) into rendu from pieces_jointes_ecartees where dossier_id = dossier_client and empreinte = e1;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '11. rejouée comme receive-email l''écrit (on conflict do nothing) : une seule ligne, sans erreur',
+    'observe', coalesce(n::text, '?') || ' puis ' || coalesce(m::text, '?') || ' ligne(s) écrite(s), ' || coalesce(rendu::text, '?') || ' en base, ' || coalesce(code_recu, '?'),
+    'ok', coalesce(n = 1 and m = 0 and rendu = 1 and code_recu = 'P0001', false));
+
+  n := null; code_recu := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1), (dossier_autre, 'format', 12, e1);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '12. la clé est celle d''un dossier : la même empreinte dans un autre dossier s''écrit',
+    'observe', coalesce(n::text, '?') || ' ligne(s), ' || coalesce(code_recu, '?'), 'ok', coalesce(n = 2 and code_recu = 'P0001', false));
+
+  -- ══ 13 à 18. Qui lit ════════════════════════════════════════════════════════════════════════════════════════
+  -- Deux lignes : l'une dans le dossier du client, l'autre dans l'autre dossier du cabinet.
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    select count(*) into n from pieces_jointes_ecartees;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '13. l''anonyme ne voit aucune pièce jointe écartée',
+    'observe', coalesce(n::text, '?') || ' vue(s) sur 2', 'ok', coalesce(n = 0 and code_recu = 'P0001', false));
+
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
+    select count(*) into n from pieces_jointes_ecartees;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '14. un compte rattaché à rien ne voit aucune pièce jointe écartée',
+    'observe', coalesce(n::text, '?') || ' vue(s) sur 2', 'ok', coalesce(n = 0 and code_recu = 'P0001', false));
+
+  n := null; m := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from pieces_jointes_ecartees where dossier_id = dossier_client;
+    select count(*) into m from pieces_jointes_ecartees;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '15. le client ne voit rien, pas même ce qui vient de son dossier',
+    'observe', coalesce(n::text, '?') || ' vue(s) dans son dossier, ' || coalesce(m::text, '?') || ' en tout',
+    'ok', coalesce(n = 0 and m = 0 and code_recu = 'P0001', false));
+
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from pieces_jointes_ecartees where id in (ligne_client, ligne_autre);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '16. le chef du cabinet voit les deux (contrôle positif)',
+    'observe', coalesce(n::text, '?') || ' vue(s) sur 2', 'ok', coalesce(n = 2 and code_recu = 'P0001', false));
+
+  n := null; obs := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+    insert into dossier_assignations (dossier_id, user_id) values (dossier_autre, client);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*), string_agg(case when dossier_id = dossier_autre then 'autre' else 'client' end, ',') into n, obs
+      from pieces_jointes_ecartees where id in (ligne_client, ligne_autre);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '17. un membre affecté à l''autre dossier ne voit que celui-là',
+    'observe', coalesce(n::text, '?') || ' vue(s) : ' || coalesce(obs, 'aucune'), 'ok', coalesce(n = 1 and obs = 'autre' and code_recu = 'P0001', false));
+
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from pieces_jointes_ecartees where id in (ligne_client, ligne_autre);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '18. un chef du cabinet qui n''est pas super-administrateur voit les deux',
+    'observe', coalesce(n::text, '?') || ' vue(s) sur 2', 'ok', coalesce(n = 2 and code_recu = 'P0001', false));
+
+  -- ══ 19 à 23. Qui écrit directement ══════════════════════════════════════════════════════════════════════════
+  code_recu := null; message := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e3);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '19. le client n''écrit pas, même dans son dossier',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''), 'ok', coalesce(code_recu = '42501', false));
+
+  code_recu := null; message := null;
+  begin
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e3);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '20. un chef du cabinet n''écrit pas directement : la porte de l''écriture est la restauration, au super-administrateur',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''), 'ok', coalesce(code_recu = '42501', false));
+
+  n := null; code_recu := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte, recue_le, vue_le, vue_par)
+      values (ligne_neuve, dossier_client, 'format', 12, e3, now() - interval '3 days', now() - interval '2 days', chef);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '21. le super-administrateur réinsère une ligne telle qu''elle était, vue comprise (la restauration)',
+    'observe', coalesce(n::text, '?') || ' ligne(s), ' || coalesce(code_recu, '?'), 'ok', coalesce(n = 1 and code_recu = 'P0001', false));
+
+  n := null; code_recu := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    update pieces_jointes_ecartees set vue_le = now(), vue_par = client where id = ligne_client;
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '22. le client ne met rien à jour : aucune ligne touchée',
+    'observe', coalesce(n::text, '?') || ' ligne(s), ' || coalesce(code_recu, '?'), 'ok', coalesce(n = 0 and code_recu = 'P0001', false));
+
+  n := null; code_recu := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    update pieces_jointes_ecartees set vue_le = now(), vue_par = chef where id = ligne_client;
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '23. le super-administrateur non plus : « vue » ne se pose que par la fonction',
+    'observe', coalesce(n::text, '?') || ' ligne(s), ' || coalesce(code_recu, '?'), 'ok', coalesce(n = 0 and code_recu = 'P0001', false));
+
+  -- ══ 24 à 35. Marquer vues ═══════════════════════════════════════════════════════════════════════════════════
+  code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '24. l''anonyme n''exécute pas la fonction : refus du droit d''exécution',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '42501' and message like 'permission denied for function marquer_pieces_jointes_vues%', false));
+
+  code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
+    perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '25. un compte rattaché à rien : « Accès refusé à ce dossier. »',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '42501' and message = 'Accès refusé à ce dossier.', false));
+
+  code_recu := null; message := null; vue := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    begin
+      perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    select e.vue_le into vue from pieces_jointes_ecartees e where e.id = ligne_client;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then null;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '26. le client, sur son propre dossier : « Accès refusé à ce dossier. », et rien n''est marqué',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, '') || ', vue ' || coalesce(vue::text, 'non'),
+    'ok', coalesce(code_recu = '42501' and message = 'Accès refusé à ce dossier.' and vue is null, false));
+
+  code_recu := null; message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+    insert into dossier_assignations (dossier_id, user_id) values (dossier_autre, client);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '27. un membre affecté à un autre dossier : « Accès refusé à ce dossier. »',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '42501' and message = 'Accès refusé à ce dossier.', false));
+
+  code_recu := null; message := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform marquer_pieces_jointes_vues(gen_random_uuid(), array[ligne_client]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '28. un dossier qui n''existe pas, même pour le super-administrateur : « Accès refusé à ce dossier. »',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '42501' and message = 'Accès refusé à ce dossier.', false));
+
+  code_recu := null; message := null; obs := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    begin
+      perform marquer_pieces_jointes_vues(dossier_client, null);
+    exception when others then obs := sqlstate || ' ' || sqlerrm;
+    end;
+    perform marquer_pieces_jointes_vues(dossier_client, array[]::uuid[]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '29. aucune pièce jointe désignée — nul ou vide : refusé, rang 2',
+    'observe', coalesce(obs, '?') || ' / ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(obs = '22023 Aucune pièce jointe désignée.' and code_recu = '22023' and message = 'Aucune pièce jointe désignée.', false));
+
+  code_recu := null; message := null; obs := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    begin
+      perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client, ligne_autre]);
+    exception when others then obs := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    select count(*) into n from pieces_jointes_ecartees where id in (ligne_client, ligne_autre) and vue_le is not null;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '30. une pièce jointe d''un autre dossier désignée avec celle du dossier : refusé, rang 3, et rien n''est marqué',
+    'observe', coalesce(obs, '?') || ', ' || coalesce(n::text, '?') || ' marquée(s)',
+    'ok', coalesce(obs = 'P0002 Une pièce jointe désignée n''est pas de ce dossier : relire la liste avant de la marquer vue.' and n = 0, false));
+
+  code_recu := null; message := null; obs := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    begin
+      perform marquer_pieces_jointes_vues(dossier_client, array[inconnue]);
+    exception when others then obs := sqlstate;
+    end;
+    perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client, null]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '31. un identifiant inconnu, ou nul : refusé, rang 3',
+    'observe', coalesce(obs, '?') || ' / ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(obs = 'P0002' and code_recu = 'P0002' and message like 'Une pièce jointe désignée n''est pas de ce dossier%', false));
+
+  code_recu := null; message := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
+    perform marquer_pieces_jointes_vues(dossier_client, array[]::uuid[]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '32. l''accès passe avant la désignation : rien de désigné, sans accès, c''est l''accès qui se refuse',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(code_recu = '42501' and message = 'Accès refusé à ce dossier.', false));
+
+  rendu := null; vue := null; par := null; n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values
+      (ligne_client, dossier_client, 'format', 4120, e1), (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    rendu := marquer_pieces_jointes_vues(dossier_client, array[ligne_client, ligne_client]);
+    reset role;
+    select e.vue_le, e.vue_par into vue, par from pieces_jointes_ecartees e where e.id = ligne_client;
+    select count(*) into n from pieces_jointes_ecartees e where e.id = ligne_autre and e.vue_le is null;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '33. le chef marque vue la pièce jointe de son dossier : une ligne, son nom et l''instant ; l''autre dossier n''est pas touché',
+    'observe', coalesce(rendu::text, '?') || ' marquée(s), par ' || coalesce(case when par = chef then 'le chef' else par::text end, 'personne')
+      || ', l''autre non vue : ' || coalesce(n::text, '?') || ', ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(rendu = 1 and vue is not null and par = chef and n = 1 and code_recu = 'P0001', false));
+
+  rendu := null; vue := null; par := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte, vue_le, vue_par) values
+      (ligne_client, dossier_client, 'format', 4120, e1, timestamptz '2026-10-01 08:00:00+00', chef);
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    rendu := marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    reset role;
+    select e.vue_le, e.vue_par into vue, par from pieces_jointes_ecartees e where e.id = ligne_client;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '34. une ligne déjà vue, marquée de nouveau par un autre : rien ne change, la première marque tient',
+    'observe', coalesce(rendu::text, '?') || ' marquée(s), vue le ' || coalesce(vue::text, '?') || ' par ' || coalesce(case when par = chef then 'le chef' else par::text end, '?')
+      || ', ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(rendu = 0 and vue = timestamptz '2026-10-01 08:00:00+00' and par = chef and code_recu = 'P0001', false));
+
+  rendu := null; par := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_autre, dossier_autre, 'taille', 26214400, e2);
+    insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+    insert into dossier_assignations (dossier_id, user_id) values (dossier_autre, client);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    rendu := marquer_pieces_jointes_vues(dossier_autre, array[ligne_autre]);
+    reset role;
+    select e.vue_par into par from pieces_jointes_ecartees e where e.id = ligne_autre;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '35. un membre affecté au dossier y marque vue (contrôle positif de l''affectation)',
+    'observe', coalesce(rendu::text, '?') || ' marquée(s), par ' || coalesce(case when par = client then 'lui' else par::text end, 'personne')
+      || ', ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    'ok', coalesce(rendu = 1 and par = client and code_recu = 'P0001', false));
+
+  -- ══ 36. La garde ═══════════════════════════════════════════════════════════════════════════════════════════
+  -- Chaque colonne reçue, changée AVEC une marque « vue » valable : c'est la comparaison de la garde qui refuse, pas
+  -- l'absence de marque. Puis un changement sans marque, une ligne vue rendue non vue, puis remarquée ; et la marque seule.
+  obs := '';
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte, vue_le, vue_par) values
+      (ligne_client, dossier_client, 'format', 4120, e1, null, null),
+      (ligne_autre, dossier_autre, 'taille', 26214400, e2, timestamptz '2026-10-01 08:00:00+00', chef);
+    foreach champ in array array[format('id = %L', ligne_neuve), format('dossier_id = %L', dossier_autre),
+                                 'recue_le = recue_le - interval ''1 day''', 'raison = ''taille''', 'octets = octets + 1',
+                                 'empreinte = repeat(''d'', 64)'] loop
+      begin
+        execute format('update pieces_jointes_ecartees set %s, vue_le = now(), vue_par = %L where id = %L', champ, chef, ligne_client);
+        obs := obs || split_part(champ, ' ', 1) || ':passe ';
+      exception when others then obs := obs || split_part(champ, ' ', 1) || ':' || sqlstate || ' ';
+      end;
+    end loop;
+    begin
+      update pieces_jointes_ecartees set raison = 'taille' where id = ligne_client;
+      obs := obs || 'seule:passe ';
+    exception when others then obs := obs || 'seule:' || sqlstate || ' ';
+    end;
+    begin
+      update pieces_jointes_ecartees set vue_le = null, vue_par = null where id = ligne_autre;
+      obs := obs || 'devue:passe ';
+    exception when others then obs := obs || 'devue:' || sqlstate || ' ';
+    end;
+    begin
+      update pieces_jointes_ecartees set vue_le = now() where id = ligne_autre;
+      obs := obs || 'revue:passe ';
+    exception when others then obs := obs || 'revue:' || sqlstate || ' ';
+    end;
+    begin
+      update pieces_jointes_ecartees set vue_le = now(), vue_par = chef where id = ligne_client;
+      obs := obs || 'vue:passe';
+    exception when others then obs := obs || 'vue:' || sqlstate;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '36. la garde : rien de ce qui a été reçu ne change, une ligne vue ne redevient pas non vue ni ne se remarque ; seul « vue » se pose',
+    'observe', obs, 'ok', coalesce(obs = 'id:23514 dossier_id:23514 recue_le:23514 raison:23514 octets:23514 empreinte:23514 '
+      || 'seule:23514 devue:23514 revue:23514 vue:passe' and code_recu = 'P0001', false));
+
+  -- ══ 37. Le rôle des Edge Functions : receive-email écrit à la clé secrète ═══════════════════════════════════
+  -- Son écriture telle que PostgREST la passe (`on conflict … do nothing`), puis son rejeu — la même pièce jointe,
+  -- d'autres valeurs : rien ne s'écrit, sans erreur, et la ligne reste telle qu'elle a été reçue — ; puis une mise à
+  -- jour de ce qui a été reçu, que la garde refuse aussi à ce rôle.
+  n := null; m := null; rendu := null; obs := null; code_recu := null;
+  begin
+    set local role service_role;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics n = row_count;
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'taille', 99999999, e1)
+      on conflict (dossier_id, empreinte) do nothing;
+    get diagnostics m = row_count;
+    select count(*) into rendu from pieces_jointes_ecartees
+     where dossier_id = dossier_client and empreinte = e1 and raison = 'format' and octets = 12 and vue_le is null;
+    begin
+      update pieces_jointes_ecartees set octets = 13 where dossier_id = dossier_client and empreinte = e1;
+      obs := 'passe';
+    exception when others then obs := sqlstate;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '37. le rôle des Edge Functions (receive-email, à la clé secrète) écrit comme elle, une fois — le rejeu n''écrit rien, sans erreur — et la garde le tient aussi',
+    'observe', coalesce(n::text, '?') || ' puis ' || coalesce(m::text, '?') || ' ligne(s) écrite(s), ' || coalesce(rendu::text, '?')
+      || ' telle que reçue, mise à jour : ' || coalesce(obs, '?') || ', ' || coalesce(code_recu, '?'),
+    'ok', coalesce(n = 1 and m = 0 and rendu = 1 and obs = '23514' and code_recu = 'P0001', false));
+
+  -- ══ 40 à 45. Les mutations ═════════════════════════════════════════════════════════════════════════════════
+  -- 40. Le contrôle 15 joué sous le chef : il doit voir la ligne du dossier du client.
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from pieces_jointes_ecartees where dossier_id = dossier_client;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '40. MUTATION — le contrôle 15 joué sous le chef : il doit voir la ligne',
+    'observe', coalesce(n::text, '?') || ' vue(s)', 'ok', coalesce(n >= 1, false));
+
+  -- 41. Le contrôle 19 joué sous le super-administrateur : l'écriture passe.
+  n := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e3);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '41. MUTATION — le contrôle 19 joué sous le super-administrateur : l''écriture doit passer',
+    'observe', coalesce(n::text, 'refusée'), 'ok', coalesce(n = 1, false));
+
+  -- 42. Le contrôle 26 joué sous le chef : la marque passe.
+  rendu := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    rendu := marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '42. MUTATION — le contrôle 26 joué sous le chef : la marque doit passer',
+    'observe', coalesce(rendu::text, 'refusée'), 'ok', coalesce(rendu = 1, false));
+
+  -- 43. Le contrôle 10 avec deux empreintes différentes : les deux s'écrivent.
+  n := null;
+  begin
+    insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1), (dossier_client, 'taille', 99999999, e2);
+    get diagnostics n = row_count;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  verdicts := verdicts || jsonb_build_object('controle', '43. MUTATION — le contrôle 10 avec deux empreintes : les deux doivent s''écrire',
+    'observe', coalesce(n::text, 'refusées'), 'ok', coalesce(n = 2, false));
+
+  -- 44. Le contrôle 24 avec le droit d'exécution rendu à l'anonyme : c'est alors la fonction qui refuse.
+  message := null;
+  begin
+    insert into pieces_jointes_ecartees (id, dossier_id, raison, octets, empreinte) values (ligne_client, dossier_client, 'format', 4120, e1);
+    grant execute on function public.marquer_pieces_jointes_vues(uuid, uuid[]) to anon;
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    begin
+      perform marquer_pieces_jointes_vues(dossier_client, array[ligne_client]);
+    exception when others then message := sqlerrm;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '44. MUTATION — le contrôle 24 avec le droit rendu à l''anonyme : le refus doit changer',
+    'observe', coalesce(message, '?'), 'ok', coalesce(message = 'Accès refusé à ce dossier.', false));
+
+  -- 45. Le contrôle 37 joué sous une session ordinaire — celle du client — au lieu du rôle des Edge Functions :
+  -- l'écriture se refuse. (Le droit d'insertion de ce rôle se lit au contrôle 50 ; le lui retirer est une mutation de
+  -- la migration, jouée sur une réplique, jamais un geste d'un essai qui se joue en production.)
+  message := null;
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    begin
+      insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'format', 12, e1)
+        on conflict (dossier_id, empreinte) do nothing;
+      message := 'passe';
+    exception when others then message := sqlstate;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '45. MUTATION — le contrôle 37 joué sous la session du client : l''écriture doit se refuser',
+    'observe', coalesce(message, '?'), 'ok', coalesce(message = '42501', false));
+
+  -- ══ 50. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
+  verdicts := verdicts || jsonb_build_object('controle', '50. rien n''est resté en base',
+    'observe', 'pièces jointes écartées ' || lignes_avant || ' -> ' || (select count(*) from pieces_jointes_ecartees)
+      || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
+      || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations),
+    'ok', coalesce(lignes_avant = (select count(*) from pieces_jointes_ecartees)
+      and admins_avant = (select count(*) from cabinet_admins)
+      and assignations_avant = (select count(*) from dossier_assignations)
+      and not exists (select 1 from cabinet_admins where user_id = client)
+      and not exists (select 1 from pieces_jointes_ecartees where id in (ligne_client, ligne_autre, ligne_neuve))
+      and not has_function_privilege('anon', 'public.marquer_pieces_jointes_vues(uuid, uuid[])', 'execute')
+      and has_table_privilege('service_role', 'public.pieces_jointes_ecartees', 'insert'), false));
+
+  perform set_config('essai.pieces_jointes_ecartees', verdicts::text, true);
+end $$;
+
+-- Un verdict qui n'a pas pu se calculer est une faute, pas un silence. La ligne 0 dit le texte que la base a reçu — par
+-- l'outil MCP, qui ajoute sa signature après lui —, pour le comparer au fichier sans ses lignes de commentaire
+-- (`grep -v '^\s*--'`) par son empreinte.
+select x.controle, x.ok, x.observe from (
+  select v.controle, coalesce(v.ok, false) as ok, v.observe
+  from jsonb_to_recordset(current_setting('essai.pieces_jointes_ecartees')::jsonb) as v(controle text, ok boolean, observe text)
+  union all
+  select '0. information : le texte reçu par la base', true, length(t.recu) || ' caractères, empreinte ' || md5(t.recu)
+  from (select case when position(E'\n\n-- source: POST /mcp' in current_query()) > 0
+                    then left(current_query(), position(E'\n\n-- source: POST /mcp' in current_query()) - 1)
+                    else current_query() end as recu) t
+) x
+order by (regexp_match(x.controle, '^(\d+)'))[1]::int, x.controle;

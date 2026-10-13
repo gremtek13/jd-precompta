@@ -39,6 +39,7 @@ import { lireDeclarationsEreporting, type LectureDesDeclarations } from '../../l
 import { pieceDeclaree } from '../../lib/ereportingEcran'
 import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
+import PiecesJointesEcartees from './PiecesJointesEcartees'
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -730,6 +731,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
           'page avant d’arbitrer.'
         }
       />
+
+      {/* Les pièces jointes que la réception par e-mail a écartées (ligne 22.7) : elle les lit et les dit elle-même. */}
+      <PiecesJointesEcartees dossierId={dossierId} />
 
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche

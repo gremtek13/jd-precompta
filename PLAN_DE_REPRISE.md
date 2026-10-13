@@ -408,6 +408,15 @@ réinsérée avant son dossier arrête l'essai sur sa clé ; et la réinsertion 
 comprises, des lignes relues en JSON sur un dossier jetable : lignes identiques ; la suite d'abord, ou l'entrée avant la
 pièce qu'elle cite, la garde refuse.
 
+Le 13/10/2026 (ligne 22.7, migration `pieces_jointes_ecartees`, appliquée le même jour AVANT la fusion du correctif qui
+la met au plan : sans elle, toute sauvegarde échouerait sur une table absente), les pièces jointes que la réception par
+e-mail a écartées entrent au plan, après le dossier permanent et avant `exercices_valides` — 76 tables, 79 avec les
+devis —, sans vague. L'auteur d'une marque « vue » (`vue_par`) n'a pas de clé vers les comptes : il n'est pas parmi les
+prérequis du §3, 1. Une ligne déjà vue se réinsère telle qu'elle a été vue, par la porte du super-administrateur (la
+seule policy d'insertion de la table) ; la garde ne regarde que la mise à jour. Sur la réplique de l'étape, le dossier
+`test` portant deux pièces jointes écartées, dont une marquée vue par la fonction : 70 tables restaurées, 70 identiques,
+0 écart ; la table réinsérée avant son dossier arrête l'essai sur sa clé.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
 recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
 

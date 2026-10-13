@@ -338,6 +338,20 @@
 -- sur laquelle ce fichier a rendu, ENTIER, les verdicts ci-dessus (35 lignes, 0 en faute, 31 mutations sur 31) : il n'a
 -- pas été rejoué en production, où la table est vide. `dossierPermanent.sql`, lui, y a été joué le même jour : 188
 -- verdicts sur 188.
+--
+-- 13/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 22.7 : migration `pieces_jointes_ecartees`, préparée, non
+-- appliquée), qui crée `pieces_jointes_ecartees` — lecture sous `admin_du_dossier`, insertion de restauration réservée
+-- au super-administrateur, aucune autre policy, aucune branche client — ; ce fichier n'y change rien que cet en-tête.
+-- Joué ENTIER par psql sur la réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la
+-- production à 127 migrations) : sans la migration, 35 lignes de verdict (75 tables, dont 66 portant un `dossier_id`),
+-- 0 en faute, 31 mutations sur 31 qui mordent ; avec elle, la table semée dans le dossier `test` (deux pièces jointes
+-- écartées, l'une marquée vue par `marquer_pieces_jointes_vues` sous la session du chef) et dans celui du client (une),
+-- 35 lignes (76 tables, dont 67 portant un `dossier_id`), 0 en faute, 31 sur 31 — M1 et M3 y voient la table de plus
+-- (19 et 8 tables en faute, pour 18 et 7). En production le même jour, la migration appliquée (`20261013061933`) :
+-- 35 lignes, 0 en faute, 31 mutations sur 31 (76 tables, dont 67 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables
+-- en faute), le texte reçu par la base égal à la copie transmise (57 889 caractères, `d661fbbd…`). Ce que ses policies,
+-- sa garde et sa fonction refusent et acceptent, profil par profil et par leur raison, est éprouvé par
+-- `piecesJointesEcartees.sql`.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

@@ -200,6 +200,15 @@
 -- six entrées en trois vagues, dont une retirée et trois citations, relues identiques après la cascade du dossier et
 -- l'aller-retour JSON ; la suite d'abord, la garde la refuse (« … en remplace une de son dossier. ») ; l'entrée avant
 -- la pièce qu'elle cite aussi (« … cite une pièce de son dossier. ») ; un autre compte, la policy de restauration.
+--
+-- 13/10/2026, ligne 22.7 (migration `pieces_jointes_ecartees`, préparée, non appliquée) : `pieces_jointes_ecartees`
+-- entre au plan (76 tables, 79 avec les devis), après le dossier permanent et avant `exercices_valides`, sans vague ;
+-- seuls les rangs des devis et d'`exercices_valides` changent. Rejoué sur la réplique de l'étape, égale à la production à
+-- 127 migrations plus celle-ci (signature.sql, neuf familles, et l'historique), le dossier `test` portant deux pièces
+-- jointes écartées dont une marquée vue par `marquer_pieces_jointes_vues` : 134 clés recopiées, 70 tables restaurées et
+-- IDENTIQUES à la source (les deux lignes comprises), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
+-- colonne générée justes. Planté — la table avant son dossier —, le script s'arrête sur sa clé (23503). Sur une base qui
+-- n'a pas la migration, il s'arrête dès la création de ses tables d'essai, en nommant la table absente.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -237,7 +246,7 @@ insert into essai_restauration._ordre (rang, table_nom) values
  (61,'revision_justifications'),(62,'revision_preuves'),(63,'revision_conclusions'),(64,'revision_notes'),(65,'revision_revues'),
  (66,'revision_seuils'),(67,'revision_explications'),(68,'justificatifs_proposes'),(69,'precisions_mouvements'),(70,'regimes_ereporting'),
  (71,'pieces_ecartees_ereporting'),(72,'declarations_ereporting'),(73,'declarations_ereporting_sources'),(74,'dossier_permanent'),
- (75,'exercices_valides');
+ (75,'pieces_jointes_ecartees'),(76,'exercices_valides');
 
 insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
  ('a_nouveaux','direct',null,null),('agent_conversations','direct',null,null),('cabinet_admins','cabinet',null,null),
@@ -271,7 +280,8 @@ insert into essai_restauration._chemins (table_nom, acces, parent, colonne) valu
  ('superpdp_credentials','direct',null,null),('supplements','direct',null,null),('taux_change_bce','global',null,null),
  ('tiers_categories','direct',null,null),('tiers_categories_cabinet','cabinet',null,null),('transmissions_encaissements','direct',null,null),
  ('transmissions_factures','direct',null,null),('vehicules','direct',null,null),('ventilations_bancaires','direct',null,null),
- ('volet_social_pamc','direct',null,null);
+ ('volet_social_pamc','direct',null,null),
+ ('pieces_jointes_ecartees','direct',null,null);
 
 insert into essai_restauration._vagues (table_nom, colonne) values
  ('encaissements_factures','annule_id'),('revision_justifications','remplace_id'),('revision_justifications','reprise_de'),
