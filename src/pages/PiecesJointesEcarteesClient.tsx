@@ -15,7 +15,13 @@ import type { PieceJointeEcarteeDuClient } from '../lib/types'
 // vide) ; lue EN ENTIER et vide, rien ; lue en partie, refusée ou illisible, le bandeau, dans ses mots, sans compte.
 // Les mêmes classes que la carte de l'onglet Justificatifs (index.css) : la même alerte, de l'autre côté.
 
-export default function PiecesJointesEcarteesClient({ lecture }: { lecture: LectureComplete<PieceJointeEcarteeDuClient> | null }) {
+// `adresse` : l'adresse de collecte du dossier affiché, lue par l'écran (ligne 22.93) — nulle tant qu'elle n'est pas revenue,
+// quand sa lecture a échoué ou que le dossier n'en a pas : la carte dit alors « la même adresse », comme avant. Obligatoire :
+// un appelant qui l'oublierait ne dirait jamais l'adresse, sans qu'aucun test ne le voie.
+export default function PiecesJointesEcarteesClient({ lecture, adresse }: {
+  lecture: LectureComplete<PieceJointeEcarteeDuClient> | null
+  adresse: string | null
+}) {
   if (lecture === null) {
     return <p className="muted pieces-jointes-ecartees-attente" aria-busy="true">{ECARTEES_EN_LECTURE}</p>
   }
@@ -41,7 +47,7 @@ export default function PiecesJointesEcarteesClient({ lecture }: { lecture: Lect
           </li>
         ))}
       </ul>
-      {ceQueTuPeuxFaire(lecture.lignes).map((phrase) => <p key={phrase}>{phrase}</p>)}
+      {ceQueTuPeuxFaire(lecture.lignes, adresse).map((phrase) => <p key={phrase}>{phrase}</p>)}
     </section>
   )
 }

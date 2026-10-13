@@ -41,6 +41,11 @@ vi.mock('../lib/supabase', () => ({
         select: () => chaine,
         eq: () => chaine,
         order: () => chaine,
+        // L'adresse e-mail du dossier (ligne 22.93) : un dossier SANS code, ce fichier n'étant pas celui de l'adresse
+        // (ClientUpload.adresse.test.tsx) — rien ne s'en affiche, et aucune autre lecture n'en dépend.
+        maybeSingle: () => Promise.resolve(table === 'dossiers'
+          ? { data: { code_email: null }, error: null }
+          : { data: null, error: { message: `lecture inattendue : ${table}` } }),
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
           faux.demandees.push(table)

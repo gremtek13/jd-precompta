@@ -15,15 +15,12 @@ import {
 } from '../../lib/droitsAcces'
 import { avisDeLAccesCree, compteDeLaReponse } from '../../lib/creationDesComptes'
 import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
+import { adresseDeCollecte } from '../../lib/adresseCollecte'
+import { useCopieDuTexte } from '../../lib/copieDuTexte'
 import type { Membership } from '../../lib/types'
 
 // Un accès tel que l'onglet le lit : la personne, et ses deux droits (espace client, étape P1, voir lib/droitsAcces.ts).
 type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque'>
-
-// Domaine dédié à la réception (Resend) — distinct du domaine principal pour ne pas toucher à la
-// messagerie personnelle existante. Voir Palier 4 : le client configure un simple transfert
-// automatique de ses e-mails de prélèvement vers cette adresse, sans jamais donner accès à sa boîte.
-const DOMAINE_COLLECTE_EMAIL = 'precompta.jdarnis.fr'
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<AccesLu[]>([])
@@ -34,20 +31,6 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // mot de passe) — sans cet avis, le cabinet communiquerait au client un mot de passe qui n'a pas été posé.
   const [avisCreation, setAvisCreation] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
-  const [copie, setCopie] = useState(false)
-  const [copieRefusee, setCopieRefusee] = useState(false)
-  // Le « Copié ✓ » s'efface au bout de deux secondes. Son minuteur part avec l'écran : laissé derrière lui, il rappelait
-  // un écran démonté, et dans la suite de tests un environnement déjà détruit (une erreur non gérée, au hasard de la
-  // charge). `demonte` couvre la copie encore en vol au démontage, qui armerait sinon un minuteur que plus rien n'annule.
-  const minuteurCopie = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const demonte = useRef(false)
-  useEffect(() => {
-    demonte.current = false
-    return () => {
-      demonte.current = true
-      if (minuteurCopie.current !== null) clearTimeout(minuteurCopie.current)
-    }
-  }, [])
   const [relanceDe, setRelanceDe] = useState<AccesLu | null>(null)
   // « Aucun accès client pour ce dossier » est une AFFIRMATION, pas un écran vide : une lecture
   // refusée rendait la même liste vide, et le cabinet en concluait qu'il ne restait aucun accès.
@@ -249,24 +232,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     load()
   }
 
-  const adresseCollecte = codeEmail ? `${codeEmail}@${DOMAINE_COLLECTE_EMAIL}` : null
-
-  async function copierAdresse() {
-    if (!adresseCollecte) return
-    try {
-      await navigator.clipboard.writeText(adresseCollecte)
-    } catch {
-      // Le navigateur refuse le presse-papiers (permission, page non sécurisée) : sans ce `catch`, le clic ne faisait
-      // rien et l'échec partait en erreur non gérée. L'adresse reste affichée, à copier à la main.
-      if (!demonte.current) setCopieRefusee(true)
-      return
-    }
-    if (demonte.current) return
-    setCopieRefusee(false)
-    setCopie(true)
-    if (minuteurCopie.current !== null) clearTimeout(minuteurCopie.current)
-    minuteurCopie.current = setTimeout(() => setCopie(false), 2000)
-  }
+  const adresseCollecte = adresseDeCollecte(codeEmail)
+  // Le « Copié ✓ » et son minuteur : lib/copieDuTexte.ts, le même que « Mes pièces » du client.
+  const { copie, refusee: copieRefusee, copier: copierAdresse } = useCopieDuTexte(adresseCollecte)
 
   // Les cases ne s'offrent que sur une liste lue EN ENTIER ; lue en partie, chaque droit se lit, sans se changer. Le lien
   // de réinitialisation suit la même règle : il part vers l'adresse d'une ligne, et une liste tronquée ou pas encore

@@ -2182,3 +2182,17 @@ a.nav-menu-item { text-decoration: none; }
 .pieces-jointes-ecartees-seules { margin-bottom: 14px; }
 .pieces-jointes-ecartees-attente { margin: 0 0 10px; font-size: 0.8rem; }
 .pieces-jointes-ecartees-seules > .pieces-jointes-ecartees-vues { margin-top: 0; }
+
+/* L'adresse e-mail de collecte du dossier, dans la carte « Déposer des fichiers » de « Mes pièces » (ligne 22.93). C'est un seul
+   mot, souvent long (le nom du dossier, six caractères de son identifiant, puis `@precompta.jdarnis.fr`) : sur un téléphone il
+   passe à la ligne n'importe où (`overflow-wrap: anywhere`, comme `.nom-fichier`) plutôt que d'élargir la carte — c'est juste
+   pour une adresse, d'au moins 25 caractères, que le banc admet coupée ; un mot plus court, lui, ne se coupe jamais. Le bouton
+   passe à la ligne sous elle plutôt que de déborder. */
+.adresse-collecte-client { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-border); }
+.adresse-collecte-client p { margin: 0 0 8px; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.adresse-collecte-ligne { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 10px; margin-bottom: 10px; }
+.adresse-collecte {
+  min-width: 0; max-width: 100%; padding: 6px 10px; border-radius: var(--radius-xs);
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  font-size: 0.86rem; overflow-wrap: anywhere;
+}

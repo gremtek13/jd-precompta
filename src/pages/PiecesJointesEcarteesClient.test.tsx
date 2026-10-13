@@ -19,14 +19,14 @@ const texte = () => (document.body.textContent ?? '').replace(/[ \t\r\n]+/g, ' '
 
 describe('la carte du client : l’attente, la lecture partielle, le vide, la liste', () => {
   it('avant la lecture, l’attente seule — ni compte, ni silence', () => {
-    render(<PiecesJointesEcarteesClient lecture={null} />)
+    render(<PiecesJointesEcarteesClient lecture={null} adresse={null} />)
     const attente = screen.getByText(ECARTEES_EN_LECTURE)
     expect(attente.getAttribute('aria-busy')).toBe('true')
     expect(screen.queryByRole('heading')).toBeNull()
   })
 
   it('lue en partie ou refusée : le bandeau, dans ses mots, sans compte ni liste', () => {
-    render(<PiecesJointesEcarteesClient lecture={{ lignes: [ligne()], complete: false, motif: 'lecture refusée : Accès refusé à ce dossier.' }} />)
+    render(<PiecesJointesEcarteesClient lecture={{ lignes: [ligne()], complete: false, motif: 'lecture refusée : Accès refusé à ce dossier.' }} adresse={null} />)
     // (L'apostrophe droite de « n'ont » est celle du bandeau partagé, BandeauLecturePartielle.)
     expect(texte()).toBe('Les pièces jointes reçues par e-mail n\'ont pas pu être affichées en entier. Recharge la page : une pièce jointe reçue '
       + 'par e-mail et qui n’a pas pu être déposée peut ne pas être dite ici.')
@@ -36,7 +36,7 @@ describe('la carte du client : l’attente, la lecture partielle, le vide, la li
   })
 
   it('lue en entier et vide : rien', () => {
-    const { container } = render(<PiecesJointesEcarteesClient lecture={lue([])} />)
+    const { container } = render(<PiecesJointesEcarteesClient lecture={lue([])} adresse={null} />)
     expect(container.innerHTML).toBe('')
   })
 
@@ -45,7 +45,7 @@ describe('la carte du client : l’attente, la lecture partielle, le vide, la li
       ligne(),
       ligne({ jour: '2026-10-11', raison: 'depot', octets: null }),
       ligne({ jour: '2026-09-30', raison: 'vide', octets: 0 }),
-    ])} />)
+    ])} adresse={null} />)
     expect(screen.getByRole('region', { name: 'Pièces jointes reçues par e-mail et non déposées' })).toBeTruthy()
     expect(screen.getByRole('heading').textContent).toBe('3 pièces jointes reçues par e-mail n’ont pas été déposées')
     expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
@@ -64,7 +64,7 @@ describe('la carte du client : l’attente, la lecture partielle, le vide, la li
   })
 
   it('une seule : au singulier, d’un bout à l’autre', () => {
-    render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'taille', octets: 27_000_000 })])} />)
+    render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'taille', octets: 27_000_000 })])} adresse={null} />)
     expect(screen.getByRole('heading').textContent).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')
     expect(texte()).toContain('Reçue à l’adresse de collecte de ton dossier ces 90 derniers jours ; ton cabinet la voit aussi.')
     expect(texte()).toContain('le 12/10/2026 — au-delà des 20 Mo qu’une pièce peut peser (25,7 Mo)')
@@ -74,7 +74,34 @@ describe('la carte du client : l’attente, la lecture partielle, le vide, la li
   })
 
   it('deux pièces jointes d’un même jour, d’une même raison et d’un même poids restent deux lignes', () => {
-    render(<PiecesJointesEcarteesClient lecture={lue([ligne(), ligne()])} />)
+    render(<PiecesJointesEcarteesClient lecture={lue([ligne(), ligne()])} adresse={null} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  // Ligne 22.93 : l'adresse que « Mes pièces » a lue pour la société affichée. Nommée quand elle l'est, « la même adresse »
+  // sinon — jamais une adresse devinée.
+  it('avec l’adresse lue : « par e-mail, à <adresse> », et elle seule ; sans elle : « la même adresse »', () => {
+    const adresse = 'dossier-fictif-3f9a2c@precompta.jdarnis.fr'
+    const { unmount } = render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'taille', octets: 27_000_000 })])} adresse={adresse} />)
+    expect(texte()).toContain(`ou par e-mail, à ${adresse}.`)
+    expect(texte()).not.toContain('la même adresse')
+    expect(texte().split(adresse)).toHaveLength(2)
+    expect(motsDuCabinet(texte())).toEqual([])
+    unmount()
+    render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'taille', octets: 27_000_000 })])} adresse={null} />)
+    expect(texte()).toContain('ou par e-mail, à la même adresse.')
+    expect(texte()).not.toMatch(/@/)
+  })
+
+  it('l’adresse ne change rien aux autres états : l’attente, le bandeau et le vide ne la disent pas', () => {
+    const adresse = 'dossier-fictif-3f9a2c@precompta.jdarnis.fr'
+    const attente = render(<PiecesJointesEcarteesClient lecture={null} adresse={adresse} />)
+    expect(texte()).toBe(ECARTEES_EN_LECTURE)
+    attente.unmount()
+    const partielle = render(<PiecesJointesEcarteesClient lecture={{ lignes: [], complete: false, motif: 'réponse illisible' }} adresse={adresse} />)
+    expect(texte()).not.toContain(adresse)
+    partielle.unmount()
+    const { container } = render(<PiecesJointesEcarteesClient lecture={lue([])} adresse={adresse} />)
+    expect(container.innerHTML).toBe('')
   })
 })

@@ -23415,10 +23415,10 @@ en base) ; Q6, une ligne sur l'accueil du client (recommandé : oui, étape à p
 appliquée (ci-dessous). S228B-Q2 : les pièces jointes des 90 derniers jours, vues ou non par le cabinet. S228B-Q3 : la
 marque « vue » du cabinet range l'alerte chez lui seul et ne change rien pour le client. S228B-Q4 : le client ne marque
 rien ; son geste est de renvoyer, et la ligne sort d'elle-même de la fenêtre après 90 jours. S228B-Q5 : l'adresse de
-collecte se montrera dans « Mes pièces », dans une étape à part — l'espace du client la lit déjà sur la fiche de son
-dossier : rien de plus à ouvrir en base. S228B-Q6 : une ligne sur l'accueil du client, qui renvoie à « Mes pièces »,
-dans une étape à part, ensuite. Les hypothèses posées dans le code sont devenues des décisions, et ses commentaires le
-disent.
+collecte se montrera dans « Mes pièces », dans une étape à part — aucun écran du client ne la montre, seul l'onglet
+Accès du cabinet l'affiche ; la base lui ouvre déjà la fiche de son dossier, qui la porte (policy `dossiers_select`) :
+rien de plus à ouvrir en base. S228B-Q6 : une ligne sur l'accueil du client, qui renvoie à « Mes pièces », dans une
+étape à part, ensuite. Les hypothèses posées dans le code sont devenues des décisions, et ses commentaires le disent.
 
 **L'APPLICATION ET L'INTÉGRATION, LE 13/10/2026.** Avant : 130 migrations, et `signature.sql` en production égale, sur
 ses neuf familles, à la réplique d'avant la migration. La migration appliquée par la session (`apply_migration`), sans
@@ -23436,5 +23436,95 @@ note de `rls.sql`), l'essai sans commentaires restant au caractère près celui 
 intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 435 tests
 chacun ; construction verte (`index-B3TXwFVE.js`).
 
+**LA MISE EN LIGNE, LE 13/10/2026.** Fusionnée par #161 (`5da3224`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-B3TXwFVE.js`, le paquet de la barrière (déploiement 38446631019) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 22.9 à « Fait », deux lignes nouvelles — 22.93, l'adresse de collecte dans
+« Mes pièces » (S228B-Q5), et 22.94, une ligne sur l'accueil du client (S228B-Q6) —, les barres recomptées (137
+chantiers livrés sur 182, 75 % ; pour un dossier BNC, 137 sur 169, 81 %). Le worktree de l'agent retiré, ses fichiers
+repris par le correctif.
+
 **RESTE.** Deux étapes à part, décidées par le cabinet (S228B-Q5, Q6) : l'adresse de collecte dans « Mes pièces », puis
 une ligne sur l'accueil du client ; et la décision sur les éléments intégrés, sur les comptes réels (S229-Q3, Q4).
+
+### 13/10/2026 — « MES PIÈCES » MONTRE L'ADRESSE DE COLLECTE DU DOSSIER — LIGNE 22.93
+
+(`src/lib/adresseCollecte.ts` et `src/lib/copieDuTexte.ts`, nouveaux, et leurs tests ; `src/pages/ClientUpload.tsx` et
+un test neuf, `ClientUpload.adresse.test.tsx` ; `src/pages/PiecesJointesEcarteesClient.tsx`,
+`src/lib/piecesJointesEcarteesClient.ts`, `src/pages/dossier/AccesTab.tsx`, `src/index.css`,
+`outils/captures/fauxSupabase.ts`, `src/lib/verrousExecution.test.ts`, `RGPD.md` ; aucune migration, aucune Edge
+Function. Fait par l'agent S230 sur `5da3224`, relu et intégré par la session.) Décision du cabinet, S228B-Q5 : la carte
+des pièces jointes écartées dit de les renvoyer « par e-mail, à la même adresse », et aucun écran du client ne montrait
+cette adresse.
+
+**RIEN À OUVRIR EN BASE, RELU.** `dossiers_select` (lecture du catalogue, `pg_policies`) : `admin_du_dossier(id)` OU une
+ligne de `memberships` au nom de `auth.uid()` — tout accès du dossier lit la ligne, `code_email` comprise ; les
+privilèges de colonne de `authenticated` portent les 21 colonnes, `code_email` en tête. En production, le 13/10/2026,
+relu par la session : les quatre dossiers ont un code, tous de la forme que la lecture admet (le plus long,
+20 caractères) — aucun n'y passerait pour « illisible ».
+
+**L'ADRESSE EN UN SEUL ENDROIT.** `<code>@precompta.jdarnis.fr` ne se composait que dans AccesTab (constante locale) ;
+elle vit dans `lib/adresseCollecte.ts` (`adresseDeCollecte`, `DOMAINE_COLLECTE_EMAIL`), et un test balaie `src/` pour
+exiger qu'aucune autre source de production n'écrive le domaine (plancher de 200 fichiers lus). Copies de la VALEUR :
+les Edge Functions ne composent pas l'adresse — `receive-email` ne nomme le domaine que dans un commentaire d'en-tête
+(elle reconnaît le dossier au code, avant le « @ »), `send-email` en fait son domaine d'ENVOI (`DOMAINE_ENVOI`) ; les
+fixtures de `src/test/contratsFonctions.ts` l'écrivent dans des adresses de test. Aucun garde de copie écrit : s'il en
+fallait un, ce serait un test qui extrait `DOMAINE_ENVOI` de `send-email` et le confronte à `DOMAINE_COLLECTE_EMAIL` —
+Resend vérifie le domaine dans les deux sens, mais l'envoi et la collecte sont deux usages, et rien ne les lie par le
+code.
+
+**LA LECTURE.** `ClientUpload` lit `from('dossiers').select('code_email').eq('id', dossierId).maybeSingle()`, à part, au
+montage, gardée AVEC le dossier lu (`{ dossierId, lecture }`, comparé au dossier affiché) et annulée au changement de
+société (« UNE LECTURE PLUS LENTE ÉCRIT EN DERNIER ») ; `lireLAdresseDeCollecte` attend la requête, lit `error`, et une
+requête qui lève tombe du côté signalé. Rendu : l'adresse, ou rien — avec un motif quand la lecture a échoué (refus,
+ligne absente que la RLS ne dit pas, forme illisible, code d'une forme qu'aucun dossier n'a : un blanc, un « @ »…), SANS
+motif quand le dossier n'a pas de code. Avant le retour, rien n'est affirmé ; échec : une ligne dit que l'adresse n'a
+pas pu être lue (motif en infobulle) ; sans code : rien. La carte reçoit `adresse` (obligatoire) : « par e-mail, à
+<adresse> » quand elle est lue, « à la même adresse » sinon — `ceQueTuPeuxFaire(lignes, adresse)`, sans valeur par
+défaut ; avec `null` les phrases sont celles d'avant, au caractère près.
+
+**LA DISPOSITION LA PLUS SIMPLE.** Un bloc DANS la carte « Déposer des fichiers », sous les deux boutons, séparé d'un
+filet : « Tu peux aussi envoyer tes pièces par e-mail, en pièces jointes, à l'adresse de ton dossier : », l'adresse en
+`<code>` et « Copier l'adresse », puis ce qu'elle accepte — « PDF, JPEG, PNG ou CSV, de 20 Mo au plus chacune » — tiré
+de `TYPES_DES_FICHIERS_DE_PIECE` (un format de plus sans son nom ne compile pas) et de `TAILLE_MAX_PIECE`, confronté par
+le test au refus de format de `refusDUnePiece` (une référence extérieure à la phrase). Pas de carte de plus, pas de
+nouvelle page : le client qui cherche où déposer est déjà là.
+
+**LA COPIE : UN SEUL CROCHET.** Le « Copié ✓ » de l'onglet Accès (minuteur de deux secondes qui part avec l'écran,
+corrigé le 10/10/2026) est sorti en `lib/copieDuTexte.ts`, partagé avec « Mes pièces » — deux copies du même correctif
+sont le défaut que CLAUDE.md nomme (« chercher toutes les copies »). `AccesTab.test.tsx` passe SANS changer une ligne :
+la preuve que le côté cabinet ne bouge pas. Un défaut évité en passant : l'état se garde avec le TEXTE copié, un autre
+texte (une autre société) ne montre pas le « copié ✓ » du précédent. La garde `verrousExecution.test.ts` voyait le
+drapeau `demonte` dans AccesTab : son exception suit le crochet.
+
+**UNE ADRESSE LONGUE NE DÉBORDE PAS.** Le code d'un vrai dossier est son nom en tirets suivi de six caractères de son
+identifiant (`generate_code_email`) : un seul mot, de 30 à 70 caractères pour une raison sociale ordinaire.
+`.adresse-collecte` porte `overflow-wrap: anywhere` (comme `.nom-fichier`, entrée « UN MOT NE SE COUPE PLUS AU MILIEU »)
+et les paragraphes du bloc aussi ; la carte écartée le portait déjà. C'est juste pour une adresse : la règle du banc
+n'interdit de couper un mot qu'entre 2 et 24 caractères, et une adresse en a toujours plus de 25 ; sur téléphone elle
+passe à la ligne après un tiret quand elle peut (capture à 390 px : « societe-civile-de-moyens-des- /
+cabinets-infirmiers-de-la-vallee- / 9f8e7d@precompta.jdarnis.fr »), n'élargit ni la carte ni la page, et le bouton passe
+sous elle. Le faux Supabase du banc ne portait que `code_email: id` (« d1 ») : AJOUT d'une boucle qui donne au cabinet
+infirmier (d1) une adresse de vraie longueur et à l'atelier (d7, la société du client « Ventes » du banc) une adresse
+extrême, 89 caractères ; elles servent aussi à la passe du cabinet (l'onglet Accès).
+
+**CE QUI A ÉTÉ MESURÉ.** Banc, passe client : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 px ; passe du cabinet : 0
+à 1 440 et 390 px ; captures de « Mes pièces » relues à 1 440 (société d1) et à 390 px (société d7, clair et sombre).
+Tests : 10 469 passés (349 fichiers) ; les fichiers de S230 (145 tests) sous les quatre fuseaux. Mutations : 35 ciblées
+(composition, domaine, lecture, forme du code, garde du dossier, annulation, filtre `eq`, bloc sans adresse, bandeau,
+formats et poids, crochet de copie), 32 tuées ; trois équivalentes, justifiées — `Array.isArray` (un tableau n'a pas
+`code_email`, il tombe déjà sur « illisible »), `adresse === null` du bandeau (un motif non nul implique une adresse
+nulle), `!demonte.current` avant le refus de copie (React 19 ne dit rien d'une mise à jour d'un composant démonté ; le
+garde reprend celui d'AccesTab). `tsc -b` 0, Edge 25 erreurs connues avant et après, lint 63 avertissements avant et
+après, build vert.
+
+**RÉSULTAT NÉGATIF À NE PAS RÉENQUÊTER.** Un code d'adresse peut commencer par un tiret (`generate_code_email` remplace
+tout signe, y compris en tête, par un tiret) : la forme acceptée n'exige pas une lettre en tête.
+
+**L'INTÉGRATION, LE 13/10/2026.** Le correctif relu (18 fichiers) et appliqué sur `5da3224`, avec, dans la même demande,
+la mise en ligne de la ligne 22.9 et la retouche d'une formule de son entrée (S228B-Q5 : la base ouvre l'adresse au
+client, aucun écran ne la lui montrait). Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint
+63 avertissements, les mêmes ; quatre fuseaux, 10 469 tests chacun ; construction verte (`index-elM_bfXs.js`).
+
+**RESTE.** La ligne 22.94 : une ligne sur l'accueil du client qui renvoie à « Mes pièces » (S228B-Q6). Proposé par
+l'agent, non écrit : un garde de copie qui confronterait `DOMAINE_ENVOI` de `send-email` à `DOMAINE_COLLECTE_EMAIL` —
+l'envoi et la collecte sont deux usages, et rien ne les lie par le code.

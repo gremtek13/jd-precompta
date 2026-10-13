@@ -120,16 +120,26 @@ export function dOuEllesViennent(n: number): string {
 export const SI_LA_LECTURE_MANQUE =
   'Recharge la page : une pièce jointe reçue par e-mail et qui n’a pas pu être déposée peut ne pas être dite ici.'
 
-const OU = 'dans « Déposer des fichiers », ci-dessous, ou par e-mail, à la même adresse'
+/**
+ * Où renvoyer : « Déposer des fichiers », ci-dessous, ou l'adresse e-mail du dossier — NOMMÉE quand « Mes pièces » l'a lue
+ * (ligne 22.93), sinon « la même adresse » : celle que le titre de la carte appelle l'adresse de collecte. Jamais une
+ * adresse devinée : `adresse` est nulle tant que la lecture n'est pas revenue, quand elle a échoué ou que le dossier n'a
+ * pas de code.
+ */
+export function ouRenvoyer(adresse: string | null): string {
+  return `dans « Déposer des fichiers », ci-dessous, ou par e-mail, à ${adresse ?? 'la même adresse'}`
+}
 
 /**
  * Ce que le client peut faire, une phrase par idée : refusée à son format ou à son poids, elle se renvoie autrement ; son
  * dépôt échoué, TELLE QUELLE — ce n'est pas de son fait ; arrivée vide, il VÉRIFIE SON FICHIER d'abord — la renvoyer telle
  * quelle la ferait arriver vide de nouveau (les consignes de l'onglet Justificatifs, dites à lui). Mêlées, chacune garde
  * la sienne, et une phrase commune dit où. Un format refusé peut n'avoir jamais été une pièce : il n'a rien à faire. Et la
- * liste garde 90 jours sans savoir s'il a renvoyé depuis : la dernière phrase le dit.
+ * liste garde 90 jours sans savoir s'il a renvoyé depuis : la dernière phrase le dit. `adresse` est celle que « Mes pièces »
+ * a lue pour la société affichée, ou null (voir `ouRenvoyer`) : le paramètre n'a pas de valeur par défaut.
  */
-export function ceQueTuPeuxFaire(lignes: readonly Pick<PieceJointeEcarteeDuClient, 'raison'>[]): string[] {
+export function ceQueTuPeuxFaire(lignes: readonly Pick<PieceJointeEcarteeDuClient, 'raison'>[], adresse: string | null): string[] {
+  const OU = ouRenvoyer(adresse)
   const formats = lignes.filter((l) => l.raison === 'format').length
   const refusees = formats + lignes.filter((l) => l.raison === 'taille').length
   const echouees = lignes.filter((l) => l.raison === 'depot').length

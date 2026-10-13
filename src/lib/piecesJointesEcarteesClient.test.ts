@@ -7,7 +7,7 @@ import * as cabinet from './piecesJointesEcartees'
 import {
   CE_QUE_DIT_LA_COLLECTE, ceQueDitLaCollecte, ceQueTuPeuxFaire, dOuEllesViennent, ECARTEES_DU_CLIENT_EXPORTEES,
   ECARTEES_EN_LECTURE, JOURS_DE_LA_LECTURE_DU_CLIENT, lectureDesEcarteesDuClient, lignesDuClient, lireLesEcarteesDuClient,
-  phraseDeLaRaison, quandPourLeClient, SI_LA_LECTURE_MANQUE, titreDuSignalement,
+  ouRenvoyer, phraseDeLaRaison, quandPourLeClient, SI_LA_LECTURE_MANQUE, titreDuSignalement,
 } from './piecesJointesEcarteesClient'
 import type { PieceJointeEcarteeDuClient } from './types'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -24,6 +24,10 @@ const ligne = (o: Partial<PieceJointeEcarteeDuClient> = {}): PieceJointeEcarteeD
 })
 const OU = 'dans « Déposer des fichiers », ci-dessous, ou par e-mail, à la même adresse'
 const BORNE = poids(TAILLE_MAX_PIECE)
+// Sans adresse lue (l'état d'avant la ligne 22.93, et celui d'une lecture ratée ou pas revenue) : « la même adresse ».
+const peutFaire = (lignes: readonly Pick<PieceJointeEcarteeDuClient, 'raison'>[]) => ceQueTuPeuxFaire(lignes, null)
+// Une adresse fictive, de la forme que compose `adresseDeCollecte`.
+const ADRESSE = 'dossier-fictif-3f9a2c@precompta.jdarnis.fr'
 
 // Une requête comme PostgREST en construit une : un `then` qui ne rend rien (le patron de couvertureReleve.test.ts).
 function requete(reponse: () => ReponseDeLaBase): PromiseLike<ReponseDeLaBase> {
@@ -126,37 +130,37 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
   const pasUnePiece = 'Une pièce jointe qui n’était pas une pièce — une signature électronique, une invitation… — n’a pas à être renvoyée.'
 
   it('refusées à leur format ou à leur poids : autrement, en PDF, JPEG, PNG ou CSV, et sous la borne', () => {
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'taille' })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'taille' })])).toEqual([
       `Pour qu’elle arrive, renvoie-la en PDF, JPEG, PNG ou CSV, et sous ${BORNE} — ${OU}.`, reste1,
     ])
     // Un format refusé peut n'avoir jamais été une pièce : il n'a rien à faire.
-    expect(ceQueTuPeuxFaire([ligne(), ligne({ raison: 'taille' })])).toEqual([
+    expect(peutFaire([ligne(), ligne({ raison: 'taille' })])).toEqual([
       `Pour qu’elles arrivent, renvoie-les en PDF, JPEG, PNG ou CSV, et sous ${BORNE} chacune — ${OU}.`, pasUnePiece, resteN,
     ])
     expect(BORNE).toBe('20 Mo')
   })
 
   it('le dépôt a échoué : ce n’est pas de son fait, TELLE QUELLE', () => {
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'depot', octets: null })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'depot', octets: null })])).toEqual([
       `Ce n’est pas de ton fait : renvoie-la telle quelle — ${OU}.`, reste1,
     ])
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'depot' }), ligne({ raison: 'depot', octets: null })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'depot' }), ligne({ raison: 'depot', octets: null })])).toEqual([
       `Ce n’est pas de ton fait : renvoie-les telles quelles — ${OU}.`, resteN,
     ])
   })
 
   it('arrivée vide : vérifier son fichier d’abord — jamais « telle quelle », qui la ferait arriver vide de nouveau', () => {
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'vide', octets: 0 })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'vide', octets: 0 })])).toEqual([
       `Vérifie ton fichier (qu’il s’ouvre et ne soit pas vide), puis renvoie-le — ${OU}.`, reste1,
     ])
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'vide', octets: 0 }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'vide', octets: 0 }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
       `Vérifie tes fichiers (qu’ils s’ouvrent et ne soient pas vides), puis renvoie-les — ${OU}.`, resteN,
     ])
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'vide', octets: 0 })]).join(' ')).not.toMatch(/telle quelle/)
+    expect(peutFaire([ligne({ raison: 'vide', octets: 0 })]).join(' ')).not.toMatch(/telle quelle/)
   })
 
   it('mêlées : chacune sa consigne, puis où les renvoyer', () => {
-    expect(ceQueTuPeuxFaire([ligne(), ligne({ raison: 'depot', octets: null }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
+    expect(peutFaire([ligne(), ligne({ raison: 'depot', octets: null }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
       `Celle refusée à son format ou à son poids : renvoie-la en PDF, JPEG, PNG ou CSV, et sous ${BORNE}.`,
       'Celle dont le dépôt a échoué : ce n’est pas de ton fait, renvoie-la telle quelle.',
       'Celle arrivée vide : vérifie ton fichier (qu’il s’ouvre et ne soit pas vide) avant de le renvoyer.',
@@ -164,7 +168,7 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
       pasUnePiece,
       resteN,
     ])
-    expect(ceQueTuPeuxFaire([
+    expect(peutFaire([
       ligne({ raison: 'taille' }), ligne({ raison: 'taille' }), ligne({ raison: 'depot' }), ligne({ raison: 'depot' }),
       ligne({ raison: 'vide', octets: 0 }), ligne({ raison: 'vide', octets: 0 }),
     ])).toEqual([
@@ -175,13 +179,38 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
       resteN,
     ])
     // Deux raisons seulement : le groupe absent ne se dit pas.
-    expect(ceQueTuPeuxFaire([ligne({ raison: 'depot' }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
+    expect(peutFaire([ligne({ raison: 'depot' }), ligne({ raison: 'vide', octets: 0 })])).toEqual([
       'Celle dont le dépôt a échoué : ce n’est pas de ton fait, renvoie-la telle quelle.',
       'Celle arrivée vide : vérifie ton fichier (qu’il s’ouvre et ne soit pas vide) avant de le renvoyer.',
       `Renvoie-les ${OU}.`,
       resteN,
     ])
-    expect(ceQueTuPeuxFaire([])).toEqual([])
+    expect(peutFaire([])).toEqual([])
+  })
+
+  it('l’adresse lue est NOMMÉE à la place de « la même adresse », dans chaque phrase qui dit où renvoyer — et nulle part ailleurs', () => {
+    const ou = `dans « Déposer des fichiers », ci-dessous, ou par e-mail, à ${ADRESSE}`
+    expect(ouRenvoyer(ADRESSE)).toBe(ou)
+    expect(ouRenvoyer(null)).toBe(OU)
+    expect(ceQueTuPeuxFaire([ligne({ raison: 'taille' })], ADRESSE)).toEqual([
+      `Pour qu’elle arrive, renvoie-la en PDF, JPEG, PNG ou CSV, et sous ${BORNE} — ${ou}.`, reste1,
+    ])
+    expect(ceQueTuPeuxFaire([ligne({ raison: 'depot', octets: null }), ligne({ raison: 'depot' })], ADRESSE)).toEqual([
+      `Ce n’est pas de ton fait : renvoie-les telles quelles — ${ou}.`, resteN,
+    ])
+    expect(ceQueTuPeuxFaire([ligne({ raison: 'vide', octets: 0 })], ADRESSE)).toEqual([
+      `Vérifie ton fichier (qu’il s’ouvre et ne soit pas vide), puis renvoie-le — ${ou}.`, reste1,
+    ])
+    // Mêlées : la phrase commune, et elle seule, dit où.
+    const melees = ceQueTuPeuxFaire([ligne(), ligne({ raison: 'depot', octets: null })], ADRESSE)
+    expect(melees).toContain(`Renvoie-les ${ou}.`)
+    for (const cas of [[ligne()], [ligne(), ligne({ raison: 'depot' }), ligne({ raison: 'vide', octets: 0 })]]) {
+      const phrases = ceQueTuPeuxFaire(cas, ADRESSE)
+      expect(phrases.join(' ').split(ADRESSE)).toHaveLength(2)
+      expect(phrases.join(' ')).not.toContain('la même adresse')
+    }
+    // Sans adresse, rien n'est inventé : les phrases d'avant, au caractère près.
+    expect(ceQueTuPeuxFaire([ligne()], null).join(' ')).not.toMatch(/@/)
   })
 
   it('aucun texte montré au client ne parle comme le cabinet : ni onglet, ni « le client », ni vouvoiement', () => {
@@ -196,7 +225,7 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
         ...Array.from({ length: d }, () => ligne({ raison: 'depot', octets: null })),
         ...Array.from({ length: v }, () => ligne({ raison: 'vide', octets: 0 })),
       ]
-      textes.push(...ceQueTuPeuxFaire(lignes))
+      textes.push(...peutFaire(lignes), ...ceQueTuPeuxFaire(lignes, ADRESSE))
     }
     for (const texte of textes) expect(motsDuCabinet(texte), texte).toEqual([])
     // Le garde des ventes laisse passer « le client », qu'il réserve à l'ACHETEUR : ici, il n'y a pas d'acheteur, et le mot
