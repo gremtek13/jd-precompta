@@ -23525,6 +23525,89 @@ la mise en ligne de la ligne 22.9 et la retouche d'une formule de son entrée (S
 client, aucun écran ne la lui montrait). Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint
 63 avertissements, les mêmes ; quatre fuseaux, 10 469 tests chacun ; construction verte (`index-elM_bfXs.js`).
 
+**LA MISE EN LIGNE, LE 13/10/2026.** Fusionnée par #162 (`f83f4a9`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-elM_bfXs.js`, le paquet de la barrière (déploiement 38456998304) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 22.93 à « Fait », les barres recomptées (138 chantiers livrés sur 182, 76 % ;
+pour un dossier BNC, 138 sur 169, 82 %). Le worktree de l'agent retiré (ses 18 fichiers identiques à ceux intégrés),
+comme celui de l'intégration.
+
 **RESTE.** La ligne 22.94 : une ligne sur l'accueil du client qui renvoie à « Mes pièces » (S228B-Q6). Proposé par
 l'agent, non écrit : un garde de copie qui confronterait `DOMAINE_ENVOI` de `send-email` à `DOMAINE_COLLECTE_EMAIL` —
 l'envoi et la collecte sont deux usages, et rien ne les lie par le code.
+
+### 13/10/2026 — L'ACCUEIL DU CLIENT SIGNALE UNE PIÈCE JOINTE ÉCARTÉE ET RENVOIE À « MES PIÈCES » — LIGNE 22.94
+
+(`src/lib/piecesJointesEcarteesClientLecture.ts` et son test, `src/pages/PiecesJointesEcarteesAccueil.tsx` et son test,
+`src/pages/ClientHome.ecartees.test.tsx`, `src/pages/ClientHome.tsx`, `src/pages/ClientUpload.tsx`,
+`src/lib/piecesJointesEcarteesClient.ts` et son test, `src/index.css`, `RGPD.md` ; quatre fichiers de test ajustés — les
+doublures de `ClientHome.test.tsx` et `ClientHome.couverture.test.tsx`, les raisons de `ecrituresVerifiees.test.ts` et
+`verrousEcritures.test.ts` ; aucune migration, aucune Edge Function, aucun changement du faux Supabase du banc. Fait par
+l'agent S231 sur `f83f4a9`, relu et intégré par la session.) Décision du cabinet, S228B-Q6 : un client qui ne passe que
+par son accueil ne voyait pas les pièces jointes que la réception par e-mail avait écartées — « Mes pièces » les disait,
+l'accueil n'en savait rien.
+
+**RIEN À OUVRIR EN BASE.** La même fonction, `pieces_jointes_ecartees_du_client` (tout accès du dossier, 90 derniers
+jours, le jour, la raison et le poids), sous `ECARTEES_DU_CLIENT_EXPORTEES` (levé) ; drapeau baissé, l'accueil n'appelle
+rien et ne dit rien, comme « Mes pièces ». RGPD.md : une phrase par AJOUT, sous la puce de la ligne 22.9 qui nomme déjà
+« Mes pièces » comme l'écran qui lit — l'accueil lit les mêmes trois champs, la même fenêtre, et n'en montre que le
+compte.
+
+**LA LECTURE, ÉCRITE UNE FOIS.** « Mes pièces » la faisait en ligne (l'appel `rpc`, la garde `{ dossierId, lecture }`,
+le drapeau d'annulation). Elle est sortie en un crochet, `useEcarteesDuClient(dossierId)`, dans
+`lib/piecesJointesEcarteesClientLecture.ts` — un module à part de `piecesJointesEcarteesClient.ts`, qui reste PUR et
+n'importe toujours pas `supabase.ts` (le patron de `lib/ventesLecture.ts`). `ClientUpload` l'appelle à la place de son
+code ; `ClientUpload.ecartees.test.tsx` passe SANS changer une attente. Le crochet rend `null` tant que la lecture n'est
+pas revenue (et toujours : drapeau baissé, sans société), la lecture d'une société ne se montre jamais sous une autre,
+une réponse tardive de la société quittée n'écrase pas celle de la société affichée ; refus, réponse illisible, requête
+qui lève : une lecture INCOMPLÈTE avec son motif, jamais une liste vide. Un test balaie `src/` et exige qu'un seul
+fichier de production porte le `.rpc(` de la fonction (les lignes de code seules : les commentaires citent l'appel), et
+que les deux écrans appellent le crochet ; les gardes de scanner (`ecrituresVerifiees`, `verrousEcritures`) comptent
+toujours UN `lireLesEcarteesDuClient` et un `rpc:` — seules leurs raisons nomment le crochet. Sur l'accueil la lecture
+vit À PART de `load` : la panne des listes de l'accueil ne la tait pas (test : `pieces` refusée, la ligne se dit quand
+même), et la sienne n'en fausse aucune (aucun bandeau « Tes envois », les chiffres sont là).
+
+**CE QUE DIT LA LIGNE** (`PiecesJointesEcarteesAccueil`, quatre états, aux mots du client, `MOTS_DU_CABINET` éprouvés).
+Liste lue EN ENTIER et non vide : le compte sous la phrase PARTAGÉE de la carte de « Mes pièces » et de l'onglet
+Justificatifs (`titreDuSignalement`, aucune phrase recopiée ; mutation M11) et un bouton « Voir dans « Mes pièces » » ;
+ni raison, ni jour, ni poids, ni adresse. Vide lue en entier : RIEN, pas de « aucune ». Avant le retour : rien — ni
+attente (l'accueil n'en dépend pas, contrairement à la carte de « Mes pièces »), ni affirmation. Lecture partielle,
+refusée ou illisible : une ligne DISCRÈTE, sans teinte ni pastille, motif en infobulle — « Les pièces jointes reçues par
+e-mail n'ont pas pu être vérifiées ici : regarde dans « Mes pièces ». » — et le même renvoi ; « Mes pièces » dit la
+suite par son bandeau. Choisi plutôt que le silence : une liste qu'on n'a pas pu lire ne doit pas passer pour une liste
+vide ; et plutôt qu'un bandeau d'erreur : l'accueil n'en dépend pas, la panne d'une ligne ne doit pas dominer l'écran.
+
+**LA DISPOSITION.** Une ligne au-dessus des tuiles, sous la salutation (`.client-signalement`, `index.css`) : la teinte
+d'avertissement de la carte de « Mes pièces » (`--color-warning`, `color-mix`, aucune couleur en dur), la pastille
+d'attention (`check-dot check-attention`, décorative : le statut se lit au texte), la phrase, le bouton
+`btn-outline btn-sm` déjà utilisé par « Envoyer » et « Tout voir ». Une rangée qui passe à la ligne (le bouton sous la
+phrase sur téléphone) ; elle ne remplace ni ne déplace aucune tuile ni aucun indicateur (test : quatre tuiles, la ligne
+avant elles). Pas de fenêtre superposée, rien dans la grille `bento`.
+
+**DOUBLURES.** Les accueils dont le faux `rpc` rendait une erreur pour toute fonction inconnue (`ClientHome.test.tsx`)
+ou la couverture pour toute fonction (`ClientHome.couverture.test.tsx`) répondent maintenant à
+`pieces_jointes_ecartees_du_client` par « aucune, lue en entier » ; le second compte ses appels PAR NOM (la couverture
+se lit toujours UNE fois, et la lecture des pièces jointes écartées en est une autre).
+`espaceClientAvantCouverture.test.tsx`, qui force le drapeau baissé, passe sans changement : l'accueil n'appelle
+toujours aucune fonction dans le monde d'avant.
+
+**CE QUI A ÉTÉ MESURÉ.** Tests : 10 494 passés (352 fichiers ; +25 tests, +3 fichiers) ; les 15 fichiers touchés
+(280 tests) verts sous Paris, UTC, New York et Auckland. Mutations : 15 ciblées (annulation, garde de société, drapeau,
+société absente, relecture au changement de société, requête non lue, ligne muette sur une lecture manquée, vide dit,
+lecture manquée prise pour une liste, renvoi vers une autre route, phrase recopiée, pastille sur la ligne discrète,
+ligne après les tuiles, lecture non passée à la ligne, « Mes pièces » sans le crochet), 15 mordent, aucune équivalente.
+Un garde `ECARTEES_DU_CLIENT_EXPORTEES &&` autour de la ligne, écrit d'abord, était équivalent (le crochet rend `null`
+drapeau baissé, et la ligne ne dit rien de `null`) : retiré, le drapeau n'est consulté qu'au crochet, que la mutation M3
+éprouve. `tsc -b` 0, lint 0 erreur et les mêmes 63 avertissements qu'avant, Edge 25 erreurs connues avant et après,
+build vert. Banc (port 5331), passe client : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 px ; accueil du client du
+banc relu à 1 440, 1 024 et 390 px (cabinet infirmier d1 : 5 pièces jointes écartées lues, dont une déjà vue par le
+cabinet — la marque ne change rien pour le client) ; aucune police refusée.
+
+**L'INTÉGRATION, LE 13/10/2026.** Le correctif relu (15 fichiers) et appliqué sur `f83f4a9`, avec, dans la même demande,
+la mise en ligne de la ligne 22.93 ; captures du banc relues (l'accueil à 1 440 et 390 px : la ligne teintée, sa
+pastille, le renvoi, qui passe sous la phrase sur téléphone). Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge
+25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 494 tests chacun ; construction verte
+(`index-tWUcQ3Eq.js`).
+
+**RESTE.** Des lignes 22.7 à 22.94, la seule décision sur les éléments de l'e-mail qui ne sont pas des pièces jointes,
+prise sur les comptes réels (S229-Q3, Q4). L'état « lecture manquée » de la ligne de l'accueil n'a pas de capture du
+banc (son faux Supabase répond toujours) : les tests le couvrent.

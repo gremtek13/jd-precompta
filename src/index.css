@@ -1569,6 +1569,17 @@ a.nav-menu-item { text-decoration: none; }
 .client-hero-sous { margin: 0; color: var(--color-text-light); font-size: 0.92rem; }
 .client-hero-date { display: inline-block; margin-bottom: 12px; font-size: 0.76rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary); }
 .tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+/* La ligne de l'accueil sur les pièces jointes reçues par e-mail et écartées (ligne 22.94) : la teinte d'avertissement de la
+   carte de « Mes pièces », en une seule rangée — pastille, phrase, renvoi. Elle passe à la ligne (le bouton sous la phrase)
+   plutôt que de déborder ; la version discrète (lecture manquée) n'a ni teinte ni pastille. */
+.client-signalement {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  margin-bottom: 20px; padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, var(--color-border)); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-warning-light) 55%, var(--color-surface));
+}
+.client-signalement-discret { border-color: var(--color-border); background: var(--color-surface); }
+.client-signalement-texte { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 0.9rem; line-height: 1.4; overflow-wrap: anywhere; }
 .tuile {
   display: flex; flex-direction: column; gap: 12px; text-align: left;
   padding: 18px; text-decoration: none; color: var(--color-text); cursor: pointer;

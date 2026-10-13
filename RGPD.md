@@ -370,6 +370,10 @@ Ce qui est **prouvé**, pas seulement affirmé :
   `code_email` de SA ligne de `dossiers` (son nom en tirets et six caractères de l'identifiant), que la policy de lecture
   de `dossiers` lui ouvrait déjà ; rien de plus n'est ouvert en base, aucune donnée nouvelle ne sort, et la lecture ne
   part qu'avec la société affichée.
+  Depuis la ligne 22.94 (13/10/2026), l'accueil du client lit la MÊME fonction, par le même crochet
+  (`lib/piecesJointesEcarteesClientLecture.ts`), pour dire en une ligne combien de pièces jointes écartées l'attendent
+  dans « Mes pièces » : rien de plus n'est ouvert ni lu — les mêmes trois champs, la même fenêtre de 90 jours, et l'accueil
+  n'en montre que le compte (ni raison, ni jour, ni poids) ; la lecture ne part qu'avec la société affichée.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

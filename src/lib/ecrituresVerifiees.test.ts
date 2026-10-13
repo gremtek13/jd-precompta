@@ -104,9 +104,9 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
     nombre: 1,
     raison:
       'ce n’est pas une écriture : `pieces_jointes_ecartees_du_client` LIT le jour, la raison et le poids des pièces ' +
-      'jointes que la réception par e-mail a écartées (ligne 22.9), pour « Mes pièces » du client. ' +
-      '`lib/piecesJointesEcarteesClient.ts` attend la requête et lit son erreur : un refus, ou une réponse illisible, ' +
-      'rendent une lecture INCOMPLÈTE, que l’écran dit, jamais une liste vide',
+      'jointes que la réception par e-mail a écartées (ligne 22.9), pour « Mes pièces » et l’accueil du client, par UN ' +
+      'crochet (`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94). `lib/piecesJointesEcarteesClient.ts` attend la ' +
+      'requête et lit son erreur : un refus, ou une réponse illisible, rendent une lecture INCOMPLÈTE, que l’écran dit, jamais une liste vide',
   },
   lireLePlanDuDossier: {
     nombre: 1,

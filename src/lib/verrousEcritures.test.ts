@@ -68,7 +68,8 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
   'rpc:pieces_jointes_ecartees_du_client': {
     nature: 'lecture',
     raison: 'Le jour, la raison et le poids des pièces jointes écartées d’un dossier (fonction `stable`, `security definer`, '
-      + 'sans écriture ; migration `pieces_jointes_ecartees_au_client`, ligne 22.9), au montage de « Mes pièces » du client.',
+      + 'sans écriture ; migration `pieces_jointes_ecartees_au_client`, ligne 22.9), au montage de « Mes pièces » et de l’accueil du client '
+      + '(`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94).',
   },
   'rpc:plan_du_dossier': {
     nature: 'lecture',
