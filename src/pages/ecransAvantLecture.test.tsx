@@ -39,6 +39,7 @@ import CotisationsTab from './dossier/CotisationsTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
+import ReglementsSection from './dossier/ReglementsSection'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
@@ -354,6 +355,13 @@ const ECRANS: Ecran[] = [
   // aussi ; rien ne se dit ni ne s'offre avant leur lecture.
   { nom: 'PiecesJointesEcartees', fichier: 'pages/dossier/PiecesJointesEcartees.tsx', rendre: () => (
     <Dossier1><PiecesJointesEcartees dossierId="d1" /></Dossier1>
+  ) },
+  // « Règlements » (étape A3) : la vue de l'onglet Factures, montée seule — au cabinet, et au client sans « Banque ».
+  { nom: 'ReglementsSection', fichier: 'pages/dossier/ReglementsSection.tsx', rendre: () => (
+    <Dossier1><ReglementsSection espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" statutTva="redevable" /></Dossier1>
+  ) },
+  { nom: 'ReglementsSection (client)', fichier: 'pages/dossier/ReglementsSection.tsx', rendre: () => (
+    <Dossier1><ReglementsSection espace="client" banque={false} dossierId="d1" statutTva="redevable" /></Dossier1>
   ) },
 ]
 

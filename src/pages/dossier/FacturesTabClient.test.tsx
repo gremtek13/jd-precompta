@@ -383,6 +383,26 @@ const ETATS: Etat[] = [
     },
   },
   {
+    // « Règlements » (étape A3) : un mouvement désigné que l'accès ne montre pas, un encaissement déclaré puis contre-passé,
+    // un chèque retiré, et un statut de TVA à préciser — la raison de l'obligation nomme un onglet, réécrite pour le client.
+    nom: 'les règlements, sans « Banque », statut de TVA à préciser',
+    montage: { statutTva: null },
+    jeu: {
+      transmissions: [transmission()],
+      encaissements: [
+        encaissement({ id: 'e2', ligne_bancaire_id: 'm1' }),
+        encaissement({ id: 'e3', montant: -600, annule_id: 'e2', motif: 'Rendu', date_encaissement: '2027-10-09' }),
+        encaissement({ id: 'e4', montant: 200, moyen: 'cheque', retire_le: '2027-10-06T08:00:00Z' }),
+        encaissement({ id: 'e5', montant: 100, moyen: 'cheque' }),
+      ],
+      declarations: [declaration()],
+    },
+    atteindre: async () => {
+      fireEvent.click(screen.getByRole('tab', { name: 'Règlements' }))
+      await screen.findByRole('table', { name: 'Règlements' })
+    },
+  },
+  {
     nom: 'le bilan d’un relevé incomplet',
     connexion: CONNEXION,
     relever: releveIncomplet,

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { compterLesPastilles, type ListesDesVentes } from './tuilesVentes'
+import { compterLesPastilles, type EncaissementDesVentes, type ListesDesVentes } from './tuilesVentes'
 import { pastilleDeclaration, pastilleEncaissement } from './encaissementsAffichage'
 import { facture as factureCii } from '../test/facturesCii'
 import type { FactureEmise, TransmissionFacture } from './types'
-import type { EncaissementPourContrePassation, PartLue } from './encaissementsFactures'
+import type { PartLue } from './encaissementsFactures'
 
 // LE COMPTE DES TUILES DE L'ACCUEIL DU CLIENT (espace client, étape P4b) : les pastilles de l'onglet Factures, comptées.
 // Ce que ces cas gardent : le compte est celui des deux fonctions de pastille, facture par facture ; « Encaissée » ne compte
@@ -22,9 +22,9 @@ const transmission = (factureId: string): TransmissionFacture => ({
   id: `t-${factureId}`, dossier_id: 'd1', facture_id: factureId, canal: 'plateforme', hote: HOTE, flux_id: `flux-${factureId}`,
   sha256: 'e'.repeat(64), etat: 'accepte', detail: null, cree_le: '2027-10-02T09:00:00Z', maj_le: '2027-10-02T09:05:00Z',
 })
-const encaissement = (id: string, factureId: string, montant: number, date: string): EncaissementPourContrePassation => ({
-  id, dossier_id: 'd1', facture_id: factureId, date_encaissement: date, montant, ligne_bancaire_id: null, annule_id: null,
-  retire_le: null,
+const encaissement = (id: string, factureId: string, montant: number, date: string): EncaissementDesVentes => ({
+  id, dossier_id: 'd1', facture_id: factureId, date_encaissement: date, montant, moyen: 'virement', ligne_bancaire_id: null,
+  annule_id: null, cree_par: null, cree_le: `${date}T09:00:00Z`, retire_le: null,
 })
 const part = (encaissementId: string, montant: number): PartLue => ({ encaissement_id: encaissementId, taux: 20, montant })
 

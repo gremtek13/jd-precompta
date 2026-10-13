@@ -89,8 +89,9 @@ export default function ClientVentes() {
           demande à ton cabinet d’ajouter « Ventes » à ton accès.
         </p>
       ) : (
+        // « Factures » et « Règlements » (étape A3) : les deux vues de l'onglet, que son sélecteur nomme — un titre « Factures »
+        // au-dessus mentirait sur la vue des règlements.
         <>
-          <h2 style={{ margin: '0 0 12px' }}>Factures</h2>
           <FacturesTab
             espace="client"
             banque={lecture.droits.banque}

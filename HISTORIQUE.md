@@ -22980,3 +22980,98 @@ dépôt a échoué », une troisième raison pour les pertes que seul le journal
 que Resend ne rend pas, un téléchargement raté, une recherche de doublon qui tombe, le stockage ou l'insertion qui refusent,
 la fonction répondant 200 et Resend ne rejouant pas (Q3, ligne 22.8 de la feuille de route) ; et le dire au client dans « Mes
 pièces », la lecture qui lui serait ouverte présentée au cabinet avant d'être appliquée (Q6, ligne 22.9).
+
+### 13/10/2026 — « MES VENTES › RÈGLEMENTS » : LA LISTE DES ENCAISSEMENTS D'UN DOSSIER — ESPACE CLIENT, ÉTAPE A3 (LIGNE 51.5)
+
+(Écrans et modules : aucune migration, aucune policy, aucune Edge Function, aucune écriture. Neufs : `src/lib/reglements.ts`,
+`src/lib/reglementsLecture.ts`, `src/pages/dossier/ReglementsSection.tsx` et leurs tests. Modifiés : `lib/ventesLecture.ts`
+(trois colonnes de plus au registre), `lib/tuilesVentes.ts` (le type `EncaissementDesVentes`), `FacturesTab.tsx` (le
+sélecteur « Factures | Règlements »), `ClientVentes.tsx` (son titre « Factures » retiré) ; les tests `tuilesVentes.test.ts`
+(la fabrique), `ClientVentes.test.tsx` (le titre), `FacturesTabClient.test.tsx` (un état du garde des mots),
+`ecransAvantLecture.test.tsx` (deux écrans) ; le banc `outils/captures/` (fichiers partagés, par ajout : un encaissement
+au faux Supabase, deux visites).) Première étape du premier groupe de l'espace client (« L'ESPACE CLIENT, LOGICIEL DE
+GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.2 et ligne A3 du §A.9), sans migration : le registre
+des encaissements (ligne 28.5, d1 à d4) était entier et ouvert au client « Ventes » (P2, P3, P4a) ; il manquait la LISTE.
+
+**OÙ.** Une vue « Règlements » de l'onglet Factures, à côté de « Factures », par un sélecteur en tête de l'onglet (le
+contrôle segmenté des exercices), dans les deux espaces : au cabinet dans l'onglet Factures du dossier, au client dans
+« Mes ventes » (`ClientVentes` monte l'onglet en mode client ; son titre « Factures » disparaît, le sélecteur nomme la
+vue). Pourquoi là : l'onglet EST déjà « Mes ventes › Factures » pour le client — une seule implantation pour les deux
+espaces, sous la propriété `espace` obligatoire ; la vue par défaut reste « Factures », donc rien ne change pour qui ne
+clique pas, et le relevé n'est lu qu'à l'ouverture de la vue. Une vue à la fois : la liste de neuf colonnes sous celle des
+factures aurait doublé la page, et ses noms de clients auraient doublé ceux de la liste des factures. Revenir à
+« Factures » relit l'onglet : la fenêtre ouverte depuis les règlements a pu écrire, et les pastilles diraient encore ce
+qu'elles disaient.
+
+**LA LECTURE.** `lireLesVentesDuDossier` (lib/ventesLecture.ts), celle que l'onglet et l'accueil du client partagent, lit
+désormais le registre avec `moyen`, `cree_par` et `cree_le` — aucune seconde lecture des encaissements ; le type
+`EncaissementDesVentes` le dit, et ses autres appelants (pastilles de l'onglet, tuiles de l'accueil) restent verts sans
+changement de leurs valeurs attendues (la fabrique de `tuilesVentes.test.ts` reçoit les trois champs). Le relevé, comme
+la fenêtre des encaissements le lit — `lignes_bancaires`, filtre du dossier, tri `date` puis `id`, `lireTout` — et
+SEULEMENT avec « Banque » (`lib/reglementsLecture.ts`) : sans elle, aucune requête ne part (la RLS rendrait zéro ligne
+sans erreur, et le vide serait une affirmation) ; le mouvement désigné se dit « Un mouvement du relevé, que ton accès ne
+montre pas », les mots de la fenêtre. La section lit à son ouverture, gardée avec sa clé (dossier, « Banque ») : une autre
+clé repart en chargement, une réponse tardive d'une clé quittée ne s'affiche pas ; une requête qui lève se dit.
+
+**LE MODULE** (`lib/reglements.ts`, pur). `reglementsDuDossier` : une ligne par encaissement ou contre-passation, retirés
+compris, du plus récent au plus ancien (date, enregistrement, identifiant : un ordre total) — le montant tel que la base
+le garde (la contre-passation NÉGATIVE), le moyen, le mouvement (nommé, hors de l'accès, aucun, introuvable), l'état
+(actif, retiré ; « Contre-passé » et « Annulation » à l'écran, comme la fenêtre), « par le client » (`estLeClient`, accès
+lus en entier). **La déclaration, sans aucune règle recopiée** : `pastilleDeclaration` appelée sur CET encaissement seul
+(`refusDeclaration` ne dépend que de lui et des déclarations : elle dit « À déclarer » ou « Déclaration en retard »
+exactement quand la pastille de sa facture le dirait à cause de lui — un test le confronte, facture par facture) ;
+déclarée par `encaissementsDeclares` (« issue inconnue » pour un envoi) ; sinon `obligationEncaissee` — sans objet ou
+facultative : « Non due », avec sa raison ; à préciser ou refusée : « Ne se déclare pas d'ici » ; due mais refusée par la
+base (facture rejetée, aucune transmission acceptée) : « Ne se déclare pas d'ici », sous le message de `refusDeclaration`.
+Un retiré n'a pas de déclaration. Une source lue en partie — factures, transmissions, registre, déclarations et
+historique de Super PDP, statuts lus, relevé — : ni ligne, ni total, ni export, la première et son motif ; un
+encaissement dont la facture manque aussi. `filtrerReglements` (période bornes comprises, moyen, client, état,
+déclaration ; « par le client » ne filtre que sur des accès lus en entier, `raisonDuFiltreDesReglements` dit la case
+grisée) ; `totauxDesReglements` (par moyen dans l'ordre des moyens, par mois, sur les lignes DONNÉES — les retirés n'y
+comptent pas, une contre-passation vient en moins dans son moyen) ; `champsDeRecherche` ; `csvDesReglements` (BOM UTF-8,
+point-virgule, `champCsv`, virgule décimale, dates AAAA-MM-JJ, comme la piste d'audit et le détail de l'e-reporting) ;
+`nomFichierDesReglements` (le jour, jamais le nom du dossier).
+
+**L'ÉCRAN** (`ReglementsSection`). Avant sa lecture : « Chargement… », ni « aucun », ni total, ni export. Lue : une phrase
+qui dit ce qu'est la liste et qu'elle n'écrit rien (vouvoyée au cabinet, tutoyée au client, sans « Banque » le dit),
+six filtres, la case « Enregistrés par le client » au cabinet seul (grisée avec sa raison), la recherche
+(`BarreRecherche`, « N sur M » : M après les filtres), le total et les deux tableaux de totaux, « Exporter (CSV) » (grisé
+sans ligne), puis la liste repliée en fiches sous 860 px (neuf colonnes, dont une commande). Chaque ligne — et son bouton
+« Encaissements » — ouvre la fenêtre de SA facture, montée par la section en mode cabinet (avec les accès) ou client
+(avec « Banque ») ; ce que la fenêtre écrit fait relire la liste. Rien ne s'écrit depuis la liste.
+
+**LES PREUVES.** Tests neufs : le module (40), la lecture (5), l'écran (14 : en cours, vide lu en entier, trois lectures
+partielles, les lignes au cabinet et au client avec et sans « Banque », les mots, la ligne et son bouton qui ouvrent leur
+facture sans rien écrire, la relecture après une écriture de la fenêtre et au retour aux factures, la recherche qui ne
+touche ni le total ni l'export, un filtre qui les change, « par le client ») ; `ecransAvantLecture` (+2 écrans, cabinet et
+client) ; le garde des mots (+1 état, et son défaut planté au cabinet). **Mutations : 36, 36 mordent** — dont le total et
+l'export calculés sur la recherche, la contre-passation rendue positive, le relevé lu ou nommé sans « Banque », chaque
+lecture partielle muette, « par le client » qui devine un accès retiré, la pastille appelée sur toute la facture, la
+fenêtre qui écrit sans relecture de la liste, le retour aux factures sans relecture, un « aucun » avant lecture, les mots
+du cabinet au client. Deux ont d'abord survécu ou manqué leur ancre : la recherche « beta » donnait PAR HASARD le même
+total que les filtres (300 €) — elle passe à « alpha », dont le total seul serait 0 € — ; l'outil d'écriture avait posé un
+BOM BRUT dans la source au lieu de l'échappement `\uFEFF` (corrigé, la mutation mord). **La barrière** : `tsc -b` sans
+erreur ; `tsc -p tsconfig.edge.json` aux 25 erreurs connues ; `npm run lint` aux 63 avertissements connus ; `npm run
+build` vert ; les douze fichiers touchés et leurs gardes (328 tests) verts sous Paris, UTC, New York et Auckland ; la
+suite entière sous Paris (`--maxWorkers=2`) : 10 345 tests verts sur 10 345, 343 fichiers. **Le banc** (port à part) :
+0 débordement aux cinq largeurs, aux quatre combinaisons extrêmes des volets, à la passe `client` (390, 720, 1 024,
+1 280, 1 440) et `client-banque` (390, 1 440) — sauf, au premier tour, « mouvemen|t » coupé au milieu à 1 280 px dans la
+colonne Mouvement du client (`overflowWrap: 'anywhere'`, recopié de la fenêtre) : retiré ; la reprise (1 440, 1 280,
+client 390, 1 024, 1 280, 1 440, client-banque 1 280, 1 440) est à 0 ; aucune police refusée.
+
+**QUESTIONS AU CABINET.** A3-Q1 (les totaux nets : retirés hors, contre-passation en moins) ; A3-Q2 (« Non due » pour une
+obligation facultative, quand la fenêtre offre la déclaration) ; A3-Q3 (une vue de l'onglet plutôt qu'une entrée de
+« Mes ventes ») ; A3-Q4 (la période jugée sur la date de l'encaissement). Chacune avec la recommandation du rapport.
+
+**CE QUI RESTE.** A11 (un règlement pour plusieurs factures) s'y branchera ; la colonne « Mouvement » de la FENÊTRE garde
+son `overflowWrap: 'anywhere'` (aucun mot coupé au banc, la fenêtre se repliant en fiches ; à surveiller).
+
+**L'INTÉGRATION, LE 13/10/2026.** Le correctif de l'agent (16 fichiers, `a249dc6d…`) relu puis appliqué tel quel sur
+`dbf8bb7`, le `main` du jour, qui ne différait de sa base (`f1c37e7`) que par des documents ; une seule retouche, dans
+cette entrée : l'échappement du BOM, que l'outil d'écriture avait de nouveau posé brut. Relu en particulier : la vue
+« Règlements » ne change rien à l'onglet tant qu'on ne la choisit pas (32 lignes de `FacturesTab.tsx` hors indentation) ;
+la déclaration de chaque encaissement passe par les modules de d3 et d4, aucune règle n'est recopiée ; le relevé n'est
+demandé qu'avec « Banque » ; rien ne s'écrit depuis la liste. La barrière sur l'arbre intégré : `tsc -b` vert ; les 25
+erreurs connues des Edge Functions ; lint, 63 avertissements et aucune erreur ; la suite entière sous Paris, UTC, New York
+et Auckland : 10 345 tests, tous verts ; construction verte (`index-CViFgr17.js`). Le banc n'est pas rejoué : le code est
+celui que l'agent a mesuré (0 débordement à la reprise, passes du client comprises).

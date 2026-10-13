@@ -3,7 +3,7 @@ import type {
   DeclarationLue, EncaissementPourContrePassation, EvenementSuperpdpLu, LigneDeFacture, PartLue,
 } from './encaissementsFactures'
 import type { StatutLu } from './statutsLus'
-import type { FactureEmise, StatutTva, TransmissionFacture } from './types'
+import type { EncaissementFacture, FactureEmise, StatutTva, TransmissionFacture } from './types'
 
 // « À ENCAISSER » ET « À DÉCLARER » SUR L'ACCUEIL DU CLIENT (espace client, étape P4b ; conception : HISTORIQUE.md,
 // « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION », §2.2) : les pastilles de l'onglet Factures,
@@ -15,6 +15,10 @@ import type { FactureEmise, StatutTva, TransmissionFacture } from './types'
 // montre une pastille dès que les listes dont ELLE dépend sont lues ; une facture qu'il n'aurait pas lue n'y paraît pas — sur
 // l'accueil, elle ferait un « 0 » faux. D'où la règle plus stricte : une seule liste partielle, et rien ne se compte.
 
+/** Un encaissement tel que l'onglet le lit : ce que les pastilles jugent, et ce que la liste des règlements dit en plus (son
+ * moyen, son auteur, son enregistrement — étape A3). */
+export type EncaissementDesVentes = EncaissementPourContrePassation & Pick<EncaissementFacture, 'moyen' | 'cree_par' | 'cree_le'>
+
 /** Ce que l'onglet Factures lit d'un dossier pour ses pastilles ; chaque `…Incomplet(e)s` est le motif d'une lecture partielle. */
 export interface ListesDesVentes {
   factures: FactureEmise[]
@@ -22,7 +26,7 @@ export interface ListesDesVentes {
   transmissions: TransmissionFacture[]
   transmissionsIncompletes: string | null
   lignes: LigneDeFacture[]
-  encaissements: EncaissementPourContrePassation[]
+  encaissements: EncaissementDesVentes[]
   parts: PartLue[]
   /** Les lignes, les encaissements ou leurs parts. */
   encaissementsIncomplets: string | null
