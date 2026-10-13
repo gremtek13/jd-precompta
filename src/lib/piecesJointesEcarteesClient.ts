@@ -171,6 +171,21 @@ export function ceQueTuPeuxFaire(lignes: readonly Pick<PieceJointeEcarteeDuClien
   return phrases
 }
 
+// ── Ce que l'ACCUEIL du client en dit (ligne 22.94 ; décision du cabinet du 13/10/2026, S228B-Q6) ─────────────────────────
+// Une LIGNE, qui signale et renvoie à « Mes pièces » — où la carte dit le reste : quand, pourquoi, comment les renvoyer, et
+// l'adresse de collecte. Le combien est la phrase PARTAGÉE de la carte et de l'onglet Justificatifs (`titreDuSignalement`,
+// jamais recopiée) ; ni la raison, ni le jour, ni le poids, ni l'adresse ne se disent sur l'accueil. Lue en entier et vide :
+// rien (pas de « aucune »). Pas revenue : rien d'affirmé. Partielle, refusée ou illisible : une ligne DISCRÈTE qui dit que la
+// vérification n'a pas pu se faire — jamais le silence d'une liste qu'on croirait vide — et renvoie au même endroit, dont le
+// bandeau dit la suite.
+
+/** Le renvoi de la ligne de l'accueil, sur le bouton qui mène à « Mes pièces ». */
+export const VOIR_DANS_MES_PIECES = 'Voir dans « Mes pièces »'
+
+/** La ligne discrète de l'accueil quand la lecture n'a pas pu se faire en entier : ce qui n'a pas pu se faire, et où regarder. */
+export const ACCUEIL_VERIFICATION_IMPOSSIBLE =
+  'Les pièces jointes reçues par e-mail n’ont pas pu être vérifiées ici : regarde dans « Mes pièces ».'
+
 /**
  * La phrase de l'onglet Accès sur la collecte par e-mail (S229-Q5) : ce qui arrive, ce qui n'arrive pas et où le cabinet
  * le voit — et, une fois la lecture du client en base, ce que la base en ouvre à la SESSION du client (la règle de cet

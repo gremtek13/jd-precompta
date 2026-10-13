@@ -71,8 +71,11 @@ vi.mock('../lib/supabase', () => ({
     },
     // La couverture du relevé (espace client, étape P7) : déduite des mêmes mouvements, refusée avec eux — ce fichier vaut
     // drapeau levé comme baissé (`COUVERTURE_EXPORTEE`, voir src/test/couvertureDuReleve.ts).
+    // Et les pièces jointes écartées (ligne 22.94), que l'accueil lit à part : aucune, lue en entier — ce fichier n'est pas celui de
+    // la ligne qui les signale (ClientHome.ecartees.test.tsx), et rien d'autre ne dépend de cette lecture.
     rpc: async (nom: string) => {
       const { couvertureDe } = await import('../test/couvertureDuReleve')
+      if (nom === 'pieces_jointes_ecartees_du_client') return { data: [], error: null }
       if (nom !== 'couverture_du_releve') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
       if (faux.refusees.has('lignes_bancaires')) return { data: null, error: { message: 'permission denied' } }
       return { data: couvertureDe(faux.parTable.lignes_bancaires ?? []), error: null }

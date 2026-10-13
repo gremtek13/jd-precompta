@@ -5,9 +5,9 @@ import type { ReponseDeLaBase } from './couvertureReleve'
 import { motsDuCabinet } from './espaceVentes'
 import * as cabinet from './piecesJointesEcartees'
 import {
-  CE_QUE_DIT_LA_COLLECTE, ceQueDitLaCollecte, ceQueTuPeuxFaire, dOuEllesViennent, ECARTEES_DU_CLIENT_EXPORTEES,
+  ACCUEIL_VERIFICATION_IMPOSSIBLE, CE_QUE_DIT_LA_COLLECTE, ceQueDitLaCollecte, ceQueTuPeuxFaire, dOuEllesViennent, ECARTEES_DU_CLIENT_EXPORTEES,
   ECARTEES_EN_LECTURE, JOURS_DE_LA_LECTURE_DU_CLIENT, lectureDesEcarteesDuClient, lignesDuClient, lireLesEcarteesDuClient,
-  ouRenvoyer, phraseDeLaRaison, quandPourLeClient, SI_LA_LECTURE_MANQUE, titreDuSignalement,
+  ouRenvoyer, phraseDeLaRaison, quandPourLeClient, SI_LA_LECTURE_MANQUE, titreDuSignalement, VOIR_DANS_MES_PIECES,
 } from './piecesJointesEcarteesClient'
 import type { PieceJointeEcarteeDuClient } from './types'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -235,6 +235,43 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
     // Justificatifs nomme « le client ».
     expect(motsDuCabinet(ceQueDitLaCollecte(false)).length).toBeGreaterThan(0)
     expect(cabinet.ceQueLeCabinetPeutFaire([{ raison: 'format' }])).toMatch(/\bclients?\b/i)
+  })
+})
+
+describe('l’accueil du client (ligne 22.94) : une ligne qui signale et renvoie à « Mes pièces »', () => {
+  it('les phrases neuves sont celles du client, et renvoient à « Mes pièces » sans rien dire de la carte', () => {
+    for (const texte of [VOIR_DANS_MES_PIECES, ACCUEIL_VERIFICATION_IMPOSSIBLE]) {
+      expect(motsDuCabinet(texte), texte).toEqual([])
+      expect(texte, texte).toContain('« Mes pièces »')
+      expect(texte, texte).not.toMatch(/\bclients?\b/i)
+    }
+    // Ni raison, ni jour, ni poids, ni adresse : la carte de « Mes pièces » les dit.
+    expect(ACCUEIL_VERIFICATION_IMPOSSIBLE).not.toMatch(/\d|@|format|taille|vide/)
+    // La vérification manquée ne se confond ni avec le signalement ni avec un vide : elle dit qu'elle n'a pas pu se faire.
+    expect(ACCUEIL_VERIFICATION_IMPOSSIBLE).toMatch(/n’ont pas pu être vérifiées/)
+    expect(ACCUEIL_VERIFICATION_IMPOSSIBLE).not.toBe(titreDuSignalement(1))
+  })
+
+  it('la lecture s’écrit UNE fois : un seul `.rpc(` de la fonction dans la source, et il est dans le crochet partagé', () => {
+    const racine = new URL('../', import.meta.url)
+    const trouves: string[] = []
+    const parcourir = (dossier: URL, prefixe: string) => {
+      for (const entree of readdirSync(dossier, { withFileTypes: true })) {
+        if (entree.name === 'test') continue
+        const suivant = new URL(`${entree.name}${entree.isDirectory() ? '/' : ''}`, dossier)
+        if (entree.isDirectory()) { parcourir(suivant, `${prefixe}${entree.name}/`); continue }
+        if (!/\.tsx?$/.test(entree.name) || /\.test\.tsx?$/.test(entree.name)) continue
+        // Les commentaires citent l'appel (« lireLesEcarteesDuClient(supabase.rpc('…') ») : seules les lignes de code comptent.
+        const code = readFileSync(suivant, 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')
+        if (/rpc\(\s*'pieces_jointes_ecartees_du_client'/.test(code)) trouves.push(`${prefixe}${entree.name}`)
+      }
+    }
+    parcourir(racine, '')
+    expect(trouves).toEqual(['lib/piecesJointesEcarteesClientLecture.ts'])
+    // Et les deux écrans du client l'appellent par ce crochet.
+    for (const ecran of ['../pages/ClientHome.tsx', '../pages/ClientUpload.tsx']) {
+      expect(readFileSync(new URL(ecran, import.meta.url), 'utf8'), ecran).toMatch(/useEcarteesDuClient\(dossierId\)/)
+    }
   })
 })
 

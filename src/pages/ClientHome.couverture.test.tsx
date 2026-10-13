@@ -49,6 +49,9 @@ vi.mock('../lib/supabase', () => ({
     rpc: (nom: string, args: unknown) => {
       faux.rpcs.push({ nom, args })
       const reponse = async () => {
+        // Les pièces jointes écartées (ligne 22.94), lues à part par l'accueil : aucune, lue en entier. Ce fichier est celui de
+        // la couverture, pas de cette ligne (ClientHome.ecartees.test.tsx), et la couverture ne leur est pas rendue.
+        if (nom === 'pieces_jointes_ecartees_du_client') return { data: [], error: null, count: null, status: 200, statusText: '' }
         await faux.porteCouverture
         return { ...faux.couverture, count: null, status: faux.couverture.error ? 400 : 200, statusText: '' }
       }
@@ -90,7 +93,9 @@ describe('ClientHome — drapeau levé : la couverture du relevé, jamais les mo
     poser({ data: ['2026-01-01', '2026-02-01'] })
     monter()
     expect(await screen.findByText('Relevés bancaires 2026')).toBeTruthy()
-    expect(faux.rpcs).toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
+    // La couverture se lit UNE fois, sur le dossier affiché ; la lecture des pièces jointes écartées, à part, n'y change rien.
+    expect(faux.rpcs.filter((r) => r.nom === 'couverture_du_releve')).toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
+    expect(faux.rpcs.filter((r) => r.nom !== 'couverture_du_releve').map((r) => r.nom)).toEqual(['pieces_jointes_ecartees_du_client'])
     expect(faux.demandees).not.toContain('lignes_bancaires')
   })
 

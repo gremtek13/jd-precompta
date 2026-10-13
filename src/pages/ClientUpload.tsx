@@ -13,11 +13,11 @@ import FilCommentaires from '../components/FilCommentaires'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
 import type { CibleCommentaire } from '../lib/commentaires'
-import { lireTout, type LectureComplete } from '../lib/lectureComplete'
+import { lireTout } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
 import { poids, TAILLE_MAX_PIECE } from '../lib/bornesStockage'
-import { ECARTEES_DU_CLIENT_EXPORTEES, lireLesEcarteesDuClient } from '../lib/piecesJointesEcarteesClient'
-import type { PieceJointeEcarteeDuClient } from '../lib/types'
+import { ECARTEES_DU_CLIENT_EXPORTEES } from '../lib/piecesJointesEcarteesClient'
+import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
 import {
   ADRESSE_COPIEE, ADRESSE_ILLISIBLE, ceQueAccepteLAdresse, COPIE_REFUSEE, COPIER_L_ADRESSE, ENVOI_PAR_EMAIL, lireLAdresseDeCollecte,
   type LectureAdresseCollecte,
@@ -94,20 +94,10 @@ export default function ClientUpload() {
     cibleDepuisAccueil ? cleCible(cibleDepuisAccueil) : null,
   )
   // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.9), lues À PART de « ce qu'il reste à
-  // envoyer » : leur lecture ratée ne rend aucune autre liste fausse, et elle a son propre bandeau. Gardée AVEC le dossier
-  // pour lequel elle a été faite — nulle tant qu'elle n'est pas revenue — ; aucun dépôt ne la change, elle ne se relit pas.
-  // Rien ne se lit tant que la fonction n'est pas en base (`ECARTEES_DU_CLIENT_EXPORTEES`).
-  const [ecarteesLues, setEcarteesLues] = useState<{ dossierId: string; lecture: LectureComplete<PieceJointeEcarteeDuClient> } | null>(null)
-  const ecartees = ecarteesLues !== null && ecarteesLues.dossierId === dossierId ? ecarteesLues.lecture : null
-
-  // Une lecture plus lente que le changement de société n'écrit pas : le drapeau d'annulation.
-  useEffect(() => {
-    if (!ECARTEES_DU_CLIENT_EXPORTEES || !dossierId) return
-    let annule = false
-    lireLesEcarteesDuClient(supabase.rpc('pieces_jointes_ecartees_du_client', { p_dossier_id: dossierId }))
-      .then((lecture) => { if (!annule) setEcarteesLues({ dossierId, lecture }) })
-    return () => { annule = true }
-  }, [dossierId])
+  // envoyer » : leur lecture ratée ne rend aucune autre liste fausse, et elle a son propre bandeau. La lecture est celle de
+  // l'accueil, écrite une fois (lib/piecesJointesEcarteesClientLecture.ts, ligne 22.94) : gardée avec la société, annulée à
+  // son changement, nulle tant qu'elle n'est pas revenue ; rien ne se lit tant que la fonction n'est pas en base.
+  const ecartees = useEcarteesDuClient(dossierId)
 
   // L'adresse e-mail de collecte du dossier (ligne 22.93), lue À PART : sa lecture ratée ne rend aucune autre liste fausse, et
   // elle ne dit que l'adresse. Gardée AVEC le dossier pour lequel elle a été faite — nulle tant qu'elle n'est pas revenue :

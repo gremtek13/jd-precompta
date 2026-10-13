@@ -449,10 +449,14 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
   `admin_du_dossier` ou `client_du_dossier(…, 'membre')`, l'accès avant toute lecture) rend en UNE valeur `jsonb` le
   jour à Paris, la raison et le poids de celles des 90 derniers jours, vues ou non par le cabinet — jamais
-  l'identifiant, l'empreinte, la marque « vue » ni son auteur ; le client ne marque rien. « Mes pièces » la lit
-  (`lib/piecesJointesEcarteesClient.ts`, `ECARTEES_DU_CLIENT_EXPORTEES` confronté à l'export), à part de « ce qu'il
-  reste à envoyer », gardée avec la société ; carte `PiecesJointesEcarteesClient` aux mots du client ; l'onglet Accès
-  dit la collecte par `CE_QUE_DIT_LA_COLLECTE` → « LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » ».
+  l'identifiant, l'empreinte, la marque « vue » ni son auteur ; le client ne marque rien. « Mes pièces » la lit par un
+  crochet que l'accueil partage (`useEcarteesDuClient`, `lib/piecesJointesEcarteesClientLecture.ts` ;
+  `ECARTEES_DU_CLIENT_EXPORTEES` confronté à l'export), à part de ses autres lectures, gardée avec la société ; carte
+  `PiecesJointesEcarteesClient` aux mots du client ; l'accueil n'en dit que le compte, sous la phrase partagée
+  `titreDuSignalement`, et renvoie à « Mes pièces » (`PiecesJointesEcarteesAccueil`, ligne 22.94) — rien avant le retour
+  ni sur un vide lu en entier, une ligne discrète sur une lecture manquée, jamais le silence d'une liste qu'on croirait
+  vide ; l'onglet Accès dit la collecte par `CE_QUE_DIT_LA_COLLECTE` → « LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS
+  « MES PIÈCES » », « L'ACCUEIL DU CLIENT SIGNALE UNE PIÈCE JOINTE ÉCARTÉE ET RENVOIE À « MES PIÈCES » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -521,7 +525,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026) ; et dite au client dans
   « Mes pièces » — le jour, la raison et le poids, 90 jours durant (ligne 22.9, 13/10/2026) ; « Mes pièces » montre
   aussi au client l'adresse de collecte de son dossier, avec ce qu'elle accepte et « Copier l'adresse », et la carte des
-  pièces jointes écartées la nomme (ligne 22.93, 13/10/2026).
+  pièces jointes écartées la nomme (ligne 22.93, 13/10/2026) ; l'accueil du client les signale par une ligne — combien,
+  et un renvoi vers « Mes pièces » (ligne 22.94, 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -604,15 +609,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   nom pour chaque e-mail d'un dossier connu, même à zéro (S228-Q4, S229-Q2, ligne 22.92), le 13/10/2026. « Mes pièces »
   le dit au client — le jour, la raison et le poids, 90 jours durant —, et l'onglet Accès nomme les quatre raisons (Q6,
   S229-Q5, ligne 22.9, le 13/10/2026 ; la lecture présentée au cabinet puis appliquée sur son accord, S228B-Q1 à Q4) ;
-  il y lit aussi l'adresse de collecte de son dossier (S228B-Q5, ligne 22.93, le 13/10/2026). Restent la décision sur
-  ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune de ses reprises pendant
-  un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans nom seulement si une
-  décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces jointes se normalise
-  dans une étape à part (S229-Q4) —, et une étape à part, décidée par le cabinet le 13/10/2026 : une ligne sur l'accueil
-  du client qui renvoie à « Mes pièces » (S228B-Q6, ligne 22.94) → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL
-  SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
-  QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » »,
-  « « MES PIÈCES » MONTRE L'ADRESSE DE COLLECTE DU DOSSIER ».
+  il y lit aussi l'adresse de collecte de son dossier (S228B-Q5, ligne 22.93), et son accueil les lui signale par une
+  ligne qui y renvoie (S228B-Q6, ligne 22.94), le 13/10/2026. Reste, sur les comptes réels, la décision sur ces
+  éléments — au premier client réel, la session les relève à chacune de ses reprises pendant un mois (le journal ne se
+  garde qu'un jour sur le plan gratuit), une table des comptes sans nom seulement si une décision demande plus de recul
+  (S229-Q3) ; « autre disposition » non nul, le filtre des pièces jointes se normalise dans une étape à part (S229-Q4) —
+  → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON
+  D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « LE CLIENT VOIT UNE
+  PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » », « « MES PIÈCES » MONTRE L'ADRESSE DE COLLECTE DU DOSSIER », « L'ACCUEIL DU
+  CLIENT SIGNALE UNE PIÈCE JOINTE ÉCARTÉE ET RENVOIE À « MES PIÈCES » ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -858,8 +863,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rien (`src/test/clientRetenu.ts`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU », « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT
   D'AVOIR LU ».
 - **Une lecture que deux écrans comptent s'écrit une fois** (`lib/ventesLecture.ts` : les pastilles de l'onglet Factures
-  et les tuiles de l'accueil du client, comptées par `compterLesPastilles`) ; un compte ne se dit que de listes TOUTES
-  lues en entier → « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL ».
+  et les tuiles de l'accueil du client, comptées par `compterLesPastilles` ; les pièces jointes écartées du client, que
+  « Mes pièces » et l'accueil lisent par `useEcarteesDuClient`, le seul `.rpc(` de la fonction, gardé par
+  `piecesJointesEcarteesClient.test.ts`) ; un compte ne se dit que de listes TOUTES lues en entier → « LES CONNEXIONS DU
+  CLIENT ET LES TUILES DE SON ACCUEIL », « L'ACCUEIL DU CLIENT SIGNALE UNE PIÈCE JOINTE ÉCARTÉE ET RENVOIE À « MES
+  PIÈCES » ».
 - **Lecture → formulaire → écriture de tous les champs** : une lecture ratée n'offre AUCUN formulaire, sinon le premier
   « Enregistrer » écrase → « ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE ».
 - **PostgREST plafonne les lignes rendues sans le dire** : toute lecture de collection passe par `lireTout` (tranches,
@@ -1521,7 +1529,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 469 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 494 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

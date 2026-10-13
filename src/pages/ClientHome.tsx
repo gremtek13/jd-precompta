@@ -19,6 +19,8 @@ import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import TuilesVentesClient from './TuilesVentesClient'
 import { maBanqueOuverte } from '../lib/banqueClient'
+import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
+import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -56,6 +58,10 @@ export default function ClientHome() {
   // et ses tuiles en tiennent lieu.
   const banqueOuverte = maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
   const navigate = useNavigate()
+  // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.94) : la lecture de « Mes pièces », écrite une
+  // fois (lib/piecesJointesEcarteesClientLecture.ts), À PART de `load` — sa panne n'en fausse aucune autre, et la panne des
+  // autres ne la tait pas —, gardée avec la société et annulée à son changement. Lue ici pour dire LE COMBIEN d'une ligne.
+  const ecartees = useEcarteesDuClient(dossierId)
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
@@ -274,6 +280,10 @@ export default function ClientHome() {
         <h1>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>
         <p className="client-hero-sous">{dossier ? `Ton espace pour ${dossier.nom}` : 'Ton espace'} — dépose, on s'occupe du reste.</p>
       </section>
+
+      {/* Au-dessus des tuiles, sous la salutation : une pièce attendue qui n'est pas arrivée se voit d'abord. Rien de plus
+          que cette ligne ; « Mes pièces » dit le reste. Drapeau baissé : la lecture reste nulle, donc ni appel ni ligne. */}
+      <PiecesJointesEcarteesAccueil lecture={ecartees} />
 
       <div className="tuiles">
         <label className={`tuile tuile-principale${capturing ? ' tuile-desactivee' : ''}`}>
