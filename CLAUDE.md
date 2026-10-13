@@ -706,8 +706,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   la parité — achats, notes de frais, analyse, documents du cabinet, trois cases neuves (« Achats », « Notes de frais »,
   « Documents »), le resserrement des pièces (B1 à B9) ; « aller plus loin » — l'échéancier, l'état du dossier, les
   situations publiées (C1 à C8) ; trente-cinq questions au cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT :
-  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (quatre questions au cabinet, A3-Q1 à
-  A3-Q4) → « « MES VENTES › RÈGLEMENTS » ».
+  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (ses quatre questions, A3-Q1 à
+  A3-Q4, tranchées « comme recommandé » le même jour : rien ne change) → « « MES VENTES › RÈGLEMENTS » ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
