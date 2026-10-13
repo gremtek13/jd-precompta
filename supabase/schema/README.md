@@ -255,6 +255,18 @@ famille des contraintes a changé (586, `8b1d3543…`), les huit autres égales 
 `supabase/essais/piecesJointesEcartees.sql`, rejoué en production sans ses lignes de commentaire (60 892 caractères,
 reçus tels quels), rend ses 57 verdicts justes, mutations comprises, et rien n'est resté en base.
 
+**Rejoué le 13/10/2026 après `pieces_jointes_ecartees_au_client`** (ligne 22.9), appliquée par la session sous la
+version `20261013174021` sur l'accord du cabinet (S228B-Q1), sans confirmation demandée (aucune suppression), AVANT la
+fusion de l'écran qui la lit ; son fichier a quitté la version PROVISOIRE `20261013235000` pour celle-ci, texte inchangé
+(5 751 caractères, empreinte `bd9f20870264c17ac2e0dc0535028ee1`, celle que rend sa ligne d'historique) : 131 fichiers,
+131 migrations, empreinte globale `e1d6d37e8e4d6c1e19dc18b0fb43486b` des deux côtés, aucune divergence. Le socle est
+inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 1 898 objets, `5535f404cd873f4c1a10278001bf3885` des deux
+côtés — la fonction `pieces_jointes_ecartees_du_client` en plus. `signature.sql` rend en production ce que l'étape avait
+relevé sur sa réplique après la migration : seules les fonctions (155, `e9e596fe…`) et leurs droits (155, `93544847…`)
+ont changé, les sept autres familles égales à celles d'avant. L'essai `supabase/essais/piecesJointesEcartees.sql`,
+rejoué en production sans ses lignes de commentaire (82 909 caractères, reçus tels quels), rend ses 81 verdicts justes,
+mutations comprises, et rien n'est resté en base.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

@@ -13,9 +13,12 @@ import FilCommentaires from '../components/FilCommentaires'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
 import type { CibleCommentaire } from '../lib/commentaires'
-import { lireTout } from '../lib/lectureComplete'
+import { lireTout, type LectureComplete } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
 import { poids, TAILLE_MAX_PIECE } from '../lib/bornesStockage'
+import { ECARTEES_DU_CLIENT_EXPORTEES, lireLesEcarteesDuClient } from '../lib/piecesJointesEcarteesClient'
+import type { PieceJointeEcarteeDuClient } from '../lib/types'
+import PiecesJointesEcarteesClient from './PiecesJointesEcarteesClient'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -85,6 +88,21 @@ export default function ClientUpload() {
   const [filOuvert, setFilOuvert] = useState<string | null>(
     cibleDepuisAccueil ? cleCible(cibleDepuisAccueil) : null,
   )
+  // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.9), lues À PART de « ce qu'il reste à
+  // envoyer » : leur lecture ratée ne rend aucune autre liste fausse, et elle a son propre bandeau. Gardée AVEC le dossier
+  // pour lequel elle a été faite — nulle tant qu'elle n'est pas revenue — ; aucun dépôt ne la change, elle ne se relit pas.
+  // Rien ne se lit tant que la fonction n'est pas en base (`ECARTEES_DU_CLIENT_EXPORTEES`).
+  const [ecarteesLues, setEcarteesLues] = useState<{ dossierId: string; lecture: LectureComplete<PieceJointeEcarteeDuClient> } | null>(null)
+  const ecartees = ecarteesLues !== null && ecarteesLues.dossierId === dossierId ? ecarteesLues.lecture : null
+
+  // Une lecture plus lente que le changement de société n'écrit pas : le drapeau d'annulation.
+  useEffect(() => {
+    if (!ECARTEES_DU_CLIENT_EXPORTEES || !dossierId) return
+    let annule = false
+    lireLesEcarteesDuClient(supabase.rpc('pieces_jointes_ecartees_du_client', { p_dossier_id: dossierId }))
+      .then((lecture) => { if (!annule) setEcarteesLues({ dossierId, lecture }) })
+    return () => { annule = true }
+  }, [dossierId])
 
   async function load() {
     if (!dossierId) return
@@ -279,6 +297,8 @@ export default function ClientUpload() {
         technique={false}
         consequence="Recharge la page : il manque peut-être des messages sous tes documents."
       />
+
+      {ECARTEES_DU_CLIENT_EXPORTEES && <PiecesJointesEcarteesClient lecture={ecartees} />}
 
       <h3>Ce qu'il reste à envoyer</h3>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>

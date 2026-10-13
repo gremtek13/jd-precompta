@@ -65,6 +65,11 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
       + 'au montage de « Ma simulation » (P7).',
   },
+  'rpc:pieces_jointes_ecartees_du_client': {
+    nature: 'lecture',
+    raison: 'Le jour, la raison et le poids des pièces jointes écartées d’un dossier (fonction `stable`, `security definer`, '
+      + 'sans écriture ; migration `pieces_jointes_ecartees_au_client`, ligne 22.9), au montage de « Mes pièces » du client.',
+  },
   'rpc:plan_du_dossier': {
     nature: 'lecture',
     raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '

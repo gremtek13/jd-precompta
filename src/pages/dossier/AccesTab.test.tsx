@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import { CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES } from '../../lib/droitsAcces'
 import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../../lib/recuperationMotDePasse'
+import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 
 // L'ÉCRAN QUI DIT QUI PEUT ENTRER DANS UN DOSSIER, et il se trompait dans les deux sens.
 //
@@ -1046,5 +1047,19 @@ describe('AccesTab — la règle des mots de passe du projet', () => {
     expect(await screen.findByText(refus as string)).toBeTruthy()
     expect(screen.queryAllByText(/Un compte existe déjà/)).toHaveLength(0)
     expect(screen.queryAllByRole('status').map((e) => e.textContent ?? '').filter((t) => t.includes('est créé'))).toEqual([])
+  })
+})
+
+// LA PHRASE DE LA COLLECTE PAR E-MAIL (S229-Q5, ligne 22.9) : les quatre raisons d'une pièce jointe écartée et où le cabinet
+// les voit — et, une fois la lecture du client en base, ce que la base en ouvre au client. L'onglet dit ce que la base ouvre
+// à la SESSION du client : la phrase est celle du module à l'état du drapeau (lib/piecesJointesEcarteesClient.ts, où ses deux
+// états se jouent).
+describe('AccesTab — la phrase de la collecte par e-mail', () => {
+  it('dit ce qui arrive, ce qui n’est pas déposé et où — la phrase du module, à l’état du drapeau', () => {
+    monter()
+    const carte = screen.getByRole('heading', { name: 'Collecte automatique par e-mail' }).parentElement
+    // Les blancs ordinaires seulement : une espace insécable tient « 20 Mo » ensemble.
+    expect((carte?.textContent ?? '').replace(/[ \t\r\n]+/g, ' ')).toContain(CE_QUE_DIT_LA_COLLECTE)
+    expect(CE_QUE_DIT_LA_COLLECTE).toMatch(/arrivée vide, ou dont le dépôt a échoué/)
   })
 })

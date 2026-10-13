@@ -65,6 +65,9 @@ vi.mock('../lib/supabase', () => ({
     // (`COUVERTURE_EXPORTEE`, voir src/test/couvertureDuReleve.ts).
     rpc: async (nom: string) => {
       const { couvertureDe } = await import('../test/couvertureDuReleve')
+      // Les pièces jointes écartées (ligne 22.9), lues dès que leur fonction est en base (`ECARTEES_DU_CLIENT_EXPORTEES`) :
+      // une base qui n'en a aucune, et ce fichier vaut drapeau levé comme baissé (leur carte : ClientUpload.ecartees.test.tsx).
+      if (nom === 'pieces_jointes_ecartees_du_client') return { data: [], error: null }
       if (nom !== 'couverture_du_releve') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
       faux.demandees.push('lignes_bancaires')
       await faux.retenues.get('lignes_bancaires')

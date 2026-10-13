@@ -444,6 +444,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   et CSV sur les lignes FILTRÉES ; « par le client » au cabinet, sur des accès lus en entier ; chaque ligne ouvre
   « Encaissements » de SA facture, rien ne s'écrit d'ici ; revenir à « Factures » relit l'onglet → « « MES VENTES ›
   RÈGLEMENTS » ».
+- **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
+  `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
+  recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
+  `admin_du_dossier` ou `client_du_dossier(…, 'membre')`, l'accès avant toute lecture) rend en UNE valeur `jsonb` le
+  jour à Paris, la raison et le poids de celles des 90 derniers jours, vues ou non par le cabinet — jamais
+  l'identifiant, l'empreinte, la marque « vue » ni son auteur ; le client ne marque rien. « Mes pièces » la lit
+  (`lib/piecesJointesEcarteesClient.ts`, `ECARTEES_DU_CLIENT_EXPORTEES` confronté à l'export), à part de « ce qu'il
+  reste à envoyer », gardée avec la société ; carte `PiecesJointesEcarteesClient` aux mots du client ; l'onglet Accès
+  dit la collecte par `CE_QUE_DIT_LA_COLLECTE` → « LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal. `superpdp_credentials`, `connexions_bancaires` et
   `connexions_plateformes` n'ont aucune policy (refus total hors service role). La clé SECRÈTE de Supabase n'entre ni au
   dépôt (public) ni au navigateur (`clesSupabase.test.ts`, `lib/clePublique.ts`).
@@ -506,10 +515,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   texte), validation ; texte OCR conservé et relu (pièces et documents) ; fil de précisions client ↔ cabinet ; notes
   internes du cabinet dans leur propre table, hors de portée du client (09/10/2026) ; proposition de catégorie
   (26/09/2026) ; la fiche « fournisseur établi hors de France » d'un achat : voir, saisir une version, retirer, avec ses
-  propositions (e-reporting, e3, 10/10/2026) ; les bornes du stockage — format et taille jugés avant tout
-  dépôt et posés en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026) ; la pièce
-  jointe que la réception par e-mail écarte (format, poids), n'a pas pu déposer (ligne 22.8) ou reçoit vide (ligne
-  22.91), dite au cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026).
+  propositions (e-reporting, e3, 10/10/2026) ; les bornes du stockage — format et taille jugés avant tout dépôt et posés
+  en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026) ; la pièce jointe que la
+  réception par e-mail écarte (format, poids), n'a pas pu déposer (ligne 22.8) ou reçoit vide (ligne 22.91), dite au
+  cabinet en tête de Justificatifs, sans nom, et marquée vue par lui (ligne 22.7, 13/10/2026) ; et dite au client dans
+  « Mes pièces » — le jour, la raison et le poids, 90 jours durant (ligne 22.9, 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -589,15 +599,17 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   `receive-email` et à l'écran ; un rejeu qui réussit après un dépôt échoué ne change rien, le cabinet marque l'alerte
   vue (S228-Q3). La pièce jointe arrivée vide, sous une quatrième raison, « vide » (S228-Q2, ligne 22.91 ; en base sur
   l'accord du cabinet, S229-Q1), et les éléments de l'e-mail qui ne sont pas des pièces jointes, comptés au journal sans
-  nom pour chaque e-mail d'un dossier connu, même à zéro (S228-Q4, S229-Q2, ligne 22.92), le 13/10/2026. Restent la
-  décision sur ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune de ses
-  reprises pendant un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans nom
-  seulement si une décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces
-  jointes se normalise dans une étape à part (S229-Q4) —, et le dire au client dans « Mes pièces », la lecture qui lui
-  serait ouverte présentée au cabinet avant d'être appliquée, la phrase de l'onglet Accès sur la collecte complétée du
-  dépôt échoué et de la pièce jointe vide (Q6, S229-Q5, ligne 22.9) → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR
-  E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE :
-  LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
+  nom pour chaque e-mail d'un dossier connu, même à zéro (S228-Q4, S229-Q2, ligne 22.92), le 13/10/2026. « Mes pièces »
+  le dit au client — le jour, la raison et le poids, 90 jours durant —, et l'onglet Accès nomme les quatre raisons (Q6,
+  S229-Q5, ligne 22.9, le 13/10/2026 ; la lecture présentée au cabinet puis appliquée sur son accord, S228B-Q1 à Q4).
+  Restent la décision sur ces éléments, sur les comptes réels — au premier client réel, la session les relève à chacune
+  de ses reprises pendant un mois (le journal ne se garde qu'un jour sur le plan gratuit), une table des comptes sans
+  nom seulement si une décision demande plus de recul (S229-Q3) ; « autre disposition » non nul, le filtre des pièces
+  jointes se normalise dans une étape à part (S229-Q4) —, et deux étapes à part, décidées par le cabinet le 13/10/2026 :
+  l'adresse de collecte dans « Mes pièces » (S228B-Q5), puis une ligne sur l'accueil du client qui y renvoie (S228B-Q6)
+  → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON
+  D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « LE CLIENT VOIT UNE
+  PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -751,7 +763,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 40 fonctions au 13/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 41 fonctions au 13/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -767,8 +779,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dossier annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`,
   gardes `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`,
   `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant (`droitsAcces.sql`),
-  `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`) ; plus aucun rôle
-  n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction
+  `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`),
+  `pieces_jointes_ecartees_du_client` que le jour, la raison et le poids des pièces jointes écartées des 90 derniers
+  jours d'un dossier où il a accès (`piecesJointesEcartees.sql`, 38a à 38r) ; plus aucun rôle n'exécute
+  `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction
   `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
@@ -874,7 +888,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   par un `upsert` qui ne fait rien sur la clé (le dossier, l'empreinte SHA-256 des identifiants Resend) — un rejeu de
   Resend n'écrit rien de plus, et un identifiant Resend gardé tel quel désignerait un e-mail relisible ; jamais le nom,
   l'extension, l'expéditeur ni l'objet ; son refus se journalise et la pièce jointe suivante se traite. Lecture
-  `admin_du_dossier`, aucune branche client ; insertion de RESTAURATION au super-administrateur (sans elle, la
+  `admin_du_dossier`, aucune branche client — le client n'en reçoit que le jour, la raison et le poids, par
+  `pieces_jointes_ecartees_du_client` (ligne 22.9) ; insertion de RESTAURATION au super-administrateur (sans elle, la
   restauration d'un dossier qui en a s'arrêterait) ; « vue » par `marquer_pieces_jointes_vues` seule (l'accès d'abord),
   une fois, la garde n'admettant que ce passage. L'écran (`PiecesJointesEcartees`, en tête de Justificatifs) : l'attente
   dite avant la lecture, rien sur un vide lu en entier, le bandeau sur une lecture partielle, le geste sous
@@ -889,8 +904,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   comprise), par disposition et famille de type DÉCLARÉ — un compte, jamais une décision de dépôt —, sans nom, sans
   identifiant, sans disposition ni type recopiés (ligne 22.92). L'écran dit qu'un dépôt échoué n'est pas du fait du
   client, son poids s'il est connu — rien d'inventé sinon —, et de le renvoyer tel quel ; d'une pièce jointe arrivée
-  vide, que le client vérifie son fichier avant de la renvoyer → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL
-  SE DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
+  vide, que le client vérifie son fichier avant de la renvoyer → « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE
+  DIT AU CABINET », « LE DÉPÔT A ÉCHOUÉ : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE », « ARRIVÉE VIDE : LA
   QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
@@ -1499,7 +1514,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 10 404 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 435 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

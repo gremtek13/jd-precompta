@@ -100,6 +100,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '(P4a) et ses tuiles de l’accueil (P4b). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
       'réponse illisible, ne rend AUCUN droit, et l’écran n’offre alors aucun geste, ni les tuiles aucun chiffre, avec son motif',
   },
+  lireLesEcarteesDuClient: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `pieces_jointes_ecartees_du_client` LIT le jour, la raison et le poids des pièces ' +
+      'jointes que la réception par e-mail a écartées (ligne 22.9), pour « Mes pièces » du client. ' +
+      '`lib/piecesJointesEcarteesClient.ts` attend la requête et lit son erreur : un refus, ou une réponse illisible, ' +
+      'rendent une lecture INCOMPLÈTE, que l’écran dit, jamais une liste vide',
+  },
   lireLePlanDuDossier: {
     nombre: 1,
     raison:

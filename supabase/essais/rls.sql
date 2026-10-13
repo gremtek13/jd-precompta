@@ -352,6 +352,20 @@
 -- en faute), le texte reçu par la base égal à la copie transmise (57 889 caractères, `d661fbbd…`). Ce que ses policies,
 -- sa garde et sa fonction refusent et acceptent, profil par profil et par leur raison, est éprouvé par
 -- `piecesJointesEcartees.sql`.
+--
+-- 13/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 22.9 : migration `pieces_jointes_ecartees_au_client`,
+-- préparée, présentée au cabinet, non appliquée), qui ne pose AUCUNE policy : une fonction de lecture,
+-- `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`, l'accès vérifié d'abord, exécutable par les connectés
+-- seuls) ; la table reste fermée au client, et ce fichier n'y change rien que cet en-tête. Joué ENTIER par psql sur la
+-- réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la production à 130 migrations) :
+-- sans la migration, 35 lignes de verdict, 0 en faute, 31 mutations sur 31 qui mordent ; avec elle, la table semée dans
+-- le dossier `test` (deux pièces jointes, l'une marquée vue) et dans celui du client (deux, dont une arrivée vide), 35
+-- lignes, 0 en faute, 31 sur 31 — M1 et M3 voient la table semée (19 et 8 tables en faute, pour 18 et 7). Ce que la
+-- fonction rend au client et refuse aux autres, profil par profil et par sa raison, est éprouvé par
+-- `piecesJointesEcartees.sql` (contrôles 38a à 38r). En production le même jour, la migration appliquée sur l'accord du
+-- cabinet (S228B-Q1, `20261013174021`) : ce fichier n'y a pas été rejoué — `signature.sql` y rend les policies (145),
+-- la RLS (76) et les droits des tables (76) d'avant elle, au caractère près — ; `piecesJointesEcartees.sql` y rend ses
+-- 81 verdicts, 0 en faute.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

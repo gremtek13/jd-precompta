@@ -676,8 +676,12 @@ const LECTURES_PAR_FONCTION = new Set([
 // Les fonctions SQL qui LISENT, appelées au montage : la couverture du relevé (l'Accueil et « Mes pièces » du client) et
 // les droits de l'appelant (« Ma simulation »), espace client, étape P7. Le faux client note tout `rpc` comme une écriture
 // possible ; celles-ci n'écrivent rien.
-// Et le plan comptable d'un dossier (`plan_du_dossier`, ligne 43, étape PC3), que la page du dossier lit avec lui.
-const LECTURES_PAR_RPC = new Set(['rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier'])
+// Et le plan comptable d'un dossier (`plan_du_dossier`, ligne 43, étape PC3), que la page du dossier lit avec lui ; et les
+// pièces jointes écartées que « Mes pièces » du client lit (`pieces_jointes_ecartees_du_client`, ligne 22.9), dès que la
+// fonction est en base (`ECARTEES_DU_CLIENT_EXPORTEES`).
+const LECTURES_PAR_RPC = new Set([
+  'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
+])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
 const REFERMER = /^(Annuler|Fermer.*|×|Réduire.*)$/
