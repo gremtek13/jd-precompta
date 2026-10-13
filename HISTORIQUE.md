@@ -23076,6 +23076,14 @@ erreurs connues des Edge Functions ; lint, 63 avertissements et aucune erreur ; 
 et Auckland : 10 345 tests, tous verts ; construction verte (`index-CViFgr17.js`). Le banc n'est pas rejoué : le code est
 celui que l'agent a mesuré (0 débordement à la reprise, passes du client comprises).
 
+**LES RÉPONSES DU CABINET, LE 13/10/2026 (« comme recommandé »).** A3-Q1 : les totaux restent nets — un retiré n'y
+compte pas, une contre-passation y vient en moins, dans le moyen de l'encaissement qu'elle annule : ils disent ce qui a
+réellement été encaissé. A3-Q2 : la liste dit « Non due » d'une obligation facultative, comme la pastille qui se tait ;
+la fenêtre des encaissements reste l'endroit où la déclarer quand même. A3-Q3 : « Règlements » reste une vue de l'onglet
+Factures ; « Mes ventes » aura un vrai sous-menu quand « Articles » et « Clients » arriveront (A2, A4). A3-Q4 : la
+période se juge à la date de l'encaissement (du décaissement, pour une contre-passation), celle qui compte pour la TVA à
+l'encaissement et pour la déclaration du statut. Rien ne change dans le code.
+
 ### 13/10/2026 — « LE DÉPÔT A ÉCHOUÉ » : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE — LIGNE 22.8
 
 (La migration `pieces_jointes_ecartees_depot`, appliquée le 13/10/2026 sous la version `20261013103407`, AVANT la
@@ -23182,8 +23190,8 @@ pour un dossier BNC, 134 sur 167, 80 %).
 ### 13/10/2026 — ARRIVÉE VIDE : LA QUATRIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE, ET LES ÉLÉMENTS INTÉGRÉS COMPTÉS AU JOURNAL — LIGNES 22.91 ET 22.92
 
 (La migration `pieces_jointes_ecartees_vide`, préparée sous la version PROVISOIRE `20261013230000`, appliquée sur
-l'accord du cabinet (S229-Q1) AVANT la fusion, sous la version `20261013121915` ; `receive-email` se redéploie APRÈS la
-mise en ligne de l'application. Préparée par l'agent S229 sur `ef9008f`. Fichiers :
+l'accord du cabinet (S229-Q1) AVANT la fusion, sous la version `20261013121915` ; `receive-email` redéployée en version
+15 APRÈS la mise en ligne de l'application. Préparée par l'agent S229 sur `ef9008f`. Fichiers :
 `supabase/schema/20261013121915_pieces_jointes_ecartees_vide.sql` (nouveau),
 `supabase/functions/receive-email/index.ts`, `supabase/essais/piecesJointesEcartees.sql`,
 `lib/piecesJointesEcartees.ts`, `pages/dossier/PiecesJointesEcartees.tsx` (un commentaire), `lib/types.ts`, leurs tests,
@@ -23297,8 +23305,18 @@ rien n'est resté en base ; `signature.sql`, seules les contraintes ont changé 
 familles égales à celles d'avant ; dérive 130 = 130 (`cd7850e3…`), socle 78 (`91ae95ec…`) et inventaire 1 897
 (`a33f2032…`) inchangés, égaux des deux côtés ; advisors inchangés (5 et 40). Barrière sur l'arbre intégré :
 `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 404 tests chacun ;
-construction verte (`index-BQ0AnL3T.js`). Le redéploiement de `receive-email`, qui suit la mise en ligne de
-l'application, se consigne au commit suivant.
+construction verte (`index-BQ0AnL3T.js`). Le redéploiement de `receive-email` suit la mise en ligne de
+l'application (ci-dessous).
+
+**LA MISE EN LIGNE ET LE REDÉPLOIEMENT, LE 13/10/2026.** Fusionnée par #159 (`560fec9`) quand `verifier` a été vert sur
+ses deux passes ; le site sert `index-BQ0AnL3T.js`, le paquet de la barrière (déploiement 38400146612). PUIS SEULEMENT
+`receive-email` redéployée en version 15, `verify_jwt` faux comme `config.toml` et la version 14 : la version 14 en
+place égale au dépôt d'avant (aller-retour, 0 différence sur 438 lignes), lue avant l'écrasement ; le texte ENVOYÉ, relu
+dans le journal de la session, égal au dépôt (496 lignes, 28 355 caractères) ; l'aller-retour, 0 différence sur
+496 lignes, la copie relue portant la marque « LA PIÈCE JOINTE ARRIVÉE VIDE » ; un POST sans signature rend 400
+« En-têtes de signature manquants », un GET 405 : c'est la fonction qui répond. Aucun e-mail réel envoyé ni reçu par la
+session. La feuille de route : les lignes 22.91 et 22.92 à « Fait », la ligne 22.9 complétée de S229-Q5, les barres
+recomptées (136 chantiers livrés sur 180, 76 % ; pour un dossier BNC, 136 sur 167, 81 %).
 
 **RESTE.** La décision sur les éléments intégrés, sur les comptes réels (S229-Q3, Q4) ; le dire au client dans « Mes
 pièces », avec la phrase de l'onglet Accès sur la collecte (ligne 22.9, S229-Q5).
