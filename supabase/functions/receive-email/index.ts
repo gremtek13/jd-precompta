@@ -106,6 +106,26 @@ async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleS
   }
 }
 
+// LA TRACE D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7 ; décision du cabinet du 13/10/2026, S226-Q3). Écartée sans trace,
+// elle manquait à tout le monde : le client croyait l'avoir envoyée, le cabinet n'en savait rien — le journal de la
+// fonction ne se garde qu'un temps et ne s'ouvre pas depuis l'application. Une ligne par pièce jointe dans
+// `pieces_jointes_ecartees`, que l'onglet Justificatifs du cabinet lit : le dossier, la raison, le poids — jamais le nom
+// du fichier, son extension, l'expéditeur ni l'objet. Resend rejoue le webhook quand la fonction échoue en cours de
+// route : la clé — le dossier, et l'EMPREINTE des deux identifiants que Resend donne à la pièce jointe, jamais ces
+// identifiants eux-mêmes, qui désigneraient un e-mail qu'on peut relire chez Resend — fait qu'un rejeu n'écrit rien de
+// plus (`on conflict do nothing`). L'erreur se lit et se journalise sans lever : rien ne recharge derrière, et la pièce
+// jointe suivante se traite (ce qui lèverait encore tombe dans le `catch` de la boucle, qui passe à la suivante).
+async function noterLaPieceJointeEcartee(
+  supabase: ReturnType<typeof createClient>, dossierId: string, emailId: string, pieceJointeId: string,
+  raison: "format" | "taille", octets: number,
+): Promise<void> {
+  const empreinte = await hashBytes(new TextEncoder().encode(JSON.stringify([emailId, pieceJointeId])))
+  const { error } = await supabase
+    .from("pieces_jointes_ecartees")
+    .upsert({ dossier_id: dossierId, raison, octets, empreinte }, { onConflict: "dossier_id,empreinte", ignoreDuplicates: true })
+  if (error) console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets} octets) : ${error.message}`)
+}
+
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
 // Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
 // historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
@@ -138,10 +158,11 @@ function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KE
 // caractère près et l'exécute contre l'original.
 
 /**
- * HYPOTHÈSE S226-Q1, à confirmer par le cabinet : la plus grande pièce déposée, 20 Mio (20 971 520 octets) — la borne
- * que receive-email appliquait déjà aux pièces jointes. Au-dessus du plus gros fichier d'aujourd'hui (1,4 Mo) et d'une
- * photo de téléphone (3 à 15 Mo), en dessous du plafond du plan gratuit (50 Mo) ; la lecture automatique, elle, s'arrête
- * à 10 Mio (extract-piece). Une valeur à changer ici, dans la migration `bornes_du_stockage` et dans cette copie.
+ * La plus grande pièce déposée, 20 Mio (20 971 520 octets) : décision du cabinet du 13/10/2026 (S226-Q1), la borne que
+ * receive-email appliquait déjà aux pièces jointes. Au-dessus du plus gros fichier d'aujourd'hui (1,4 Mo) et d'une photo
+ * de téléphone (3 à 15 Mo), en dessous du plafond du plan gratuit (50 Mo) ; la lecture automatique, elle, s'arrête à
+ * 10 Mio (extract-piece). La changer, c'est la changer ici, dans cette copie, et par une nouvelle migration du seau :
+ * `bornes_du_stockage` est appliquée.
  */
 export const TAILLE_MAX_PIECE = 20 * 1024 * 1024
 
@@ -264,15 +285,18 @@ Deno.serve(async (req: Request) => {
       if (bytes.byteLength === 0) continue
       // LES BORNES DU SEAU DES PIÈCES (ligne 22.6), celles que l'application applique à tout dépôt : le type se décide
       // sur le nom et les premiers octets — jamais sur celui que DÉCLARE l'expéditeur, qui partait tel quel au stockage
-      // —, et une pièce jointe hors des bornes est écartée avant tout envoi, journalisée sans son nom.
+      // —, et une pièce jointe hors des bornes est écartée avant tout envoi, journalisée sans son nom, et consignée pour
+      // le cabinet (ligne 22.7).
       const nomFichier = fichier.filename || `piece-${fichier.id}`
       const type = typeDUnePiece(nomFichier, bytes.subarray(0, 16))
       if (type === null) {
         console.warn(`Pièce jointe écartée, format non pris en charge (PDF, JPEG, PNG ou CSV) : ${fichier.id}`)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "format", bytes.byteLength)
         continue
       }
       if (bytes.byteLength > TAILLE_MAX_PIECE) {
         console.warn(`Pièce jointe écartée, ${bytes.byteLength} octets au-delà de la borne de ${TAILLE_MAX_PIECE} : ${fichier.id}`)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "taille", bytes.byteLength)
         continue
       }
 

@@ -219,6 +219,17 @@ instructions, `91ae95ec…`) et l'inventaire (1 875 objets, `ae3d8044…`) sont 
 migration n'écrit que deux colonnes de trois lignes de `storage.buckets`, qu'aucun des trois contrôles ne lit ;
 `supabase/essais/bornesStockage.sql` les juge, et rend « ok » à ses cinq lignes.
 
+**Rejoué le 13/10/2026 après `pieces_jointes_ecartees`** (ligne 22.7), appliquée par la session sous la version
+`20261013061933`, sans confirmation demandée (`delete` n'y paraît que dans `on delete cascade`), AVANT la fusion du
+correctif qui lit la table ; son fichier a quitté la version PROVISOIRE `20261013200000` pour celle-ci, texte inchangé
+(9 258 caractères, empreinte `38c6cd0fc87d17b9626c3806673cf179`, celle que rend sa ligne d'historique) : 128 fichiers,
+128 migrations, empreinte globale `fba7cc1afb1e304fcdeaf7784ed3dd2e` des deux côtés, aucune divergence. Le socle est
+inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 1 896 objets, `e20c0b51100a3f97348b9578afe9f69e` des deux
+côtés — la migration en ajoute 21 : huit colonnes, sept contraintes, un déclencheur, deux policies, deux fonctions et la
+RLS de sa table. `signature.sql` rend en production, famille par famille, ce que l'étape avait relevé sur sa réplique
+après la migration (colonnes 780, contraintes 585, déclencheurs 53, fonctions 154 et leurs droits 154, index 218,
+policies 145, tables 76 et leur RLS 76).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

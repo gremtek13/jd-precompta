@@ -22862,3 +22862,110 @@ tests le trouvent par son nom (`<version>_bornes_du_stockage.sql`).
 **RESTE.** S226-Q3, l'étape qui dit au cabinet une pièce jointe écartée ; avec elle, les commentaires « HYPOTHÈSE S226-Q1 » de
 `lib/bornesStockage.ts` et de sa copie dans `receive-email` deviennent la décision du 13/10/2026 (la copie se redéploie alors
 avec le reste).
+
+### 13/10/2026 — UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET — LIGNE 22.7
+
+(La migration `pieces_jointes_ecartees`, appliquée le 13/10/2026 sous la version `20261013061933`, AVANT la fusion ;
+`receive-email` redéployée. Préparée par l'agent S227 sur `64a5b74`, intégrée sur `93958e6`. Fichiers :
+`lib/piecesJointesEcartees.ts` et `lib/piecesJointesEcarteesLecture.ts` (nouveaux), `pages/dossier/PiecesJointesEcartees.tsx`
+(nouveau), `PiecesTab.tsx` (une ligne), `AccesTab.tsx` (la phrase de la collecte), `lib/bornesStockage.ts` (le commentaire de
+S226-Q1, `poidsFaceALaBorne` exportée), `lib/types.ts`, `lib/sauvegarde.ts`, `index.css`, `supabase/functions/receive-email`,
+`supabase/essais/piecesJointesEcartees.sql` (nouveau), `rls.sql` et `restauration.sql` (en-têtes, plan), `RGPD.md`,
+`PLAN_DE_REPRISE.md`, le README du schéma, leurs tests, `src/test/fonctionsEdge.ts` et `contratsFonctions.ts` (le harnais),
+`outils/captures/fauxSupabase.ts`.)
+
+**LE CONSTAT.** Depuis la ligne 22.6, `receive-email` écarte une pièce jointe dont le format n'est pas celui d'une pièce, ou qui
+pèse plus de 20 Mio, et n'en laisse qu'un `console.warn`. Le client croit l'avoir envoyée ; le cabinet n'en sait rien ; « ce
+qu'il reste à envoyer » continue de la réclamer. Décision du cabinet du 13/10/2026 (S226-Q3) : elle se dit au cabinet, sans nom
+de fichier.
+
+**LA TABLE.** `pieces_jointes_ecartees` : le dossier (cascade), l'instant (`now()` de la base, celui de la réception par la
+fonction), la raison — `format` ou `taille`, et rien d'autre —, le poids en octets (> 0 : une pièce jointe vide est sautée, pas
+écartée), l'empreinte, et la marque « vue » (instant et compte, ensemble ou pas du tout). Ni nom, ni extension, ni expéditeur,
+ni objet. LA CLÉ D'IDEMPOTENCE est l'unicité TOTALE (dossier, empreinte), l'empreinte étant le SHA-256 du JSON [identifiant de
+l'e-mail, identifiant de la pièce jointe] que Resend leur donne : un rejeu du webhook après un échec rend les mêmes
+identifiants, et `on conflict do nothing` n'écrit rien de plus. Écartés : les identifiants gardés tels quels (un e-mail
+relisible chez Resend) ; l'empreinte du CONTENU, qui ferait taire le même fichier renvoyé dans un autre e-mail et reconnaîtrait
+un document connu.
+
+**QUI LIT, QUI ÉCRIT.** Lecture au cabinet (`admin_du_dossier`, `to authenticated`), aucune branche client ; `receive-email`
+écrit à la clé secrète. UNE policy d'insertion, contre la lettre de la consigne : la porte de la RESTAURATION au
+super-administrateur — la sauvegarde lit la table, la restauration la réécrit sous la session du super-administrateur
+(`ecrireParLots`), et sans cette porte elle s'arrêterait en 42501 sur un dossier qui a une ligne (le patron de
+`statuts_factures_recus`). Question S227-Q1.
+
+**« VUE ».** Une alerte qui ne s'éteint jamais cesse d'être lue : un fichier de signature électronique joint à chaque e-mail
+transféré en ferait une par mois. `marquer_pieces_jointes_vues(dossier, identifiants)`, `SECURITY DEFINER` : l'accès au dossier
+annoncé d'abord (42501, « Accès refusé à ce dossier. »), puis aucune pièce jointe désignée (22023), puis une pièce jointe qui
+n'est pas de ce dossier ou un identifiant nul (P0002) ; une ligne déjà vue garde sa première marque. La garde
+`garder_piece_jointe_ecartee` (avant mise à jour seulement — l'essai de la validation, qui compte les gardes de suppression,
+n'en voit pas une de plus) n'admet que le passage de « non vue » à « vue ». Question S227-Q2.
+
+**L'ÉCRAN.** En tête de l'onglet Justificatifs, là où le cabinet travaille les pièces reçues (l'onglet Accès ne se visite qu'à
+la mise en place ; un point de la Vue d'ensemble entraînerait les cycles de la révision et les préalables de la validation pour
+un fait qui ne touche aucun compte). `PiecesJointesEcartees` lit la table par `lireTout` (une requête qui lève tombe du côté
+signalé) : avant la lecture, l'attente dite (`aria-busy`) — le garde des écrans exige qu'un écran rende quelque chose avant ses
+lectures ; lue en entier et vide, rien ; lue en partie, refusée ou levée, le bandeau, sans compte ni geste ; sinon combien,
+quand (le jour et l'heure de qui regarde), pourquoi (« format non pris en charge (4 Ko) », « au-delà des 20 Mo qu'une pièce peut
+peser (25,7 Mo) », à l'octet quand une décimale les confondrait — `poidsFaceALaBorne` exportée de `bornesStockage.ts`), ce que
+le cabinet peut faire, et « Marquer comme vues », sous `marquageEnCours` relâché après la relecture, relue aussi sur un refus ;
+l'historique des vues se replie. L'onglet Accès dit désormais les formats et la borne d'une pièce jointe, et qu'une autre est
+écartée.
+
+**CE QUI A ÉTÉ MESURÉ.** Réplique (grappe 54331) : `s227_base` et `s227_semee`, copies des bases de R7 complétées — version
+réelle de `dossier_permanent`, talon de `storage.buckets`, `bornes_du_stockage` et sa ligne — égales à la production du
+13/10/2026 sur les neuf familles de `signature.sql` et sur l'historique (127, `df208517…`). L'essai : 45 verdicts, 0 en faute,
+sur la base vide et la base semée ; arrêt nommé sans la migration. Mutations de la migration : 23 sur 23 mordent — la première
+version de l'essai laissait passer une garde qui ne comparait plus la raison (le refus venait de l'absence de marque) : chaque
+colonne se change désormais AVEC une marque valable. `rls.sql` entier : 35 lignes, 0 en faute, 31 mutations sur 31, sans
+(75 tables) et avec (76) la migration. `restauration.sql` : 134 clés, 70 tables IDENTIQUES, arrêt 23503 sur la table plantée
+avant son dossier. Contrôles de l'export : dérive 128 = 128 (`ea002dcf…`, le fichier des bornes renommé en mémoire), socle 78
+`91ae95ec…` inchangé, inventaire 1 896 `e20c0b51…` (+21). Contrats HTTP : quatre scénarios neufs (rejeu, même contenu, format et
+poids, refus de la base) et deux étendus ; huit défauts plantés permanents, tous vus. ÉQUIVALENTE dans le harnais :
+`ignoreDuplicates` retiré (le faux PostgREST fusionne ; en base la garde ferait refuser le rejeu, journalisé — pas de seconde
+ligne non plus). L'essai éprouve l'écriture de receive-email sous le rôle de la clé secrète (contrôle 37 : une ligne, son rejeu
+n'écrit rien, la garde le tient aussi), et le droit d'insertion de ce rôle se lit au contrôle 50 : une première version le
+retirait dans une sous-transaction, écartée — un essai joué en production ne retire aucun droit ; retirer ce droit est une
+mutation de la migration. Mutations de l'écran : 17 sur 17. Barrière : `tsc -b` 0 ; Edge 25 erreurs et lint 63 avertissements,
+ceux de la base ; quatre fuseaux, 46 fichiers, 1 561 tests ; suite entière (Paris) 340 fichiers, 10 280 tests ; construction
+verte. Banc : onze passes, 0 débordement, polices 0 ; captures claire, sombre et téléphone.
+
+**L'INTÉGRATION ET LA MISE EN BASE, LE 13/10/2026.** Le correctif de l'agent (24 fichiers, `681e8de8…`) relu puis appliqué tel
+quel sur `93958e6`, avec une retouche : `piecesJointesEcartees.test.ts` trouve la migration par son NOM
+(`<version>_pieces_jointes_ecartees.sql`), comme les bornes du stockage, et non plus par sa version provisoire. Ses tests et
+ceux des modules qu'il touche, rejoués sur l'arbre intégré AVANT toute application (13 fichiers, 1 107 tests) : verts. La
+migration appliquée par `apply_migration`, sans confirmation demandée, sous la version `20261013061933` : la ligne d'historique
+rend l'empreinte du fichier (`38c6cd0f…`, 9 258 caractères) ; 128 migrations ; le fichier renommé à cette version. En
+production : `piecesJointesEcartees.sql`, sans ses lignes de commentaire — la copie d'abord jouée sur la réplique avec le
+fichier entier, les mêmes 45 verdicts —, 45 verdicts sur 45, « rien n'est resté », la ligne 0 rendant le texte transmis au
+caractère près (43 987 caractères, `fc31a788…`) ; `rls.sql` adapté selon son en-tête (sans commentaire, tables de résultats `on
+commit drop` ; la copie d'abord jouée sur la réplique : les verdicts du fichier), 35 lignes, 0 en faute, 31 mutations sur 31,
+76 tables dont 67 portent un `dossier_id`, le texte reçu égal à la copie (57 889 caractères, `d661fbbd…`). `signature.sql` : les
+neuf familles égales à celles que l'agent avait relevées sur sa réplique après la migration. Les trois contrôles de l'export,
+égaux des deux côtés : dérive 128 = 128 (`fba7cc1a…`), socle 78 (`91ae95ec…`, inchangé), inventaire 1 896 objets (`e20c0b51…`).
+Les advisors : `authenticated_security_definer_function_executable` compte 40 fonctions (39 avant :
+`marquer_pieces_jointes_vues`, qui vérifie l'accès avant toute lecture), `anon_` 5, inchangé ; rien d'autre de nouveau.
+
+**LA BARRIÈRE ET LE DÉPLOIEMENT, LE 13/10/2026.** Sur l'arbre intégré : `tsc -b` vert ; les 25 erreurs connues des Edge
+Functions, à l'identique ; lint, 63 avertissements et aucune erreur ; la suite entière sous Paris, UTC, New York et Auckland :
+10 280 tests, tous verts ; construction verte (`index-CruKavn7.js`). Le banc n'est pas rejoué : le code est celui que l'agent a
+photographié (onze passes, 0 débordement), seuls des documents diffèrent. `receive-email` redéployée en version 13, `verify_jwt`
+faux comme `config.toml` et la version 12 — après la migration, qu'elle écrit : la version 12 en place égale au dépôt d'avant
+(aller-retour, 0 différence sur 377 lignes) ; le texte ENVOYÉ, relu dans le journal de la session, égal au dépôt (401 lignes,
+21 723 caractères) ; l'aller-retour, 0 différence sur 401 lignes ; un POST sans signature rend 400 « En-têtes de signature
+manquants », un GET 405 : c'est la fonction qui répond. Aucun e-mail réel envoyé ni reçu par la session.
+
+**LES QUESTIONS AU CABINET.** S227-Q1, la porte de la restauration au super-administrateur (recommandé : la garder ; sinon la
+table hors du plan de sauvegarde, et une restauration perdrait les écarts et leurs marques), et S227-Q2, le geste « vue »
+(recommandé : le garder ; sinon aucun geste, ou un effacement), prises comme les recommandations. S227-Q3 : d'autres pertes
+silencieuses — Resend ne rend pas la pièce jointe, son téléchargement échoue, la détection de doublon tombe, le stockage ou
+l'insertion refuse : la fonction répond 200, Resend ne rejoue pas, seul le journal la garde (recommandé : une troisième raison,
+« le dépôt a échoué », dans une étape à part). S227-Q4 : la durée de conservation (recommandé : celle du dossier, la ligne ne
+portant ni nom ni contenu). S227-Q5 : les fichiers qui ne sont jamais des pièces — une signature électronique, une invitation,
+une carte de visite — seront tous signalés (recommandé : compter d'abord les signalements réels par mois, puis, s'ils font du
+bruit, taire une liste FERMÉE d'extensions décidée par le cabinet). S227-Q6 : le dire au client dans « Mes pièces »
+(recommandé : oui, dans une étape à part, la lecture ouverte au client présentée au cabinet avant d'être appliquée).
+
+**RESTE.** Les quatre questions ouvertes. Vu en passant au banc par l'agent, antérieur à S227 : deux avertissements React de
+clés dupliquées (`r31`, `r32`) — deux jeux d'écritures fictives de `outils/captures/fauxSupabase.ts` portent les mêmes
+identifiants ; un défaut du banc, pas de l'application.

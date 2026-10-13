@@ -58,6 +58,12 @@ export interface Scenario {
   attendu: Attendu
   /** Un défaut constaté et nommé : la clé de `DEFAUTS_CONNUS`. */
   defautConnu?: CleDefaut
+  /**
+   * La même requête déjà reçue une fois, dans le même monde : un webhook que Resend REJOUE après un échec (ligne 22.7).
+   * Le journal des demandes repart à vide avant la requête jugée — les dépenses attendues sont celles du rejeu — ; la
+   * base, les fichiers, les journaux et les exceptions de la première restent.
+   */
+  dejaRecue?: boolean
 }
 
 export interface ContratFonction {
@@ -117,6 +123,10 @@ export async function jugerScenario(
   scenario.preparer?.(monde, voisine)
   const env = typeof scenario.env === 'function' ? scenario.env() : scenario.env
   const fonction = chargerFonction(contrat.slug, monde, { source, env })
+  if (scenario.dejaRecue) {
+    await fonction.appeler(scenario.requete(contrat.slug, contexte), { passerelle: scenario.passerelle })
+    monde.journal.length = 0
+  }
   const r = await fonction.appeler(scenario.requete(contrat.slug, contexte), { passerelle: scenario.passerelle })
   const fautes: string[] = []
   const a = scenario.attendu
@@ -429,20 +439,30 @@ const EXTRACT_PIECE: ContratFonction = {
 const HOTE_PIECES_JOINTES = 'pieces-jointes.resend.invalid'
 const OBJET = 'Objet Kraltinvor Brimesque'
 const EXPEDITEUR = 'brumoxe-lindavar@exemple.invalid'
+// L'identifiant que Resend donne à l'e-mail : une trace qui le garderait tel quel désignerait un e-mail relisible chez
+// Resend (ligne 22.7).
+const EMAIL_ID = 'courriel-du-harnais'
 
-function evenementRecu(options: { a?: string; type?: string; pieces?: number; fichier?: { nom: string; type: string } } = {}): string {
+function evenementRecu(options: {
+  a?: string; type?: string; pieces?: number; fichier?: { nom: string; type: string }
+  // Une pièce jointe par fichier, chacune son nom et le type que déclare l'expéditeur (ligne 22.7) : `pieces` et `fichier`
+  // ne servent alors pas.
+  fichiers?: { nom: string; type: string }[]
+} = {}): string {
+  const fichiers = options.fichiers ?? Array.from({ length: options.pieces ?? 1 }, (_, i) => ({
+    nom: options.fichier?.nom ?? `facture-${i}.png`, type: options.fichier?.type ?? 'image/png',
+  }))
   // Mis en forme, comme un webhook réel : une signature vérifiée sur un corps RELU (`JSON.parse` puis `JSON.stringify`)
   // ne tiendrait plus, et c'est ce que ce corps permet de voir.
   return JSON.stringify({
     type: options.type ?? 'email.received',
     data: {
-      email_id: 'courriel-du-harnais',
+      email_id: EMAIL_ID,
       to: [options.a ?? 'Dossier <dossier-fictif@precompta.jdarnis.fr>'],
       from: EXPEDITEUR,
       subject: OBJET,
-      attachments: Array.from({ length: options.pieces ?? 1 }, (_, i) => ({
-        id: `pj-${i}`, filename: options.fichier?.nom ?? `facture-${i}.png`, content_type: options.fichier?.type ?? 'image/png',
-        content_disposition: 'attachment',
+      attachments: fichiers.map((f, i) => ({
+        id: `pj-${i}`, filename: f.nom, content_type: f.type, content_disposition: 'attachment',
       })),
     },
   }, null, 2)
@@ -460,11 +480,18 @@ function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: 
   })
 }
 
-/** Resend rend la pièce jointe à une adresse, le projet sert la vraie extract-piece, Textract et le modèle répondent. */
-function boiteAuxLettres(monde: Monde, voisine: (slug: string) => FonctionChargee, options: { lecture?: 'refusee'; octets?: Uint8Array<ArrayBuffer> } = {}) {
+/**
+ * Resend rend la pièce jointe à une adresse, le projet sert la vraie extract-piece, Textract et le modèle répondent.
+ * `octetsPar` : les octets d'une pièce jointe désignée par son identifiant (`pj-1`) ; les autres reçoivent `octets`.
+ */
+function boiteAuxLettres(
+  monde: Monde, voisine: (slug: string) => FonctionChargee,
+  options: { lecture?: 'refusee'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>> } = {},
+) {
   lecture(monde)
   monde.resend.pieceJointe = (demande) => ({ data: { download_url: `https://${HOTE_PIECES_JOINTES}/${String(demande.id)}` }, error: null })
-  monde.hotes[HOTE_PIECES_JOINTES] = () => new Response(options.octets ?? PNG)
+  monde.hotes[HOTE_PIECES_JOINTES] = (requete) =>
+    new Response(options.octetsPar?.[new URL(requete.url).pathname.slice(1)] ?? options.octets ?? PNG)
   const extractPiece = voisine('extract-piece')
   const projet = projetSurLeReseau([extractPiece])
   monde.hotes[HOTE_PROJET] = async (requete) => {
@@ -484,11 +511,43 @@ const ETAPES_DEPOT = [
 // début d'un document Word — un format que le seau n'admet pas.
 const NOM_HORS_FORMAT = 'Brimvoltek-Quarzel.docx'
 const DOCX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0, 0x06, 0])
-const ECARTEE = ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`]
+// Une pièce jointe écartée : lue chez Resend, téléchargée, puis CONSIGNÉE pour le cabinet (ligne 22.7) — rien au stockage.
+const ecartee = (pj: string) => ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'écriture upsert pieces_jointes_ecartees']
+// Une note texte, hors format : son nom et son CONTENU, inventés, qu'aucun journal ni aucune trace ne doit porter.
+const NOM_NOTE = 'Trelvandor-Mirquaze.txt'
+const CONTENU_NOTE = 'Contenu Vrelmondaxe Quarzibul du harnais'
+const NOTE = new TextEncoder().encode(CONTENU_NOTE)
+const LOURDE = 20 * 1024 * 1024 + 1
 
 /** Le journal porte-t-il cette phrase ? Une faute sinon. */
 function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
   return m.journaux.some((j) => motif.test(j.texte)) ? [] : [`${quoi} non journalisé`]
+}
+
+/**
+ * Les pièces jointes écartées que receive-email a consignées (ligne 22.7), dans l'ordre de l'e-mail : le dossier, la
+ * raison et le poids attendus, une empreinte SHA-256 par pièce jointe — et rien d'autre : ni le nom du fichier, ni son
+ * extension, ni son contenu, ni l'expéditeur, ni l'objet, ni les identifiants que Resend donne à l'e-mail et à la pièce
+ * jointe (gardés tels quels, ils désigneraient un e-mail relisible chez Resend).
+ */
+function ecartsConsignes(m: Monde, attendus: { raison: 'format' | 'taille'; octets: number }[], interdits: readonly string[]): string[] {
+  const traces = lignes(m, 'pieces_jointes_ecartees')
+  const fautes: string[] = []
+  if (traces.length !== attendus.length) fautes.push(`${traces.length} pièce(s) jointe(s) consignée(s) au lieu de ${attendus.length}`)
+  attendus.forEach((a, i) => {
+    const t = traces[i]
+    if (!t) return
+    const colonnes = Object.keys(t).sort().join(',')
+    if (colonnes !== 'dossier_id,empreinte,id,octets,raison') fautes.push(`colonnes écrites : ${colonnes}`)
+    if (t.dossier_id !== D || t.raison !== a.raison || t.octets !== a.octets) {
+      fautes.push(`consignée : ${JSON.stringify({ duDossier: t.dossier_id === D, raison: t.raison, octets: t.octets })}`)
+    }
+    if (typeof t.empreinte !== 'string' || !/^[0-9a-f]{64}$/.test(t.empreinte)) fautes.push('une empreinte qui n’est pas un SHA-256')
+    const texte = JSON.stringify(t)
+    for (const v of [EMAIL_ID, 'pj-', EXPEDITEUR, OBJET, ...interdits]) if (texte.includes(v)) fautes.push(`la trace porte « ${v.slice(0, 8)}… »`)
+  })
+  if (new Set(traces.map((t) => t.empreinte)).size !== traces.length) fautes.push('deux pièces jointes sous la même empreinte')
+  return fautes
 }
 
 const RECEIVE_EMAIL: ContratFonction = {
@@ -602,27 +661,102 @@ const RECEIVE_EMAIL: ContratFonction = {
       defautConnu: 'objetAuJournal',
     },
     {
-      nom: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom',
+      nom: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom, consignée pour le cabinet',
       preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: DOCX }); m.sensibles.push(NOM_HORS_FORMAT) },
       requete: requeteWebhook(evenementRecu({
         fichier: { nom: NOM_HORS_FORMAT, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
       })),
       attendu: {
-        statut: 200, depenses: ECARTEE,
-        verifier: (_r, m) => journalise(m, /Pièce jointe écartée, format non pris en charge \(PDF, JPEG, PNG ou CSV\) : pj-0/, 'l’écart du format'),
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /Pièce jointe écartée, format non pris en charge \(PDF, JPEG, PNG ou CSV\) : pj-0/, 'l’écart du format'),
+          ...ecartsConsignes(m, [{ raison: 'format', octets: DOCX.byteLength }], [NOM_HORS_FORMAT, 'docx']),
+        ],
       },
     },
     {
-      nom: 'une pièce jointe plus lourde que la borne d’une pièce : écartée avant tout dépôt',
+      nom: 'une pièce jointe plus lourde que la borne d’une pièce : écartée avant tout dépôt, consignée pour le cabinet',
       preparer: (m, voisine) => {
-        const lourde = new Uint8Array(20 * 1024 * 1024 + 1)
+        const lourde = new Uint8Array(LOURDE)
         lourde.set(PNG)
         boiteAuxLettres(m, voisine, { octets: lourde })
       },
       requete: requeteWebhook(evenementRecu()),
       attendu: {
-        statut: 200, depenses: ECARTEE,
-        verifier: (_r, m) => journalise(m, /Pièce jointe écartée, 20971521 octets au-delà de la borne de 20971520 : pj-0/, 'l’écart du poids'),
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /Pièce jointe écartée, 20971521 octets au-delà de la borne de 20971520 : pj-0/, 'l’écart du poids'),
+          ...ecartsConsignes(m, [{ raison: 'taille', octets: LOURDE }], ['facture-0', 'png']),
+        ],
+      },
+    },
+    // LA TRACE D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7) : une par pièce jointe, une seule fois quand Resend rejoue le
+    // webhook, sans rien de ce qui la nomme ; refusée par la base, elle se journalise et n'arrête rien.
+    {
+      nom: 'Resend rejoue le webhook : la pièce jointe écartée ne se consigne pas une seconde fois, et sans erreur',
+      dejaRecue: true,
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: DOCX }); m.sensibles.push(NOM_HORS_FORMAT) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_HORS_FORMAT, type: 'application/msword' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'format', octets: DOCX.byteLength }], [NOM_HORS_FORMAT, 'docx']),
+          ...(m.journaux.some((j) => /NON consignée/.test(j.texte)) ? ['le rejeu a journalisé une erreur'] : []),
+        ],
+      },
+    },
+    {
+      nom: 'deux pièces jointes hors format au même contenu : chacune sa trace, sans nom ni contenu au journal ni dans la trace',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: NOTE }); m.sensibles.push(NOM_NOTE, CONTENU_NOTE) },
+      requete: requeteWebhook(evenementRecu({
+        fichiers: [{ nom: NOM_NOTE, type: 'text/plain' }, { nom: `copie-${NOM_NOTE}`, type: 'text/plain' }],
+      })),
+      attendu: {
+        statut: 200, depenses: [...ecartee('pj-0'), ...ecartee('pj-1')],
+        verifier: (_r, m) => ecartsConsignes(m,
+          [{ raison: 'format', octets: NOTE.byteLength }, { raison: 'format', octets: NOTE.byteLength }], [NOM_NOTE, CONTENU_NOTE, 'txt']),
+      },
+    },
+    {
+      nom: 'une pièce jointe hors format et une trop lourde, dans le même e-mail : chacune sa trace, rien au stockage',
+      preparer: (m, voisine) => {
+        const lourde = new Uint8Array(LOURDE)
+        lourde.set(PNG)
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-0': DOCX, 'pj-1': lourde } })
+        m.sensibles.push(NOM_HORS_FORMAT)
+      },
+      requete: requeteWebhook(evenementRecu({
+        fichiers: [{ nom: NOM_HORS_FORMAT, type: 'application/msword' }, { nom: 'scan-1.png', type: 'image/png' }],
+      })),
+      attendu: {
+        statut: 200, depenses: [...ecartee('pj-0'), ...ecartee('pj-1')],
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'format', octets: DOCX.byteLength }, { raison: 'taille', octets: LOURDE }], [NOM_HORS_FORMAT, 'docx', 'scan-1']),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+        ],
+      },
+    },
+    {
+      nom: 'la base refuse la trace : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-0': DOCX } })
+        m.sensibles.push(NOM_HORS_FORMAT)
+        m.pannes.push({ table: 'pieces_jointes_ecartees', operation: 'upsert', erreur: { message: 'délai dépassé' }, fois: 1 })
+      },
+      requete: requeteWebhook(evenementRecu({
+        fichiers: [{ nom: NOM_HORS_FORMAT, type: 'application/msword' }, { nom: 'facture-1.png', type: 'image/png' }],
+      })),
+      attendu: {
+        statut: 200,
+        depenses: [
+          ...ecartee('pj-0'), 'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-1`, 'stockage upload pieces',
+          `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces',
+        ],
+        verifier: (_r, m) => [
+          ...journalise(m, /pièce jointe écartée NON consignée \(format, 8 octets\) : délai dépassé/, 'le refus de la trace'),
+          ...(lignes(m, 'pieces_jointes_ecartees').length === 0 ? [] : ['une trace écrite malgré le refus']),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
       },
     },
     {

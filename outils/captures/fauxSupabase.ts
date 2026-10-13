@@ -1673,6 +1673,14 @@ const TABLES: Record<string, Ligne[]> = {
   encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1].map((p) => ({ ...p })),
   transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
   dossier_permanent: DOSSIER_PERMANENT_D9.map((e) => ({ ...e })),
+  // Les pièces jointes que la réception par e-mail a écartées pour le cabinet infirmier (ligne 22.7) : un format refusé et
+  // une pièce trop lourde, à signaler en tête de l'onglet Justificatifs, et une déjà vue, dans l'historique replié. Des
+  // poids et des instants fictifs, aucun nom — la table n'en garde pas.
+  pieces_jointes_ecartees: [
+    { id: 'pje-1', dossier_id: 'd1', recue_le: '2026-09-24T07:42:00Z', raison: 'format', octets: 48_312, empreinte: '1'.repeat(64), vue_le: null, vue_par: null },
+    { id: 'pje-2', dossier_id: 'd1', recue_le: '2026-09-22T15:05:00Z', raison: 'taille', octets: 27_403_212, empreinte: '2'.repeat(64), vue_le: null, vue_par: null },
+    { id: 'pje-3', dossier_id: 'd1', recue_le: '2026-09-02T09:10:00Z', raison: 'format', octets: 3_871, empreinte: '3'.repeat(64), vue_le: '2026-09-03T08:00:00Z', vue_par: 'u1' },
+  ],
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

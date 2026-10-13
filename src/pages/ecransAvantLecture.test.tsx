@@ -63,6 +63,7 @@ import TvaTab from './dossier/TvaTab'
 import VehiculesCard from './dossier/VehiculesCard'
 import VirementsTab from './dossier/VirementsTab'
 import VoletSocialCard from './dossier/VoletSocialCard'
+import PiecesJointesEcartees from './dossier/PiecesJointesEcartees'
 import { ACCES_EN_COURS } from '../lib/auteursVentes'
 import { ECARTS_ET_DECLARATIONS_VIDES } from '../test/ereportingDeLaPiece'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
@@ -348,6 +349,11 @@ const ECRANS: Ecran[] = [
   { nom: 'VirementsTab', fichier: 'pages/dossier/VirementsTab.tsx', rendre: () => <Dossier1><VirementsTab dossierId="d1" modele={TRESORERIE} /></Dossier1> },
   { nom: 'VoletSocialCard', fichier: 'pages/dossier/VoletSocialCard.tsx', rendre: () => (
     <Dossier1><VoletSocialCard dossierId="d1" annee={2025} valeurs={new Map()} blocage={null} /></Dossier1>
+  ) },
+  // Les pièces jointes écartées à la réception par e-mail (ligne 22.7) : montées seules, l'onglet Justificatifs les monte
+  // aussi ; rien ne se dit ni ne s'offre avant leur lecture.
+  { nom: 'PiecesJointesEcartees', fichier: 'pages/dossier/PiecesJointesEcartees.tsx', rendre: () => (
+    <Dossier1><PiecesJointesEcartees dossierId="d1" /></Dossier1>
   ) },
 ]
 

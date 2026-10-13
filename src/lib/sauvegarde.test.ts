@@ -256,7 +256,8 @@ describe('ordre de restauration', () => {
     for (const lue of ['pieces', 'documents_divers']) expect(rang(lue), lue).toBeLessThan(rang('dossier_permanent'))
     expect(ORDRE_RESTAURATION[rang('dossier_permanent') - 1]).toBe('declarations_ereporting_sources')
     expect(rang('dossier_permanent')).toBeLessThan(rang('exercices_valides'))
-    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1]).toBe('devis_numerotation')
+    // Suivi, depuis la ligne 22.7, des pièces jointes écartées, puis des devis (le test qui suit).
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('dossier_permanent') + 1]).toBe('pieces_jointes_ecartees')
     expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
     expect(RELATIONS.filter((r) => r.enfant === 'dossier_permanent')
       .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`).sort())
@@ -269,6 +270,33 @@ describe('ordre de restauration', () => {
     expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toContainEqual({ table: 'dossier_permanent', colonne: 'remplace_id' })
     expect(CHEMINS_DOSSIER.dossier_permanent).toEqual({ acces: 'direct' })
     expect(clePrimaire('dossier_permanent')).toEqual(['id'])
+  })
+
+  it('écrit les pièces jointes écartées après leur dossier, avant les devis et `exercices_valides` (ligne 22.7)', () => {
+    // Leur seul parent est le dossier ; aucune garde ne les lit à l'insertion, aucune validation ne les fige. Après le
+    // dossier permanent et avant la série des devis : elles ne déplacent le rang d'aucune autre table d'hier.
+    const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
+    expect(ORDRE_RESTAURATION[rang('pieces_jointes_ecartees') - 1]).toBe('dossier_permanent')
+    expect(rang('pieces_jointes_ecartees')).toBeLessThan(rang('exercices_valides'))
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees') + 1]).toBe('devis_numerotation')
+    expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
+    expect(RELATIONS.filter((r) => r.enfant === 'pieces_jointes_ecartees')
+      .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`))
+      .toEqual(['pieces_jointes_ecartees.dossier_id>dossiers:cascade'])
+    expect(LIENS_GARDES.filter((l) => l.enfant === 'pieces_jointes_ecartees')).toEqual([])
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES.filter((t) => t.table === 'pieces_jointes_ecartees')).toEqual([])
+    expect(CHEMINS_DOSSIER.pieces_jointes_ecartees).toEqual({ acces: 'direct' })
+    expect(clePrimaire('pieces_jointes_ecartees')).toEqual(['id'])
+    // Une ligne déjà vue se réinsère telle quelle, en une étape : rien ne la relie à une autre ligne de la table.
+    const plan = planReinsertion({
+      dossiers: [{ id: 'd' }],
+      pieces_jointes_ecartees: [
+        { id: 'a', dossier_id: 'd', raison: 'format', octets: 12, empreinte: 'e'.repeat(64), vue_le: null, vue_par: null },
+        { id: 'b', dossier_id: 'd', raison: 'taille', octets: 30_000_000, empreinte: 'f'.repeat(64), vue_le: '2026-10-13T08:00:00+00:00', vue_par: 'u' },
+      ],
+    })
+    expect(plan.etapes.filter((e) => e.table === 'pieces_jointes_ecartees').map((e) => e.lignes.map((l) => l.id))).toEqual([['a', 'b']])
+    expect(plan.secondePasse).toEqual([])
   })
 
   it('réinsère les versions d’une entrée du dossier permanent maillon après maillon, retirée comprise', () => {

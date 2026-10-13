@@ -178,6 +178,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'ventilations_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'ventilations_bancaires', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
   { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les pièces jointes écartées à la réception par e-mail (ligne 22.7) : seulement leur dossier.
+  { enfant: 'pieces_jointes_ecartees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis tant que leurs migrations ne sont pas exportées.
@@ -290,6 +292,12 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // super-administrateur. À cette place, il ne déplace que le rang des devis et de `exercices_valides` dans l'essai de
 // restauration. `sauvegarde.test.ts` garde cet ordre.
 //
+// Les pièces jointes écartées à la réception par e-mail (ligne 22.7, migration `pieces_jointes_ecartees`) suivent le
+// dossier permanent : leur seul parent est le dossier, aucune garde ne les lit à l'insertion (la leur ne garde que la mise
+// à jour), aucune validation ne les fige ; une ligne déjà marquée vue se réinsère telle quelle, par la policy du
+// super-administrateur. À cette place, elles ne déplacent que le rang des devis et de `exercices_valides` dans l'essai de
+// restauration. `sauvegarde.test.ts` garde cet ordre.
+//
 // Les devis (espace client, étape P5) viennent juste avant `exercices_valides`, APRÈS les registres de P7 : leurs
 // parents (le dossier, les factures) sont plus haut, aucune validation ne les fige, et à cette place ils ne déplacent
 // le rang d'aucune table d'hier dans l'essai de restauration. La série d'abord (aucune policy : la sauvegarde n'en lit
@@ -371,6 +379,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'declarations_ereporting',
   'declarations_ereporting_sources',
   'dossier_permanent',
+  'pieces_jointes_ecartees',
   'devis_numerotation',
   'devis',
   'devis_factures',
@@ -842,6 +851,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   vehicules: { acces: 'direct' },
   ventilations_bancaires: { acces: 'direct' },
   volet_social_pamc: { acces: 'direct' },
+  pieces_jointes_ecartees: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis tant que leurs migrations ne sont pas

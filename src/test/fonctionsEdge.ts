@@ -1396,7 +1396,12 @@ export function mondeDeReference(): Monde {
     ],
     super_admins: [{ user_id: PERSONNES.superAdmin.id }],
   }
-  monde.uniques = { memberships: [['user_id', 'dossier_id']] }
+  monde.uniques = {
+    memberships: [['user_id', 'dossier_id']],
+    // La clé d'idempotence des pièces jointes écartées (migration `pieces_jointes_ecartees`, ligne 22.7) : un rejeu de
+    // Resend ne peut pas écrire deux fois la même pièce jointe d'un dossier.
+    pieces_jointes_ecartees: [['dossier_id', 'empreinte']],
+  }
   return monde
 }
 

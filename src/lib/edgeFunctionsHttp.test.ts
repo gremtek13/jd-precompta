@@ -230,6 +230,54 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['    return new Response("Signature invalide", { status: 401 })', '    event = JSON.parse(rawBody)']],
     scenario: 'signé d’un autre secret : 401, rien de lu',
   },
+  // LA TRACE D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7) : jetée, mal écrite, instable au rejeu, tirée du poids au lieu des
+  // identifiants, ou gardant l'identifiant de Resend tel quel ; et son refus par la base, tu.
+  {
+    slug: 'receive-email', quoi: 'la trace d’un format refusé jetée',
+    remplacements: [['        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "format", bytes.byteLength)\n', '']],
+    scenario: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom, consignée pour le cabinet',
+  },
+  {
+    slug: 'receive-email', quoi: 'la trace d’un poids refusé jetée',
+    remplacements: [['        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "taille", bytes.byteLength)\n', '']],
+    scenario: 'une pièce jointe plus lourde que la borne d’une pièce : écartée avant tout dépôt, consignée pour le cabinet',
+  },
+  {
+    slug: 'receive-email', quoi: 'la raison mal écrite',
+    remplacements: [['fichier.id, "format", bytes.byteLength)', 'fichier.id, "formats", bytes.byteLength)']],
+    scenario: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom, consignée pour le cabinet',
+  },
+  {
+    slug: 'receive-email', quoi: 'la clé d’idempotence instable (un tirage dans l’empreinte)',
+    remplacements: [['JSON.stringify([emailId, pieceJointeId])', 'JSON.stringify([emailId, pieceJointeId, crypto.randomUUID()])']],
+    scenario: 'Resend rejoue le webhook : la pièce jointe écartée ne se consigne pas une seconde fois, et sans erreur',
+  },
+  {
+    slug: 'receive-email', quoi: 'la clé d’idempotence ignorée (une insertion simple, que le rejeu fait refuser)',
+    remplacements: [[
+      '.upsert({ dossier_id: dossierId, raison, octets, empreinte }, { onConflict: "dossier_id,empreinte", ignoreDuplicates: true })',
+      '.insert({ dossier_id: dossierId, raison, octets, empreinte })',
+    ]],
+    scenario: 'Resend rejoue le webhook : la pièce jointe écartée ne se consigne pas une seconde fois, et sans erreur',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’empreinte tirée du poids, comme d’un contenu, et non des identifiants',
+    remplacements: [['JSON.stringify([emailId, pieceJointeId])', 'String(octets)']],
+    scenario: 'deux pièces jointes hors format au même contenu : chacune sa trace, sans nom ni contenu au journal ni dans la trace',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’identifiant de Resend gardé tel quel',
+    remplacements: [['upsert({ dossier_id: dossierId, raison, octets, empreinte }', 'upsert({ dossier_id: dossierId, raison, octets, empreinte: pieceJointeId }']],
+    scenario: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom, consignée pour le cabinet',
+  },
+  {
+    slug: 'receive-email', quoi: 'le refus de la trace tu',
+    remplacements: [[
+      '  if (error) console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets} octets) : ${error.message}`)\n',
+      '',
+    ]],
+    scenario: 'la base refuse la trace : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
+  },
   {
     slug: 'create-client-access', quoi: 'le contrôle d’accès demandé avec la clé de service (personne n’y passe plus)',
     remplacements: [['await supabaseAsCaller.rpc("admin_du_dossier"', 'await supabaseAdmin.rpc("admin_du_dossier"']],
