@@ -32,7 +32,21 @@
 --     jointe — la même, ou d'une autre raison — n'écrit rien ; la garde refuse qu'un poids se pose après coup, que la
 --     raison change ou que le poids devienne inconnu, et la marque « vue » s'y pose (contrôles 6, 7c, 33c, 36c, 37c, 48 et
 --     49) ;
+--   - CE QUE LE CLIENT LIT (ligne 22.9, migration `pieces_jointes_ecartees_au_client`) : la table lui reste fermée, et
+--     `pieces_jointes_ecartees_du_client` lui rend, pour SON dossier seul, le jour à Paris, la raison et le poids des
+--     pièces jointes reçues depuis 90 jours — bornes comprises —, du plus récent au plus ancien, vues par le cabinet ou
+--     non, avec ou sans les cases « Ventes » et « Banque » ; ni l'identifiant, ni l'empreinte, ni la marque « vue », ni
+--     son auteur. Refusée au client sur un autre dossier, à un compte rattaché à rien et à un membre du cabinet hors de
+--     ses affectations (« Accès refusé à ce dossier. », 42501), et à l'anonyme par le droit d'exécution ; le cabinet du
+--     dossier lit la même chose que le client ; sans ligne, un tableau vide, jamais nul (contrôles 38a à 38r, mutations
+--     49a à 49f) ;
 --   - et que RIEN ne reste en base.
+--
+-- SANS LA MIGRATION `pieces_jointes_ecartees_au_client`, une seule ligne la dit, « 38. EN ATTENTE », SANS être une
+-- faute : une base d'avant son application (le 13/10/2026, sur l'accord du cabinet, S228B-Q1), ou une réplique qui ne
+-- la porte pas, se rejoue aussi. Elle EN EST UNE si l'historique des migrations porte
+-- `pieces_jointes_ecartees_au_client` sans que la fonction existe — sauf si une ligne
+-- `retour_pieces_jointes_ecartees_au_client`, plus récente, dit son retour arrière.
 --
 -- SANS LA MIGRATION `pieces_jointes_ecartees_vide` (celle de 22.8 appliquée), les contrôles 6, 7c, 33c, 36c, 37c et 49 sont
 -- en faute, et eux seuls : la base refuse alors la raison `vide` et tout poids de zéro. SANS NI L'UNE NI L'AUTRE, s'y
@@ -51,6 +65,16 @@
 -- pour la vide ; la règle écrite `octets > 0 or raison = 'vide'` ou `raison <> 'vide' or octets = 0` ; son remplacement
 -- oublié, ou la contrainte retirée sans être reposée ; la raison oubliée, mal écrite ou une de plus ; la garde sans le
 -- poids, sans la raison ou par `<>` — : 16 vues.
+--
+-- ÉPROUVÉ LE 13/10/2026 (ligne 22.9) sur une réplique égale à la production à 130 migrations (neuf familles de
+-- signature.sql, et l'historique), vide et semée : sans la migration, 58 verdicts, 0 en faute (la ligne « 38. EN
+-- ATTENTE ») ; avec elle, 81 verdicts, 0 en faute. Vingt-sept mutations de la migration — l'accès retiré, réduit au
+-- cabinet, au client, aux cases « Ventes » ou « Banque » ; la fenêtre retirée, exclusive, à 30 ou à 91 jours ;
+-- l'identifiant, la marque « vue » rendus ou le poids omis ; le jour universel ou l'instant ; l'ordre inversé ; les
+-- lignes vues tues ; le dossier oublié ; nul au lieu de `[]` ; un autre message ou code de refus ; `SECURITY INVOKER`,
+-- `volatile`, le chemin non fixé ; le droit laissé à PUBLIC ou rendu à l'anonyme ; une policy de lecture ouverte au client
+-- à côté ; la migration à l'historique sans la fonction — : 27 vues. Le retour arrière joué : 58 verdicts, la ligne 38
+-- en faute tant que sa ligne d'historique (`retour_pieces_jointes_ecartees_au_client`) manque, 0 avec elle.
 --
 -- Chaque contrôle s'annule dans sa sous-transaction (`ANNULATION_ESSAI`, P0001), le verdict étant posé dans une VARIABLE
 -- avant le `raise` — le mécanisme de rls.sql. Les lignes d'essai y sont posées par le propriétaire de la base, sous des
@@ -72,6 +96,15 @@ declare
   ligne_neuve uuid := 'e5a70000-0000-4000-8000-000000000a03';
   inconnue uuid := 'e5a70000-0000-4000-8000-000000000a09';
   e1 text := repeat('a', 64); e2 text := repeat('b', 64); e3 text := repeat('c', 64); e4 text := repeat('9', 64);
+  e5 text := repeat('d', 64); e6 text := repeat('e', 64);
+  -- Ce que la lecture du client (ligne 22.9) rend à chacun, et ce qu'elle refuse : posés dans des VARIABLES avant
+  -- l'annulation de chaque sous-transaction, comme les verdicts.
+  dossier_second uuid; dossier_tiers uuid; acces_avant text; avec_le_client boolean;
+  rendu_client jsonb; rendu_chef jsonb; rendu_cases jsonb; rendu_second jsonb; rendu_membre jsonb; rendu_autre jsonb;
+  rendu_89 jsonb; rendu_vide jsonb; code_vide text; cles_ligne text;
+  code_bloc text; code_client text; code_chef text; code_cases text; code_second text; code_membre text; code_autre text;
+  code_89 text; refus_autre text; refus_rien text; refus_anon text; refus_tiers text; mutation_anon text;
+  lues_directement int; jour_paris date; jour_utc date;
   -- Le refus de la garde, mot pour mot : un refus de la garde se distingue ainsi de celui d'une contrainte, même code.
   refus_garde constant text := 'Une pièce jointe écartée ne change pas : seule sa marque « vue » se pose, une fois.';
 
@@ -1033,6 +1066,336 @@ begin
   end;
   verdicts := verdicts || jsonb_build_object('controle', '49. MUTATION — le refus du contrôle 7 (le format au poids zéro) rejoué avec la raison « vide » : l''écriture doit passer',
     'observe', coalesce(n::text, coalesce(code_recu, '?') || ' ' || coalesce(message, '')), 'ok', coalesce(n = 1, false));
+
+  -- ══ 38 et 49a à 49f. Ce que le client lit : `pieces_jointes_ecartees_du_client` (ligne 22.9) ═══════════════════════
+  -- La fonction est appelée par son nom dans des branches que PL/pgSQL ne prépare qu'en les exécutant : sans elle, seule
+  -- la ligne « EN ATTENTE » se joue.
+  if to_regprocedure('public.pieces_jointes_ecartees_du_client(uuid)') is null then
+    -- La dernière des deux lignes d'historique décide : la migration, ou son retour arrière.
+    select coalesce((select s.name from supabase_migrations.schema_migrations s
+                      where s.name in ('pieces_jointes_ecartees_au_client', 'retour_pieces_jointes_ecartees_au_client')
+                      order by s.version desc limit 1) = 'pieces_jointes_ecartees_au_client', false) into avec_le_client;
+    verdicts := verdicts || jsonb_build_object('controle', '38. EN ATTENTE : la lecture du client (pieces_jointes_ecartees_du_client, ligne 22.9) n''est pas en base',
+      'observe', case when avec_le_client
+                      then 'la migration pieces_jointes_ecartees_au_client est à l''historique, sans retour arrière, et la fonction manque'
+                      else 'la migration pieces_jointes_ecartees_au_client n''est pas appliquée, ou son retour arrière l''a suivie' end,
+      'ok', not avec_le_client);
+  else
+    -- Le second dossier du client, s'il en a un ; un troisième dossier du cabinet, ni le sien ni l'autre.
+    select mb.dossier_id into dossier_second from memberships mb
+     where mb.user_id = client and mb.dossier_id <> dossier_client order by mb.dossier_id limit 1;
+    select d.id into dossier_tiers from dossiers d
+     where d.cabinet_id = cabinet and d.id <> dossier_client and d.id <> dossier_autre
+       and not exists (select 1 from memberships mb where mb.user_id = client and mb.dossier_id = d.id) order by d.id limit 1;
+    select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) into acces_avant from memberships mb;
+    -- Le jour d'une réception à 23 h 30 en temps universel, avant-hier : à Paris, c'est déjà hier (UTC+1 ou UTC+2).
+    jour_utc := (now() at time zone 'UTC')::date - 2;
+    jour_paris := jour_utc + 1;
+
+    -- ── 38a, 38b. Le catalogue ──
+    select p.proname::text || '(' || pg_get_function_identity_arguments(p.oid) || '):' || p.prosecdef::text || ':'
+           || p.provolatile::text || ':' || coalesce(array_to_string(p.proconfig, ','), '') || ':' || pg_get_function_result(p.oid)
+           || ':' || coalesce((
+             select string_agg(q.g, '+' order by q.g) from (
+               select case when a.grantee = 0 then 'public' else pg_get_userbyid(a.grantee) end as g
+               from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               where a.privilege_type = 'EXECUTE' and (a.grantee = 0 or pg_get_userbyid(a.grantee) in ('anon', 'authenticated'))) q), 'personne')
+      into obs from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'pieces_jointes_ecartees_du_client';
+    verdicts := verdicts || jsonb_build_object('controle', '38a. la lecture du client est une fonction SECURITY DEFINER, stable, au chemin fixé, qui rend UNE valeur jsonb ; exécutable par les connectés seuls',
+      'observe', coalesce(obs, 'aucune'),
+      'ok', coalesce(obs = 'pieces_jointes_ecartees_du_client(p_dossier_id uuid):true:s:search_path=public:jsonb:authenticated', false));
+
+    select position('admin_du_dossier(p_dossier_id)' in p.prosrc), position('client_du_dossier(p_dossier_id, ''membre'')' in p.prosrc),
+           position('raise exception' in p.prosrc), position('pieces_jointes_ecartees' in p.prosrc)
+      into n, m, k, rendu from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'pieces_jointes_ecartees_du_client';
+    verdicts := verdicts || jsonb_build_object('controle', '38b. elle vérifie l''accès — le cabinet du dossier, ou TOUT accès client (« membre ») — avant de lire la table',
+      'observe', 'cabinet au caractère ' || coalesce(n::text, '?') || ', accès client au ' || coalesce(m::text, '?')
+        || ', refus au ' || coalesce(k::text, '?') || ', première lecture au ' || coalesce(rendu::text, '?'),
+      'ok', coalesce(n > 0 and m > 0 and k > greatest(n, m) and rendu > k, false));
+
+    -- ── Un seul jeu, posé par le propriétaire, et chaque appel dans sa sous-transaction ──
+    -- Dans le dossier du client : hier (format), avant-hier à 23 h 30 en temps universel (un dépôt échoué, poids
+    -- inconnu), il y a dix jours (une taille refusée, VUE par le cabinet), il y a 90 jours exactement (une vide), il y a
+    -- 90 jours et une minute (hors de la fenêtre). Dans l'autre dossier, le second dossier du client et le troisième
+    -- dossier du cabinet : une ligne chacun, hier, à un poids qui les désigne (999, 777, 555).
+    code_bloc := null;
+    rendu_client := null; rendu_chef := null; rendu_cases := null; rendu_second := null; rendu_membre := null;
+    rendu_autre := null; rendu_89 := null; rendu_vide := null; code_vide := null; cles_ligne := null;
+    code_client := null; code_chef := null; code_cases := null; code_second := null; code_membre := null; code_autre := null;
+    code_89 := null; refus_autre := null; refus_rien := null; refus_anon := null; refus_tiers := null; mutation_anon := null;
+    lues_directement := null;
+    begin
+      insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, recue_le, vue_le, vue_par) values
+        (dossier_client, 'format', 4120, e1, now() - interval '1 day', null, null),
+        (dossier_client, 'depot', null, e2, (jour_utc + time '23:30') at time zone 'UTC', null, null),
+        (dossier_client, 'taille', 26214400, e3, now() - interval '10 days', now() - interval '9 days', chef),
+        (dossier_client, 'vide', 0, e4, now() - interval '90 days', null, null),
+        (dossier_client, 'taille', 27000000, e5, now() - interval '90 days 1 minute', null, null),
+        (dossier_autre, 'format', 999, e1, now() - interval '1 day', null, null);
+      if dossier_second is not null then
+        insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, recue_le) values (dossier_second, 'format', 777, e1, now() - interval '1 day');
+      end if;
+      if dossier_tiers is not null then
+        insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, recue_le) values (dossier_tiers, 'format', 555, e1, now() - interval '1 day');
+      end if;
+
+      -- Le client, sans aucune case, sur son dossier — et ce qu'il lit encore DIRECTEMENT de la table.
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        rendu_client := pieces_jointes_ecartees_du_client(dossier_client);
+        select count(*) into lues_directement from pieces_jointes_ecartees;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_client := sqlstate;
+      end;
+      reset role;
+
+      -- Le chef du cabinet, sur le même dossier.
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        rendu_chef := pieces_jointes_ecartees_du_client(dossier_client);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_chef := sqlstate;
+      end;
+      reset role;
+
+      -- Le chef, sur un dossier qu'aucune ligne ne désigne (un identifiant tiré au hasard : le super-administrateur a accès
+      -- à tout dossier) : un tableau vide, jamais nul.
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        rendu_vide := pieces_jointes_ecartees_du_client(gen_random_uuid());
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_vide := sqlstate;
+      end;
+      reset role;
+
+      -- Le client, les deux cases de son accès cochées.
+      begin
+        update memberships set droit_ventes = true, droit_banque = true where user_id = client and dossier_id = dossier_client;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        rendu_cases := pieces_jointes_ecartees_du_client(dossier_client);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_cases := sqlstate;
+      end;
+      reset role;
+
+      -- Le client, sur son second dossier.
+      if dossier_second is not null then
+        begin
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+          rendu_second := pieces_jointes_ecartees_du_client(dossier_second);
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then code_second := sqlstate;
+        end;
+        reset role;
+      end if;
+
+      -- Le client, sur l'autre dossier du cabinet ; un compte rattaché à rien ; l'anonyme.
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        perform pieces_jointes_ecartees_du_client(dossier_autre);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then refus_autre := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
+        perform pieces_jointes_ecartees_du_client(dossier_client);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then refus_rien := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      begin
+        set local role anon;
+        perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+        perform pieces_jointes_ecartees_du_client(dossier_client);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then refus_anon := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+
+      -- Le client devenu membre du cabinet, affecté à l'autre dossier : il le lit ; le troisième lui reste refusé.
+      begin
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+        insert into dossier_assignations (dossier_id, user_id) values (dossier_autre, client);
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        rendu_membre := pieces_jointes_ecartees_du_client(dossier_autre);
+        if dossier_tiers is not null then
+          begin
+            perform pieces_jointes_ecartees_du_client(dossier_tiers);
+            refus_tiers := 'lu';
+          exception when others then refus_tiers := sqlstate || ' ' || sqlerrm;
+          end;
+        end if;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_membre := sqlstate;
+      end;
+      reset role;
+
+      -- Mutation 49a : le refus de l'anonyme rejoué avec le droit d'exécution rendu — c'est alors la fonction qui refuse.
+      begin
+        grant execute on function public.pieces_jointes_ecartees_du_client(uuid) to anon;
+        set local role anon;
+        perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+        begin
+          perform pieces_jointes_ecartees_du_client(dossier_client);
+          mutation_anon := 'lu';
+        exception when others then mutation_anon := sqlerrm;
+        end;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then null;
+      end;
+      reset role;
+
+      -- Mutation 49c : le refus de l'autre dossier rejoué avec un accès du client posé sur ce dossier.
+      begin
+        insert into memberships (user_id, dossier_id, role) values (client, dossier_autre, 'client');
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        rendu_autre := pieces_jointes_ecartees_du_client(dossier_autre);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_autre := sqlstate;
+      end;
+      reset role;
+
+      -- Mutation 49d : la borne rejouée avec une pièce jointe reçue il y a 89 jours — elle doit être rendue.
+      begin
+        insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, recue_le) values (dossier_client, 'format', 1234, e6, now() - interval '89 days');
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        rendu_89 := pieces_jointes_ecartees_du_client(dossier_client);
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_89 := sqlstate;
+      end;
+      reset role;
+
+      -- Mutation 49e : la règle des clés appliquée à une ligne de la TABLE (ce qu'une policy ouvrirait) — elle doit refuser.
+      select string_agg(x, ',' order by x) into cles_ligne
+        from jsonb_object_keys((select to_jsonb(e) from pieces_jointes_ecartees e where e.dossier_id = dossier_client limit 1)) x;
+
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_bloc := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+
+    -- ── 38c à 38q. Les verdicts ──
+    -- Ce que le client a lu, élément par élément : « raison/poids@jour ».
+    select string_agg((x->>'raison') || '/' || coalesce(x->>'octets', 'inconnu') || '@' || coalesce(x->>'jour', '?'), ',' order by i)
+      into obs from jsonb_array_elements(case when jsonb_typeof(rendu_client) = 'array' then rendu_client else '[]'::jsonb end) with ordinality t(x, i);
+    verdicts := verdicts || jsonb_build_object('controle', '38c. le client, sans aucune case, lit SON dossier : les quatre pièces jointes des 90 derniers jours, de la plus récente à la plus ancienne — ni celle d''un autre dossier, ni celle de son second, ni celle d''avant',
+      'observe', coalesce(code_bloc, '?') || ' ; ' || coalesce(code_client, '?') || ' : ' || coalesce(obs, 'rien'),
+      'ok', coalesce(code_bloc = 'P0001 ANNULATION_ESSAI' and code_client = 'P0001'
+        and obs = 'format/4120@' || ((now() - interval '1 day') at time zone 'Europe/Paris')::date
+          || ',depot/inconnu@' || jour_paris
+          || ',taille/26214400@' || ((now() - interval '10 days') at time zone 'Europe/Paris')::date
+          || ',vide/0@' || ((now() - interval '90 days') at time zone 'Europe/Paris')::date, false));
+
+    select string_agg(distinct cles, ' | ') into obs from (
+      select (select string_agg(c, ',' order by c) from jsonb_object_keys(x) c) as cles
+      from jsonb_array_elements(case when jsonb_typeof(rendu_client) = 'array' then rendu_client else '[]'::jsonb end) x) q;
+    verdicts := verdicts || jsonb_build_object('controle', '38d. chaque élément porte trois champs, le jour, la raison et le poids — ni l''identifiant, ni l''empreinte, ni la marque « vue » ni son auteur, ni le dossier',
+      'observe', coalesce(obs, 'aucun élément'), 'ok', coalesce(obs = 'jour,octets,raison', false));
+
+    select x->>'jour' into obs from jsonb_array_elements(case when jsonb_typeof(rendu_client) = 'array' then rendu_client else '[]'::jsonb end) x
+     where x->>'raison' = 'depot';
+    verdicts := verdicts || jsonb_build_object('controle', '38e. le jour est celui de Paris : reçue à 23 h 30 en temps universel, elle se dit du lendemain',
+      'observe', 'reçue le ' || jour_utc || ' à 23 h 30 UTC, rendue au ' || coalesce(obs, '?'), 'ok', coalesce(obs = jour_paris::text, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38f. la marque « vue » du cabinet ne change rien pour le client : la pièce jointe vue lui est rendue, sans sa marque',
+      'observe', coalesce(rendu_client::text, '?'),
+      'ok', coalesce(rendu_client @> jsonb_build_array(jsonb_build_object('raison', 'taille', 'octets', 26214400))
+        and position('vue' in rendu_client::text) = 0, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38g. la fenêtre est de 90 jours, bornes comprises : reçue il y a 90 jours exactement, rendue ; 90 jours et une minute, non',
+      'observe', coalesce(rendu_client::text, '?'),
+      'ok', coalesce(rendu_client @> jsonb_build_array(jsonb_build_object('raison', 'vide', 'octets', 0))
+        and not rendu_client @> jsonb_build_array(jsonb_build_object('octets', 27000000)), false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38h. le poids se rend tel que reçu : inconnu d''un dépôt échoué avant toute lecture, zéro d''une pièce jointe arrivée vide',
+      'observe', coalesce(rendu_client::text, '?'),
+      'ok', coalesce(rendu_client @> jsonb_build_array(jsonb_build_object('raison', 'depot', 'octets', null))
+        and rendu_client @> jsonb_build_array(jsonb_build_object('raison', 'vide', 'octets', 0)), false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38i. ses deux cases cochées (« Ventes », « Banque »), le client lit la même chose',
+      'observe', coalesce(code_cases, '?') || ', ' || case when rendu_cases = rendu_client then 'la même chose' else coalesce(rendu_cases::text, 'rien') end,
+      'ok', coalesce(code_cases = 'P0001' and rendu_cases = rendu_client, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38j. le client, sur un dossier qui n''est pas le sien : « Accès refusé à ce dossier. » (42501)',
+      'observe', coalesce(refus_autre, '?'), 'ok', coalesce(refus_autre = '42501 Accès refusé à ce dossier.', false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38k. un compte rattaché à rien : « Accès refusé à ce dossier. » (42501)',
+      'observe', coalesce(refus_rien, '?'), 'ok', coalesce(refus_rien = '42501 Accès refusé à ce dossier.', false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38l. l''anonyme n''exécute pas la fonction : refus du droit d''exécution',
+      'observe', coalesce(refus_anon, '?'),
+      'ok', coalesce(refus_anon like '42501 permission denied for function pieces_jointes_ecartees_du_client%', false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38m. le chef du cabinet lit la même chose que le client (contrôle positif du cabinet)',
+      'observe', coalesce(code_chef, '?') || ', ' || case when rendu_chef = rendu_client then 'la même chose' else coalesce(rendu_chef::text, 'rien') end,
+      'ok', coalesce(code_chef = 'P0001' and rendu_chef = rendu_client, false));
+
+    select string_agg((x->>'raison') || '/' || coalesce(x->>'octets', 'inconnu'), ',') into obs
+      from jsonb_array_elements(case when jsonb_typeof(rendu_membre) = 'array' then rendu_membre else '[]'::jsonb end) x;
+    -- Un troisième dossier du cabinet manque à un jeu de deux dossiers : sa moitié du contrôle est alors sans objet, et
+    -- l'observation le dit (la production en a quatre).
+    verdicts := verdicts || jsonb_build_object('controle', '38n. un membre du cabinet affecté à l''autre dossier y lit sa pièce jointe, et seulement elle ; un troisième dossier lui reste refusé',
+      'observe', coalesce(code_membre, '?') || ' : ' || coalesce(obs, 'rien') || ' ; troisième dossier : '
+        || case when dossier_tiers is null then 'sans objet, le cabinet n''en a pas' else coalesce(refus_tiers, '?') end,
+      'ok', coalesce(code_membre = 'P0001' and obs = 'format/999'
+        and (dossier_tiers is null or refus_tiers = '42501 Accès refusé à ce dossier.'), false));
+
+    select string_agg((x->>'raison') || '/' || coalesce(x->>'octets', 'inconnu'), ',') into obs
+      from jsonb_array_elements(case when jsonb_typeof(rendu_second) = 'array' then rendu_second else '[]'::jsonb end) x;
+    verdicts := verdicts || jsonb_build_object('controle', '38o. sur son second dossier, le client lit la pièce jointe de ce dossier-là, et elle seule',
+      'observe', case when dossier_second is null then 'sans objet : le client n''a qu''un dossier'
+                      else coalesce(code_second, '?') || ' : ' || coalesce(obs, 'rien') end,
+      'ok', coalesce(dossier_second is null or (code_second = 'P0001' and obs = 'format/777'), false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38p. la table lui reste fermée : il n''en lit directement aucune ligne, cinq étant dans son dossier',
+      'observe', coalesce(lues_directement::text, '?') || ' ligne(s)', 'ok', coalesce(lues_directement = 0, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38r. sans pièce jointe écartée dans la fenêtre, la lecture rend un tableau vide, jamais nul',
+      'observe', coalesce(code_vide, '?') || ' : ' || coalesce(rendu_vide::text, 'nul'),
+      'ok', coalesce(code_vide = 'P0001' and rendu_vide = '[]'::jsonb, false));
+
+    -- ── 49a à 49f. Les mutations ──
+    verdicts := verdicts || jsonb_build_object('controle', '49a. MUTATION — le contrôle 38l avec le droit rendu à l''anonyme : c''est alors la fonction qui refuse',
+      'observe', coalesce(mutation_anon, '?'), 'ok', coalesce(mutation_anon = 'Accès refusé à ce dossier.', false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '49b. MUTATION — le contrôle 38k joué sous le client : la lecture doit passer',
+      'observe', coalesce(jsonb_array_length(rendu_client)::text, 'refusée') || ' élément(s)',
+      'ok', coalesce(code_client = 'P0001' and jsonb_array_length(rendu_client) > 0, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '49c. MUTATION — le contrôle 38j avec un accès du client posé sur l''autre dossier : il doit en lire la pièce jointe',
+      'observe', coalesce(code_autre, '?') || ' : ' || coalesce(rendu_autre::text, 'rien'),
+      'ok', coalesce(code_autre = 'P0001' and rendu_autre @> jsonb_build_array(jsonb_build_object('octets', 999)), false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '49d. MUTATION — le contrôle 38g avec une pièce jointe reçue il y a 89 jours : elle doit être rendue',
+      'observe', coalesce(code_89, '?') || ' : ' || coalesce(jsonb_array_length(rendu_89)::text, '?') || ' élément(s)',
+      'ok', coalesce(code_89 = 'P0001' and rendu_89 @> jsonb_build_array(jsonb_build_object('octets', 1234)), false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '49e. MUTATION — la règle du contrôle 38d appliquée à une ligne de la table, telle qu''une policy l''ouvrirait : elle doit refuser',
+      'observe', coalesce(cles_ligne, '?'), 'ok', coalesce(cles_ligne <> 'jour,octets,raison', false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '49f. MUTATION — le contrôle 38e jugé au jour du temps universel : il doit refuser',
+      'observe', 'jour universel ' || jour_utc || ', jour de Paris ' || jour_paris, 'ok', coalesce(jour_utc <> jour_paris, false));
+
+    verdicts := verdicts || jsonb_build_object('controle', '38q. rien de ce bloc n''est resté : les accès et leurs cases, les membres et leurs affectations, le droit de l''anonyme',
+      'observe', case when acces_avant = (select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) from memberships mb)
+                      then 'accès inchangés' else 'accès CHANGÉS' end
+        || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
+        || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations),
+      'ok', coalesce(acces_avant = (select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) from memberships mb)
+        and admins_avant = (select count(*) from cabinet_admins) and assignations_avant = (select count(*) from dossier_assignations)
+        and not has_function_privilege('anon', 'public.pieces_jointes_ecartees_du_client(uuid)', 'execute'), false));
+  end if;
 
   -- ══ 50. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
   verdicts := verdicts || jsonb_build_object('controle', '50. rien n''est resté en base',

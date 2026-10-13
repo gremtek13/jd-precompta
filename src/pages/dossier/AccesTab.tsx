@@ -14,7 +14,7 @@ import {
   libelleDeLaCase, messageDuRefus, type Domaine,
 } from '../../lib/droitsAcces'
 import { avisDeLAccesCree, compteDeLaReponse } from '../../lib/creationDesComptes'
-import { poids, TAILLE_MAX_PIECE } from '../../lib/bornesStockage'
+import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 import type { Membership } from '../../lib/types'
 
 // Un accès tel que l'onglet le lit : la personne, et ses deux droits (espace client, étape P1, voir lib/droitsAcces.ts).
@@ -280,8 +280,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
         <p className="muted" style={{ marginTop: -8 }}>
           Le client transfère ses e-mails de prélèvement récurrent (assurance, cotisations…) vers cette adresse —
           un simple réglage de transfert automatique dans sa boîte, sans jamais donner accès à sa messagerie.
-          Les pièces jointes reçues — en PDF, JPEG, PNG ou CSV, de {poids(TAILLE_MAX_PIECE)} au plus chacune — arrivent
-          directement en pièces à valider ; une autre est écartée, et l’onglet Justificatifs le dit.
+          {' '}{CE_QUE_DIT_LA_COLLECTE}
         </p>
         {adresseCollecte ? (
           <div className="field-row" style={{ alignItems: 'center' }}>

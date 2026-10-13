@@ -1694,6 +1694,12 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'pje-4', dossier_id: 'd1', recue_le: '2026-09-25T10:15:00Z', raison: 'depot', octets: null, empreinte: '4'.repeat(64), vue_le: null, vue_par: null },
     // Puis une pièce jointe arrivée vide (ligne 22.91) : sa raison, et son poids de zéro.
     { id: 'pje-5', dossier_id: 'd1', recue_le: '2026-09-25T16:40:00Z', raison: 'vide', octets: 0, empreinte: '5'.repeat(64), vue_le: null, vue_par: null },
+    // Et pour l'atelier (d7), la société du client du banc (ligne 22.9) : « Mes pièces » les dit à son client — un format
+    // refusé, un dépôt échoué avant toute lecture, reçu à 23 h 30 en temps universel (le lendemain à Paris), une pièce
+    // jointe arrivée vide, déjà vue par le cabinet (la marque ne change rien pour le client). Fictifs, aucun nom.
+    { id: 'pje-6', dossier_id: 'd7', recue_le: '2026-10-08T07:40:00Z', raison: 'format', octets: 6_112, empreinte: '6'.repeat(64), vue_le: null, vue_par: null },
+    { id: 'pje-7', dossier_id: 'd7', recue_le: '2026-10-02T23:30:00Z', raison: 'depot', octets: null, empreinte: '7'.repeat(64), vue_le: null, vue_par: null },
+    { id: 'pje-8', dossier_id: 'd7', recue_le: '2026-09-29T08:05:00Z', raison: 'vide', octets: 0, empreinte: '8'.repeat(64), vue_le: '2026-09-30T08:00:00Z', vue_par: 'u1' },
   ],
 }
 
@@ -1877,6 +1883,20 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       data: ROLES_COMPTABLES.map((r) => ({
         role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
       })),
+      error: null,
+    }
+  }
+  // `pieces_jointes_ecartees_du_client` (ligne 22.9) : le jour à Paris, la raison et le poids des pièces jointes écartées
+  // du dossier, de la plus récente à la plus ancienne, comme la fonction en base. Le banc ne juge pas la fenêtre de 90
+  // jours (l'essai en base la juge) : il mesure la carte de « Mes pièces ».
+  if (nom === 'pieces_jointes_ecartees_du_client') {
+    const jourAParis = (instant: string) => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(instant))
+    return {
+      data: (TABLES.pieces_jointes_ecartees ?? []).filter((e) => e.dossier_id === dossierId)
+        .sort((a, b) => String(b.recue_le).localeCompare(String(a.recue_le)))
+        .map((e) => ({ jour: jourAParis(String(e.recue_le)), raison: e.raison, octets: e.octets })),
       error: null,
     }
   }

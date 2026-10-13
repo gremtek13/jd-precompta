@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientUpload from './ClientUpload'
+import { ECARTEES_DU_CLIENT_EXPORTEES } from '../lib/piecesJointesEcarteesClient'
 
 // « MES PIÈCES » QUAND LA COUVERTURE DU RELEVÉ EST EN BASE (espace client, étape P7) — le pendant de
 // ClientHome.couverture.test.tsx. Drapeau levé, l'écran ne lit plus aucun mouvement : il lit des mois par
@@ -43,6 +44,11 @@ vi.mock('../lib/supabase', () => ({
     },
     rpc: (nom: string, args: unknown) => {
       faux.rpcs.push({ nom, args })
+      // Les pièces jointes écartées (ligne 22.9), lues dès que leur fonction est en base (`ECARTEES_DU_CLIENT_EXPORTEES`) :
+      // une base qui n'en a aucune — ce fichier garde la couverture, leur carte a son propre test.
+      if (nom === 'pieces_jointes_ecartees_du_client') {
+        return { then: (suite: (r: unknown) => unknown) => Promise.resolve({ data: [], error: null, count: null, status: 200, statusText: '' }).then(suite) }
+      }
       const reponse = async () => {
         await faux.porteCouverture
         return { ...faux.couverture, count: null, status: faux.couverture.error ? 400 : 200, statusText: '' }
@@ -88,7 +94,11 @@ describe('ClientUpload — drapeau levé : la couverture du relevé, jamais les 
   it('lit la couverture par couverture_du_releve, sur le dossier affiché, et ne demande aucun mouvement', async () => {
     poser({ data: ['2026-01-01'] })
     await monter()
-    expect(faux.rpcs).toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
+    // Et aucune autre fonction — hors la lecture des pièces jointes écartées, une fois sa fonction en base (ligne 22.9).
+    expect(faux.rpcs.filter((r) => r.nom !== 'pieces_jointes_ecartees_du_client'))
+      .toEqual([{ nom: 'couverture_du_releve', args: { p_dossier_id: 'dossier-de-test' } }])
+    expect(faux.rpcs.filter((r) => r.nom === 'pieces_jointes_ecartees_du_client'))
+      .toEqual(ECARTEES_DU_CLIENT_EXPORTEES ? [{ nom: 'pieces_jointes_ecartees_du_client', args: { p_dossier_id: 'dossier-de-test' } }] : [])
     expect(faux.demandees).not.toContain('lignes_bancaires')
   })
 

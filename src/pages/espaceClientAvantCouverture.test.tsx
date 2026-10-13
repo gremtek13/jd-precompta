@@ -17,6 +17,12 @@ vi.mock('../lib/couvertureReleve', async (importOriginal) => ({
   ...await importOriginal<typeof import('../lib/couvertureReleve')>(),
   COUVERTURE_EXPORTEE: false,
 }))
+// Avant P7, la lecture des pièces jointes écartées (ligne 22.9, `pieces_jointes_ecartees_du_client`) n'existait pas
+// davantage : « Mes pièces » n'appelait aucune fonction. Ce monde-là se force entier.
+vi.mock('../lib/piecesJointesEcarteesClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../lib/piecesJointesEcarteesClient')>(),
+  ECARTEES_DU_CLIENT_EXPORTEES: false,
+}))
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,

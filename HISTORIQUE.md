@@ -23320,3 +23320,121 @@ recomptées (136 chantiers livrés sur 180, 76 % ; pour un dossier BNC, 136 sur 
 
 **RESTE.** La décision sur les éléments intégrés, sur les comptes réels (S229-Q3, Q4) ; le dire au client dans « Mes
 pièces », avec la phrase de l'onglet Accès sur la collecte (ligne 22.9, S229-Q5).
+
+### 13/10/2026 — LE CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » — LIGNE 22.9
+
+(La migration `pieces_jointes_ecartees_au_client`, préparée sous la version PROVISOIRE `20261013235000`, présentée au
+cabinet, appliquée sur son accord (S228B-Q1) sous la version `20261013174021`, AVANT la fusion de l'écran qui la lit.
+Préparée par l'agent S228b sur `560fec9`, intégrée sur `38b4ef9` avec sa bascule. Fichiers :
+`supabase/schema/20261013174021_pieces_jointes_ecartees_au_client.sql`, `src/lib/piecesJointesEcarteesClient.ts` et
+`src/pages/PiecesJointesEcarteesClient.tsx` (nouveaux), `src/pages/ClientUpload.tsx`, `src/pages/dossier/AccesTab.tsx`,
+`src/lib/types.ts`, `supabase/essais/piecesJointesEcartees.sql`, leurs tests (`piecesJointesEcarteesClient.test.ts`,
+`PiecesJointesEcarteesClient.test.tsx`, `ClientUpload.ecartees.test.tsx` nouveaux ; `AccesTab.test.tsx`,
+`ClientUpload.test.tsx`, `ClientUpload.couverture.test.tsx`, `espaceClientAvantCouverture.test.tsx`), les gardes
+`ecrituresVerifiees.test.ts`, `verrousEcritures.test.ts`, `ecransAvantLecture.test.tsx`, `RGPD.md`, l'en-tête de
+`rls.sql`, `outils/captures/fauxSupabase.ts`.)
+
+**LE CONSTAT.** Depuis les lignes 22.7, 22.8 et 22.91, `receive-email` consigne la pièce jointe qu'elle n'a pas déposée,
+et le cabinet la voit dans Justificatifs. Le client, lui, croit l'avoir envoyée. Décision du cabinet du 13/10/2026
+(S227-Q6) : « Mes pièces » le lui dira — quand, pourquoi, comment la renvoyer —, sans nom ; la lecture ouverte au
+client, présentée avant d'être appliquée.
+
+**LA VOIE.** Écartée : une policy de lecture `to authenticated` sur `client_du_dossier(dossier_id, 'membre')` — elle
+ouvrait les HUIT colonnes (la marque « vue » et l'identifiant du membre du cabinet qui l'a posée, l'empreinte des
+identifiants Resend) et toutes les lignes depuis la création du dossier : le droit de lire une colonne se donne à un
+rôle, et le cabinet et le client sont le même (`authenticated`). Retenue : une fonction de lecture,
+`pieces_jointes_ecartees_du_client(dossier) returns jsonb`, `SECURITY DEFINER`, `stable`, `search_path` fixé, exécutable
+par les connectés seuls ; l'accès d'abord (`admin_du_dossier` ou `client_du_dossier(…, 'membre')` — tout accès, cases ou
+non, comme « Mes pièces » ; sinon « Accès refusé à ce dossier. », 42501) ; UNE valeur (PostgREST plafonne les lignes,
+pas une valeur : le patron de `couverture_du_releve`), du plus récent au plus ancien, `[]` à vide ; trois champs — le
+jour de la réception À PARIS (calculé par la base : retrouver l'e-mail ; ni l'heure ni l'instant), la raison (la
+consigne), le poids (ce qui distingue deux pièces jointes d'un même jour). La table reste fermée au client : ses deux
+policies ne changent pas. Conséquences : aucune policy de plus pour `rls.sql` (rejoué entier sur la réplique quand même,
+la fonction portant un droit) ; l'advisor `authenticated_security_definer_function_executable` passe de 40 à 41, `anon_`
+restant à 5.
+
+**CE QUE LE CLIENT VOIT, ET JUSQU'À QUAND** (posé dans le code en hypothèses, tranché par le cabinet le même jour,
+S228B-Q2 à Q4) : les lignes des 90 derniers jours, bornes comprises ; vues ou non par le cabinet — sa marque range
+l'alerte dans SON onglet et ne change rien pour le client ; le client ne marque rien, son geste est de renvoyer. La
+carte (`PiecesJointesEcarteesClient`, en tête de « Mes pièces », les classes de celle de Justificatifs) : le combien et
+le pourquoi de l'onglet Justificatifs, PARTAGÉS (réexportés de `lib/piecesJointesEcartees.ts`, aucun mot du cabinet
+changé) ; d'où elles viennent, que le cabinet les voit, pourquoi aucun nom ; ce qu'il peut faire, par raison —
+autrement, telle quelle (« ce n'est pas de ton fait »), ou vérifier son fichier d'abord —, dans « Déposer des fichiers »
+ou « par e-mail, à la même adresse » (l'espace du client ne montre pas l'adresse de collecte : S228B-Q5) ; un format
+refusé qui n'était pas une pièce n'a pas à être renvoyé ; la liste ne sait pas s'il a renvoyé depuis. Aux mots du
+client : `MOTS_DU_CABINET`, et aucun texte ne porte « client ». Lecture À PART de « ce qu'il reste à envoyer » (sa panne
+n'en fausse aucune autre), gardée avec la société et sous un drapeau d'annulation ; avant elle l'attente (`aria-busy`),
+rien sur un vide lu en entier, le bandeau (motif en infobulle) sur un refus ou une réponse illisible.
+
+**LE DRAPEAU.** `ECARTEES_DU_CLIENT_EXPORTEES`, confronté à l'export : vrai si et seulement si l'export porte la
+fonction, et alors sa forme est confrontée — paramètre, prédicat « membre », fenêtre, trois champs, Paris, ordre, `[]`,
+droits, aucune policy. Baissé, « Mes pièces » n'appelle rien et ne dit rien ; ses deux états se jouent par un accesseur
+(`ClientUpload.ecartees.test.tsx`). La bascule (le fichier posé dans l'export, le drapeau levé) a d'abord été éprouvée
+en SIMULATION : la suite entière a vu trois doublures qui ne savaient pas répondre à la fonction ou comptaient tous les
+`rpc` (`ClientUpload.test.tsx`, `ClientUpload.couverture.test.tsx`, `espaceClientAvantCouverture.test.tsx`) ; corrigées
+dans le correctif même, valables dans les deux états. La migration appliquée, le correctif et la bascule partent
+ensemble.
+
+**L'ONGLET ACCÈS (S229-Q5).** La phrase de la collecte nomme les quatre raisons et Justificatifs, et, drapeau levé, ce
+que la base ouvre à la session du client : « … tout accès client du dossier, avec ou sans case, la voit aussi dans « Mes
+pièces » pendant 90 jours : le jour, la raison et le poids, jamais le nom. »
+
+**CE QUI A ÉTÉ MESURÉ SUR LA RÉPLIQUE.** Réplique (grappe 54331) : `s228b_base` et `s228b_semee`, copies de
+`s229_migree` et `s229_semee_migree`, la ligne d'historique de 22.91 portée à sa version réelle — égales à la production
+du 13/10/2026 sur les neuf familles de `signature.sql` et sur l'historique (130, `cd7850e3…`). Migrée : seules
+`fonctions` (155, `e9e596fe…`) et `droits_fonctions` (155, `93544847…`) changent. L'essai étendu (38a à 38r, mutations
+49a à 49f ; « 38. EN ATTENTE » sans la migration, pas une faute, sauf si l'historique la porte sans retour arrière) :
+sans la migration 58 verdicts, 0 en faute ; avec, 81, 0 — vide et semée ; la copie sans commentaires (82 909 caractères,
+`55525c4e…`), d'un seul tenant : les mêmes, la ligne 0 rendant le texte au caractère près. Mutations de la migration :
+27 sur 27 vues. Retour arrière : 9/9 familles égales à la production d'avant, commentaire d'avant ; l'essai,
+58 verdicts, la ligne 38 en faute tant que la ligne d'historique du retour manque, 0 avec elle. `rls.sql` ENTIER :
+35 lignes, 0 en faute, 31 mutations sur 31, sans et avec la migration. Contrôles de l'export : sans le fichier, dérive
+130 = 130 (`cd7850e3…`), socle 78 (`91ae95ec…`), inventaire 1 897 (`a33f2032…`) ; le fichier posé, 131 = 131
+(`372bac63…`), socle 78, inventaire 1 898 (`5535f404…`, la fonction). Mutations du code : 24 sur 26 vues, deux
+ÉQUIVALENTES (chacune retire l'une des deux protections contre une lecture tardive, l'autre tient ; les deux ensemble :
+vue). Bascule en simulation : suite entière (Paris) 346 fichiers, 10 435 tests ; banc (port 5330) sur l'arbre de la
+bascule, onze passes, 0 débordement, polices 0, `client/mes-pieces` mesurée à 390 et 1 440 px, captures relues. Barrière
+du correctif : `tsc -b` 0 ; Edge 25 erreurs, les mêmes qu'à la base ; lint 63 avertissements, les mêmes ; quatre
+fuseaux, 15 fichiers, 373 tests ; suite entière (Paris) 346 fichiers, 10 435 tests ; construction verte
+(`index-99oKtsep.js`). Correctif : 19 fichiers, `git apply --check` vert contre `560fec9` ; bascule : 3 fichiers, vert
+contre `560fec9` et le correctif.
+
+**L'ORDRE DE MISE EN LIGNE.** Le correctif (drapeau faux) pouvait partir AVANT toute décision : il ne change rien pour
+le client. Sur l'accord du cabinet (S228B-Q1) : la migration (`apply_migration`, aucune suppression), l'essai et les
+contrôles en production ; PUIS la bascule (le fichier renommé à sa version réelle, le drapeau levé) et sa mise en ligne.
+Jamais la bascule avant la migration : chaque client verrait le bandeau d'une lecture refusée. Retour arrière :
+l'application d'abord (drapeau rebaissé), puis la fonction retirée (un `drop function`, destructif au sens du dépôt,
+aucune donnée), avec sa ligne d'historique `retour_pieces_jointes_ecartees_au_client`.
+
+**LES QUESTIONS AU CABINET.** S228B-Q1, l'accord sur la lecture (recommandé : oui) ; Q2, les 90 derniers jours
+(recommandé) ; Q3, la marque « vue » ne change rien pour le client (recommandé) ; Q4, le client ne marque rien
+(recommandé) ; Q5, montrer l'adresse de collecte dans « Mes pièces » (recommandé : oui, étape à part, sans rien ouvrir
+en base) ; Q6, une ligne sur l'accueil du client (recommandé : oui, étape à part).
+
+**LES RÉPONSES DU CABINET, LE 13/10/2026 (« comme recommandé »).** S228B-Q1 : oui — la lecture est ouverte, la migration
+appliquée (ci-dessous). S228B-Q2 : les pièces jointes des 90 derniers jours, vues ou non par le cabinet. S228B-Q3 : la
+marque « vue » du cabinet range l'alerte chez lui seul et ne change rien pour le client. S228B-Q4 : le client ne marque
+rien ; son geste est de renvoyer, et la ligne sort d'elle-même de la fenêtre après 90 jours. S228B-Q5 : l'adresse de
+collecte se montrera dans « Mes pièces », dans une étape à part — l'espace du client la lit déjà sur la fiche de son
+dossier : rien de plus à ouvrir en base. S228B-Q6 : une ligne sur l'accueil du client, qui renvoie à « Mes pièces »,
+dans une étape à part, ensuite. Les hypothèses posées dans le code sont devenues des décisions, et ses commentaires le
+disent.
+
+**L'APPLICATION ET L'INTÉGRATION, LE 13/10/2026.** Avant : 130 migrations, et `signature.sql` en production égale, sur
+ses neuf familles, à la réplique d'avant la migration. La migration appliquée par la session (`apply_migration`), sans
+confirmation demandée, sous la version `20261013174021` : sa ligne d'historique rend l'empreinte du fichier
+(`bd9f2087…`, 5 751 caractères), 131 migrations ; le fichier renommé à cette version, texte inchangé. En production :
+l'essai sans ses lignes de commentaire (82 909 caractères, `55525c4e…`, reçus tels quels — la ligne 0 le rend),
+81 verdicts, 0 en faute, mutations comprises — dont 38q : accès, membres, affectations et droit de l'anonyme inchangés
+—, rien n'est resté en base ; `signature.sql`, seules les fonctions (155, `e9e596fe…`) et leurs droits (155,
+`93544847…`) ont changé, les sept autres familles égales à celles d'avant ; dérive 131 = 131 (`e1d6d37e…`), socle 78
+(`91ae95ec…`) inchangé et inventaire 1 898 (`5535f404…`), égaux des deux côtés ; advisors 41 et 5, la seule alerte
+nouvelle étant la fonction. `rls.sql` n'a pas été rejoué en production : la signature y rend les policies (145), la RLS
+(76) et les droits des tables (76) d'avant la migration, au caractère près. Le correctif (19 fichiers) et la bascule (3)
+appliqués sur `38b4ef9` ; quatre commentaires remis à l'état d'après l'accord (les hypothèses devenues décisions, la
+note de `rls.sql`), l'essai sans commentaires restant au caractère près celui joué en production. Barrière sur l'arbre
+intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 435 tests
+chacun ; construction verte (`index-B3TXwFVE.js`).
+
+**RESTE.** Deux étapes à part, décidées par le cabinet (S228B-Q5, Q6) : l'adresse de collecte dans « Mes pièces », puis
+une ligne sur l'accueil du client ; et la décision sur les éléments intégrés, sur les comptes réels (S229-Q3, Q4).

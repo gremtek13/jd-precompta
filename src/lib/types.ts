@@ -1662,3 +1662,14 @@ export interface PieceJointeEcartee {
   vue_le: string | null
   vue_par: string | null
 }
+
+// Ce que le CLIENT lit d'une pièce jointe écartée (ligne 22.9, migration `pieces_jointes_ecartees_au_client`) : un
+// élément du tableau que rend `pieces_jointes_ecartees_du_client` — la table lui reste fermée. Ni l'identifiant, ni
+// l'empreinte, ni la marque « vue » ni son auteur (src/lib/piecesJointesEcarteesClient.ts).
+export interface PieceJointeEcarteeDuClient {
+  // Le jour de la réception À PARIS, calculé par la base : une date civile (AAAA-MM-JJ), sans heure.
+  jour: string
+  raison: PieceJointeEcartee['raison']
+  // Le poids tel que la table le garde : inconnu (null) d'un dépôt échoué avant toute lecture, zéro d'une vide.
+  octets: number | null
+}
