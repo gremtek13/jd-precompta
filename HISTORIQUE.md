@@ -22969,3 +22969,14 @@ bruit, taire une liste FERMÉE d'extensions décidée par le cabinet). S227-Q6 :
 **RESTE.** Les quatre questions ouvertes. Vu en passant au banc par l'agent, antérieur à S227 : deux avertissements React de
 clés dupliquées (`r31`, `r32`) — deux jeux d'écritures fictives de `outils/captures/fauxSupabase.ts` portent les mêmes
 identifiants ; un défaut du banc, pas de l'application.
+
+**LA MISE EN LIGNE ET LES RÉPONSES DU CABINET, LE 13/10/2026.** Fusionnée par #155 (`f1c37e7`) quand `verifier` a été vert
+sur ses deux passes ; le site sert `index-CruKavn7.js`, le paquet de la barrière (déploiement 38360393990) ; la grappe de la
+réplique arrêtée. Le cabinet a suivi les six recommandations : la porte de la restauration au super-administrateur et le geste
+« vue » restent (S227-Q1, Q2) ; la ligne se garde aussi longtemps que son dossier (Q4, RGPD.md le dit) ; les fichiers qui ne
+sont jamais des pièces se comptent d'abord sur les signalements réels, et une liste FERMÉE d'extensions ne se tait que s'ils
+font du bruit et si le cabinet la choisit (Q5 : rien à écrire aujourd'hui). Deux étapes décidées, chacune la sienne : « le
+dépôt a échoué », une troisième raison pour les pertes que seul le journal de `receive-email` garde encore — la pièce jointe
+que Resend ne rend pas, un téléchargement raté, une recherche de doublon qui tombe, le stockage ou l'insertion qui refusent,
+la fonction répondant 200 et Resend ne rejouant pas (Q3, ligne 22.8 de la feuille de route) ; et le dire au client dans « Mes
+pièces », la lecture qui lui serait ouverte présentée au cabinet avant d'être appliquée (Q6, ligne 22.9).
