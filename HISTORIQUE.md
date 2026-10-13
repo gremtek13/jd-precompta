@@ -22827,3 +22827,38 @@ anglais ; puis la migration, après la réponse du cabinet à S226-Q1, et `supab
 **RESTE.** S226-Q1 (la taille d'une pièce), S226-Q2 (les formats hors de la liste) et S226-Q3 (dire au cabinet une pièce jointe
 écartée) ; l'application de la migration, après les déploiements et un délai ; le plafond global du projet (Storage › Settings)
 à relire au tableau de bord — il doit valoir au moins 50 Mo.
+
+### 13/10/2026 — LES BORNES DES SEAUX DU STOCKAGE, EN BASE — LIGNE 22.6
+
+(La suite de « LES BORNES DES SEAUX DU STOCKAGE », 12/10/2026. Aucun code changé : la migration appliquée et son fichier renommé
+à sa version, `supabase/schema/README.md`, CLAUDE.md et ces lignes.)
+
+**LA MISE EN LIGNE, LE 12/10/2026.** La demande de fusion #153 fusionnée en « Rebase and merge » (`main` `64a5b74`) ; le site
+sert le paquet de la barrière, `index-DH__pjNJ.js` (déploiement 38292746419). `receive-email` redéployée en version 12,
+`verify_jwt` faux comme `config.toml` et la version 11 : la version 11 en place (30/09) était égale au dépôt d'avant la fusion
+(aller-retour, 0 différence sur 325 lignes) ; le texte ENVOYÉ, relu dans le journal de la session, égal au dépôt (377 lignes,
+19 700 caractères) — les quatre bordures transcrites sous leur forme marquée, les deux caractères combinants de `slugify` en
+échappements ; l'aller-retour, 0 différence sur 377 lignes ; un POST sans signature rend 400 « En-têtes de signature
+manquants », un GET 405 : c'est la fonction qui répond, la passerelle ne bloque pas. Aucun e-mail réel envoyé ni reçu par la
+session.
+
+**LES RÉPONSES DU CABINET, LE 13/10/2026.** S226-Q1 : 20 Mio, la valeur de l'hypothèse — rien à changer. S226-Q2 : non — aucun
+autre format n'est admis ; un TIFF reçu par e-mail, une photo HEIF, un tableur ou un document Word restent refusés. S226-Q3 :
+oui — une pièce jointe écartée se dira au cabinet, sans nom de fichier ; c'est une étape à part (une table, sa migration,
+l'écran), qui reçoit sa ligne dans la feuille de route. Le plafond global du stockage, relu par le cabinet au tableau de bord
+(Storage › Settings) : 50 Mo, la borne des packs — aucun seau ne refuse avant sa propre borne.
+
+**LA MIGRATION, LE 13/10/2026.** Le délai d'abord : la mise en ligne datait de la veille, et l'application n'a pas de service
+worker (un manifeste seulement) — chaque lancement relit son paquet, et un onglet resté ouvert sur l'ancienne version
+n'enverrait plus, au pire, qu'un refus en anglais, sans rien perdre. Appliquée par `apply_migration` sous la version
+`20261013043646`, sans confirmation demandée, le texte relu, testé et fusionné tel quel — le commentaire « HYPOTHÈSE S226-Q1 » y
+reste : un texte appliqué ne se réécrit pas. La ligne d'historique rend l'empreinte du fichier (`c5b7acf5…`, 2 653 caractères) ;
+127 migrations. `supabase/essais/bornesStockage.sql`, en lecture seule : « ok » aux trois seaux (taille, types, accès public),
+au nombre de seaux et aux fichiers déjà déposés (aucun hors des bornes). Les trois contrôles de l'export : dérive, 127 fichiers
+et 127 migrations, `df2085177f71e382f8e8761b496d784d` des deux côtés ; socle, 78 instructions, `91ae95ec…` ; inventaire, 1 875
+objets, `ae3d8044…` — égaux des deux côtés. Le fichier quitte sa version provisoire `20261012200000` pour `20261013043646` ; les
+tests le trouvent par son nom (`<version>_bornes_du_stockage.sql`).
+
+**RESTE.** S226-Q3, l'étape qui dit au cabinet une pièce jointe écartée ; avec elle, les commentaires « HYPOTHÈSE S226-Q1 » de
+`lib/bornesStockage.ts` et de sa copie dans `receive-email` deviennent la décision du 13/10/2026 (la copie se redéploie alors
+avec le reste).

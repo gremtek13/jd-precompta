@@ -490,7 +490,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   texte), validation ; texte OCR conservé et relu (pièces et documents) ; fil de précisions client ↔ cabinet ; notes
   internes du cabinet dans leur propre table, hors de portée du client (09/10/2026) ; proposition de catégorie
   (26/09/2026) ; la fiche « fournisseur établi hors de France » d'un achat : voir, saisir une version, retirer, avec ses
-  propositions (e-reporting, e3, 10/10/2026).
+  propositions (e-reporting, e3, 10/10/2026) ; les bornes du stockage — format et taille jugés avant tout
+  dépôt et posés en base sur les trois seaux, plus de SVG pour le logo (ligne 22.6, 12 et 13/10/2026).
 - **Banque** : import CSV et PDF (contrôle de solde conservé), rapprochement manuel et par lots, règles « toujours
   ignorer », connexion bancaire (Enable Banking, bac à sable, 30/09/2026).
 - **Comptabilité d'un BNC** (ligne 26.6, du 29/09 au 05/10/2026) : chaque mouvement du relevé s'écrit — affectation à
@@ -561,13 +562,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
-- **Les bornes du stockage** (ligne 22.6) : l'application et `receive-email` les appliquent depuis le 12/10/2026 ; la
-  migration `bornes_du_stockage` est PRÉPARÉE (version provisoire), à appliquer APRÈS leur déploiement et un délai (un
-  onglet ouvert sur l'ancienne application enverrait encore le type du navigateur), puis
-  `supabase/essais/bornesStockage.sql` ; le plafond global du stockage (tableau de bord) doit valoir au moins 50 Mo ;
-  S226-Q1 (la taille d'une pièce, 20 Mio en hypothèse), S226-Q2 (les formats hors de la liste : le TIFF reçu par e-mail,
-  une photo HEIF, un tableur glissé dans « Mes pièces ») et S226-Q3 (dire au cabinet une pièce jointe écartée) au
-  cabinet → « LES BORNES DES SEAUX DU STOCKAGE ».
+- **Une pièce jointe écartée à la réception par e-mail** (S226-Q3, décision du cabinet du 13/10/2026 : la dire au
+  cabinet, sans nom de fichier) : aujourd'hui seul le journal de `receive-email` la note (format hors de la liste, poids
+  au-delà de la borne) ; une étape à part — une table, sa migration, l'écran. Les commentaires « HYPOTHÈSE S226-Q1 » de
+  `lib/bornesStockage.ts` et de sa copie dans `receive-email` se mettent à jour avec elle (la copie redéployée) → « LES
+  BORNES DES SEAUX DU STOCKAGE, EN BASE ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
@@ -831,12 +830,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ou `preparerContenu`, qui jugent AVANT l'envoi le type — décidé par l'application (extension, sinon signature ; un
   logo à sa seule signature), jamais `file.type` ni le type que déclare un expéditeur — et la taille, disent le refus
   avec le poids et la borne, et rendent un Blob RÉÉTIQUETÉ (storage-js ignore `contentType` pour un Blob,
-  `bornesStockageClient.test.ts`). Pièces : PDF, JPEG, PNG, CSV (+ `text/plain` des plateformes), 20 Mio (hypothèse
-  S226-Q1) ; packs : ZIP et XLSX, 50 Mio ; logos : PNG, JPEG, WebP, 500 Kio, jamais de SVG (le seau est public). Les
-  mêmes valeurs dans la migration `bornes_du_stockage`, confrontées par `bornesStockage.test.ts` ;
+  `bornesStockageClient.test.ts`). Pièces : PDF, JPEG, PNG, CSV (+ `text/plain` des plateformes), 20 Mio (S226-Q1,
+  décision du cabinet du 13/10/2026 ; aucun autre format, S226-Q2) ; packs : ZIP et XLSX, 50 Mio ; logos : PNG, JPEG,
+  WebP, 500 Kio, jamais de SVG (le seau est public). Les mêmes valeurs en base depuis le 13/10/2026 (migration
+  `bornes_du_stockage`, essai `bornesStockage.sql`), confrontées par `bornesStockage.test.ts` ;
   `depotsDansLesSeaux.test.ts` lit l'arbre de toute la source et exige que chaque dépôt envoie un type que la migration
   admet pour son seau — ni plus, ni moins ; un refus 413 ou 415 du stockage se dit en français (`messageErreur`) → « LES
-  BORNES DES SEAUX DU STOCKAGE ».
+  BORNES DES SEAUX DU STOCKAGE », « LES BORNES DES SEAUX DU STOCKAGE, EN BASE ».
 - **Une suppression se confirme, et la confirmation NOMME ce qu'on perd** ; une mise en garde se vérifie contre ce que le
   code FAIT, pas contre ce qu'elle a voulu dire → « UNE SUPPRESSION SE CONFIRME ».
 - **Une suppression en lot dit son bilan** : la ligne d'abord, le fichier seulement si la base a RENDU la ligne
