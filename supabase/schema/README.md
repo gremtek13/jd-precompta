@@ -209,6 +209,16 @@ l'application et de `receive-email` qui portent les mêmes bornes. Ni le socle n
 `supabase/essais/bornesStockage.sql` les juge, après l'application. Jusqu'à elle, l'export compte un fichier de plus que
 l'historique de la production (127 pour 126).
 
+**Rejoué le 13/10/2026 après `bornes_du_stockage`** (ligne 22.6), appliquée par la session sous la version
+`20261013043646`, sans confirmation demandée (trois `update … where id = …`, aucune suppression), le lendemain du
+déploiement de l'application et de `receive-email` qui portent les mêmes bornes, et après la réponse du cabinet à
+S226-Q1 (20 Mio) ; son fichier a quitté la version PROVISOIRE `20261012200000` pour celle-ci, texte inchangé
+(2 653 caractères, empreinte `c5b7acf5e028ff621d4b0813c49768da`, celle que rend sa ligne d'historique) : 127 fichiers,
+127 migrations, empreinte globale `df2085177f71e382f8e8761b496d784d` des deux côtés, aucune divergence. Le socle (78
+instructions, `91ae95ec…`) et l'inventaire (1 875 objets, `ae3d8044…`) sont inchangés, égaux des deux côtés : la
+migration n'écrit que deux colonnes de trois lignes de `storage.buckets`, qu'aucun des trois contrôles ne lit ;
+`supabase/essais/bornesStockage.sql` les juge, et rend « ok » à ses cinq lignes.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
