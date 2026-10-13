@@ -566,11 +566,14 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
   automatique ou au clic (RGPD.md §8.8).
 - **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
-- **Les pièces jointes écartées** (ligne 22.7, S226-Q3) : en base, dans `receive-email` et à l'écran le 13/10/2026 —
-  S227-Q1 (la porte de la restauration au super-administrateur) et S227-Q2 (le geste « vue ») prises comme les
-  recommandations ; restent quatre questions au cabinet : d'autres pertes silencieuses d'une pièce jointe (S227-Q3), la
-  durée de conservation (Q4), les fichiers qui ne sont jamais des pièces (Q5), le dire au client (Q6) → « UNE PIÈCE
-  JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
+- **Les pièces jointes écartées** (ligne 22.7, S226-Q3) : en base, dans `receive-email` et à l'écran le 13/10/2026 ; ses
+  six questions tranchées par le cabinet le même jour, comme recommandé — la porte de la restauration au
+  super-administrateur et le geste « vue » gardés (S227-Q1, Q2), la durée de conservation celle du dossier (Q4), les
+  fichiers qui ne sont jamais des pièces comptés d'abord sur les signalements réels, une liste fermée d'extensions tue
+  seulement s'ils font du bruit et si le cabinet la choisit (Q5). Restent deux étapes décidées : « le dépôt a échoué »,
+  une troisième raison pour les autres pertes silencieuses d'une pièce jointe (Q3, ligne 22.8), et le dire au client
+  dans « Mes pièces », la lecture qui lui serait ouverte présentée au cabinet avant d'être appliquée (Q6, ligne 22.9) →
+  « UNE PIÈCE JOINTE ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
