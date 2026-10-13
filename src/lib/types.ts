@@ -1648,9 +1648,11 @@ export interface PieceJointeEcartee {
   dossier_id: string
   // L'instant où receive-email l'a reçue et écartée, posé par la base.
   recue_le: string
-  raison: 'format' | 'taille'
-  // Le poids de la pièce jointe, en octets (plus de zéro).
-  octets: number
+  // `depot` (ligne 22.8, migration `pieces_jointes_ecartees_depot`) : le dépôt a échoué.
+  raison: 'format' | 'taille' | 'depot'
+  // Le poids de la pièce jointe, en octets (plus de zéro) ; inconnu (null) pour un dépôt échoué avant toute lecture, et
+  // pour lui seul (`pieces_jointes_ecartees_poids_connu`).
+  octets: number | null
   // SHA-256 des identifiants Resend de l'e-mail et de la pièce jointe : la clé d'idempotence, avec le dossier.
   empreinte: string
   // La marque du cabinet, une fois : quand et par qui ; nulles toutes deux tant qu'elle n'est pas vue.

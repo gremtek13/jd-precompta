@@ -7,7 +7,10 @@ import type { PieceJointeEcartee } from './types'
 // 13/10/2026, S226-Q3 : « une pièce jointe écartée à la réception par e-mail se dit au cabinet, sans nom de fichier »).
 //
 // receive-email écarte une pièce jointe dont le format n'est pas celui d'une pièce, ou qui pèse plus que sa borne, et
-// la consigne dans `pieces_jointes_ecartees` — le dossier, l'instant, la raison, le poids, jamais le nom. Ce module dit,
+// la consigne dans `pieces_jointes_ecartees` — le dossier, l'instant, la raison, le poids, jamais le nom. Depuis la ligne
+// 22.8 (décision du cabinet du 13/10/2026, S227-Q3), elle y consigne aussi celle dont le DÉPÔT A ÉCHOUÉ — Resend ne l'a
+// pas rendue, son téléchargement, la recherche de doublon, le stockage ou l'insertion ont échoué, une exception — : ce
+// n'est pas du fait du client, et son poids est inconnu (null) quand rien n'a été lu. Ce module dit,
 // pour l'onglet Justificatifs : combien, quand, pourquoi, et ce que le cabinet peut faire ; il range les lignes non vues
 // avant les vues, et redit avant le clic les refus de `marquer_pieces_jointes_vues` (migration
 // `pieces_jointes_ecartees`), dans leur ordre et sous leurs mots — `piecesJointesEcartees.test.ts` les confronte au texte
@@ -37,11 +40,21 @@ export function rangerLesEcarts(
 }
 
 /**
- * Pourquoi elle a été écartée, avec son poids — comme un dépôt refusé se dit (src/lib/bornesStockage.ts) : le format, ou
- * le poids face à la borne, à l'octet quand une décimale les confondrait. Jamais de nom : la base n'en garde aucun.
+ * Pourquoi elle n'a pas été déposée, avec son poids — comme un dépôt refusé se dit (src/lib/bornesStockage.ts) : le
+ * format, ou le poids face à la borne, à l'octet quand une décimale les confondrait ; ou le dépôt qui a échoué (ligne
+ * 22.8) : lue, son format et son poids allaient, et son poids se dit ; pas lue, rien ne se dit d'elle que son poids
+ * inconnu — ni un poids, ni un format. Jamais de nom : la base n'en garde aucun.
  */
 export function phraseDeLaRaison(e: Pick<PieceJointeEcartee, 'raison' | 'octets'>): string {
-  if (e.raison === 'format') return `format non pris en charge (${poids(e.octets)})`
+  if (e.raison === 'depot') {
+    return e.octets === null
+      ? 'le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)'
+      : `le dépôt a échoué, alors que son format et son poids allaient (${poids(e.octets)})`
+  }
+  // Le format et la taille ont toujours leur poids — la base l'exige (`pieces_jointes_ecartees_poids_connu`) — : sans
+  // lui, rien ne s'invente non plus.
+  if (e.raison === 'format') return e.octets === null ? 'format non pris en charge' : `format non pris en charge (${poids(e.octets)})`
+  if (e.octets === null) return `au-delà des ${poids(TAILLE_MAX_PIECE)} qu’une pièce peut peser`
   const dits = poidsFaceALaBorne([e.octets], TAILLE_MAX_PIECE)
   return `au-delà des ${dits.borne} qu’une pièce peut peser (${dits.lus[0]})`
 }
@@ -63,12 +76,33 @@ export function titreDuSignalement(n: number): string {
     : `${n} pièces jointes reçues par e-mail n’ont pas été déposées`
 }
 
-/** Ce que le cabinet peut faire : le client croit l'avoir envoyée. */
-export function ceQueLeCabinetPeutFaire(n: number): string {
+/**
+ * Ce que le cabinet peut faire des pièces jointes signalées : le client croit les avoir envoyées. Refusée à son format ou
+ * à son poids, elle se renvoie autrement ; son dépôt échoué (ligne 22.8), elle se renvoie TELLE QUELLE — ce n'est pas du
+ * fait du client. Signalées ensemble, chacune garde sa consigne.
+ */
+export function ceQueLeCabinetPeutFaire(lignes: readonly Pick<PieceJointeEcartee, 'raison'>[]): string {
+  const echouees = lignes.filter((l) => l.raison === 'depot').length
+  const refusees = lignes.length - echouees
   const borne = poids(TAILLE_MAX_PIECE)
-  return n === 1
-    ? `Le client croit l’avoir envoyée : demande-lui de la renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} — à l’adresse de collecte du dossier ou dans « Mes pièces ».`
-    : `Le client croit les avoir envoyées : demande-lui de les renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} chacune — à l’adresse de collecte du dossier ou dans « Mes pièces ».`
+  const ou = 'à l’adresse de collecte du dossier ou dans « Mes pièces »'
+  if (echouees === 0) {
+    return refusees === 1
+      ? `Le client croit l’avoir envoyée : demande-lui de la renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} — ${ou}.`
+      : `Le client croit les avoir envoyées : demande-lui de les renvoyer en PDF, JPEG, PNG ou CSV, et sous ${borne} chacune — ${ou}.`
+  }
+  if (refusees === 0) {
+    return echouees === 1
+      ? `Le client croit l’avoir envoyée, et ce n’est pas de son fait si elle n’est pas arrivée : demande-lui de la renvoyer telle quelle — ${ou}.`
+      : `Le client croit les avoir envoyées, et ce n’est pas de son fait si elles ne sont pas arrivées : demande-lui de les renvoyer telles quelles — ${ou}.`
+  }
+  const autrement = refusees === 1
+    ? `celle refusée à son format ou à son poids en PDF, JPEG, PNG ou CSV, et sous ${borne}`
+    : `celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous ${borne} chacune`
+  const telleQuelle = echouees === 1
+    ? 'telle quelle celle dont le dépôt a échoué'
+    : 'telles quelles celles dont le dépôt a échoué'
+  return `Le client croit les avoir envoyées : demande-lui de renvoyer ${autrement}, et ${telleQuelle} (ce n’est pas de son fait) — ${ou}.`
 }
 
 /** Ce que « Marquer comme vue » change, dit à côté du bouton. */

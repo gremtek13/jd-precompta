@@ -230,6 +230,19 @@ RLS de sa table. `signature.sql` rend en production, famille par famille, ce que
 après la migration (colonnes 780, contraintes 585, déclencheurs 53, fonctions 154 et leurs droits 154, index 218,
 policies 145, tables 76 et leur RLS 76).
 
+**Rejoué le 13/10/2026 après `pieces_jointes_ecartees_depot`** (ligne 22.8), appliquée par la session sous la version
+`20261013103407` sur l'accord du cabinet (S228-Q1), sans confirmation demandée (le détecteur de l'outil n'a retenu ni
+son `drop constraint` ni son `drop not null`), AVANT la fusion du correctif qui écrit et lit la raison `depot` ; son
+fichier a quitté la version PROVISOIRE `20261013220000` pour celle-ci, texte inchangé (4 199 caractères, empreinte
+`56135d38a531ed7a5b234a47c0556a0f`, celle que rend sa ligne d'historique) : 129 fichiers, 129 migrations, empreinte
+globale `a33646ecf1e5ddb7202ad6d15c977ddd` des deux côtés, aucune divergence. Le socle est inchangé (78 instructions,
+`91ae95ec…`) ; l'inventaire compte 1 897 objets, `a33f203240bbb9c6d9ecb40e3c384add` des deux côtés — la contrainte
+`pieces_jointes_ecartees_poids_connu` en plus, la contrainte remplacée gardant son nom. `signature.sql` rend en
+production ce que l'étape avait relevé sur sa réplique après la migration : seules les colonnes (780, la nullabilité du
+poids) et les contraintes (586) ont changé. L'essai `supabase/essais/piecesJointesEcartees.sql`, rejoué en production
+sans ses lignes de commentaire (52 511 caractères, reçus tels quels), rend ses verdicts justes, mutations comprises, et
+rien n'est resté en base.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

@@ -113,17 +113,32 @@ async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleS
 // du fichier, son extension, l'expéditeur ni l'objet. Resend rejoue le webhook quand la fonction échoue en cours de
 // route : la clé — le dossier, et l'EMPREINTE des deux identifiants que Resend donne à la pièce jointe, jamais ces
 // identifiants eux-mêmes, qui désigneraient un e-mail qu'on peut relire chez Resend — fait qu'un rejeu n'écrit rien de
-// plus (`on conflict do nothing`). L'erreur se lit et se journalise sans lever : rien ne recharge derrière, et la pièce
-// jointe suivante se traite (ce qui lèverait encore tombe dans le `catch` de la boucle, qui passe à la suivante).
+// plus (`on conflict do nothing`). L'erreur se lit et se journalise sans lever — ce qui lèverait en chemin aussi : rien
+// ne recharge derrière, et la pièce jointe suivante se traite.
+//
+// LE DÉPÔT QUI A ÉCHOUÉ (ligne 22.8 ; décision du cabinet du 13/10/2026, S227-Q3). Les autres pertes d'une pièce jointe
+// — Resend ne la rend pas, son téléchargement échoue, la recherche de doublon tombe, le stockage ou l'insertion refusent,
+// une exception — n'avaient, elles aussi, que le journal : la fonction répond 200, et Resend ne rejoue pas. Elles
+// s'écrivent sous la raison `depot`, avec le poids de la pièce jointe s'il a été lu, INCONNU (null) sinon — jamais
+// deviné : la migration `pieces_jointes_ecartees_depot` ne l'admet que pour cette raison. Une pièce jointe déjà au
+// dossier (même empreinte) n'est pas une perte : rien ne s'écrit.
 async function noterLaPieceJointeEcartee(
   supabase: ReturnType<typeof createClient>, dossierId: string, emailId: string, pieceJointeId: string,
-  raison: "format" | "taille", octets: number,
+  raison: "format" | "taille" | "depot", octets: number | null,
 ): Promise<void> {
-  const empreinte = await hashBytes(new TextEncoder().encode(JSON.stringify([emailId, pieceJointeId])))
-  const { error } = await supabase
-    .from("pieces_jointes_ecartees")
-    .upsert({ dossier_id: dossierId, raison, octets, empreinte }, { onConflict: "dossier_id,empreinte", ignoreDuplicates: true })
-  if (error) console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets} octets) : ${error.message}`)
+  let erreur: string | null
+  try {
+    const empreinte = await hashBytes(new TextEncoder().encode(JSON.stringify([emailId, pieceJointeId])))
+    const { error } = await supabase
+      .from("pieces_jointes_ecartees")
+      .upsert({ dossier_id: dossierId, raison, octets, empreinte }, { onConflict: "dossier_id,empreinte", ignoreDuplicates: true })
+    erreur = error ? error.message : null
+  } catch (err) {
+    erreur = String(err)
+  }
+  if (erreur !== null) {
+    console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets === null ? "poids inconnu" : `${octets} octets`}) : ${erreur}`)
+  }
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -266,6 +281,9 @@ Deno.serve(async (req: Request) => {
 
   let nbImportees = 0
   for (const fichier of fichiers) {
+    // Le poids de la pièce jointe, une fois téléchargée : inconnu (null) tant que rien n'a été lu — Resend ne l'a pas
+    // rendue, son téléchargement a échoué, une exception est venue avant —, et dit tel quel au cabinet, jamais deviné.
+    let octets: number | null = null
     try {
       const { data: detail, error: attachError } = await resend.emails.receiving.attachments.get({
         emailId: email_id,
@@ -273,16 +291,25 @@ Deno.serve(async (req: Request) => {
       })
       if (attachError || !detail) {
         console.error("Récupération pièce jointe échouée:", fichier.id, attachError)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)
         continue
       }
 
       const res = await fetch(detail.download_url)
       if (!res.ok) {
         console.error("Téléchargement pièce jointe échoué:", fichier.id, res.status)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)
         continue
       }
       const bytes = new Uint8Array(await res.arrayBuffer())
-      if (bytes.byteLength === 0) continue
+      octets = bytes.byteLength
+      // UNE PIÈCE JOINTE VIDE (0 octet) est sautée, pas écartée : il n'y a rien à déposer, et ni « son format et son
+      // poids allaient » ni « renvoie-la telle quelle » ne seraient vrais d'elle — la dire au cabinet, et sous quelle
+      // raison, est une question au cabinet (S228-Q2). Elle se journalise, sans son nom : elle n'y laissait rien.
+      if (bytes.byteLength === 0) {
+        console.warn(`Pièce jointe vide (0 octet), sautée : ${fichier.id}`)
+        continue
+      }
       // LES BORNES DU SEAU DES PIÈCES (ligne 22.6), celles que l'application applique à tout dépôt : le type se décide
       // sur le nom et les premiers octets — jamais sur celui que DÉCLARE l'expéditeur, qui partait tel quel au stockage
       // —, et une pièce jointe hors des bornes est écartée avant tout envoi, journalisée sans son nom, et consignée pour
@@ -322,14 +349,18 @@ Deno.serve(async (req: Request) => {
       const erreurDoublon = pieces.error ?? documents.error
       if (erreurDoublon) {
         console.error(`Détection de doublon impossible, pièce jointe ignorée: ${fichier.id} (${erreurDoublon.message})`)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)
         continue
       }
+      // Déjà au dossier : ce n'est pas une perte, rien ne s'écrit pour le cabinet.
       if ((pieces.count ?? 0) > 0 || (documents.count ?? 0) > 0) {
         console.log(`Pièce jointe déjà présente (hash identique), ignorée: ${fichier.id}`)
         continue
       }
 
-      const path = `${dossier.id}/${Date.now()}-${slugify(nomFichier)}`
+      // L'horodatage à part : le journal d'un fichier orphelin le cite sans le nom que porte le chemin.
+      const horodatage = Date.now()
+      const path = `${dossier.id}/${horodatage}-${slugify(nomFichier)}`
 
       // Un Blob du type décidé ci-dessus : c'est lui que le stockage juge (supabase-js envoie un Blob en multipart, la
       // partie portant son type).
@@ -338,6 +369,7 @@ Deno.serve(async (req: Request) => {
         .upload(path, new Blob([bytes], { type }))
       if (uploadError) {
         console.error("Upload storage échoué:", fichier.id, uploadError)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)
         continue
       }
 
@@ -382,17 +414,22 @@ Deno.serve(async (req: Request) => {
         // pour éviter — même défaut que les deux `delete` de create-cabinet. Rien ne recharge
         // derrière : personne ne relit le seau, donc le fichier resterait là sans qu'aucun écran ni
         // aucun compte ne puisse le montrer.
-        console.error("Insertion échouée:", fichier.id, insertError)
+        // Le code et le message de PostgREST, jamais son détail : il recopie la ligne refusée — le nom du fichier, le
+        // tiers et les montants lus.
+        console.error(`Insertion échouée: ${fichier.id} (${insertError.code || "sans code"} ${insertError.message})`)
         const { error: erreurRetrait } = await supabase.storage.from("pieces").remove([path])
         if (erreurRetrait) {
-          console.error(`[receive-email] fichier ORPHELIN laissé dans le stockage : ${path} (${erreurRetrait.message})`)
+          // Le dossier et l'horodatage le retrouvent dans le seau ; le reste du chemin est le nom du fichier.
+          console.error(`[receive-email] fichier ORPHELIN laissé dans le stockage : ${dossier.id}/${horodatage}-… (${erreurRetrait.message})`)
         }
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)
         continue
       }
 
       nbImportees++
     } catch (err) {
       console.error("Erreur traitement pièce jointe:", fichier.id, err)
+      await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)
     }
   }
 

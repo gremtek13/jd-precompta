@@ -158,6 +158,44 @@ describe('ce qui se dit : combien, quand, pourquoi, quoi faire — sans nom', ()
   })
 })
 
+describe('le dépôt qui a échoué (ligne 22.8) : dit, compté, son poids quand il est connu, rien d’inventé sinon', () => {
+  const PERDUE = () => ecart({ id: 'x4', raison: 'depot', octets: null, empreinte: 'd'.repeat(64), recue_le: '2026-10-12T15:30:00+00:00' })
+  const LUE = () => ecart({ id: 'x5', raison: 'depot', octets: 4120, empreinte: 'e'.repeat(64), recue_le: '2026-10-10T08:00:00+00:00' })
+
+  it('mêlé aux deux autres raisons : chacune sa phrase, le titre les compte toutes, chacune sa consigne, et la marque les prend toutes', async () => {
+    faux.lignes = [ecart(), LOURDE(), PERDUE(), LUE(), VUE()]
+    const vue = await monter()
+    const section = screen.getByRole('region', { name: 'Pièces jointes écartées à la réception par e-mail' })
+    expect(section.querySelector('h3')?.textContent).toBe('4 pièces jointes reçues par e-mail n’ont pas été déposées')
+    const items = [...section.querySelectorAll('.pieces-jointes-ecartees-liste li')].map((li) => li.textContent)
+    expect(items).toEqual([
+      'le 12/10/2026 à 17 h 30 — le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)',
+      'le 12/10/2026 à 14 h 03 — format non pris en charge (4\u00a0Ko)',
+      'le 11/10/2026 à 10 h 00 — au-delà des 20\u00a0Mo qu’une pièce peut peser (25,7\u00a0Mo)',
+      'le 10/10/2026 à 10 h 00 — le dépôt a échoué, alors que son format et son poids allaient (4\u00a0Ko)',
+    ])
+    // `texte` ramène les blancs, insécables compris, à une espace.
+    expect(texte(vue)).toContain('demande-lui de renvoyer celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous 20 Mo chacune, '
+      + 'et telles quelles celles dont le dépôt a échoué (ce n’est pas de son fait) — à l’adresse de collecte du dossier ou dans « Mes pièces ».')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Marquer comme vues' })) })
+    await laisser()
+    expect(faux.rpcs.map((r) => r.args.p_ids)).toEqual([['x4', 'x1', 'x2', 'x5']])
+    expect(document.querySelector('details summary')?.textContent).toBe('5 pièces jointes écartées déjà vues')
+  })
+
+  it('seul, au poids inconnu : la consigne de le renvoyer tel quel, au singulier, et aucun poids ni format prétendus', async () => {
+    faux.lignes = [PERDUE()]
+    const vue = await monter()
+    expect(screen.getByRole('heading').textContent).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')
+    const ligne = vue.container.querySelector('.pieces-jointes-ecartees-liste li')?.textContent ?? ''
+    expect(ligne).toBe('le 12/10/2026 à 17 h 30 — le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)')
+    expect(ligne.split(' — ')[1]).not.toMatch(/\d|octet|Ko|Mo|format/)
+    expect(texte(vue)).toContain('Le client croit l’avoir envoyée, et ce n’est pas de son fait si elle n’est pas arrivée : demande-lui de la renvoyer telle quelle')
+    expect(texte(vue)).not.toContain('PDF, JPEG, PNG ou CSV')
+    expect(screen.getByRole('button', { name: 'Marquer comme vue' })).toBeTruthy()
+  })
+})
+
 describe('lue en partie, refusée ou levée : le bandeau, sans compte ni geste', () => {
   it('partielle', async () => {
     faux.muetApres = 1

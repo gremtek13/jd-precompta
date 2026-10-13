@@ -513,6 +513,16 @@ const NOM_HORS_FORMAT = 'Brimvoltek-Quarzel.docx'
 const DOCX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0, 0x06, 0])
 // Une pièce jointe écartée : lue chez Resend, téléchargée, puis CONSIGNÉE pour le cabinet (ligne 22.7) — rien au stockage.
 const ecartee = (pj: string) => ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'écriture upsert pieces_jointes_ecartees']
+// Une pièce jointe déposée de bout en bout : lue chez Resend, téléchargée, déposée au stockage, lue par extract-piece,
+// posée « à valider ».
+const deposee = (pj: string) => [
+  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'stockage upload pieces',
+  `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces',
+]
+// Deux noms de pièce jointe inventés (ligne 22.8), qu'aucun journal ni aucune trace ne doit porter : celle dont le dépôt
+// échoue avant toute lecture, celle que la base refuse avec le détail de la ligne.
+const NOM_PERDU = 'Zorvantelle-Quimbrade.pdf'
+const NOM_REFUSE = 'Plindorax-Vestrumbel.png'
 // Une note texte, hors format : son nom et son CONTENU, inventés, qu'aucun journal ni aucune trace ne doit porter.
 const NOM_NOTE = 'Trelvandor-Mirquaze.txt'
 const CONTENU_NOTE = 'Contenu Vrelmondaxe Quarzibul du harnais'
@@ -528,9 +538,13 @@ function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
  * Les pièces jointes écartées que receive-email a consignées (ligne 22.7), dans l'ordre de l'e-mail : le dossier, la
  * raison et le poids attendus, une empreinte SHA-256 par pièce jointe — et rien d'autre : ni le nom du fichier, ni son
  * extension, ni son contenu, ni l'expéditeur, ni l'objet, ni les identifiants que Resend donne à l'e-mail et à la pièce
- * jointe (gardés tels quels, ils désigneraient un e-mail relisible chez Resend).
+ * jointe (gardés tels quels, ils désigneraient un e-mail relisible chez Resend). Un dépôt qui a échoué (ligne 22.8) porte
+ * le poids lu, ou un poids INCONNU (`null`) quand rien n'a été lu — jamais un poids deviné : le faux PostgREST ne tient
+ * pas les contraintes CHECK de la table, c'est ce juge qui exige la valeur exacte.
  */
-function ecartsConsignes(m: Monde, attendus: { raison: 'format' | 'taille'; octets: number }[], interdits: readonly string[]): string[] {
+function ecartsConsignes(
+  m: Monde, attendus: { raison: 'format' | 'taille' | 'depot'; octets: number | null }[], interdits: readonly string[],
+): string[] {
   const traces = lignes(m, 'pieces_jointes_ecartees')
   const fautes: string[] = []
   if (traces.length !== attendus.length) fautes.push(`${traces.length} pièce(s) jointe(s) consignée(s) au lieu de ${attendus.length}`)
@@ -636,21 +650,38 @@ const RECEIVE_EMAIL: ContratFonction = {
         m.base.pieces = [{ id: identifiantGenere(), dossier_id: D, storage_hash: createHash('sha256').update(PNG).digest('hex') }]
       },
       requete: requeteWebhook(evenementRecu()),
-      attendu: { statut: 200, depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`] },
+      attendu: {
+        statut: 200, depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`],
+        // Déjà au dossier : ce n'est pas une perte, et rien ne se consigne pour le cabinet (ligne 22.8).
+        verifier: (_r, m) => ecartsConsignes(m, [], []),
+      },
     },
     {
-      nom: 'la détection de doublon tombe : la pièce jointe est écartée, pas déposée à l’aveugle',
+      nom: 'la détection de doublon tombe : la pièce jointe n’est pas déposée à l’aveugle, et le dépôt échoué se consigne avec son poids',
       preparer: (m, voisine) => { boiteAuxLettres(m, voisine); m.pannes.push({ table: 'documents_divers', operation: 'select', erreur: { message: 'délai dépassé' } }) },
       requete: requeteWebhook(evenementRecu()),
-      attendu: { statut: 200, depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`] },
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /Détection de doublon impossible, pièce jointe ignorée: pj-0 \(délai dépassé\)/, 'la recherche tombée'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], ['facture-0']),
+        ],
+      },
     },
     {
-      nom: 'l’insertion de la pièce tombe : le fichier déposé est retiré du stockage',
+      nom: 'l’insertion de la pièce tombe : le fichier déposé est retiré du stockage, et le dépôt échoué se consigne avec son poids',
       preparer: (m, voisine) => { boiteAuxLettres(m, voisine); m.pannes.push({ table: 'pieces', operation: 'insert', erreur: { message: 'refusée' } }) },
       requete: requeteWebhook(evenementRecu()),
       attendu: {
         statut: 200,
-        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces', 'stockage remove pieces'],
+        depenses: [
+          ...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces', 'stockage remove pieces',
+          'écriture upsert pieces_jointes_ecartees',
+        ],
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], ['facture-0']),
+          ...(m.fichiers.size === 0 ? [] : ['le fichier déposé est resté au stockage']),
+        ],
       },
     },
     {
@@ -771,6 +802,184 @@ const RECEIVE_EMAIL: ContratFonction = {
           return corps.length === 1 && corps[0] instanceof Blob && corps[0].type === 'image/png'
             ? [] : [`corps déposé : ${corps.map((c) => (c instanceof Blob ? `Blob ${c.type}` : typeof c)).join(', ')}`]
         },
+      },
+    },
+    // LE DÉPÔT QUI A ÉCHOUÉ (ligne 22.8) : chaque chemin qui perdait une pièce jointe en répondant 200 — Resend ne la rend
+    // pas, son téléchargement échoue ou lève, le stockage refuse, l'insertion refuse ou lève — la consigne sous la raison
+    // `depot`, au poids lu, ou INCONNU quand rien n'a été lu ; la pièce jointe suivante se traite ; un rejeu n'écrit rien
+    // de plus ; un refus de la base se journalise sans nom ; une pièce jointe vide se journalise, sans rien consigner.
+    {
+      nom: 'Resend ne rend pas la pièce jointe : un dépôt échoué au poids inconnu, consigné, et la suivante se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        const rendre = m.resend.pieceJointe!
+        m.resend.pieceJointe = (demande) => (demande.id === 'pj-0'
+          ? { data: null, error: { name: 'not_found', message: 'Pièce jointe introuvable chez Resend' } }
+          : rendre(demande))
+        m.sensibles.push(NOM_PERDU)
+      },
+      requete: requeteWebhook(evenementRecu({ fichiers: [{ nom: NOM_PERDU, type: 'application/pdf' }, { nom: 'facture-1.png', type: 'image/png' }] })),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', 'écriture upsert pieces_jointes_ecartees', ...deposee('pj-1')],
+        verifier: (_r, m) => [
+          ...journalise(m, /Récupération pièce jointe échouée: pj-0/, 'la pièce jointe que Resend ne rend pas'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: null }], [NOM_PERDU, 'pdf']),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    {
+      nom: 'le téléchargement de la pièce jointe échoue : un dépôt échoué au poids inconnu, consigné, rien au stockage',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        m.hotes[HOTE_PIECES_JOINTES] = () => new Response('introuvable', { status: 404 })
+        m.sensibles.push(NOM_PERDU)
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_PERDU, type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /Téléchargement pièce jointe échoué: pj-0 404/, 'le téléchargement raté'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: null }], [NOM_PERDU, 'pdf']),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+        ],
+      },
+    },
+    {
+      nom: 'le téléchargement lève (le réseau coupé) : un dépôt échoué au poids inconnu, et la suivante se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        m.hotes[HOTE_PIECES_JOINTES] = (requete) => {
+          if (new URL(requete.url).pathname === '/pj-0') throw new TypeError('connexion réinitialisée par le pair')
+          return new Response(PNG)
+        }
+        m.sensibles.push(NOM_PERDU)
+      },
+      requete: requeteWebhook(evenementRecu({ fichiers: [{ nom: NOM_PERDU, type: 'application/pdf' }, { nom: 'facture-1.png', type: 'image/png' }] })),
+      attendu: {
+        statut: 200,
+        depenses: [...ecartee('pj-0'), ...deposee('pj-1')],
+        verifier: (_r, m) => [
+          ...journalise(m, /Erreur traitement pièce jointe: pj-0/, 'l’exception'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: null }], [NOM_PERDU, 'pdf']),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    {
+      nom: 'le stockage refuse le dépôt : le dépôt échoué se consigne avec le poids lu, rien d’inséré',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        m.pannes.push({ stockage: 'upload', erreur: { message: 'Le seau ne répond pas', status: 503 } })
+        m.sensibles.push(NOM_REFUSE)
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_REFUSE, type: 'image/png' } })),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces', 'écriture upsert pieces_jointes_ecartees'],
+        verifier: (_r, m) => [
+          ...journalise(m, /Upload storage échoué: pj-0/, 'le refus du stockage'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], [NOM_REFUSE, 'png']),
+          ...(lignes(m, 'pieces').length === 0 ? [] : ['une pièce insérée malgré le refus du stockage']),
+        ],
+      },
+    },
+    {
+      nom: 'l’insertion refusée avec le détail de la ligne, et le fichier qui ne se retire pas : le dépôt échoué se consigne, et le journal ne porte ni le nom ni les valeurs lues',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        // Comme PostgREST le rend d'une contrainte refusée : le détail RECOPIE la ligne, nom du fichier et tiers lu compris.
+        m.pannes.push({
+          table: 'pieces', operation: 'insert',
+          erreur: {
+            code: '23514', status: 400, message: 'new row for relation "pieces" violates check constraint "pieces_montants"',
+            details: `Failing row contains (${NOM_REFUSE}, ${TIERS_LU}, 987.65).`,
+          },
+        })
+        m.pannes.push({ stockage: 'remove', erreur: { message: 'Le seau ne répond pas', status: 503 } })
+        m.sensibles.push(NOM_REFUSE)
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_REFUSE, type: 'image/png' } })),
+      attendu: {
+        statut: 200,
+        depenses: [...deposee('pj-0'), 'stockage remove pieces', 'écriture upsert pieces_jointes_ecartees'],
+        verifier: (_r, m) => [
+          ...journalise(m, /Insertion échouée: pj-0 \(23514 new row for relation "pieces" violates check constraint "pieces_montants"\)/, 'le refus de l’insertion'),
+          ...journalise(m, new RegExp(`fichier ORPHELIN laissé dans le stockage : ${D}/\\d+-… \\(Le seau ne répond pas\\)`), 'l’orphelin, sans son nom'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], [NOM_REFUSE, 'png']),
+        ],
+      },
+    },
+    {
+      nom: 'une exception après la lecture (l’insertion lève) : le dépôt échoué se consigne avec le poids lu',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        m.defauts.pieces = () => { throw new Error('connexion coupée pendant l’écriture') }
+        m.sensibles.push(NOM_REFUSE)
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_REFUSE, type: 'image/png' } })),
+      attendu: {
+        statut: 200,
+        depenses: [...deposee('pj-0'), 'écriture upsert pieces_jointes_ecartees'],
+        verifier: (_r, m) => [
+          ...journalise(m, /Erreur traitement pièce jointe: pj-0/, 'l’exception'),
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], [NOM_REFUSE, 'png']),
+        ],
+      },
+    },
+    {
+      nom: 'Resend rejoue le webhook d’un dépôt échoué, lu cette fois et refusé à son format : rien de plus ne se consigne, sans erreur',
+      dejaRecue: true,
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        // La première réception échoue au téléchargement ; le rejeu lit un document Word.
+        let appels = 0
+        m.hotes[HOTE_PIECES_JOINTES] = () => (++appels === 1 ? new Response('indisponible', { status: 503 }) : new Response(DOCX))
+        m.sensibles.push(NOM_HORS_FORMAT)
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_HORS_FORMAT, type: 'application/msword' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          // La première trace tient : la clé est celle de la pièce jointe, pas de sa raison.
+          ...ecartsConsignes(m, [{ raison: 'depot', octets: null }], [NOM_HORS_FORMAT, 'docx']),
+          ...(m.journaux.some((j) => /NON consignée/.test(j.texte)) ? ['le rejeu a journalisé une erreur'] : []),
+        ],
+      },
+    },
+    {
+      nom: 'la base refuse la trace d’un dépôt échoué : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        const rendre = m.resend.pieceJointe!
+        m.resend.pieceJointe = (demande) => (demande.id === 'pj-0'
+          ? { data: null, error: { name: 'not_found', message: 'Pièce jointe introuvable chez Resend' } }
+          : rendre(demande))
+        m.pannes.push({ table: 'pieces_jointes_ecartees', operation: 'upsert', erreur: { message: 'délai dépassé' }, fois: 1 })
+        m.sensibles.push(NOM_PERDU)
+      },
+      requete: requeteWebhook(evenementRecu({ fichiers: [{ nom: NOM_PERDU, type: 'application/pdf' }, { nom: 'facture-1.png', type: 'image/png' }] })),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', 'écriture upsert pieces_jointes_ecartees', ...deposee('pj-1')],
+        verifier: (_r, m) => [
+          ...journalise(m, /pièce jointe écartée NON consignée \(depot, poids inconnu\) : délai dépassé/, 'le refus de la trace'),
+          ...ecartsConsignes(m, [], [NOM_PERDU]),
+          ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
+        ],
+      },
+    },
+    {
+      nom: 'une pièce jointe vide (0 octet) : sautée, journalisée sans son nom, rien de consigné ni de déposé',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: new Uint8Array(0) }); m.sensibles.push(NOM_PERDU) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_PERDU, type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`],
+        verifier: (_r, m) => [
+          ...journalise(m, /Pièce jointe vide \(0 octet\), sautée : pj-0/, 'la pièce jointe vide'),
+          ...ecartsConsignes(m, [], [NOM_PERDU]),
+        ],
       },
     },
   ],
