@@ -20,6 +20,12 @@ if (NOMS_DE_LA_MIGRATION.length !== 1) {
   throw new Error(`la migration pieces_jointes_ecartees doit être UNE dans l'export : ${NOMS_DE_LA_MIGRATION.length} trouvée(s)`)
 }
 const MIGRATION = readFileSync(new URL(NOMS_DE_LA_MIGRATION[0], SCHEMA), 'utf8')
+// La troisième raison et le poids inconnu (ligne 22.8), de même par son nom.
+const NOMS_DU_DEPOT = readdirSync(SCHEMA).filter((nom) => /^\d{14}_pieces_jointes_ecartees_depot\.sql$/.test(nom))
+if (NOMS_DU_DEPOT.length !== 1) {
+  throw new Error(`la migration pieces_jointes_ecartees_depot doit être UNE dans l'export : ${NOMS_DU_DEPOT.length} trouvée(s)`)
+}
+const MIGRATION_DEPOT = readFileSync(new URL(NOMS_DU_DEPOT[0], SCHEMA), 'utf8')
 const RECEIVE_EMAIL = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
 
 const D = 'd1'
@@ -58,8 +64,9 @@ describe('pourquoi, quand, combien — sans nom', () => {
   it('combien, et ce que le cabinet peut faire : les formats, la borne, l’adresse de collecte ou « Mes pièces »', () => {
     expect(titreDuSignalement(1)).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')
     expect(titreDuSignalement(3)).toBe('3 pièces jointes reçues par e-mail n’ont pas été déposées')
-    expect(ceQueLeCabinetPeutFaire(1)).toBe('Le client croit l’avoir envoyée : demande-lui de la renvoyer en PDF, JPEG, PNG ou CSV, et sous 20\u00a0Mo — à l’adresse de collecte du dossier ou dans « Mes pièces ».')
-    expect(ceQueLeCabinetPeutFaire(2)).toMatch(/^Le client croit les avoir envoyées : demande-lui de les renvoyer en PDF, JPEG, PNG ou CSV, et sous 20\u00a0Mo chacune/)
+    expect(ceQueLeCabinetPeutFaire([ecart()])).toBe('Le client croit l’avoir envoyée : demande-lui de la renvoyer en PDF, JPEG, PNG ou CSV, et sous 20\u00a0Mo — à l’adresse de collecte du dossier ou dans « Mes pièces ».')
+    expect(ceQueLeCabinetPeutFaire([ecart(), ecart({ raison: 'taille', octets: TAILLE_MAX_PIECE + 1 })]))
+      .toMatch(/^Le client croit les avoir envoyées : demande-lui de les renvoyer en PDF, JPEG, PNG ou CSV, et sous 20\u00a0Mo chacune/)
     expect(libelleDuGeste(1)).toBe('Marquer comme vue')
     expect(libelleDuGeste(2)).toBe('Marquer comme vues')
     expect(CE_QUE_FAIT_LA_MARQUE).toMatch(/pour personne du cabinet/)
@@ -82,6 +89,49 @@ describe('pourquoi, quand, combien — sans nom', () => {
     // L'heure d'un instant compte, pas son libellé : la même minute écrite en deux fuseaux est une seule.
     const memes = rangerLesEcarts(D, [ecart({ id: 'z', recue_le: '2026-10-12T14:03:00+02:00' }), ecart({ id: 'y', recue_le: '2026-10-12T12:04:00+00:00' })])
     expect(memes.aSignaler.map((e) => e.id)).toEqual(['y', 'z'])
+  })
+})
+
+describe('le dépôt qui a échoué (ligne 22.8) : pas du fait du client, son poids quand il est connu, rien d’inventé sinon', () => {
+  const NBSP = '\u00a0'
+
+  it('lue : son format et son poids allaient, et son poids se dit ; pas lue : le poids inconnu, ni poids ni format', () => {
+    expect(phraseDeLaRaison({ raison: 'depot', octets: 4120 })).toBe(`le dépôt a échoué, alors que son format et son poids allaient (4${NBSP}Ko)`)
+    expect(phraseDeLaRaison({ raison: 'depot', octets: 830 })).toBe(`le dépôt a échoué, alors que son format et son poids allaient (830${NBSP}octets)`)
+    expect(phraseDeLaRaison({ raison: 'depot', octets: 2_621_440 })).toBe(`le dépôt a échoué, alors que son format et son poids allaient (2,5${NBSP}Mo)`)
+    const inconnu = phraseDeLaRaison({ raison: 'depot', octets: null })
+    expect(inconnu).toBe('le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)')
+    // Rien d'inventé : aucun chiffre, aucune unité, aucun format prétendu bon.
+    expect(inconnu).not.toMatch(/\d|octet|Ko|Mo|format/)
+  })
+
+  it('les deux autres raisons inchangées ; et sans poids — que la base refuse —, rien ne s’invente non plus', () => {
+    expect(phraseDeLaRaison({ raison: 'format', octets: 4120 })).toBe(`format non pris en charge (4${NBSP}Ko)`)
+    expect(phraseDeLaRaison({ raison: 'taille', octets: 27_000_000 })).toBe(`au-delà des 20${NBSP}Mo qu’une pièce peut peser (25,7${NBSP}Mo)`)
+    expect(phraseDeLaRaison({ raison: 'format', octets: null })).toBe('format non pris en charge')
+    expect(phraseDeLaRaison({ raison: 'taille', octets: null })).toBe(`au-delà des 20${NBSP}Mo qu’une pièce peut peser`)
+  })
+
+  it('ce que le cabinet peut faire : la renvoyer TELLE QUELLE, ce n’est pas de son fait ; mêlée aux autres, chacune sa consigne', () => {
+    const ou = 'à l’adresse de collecte du dossier ou dans « Mes pièces »'
+    const depot = (o: Partial<PieceJointeEcartee> = {}) => ecart({ raison: 'depot', octets: null, ...o })
+    expect(ceQueLeCabinetPeutFaire([depot()])).toBe(
+      `Le client croit l’avoir envoyée, et ce n’est pas de son fait si elle n’est pas arrivée : demande-lui de la renvoyer telle quelle — ${ou}.`)
+    expect(ceQueLeCabinetPeutFaire([depot(), depot({ octets: 4120 })])).toBe(
+      `Le client croit les avoir envoyées, et ce n’est pas de son fait si elles ne sont pas arrivées : demande-lui de les renvoyer telles quelles — ${ou}.`)
+    expect(ceQueLeCabinetPeutFaire([ecart(), depot()])).toBe(
+      `Le client croit les avoir envoyées : demande-lui de renvoyer celle refusée à son format ou à son poids en PDF, JPEG, PNG ou CSV, et sous 20${NBSP}Mo, `
+      + `et telle quelle celle dont le dépôt a échoué (ce n’est pas de son fait) — ${ou}.`)
+    expect(ceQueLeCabinetPeutFaire([ecart(), ecart({ raison: 'taille', octets: TAILLE_MAX_PIECE + 1 }), depot(), depot({ octets: 12 })])).toBe(
+      `Le client croit les avoir envoyées : demande-lui de renvoyer celles refusées à leur format ou à leur poids en PDF, JPEG, PNG ou CSV, et sous 20${NBSP}Mo chacune, `
+      + `et telles quelles celles dont le dépôt a échoué (ce n’est pas de son fait) — ${ou}.`)
+  })
+
+  it('l’historique d’une ligne vue, et le rangement : un dépôt échoué se range et se dit comme les autres', () => {
+    expect(phraseDeLaLigneVue(ecart({ raison: 'depot', octets: null, vue_le: '2026-10-13T07:00:00+00:00', vue_par: 'u1' })))
+      .toBe('le 12/10/2026 à 14 h 03 — le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu) ; vue le 13/10/2026')
+    const { aSignaler } = rangerLesEcarts(D, [ecart({ id: 'f' }), ecart({ id: 'p', raison: 'depot', octets: null, recue_le: '2026-10-13T06:00:00+00:00' })])
+    expect(aSignaler.map((e) => e.id)).toEqual(['p', 'f'])
   })
 })
 
@@ -116,11 +166,38 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     expect(RECEIVE_EMAIL).toContain('.from("pieces_jointes_ecartees")')
   })
 
-  it('les deux raisons, et rien d’autre, des deux côtés', () => {
-    expect(MIGRATION).toMatch(/check \(raison in \('format', 'taille'\)\)/)
-    const raisons = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", bytes\.byteLength\)/g)].map((m) => m[1])
-    expect(raisons).toEqual(['format', 'taille'])
-    for (const r of raisons) expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: TAILLE_MAX_PIECE + 1024 })).not.toBe('')
+  it('les trois raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8', () => {
+    expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille'\)\)/)
+    expect(MIGRATION_DEPOT).toMatch(/drop constraint pieces_jointes_ecartees_raison;/)
+    const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_DEPOT)
+    const raisonsDeLaBase = [...(enVigueur?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
+    expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot'])
+    const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
+    expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase].sort())
+    for (const r of raisonsDeLaBase) expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: TAILLE_MAX_PIECE + 1024 })).not.toBe('')
+  })
+
+  it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après', () => {
+    // La base : le poids admis inconnu pour la raison `depot` seule, zéro refusé partout (la contrainte de 22.7 tient).
+    expect(MIGRATION_DEPOT).toMatch(/alter column octets drop not null;/)
+    expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_poids_connu check \(octets is not null or raison = 'depot'\);/)
+    expect(MIGRATION_DEPOT).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_octets\b/)
+    expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_octets check \(octets > 0\)/)
+    // La fonction : chaque appel, dans l'ordre du fichier — deux pertes avant toute lecture, au poids inconnu ; le format
+    // et la taille, au poids téléchargé ; quatre pertes après la lecture, au poids lu (l'exception aussi : inconnu si
+    // elle est venue avant).
+    const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
+    expect(appels.map((m) => `${m[1]}:${m[2]}`)).toEqual([
+      'depot:null', 'depot:null', 'format:bytes.byteLength', 'taille:bytes.byteLength',
+      'depot:octets', 'depot:octets', 'depot:octets', 'depot:octets',
+    ])
+    const lu = RECEIVE_EMAIL.indexOf('      octets = bytes.byteLength\n')
+    expect(lu).toBeGreaterThan(0)
+    for (const m of appels) {
+      if (m[2] === 'null') expect(m.index).toBeLessThan(lu)
+      else expect(m.index).toBeGreaterThan(lu)
+    }
+    expect(RECEIVE_EMAIL).toContain('    let octets: number | null = null\n    try {\n')
   })
 
   it('aucune colonne pour un nom, une extension, un expéditeur ou un objet', () => {

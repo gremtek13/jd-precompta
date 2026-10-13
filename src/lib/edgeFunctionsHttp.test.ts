@@ -273,7 +273,7 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   {
     slug: 'receive-email', quoi: 'le refus de la trace tu',
     remplacements: [[
-      '  if (error) console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets} octets) : ${error.message}`)\n',
+      '    console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets === null ? "poids inconnu" : `${octets} octets`}) : ${erreur}`)\n',
       '',
     ]],
     scenario: 'la base refuse la trace : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
@@ -389,6 +389,120 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
       '    const utc = new Date(Date.now()).toISOString().split("T")[0]\n    const jour = { debut: `${utc}T00:00:00.000Z`, fin: `${utc}T23:59:59.999Z` }\n',
     ]],
     scenario: 'le jour de Paris : trente e-mails partis avant minuit à Paris ne comptent plus après, même le même jour UTC',
+  },
+  // LE DÉPÔT QUI A ÉCHOUÉ (ligne 22.8) : chaque chemin de perte redevenu muet ; le doublon consigné comme une perte ; le
+  // poids inventé, ou le poids lu jeté ; le nom du fichier rendu au journal par le détail de PostgREST ou le chemin d'un
+  // orphelin ; le refus de la trace qui arrête la boucle ; la clé instable au rejeu ; la pièce jointe vide consignée.
+  {
+    slug: 'receive-email', quoi: 'la pièce jointe que Resend ne rend pas, sans trace',
+    remplacements: [[
+      '        console.error("Récupération pièce jointe échouée:", fichier.id, attachError)\n'
+      + '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)\n',
+      '        console.error("Récupération pièce jointe échouée:", fichier.id, attachError)\n',
+    ]],
+    scenario: 'Resend ne rend pas la pièce jointe : un dépôt échoué au poids inconnu, consigné, et la suivante se dépose',
+  },
+  {
+    slug: 'receive-email', quoi: 'le téléchargement raté, sans trace',
+    remplacements: [[
+      '        console.error("Téléchargement pièce jointe échoué:", fichier.id, res.status)\n'
+      + '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)\n',
+      '        console.error("Téléchargement pièce jointe échoué:", fichier.id, res.status)\n',
+    ]],
+    scenario: 'le téléchargement de la pièce jointe échoue : un dépôt échoué au poids inconnu, consigné, rien au stockage',
+  },
+  {
+    slug: 'receive-email', quoi: 'la recherche de doublon tombée, sans trace',
+    remplacements: [[
+      '(${erreurDoublon.message})`)\n        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)\n',
+      '(${erreurDoublon.message})`)\n',
+    ]],
+    scenario: 'la détection de doublon tombe : la pièce jointe n’est pas déposée à l’aveugle, et le dépôt échoué se consigne avec son poids',
+  },
+  {
+    slug: 'receive-email', quoi: 'le stockage refusé, sans trace',
+    remplacements: [[
+      '        console.error("Upload storage échoué:", fichier.id, uploadError)\n'
+      + '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)\n',
+      '        console.error("Upload storage échoué:", fichier.id, uploadError)\n',
+    ]],
+    scenario: 'le stockage refuse le dépôt : le dépôt échoué se consigne avec le poids lu, rien d’inséré',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’insertion refusée, sans trace',
+    remplacements: [[
+      '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)\n        continue\n      }\n\n      nbImportees++',
+      '        continue\n      }\n\n      nbImportees++',
+    ]],
+    scenario: 'l’insertion de la pièce tombe : le fichier déposé est retiré du stockage, et le dépôt échoué se consigne avec son poids',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’exception, sans trace',
+    remplacements: [[
+      '      console.error("Erreur traitement pièce jointe:", fichier.id, err)\n'
+      + '      await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)\n',
+      '      console.error("Erreur traitement pièce jointe:", fichier.id, err)\n',
+    ]],
+    scenario: 'une exception après la lecture (l’insertion lève) : le dépôt échoué se consigne avec le poids lu',
+  },
+  {
+    slug: 'receive-email', quoi: 'le doublon consigné comme un dépôt échoué',
+    remplacements: [[
+      '        console.log(`Pièce jointe déjà présente (hash identique), ignorée: ${fichier.id}`)\n',
+      '        console.log(`Pièce jointe déjà présente (hash identique), ignorée: ${fichier.id}`)\n'
+      + '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)\n',
+    ]],
+    scenario: 'un doublon (même empreinte) : ni dépôt ni pièce',
+  },
+  {
+    slug: 'receive-email', quoi: 'un poids inventé pour un dépôt échoué avant toute lecture',
+    remplacements: [[
+      'res.status)\n        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)',
+      'res.status)\n        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", 1)',
+    ]],
+    scenario: 'le téléchargement de la pièce jointe échoue : un dépôt échoué au poids inconnu, consigné, rien au stockage',
+  },
+  {
+    slug: 'receive-email', quoi: 'le poids lu jeté (un dépôt échoué consigné au poids inconnu)',
+    remplacements: [[
+      'uploadError)\n        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", octets)',
+      'uploadError)\n        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)',
+    ]],
+    scenario: 'le stockage refuse le dépôt : le dépôt échoué se consigne avec le poids lu, rien d’inséré',
+  },
+  {
+    slug: 'receive-email', quoi: 'le détail de PostgREST — la ligne refusée — rendu au journal',
+    remplacements: [[
+      'console.error(`Insertion échouée: ${fichier.id} (${insertError.code || "sans code"} ${insertError.message})`)',
+      'console.error("Insertion échouée:", fichier.id, insertError)',
+    ]],
+    scenario: 'l’insertion refusée avec le détail de la ligne, et le fichier qui ne se retire pas : le dépôt échoué se consigne, et le journal ne porte ni le nom ni les valeurs lues',
+  },
+  {
+    slug: 'receive-email', quoi: 'le chemin du fichier orphelin, nom compris, rendu au journal',
+    remplacements: [['stockage : ${dossier.id}/${horodatage}-… (${erreurRetrait.message})', 'stockage : ${path} (${erreurRetrait.message})']],
+    scenario: 'l’insertion refusée avec le détail de la ligne, et le fichier qui ne se retire pas : le dépôt échoué se consigne, et le journal ne porte ni le nom ni les valeurs lues',
+  },
+  {
+    slug: 'receive-email', quoi: 'le refus de la trace qui lève et arrête la boucle',
+    remplacements: [[
+      '    console.error(`[receive-email] pièce jointe écartée NON consignée (${raison}, ${octets === null ? "poids inconnu" : `${octets} octets`}) : ${erreur}`)\n',
+      '    throw new Error(erreur)\n',
+    ]],
+    scenario: 'la base refuse la trace d’un dépôt échoué : le refus est journalisé sans nom, et la pièce jointe suivante se dépose',
+  },
+  {
+    slug: 'receive-email', quoi: 'la clé d’idempotence instable, au rejeu d’un dépôt échoué',
+    remplacements: [['JSON.stringify([emailId, pieceJointeId])', 'JSON.stringify([emailId, pieceJointeId, raison])']],
+    scenario: 'Resend rejoue le webhook d’un dépôt échoué, lu cette fois et refusé à son format : rien de plus ne se consigne, sans erreur',
+  },
+  {
+    slug: 'receive-email', quoi: 'la pièce jointe vide consignée comme un dépôt échoué',
+    remplacements: [[
+      '        console.warn(`Pièce jointe vide (0 octet), sautée : ${fichier.id}`)\n',
+      '        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "depot", null)\n',
+    ]],
+    scenario: 'une pièce jointe vide (0 octet) : sautée, journalisée sans son nom, rien de consigné ni de déposé',
   },
 ]
 

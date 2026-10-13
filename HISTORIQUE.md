@@ -23075,3 +23075,96 @@ demandé qu'avec « Banque » ; rien ne s'écrit depuis la liste. La barrière s
 erreurs connues des Edge Functions ; lint, 63 avertissements et aucune erreur ; la suite entière sous Paris, UTC, New York
 et Auckland : 10 345 tests, tous verts ; construction verte (`index-CViFgr17.js`). Le banc n'est pas rejoué : le code est
 celui que l'agent a mesuré (0 débordement à la reprise, passes du client comprises).
+
+### 13/10/2026 — « LE DÉPÔT A ÉCHOUÉ » : LA TROISIÈME RAISON D'UNE PIÈCE JOINTE ÉCARTÉE — LIGNE 22.8
+
+(La migration `pieces_jointes_ecartees_depot`, appliquée le 13/10/2026 sous la version `20261013103407`, AVANT la
+fusion ; `receive-email` se redéploie APRÈS la mise en ligne de l'application. Préparée par l'agent S228a sur `08e457a`,
+intégrée sur `08e457a`. Fichiers : `supabase/schema/20261013103407_pieces_jointes_ecartees_depot.sql` (nouveau),
+`supabase/functions/receive-email/index.ts`, `supabase/essais/piecesJointesEcartees.sql`,
+`lib/piecesJointesEcartees.ts`, `pages/dossier/PiecesJointesEcartees.tsx`, `lib/types.ts`, leurs tests,
+`src/test/contratsFonctions.ts` et `edgeFunctionsHttp.test.ts` (les contrats et les défauts plantés), `RGPD.md`, le
+README du schéma, `outils/captures/fauxSupabase.ts`.)
+
+**LE CONSTAT.** Dans la boucle des pièces jointes de `receive-email`, six chemins perdaient une pièce jointe sans rien
+écrire — Resend ne la rend pas, son téléchargement échoue, la recherche de doublon tombe, le stockage refuse,
+l'insertion refuse (le fichier retiré ensuite), une exception — et la fonction répondait 200 : Resend ne rejoue pas, seul
+le journal en gardait la trace, un temps. Décision du cabinet du 13/10/2026 (S227-Q3) : une troisième raison, « le dépôt
+a échoué ». Trouvé en écrivant les contrats : deux de ces chemins mettaient le NOM du fichier au journal — l'objet
+d'erreur de PostgREST, dont le détail recopie la ligne refusée (nom du fichier, tiers et montants lus), et le chemin d'un
+fichier orphelin, qui porte le nom.
+
+**LA BASE.** La raison `depot` s'ajoute (la contrainte `pieces_jointes_ecartees_raison` remplacée sous le même nom : un
+`drop constraint`, Postgres ne modifiant pas une contrainte CHECK en place). Le poids devient INCONNU (null) possible —
+rien n'a été lu quand Resend ne rend pas la pièce jointe ou que son téléchargement échoue — pour elle SEULE : la
+contrainte `pieces_jointes_ecartees_octets` (plus de zéro) reste telle quelle — un null la passe —, et une contrainte
+neuve, `pieces_jointes_ecartees_poids_connu` (`octets is not null or raison = 'depot'`), exige le poids du format et de la
+taille. Écartée : `octets > 0 or raison = 'depot'`, qu'un null passe pour TOUTE raison (la logique à trois valeurs) — une
+mutation de l'essai la fait tomber. La garde (`is distinct from`, qui tient deux null pour égaux), la fonction
+`marquer_pieces_jointes_vues`, les policies, les droits et la clé d'idempotence ne changent pas : `signature.sql` ne voit
+bouger que les colonnes (la nullabilité) et les contraintes (une de plus). Destructive au sens des règles du dépôt — un
+`drop constraint`, un `drop not null` —, sans perte de données. Le retour arrière, donné à part, verrouille la table,
+refuse tant qu'une ligne `depot` existe en en disant le nombre, et ne la supprime jamais.
+
+**LA FONCTION.** Chaque chemin de perte écrit sa ligne `depot` par `noterLaPieceJointeEcartee` : au poids inconnu avant
+toute lecture (Resend, téléchargement), au poids lu après (recherche de doublon, stockage, insertion — après le retrait
+du fichier —, exception, qui garde le poids s'il a été lu). Un doublon n'est pas une perte : rien ne s'écrit.
+`noterLaPieceJointeEcartee` ne lève plus jamais : son erreur se journalise, la pièce jointe suivante se traite. Le
+journal porte le code et le message d'un refus de PostgREST, jamais son détail ; un orphelin s'y dit par son dossier et
+son horodatage. LA PIÈCE JOINTE VIDE (0 octet) reste sautée, sans ligne : il n'y a rien à déposer, et « son format et son
+poids allaient — renvoie-la telle quelle » serait faux d'elle ; elle quitte le silence du journal (un avertissement sans
+nom) — question S228-Q2.
+
+**L'ÉCRAN.** Un dépôt échoué se dit « le dépôt a échoué, alors que son format et son poids allaient (4 Ko) », ou, rien
+n'ayant été lu, « le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu) » — ni poids, ni format
+prétendus. Le titre les compte toutes. La consigne : renvoyer TELLE QUELLE, ce n'est pas du fait du client ; mêlée aux
+refusées, une phrase les dit chacune (« … en PDF, JPEG, PNG ou CSV, et sous 20 Mo chacune, et telle quelle celle dont le dépôt a
+échoué (ce n'est pas de son fait) »). Le format et la taille se disent comme avant.
+
+**CE QUI A ÉTÉ MESURÉ.** Réplique (grappe 54331) : `s228a_base` et `s228a_semee`, copies de `s227_migree` et
+`s227_semee_migree`, la ligne d'historique de 22.7 portée à sa version réelle — égales à la production du 13/10/2026 sur
+les neuf familles de `signature.sql` et sur l'historique (128, `fba7cc1a…`). L'essai étendu (51 verdicts : 6 étendu, 7b,
+33b, 36b, 37b, 46, 47 neufs) : sans la migration, exactement ces 7 en faute ; avec elle, 0, vide et semée ; la copie sans
+commentaires (52 511 caractères, `b7052ff2…`) : 51, 0. Mutations de la migration : 13 sur 13 vues — la garde en `<>`
+(un null n'y est jamais différent) n'est vue QUE par 36b et 37b. Retour arrière : refus nommé et rien de changé avec une
+ligne `depot` ; passé sans elle, signature égale à la production d'avant. `rls.sql` non rejoué : aucune policy,
+fonction ni droit touché (les sept familles qui les portent, identiques avant et après). `restauration.sql`, le dossier
+`test` portant une ligne de chaque raison dont deux dépôts échoués (l'un au poids inconnu, marqué vu) : 134 clés, 70
+tables IDENTIQUES, 0 écart. Contrôles de l'export : dérive 129 = 129 (`41a9bb71…`), socle 78 inchangé, inventaire 1 897
+(`a33f2032…`, +1). Contrats HTTP : 9 scénarios neufs, 3 étendus, 14 défauts plantés neufs (et une ancre remise à jour),
+tous vus. Mutations du code : 18 sur 18 (8 de receive-email jugées par ses contrats seuls). Barrière : `tsc -b` 0 ; Edge
+25 erreurs, les mêmes qu'à la base ; lint 63 avertissements ; quatre fuseaux, 17 fichiers, 1 133 tests ; suite entière
+(Paris) 343 fichiers, 10 375 tests ; construction verte (`index-DQ3C3ote.js`). Banc (port 5328) : neuf passes, 0
+débordement, polices 0 ; après la dernière retouche de la consigne mêlée, 1 440, 390 et 720 de nouveau à 0.
+
+**L'ORDRE DE MISE EN LIGNE.** La migration d'abord (avant la fusion) ; puis la fusion et l'application en ligne ; puis
+SEULEMENT le redéploiement de `receive-email` (`verify_jwt` faux) : l'application d'avant dirait une ligne `depot` « au-delà
+des 20 Mo … (null octet) ».
+
+**LES QUESTIONS AU CABINET.** S228-Q1, l'accord sur la migration (un `drop constraint` et un `drop not null`, aucune
+donnée retirée ; recommandé : oui). S228-Q2, la pièce jointe vide (recommandé : la dire, sous une quatrième raison
+« vide », dans une étape à part). S228-Q3, le rejeu qui réussit après un dépôt échoué (recommandé : rien ; le cabinet
+marque l'alerte vue). S228-Q4, les images intégrées au corps d'un e-mail, écartées sans trace (recommandé : les compter
+d'abord, au journal, sans nom).
+
+**L'INTÉGRATION ET LA MISE EN BASE, LE 13/10/2026.** Le correctif de l'agent (treize fichiers et la migration,
+`315ec25c…`) relu puis appliqué tel quel sur `08e457a`. La barrière de l'arbre intégré, avant toute application :
+`tsc -b` vert ; les 25 erreurs connues des Edge Functions, à l'identique ; lint, 63 avertissements et aucune erreur ; la
+suite entière sous Paris, UTC, New York et Auckland : 10 375 tests, tous verts ; construction verte
+(`index-DQ3C3ote.js`). Sur l'accord du cabinet (S228-Q1), la migration appliquée par `apply_migration`, sans
+confirmation demandée — le détecteur de l'outil n'a retenu ni le `drop constraint` ni le `drop not null` —, sous la
+version `20261013103407` : la ligne d'historique rend l'empreinte du fichier (`56135d38…`, 4 199 caractères) ; 129
+migrations ; le fichier renommé à cette version (`piecesJointesEcartees.test.ts` le trouve par son nom). En production :
+`piecesJointesEcartees.sql`, sans ses lignes de commentaire — la copie que l'agent avait jouée sur sa réplique —, 51
+verdicts sur 51, mutations comprises, « rien n'est resté », la ligne 0 rendant le texte transmis au caractère près
+(52 511 caractères, `b7052ff2…`). `signature.sql` : les neuf familles égales à celles que l'agent avait relevées sur sa
+réplique après la migration — colonnes 780 (`61247b7f…`) et contraintes 586 (`9941f538…`), les sept autres celles
+d'avant. Les trois contrôles de l'export, égaux des deux côtés : dérive 129 = 129 (`a33646ec…`), socle 78 (`91ae95ec…`,
+inchangé), inventaire 1 897 objets (`a33f2032…`). Les advisors, inchangés : `anon_` 5,
+`authenticated_security_definer_function_executable` 40. `rls.sql` non rejoué : aucune policy, fonction ni droit touché.
+
+**LES RÉPONSES DU CABINET, LE 13/10/2026.** « Oui pour tout » : la migration (S228-Q1, ci-dessus) ; la pièce jointe vide
+se dira sous une quatrième raison, « vide » — arrivée vide, demander au client de vérifier son fichier —, dans une étape
+à part (S228-Q2) ; un rejeu qui réussit après un dépôt échoué ne change rien, le cabinet marque l'alerte vue (S228-Q3 :
+rien à écrire) ; les images intégrées au corps d'un e-mail se comptent d'abord au journal, sans nom, puis se décident,
+dans une étape à part (S228-Q4). Reste aussi le dire au client dans « Mes pièces » (S227-Q6, ligne 22.9).

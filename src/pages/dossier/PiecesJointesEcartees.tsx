@@ -12,7 +12,8 @@ import type { PieceJointeEcartee } from '../../lib/types'
 
 // LES PIÈCES JOINTES ÉCARTÉES À LA RÉCEPTION PAR E-MAIL, DANS L'ONGLET JUSTIFICATIFS (ligne 22.7). C'est là que le cabinet
 // travaille les pièces reçues — celles de l'adresse de collecte y arrivent « à valider » — : c'est donc là qu'il voit
-// celles qui ne sont PAS arrivées, et pourquoi (src/lib/piecesJointesEcartees.ts). L'onglet Accès, où se lit l'adresse,
+// celles qui ne sont PAS arrivées, et pourquoi (src/lib/piecesJointesEcartees.ts) : refusées à leur format ou à leur
+// poids, ou leur dépôt échoué (ligne 22.8), qui n'est pas du fait du client. L'onglet Accès, où se lit l'adresse,
 // ne se visite qu'à la mise en place ; un point de la Vue d'ensemble entraînerait les cycles de la révision et les
 // préalables de la validation, pour un fait qui ne touche aucun compte.
 //
@@ -94,7 +95,7 @@ export default function PiecesJointesEcartees({ dossierId }: { dossierId: string
           <li key={e.id}><span className="pieces-jointes-ecartees-quand">{quandRecue(e.recue_le)}</span> — {phraseDeLaRaison(e)}</li>
         ))}
       </ul>
-      <p>{ceQueLeCabinetPeutFaire(aSignaler.length)}</p>
+      <p>{ceQueLeCabinetPeutFaire(aSignaler)}</p>
       {erreur && <p className="error-text" role="alert">{erreur}</p>}
       <div className="pieces-jointes-ecartees-actions">
         <button type="button" className="btn btn-outline btn-sm" disabled={enCours || refus !== null} onClick={marquerVues}>

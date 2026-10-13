@@ -1690,6 +1690,8 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'pje-1', dossier_id: 'd1', recue_le: '2026-09-24T07:42:00Z', raison: 'format', octets: 48_312, empreinte: '1'.repeat(64), vue_le: null, vue_par: null },
     { id: 'pje-2', dossier_id: 'd1', recue_le: '2026-09-22T15:05:00Z', raison: 'taille', octets: 27_403_212, empreinte: '2'.repeat(64), vue_le: null, vue_par: null },
     { id: 'pje-3', dossier_id: 'd1', recue_le: '2026-09-02T09:10:00Z', raison: 'format', octets: 3_871, empreinte: '3'.repeat(64), vue_le: '2026-09-03T08:00:00Z', vue_par: 'u1' },
+    // Puis un dépôt qui a échoué avant toute lecture (ligne 22.8) : sa raison, et aucun poids — rien n'a été lu.
+    { id: 'pje-4', dossier_id: 'd1', recue_le: '2026-09-25T10:15:00Z', raison: 'depot', octets: null, empreinte: '4'.repeat(64), vue_le: null, vue_par: null },
   ],
 }
 
