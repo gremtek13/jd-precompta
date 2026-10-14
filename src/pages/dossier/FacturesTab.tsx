@@ -15,6 +15,8 @@ import FactureApercu from './FactureApercu'
 import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import ReglementsSection from './ReglementsSection'
+import ArticlesVue from './ArticlesVue'
+import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
   ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
@@ -47,6 +49,8 @@ import { lireLesAccesDuDossier } from '../../lib/auteursVentesLecture'
 type QuiRegarde =
   | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
   | { espace: 'client'; banque: boolean }
+
+type VueDeLOnglet = 'factures' | 'reglements' | 'articles'
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -120,8 +124,8 @@ export default function FacturesTab(props: Props) {
   // La case « Émises par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des accès lus en entier.
   const [filtreClient, setFiltreClient] = useState(false)
   const filtre = etatDuFiltre(acces)
-  // La vue : les factures, ou les règlements de tout le dossier (étape A3).
-  const [vue, setVue] = useState<'factures' | 'reglements'>('factures')
+  // La vue : les factures, les règlements de tout le dossier (étape A3) ou le catalogue d'articles (étape A2a).
+  const [vue, setVue] = useState<VueDeLOnglet>('factures')
 
   async function load() {
     setLoading(true)
@@ -242,7 +246,7 @@ export default function FacturesTab(props: Props) {
 
   // Revenir aux factures RELIT leurs listes : la fenêtre des encaissements, ouverte depuis les règlements, a pu écrire, et
   // les pastilles diraient encore ce qu'elles disaient avant.
-  function changerDeVue(v: 'factures' | 'reglements') {
+  function changerDeVue(v: VueDeLOnglet) {
     if (v === vue) return
     setVue(v)
     if (v === 'factures') load()
@@ -259,7 +263,8 @@ export default function FacturesTab(props: Props) {
 
   return (
     <>
-      {/* « Factures » et « Règlements » (étape A3) : la liste de tous les encaissements du dossier, à côté de celle des factures.
+      {/* « Factures », « Règlements » (étape A3) et « Articles » (étape A2a) : la liste de tous les encaissements du dossier et le
+          catalogue, à côté de celle des factures.
           Une vue à la fois ; revenir aux factures relit leurs pastilles, que la fenêtre ouverte depuis la liste a pu changer. */}
       <div className="segmented" role="tablist" aria-label={espace === 'client' ? 'Mes ventes' : 'Factures du dossier'} style={{ marginBottom: 14 }}>
         <button type="button" role="tab" aria-selected={vue === 'factures'} className={vue === 'factures' ? 'active' : ''} onClick={() => changerDeVue('factures')}>
@@ -268,6 +273,13 @@ export default function FacturesTab(props: Props) {
         <button type="button" role="tab" aria-selected={vue === 'reglements'} className={vue === 'reglements' ? 'active' : ''} onClick={() => changerDeVue('reglements')}>
           Règlements
         </button>
+        {/* « Articles » (étape A2a) : le catalogue, que lit et tient aussi le client « Ventes » — offert seulement quand la
+            migration des articles est en base (`ARTICLES_EXPORTES`) : sans elle, la lecture de la table échouerait. */}
+        {ARTICLES_EXPORTES && (
+          <button type="button" role="tab" aria-selected={vue === 'articles'} className={vue === 'articles' ? 'active' : ''} onClick={() => changerDeVue('articles')}>
+            Articles
+          </button>
+        )}
       </div>
 
       {vue === 'reglements' ? (
@@ -275,6 +287,11 @@ export default function FacturesTab(props: Props) {
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           statutTva={statutTva}
+        />
+      ) : vue === 'articles' ? (
+        <ArticlesVue
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
+          dossierId={dossierId}
         />
       ) : (
         <>

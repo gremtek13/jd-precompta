@@ -1415,6 +1415,44 @@ const DOSSIER_PERMANENT_D9: Ligne[] = [
   },
 ]
 
+// LE CATALOGUE D'ARTICLES de l'atelier de conseil (d7, espace client, étape A2a), vu du cabinet (l'onglet Factures › Articles) et
+// de son client « Ventes » (« Mes ventes › Articles ») : six articles FICTIFS — un prix à six décimales qu'un affichage à deux
+// arrondirait, une désignation et une description LONGUES (la cellule se coupe, l'infobulle garde le texte), une référence
+// absente, un taux réduit, un article créé par le client puis modifié par le cabinet, un article créé par le client et un
+// RETIRÉ par lui (« par le client » au cabinet). Les auteurs sont les comptes du banc : `u1` (le compte du banc : le cabinet,
+// ou le client de la passe client) et `u-bernard` (le titulaire de l'atelier, reconnu par `memberships`).
+const articleDuBanc = (o: Ligne): Ligne => ({
+  dossier_id: 'd7', description: null, retire_le: null, retire_par: null, modifie_par: null, modifie_le: null, ...o,
+})
+const ARTICLES_D7: Ligne[] = [
+  articleDuBanc({
+    id: 'art1', reference: 'CONS-H', designation: 'Séance de conseil en gestion', unite: 'HUR', prix_unitaire_ht: 90, taux_tva: 20, nature: 'services',
+    description: 'Une heure en visioconférence ou à l’atelier, compte rendu écrit inclus sous quarante-huit heures, quel que soit le sujet traité pendant la séance.',
+    cree_par: 'u1', cree_le: '2026-09-01T09:00:00Z',
+  }),
+  articleDuBanc({
+    id: 'art2', reference: 'AUDIT-FORFAIT', unite: 'LS', prix_unitaire_ht: 1250, taux_tva: 20, nature: 'services',
+    designation: 'Audit de l’organisation commerciale — forfait, déplacement, entretiens avec l’équipe et rapport de synthèse remis en main propre',
+    cree_par: 'u-bernard', cree_le: '2026-09-03T09:00:00Z',
+  }),
+  articleDuBanc({
+    id: 'art3', reference: 'JOINT-NT', designation: 'Joint torique de remplacement', unite: 'H87', prix_unitaire_ht: 0.123456, taux_tva: 20, nature: 'biens',
+    cree_par: 'u-bernard', cree_le: '2026-09-04T09:00:00Z',
+  }),
+  articleDuBanc({
+    id: 'art4', reference: null, designation: 'Abonnement mensuel de suivi', unite: 'MON', prix_unitaire_ht: 149.9, taux_tva: 20, nature: 'services',
+    cree_par: 'u-bernard', cree_le: '2026-09-05T09:00:00Z', modifie_par: 'u1', modifie_le: '2026-09-20T09:00:00Z',
+  }),
+  articleDuBanc({
+    id: 'art5', reference: 'SUPPORT-A4', designation: 'Supports pédagogiques imprimés', unite: 'C62', prix_unitaire_ht: 12.5, taux_tva: 5.5, nature: 'biens',
+    cree_par: 'u1', cree_le: '2026-09-06T09:00:00Z',
+  }),
+  articleDuBanc({
+    id: 'art6', reference: 'TARIF-2025', designation: 'Ancien tarif horaire', unite: 'HUR', prix_unitaire_ht: 80, taux_tva: 20, nature: 'services',
+    cree_par: 'u1', cree_le: '2026-01-10T09:00:00Z', retire_par: 'u-bernard', retire_le: '2026-09-10T09:00:00Z',
+  }),
+]
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1713,6 +1751,8 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'pje-7', dossier_id: 'd7', recue_le: '2026-10-02T23:30:00Z', raison: 'depot', octets: null, empreinte: '7'.repeat(64), vue_le: null, vue_par: null },
     { id: 'pje-8', dossier_id: 'd7', recue_le: '2026-09-29T08:05:00Z', raison: 'vide', octets: 0, empreinte: '8'.repeat(64), vue_le: '2026-09-30T08:00:00Z', vue_par: 'u1' },
   ],
+  // Le catalogue d'articles de l'atelier (espace client, étape A2a) : voir ARTICLES_D7.
+  articles: ARTICLES_D7.map((a) => ({ ...a })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

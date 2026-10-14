@@ -157,7 +157,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
 // droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
 // DEPUIS L'ÉTAPE A1, un troisième drapeau : la migration `articles` (`ARTICLES_EXPORTES`, lib/articles.ts) ouvre au client
-// « Ventes », par la base, le catalogue des articles et ses trois gestes, avant l'écran qui les montrera (étape A2). Elle
+// « Ventes », par la base, le catalogue des articles et ses trois gestes ; l'écran qui les montre (étape A2a, « Mes ventes ›
+// Articles ») suit, et la phrase ne le dit plus à venir. Elle
 // exige celles des ventes : sans elles, ce drapeau ne change rien à la phrase. Le tenir « avec toi » est la décision
 // MEG1-Q1 du cabinet (lib/articles.ts, `QUI_TIENT_LE_CATALOGUE`).
 export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean, articlesOuverts: boolean): string {
@@ -178,7 +179,7 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
     : ''
   const avecLesArticles = ventesOuvertes && articlesOuverts
   const articles = avecLesArticles
-    ? ' Il tient aussi avec toi, par les fonctions de la base, le catalogue des articles du dossier : il le lit en entier — '
+    ? ' Il tient aussi avec toi, dans « Mes ventes › Articles » et par les fonctions de la base, le catalogue des articles du dossier : il le lit en entier — '
       + 'référence, désignation, description, unité, prix, taux de TVA, nature, et qui a créé, changé ou retiré chaque '
       + 'article — et peut créer, modifier, retirer ou reprendre un article.'
     : ''
@@ -194,18 +195,15 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
   const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
-  // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états ; l'écran de ses articles (étape
-  // A2), dès que la base les lui ouvre.
+  // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états. L'écran de ses articles existe
+  // depuis l'étape A2a (la vue « Articles » de « Mes ventes ») : la phrase ne le dit plus à venir — ce qui reste d'A2, le
+  // choix d'un article dans la facture, n'est pas un écran de plus.
   const aVenir = simulationSousBanque
     ? (ventesOuvertes
-      ? (avecLesArticles
-        ? ' L’écran de ses articles et la connexion de sa banque depuis son espace viendront ensuite.'
-        : ' La connexion de sa banque depuis son espace viendra ensuite.')
+      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
       : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
     : (ventesOuvertes
-      ? (avecLesArticles
-        ? ' L’écran « Banque » de son espace et celui de ses articles viendront ensuite.'
-        : ' L’écran « Banque » de son espace viendra ensuite.')
+      ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + banque + ventesFermees + aVenir
 }
@@ -245,6 +243,13 @@ export const LIBELLE_MOTIF_CONTRE_PASSATION = `Motif d’annulation, que la plat
 export const LIBELLE_NOTE_DECLARATION =
   `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${LE_CLIENT_VENTES} la lit`
 
+// Les deux textes libres d'un ARTICLE (étape A2a) : la désignation et la description, que le cabinet saisit dans le
+// catalogue que `articles_lecture_ventes` ouvre au client « Ventes » — la même condition, le même mot. La désignation figure
+// sur la ligne de facture, la description la suit : le libellé dit où le texte va, puis qui le lit.
+export const LIBELLE_DESIGNATION_ARTICLE = `Désignation (le nom de l’article ; ${LE_CLIENT_VENTES} la lit)`
+
+export const LIBELLE_DESCRIPTION_ARTICLE = `Description (facultative ; ${LE_CLIENT_VENTES} la lit)`
+
 // ET CE QUE LE MÊME CLIENT LIT AU-DESSUS DU CHAMP, quand c'est LUI qui écrit (« Mes ventes », espace client, étape P4a) : ces
 // textes ne figurent pas sur la facture, et ton cabinet les lit aussi. On tutoie le client (lib/resteAEnvoyer.ts).
 const TON_CABINET = 'ton cabinet'
@@ -257,6 +262,10 @@ export const LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT = `Motif d’annulation, que 
 
 export const LIBELLE_NOTE_DECLARATION_CLIENT =
   `Note (facultative) : qui l’a saisi, quand, sous quelle référence — ${TON_CABINET} la lit aussi`
+
+export const LIBELLE_DESIGNATION_ARTICLE_CLIENT = `Désignation (le nom de l’article ; ${TON_CABINET} la lit aussi)`
+
+export const LIBELLE_DESCRIPTION_ARTICLE_CLIENT = `Description (facultative ; ${TON_CABINET} la lit aussi)`
 
 // ── Ce que le client « Banque » lit de la main du cabinet (espace client, étape P9b) ──────────────────────────────────
 // La migration `banque_du_client` ouvre le fil d'un mouvement (`precisions_mouvements`) au cabinet et au client qui porte

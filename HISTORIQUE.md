@@ -23726,6 +23726,105 @@ les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 544 tests c
 (`index-gOMdrhJG.js`). La bascule ne part qu'après la migration : en ligne avant elle, chaque sauvegarde d'un dossier
 aurait lu une table absente.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #164 (`b7265b0`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-gOMdrhJG.js`, le paquet de la barrière (déploiement 38527347134) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 51.5 reçoit le paragraphe d'A1 et son « RESTE » (A2, A4 à A11), relue à sa
+longueur attendue ; les barres recomptées, inchangées (139 chantiers livrés sur 182, 76 % ; pour un dossier BNC, 139 sur
+169, 82 %). Le worktree de l'agent retiré (ses 14 fichiers identiques à ceux du correctif), comme celui de
+l'intégration ; la grappe de la réplique reste arrêtée. A2 est ensuite découpée : A2a, la liste des articles et ses
+gestes ; A2b, le formulaire de facture.
+
 **RESTE.** A2, l'écran des articles : au-dessus de la désignation et de la description que le cabinet saisit, dire que
 le client « Ventes » les lit. NON VÉRIFIÉ (A-NV1) : que chaque code d'unité passe le validateur officiel — sur des
 exemples fictifs, à A7.
+
+### 14/10/2026 — LA LISTE DES ARTICLES, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A2a (LIGNE 51.5)
+
+(Préparée le 14/10/2026 par l'agent S233 sur `b7265b0`, relue et intégrée par la session le même jour. Fichiers
+nouveaux : `src/lib/articlesLecture.ts`, `articlesEcriture.ts`, `articlesVue.ts` et leurs trois tests,
+`src/pages/dossier/ArticlesVue.tsx`, `ArticleSaisieModal.tsx`, `ArticlesVue.test.tsx`, `FacturesTabArticles.test.tsx`,
+`src/test/articles.ts`. Modifiés : `FacturesTab.tsx`, `ClientVentes.tsx` (un commentaire), `src/lib/droitsAcces.ts` et
+son test, `espaceVentes.test.ts`, `ecransAvantLecture.test.tsx`, `articles.ts` et `types.ts` (deux commentaires devenus
+faux), `RGPD.md` (une parenthèse devenue fausse), `outils/captures/fauxSupabase.ts` et `debordements.mjs` (par AJOUT).
+Aucune migration, aucune policy, aucune Edge Function.)
+
+**LA DÉLIMITATION.** A2 est découpée : A2a, la liste et ses gestes ; A2b, le formulaire de facture (« Choisir un
+article », « Enregistrer comme article », « Mettre l'article à ce prix »), non touché.
+
+**LA VUE.** « Articles » est la troisième vue du sélecteur de l'onglet Factures (« Factures » reste la vue par défaut),
+au cabinet dans l'onglet et au client « Ventes » dans « Mes ventes » — la même propriété `espace`, obligatoire ; elle
+n'est offerte que sous `ARTICLES_EXPORTES` (rebaissé : aucun onglet, aucune lecture de la table, éprouvé par un
+accesseur). La table n'est lue qu'au clic sur la vue. La liste : référence, désignation (la description, coupée à
+140 caractères, son texte entier en infobulle), unité (`libelleUnite`), prix HT, taux, nature, état ; la recherche
+commune sur la référence et la désignation, « N sur M » compté avant la recherche ; le filtre « Retirés » (sans lui, les
+retirés ne se montrent pas ; avec lui, ils suivent les articles en cours) ; « par le client » au cabinet seul.
+
+**LE PRIX, JAMAIS ARRONDI EN SILENCE.** `formaterPrixArticle` montre deux décimales au moins et six au plus (0,123456 €
+se lit 0,123456 €, pas 0,12 €), l'espace avant « € » insécable. À la saisie, un prix tapé se lit sans être changé :
+espaces ordinaires, insécables et fines ignorées, virgule ou point, et un texte que le nombre ne tient pas fidèlement
+(`0,10000000000000000001`) est dit « illisible » au lieu d'être arrondi.
+
+**LES REFUS, CEUX DU MODULE.** `refusDeLaSaisie` appelle `refusEnregistrementArticle` sur la saisie TELLE QU'ELLE PART
+(`saisieEnvoyee` : une référence ou une description vides partent `null` — la base refuse une référence de zéro
+caractère —, une référence aux blancs de bord part telle quelle et le module dit son refus, jamais rognée) ; il n'ajoute
+qu'un cas, celui d'un prix tapé qui n'est pas un nombre (le module le lirait « absent »), après les refus d'avant lui,
+dans l'ordre de la base. Le taux et la nature d'un article neuf ne sont PAS choisis à la place de qui saisit (l'unité
+l'est : `C62`, la décision de la conception). « Modifier » d'un retiré est grisé sous le refus du module, dit en
+infobulle et par « Reprendre » à côté. Le refus de la base se dit sous ses mots, dans la fenêtre ; la liste se relit sur
+un refus comme sur un succès.
+
+**UN SEUL VERROU, POUR LES TROIS GESTES** (`gesteEnCours`, un `useRef` posé avant le `try`, relâché dans le `finally`
+APRÈS la relecture) : trois clics du même rendu, une seule écriture ; pendant la relecture, tout est grisé, la fenêtre
+aussi. Une lecture arrivée après un changement de dossier ne s'inscrit pas, ni une relecture lancée sous un dossier
+quitté.
+
+**QUI A FAIT QUOI.** `mentionParLeClient` (pur) : le DERNIER geste de la vie de l'article — sa création, sa dernière
+modification (la reprise en est une) ou son retrait, le plus récent des trois, les instants comparés comme des instants,
+à égalité le geste le plus tardif — est-il d'un compte qui porte un accès client lu EN ENTIER ? Un auteur nul n'est
+personne, un accès retiré n'est pas deviné, jamais « par le cabinet ». Lecture du retrait : la consigne disait « créé ou
+modifié » ; la base écrit aussi `retire_par`, et l'onglet Accès dit depuis A1 « qui a créé, changé ou retiré chaque
+article » — le retrait compte (A2-Q1).
+
+**LES LIBELLÉS.** La désignation et la description disent qui les lit (`LIBELLE_DESIGNATION_ARTICLE`,
+`LIBELLE_DESCRIPTION_ARTICLE` : le client qui porte « Ventes » ; variantes `_CLIENT` : ton cabinet les lit aussi) ; la
+phrase des cases de l'onglet Accès ne dit plus l'écran des articles « à venir » mais « Mes ventes › Articles ». La
+parenthèse « aucun écran encore » de RGPD.md (le registre dit toujours le même traitement) et deux commentaires devenus
+faux suivent.
+
+**LES PREUVES.** Des tests de logique (la lecture, l'écriture, le module pur) et d'écran des deux espaces : la lecture
+en cours, vide, partielle, refusée ou qui lève ; chaque geste et son refus avant le clic ; le verrou à trois clics ; la
+relecture sur un refus ; le drapeau dans ses deux états ; les mots du client. L'écran est inscrit dans
+`ecransAvantLecture.test.tsx` (rien avant la lecture, aucun geste sans liste) ; les scanners passent sans exception
+nouvelle. 93 mutations ciblées : 91 mordent, deux sont équivalentes (le tri se fait sur la copie que rend `filter` ; un
+verrou qui tomberait avant la relecture ne se voit pas à l'écran, où l'état `occupe` grise tout jusqu'après elle). Le
+banc : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 pixels et aux combinaisons extrêmes des volets, passes du
+cabinet, du client et du client « Banque ». Il a trouvé deux défauts, corrigés : en fiche (téléphone), les enfants d'une
+cellule se rangent côte à côte de son libellé, et la description, posée à côté de la désignation, tombait dans une
+colonne de 40 pixels (« Séanc|e ») — les deux vivent dans UN seul enfant ; et « 20 / % » sur deux lignes à
+1 440 pixels — l'espace avant « % » est insécable.
+
+**RÉSULTATS NÉGATIFS, À NE PAS RÉENQUÊTER.** Un `return lireTout(…)` n'est pas une forme que `lecturesSignalees.test.ts`
+reconnaît : la lecture se lie à un `const`, dont le drapeau `complete` se lit. Le type de la saisie envoyée vit dans le
+module pur (`articlesVue.ts`), non dans celui qui écrit : `ecransAvantLecture.test.tsx` tient pour « lisant la base »
+tout fichier qui importe, même en type, un module qui importe `supabase`.
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu fichier par fichier contre la consigne : la lecture (tri TOTAL
+terminé par `id`, `count: 'exact'`), l'écriture (la ligne rendue est celle de l'article visé), le module pur (aucune
+règle de la base recopiée), le verrou, l'attente et le bandeau, les libellés, la phrase de l'onglet Accès et son test.
+Les captures relues aux deux largeurs ; à 390 pixels, dans l'espace du client, la fenêtre de saisie s'arrête au-dessus
+de la barre du bas et défile, comme toutes les fenêtres de l'application : rien à corriger.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif appliqué sur `b7265b0` tel que l'agent l'a rendu (22 fichiers) ; dans la
+même demande, la mise en ligne d'A1. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint
+63 avertissements, les mêmes ; quatre fuseaux, 10 695 tests chacun ; construction verte (`index-VpQl6TzJ.js`).
+
+**LES QUESTIONS AU CABINET (A2-Q1 À A2-Q5).** Cinq lectures de la conception, prises par l'écran et soumises au cabinet,
+chacune une ligne à changer : A2-Q1, « par le client » compte aussi le retrait (le dernier geste parmi la création, la
+modification et le retrait) ; A2-Q2, un article neuf ne propose ni taux ni nature, seulement l'unité générique ; A2-Q3,
+« Retirer » part sans confirmation, puisque « Reprendre » le défait ; A2-Q4, la recherche ne lit que la référence et la
+désignation, pas la description ; A2-Q5, un prix que l'écran ne lit pas fidèlement est refusé comme « illisible »,
+jamais arrondi. Recommandation : les cinq telles quelles.
+
+**RESTE.** A2b, le formulaire de facture : « Choisir un article », « Enregistrer comme article », « Mettre l'article à
+ce prix ». NON VÉRIFIÉ : le premier geste réel du cabinet sur la table, et une lecture par un accès client « Ventes »
+réel (aucun ne porte la case aujourd'hui).

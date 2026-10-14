@@ -619,6 +619,52 @@ const VISITES = [
       await page.getByRole('table', { name: 'Règlements' }).waitFor({ timeout: 10000 })
     },
   },
+  // « ARTICLES » (espace client, étape A2a) : le catalogue de l'atelier (d7) dans la vue « Articles » de l'onglet Factures — six
+  // articles fictifs dont un prix à six décimales, une désignation et une description longues, une référence absente —, avec
+  // « par le client » sur ceux que son titulaire a créés ou retirés en dernier ; puis le filtre « Retirés » ; puis la saisie
+  // d'un article neuf (une désignation longue, une référence refusée, le refus du module dit avant le clic) et celle d'un
+  // article lu à modifier. Chaque visite choisit sa vue : la page ne se recharge pas entre deux visites du même onglet.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/articles',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.getByRole('table', { name: 'Articles' }).waitFor({ timeout: 10000 })
+      // Les accès du dossier se lisent à part : « par le client » paraît quand ils sont revenus.
+      await page.getByText('par le client').first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/articles-retirés',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.getByRole('table', { name: 'Articles' }).waitFor({ timeout: 10000 })
+      await page.getByRole('checkbox', { name: 'Retirés', exact: true }).check()
+      await page.getByText(/^Retiré le /).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/articles-nouveau', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.getByRole('button', { name: '+ Nouvel article', exact: true }).click()
+      await page.locator('#article-designation').fill('Intervention de dépannage en urgence, déplacement, main-d’œuvre et fournitures courantes comprises, le soir et le week-end')
+      await page.locator('#article-reference').fill('CONS-H')
+      await page.locator('#article-prix').fill('douze')
+      await page.getByText(/^La référence « CONS-H » est déjà celle/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/articles-modifier', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.locator('tr', { hasText: 'AUDIT-FORFAIT' }).getByRole('button', { name: 'Modifier', exact: true }).click()
+      await page.getByRole('heading', { name: 'Modifier l’article' }).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -780,6 +826,29 @@ const VISITES_CLIENT = [
       await fermerLesFenetres(page)
       await page.getByRole('tab', { name: 'Règlements', exact: true }).click()
       await page.getByRole('table', { name: 'Règlements' }).waitFor({ timeout: 10000 })
+    },
+  },
+  // « Mes ventes › Articles » (étape A2a) : le même catalogue aux mots du client — sans « par le client », ton cabinet le lit
+  // aussi —, puis la saisie d'un article neuf, aux libellés du client.
+  {
+    chemin: '#/mes-ventes', nom: 'client/articles', nav: true,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.getByRole('table', { name: 'Articles' }).waitFor({ timeout: 10000 })
+      await page.getByRole('checkbox', { name: 'Retirés', exact: true }).check()
+      await page.getByText(/^Retiré le /).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/articles-nouveau', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+      await page.getByRole('button', { name: '+ Nouvel article', exact: true }).click()
+      await page.locator('#article-designation').fill('Intervention de dépannage en urgence, déplacement, main-d’œuvre et fournitures courantes comprises')
+      await page.locator('#article-reference').fill('CONS-H')
+      await page.getByText(/^La référence « CONS-H » est déjà celle/).waitFor({ timeout: 10000 })
     },
   },
 ]
