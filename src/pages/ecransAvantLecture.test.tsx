@@ -40,6 +40,7 @@ import DocumentsTab from './dossier/DocumentsTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
 import ReglementsSection from './dossier/ReglementsSection'
+import ArticlesVue from './dossier/ArticlesVue'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
@@ -362,6 +363,13 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'ReglementsSection (client)', fichier: 'pages/dossier/ReglementsSection.tsx', rendre: () => (
     <Dossier1><ReglementsSection espace="client" banque={false} dossierId="d1" statutTva="redevable" /></Dossier1>
+  ) },
+  // « Articles » (étape A2a) : la vue du catalogue, montée seule — au cabinet, et au client « Ventes ».
+  { nom: 'ArticlesVue', fichier: 'pages/dossier/ArticlesVue.tsx', rendre: () => (
+    <Dossier1><ArticlesVue espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" /></Dossier1>
+  ) },
+  { nom: 'ArticlesVue (client)', fichier: 'pages/dossier/ArticlesVue.tsx', rendre: () => (
+    <Dossier1><ArticlesVue espace="client" dossierId="d1" /></Dossier1>
   ) },
 ]
 

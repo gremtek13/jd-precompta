@@ -1675,7 +1675,7 @@ export interface PieceJointeEcarteeDuClient {
 }
 
 // LES ARTICLES D'UN DOSSIER (espace client, étape A1 ; migration `articles`, présentée au cabinet et appliquée sur son
-// accord : la sauvegarde lit cette table, aucun écran encore — étape A2). Un article PRÉ-REMPLIT une
+// accord : la sauvegarde lit cette table ; la vue « Articles » l'affiche depuis l'étape A2a). Un article PRÉ-REMPLIT une
 // ligne de facture, qui en garde sa copie ; il se modifie, se retire et se reprend, ne se supprime jamais. Le cabinet et le
 // client qui porte le droit « Ventes » le lisent, toutes colonnes ; seules `enregistrer_article`, `retirer_article` et
 // `reprendre_article` l'écrivent.

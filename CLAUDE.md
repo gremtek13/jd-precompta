@@ -371,7 +371,7 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   (10/10/2026), « Ventes » ouvre en base la lecture
   des neuf tables des ventes de son dossier et leurs gestes par les fonctions du cabinet (`gere_les_ventes`), sans écran
   encore — désigner le mouvement d'un encaissement demande aussi « Banque » ; depuis A1 (14/10/2026), le catalogue des
-  articles et ses trois fonctions, sans écran avant A2. L'onglet Accès dit ce que la
+  articles et ses trois fonctions, à l'écran depuis A2a (« Mes ventes › Articles »). L'onglet Accès dit ce que la
   base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
   drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -447,6 +447,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   et CSV sur les lignes FILTRÉES ; « par le client » au cabinet, sur des accès lus en entier ; chaque ligne ouvre
   « Encaissements » de SA facture, rien ne s'écrit d'ici ; revenir à « Factures » relit l'onglet → « « MES VENTES ›
   RÈGLEMENTS » ».
+- **« Articles » (A2a, 14/10/2026)** : la troisième vue de l'onglet Factures, sous `ARTICLES_EXPORTES`, au cabinet dans
+  l'onglet et au client « Ventes » dans « Mes ventes » (`ArticlesVue`, `ArticleSaisieModal` ; `lib/articlesVue.ts`,
+  pur) : la liste lue en entier, sa recherche (référence, désignation), le filtre « Retirés » ; créer et modifier un
+  article (tous ses champs par `enregistrer_article`), le retirer, le reprendre. Les refus sont ceux de
+  `lib/articles.ts`, sur la saisie TELLE QU'ELLE PART : un prix qui n'est pas un nombre fidèle est « illisible », jamais
+  arrondi, et ni taux ni nature ne sont choisis à la place de qui saisit ; un prix s'affiche avec deux à six décimales.
+  « Par le client » au cabinet seul, sur le DERNIER geste (créé, modifié ou retiré), d'après des accès lus en entier ;
+  la désignation et la description disent qui les lit (`LIBELLE_*_ARTICLE`) ; rien avant la lecture ; lue en partie,
+  aucun geste ; un verrou `useRef` pour les trois gestes, relâché après la relecture → « LA LISTE DES ARTICLES, À
+  L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -510,7 +520,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   par le client » (P9b, 11/10/2026), écarter la pièce proposée et supprimer un message du fil (P9b2, 11/10/2026) ;
   « Règlements » (A3, 13/10/2026) : la liste de tous les encaissements d'un dossier, ses filtres, ses totaux par moyen
   et par mois, son export CSV, au cabinet et au client « Ventes » ; le catalogue des articles en base, que le cabinet
-  et le client « Ventes » tiennent par trois fonctions (A1, 14/10/2026), sans écran avant A2 ;
+  et le client « Ventes » tiennent par trois fonctions (A1, 14/10/2026), et sa vue « Articles » dans l'onglet Factures
+  et « Mes ventes » : la liste, la recherche, le filtre « Retirés », créer, modifier, retirer et reprendre un article
+  (A2a, 14/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -734,8 +746,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   A3-Q4, tranchées « comme recommandé » le même jour : rien ne change) → « « MES VENTES › RÈGLEMENTS » ».
   A1, les articles en base, appliquée le 14/10/2026 sur l'accord du cabinet (A1-Q1 ; MEG1-Q1 et A1-Q2 à A1-Q4 tranchées
   « comme recommandé » le même jour), et la bascule (`ARTICLES_EXPORTES`) en ligne : la sauvegarde d'un dossier les
-  emporte, l'onglet Accès dit que « Ventes » ouvre le catalogue et ses quatre gestes ; l'écran viendra avec A2 → « LES
-  ARTICLES, EN BASE ».
+  emporte, l'onglet Accès dit que « Ventes » ouvre le catalogue et ses quatre gestes → « LES ARTICLES, EN BASE ». A2a,
+  la vue « Articles » de l'onglet Factures et de « Mes ventes », la liste et ses gestes, le 14/10/2026 (cinq lectures de
+  la conception soumises au cabinet, A2-Q1 à A2-Q5) ; reste A2b, le formulaire de facture : choisir un article,
+  l'enregistrer comme article, le mettre à ce prix → « LA LISTE DES ARTICLES, À L'ÉCRAN ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1545,12 +1559,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   cabinet et le client « Ventes », MEG1-Q1) ; aucune policy d'écriture hors de la restauration. `ligneDepuisArticle`
   applique le statut de TVA du jour (0 % hors redevable, « à préciser » compris, avec son avertissement, A1-Q3 ; la
   mention du module du statut) et met la description à la suite de la désignation (A1-Q4). `articles.test.ts` confronte
-  le module au texte exporté et rejoue l'essai ; à l'écran (A2), la désignation et la description que le cabinet saisit
-  diront que le client « Ventes » les lit → « LES ARTICLES, EN BASE ».
+  le module au texte exporté et rejoue l'essai ; à l'écran (A2a), la désignation et la description que le cabinet saisit
+  disent que le client « Ventes » les lit → « LES ARTICLES, EN BASE », « LA LISTE DES ARTICLES, À L'ÉCRAN ».
 
 ## Tests
 
-Vitest, 10 544 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 695 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

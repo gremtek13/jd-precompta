@@ -19,7 +19,8 @@ import type { Article, ArticleExoneration, NatureArticle, StatutTva, UniteArticl
 // La migration `articles` OUVRE une lecture au client qui porte la case « Ventes » : présentée au cabinet, elle a été
 // appliquée sur son accord, et l'export (supabase/schema) la porte. Le drapeau levé, le plan de sauvegarde compte leur
 // table (src/lib/sauvegarde.ts) et la phrase de l'onglet Accès dit ce que la case « Ventes » ouvre de plus
-// (src/lib/droitsAcces.ts) ; aucun écran ne les offre encore (étape A2). articles.test.ts confronte ce drapeau à l'export,
+// (src/lib/droitsAcces.ts) ; la vue « Articles » de l'onglet Factures les offre depuis l'étape A2a (c'est ce drapeau qui la
+// montre), le choix d'un article dans la facture viendra avec A2b. articles.test.ts confronte ce drapeau à l'export,
 // et les refus ci-dessous au texte même des fonctions. Un retour arrière de la migration ne vient qu'APRÈS le drapeau
 // rebaissé en ligne : sinon chaque sauvegarde lirait une table absente.
 export const ARTICLES_EXPORTES: boolean = true

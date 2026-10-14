@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
-  LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
+  LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
 import { ARTICLES_EXPORTES } from './articles'
@@ -352,10 +352,13 @@ describe('ce que disent les cases, les articles ouverts (étape A1)', () => {
     // (MEG1-Q1, la décision du cabinet).
     expect(phrase).toContain('il le lit en entier — référence, désignation, description, unité, prix, taux de TVA, nature, '
       + 'et qui a créé, changé ou retiré chaque article —')
-    expect(phrase).toContain('Il tient aussi avec toi, par les fonctions de la base,')
+    // Depuis l'étape A2a, l'écran des articles existe : « Mes ventes › Articles » est nommé, et la phrase ne le dit plus à
+    // venir — seuls la banque du client (P8) et l'écran « Banque » restent à venir, comme sans les articles.
+    expect(phrase).toContain('Il tient aussi avec toi, dans « Mes ventes › Articles » et par les fonctions de la base,')
+    expect(phrase).not.toMatch(/écran de ses articles|celui de ses articles/)
     expect(phrase.endsWith(banque
-      ? ' L’écran de ses articles et la connexion de sa banque depuis son espace viendront ensuite.'
-      : ' L’écran « Banque » de son espace et celui de ses articles viendront ensuite.')).toBe(true)
+      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+      : ' L’écran « Banque » de son espace viendra ensuite.')).toBe(true)
     // Les devis n'existent pas encore (étape P5) : seul le préfixe, qui dit ce que la case OUVRIRA, les nomme.
     expect(phrase).not.toMatch(/sans écran/)
     expect(phrase.slice(phrase.indexOf('une case cochée'))).not.toMatch(/devis/)
@@ -471,6 +474,10 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     [LIBELLE_MOTIF_AVOIR, 'il ne figure pas sur l’avoir', 'le lit'],
     [LIBELLE_MOTIF_CONTRE_PASSATION, 'que la plateforme portera', 'que lit le client'],
     [LIBELLE_NOTE_DECLARATION, 'qui l’a saisi, quand, sous quelle référence', 'la lit'],
+    // Les deux textes libres d'un article (étape A2a) : la table `articles` est ouverte à « Ventes » par sa migration (le test
+    // plus bas confronte sa policy à l'export).
+    [LIBELLE_DESIGNATION_ARTICLE, 'le nom de l’article', 'la lit'],
+    [LIBELLE_DESCRIPTION_ARTICLE, 'facultative', 'la lit'],
   ]
 
   it('aucun ne se dit interne ; chacun dit où le texte va, et que le client qui porte la case le lit', () => {
@@ -480,7 +487,7 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
       expect(libelle).toContain(ou)
       expect(libelle).toContain(lit)
     }
-    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(4)
+    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(6)
   })
 
   it('la phrase des cases dit lus les textes que les libellés disent lus', () => {
@@ -500,6 +507,14 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     for (const table of tables) {
       expect(fichiersDuSchema().some((f) => f.texte.includes(`create policy ${table}_lecture_ventes on public.${table}`)), table).toBe(true)
     }
+  })
+
+  // La désignation et la description d'un article (étape A2a) vivent dans `articles`, que le droit « Ventes » ouvre en lecture
+  // dès l'export de sa migration : sans cela, leurs libellés diraient lu ce que le client ne lit pas.
+  it('la désignation et la description d’un article vivent dans une table que l’export ouvre à « Ventes »', () => {
+    if (!ARTICLES_EXPORTES) return
+    expect(fichiersDuSchema().some((f) => f.texte.includes('create policy articles_lecture_ventes on public.articles'))).toBe(true)
+    expect(fichiersDuSchema().some((f) => /create table public\.articles \([^;]*\bdesignation text\b[^;]*\bdescription text\b/.test(f.texte))).toBe(true)
   })
 })
 
