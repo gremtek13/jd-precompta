@@ -24351,7 +24351,107 @@ copie de l'agent, qui n'en portait pas d'autre (l'arbre obtenu, `aa33ac82…`). 
 fichiers et 109 tests de plus) ; construction verte (`index-CjpFe_PJ.js`). Dans la même demande, la mise en ligne d'A6b1
 et les réponses du cabinet à A6B1-Q1 à Q6.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #169 (`1f0bdba`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-CjpFe_PJ.js`, le paquet de la barrière (déploiement 38628444174) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 51.5 reçoit les réponses du cabinet à A6B1-Q1 à Q6, le paragraphe d'A6b2 et un
+« RESTE » qui nomme A7 ; la propriété réécrite ENTIÈRE (28 289 caractères au format de la lecture) et vérifiée sans
+empreintes : le texte ENVOYÉ, relu dans le journal de la session, égal au fichier préparé, puis la page RELUE égale au
+fichier, caractère pour caractère — une comparaison exacte au format fidèle, quand la copie SQL perd les liens et les
+sauts de ligne. Les barres recomptées par requête, la limite des requêtes SQL de Notion levée : inchangées (139
+chantiers livrés sur 183, 76 % ; pour un dossier BNC, 139 sur 170, 82 %). Le worktree de l'agent retiré (ses 25 fichiers
+identiques à `main`), comme celui de l'intégration ; un `cd` de la session dans le worktree de l'agent, pour comparer
+ses fichiers, en avait fait le répertoire de travail principal de la session : revenue au dépôt AVANT de le retirer —
+comparer par `git -C`, jamais par `cd`.
+
+**LES RÉPONSES DU CABINET, LE 14/10/2026 (« comme recommandé »).** A6B2-Q1 à A6B2-Q5 : les cinq lectures telles
+quelles — les factures en attente de transmission ne se comptent pas ; « refusées » ne compte que les statuts lus sur la
+plateforme du client, une facture déjà annulée par un avoir interne comprise ; « pas encore relevés » plutôt que
+« aucune » ; l'encart paraît une fois les ventes lues ; sur téléphone, la tuile ne dit que l'état. Rien ne change dans
+le code. La ligne 51.5 le dit (« TRANCHÉES… »), réécrite et relue à l'identique (28 410 caractères).
+
 **RESTE.** A7 (l'unité, la référence et l'article sur la ligne enregistrée, une migration) et la suite du premier
-groupe ; la retouche de la barre du bas du téléphone (34.93) vient d'abord. Les cinq lectures A6B2-Q1 à Q5 attendent le
-cabinet. NON VÉRIFIÉ : l'encart sur de vraies données — l'état n'a été lu que sur le faux client du banc et sur l'essai
-de la base d'A6a ; aucun essai réel du client « Ventes ».
+groupe ; la retouche de la barre du bas du téléphone (34.93) vient d'abord. NON VÉRIFIÉ : l'encart sur de vraies
+données — l'état n'a été lu que sur le faux client du banc et sur l'essai de la base d'A6a ; aucun essai réel du client
+« Ventes ».
+
+### 14/10/2026 — LA BARRE DU BAS NE RECOUVRE PAS LES BOUTONS D'UNE FENÊTRE (LIGNE 34.93)
+
+(Préparée par l'agent S238 sur `1f0bdba`, relue et intégrée par la session le même jour. Aucune migration, aucune
+policy, aucune Edge Function, aucune règle de `index.css`, aucun écran : le seul fichier changé est
+`outils/captures/debordements.mjs`, par ajout. Titre : celui de la consigne disait « RECOUVRAIT » ; l'entrée consigne un
+résultat négatif, son titre le dit.)
+
+**CE QUI ÉTAIT LU.** Les captures d'A2a (« Nouvel article », client et cabinet, 390 px) et la remarque d'A6b1 (la
+fenêtre de l'adresse de réception, ramenée à 80 % de la hauteur) faisaient dire que la barre de navigation du bas
+(`.sidebar nav` chez le client, `.nav-groupes` au cabinet, `position: fixed; z-index: 40`) était peinte AU-DESSUS du
+voile des fenêtres (`position: fixed; z-index: 50`, carte à 90–92 % de la hauteur), et que la dernière rangée de boutons
+passait dessous. La cause nommée était un ancêtre du voile qui crée un contexte d'empilement (`container-type`,
+`transform`, `filter`…), NON VÉRIFIÉ.
+
+**CE QUE LA MESURE A MONTRÉ** (banc, Chromium 141, propriétés CALCULÉES, 390 px, « Nouvel article » chez le client puis
+au cabinet). Les ancêtres du voile (`div.main-contenu`, `main.main`, `div.app-shell`, `div#root`, `body`) ne créent
+AUCUN contexte d'empilement ni bloc conteneur des éléments fixes : le voile est un participant direct du contexte de la
+racine, à 50. `.sidebar` (`position: sticky; z-index: 10` : un contexte d'empilement) confine la barre du bas du client
+à 10 ; `.nav-groupes` du cabinet est à 40 dans la racine. Le voile est au-dessus des deux : `document.elementsFromPoint`
+rend, à (195, 824), le voile, puis la barre ; la carte est peinte par-dessus la barre du haut comme par-dessus celle du
+bas. Une enquête sur TOUTES les fenêtres que le banc ouvre (32 au cabinet, 18 chez le client) : aucun ancêtre d'un voile
+ne crée de contexte, sauf les fenêtres d'article posées dans le voile de la facture (50 : leurs z-index 55 et 60 y sont
+confinés, au-dessus des barres quand même). `container-type` éprouvé seul (page de rien, ce Chromium) : ni bloc
+conteneur des éléments fixes ni contexte d'empilement ; `transform`, `backdrop-filter` et `contain: layout` le font.
+
+**CE QUE MONTRENT LES CAPTURES.** La barre du bas y est ASSOMBRIE par le voile, et la carte (776 px sur 844) a ses coins
+arrondis peints à `y = 810`, sur l'emprise de la barre (777–844). La rangée « Annuler / Enregistrer » est coupée par le
+BORD DE LA CARTE : la carte défile en interne (44 px de défilement), au premier affichage la rangée est à `y = 800–837`,
+sous le bord bas (le centre du bouton rend le voile) ; défilée jusqu'en bas, elle est à `y = 756–793` et
+`elementFromPoint` rend les boutons. Au 390x844, 22 des 32 fenêtres du cabinet et 10 des 18 du client ont leur carte qui
+déborde l'emprise de la barre ; 25 et 12 défilent ; trois au cabinet (« Annuler / Enregistrer » d'un article neuf,
+« Enregistrer la contre-passation », « Déclarer une nouvelle adresse ») et quatre chez le client ont des boutons sous le
+pli au premier affichage. L'œil lit « la barre couvre », c'est la carte qui coupe.
+
+**LA MESURE QUI RESTE** (`outils/captures/debordements.mjs`, cinquième règle ; `mesurerLesBoutons`). Pour la fenêtre de
+la visite (`fenetre`, sinon `[aria-modal="true"]` ; celle du dessus s'il y en a plusieurs : le plus grand `z-index` de
+son voile), la carte est défilée de bout en bout (pas d'une carte moins 60 px, la dernière position étant le bas) ; à
+chaque position, chaque bouton et chaque lien dont le centre est visible (dans la boîte des ancêtres qui rognent, carte
+comprise) est sondé au CENTRE et au milieu de ses quatre bords, à 2 px (`elementFromPoint`) — le centre seul ne voit pas
+une barre qui mord sur le bas d'un bouton —, et doit rendre le bouton, un descendant ou un ancêtre ; un bouton qu'aucune
+position ne dégage est une faute (« recouvert par la barre du bas », ou par l'élément qui le recouvre), comptée avec les
+débordements — le banc échoue, code 1 ; une fenêtre sans bouton visible est une faute (mesure aveugle). Une ligne avant
+le total : « N bouton(s) de fenêtre superposée recouvert(s), sur M sondés dans K fenêtre(s) ». **0 sur 162 sondés dans
+32 fenêtres au cabinet, 0 sur 80 dans 18 chez le client, aux dix-huit passes du banc** (de 390 à 1 440 px, volets et
+passes du client avec et sans « Banque »). **Éprouvée par un défaut planté** qui reproduit la thèse — une feuille
+injectée (jamais un fichier du dépôt) qui rend `.sidebar` statique et sans `z-index` et pose `.sidebar nav` et
+`.nav-groupes` à 60 : **à 390 px, 20 boutons recouverts dans 18 fenêtres du cabinet et 10 dans 8 chez le client ; à
+720 px, 17 et 12** (code 1), tous « par la barre du bas ». Un premier plant, `.sidebar { z-index: 60 }` seul, fait aussi
+passer la barre du haut sur les fenêtres : le banc entier plante alors à une visite (« Fermer le panneau » intercepté).
+
+**À NE PAS RÉENQUÊTER.** La barre du bas n'est pas peinte au-dessus d'une fenêtre dans le banc, à aucune largeur, ni au
+cabinet ni chez le client ; aucune règle de `index.css` ne la « descend ». Ne pas ajouter de `role="dialog"` /
+`aria-modal` aux fenêtres pour une règle `:has(…)` qui effacerait les barres : elle ne change pas ce que montrent les
+captures (la carte coupée à son bord), touche seize composants (sur les vingt-deux qui posent un voile, six portent
+`aria-modal`), et le banc (`fermerLesFenetres`) comme des tests d'écran interrogent les `[role="dialog"]`. **Ce qui
+reste NON VÉRIFIÉ** : un rendu de WebKit (l'iPhone du cabinet) — le banc n'a que Chromium ; l'hypothèse la plus
+plausible d'un vrai défaut d'iPhone est `vh` (la hauteur de la grande fenêtre, barres d'outils repliées) contre le voile
+`inset: 0` (la fenêtre visible), la carte à 92 vh dépassant alors le bas visible — `index.css` connaît ce piège pour le
+volet de droite (« dvh plutôt que vh ») : à confirmer par une capture de l'iPhone avant toute règle.
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu en entier : un seul fichier, par ajout (la fonction, trois compteurs,
+une ligne avant le total, un paragraphe d'en-tête) ; deux mots corrigés à l'intégration (« la du dessus », devenu
+« celle du dessus »). Les captures relues par la session : l'original d'A2a, l'état réel de l'agent avant et après le
+défilement de la carte, et l'état planté. La lecture qui a ouvert la ligne 34.93 était celle de la session (l'entrée
+d'A6b1, « LA BARRE DU BAS DU TÉLÉPHONE »), et elle était fausse : sur la capture d'A2a, la barre est assombrie par le
+voile, et la rangée « Annuler / Enregistrer » est coupée par le bord de la carte, qui défile ; seul le défaut planté
+montre une barre nette par-dessus les boutons. Accepté.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif appliqué sur `1f0bdba` : le fichier identique à celui de la copie de
+l'agent, qui n'en portait pas d'autre, puis les deux mots. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs,
+les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 153 tests chacun (aucun de plus : le banc n'est pas
+sous Vitest) ; construction verte (`index-CjpFe_PJ.js`, le paquet déjà en ligne : rien dans `src/` n'a changé). Le banc
+rejoué par la session sur l'arbre intégré : 0 débordement et 0 bouton recouvert — 162 boutons sondés dans 32 fenêtres au
+cabinet, à 390 et à 720 px ; 80 dans 18 chez le client, à 390 px, avec et sans « Banque ». Dans la même demande, la mise
+en ligne d'A6b2 et les réponses du cabinet à A6B2-Q1 à Q5.
+
+**RESTE.** La ligne 34.93 se ferme sur la mesure : aucun correctif, la mesure reste au banc. NON VÉRIFIÉ : l'iPhone — le
+banc n'a que Chromium ; la question est posée au cabinet (dans Safari, et non dans l'application installée, les boutons
+du bas d'une longue fenêtre s'atteignent-ils ?). L'hypothèse la plus plausible d'un défaut de WebKit est la hauteur `vh`
+des cartes contre le voile, et son remède une classe commune de voile et de carte (`dvh`), une étape de `dev`, seulement
+si l'iPhone la confirme. Les fenêtres que le banc n'ouvre pas (une dizaine) ne sont pas sondées.

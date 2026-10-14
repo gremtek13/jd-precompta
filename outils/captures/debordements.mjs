@@ -44,6 +44,20 @@
 // verticale à l'endroit de la coupure. Les espaces insécables restent DANS le morceau : un montant en est un seul. Au-delà de 24
 // caractères (adresse électronique, IBAN, référence longue), couper est admis. Elle ne s'arrête pas aux conteneurs qui défilent :
 // c'est dans un `.table-scroll` que les mots se coupaient.
+//
+// LES BOUTONS D'UNE FENÊTRE SUPERPOSÉE (14/10/2026, ligne 34.93). Cinquième règle. Sur téléphone, la barre du bas (`.sidebar nav` chez
+// le client, `.nav-groupes` au cabinet : `position: fixed; z-index: 40`) passait pour recouvrir la dernière rangée de boutons des
+// fenêtres (voile `position: fixed; z-index: 50`, carte à 90–92 % de la hauteur) : sur les captures d'A2a et d'A6b1, cette rangée est
+// coupée au bord de la carte, juste au-dessus de la barre. Mesuré, la carte la coupe (elle défile en interne), la barre ne la
+// recouvre pas : aucun ancêtre d'un voile ne crée de contexte d'empilement (la barre du client est confinée dans `.sidebar`, `sticky;
+// z-index: 10` ; celle du cabinet est à 40 dans la racine), et le voile est au-dessus des deux — 0 bouton recouvert sur 162 sondés au
+// cabinet et sur 80 chez le client, à toutes les passes du banc (de 390 à 1 440 px, volets et passe du client comprise). La mesure
+// reste : la carte de la fenêtre ouverte (celle de la visite, `fenetre`, sinon `[aria-modal="true"]` ; celle du dessus s'il y en a
+// plusieurs) est défilée de bout en bout, chaque bouton et chaque lien visible est sondé au centre et au milieu de ses quatre bords
+// (`elementFromPoint`), et un bouton qu'aucune position ne dégage — par la barre du bas, ou par tout élément qui n'est ni lui, ni son
+// descendant, ni son ancêtre — est une faute, comptée avec les débordements (le banc échoue). Éprouvée par un défaut planté, les
+// barres du bas posées AU-DESSUS des fenêtres : à 390 px, 20 boutons recouverts au cabinet et 10 chez le client ; à 720 px, 17 et 12.
+// Une ligne de plus dit le compte avant le total.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
@@ -1113,6 +1127,84 @@ function exercice(annee) {
     await page.waitForTimeout(400)
   }
 }
+
+// LES BOUTONS D'UNE FENÊTRE SUPERPOSÉE NE SONT RECOUVERTS PAR RIEN (14/10/2026, ligne 34.93 ; voir l'en-tête). La fenêtre est celle de
+// la visite (`fenetre`), sinon toute fenêtre `[aria-modal="true"]` ; s'il y en a plusieurs, celle DU DESSUS — le plus grand `z-index` de
+// son voile, à égalité la dernière du document : les boutons de celle qu'une autre recouvre le sont à bon droit. La carte est défilée
+// de bout en bout, par pas d'une carte moins 60 px (une rangée de boutons tient toujours en entier dans une des positions), la
+// dernière étant le bas — là où est la dernière rangée. À chaque position, chaque bouton et chaque lien dont le centre est VISIBLE
+// (dans la boîte de tous les ancêtres qui rognent, `overflow`, carte comprise) est sondé au centre et au milieu de ses quatre
+// bords, à 2 px du bord : `elementFromPoint` doit rendre le bouton lui-même, l'un de ses descendants ou l'un de ses ancêtres (la
+// carte, le voile : ce que le bouton traverse est son propre défilement, pas un recouvrement). Un bouton est ATTEIGNABLE s'il est
+// dégagé à une position au moins ; sinon c'est UN RECOUVREMENT, cité avec ce qui recouvre (un point hors de l'écran, `null`, aussi).
+// Un seul point ne verrait pas la barre du bas qui mord sur le bas d'un bouton : son centre reste dégagé. Une fenêtre où aucun bouton
+// n'est visible est une faute : ce serait une mesure aveugle.
+async function mesurerLesBoutons(page, fenetre) {
+  return page.evaluate((fenetre) => {
+    const cartes = [...document.querySelectorAll(fenetre ?? '[aria-modal="true"]')]
+    if (cartes.length === 0) return { fautes: [], fenetres: 0, boutons: 0, recouverts: 0 }
+    const zDe = (c) => Number.parseInt(getComputedStyle(c.parentElement).zIndex, 10) || 0
+    const carte = cartes.reduce((haut, c) => {
+      if (zDe(c) !== zDe(haut)) return zDe(c) > zDe(haut) ? c : haut
+      return haut.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING ? c : haut
+    })
+    const libelle = (b) => (b.getAttribute('aria-label') || b.innerText || b.title || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+    const etiquette = (e) => `<${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ''}${[...e.classList].slice(0, 2).map((c) => `.${c}`).join('')}>`
+    // Ce qui rogne un bouton avant qu'il atteigne l'écran : un ancêtre dont `overflow` n'est pas `visible`, jusqu'à la carte.
+    const rogne = (b, x, y) => {
+      for (let p = b.parentElement; p; p = p.parentElement) {
+        const st = getComputedStyle(p)
+        if (st.overflowX !== 'visible' || st.overflowY !== 'visible') {
+          const r = p.getBoundingClientRect()
+          if (x < r.left || x > r.right || y < r.top || y > r.bottom) return true
+        }
+        if (p === carte) break
+      }
+      return false
+    }
+    const defilementInitial = carte.scrollTop
+    const bas = Math.max(carte.scrollHeight - carte.clientHeight, 0)
+    const pas = Math.max(carte.clientHeight - 60, 40)
+    const positions = []
+    for (let p = 0; p < bas; p += pas) positions.push(p)
+    positions.push(bas)
+    // Pour chaque bouton : vu (visible à une position au moins), degage (dégagé à une position au moins), cause (le dernier recouvrement).
+    const etat = new Map()
+    for (const position of positions) {
+      carte.scrollTop = position
+      for (const b of carte.querySelectorAll('button, a[href]')) {
+        const r = b.getBoundingClientRect()
+        if (r.width === 0 || r.height === 0 || getComputedStyle(b).visibility === 'hidden') continue
+        const cx = r.left + r.width / 2
+        const cy = r.top + r.height / 2
+        if (rogne(b, cx, cy)) continue
+        const e = etat.get(b) ?? { degage: false, cause: null }
+        etat.set(b, e)
+        let cause = null
+        for (const [x, y] of [[cx, cy], [cx, r.top + 2], [cx, r.bottom - 2], [r.left + 2, cy], [r.right - 2, cy]]) {
+          const dessus = document.elementFromPoint(x, y)
+          if (dessus === b || (dessus && (b.contains(dessus) || dessus.contains(b)))) continue
+          const barre = dessus?.closest('.sidebar nav, .nav-groupes')
+          const par = dessus === null ? 'le bord de l’écran' : barre ? `la barre du bas (${etiquette(barre)})` : etiquette(dessus)
+          cause = `${par} à ${Math.round(x)}, ${Math.round(y)}`
+          break
+        }
+        if (cause === null) e.degage = true
+        else e.cause = cause
+      }
+    }
+    carte.scrollTop = defilementInitial
+    const fautes = []
+    let recouverts = 0
+    for (const [b, e] of etat) {
+      if (e.degage) continue
+      fautes.push(`bouton « ${libelle(b)} » recouvert par ${e.cause} — à aucune position de la fenêtre défilée de bout en bout`)
+      recouverts++
+    }
+    if (etat.size === 0) fautes.push('aucun bouton visible dans la fenêtre : la mesure ne voit rien')
+    return { fautes, fenetres: 1, boutons: etat.size, recouverts }
+  }, fenetre)
+}
 const largeur = Number(process.argv[2] ?? 1440)
 // La passe du client : `client` (la case « Ventes » seule) ou `client-banque` (et « Banque »).
 const passeClient = process.argv.slice(3).find((a) => a === 'client' || a === 'client-banque') ?? null
@@ -1150,6 +1242,9 @@ await contexte.addInitScript(({ barre, panneau, client }) => {
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
+let fenetresSondees = 0
+let boutonsSondes = 0
+let boutonsRecouverts = 0
 const visitesDuClient = passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
 for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient ? visitesDuClient : VISITES) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
@@ -1290,6 +1385,13 @@ for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient 
     }
     return [...trouvees.map((t) => t.texte), ...textes, ...coupes, ...entrees]
   }, { fenetre: fenetre ?? null, nav: nav ?? false })
+  // Les boutons de la fenêtre ouverte, APRÈS le reste : la carte y est défilée jusqu'en bas, ce qui déplace ce que les règles
+  // ci-dessus mesurent.
+  const sondage = await mesurerLesBoutons(page, fenetre ?? null)
+  fautes.push(...sondage.fautes)
+  fenetresSondees += sondage.fenetres
+  boutonsSondes += sondage.boutons
+  boutonsRecouverts += sondage.recouverts
   total += fautes.length
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
 }
@@ -1298,5 +1400,6 @@ const volets = Object.entries(choisies).map(([k, v]) => `${k} ${v}`).join(', ')
 const etatDuPanneau = panneauOuvert ? 'ouvert'
   : avecPanneau ? `fermé (sous ${LARGEUR_DU_PANNEAU_A_COTE} px il se superpose au lieu de rétrécir le panneau central : l’ouvrir ne mesurerait rien de plus)`
   : 'fermé'
+console.log(`\n${boutonsRecouverts} bouton(s) de fenêtre superposée recouvert(s), sur ${boutonsSondes} sondés dans ${fenetresSondees} fenêtre(s).`)
 console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}${passeClient ? `, passe du client (${passeClient})` : ''}.`)
 process.exitCode = total > 0 ? 1 : 0
