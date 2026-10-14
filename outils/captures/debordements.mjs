@@ -711,6 +711,13 @@ const VISITES = [
       await page.getByText(/^Le dossier n'a pas de SIREN/).waitFor({ timeout: 10000 })
     },
   },
+  // LA CARTE « FACTURE ÉLECTRONIQUE » de la Vue d'ensemble (espace client, étape A6b2), aux mots du cabinet : le cabinet infirmier
+  // (d1) a sa plateforme et une adresse non vérifiée, « Active » ; l'atelier (d7) une adresse à venir, « À compléter » ; un dossier
+  // sans rien relié ni déclaré (d2) dit ce qui manque. Chaque visite attend l'état : la carte lit en base, après la Vue d'ensemble.
+  ...[['d1', 'Active'], ['d7', 'À compléter : 1 point'], ['d2', 'À compléter : 2 points']].map(([dossier, etat]) => ({
+    dossier, onglet: 'checklist', nom: `checklist/facture-électronique-${dossier}`,
+    apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasText: etat }).waitFor({ timeout: 10000 }),
+  })),
   // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
   // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
   // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six
@@ -834,7 +841,12 @@ const VISITES_CLIENT = [
   // ouvre en mode client — la plateforme agréée de l'atelier (reliée), sa modification, et Super PDP (configuré).
   // L'accueil sans `nav` : sur téléphone, il cache la barre du bas (ses tuiles en tiennent lieu, `app-nav-accueil-client`
   // dans index.css), et la barre se mesure sur les autres écrans du client.
-  { chemin: '#/accueil', nom: 'client/accueil' },
+  // L'encart « Facture électronique » (étape A6b2) s'y ajoute : il ne lit son état qu'une fois les ventes lues, donc la visite
+  // l'attend — sur téléphone, sa tuile (le titre et l'état en une ligne), sur ordinateur sa carte entière.
+  {
+    chemin: '#/accueil', nom: 'client/accueil',
+    apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasText: /^(Active|À compléter)/ }).waitFor({ timeout: 10000 }),
+  },
   {
     chemin: '#/mes-ventes', nom: 'client/plateforme', fenetre: '.plateforme-client',
     apres: async (page) => {

@@ -3,6 +3,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TuilesVentesClient from './TuilesVentesClient'
 import ClientHome from './ClientHome'
+import AccueilVentesClient from './AccueilVentesClient'
+import { motsDuCabinet } from '../lib/espaceVentes'
+import { useVentesDuClient } from '../lib/ventesDuClientLecture'
+import { ETAT_FICTIF, ETAT_NEUF, statutLuFictif } from '../test/etatFactureElectronique'
 import FacturesTab from './dossier/FacturesTab'
 import { facture as factureCii, SIRET_VENDEUR } from '../test/facturesCii'
 import type {
@@ -15,7 +19,9 @@ import type {
 //     une phrase qui le dit ;
 //  3. lue en entier : les NOMBRES des pastilles de l'onglet Factures, montées sur le MÊME jeu d'essai — un compte qui
 //     divergerait de l'onglet enverrait le client chercher ce qu'il n'y trouve pas ; chaque tuile mène à « Mes ventes » ;
-//  4. l'accueil ne monte les tuiles qu'avec « Mes ventes » ouvert sur la société affichée.
+//  4. l'accueil ne monte les tuiles qu'avec « Mes ventes » ouvert sur la société affichée ;
+//  5. depuis l'étape A6b2, l'accueil les monte AVEC l'encart « Facture électronique », d'après UNE SEULE lecture des ventes : le
+//     faux client compte les requêtes, et l'encart dit les mêmes nombres que les tuiles et l'onglet.
 // Le faux client APPLIQUE les filtres (src/test/filtresPostgrest.ts). Données FICTIVES.
 
 const faux = vi.hoisted(() => ({
@@ -25,6 +31,11 @@ const faux = vi.hoisted(() => ({
   droits: { cabinet: false, membre: true, ventes: true, banque: false } as unknown,
   refusDroits: null as string | null,
   rpcs: [] as string[],
+  // Les tables lues, une entrée par requête partie : l'accueil lit les ventes UNE fois pour les tuiles et pour l'encart.
+  tablesLues: [] as string[],
+  // L'état de la facture électronique que rend la base (étape A6b2), ou son refus.
+  etat: null as unknown,
+  refusEtat: null as string | null,
   // Toutes les réponses restent EN ATTENTE tant que le cas ne les libère pas.
   retenir: false,
   enAttente: [] as (() => void)[],
@@ -44,6 +55,9 @@ vi.mock('../lib/supabase', async () => {
           return faux.refusDroits ? { data: null, error: { message: faux.refusDroits } } : { data: faux.droits, error: null }
         }
         if (nom === 'couverture_du_releve') return { data: [], error: null }
+        if (nom === 'etat_facture_electronique') {
+          return faux.refusEtat ? { data: null, error: { message: faux.refusEtat } } : { data: faux.etat, error: null }
+        }
         return { data: null, error: { message: `fonction inattendue : ${nom}` } }
       },
       functions: {
@@ -55,6 +69,7 @@ vi.mock('../lib/supabase', async () => {
       },
       from: (table: string) => {
         if (!(table in faux.tables)) throw new Error(`Table non attendue dans ce test : ${table}`)
+        faux.tablesLues.push(table)
         const predicats: Predicat[] = []
         let debut = 0
         let fin = Number.MAX_SAFE_INTEGER
@@ -165,6 +180,9 @@ beforeEach(() => {
   faux.droits = { cabinet: false, membre: true, ventes: true, banque: false }
   faux.refusDroits = null
   faux.rpcs = []
+  faux.tablesLues = []
+  faux.etat = ETAT_FICTIF
+  faux.refusEtat = null
   faux.retenir = false
   faux.enAttente = []
   faux.droitsParDossier = { d1: { ventes: true, banque: false } }
@@ -173,11 +191,16 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// Les tuiles ne lisent plus : l'accueil lit les ventes une fois (`useVentesDuClient`) et les leur passe, comme à l'encart.
+function TuilesLues() {
+  return <TuilesVentesClient dossierId="d1" ventes={useVentesDuClient('d1')} />
+}
+
 function monterTuiles() {
   return render(
     <MemoryRouter initialEntries={['/accueil']}>
       <Routes>
-        <Route path="/accueil" element={<div className="bento"><TuilesVentesClient dossierId="d1" /></div>} />
+        <Route path="/accueil" element={<div className="bento"><TuilesLues /></div>} />
         <Route path="/mes-ventes" element={<p>Écran des ventes</p>} />
       </Routes>
     </MemoryRouter>,
@@ -317,5 +340,134 @@ describe('l’accueil ne monte les tuiles qu’avec « Mes ventes » ouvert', ()
     await act(async () => {})
     expect(screen.queryByText('À encaisser')).toBeNull()
     expect(faux.rpcs).not.toContain('droits_sur_le_dossier')
+  })
+})
+
+// ── 5. L'encart « Facture électronique » de l'accueil (étape A6b2) ───────────────────────────────────────────────────────
+// Les tuiles et l'encart disent des nombres des MÊMES listes : une seule lecture des ventes, que le faux client COMPTE.
+describe('l’accueil monte l’encart « Facture électronique » avec les tuiles, d’après une seule lecture des ventes', () => {
+  const monterAccueil = () => render(<MemoryRouter><ClientHome /></MemoryRouter>)
+  const encart = () => document.querySelector('section.encart-fe') as HTMLElement | null
+  const attendre = async () => { await screen.findByText('À encaisser'); await screen.findByText('Active') }
+  const refus = (id: string, factureId: string, code: string) => ({
+    ...statutLuFictif({ id, facture_id: factureId, code: code as '210' }), dossier_id: 'd1', lu_par: null,
+  })
+
+  it('UNE lecture : chaque table des ventes est demandée une fois, les cases une fois, l’état une fois', async () => {
+    monterAccueil()
+    await attendre()
+    for (const table of ['factures_emises', 'transmissions_factures', 'facture_lignes', 'encaissements_factures',
+      'encaissements_factures_taux', 'transmissions_encaissements', 'facture_superpdp_events', 'statuts_factures_recus']) {
+      expect(faux.tablesLues.filter((t) => t === table), table).toHaveLength(1)
+    }
+    expect(faux.rpcs.filter((r) => r === 'droits_sur_le_dossier')).toHaveLength(1)
+    expect(faux.rpcs.filter((r) => r === 'etat_facture_electronique')).toHaveLength(1)
+  })
+
+  it('l’encart dit les mêmes nombres que les tuiles : les encaissements à déclarer, dont ceux en retard', async () => {
+    monterAccueil()
+    await attendre()
+    const declarer = valeurDe('À déclarer')
+    expect(declarer.valeur).toBe(2)
+    expect(encart()?.textContent).toContain(`${declarer.valeur} factures dont l’encaissement est à déclarer, dont 1 en retard.`)
+    expect(encart()?.textContent).toContain('Aucune facture refusée ou rejetée parmi les statuts relevés sur ta plateforme.')
+  })
+
+  it('une facture refusée sur sa plateforme se compte, d’après les statuts lus', async () => {
+    faux.tables.statuts_factures_recus = [refus('s1', 'f1', '210'), refus('s2', 'f1', '213')]
+    monterAccueil()
+    await attendre()
+    expect(encart()?.textContent).toContain('1 facture refusée ou rejetée sur ta plateforme.')
+  })
+
+  it.each([
+    ['les encaissements', 'encaissements_factures'],
+    ['les statuts lus', 'statuts_factures_recus'],
+    ['les factures', 'factures_emises'],
+  ])('%s lus en partie : l’encart ne compte rien et le dit ; son état, lui, se dit', async (_nom, table) => {
+    faux.tables[table] = [...faux.tables[table], ...faux.tables[table].map((l) => ({ ...l, id: `${String(l.id)}-bis` }))]
+    if (table === 'statuts_factures_recus') faux.tables[table] = [refus('s1', 'f1', '210'), refus('s2', 'f2', '210')]
+    faux.muetApres = { [table]: 1 }
+    monterAccueil()
+    await screen.findByText('Active')
+    await screen.findByText('Ce qui t’attend ne se compte pas ici : tes ventes n’ont pas pu être toutes lues.')
+    expect(encart()?.textContent).not.toMatch(/à déclarer, dont|refusée ou rejetée sur ta plateforme|Aucun encaissement/)
+  })
+
+  it('les cases illisibles : l’encart lit son état, et dit que ce qui attend ne se compte pas', async () => {
+    faux.refusDroits = 'panne fictive'
+    monterAccueil()
+    await screen.findByText('Active')
+    await screen.findByText('Ce qui t’attend ne se compte pas ici : tes ventes n’ont pas pu être toutes lues.')
+  })
+
+  it('pas encore revenues : un squelette pour l’encart, aucun état, et l’état n’est pas encore demandé', async () => {
+    faux.retenir = true
+    // L'accueil entier attend ses propres lectures avant de monter la grille : ce que l'encart montre se joue sur son composant.
+    render(<MemoryRouter><div className="bento"><AccueilVentesClient dossierId="d1" /></div></MemoryRouter>)
+    await act(async () => {})
+    expect(document.querySelector('[aria-label="Chargement de ta facture électronique"]')?.getAttribute('aria-busy')).toBe('true')
+    expect(encart()).toBeNull()
+    expect(screen.queryByText('Active')).toBeNull()
+    expect(faux.rpcs).not.toContain('etat_facture_electronique')
+  })
+
+  it('sans la case « Ventes » relue à la base : ni encart ni squelette, et l’état n’est jamais demandé', async () => {
+    faux.droits = { cabinet: false, membre: true, ventes: false, banque: true }
+    monterAccueil()
+    await screen.findByText(/^Cotisations /)
+    await act(async () => {})
+    await act(async () => {})
+    expect(faux.rpcs).toContain('droits_sur_le_dossier')
+    expect(encart()).toBeNull()
+    expect(document.querySelector('[aria-label="Chargement de ta facture électronique"]')).toBeNull()
+    expect(faux.rpcs).not.toContain('etat_facture_electronique')
+  })
+
+  it('sans la case sur la société affichée : ni encart, ni lecture des droits, des ventes ou de l’état', async () => {
+    faux.droitsParDossier = { d1: { ventes: false, banque: true } }
+    monterAccueil()
+    await screen.findByText(/^Cotisations /)
+    await act(async () => {})
+    expect(encart()).toBeNull()
+    expect(faux.rpcs).not.toContain('etat_facture_electronique')
+    expect(faux.tablesLues).not.toContain('factures_emises')
+  })
+
+  it('un état illisible : l’encart le dit, sans « active » ni « à compléter » ; les tuiles, elles, se comptent', async () => {
+    faux.etat = { ...ETAT_FICTIF, portee: 'x' }
+    monterAccueil()
+    await screen.findByText('Lecture impossible')
+    expect(encart()?.textContent).not.toMatch(/Active|À compléter/)
+    expect(valeurDe('À déclarer').valeur).toBe(2)
+  })
+
+  it('un état refusé : son motif, et les tuiles se comptent', async () => {
+    faux.refusEtat = 'permission denied'
+    monterAccueil()
+    await screen.findByText('Lecture impossible')
+    expect(encart()?.textContent).toContain('L’état de ta facture électronique n’a pas pu être lu (permission denied).')
+    expect(valeurDe('À encaisser').valeur).toBe(2)
+  })
+
+  it('un dossier neuf : « À compléter », ce qui manque, aux mots du client', async () => {
+    faux.etat = ETAT_NEUF
+    monterAccueil()
+    await screen.findByText('À compléter : 2 points')
+    expect(motsDuCabinet(encart()?.textContent ?? '')).toEqual([])
+    expect(encart()?.textContent).toContain('Tu n’as pas encore déclaré d’adresse de réception.')
+  })
+
+  it('une autre société repart du squelette : jamais les comptes ni l’état de la précédente', async () => {
+    const vue = (id: string) => <MemoryRouter><div className="bento"><AccueilVentesClient key={id} dossierId={id} /></div></MemoryRouter>
+    const { rerender } = render(vue('d1'))
+    await attendre()
+    faux.retenir = true
+    rerender(vue('d2'))
+    await act(async () => {})
+    expect(encart()).toBeNull()
+    expect(screen.queryByText('Active')).toBeNull()
+    expect(screen.queryByText('À encaisser')).toBeNull()
+    expect(document.querySelector('[aria-label="Chargement de ta facture électronique"]')).not.toBeNull()
   })
 })

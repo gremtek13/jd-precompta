@@ -16,6 +16,7 @@ import { reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
 import { lireLaChecklist, type LectureDeLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import EncartFactureElectronique from './EncartFactureElectronique'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -279,6 +280,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
         <Widget className="span-5" titre="Paramétrage à compléter" sousTitre="Configuration à finir une fois, indépendante du client">
           {listePoints(pointsParametrage, 'Rien à compléter — statut de TVA, comptes et postes 2035 sont renseignés.')}
         </Widget>
+
+        {/* La facture électronique du client (étape A6b2) : l'état lu en base, ses connexions et son adresse de réception. Sa
+            lecture est la sienne : une lecture ratée ne tait que cette carte, jamais la Vue d'ensemble. Ses liens mènent à
+            Justificatifs, où les connexions et l'adresse se règlent. */}
+        <EncartFactureElectronique espace="cabinet" dossierId={dossierId} onNavigate={onNavigate} />
 
         {/* Des dates, pas des anomalies : aucun bouton, et la pastille ne dit que l'imminence — trente jours ou moins. */}
         <Widget

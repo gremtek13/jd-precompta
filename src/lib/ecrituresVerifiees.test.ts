@@ -108,6 +108,15 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'crochet (`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94). `lib/piecesJointesEcarteesClient.ts` attend la ' +
       'requête et lit son erreur : un refus, ou une réponse illisible, rendent une lecture INCOMPLÈTE, que l’écran dit, jamais une liste vide',
   },
+  lireLEtatDeLaFactureElectronique: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `etat_facture_electronique` LIT l’état de la facture électronique d’un dossier — ' +
+      'connexions reliées ou non, nom et dates, adresse de réception courante, jamais un secret — pour l’encart de ' +
+      'l’accueil du client et la carte de la Vue d’ensemble du cabinet (étape A6b2), par UN crochet ' +
+      '(`lib/etatFactureElectroniqueLecture.ts`). Il attend la requête et lit son erreur : un refus, une valeur ' +
+      'illisible ou une requête qui lève rendent une lecture ratée que la carte DIT, jamais un état',
+  },
   lireLePlanDuDossier: {
     nombre: 1,
     raison:

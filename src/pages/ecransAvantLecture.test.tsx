@@ -20,7 +20,7 @@ import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
 import ClientBanque from './ClientBanque'
-import TuilesVentesClient from './TuilesVentesClient'
+import AccueilVentesClient from './AccueilVentesClient'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
 import EquipePage from './EquipePage'
@@ -42,6 +42,7 @@ import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
 import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
+import EncartFactureElectronique from './dossier/EncartFactureElectronique'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
@@ -214,10 +215,18 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientVentes', fichier: 'pages/ClientVentes.tsx', rendre: () => <MemoryRouter><ClientVentes /></MemoryRouter> },
   // « Ma banque » (espace client, étape P9) : la case « Banque » relue à la base, le relevé, ses envois, son fil, les pièces.
   { nom: 'ClientBanque', fichier: 'pages/ClientBanque.tsx', rendre: () => <MemoryRouter><ClientBanque /></MemoryRouter> },
-  // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) : montées seules, l'accueil ne les monte qu'une
-  // fois ses propres lectures revenues.
-  { nom: 'TuilesVentesClient', fichier: 'pages/TuilesVentesClient.tsx', rendre: () => (
-    <MemoryRouter><div className="bento"><TuilesVentesClient dossierId="d1" /></div></MemoryRouter>
+  // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après
+  // UNE lecture des ventes : montés seuls, l'accueil ne les monte qu'une fois ses propres lectures revenues.
+  { nom: 'AccueilVentesClient', fichier: 'pages/AccueilVentesClient.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><AccueilVentesClient dossierId="d1" /></div></MemoryRouter>
+  ) },
+  // L'encart seul, aux deux espaces (étape A6b2) : l'état de la facture électronique, lu en base. Retenu, ni état ni ligne ;
+  // revenu vide ou refusé, il dit sa lecture ratée au lieu de rester en « Chargement… ».
+  { nom: 'EncartFactureElectronique (client)', fichier: 'pages/dossier/EncartFactureElectronique.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><EncartFactureElectronique espace="client" dossierId="d1" attente={{ etat: 'en_cours' }} /></div></MemoryRouter>
+  ) },
+  { nom: 'EncartFactureElectronique (cabinet)', fichier: 'pages/dossier/EncartFactureElectronique.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><EncartFactureElectronique espace="cabinet" dossierId="d1" onNavigate={rien} /></div></MemoryRouter>
   ) },
   { nom: 'DossiersList', fichier: 'pages/DossiersList.tsx', rendre: () => <Dossier1><DossiersList /></Dossier1> },
   { nom: 'DossierDetail', fichier: 'pages/DossierDetail.tsx', rendre: () => (
@@ -410,6 +419,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'components/FilCommentaires.tsx': 'reçoit le fil de l’écran qui l’ouvre ; n’écrit qu’à l’envoi',
   'pages/dossier/BilanReleveStatuts.tsx': 'reçoit le relevé des statuts que l’écran qui l’offre a lancé sur un clic (FacturesTab, EncaissementsFactureModal, PlateformeClientModal, montés ici)',
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
+  'pages/TuilesVentesClient.tsx': 'ne lit plus (étape A6b2) : reçoit la lecture des ventes de l’accueil (AccueilVentesClient, montée ici) et ne fait que compter ses pastilles ; n’écrit rien',
   'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif, n’écarte une proposition et ne supprime un message que sur un clic confirmé, et seulement sur des envois lus en entier',
 }
 
@@ -706,8 +716,11 @@ const LECTURES_PAR_FONCTION = new Set([
 // Et le plan comptable d'un dossier (`plan_du_dossier`, ligne 43, étape PC3), que la page du dossier lit avec lui ; et les
 // pièces jointes écartées que « Mes pièces » du client lit (`pieces_jointes_ecartees_du_client`, ligne 22.9), dès que la
 // fonction est en base (`ECARTEES_DU_CLIENT_EXPORTEES`).
+// Et l'état de la facture électronique (`etat_facture_electronique`, étape A6b2), lu par l'encart de l'accueil du client et la carte
+// de la Vue d'ensemble du cabinet.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
+  'rpc:etat_facture_electronique',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

@@ -13,6 +13,7 @@ import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
 import type { FacturePourJumelle } from '../../lib/ventesJumelles'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { ETAT_FICTIF, ETAT_NEUF, adresseFictive, etatFictif } from '../../test/etatFactureElectronique'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -37,6 +38,13 @@ const faux = vi.hoisted(() => ({
   refusMajInfos: null as string | null,
   // La lecture des relevés qui ne bouclent pas échoue : la Vue d'ensemble la lit vide, best-effort, et le journalise.
   relevesIllisibles: false,
+  // L'état de la facture électronique que rend la base à la carte du cabinet (étape A6b2), ou son refus ; les fonctions appelées.
+  etatFE: null as unknown,
+  refusEtatFE: null as string | null,
+  rpcs: [] as { nom: string; args: unknown }[],
+  // La réponse de l'état retenue tant que le cas ne la libère pas (la Vue d'ensemble, elle, se lit sans l'attendre).
+  retenirEtatFE: false,
+  libererEtatFE: [] as (() => void)[],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -49,6 +57,12 @@ vi.mock('../../lib/supabase', async () => {
   const filtrees = new Set(['natures_immobilisation', 'factures_emises', 'transmissions_factures'])
   return {
     supabase: {
+      rpc: async (nom: string, args: unknown) => {
+        faux.rpcs.push({ nom, args })
+        if (nom !== 'etat_facture_electronique') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
+        if (faux.retenirEtatFE) await new Promise<void>((r) => { faux.libererEtatFE.push(r) })
+        return faux.refusEtatFE ? { data: null, error: { message: faux.refusEtatFE } } : { data: faux.etatFE, error: null }
+      },
       from: (table: string) => {
         const chaine: Record<string, unknown> = {}
         let debut = 0
@@ -192,6 +206,11 @@ function poser(pieces: {
   faux.tronquees = new Set(pieces.tronquees ?? [])
   faux.refusMajInfos = null
   faux.relevesIllisibles = false
+  faux.etatFE = ETAT_FICTIF
+  faux.refusEtatFE = null
+  faux.rpcs = []
+  faux.retenirEtatFE = false
+  faux.libererEtatFE = []
 }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
@@ -2456,5 +2475,81 @@ describe('ChecklistTab — ses lectures, sorties de l’écran', () => {
     poser({ tronquees: ['natures_immobilisation'] })
     monter()
     expect(await screen.findByText(/Les données du dossier n'ont pas pu être lues en entier/)).toBeDefined()
+  })
+})
+
+// LA CARTE « FACTURE ÉLECTRONIQUE » DE LA VUE D'ENSEMBLE (espace client, étape A6b2) : l'état lu en base, aux mots du cabinet. Sa lecture
+// est la sienne : une lecture ratée ne tait que la carte, jamais la Vue d'ensemble ; ses lignes mènent à Justificatifs.
+describe('ChecklistTab — la carte « Facture électronique »', () => {
+  const carte = () => document.querySelector('section.encart-fe') as HTMLElement | null
+
+  it('active : l’état, l’adresse et les plateformes, aux mots du cabinet, et pas « ce qui attend »', async () => {
+    poser({})
+    monter()
+    await screen.findByText('Active')
+    expect(faux.rpcs).toEqual([{ nom: 'etat_facture_electronique', args: { p_dossier_id: 'dossier-de-test' } }])
+    expect(carte()?.textContent).toContain('Plateforme agréée : reliée (Plateforme fictive Alpha).')
+    expect(carte()?.textContent).toContain('Non vérifiée : simple déclaration.')
+    expect(carte()?.textContent).not.toMatch(/attend|refusée ou rejetée/)
+    // Jamais le tutoiement du client (« Bêta » n'est pas « ta » : un mot entier, lettres accentuées comprises).
+    expect(carte()?.textContent).not.toMatch(/(?<![\p{L}])(tu|ta|ton|tes)(?![\p{L}])/iu)
+  })
+
+  it('un dossier neuf : « À compléter », ce qui manque, et « le client »', async () => {
+    poser({})
+    faux.etatFE = ETAT_NEUF
+    monter()
+    await screen.findByText('À compléter : 2 points')
+    expect(carte()?.textContent).toContain('Aucune adresse de réception déclarée pour le client.')
+  })
+
+  it('une adresse à venir : « À venir », et la carte est à compléter', async () => {
+    poser({})
+    faux.etatFE = etatFictif({ adresse: adresseFictive({ prise_effet: '2099-01-01' }) })
+    monter()
+    await screen.findByText('À compléter : 1 point')
+    expect(carte()?.textContent).toContain('À venir : à partir du 01/01/2099.')
+  })
+
+  it('une valeur illisible ou un refus : la carte le dit, sans état — et le reste de la Vue d’ensemble se monte', async () => {
+    poser({})
+    faux.etatFE = { ...ETAT_FICTIF, portee: 'x' }
+    const { unmount } = monter()
+    await screen.findByText('Lecture impossible')
+    expect(carte()?.textContent).not.toMatch(/Active|À compléter/)
+    expect(carte()?.textContent).toContain('la base a répondu sous une forme que l’écran ne sait pas lire')
+    expect(screen.getByText('Travail à effectuer')).toBeTruthy()
+    unmount()
+    faux.etatFE = ETAT_FICTIF
+    faux.refusEtatFE = 'permission denied'
+    monter()
+    await screen.findByText('Lecture impossible')
+    expect(carte()?.textContent).toContain('L’état de la facture électronique du client n’a pas pu être lu (permission denied).')
+    expect(screen.getByText('Travail à effectuer')).toBeTruthy()
+  })
+
+  it('rien avant la lecture : le titre de la carte et « Chargement… », ni état ni ligne — la Vue d’ensemble, elle, se monte', async () => {
+    poser({})
+    faux.retenirEtatFE = true
+    monter()
+    await screen.findByText('Travail à effectuer')
+    await act(async () => {})
+    expect(carte()?.querySelector('.widget-sous-titre')?.textContent).toBe('Chargement…')
+    expect(carte()?.querySelectorAll('.encart-fe-ligne')).toHaveLength(0)
+    expect(carte()?.textContent).not.toMatch(/Active|À compléter|Aucune|reliée/)
+    await act(async () => { for (const rendre of faux.libererEtatFE.splice(0)) rendre() })
+    await screen.findByText('Active')
+  })
+
+  it('chaque ligne et le bouton de la carte mènent à Justificatifs', async () => {
+    poser({})
+    const onglets: DossierTab[] = []
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', (t) => onglets.push(t))
+    await screen.findByText('Active')
+    const lignes = [...(carte()?.querySelectorAll('.encart-fe-ligne') ?? [])]
+    expect(lignes.length).toBeGreaterThan(0)
+    for (const ligne of lignes) act(() => { (ligne as HTMLElement).click() })
+    act(() => { screen.getByRole('button', { name: 'Justificatifs' }).click() })
+    expect(onglets).toEqual([...lignes.map(() => 'pieces'), 'pieces'])
   })
 })
