@@ -20,6 +20,7 @@
 // session du client, qu'un écran la montre ou non (étapes P2 et P7). Ce qu'une case change se dit donc de ce que la base
 // ouvre (`ceQueDisentLesCases`), et ce que le cabinet écrit dans une table que la case « Ventes » ouvre le dit au-dessus
 // de son champ (les libellés en fin de module).
+import { ARTICLES_EXPORTES } from './articles'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 
@@ -155,7 +156,11 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // relier la plateforme s'y fait aussi, dans « Tes plateformes » : plus aucun geste des ventes n'est « sans écran ».
 // Quatre états, une phrase chacun. Les deux migrations des ventes s'exportent ENSEMBLE, et la phrase les dit ensemble ;
 // droitsAcces.test.ts l'exige, et confronte chaque geste et chaque table nommés à l'export dès qu'il porte leur migration.
-export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean): string {
+// DEPUIS L'ÉTAPE A1, un troisième drapeau : la migration `articles` (`ARTICLES_EXPORTES`, lib/articles.ts) ouvre au client
+// « Ventes », par la base, le catalogue des articles et ses trois gestes, avant l'écran qui les montrera (étape A2). Elle
+// exige celles des ventes : sans elles, ce drapeau ne change rien à la phrase. Le tenir « avec toi » est la décision
+// MEG1-Q1 du cabinet (lib/articles.ts, `QUI_TIENT_LE_CATALOGUE`).
+export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuvertes: boolean, articlesOuverts: boolean): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
     return cases + 'une case cochée enregistre dès aujourd’hui un droit que l’espace du client honorera quand ses écrans '
@@ -171,6 +176,12 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
       + 'transmission, relever les statuts de sa plateforme, et envoyer une facture par e-mail, trente par dossier et par '
       + 'jour au plus.'
     : ''
+  const avecLesArticles = ventesOuvertes && articlesOuverts
+  const articles = avecLesArticles
+    ? ' Il tient aussi avec toi, par les fonctions de la base, le catalogue des articles du dossier : il le lit en entier — '
+      + 'référence, désignation, description, unité, prix, taux de TVA, nature, et qui a créé, changé ou retiré chaque '
+      + 'article — et peut créer, modifier, retirer ou reprendre un article.'
+    : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
     ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
@@ -183,21 +194,27 @@ export function ceQueDisentLesCases(simulationSousBanque: boolean, ventesOuverte
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
   const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
-  // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états.
+  // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états ; l'écran de ses articles (étape
+  // A2), dès que la base les lui ouvre.
   const aVenir = simulationSousBanque
     ? (ventesOuvertes
-      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+      ? (avecLesArticles
+        ? ' L’écran de ses articles et la connexion de sa banque depuis son espace viendront ensuite.'
+        : ' La connexion de sa banque depuis son espace viendra ensuite.')
       : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
     : (ventesOuvertes
-      ? ' L’écran « Banque » de son espace viendra ensuite.'
+      ? (avecLesArticles
+        ? ' L’écran « Banque » de son espace et celui de ses articles viendront ensuite.'
+        : ' L’écran « Banque » de son espace viendra ensuite.')
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
-  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + banque + ventesFermees + aVenir
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + banque + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 
-// L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est.
-export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES)
+// L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
+// des articles, celui de leur migration (étape A1).
+export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES)
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
 export function libelleDeLaCase(domaine: Domaine, personne: string): string {

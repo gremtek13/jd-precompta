@@ -177,7 +177,7 @@ supabase/
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
-                    piecesJointesEcartees ;
+                    piecesJointesEcartees, articles ;
                     bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
                     `bornes_du_stockage`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
@@ -280,10 +280,12 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   annulées par sous-transaction, refus exigé en 42501 nommément, seize mutations qui doivent virer au rouge ; depuis
   P7 et P2, deux blocs de plus — « La banque du client » (3bis, 4bis, trois mutations) et « Les ventes du client »
   (3bis, 4bis, douze mutations), que les devis rejoignent dès leur migration (P5 ; témoin : la table `devis` ; avant,
-  une ligne « EN ATTENTE ») —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la
+  une ligne « EN ATTENTE »), et les articles dès la leur (A1 ; témoin : la table `articles` ; deux mutations de
+  plus) —, qui se disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la
   banque se juge entier depuis le 10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en
   production), celui des ventes depuis le même jour (les deux migrations de P2 en base : 35 lignes, 0 en faute,
-  31 mutations sur 31 en production ; les devis EN ATTENTE). Le fichier
+  31 mutations sur 31 en production ; les devis EN ATTENTE), et le 14/10/2026 avec les articles (35 lignes, 0 en
+  faute, 33 mutations sur 33 en production). Le fichier
   se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
   19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
   l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
@@ -368,7 +370,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   de solde des relevés, et à l'écran « Ma simulation » et, depuis P9a (11/10/2026), « Ma banque » ; depuis P2
   (10/10/2026), « Ventes » ouvre en base la lecture
   des neuf tables des ventes de son dossier et leurs gestes par les fonctions du cabinet (`gere_les_ventes`), sans écran
-  encore — désigner le mouvement d'un encaissement demande aussi « Banque ». L'onglet Accès dit ce que la
+  encore — désigner le mouvement d'un encaissement demande aussi « Banque » ; depuis A1 (14/10/2026), le catalogue des
+  articles et ses trois fonctions, sans écran avant A2. L'onglet Accès dit ce que la
   base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
   drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -506,7 +509,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   cabinet — la pièce proposée en tête de la fiche d'un mouvement, le fil et « Demander au client », le filtre « Proposés
   par le client » (P9b, 11/10/2026), écarter la pièce proposée et supprimer un message du fil (P9b2, 11/10/2026) ;
   « Règlements » (A3, 13/10/2026) : la liste de tous les encaissements d'un dossier, ses filtres, ses totaux par moyen
-  et par mois, son export CSV, au cabinet et au client « Ventes » ;
+  et par mois, son export CSV, au cabinet et au client « Ventes » ; le catalogue des articles en base, que le cabinet
+  et le client « Ventes » tiennent par trois fonctions (A1, 14/10/2026), sans écran avant A2 ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -728,6 +732,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   situations publiées (C1 à C8) ; trente-cinq questions au cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT :
   LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (ses quatre questions, A3-Q1 à
   A3-Q4, tranchées « comme recommandé » le même jour : rien ne change) → « « MES VENTES › RÈGLEMENTS » ».
+  A1, les articles en base, appliquée le 14/10/2026 sur l'accord du cabinet (A1-Q1 ; MEG1-Q1 et A1-Q2 à A1-Q4 tranchées
+  « comme recommandé » le même jour), et la bascule (`ARTICLES_EXPORTES`) en ligne : la sauvegarde d'un dossier les
+  emporte, l'onglet Accès dit que « Ventes » ouvre le catalogue et ses quatre gestes ; l'écran viendra avec A2 → « LES
+  ARTICLES, EN BASE ».
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -771,7 +779,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 41 fonctions au 13/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 44 fonctions au 14/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -779,10 +787,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `retirer_proposition`, `ecrire_precision_mouvement`, `conclure_cycle`, `noter_revision`, `revoir_cycle`,
   `supprimer_brouillon_facture`, `fixer_seuil_de_signification`, `expliquer_variation`, `confirmer_regime_ereporting`,
   `retirer_regime_ereporting`, `ecarter_piece_ereporting`, `reprendre_piece_ereporting`,
-  `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent`, `retirer_du_dossier_permanent` et
-  `marquer_pieces_jointes_vues` écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
+  `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent`, `retirer_du_dossier_permanent`,
+  `marquer_pieces_jointes_vues`, `enregistrer_article`, `retirer_article` et `reprendre_article` écrivent, chacune
+  avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
   du dossier annoncé pour conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ;
   depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ;
+  les trois d'A1 : `gere_les_ventes` du dossier annoncé, et qu'il existe, avant toute lecture ;
   les deux de R5, les quatre d'e5a, celle d'e5b1, les deux de R7 et celle de la ligne 22.7 : `admin_du_dossier` du
   dossier annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`,
   gardes `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`,
@@ -829,7 +839,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une table préparée et non appliquée se déclare au plan de sauvegarde derrière son drapeau** (P5 : listes
   `*_PREVU(E)S`, filtre `auPlan`, `sauvegardeDevis.test.ts`) : la lire avant sa migration ferait échouer toute
   sauvegarde, et lever le drapeau suffit le jour de l'application ; `restauration.sql` la met au plan quand elle existe,
-  ses rangs comptés depuis celui d'`exercices_valides` → « LES DEVIS, EN BASE ».
+  ses rangs comptés depuis celui d'`exercices_valides` ; un drapeau par migration préparée (A1 : `auPlanDesArticles`,
+  `sauvegardeArticles.test.ts`), réunis par `auPlanAujourdHui` → « LES DEVIS, EN BASE », « LES ARTICLES, EN BASE ».
 - **Un type de `types.ts` décrit la table**, colonnes NOT NULL comprises — et les déclencheurs comptent : ceux de
   `dossiers` remplissent `cabinet_id` et `code_email` seulement s'ils sont nuls.
 - **`pack_pieces` a été supprimée** (jamais écrite) : la composition d'un pack n'est pas modélisée. Avant de supprimer
@@ -1526,10 +1537,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `devis.sql` est la RÉFÉRENCE des refus du module (`devis.test.ts` : chaque refus exigé de la base, les écritures de
   l'essai rejouées) ; le contrôle 0c de `ventesClient.sql` attend les quatre fonctions dès la table `devis` →
   « LES DEVIS, EN BASE ».
+- **Les articles** (A1, en base depuis le 14/10/2026, `lib/articles.ts`) : un catalogue par dossier (BT-153, 154, 155,
+  130, 146, 152 et la nature) ; un article PRÉ-REMPLIT une ligne de facture, qui garde sa copie — la base ne lit jamais
+  un article pour une facture ; il se modifie, se retire, se reprend, ne se supprime jamais ; la référence est unique
+  par dossier, à la lettre près, retirés compris (contrainte TOTALE ; A1-Q2). `enregistrer_article` (neuf rangs,
+  quatorze messages), `retirer_article` et `reprendre_article` écrivent seules, l'accès d'abord (`gere_les_ventes` : le
+  cabinet et le client « Ventes », MEG1-Q1) ; aucune policy d'écriture hors de la restauration. `ligneDepuisArticle`
+  applique le statut de TVA du jour (0 % hors redevable, « à préciser » compris, avec son avertissement, A1-Q3 ; la
+  mention du module du statut) et met la description à la suite de la désignation (A1-Q4). `articles.test.ts` confronte
+  le module au texte exporté et rejoue l'essai ; à l'écran (A2), la désignation et la description que le cabinet saisit
+  diront que le client « Ventes » les lit → « LES ARTICLES, EN BASE ».
 
 ## Tests
 
-Vitest, 10 494 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 10 544 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
@@ -1594,7 +1615,8 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
 - Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** toutes
-  ses mutations qui mordent — trente et une depuis P2 : dix-neuf avec P7, douze de plus avec les ventes) ; la CI n'a pas accès à la base.
+  ses mutations qui mordent — trente-trois depuis A1 : dix-neuf avec P7, douze de plus avec les ventes, deux avec
+  les articles) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

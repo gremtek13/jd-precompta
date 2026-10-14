@@ -209,6 +209,15 @@
 -- IDENTIQUES à la source (les deux lignes comprises), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
 -- colonne générée justes. Planté — la table avant son dossier —, le script s'arrête sur sa clé (23503). Sur une base qui
 -- n'a pas la migration, il s'arrête dès la création de ses tables d'essai, en nommant la table absente.
+--
+-- 13/10/2026, espace client, étape A1 (migration `articles`, préparée, non appliquée) : `articles` entre au plan par son
+-- bloc à part dès que sa table existe (77 tables, 80 avec les devis), juste après `agent_conversations` — après le dossier,
+-- avant les factures, dont une ligne désignera son article à l'étape A7 —, les tables qui suivent reculant d'un rang.
+-- Rejoué sur la réplique de l'étape, égale à la production à 131 migrations plus celle-ci (signature.sql, neuf familles,
+-- et l'historique), le dossier `test` portant trois articles posés par leurs fonctions (un retiré, un modifié) : 135 clés
+-- recopiées, 71 tables restaurées et IDENTIQUES à la source (les trois articles compris), 0 écart, aucun arrêt, les
+-- contrôles du catalogue des rôles et de la colonne générée justes. Planté — les articles ancrés avant le dossier —, le
+-- script s'arrête sur leur clé (23503). Sur une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -294,6 +303,24 @@ insert into essai_restauration._vagues (table_nom, colonne) values
 
 insert into essai_restauration._generees (table_nom, colonne) values
  ('piece_textes_ocr','texte_md5');
+
+-- ══ Les articles (espace client, étape A1) ══ Au plan du code quand `ARTICLES_EXPORTES` est levé — c'est-à-dire quand
+-- leur migration est en base : le script les y met dès que leur table existe, juste après `agent_conversations`
+-- (ORDRE_RESTAURATION_PREVU : après le dossier, avant les factures, dont une ligne désignera son article à l'étape A7) ; les
+-- tables qui suivent reculent d'un rang — par les rangs négatifs, que la clé de `_ordre` admet. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.articles') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'agent_conversations';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'articles');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('articles','direct',null,null);
+  end if;
+end $$;
 
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme

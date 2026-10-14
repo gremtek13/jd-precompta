@@ -23608,6 +23608,124 @@ pastille, le renvoi, qui passe sous la phrase sur téléphone). Barrière sur l'
 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 494 tests chacun ; construction verte
 (`index-tWUcQ3Eq.js`).
 
+**LA MISE EN LIGNE, LE 13/10/2026.** Fusionnée par #163 (`253c7cf`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-tWUcQ3Eq.js`, le paquet de la barrière (déploiement 38464773377) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 22.94 à « Fait », les barres recomptées (139 chantiers livrés sur 182, 76 % ;
+pour un dossier BNC, 139 sur 169, 82 %). Le worktree de l'agent retiré (ses 15 fichiers identiques à ceux intégrés),
+comme celui de l'intégration.
+
 **RESTE.** Des lignes 22.7 à 22.94, la seule décision sur les éléments de l'e-mail qui ne sont pas des pièces jointes,
 prise sur les comptes réels (S229-Q3, Q4). L'état « lecture manquée » de la ligne de l'accueil n'a pas de capture du
 banc (son faux Supabase répond toujours) : les tests le couvrent.
+
+### 14/10/2026 — LES ARTICLES, EN BASE — ESPACE CLIENT, ÉTAPE A1 (LIGNE 51.5)
+
+(Préparée le 13/10/2026 par l'agent S232 sur `253c7cf`, sous la version PROVISOIRE `20261014090000` ; présentée au
+cabinet — elle ouvre une lecture au client qui porte la case « Ventes » — et appliquée le 14/10/2026 par la session sur
+son accord (A1-Q1), sous la version `20261014063058`. Fichiers : `src/lib/articles.ts`, `src/lib/articles.test.ts`,
+`src/lib/sauvegardeArticles.test.ts`, `supabase/essais/articles.sql`, `supabase/schema/20261014063058_articles.sql`
+(nouveaux) ; `src/lib/types.ts`, `src/lib/sauvegarde.ts`, `src/lib/droitsAcces.ts`, `supabase/essais/rls.sql`,
+`supabase/essais/restauration.sql`, `supabase/schema/README.md`, `RGPD.md`, et les tests `droitsAcces.test.ts`,
+`sauvegardeDevis.test.ts`, `restaurationEssai.test.ts`, `AccesTab.casesOuvertes.test.tsx`. Aucun écran (A2), aucune Edge
+Function.)
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 13/10/2026 (131 migrations, lecture seule) : `gere_les_ventes`,
+`client_du_dossier` et `droits_sur_le_dossier` sont ceux de P2, les neuf tables des ventes portent leur
+`*_lecture_ventes`, le plan de sauvegarde a le patron des tables PRÉVUES de P5. Rien du §A.1 ne tombait ; il a été écrit
+tel quel. Trois accès clients, aucun ne porte « Ventes » ni « Banque ».
+
+**LA TABLE ET SES FONCTIONS.** `articles` : la référence (BT-155 ; un à cent caractères, sans blanc aux bords, unique
+par dossier en contrainte TOTALE, retirés compris), la désignation (BT-153, mille), la description (BT-154, quatre
+mille), l'unité (BT-130, une liste FERMÉE de treize codes de la recommandation 20, `C62` par défaut), le prix hors taxes
+(BT-146 ; positif ou nul, six décimales — G1.16 —, sous dix milliards, la borne de P5), le taux (G1.24), la nature ; le
+retrait et la dernière modification entiers ou absents ; les auteurs sans clé vers les comptes, comme `valide_par`. Les
+blancs sont ceux des migrations du dépôt (`E' \t\n\r'`) ; une longueur se compte par point de code.
+`enregistrer_article` lit chaque champ par son TYPE JSON d'abord (un nombre n'est pas un texte) et refuse en neuf rangs,
+quatorze messages, l'accès avant de rien lire (`gere_les_ventes` et le dossier existe, sinon 42501 pour tous) ; la
+référence prise (23505) nomme l'article qui la porte, coupé à quatre-vingts caractères, dit retiré s'il l'est, et se
+redit sous les mêmes mots à l'écriture concurrente (`unique_violation`). `retirer_article` et `reprendre_article`, trois
+refus chacune ; la reprise est une modification. Trois policies `to authenticated` — la lecture du cabinet, celle du
+droit « Ventes », l'insertion de restauration au super-administrateur — et aucune autre. MEG1-Q1, prise comme hypothèse
+puis tranchée « comme recommandé » le 14/10/2026 : le cabinet et le client « Ventes », par les mêmes fonctions —
+l'en-tête de la migration, figé avec l'historique, la dit encore hypothèse.
+
+**LE MODULE, LE DRAPEAU, LA SAUVEGARDE, L'ONGLET ACCÈS.** `lib/articles.ts` (pur) redit les refus dans l'ordre et sous
+les mots de la base, sur la saisie telle que la base la reçoit (l'aller-retour par JSON) ; `ligneDepuisArticle` donne la
+ligne qu'un article pré-remplit au statut de TVA du JOUR (0 % hors redevable, la mention du module du statut, sinon ce
+qui empêche de la proposer) ; la description suit la désignation après un tiret, sur une ligne (A1-Q4). Sans la
+migration dans l'export, la RÉFÉRENCE des refus est l'essai : `articles.test.ts` exige chaque refus du module dans
+l'essai, sous ses mots, et REJOUE dans le module les écritures de l'essai — le même premier refus, ou aucun ; drapeau
+levé, il confronte aussi le texte de la migration (messages, codes, ordre, valeurs des contraintes, policies, droits,
+aucune suppression, le prédicat des trois fonctions). `ARTICLES_EXPORTES` garde la table hors du plan : un drapeau par
+migration préparée (`auPlanDesArticles`), réunis par `auPlanAujourdHui` ; la table entre juste après
+`agent_conversations`, AVANT les factures (A7 y pointera), et l'essai de restauration la met à cette place quand elle
+existe. La phrase des cases de l'onglet Accès prend un troisième paramètre : avec « Ventes » et le drapeau, le catalogue
+lu en entier et ses quatre gestes ; l'écran viendra ensuite.
+
+**L'ESSAI ET `rls.sql`.** `articles.sql` (deux dossiers JETABLES, un bloc annulé en entier, chaque contrôle dans sa
+sous-transaction, aucune suppression) : 159 verdicts, 149 contrôles et 10 mutations, 0 en faute, sur la réplique vide et
+semée ; sans la migration, une ligne « EN ATTENTE », qui n'est une faute que si l'historique porte `articles` sans la
+table et sans `retour_articles` plus récent. Son premier passage a trouvé un défaut de l'essai : le membre du cabinet
+est le compte du client, dont l'accès d'essai portait encore « Ventes » — il voyait les articles par le droit du
+client ; ses deux étapes posent désormais un accès sans droit. `rls.sql`, bloc « Les ventes du client » : la table dans
+la liste attendue dès qu'elle existe, deux articles du jeu (dont un retiré), deux écritures directes de plus, et
+M3bis-membre (articles), qui compte CETTE table (le total de M3bis-membre mordrait par les autres). Joué ENTIER : sans
+la migration, 36 lignes, 0 en faute, 31 sur 31 ; avec, 35 lignes, 0 en faute, 33 sur 33. Sa copie pour la production
+(toutes les lignes de commentaire retirées, l'outil de P2, qui redonne au caractère près celle d'hier) :
+60 193 caractères, `b49cdaf6…`, les mêmes verdicts ligne à ligne.
+
+**LES PREUVES SUR LA RÉPLIQUE** (grappe 54331 ; `s232_base` et `s232_semee`, copies des bases de S228b ramenées à la
+version réelle de `pieces_jointes_ecartees_au_client` : neuf familles et historique égaux à la production). Migrée :
+huit familles changent (colonnes 795, contraintes 598, index 220, policies 148, fonctions 158 et leurs droits, RLS 77,
+droits des tables 77), pas les déclencheurs. Les trois contrôles de l'export : sans le fichier, 131 = 131, socle 78,
+inventaire 1 898 ; avec, 132 = 132, socle 78, inventaire 1 932 des deux côtés. Restauration : 71 tables IDENTIQUES (les
+articles au rang 10), un défaut planté arrête en 23503 sur leur clé ; sans la migration, le plan d'hier (70). Le retour
+arrière : neuf familles revenues à la production. Le bloc à coller : collage passé, historique égal au fichier, essai
+159 / 0. Mutations : 37 de la migration, toutes vues par l'essai — une (l'unicité qui ignorerait un retiré) seulement
+après un contrôle de plus (29g2 : l'unicité avant l'unité quand le porteur est retiré) ; 44 du code, qui mordent — la
+première version de C20 était ÉQUIVALENTE (l'aller-retour par JSON ne garde que les clés propres : le contrôle redondant
+a quitté le module) ; 26 de la bascule, qui mordent — l'une a montré une coupe du nom écrite DEUX fois dans la fonction,
+que le test ne voyait qu'une fois : il les compte.
+
+**LA BASCULE EN SIMULATION.** Le fichier posé dans l'export, le drapeau levé, la suite ENTIÈRE : un test qui ne jouait
+que ce jour-là attendait trois usages des blancs dans `enregistrer_article`, la fonction en a deux (la désignation vide,
+la référence aux bords), comme le module — corrigé dans le correctif. Puis 354 fichiers, 10 544 tests, verts ;
+`tsc -b` 0, lint 63. Correctif : la même suite, verte ; quatre fuseaux sur les fichiers touchés.
+
+**RÉSULTATS NÉGATIFS, À NE PAS RÉENQUÊTER.** L'inventaire d'une réplique NON semée (1 924) n'égale pas celui de la
+production : elle n'a pas les huit policies du stockage ; seule la réplique semée se compare (1 932 des deux côtés).
+Collé sous le super-utilisateur de la réplique, le bloc donnait une table sans droit pour `anon` ni `authenticated` (19
+fautes de l'essai) : les privilèges par défaut de la réplique sont ceux de son rôle propriétaire — collé sous lui,
+juste ; en production l'éditeur colle sous `postgres`, et `droits_tables` le vérifie après coup.
+
+**LES DÉCISIONS DU CABINET, LE 14/10/2026.** « Comme recommandé » : MEG1-Q1, le cabinet et le client « Ventes » tiennent
+le catalogue ; A1-Q1, l'accord — la migration appliquée, la lecture ouverte au client « Ventes » ; A1-Q2, la référence
+unique dans le dossier, à la lettre près (« R1 » n'est pas « r1 »), retirés compris ; A1-Q3, un dossier au statut « à
+préciser » pré-remplit la ligne à 0 %, avec son avertissement ; A1-Q4, la description suit la désignation sur la ligne,
+jusqu'à A7. Le code les dit à leur place (`lib/articles.ts`, `lib/droitsAcces.ts` et leurs tests) ; rien d'autre ne
+change.
+
+**L'APPLICATION EN PRODUCTION, LE 14/10/2026.** `apply_migration` l'a prise sans confirmation (aucune suppression), sous
+la version `20261014063058` : 132 migrations, la ligne d'historique rend l'empreinte du fichier (`53ec6946…`,
+20 536 caractères). L'essai, sans ses lignes de commentaire (60 638 caractères reçus tels quels, `738b9c30…`) :
+159 verdicts justes, les 10 mutations mordent, et rien n'est resté en base (4/3/1/0/0 avant et après). `signature.sql`
+rend en production ce que rendait la réplique migrée : huit familles changent (colonnes 795, contraintes 598, index 220,
+policies 148, fonctions et leurs droits 158, RLS et droits des tables 77), les déclencheurs non (53). `rls.sql`, sa
+copie (60 193 caractères, `b49cdaf6…`) : 35 lignes, 0 en faute, 33 mutations sur 33 — M3bis-membre (articles) voit les
+deux articles du jeu ; M1 et M3 comptent 28 et 14 tables. Les advisors :
+`authenticated_security_definer_function_executable` 44 (les trois fonctions, qui vérifient l'accès avant toute
+lecture), `anon_` 5, inchangé ; côté performances, `multiple_permissive_policies` gagne la table, le patron des ventes,
+et rien d'autre de nouveau. Les trois contrôles de l'export, le fichier renommé à sa version réelle : 132 fichiers et
+132 migrations, empreinte globale `789570a9…` des deux côtés ; socle inchangé (78 instructions, `91ae95ec…`) ;
+inventaire 1 932 objets, `d5007734…` des deux côtés.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif et la bascule appliqués sur `253c7cf`, la migration renommée à sa version
+réelle, les décisions du cabinet écrites dans le code, le paragraphe du README du schéma et la note de `rls.sql` posés ;
+dans la même demande, la mise en ligne de la ligne 22.94. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs,
+les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 10 544 tests chacun ; construction verte
+(`index-gOMdrhJG.js`). La bascule ne part qu'après la migration : en ligne avant elle, chaque sauvegarde d'un dossier
+aurait lu une table absente.
+
+**RESTE.** A2, l'écran des articles : au-dessus de la désignation et de la description que le cabinet saisit, dire que
+le client « Ventes » les lit. NON VÉRIFIÉ (A-NV1) : que chaque code d'unité passe le validateur officiel — sur des
+exemples fictifs, à A7.
