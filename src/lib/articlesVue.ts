@@ -123,14 +123,6 @@ export function refusDeLaSaisie(
 }
 
 // ── Ce que la liste montre ───────────────────────────────────────────────────────────────────────────────────────────
-/**
- * Un prix, JAMAIS arrondi en silence : deux décimales au moins (« 12,50 € »), jusqu'à six quand l'article les porte
- * (« 0,123456 € ») — la base en admet six (G1.16), et deux seules afficheraient 0,12 € un prix qui en vaut 0,123456.
- */
-export function formaterPrixArticle(prix: number): string {
-  return prix.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 6 })
-}
-
 /** Ce que la recherche lit d'une ligne : la référence et la désignation (la conception, §A.1). */
 export function champsDeRechercheArticle(a: Pick<Article, 'reference' | 'designation'>): (string | null)[] {
   return [a.reference, a.designation]

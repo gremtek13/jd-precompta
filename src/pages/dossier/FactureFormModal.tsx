@@ -1,12 +1,24 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
-import { aujourdHuiSql, formatMoney } from '../../lib/format'
-import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
+import { aujourdHuiSql, formatMoney, formaterPrixUnitaire } from '../../lib/format'
+import type { Article, ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
+import { ARTICLES_EXPORTES, nomDansUnRefus } from '../../lib/articles'
+import { lireLesArticles, type LectureDesArticles } from '../../lib/articlesLecture'
+import { enregistrerArticle } from '../../lib/articlesEcriture'
+import { refusDeLaSaisie, saisieEnvoyee, type SaisieArticle } from '../../lib/articlesVue'
+import {
+  avecProvenance, ceQueLeChoixRemplace, choixDArticle, enumeration, gestePrixDeLArticle, peutEnregistrerCommeArticle, saisieDeLaLigne,
+  garderProvenance, type Provenance,
+} from '../../lib/articlesFacture'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import ArticleChoixModal from './ArticleChoixModal'
+import ArticleSaisieModal from './ArticleSaisieModal'
+import ConfirmationArticle from './ConfirmationArticle'
 import {
   apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
   siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
@@ -14,16 +26,33 @@ import {
 
 interface LigneEdit {
   id?: string // absent = ligne pas encore enregistrée
+  // L'identité de la ligne DANS CE FORMULAIRE, stable tant qu'elle existe : c'est la clé de sa provenance (l'article qui l'a
+  // remplie) et celle de son rendu. Ni l'indice, que le retrait d'une autre ligne déplace, ni `id`, que les lignes neuves n'ont pas.
+  cle: string
   designation: string
   quantite: string
   prix_unitaire_ht: string
   taux_tva: string
 }
 
+// La lecture des articles, gardée avec le dossier pour lequel elle a été faite : lue, ou ratée avec son motif.
+type LectureArticles = { cle: string; lu: LectureDesArticles } | { cle: string; echec: string }
+
+// La fenêtre d'article ouverte, une seule à la fois : le choix, la saisie d'un article neuf tiré d'une ligne, et les deux
+// confirmations (remplacer une ligne déjà saisie, mettre l'article à ce prix).
+type FenetreArticle =
+  | { genre: 'choix'; cle: string }
+  | { genre: 'saisie'; cle: string; depart: SaisieArticle }
+  | { genre: 'remplacer'; cle: string; article: Article; remplace: string[] }
+  | { genre: 'prix'; cle: string }
+
+const CONSEQUENCE_ARTICLES_PARTIELS = 'Aucun article ne peut donc être choisi ni enregistré d’ici : une liste tronquée dirait « libre » '
+  + 'une référence déjà prise.'
+
 // Le taux d'une ligne neuve suit le statut de TVA du dossier : 20 % pour un redevable, qui facture la TVA, 0 % pour
 // les autres. Une ligne d'un redevable à 0 % par défaut partait chez la plateforme avec le motif de la franchise.
-function ligneVide(statut: StatutTva | null): LigneEdit {
-  return { designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0' }
+function ligneVide(statut: StatutTva | null, cle: string): LigneEdit {
+  return { cle, designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0' }
 }
 
 // QUI RÉDIGE LA FACTURE (espace client, étape P4a) : le cabinet, qui peut aussi enregistrer l'adresse de l'émetteur comme
@@ -70,13 +99,24 @@ export default function FactureFormModal(props: Props) {
   const [enregistrerAdresseDossier, setEnregistrerAdresseDossier] = useState(false)
   // Les mentions de la facture électronique (lib/mentionsFacture.ts), reprises du brouillon.
   const [mentions, setMentions] = useState<SaisieMentions>(() => saisieDesMentions(facture))
-  const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide(statutTva)])
+  // Le compteur des clés de ligne : `l0` est celle de la première ligne.
+  const compteurLignes = useRef(1)
+  const nouvelleCle = () => `l${compteurLignes.current++}`
+  const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide(statutTva, 'l0')])
   const [chargementLignes, setChargementLignes] = useState(!!facture)
   // Non nul = on ne SAIT PAS ce que cette facture porte comme lignes. Voir l'effet ci-dessous :
   // ce n'est pas la même chose que « elle n'en a aucune », et le formulaire ne doit pas le confondre.
   const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
   const [saving, setSaving] = useState<'brouillon' | 'validation' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // L'article qui a rempli chaque ligne (clé de la ligne → identifiant), EN MÉMOIRE seulement : rien ne s'enregistre avant A7.
+  // Une facture rouverte n'en a sur aucune de ses lignes.
+  const [provenanceBrute, setProvenance] = useState<Provenance>({})
+  // Une ligne retirée perd sa provenance : celle qu'on LIT ne garde que les lignes qui existent, et la clé d'une ligne retirée ne revient jamais.
+  const provenance = garderProvenance(provenanceBrute, lignes.map((l) => l.cle))
+  // Les articles du dossier, lus EN ENTIER à l'ouverture et relus après chaque écriture ; gardés AVEC le dossier lu.
+  const [lectureArticles, setLectureArticles] = useState<LectureArticles | null>(null)
+  const dossierAffiche = useRef(dossierId)
 
   // UNE LECTURE REFUSÉE NE DOIT PAS PASSER POUR « CETTE FACTURE N'A AUCUNE LIGNE ».
   //
@@ -99,17 +139,31 @@ export default function FactureFormModal(props: Props) {
       }
       const l = (data ?? []) as FactureLigne[]
       setLignes(l.length > 0
-        ? l.map((x) => ({ id: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht), taux_tva: String(x.taux_tva) }))
-        : [ligneVide(statutTva)])
+        ? l.map((x) => ({ id: x.id, cle: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht), taux_tva: String(x.taux_tva) }))
+        : [ligneVide(statutTva, nouvelleCle())])
       setChargementLignes(false)
     })
   }, [facture, statutTva])
+
+  // Les articles : lus à l'ouverture, jamais avant que l'espace les ouvre (`ARTICLES_EXPORTES`). Une réponse arrivée après un
+  // changement de dossier ne s'inscrit pas (`annule`).
+  useEffect(() => {
+    if (!ARTICLES_EXPORTES) return
+    let annule = false
+    dossierAffiche.current = dossierId
+    lireLesArticles(dossierId).then(
+      (lu) => { if (!annule) setLectureArticles({ cle: dossierId, lu }) },
+      (e: unknown) => { if (!annule) setLectureArticles({ cle: dossierId, echec: messageErreur(e, 'les articles n’ont pas pu être lus') }) },
+    )
+    return () => { annule = true }
+  }, [dossierId])
 
   function majLigne(index: number, patch: Partial<LigneEdit>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
   }
   function ajouterLigne() {
-    setLignes((prev) => [...prev, ligneVide(statutTva)])
+    const cle = nouvelleCle()
+    setLignes((prev) => [...prev, ligneVide(statutTva, cle)])
   }
   function retirerLigne(index: number) {
     setLignes((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
@@ -215,6 +269,189 @@ export default function FactureFormModal(props: Props) {
   // donc deux « Entrée » rapprochés suffisent, geste plus banal que deux clics.
   const enregistrementEnCours = useRef(false)
 
+  // ── UN ARTICLE DANS LA FACTURE (espace client, étape A2b ; lib/articlesFacture.ts, conception : HISTORIQUE.md, §A.1) ──────────
+  // « Choisir un article » remplit la ligne (la désignation, la quantité 1, le prix et le taux du statut de TVA du jour) ; la
+  // ligne reste LIBRE, et la changer n'écrit jamais rien dans l'article. Deux gestes à part, jamais faits en passant : « Mettre
+  // l'article à ce prix » et « Enregistrer comme article », par `enregistrer_article` seule. Rien n'est offert avant la lecture
+  // des articles, ni sur une lecture partielle ou refusée (l'unicité d'une référence ne se juge pas sur une liste tronquée).
+  //
+  // LA MENTION DE TVA : le formulaire la propose déjà (`mentionAbsente`, « Ajouter la mention », d'après le statut et les taux
+  // des lignes — la même que `mention` de `choixDArticle`, confrontée par FactureFormModalArticles.test.tsx) ; le choix n'en ajoute
+  // pas une seconde.
+  const courante = lectureArticles?.cle === dossierId ? lectureArticles : null
+  const articlesLus = courante != null && 'lu' in courante ? courante.lu : null
+  const articlesEntiers: readonly Article[] | null = articlesLus?.complete ? articlesLus.lignes : null
+  const articlesEnCours = articlesEntiers?.filter((a) => a.retire_le == null) ?? []
+
+  const [fenetreArticle, setFenetreArticle] = useState<FenetreArticle | null>(null)
+  const [articleOccupe, setArticleOccupe] = useState(false)
+  const [erreurArticle, setErreurArticle] = useState<string | null>(null)
+  const [messageArticle, setMessageArticle] = useState<string | null>(null)
+
+  // Le verrou des gestes d'article, en `useRef` et POSÉ AVANT LE `try` : relâché dans le `finally`, APRÈS la relecture des
+  // articles (un second clic pendant qu'elle court écrirait sur ce que la liste montrait avant), relue aussi sur un refus. Il
+  // s'efface devant l'enregistrement de la facture, et l'enregistrement devant lui : aucun geste d'article pendant l'un, ni
+  // l'inverse.
+  const gesteArticleEnCours = useRef(false)
+
+  async function relireArticles() {
+    try {
+      const lu = await lireLesArticles(dossierId)
+      if (dossierAffiche.current === dossierId) setLectureArticles({ cle: dossierId, lu })
+    } catch (e) {
+      if (dossierAffiche.current === dossierId) {
+        setLectureArticles({ cle: dossierId, echec: messageErreur(e, 'les articles n’ont pas pu être lus') })
+      }
+    }
+  }
+
+  async function sousVerrou<T>(repli: string, ecrire: () => Promise<T>, message: (ecrit: T) => string): Promise<T | null> {
+    if (gesteArticleEnCours.current || enregistrementEnCours.current) return null
+    gesteArticleEnCours.current = true
+    setArticleOccupe(true)
+    setErreurArticle(null)
+    setMessageArticle(null)
+    let resultat: T | null = null
+    try {
+      const ecrit = await ecrire()
+      setMessageArticle(message(ecrit))
+      resultat = ecrit
+    } catch (e) {
+      setErreurArticle(messageErreur(e, repli))
+    } finally {
+      await relireArticles()
+      gesteArticleEnCours.current = false
+      setArticleOccupe(false)
+    }
+    return resultat
+  }
+
+  // Aucun geste pendant l'enregistrement de la facture, ni pendant un geste d'article (le temps de sa relecture compris).
+  const gesteBloque = articleOccupe || !!saving
+
+  function ouvrirFenetre(fenetre: FenetreArticle) {
+    setErreurArticle(null)
+    setMessageArticle(null)
+    setFenetreArticle(fenetre)
+  }
+
+  function appliquerChoix(cle: string, article: Article) {
+    const { ligne } = choixDArticle(article, statutTva, articleExoneration)
+    setLignes((prev) => prev.map((l) => (l.cle === cle ? { ...l, ...ligne } : l)))
+    // Remplie par cet article, la ligne n'a plus la provenance qu'elle avait.
+    setProvenance((p) => avecProvenance(p, cle, article.id))
+  }
+
+  // Une ligne déjà saisie ne se remplace qu'après une confirmation qui nomme ce qui sera remplacé (A2B-Q1).
+  function choisir(cle: string, article: Article) {
+    const ligne = lignes.find((l) => l.cle === cle)
+    if (!ligne) { setFenetreArticle(null); return }
+    const remplace = ceQueLeChoixRemplace(ligne, choixDArticle(article, statutTva, articleExoneration).ligne)
+    if (remplace.length > 0) { setFenetreArticle({ genre: 'remplacer', cle, article, remplace }); return }
+    appliquerChoix(cle, article)
+    setFenetreArticle(null)
+  }
+
+  // « Mettre l'article à ce prix » d'une ligne : l'article de sa provenance TEL QUE LA LISTE LUE LE PORTE, et ce que le geste
+  // enverrait (tous ses champs, le prix de la ligne seul changé) avec le refus que la base opposerait, dit avant le clic.
+  function prixDeLaLigne(cle: string) {
+    const ligne = lignes.find((l) => l.cle === cle)
+    const idArticle = provenance[cle]
+    if (!ligne || idArticle == null || articlesEntiers == null) return null
+    const article = articlesEntiers.find((a) => a.id === idArticle) ?? null
+    return { ligne, article, geste: gestePrixDeLArticle(dossierId, article, ligne.prix_unitaire_ht, articlesEntiers) }
+  }
+
+  async function mettreAuPrix(cle: string) {
+    const lu = prixDeLaLigne(cle)
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    if (lu == null || lu.geste.etat !== 'offert') return
+    if (lu.geste.refus != null || lu.article == null) {
+      setErreurArticle(lu.geste.refus)
+      return
+    }
+    const { id } = lu.article
+    const { saisie } = lu.geste
+    const ecrit = await sousVerrou(
+      'Le prix de l’article n’a pas pu être mis à jour.',
+      () => enregistrerArticle(dossierId, id, saisieEnvoyee(saisie)),
+      (a) => `Article « ${nomDansUnRefus(a.designation)} » : prix mis à jour.`,
+    )
+    if (ecrit) setFenetreArticle(null)
+  }
+
+  async function enregistrerCommeArticle(cle: string, saisie: SaisieArticle) {
+    if (articlesEntiers == null) return
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    const refus = refusDeLaSaisie(dossierId, { nouveau: true }, saisie, articlesEntiers)
+    if (refus) {
+      setErreurArticle(refus.message)
+      return
+    }
+    const ecrit = await sousVerrou(
+      'L’article n’a pas pu être enregistré.',
+      () => enregistrerArticle(dossierId, null, saisieEnvoyee(saisie)),
+      (a) => `Article « ${nomDansUnRefus(a.designation)} » enregistré.`,
+    )
+    if (ecrit) {
+      // La ligne prend le nouvel article pour provenance : elle est désormais celle d'un article du catalogue.
+      setProvenance((p) => avecProvenance(p, cle, ecrit.id))
+      setFenetreArticle(null)
+    }
+  }
+
+  // Ce que la ligne `i` offre : l'article de sa provenance, ses trois gestes, l'avertissement du choix.
+  function articleDeLaLigne(l: LigneEdit, i: number) {
+    if (!ARTICLES_EXPORTES || articlesEntiers == null) return null
+    const lu = prixDeLaLigne(l.cle)
+    const sansProvenanceConnue = provenance[l.cle] == null
+    // L'avertissement du choix se dit tant que la ligne porte le taux que l'article lui a donné : un taux retouché à la main
+    // n'est plus celui dont il parle.
+    const apporte = lu?.article ? choixDArticle(lu.article, statutTva, articleExoneration) : null
+    const avertissement = apporte?.avertissement != null && Number(l.taux_tva) === Number(apporte.ligne.taux_tva) ? apporte.avertissement : null
+    return (
+      <>
+        {lu?.article && (
+          <span className="muted" style={{ fontSize: '0.78rem' }}>
+            Article : {lu.article.reference ? `${lu.article.reference} — ` : ''}{nomDansUnRefus(lu.article.designation)}
+          </span>
+        )}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {articlesEnCours.length > 0 && (
+            <button
+              type="button" className="btn btn-outline btn-sm" disabled={gesteBloque}
+              aria-label={`Choisir un article, ligne ${i + 1}`} onClick={() => ouvrirFenetre({ genre: 'choix', cle: l.cle })}
+            >
+              Choisir un article
+            </button>
+          )}
+          {lu?.geste.etat === 'offert' && (
+            <button
+              type="button" className="btn btn-outline btn-sm" disabled={gesteBloque || lu.geste.refus != null} title={lu.geste.refus ?? undefined}
+              aria-label={`Mettre l’article à ce prix, ligne ${i + 1}`} onClick={() => ouvrirFenetre({ genre: 'prix', cle: l.cle })}
+            >
+              Mettre l’article à ce prix
+            </button>
+          )}
+          {sansProvenanceConnue && peutEnregistrerCommeArticle(l) && (
+            <button
+              type="button" className="btn btn-outline btn-sm" disabled={gesteBloque}
+              aria-label={`Enregistrer comme article, ligne ${i + 1}`}
+              onClick={() => ouvrirFenetre({ genre: 'saisie', cle: l.cle, depart: saisieDeLaLigne(l, statutTva) })}
+            >
+              Enregistrer comme article
+            </button>
+          )}
+        </div>
+        {/* Le refus du geste se lit aussi sous la ligne : une infobulle ne se voit pas au doigt. */}
+        {lu?.geste.etat === 'offert' && lu.geste.refus != null && (
+          <span className="muted" style={{ fontSize: '0.78rem' }}>{lu.geste.refus}</span>
+        )}
+        {avertissement && <span className="alerte-tva" style={{ fontSize: '0.8rem' }}>{pourLEspace(espace, avertissement)}</span>}
+      </>
+    )
+  }
+
   async function enregistrer(statutCible: 'brouillon' | 'validee') {
     if (!tiersNom.trim()) {
       setError('Le nom du client est obligatoire.')
@@ -234,7 +471,7 @@ export default function FactureFormModal(props: Props) {
       setError(refusMentions[0])
       return
     }
-    if (enregistrementEnCours.current) return
+    if (enregistrementEnCours.current || gesteArticleEnCours.current) return
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
     // validée : la validation se confirme, et la confirmation dit ce qu'on perd.
     if (statutCible === 'validee' && nonTransmissible) {
@@ -479,10 +716,18 @@ export default function FactureFormModal(props: Props) {
                     {lignes.map((l, i) => {
                       const c = calculerLigne(parseFloat(l.quantite) || 0, parseFloat(l.prix_unitaire_ht) || 0, parseFloat(l.taux_tva) || 0)
                       return (
-                        <tr key={l.id ?? `nouvelle-${i}`}>
-                          <td data-libelle="Désignation"><input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160 }} /></td>
+                        <tr key={l.cle}>
+                          {/* UN SEUL enfant : en fiche (téléphone), les enfants d'une cellule se rangent côte à côte de son libellé. Il prend la
+                              place qu'avait le champ (`flex`, 62 % : index.css, « Un champ dans une fiche »), et le champ, que cette règle borne
+                              aussi — à 62 % de SON parent —, remplit son enveloppe. */}
+                          <td data-libelle="Désignation">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 auto', minWidth: 0, maxWidth: '62%' }}>
+                              <input value={l.designation} onChange={(e) => majLigne(i, { designation: e.target.value })} style={{ minWidth: 160, maxWidth: 'none', width: '100%' }} />
+                              {articleDeLaLigne(l, i)}
+                            </div>
+                          </td>
                           <td data-libelle="Qté"><input type="number" step="0.01" value={l.quantite} onChange={(e) => majLigne(i, { quantite: e.target.value })} style={{ width: 65 }} /></td>
-                          <td data-libelle="PU HT"><input type="number" step="0.01" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
+                          <td data-libelle="PU HT"><input type="number" step="any" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
                           <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
                           <td data-libelle="Montant TTC">{formatMoney(c.montant_ttc)}</td>
                           <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)} disabled={lignes.length === 1}>✕</button></td>
@@ -501,6 +746,32 @@ export default function FactureFormModal(props: Props) {
                   une ligne porte une désignation et une quantité positive.
                 </p>
               )}
+              {ARTICLES_EXPORTES && (courante == null
+                ? <p className="muted" style={{ marginTop: 8 }}>Articles : Chargement…</p>
+                : 'echec' in courante
+                  ? (
+                    <p className="error-text" style={{ marginTop: 8 }}>
+                      {espace === 'client' ? 'Tes articles ne se lisent pas' : 'Les articles ne se lisent pas'} : {courante.echec}. Aucun
+                      article ne peut être choisi ni enregistré d’ici ; rouvre la facture pour les relire.
+                    </p>
+                  )
+                  : (
+                    <>
+                      <BandeauLecturePartielle
+                        quoi={espace === 'client' ? 'Tes articles' : 'Les articles du dossier'} accord="lus"
+                        motif={courante.lu.complete ? null : (courante.lu.motif ?? 'lecture incomplète')}
+                        consequence={CONSEQUENCE_ARTICLES_PARTIELS} technique={espace === 'cabinet'}
+                      />
+                      {articlesEntiers != null && articlesEnCours.length === 0 && (
+                        <p className="muted" style={{ marginTop: 8 }}>
+                          {espace === 'client' ? 'Tu n’as encore aucun article en cours' : 'Le catalogue du dossier n’a encore aucun article en cours'}
+                          {' : « Enregistrer comme article », sous une ligne saisie, en crée un.'}
+                        </p>
+                      )}
+                    </>
+                  ))}
+              {messageArticle && <p role="status" style={{ marginTop: 8 }}>{messageArticle}</p>}
+              {erreurArticle && !fenetreArticle && <p className="error-text" role="alert" style={{ marginTop: 8 }}>{erreurArticle}</p>}
               {refusTaxe && <p className="error-text">{pourLEspace(espace, refusTaxe)}</p>}
               {zeroSansArticle && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>
@@ -578,16 +849,65 @@ export default function FactureFormModal(props: Props) {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>
-              <button type="submit" className="btn btn-outline" disabled={!!saving || refusMentions.length > 0}>
+              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || refusMentions.length > 0}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>
           </form>
         )}
       </div>
+      {fenetreArticle?.genre === 'choix' && articlesEntiers != null && (
+        <ArticleChoixModal
+          espace={espace} articles={articlesEntiers}
+          onChoisir={(a) => choisir(fenetreArticle.cle, a)} onClose={() => setFenetreArticle(null)}
+        />
+      )}
+      {fenetreArticle?.genre === 'saisie' && articlesEntiers != null && (
+        <ArticleSaisieModal
+          dossierId={dossierId} espace={espace} article={null} saisieDeDepart={fenetreArticle.depart} articles={articlesEntiers}
+          occupe={articleOccupe} erreur={erreurArticle}
+          onEnregistrer={(saisie) => enregistrerCommeArticle(fenetreArticle.cle, saisie)} onClose={() => setFenetreArticle(null)}
+        />
+      )}
+      {fenetreArticle?.genre === 'remplacer' && (
+        <ConfirmationArticle
+          titre="Remplacer le contenu de la ligne ?" boutonLabel="Remplacer" occupe={false} refus={null} erreur={null}
+          onConfirmer={() => { appliquerChoix(fenetreArticle.cle, fenetreArticle.article); setFenetreArticle(null) }}
+          onAnnuler={() => setFenetreArticle(null)}
+        >
+          <p>
+            Choisir l’article « {nomDansUnRefus(fenetreArticle.article.designation)} » remplace {enumeration(fenetreArticle.remplace)} de
+            cette ligne.
+          </p>
+          <p className="muted">La ligne reste libre : la modifier ensuite ne change pas l’article.</p>
+        </ConfirmationArticle>
+      )}
+      {fenetreArticle?.genre === 'prix' && (() => {
+        const lu = prixDeLaLigne(fenetreArticle.cle)
+        if (lu == null || lu.geste.etat !== 'offert') return null
+        const { geste, article } = lu
+        return (
+          <ConfirmationArticle
+            titre="Mettre l’article à ce prix ?" boutonLabel="Mettre à ce prix" occupe={articleOccupe} refus={geste.refus} erreur={erreurArticle}
+            onConfirmer={() => mettreAuPrix(fenetreArticle.cle)} onAnnuler={() => setFenetreArticle(null)}
+          >
+            {article != null && geste.nouveau != null && geste.ancien != null && (
+              <p>
+                L’article « {nomDansUnRefus(article.designation)} » passe de {formaterPrixUnitaire(geste.ancien)} à {formaterPrixUnitaire(geste.nouveau)}.
+              </p>
+            )}
+            <p className="muted">
+              {espace === 'client'
+                ? 'Tes prochaines factures qui choisiront cet article prendront ce prix'
+                : 'Les prochaines factures de ce dossier qui choisiront cet article prendront ce prix'}
+              {' ; aucune facture déjà rédigée ne change, et rien d’autre de l’article ne bouge.'}
+            </p>
+          </ConfirmationArticle>
+        )
+      })()}
     </div>
   )
 }

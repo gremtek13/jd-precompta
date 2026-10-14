@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
-import { formatDate } from '../../lib/format'
+import { formatDate, formaterPrixUnitaire } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace } from '../../lib/espaceVentes'
 import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
@@ -11,7 +11,7 @@ import { tauxCommeLaBase } from '../../lib/encaissementsFactures'
 import { lireLesArticles, type LectureDesArticles } from '../../lib/articlesLecture'
 import { enregistrerArticle, reprendreArticle, retirerArticle } from '../../lib/articlesEcriture'
 import {
-  articlesAffiches, champsDeRechercheArticle, formaterPrixArticle, gestesDeLArticle, mentionParLeClient, refusDeLaSaisie,
+  articlesAffiches, champsDeRechercheArticle, gestesDeLArticle, mentionParLeClient, refusDeLaSaisie,
   saisieEnvoyee, type SaisieArticle,
 } from '../../lib/articlesVue'
 import type { Article } from '../../lib/types'
@@ -20,7 +20,7 @@ import ArticleSaisieModal from './ArticleSaisieModal'
 // « ARTICLES » (espace client, étape A2a ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE
 // PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.1) : le catalogue du dossier — la liste et ses gestes (nouvel article, modifier,
 // retirer, reprendre). La vue « Articles » de l'onglet Factures, à côté de « Factures » et « Règlements » : au cabinet dans
-// l'onglet, au client « Ventes » dans « Mes ventes ». Le choix d'un article dans le formulaire d'une facture est l'étape A2b.
+// l'onglet, au client « Ventes » dans « Mes ventes ». Le choix d'un article dans le formulaire d'une facture, lui, est celui de `FactureFormModal` (étape A2b).
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions de la base (MEG1-Q1) ; ce que chacune refuserait
 // est dit avant le clic par le module `lib/articles.ts`, et la base juge encore — son refus se dit sous ses mots.
@@ -253,7 +253,7 @@ export default function ArticlesVue(props: Props) {
                         </div>
                       </td>
                       <td data-libelle="Unité">{libelleUnite(a.unite)}</td>
-                      <td data-libelle="Prix HT">{formaterPrixArticle(a.prix_unitaire_ht)}</td>
+                      <td data-libelle="Prix HT">{formaterPrixUnitaire(a.prix_unitaire_ht)}</td>
                       {/* L'espace avant « % » est insécable : « 20 / % » sur deux lignes dans une colonne étroite (banc, 1 440 px). */}
                       <td data-libelle="TVA">{tauxCommeLaBase(a.taux_tva)}{' '}%</td>
                       <td data-libelle="Nature">{NOM_NATURE[a.nature]}</td>

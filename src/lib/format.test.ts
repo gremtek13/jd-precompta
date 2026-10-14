@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ajouterJours, ajouterMois, anneeDe, anneeEtMoisEcoules, anneeLocaleDe, aujourdHuiAParis, aujourdHuiSql, cleFournisseur, dateAParis, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { ajouterJours, ajouterMois, anneeDe, anneeEtMoisEcoules, anneeLocaleDe, aujourdHuiAParis, aujourdHuiSql, cleFournisseur, dateAParis, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, formatMoney, formaterPrixUnitaire, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -498,5 +498,32 @@ describe('dateAParis', () => {
     expect(aujourdHuiAParis()).toBe('2026-12-31')
     vi.setSystemTime(new Date('2026-12-31T23:30:00Z'))
     expect(aujourdHuiAParis()).toBe('2027-01-01')
+  })
+})
+
+// Le prix unitaire d'une ligne de facture et d'un article (étape A2b) : jamais arrondi en silence, et au centime IDENTIQUE à
+// `formatMoney` — l'aperçu d'une facture d'avant ne doit pas bouger d'un caractère.
+const lisible = (t: string) => t.replace(/[\u00a0\u202f]/g, ' ')
+
+describe('formaterPrixUnitaire — un prix ne s’arrondit jamais à l’affichage', () => {
+  it.each([
+    [12.5, '12,50 €'], [60, '60,00 €'], [0, '0,00 €'], [0.1, '0,10 €'], [1.2345, '1,2345 €'], [0.123456, '0,123456 €'],
+    [1234.5, '1 234,50 €'], [999999.999999, '999 999,999999 €'], [-50, '-50,00 €'],
+  ])('%s s’affiche « %s »', (prix, attendu) => {
+    expect(lisible(formaterPrixUnitaire(prix))).toBe(attendu)
+  })
+
+  it('l’espace avant « € » est insécable : un montant ne se coupe pas en fin de ligne', () => {
+    expect(formaterPrixUnitaire(12.5)).toMatch(/\u00a0€$/)
+  })
+
+  it('un prix au centime s’écrit EXACTEMENT comme `formatMoney` : même texte, au caractère près', () => {
+    for (const prix of [0, 0.01, 0.1, 1, 12.5, 59.99, 60, 349.9, 1234.5, 12345678.9, -50, -0.5]) {
+      expect(formaterPrixUnitaire(prix)).toBe(formatMoney(prix))
+    }
+  })
+
+  it('un prix à plus de deux décimales n’est pas celui de `formatMoney` : celui-ci l’arrondirait', () => {
+    expect(formatMoney(0.123456)).not.toBe(formaterPrixUnitaire(0.123456))
   })
 })

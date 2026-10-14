@@ -23825,6 +23825,150 @@ modification et le retrait) ; A2-Q2, un article neuf ne propose ni taux ni natur
 désignation, pas la description ; A2-Q5, un prix que l'écran ne lit pas fidèlement est refusé comme « illisible »,
 jamais arrondi. Recommandation : les cinq telles quelles.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #165 (`94148b4`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-VpQl6TzJ.js`, le paquet de la barrière (déploiement 38543446967) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 51.5 reçoit le paragraphe d'A2a, et son « RESTE » nomme A2b ; la propriété se
+réécrit ENTIÈRE, et la réécriture se vérifie par des empreintes calculées dans Notion — la partie d'avant et le
+« RESTE » égaux à ceux d'avant l'écriture, le paragraphe égal au fichier préparé, 19 587 caractères (le SQL de Notion
+n'admet pas `WITH RECURSIVE` : une table de positions, produit croisé de chiffres, en tient lieu) ; les barres
+recomptées, inchangées (139 chantiers livrés sur 182, 76 % ; pour un dossier BNC, 139 sur 169, 82 %). Le worktree de
+l'agent retiré (ses 22 fichiers identiques au correctif), comme celui de l'intégration.
+
 **RESTE.** A2b, le formulaire de facture : « Choisir un article », « Enregistrer comme article », « Mettre l'article à
 ce prix ». NON VÉRIFIÉ : le premier geste réel du cabinet sur la table, et une lecture par un accès client « Ventes »
 réel (aucun ne porte la case aujourd'hui).
+
+### 14/10/2026 — UN ARTICLE DANS LA FACTURE — ESPACE CLIENT, ÉTAPE A2b (LIGNE 51.5)
+
+(Préparée le 14/10/2026 par l'agent S234 sur `94148b4`, relue et intégrée par la session le même jour. Fichiers
+nouveaux : `src/lib/articlesFacture.ts` et son test, `src/pages/dossier/ArticleChoixModal.tsx`,
+`ConfirmationArticle.tsx`, `FactureFormModalArticles.test.tsx`. Modifiés : `FactureFormModal.tsx`, `FactureApercu.tsx`,
+`ArticleSaisieModal.tsx` (une saisie de départ facultative, par ajout), `ArticlesVue.tsx` et `articles.ts` (un
+commentaire chacun), `lib/format.ts` et `format.test.ts`, `articlesVue.ts` et son test (le formateur du prix, déplacé),
+`FactureFormModal.test.tsx`, `FactureApercu.test.tsx`, `ecransAvantLecture.test.tsx`, `outils/captures/debordements.mjs`
+(par ajout). Aucune migration, aucune policy, aucune Edge Function, aucun appel extérieur.)
+
+**LA DÉLIMITATION.** A2b est le formulaire de facture et ce qu'un prix à plus de deux décimales lui demande. Hors
+d'elle : les devis (P6, aucune table), l'unité, la référence et l'identifiant d'article sur la ligne ENREGISTRÉE (A7,
+une migration d'`enregistrer_facture`). La provenance d'une ligne — l'article qui l'a remplie — vit donc en MÉMOIRE
+seulement, jusqu'à A7.
+
+**CHOISIR UN ARTICLE.** Sous chaque ligne du formulaire, au cabinet et au client « Ventes » (la même propriété
+`espace`) : « Choisir un article » ouvre la liste des articles EN COURS du dossier (la recherche de l'application,
+référence et désignation, dans l'ordre de la liste d'A2a ; jamais un retiré, même cherché par sa référence). Le choix
+remplit la ligne par `ligneDepuisArticle` (lib/articles.ts, aucune règle recopiée) : la désignation avec sa description,
+la quantité 1, le prix et le taux du statut de TVA du jour — 0 % pour une franchise, un exonéré, un statut à préciser
+(avec son avertissement, dit SUR la ligne tant qu'elle porte le taux que l'article lui a donné) —, en texte et sans
+arrondi (un prix à six décimales reste à six décimales). La mention de TVA du choix n'est PAS écrite : le formulaire la
+propose déjà (`mentionAbsente`, « Ajouter la mention », d'après le statut et les taux des lignes), la même que `mention`
+de `choixDArticle` — un test les confronte, et vérifie qu'une seule proposition paraît.
+
+**UNE LIGNE DÉJÀ SAISIE** (A2B-Q1). Sur une ligne qui porte une désignation, un prix, ou une quantité que quelqu'un a
+tapée, le choix ne remplace qu'après une confirmation qui NOMME ce qui part (« Choisir l'article « … » remplace la
+désignation « … », la quantité 3, le prix 12,50 € et le taux 10 % de cette ligne. ») ; une ligne vide, ou qui dit déjà
+exactement ce que l'article apporte, se remplit directement. La confirmation est dans la page (`ConfirmationArticle`),
+jamais un `window.confirm`, qu'on ne voit ni ne teste. LA LIGNE RESTE LIBRE : la retoucher n'écrit rien, la provenance
+reste ; elle tombe quand la ligne est retirée ou remplie par un autre article ; une facture rouverte n'en a aucune.
+
+**METTRE L'ARTICLE À CE PRIX** (A2B-Q2), sur une ligne dont la provenance est connue et dont le prix diffère de celui de
+l'article TEL QUE LA LISTE LE PORTE. `enregistrer_article` reçoit TOUS les champs de l'article tel que lu (désignation,
+description, référence, unité, taux, nature), le prix de la ligne seul changé — jamais la désignation ni le taux
+retouchés de la ligne. Les refus se disent avant le clic, par `refusDeLaSaisie` sur ce qui part et la liste lue en
+entier : un article retiré (« le reprendre avant de le modifier »), un prix vide, illisible, négatif ou à plus de six
+décimales grisent le geste, sous les mots de la base, en infobulle ET sous la ligne. La confirmation nomme l'article,
+l'ancien et le nouveau prix, et dit que les factures à venir le prendront — aucune facture déjà rédigée ne change. La
+liste se relit après l'écriture, après un refus aussi.
+
+**ENREGISTRER COMME ARTICLE.** Sur une ligne SANS provenance qui porte une désignation (une ligne saisie à la main, ou
+d'une facture rouverte) : `ArticleSaisieModal` s'ouvre préremplie — la désignation de la ligne ; son prix lu par
+`lirePrix`, jamais arrondi ; son taux SEULEMENT si le dossier est redevable (A2B-Q3 : le taux d'un article est celui de
+l'opération d'un dossier redevable, alors que la ligne d'une franchise ou d'un exonéré est à 0 % du seul fait du
+statut ; un article à 0 % ferait facturer 0 % à un dossier devenu redevable) ; l'unité `C62`, la nature à choisir,
+aucune référence. L'écriture passe par `enregistrer_article` ; la ligne prend le nouvel article pour provenance, la
+liste se relit.
+
+**LA LECTURE ET LE VERROU.** Les articles se lisent en entier à l'ouverture du formulaire (A2B-Q4, une lecture par
+ouverture, sous `ARTICLES_EXPORTES` : rebaissé, rien ne se lit ni ne s'offre). Avant son retour : « Articles :
+Chargement… » et aucun choix ; lue en partie ou refusée : le bandeau (ou le message) et aucun geste, aucun choix ; un
+catalogue vide, lu en entier, le dit — « Enregistrer comme article » reste offert. UN verrou `useRef`
+(`gesteArticleEnCours`) pour les deux gestes, posé avant le `try`, relâché dans le `finally` APRÈS la relecture ; il
+s'efface devant l'enregistrement de la facture (`enregistrementEnCours`) et l'inverse — même la soumission du formulaire
+(« Entrée »), que le bouton grisé n'arrête pas, est refusée pendant un geste d'article ou pendant sa relecture. Les
+fenêtres d'article sont posées HORS du `<form>` : un « Entrée » dans la saisie ne soumet pas la facture.
+
+**UN PRIX À PLUS DE DEUX DÉCIMALES.** Le champ « PU HT » était `type="number" step="0.01"` : le navigateur refusait
+d'envoyer le formulaire d'un prix à six décimales (vérifié : jsdom signale `stepMismatch` sur l'ancien pas, pas sur
+`step="any"`) — c'est une vraie borne, que le générateur CII ne partage pas (il n'en refuse que plus de six, dit avant
+le clic comme avant). Le champ est en `step="any"`. L'AFFICHAGE : l'aperçu d'une facture, le document qu'on imprime et
+qu'on envoie, disait « 0,12 € » un prix de 0,123456 €. `formaterPrixUnitaire` (deux décimales au moins, six au plus)
+quitte `articlesVue.ts` pour `lib/format.ts` et sert la liste des articles ET l'aperçu ; au centime il écrit EXACTEMENT
+comme `formatMoney`, au caractère près (un test le prouve sur douze prix) — l'aperçu d'une facture d'avant ne bouge
+pas —, et les montants (total HT, TTC d'une ligne) restent au centime : aucun calcul ne change. Ce que `src/` affiche
+d'autre du prix unitaire : rien (les fenêtres des encaissements et de la transmission le LISENT sans l'afficher ; celle
+de l'avoir le montre dans un champ, que `step="0.01"` ne valide pas — voir plus bas). `send-email` n'imprime que des
+montants de ligne au centime ; `plateforme-agreee` et `superpdp-emit` n'affichent aucun prix unitaire : rien à changer
+côté Edge Functions.
+
+**LES MOTS.** Au client : tutoiement, aucun onglet, aucun « le client qui porte » (`MOTS_DU_CABINET`, `pourLEspace` pour
+l'avertissement du module) ; le garde est éprouvé sur les mêmes états montés pour le cabinet.
+
+**LES PREUVES.** 51 tests de logique (`articlesFacture.test.ts`), 3 de plus au formateur (`format.test.ts`) et 108
+d'écran des deux espaces (`FactureFormModalArticles.test.tsx`) : la lecture en cours, partielle, refusée, vide, le
+drapeau rebaissé ; le choix selon les quatre statuts ; la confirmation ; la ligne libre ; la provenance (retirée,
+rouverte) ; « Mettre l'article à ce prix » (refus, confirmation, tous les champs, relecture sur succès et refus, verrou
+à deux puis trois clics) ; « Enregistrer comme article » (préremplissage, taux d'un redevable seul, refus, verrou) ; la
+facture et les gestes d'article qui se tiennent à l'écart, la relecture comprise ; le prix à six décimales à travers le
+formulaire. `FactureApercu.test.tsx` : l'aperçu au centime est identique à `formatMoney`, six décimales sans arrondi,
+montants au centime. `ecransAvantLecture.test.tsx` : le formulaire du client s'ajoute à celui du cabinet. 43 mutations
+ciblées : 41 mordent, deux sont équivalentes (le drapeau lu une seconde fois dans `articleDeLaLigne`, que
+`articlesEntiers == null` couvre déjà quand il est rebaissé ; la seconde ceinture `refusDeLaSaisie`
+d'`enregistrerCommeArticle`, que le bouton grisé de la saisie couvre — comme dans `ArticlesVue`). Le banc : 0
+débordement aux largeurs de référence (1 440, 1 280, 1 024, 720, 390), aux combinaisons extrêmes des volets et aux deux
+passes du client, avec dix visites neuves (cinq au cabinet, cinq au client) ; il a fait corriger deux défauts de
+présentation, vus sur capture : la désignation et ses détails d'un choix se rangeaient côte à côte (`.btn` est une
+rangée : un bloc les empile), et le champ de la désignation, enveloppé pour porter les gestes, ne prenait que 62 % de
+son enveloppe (la règle des champs d'une fiche, index.css, borne tout `input` d'une cellule à 62 % de son PARENT) :
+c'est l'enveloppe qui prend ces 62 % de la cellule, et le champ la remplit.
+
+**LA BARRIÈRE (de l'agent, sur `94148b4` + le correctif).** `tsc -b` 0 ; Edge : 25 erreurs, les mêmes qu'à la base ;
+lint : 0 erreur, 63 avertissements (l'agent en comptait 64 dans sa copie de la base ; la barrière de la session en
+compte 63 avant comme après, la même liste), aucun neuf ; construction verte ; les dix fichiers touchés ou ajoutés sous
+les quatre fuseaux (415 tests chacun) ; la suite entière sous Paris, 361 fichiers, 10 862 tests, tous verts (10 695 à la
+base : +167).
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu fichier par fichier : le module pur (aucune règle recopiée ; le prix
+porté dans le champ numérique sans séparateur de milliers, par `tauxCommeLaBase`) ; le formulaire (des clés de ligne
+stables, la lecture gardée avec son dossier, le verrou posé avant le `try` et relâché après la relecture, « Mettre
+l'article à ce prix » qui écrit tous les champs de l'article lu, « Enregistrer comme article » jugé sur la liste
+entière) ; les deux fenêtres neuves (la confirmation dans la page, le choix sans retirés) ; l'aperçu, dont seule la
+cellule du prix unitaire change ; le banc et les tests partagés, qui ne reçoivent que des ajouts. Les captures relues
+aux deux largeurs et dans les deux espaces : rien à corriger.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif appliqué sur `94148b4` tel que l'agent l'a rendu (18 fichiers) ; dans la
+même demande, la mise en ligne d'A2a et la ligne du catalogue au registre (RGPD.md : le choix d'un article dans le
+formulaire d'une facture, même traitement). Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ;
+lint 63 avertissements, aucun neuf ; quatre fuseaux, 10 862 tests chacun ; construction verte (`index-Dn8FUzCE.js`).
+
+**RÉSULTATS NÉGATIFS, À NE PAS RÉENQUÊTER.** Un `.btn` est une rangée centrée (`display: inline-flex`) : tout contenu à
+deux lignes d'un bouton se range côte à côte sans un `display: block`. `lecturesSignalees` et `recherchesEtTotaux` ne
+lisent que `const … = X.filter(…)` : une recherche liée à un nom. Le `tbody tr` d'une visite du banc désigne d'abord le
+tableau des factures DERRIÈRE la fenêtre : une ligne du formulaire se désigne par sa carte (`ligneDuFormulaire`). Le
+champ « PU HT » de la fenêtre de l'avoir est resté en `step="0.01"` : elle n'est pas un `<form>`, le navigateur n'y
+valide rien — seule la flèche du champ y arrondirait (à voir avec le cabinet si elle gêne).
+
+**LES QUESTIONS AU CABINET (A2B-Q1 À A2B-Q8).** Huit lectures de la consigne, prises par l'écran et soumises au cabinet,
+chacune une ligne à changer. A2B-Q1 : une ligne déjà saisie se remplace après confirmation (désignation, prix ou
+quantité tapée) ; `ceQueLeChoixRemplace`, `lib/articlesFacture.ts`. A2B-Q2 : « Mettre l'article à ce prix » se confirme
+en nommant l'ancien et le nouveau prix ; `ConfirmationArticle` dans `FactureFormModal.tsx`. A2B-Q3 : « Enregistrer comme
+article » préremplit le taux d'un dossier redevable seul ; `saisieDeLaLigne`. A2B-Q4 : les articles se lisent à
+l'ouverture du formulaire (une lecture), pas au premier clic ; l'effet de lecture de `FactureFormModal.tsx`. A2B-Q5 :
+« Mettre l'article à ce prix » ne s'offre pas quand le prix de la ligne est celui de l'article, et s'offre grisé sous le
+refus du module pour un article retiré ou un prix qu'on ne lit pas ; `gestePrixDeLArticle`. A2B-Q6 : l'article visé est
+celui de la DERNIÈRE lecture de la liste (relue après chaque écriture), non un instantané du choix ; `prixDeLaLigne`.
+A2B-Q7 : « Enregistrer comme article » s'offre aussi sur les lignes d'une facture rouverte (sans provenance) ;
+`peutEnregistrerCommeArticle`. A2B-Q8 : l'avertissement du choix se dit tant que la ligne porte le taux que l'article
+lui a donné ; `articleDeLaLigne`. Recommandation : les huit telles quelles.
+
+**RESTE.** A7 (l'unité, la référence et l'identifiant d'article sur la ligne enregistrée, le CII sous son unité) et P6
+(les devis). NON VÉRIFIÉ : un premier geste réel du cabinet sur le formulaire, et un accès client « Ventes » réel (aucun
+ne porte la case aujourd'hui).

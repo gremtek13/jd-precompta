@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import { calculerLigne } from '../../lib/factures'
 import { mentionsImprimees, numeroTvaImprime, type DossierCii } from '../../lib/factureCii'
-import { formatDate, formatMoney } from '../../lib/format'
+import { formatDate, formatMoney, formaterPrixUnitaire } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
 // Un taux se lit « 5,5 % » sur une facture française — virgule décimale — et ne se coupe pas de son « % » : l'espace est
@@ -119,7 +119,8 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
                     <tr key={l.id}>
                       <td>{l.designation}</td>
                       <td data-libelle="Qté">{l.quantite}</td>
-                      <td data-libelle="PU HT">{formatMoney(l.prix_unitaire_ht)}</td>
+                      {/* Un prix unitaire n'est jamais arrondi en silence (jusqu'à six décimales, BT-146) ; un MONTANT reste au centime. */}
+                      <td data-libelle="PU HT">{formaterPrixUnitaire(l.prix_unitaire_ht)}</td>
                       <td data-libelle="TVA">{tauxLisible(l.taux_tva)}</td>
                       <td data-libelle="Total HT">{formatMoney(c.montant_ht)}</td>
                       <td data-libelle="Total TTC">{formatMoney(c.montant_ttc)}</td>

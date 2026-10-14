@@ -64,6 +64,10 @@ const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'esti
 // fait un seul sélecteur, que `FENETRE_FACTURE` et le `${fenetre} *` de la mesure prolongent sans changer de sens.
 const VOILE_FACTURE = ':is(div[style*="position: fixed"], .facture-apercu-voile)'
 const FENETRE_FACTURE = `${VOILE_FACTURE} > .card`
+// Les fenêtres d'ARTICLE (espace client, étape A2b : le choix, la saisie, les deux confirmations) se posent PAR-DESSUS celle de la
+// facture, qu'elles ne remplacent pas : seules elles portent un rôle (`dialog`, `alertdialog`), ce qui les désigne sans désigner
+// la carte du formulaire, que `FENETRE_FACTURE` prend en premier.
+const FENETRE_ARTICLE = 'div[style*="position: fixed"] > .card:is([role="dialog"], [role="alertdialog"])'
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
@@ -665,6 +669,58 @@ const VISITES = [
       await page.getByRole('heading', { name: 'Modifier l’article' }).waitFor({ timeout: 10000 })
     },
   },
+  // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
+  // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
+  // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six
+  // décimales, et la saisie d'un article tiré d'une ligne. Les fenêtres d'article se mesurent contre leur propre carte
+  // (`FENETRE_ARTICLE`) ; la ligne remplie, contre celle du formulaire.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/article-choix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await page.getByRole('button', { name: 'Choisir un article, ligne 1', exact: true }).click()
+      await page.getByRole('button', { name: /^Joint torique de remplacement/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/article-ligne', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await choisirUnArticle(page, /^Audit de l’organisation commerciale/)
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('1300')
+      await page.getByRole('button', { name: 'Mettre l’article à ce prix, ligne 1', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/article-remplacer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await ligneDuFormulaire(page, 0).locator('input').first().fill('Intervention de dépannage en urgence, déplacement et main-d’œuvre, le soir')
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('12.5')
+      await choisirUnArticle(page, /^Séance de conseil en gestion/)
+      await page.getByRole('alertdialog', { name: 'Remplacer le contenu de la ligne ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/article-prix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await choisirUnArticle(page, /^Joint torique de remplacement/)
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('0.2')
+      await page.getByRole('button', { name: 'Mettre l’article à ce prix, ligne 1', exact: true }).click()
+      await page.getByRole('alertdialog', { name: 'Mettre l’article à ce prix ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/article-enregistrer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await ligneDuFormulaire(page, 0).locator('input').first().fill('Intervention de dépannage en urgence, déplacement et main-d’œuvre, le soir')
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('0.123456')
+      await page.getByRole('button', { name: 'Enregistrer comme article, ligne 1', exact: true }).click()
+      await page.getByRole('heading', { name: 'Nouvel article' }).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -851,6 +907,55 @@ const VISITES_CLIENT = [
       await page.getByText(/^La référence « CONS-H » est déjà celle/).waitFor({ timeout: 10000 })
     },
   },
+  // « Un article dans la facture » (étape A2b), aux mots du client : le choix, la ligne remplie, la confirmation d'une ligne déjà
+  // saisie, celle du nouveau prix, et la saisie d'un article tiré d'une ligne.
+  {
+    chemin: '#/mes-ventes', nom: 'client/article-choix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await page.getByRole('button', { name: 'Choisir un article, ligne 1', exact: true }).click()
+      await page.getByRole('button', { name: /^Joint torique de remplacement/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/article-ligne', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await choisirUnArticle(page, /^Audit de l’organisation commerciale/)
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('1300')
+      await page.getByRole('button', { name: 'Mettre l’article à ce prix, ligne 1', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/article-remplacer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await ligneDuFormulaire(page, 0).locator('input').first().fill('Intervention de dépannage en urgence, déplacement et main-d’œuvre, le soir')
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('12.5')
+      await choisirUnArticle(page, /^Séance de conseil en gestion/)
+      await page.getByRole('alertdialog', { name: 'Remplacer le contenu de la ligne ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/article-prix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await choisirUnArticle(page, /^Joint torique de remplacement/)
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('0.2')
+      await page.getByRole('button', { name: 'Mettre l’article à ce prix, ligne 1', exact: true }).click()
+      await page.getByRole('alertdialog', { name: 'Mettre l’article à ce prix ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/article-enregistrer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFacture(page)
+      await ligneDuFormulaire(page, 0).locator('input').first().fill('Intervention de dépannage en urgence, déplacement et main-d’œuvre, le soir')
+      await ligneDuFormulaire(page, 0).locator('input[type="number"]').nth(1).fill('0.123456')
+      await page.getByRole('button', { name: 'Enregistrer comme article, ligne 1', exact: true }).click()
+      await page.getByRole('heading', { name: 'Nouvel article' }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 // « Ma banque » (espace client, étape P9), pour la seule passe `client-banque` : le relevé, puis le détail d'un mouvement
@@ -879,6 +984,15 @@ function boutonDeFacture(page, numero, nom) {
 // sur l'aperçu et sur la transmission. Une fenêtre qui n'a ni l'un ni l'autre est une faute du banc, dite plutôt que
 // attendue jusqu'à l'expiration d'un clic.
 async function fermerLesFenetres(page) {
+  // Les fenêtres d'ARTICLE (étape A2b), posées par-dessus celle de la facture, se ferment d'abord : leur voile intercepterait le
+  // clic sur le « Annuler » du formulaire. Chacune a le sien.
+  const dialogues = page.locator('[role="dialog"], [role="alertdialog"]')
+  for (let i = 0; i < 3 && (await dialogues.count()) > 0; i++) {
+    const annuler = dialogues.first().getByRole('button', { name: 'Annuler', exact: true })
+    if ((await annuler.count()) === 0) break
+    await annuler.first().click()
+    await page.waitForTimeout(200)
+  }
   const voile = page.locator(VOILE_FACTURE)
   for (let i = 0; i < 5 && (await voile.count()) > 0; i++) {
     const fermer = voile.first().getByRole('button', { name: /^(Annuler|Fermer)$/ })
@@ -886,6 +1000,28 @@ async function fermerLesFenetres(page) {
     await fermer.first().click()
     await page.waitForTimeout(200)
   }
+}
+
+// Le formulaire d'une facture neuve, ouvert une fois les articles du dossier lus (« Choisir un article » n'existe qu'alors). Dans
+// « Mes ventes », la vue « Factures » du sélecteur est reprise d'abord : la visite d'avant a pu laisser « Articles ».
+async function ouvrirLaFacture(page) {
+  await fermerLesFenetres(page)
+  const vue = page.getByRole('tab', { name: 'Factures', exact: true })
+  if ((await vue.count()) > 0) await vue.first().click()
+  await page.getByRole('button', { name: '+ Nouvelle facture', exact: true }).click()
+  await page.locator('#tiers-nom').waitFor({ timeout: 10000 })
+  await page.getByRole('button', { name: 'Choisir un article, ligne 1', exact: true }).waitFor({ timeout: 10000 })
+}
+
+// Une ligne du formulaire de facture : la page porte, derrière lui, le tableau des factures, dont les lignes sont aussi des `tr`.
+function ligneDuFormulaire(page, n) {
+  return page.locator(`${FENETRE_FACTURE} tbody tr`).nth(n)
+}
+
+// Choisit un article dans la fenêtre du choix : la ligne 1 s'ouvre sur lui.
+async function choisirUnArticle(page, nom) {
+  await page.getByRole('button', { name: 'Choisir un article, ligne 1', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choisir un article' }).getByRole('button', { name: nom }).click()
 }
 
 // Choisit un exercice dans le sélecteur de l'en-tête du dossier, dont les boutons sont des onglets.
