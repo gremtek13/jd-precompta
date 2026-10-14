@@ -23834,6 +23834,11 @@ n'admet pas `WITH RECURSIVE` : une table de positions, produit croisé de chiffr
 recomptées, inchangées (139 chantiers livrés sur 182, 76 % ; pour un dossier BNC, 139 sur 169, 82 %). Le worktree de
 l'agent retiré (ses 22 fichiers identiques au correctif), comme celui de l'intégration.
 
+**LES RÉPONSES DU CABINET, LE 14/10/2026 (« comme recommandé »).** A2-Q1 à A2-Q5 : les cinq lectures telles quelles —
+« par le client » compte le retrait comme la création et la modification ; un article neuf ne propose ni taux ni
+nature ; « Retirer » part sans confirmation, « Reprendre » le défait ; la recherche lit la référence et la désignation ;
+un prix que l'écran ne lit pas fidèlement est refusé, jamais arrondi. Rien ne change dans le code.
+
 **RESTE.** A2b, le formulaire de facture : « Choisir un article », « Enregistrer comme article », « Mettre l'article à
 ce prix ». NON VÉRIFIÉ : le premier geste réel du cabinet sur la table, et une lecture par un accès client « Ventes »
 réel (aucun ne porte la case aujourd'hui).
@@ -23969,6 +23974,166 @@ A2B-Q7 : « Enregistrer comme article » s'offre aussi sur les lignes d'une fact
 `peutEnregistrerCommeArticle`. A2B-Q8 : l'avertissement du choix se dit tant que la ligne porte le taux que l'article
 lui a donné ; `articleDeLaLigne`. Recommandation : les huit telles quelles.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #166 (`2d840cd`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-Dn8FUzCE.js`, le paquet de la barrière (déploiement 38563899399) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 51.5 reçoit le paragraphe d'A2b, et son « RESTE » ne nomme plus A2b ; la
+réécriture vérifiée par empreintes (21 044 caractères : la partie d'avant et le « RESTE » corrigé égaux à ceux d'avant
+l'écriture, le paragraphe égal au fichier préparé) ; les barres recomptées, inchangées (139 chantiers livrés sur 182,
+76 % ; pour un dossier BNC, 139 sur 169, 82 %). La copie que lit le SQL de Notion a rendu l'ancienne valeur pendant
+quelques minutes après l'écriture, quand la page relue directement portait déjà la nouvelle : une empreinte se prend une
+fois la longueur attendue revenue, jamais sur la première lecture. Le worktree de l'agent retiré avant l'intégration,
+celui de l'intégration après.
+
+**LES RÉPONSES DU CABINET, LE 14/10/2026 (« comme recommandé »).** A2B-Q1 à A2B-Q8 : les huit lectures telles quelles ;
+rien ne change dans le code. Dans la même réponse, MEG1-Q16 — l'adresse de réception DÉCLARÉE par le cabinet ou le
+client « Ventes », vérifiée sur le portail public de l'annuaire, et l'encart le dit — et le départ d'A6, l'encart
+« Facture électronique » : voir l'étape A6a.
+
 **RESTE.** A7 (l'unité, la référence et l'identifiant d'article sur la ligne enregistrée, le CII sous son unité) et P6
 (les devis). NON VÉRIFIÉ : un premier geste réel du cabinet sur le formulaire, et un accès client « Ventes » réel (aucun
 ne porte la case aujourd'hui).
+
+### 14/10/2026 — L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE — ESPACE CLIENT, ÉTAPE A6a (LIGNE 51.5)
+
+(La migration `adresses_reception`, préparée sous la version PROVISOIRE `20261014160000` et présentée au cabinet — elle
+ouvre une lecture au client qui porte la case « Ventes », et une fonction qui lit pour lui les deux tables des
+connexions —, appliquée le 14/10/2026 sous la version `20261014143141` sur son accord (A6-Q1), AVANT la mise en ligne de
+la bascule qui la lit. Préparée par l'agent S235 sur `2d840cd`, relue et intégrée par la session le même jour.
+Fichiers : `src/lib/adressesReception.ts`, `src/lib/etatFactureElectronique.ts`, leurs tests,
+`src/lib/sauvegardeAdressesReception.test.ts`, `supabase/essais/etatFactureElectronique.sql` (nouveaux) ;
+`src/lib/types.ts`, `src/lib/sauvegarde.ts`, `src/lib/droitsAcces.ts`, `supabase/essais/rls.sql`,
+`supabase/essais/restauration.sql`, `RGPD.md`, et les tests `droitsAcces.test.ts`, `sauvegarde.test.ts`,
+`sauvegardeDevis.test.ts`, `restaurationEssai.test.ts`, `AccesTab.casesOuvertes.test.tsx`. La bascule — le fichier dans
+l'export, renommé à sa version réelle, le drapeau levé — part dans la même demande.)
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 14/10/2026 (132 migrations, la dernière `articles`, lecture
+seule du catalogue) : `gere_les_ventes` (le cabinet OU `client_du_dossier(…, 'ventes')`), les patrons
+`couverture_du_releve` et `pieces_jointes_ecartees_du_client` (plpgsql, stable, definer, l'accès d'abord, une valeur) ;
+`connexions_plateformes` et `superpdp_credentials`, clé primaire `dossier_id` (une connexion par dossier), RLS sans
+aucune policy. Deux écarts au §A.6, dits ici : (1) la lecture du client « Ventes » s'écrit
+`client_du_dossier(dossier_id, 'ventes')` dans sa policy à part (`…_lecture_ventes`), comme les dix tables des ventes —
+même effet que `gere_les_ventes`, mais c'est à ce prédicat que `rls.sql` (3bis) reconnaît une table des ventes et que
+M3bis-membre le remplace ; (2) LE DOSSIER N'A PAS DE COLONNE SIREN : `dossiers.siret` est un texte libre, et le code
+tire le SIREN par `sirenDuDossier` (blancs retirés, quatorze chiffres → les neuf premiers, neuf → lui-même) ; la
+fonction le tire de même, avec la classe EXPLICITE des blancs de `\s` de JavaScript (le test la confronte à `\s` sur
+tout le plan multilingue de base), d'où un refus de plus à son rang : « le dossier n'a pas de SIREN ». Trois accès
+clients, aucun ne porte « Ventes » ni « Banque ».
+
+**LES SOURCES.** L'archive officielle v3.2 des spécifications externes (empreinte `cd8f6e81…`) : annexe 3 v1.8, F14 —
+DT-7-5-1 « Identifiant d'adressage » (« obtenu en concaténant … séparées par un '_' », Ouvert), DT-7-5-1-2 à 1-4 (SIRET
+14, routage 100, suffixe 100), DT-7-3-1 date de prise d'effet et DT-7-6 matricule « Restreint aux PA », DT-6-6/6-7
+(99) ; annexe 7 v1.9 — G1.36 (2000-2099), G1.80 (le SIRET commence par le SIREN), G1.89, G1.91 (routage avec un SIRET),
+G1.93 (suffixe sans SIRET), G1.95 et G1.115 (caractères), G2.07 ; l'interface publique de l'annuaire 1.11.0 — routage
+`[-_/@a-zA-Z0-9]{1,100}`, suffixe `[-_.@a-zA-Z0-9]{1,100}`, plus larges que G1.95 et G1.115 : la base les admettait déjà
+pour l'adresse électronique d'un acheteur, ils sont repris (NON VÉRIFIÉ : laquelle des deux l'annuaire applique). Et le
+dossier général v3.2 : une ligne à la maille du SIREN est créée PAR DÉFAUT pour toute entreprise nouvellement
+assujettie, avec une plateforme « fictive » de matricule 9998 — trouver l'identifiant sur le portail ne prouve pas
+qu'une vraie plateforme reçoit dessus (A6-Q4). UNE AMBIGUÏTÉ : « neuf chiffres _ quatorze chiffres » est un SIREN_SIRET
+ou un SIREN_suffixe (un suffixe peut contenir « _ ») : la maille se DÉCLARE avec l'identifiant.
+
+**LA TABLE ET SES FONCTIONS.** `adresses_reception` : la maille, l'identifiant à sa forme (le SIRET de l'identifiant
+commence par son SIREN), la plateforme (99 caractères, pas des seuls blancs `E' \t\n\r'`), la prise d'effet et le jour
+de vérification entre 2000 et 2099, la source (`portail_annuaire`, `plateforme`, `declaration` — un jour si et seulement
+si vérifiée), `remplace_id`, l'auteur (sans clé vers les comptes, comme `dossier_permanent.auteur`), l'instant. Une
+seule première par dossier (index unique partiel), une seule suite par version (unicité TOTALE de `remplace_id`) et la
+garde (une version en remplace une de son dossier) : une CHAÎNE linéaire, la courante est celle qu'aucune ne remplace.
+La garde refuse toute modification et toute suppression (23514), sauf la cascade du dossier.
+`declarer_adresse_reception` (SECURITY DEFINER) : l'accès d'abord (`gere_les_ventes` et le dossier existe, sinon 42501
+pour tous), puis un verrou consultatif par dossier, puis sept rangs, dix-neuf messages (la forme, le SIREN du dossier,
+la prise d'effet, la plateforme, la vérification, la version remplacée — qui doit être la COURANTE, sinon le refus nomme
+celle qui l'est et son jour à Paris). `etat_facture_electronique` (SECURITY DEFINER, stable) : l'accès d'abord, puis UNE
+valeur — la plateforme agréée (reliée, nom, création, dernière récupération, dernier relevé des statuts), Super PDP
+(relié, depuis), l'adresse courante — et rien d'autre des deux tables des connexions. Trois policies
+`to authenticated` : la lecture du cabinet, celle du droit « Ventes », l'insertion de restauration au
+super-administrateur. Droits d'exécution retirés à PUBLIC et `anon` ; la garde, à tous.
+
+**LE MODULE, LE DRAPEAU, LA SAUVEGARDE, L'ONGLET ACCÈS.** `lib/adressesReception.ts` (pur) : les mailles et leurs
+formes, `maillesPossibles`, `versionCourante` (nulle, la courante, ou `rompue` — deux premières, une fourche, un trou,
+un cycle, une suite d'un autre dossier), `refusDeclarationAdresse` (le premier refus dans l'ordre et sous les mots de la
+base, le jour de Paris DONNÉ ; une date que le champ ne donne pas lève). `lib/etatFactureElectronique.ts` (pur) :
+`lireEtatFactureElectronique` — les clés exactes à chaque niveau, leurs formes et leur cohérence, sinon illisible —, et
+`etatDeLaFactureElectronique` — « active » (une plateforme agréée OU Super PDP reliée, ET l'adresse courante en vigueur
+au jour donné), ou « à compléter » et ce qui manque, nommé. `ADRESSES_RECEPTION_EXPORTEES` (levé par la bascule) : le
+plan de sauvegarde déclare la table d'avance (deux relations, son rang après `pieces_jointes_ecartees`, son chemin, sa
+VAGUE — une liste nouvelle, `TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES`, dont celle du jour est filtrée) et la retire
+tant que le drapeau est baissé ; `ceQueDisentLesCases` prend un quatrième paramètre, et la phrase dit, avec « Ventes »,
+l'adresse, son histoire, sa déclaration et l'état, puis l'encart à venir ; `restauration.sql` met la table au plan par
+un bloc à part dès qu'elle existe.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et l'historique 132
+`789570a9…`) : l'essai `etatFactureElectronique.sql`, sans la migration 1 verdict « EN ATTENTE », avec 129 verdicts (113
+justes + 16 mutations qui mordent), 0 en faute, vide et semée, rien resté en base, et sa copie sans commentaires jouée
+d'un seul tenant (65 027 caractères) ; hors production (ce qu'un essai joué en production ne peut pas faire) : la
+suppression refusée au propriétaire et aux Edge Functions, sans effet pour le chef, la cascade du dossier, LA COURSE de
+deux déclarations (la seconde attend le verrou, puis nomme la courante ; sans le verrou, le refus brut de l'unicité) ;
+44 mutations de la migration sur 44 vues ; `rls.sql` ENTIER, 35 lignes, 0 en faute, 35 mutations sur 35 (sans la
+migration : 36, 0, 33 sur 33) ; la restauration, 137 clés, 72 tables IDENTIQUES dont trois adresses en trois vagues, et
+planté — les adresses avant leur dossier — l'arrêt sur leur clé ; le retour arrière, les neuf familles revenues ; les
+trois contrôles de l'export à la version provisoire (133 = 133, socle inchangé, inventaire 1 964, +32). Le code : 61
+mutations ciblées, 58 qui mordent et 3 équivalentes justifiées ; la bascule en simulation, suite entière 364 fichiers,
+10 916 tests, et 12 mutations de la bascule sur 12.
+
+**DEUX PIÈGES, À NE PAS RETROUVER.** (1) L'outil d'écriture de fichiers DÉCODE les échappements Unicode (barre oblique
+inverse, « u », quatre chiffres) : la classe des blancs de la migration et un SIRET de l'essai étaient partis en
+caractères invisibles, U+2028 compris — remis en échappements ASCII par un script, et toute écriture d'un tel
+échappement passe désormais par un script ou par `String.fromCodePoint`. (2) Le garde des écrans
+(`ecransAvantLecture.test.tsx`) tient le mot « rien » pour une affirmation avant lecture : la phrase de l'onglet Accès
+disait « sans rien de secret » et ne passait que drapeau levé — elle dit « jamais leurs secrets », et un test de la
+phrase refuse « aucun », « aucune » et « rien » dans ce qu'elle ajoute.
+
+**LES QUESTIONS AU CABINET (A6-Q1 À A6-Q4).** A6-Q1, l'accord pour appliquer ; A6-Q2, une adresse qui prend effet plus
+tard (seule la dernière déclaration compte : un remplacement peut être une correction, l'application ne sait pas le
+distinguer d'un changement) ; A6-Q3, une adresse déclarée sans vérification compte (l'encart le dira) ; A6-Q4, ce qu'une
+vérification sur le portail établit (l'identifiant seulement : le matricule et la date sont réservés aux plateformes, et
+la ligne par défaut porte la plateforme fictive 9998). Recommandations : oui ; la règle simple ; oui ; les trois sources
+telles quelles, l'encart dira ce que chacune établit.
+
+**LES DÉCISIONS DU CABINET, LE 14/10/2026.** « Comme recommandé », en deux réponses. MEG1-Q16 d'abord (avec A2B-Q1 à
+A2B-Q8) : l'adresse est DÉCLARÉE par le cabinet ou le client « Ventes », vérifiée sur le portail public de l'annuaire,
+et l'encart le dit. Puis A6-Q1 à A6-Q4 : l'accord — la migration appliquée, la lecture ouverte au client « Ventes » — ;
+seule la dernière déclaration compte, et une adresse qui prend effet plus tard se dit « à venir » ; une adresse déclarée
+sans vérification compte pour « active », et l'encart dira qu'elle n'est pas vérifiée ; les trois sources de
+vérification telles quelles, et l'encart dira ce que chacune établit. Le code les disait déjà à leur place
+(`lib/etatFactureElectronique.ts` pour A6-Q2 et A6-Q3, `lib/adressesReception.ts` pour MEG1-Q16) ; les deux commentaires
+d'A6-Q2 et d'A6-Q3 les disent désormais tranchées, rien d'autre ne change.
+
+**L'APPLICATION EN PRODUCTION, LE 14/10/2026.** `apply_migration` l'a prise sans confirmation (aucune suppression), sous
+la version `20261014143141` : 133 migrations, la ligne d'historique rend l'empreinte du fichier (`bed56842…`,
+25 674 caractères). L'essai, sans ses lignes de commentaire (65 027 caractères reçus tels quels, `5a1ea374…`) :
+129 verdicts justes — 113 contrôles et 16 mutations qui mordent —, et rien n'est resté en base. `signature.sql` rend en
+production ce que rendait la réplique migrée : les neuf familles changent (colonnes 806, contraintes 609, déclencheurs
+54, index 224, policies 151, fonctions et leurs droits 161, RLS et droits des tables 78). `rls.sql`, sa copie
+(63 449 caractères, `990deaf1…`) : 35 lignes, 0 en faute, 35 mutations sur 35 — M3bis-membre (adresses de réception)
+voit les deux adresses du jeu ; M1 et M3 comptent 28 et 14 tables —, et rien n'est resté en base (aucune adresse, aucun
+article, aucune facture ni numéro de 2099, aucun mouvement, aucune pièce ni aucun e-mail d'essai, aucun droit au client
+d'essai, aucune policy de mutation). Les advisors : `authenticated_security_definer_function_executable` 46 (les deux
+fonctions, qui vérifient l'accès avant toute lecture), `anon_` 5, inchangé ; rien d'autre de nouveau côté sécurité. Les
+trois contrôles de l'export, le fichier renommé à sa version réelle : 133 fichiers et 133 migrations, empreinte globale
+`410fe6d2…` des deux côtés ; socle inchangé (78 instructions, `91ae95ec…`) ; inventaire 1 964 objets, `e21ba280…` des
+deux côtés.
+
+**ET LES OUTILS MCP DÉCODENT AUSSI LES ÉCHAPPEMENTS.** Comme l'outil d'écriture de fichiers (le premier piège
+ci-dessus), `apply_migration` et `execute_sql` décodent les échappements Unicode de leurs paramètres : envoyés tels
+quels, la classe des blancs de la migration (dix échappements), le SIRET de l'essai (deux) et la classe de la copie de
+`rls.sql` seraient partis en caractères invisibles — même comportement de l'expression rationnelle, mais un texte
+enregistré qui n'est plus celui du fichier. Chaque échappement est parti avec sa barre oblique inverse elle-même
+échappée (`\u005c` suivi de « u » et des quatre chiffres), que l'outil décode seule ; des lectures sans écriture l'ont
+d'abord éprouvé, et la ligne d'historique et les lignes TEXTE des deux essais rendent l'empreinte des fichiers.
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu avant la présentation au cabinet : la migration en entier (l'accès
+avant toute lecture dans les deux fonctions, le verrou, la garde, les trois policies, les droits retirés à PUBLIC et à
+`anon`), les deux modules purs, le plan de sauvegarde (le rang, la vague, le filtre du jour), la phrase de l'onglet
+Accès ; la copie de `rls.sql` lue en entier avant de l'envoyer.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif et la bascule appliqués sur `2d840cd` (17 et 7 fichiers ; l'arbre obtenu,
+`40a02f75…`, est celui que l'étape a éprouvé), la migration renommée à sa version réelle, le paragraphe du README du
+schéma et la note de `rls.sql` posés ; dans la même demande, la mise en ligne d'A2b et les réponses du cabinet à A2-Q1 à
+A2-Q5 et A2B-Q1 à A2B-Q8. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint
+63 avertissements, les mêmes ; quatre fuseaux, 10 916 tests chacun ; construction verte (`index-CNsf507o.js`). La
+bascule ne part qu'après la migration : en ligne avant elle, chaque sauvegarde d'un dossier aurait lu une table absente.
+
+**RESTE.** A6b, les écrans : l'encart « Facture électronique » (au cabinet et au client « Ventes »), la tuile de
+l'accueil du client, la carte du cabinet, la saisie de l'adresse et « Vérifier sur l'annuaire », qui ouvre le portail
+public sur un clic ; au-dessus du nom de la plateforme que le cabinet saisit, dire que le client « Ventes » le lit. NON
+VÉRIFIÉ : laquelle des deux grammaires du routage et du suffixe l'annuaire applique ; une première déclaration réelle ;
+un accès client « Ventes » réel (aucun ne porte la case aujourd'hui).

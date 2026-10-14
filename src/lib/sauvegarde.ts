@@ -10,6 +10,7 @@
 // `sauvegardeRelations.test.ts` le compare au schéma exporté à chaque exécution : une clé étrangère
 // ajoutée par une migration et oubliée ici fait échouer la suite, action à la suppression comprise.
 
+import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { DEVIS_EXPORTES } from './devis'
 
@@ -48,9 +49,24 @@ export function auPlanDesArticles(table: string, articlesExportes: boolean): boo
   return articlesExportes || !TABLES_DES_ARTICLES.includes(table)
 }
 
-/** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles. */
+// LES ADRESSES DE RÉCEPTION (espace client, étape A6a ; migration `adresses_reception`, présentée au cabinet et appliquée
+// sur son accord) : le patron des articles, sous leur propre drapeau (`ADRESSES_RECEPTION_EXPORTEES`,
+// src/lib/adressesReception.ts), levé. Leur table est déclarée ci-dessous à sa place — ses deux relations, son rang, son
+// chemin, et sa vague (une version remplace la courante, `remplace_id`) — et serait RETIRÉE du plan le drapeau rebaissé
+// (avant tout retour arrière de la migration) ; sauvegardeAdressesReception.test.ts éprouve le plan prévu et le plan du
+// jour.
+export const TABLES_DES_ADRESSES_RECEPTION: readonly string[] = ['adresses_reception']
+
+/** Une table au plan, côté adresses de réception : toutes, sauf la leur tant que sa migration n'est pas exportée. */
+export function auPlanDesAdressesReception(table: string, adressesExportees: boolean): boolean {
+  return adressesExportees || !TABLES_DES_ADRESSES_RECEPTION.includes(table)
+}
+
+/** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
+ *  adresses de réception. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
+    && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -199,10 +215,13 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'pieces_jointes_ecartees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les articles (espace client, étape A1) : seulement leur dossier, jusqu'à l'étape A7.
   { enfant: 'articles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les adresses de réception (espace client, étape A6a) : leur dossier, et la version qu'une adresse remplace.
+  { enfant: 'adresses_reception', parent: 'adresses_reception', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'adresses_reception', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
-// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis ni celle des articles tant que leurs migrations
-// ne sont pas exportées.
+// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles ni des adresses de réception tant
+// que leurs migrations ne sont pas exportées.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
@@ -331,6 +350,13 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // Aucune garde ne les lit, aucune validation ne les fige ; un article retiré se réinsère tel quel, par la policy du
 // super-administrateur. Le jour où leur table existe, l'essai de restauration les met à cette place et recule d'un rang les
 // tables qui suivent. `sauvegardeArticles.test.ts` garde cet ordre.
+//
+// Les adresses de réception (espace client, étape A6a) viennent après les pièces jointes écartées, à la fin de ce qui ne
+// dépend que du dossier : leur seul parent est le dossier, rien ne les lit à l'insertion d'une autre ligne, aucune
+// validation ne les fige. Une version en remplace une autre de son dossier (`remplace_id`) : elles partent par VAGUES, et
+// leur garde, à l'insertion, ne lit que la version remplacée — déjà écrite. Le jour où leur table existe, l'essai de
+// restauration les met à cette place : seuls les rangs des devis et d'`exercices_valides` changent.
+// `sauvegardeAdressesReception.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -408,14 +434,15 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'declarations_ereporting_sources',
   'dossier_permanent',
   'pieces_jointes_ecartees',
+  'adresses_reception',
   'devis_numerotation',
   'devis',
   'devis_factures',
   'exercices_valides',
 ]
 
-// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis ni celle des articles tant que leurs migrations ne
-// sont pas exportées.
+// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles ni des adresses de réception tant que
+// leurs migrations ne sont pas exportées.
 export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
@@ -451,7 +478,11 @@ export const TABLES_AUTO_REFERENCEES: readonly { table: string; colonne: string 
 // (`reprise_de`). Immuable, elle ne part pas à NULL pour se compléter ensuite, et sa garde lit chaque cible : une
 // décision part dans la vague qui suit l'écriture de TOUTES ses cibles — une chaîne de remplacements fait autant de
 // vagues qu'elle a de maillons.
-export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] = [
+//
+// Une table d'une migration PRÉPARÉE y est déclarée d'avance, comme dans l'ordre (la liste « prévue ») ; la liste du jour
+// ne la porte que son drapeau levé — le graphe du jour, que `sauvegarde.test.ts` confronte à ces vagues, ne la connaît pas
+// avant.
+export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: string; colonne: string }[] = [
   { table: 'encaissements_factures', colonne: 'annule_id' },
   { table: 'revision_justifications', colonne: 'remplace_id' },
   { table: 'revision_justifications', colonne: 'reprise_de' },
@@ -474,7 +505,15 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colon
   // (`remplace_id`) ; immuable hors de son retrait, elle ne part pas à NULL, et sa garde lit la version remplacée — qu'elle
   // exige non retirée : une entrée retirée n'a pas de suite dans une sauvegarde.
   { table: 'dossier_permanent', colonne: 'remplace_id' },
+  // L'adresse de réception d'un dossier (espace client, étape A6a) : une version en remplace une autre de son dossier
+  // (`remplace_id`) ; immuable, elle ne part pas à NULL, et sa garde lit la version remplacée.
+  { table: 'adresses_reception', colonne: 'remplace_id' },
 ]
+
+// Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception tant que leur migration n'est
+// pas exportée.
+export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] =
+  TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table))
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
 // pointe que des lignes des précédentes, par chacune des colonnes données. Une ligne qui pointe une ligne ABSENTE de la
@@ -883,10 +922,11 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   volet_social_pamc: { acces: 'direct' },
   pieces_jointes_ecartees: { acces: 'direct' },
   articles: { acces: 'direct' },
+  adresses_reception: { acces: 'direct' },
 }
 
-// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis ni celle des articles tant que leurs
-// migrations ne sont pas exportées.
+// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles ni des adresses de réception
+// tant que leurs migrations ne sont pas exportées.
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
   Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlanAujourdHui(table)),
 )

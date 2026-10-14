@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { DEVIS_EXPORTES } from './devis'
 import {
@@ -11,6 +12,8 @@ import {
   PARENTS_HORS_PLAN_VOULUS,
   TABLES_AUTO_REFERENCEES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES,
+  TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES,
+  TABLES_DES_ADRESSES_RECEPTION,
   TABLES_DES_ARTICLES,
   TABLES_DES_DEVIS,
   type CheminDossier,
@@ -148,15 +151,60 @@ function avecLesArticles(plan: PlanDeLEssai, bloc: BlocDesArticles): PlanDeLEssa
   return { ...plan, ordre, chemins: { ...plan.chemins, ...bloc.chemins } }
 }
 
-/** Le plan que le script joue avec les tables des deux blocs : les articles d'abord (le script les met d'abord), puis les devis. */
-const avecLesDeuxBlocs = (texte: string): PlanDeLEssai =>
-  avecLesDevis(avecLesArticles(planDeLEssai(texte), blocDesArticles(texte)), blocDesDevis(texte))
+// LES ADRESSES DE RÉCEPTION (espace client, étape A6a) : un troisième bloc à part les met au plan quand leur table existe,
+// juste avant `exercices_valides` — après les pièces jointes écartées ; le bloc des devis, joué ensuite, met les siennes au
+// même endroit, donc après elles —, avec leur chemin et leur vague. Ce qu'il dit : les tables, leurs chemins, leurs vagues,
+// le décalage d'`exercices_valides` et le retrait du rang de la table, et s'il ne joue qu'avec la table présente.
+interface BlocDesAdresses {
+  tables: string[]
+  chemins: PlanDeLEssai['chemins']
+  vagues: { table: string; colonne: string }[]
+  decalage: number | null
+  retrait: number | null
+  conditionne: boolean
+}
+
+const MARQUE_DES_ADRESSES = '-- ══ Les adresses de réception (espace client, étape A6a) ══'
+
+function blocDesAdresses(texte: string): BlocDesAdresses {
+  const debut = texte.indexOf(MARQUE_DES_ADRESSES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  const decalage = /set rang = rang \+ (\d+) where table_nom = 'exercices_valides'/.exec(corps)
+  const retrait = /select o\.rang - (\d+), '\w+' from essai_restauration\._ordre o where o\.table_nom = 'exercices_valides';/.exec(corps)
+  return {
+    tables: [...corps.matchAll(/select o\.rang - \d+, '(\w+)' from/g)].map((m) => m[1]),
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    decalage: decalage ? Number(decalage[1]) : null,
+    retrait: retrait ? Number(retrait[1]) : null,
+    conditionne: corps.includes("if to_regclass('public.adresses_reception') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des adresses existe : la sienne, insérée avant `exercices_valides`. */
+function avecLesAdresses(plan: PlanDeLEssai, bloc: BlocDesAdresses): PlanDeLEssai {
+  const tables = plan.ordre.map((o) => o.table)
+  const place = tables.indexOf('exercices_valides')
+  const ordre = [...tables.slice(0, place), ...bloc.tables, ...tables.slice(place)].map((table, i) => ({ rang: i + 1, table }))
+  return { ...plan, ordre, chemins: { ...plan.chemins, ...bloc.chemins }, vagues: [...plan.vagues, ...bloc.vagues] }
+}
+
+/** Le plan que le script joue avec les tables des trois blocs, dans l'ordre où il les joue : les articles, les adresses de
+ *  réception, les devis. */
+const avecLesBlocs = (texte: string): PlanDeLEssai =>
+  avecLesDevis(avecLesAdresses(avecLesArticles(planDeLEssai(texte), blocDesArticles(texte)), blocDesAdresses(texte)), blocDesDevis(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
   plan: PlanDeLEssai,
   ordreDuCode: readonly string[],
   cheminsDuCode: Readonly<Record<string, CheminDossier>>,
+  vaguesDuCode: readonly { table: string; colonne: string }[] = TABLES_AUTO_REFERENCEES_PAR_VAGUES,
 ): string[] {
   const ecarts: string[] = []
   plan.ordre.forEach((o, i) => {
@@ -181,9 +229,9 @@ function ecartsAuCode(
   for (const table of Object.keys(plan.chemins)) {
     if (!(table in cheminsDuCode)) ecarts.push(`_chemins : ${table} n'est pas dans CHEMINS_DOSSIER`)
   }
-  if (JSON.stringify(plan.vagues) !== JSON.stringify(TABLES_AUTO_REFERENCEES_PAR_VAGUES)) {
+  if (JSON.stringify(plan.vagues) !== JSON.stringify(vaguesDuCode)) {
     ecarts.push(`_vagues vaut ${JSON.stringify(plan.vagues)}, TABLES_AUTO_REFERENCEES_PAR_VAGUES `
-      + JSON.stringify(TABLES_AUTO_REFERENCEES_PAR_VAGUES))
+      + JSON.stringify(vaguesDuCode))
   }
   const generees = Object.entries(COLONNES_GENEREES).flatMap(([table, colonnes]) => colonnes.map((colonne) => ({ table, colonne })))
   if (JSON.stringify(plan.generees) !== JSON.stringify(generees)) {
@@ -204,11 +252,13 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const plan = planDeLEssai(texteDeLEssai)
   const devis = blocDesDevis(texteDeLEssai)
   const articles = blocDesArticles(texteDeLEssai)
-  // Le plan que le script joue sur une base qui a les tables des deux blocs, et celui qu'il joue AUJOURD'HUI : le même que
-  // le code, selon que `ARTICLES_EXPORTES` et `DEVIS_EXPORTES` sont levés ou non.
-  const prevu = avecLesDeuxBlocs(texteDeLEssai)
+  const adresses = blocDesAdresses(texteDeLEssai)
+  // Le plan que le script joue sur une base qui a les tables des trois blocs, et celui qu'il joue AUJOURD'HUI : le même que
+  // le code, selon que `ARTICLES_EXPORTES`, `ADRESSES_RECEPTION_EXPORTEES` et `DEVIS_EXPORTES` sont levés ou non.
+  const prevu = avecLesBlocs(texteDeLEssai)
   const avecLesArticlesDuJour = ARTICLES_EXPORTES ? avecLesArticles(plan, articles) : plan
-  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLesArticlesDuJour, devis) : avecLesArticlesDuJour
+  const avecLesAdressesDuJour = ADRESSES_RECEPTION_EXPORTEES ? avecLesAdresses(avecLesArticlesDuJour, adresses) : avecLesArticlesDuJour
+  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLesAdressesDuJour, devis) : avecLesAdressesDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -242,8 +292,18 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(articles.conditionne).toBe(true)
   })
 
-  it('avec les tables des deux blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
-    expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)).toEqual([])
+  it('le bloc des adresses de réception a été lu : sa table, son chemin, sa vague, des rangs qui tombent juste', () => {
+    expect(adresses.tables).toEqual([...TABLES_DES_ADRESSES_RECEPTION])
+    expect(Object.keys(adresses.chemins).sort()).toEqual([...TABLES_DES_ADRESSES_RECEPTION].sort())
+    expect(adresses.vagues).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => TABLES_DES_ADRESSES_RECEPTION.includes(a.table)))
+    // `exercices_valides` recule d'autant de rangs qu'il entre de tables, et la table prend l'avant-dernier rang.
+    expect(adresses.decalage).toBe(adresses.tables.length)
+    expect(adresses.retrait).toBe(1)
+    expect(adresses.conditionne).toBe(true)
+  })
+
+  it('avec les tables des trois blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
+    expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)).toEqual([])
   })
 
   it('pose en prérequis chaque parent que la sauvegarde ne porte pas, comme la base d’arrivée doit le porter', () => {
@@ -262,23 +322,26 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   })
 
   describe('un défaut planté se voit', () => {
-    // Le plan d'hier, sans les tables des deux blocs (devis, articles) : celui que le script joue sur une base qui ne les a
-    // pas.
+    // Le plan d'hier, sans les tables des trois blocs (devis, articles, adresses de réception) : celui que le script joue sur
+    // une base qui ne les a pas, ses vagues comprises.
     const horsDesBlocs = (t: string) => !TABLES_DES_DEVIS.includes(t) && !TABLES_DES_ARTICLES.includes(t)
+      && !TABLES_DES_ADRESSES_RECEPTION.includes(t)
+    const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))
     const remplacer = (avant: string, apres: string) => {
       expect(texteDeLEssai).toContain(avant)
-      return ecartsAuCode(planDeLEssai(texteDeLEssai.replace(avant, apres)), ordreSansLesBlocs, cheminsSansLesBlocs)
+      return ecartsAuCode(planDeLEssai(texteDeLEssai.replace(avant, apres)), ordreSansLesBlocs, cheminsSansLesBlocs, vaguesSansLesBlocs)
     }
-    // Le même, sur le plan que le script joue avec les tables des deux blocs.
+    // Le même, sur le plan que le script joue avec les tables des trois blocs.
     const remplacerDevis = (avant: string, apres: string) => {
       expect(texteDeLEssai).toContain(avant)
-      return ecartsAuCode(avecLesDeuxBlocs(texteDeLEssai.replace(avant, apres)), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)
+      return ecartsAuCode(avecLesBlocs(texteDeLEssai.replace(avant, apres)), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS,
+        TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)
     }
     // Les rangs se lisent dans le code, pas dans ce fichier : une table ajoutée à l'ordre les décale tous — le plan
     // comptable d'un dossier et son catalogue, deux d'un coup (ligne 43, PC1). Ceux de la liste que le script recopie,
-    // sans les tables des deux blocs, que ses blocs à part ajoutent (quels que soient les drapeaux).
+    // sans les tables des trois blocs, que ses blocs à part ajoutent (quels que soient les drapeaux).
     const rang = (table: string) => ordreSansLesBlocs.indexOf(table) + 1
     const [justifications, preuves, valides] = ['revision_justifications', 'revision_preuves', 'exercices_valides'].map(rang)
 
@@ -299,6 +362,22 @@ describe('l’essai de restauration rejoue le plan du code', () => {
         .toContain('manquantes : articles')
       expect(blocDesArticles(texteDeLEssai.replace("if to_regclass('public.articles') is not null then", 'if true then')).conditionne)
         .toBe(false)
+    })
+
+    it('les adresses de réception sans leur chemin, sans leur vague, mal placées, ou jouées sans leur table', () => {
+      expect(remplacerDevis("\n     ('adresses_reception','direct',null,null);", '').join('\n')).toContain('_chemins : adresses_reception manque')
+      expect(remplacerDevis("\n     ('adresses_reception','remplace_id');", '').join('\n')).toContain('_vagues vaut')
+      // Ancrées ailleurs qu'avant `exercices_valides` : l'ordre diffère du code.
+      const ancre = "select o.rang - 1, 'adresses_reception' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';"
+      expect(blocDesAdresses(texteDeLEssai.replace(ancre, ancre.replace('rang - 1', 'rang - 2'))).retrait).not.toBe(1)
+      expect(blocDesAdresses(texteDeLEssai.replace('set rang = rang + 1 where', 'set rang = rang + 2 where')).decalage).not.toBe(1)
+      expect(blocDesAdresses(texteDeLEssai.replace("if to_regclass('public.adresses_reception') is not null then", 'if true then')).conditionne)
+        .toBe(false)
+      // Le bloc oublié : la table manque au plan prévu.
+      const debut = texteDeLEssai.indexOf('-- ══ Les adresses de réception (espace client, étape A6a) ══')
+      const sansLeBloc = texteDeLEssai.slice(0, debut) + texteDeLEssai.slice(texteDeLEssai.indexOf('end $$;', debut) + 'end $$;'.length)
+      expect(ecartsAuCode(avecLesBlocs(sansLeBloc), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)
+        .join('\n')).toContain('manquantes : adresses_reception')
     })
 
     it('un décalage ou un rang de départ qui ne tombent pas juste', () => {
