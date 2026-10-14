@@ -374,10 +374,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   des neuf tables des ventes de son dossier et leurs gestes par les fonctions du cabinet (`gere_les_ventes`), sans écran
   encore — désigner le mouvement d'un encaissement demande aussi « Banque » ; depuis A1 (14/10/2026), le catalogue des
   articles et ses trois fonctions, à l'écran depuis A2a (« Mes ventes › Articles ») ; depuis A6a (14/10/2026),
-  l'adresse de réception de son dossier, son histoire et sa déclaration, et l'état de sa facture électronique, jamais
-  un secret des connexions (`etat_facture_electronique`). L'onglet Accès dit ce que la
-  base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`,
-  drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) →
+  l'adresse de réception de son dossier, son histoire et sa déclaration, à l'écran depuis A6b1 (« Tes plateformes »), et
+  l'état de sa facture électronique, jamais un secret des connexions (`etat_facture_electronique`). L'onglet Accès dit
+  ce que la base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes
+  (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à
+  l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
   saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
   « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
@@ -471,6 +472,19 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   tel que lu, le prix seul changé, après une confirmation ; « Enregistrer comme article » ne préremplit le taux que d'un
   dossier redevable. Un verrou `useRef` pour les deux gestes, relâché après la relecture, exclusif de l'enregistrement
   de la facture ; rien avant la lecture, aucun geste sur une lecture partielle → « UN ARTICLE DANS LA FACTURE ».
+- **« L'adresse de réception » (A6b1, 14/10/2026)** : une fenêtre pour les deux espaces (`AdresseReceptionModal`,
+  `espace` OBLIGATOIRE) — au cabinet depuis Justificatifs, au client « Ventes » depuis le troisième bloc de « Tes
+  plateformes » (`ConnexionsClient`, relu à la fermeture). Les adresses lues en entier et le SIRET du dossier à part
+  (`lib/adressesReceptionLecture.ts`, aucune des deux lectures ne rejette) : rien avant le retour, « aucune adresse »
+  d'une liste lue en entier seulement ; lue en partie, refusée, rompue ou sans SIRET lisible, la fenêtre le dit et
+  n'offre aucun geste (`peutDeclarer`). Elle dit la courante — « À venir : à partir du … » au jour de Paris, « non
+  vérifiée », ce que la source établit (`lib/adressesReceptionVue.ts`, pur) —, l'historique dès deux versions et « par
+  le client » au cabinet seul, sur des accès lus en entier. Déclarer : la maille CHOISIE (proposée seulement quand
+  l'identifiant n'en admet qu'une), la version remplacée retenue à l'ouverture, le refus du module jugé sur la saisie
+  TELLE QU'ELLE PART (blancs des bords retirés), `declarer_adresse_reception` seule (`lib/adressesReceptionEcriture.ts`)
+  sous un verrou `declarationEnCours` relâché après la relecture. « Vérifier sur l'annuaire » est un LIEN vers le
+  portail public, sur un clic ; le nom de la plateforme dit qui le lit (`LIBELLE_PLATEFORME_ADRESSE`), et deux refus de
+  la base se réécrivent pour le client → « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -539,7 +553,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   (A2a, 14/10/2026) ; dans le formulaire d'une facture, « Choisir un article », « Mettre l'article à ce prix » et
   « Enregistrer comme article », un prix unitaire à six décimales compris (A2b, 14/10/2026) ; l'adresse de réception
   d'un dossier, déclarée et versionnée, et l'état de sa facture électronique, en base, que le cabinet et le client
-  « Ventes » lisent et déclarent par deux fonctions (A6a, 14/10/2026) ;
+  « Ventes » lisent et déclarent par deux fonctions (A6a, 14/10/2026), et l'adresse à l'écran — la lire avec son
+  historique, la déclarer ou la remplacer, « Vérifier sur l'annuaire » —, au cabinet depuis Justificatifs et au client
+  « Ventes » depuis « Tes plateformes » (A6b1, 14/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -772,9 +788,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   tranchées « comme recommandé » le même jour), et la bascule (`ADRESSES_RECEPTION_EXPORTEES`) en ligne : la sauvegarde
   d'un dossier emporte son adresse et son historique, par vagues ; l'onglet Accès dit que « Ventes » ouvre l'adresse,
   son histoire, sa déclaration et l'état → « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE ».
-  Restent A6b (l'encart « Facture électronique », la tuile de l'accueil du client, la carte du cabinet, la saisie de
-  l'adresse), A7 (l'unité, la référence et l'article sur la ligne enregistrée, une migration) et la suite du premier
-  groupe.
+  A6b1, l'adresse de réception à l'écran — sa fenêtre, au cabinet depuis Justificatifs et au client « Ventes » depuis
+  « Tes plateformes » —, le 14/10/2026 (six lectures de la conception soumises au cabinet, A6B1-Q1 à A6B1-Q6) →
+  « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ». Restent A6b2 (l'encart « Facture électronique » : à l'accueil du client avec sa
+  tuile du téléphone, et la carte de la Vue d'ensemble du cabinet), A7 (l'unité, la référence et l'article sur la ligne
+  enregistrée, une migration) et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1609,13 +1627,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   portée (l'essai les plante dans deux connexions d'essai et les cherche) ; le module la lit sans rien deviner et dit
   « active » ou « à compléter » et ce qui manque, au jour de Paris DONNÉ : seule la dernière déclaration compte (A6-Q2),
   une adresse déclarée sans vérification compte et l'encart le dira (A6-Q3). `adressesReception.test.ts` et
-  `etatFactureElectronique.test.ts` confrontent les modules au texte exporté et rejouent l'essai ; à l'écran (A6b), le
-  nom de la plateforme que le cabinet saisit dira que le client « Ventes » le lit → « L'ADRESSE DE RÉCEPTION ET L'ÉTAT
-  DE LA FACTURE ÉLECTRONIQUE, EN BASE ».
+  `etatFactureElectronique.test.ts` confrontent les modules au texte exporté et rejouent l'essai ; à l'écran depuis
+  A6b1, le nom de la plateforme que le cabinet saisit dit que le client « Ventes » le lit → « L'ADRESSE DE RÉCEPTION ET
+  L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE », « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ».
 
 ## Tests
 
-Vitest, 10 916 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 044 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

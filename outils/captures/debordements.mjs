@@ -669,6 +669,48 @@ const VISITES = [
       await page.getByRole('heading', { name: 'Modifier l’article' }).waitFor({ timeout: 10000 })
     },
   },
+  // « ADRESSE DE RÉCEPTION » (espace client, étape A6b1), côté cabinet : le bouton de Justificatifs ouvre la fenêtre — l'adresse
+  // courante à venir de l'atelier (d7), son historique de trois versions (un identifiant et un nom de plateforme LONGS, « par le
+  // client »), le lien du portail —, puis le formulaire d'une nouvelle adresse (un identifiant qui s'écrit de deux façons : la maille
+  // reste à choisir) ; le cabinet infirmier (d1) n'a qu'une version non vérifiée, et le dossier sans SIRET (d4) dit pourquoi rien
+  // ne se déclare. Chaque fenêtre se mesure contre sa propre carte.
+  {
+    dossier: 'd7', onglet: 'pieces', nom: 'pieces/adresse-réception', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Adresse de réception', exact: true }).click()
+      await page.getByRole('table', { name: 'Historique des adresses' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'pieces', nom: 'pieces/adresse-réception-nouvelle', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Adresse de réception', exact: true }).click()
+      await page.getByRole('button', { name: 'Déclarer une nouvelle adresse', exact: true }).click()
+      await page.locator('#adresse-identifiant').fill('987654324_98765432400019')
+      await page.getByText(/^Cet identifiant s’écrit de 2 façons/).waitFor({ timeout: 10000 })
+      await page.getByRole('radio', { name: /Vérifiée sur le portail/ }).check()
+      await page.locator('#adresse-verifiee-le').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'pieces', nom: 'pieces/adresse-réception-seule', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Adresse de réception', exact: true }).click()
+      await page.getByText('Non vérifiée : simple déclaration').first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd4', onglet: 'pieces', nom: 'pieces/adresse-réception-sans-siret', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Adresse de réception', exact: true }).click()
+      await page.getByRole('button', { name: 'Déclarer l’adresse', exact: true }).click()
+      await page.getByText(/^Le dossier n'a pas de SIREN/).waitFor({ timeout: 10000 })
+    },
+  },
   // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
   // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
   // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six
@@ -882,6 +924,34 @@ const VISITES_CLIENT = [
       await fermerLesFenetres(page)
       await page.getByRole('tab', { name: 'Règlements', exact: true }).click()
       await page.getByRole('table', { name: 'Règlements' }).waitFor({ timeout: 10000 })
+    },
+  },
+  // « Ton adresse de réception » (étape A6b1) : le bloc de « Tes plateformes » (mesuré avec « Mes ventes », plus haut), sa fenêtre aux
+  // mots du client — l'adresse à venir, l'historique sans « par le client » — et le formulaire d'une nouvelle adresse.
+  {
+    chemin: '#/mes-ventes', nom: 'client/adresse-réception', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      // La visite d'avant a pu laisser « Règlements » ou « Articles » : « Tes plateformes » est au-dessus des factures.
+      const vue = page.getByRole('tab', { name: 'Factures', exact: true })
+      if ((await vue.count()) > 0) await vue.first().click()
+      await page.getByRole('button', { name: 'Gérer ton adresse', exact: true }).click()
+      await page.getByRole('table', { name: 'Historique des adresses' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/adresse-réception-nouvelle', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      // La visite d'avant a pu laisser « Règlements » ou « Articles » : « Tes plateformes » est au-dessus des factures.
+      const vue = page.getByRole('tab', { name: 'Factures', exact: true })
+      if ((await vue.count()) > 0) await vue.first().click()
+      await page.getByRole('button', { name: 'Gérer ton adresse', exact: true }).click()
+      await page.getByRole('button', { name: 'Déclarer une nouvelle adresse', exact: true }).click()
+      await page.locator('#adresse-identifiant').fill('987654324_98765432400019')
+      await page.getByText(/^Cet identifiant s’écrit de 2 façons/).waitFor({ timeout: 10000 })
+      await page.getByRole('radio', { name: /Confirmée par la plateforme/ }).check()
+      await page.locator('#adresse-verifiee-le').waitFor({ timeout: 10000 })
     },
   },
   // « Mes ventes › Articles » (étape A2a) : le même catalogue aux mots du client — sans « par le client », ton cabinet le lit

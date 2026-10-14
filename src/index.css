@@ -1432,6 +1432,9 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 }
 /* Une entrée qui est un LIEN (l'apparence du cabinet) : ni soulignement ni couleur de lien. */
 a.nav-menu-item { text-decoration: none; }
+/* Un lien qui a l'apparence d'un bouton (« Vérifier sur l'annuaire », fenêtre de l'adresse de réception) : sans soulignement,
+   comme le bouton qu'il imite. */
+a.btn { text-decoration: none; }
 
 /* Barre réduite à ses icônes (ordinateur seulement). Tout est en CSS sauf ce qui change de nature :
    la recherche devient un bouton, les dossiers deviennent des pastilles (voir Layout, BarreDossiers). */

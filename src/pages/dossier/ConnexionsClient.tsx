@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { lireSynchronisationSuperPdp, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import { pourLEspace } from '../../lib/espaceVentes'
+import { aujourdHuiAParis } from '../../lib/format'
+import { useAdressesReception } from '../../lib/useAdressesReception'
+import { direLaPriseEffet, direLaVerification, libelleMaille, resumeDesAdresses } from '../../lib/adressesReceptionVue'
+import AdresseReceptionModal from './AdresseReceptionModal'
 import PlateformeClientModal from './PlateformeClientModal'
 import SuperPdpModal from './SuperPdpModal'
 
@@ -15,6 +19,12 @@ import SuperPdpModal from './SuperPdpModal'
 // se dit avant la réponse — « aucune n'est reliée » d'une connexion qu'on n'a pas lue serait faux —, et une lecture ratée
 // se dit avec son motif, sans geste qui la remplacerait. À la fermeture d'une fenêtre, les deux se relisent : elle a pu
 // relier, modifier ou retirer.
+//
+// UN TROISIÈME BLOC, « Ton adresse de réception » (étape A6b1, MEG1-Q16) : l'adresse sous laquelle ta société reçoit ses
+// factures électroniques, DÉCLARÉE par le client « Ventes » ou son cabinet. Même règle : rien ne se dit avant la lecture ;
+// « aucune adresse » seulement d'une liste lue en entier ; lue en partie ou en lignes qui ne font pas une chaîne, le bloc le
+// dit et n'offre que « Réessayer ». Il ne lit que la base (rien n'est envoyé à l'annuaire) ; sa fenêtre est la même que celle
+// du cabinet (`AdresseReceptionModal`, `espace="client"`), et à sa fermeture le bloc se relit.
 
 interface Props {
   dossierId: string
@@ -31,7 +41,8 @@ export default function ConnexionsClient({ dossierId, connexion, connexionErreur
   const dire = (texte: string) => pourLEspace('client', texte)
   // `null` tant que la base n'a pas répondu.
   const [superPdp, setSuperPdp] = useState<EtatSuperPdp | null>(null)
-  const [ouverte, setOuverte] = useState<'plateforme' | 'superpdp' | null>(null)
+  const [ouverte, setOuverte] = useState<'plateforme' | 'superpdp' | 'adresse' | null>(null)
+  const { lu: adresses, relire: relireAdresses } = useAdressesReception(dossierId)
 
   useEffect(() => {
     let annule = false
@@ -44,10 +55,14 @@ export default function ConnexionsClient({ dossierId, connexion, connexionErreur
     setSuperPdp(await lireSynchronisationSuperPdp(dossierId))
   }
 
+  const aujourdhui = aujourdHuiAParis()
+  const resumeAdresse = adresses === null ? null : resumeDesAdresses(adresses.adresses, dossierId, aujourdhui)
+
   function fermer() {
     setOuverte(null)
     void relireConnexion()
     void relireSuperPdp()
+    void relireAdresses(true)
   }
 
   return (
@@ -95,8 +110,43 @@ export default function ConnexionsClient({ dossierId, connexion, connexionErreur
         )}
       </div>
 
+      <div className="plateforme-statuts">
+        {resumeAdresse === null ? (
+          <p className="muted">Ton adresse de réception : lecture…</p>
+        ) : resumeAdresse.etat === 'incomplete' ? (
+          <p>
+            Ton adresse de réception : elle n’a pas pu être lue en entier ({resumeAdresse.motif}). Elle ne se déclare pas d’ici
+            tant qu’elle n’est pas lue.
+          </p>
+        ) : resumeAdresse.etat === 'rompue' ? (
+          <p>
+            Ton adresse de réception : ses versions lues ne forment pas une suite, aucune n’est donc dite courante. Elle ne se
+            déclare pas d’ici tant qu’elle n’est pas lue correctement.
+          </p>
+        ) : resumeAdresse.etat === 'aucune' ? (
+          <p>
+            Ton adresse de réception : tu n’en as pas encore déclaré. Déclare celle sous laquelle ta société reçoit ses factures
+            électroniques, vérifiée sur le portail de l’annuaire ou sur ta plateforme.
+          </p>
+        ) : (
+          <p>
+            Ton adresse de réception : {resumeAdresse.adresse.identifiant} ({libelleMaille(resumeAdresse.adresse.forme)}), chez{' '}
+            {resumeAdresse.adresse.plateforme}. {direLaPriseEffet(resumeAdresse.adresse.prise_effet, aujourdhui)}.{' '}
+            {direLaVerification(resumeAdresse.adresse)}.
+          </p>
+        )}
+        {resumeAdresse?.etat === 'incomplete' || resumeAdresse?.etat === 'rompue' ? (
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => void relireAdresses(true)}>Réessayer</button>
+        ) : resumeAdresse !== null && (
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setOuverte('adresse')}>
+            {resumeAdresse.etat === 'courante' ? 'Gérer ton adresse' : 'Déclarer ton adresse'}
+          </button>
+        )}
+      </div>
+
       {ouverte === 'plateforme' && <PlateformeClientModal espace="client" dossierId={dossierId} onClose={fermer} />}
       {ouverte === 'superpdp' && <SuperPdpModal espace="client" dossierId={dossierId} onClose={fermer} />}
+      {ouverte === 'adresse' && <AdresseReceptionModal espace="client" dossierId={dossierId} onClose={fermer} />}
     </section>
   )
 }

@@ -368,6 +368,10 @@ describe('ce que disent les cases, les adresses de réception ouvertes (étape A
       expect(ajout).toContain('sa maille, son identifiant, sa plateforme, sa date de prise d’effet, où et quand elle a été '
         + 'vérifiée, et qui l’a déclarée')
       expect(ajout).toContain('si sa plateforme agréée et Super PDP sont reliés, leur nom et leurs dates, jamais leurs secrets.')
+      // Depuis l'étape A6b1, la phrase dit OÙ l'adresse se lit et se déclare — « Tes plateformes », au-dessus de ses factures —,
+      // et garde l'encart de l'état à venir (étape A6b2) : il n'est pas à l'écran, la phrase ne le dit pas fait.
+      expect(ajout).toContain('elle se lit et se déclare dans « Tes plateformes », au-dessus de ses factures')
+      expect(ajout).not.toContain('encart')
       // Aucun mot que le garde des écrans tient pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
       expect(ajout).not.toMatch(/\b(aucun|aucune|rien)\b/i)
     },

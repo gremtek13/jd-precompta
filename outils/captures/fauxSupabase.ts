@@ -1415,6 +1415,35 @@ const DOSSIER_PERMANENT_D9: Ligne[] = [
   },
 ]
 
+// L'ADRESSE DE RÉCEPTION des factures électroniques (espace client, étape A6b1), vue du cabinet (Justificatifs › « Adresse de
+// réception ») et du client « Ventes » (« Mes ventes › Tes plateformes › Ton adresse de réception ») : l'atelier (d7, SIREN
+// 987654324) en a trois versions — une déclaration sans vérification, une version vérifiée sur la plateforme au NOM LONG et à
+// l'identifiant LONG (la cellule et la ligne se coupent où il faut), déclarée par le titulaire, et la courante, À VENIR,
+// vérifiée sur le portail de l'annuaire, déclarée par lui aussi (« par le client » au cabinet) ; le cabinet infirmier (d1, SIREN
+// 123456789) une seule, non vérifiée ; les autres dossiers n'en ont aucune (le dossier sans SIRET, d4, dit pourquoi on ne peut
+// pas déclarer). Fictives, comme tout le banc ; les auteurs sont les comptes du banc (`u1`, `u-bernard`).
+const ADRESSES_RECEPTION_DU_BANC: Ligne[] = [
+  {
+    id: 'adr-d7-1', dossier_id: 'd7', forme: 'siren', identifiant: '987654324', plateforme: 'Plateforme fictive Alpha', prise_effet: '2026-07-01',
+    verification: 'declaration', verifiee_le: null, remplace_id: null, auteur: 'u1', cree_le: '2026-08-20T09:00:00Z',
+  },
+  {
+    id: 'adr-d7-2', dossier_id: 'd7', forme: 'siren_siret_routage', remplace_id: 'adr-d7-1', auteur: 'u-bernard', cree_le: '2026-09-11T08:30:00Z',
+    identifiant: '987654324_98765432400019_SERVICE-COMPTABILITE-FACTURES-FOURNISSEURS-2026',
+    plateforme: 'Plateforme de dématérialisation partenaire des experts-comptables et des entreprises de conseil',
+    prise_effet: '2026-09-15', verification: 'plateforme', verifiee_le: '2026-09-10',
+  },
+  {
+    id: 'adr-d7-3', dossier_id: 'd7', forme: 'siren_siret', identifiant: '987654324_98765432400019', plateforme: 'Plateforme fictive Alpha',
+    prise_effet: '2027-03-01', verification: 'portail_annuaire', verifiee_le: '2026-10-01', remplace_id: 'adr-d7-2', auteur: 'u-bernard',
+    cree_le: '2026-10-02T14:10:00Z',
+  },
+  {
+    id: 'adr-d1-1', dossier_id: 'd1', forme: 'siren', identifiant: '123456789', plateforme: 'Plateforme fictive Bêta', prise_effet: '2026-09-01',
+    verification: 'declaration', verifiee_le: null, remplace_id: null, auteur: 'u1', cree_le: '2026-09-02T09:00:00Z',
+  },
+]
+
 // LE CATALOGUE D'ARTICLES de l'atelier de conseil (d7, espace client, étape A2a), vu du cabinet (l'onglet Factures › Articles) et
 // de son client « Ventes » (« Mes ventes › Articles ») : six articles FICTIFS — un prix à six décimales qu'un affichage à deux
 // arrondirait, une désignation et une description LONGUES (la cellule se coupe, l'infobulle garde le texte), une référence
@@ -1751,6 +1780,8 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'pje-7', dossier_id: 'd7', recue_le: '2026-10-02T23:30:00Z', raison: 'depot', octets: null, empreinte: '7'.repeat(64), vue_le: null, vue_par: null },
     { id: 'pje-8', dossier_id: 'd7', recue_le: '2026-09-29T08:05:00Z', raison: 'vide', octets: 0, empreinte: '8'.repeat(64), vue_le: '2026-09-30T08:00:00Z', vue_par: 'u1' },
   ],
+  // L'adresse de réception des factures électroniques (espace client, étape A6b1) : voir ADRESSES_RECEPTION_DU_BANC.
+  adresses_reception: ADRESSES_RECEPTION_DU_BANC.map((a) => ({ ...a })),
   // Le catalogue d'articles de l'atelier (espace client, étape A2a) : voir ARTICLES_D7.
   articles: ARTICLES_D7.map((a) => ({ ...a })),
 }
