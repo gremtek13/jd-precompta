@@ -117,6 +117,16 @@ export function formatMoney(value: number | null): string {
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 }
 
+// UN PRIX UNITAIRE, JAMAIS ARRONDI EN SILENCE (espace client, étape A2b ; né à l'étape A2a pour la liste des articles). Un prix
+// unitaire hors taxes peut porter six décimales (BT-146, règle G1.16 ; le générateur CII n'en refuse que plus de six) :
+// `formatMoney` en montre deux, donc 0,123456 € se lisait « 0,12 € » — la ligne de facture et l'article disaient ce que le
+// document ne contient pas. Deux décimales AU MOINS : un prix au centime s'écrit exactement comme avec `formatMoney`
+// (« 60,00 € », « 1 234,50 € », mêmes espaces insécables, même « € »), et l'aperçu d'une facture d'avant ne bouge pas ; jusqu'à
+// six quand le prix les porte (« 0,123456 € »). Un MONTANT (total, montant de ligne) reste au centime : `formatMoney`.
+export function formaterPrixUnitaire(prix: number): string {
+  return prix.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 6 })
+}
+
 // Une date affichée en français, qu'elle vienne d'une colonne `date` de Postgres (`date_piece`,
 // `echeance`, `date_emission`…) ou d'un `timestamptz` (`created_at`, `generated_at`, `occurred_at`).
 // Les deux ne se lisent PAS de la même façon, et c'est exactement la distinction que portent

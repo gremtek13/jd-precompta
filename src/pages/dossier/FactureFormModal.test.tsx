@@ -44,6 +44,12 @@ vi.mock('../../lib/supabase', () => ({
     // Volontairement bruyant : une table inattendue doit nommer ce que le test n'avait pas prévu,
     // plutôt que de rendre un objet vide et de faire échouer l'écran loin de la cause.
     from: (table: string) => {
+      // Les articles du dossier, lus en entier à l'ouverture (étape A2b) : le catalogue est vide ici ; leurs cas sont dans
+      // FactureFormModalArticles.test.tsx.
+      if (table === 'articles') {
+        const articles = { select: () => articles, eq: () => articles, order: () => articles, range: () => Promise.resolve({ data: [], error: null, count: 0 }) }
+        return articles
+      }
       if (table !== 'facture_lignes') throw new Error(`Table non attendue dans ce test : ${table}`)
       const requete = { select: () => requete, eq: () => requete, order: () => Promise.resolve({ data: faux.lignes, error: null }) }
       return requete

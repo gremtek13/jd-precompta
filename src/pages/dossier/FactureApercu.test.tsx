@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureApercu from './FactureApercu'
+import { formatMoney } from '../../lib/format'
 import { MENTIONS_VIDES } from '../../test/factures'
 import { SIREN_CLIENT, SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import type { DossierCii } from '../../lib/factureCii'
@@ -41,6 +42,9 @@ function validee(o: Partial<FactureEmise> = {}): FactureEmise {
 }
 
 afterEach(() => { cleanup(); faux.lignes = [faux.uneLigne] })
+
+// Les cellules « PU HT » de l'aperçu, telles qu'elles s'impriment (le texte, insécables comprises).
+const prixUnitaires = () => Array.from(document.querySelectorAll('td[data-libelle="PU HT"]')).map((c) => c.textContent)
 
 const REDEVABLE: DossierCii = { statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }
 
@@ -137,5 +141,38 @@ describe('FactureApercu — le taux de TVA imprimé', () => {
     await screen.findByText('Livret imprimé')
     const taux = [...document.querySelectorAll('td[data-libelle="TVA"]')].map((c) => c.textContent)
     expect(taux).toEqual(['20\u00a0%', '5,5\u00a0%', '0\u00a0%'])
+  })
+})
+
+// LE PRIX UNITAIRE D'UNE LIGNE NE S'ARRONDIT JAMAIS EN SILENCE (espace client, étape A2b). Un article peut porter six décimales
+// (BT-146, règle G1.16) et la ligne de facture le prend tel quel : l'aperçu, qui est le document qu'on imprime et qu'on envoie,
+// disait « 0,12 € » un prix de 0,123456 €. Un MONTANT (total HT, total TTC de la ligne) reste, lui, au centime.
+describe('FactureApercu — le prix unitaire, jamais arrondi en silence', () => {
+  const lignesDe = (...prix: number[]) => prix.map((p, i) => ({
+    id: `l${i + 1}`, facture_id: 'f1', ordre: i, designation: `Ligne ${i + 1}`, quantite: 1, prix_unitaire_ht: p, taux_tva: 20,
+  }))
+
+  it('une facture AU CENTIME s’imprime EXACTEMENT comme avant : chaque prix unitaire est celui de `formatMoney`, au caractère près', async () => {
+    const prix = [100, 85.5, 0.01, 349.9, 1234.5, 12345678.9, 0]
+    faux.lignes = lignesDe(...prix)
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
+    await screen.findByText('Ligne 1')
+    expect(prixUnitaires()).toEqual(prix.map((p) => formatMoney(p)))
+  })
+
+  it('un prix à six décimales s’imprime sans arrondi, deux décimales au moins', async () => {
+    faux.lignes = lignesDe(0.123456, 1.5, 12.34567, 0.000001)
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
+    await screen.findByText('Ligne 1')
+    expect(prixUnitaires().map((t) => t?.replace(/[\u00a0\u202f]/g, ' '))).toEqual(['0,123456 €', '1,50 €', '12,34567 €', '0,000001 €'])
+  })
+
+  it('les montants de la ligne restent au centime : le prix unitaire seul gagne des décimales', async () => {
+    faux.lignes = [{ id: 'l1', facture_id: 'f1', ordre: 0, designation: 'Pièce', quantite: 1000, prix_unitaire_ht: 0.123456, taux_tva: 0 }]
+    render(<FactureApercu facture={validee()} dossier={REDEVABLE} onClose={() => {}} />)
+    await screen.findByText('Pièce')
+    const ligne = document.querySelector('tbody tr')!
+    expect(ligne.querySelector('td[data-libelle="Total HT"]')?.textContent).toBe(formatMoney(123.46))
+    expect(ligne.querySelector('td[data-libelle="Total TTC"]')?.textContent).toBe(formatMoney(123.46))
   })
 })

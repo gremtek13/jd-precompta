@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formaterPrixArticle, gestesDeLArticle, lirePrix, mentionParLeClient, PRIX_ILLISIBLE, refusDeLaSaisie, saisieEnvoyee,
+  gestesDeLArticle, lirePrix, mentionParLeClient, PRIX_ILLISIBLE, refusDeLaSaisie, saisieEnvoyee,
   saisieInitiale, saisieTouchee, articlesAffiches, champsDeRechercheArticle, TITRES_ARTICLE_PAR_LE_CLIENT, type SaisieArticle,
 } from './articlesVue'
 import { refusEnregistrementArticle, refusRepriseArticle, refusRetraitArticle } from './articles'
@@ -16,8 +16,6 @@ const SAISIE_VALIDE: SaisieArticle = {
   reference: 'NEUF-01', designation: 'Article neuf', description: '', unite: 'C62', prix: '12,50', taux: '20', nature: 'services',
 }
 const ACCES_LUS: AccesDuDossier = { etat: 'lus', comptes: ['u-client'] }
-// Les espaces du texte rendu : l'insécable et la fine insécable se lisent comme des espaces.
-const lisible = (t: string) => t.replace(/[  ]/g, ' ')
 
 describe('lirePrix — un prix tapé se lit sans être changé', () => {
   it.each([
@@ -159,19 +157,6 @@ describe('refusDeLaSaisie — les refus sont ceux du module, dans son ordre', ()
     const retire = article({ id: 'x2', reference: 'ANCIENNE', retire_le: '2027-10-05T08:00:00Z' })
     expect(refusDeLaSaisie(dossier, { nouveau: false, article: retire }, saisieInitiale(retire), autres)?.message)
       .toBe('Cet article est retiré : le reprendre avant de le modifier.')
-  })
-})
-
-describe('formaterPrixArticle — un prix ne s’arrondit jamais à l’affichage', () => {
-  it.each([
-    [12.5, '12,50 €'], [60, '60,00 €'], [0, '0,00 €'], [0.1, '0,10 €'], [1.2345, '1,2345 €'], [0.123456, '0,123456 €'],
-    [1234.5, '1 234,50 €'], [999999.999999, '999 999,999999 €'],
-  ])('%s s’affiche « %s »', (prix, attendu) => {
-    expect(lisible(formaterPrixArticle(prix))).toBe(attendu)
-  })
-
-  it('l’espace avant « € » est insécable : un montant ne se coupe pas en fin de ligne', () => {
-    expect(formaterPrixArticle(12.5)).toMatch(/ €$/)
   })
 })
 

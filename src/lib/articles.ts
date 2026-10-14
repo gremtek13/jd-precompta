@@ -20,9 +20,9 @@ import type { Article, ArticleExoneration, NatureArticle, StatutTva, UniteArticl
 // appliquée sur son accord, et l'export (supabase/schema) la porte. Le drapeau levé, le plan de sauvegarde compte leur
 // table (src/lib/sauvegarde.ts) et la phrase de l'onglet Accès dit ce que la case « Ventes » ouvre de plus
 // (src/lib/droitsAcces.ts) ; la vue « Articles » de l'onglet Factures les offre depuis l'étape A2a (c'est ce drapeau qui la
-// montre), le choix d'un article dans la facture viendra avec A2b. articles.test.ts confronte ce drapeau à l'export,
-// et les refus ci-dessous au texte même des fonctions. Un retour arrière de la migration ne vient qu'APRÈS le drapeau
-// rebaissé en ligne : sinon chaque sauvegarde lirait une table absente.
+// montre), et le formulaire d'une facture les lit depuis l'étape A2b (même drapeau : rebaissé, il ne lit rien et n'offre
+// rien). articles.test.ts confronte ce drapeau à l'export, et les refus ci-dessous au texte même des fonctions. Un retour
+// arrière de la migration ne vient qu'APRÈS le drapeau rebaissé en ligne : sinon chaque sauvegarde lirait une table absente.
 export const ARTICLES_EXPORTES: boolean = true
 
 // ── Qui tient le catalogue (MEG1-Q1, décision du cabinet du 14/10/2026) ─────────────────────────────────────────────

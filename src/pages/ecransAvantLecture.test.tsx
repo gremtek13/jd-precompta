@@ -283,6 +283,16 @@ const ECRANS: Ecran[] = [
       />
     </Dossier1>
   ) },
+  // Le même formulaire dans l'espace du client « Ventes » (étape A2b : un article dans la facture, lu EN ENTIER à l'ouverture).
+  { nom: 'FactureFormModal (client)', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
+    <Dossier1>
+      <FactureFormModal espace="client"
+        dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
+        articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
+        onClose={rien} onSaved={rien}
+      />
+    </Dossier1>
+  ) },
   { nom: 'FacturesTab', fichier: 'pages/dossier/FacturesTab.tsx', rendre: () => (
     <Dossier1>
       <FacturesTab espace="cabinet"

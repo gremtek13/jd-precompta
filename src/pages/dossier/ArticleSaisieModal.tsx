@@ -24,6 +24,10 @@ interface Props {
   espace: EspaceVentes
   // L'article modifié, tel que la liste l'a lu ; nul pour un article neuf.
   article: Article | null
+  // Une saisie de départ pour un article NEUF (étape A2b : « Enregistrer comme article » la tire d'une ligne de facture) ; sans
+  // elle, l'article neuf part de la saisie vide. Elle compte comme le point de départ : rien n'est « touché » tant qu'on n'y
+  // change rien, et le refus qu'elle porte déjà (la nature à choisir) se dit sans alerte.
+  saisieDeDepart?: SaisieArticle
   // La liste LUE EN ENTIER : l'unicité d'une référence s'y juge. La vue n'ouvre rien sur une lecture partielle.
   articles: readonly ArticlePourReference[]
   // Une écriture est en cours (la vue tient le verrou) ; l'erreur qu'elle a rendue, sous les mots de la base.
@@ -35,8 +39,8 @@ interface Props {
 
 const NOM_NATURE: Record<NatureArticle, string> = { biens: 'Biens', services: 'Services' }
 
-export default function ArticleSaisieModal({ dossierId, espace, article, articles, occupe, erreur, onEnregistrer, onClose }: Props) {
-  const [depart] = useState(() => saisieInitiale(article))
+export default function ArticleSaisieModal({ dossierId, espace, article, saisieDeDepart, articles, occupe, erreur, onEnregistrer, onClose }: Props) {
+  const [depart] = useState(() => saisieDeDepart ?? saisieInitiale(article))
   const [saisie, setSaisie] = useState<SaisieArticle>(depart)
   const changer = <K extends keyof SaisieArticle>(k: K, v: SaisieArticle[K]) => setSaisie({ ...saisie, [k]: v })
 
