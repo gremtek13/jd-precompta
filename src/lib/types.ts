@@ -1706,3 +1706,53 @@ export interface Article {
   modifie_par: string | null
   modifie_le: string | null
 }
+
+// L'ADRESSE DE RÉCEPTION DES FACTURES ÉLECTRONIQUES D'UN DOSSIER (espace client, étape A6a ; migration
+// `adresses_reception`, présentée au cabinet et appliquée sur son accord ; aucun écran ne la
+// lit encore, l'encart viendra avec l'étape A6b). L'identifiant d'adressage de l'annuaire et sa maille,
+// la plateforme de réception, la date de prise d'effet, DÉCLARÉS par le cabinet ou le client qui porte « Ventes », avec ce
+// qui les a vérifiés. Versionnée : une déclaration remplace la courante (`remplace_id`), rien ne se modifie ni ne se
+// supprime ; seule `declarer_adresse_reception` l'écrit.
+// La maille de l'annuaire (annexe 3 v1.8, DG-7-5) : l'entreprise, un établissement, un code de routage, un suffixe.
+export type FormeAdresseReception = 'siren' | 'siren_siret' | 'siren_siret_routage' | 'siren_suffixe'
+// Où l'adresse a été vérifiée — ou pas du tout : la seule déclaration, sans jour de vérification.
+export type VerificationAdresseReception = 'portail_annuaire' | 'plateforme' | 'declaration'
+export interface AdresseReception {
+  id: string
+  dossier_id: string
+  forme: FormeAdresseReception
+  // SIREN, SIREN_SIRET, SIREN_SIRET_routage ou SIREN_suffixe (DT-7-5-1) ; il commence par le SIREN du dossier.
+  identifiant: string
+  // Le nom de la plateforme de réception, tel que la déclaration le donne : 99 caractères au plus.
+  plateforme: string
+  // Date civile (AAAA-MM-JJ), entre 2000 et 2099.
+  prise_effet: string
+  verification: VerificationAdresseReception
+  // Date civile (AAAA-MM-JJ) ; nulle si et seulement si l'adresse est déclarée sans vérification.
+  verifiee_le: string | null
+  // La version que celle-ci remplace ; nulle pour la première du dossier. La courante est celle qu'aucune ne remplace.
+  remplace_id: string | null
+  // Qui l'a déclarée — un identifiant de compte, sans clé vers les comptes —, et quand.
+  auteur: string
+  cree_le: string
+}
+
+// L'ÉTAT DE LA FACTURE ÉLECTRONIQUE D'UN DOSSIER, tel que `etat_facture_electronique` le rend (même migration) : des
+// booléens, un nom et des dates — jamais une adresse de connexion, un identifiant, un secret, une organisation ni une
+// portée — et l'adresse de réception COURANTE. Lu par src/lib/etatFactureElectronique.ts, sans rien deviner.
+export interface EtatFactureElectroniqueLu {
+  plateforme: {
+    reliee: boolean
+    // Le nom que la connexion porte ; nul quand rien n'est relié.
+    nom: string | null
+    // Des instants (horodatages ISO 8601), nuls quand rien n'est relié ou que rien n'a encore été fait.
+    creee_le: string | null
+    derniere_recuperation: string | null
+    statuts_lus_le: string | null
+  }
+  superpdp: {
+    relie: boolean
+    depuis: string | null
+  }
+  adresse: Omit<AdresseReception, 'dossier_id' | 'remplace_id'> | null
+}

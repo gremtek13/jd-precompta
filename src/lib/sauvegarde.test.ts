@@ -32,6 +32,7 @@ import {
   vaguesParLien,
   type Relation,
 } from './sauvegarde'
+import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { derniereDefinitionSql } from '../test/schema'
 
 // Ces tests sont la RÉPÉTITION de la restauration. Une sauvegarde jamais restaurée n'est pas une
@@ -130,6 +131,8 @@ describe('ordre de restauration', () => {
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
       'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
       'revision_explications.remplace_id', 'declarations_ereporting.remplace_id', 'dossier_permanent.remplace_id',
+      // Depuis l'étape A6a, les adresses de réception, le jour où leur migration est exportée.
+      ...(ADRESSES_RECEPTION_EXPORTEES ? ['adresses_reception.remplace_id'] : []),
     ])
   })
 
@@ -278,7 +281,9 @@ describe('ordre de restauration', () => {
     const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
     expect(ORDRE_RESTAURATION[rang('pieces_jointes_ecartees') - 1]).toBe('dossier_permanent')
     expect(rang('pieces_jointes_ecartees')).toBeLessThan(rang('exercices_valides'))
-    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees') + 1]).toBe('devis_numerotation')
+    // Depuis l'étape A6a, les adresses de réception les suivent (sauvegardeAdressesReception.test.ts), puis les devis.
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees') + 1]).toBe('adresses_reception')
+    expect(ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees')).toBeLessThan(ORDRE_RESTAURATION_PREVU.indexOf('devis_numerotation'))
     expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
     expect(RELATIONS.filter((r) => r.enfant === 'pieces_jointes_ecartees')
       .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`))

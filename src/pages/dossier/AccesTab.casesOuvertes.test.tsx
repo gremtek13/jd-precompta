@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
+import { ADRESSES_RECEPTION_EXPORTEES } from '../../lib/adressesReception'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { CE_QUE_DISENT_LES_CASES, ceQueDisentLesCases } from '../../lib/droitsAcces'
 
@@ -71,9 +72,10 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     // La lecture revenue : l'accès du dossier, et lui seul.
     await screen.findByText('client@exemple.fr')
     expect(screen.queryByText('autre@exemple.fr')).toBeNull()
-    // Le drapeau des articles (étape A1) est pris tel qu'il est : la phrase suit les trois (droitsAcces.test.ts, ses états).
-    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES))
-    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES))
+    // Les drapeaux des articles (étape A1) et des adresses de réception (étape A6a) sont pris tels qu'ils sont : la phrase
+    // suit les quatre (droitsAcces.test.ts, leurs états).
+    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES))
+    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES))
     expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
     expect(phrase.textContent).toContain('et, avec « Ventes », désigner celui qui prouve un encaissement.')

@@ -280,6 +280,19 @@ sans ses lignes de commentaire (60 638 caractères, reçus tels quels), rend ses
 et rien n'est resté en base ; `rls.sql`, sa copie adaptée (60 193 caractères, `b49cdaf6…`), 35 lignes, 0 en faute, 33
 mutations sur 33.
 
+**Rejoué le 14/10/2026 après `adresses_reception`** (espace client, étape A6a), appliquée par la session sous la version
+`20261014143141` sur l'accord du cabinet (A6-Q1), sans confirmation demandée (aucune suppression), AVANT la mise en
+ligne de la bascule qui la lit ; son fichier a quitté la version PROVISOIRE `20261014160000` pour celle-ci, texte
+inchangé (25 674 caractères, empreinte `bed56842e960b3b04ef6beccc137fc9e`, celle que rend sa ligne d'historique) :
+133 fichiers, 133 migrations, empreinte globale `410fe6d20dea5da17d11042814d32185` des deux côtés, aucune divergence. Le
+socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 1 964 objets, `e21ba280643354680eda94553cfd19c3`
+des deux côtés — la table `adresses_reception`, ses onze colonnes, ses onze contraintes, ses deux index, sa garde et son
+déclencheur, ses trois policies, sa RLS et ses deux fonctions en plus. `signature.sql` rend en production ce que l'étape
+avait relevé sur sa réplique après la migration : les neuf familles changent. L'essai
+`supabase/essais/etatFactureElectronique.sql`, rejoué en production sans ses lignes de commentaire (65 027 caractères,
+reçus tels quels), rend ses 129 verdicts justes, mutations comprises, et rien n'est resté en base ; `rls.sql`, sa copie
+adaptée (63 449 caractères, `990deaf1…`), 35 lignes, 0 en faute, 35 mutations sur 35.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

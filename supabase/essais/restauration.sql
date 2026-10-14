@@ -218,6 +218,16 @@
 -- recopiées, 71 tables restaurées et IDENTIQUES à la source (les trois articles compris), 0 écart, aucun arrêt, les
 -- contrôles du catalogue des rôles et de la colonne générée justes. Planté — les articles ancrés avant le dossier —, le
 -- script s'arrête sur leur clé (23503). Sur une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier.
+--
+-- 14/10/2026, espace client, étape A6a (migration `adresses_reception`, préparée, non appliquée) : `adresses_reception`
+-- entre au plan par son bloc à part dès que sa table existe (78 tables, 81 avec les devis), juste avant
+-- `exercices_valides` — après les pièces jointes écartées, avant les devis —, par VAGUES (`remplace_id`) ; seuls les rangs
+-- des devis et d'`exercices_valides` changent. Rejoué sur la réplique de l'étape, égale à la production à 132 migrations
+-- plus celle-ci (signature.sql, neuf familles, et l'historique), le dossier `test` portant trois adresses déclarées par
+-- leur fonction (une chaîne de trois versions) : 137 clés recopiées, 72 tables restaurées et IDENTIQUES à la source (69
+-- lignes, dont les trois adresses en trois vagues), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
+-- colonne générée justes. Planté — les adresses ancrées avant le dossier —, le script s'arrête sur leur clé (23503).
+-- Sur une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier (135 clés, 71 tables IDENTIQUES).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -319,6 +329,25 @@ begin
     insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'articles');
     insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
      ('articles','direct',null,null);
+  end if;
+end $$;
+
+-- ══ Les adresses de réception (espace client, étape A6a) ══ Au plan du code quand `ADRESSES_RECEPTION_EXPORTEES` est levé
+-- — c'est-à-dire quand leur migration est en base : le script les y met dès que leur table existe, juste avant
+-- `exercices_valides` (ORDRE_RESTAURATION_PREVU : après les pièces jointes écartées, avant les devis, que leur bloc met
+-- ensuite au même endroit), `exercices_valides` reculant d'un rang ; leur chemin, et leur vague (une version remplace la
+-- courante, `remplace_id`). Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte
+-- ce bloc au plan prévu du code.
+do $$
+begin
+  if to_regclass('public.adresses_reception') is not null then
+    update essai_restauration._ordre set rang = rang + 1 where table_nom = 'exercices_valides';
+    insert into essai_restauration._ordre (rang, table_nom)
+      select o.rang - 1, 'adresses_reception' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('adresses_reception','direct',null,null);
+    insert into essai_restauration._vagues (table_nom, colonne) values
+     ('adresses_reception','remplace_id');
   end if;
 end $$;
 
