@@ -218,7 +218,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   Fonds plats, ombres `--shadow-xs/sm/md/lg`, rayons `--radius-*`, transitions `var(--duree) var(--ease)`.
 - **Pièges de positionnement** : jamais de `backdrop-filter`, `filter` ni `transform` sur `.sidebar` ; jamais de
   `container-type` sur un ancêtre d'éléments `position: fixed` (panneau central, grille, carte) — il en devient la
-  référence, et les fenêtres superposées se décalent.
+  référence, et les fenêtres superposées se décalent (le Chromium du banc ne le fait plus, mesuré le 14/10/2026 : la
+  précaution reste pour les autres moteurs → « LA BARRE DU BAS NE RECOUVRE PAS LES BOUTONS D'UNE FENÊTRE »).
 - **Tableaux de bord** : widgets partagés (`src/components/widgets/` : `KpiTile`, `ProgressRing`, `MonthlyBars`,
   `Widget`, `Avatar`) en grille `.bento` de 12 colonnes, qui suit SA largeur (conteneur `bento` ; sous 760 px, rangement
   du téléphone) ; une tuile remplit sa case ; le texte garde sa couleur et le statut se lit à une pastille ; une couleur
@@ -237,11 +238,14 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
 - **Vérification visuelle** : `outils/captures/` après toute modification de `index.css` ou de la coque.
   `debordements.mjs` compte ce qui sort du panneau, d'une carte, d'une case de grille, le texte plus large que sa
   boîte, et un mot de 2 à 24 caractères coupé au milieu : 0 aux quatre largeurs de référence, à 720 px et aux
-  combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à
-  1 280 px et plus). Il admet un tableau qui défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. La passe
-  du client « Mes ventes » : `debordements.mjs <largeur> client` (ou `client-banque`), qui mesure aussi la barre du bas du
-  téléphone. Ne
-  JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de `vitrine.mjs`).
+  combinaisons extrêmes des volets (il n'ouvre le volet de droite qu'à 1 280 px et plus). Il admet un tableau qui
+  défile : une capture vérifie qu'aucun bouton n'y passe hors de vue. Il sonde aussi les boutons de la fenêtre
+  superposée ouverte, défilée de bout en bout (le centre et le milieu des quatre bords, `elementFromPoint`) : un bouton
+  qu'aucune position ne dégage est une faute — la barre du bas du téléphone est SOUS les fenêtres, et une rangée coupée
+  au bord d'une carte qui défile n'est pas recouverte → « LA BARRE DU BAS NE RECOUVRE PAS LES BOUTONS D'UNE FENÊTRE ».
+  La passe du client « Mes ventes » : `debordements.mjs <largeur> client` (ou `client-banque`), qui mesure aussi la
+  barre du bas du téléphone. Ne JAMAIS donner au navigateur le mandataire de l'environnement (voir l'en-tête de
+  `vitrine.mjs`).
   Sous un `node_modules` fait de liens (worktree d'agent), Vite refuse les polices et le banc mesure la police de
   repli sans échouer : `outils/captures/vite.config.ts` autorise le `node_modules` réel (`realpathSync` d'un paquet)
   et ne surveille pas `.claude` sous la racine (jamais en `**/.claude/**` : un worktree n'y verrait plus ses sources).
@@ -809,9 +813,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   A6b1, l'adresse de réception à l'écran — sa fenêtre, au cabinet depuis Justificatifs et au client « Ventes » depuis
   « Tes plateformes » —, le 14/10/2026 (ses six lectures de la conception, A6B1-Q1 à A6B1-Q6, tranchées « comme
   recommandé » le même jour) → « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ». A6b2, l'encart « Facture électronique » — à
-  l'accueil du client « Ventes » avec sa tuile du téléphone, et dans la Vue d'ensemble du cabinet —, le 14/10/2026 (cinq
-  lectures de la conception soumises au cabinet, A6B2-Q1 à A6B2-Q5) → « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ».
-  Restent A7 (l'unité, la référence et l'article sur la ligne enregistrée, une migration) et la suite du premier groupe.
+  l'accueil du client « Ventes » avec sa tuile du téléphone, et dans la Vue d'ensemble du cabinet —, le 14/10/2026 (ses
+  cinq lectures de la conception, A6B2-Q1 à A6B2-Q5, tranchées « comme recommandé » le même jour) → « L'ENCART « FACTURE
+  ÉLECTRONIQUE », À L'ÉCRAN ». Restent, dans l'ordre recommandé, A4 (les contacts ; MEG1-Q9 à Q11), A5 (les paramètres
+  de facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et
+  l'article sur la ligne enregistrée —, une migration) et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
