@@ -10,6 +10,7 @@
 // `sauvegardeRelations.test.ts` le compare au schéma exporté à chaque exécution : une clé étrangère
 // ajoutée par une migration et oubliée ici fait échouer la suite, action à la suppression comprise.
 
+import { ARTICLES_EXPORTES } from './articles'
 import { DEVIS_EXPORTES } from './devis'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -34,6 +35,22 @@ export const TABLES_DES_DEVIS: readonly string[] = ['devis', 'devis_factures', '
 /** Une table au plan de sauvegarde : toutes, sauf celles des devis tant que leurs migrations ne sont pas exportées. */
 export function auPlan(table: string, devisExportes: boolean): boolean {
   return devisExportes || !TABLES_DES_DEVIS.includes(table)
+}
+
+// LES ARTICLES (espace client, étape A1 ; migration `articles`, présentée au cabinet et appliquée sur son accord) : le
+// patron des devis, sous leur propre drapeau (`ARTICLES_EXPORTES`, src/lib/articles.ts), levé. Leur table est déclarée
+// ci-dessous à sa place — sa relation, son rang, son chemin — et serait RETIRÉE du plan le drapeau rebaissé (avant tout
+// retour arrière de la migration) ; sauvegardeArticles.test.ts éprouve le plan prévu et le plan du jour.
+export const TABLES_DES_ARTICLES: readonly string[] = ['articles']
+
+/** Une table au plan, côté articles : toutes, sauf la leur tant que sa migration n'est pas exportée. */
+export function auPlanDesArticles(table: string, articlesExportes: boolean): boolean {
+  return articlesExportes || !TABLES_DES_ARTICLES.includes(table)
+}
+
+/** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles. */
+export function auPlanAujourdHui(table: string): boolean {
+  return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -180,10 +197,13 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les pièces jointes écartées à la réception par e-mail (ligne 22.7) : seulement leur dossier.
   { enfant: 'pieces_jointes_ecartees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les articles (espace client, étape A1) : seulement leur dossier, jusqu'à l'étape A7.
+  { enfant: 'articles', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
-// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis tant que leurs migrations ne sont pas exportées.
-export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlan(r.enfant, DEVIS_EXPORTES))
+// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis ni celle des articles tant que leurs migrations
+// ne sont pas exportées.
+export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -304,6 +324,13 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // rien, elle se reprend du plus haut numéro restauré), les devis — un devis émis ne naît que par la porte de la
 // restauration, dans un dossier sans série —, puis leurs liens, dont la garde lit le devis et la facture.
 // `sauvegardeDevis.test.ts` garde cet ordre.
+//
+// Les articles (espace client, étape A1) viennent juste après `agent_conversations`, à la place que le tri leur donne parmi
+// les tables qui ne dépendent que du dossier — et AVANT les factures, comme la conception le veut : à l'étape A7, une
+// ligne de facture désignera l'article qui l'a pré-remplie (`facture_lignes.article_id`), et devra le trouver déjà écrit.
+// Aucune garde ne les lit, aucune validation ne les fige ; un article retiré se réinsère tel quel, par la policy du
+// super-administrateur. Le jour où leur table existe, l'essai de restauration les met à cette place et recule d'un rang les
+// tables qui suivent. `sauvegardeArticles.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -314,6 +341,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'plan_comptable_dossier',
   'a_nouveaux',
   'agent_conversations',
+  'articles',
   'categories',
   'comptes_courants_associes',
   'connexions_bancaires',
@@ -386,8 +414,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'exercices_valides',
 ]
 
-// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis tant que leurs migrations ne sont pas exportées.
-export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlan(t, DEVIS_EXPORTES))
+// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis ni celle des articles tant que leurs migrations ne
+// sont pas exportées.
+export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
 // ligne insérée peut pointer une ligne qui n'existe pas encore. Ici c'est `factures_emises`, dont un
@@ -622,8 +651,9 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
 }
 
 // Les clés telles qu'elles s'appliquent AUJOURD'HUI : sans la série des devis tant que ses migrations ne sont pas exportées.
+// (Les articles ont la clé commune, `id` : ils n'ont pas de ligne ici.)
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
-  Object.entries(CLES_PRIMAIRES_PREVUES).filter(([table]) => auPlan(table, DEVIS_EXPORTES)),
+  Object.entries(CLES_PRIMAIRES_PREVUES).filter(([table]) => auPlanAujourdHui(table)),
 )
 
 /** La clé primaire d'une table — `id` sauf exception déclarée. */
@@ -852,12 +882,13 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   ventilations_bancaires: { acces: 'direct' },
   volet_social_pamc: { acces: 'direct' },
   pieces_jointes_ecartees: { acces: 'direct' },
+  articles: { acces: 'direct' },
 }
 
-// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis tant que leurs migrations ne sont pas
-// exportées.
+// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis ni celle des articles tant que leurs
+// migrations ne sont pas exportées.
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
-  Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlan(table, DEVIS_EXPORTES)),
+  Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlanAujourdHui(table)),
 )
 
 /** Une étape du plan de lecture d'un dossier, dans l'ordre où elle doit être exécutée. */

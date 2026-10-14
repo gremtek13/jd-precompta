@@ -31,6 +31,7 @@
 --      (espace client, étape P2 ; bloc « Les ventes du client », en fin de fichier).
 --   4bis (Ventes). Avec les droits, il n'écrit directement aucune table des ventes (42501) : ses gestes passent par les fonctions.
 --      Les devis (espace client, étape P5) rejoignent les tables des ventes dès que leur migration est en base (3bis et 4bis).
+--      Les articles (espace client, étape A1) aussi, dès la leur, avec une mutation à eux (M3bis-membre (articles)).
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -366,6 +367,26 @@
 -- cabinet (S228B-Q1, `20261013174021`) : ce fichier n'y a pas été rejoué — `signature.sql` y rend les policies (145),
 -- la RLS (76) et les droits des tables (76) d'avant elle, au caractère près — ; `piecesJointesEcartees.sql` y rend ses
 -- 81 verdicts, 0 en faute.
+--
+-- 13/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape A1 : migration `articles`, préparée, présentée
+-- au cabinet, non appliquée), qui crée `articles` — lecture du cabinet (`admin_du_dossier`), lecture du droit « Ventes »
+-- (`articles_lecture_ventes`), insertion de restauration réservée au super-administrateur, aucune autre policy ; trois
+-- fonctions l'écrivent. Le bloc « Les ventes du client » la prend dès qu'elle existe (3bis, 4bis, M4bis, et une mutation
+-- à elle, M3bis-membre (articles)) ; avant, une ligne « EN ATTENTE ». Joué ENTIER par psql sur la réplique de l'étape
+-- (signature.sql : les neuf familles, et l'historique, égaux à la production à 131 migrations) : sans la migration,
+-- 36 lignes de verdict (76 tables, dont 67 portant un `dossier_id`), 0 en faute, 31 mutations sur 31 qui mordent ; avec
+-- elle, 35 lignes (77 tables, dont 68 portant un `dossier_id` ; 3bis sur dix tables des ventes, 4bis sur quatorze
+-- écritures directes), 0 en faute, 33 mutations sur 33. La copie adaptée selon cet en-tête, toutes ses lignes de
+-- commentaire retirées (60 193 caractères, `b49cdaf6538b8042f2447a96ca016531`), jouée d'un seul tenant sur la même
+-- réplique, rend les mêmes verdicts, ligne à ligne, avec et sans la migration. Ce que les fonctions refusent et
+-- acceptent, profil par profil et par leur raison, est éprouvé par `articles.sql`. Le passage en production suivra
+-- l'application et se notera ici.
+--
+-- 14/10/2026 — LA MIGRATION APPLIQUÉE EN PRODUCTION, `articles` (`20261014063058`, sur l'accord du cabinet, A1-Q1) :
+-- 132 migrations ; la signature de la production (signature.sql, neuf familles) est celle de la réplique migrée. La
+-- copie adaptée (60 193 caractères, `b49cdaf6…`, ce que rend la ligne TEXTE) y rend 35 lignes, 0 en faute, 33 mutations
+-- sur 33 (77 tables, dont 68 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (articles)
+-- voit les deux articles du jeu). `articles.sql` y rend ses 159 verdicts, 0 en faute.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1235,6 +1256,13 @@ end $$;
 -- super-administrateur, fait passer les insertions de M4bis par la policy de la restauration. La série
 -- (`devis_numerotation`) n'a aucune policy et n'est pas une vente : le client ne la lit pas (devis.sql, 97). Avant cette
 -- migration, une ligne dit que les devis attendent, et les neuf tables se jugent seules.
+-- LES ARTICLES (étape A1) rejoignent ce domaine dès que la migration `articles` est en base (son témoin : la table
+-- `articles`) : la table entre dans la liste attendue ; le jeu d'essai y pose deux articles du dossier du client, par leur
+-- fonction et sous le chef, dont un retiré (le client qui porte « Ventes » lit aussi les retirés) ; 4bis y tente
+-- l'insertion directe d'un article et sa mise à jour. Le cabinet n'a AUCUNE policy d'écriture sur cette table : le chef de
+-- l'essai, super-administrateur, fait passer l'insertion de M4bis par la policy de la restauration. Une mutation à elle,
+-- M3bis-membre (articles), compte ce que le client sans droit voit de CETTE table quand sa policy passe à « membre » : le
+-- total de M3bis-membre, lui, mordrait par les autres tables. Avant la migration, une ligne dit que les articles attendent.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -1264,6 +1292,8 @@ declare
   -- Les devis (étape P5) : celui du jeu, son jour (à Paris, comme la base date une émission), et ce que 4bis tentera.
   dv uuid; jour date := (now() at time zone 'Europe/Paris')::date;
   ecritures_devis jsonb := '[]'::jsonb; mises_a_jour_devis jsonb := '[]'::jsonb;
+  -- Les articles (étape A1) : celui du jeu, ce que 4bis tentera, et ce que la mutation à part voit de la table.
+  art uuid; ecritures_articles jsonb := '[]'::jsonb; mises_a_jour_articles jsonb := '[]'::jsonb; articles_membre bigint;
 begin
   if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                   and not attisdropped) then
@@ -1278,6 +1308,13 @@ begin
   else
     insert into rls_verdict values ('3bis et 4bis. les devis : EN ATTENTE de la migration devis_du_client',
       'public.devis', 'absente : les devis se jugent avec les ventes dès que la migration y est', true);
+  end if;
+  -- Les articles (étape A1), dès que leur migration est en base ; avant, une ligne le dit.
+  if to_regclass('public.articles') is not null then
+    attendues := array(select x from unnest(attendues || array['articles']) x order by 1);
+  else
+    insert into rls_verdict values ('3bis et 4bis. les articles : EN ATTENTE de la migration articles',
+      'public.articles', 'absente : les articles se jugent avec les ventes dès que la migration y est', true);
   end if;
   -- Le catalogue, tel qu'il est.
   execute catalogue_sql into tables_ventes, hors_lecture;
@@ -1335,6 +1372,23 @@ begin
       mises_a_jour_devis := jsonb_build_array(
         jsonb_build_object('nom', 'devis', 'ordre', format('update devis set notes = notes where dossier_id = %L', dossier_du_client)));
     end if;
+    -- Les articles (étape A1) : deux articles du dossier du client, posés par le chef par leur fonction, dont un retiré.
+    if to_regclass('public.articles') is not null then
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select a.id into art from enregistrer_article(dossier_du_client, null,
+        '{"designation":"ESSAI RLS","prix_unitaire_ht":10,"taux_tva":20,"nature":"services"}'::jsonb) a;
+      perform retirer_article(dossier_du_client, art);
+      perform enregistrer_article(dossier_du_client, null,
+        '{"designation":"ESSAI RLS 2","unite":"HUR","prix_unitaire_ht":5,"taux_tva":5.5,"nature":"biens"}'::jsonb);
+      reset role;
+      -- Ce que 4bis tentera : un article valide, que les contraintes de la table laissent passer, et une mise à jour.
+      ecritures_articles := jsonb_build_array(
+        jsonb_build_object('nom', 'articles', 'ordre', format('insert into articles (dossier_id, designation, prix_unitaire_ht, taux_tva, nature) values (%L, %L, 1, 20, %L)',
+          dossier_du_client, 'ESSAI RLS 4bis', 'services')));
+      mises_a_jour_articles := jsonb_build_array(
+        jsonb_build_object('nom', 'articles', 'ordre', format('update articles set designation = designation where dossier_id = %L', dossier_du_client)));
+    end if;
     construit := true;
 
     -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
@@ -1384,6 +1438,8 @@ begin
       ) as v(nom, ordre)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(ecritures_devis) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(ecritures_articles) as d(nom text, ordre text)
     loop
       -- Sous le client portant les deux droits : refusé par la RLS, nommément.
       accepte := false; motif := null;
@@ -1421,6 +1477,8 @@ begin
       ) as v(nom, ordre)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_devis) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_articles) as d(nom text, ordre text)
     loop
       touchees := -1; motif := null;
       begin
@@ -1453,11 +1511,17 @@ begin
         begin execute format('select count(*) from public.%I', t) into vus; exception when others then vus := 0; end;
         reset role;
         total := total + vus;
+        -- Les articles (étape A1), comptés à part : le total mordrait par les autres tables.
+        if t = 'articles' then articles_membre := vus; end if;
       end loop;
       raise exception 'ANNULATION_ESSAI';
     exception when sqlstate 'P0001' then null;
     end;
     reset role;
+    if to_regclass('public.articles') is not null then
+      mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre (articles) — 3bis sans droit, la policy des articles sur « membre »',
+        'attendu', 'des articles vus', 'observe', coalesce(articles_membre::text, '?') || ' article(s) vu(s)', 'mord', coalesce(articles_membre > 0, false));
+    end if;
     mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre — 3bis sans droit, les policies sur « membre »',
       'attendu', 'des lignes vues', 'observe', total || ' ligne(s) vue(s)', 'mord', total > 0);
 

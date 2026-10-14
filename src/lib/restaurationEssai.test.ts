@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { ARTICLES_EXPORTES } from './articles'
 import { DEVIS_EXPORTES } from './devis'
 import {
   CHEMINS_DOSSIER,
@@ -10,6 +11,7 @@ import {
   PARENTS_HORS_PLAN_VOULUS,
   TABLES_AUTO_REFERENCEES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES,
+  TABLES_DES_ARTICLES,
   TABLES_DES_DEVIS,
   type CheminDossier,
 } from './sauvegarde'
@@ -108,6 +110,48 @@ function avecLesDevis(plan: PlanDeLEssai, bloc: BlocDesDevis): PlanDeLEssai {
   return { ...plan, ordre, chemins: { ...plan.chemins, ...bloc.chemins } }
 }
 
+// LES ARTICLES (espace client, étape A1) : un second bloc à part les met au plan quand leur table existe, juste après la
+// table qu'il nomme (`agent_conversations`), les rangs qui suivent reculant d'autant. Ce qu'il dit : la table d'ancrage, les
+// tables qu'il insère, leurs chemins, s'il recule bien les rangs qui suivent, et s'il ne joue qu'avec la table présente.
+interface BlocDesArticles {
+  ancre: string | null
+  tables: string[]
+  chemins: PlanDeLEssai['chemins']
+  recule: boolean
+  conditionne: boolean
+}
+
+const MARQUE_DES_ARTICLES = '-- ══ Les articles (espace client, étape A1) ══'
+
+function blocDesArticles(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_ARTICLES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.articles') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des articles existe : la sienne, insérée après sa table d'ancrage. */
+function avecLesArticles(plan: PlanDeLEssai, bloc: BlocDesArticles): PlanDeLEssai {
+  const tables = plan.ordre.map((o) => o.table)
+  const place = bloc.ancre == null ? -1 : tables.indexOf(bloc.ancre)
+  if (place < 0 || !bloc.recule) return { ...plan, chemins: { ...plan.chemins, ...bloc.chemins } }
+  const ordre = [...tables.slice(0, place + 1), ...bloc.tables, ...tables.slice(place + 1)].map((table, i) => ({ rang: i + 1, table }))
+  return { ...plan, ordre, chemins: { ...plan.chemins, ...bloc.chemins } }
+}
+
+/** Le plan que le script joue avec les tables des deux blocs : les articles d'abord (le script les met d'abord), puis les devis. */
+const avecLesDeuxBlocs = (texte: string): PlanDeLEssai =>
+  avecLesDevis(avecLesArticles(planDeLEssai(texte), blocDesArticles(texte)), blocDesDevis(texte))
+
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
   plan: PlanDeLEssai,
@@ -159,10 +203,12 @@ function ecartsAuCode(
 describe('l’essai de restauration rejoue le plan du code', () => {
   const plan = planDeLEssai(texteDeLEssai)
   const devis = blocDesDevis(texteDeLEssai)
-  // Le plan que le script joue sur une base qui a les tables des devis, et celui qu'il joue AUJOURD'HUI : le même que le
-  // code, selon que `DEVIS_EXPORTES` est levé ou non.
-  const prevu = avecLesDevis(plan, devis)
-  const courant = DEVIS_EXPORTES ? prevu : plan
+  const articles = blocDesArticles(texteDeLEssai)
+  // Le plan que le script joue sur une base qui a les tables des deux blocs, et celui qu'il joue AUJOURD'HUI : le même que
+  // le code, selon que `ARTICLES_EXPORTES` et `DEVIS_EXPORTES` sont levés ou non.
+  const prevu = avecLesDeuxBlocs(texteDeLEssai)
+  const avecLesArticlesDuJour = ARTICLES_EXPORTES ? avecLesArticles(plan, articles) : plan
+  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLesArticlesDuJour, devis) : avecLesArticlesDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -187,7 +233,16 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(devis.conditionne).toBe(true)
   })
 
-  it('avec les tables des devis, le script joue le plan PRÉVU du code — quel que soit le drapeau', () => {
+  it('le bloc des articles a été lu : sa table, son chemin, sa table d’ancrage, les rangs qui suivent reculés', () => {
+    expect(articles.tables).toEqual([...TABLES_DES_ARTICLES])
+    expect(Object.keys(articles.chemins).sort()).toEqual([...TABLES_DES_ARTICLES].sort())
+    // L'ancrage est la table qui précède la leur dans l'ordre PRÉVU du code.
+    expect(articles.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_ARTICLES[0]) - 1])
+    expect(articles.recule).toBe(true)
+    expect(articles.conditionne).toBe(true)
+  })
+
+  it('avec les tables des deux blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
     expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)).toEqual([])
   })
 
@@ -207,23 +262,24 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   })
 
   describe('un défaut planté se voit', () => {
-    // Le plan d'hier, sans les tables des devis : celui que le script joue sur une base qui ne les a pas.
-    const ordreSansDevis = ORDRE_RESTAURATION_PREVU.filter((t) => !TABLES_DES_DEVIS.includes(t))
-    const cheminsSansDevis = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => !TABLES_DES_DEVIS.includes(table)))
+    // Le plan d'hier, sans les tables des deux blocs (devis, articles) : celui que le script joue sur une base qui ne les a
+    // pas.
+    const horsDesBlocs = (t: string) => !TABLES_DES_DEVIS.includes(t) && !TABLES_DES_ARTICLES.includes(t)
+    const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
+    const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))
     const remplacer = (avant: string, apres: string) => {
       expect(texteDeLEssai).toContain(avant)
-      return ecartsAuCode(planDeLEssai(texteDeLEssai.replace(avant, apres)), ordreSansDevis, cheminsSansDevis)
+      return ecartsAuCode(planDeLEssai(texteDeLEssai.replace(avant, apres)), ordreSansLesBlocs, cheminsSansLesBlocs)
     }
-    // Le même, sur le plan que le script joue avec les tables des devis.
+    // Le même, sur le plan que le script joue avec les tables des deux blocs.
     const remplacerDevis = (avant: string, apres: string) => {
       expect(texteDeLEssai).toContain(avant)
-      const texte = texteDeLEssai.replace(avant, apres)
-      return ecartsAuCode(avecLesDevis(planDeLEssai(texte), blocDesDevis(texte)), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)
+      return ecartsAuCode(avecLesDeuxBlocs(texteDeLEssai.replace(avant, apres)), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS)
     }
     // Les rangs se lisent dans le code, pas dans ce fichier : une table ajoutée à l'ordre les décale tous — le plan
     // comptable d'un dossier et son catalogue, deux d'un coup (ligne 43, PC1). Ceux de la liste que le script recopie,
-    // sans les devis, que son bloc à part ajoute (quel que soit le drapeau).
-    const rang = (table: string) => ordreSansDevis.indexOf(table) + 1
+    // sans les tables des deux blocs, que ses blocs à part ajoutent (quels que soient les drapeaux).
+    const rang = (table: string) => ordreSansLesBlocs.indexOf(table) + 1
     const [justifications, preuves, valides] = ['revision_justifications', 'revision_preuves', 'exercices_valides'].map(rang)
 
     it('une table des devis oubliée, deux échangées, un chemin oublié', () => {
@@ -231,6 +287,18 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       expect(remplacerDevis("(1,'devis_numerotation'),(2,'devis')", "(1,'devis'),(2,'devis_numerotation')").join('\n'))
         .toContain('premier écart')
       expect(remplacerDevis("('devis_factures','direct',null,null),", '').join('\n')).toContain('_chemins : devis_factures manque')
+    })
+
+    it('les articles ancrés ailleurs, sans leur chemin, sans le recul des rangs, ou joués sans leur table', () => {
+      // Ancrés après une autre table : l'ordre diffère du code au rang de l'article.
+      expect(remplacerDevis("where o.table_nom = 'agent_conversations';", "where o.table_nom = 'a_nouveaux';").join('\n'))
+        .toContain('premier écart')
+      expect(remplacerDevis("\n     ('articles','direct',null,null);", '').join('\n')).toContain('_chemins : articles manque')
+      // Sans le recul des rangs, la table n'entre pas où le code la met — et la clé de `_ordre` l'aurait refusée.
+      expect(remplacerDevis('set rang = -rang where rang < 0;', 'set rang = rang where rang < 0;').join('\n'))
+        .toContain('manquantes : articles')
+      expect(blocDesArticles(texteDeLEssai.replace("if to_regclass('public.articles') is not null then", 'if true then')).conditionne)
+        .toBe(false)
     })
 
     it('un décalage ou un rang de départ qui ne tombent pas juste', () => {
@@ -250,7 +318,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     it('une table oubliée dans l’ordre', () => {
       // Le bloc entier se réécrit depuis le code, sans la table et aux rangs continus : seule son absence se voit, où que
       // passent les lignes (la banque du client, P7, a glissé deux tables entre elle et `exercices_valides`).
-      const sansLaTable = ordreSansDevis.filter((t) => t !== 'revision_preuves').map((t, i) => `(${i + 1},'${t}')`)
+      const sansLaTable = ordreSansLesBlocs.filter((t) => t !== 'revision_preuves').map((t, i) => `(${i + 1},'${t}')`)
       const ecarts = remplacer(bloc(texteDeLEssai, '_ordre'),
         `insert into essai_restauration._ordre (rang, table_nom) values ${sansLaTable.join(',')}`)
       expect(ecarts.join('\n')).toContain('manquantes : revision_preuves')

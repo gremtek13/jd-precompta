@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { ARTICLES_EXPORTES } from './articles'
 import { DEVIS_EXPORTES } from './devis'
 import {
   auPlan,
+  auPlanAujourdHui,
+  auPlanDesArticles,
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
   CLES_PRIMAIRES,
@@ -35,11 +38,15 @@ describe('le filtre du plan', () => {
     }
   })
 
-  it('le plan effectif est le plan prévu filtré par le drapeau, liste par liste', () => {
-    expect(RELATIONS).toEqual(RELATIONS_PREVUES.filter((r) => auPlan(r.enfant, DEVIS_EXPORTES)))
-    expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlan(t, DEVIS_EXPORTES)))
-    expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlan(t, DEVIS_EXPORTES)))
-    expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlan(t, DEVIS_EXPORTES)))
+  it('le plan effectif est le plan prévu filtré par les drapeaux, liste par liste', () => {
+    // Depuis l'étape A1, le filtre du jour compose celui des devis et celui des articles (sauvegardeArticles.test.ts).
+    for (const table of ORDRE_RESTAURATION_PREVU) {
+      expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES))
+    }
+    expect(RELATIONS).toEqual(RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant)))
+    expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
+    expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
+    expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))
   })
 
   it('drapeau baissé, le plan effectif ne nomme aucune table des devis — drapeau levé, toutes', () => {

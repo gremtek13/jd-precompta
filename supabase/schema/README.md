@@ -267,6 +267,19 @@ ont changé, les sept autres familles égales à celles d'avant. L'essai `supaba
 rejoué en production sans ses lignes de commentaire (82 909 caractères, reçus tels quels), rend ses 81 verdicts justes,
 mutations comprises, et rien n'est resté en base.
 
+**Rejoué le 14/10/2026 après `articles`** (espace client, étape A1), appliquée par la session sous la version
+`20261014063058` sur l'accord du cabinet (A1-Q1), sans confirmation demandée (aucune suppression), AVANT la mise en
+ligne de la bascule qui la lit ; son fichier a quitté la version PROVISOIRE `20261014090000` pour celle-ci, texte
+inchangé (20 536 caractères, empreinte `53ec69461cf88f6459ccf30ad9b29290`, celle que rend sa ligne d'historique) :
+132 fichiers, 132 migrations, empreinte globale `789570a96cec5ac570ee7d1ae0fd3ea0` des deux côtés, aucune divergence. Le
+socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 1 932 objets, `d500773486b79a3b24e3adb38d2fe46a`
+des deux côtés — la table `articles`, ses quinze colonnes, ses douze contraintes, ses trois policies, sa RLS et ses
+trois fonctions en plus. `signature.sql` rend en production ce que l'étape avait relevé sur sa réplique après la
+migration : huit familles changent, les déclencheurs non. L'essai `supabase/essais/articles.sql`, rejoué en production
+sans ses lignes de commentaire (60 638 caractères, reçus tels quels), rend ses 159 verdicts justes, mutations comprises,
+et rien n'est resté en base ; `rls.sql`, sa copie adaptée (60 193 caractères, `b49cdaf6…`), 35 lignes, 0 en faute, 33
+mutations sur 33.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

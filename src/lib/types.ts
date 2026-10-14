@@ -1673,3 +1673,36 @@ export interface PieceJointeEcarteeDuClient {
   // Le poids tel que la table le garde : inconnu (null) d'un dépôt échoué avant toute lecture, zéro d'une vide.
   octets: number | null
 }
+
+// LES ARTICLES D'UN DOSSIER (espace client, étape A1 ; migration `articles`, présentée au cabinet et appliquée sur son
+// accord : la sauvegarde lit cette table, aucun écran encore — étape A2). Un article PRÉ-REMPLIT une
+// ligne de facture, qui en garde sa copie ; il se modifie, se retire et se reprend, ne se supprime jamais. Le cabinet et le
+// client qui porte le droit « Ventes » le lisent, toutes colonnes ; seules `enregistrer_article`, `retirer_article` et
+// `reprendre_article` l'écrivent.
+// L'unité de la quantité (BT-130) : la liste fermée de la migration, `C62` (l'unité) par défaut.
+export type UniteArticle = 'C62' | 'H87' | 'HUR' | 'DAY' | 'WEE' | 'MON' | 'ANN' | 'KGM' | 'MTR' | 'MTK' | 'LTR' | 'KMT' | 'LS'
+export type NatureArticle = 'biens' | 'services'
+export interface Article {
+  id: string
+  dossier_id: string
+  // L'identifiant que le vendeur lui donne (BT-155) : facultatif, unique dans le dossier, retirés compris.
+  reference: string | null
+  // Le nom de l'article (BT-153) : mille caractères au plus.
+  designation: string
+  // Sa description (BT-154) : quatre mille caractères au plus.
+  description: string | null
+  unite: UniteArticle
+  // Hors taxes, positif ou nul, six décimales au plus (G1.16).
+  prix_unitaire_ht: number
+  // Le taux de l'opération QUAND le dossier est redevable (G1.24) : une ligne pré-remplie applique le statut du jour.
+  taux_tva: number
+  nature: NatureArticle
+  // Le retrait, entier ou absent : un article retiré sort des choix et garde sa référence.
+  retire_le: string | null
+  retire_par: string | null
+  // Qui l'a créé et changé — un identifiant de compte, sans clé vers les comptes ; la reprise est une modification.
+  cree_par: string | null
+  cree_le: string
+  modifie_par: string | null
+  modifie_le: string | null
+}
