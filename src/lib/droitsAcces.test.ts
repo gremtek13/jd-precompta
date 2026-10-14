@@ -152,9 +152,15 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(accueil).not.toMatch(/droit_ventes|droit_banque/)
     expect(accueil.match(/\.banque\b/g)).toHaveLength(1)
     expect(accueil.match(/droitsSur\(/g)).toHaveLength(2)
-    const tuiles = readFileSync(resolve(process.cwd(), 'src/pages/TuilesVentesClient.tsx'), 'utf8')
-    expect(tuiles).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
-    expect(tuiles).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
+    // DEPUIS L'ÉTAPE A6b2, les cases se relisent à la base dans UNE lecture des ventes (`useVentesDuClient`), partagée par les tuiles
+    // et l'encart « Facture électronique » : les tuiles ne lisent plus rien, l'encart ne lit que l'état de sa facture électronique.
+    const lectureDesVentes = readFileSync(resolve(process.cwd(), 'src/lib/ventesDuClientLecture.ts'), 'utf8')
+    expect(lectureDesVentes).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
+    expect(lectureDesVentes).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
+    for (const fichier of ['TuilesVentesClient.tsx', 'AccueilVentesClient.tsx']) {
+      const texte = readFileSync(resolve(process.cwd(), `src/pages/${fichier}`), 'utf8')
+      expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|supabase/)
+    }
     for (const fichier of ['ClientInformations.tsx', 'ClientUpload.tsx'].map((f) => `src/pages/${f}`)) {
       const texte = readFileSync(resolve(process.cwd(), fichier), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|droitsAcces/)
@@ -345,18 +351,16 @@ const GESTES_AVEC_ADRESSES: Record<string, readonly string[]> = {
 
 describe('ce que disent les cases, les adresses de réception ouvertes (étape A6a)', () => {
   it.each([false, true].flatMap((banque) => [false, true].map((articles) => ({ banque, articles }))))(
-    'banque ouverte : $banque, articles : $articles — la phrase d’avant, puis l’adresse, son histoire, sa déclaration et l’état, et leur encart à venir',
+    'banque ouverte : $banque, articles : $articles — la phrase d’avant, puis l’adresse, son histoire, sa déclaration, l’état et leur encart',
     ({ banque, articles }) => {
       const avant = ceQueDisentLesCases(banque, true, articles, false)
       const phrase = ceQueDisentLesCases(banque, true, articles, true)
-      // Rien de ce que la phrase disait ne se perd : les ventes et les articles, mot pour mot, puis la banque ; seule la
-      // phrase de ce qui vient ensuite change, l'encart (étape A6b) à venir avec ce qui l'était déjà.
+      // Rien de ce que la phrase disait ne se perd : les ventes et les articles, mot pour mot, puis la banque ; la phrase de ce
+      // qui vient ensuite ne change PAS — l'encart (étape A6b2) est à l'écran, il n'est plus « à venir ».
       const finAvant = banque
         ? ' La connexion de sa banque depuis son espace viendra ensuite.'
         : ' L’écran « Banque » de son espace viendra ensuite.'
-      const finPhrase = banque
-        ? ' L’encart de sa facture électronique et la connexion de sa banque depuis son espace viendront ensuite.'
-        : ' L’écran « Banque » de son espace et l’encart de sa facture électronique viendront ensuite.'
+      const finPhrase = finAvant
       expect(avant.endsWith(finAvant)).toBe(true)
       const debutBanque = (texte: string) => texte.indexOf(banque ? ' « Banque » ouvre au client' : ' « Banque » ne change encore')
       const ajout = phrase.slice(debutBanque(avant), debutBanque(phrase))
@@ -369,9 +373,12 @@ describe('ce que disent les cases, les adresses de réception ouvertes (étape A
         + 'vérifiée, et qui l’a déclarée')
       expect(ajout).toContain('si sa plateforme agréée et Super PDP sont reliés, leur nom et leurs dates, jamais leurs secrets.')
       // Depuis l'étape A6b1, la phrase dit OÙ l'adresse se lit et se déclare — « Tes plateformes », au-dessus de ses factures —,
-      // et garde l'encart de l'état à venir (étape A6b2) : il n'est pas à l'écran, la phrase ne le dit pas fait.
+      // et depuis l'étape A6b2 où l'état se montre : l'encart de son accueil, avec ce qui attend, qui mène à « Mes ventes ».
       expect(ajout).toContain('elle se lit et se déclare dans « Tes plateformes », au-dessus de ses factures')
-      expect(ajout).not.toContain('encart')
+      expect(ajout).toContain('L’encart « Facture électronique » de son accueil le dit, avec l’adresse et ce qui attend '
+        + '— les encaissements à déclarer et les factures refusées sur sa plateforme —, et mène à « Mes ventes ».')
+      // « ensuite » ne reste que pour ce qui est à venir : plus l'encart.
+      expect(phrase).not.toMatch(/encart[^.]*ensuite/)
       // Aucun mot que le garde des écrans tient pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
       expect(ajout).not.toMatch(/\b(aucun|aucune|rien)\b/i)
     },

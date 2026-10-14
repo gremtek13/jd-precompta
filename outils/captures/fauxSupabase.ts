@@ -1959,6 +1959,38 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
     }
     return { data: droits, error: null }
   }
+  // `etat_facture_electronique` (espace client, étape A6b2) : la plateforme du client et Super PDP, reliés ou non, et l'adresse de
+  // réception COURANTE (la version qu'aucune autre ne remplace), comme la fonction en base — jamais un secret, un identifiant de
+  // connexion ni une adresse de service. Le cabinet infirmier (d1) a sa plateforme et son adresse déclarée sans vérification :
+  // « Active », non vérifiée ; l'atelier de conseil (d7) a la sienne et une adresse qui ne prend effet qu'en 2027 : « À
+  // compléter », « À venir » ; un autre dossier n'a rien. Les identifiants sont des UUID, que le module de l'état exige.
+  if (nom === 'etat_facture_electronique') {
+    const uuidDuBanc = (texte: string) => {
+      const hex = [...texte].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').padEnd(32, '0').slice(0, 32)
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+    }
+    const versions = (TABLES.adresses_reception ?? []).filter((a) => a.dossier_id === dossierId)
+    const courante = versions.find((a) => !versions.some((b) => b.remplace_id === a.id))
+    const connexion = dossierId === 'd1' ? CONNEXION_PLATEFORME_D1 : dossierId === 'd7' ? CONNEXION_PLATEFORME_D7 : null
+    const superpdp = dossierId === 'd1' || dossierId === 'd7'
+    return {
+      data: {
+        plateforme: connexion === null
+          ? { reliee: false, nom: null, creee_le: null, derniere_recuperation: null, statuts_lus_le: null }
+          : {
+            reliee: true, nom: connexion.nom, creee_le: connexion.created_at, derniere_recuperation: connexion.derniere_recuperation,
+            statuts_lus_le: connexion.cycle_vie_lu_le,
+          },
+        superpdp: superpdp ? { relie: true, depuis: '2026-09-05T14:00:00+02:00' } : { relie: false, depuis: null },
+        adresse: courante === undefined ? null : {
+          id: uuidDuBanc(String(courante.id)), forme: courante.forme, identifiant: courante.identifiant,
+          plateforme: courante.plateforme, prise_effet: courante.prise_effet, verification: courante.verification,
+          verifiee_le: courante.verifiee_le, auteur: uuidDuBanc(String(courante.auteur)), cree_le: courante.cree_le,
+        },
+      },
+      error: null,
+    }
+  }
   // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
   // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base.
   if (nom === 'plan_du_dossier') {

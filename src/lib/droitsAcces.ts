@@ -166,8 +166,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // lib/adressesReception.ts) ouvre au client « Ventes », par la base, l'adresse de réception déclarée pour le dossier et son
 // histoire, sa déclaration, et l'état de sa facture électronique — sans rien de secret —, avant l'encart qui les montrera
 // (étape A6b). Elle exige aussi celles des ventes. La déclarer « avec toi » est la décision MEG1-Q16 du cabinet.
-// L'adresse se lit et se déclare à l'écran depuis l'étape A6b1 (« Tes plateformes »), l'encart de l'état viendra avec
-// l'étape A6b2 : la phrase dit le premier, et garde le second à venir.
+// L'adresse se lit et se déclare à l'écran depuis l'étape A6b1 (« Tes plateformes »), et l'encart de l'état est sur l'accueil
+// depuis l'étape A6b2 : la phrase dit l'un et l'autre, et ne garde « ensuite » que pour ce qui reste à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -201,7 +201,9 @@ export function ceQueDisentLesCases(
       + 'sa maille, son identifiant, sa plateforme, sa date de prise d’effet, où et quand elle a été vérifiée, et qui l’a '
       + 'déclarée — et peut la déclarer ou la remplacer avec toi ; elle se lit et se déclare dans « Tes plateformes », au-dessus '
       + 'de ses factures. Par la base, l’état de sa facture électronique lui dit si sa plateforme agréée et Super PDP sont '
-      + 'reliés, leur nom et leurs dates, jamais leurs secrets.'
+      + 'reliés, leur nom et leurs dates, jamais leurs secrets. L’encart « Facture électronique » de son accueil le dit, avec '
+      + 'l’adresse et ce qui attend — les encaissements à déclarer et les factures refusées sur sa plateforme —, et mène à '
+      + '« Mes ventes ».'
     : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
@@ -218,17 +220,14 @@ export function ceQueDisentLesCases(
   // La connexion de sa banque par le client (étape P8) reste à venir dans tous les états. L'écran de ses articles existe
   // depuis l'étape A2a (la vue « Articles » de « Mes ventes ») : la phrase ne le dit plus à venir — ce qui reste d'A2, le
   // choix d'un article dans la facture, n'est pas un écran de plus.
-  // L'encart de sa facture électronique (étape A6b) vient après ce que la base lui ouvre (étape A6a) : à venir, avec elle.
+  // L'encart de sa facture électronique est sur son accueil depuis l'étape A6b2 : la phrase ne le dit plus à venir, et ne garde
+  // « ensuite » que pour ce qui l'est encore — la connexion de sa banque, l'écran « Banque », ou les écrans « Ventes » et « Banque ».
   const aVenir = simulationSousBanque
     ? (ventesOuvertes
-      ? (avecLesAdresses
-        ? ' L’encart de sa facture électronique et la connexion de sa banque depuis son espace viendront ensuite.'
-        : ' La connexion de sa banque depuis son espace viendra ensuite.')
+      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
       : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
     : (ventesOuvertes
-      ? (avecLesAdresses
-        ? ' L’écran « Banque » de son espace et l’encart de sa facture électronique viendront ensuite.'
-        : ' L’écran « Banque » de son espace viendra ensuite.')
+      ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + banque + ventesFermees + aVenir
 }

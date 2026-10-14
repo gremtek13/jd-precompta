@@ -17,7 +17,7 @@ import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/
 import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
-import TuilesVentesClient from './TuilesVentesClient'
+import AccueilVentesClient from './AccueilVentesClient'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
 import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
@@ -377,8 +377,9 @@ export default function ClientHome() {
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
-          {/* « À encaisser » et « À déclarer » (étape P4b) : seulement si « Mes ventes » est ouvert sur la société affichée. */}
-          {ventesOuvertes && <TuilesVentesClient key={dossierId} dossierId={dossierId} />}
+          {/* « À encaisser » et « À déclarer » (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après UNE lecture
+              des ventes : seulement si « Mes ventes » est ouvert sur la société affichée. */}
+          {ventesOuvertes && <AccueilVentesClient key={dossierId} dossierId={dossierId} />}
 
           <Widget
             className="span-7"

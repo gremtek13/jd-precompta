@@ -375,10 +375,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   encore — désigner le mouvement d'un encaissement demande aussi « Banque » ; depuis A1 (14/10/2026), le catalogue des
   articles et ses trois fonctions, à l'écran depuis A2a (« Mes ventes › Articles ») ; depuis A6a (14/10/2026),
   l'adresse de réception de son dossier, son histoire et sa déclaration, à l'écran depuis A6b1 (« Tes plateformes »), et
-  l'état de sa facture électronique, jamais un secret des connexions (`etat_facture_electronique`). L'onglet Accès dit
-  ce que la base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes
-  (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à
-  l'export) →
+  l'état de sa facture électronique, à l'écran depuis A6b2 (l'encart de son accueil), jamais un secret des connexions
+  (`etat_facture_electronique`). L'onglet Accès dit ce que la base ouvre à la SESSION du client, écran ou non, dans les
+  quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
+  chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
   saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
   « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
@@ -485,6 +485,22 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   sous un verrou `declarationEnCours` relâché après la relecture. « Vérifier sur l'annuaire » est un LIEN vers le
   portail public, sur un clic ; le nom de la plateforme dit qui le lit (`LIBELLE_PLATEFORME_ADRESSE`), et deux refus de
   la base se réécrivent pour le client → « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ».
+- **L'encart « Facture électronique » (A6b2, 14/10/2026)** : une carte pour les deux espaces
+  (`EncartFactureElectronique`, `espace` OBLIGATOIRE, union typée) — à l'accueil du client « Ventes »
+  (`AccueilVentesClient`, sous `mesVentesOuvertes`, clé par la société) et dans la Vue d'ensemble du cabinet
+  (`ChecklistTab`, sans « ce qui attend »). L'état se lit par `lib/etatFactureElectroniqueLecture.ts` — pas revenu, lu,
+  ILLISIBLE ou refusé ; jamais « active » ni « à compléter » d'une valeur non lue ; la lecture ne rejette jamais et se
+  garde avec le dossier — et se dit par `lib/encartFactureElectronique.ts` (pur) : ce qui manque, l'adresse (« À
+  venir », « Non vérifiée », ce que sa source établit : les phrases d'`adressesReceptionVue`), les plateformes et, chez
+  le client seul, ce qui attend — les encaissements à déclarer et les factures refusées ou rejetées sur sa plateforme,
+  de listes lues en entier seulement, et « pas encore relevés » tant qu'aucun relevé des statuts n'a eu lieu. UNE
+  lecture des ventes sur l'accueil, `useVentesDuClient` (`lib/ventesDuClientLecture.ts`), que les tuiles « À encaisser »
+  et « À déclarer » (qui ne lisent plus) et l'encart partagent ; l'encart l'attend, les cases relues à la base
+  comprises : sans « Ventes », ni encart ni appel de l'état. Aucune fenêtre ne s'ouvre d'ici (la grille est un
+  conteneur) : chaque ligne MÈNE à « Mes ventes » ou à Justificatifs ; sur téléphone, la carte du client est une tuile —
+  le titre et l'état en une ligne, le corps replié par une requête de conteneur sur `.bento`, le lien qui la couvre. Les
+  factures qui relèvent de la facture électronique et attendent leur transmission ne se comptent pas (A6B2-Q1) →
+  « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -555,7 +571,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   d'un dossier, déclarée et versionnée, et l'état de sa facture électronique, en base, que le cabinet et le client
   « Ventes » lisent et déclarent par deux fonctions (A6a, 14/10/2026), et l'adresse à l'écran — la lire avec son
   historique, la déclarer ou la remplacer, « Vérifier sur l'annuaire » —, au cabinet depuis Justificatifs et au client
-  « Ventes » depuis « Tes plateformes » (A6b1, 14/10/2026) ;
+  « Ventes » depuis « Tes plateformes » (A6b1, 14/10/2026) ; l'encart « Facture électronique » — l'état lu en base, ce
+  qui manque, l'adresse et les plateformes, et pour le client ce qui attend —, à l'accueil du client « Ventes », une
+  tuile sur téléphone, et dans la Vue d'ensemble du cabinet (A6b2, 14/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -789,10 +807,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   d'un dossier emporte son adresse et son historique, par vagues ; l'onglet Accès dit que « Ventes » ouvre l'adresse,
   son histoire, sa déclaration et l'état → « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE ».
   A6b1, l'adresse de réception à l'écran — sa fenêtre, au cabinet depuis Justificatifs et au client « Ventes » depuis
-  « Tes plateformes » —, le 14/10/2026 (six lectures de la conception soumises au cabinet, A6B1-Q1 à A6B1-Q6) →
-  « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ». Restent A6b2 (l'encart « Facture électronique » : à l'accueil du client avec sa
-  tuile du téléphone, et la carte de la Vue d'ensemble du cabinet), A7 (l'unité, la référence et l'article sur la ligne
-  enregistrée, une migration) et la suite du premier groupe.
+  « Tes plateformes » —, le 14/10/2026 (ses six lectures de la conception, A6B1-Q1 à A6B1-Q6, tranchées « comme
+  recommandé » le même jour) → « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ». A6b2, l'encart « Facture électronique » — à
+  l'accueil du client « Ventes » avec sa tuile du téléphone, et dans la Vue d'ensemble du cabinet —, le 14/10/2026 (cinq
+  lectures de la conception soumises au cabinet, A6B2-Q1 à A6B2-Q5) → « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ».
+  Restent A7 (l'unité, la référence et l'article sur la ligne enregistrée, une migration) et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -936,11 +955,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rien (`src/test/clientRetenu.ts`) → « RÉCLAMAIT AU CLIENT AVANT D'AVOIR RIEN LU », « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT
   D'AVOIR LU ».
 - **Une lecture que deux écrans comptent s'écrit une fois** (`lib/ventesLecture.ts` : les pastilles de l'onglet Factures
-  et les tuiles de l'accueil du client, comptées par `compterLesPastilles` ; les pièces jointes écartées du client, que
-  « Mes pièces » et l'accueil lisent par `useEcarteesDuClient`, le seul `.rpc(` de la fonction, gardé par
-  `piecesJointesEcarteesClient.test.ts`) ; un compte ne se dit que de listes TOUTES lues en entier → « LES CONNEXIONS DU
-  CLIENT ET LES TUILES DE SON ACCUEIL », « L'ACCUEIL DU CLIENT SIGNALE UNE PIÈCE JOINTE ÉCARTÉE ET RENVOIE À « MES
-  PIÈCES » ».
+  et les tuiles de l'accueil du client, comptées par `compterLesPastilles` ; sur l'accueil, les tuiles et l'encart
+  « Facture électronique » partagent UNE lecture des ventes, `useVentesDuClient` (`lib/ventesDuClientLecture.ts`) ; les
+  pièces jointes écartées du client, que « Mes pièces » et l'accueil lisent par `useEcarteesDuClient`, le seul `.rpc(`
+  de la fonction, gardé par `piecesJointesEcarteesClient.test.ts`) ; un compte ne se dit que de listes TOUTES lues en
+  entier → « LES CONNEXIONS DU CLIENT ET LES TUILES DE SON ACCUEIL », « L'ACCUEIL DU CLIENT SIGNALE UNE PIÈCE JOINTE
+  ÉCARTÉE ET RENVOIE À « MES PIÈCES » », « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ».
 - **Lecture → formulaire → écriture de tous les champs** : une lecture ratée n'offre AUCUN formulaire, sinon le premier
   « Enregistrer » écrase → « ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE ».
 - **PostgREST plafonne les lignes rendues sans le dire** : toute lecture de collection passe par `lireTout` (tranches,
@@ -1626,14 +1646,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dates, l'adresse courante — et JAMAIS une adresse de service, un identifiant, un secret, une organisation ni une
   portée (l'essai les plante dans deux connexions d'essai et les cherche) ; le module la lit sans rien deviner et dit
   « active » ou « à compléter » et ce qui manque, au jour de Paris DONNÉ : seule la dernière déclaration compte (A6-Q2),
-  une adresse déclarée sans vérification compte et l'encart le dira (A6-Q3). `adressesReception.test.ts` et
+  une adresse déclarée sans vérification compte et l'encart le dit (A6-Q3). `adressesReception.test.ts` et
   `etatFactureElectronique.test.ts` confrontent les modules au texte exporté et rejouent l'essai ; à l'écran depuis
   A6b1, le nom de la plateforme que le cabinet saisit dit que le client « Ventes » le lit → « L'ADRESSE DE RÉCEPTION ET
-  L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE », « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ».
+  L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE », « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN », « L'ENCART « FACTURE
+  ÉLECTRONIQUE », À L'ÉCRAN ».
 
 ## Tests
 
-Vitest, 11 044 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 153 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

@@ -24240,8 +24240,118 @@ boutons sous la barre de navigation. Il a sa ligne dans la feuille de route (34.
 mesure d'abord, que le banc n'a pas (rien ne déborde du panneau), puis une règle commune, vérifiée aux quatre largeurs
 de référence et dans la passe du client.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #168 (`eb00cb0`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-OCPTMneD.js`, le paquet de la barrière (déploiement 38614433240) ; `main` reste linéaire, la branche
+réalignée. La feuille de route : la ligne 34.93 créée avant la fusion (le défaut de la barre du bas, à faire) ; la ligne
+51.5 reçoit le paragraphe d'A6b1 et un « RESTE » qui nomme A6b2, la propriété réécrite ENTIÈRE et vérifiée par
+empreintes sur la copie SQL (25 019 caractères : la partie d'avant, recopiée puis contrôlée bloc par bloc AVANT l'envoi,
+égale à celle d'avant l'écriture ; l'ajout égal au fichier préparé) ; les barres recomptées par requête à la création de
+la ligne 34.93 (139 chantiers livrés sur 183, 76 % ; pour un dossier BNC, 139 sur 170, 82 %). Le recomptage qui devait
+suivre l'écriture a été refusé par la limite d'usage des requêtes SQL de Notion ; aucune ligne n'avait changé d'état
+depuis le précédent. Le worktree de l'agent retiré (ses 23 fichiers identiques au correctif), comme celui de
+l'intégration.
+
+**LES RÉPONSES DU CABINET, LE 14/10/2026 (« comme recommandé »).** A6B1-Q1 à A6B1-Q6 : les six lectures telles quelles —
+la maille proposée quand l'identifiant n'en admet qu'une, les blancs des bords retirés, une adresse à venir qui ne dit
+pas ce qui reçoit d'ici là, aucune source de vérification présélectionnée, l'historique dès deux versions, le refus de
+la base dit en tête du formulaire d'un dossier sans SIRET. Rien ne change dans le code.
+
 **RESTE.** A6b2, l'encart « Facture électronique » sur `etat_facture_electronique` : à l'accueil du client « Ventes »
-avec sa tuile du téléphone, et la carte de la Vue d'ensemble du cabinet. Les six lectures A6B1-Q1 à Q6 attendent le
-cabinet. NON VÉRIFIÉ : une première déclaration réelle ; le portail de l'annuaire, que ni l'agent ni la session n'ont
-ouvert ; un échec isolé du banc — un délai de clic sur la visite du dossier sans SIRET, à 1 280 pixels, barre à 420 et
-volet à 760 —, rejoué cinq fois sans se reproduire.
+avec sa tuile du téléphone, et la carte de la Vue d'ensemble du cabinet. NON VÉRIFIÉ : une première déclaration réelle ;
+le portail de l'annuaire, que ni l'agent ni la session n'ont ouvert ; un échec isolé du banc — un délai de clic sur la
+visite du dossier sans SIRET, à 1 280 pixels, barre à 420 et volet à 760 —, rejoué cinq fois sans se reproduire.
+
+### 14/10/2026 — L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A6b2 (LIGNE 51.5)
+
+(Préparée par l'agent S237 sur `eb00cb0`, relue et intégrée par la session le même jour. Aucune migration, aucune
+policy, aucune Edge Function : la base est celle d'A6a. Fichiers nouveaux : `src/lib/etatFactureElectroniqueLecture.ts`,
+`src/lib/encartFactureElectronique.ts` (pur), `src/lib/ventesDuClientLecture.ts`, `src/pages/AccueilVentesClient.tsx`,
+`src/pages/dossier/EncartFactureElectronique.tsx`, `src/test/etatFactureElectronique.ts`, et cinq fichiers de tests,
+ceux des trois modules (deux pour la lecture de l'état, la fonction et son crochet) et de la carte. Modifiés :
+`ClientHome.tsx`, `TuilesVentesClient.tsx` (ne lit plus), `ChecklistTab.tsx`, `src/index.css` (un bloc, par ajout),
+`src/lib/droitsAcces.ts` (la phrase des cases), `RGPD.md`, `outils/captures/` (`fauxSupabase.ts` : la fonction ;
+`debordements.mjs` : trois visites de la Vue d'ensemble, et l'accueil du client qui attend l'encart), et les tests
+`TuilesVentesClient`, `ChecklistTab`, `ecransAvantLecture`, `droitsAcces`, `ecrituresVerifiees`, `verrousEcritures`.)
+
+**CE QUI EST À L'ÉCRAN.** UNE carte pour les deux espaces (`EncartFactureElectronique`, `espace` OBLIGATOIRE, union
+typée). Chez le client « Ventes », dans la grille de l'accueil, sous « À encaisser » et « À déclarer » ; au cabinet,
+dans la Vue d'ensemble, avant les échéances fiscales. Elle dit, sous son titre, l'état en une ligne — « Active », « À
+compléter : N points » — puis des lignes en colonnes que la place de la carte répartit seule : ce qui manque (les
+libellés du module de l'état, une majuscule en tête), l'adresse (identifiant, maille, plateforme, « Reçoit depuis le… »
+ou « À venir : à partir du… », « Non vérifiée : simple déclaration » ou la source et son jour, et ce que la source
+établit — les phrases de la fenêtre de l'adresse, jamais réécrites), les plateformes (le nom de la plateforme agréée
+reliée, Super PDP relié ou non), et, chez le client seul, ce qui attend. Chaque ligne MÈNE à son écran, par la
+navigation : « Mes ventes » chez le client, Justificatifs au cabinet (`onNavigate('pieces')`). Aucune fenêtre ne s'ouvre
+d'ici (un test lit la source : ni `Modal`, ni portail, ni `position: fixed`).
+
+**LA LECTURE.** `lireLEtatDeLaFactureElectronique` attend la requête, lit son erreur (`messageErreur`) et passe la
+valeur par `lireEtatFactureElectronique` : quatre états, `en_cours`, `lue`, `illisible`, `refusee` — jamais « active »
+ni « à compléter » d'une valeur non lue. `lireLEtatDuDossier` ne rejette jamais, même quand l'appel lève avant d'avoir
+rendu une requête (un client sans la fonction) ; `useEtatFactureElectronique` garde la lecture AVEC le dossier et
+l'annule au changement. Une lecture ratée ne tait que la carte : la Vue d'ensemble se monte.
+
+**UNE SEULE LECTURE DES VENTES.** Les tuiles « À encaisser » / « À déclarer » lisaient seules (cases, statut de TVA,
+neuf tables). L'encart en tire « ce qui attend » : la lecture est sortie de la tuile (`useVentesDuClient`, appelé UNE
+fois par `AccueilVentesClient`, qui la passe aux deux ; `TuilesVentesClient` ne lit plus). Un test d'accueil COMPTE les
+requêtes du faux client : chaque table des ventes une fois, les cases une fois, l'état une fois. L'encart attend cette
+lecture, les cases relues à la base comprises (un squelette d'ici là) : sans « Ventes », ni encart ni appel de l'état.
+« Ce qui attend » vient de `compterLesPastilles` (les encaissements à déclarer, dont en retard) et
+d'`annuleeSurSaPlateforme` sur les statuts lus (les factures validées refusées ou rejetées) ; une liste partielle, aucun
+compte et la phrase qui le dit. Un zéro n'est pas dit « aucune » quand aucun relevé des statuts n'a jamais eu lieu
+(`statuts_lus_le` nul) : « n'ont pas encore été relevés ».
+
+**LA TUILE DU TÉLÉPHONE.** Sous 760 px de GRILLE (requête de conteneur sur `.bento`, jamais une largeur lue en
+JavaScript — un test lit la source), la carte du client garde son titre et l'état en une ligne, le corps se replie, et
+le lien « Mes ventes » (un pseudo-élément) la couvre tout entière.
+
+**LES MOTS.** Le client : tutoiement, « ta société », aucun onglet — la garde `MOTS_DU_CABINET` sur six états montés, et
+le défaut planté (le garde voit un texte du cabinet). Le cabinet : « le client ». L'onglet Accès dit que l'encart est
+sur l'accueil, avec l'adresse et ce qui attend, et qu'il mène à « Mes ventes » ; « ensuite » ne reste que pour la banque
+et les écrans « Ventes » et « Banque ».
+
+**LES PREUVES.** 109 tests de plus (11 153 en tout, sous `TZ=Europe/Paris` ; les neuf fichiers touchés ou neufs aux
+quatre fuseaux, 440 tests chacun). `ecransAvantLecture` monte l'accueil des ventes et l'encart aux deux espaces (plus
+`TuilesVentesClient`, qui ne lit plus, écarté avec sa raison) ; `ecrituresVerifiees` nomme le consommateur de la
+lecture ; `verrousEcritures` déclare la porte `rpc:etat_facture_electronique` en lecture. 26 mutations CIBLÉES : 26
+mordent (deux, sur la garde et l'annulation de la lecture des ventes, ne mordaient pas : le cas de la réponse tardive
+d'une société quittée manquait, il est écrit). Le banc (port 5337) : 0 débordement aux quatre largeurs de référence et à
+720, aux quatre combinaisons des volets et dans la passe du client (390, 720, 1 024, 1 440) ; deux captures relues
+(l'encart à 1 440, la tuile à 390).
+
+**LES LECTURES DE LA CONCEPTION SOUMISES AU CABINET (A6B2-Q1 À A6B2-Q5).** Cinq, chacune avec sa recommandation. Q1 :
+les factures validées qui relèvent de la facture électronique et attendent leur transmission ne se comptent pas — aucun
+module ne dit laquelle en relève sans recopier une règle éparse : le type de client, nul sur les factures d'avant ; la
+date (l'e-reporting à partir du 1er septembre 2027) ; le statut de TVA ; la taille de l'entreprise, que rien ne
+modélise ; une facture envoyée hors de l'application, que les transmissions ignorent. Recommandation : ne rien compter
+tant qu'un module unique ne le dit pas ; un chiffre approché serait une étape de module, pas d'écran. Q2 : « refusées »
+ne compte que les statuts 210 et 213 lus sur la plateforme du client (`annuleeSurSaPlateforme`), sur les factures
+validées, jamais un avoir — ni un refus lu chez Super PDP, ni une transmission rejetée ; une facture refusée que l'avoir
+interne a déjà annulée reste comptée, comme l'onglet Factures lui offre encore l'« Avoir interne » : l'écarter
+demanderait une règle neuve (quand un avoir annule une facture en entier). Recommandation : garder, et étendre à Super
+PDP plus tard si le cabinet le veut. Q3 : tant qu'aucun relevé des statuts n'a eu lieu, l'encart dit qu'ils « n'ont pas
+encore été relevés », et non « aucune facture refusée ». Recommandation : oui. Q4 : l'encart ne paraît qu'une fois les
+ventes lues (un squelette d'ici là), sans appel de l'état pour un accès sans « Ventes ». Recommandation : garder. Q5 :
+sur téléphone, la tuile ne dit que le titre et l'état ; ce qui manque et ce qui attend se lisent dans « Mes ventes ».
+Recommandation : oui.
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu en entier avant l'intégration : la lecture de l'état (l'`error` lue,
+la valeur passée par `lireEtatFactureElectronique`, une requête qui lève tombée du côté signalé, la garde par dossier),
+le crochet des ventes sorti de la tuile (les trois lectures ensemble, la réponse tardive d'une société quittée jetée),
+le module pur (aucune règle recopiée : `compterLesPastilles`, `annuleeSurSaPlateforme`, les phrases
+d'`adressesReceptionVue`), la carte (ni fenêtre ni portail ; les liens du client vers « Mes ventes », les boutons du
+cabinet vers Justificatifs), le bloc de `index.css` (une requête de conteneur sur `.bento`, par ajout), les déclarations
+des scanners, la phrase de l'onglet Accès, la ligne de RGPD.md ; `etat_facture_electronique` relue en base (`stable`,
+`SECURITY DEFINER`, exécutable par `authenticated` seul) ; deux captures relues — la tuile du client à 390 pixels, la
+carte du cabinet à 1 440 en trois colonnes. Une nuance trouvée, portée à A6B2-Q2 : la facture refusée déjà annulée par
+un avoir interne. Accepté sans retouche.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif appliqué sur `eb00cb0` : 25 fichiers, identiques un à un à ceux de la
+copie de l'agent, qui n'en portait pas d'autre (l'arbre obtenu, `aa33ac82…`). Barrière sur l'arbre intégré :
+`tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 153 tests chacun (cinq
+fichiers et 109 tests de plus) ; construction verte (`index-CjpFe_PJ.js`). Dans la même demande, la mise en ligne d'A6b1
+et les réponses du cabinet à A6B1-Q1 à Q6.
+
+**RESTE.** A7 (l'unité, la référence et l'article sur la ligne enregistrée, une migration) et la suite du premier
+groupe ; la retouche de la barre du bas du téléphone (34.93) vient d'abord. Les cinq lectures A6B2-Q1 à Q5 attendent le
+cabinet. NON VÉRIFIÉ : l'encart sur de vraies données — l'état n'a été lu que sur le faux client du banc et sur l'essai
+de la base d'A6a ; aucun essai réel du client « Ventes ».

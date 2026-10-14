@@ -71,6 +71,13 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + 'sans écriture ; migration `pieces_jointes_ecartees_au_client`, ligne 22.9), au montage de « Mes pièces » et de l’accueil du client '
       + '(`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94).',
   },
+  'rpc:etat_facture_electronique': {
+    nature: 'lecture',
+    raison: 'L’état de la facture électronique d’un dossier — connexions reliées ou non, nom et dates, adresse de réception '
+      + 'courante, jamais un secret (fonction `stable`, `security definer`, sans écriture ; migration `adresses_reception`, '
+      + 'étape A6a), lu par l’encart de l’accueil du client et la carte de la Vue d’ensemble du cabinet '
+      + '(`lib/etatFactureElectroniqueLecture.ts`, étape A6b2).',
+  },
   'rpc:plan_du_dossier': {
     nature: 'lecture',
     raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '

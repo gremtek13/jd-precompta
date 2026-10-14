@@ -1529,6 +1529,35 @@ a.btn { text-decoration: none; }
 .check-dot.check-attention { background: var(--color-warning); }
 .check-dot.check-cliquable { cursor: pointer; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
 
+/* L'ENCART « FACTURE ÉLECTRONIQUE » (accueil du client, Vue d'ensemble du cabinet ; étape A6b2) : des lignes en colonnes que la
+   place de la CARTE répartit seule (`auto-fit`), chacune un lien ou un bouton qui MÈNE à son écran — aucune fenêtre ne s'ouvre
+   d'ici, la grille est un conteneur. Un texte long (l'identifiant d'une adresse, ce que sa source établit) passe à la ligne :
+   `overflow-wrap: anywhere`, jamais un débordement. */
+.encart-fe-corps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; }
+.encart-fe-ligne {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0; width: 100%; text-align: left; text-decoration: none;
+  font: inherit; color: var(--color-text); cursor: pointer;
+  padding: 12px 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius);
+  transition: background var(--duree) var(--ease), border-color var(--duree) var(--ease);
+}
+.encart-fe-ligne:hover { background: var(--color-surface-2); border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border)); }
+.encart-fe-ligne:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-primary); }
+.encart-fe-titre { font-size: 0.8rem; font-weight: 700; color: var(--color-text-light); }
+.encart-fe-texte { font-size: 0.85rem; line-height: 1.4; overflow-wrap: anywhere; }
+.encart-fe-etablit { font-size: 0.78rem; color: var(--color-text-light); }
+.encart-fe-panne { margin: 0; }
+.encart-fe .widget-corps:empty { display: none; }
+/* SUR TÉLÉPHONE, L'ENCART DU CLIENT EST UNE TUILE : la grille se range alors comme sur téléphone (requête de conteneur sur
+   `bento`, jamais une largeur lue en JavaScript) — son titre et l'état en une ligne, le corps replié, et le lien « Mes ventes »
+   la couvre tout entière (pseudo-élément sur la carte, qui est le repère de position). */
+@container bento (max-width: 760px) {
+  .encart-fe-client { position: relative; }
+  .encart-fe-client .widget-entete { align-items: center; padding-bottom: 16px; }
+  .encart-fe-client .widget-corps { display: none; }
+  .encart-fe-client .encart-fe-va::after { content: ''; position: absolute; inset: 0; border-radius: var(--radius-lg); }
+  .encart-fe-client:hover { box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border)); }
+}
+
 /* Cellule tableau "nom + avatar". */
 .cellule-identite { display: flex; align-items: center; gap: 10px; min-width: 0; }
 /* Chevron de fin de ligne réservé au mobile — sur ordinateur c'est le bouton "Ouvrir" qui s'affiche. */

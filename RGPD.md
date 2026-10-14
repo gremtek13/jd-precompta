@@ -383,6 +383,13 @@ Ce qui est **prouvé**, pas seulement affirmé :
   plateforme, leurs dates (création, dernière récupération, dernier relevé des statuts) et l'adresse de réception
   courante — jamais une adresse de service, un identifiant ou un secret OAuth2, une organisation ni une portée, que
   l'essai `supabase/essais/etatFactureElectronique.sql` cherche, plantés, dans le texte rendu.
+  Depuis l'étape A6b2 (14/10/2026), l'état est à l'écran : l'encart « Facture électronique » de l'accueil du client qui
+  porte « Ventes » et la carte de la Vue d'ensemble du cabinet le lisent par un seul crochet
+  (`lib/etatFactureElectroniqueLecture.ts`). Rien de plus n'est ouvert ni lu — la même valeur, lue sans rien deviner
+  (une valeur d'une autre forme est dite illisible, jamais montrée) —, la lecture ne part qu'avec la société affichée,
+  et l'encart n'appelle aucune plateforme. Il montre l'adresse (identifiant, maille, plateforme, prise d'effet,
+  vérification) et le nom de la plateforme, jamais l'auteur de l'adresse ; « ce qui attend », chez le client seul, se
+  compte des listes de ventes que l'onglet Factures lit déjà, par UNE lecture partagée avec les tuiles de l'accueil.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 
