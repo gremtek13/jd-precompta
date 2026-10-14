@@ -23,6 +23,7 @@ import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
 import PlateformeClientModal from './PlateformeClientModal'
+import AdresseReceptionModal from './AdresseReceptionModal'
 import CategoriserTiersModal from './CategoriserTiersModal'
 import { useAnnee } from '../../context/AnneeContext'
 import { useAuth } from '../../context/AuthContext'
@@ -85,6 +86,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   const [importDossierOuvert, setImportDossierOuvert] = useState(false)
   const [superPdpOpen, setSuperPdpOpen] = useState(false)
   const [plateformeOuverte, setPlateformeOuverte] = useState(false)
+  const [adresseOuverte, setAdresseOuverte] = useState(false)
   // Pièces déjà rapprochées d'un mouvement bancaire (voir BanqueTab) — pour ne plus laisser
   // "Validée" seule donner l'impression que le traitement d'une pièce est terminé (voir audit
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
@@ -823,6 +825,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
           >
             Plateforme du client
           </button>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setAdresseOuverte(true)}
+            title="L'adresse à laquelle le dossier reçoit ses factures électroniques : la lire, son historique, la déclarer"
+          >
+            Adresse de réception
+          </button>
           <button className="btn btn-outline btn-sm" onClick={() => setImportDossierOuvert(true)} title="Pour importer une arborescence de dossiers depuis ton ordinateur, avec sous-dossiers automatiques">
             📁 Importer un dossier complet
           </button>
@@ -1133,6 +1142,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
           onClose={() => setPlateformeOuverte(false)}
           onImported={load}
         />
+      )}
+
+      {adresseOuverte && (
+        <AdresseReceptionModal espace="cabinet" dossierId={dossierId} onClose={() => setAdresseOuverte(false)} />
       )}
 
       {categoriserTiers && (

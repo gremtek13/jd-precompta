@@ -5,6 +5,7 @@ import PlateformeClientModal from './PlateformeClientModal'
 import SuperPdpModal from './SuperPdpModal'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import type { ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
+import { adresse, SIREN_FICTIF } from '../../test/adressesReception'
 
 // LES CONNEXIONS DU CLIENT (espace client, étape P4b, sous l'hypothèse EC-Q4) : la section « Tes plateformes » de « Mes
 // ventes », et les deux fenêtres du cabinet montées en mode client. Les VRAIS modules de la réception (lib/receptionPlateforme.ts,
@@ -16,6 +17,8 @@ import type { ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 //  2. Les fenêtres en mode client : les gestes de la vente (relier, modifier, tester, retirer, relire les statuts ;
 //     enregistrer et retirer les identifiants Super PDP) présents ; la RÉCEPTION (chercher, reprendre, synchroniser) absente,
 //     bouton et texte ; le secret jamais affiché ; deux puis trois clics sur « Enregistrer » dans le même `act` : un envoi.
+//  4. Le troisième bloc, « Ton adresse de réception » (étape A6b1) : rien de dit avant la lecture, l'état lu (aucune déclarée,
+//     l'adresse et sa prise d'effet, à venir, lecture ratée ou rompue), sa fenêtre, et la relecture à sa fermeture.
 //  3. Le garde des mots (`motsDuCabinet`, étape P4a) sur ces fenêtres en mode client, et son DÉFAUT PLANTÉ : les mêmes états
 //     montés pour le cabinet, où il trouve chaque fois au moins une forme.
 //
@@ -27,6 +30,10 @@ const faux = vi.hoisted(() => ({
   superpdp: false,
   // Une réponse fabriquée à la place de la réponse normale, par fonction et action (« plateforme-agreee tester »).
   refus: {} as Record<string, { status: number; corps: Record<string, unknown> }>,
+  // L'adresse de réception de la société (étape A6b1), lue dans la base ; son refus ; le nombre de lectures de la table.
+  adresses: [] as Record<string, unknown>[],
+  refusAdresses: null as string | null,
+  lecturesAdresses: 0,
   // Les réponses aux écritures restent EN ATTENTE tant que le cas ne les libère pas.
   retenir: false,
   enAttente: [] as (() => void)[],
@@ -60,7 +67,32 @@ vi.mock('../../lib/supabase', () => ({
         throw new Error(`Appel non attendu : ${nom} ${action}`)
       },
     },
-    from: (table: string) => { throw new Error(`Table non attendue dans ce test : ${table}`) },
+    // Les deux lectures de l'adresse de réception (étape A6b1) : ses lignes, filtrées comme PostgREST, et le SIRET du dossier.
+    from: (table: string) => {
+      if (table !== 'adresses_reception' && table !== 'dossiers') throw new Error(`Table non attendue dans ce test : ${table}`)
+      const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+      const c: Record<string, unknown> = {}
+      Object.assign(c, {
+        select: () => c,
+        eq: (colonne: string, valeur: unknown) => { predicats.push((l) => l[colonne] === valeur); return c },
+        order: () => c,
+        range: () => c,
+        maybeSingle: () => c,
+        then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
+          let reponse: unknown
+          if (table === 'dossiers') reponse = { data: { siret: '12345678200010' }, error: null }
+          else {
+            faux.lecturesAdresses += 1
+            const lignes = faux.adresses.filter((l) => predicats.every((p) => p(l)))
+            reponse = faux.refusAdresses
+              ? { data: null, error: { message: faux.refusAdresses }, count: null }
+              : { data: lignes, error: null, count: lignes.length }
+          }
+          return Promise.resolve(reponse).then(suite, echec)
+        },
+      })
+      return c
+    },
   },
 }))
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'u-client' } } }) }))
@@ -92,6 +124,9 @@ beforeEach(() => {
   faux.connexion = null
   faux.superpdp = false
   faux.refus = {}
+  faux.adresses = []
+  faux.refusAdresses = null
+  faux.lecturesAdresses = 0
   faux.retenir = false
   faux.enAttente = []
   confirmations = []
@@ -423,5 +458,116 @@ describe('les fenêtres des connexions — le garde des mots', () => {
   // LE DÉFAUT PLANTÉ : le même état, monté pour le cabinet — l'erreur d'un écran qui oublierait de dire qui regarde.
   it.each(ETATS.map((e) => [e.nom, e] as const))('%s : monté pour le cabinet, le garde y voit ses mots', async (_nom, e) => {
     expect(motsDuCabinet(await atteindre('cabinet', e)).length).toBeGreaterThan(0)
+  })
+})
+
+// ── 4. « Ton adresse de réception » (étape A6b1) ────────────────────────────────────────────────────────────────────────
+// Le troisième bloc de la section : l'adresse sous laquelle la société reçoit ses factures électroniques, DÉCLARÉE par elle ou
+// par son cabinet. Il ne lit que la base (deux lectures : les adresses, le SIRET) ; rien n'est envoyé à une plateforme ni à
+// l'annuaire. Sa fenêtre est celle du cabinet en mode client ; à sa fermeture le bloc se relit.
+describe('« Ton adresse de réception »', () => {
+  const relireConnexion = vi.fn(async () => {})
+  const monterSection = () =>
+    render(<ConnexionsClient dossierId="d1" connexion={null} connexionErreur={null} relireConnexion={relireConnexion} />)
+  const phrasesAdresse = () => [...document.querySelectorAll('p')].map((p) => (p.textContent ?? '').replace(/[\u00a0\u202f]/g, ' '))
+    .filter((t) => t.startsWith('Ton adresse de réception'))
+
+  beforeEach(() => {
+    relireConnexion.mockClear()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-14T10:00:00Z'))
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('avant la lecture : « lecture… », ni vide ni geste', () => {
+    monterSection()
+    expect(phrasesAdresse()).toEqual(['Ton adresse de réception : lecture…'])
+    expect(screen.queryByRole('button', { name: /adresse/ })).toBeNull()
+    expect(texteRendu()).not.toMatch(/tu n’en as pas/)
+  })
+
+  it('lue vide en entier : « pas encore déclaré », et le geste « Déclarer ton adresse »', async () => {
+    monterSection()
+    await screen.findByRole('button', { name: 'Déclarer ton adresse' })
+    expect(phrasesAdresse()[0]).toMatch(/^Ton adresse de réception : tu n’en as pas encore déclaré\./)
+  })
+
+  it('une adresse déclarée : l’identifiant, sa maille, la plateforme, la prise d’effet et la vérification ; « Gérer ton adresse »', async () => {
+    faux.adresses = [{ ...adresse({ verification: 'portail_annuaire', verifiee_le: '2026-10-01' }) }]
+    monterSection()
+    await screen.findByRole('button', { name: 'Gérer ton adresse' })
+    expect(phrasesAdresse()).toEqual([
+      `Ton adresse de réception : ${SIREN_FICTIF} (SIREN), chez Plateforme fictive. Reçoit depuis le 01/09/2026. Vérifiée sur le portail de l’annuaire le 01/10/2026.`,
+    ])
+    expect(screen.queryByRole('button', { name: 'Déclarer ton adresse' })).toBeNull()
+  })
+
+  it('une adresse à venir se dit à venir ; une non vérifiée se dit non vérifiée', async () => {
+    faux.adresses = [{ ...adresse({ prise_effet: '2026-10-20' }) }]
+    monterSection()
+    await screen.findByRole('button', { name: 'Gérer ton adresse' })
+    expect(phrasesAdresse()[0]).toContain('À venir : à partir du 20/10/2026. Non vérifiée : simple déclaration.')
+  })
+
+  it('l’adresse d’un autre dossier ne s’y lit pas', async () => {
+    faux.adresses = [{ ...adresse({ dossier_id: 'd2' }) }]
+    monterSection()
+    await screen.findByRole('button', { name: 'Déclarer ton adresse' })
+  })
+
+  it('une lecture ratée se dit avec son motif et ne s’offre qu’à « Réessayer », qui relit', async () => {
+    faux.refusAdresses = 'permission denied'
+    monterSection()
+    await screen.findByText(/^Ton adresse de réception : elle n’a pas pu être lue en entier \(lecture interrompue après 0 ligne\(s\) : permission denied\)/)
+    expect(screen.queryByRole('button', { name: /Déclarer ton adresse|Gérer ton adresse/ })).toBeNull()
+    const avant = faux.lecturesAdresses
+    faux.refusAdresses = null
+    // Les autres « Réessayer » sont ceux de la plateforme et de Super PDP : seul le dernier est celui de l'adresse.
+    const reessayer = screen.getAllByRole('button', { name: 'Réessayer' }).at(-1) as HTMLElement
+    await act(async () => { fireEvent.click(reessayer) })
+    await screen.findByRole('button', { name: 'Déclarer ton adresse' })
+    expect(faux.lecturesAdresses).toBeGreaterThan(avant)
+  })
+
+  it('des versions qui ne font pas une chaîne : dites, aucune n’est courante, et « Réessayer » seul', async () => {
+    faux.adresses = [{ ...adresse({ id: 'a1' }) }, { ...adresse({ id: 'a2' }) }]
+    monterSection()
+    await screen.findByText(/ne forment pas une suite, aucune n’est donc dite courante/)
+    expect(screen.queryByRole('button', { name: /Déclarer ton adresse|Gérer ton adresse/ })).toBeNull()
+  })
+
+  it('le bouton ouvre la fenêtre du client ; à sa fermeture, le bloc relit ce que la fenêtre a pu changer', async () => {
+    monterSection()
+    fireEvent.click(await screen.findByRole('button', { name: 'Déclarer ton adresse' }))
+    await screen.findByRole('dialog', { name: 'Ton adresse de réception' })
+    // Une déclaration faite entre-temps (par la fenêtre, ou par le cabinet) : la fermeture relit.
+    faux.adresses = [{ ...adresse({ identifiant: SIREN_FICTIF }) }]
+    const avant = faux.lecturesAdresses
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Fermer' })) })
+    await screen.findByRole('button', { name: 'Gérer ton adresse' })
+    expect(faux.lecturesAdresses).toBeGreaterThan(avant)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('rien ne part chez une plateforme ni vers l’annuaire : aucun appel de fonction pour l’adresse', async () => {
+    monterSection()
+    await screen.findByRole('button', { name: 'Déclarer ton adresse' })
+    expect(faux.appels.map((a) => a.fonction)).toEqual(['superpdp-credentials'])
+  })
+
+  it.each([
+    ['aucune adresse', () => {}],
+    ['une adresse déclarée', () => { faux.adresses = [{ ...adresse() }] }],
+    ['une adresse à venir', () => { faux.adresses = [{ ...adresse({ prise_effet: '2026-10-20' }) }] }],
+    ['une lecture ratée', () => { faux.refusAdresses = 'permission denied' }],
+    ['des versions rompues', () => { faux.adresses = [{ ...adresse({ id: 'a1' }) }, { ...adresse({ id: 'a2' }) }] }],
+  ])('%s : rien du cabinet dans ce que lit le client', async (_nom, poser) => {
+    poser()
+    monterSection()
+    await screen.findByRole('button', { name: /Déclarer ton adresse|Gérer ton adresse|Réessayer/ })
+    await act(async () => { await Promise.resolve() })
+    const texte = texteRendu()
+    expect(texte).toContain('Ton adresse de réception')
+    expect(motsDuCabinet(texte)).toEqual([])
   })
 })

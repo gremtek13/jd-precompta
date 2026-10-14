@@ -9,12 +9,14 @@ import {
   LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESCRIPTION_ARTICLE_CLIENT, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE_CLIENT,
   LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT, LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT,
   LIBELLE_NOTE_DECLARATION, LIBELLE_NOTE_DECLARATION_CLIENT, LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT,
+  LIBELLE_PLATEFORME_ADRESSE, LIBELLE_PLATEFORME_ADRESSE_CLIENT,
 } from './droitsAcces'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import { obligationEncaissee } from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
+import { REFUS_DECLARATION_ADRESSE } from './adressesReception'
 import type { ReleveStatuts } from './receptionPlateforme'
 import { donnees, ligne } from '../test/facturesCii'
 
@@ -53,6 +55,9 @@ const PRODUITES: Record<string, () => string> = {
   },
   'libelleCanal': () => libelleCanal({ canal: 'plateforme', hote: 'flux.plateforme-fictive.fr' }),
   'libelleCourtCanal': () => libelleCourtCanal({ canal: 'plateforme' }),
+  // Les refus de la déclaration d'une adresse de réception (étape A6b1) : les dix-neuf messages de la base, tels que le module
+  // les dit ; deux nomment « le dossier ».
+  'REFUS_DECLARATION_ADRESSE': () => REFUS_DECLARATION_ADRESSE.map((r) => r.modele).join('\n'),
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
   // Les refus de la fonction que la liaison du client rencontre (étape P4b) : lus dans sa source, au caractère près.
@@ -177,6 +182,7 @@ describe('les libellés des textes que le client écrit', () => {
     [LIBELLE_NOTE_DECLARATION, LIBELLE_NOTE_DECLARATION_CLIENT],
     [LIBELLE_DESIGNATION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE_CLIENT],
     [LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESCRIPTION_ARTICLE_CLIENT],
+    [LIBELLE_PLATEFORME_ADRESSE, LIBELLE_PLATEFORME_ADRESSE_CLIENT],
   ])('« %s » se dit au client : ton cabinet le lit aussi', (cabinet, client) => {
     expect(motsDuCabinet(cabinet).length).toBeGreaterThan(0)
     expect(motsDuCabinet(client)).toEqual([])

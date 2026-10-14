@@ -107,6 +107,14 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
   // plateforme agréée du TITULAIRE : pour lui, c'est la sienne.
   { de: 'la plateforme du client', vers: 'ta plateforme' },
   { de: 'Plateforme du client', vers: 'Ta plateforme' },
+  // lib/adressesReception.ts, `REFUS_DECLARATION_ADRESSE` (étape A6b1) : les deux refus qui nomment « le dossier » ; les dix-sept
+  // autres se lisent tels quels. Le SIRET d'un dossier se renseigne au cabinet.
+  {
+    de: "Le dossier n'a pas de SIREN : renseigner son SIRET avant de déclarer son adresse de réception.",
+    vers: 'Le SIRET de ta société n’est pas renseigné : demande à ton cabinet de le renseigner avant de déclarer ton adresse '
+      + 'de réception.',
+  },
+  { de: 'le SIREN du dossier', vers: 'le SIREN de ta société' },
 ]
 
 /** Le texte tel que l'espace le lit : celui du cabinet tel quel ; pour le client, ses phrases du cabinet réécrites. */

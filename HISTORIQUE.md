@@ -24132,8 +24132,116 @@ A2-Q5 et A2B-Q1 à A2B-Q8. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 2
 63 avertissements, les mêmes ; quatre fuseaux, 10 916 tests chacun ; construction verte (`index-CNsf507o.js`). La
 bascule ne part qu'après la migration : en ligne avant elle, chaque sauvegarde d'un dossier aurait lu une table absente.
 
+**LA MISE EN LIGNE, LE 14/10/2026.** Fusionnée par #167 (`451565c`) quand `verifier` a été vert sur ses deux passes ; le
+site sert `index-CNsf507o.js`, le paquet de la barrière (déploiement 38588670600) ; `main` reste linéaire, la branche
+réalignée. GitHub a livré deux fois l'événement de la fusion : deux séries de tâches pour la même tête, la première
+publication annulée par le groupe de concurrence `pages`, la seconde publiée. La feuille de route : la ligne 51.5 reçoit
+les réponses du cabinet (A2-Q1 à Q5, A2B-Q1 à Q8, MEG1-Q16), le paragraphe d'A6a et un « RESTE » qui nomme A6b ; la
+réécriture vérifiée par empreintes sur la copie SQL (23 291 caractères : la partie d'avant et le paragraphe d'A2b égaux
+à ceux d'avant l'écriture, les deux ajouts égaux aux fichiers préparés), la copie à jour dès la première relecture ; les
+barres recomptées, inchangées (139 chantiers livrés sur 182, 76 % ; pour un dossier BNC, 139 sur 169, 82 %). Une
+commande de la session, mal enchaînée (`&&` puis `;`), a lancé `vitest`, le lint et la construction dans le dépôt
+principal au lieu de la copie d'intégration : rien de suivi n'y a changé (`dist/`, ignoré, reconstruit à l'identique) ;
+relancées au bon endroit, chaque commande sous `cd "$W" || exit 1`. Les worktrees de l'agent et de l'intégration
+retirés, le premier après avoir comparé ses fichiers au correctif.
+
 **RESTE.** A6b, les écrans : l'encart « Facture électronique » (au cabinet et au client « Ventes »), la tuile de
 l'accueil du client, la carte du cabinet, la saisie de l'adresse et « Vérifier sur l'annuaire », qui ouvre le portail
 public sur un clic ; au-dessus du nom de la plateforme que le cabinet saisit, dire que le client « Ventes » le lit. NON
 VÉRIFIÉ : laquelle des deux grammaires du routage et du suffixe l'annuaire applique ; une première déclaration réelle ;
 un accès client « Ventes » réel (aucun ne porte la case aujourd'hui).
+
+### 14/10/2026 — L'ADRESSE DE RÉCEPTION, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A6b1 (LIGNE 51.5)
+
+(Préparée par l'agent S236 sur `451565c`, relue et intégrée par la session le même jour. Aucune migration, aucune
+policy, aucune Edge Function : la base est celle d'A6a. Fichiers nouveaux : `src/lib/adressesReceptionLecture.ts`,
+`src/lib/adressesReceptionEcriture.ts`, `src/lib/adressesReceptionVue.ts` (pur), `src/lib/useAdressesReception.ts`,
+`src/pages/dossier/AdresseReceptionModal.tsx`, `src/test/adressesReception.ts`, et les tests des quatre modules et de la
+fenêtre. Modifiés : `ConnexionsClient.tsx` (le troisième bloc), `PiecesTab.tsx` (le bouton et la fenêtre),
+`src/lib/droitsAcces.ts` (deux libellés, la phrase des cases), `src/lib/espaceVentes.ts` (deux réécritures),
+`src/index.css` (une règle), `RGPD.md`, `outils/captures/` (`fauxSupabase.ts` : quatre adresses fictives ;
+`debordements.mjs` : sept visites), et les tests `ConnexionsClient`, `PiecesTab`, `ecransAvantLecture`, `espaceVentes`,
+`droitsAcces`.)
+
+**CE QUI EST À L'ÉCRAN.** UNE fenêtre pour les deux espaces (`AdresseReceptionModal`, `espace` OBLIGATOIRE) : au
+cabinet, le bouton « Adresse de réception » de Justificatifs, à côté de « Plateforme du client » ; chez le client
+« Ventes », un troisième bloc de « Tes plateformes », « Ton adresse de réception », qui dit l'état lu (lecture…, pas
+encore déclarée, l'adresse et sa prise d'effet, ou la lecture ratée et « Réessayer ») et ouvre la fenêtre — il se relit
+à sa fermeture. La fenêtre dit la courante (la maille, l'identifiant, la plateforme, « Reçoit depuis le … » ou « À
+venir : à partir du … », la vérification avec sa source et son jour ou « Non vérifiée : simple déclaration », le jour de
+déclaration, et ce que la source établit), l'historique dès deux versions (la plus récente d'abord), « par le client »
+au cabinet seul, et le formulaire — dans la même fenêtre, jamais une seconde superposée. « Vérifier sur l'annuaire » est
+un LIEN vers `https://facturation.chorus-pro.gouv.fr/annuaire/#/` (dossier général v3.2, § 3.5.4, figure 26),
+`target="_blank"`, `rel="noopener noreferrer"` : rien ne part au chargement ni sur le clic de l'application, qui
+n'appelle jamais l'annuaire.
+
+**LA LECTURE.** Deux lectures qui ne REJETTENT jamais (`lireLesAdressesDuDossier`) : les adresses par `lireTout` (tri
+total `cree_le, id`, compte annoncé) et le SIRET du dossier (`dossiers.siret`, une ligne, que la policy de lecture ouvre
+déjà au client). Chacune a son état ; « aucune adresse » ne se dit que d'une liste lue en entier ; lue en partie,
+refusée, `rompue` (`versionCourante`) ou SIRET illisible, la fenêtre le dit et n'offre AUCUN geste (`peutDeclarer`). Le
+crochet `useAdressesReception`, partagé par la fenêtre et le bloc, garde la lecture AVEC le dossier lu.
+
+**L'ÉCRITURE.** `declarer_adresse_reception` seule (`lib/adressesReceptionEcriture.ts` : les huit paramètres, l'`error`
+lu et levé, la ligne rendue vérifiée — dossier visé, version remplacée annoncée). Un seul verrou `declarationEnCours`
+(`useRef`, posé avant le `try`, relâché dans le `finally` après la relecture, relue aussi sur un refus). Le bouton se
+grise sous `refusDeclarationAdresse`, jugé sur la saisie TELLE QU'ELLE PART — les blancs des bords d'un identifiant et
+d'un nom retirés, le jour d'une vérification abandonnée jamais envoyé, une date que le calendrier rend de travers (six
+chiffres d'année) dite sans lever. La version remplacée est la courante LUE à l'ouverture : une autre déclarée depuis
+fait refuser la base (« relire avant de déclarer »), la relecture suit, et le refus du MODULE le redit avant le clic
+suivant.
+
+**LES MOTS.** Au cabinet « le client » et le vouvoiement ; chez le client le tutoiement, « ta société », aucun onglet
+(la garde `MOTS_DU_CABINET`, éprouvée sur dix états montés pour le client ET sur les mêmes pour le cabinet, où elle
+trouve chaque fois ses mots). Le libellé de la plateforme dit qui le lit (`LIBELLE_PLATEFORME_ADRESSE`, `…_CLIENT`) ;
+deux des dix-neuf refus de la base nomment « le dossier », réécrits pour le client (`REECRITURES_CLIENT`, confrontés au
+module). L'onglet Accès dit que l'adresse se lit et se déclare dans « Tes plateformes » ; l'encart reste à venir (A6b2).
+
+**LES PREUVES.** Les modules (lecture, écriture sous un faux client qui APPLIQUE les filtres, vue pure), la fenêtre (52
+cas : rien avant la lecture, une lecture partielle ou refusée ou rompue ou sans SIRET, aucun geste ; la courante, à
+venir, non vérifiée ; l'historique ; « par le client » ; le formulaire et ses refus ; la maille ; deux puis trois clics
+du même rendu ; la relecture après une écriture et un refus ; le refus concurrent ; les mots ; le lien), le bloc (14
+cas), le bouton de Justificatifs, et `ecransAvantLecture.test.tsx` (la fenêtre, aux deux espaces). 36 mutations
+CIBLÉES : 35 mordent ; une est équivalente — le verrou relâché AVANT la relecture : le seul déclencheur, le bouton, est
+grisé par `occupe`, relâché après la même relecture ; le verrou ne se voit qu'au double clic du même rendu, que le cas
+des trois clics tient. Le banc (`outils/captures/`, port 5336) : 0 débordement aux quatre largeurs de référence, à
+720 px, aux combinaisons extrêmes des volets et dans la passe du client (390, 720, 1 024, 1 440), sept visites neuves.
+
+**CE QUE LE BANC A MONTRÉ.** À 390 pixels, la barre de navigation du bas (`position: fixed`, au-dessus du voile)
+couvrait le bas d'une carte à 92 % de la hauteur : les boutons de la dernière rangée passaient dessous. La carte de
+cette fenêtre n'en prend que 80 %. Les autres fenêtres superposées (90 à 92 %) ne sont pas mesurées pour cela ; à
+relever. Un lien qui a l'apparence d'un bouton (`a.btn`) se soulignait : une règle de `index.css`, à côté de
+`a.nav-menu-item`.
+
+**LES LECTURES DE LA CONCEPTION SOUMISES AU CABINET (A6B1-Q1 À A6B1-Q6).** Six, chacune recommandée telle quelle : la
+maille proposée quand l'identifiant n'en admet qu'une, et rien de choisi quand il en admet deux (la phrase le dit) ; les
+blancs des bords de l'identifiant et du nom de la plateforme retirés avant le jugement et l'envoi (la base ne les retire
+pas) ; une adresse à venir ne dit pas ce qui reçoit d'ici là (rien ne l'établit ; la précédente reste dans
+l'historique) ; aucune source de vérification présélectionnée, pas même « sans vérification » ; l'historique dès deux
+versions (avec une seule, la courante dit tout) ; un dossier sans SIRET ouvre le formulaire, qui dit en tête le refus de
+la base, réécrit pour le client (« demande à ton cabinet »), dont l'espace ne lit ni ne saisit ce SIRET.
+
+**LA RELECTURE, LE 14/10/2026.** Le correctif relu en entier avant l'intégration : la fenêtre (le verrou posé avant le
+`try` et relâché après la relecture, aucun geste hors de `peutDeclarer`, « Chargement… » avant le retour, le formulaire
+dans la même fenêtre), les deux lectures qui ne rejettent jamais, l'écriture (les huit paramètres, l'`error` levée, la
+ligne rendue vérifiée), le module pur (« à venir » au jour de Paris, la saisie telle qu'elle part), les deux portes, les
+mots du client et leurs deux réécritures, le lien et son `rel`, la ligne de RGPD.md ; deux captures relues — la fenêtre
+chez le client à 390 pixels, entière au-dessus de la barre du bas, et le formulaire au cabinet à 1 440, où l'identifiant
+et la source sont saisis par le script du banc (rien n'est présélectionné). Accepté sans retouche.
+
+**L'INTÉGRATION, LE 14/10/2026.** Le correctif appliqué sur `451565c` : 23 fichiers, identiques un à un à ceux de la
+copie de l'agent, qui n'en portait pas d'autre (l'arbre obtenu, `d9c91e73…`). Barrière sur l'arbre intégré :
+`tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 044 tests chacun
+(quatre fichiers et 128 tests de plus) ; construction verte (`index-OCPTMneD.js`). Dans la même demande, la mise en
+ligne d'A6a.
+
+**LA BARRE DU BAS DU TÉLÉPHONE.** Le défaut que le banc de l'agent a montré précède cette étape : la session l'a
+retrouvé sur une capture d'A2a, la fenêtre « Nouvel article » chez le client, à 390 pixels — sa dernière rangée de
+boutons sous la barre de navigation. Il a sa ligne dans la feuille de route (34.93) et sera une étape de retouche : une
+mesure d'abord, que le banc n'a pas (rien ne déborde du panneau), puis une règle commune, vérifiée aux quatre largeurs
+de référence et dans la passe du client.
+
+**RESTE.** A6b2, l'encart « Facture électronique » sur `etat_facture_electronique` : à l'accueil du client « Ventes »
+avec sa tuile du téléphone, et la carte de la Vue d'ensemble du cabinet. Les six lectures A6B1-Q1 à Q6 attendent le
+cabinet. NON VÉRIFIÉ : une première déclaration réelle ; le portail de l'annuaire, que ni l'agent ni la session n'ont
+ouvert ; un échec isolé du banc — un délai de clic sur la visite du dossier sans SIRET, à 1 280 pixels, barre à 420 et
+volet à 760 —, rejoué cinq fois sans se reproduire.

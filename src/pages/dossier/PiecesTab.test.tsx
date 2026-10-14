@@ -173,6 +173,16 @@ vi.mock('./PlateformeClientModal', () => ({
     </div>
   ),
 }))
+// La fenêtre de l'adresse de réception (étape A6b1) a ses propres tests : ici, seulement ce que l'onglet lui passe — l'espace du
+// cabinet et le dossier — et de quoi la refermer.
+vi.mock('./AdresseReceptionModal', () => ({
+  default: (p: { espace: string; dossierId: string; onClose: () => void }) => (
+    <div>
+      <p>Fenêtre de l’adresse — espace {p.espace}, dossier {p.dossierId}</p>
+      <button type="button" onClick={p.onClose}>Fermer (double)</button>
+    </div>
+  ),
+}))
 // La forme exacte de `PresenceTexteOcr` compte — `{ avecTexte: Set, erreur: string | null }` : le
 // premier est lu en `.has()` à chaque ligne, le second décide de l'affichage du bouton de
 // relecture (une lecture refusée retire le bouton, parce que sa présence coûte des appels Textract
@@ -393,6 +403,20 @@ describe('PiecesTab — les factures reçues de la plateforme du client', () => 
     expect(screen.queryByText(/Fenêtre de la plateforme/)).toBeNull()
     await act(async () => { screen.getByRole('button', { name: 'Plateforme du client' }).click() })
     expect(screen.getByText('Fenêtre de la plateforme — dossier dossier-de-test, SIRET 12345678200010')).toBeTruthy()
+  })
+
+  // « Adresse de réception » (étape A6b1) : le bouton du cabinet, à côté de « Facture électronique » et de « Plateforme du client ».
+  it('« Adresse de réception » ouvre la fenêtre du cabinet pour ce dossier, et se referme', async () => {
+    poser([piece()])
+    monter('toutes')
+    await screen.findByText('FOURNISSEUR')
+    expect(screen.queryByText(/Fenêtre de l’adresse/)).toBeNull()
+    const ordre = screen.getAllByRole('button').map((b) => b.textContent)
+    expect(ordre.indexOf('Adresse de réception')).toBe(ordre.indexOf('Plateforme du client') + 1)
+    await act(async () => { screen.getByRole('button', { name: 'Adresse de réception' }).click() })
+    expect(screen.getByText('Fenêtre de l’adresse — espace cabinet, dossier dossier-de-test')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Fermer (double)' }).click() })
+    expect(screen.queryByText(/Fenêtre de l’adresse/)).toBeNull()
   })
 
   it('une facture importée par la fenêtre paraît dans la liste : l’onglet la relit', async () => {

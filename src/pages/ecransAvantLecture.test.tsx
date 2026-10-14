@@ -41,6 +41,7 @@ import EcrituresTab from './dossier/EcrituresTab'
 import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
 import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
+import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
 import EstimationTab from './dossier/EstimationTab'
@@ -380,6 +381,14 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'ArticlesVue (client)', fichier: 'pages/dossier/ArticlesVue.tsx', rendre: () => (
     <Dossier1><ArticlesVue espace="client" dossierId="d1" /></Dossier1>
+  ) },
+  // « Adresse de réception » (étape A6b1) : la fenêtre, montée seule — au cabinet, et chez le client « Ventes ». Rien ne se dit ni
+  // ne s'offre avant la lecture des adresses et du SIRET du dossier.
+  { nom: 'AdresseReceptionModal', fichier: 'pages/dossier/AdresseReceptionModal.tsx', rendre: () => (
+    <Dossier1><AdresseReceptionModal espace="cabinet" dossierId="d1" onClose={rien} /></Dossier1>
+  ) },
+  { nom: 'AdresseReceptionModal (client)', fichier: 'pages/dossier/AdresseReceptionModal.tsx', rendre: () => (
+    <Dossier1><AdresseReceptionModal espace="client" dossierId="d1" onClose={rien} /></Dossier1>
   ) },
 ]
 

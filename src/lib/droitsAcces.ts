@@ -166,6 +166,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // lib/adressesReception.ts) ouvre au client « Ventes », par la base, l'adresse de réception déclarée pour le dossier et son
 // histoire, sa déclaration, et l'état de sa facture électronique — sans rien de secret —, avant l'encart qui les montrera
 // (étape A6b). Elle exige aussi celles des ventes. La déclarer « avec toi » est la décision MEG1-Q16 du cabinet.
+// L'adresse se lit et se déclare à l'écran depuis l'étape A6b1 (« Tes plateformes »), l'encart de l'état viendra avec
+// l'étape A6b2 : la phrase dit le premier, et garde le second à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -197,8 +199,9 @@ export function ceQueDisentLesCases(
   const adresses = avecLesAdresses
     ? ' Il lit aussi, avec son histoire, l’adresse de réception de ses factures électroniques déclarée pour le dossier — '
       + 'sa maille, son identifiant, sa plateforme, sa date de prise d’effet, où et quand elle a été vérifiée, et qui l’a '
-      + 'déclarée — et peut la déclarer ou la remplacer avec toi ; l’état de sa facture électronique lui dit si sa plateforme '
-      + 'agréée et Super PDP sont reliés, leur nom et leurs dates, jamais leurs secrets.'
+      + 'déclarée — et peut la déclarer ou la remplacer avec toi ; elle se lit et se déclare dans « Tes plateformes », au-dessus '
+      + 'de ses factures. Par la base, l’état de sa facture électronique lui dit si sa plateforme agréée et Super PDP sont '
+      + 'reliés, leur nom et leurs dates, jamais leurs secrets.'
     : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
@@ -290,6 +293,12 @@ export const LIBELLE_NOTE_DECLARATION_CLIENT =
 export const LIBELLE_DESIGNATION_ARTICLE_CLIENT = `Désignation (le nom de l’article ; ${TON_CABINET} la lit aussi)`
 
 export const LIBELLE_DESCRIPTION_ARTICLE_CLIENT = `Description (facultative ; ${TON_CABINET} la lit aussi)`
+
+// Le nom de la PLATEFORME de réception d'une adresse (étape A6b1), que `adresses_reception_lecture_ventes` ouvre au client
+// « Ventes » comme au cabinet : le libellé dit qui le lit, des deux côtés — la même condition que pour un article.
+export const LIBELLE_PLATEFORME_ADRESSE = `Plateforme de réception (son nom ; ${LE_CLIENT_VENTES} le lit)`
+
+export const LIBELLE_PLATEFORME_ADRESSE_CLIENT = `Plateforme de réception (son nom ; ${TON_CABINET} le lit aussi)`
 
 // ── Ce que le client « Banque » lit de la main du cabinet (espace client, étape P9b) ──────────────────────────────────
 // La migration `banque_du_client` ouvre le fil d'un mouvement (`precisions_mouvements`) au cabinet et au client qui porte
