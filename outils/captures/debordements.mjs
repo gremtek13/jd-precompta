@@ -769,6 +769,76 @@ const VISITES = [
       await page.getByText(/^Un dossier qui dispense des soins exonérés/).waitFor({ timeout: 10000 })
     },
   },
+  // « UN CLIENT DANS LA FACTURE » (espace client, étape A4b2), sur l'atelier (d7, redevable) et son fichier de clients : le choix ouvert
+  // (cinq clients en cours, dont un au nom très long, chacun avec l'échéance que son délai donnerait), le formulaire rempli par un
+  // organisme public (code service, échéance, provenance) puis la date d'émission changée (l'échéance qui se propose, jamais
+  // appliquée), la confirmation d'un client déjà saisi, et « Enregistrer ce client » (la saisie préremplie, le SIRET d'un autre refusé
+  // et NOMMÉ avant le clic) ; puis le cabinet infirmier (d1, dossier de SOINS) : l'information sous le type « particulier », le bouton
+  // refusé, et le choix, qui n'offre pas ceux que la règle refuse et le dit. Les fenêtres de client se mesurent contre leur propre
+  // carte (`FENETRE_ARTICLE` désigne toute fenêtre à rôle posée par-dessus celle de la facture) ; le formulaire, contre la sienne.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/client-choix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.getByRole('button', { name: 'Choisir un client', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Choisir un client' }).getByRole('button', { name: /^Société Alpha Conseil/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/client-ligne', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await choisirUnClient(page, /^Commune de Démoville/)
+      await page.locator('#date-emission').fill('2026-12-01')
+      await page.getByRole('button', { name: 'Recalculer l’échéance', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/client-remplacer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.locator('#tiers-nom').fill('Cliente saisie à la main, au nom volontairement long pour éprouver le passage à la ligne de la confirmation')
+      await page.locator('#tiers-siret').fill('10000020700017')
+      await page.locator('#tiers-adresse').fill('Une adresse saisie à la main, 13999 Démoville')
+      await choisirUnClient(page, /^Société Alpha Conseil/)
+      await page.getByRole('alertdialog', { name: 'Remplacer le client de la facture ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/client-enregistrer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.locator('#tiers-nom').fill('Cliente saisie à la main, au nom volontairement long pour éprouver le passage à la ligne de la fenêtre')
+      await page.locator('#tiers-siren').fill('123456782')
+      await page.locator('#tiers-siret').fill('12345678200010')
+      await page.locator('#type-client').selectOption('assujetti')
+      await page.locator('#tiers-adresse').fill('Une adresse saisie à la main, 13999 Démoville')
+      await page.getByRole('button', { name: 'Enregistrer ce client', exact: true }).click()
+      await page.getByRole('heading', { name: 'Nouveau client' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/client-soins', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.locator('#tiers-nom').fill('Particulier fictif saisi à la main')
+      await page.locator('#type-client').selectOption('non_assujetti')
+      await page.getByRole('note').filter({ hasText: /^Ce dossier dispense des soins exonérés/ }).waitFor({ timeout: 10000 })
+      if (!(await page.getByRole('button', { name: 'Enregistrer ce client', exact: true }).isDisabled())) {
+        throw new Error('« Enregistrer ce client » n’est pas refusé avant le clic sur un particulier d’un dossier de soins')
+      }
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/client-soins-choix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.getByRole('button', { name: 'Choisir un client', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Choisir un client' }).getByRole('note').filter({ hasText: /clients rangés avant que le dossier passe aux soins/ })
+        .waitFor({ timeout: 10000 })
+    },
+  },
   // « ADRESSE DE RÉCEPTION » (espace client, étape A6b1), côté cabinet : le bouton de Justificatifs ouvre la fenêtre — l'adresse
   // courante à venir de l'atelier (d7), son historique de trois versions (un identifiant et un nom de plateforme LONGS, « par le
   // client »), le lien du portail —, puis le formulaire d'une nouvelle adresse (un identifiant qui s'écrit de deux façons : la maille
@@ -1126,6 +1196,50 @@ const VISITES_CLIENT = [
       await page.getByRole('alertdialog').getByText(/^Tes factures qui le nomment gardent leur copie/).waitFor({ timeout: 10000 })
     },
   },
+  // « Un client dans la facture » (étape A4b2), aux mots du client : le choix, la ligne remplie puis l'échéance proposée après une date
+  // d'émission changée, la confirmation d'un client déjà saisi, et « Enregistrer ce client » (le SIRET d'un autre refusé, nommé).
+  {
+    chemin: '#/mes-ventes', nom: 'client/client-choix', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.getByRole('button', { name: 'Choisir un client', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Choisir un client' }).getByRole('button', { name: /^Société Alpha Conseil/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/client-ligne', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await choisirUnClient(page, /^Commune de Démoville/)
+      await page.locator('#date-emission').fill('2026-12-01')
+      await page.getByRole('button', { name: 'Recalculer l’échéance', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/client-remplacer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.locator('#tiers-nom').fill('Cliente saisie à la main, au nom volontairement long pour éprouver le passage à la ligne de la confirmation')
+      await page.locator('#tiers-siret').fill('10000020700017')
+      await page.locator('#tiers-adresse').fill('Une adresse saisie à la main, 13999 Démoville')
+      await choisirUnClient(page, /^Société Alpha Conseil/)
+      await page.getByRole('alertdialog', { name: 'Remplacer le client de la facture ?' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/client-enregistrer', fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await ouvrirLaFactureDesClients(page)
+      await page.locator('#tiers-nom').fill('Cliente saisie à la main, au nom volontairement long pour éprouver le passage à la ligne de la fenêtre')
+      await page.locator('#tiers-siren').fill('123456782')
+      await page.locator('#tiers-siret').fill('12345678200010')
+      await page.locator('#type-client').selectOption('assujetti')
+      await page.locator('#tiers-adresse').fill('Une adresse saisie à la main, 13999 Démoville')
+      await page.getByRole('button', { name: 'Enregistrer ce client', exact: true }).click()
+      await page.getByRole('heading', { name: 'Nouveau client' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
   // « Un article dans la facture » (étape A2b), aux mots du client : le choix, la ligne remplie, la confirmation d'une ligne déjà
   // saisie, celle du nouveau prix, et la saisie d'un article tiré d'une ligne.
   {
@@ -1230,6 +1344,23 @@ async function ouvrirLaFacture(page) {
   await page.getByRole('button', { name: '+ Nouvelle facture', exact: true }).click()
   await page.locator('#tiers-nom').waitFor({ timeout: 10000 })
   await page.getByRole('button', { name: 'Choisir un article, ligne 1', exact: true }).waitFor({ timeout: 10000 })
+}
+
+// Le formulaire d'une facture neuve, ouvert une fois les clients du dossier lus (« Choisir un client » n'existe qu'alors ; étape A4b2).
+// Même reprise de la vue « Factures » que `ouvrirLaFacture` : une visite d'avant a pu laisser « Clients ».
+async function ouvrirLaFactureDesClients(page) {
+  await fermerLesFenetres(page)
+  const vue = page.getByRole('tab', { name: 'Factures', exact: true })
+  if ((await vue.count()) > 0) await vue.first().click()
+  await page.getByRole('button', { name: '+ Nouvelle facture', exact: true }).click()
+  await page.locator('#tiers-nom').waitFor({ timeout: 10000 })
+  await page.getByRole('button', { name: 'Choisir un client', exact: true }).waitFor({ timeout: 10000 })
+}
+
+// Choisit un client dans la fenêtre du choix.
+async function choisirUnClient(page, nom) {
+  await page.getByRole('button', { name: 'Choisir un client', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Choisir un client' }).getByRole('button', { name: nom }).click()
 }
 
 // Une ligne du formulaire de facture : la page porte, derrière lui, le tableau des factures, dont les lignes sont aussi des `tr`.

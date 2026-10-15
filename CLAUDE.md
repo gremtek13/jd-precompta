@@ -384,8 +384,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'état de sa facture électronique, à l'écran depuis A6b2 (l'encart de son accueil), jamais un secret des connexions
   (`etat_facture_electronique`) ; depuis A4a (15/10/2026), le fichier des clients de son dossier — toutes ses
   colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), à l'écran
-  depuis A4b1 (« Mes ventes › Clients »). L'onglet Accès dit ce que la base ouvre à la SESSION du client, écran ou
-  non, dans les
+  depuis A4b1 (« Mes ventes › Clients ») et, depuis A4b2, dans le formulaire d'une facture. L'onglet Accès dit ce
+  que la base ouvre à la SESSION du client, écran ou non, dans les
   quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
   chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -523,6 +523,21 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   d'office ; ses deux refus se réécrivent pour le client (`REECRITURES_CLIENT`). Le nom, l'adresse et les observations
   disent qui les lit (`LIBELLE_*_CONTACT`) ; « par le client » au cabinet seul, sur le dernier geste → « « MES VENTES ›
   CLIENTS » ».
+- **« Un client dans la facture » (A4b2, 15/10/2026)** : le formulaire d'une facture (`FactureFormModal`, au cabinet et
+  au client « Ventes ») lit les contacts EN ENTIER à son ouverture (`lireLesContacts`, sous `CONTACTS_EXPORTES`, gardés
+  avec le dossier) et offre sous le champ « Client » « Choisir un client » (`ContactChoixModal` : les clients en cours,
+  jamais un retiré ni un effacé, ni — dossier de soins — ceux que la règle refuse, une ligne le dit) et « Enregistrer ce
+  client » (`ContactSaisieModal` préremplie, `saisieDeDepart`) ; `lib/contactsFacture.ts`, pur, ne recopie aucune règle.
+  Le choix remplit le client ENTIER (un champ que le contact n'a pas est vidé ; ni l'e-mail, que la facture n'a pas, ni
+  le numéro d'engagement) et l'échéance (émission + délai, `ajouterJours`), calculée AU CHOIX : une date d'émission
+  changée ensuite le DIT et offre « Recalculer l'échéance », jamais en silence ; un client déjà saisi ne se remplace
+  qu'après une confirmation qui nomme ce qui part ; la provenance ne vit qu'en mémoire jusqu'à A7, et reste quand on
+  retouche le client. « Enregistrer ce client » : `enregistrer_contact` seule, le refus du module dit avant le clic,
+  sous un verrou `useRef` (`gesteContactEnCours`) exclusif, dans les deux sens, de l'enregistrement de la facture et des
+  gestes d'article, relâché après la relecture. **La règle des soins se DIT et ne refuse rien** (A4B2-Q2, tranchée
+  « comme recommandé ») : un particulier ou un client établi hors de France d'un dossier de soins reçoit une information
+  (`.note-info`, teinte neutre) qui ne redit pas le refus d'« Enregistrer ce client », dit sous le bouton aux mots de la
+  base → « UN CLIENT DANS LA FACTURE ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -599,7 +614,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   en base — ranger, modifier, retirer, reprendre ou effacer un contact —, que le cabinet et le client « Ventes »
   tiennent par quatre fonctions (A4a, 15/10/2026), et sa vue « Clients » dans l'onglet Factures et « Mes ventes » —
   la liste, la recherche, le filtre « Retirés », nouveau client, modifier, retirer, reprendre, effacer après une
-  confirmation, le signalement d'un contact rangé avant le passage aux soins (A4b1, 15/10/2026) ;
+  confirmation, le signalement d'un contact rangé avant le passage aux soins (A4b1, 15/10/2026), et, dans le
+  formulaire d'une facture, « Choisir un client », « Enregistrer ce client », l'échéance proposée par le délai du
+  contact et la règle des soins dite (A4b2, 15/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -842,13 +859,14 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   ligne : la sauvegarde d'un dossier emporte ses contacts ; l'onglet Accès dit que « Ventes » ouvre le fichier de ses
   clients et ses quatre gestes, l'effacement compris → « LES CONTACTS, EN BASE ». A4b1, la vue « Clients » de l'onglet
   Factures et de « Mes ventes » — la liste et ses gestes, l'effacement confirmé, le signalement d'un contact rangé avant
-  le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, au cabinet) → « « MES
-  VENTES › CLIENTS » ». Restent, dans l'ordre recommandé, A4b2 (« Choisir un client » et « Enregistrer ce client » dans
-  la facture, l'échéance proposée, la règle des soins dite dans la facture), A4b3 (l'import d'un fichier de clients,
-  l'export d'une fiche), A5 (les paramètres de facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige
-  ses mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client —, une
-  migration), la liste des clients sans activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et
-  la suite du premier groupe.
+  le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, tranchées « comme
+  recommandé » le même jour) → « « MES VENTES › CLIENTS » ». A4b2, un client dans la facture — « Choisir un client »,
+  « Enregistrer ce client », l'échéance proposée, la règle des soins dite —, le 15/10/2026 (A4B2-Q2, avertir seulement,
+  tranchée « comme recommandé » le même jour ; A4B2-Q1, Q3 et Q4 au cabinet) → « UN CLIENT DANS LA FACTURE ». Restent,
+  dans l'ordre recommandé, A4b3 (l'import d'un fichier de clients, l'export d'une fiche), A5 (les paramètres de
+  facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et
+  l'article sur la ligne enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans
+  activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1695,22 +1713,22 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   SIRET (formes et clés par la fonction ; le SIRET commence par le SIREN ; unicité TOTALE `(dossier_id, siret)`),
   l'adresse de facturation électronique (à une entreprise ou à un organisme public) et le code service (à un organisme
   public : la contrainte de la facture), l'e-mail (la forme du WHATWG), le délai (0 à 60 jours, pour tous, A4-Q5), les
-  observations (le nom `notes` est réservé) ; aucun téléphone, aucune date de naissance. Un contact PRÉ-REMPLIRA le
-  client d'une facture, qui en garde la COPIE : aucune clé, aucune garde ne lit un contact. Il se retire, se reprend, ou
-  s'EFFACE (une mise à jour : ses données vidées, « Contact effacé le JJ/MM/AAAA » au jour de Paris, la ligne gardée) ;
-  il ne se supprime jamais hors de la cascade du dossier. `enregistrer_contact` (douze rangs, vingt-sept messages,
-  l'accès d'abord — `gere_les_ventes` —, un verrou par dossier pour l'unicité du SIRET, le contact qui le porte NOMMÉ),
-  `retirer_contact`, `reprendre_contact` et `effacer_contact` écrivent seules ; le client « Ventes » lit tout le fichier
-  de son dossier, retirés et effacés compris, et y écrit par les mêmes fonctions (MEG1-Q11). La règle des soins
-  (MEG1-Q10 ; A4-Q1 à A4-Q4) : un dossier qui porte l'article des soins, exonéré ou redevable, ne range ni un
+  observations (le nom `notes` est réservé) ; aucun téléphone, aucune date de naissance. Un contact PRÉ-REMPLIT le
+  client d'une facture (A4b2), qui en garde la COPIE : aucune clé, aucune garde ne lit un contact. Il se retire, se
+  reprend, ou s'EFFACE (une mise à jour : ses données vidées, « Contact effacé le JJ/MM/AAAA » au jour de Paris, la
+  ligne gardée) ; il ne se supprime jamais hors de la cascade du dossier. `enregistrer_contact` (douze rangs, vingt-sept
+  messages, l'accès d'abord — `gere_les_ventes` —, un verrou par dossier pour l'unicité du SIRET, le contact qui le
+  porte NOMMÉ), `retirer_contact`, `reprendre_contact` et `effacer_contact` écrivent seules ; le client « Ventes » lit
+  tout le fichier de son dossier, retirés et effacés compris, et y écrit par les mêmes fonctions (MEG1-Q11). La règle
+  des soins (MEG1-Q10 ; A4-Q1 à A4-Q4) : un dossier qui porte l'article des soins, exonéré ou redevable, ne range ni un
   non-assujetti sans SIREN ni un client établi hors de France, à l'écriture comme à la reprise ; la fonction ne réécrit
   rien d'elle-même. `contacts.test.ts` confronte le module au texte exporté et rejoue l'essai ; à l'écran (A4b1), le
   nom, l'adresse et les observations que le cabinet saisit disent que le client « Ventes » les lit (`LIBELLE_*_CONTACT`)
-  → « LES CONTACTS, EN BASE », « « MES VENTES › CLIENTS » ».
+  → « LES CONTACTS, EN BASE », « « MES VENTES › CLIENTS » », « UN CLIENT DANS LA FACTURE ».
 
 ## Tests
 
-Vitest, 11 382 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 547 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

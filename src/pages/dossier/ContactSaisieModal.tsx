@@ -35,6 +35,10 @@ interface Props {
   articleExoneration: ArticleExoneration | null
   // Le contact modifié, tel que la liste l'a lu ; nul pour un contact neuf.
   contact: Contact | null
+  // Une saisie de départ pour un contact NEUF (étape A4b2 : « Enregistrer ce client » la tire du client de la facture) ; sans elle,
+  // le contact neuf part de la saisie vide. Elle compte comme le point de départ : rien n'est « touché » tant qu'on n'y change
+  // rien, et le refus qu'elle porte déjà (l'adresse que la facture laisse facultative) se dit sans alerte.
+  saisieDeDepart?: SaisieContact
   // La liste LUE EN ENTIER : l'unicité d'un SIRET s'y juge. La vue n'ouvre rien sur une lecture partielle.
   contacts: readonly ContactPourSiret[]
   // Une écriture est en cours (la vue tient le verrou) ; l'erreur qu'elle a rendue, sous les mots de la base.
@@ -44,8 +48,8 @@ interface Props {
   onClose: () => void
 }
 
-export default function ContactSaisieModal({ dossierId, espace, articleExoneration, contact, contacts, occupe, erreur, onEnregistrer, onClose }: Props) {
-  const [depart] = useState(() => saisieInitialeContact(contact))
+export default function ContactSaisieModal({ dossierId, espace, articleExoneration, contact, saisieDeDepart, contacts, occupe, erreur, onEnregistrer, onClose }: Props) {
+  const [depart] = useState(() => saisieDeDepart ?? saisieInitialeContact(contact))
   const [saisie, setSaisie] = useState<SaisieContact>(depart)
   const changer = <K extends keyof SaisieContact>(k: K, v: SaisieContact[K]) => setSaisie({ ...saisie, [k]: v })
 
