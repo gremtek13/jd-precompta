@@ -23,6 +23,7 @@
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
+import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 
@@ -175,12 +176,17 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // depuis : la phrase le nomme, comme celle des articles nomme le sien, et ne le dit plus à venir. Elle exige aussi celles
 // des ventes. Le tenir « avec toi » suit le patron des articles (MEG1-Q1) ; que le client du cabinet réponde des données de
 // ses clients, et que le cabinet agisse pour lui, est l'hypothèse MEG1-Q11 (lib/contacts.ts, `HYPOTHESES_DES_CONTACTS`).
+// DEPUIS L'ÉTAPE A4b3a, un sixième : la migration `importer_contacts` (`IMPORT_CONTACTS_EXPORTE`, lib/contactsImport.ts)
+// ouvre au client « Ventes », par la base, un geste de plus sur le fichier de ses clients — importer d'un coup les lignes
+// d'un fichier, d'un seul tenant, sans jamais modifier un contact rangé. Elle exige celle des contacts : sans elle, ce
+// drapeau ne change rien à la phrase. L'écran de l'import (étape A4b3b) vient après : la phrase le dit à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
   articlesOuverts: boolean,
   adressesOuvertes: boolean,
   contactsOuverts: boolean,
+  importOuvert: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -222,6 +228,13 @@ export function ceQueDisentLesCases(
       + 'observations, et qui a créé, changé, retiré ou effacé chaque contact — et peut créer, modifier, retirer, reprendre '
       + 'ou effacer un contact ; effacer en vide les données, et une facture garde la copie qu’elle en a prise.'
     : ''
+  // L'import (étape A4b3a) : ce que la fonction fait — mille lignes au plus, d'un seul tenant, rien de rangé qui change —,
+  // et son écran, qui reste à venir.
+  const importContacts = avecLesContacts && importOuvert
+    ? ' Par la base, il peut aussi importer d’un coup la liste de clients de son ancien logiciel, mille lignes au plus, '
+      + 'd’un seul tenant : si une ligne est refusée, l’import entier l’est, et un contact déjà rangé n’est jamais '
+      + 'modifié ; l’écran de l’import viendra ensuite.'
+    : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
     ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
@@ -248,17 +261,18 @@ export function ceQueDisentLesCases(
     : (ventesOuvertes
       ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
-  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts + banque
-    + ventesFermees + aVenir
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts
+    + importContacts + banque + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 
 // L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
 // des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
-// contacts, de la leur (étape A4a).
+// contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a).
 export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
   COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
+  IMPORT_CONTACTS_EXPORTE,
 )
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */

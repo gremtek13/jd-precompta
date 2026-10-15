@@ -306,6 +306,19 @@ sans ses lignes de commentaire (86 512 caractères, reçus tels quels), rend ses
 et rien n'est resté en base ; `rls.sql`, sa copie adaptée (65 724 caractères, `0705e4a7…`), 35 lignes, 0 en faute, 37
 mutations sur 37.
 
+**Rejoué le 15/10/2026 après `importer_contacts`** (espace client, étape A4b3a), appliquée par la session sous la
+version `20261015170232` sur l'accord du cabinet (A4B3-Q5), sans confirmation demandée (aucune suppression), AVANT la
+mise en ligne de la bascule qui la nomme ; son fichier a quitté la version PROVISOIRE `20261015140000` pour celle-ci,
+texte inchangé (8 716 caractères, empreinte `746ef49dbda068efbd09ad484d32e1b2`, celle que rend sa ligne d'historique) :
+135 fichiers, 135 migrations, empreinte globale `9db4d12c2d2860d2bb10d5acfeb846a4` des deux côtés, aucune divergence. Le
+socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 2 016 objets, `d152ddd597f1ce7b28692bdd86b8ad88`
+des deux côtés — la fonction `importer_contacts` en plus. `signature.sql` rend en production ce que l'étape avait relevé
+sur sa réplique après la migration : deux familles changent, les fonctions et leurs droits. L'essai
+`supabase/essais/importContacts.sql`, rejoué en production sans ses lignes de commentaire (42 036 caractères, reçus tels
+quels), rend ses 73 verdicts justes, mutations comprises, et rien n'est resté en base — à son second passage : le
+premier comparait un contrôle à un message que la session avait mal recopié, et sa ligne « 0 » le disait (HISTORIQUE.md,
+« L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

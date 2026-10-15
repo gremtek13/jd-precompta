@@ -24870,3 +24870,155 @@ les quatre fuseaux, 27 tests chacun. Barrière : `tsc -b` 0 ; Edge 25 erreurs, l
 mêmes ; quatre fuseaux, 11 547 tests chacun ; construction verte (`index-DgUeavnO.js`, le paquet de `main` : le
 correctif ne touche qu'un test). La règle rejoint CLAUDE.md (Tests). Dans la même demande, la mise en ligne d'A4b2
 (S241) et la réponse du cabinet à A4B2-Q1, Q3 et Q4.
+
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #174 (`0cb82a3`) à 17 h 39 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `2f65b3e` ; l'arbre de `main` (`3951eecb…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert toujours `index-DgUeavnO.js` (déploiement 38762286696, HTTP 200) : seul un test a changé. La branche réalignée
+sur `0cb82a3`, arbres égaux (la fusion par « rebase » réécrit le commit : la branche se replace sur `origin/main`,
+jamais en avance rapide). Le worktree du correctif retiré (ses 173 liens d'abord). La feuille de route : la ligne 24.19
+créée, faite ; l'en-tête recompté par requête, 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141 sur 171 (82
+%, huit cases).
+
+### 15/10/2026 — L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE — ESPACE CLIENT, ÉTAPE A4b3a (LIGNE 51.5)
+
+(La migration `importer_contacts`, préparée sous la version PROVISOIRE `20261015140000` et éprouvée sur une réplique de
+la production, présentée au cabinet, puis appliquée par la session sur son accord (A4B3-Q5), le 15/10/2026, sous la
+version `20261015170232` : elle ouvre au client qui porte la case « Ventes » un geste nouveau, importer. Préparée par
+l'agent S242 sur `a10398b`. Fichiers : `src/lib/contactsImport.ts`, son test, `supabase/essais/importContacts.sql`
+(nouveaux) ; `src/lib/contacts.ts` (`commeLaBaseLaRecoit` exportée), `src/lib/droitsAcces.ts`, `RGPD.md`, et les tests
+`droitsAcces.test.ts`, `AccesTab.casesOuvertes.test.tsx` ; puis la bascule — le fichier de la migration dans l'export,
+sous sa version réelle, et le drapeau levé —, dans la même demande.)
+
+**LA DÉLIMITATION.** A4b3a : la fonction, son essai, son module PUR, son drapeau. Ni l'écran (la lecture du fichier, son
+encodage, la correspondance des colonnes, l'aperçu, l'export d'une fiche : A4b3b), ni le format de l'ancien logiciel, ni
+`enregistrer_contact` (inchangée), ni Edge Function, ni appel extérieur, ni écriture en production.
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 15/10/2026 (134 migrations, la dernière `contacts`
+`20261015070431`, lecture seule du catalogue) : `enregistrer_contact(p_dossier_id, p_contact_id, p_contact)` SECURITY
+DEFINER, VOLATILE, un verrou consultatif de TRANSACTION par dossier, `cree_par = auth.uid()` ; `auth.uid()` lit le
+réglage `request.jwt.claims` ; `authenticated` a un délai d'instruction de 8 s (documentation publique de Supabase,
+« Timeouts » ; le catalogue le confirme) ; la base est en `en_US.UTF-8` (fournisseur ICU), la réplique en `C.UTF-8`. Le
+paramètre se nomme `p_dossier_id`, comme dans les 52 fonctions de l'export qui prennent un dossier (la consigne écrivait
+`p_dossier`).
+
+**LA FAISABILITÉ, AVANT TOUT AUTRE ÉCRIT.** Un brouillon de la fonction posé sur une base JETABLE de la réplique : les
+quatre points tiennent. `auth.uid()` lu par `enregistrer_contact` appelée par `importer_contacts` (deux SECURITY
+DEFINER) : trois contacts importés par le client « Ventes », signés de lui. Le tout ou rien : une troisième ligne
+refusée défait les deux premières (trois contacts avant, trois après), « Ligne 3 : » et le code d'`enregistrer_contact`.
+Le SIRET d'une ligne déjà rangée par le même import : la seconde refusée en 23505, le contact de la première nommé. Le
+verrou : en deux sessions, un import en cours fait attendre une écriture du même dossier jusqu'à sa validation (2,1 s),
+qui nomme ensuite le contact importé ; une écriture en cours fait attendre l'import, qui refuse alors sa ligne au même
+SIRET ; un autre dossier n'attend pas.
+
+**LA FONCTION.** `importer_contacts(p_dossier_id uuid, p_contacts jsonb) returns uuid[]` — SECURITY DEFINER,
+`search_path` fixé, l'exécution retirée à PUBLIC et à `anon`. Les refus, dans l'ordre : l'accès (`gere_les_ventes` du
+dossier annoncé, et qu'il existe, avant toute lecture ; « Accès refusé à ce dossier. », 42501, les mots
+d'`enregistrer_contact`) ; un tableau JSON ; au moins une ligne ; mille lignes au plus (A4B3-Q1 ; le nombre reçu dit) ;
+puis, ligne par ligne et dans l'ordre, préfixés de « Ligne N : » (N depuis un, dans le tableau reçu) : un objet ; ses
+champs sont ceux qu'`enregistrer_contact` lit — une clé inconnue refusée, NOMMÉE (la première dans l'ordre des OCTETS,
+`collate "C"`, son nom coupé à quatre-vingts caractères comme un contact dans un refus), une clé absente vaut nul — ;
+puis `enregistrer_contact(p_dossier_id, null, ligne)` elle-même, sous ses mots et son code. Un seul bloc d'exception
+autour de la boucle (une sous-transaction) : le numéro de la ligne en cours survit au refus, qui repart préfixé sous son
+code ; le premier annule tout. Le délai d'une instruction (57014) n'est pas attrapé (`others` exclut `query_canceled`) :
+il repart tel quel, rien d'écrit. Elle CRÉE seulement (« id » n'est pas un champ), rend les identifiants dans l'ordre du
+fichier, ne garde rien de l'import à part : ses contacts portent le même auteur et le même instant (`now()` de la
+transaction). Aucune table, aucune policy ; aucune instruction qui retire quoi que ce soit (8 716 caractères,
+`746ef49dbda068efbd09ad484d32e1b2`). Une clé inconnue REFUSÉE plutôt qu'ignorée : `enregistrer_contact` l'ignorerait, et
+l'import réussirait en perdant en silence une colonne que l'écran a fait correspondre (A4B3-Q2).
+
+**L'ESSAI.** `supabase/essais/importContacts.sql`, à part de `contacts.sql` (96 538 octets déjà, et son test compte ses
+étapes au nombre près), sur le moteur de celui-ci : trois dossiers jetables (A redevable avec l'accès d'essai du client,
+B sans, C exonéré au titre des soins). Le catalogue (la fonction, l'accès en première instruction, les champs = ceux
+qu'`enregistrer_contact` lit, aucune écriture directe ni autre fonction nommée, la borne) ; qui importe (anonyme, compte
+rattaché à rien, client sans droit, avec « Banque » seul, client d'un autre dossier, membre non affecté, dossier
+inexistant : 42501 nommément, l'accès avant l'import vide, avant ce qui n'est pas un tableau, avant la borne ; le chef
+et le client « Ventes » : trois lignes rangées et relues, dans l'ordre, signées, un instant ; un membre affecté) ; les
+refus de l'import entier et la borne comprise (mille passent, mille et une non, la borne avant les lignes) ; la
+troisième ligne refusée — un SIRET déjà porté par un contact, par un import précédent, en double dans le fichier, la
+règle des soins (particulier, client établi hors de France), une forme (e-mail, nom absent, SIRET sans SIREN, délai) —,
+la ligne qui n'est pas un objet, les champs inconnus (« Naissance » avant « fax » : l'ordre des octets, que la collation
+de la production ne donnerait pas), « id », un nom coupé, le premier refus du fichier, les lignes comptées depuis un ;
+douze mutations ; rien de resté ; les quatre imports dont la troisième ligne est refusée sont des étapes GARDÉES,
+encadrées d'un compte des contacts (avant) et d'une lecture qui exige le même compte et aucun de leurs noms (après) :
+« AUCUNE ligne rangée » se lit dans l'essai, pas seulement dans l'atomicité de l'instruction. Sans la migration : 1
+verdict « EN ATTENTE », juste ; EN FAUTE si l'historique la porte sans retour arrière.
+
+**LE MODULE ET LE DRAPEAU.** `lib/contactsImport.ts` (pur) : `refusImportContacts` (le premier refus, dans l'ordre de la
+base et sous ses mots, la ligne et le code compris), `refusDesLignes` (l'aperçu : chaque ligne comme si les lignes
+refusées avant elle étaient ôtées ; son premier refus est celui de l'import), `refusDUneLigne` ; chaque ligne jugée par
+`refusEnregistrementContact` contre la liste lue AUGMENTÉE des lignes qui la précèdent (leur SIRET et leur nom, tels
+qu'envoyés) — aucune règle d'un contact recopiée ; le tableau jugé après l'aller-retour JSON (`commeLaBaseLaRecoit`,
+exportée de `lib/contacts.ts`) ; la première clé inconnue dans l'ordre des POINTS DE CODE (celui des octets UTF-8 ; la
+comparaison de JavaScript, en unités UTF-16, rangerait un émoji avant U+FFFD) ; les champs d'une ligne tenus par le type
+`ContactEnvoye`. `IMPORT_CONTACTS_EXPORTE`, baissé jusqu'à l'application et levé par la bascule : la phrase de l'onglet
+Accès (sixième paramètre de `ceQueDisentLesCases`) ne nomme l'import qu'avec lui, les contacts et les ventes — « Par la
+base, il peut aussi importer d’un coup la liste de clients de son ancien logiciel, mille lignes au plus, d’un seul
+tenant : si une ligne est refusée, l’import entier l’est, et un contact déjà rangé n’est jamais modifié ; l’écran de
+l’import viendra ensuite. » Ni table, ni plan de sauvegarde. Ce que le module ne juge pas : l'accès, et ce que
+PostgreSQL refuse avant la fonction — un U+0000 dans un texte fait refuser le JSON entier (22P05), à l'écran qui lit le
+fichier (A4b3b) de le dire.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et l'historique, 134
+`c9cda2ac…`) : l'essai, sans la migration 1 verdict « EN ATTENTE », avec 73 verdicts (61 justes + 12 mutations qui
+mordent), 0 en faute, vide et semée, rien de resté, et sa copie sans commentaires jouée d'un seul tenant ; DEUX familles
+changent (fonctions et leurs droits, 165 → 166) ; 35 mutations de la migration sur 35 vues (dont le tout ou rien rompu —
+une ligne refusée écartée, les autres rangées, vue aussi par le compte d'après —, l'ordre de la collation ICU de la
+production, l'identifiant admis) ; `rls.sql` ENTIER, inchangé, 35 lignes, 0 en faute, 37 mutations sur 37 ; le retour
+arrière, les neuf familles revenues ; les trois contrôles de l'export (135 = 135 à la version provisoire, socle 78
+inchangé, inventaire 2 016, +1) ; les advisors, `authenticated_security_definer_function_executable` 50 → 51, `anon_…` 5
+; mille lignes en 0,53 s (courantes, 173 Ko) et 1,1 s (chaque champ à sa borne, 5,1 Mo), sous un délai de 8 s. Le code :
+32 mutations ciblées, toutes mordent (une après un cas ajouté : un objet qui s'écrit en tableau par `toJSON`) ; la suite
+entière, 383 fichiers, 11 594 tests ; la bascule en simulation — la suite entière verte au premier passage, les trois
+contrôles de l'export avec le fichier (135 = 135, socle inchangé, inventaire 2 016, +1), 16 mutations de la bascule sur
+16.
+
+**LES QUESTIONS AU CABINET.** A4B3-Q1, la borne : mille lignes par import ; A4B3-Q2, une colonne qu'un contact n'a pas
+fait refuser l'import, nommée ; A4B3-Q3, un doublon (SIRET déjà rangé ou répété dans le fichier) refuse tout l'import,
+l'aperçu le montrant avant le clic ; A4B3-Q4, pas de geste « défaire un import » pour l'instant (un import se reconnaît
+à son auteur et à son instant) ; A4B3-Q5, l'accord pour appliquer ; A4B3-Q6 (pour A4b3b), la ligne d'en-tête et les noms
+de colonnes du fichier de l'ancien logiciel. Recommandations : oui, oui, oui, pas de geste, oui ; l'écran demandera si
+la première ligne est un en-tête. NON VÉRIFIÉ : la taille maximale d'une requête acceptée par la passerelle de Supabase
+; la durée en production.
+
+**TROUVÉ EN PASSANT.** La réplique est en `C.UTF-8`, la production en `en_US.UTF-8` (ICU) : un ordre de texte
+qu'une fonction doit tenir s'écrit `collate "C"`, et un essai qui compare un `string_agg … order by` à un texte attendu
+aussi — la réplique ne verrait pas l'écart. Un fichier enregistré en UTF-16 et lu comme de l'UTF-8 porte des U+0000 : la
+base refuserait l'import entier en anglais (22P05) ; à A4b3b de lire l'encodage.
+
+**LES RÉPONSES DU CABINET, LE 15/10/2026.** « comme recommandé » : A4B3-Q1 à A4B3-Q4 tranchées comme recommandé — mille
+lignes par import ; une colonne qu'un contact n'a pas fait refuser l'import, nommée ; un doublon de SIRET, déjà rangé ou
+répété dans le fichier, refuse tout l'import ; aucun geste « défaire un import » pour l'instant — et A4B3-Q5, l'accord
+pour appliquer la migration. A4B3-Q6 reste ouverte, pour A4b3b : l'écran demandera si la première ligne est un en-tête,
+oui par défaut ; les noms des colonnes de l'export de l'ancien logiciel (les noms seuls, aucune donnée) restent à
+donner.
+
+**L'APPLICATION ET LA PRODUCTION, LE 15/10/2026.** `apply_migration` a pris le texte du fichier sans demander de
+confirmation (aucune suppression) : version `20261015170232`, 135 migrations ; sa ligne d'historique rend l'empreinte du
+fichier (8 716 caractères, `746ef49dbda068efbd09ad484d32e1b2`). L'essai `importContacts.sql`, rejoué en production sans
+ses lignes de commentaire, rend ses 73 verdicts justes — 40 contrôles, 14 valeurs, 7 faits, 12 mutations sur 12 qui
+mordent —, sa ligne « 0 » rendant le texte du fichier (42 036 caractères, `c18c7c120d97af5f05e033712e00c59f`) et rien
+n'étant resté en base (4/3/1/0/0 avant et après : dossiers, accès, membres du cabinet, affectations, contacts).
+`signature.sql` rend ce que la réplique avait relevé après la migration : deux familles changent — fonctions 166
+`da81468c…`, droits d'exécution des fonctions 166 `f03cc236…` —, les sept autres sont celles d'avant. Les trois
+contrôles de l'export, le fichier renommé à sa version réelle, texte inchangé : 135 fichiers, 135 migrations, empreinte
+globale `9db4d12c2d2860d2bb10d5acfeb846a4` des deux côtés ; socle inchangé, 78 instructions, `91ae95ec…` ; inventaire,
+2 016 objets, `d152ddd597f1ce7b28692bdd86b8ad88` des deux côtés. Les advisors :
+`authenticated_security_definer_function_executable` 51 (`importer_contacts` en plus, qui vérifie l'accès avant toute
+lecture), `anon_security_definer_function_executable` 5, rien d'autre de nouveau. `rls.sql` n'est pas rejoué : la
+migration ne touche ni table ni policy (joué entier sur la réplique migrée : 35 lignes, 0 en faute, 37 mutations sur
+37).
+
+**UN ESSAI RECOPIÉ SE JUGE D'ABORD À SA LIGNE « 0 ».** Le premier passage en production a rendu 72 verdicts justes sur
+73 : le contrôle 35d — un champ inconnu de cent caractères, nommé coupé à quatre-vingts — en faute. La ligne « 0 »
+disait pourquoi avant tout autre examen : 42 035 caractères, `11771485…`, ni le fichier avec son saut de ligne final
+(42 036, `c18c7c12…`) ni sans (42 035, `6412d3b5…`). Le texte envoyé, relu dans le journal de la session, rendait
+exactement cette longueur et cette empreinte, et ne différait du fichier qu'en une ligne : le message attendu du
+contrôle portait 78 « x » au lieu de 79, une faute de recopie de la session ; la fonction avait rendu la clé coupée à 79
+caractères suivie de « … », ce que le fichier attend. Rejoué à l'identique du fichier : 73 sur 73. Une empreinte reçue
+qui n'est pas celle du fichier dit que le texte joué n'est pas l'essai, et que ses verdicts ne valent pas — juste ou en
+faute ; le diff du texte envoyé contre le fichier dit où.
+
+**RESTE.** A4b3b — l'écran de l'import : lire le fichier et son encodage (un U+0000 fait refuser le JSON entier, 22P05),
+faire correspondre ses colonnes, l'aperçu ligne par ligne, et l'export d'une fiche ; A4B3-Q6 — ; puis A5, MEG1-Q5, A7 et
+la liste des clients sans activité depuis trois ans. La mise en ligne de cette demande se consigne au prochain commit de
+documents.

@@ -177,7 +177,7 @@ supabase/
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
-                    piecesJointesEcartees, articles, etatFactureElectronique, contacts ;
+                    piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts ;
                     bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
                     `bornes_du_stockage`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
@@ -384,8 +384,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'état de sa facture électronique, à l'écran depuis A6b2 (l'encart de son accueil), jamais un secret des connexions
   (`etat_facture_electronique`) ; depuis A4a (15/10/2026), le fichier des clients de son dossier — toutes ses
   colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), à l'écran
-  depuis A4b1 (« Mes ventes › Clients ») et, depuis A4b2, dans le formulaire d'une facture. L'onglet Accès dit ce
-  que la base ouvre à la SESSION du client, écran ou non, dans les
+  depuis A4b1 (« Mes ventes › Clients ») et, depuis A4b2, dans le formulaire d'une facture ; depuis A4b3a
+  (15/10/2026), l'import d'un fichier de clients par `importer_contacts` — mille lignes au plus, tout ou rien, sans
+  jamais modifier un contact rangé —, à l'écran avec A4b3b. L'onglet Accès dit ce que la base ouvre à la SESSION
+  du client, écran ou non, dans les
   quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
   chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -616,7 +618,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   la liste, la recherche, le filtre « Retirés », nouveau client, modifier, retirer, reprendre, effacer après une
   confirmation, le signalement d'un contact rangé avant le passage aux soins (A4b1, 15/10/2026), et, dans le
   formulaire d'une facture, « Choisir un client », « Enregistrer ce client », l'échéance proposée par le délai du
-  contact et la règle des soins dite (A4b2, 15/10/2026) ;
+  contact et la règle des soins dite (A4b2, 15/10/2026) ; l'import d'un fichier de clients, en base — mille lignes au
+  plus, tout ou rien, par la fonction d'un contact saisi —, que le cabinet et le client « Ventes » font par une
+  fonction (A4b3a, 15/10/2026), son écran à venir (A4b3b) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -862,11 +866,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, tranchées « comme
   recommandé » le même jour) → « « MES VENTES › CLIENTS » ». A4b2, un client dans la facture — « Choisir un client »,
   « Enregistrer ce client », l'échéance proposée, la règle des soins dite —, le 15/10/2026 (ses quatre lectures,
-  A4B2-Q1 à A4B2-Q4, tranchées « comme recommandé » le même jour) → « UN CLIENT DANS LA FACTURE ». Restent,
-  dans l'ordre recommandé, A4b3 (l'import d'un fichier de clients, l'export d'une fiche), A5 (les paramètres de
-  facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et
-  l'article sur la ligne enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans
-  activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  A4B2-Q1 à A4B2-Q4, tranchées « comme recommandé » le même jour) → « UN CLIENT DANS LA FACTURE ». A4b3a, l'import d'un
+  fichier de clients en base — `importer_contacts`, tout ou rien, chaque ligne par `enregistrer_contact` elle-même —,
+  appliquée le 15/10/2026 sur l'accord du cabinet (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même
+  jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`) en ligne : l'onglet Accès dit que « Ventes » ouvre l'import →
+  « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». Restent, dans l'ordre recommandé, A4b3b (l'écran de l'import — le
+  fichier et son encodage, ses colonnes, l'aperçu ligne par ligne — et l'export d'une fiche ; A4B3-Q6, la ligne
+  d'en-tête et les noms des colonnes du fichier de l'ancien logiciel), A5 (les paramètres de facturation ; MEG1-Q12 à
+  Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur la ligne
+  enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans activité depuis trois ans,
+  qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -910,7 +919,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 50 fonctions au 15/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 51 fonctions au 15/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -920,12 +929,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `retirer_regime_ereporting`, `ecarter_piece_ereporting`, `reprendre_piece_ereporting`,
   `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent`, `retirer_du_dossier_permanent`,
   `marquer_pieces_jointes_vues`, `enregistrer_article`, `retirer_article`, `reprendre_article`,
-  `declarer_adresse_reception`, `enregistrer_contact`, `retirer_contact`, `reprendre_contact` et `effacer_contact`
-  écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
+  `declarer_adresse_reception`, `enregistrer_contact`, `retirer_contact`, `reprendre_contact`, `effacer_contact` et
+  `importer_contacts` écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
   du dossier annoncé pour conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ;
   depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ;
-  les trois d'A1, celle d'A6a et les quatre d'A4a : `gere_les_ventes` du dossier annoncé, et qu'il existe, avant
-  toute lecture ;
+  les trois d'A1, celle d'A6a, les quatre d'A4a et celle d'A4b3a : `gere_les_ventes` du dossier annoncé, et qu'il
+  existe, avant toute lecture ;
   les deux de R5, les quatre d'e5a, celle d'e5b1, les deux de R7 et celle de la ligne 22.7 : `admin_du_dossier` du
   dossier annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`,
   gardes `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`,
@@ -986,7 +995,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un drapeau qui attend une migration se bascule d'abord en SIMULATION** (le fichier posé dans l'export, le drapeau
   levé, la suite ENTIÈRE) : ce que la bascule demandera — gardes de source, doublures, plan de sauvegarde, ancres des
   défauts plantés — se voit avant elle, et se prépare en correctif d'application ; une réplique se monte en UTF8 (en
-  SQL_ASCII, `length()` compte des octets, et `signature.sql` ne voit pas l'encodage) → « LA BANQUE DU CLIENT EN BASE ».
+  SQL_ASCII, `length()` compte des octets, et `signature.sql` ne voit pas l'encodage) ; elle est en `C.UTF-8` quand
+  la production est en `en_US.UTF-8` (ICU) : un ordre de texte qu'une fonction ou un essai doit tenir s'écrit
+  `collate "C"`, la réplique ne verrait pas l'écart → « LA BANQUE DU CLIENT EN BASE », « L'IMPORT D'UN FICHIER DE
+  CLIENTS, EN BASE ».
 
 ### Lectures et écritures Supabase
 
@@ -1725,10 +1737,23 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rien d'elle-même. `contacts.test.ts` confronte le module au texte exporté et rejoue l'essai ; à l'écran (A4b1), le
   nom, l'adresse et les observations que le cabinet saisit disent que le client « Ventes » les lit (`LIBELLE_*_CONTACT`)
   → « LES CONTACTS, EN BASE », « « MES VENTES › CLIENTS » », « UN CLIENT DANS LA FACTURE ».
+- **L'import d'un fichier de clients** (A4b3a, en base depuis le 15/10/2026, `lib/contactsImport.ts`, pur) :
+  `importer_contacts(p_dossier_id, p_contacts)` range chaque ligne par `enregistrer_contact` ELLE-MÊME, dans l'ordre et
+  dans la même transaction — tout ou rien, le premier refus dit « Ligne N : » puis le message et le code
+  d'`enregistrer_contact` ; l'accès d'abord (`gere_les_ventes`), puis un tableau, d'au moins une ligne, de mille au plus
+  (A4B3-Q1), puis chaque ligne : un objet, aux seuls champs qu'`enregistrer_contact` lit (une clé inconnue refusée,
+  nommée, la première dans l'ordre des OCTETS — `collate "C"` —, A4B3-Q2 ; une clé absente vaut nul). Elle CRÉE
+  seulement (« id » n'est pas un champ), rend les identifiants dans l'ordre ; le verrou d'`enregistrer_contact` tient
+  jusqu'à la fin de l'import ; un import se reconnaît à son auteur et à son instant, et ne se défait pas d'un geste
+  (A4B3-Q4). Le module redit le premier refus (`refusImportContacts`) et l'aperçu ligne par ligne (`refusDesLignes`),
+  chaque ligne par `refusEnregistrementContact` contre la liste lue AUGMENTÉE des lignes qui la précèdent, jamais une
+  règle recopiée ; un U+0000 fait refuser le JSON entier avant la fonction (22P05) : à l'écran (A4b3b) de le dire.
+  `contactsImport.test.ts` confronte le module au texte exporté et rejoue l'essai → « L'IMPORT D'UN FICHIER DE
+  CLIENTS, EN BASE ».
 
 ## Tests
 
-Vitest, 11 547 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 594 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
