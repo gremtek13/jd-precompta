@@ -2,13 +2,17 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
-import { formatDate } from '../../lib/format'
+import { aujourdHuiAParis, formatDate } from '../../lib/format'
+import { telechargerTexte } from '../../lib/fec'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace } from '../../lib/espaceVentes'
 import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
 import { nomDansUnRefus } from '../../lib/articles'
 import { saisieQuiPart, type ContactEnvoye, type SaisieContact } from '../../lib/contacts'
 import { IMPORT_CONTACTS_EXPORTE, refusImportContacts } from '../../lib/contactsImport'
+import {
+  ficheDuContactCsv, messageDeLExportDeLaFiche, nomFichierDeLaFiche, phraseDeLExportDeLaFiche,
+} from '../../lib/contactsExport'
 import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
 import { effacerContact, enregistrerContact, importerContacts, reprendreContact, retirerContact } from '../../lib/contactsEcriture'
 import {
@@ -23,8 +27,9 @@ import ContactsImportModal from './ContactsImportModal'
 // PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4) : le fichier des clients du client — la liste et ses gestes (nouveau client,
 // modifier, retirer, reprendre, effacer). La vue « Clients » de l'onglet Factures, à côté de « Factures », « Règlements » et
 // « Articles » : au cabinet dans l'onglet, au client « Ventes » dans « Mes ventes ». Le choix d'un client dans le formulaire d'une
-// facture (étape A4b2), l'export d'une fiche et les clients sans activité depuis trois ans ne sont pas d'ici ; l'import d'un
-// fichier (étape A4b3b, `ContactsImportModal`) s'ouvre d'ici, sous le même verrou que les quatre gestes.
+// facture (étape A4b2) et les clients sans activité depuis trois ans ne sont pas d'ici ; l'import d'un fichier (étape A4b3b,
+// `ContactsImportModal`) s'ouvre d'ici, sous le même verrou que les quatre gestes ; « Exporter la fiche » (étape A4b3c) télécharge
+// la fiche d'une ligne DÉJÀ LUE — rien ne s'écrit, aucun verrou —, grisé pendant une écriture comme les autres gestes de la ligne.
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions de la base (MEG1-Q1) ; ce que chacune refuserait est
 // dit avant le clic par le module `lib/contacts.ts`, et la base juge encore — son refus se dit sous ses mots. Le client répond
@@ -205,6 +210,14 @@ export default function ContactsVue(props: Props) {
     setImportOuvert(true)
   }
 
+  // Rien ne s'écrit : le fichier se compose ici, depuis la ligne que la liste a lue, et ne part nulle part — ni verrou, ni base.
+  function exporterLaFiche(contact: Contact) {
+    const nomDuFichier = nomFichierDeLaFiche(contact.nom, aujourdHuiAParis())
+    telechargerTexte(nomDuFichier, ficheDuContactCsv(contact))
+    setErreur(null)
+    setMessage(messageDeLExportDeLaFiche(nomDansUnRefus(contact.nom), nomDuFichier))
+  }
+
   function ouvrir(contact: Contact | null) {
     setErreur(null)
     setMessage(null)
@@ -271,6 +284,12 @@ export default function ContactsVue(props: Props) {
         Sans « Retirés », les clients retirés ne se montrent pas ; ils gardent leur SIRET.
       </p>
 
+      {peutEcrire && (
+        <p id="contacts-export-phrase" className="muted" style={{ margin: '-8px 0 14px', fontSize: '0.82rem' }}>
+          {phraseDeLExportDeLaFiche(espace)}
+        </p>
+      )}
+
       {!fenetre && !aEffacer && !importOuvert && erreur && <p className="error-text" role="alert">{erreur}</p>}
       {message && <p role="status">{message}</p>}
 
@@ -332,6 +351,12 @@ export default function ContactsVue(props: Props) {
                             title={gestes.modifier ? dire(gestes.modifier.message) : undefined} onClick={() => ouvrir(c)}
                           >
                             Modifier
+                          </button>
+                          <button
+                            type="button" className="btn btn-outline btn-sm" disabled={occupe} aria-describedby="contacts-export-phrase"
+                            onClick={() => exporterLaFiche(c)}
+                          >
+                            Exporter la fiche
                           </button>
                           <button
                             type="button" className="btn btn-outline btn-sm" disabled={occupe || gestes.basculer.refus != null}

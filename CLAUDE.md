@@ -558,6 +558,19 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   refusé avant tout (`refusDuNombreDeLignes`) ; « Importer N clients » sans aucun refus seulement, « ne se défait pas »
   (A4B3-Q4). `importer_contacts` seule (`importerContacts`), sous le verrou `gesteEnCours` des quatre gestes, relâché
   après la relecture ; le refus de la base dit dans la fenêtre → « IMPORTER DES CLIENTS, À L'ÉCRAN ».
+- **« Exporter la fiche » (A4b3c, 15/10/2026)** : un geste de chaque ligne AFFICHÉE de la vue « Clients » (au cabinet et
+  au client « Ventes » ; en cours ou retiré, jamais un effacé), aux conditions des autres gestes de la ligne (liste lue
+  EN ENTIER, grisé pendant une écriture) ; rien ne s'écrit, aucun verrou, aucune lecture de plus : le fichier se compose
+  dans le navigateur depuis la ligne DÉJÀ LUE et part par `telechargerTexte`, ni stockage ni journal.
+  `lib/contactsExport.ts` (pur) : un CSV que l'import d'A4b3b RELIT tel quel — marque UTF-8, `;`, CRLF, l'en-tête aux
+  libellés de l'import, UNE ligne — en copie FIDÈLE (la valeur rangée, le type sous son libellé, rien d'arrondi ni de
+  « nettoyé ») ; un champ à `;`, `"`, CR ou LF entre guillemets, ses retours à la ligne GARDÉS (jamais `champCsv`, qui
+  les aplatit). L'aller-retour par l'import le prouve, les quatre types à leurs bornes ; un type nul (« à préciser »,
+  que la base refuse à un contact rangé) n'y revient pas. Le nom : `fiche-client-<nom simplifié>-AAAA-MM-JJ.csv`, le
+  jour de Paris donné par l'appelant. UNE phrase au-dessus de la liste dit, avant le clic, ce que le fichier contient —
+  toute la fiche, observations comprises — et que les factures n'y sont pas (rien ne les relie à un contact avant A7) ;
+  au cabinet, « contact » pour la fiche et « le client » pour le seul titulaire (RGPD.md §6) → « EXPORTER LA FICHE D'UN
+  CLIENT ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -639,7 +652,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   contact et la règle des soins dite (A4b2, 15/10/2026) ; l'import d'un fichier de clients, en base — mille lignes au
   plus, tout ou rien, par la fonction d'un contact saisi —, que le cabinet et le client « Ventes » font par une
   fonction (A4b3a, 15/10/2026), et son écran, « Importer des clients » — un fichier CSV lu dans le navigateur, ses
-  colonnes choisies, l'aperçu ligne par ligne, l'import d'un seul tenant (A4b3b, 15/10/2026) ;
+  colonnes choisies, l'aperçu ligne par ligne, l'import d'un seul tenant (A4b3b, 15/10/2026) ; « Exporter la fiche » —
+  la fiche complète d'un client dans un CSV que l'import relit, composé dans le navigateur (A4b3c, 15/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -890,12 +904,13 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   appliquée le 15/10/2026 sur l'accord du cabinet (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même
   jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`) en ligne : l'onglet Accès dit que « Ventes » ouvre l'import →
   « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». A4b3b, son écran — le fichier et son encodage, ses colonnes, l'aperçu
-  ligne par ligne —, le 15/10/2026 (six questions, A4B3B-Q1 à Q6) → « IMPORTER DES CLIENTS, À L'ÉCRAN ». Restent, dans
-  l'ordre recommandé, A4b3c (l'export d'une fiche ; A4B3-Q6, la ligne d'en-tête et les noms des colonnes du fichier de
-  l'ancien logiciel, reste ouverte), A5 (les paramètres de facturation ; MEG1-Q12 à
-  Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur la ligne
-  enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans activité depuis trois ans,
-  qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  ligne par ligne —, le 15/10/2026 (six questions, A4B3B-Q1 à Q6) → « IMPORTER DES CLIENTS, À L'ÉCRAN ». A4b3c,
+  « Exporter la fiche » — la copie fidèle de la fiche d'un client, dans un CSV que l'import relit —, le 15/10/2026 (six
+  questions, A4B3C-Q1 à Q6) → « EXPORTER LA FICHE D'UN CLIENT ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne
+  d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte), A5 (les paramètres de facturation ;
+  MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur la
+  ligne enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans activité depuis trois
+  ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1774,7 +1789,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 11 663 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 696 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

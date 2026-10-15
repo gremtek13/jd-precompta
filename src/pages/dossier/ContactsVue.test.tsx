@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContactsVue from './ContactsVue'
+import { ficheDuContactCsv, phraseDeLExportDeLaFiche } from '../../lib/contactsExport'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import {
   LIBELLE_ADRESSE_CONTACT, LIBELLE_ADRESSE_CONTACT_CLIENT, LIBELLE_NOM_CONTACT, LIBELLE_NOM_CONTACT_CLIENT,
@@ -23,7 +24,9 @@ import type { ArticleExoneration, Contact } from '../../lib/types'
 //  5. la fenêtre : les champs que le type n'ouvre pas ne s'affichent pas, aucune validation native, les libellés des textes
 //     libres que le client lit (cabinet) et ceux de son espace (client : tutoiement, aucun mot du cabinet) ;
 //  6. l'effacement : une confirmation qui NOMME le contact et ce qui part, jamais d'office ;
-//  7. un dossier de soins : la ligne d'information, le signalement de chaque contact rangé avant (A4-Q4), « Effacer » offert.
+//  7. un dossier de soins : la ligne d'information, le signalement de chaque contact rangé avant (A4-Q4), « Effacer » offert ;
+//  8. « Exporter la fiche » (A4b3c) : le geste sur chaque client affiché des deux espaces (jamais un effacé), absent sans liste lue
+//     en entier, grisé pendant une écriture, le téléchargement (nom et contenu), aucune écriture ni relecture, une seule phrase.
 // Données FICTIVES.
 
 const faux = vi.hoisted(() => ({
@@ -38,6 +41,13 @@ const faux = vi.hoisted(() => ({
   lecturesEnAttente: [] as (() => void)[],
   retenirRpc: false,
   rpcEnAttente: [] as (() => void)[],
+  telecharges: [] as { nom: string; contenu: string }[],
+}))
+
+// Le téléchargement est simulé (jsdom n'a pas d'URL d'objet) : ce que la vue donne à `telechargerTexte` se lit dans `faux.telecharges`.
+vi.mock('../../lib/fec', async (original) => ({
+  ...(await original<typeof import('../../lib/fec')>()),
+  telechargerTexte: (nom: string, contenu: string) => { faux.telecharges.push({ nom, contenu }) },
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -189,6 +199,7 @@ beforeEach(() => {
   faux.lecturesEnAttente = []
   faux.retenirRpc = false
   faux.rpcEnAttente = []
+  faux.telecharges = []
 })
 
 afterEach(() => {
@@ -1039,5 +1050,179 @@ describe('Clients — le dossier', () => {
     expect(screen.queryByRole('button', { name: /Nouveau client/ })).toBeNull()
     await act(async () => { faux.retenirLecture = false; for (const r of faux.lecturesEnAttente.splice(0)) r() })
     expect(await screen.findByText('Client d’un autre dossier')).toBeTruthy()
+  })
+})
+
+describe('Clients — « Exporter la fiche »', () => {
+  // La fiche telle qu'elle doit sortir, écrite ici en toutes lettres (aucune des fonctions du module d'export n'y est appelée).
+  const FICHE_DE_C1 = '\uFEFFNom ou raison sociale;Type;Adresse;SIREN;SIRET;Adresse de facturation électronique;Code service;E-mail;'
+    + 'Délai de paiement (jours);Observations\r\n'
+    + 'Société Essai;une entreprise établie en France;Adresse fictive;123456782;12345678200010;;;contact@societe-essai-fictive.example;30;'
+  const JOUR = '2027-11-20'
+
+  beforeEach(() => {
+    // Le jour de Paris, que le nom du fichier porte : l'horloge est posée, et elle seule (sinon `findBy…` expire).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-11-20T10:00:00Z'))
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  const exporter = (ligne: HTMLElement) => within(ligne).getByRole('button', { name: 'Exporter la fiche' }) as HTMLButtonElement
+
+  it('au cabinet : le geste est sur chaque client affiché (en cours, puis retirés sous « Retirés »), jamais sur un effacé', async () => {
+    await monter('cabinet')
+    expect(screen.getAllByRole('button', { name: 'Exporter la fiche' })).toHaveLength(4)
+    fireEvent.click(screen.getByLabelText('Retirés'))
+    expect(await lignes()).toHaveLength(6)
+    expect(screen.getAllByRole('button', { name: 'Exporter la fiche' })).toHaveLength(6)
+    for (const ligne of await lignes()) expect(exporter(ligne).disabled).toBe(false)
+    expect(screen.queryByText(/Contact effacé/)).toBeNull()
+  })
+
+  it('un clic télécharge la fiche — le nom et le contenu attendus — sans rien écrire ni relire, et le dit', async () => {
+    await monter('cabinet')
+    const lecturesAvant = faux.lectures
+    fireEvent.click(exporter(await ligneDe('Société Essai')))
+    expect(faux.telecharges).toEqual([{ nom: `fiche-client-societe-essai-${JOUR}.csv`, contenu: FICHE_DE_C1 }])
+    expect(faux.rpcs).toEqual([])
+    expect(faux.ecritures).toEqual([])
+    expect(faux.lectures).toBe(lecturesAvant)
+    expect(screen.getByRole('status').textContent).toBe(`Fiche de « Société Essai » exportée : fiche-client-societe-essai-${JOUR}.csv.`)
+  })
+
+  it('un client retiré s’exporte aussi, sous son nom', async () => {
+    await monter('cabinet')
+    fireEvent.click(screen.getByLabelText('Retirés'))
+    await lignes()
+    fireEvent.click(exporter(await ligneDe('Ancien Client')))
+    expect(faux.telecharges.map((t) => t.nom)).toEqual([`fiche-client-ancien-client-${JOUR}.csv`])
+    expect(faux.telecharges[0].contenu).toBe(ficheDuContactCsv(C5))
+    expect(faux.telecharges[0].contenu.split('\r\n')[1].startsWith('Ancien Client;')).toBe(true)
+  })
+
+  it('toute la fiche : les observations y sont, leurs retours à la ligne gardés, entre guillemets', async () => {
+    const C9 = contact({
+      id: 'c9', nom: 'Client; "à observations"', adresse: '3, rue de l’Été', siren: null, siret: null, type_client: 'non_assujetti',
+      observations: 'Première ligne\r\nSeconde ; ligne "citée"', email: 'a@b.example', delai_paiement_jours: 0,
+    })
+    faux.contacts = nues([C9])
+    await monter('cabinet')
+    fireEvent.click(exporter((await lignes())[0]))
+    const { contenu } = faux.telecharges[0]
+    const fiche = contenu.slice(contenu.indexOf('\r\n') + 2)
+    expect(fiche).toBe(
+      '"Client; ""à observations""";un particulier, ou un autre non-assujetti;3, rue de l’Été;;;;;a@b.example;0;'
+      + '"Première ligne\r\nSeconde ; ligne ""citée"""',
+    )
+  })
+
+  it('au client : le même geste, les mêmes fichiers, aucune écriture', async () => {
+    await monter('client')
+    expect(screen.getAllByRole('button', { name: 'Exporter la fiche' })).toHaveLength(4)
+    fireEvent.click(exporter(await ligneDe('Commune de Démoville')))
+    expect(faux.telecharges).toHaveLength(1)
+    expect(faux.telecharges[0].nom).toBe(`fiche-client-commune-de-demoville-${JOUR}.csv`)
+    expect(faux.telecharges[0].contenu).toBe(ficheDuContactCsv(C2))
+    expect(faux.telecharges[0].contenu).toContain('Engagement juridique obligatoire')
+    expect(faux.rpcs).toEqual([])
+    expect(faux.ecritures).toEqual([])
+    expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('absent avant la lecture, sur une lecture partielle, sur une lecture refusée : ni geste ni phrase', async () => {
+    faux.retenirLecture = true
+    const { unmount } = render(arbre('cabinet'))
+    expect(screen.queryByRole('button', { name: 'Exporter la fiche' })).toBeNull()
+    expect(screen.queryByText(/Exporter la fiche/)).toBeNull()
+    unmount()
+    faux.retenirLecture = false
+    faux.muetApres = 2
+    const partielle = render(arbre('cabinet'))
+    await screen.findByText(/Aucun geste n’est donc offert/)
+    expect(screen.queryByRole('button', { name: 'Exporter la fiche' })).toBeNull()
+    expect(screen.queryByText(/Exporter la fiche/)).toBeNull()
+    partielle.unmount()
+    faux.muetApres = Infinity
+    faux.leve = true
+    render(arbre('client'))
+    await screen.findByText(/^Tes clients ne s’affichent pas/)
+    expect(screen.queryByRole('button', { name: 'Exporter la fiche' })).toBeNull()
+    expect(screen.queryByText(/Exporter la fiche/)).toBeNull()
+    expect(faux.telecharges).toEqual([])
+  })
+
+  it('grisé pendant une écriture — et pendant la relecture qui la suit —, dégrisé après ; il ne prend aucun verrou', async () => {
+    await monter('cabinet')
+    // Un export ne tient rien : un geste d'écriture lancé juste après est entendu.
+    fireEvent.click(exporter(await ligneDe('Société Essai')))
+    faux.retenirRpc = true
+    fireEvent.click(within(await ligneDe('Association Fictive')).getByRole('button', { name: 'Retirer' }))
+    await vi.waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    for (const b of screen.getAllByRole('button', { name: 'Exporter la fiche' })) expect((b as HTMLButtonElement).disabled).toBe(true)
+    // Un clic sur le bouton grisé ne télécharge rien.
+    faux.telecharges = []
+    fireEvent.click(screen.getAllByRole('button', { name: 'Exporter la fiche' })[0])
+    expect(faux.telecharges).toEqual([])
+    faux.retenirLecture = true
+    await act(async () => { faux.retenirRpc = false; for (const r of faux.rpcEnAttente.splice(0)) r() })
+    await vi.waitFor(() => expect(faux.lecturesEnAttente.length).toBeGreaterThan(0))
+    for (const b of screen.getAllByRole('button', { name: 'Exporter la fiche' })) expect((b as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { faux.retenirLecture = false; for (const r of faux.lecturesEnAttente.splice(0)) r() })
+    await vi.waitFor(() => expect(bouton(/Nouveau client/).disabled).toBe(false))
+    for (const b of screen.getAllByRole('button', { name: 'Exporter la fiche' })) expect((b as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('l’export efface l’erreur d’un geste précédent et cède sa place au message du geste suivant', async () => {
+    faux.refus.retirer_contact = 'Contact introuvable dans ce dossier.'
+    await monter('cabinet')
+    fireEvent.click(within(await ligneDe('Société Essai')).getByRole('button', { name: 'Retirer' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Contact introuvable dans ce dossier.')
+    fireEvent.click(exporter(await ligneDe('Société Essai')))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('status').textContent).toMatch(/^Fiche de « Société Essai » exportée/)
+    fireEvent.click(within(await ligneDe('Association Fictive')).getByRole('button', { name: 'Retirer' }))
+    await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(screen.queryByText(/Fiche de « Société Essai » exportée/)).toBeNull()
+  })
+
+  it('UNE phrase au-dessus de la liste, jamais une par ligne : toute la fiche, observations comprises, et les factures qui n’y sont pas', async () => {
+    await monter('cabinet')
+    const phrases = screen.getAllByText(/^« Exporter la fiche » télécharge/)
+    expect(phrases).toHaveLength(1)
+    const phrase = phrases[0]
+    expect(phrase.textContent).toBe(phraseDeLExportDeLaFiche('cabinet'))
+    expect(phrase.textContent).toMatch(/toute la fiche d’un contact, observations comprises/)
+    // « Le client » est le titulaire du dossier, seul : la fiche est celle d'un contact (les mots de la fenêtre de l'import).
+    expect(phrase.textContent).toMatch(/pour que le client réponde à la personne qui lui demande ce qu’il garde sur elle/)
+    expect(phrase.textContent).not.toMatch(/d’un client/)
+    expect(phrase.textContent).toMatch(/Les factures qui la nomment gardent leur copie et n’y sont pas\.$/)
+    // Au-dessus de la liste, et rattachée à chaque geste.
+    expect(phrase.compareDocumentPosition(screen.getByRole('table', { name: 'Clients' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    for (const b of screen.getAllByRole('button', { name: 'Exporter la fiche' })) {
+      expect(b.getAttribute('aria-describedby')).toBe(phrase.id)
+    }
+  })
+
+  it('au client, la phrase est la sienne : tutoiement, jamais « le client » pour lui, aucun mot du cabinet', async () => {
+    await monter('client')
+    const phrase = screen.getByText(/^« Exporter la fiche » télécharge/).textContent as string
+    expect(phrase).toBe(phraseDeLExportDeLaFiche('client'))
+    expect(phrase).toMatch(/d’un de tes clients/)
+    expect(phrase).toMatch(/te demande ce que tu gardes sur elle/)
+    expect(phrase).toMatch(/Tes factures qui la nomment gardent leur copie et n’y sont pas\.$/)
+    expect(phrase).not.toMatch(/\ble client\b/i)
+    expect(motsDuCabinet(phrase)).toEqual([])
+    expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('un dossier de soins : un client rangé avant, que la règle ne laisse plus reprendre, s’exporte comme les autres', async () => {
+    faux.contacts = nues([C1, C8])
+    render(arbre('cabinet', { article: SOINS }))
+    await tableau()
+    const etranger = exporter(await ligneDe('Client étranger fictif'))
+    expect(etranger.disabled).toBe(false)
+    fireEvent.click(etranger)
+    expect(faux.telecharges).toHaveLength(1)
+    expect(faux.telecharges[0].contenu).toBe(ficheDuContactCsv(C8))
   })
 })

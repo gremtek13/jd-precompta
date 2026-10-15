@@ -25103,7 +25103,99 @@ ouverte.
 **TROUVÉ EN PASSANT.** La phrase de l'onglet Accès disait l'écran de l'import « à venir » : elle dit désormais où il
 est.
 
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #176 (`6b1e1f3`) à 21 h 51 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `5c29c04` ; l'arbre de `main` (`3932b078…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-BzKNk_pE.js` (déploiement 38797243472, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`6b1e1f3`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration (ses 173 liens
+d'abord) et celui de l'agent retirés. La feuille de route : la ligne 51.5 complétée (37 506 caractères, relue à
+l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141
+sur 171 (82 %, huit cases).
+
 **RESTE.** A4b3c, l'export d'une fiche (RGPD.md, §6 : les droits des clients du client s'exercent auprès du client) ;
 A4B3-Q6, les noms des colonnes de l'export de l'ancien logiciel, pour proposer d'emblée la correspondance ; puis A5
 (MEG1-Q12 à Q14), MEG1-Q5, A7 et la liste des clients sans activité depuis trois ans. La mise en ligne de cette demande
 se consigne au prochain commit de documents.
+
+### 15/10/2026 — EXPORTER LA FICHE D'UN CLIENT — ESPACE CLIENT, ÉTAPE A4b3c (LIGNE 51.5)
+
+(Préparé par l'agent S244 sur `6b1e1f3`, retouché par la session à l'intégration. Aucune migration, aucune policy,
+aucune Edge Function, aucun appel à la base de plus, aucun appel extérieur. Fichiers : `src/lib/contactsExport.ts` et
+son test (nouveaux) ; `src/pages/dossier/ContactsVue.tsx` (le geste, la phrase) et son test ; `RGPD.md` (§6 et la ligne
+du fichier des clients) ; `outils/captures/debordements.mjs` (deux visites, par AJOUT).)
+
+**LA DÉLIMITATION.** Le geste « Exporter la fiche » sur chaque client AFFICHÉ de la vue « Clients » — en cours ou
+retiré, jamais un effacé —, au cabinet et au client « Ventes ». Ni l'export de toute la liste (A4B3C-Q4, non offert), ni
+les factures qui nomment le client (rien ne les relie à un contact avant A7), ni la liste des clients sans activité
+(après A7). Le fichier se compose dans le navigateur depuis la ligne DÉJÀ LUE et part par `telechargerTexte` : aucun
+appel de plus à la base, ni stockage, ni journal, ni verrou (rien ne s'écrit).
+
+**POURQUOI.** RGPD.md §6 : le client est responsable des données de SES clients ; les droits de ces personnes (accès,
+art. 15 ; portabilité, art. 20) s'exercent auprès de lui, et l'application lui donne l'effacement (A4b1) et, avec cette
+étape, la copie de ce qu'il garde sur une personne.
+
+**LE FICHIER** (`lib/contactsExport.ts`, pur). Un CSV que l'import d'A4b3b RELIT tel quel : marque d'ordre UTF-8,
+séparateur `;`, fins de ligne CRLF, l'en-tête aux libellés de l'import (`LIBELLES_DES_CHAMPS`, dans l'ordre de
+`CHAMPS_DANS_L_ORDRE`), puis UNE ligne, la fiche — sans retour final, comme les autres exports. Une copie FIDÈLE : la
+valeur rangée, telle que la saisie la montre (`saisieInitialeContact`) ; le type sous son libellé
+(`LIBELLES_TYPE_CONTACT`), vide s'il est nul ; le délai en chiffres (zéro compris) ; rien d'arrondi, de raccourci ni de
+« nettoyé » (les blancs des bords restent, l'import les retire comme la saisie). Un champ qui porte `;`, `"`, CR ou LF
+se met entre guillemets, les guillemets doublés, ses retours à la ligne GARDÉS — les observations en portent :
+`champCsv` (pisteAudit.ts), qui les aplatit en espaces, n'est pas employé. Une virgule ou une tabulation n'en demandent
+pas : le séparateur est celui de l'en-tête. Le nom : `fiche-client-<nom simplifié>-AAAA-MM-JJ.csv` — minuscules ASCII,
+accents retirés, œ, æ et ß en deux lettres, tout le reste en UN tiret, 40 caractères au plus (la coupe ne laisse pas de
+tiret), `sans-nom` s'il ne reste rien —, le jour de Paris donné par l'appelant (`aujourdHuiAParis()` au clic).
+
+**L'ALLER-RETOUR, LA PREUVE.** La fiche passée par `decoderLeFichier` (la marque lue : `utf-8-marque`) →
+`separateurPropose` (`;`) → `decouperLeFichier` → `tableauDuFichier(…, true)` → `colonnesProposees` (les dix colonnes
+PROPOSÉES, aucune « à choisir ») → `valeursDuType` / `typesProposes` → `lignesAImporter` rend, pour chacun des quatre
+types, chaque champ à sa borne (nom 200, adresse 1 000, observations 1 000, e-mail 254, code service 100, délai 60) et
+des valeurs à `;`, `"`, CR, LF, CRLF, accents, ligature et caractère hors du plan de base, exactement ce que la saisie à
+la main enverrait pour ce contact (`saisieQuiPart(saisieInitialeContact(c))`) et ce que le contact dit lui-même ;
+l'aperçu de l'import, contre un fichier de clients vide, n'y refuse rien. UN CAS NE REVIENT PAS : « à préciser » (type
+nul). La base refuse un contact rangé sans type (`type_inconnu`) : seul un contact EFFACÉ n'en a plus, et la vue ne
+l'exporte jamais ; mais si un `Contact` à type nul arrivait, la cellule du type serait vide, l'import la lirait comme la
+valeur « (vide) » NON RECONNUE et refuserait sa ligne (ce que la ligne envoie, un type nul, reste ce que la saisie
+enverrait). L'import n'a pas été changé pour le faire passer.
+
+**LE GESTE.** « Exporter la fiche », deuxième bouton de la rangée de la ligne (Modifier, Exporter la fiche,
+Retirer/Reprendre, Effacer), grisé pendant une écriture et pendant la relecture qui la suit (`occupe`), jamais refusé
+par le module (un contact rangé avant le passage aux soins, un retiré s'exportent comme les autres) ; il n'existe que
+sur une liste lue en entier, comme les autres gestes de la ligne. Après le clic, `Fiche de « X » exportée : <fichier>.`
+(`role="status"`, l'erreur d'avant effacée) : le nom du fichier est dit pour le retrouver, sans affirmer que le
+navigateur l'a enregistré. UNE phrase sous la ligne « Sans « Retirés » » dit avant le clic ce que le fichier contient —
+toute la fiche, observations comprises — pour répondre à la personne qui demande ce qu'on garde sur elle (RGPD, art. 15
+et 20), et que les factures qui la nomment gardent leur copie et n'y sont pas ; chaque bouton y est rattaché
+(`aria-describedby`). Au client : tutoiement, jamais « le client » pour lui, aucun mot du cabinet (`motsDuCabinet` vide,
+éprouvé sur la phrase et sur la page).
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** La suite entière sous Paris : 386 fichiers, 11 696 tests (+1, +33 : 22 pour le module —
+l'aller-retour des quatre types à leurs bornes, le BOM, CRLF, les guillemets, le nom du fichier —, 11 pour l'écran, les
+deux espaces) ; les cinq fichiers voisins sous quatre fuseaux (223 tests chacun) ; `tsc -b` 0,
+`tsc -p tsconfig.edge.json` 25 erreurs (celles de la base), lint 63 avertissements (ceux de la base, aucun dans les
+fichiers touchés), build vert ; aucune exception nouvelle des scanners. 43 mutations ciblées (31 sur le module : marque,
+séparateur, CRLF, chaque cas de guillemets, l'ordre et le contenu des colonnes, le nom du fichier, la phrase ; 12 sur
+l'écran : le grisé, la phrase, le téléchargement, le nom, le message, l'erreur d'avant, le verrou, le jour), les 43
+mordent (la première passe en a montré trois mal ancrées — la marque, une phrase, un retrait —, refaites). Le banc (port
+5344, copies retirées) : 0 débordement aux onze passes, 0 bouton de fenêtre recouvert (208 sondés dans 46 fenêtres,
+comme avant : le geste n'ouvre aucune fenêtre), 0 police refusée ; deux visites, `factures/clients-exporter` et
+`client/clients-exporter` (le nom d'un client d'atelier, long, donne un nom de fichier coupé à 40 caractères) ; la
+rangée de quatre boutons passe à la ligne, en fiche sur téléphone.
+
+**LES RETOUCHES DE LA SESSION.** Trois, à l'intégration. La phrase du cabinet disait « la fiche d'un client », puis « ce
+que le client garde sur elle » : deux personnes sous un même mot. Elle dit désormais « la fiche d'un contact » et « pour
+que le client réponde à la personne qui lui demande ce qu'il garde sur elle », les mots de la fenêtre de l'import, et le
+test d'écran l'exige. Le commentaire du module disait la garde des mots du client éprouvée dans
+`contactsExport.test.ts` : elle l'est dans `ContactsVue.test.tsx`. RGPD.md annonçait encore la proposition d'effacement
+des clients sans activité « avec A4b3 » : elle viendra après A7, qui relie une facture à son contact. Le banc rejoué par
+la session sur l'arbre intégré, retouches comprises : 0 débordement aux onze passes, 0 bouton de fenêtre recouvert (208
+sondés dans 46 fenêtres, 112 dans 28 chez le client), 0 police refusée.
+
+**LES QUESTIONS AU CABINET.** A4B3C-Q1, le format (un CSV que l'import relit, plutôt qu'un JSON ou un PDF) ; A4B3C-Q2,
+la fiche sans l'état du contact, ses dates ni qui l'a rangé ; A4B3C-Q3, les factures absentes jusqu'à A7 ; A4B3C-Q4,
+l'export de toute la liste non offert ; A4B3C-Q5, le nom du client dans le nom du fichier ; A4B3C-Q6, les cellules qu'un
+tableur lirait comme des formules (`=`, `+`, `-`, `@`) et le zéro initial d'un SIREN, qu'un tableur perd en
+réenregistrant le fichier : le fichier reste fidèle, rien n'est neutralisé. Recommandations : les six telles quelles.
+
+**RESTE.** A4B3-Q6 (les noms des colonnes de l'export de l'ancien logiciel) ; A5 (MEG1-Q12 à Q14), MEG1-Q5, A7, puis la
+liste des clients sans activité depuis trois ans. La mise en ligne de cette demande se consigne au prochain commit de
+documents.
