@@ -25018,7 +25018,92 @@ caractères suivie de « … », ce que le fichier attend. Rejoué à l'identiqu
 qui n'est pas celle du fichier dit que le texte joué n'est pas l'essai, et que ses verdicts ne valent pas — juste ou en
 faute ; le diff du texte envoyé contre le fichier dit où.
 
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #175 (`44654c5`) à 19 h 47 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `449f1f5` ; l'arbre de `main` (`3e81eb36…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-Bs0NzSn9.js` (déploiement 38780277880, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`44654c5`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration retiré (ses 173
+liens d'abord). La feuille de route : la ligne 51.5 complétée (35 835 caractères, relue à l'identique) ; l'en-tête
+recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141 sur 171 (82 %, huit cases).
+
 **RESTE.** A4b3b — l'écran de l'import : lire le fichier et son encodage (un U+0000 fait refuser le JSON entier, 22P05),
 faire correspondre ses colonnes, l'aperçu ligne par ligne, et l'export d'une fiche ; A4B3-Q6 — ; puis A5, MEG1-Q5, A7 et
 la liste des clients sans activité depuis trois ans. La mise en ligne de cette demande se consigne au prochain commit de
 documents.
+
+### 15/10/2026 — IMPORTER DES CLIENTS, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A4b3b (LIGNE 51.5)
+
+(Préparé par l'agent S243 sur `44654c5`. Aucune migration, aucune policy, aucune Edge Function, aucun appel extérieur.
+Fichiers : `src/lib/contactsImportFichier.ts`, son test, `src/pages/dossier/ContactsImportModal.tsx`, son test
+(nouveaux) ; `src/lib/contactsImport.ts` (une fonction AJOUTÉE, `refusDuNombreDeLignes`) et son test,
+`src/lib/contactsEcriture.ts` (`importerContacts`, ajoutée), `src/pages/dossier/ContactsVue.tsx` (le bouton, la fenêtre,
+le verrou), `src/lib/droitsAcces.ts` et son test (la phrase de l'onglet Accès : l'écran n'est plus « à venir »),
+`RGPD.md` (la ligne du fichier des clients), `outils/captures/debordements.mjs` (huit visites et une aide, par AJOUT).)
+
+**LA DÉLIMITATION.** Le geste « Importer des clients » de la vue « Clients », au cabinet et au client « Ventes »,
+derrière `IMPORT_CONTACTS_EXPORTE`. Ni l'export d'une fiche (A4b3c), ni la liste des clients sans activité (après A7),
+ni la mise à jour d'un contact par un import ; `importer_contacts`, `contactsImport.ts` et ses refus inchangés.
+
+**LE FICHIER, LU DANS LE NAVIGATEUR** (`lib/contactsImportFichier.ts`, pur). La borne avant toute lecture, sur la taille
+que le navigateur annonce : 10 Mio (A4B3B-Q1 — mille lignes à chaque champ à sa borne font 5,1 Mo de requête, le double
+pour le même fichier en UTF-16). L'encodage : une marque d'ordre décide (UTF-8, UTF-16 LE, UTF-16 BE), lue en STRICT —
+des octets qui la démentent font refuser le fichier ; sans marque, l'UTF-8 strict puis windows-1252 : la règle du
+`decoder` de `BalanceCard.tsx`, son jumeau, laissé tel quel. L'écran dit l'encodage lu. Un U+0000 refuse le fichier
+ENTIER avant tout envoi, la ligne physique et la cause probable dites (un UTF-16 sans marque, ou un fichier qui n'est
+pas du texte) : la base refuserait l'import en anglais (22P05). Le découpage a sa fonction, à côté de `parseCsv` sans le
+toucher : celui-ci prend le point-virgule dès qu'il en voit un dans 2 000 caractères, guillemets compris (une adresse
+« 3, rue … ; bât. B » dans un fichier à virgules le tromperait), ignore la tabulation et lit un guillemet jamais fermé
+jusqu'à la fin. Ici : le séparateur PROPOSÉ d'après la première ligne hors guillemets (`;`, tabulation, `,`, à égalité
+dans cet ordre), dit et changeable ; guillemets, guillemet doublé, retour à la ligne dans une cellule ; CRLF, LF, CR ;
+un guillemet jamais fermé refuse le fichier, la ligne où il s'ouvre nommée ; une ligne dont toutes les cellules sont
+blanches est comptée et dite, jamais un client. L'en-tête, oui par défaut (A4B3-Q6 ouverte) ; une colonne qu'il ne nomme
+pas s'appelle « Colonne N ».
+
+**LA CORRESPONDANCE.** Chaque colonne va à UN champ, sous les libellés de la saisie, ou à « Ne pas importer », choisi —
+l'aperçu nomme les colonnes non importées ; une colonne encore « à choisir » fait attendre l'aperçu. Un champ est
+« proposé » quand le nom de la colonne est un libellé de l'application (la saisie, les en-têtes de la liste), casse,
+accents et ponctuation ignorés ; aucun nom de l'ancien logiciel supposé ; un champ ne sert qu'une fois (le prendre le
+retire à l'autre colonne). Le type (A4B3B-Q2) : une colonne choisie pour « Type », dont chaque valeur se fait
+correspondre à l'un des quatre (proposé quand elle est le libellé de la facture ou la valeur que la base range), une
+valeur « non reconnue » refusant SA ligne, dite ; sans colonne, un type unique pour tout le fichier, à choisir. La
+correspondance se garde avec la structure du fichier (le fichier, le séparateur, l'en-tête). Les valeurs prennent les
+formes de `saisieQuiPart`, et rien de plus — à un écart près, voulu : un champ que le type n'ouvre pas n'est PAS écarté
+(la saisie à la main le cache ; ici l'écarter perdrait une cellule en silence) — les formes se calculent sous le type
+qui ouvre tout, la ligne reprend son type, et le module refuse sa ligne (A4B3B-Q3).
+
+**L'APERÇU ET L'IMPORT.** `refusDesLignes` contre la liste de la vue, lue EN ENTIER (lue en partie, refusée ou pas
+encore revenue, la vue n'offre pas le geste et le dit déjà) ; « Ligne N : » sous les mots du module, la ligne du fichier
+et la valeur du type non reconnue ajoutées ; plus de mille lignes, ou aucune : le refus du module avant toute
+correspondance (`refusDuNombreDeLignes`, AJOUTÉE à `contactsImport.ts`, confrontée à `refusImportContacts`). « Importer
+N clients » seulement sans aucun refus, avec « un import ne se défait pas » (A4B3-Q4). `importer_contacts` seule
+(`importerContacts` : l'erreur lue et levée sous les mots de la base, un identifiant par ligne exigé), sous le verrou
+`gesteEnCours` de la vue — celui des quatre gestes —, relâché après la relecture ; seconde ceinture,
+`refusImportContacts`, avant le verrou ; le refus de la base dit dans la fenêtre, qui reste ouverte, la liste relue ; le
+succès dit combien sont rangés. Une lecture de fichier remplacée pendant qu'elle court ne s'inscrit pas.
+
+**LES DEUX ESPACES.** La même propriété `espace` ; les refus du module passent par `pourLEspace` (la règle des soins
+réécrite pour le client) ; les messages propres au fichier sont écrits pour chacun (tutoiement, l'infinitif au cabinet)
+; `motsDuCabinet` vide sur la fenêtre du client, éprouvé dans les états ouverts. Sur téléphone, les trois tableaux de la
+fenêtre se replient en fiches (`table-empilable-etroite`), l'aperçu défile dans sa boîte ; un texte du fichier ne se
+coupe qu'entre ses mots (`overflow-wrap: break-word` : `.nom-fichier` réduisait la colonne et coupait chaque mot, vu au
+banc).
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** La suite entière sous Paris, 385 fichiers, 11 663 tests (+2, +69) ; les sept fichiers voisins
+sous quatre fuseaux ; `tsc -b`, lint (63 avertissements, ceux de la base) et build verts. 43 mutations ciblées, 42
+mordent (trois après un cas ajouté : le drapeau baissé, la fenêtre restée ouverte sur une relecture partielle, l'erreur
+dite deux fois) ; une équivalente, le verrou relâché avant la relecture, que `occupe` masque. Le banc : 0 débordement
+aux onze passes, 0 bouton recouvert (208 dans 46 fenêtres, 112 dans 28 chez le client), huit visites nouvelles ; sa
+première passe avait trouvé 23 fautes (des mots coupés par `.nom-fichier`, une sélection à 2 px du bord), corrigées.
+
+**LES QUESTIONS AU CABINET.** A4B3B-Q1, la borne du fichier (10 Mio) ; A4B3B-Q2, la forme du type (une colonne et ses
+valeurs, ou un type unique) ; A4B3B-Q3, une valeur qu'un type n'ouvre pas refuse sa ligne plutôt que d'être écartée ;
+A4B3B-Q4, les lignes blanches ignorées et comptées ; A4B3B-Q5, un U+0000 n'importe où refuse le fichier entier ;
+A4B3B-Q6, pas de confirmation en deux temps avant l'import. Recommandations : les six telles quelles. A4B3-Q6 reste
+ouverte.
+
+**TROUVÉ EN PASSANT.** La phrase de l'onglet Accès disait l'écran de l'import « à venir » : elle dit désormais où il
+est.
+
+**RESTE.** A4b3c, l'export d'une fiche (RGPD.md, §6 : les droits des clients du client s'exercent auprès du client) ;
+A4B3-Q6, les noms des colonnes de l'export de l'ancien logiciel, pour proposer d'emblée la correspondance ; puis A5
+(MEG1-Q12 à Q14), MEG1-Q5, A7 et la liste des clients sans activité depuis trois ans. La mise en ligne de cette demande
+se consigne au prochain commit de documents.

@@ -10,6 +10,7 @@ import {
   REFUS_DE_L_IMPORT,
   REFUS_D_UNE_LIGNE,
   refusDesLignes,
+  refusDuNombreDeLignes,
   refusDUneLigne,
   refusImportContacts,
   type RefusImportContacts,
@@ -513,5 +514,17 @@ describe('IMPORT_CONTACTS_EXPORTE dit ce que porte l’export', () => {
     const instructions = texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
     expect(instructions).not.toMatch(/\b(delete|drop|truncate|insert|update|alter)\b/i)
     expect([...texte.matchAll(/create (or replace )?(function|table|policy|trigger)\b/g)].map((m) => m[2])).toEqual(['function'])
+  })
+})
+
+describe('le refus du seul nombre de lignes (ajouté pour l’écran, étape A4b3b)', () => {
+  it('celui de `refusImportContacts` sur un tableau de cette longueur : aucune ligne, plus de mille ; rien entre les deux', () => {
+    const lignes = (n: number) => Array.from({ length: n }, () => ({}))
+    for (const n of [0, 1, LIGNES_PAR_IMPORT_MAX, LIGNES_PAR_IMPORT_MAX + 1, 2500]) {
+      const attendu = n === 0 || n > LIGNES_PAR_IMPORT_MAX ? refusImportContacts('d1', null, lignes(n), []) : null
+      expect(refusDuNombreDeLignes(n), String(n)).toEqual(attendu)
+    }
+    expect(refusDuNombreDeLignes(0)?.cle).toBe('vide')
+    expect(refusDuNombreDeLignes(LIGNES_PAR_IMPORT_MAX + 1)?.message).toContain('celui-ci en porte 1001')
   })
 })

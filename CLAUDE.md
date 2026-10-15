@@ -386,7 +386,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), à l'écran
   depuis A4b1 (« Mes ventes › Clients ») et, depuis A4b2, dans le formulaire d'une facture ; depuis A4b3a
   (15/10/2026), l'import d'un fichier de clients par `importer_contacts` — mille lignes au plus, tout ou rien, sans
-  jamais modifier un contact rangé —, à l'écran avec A4b3b. L'onglet Accès dit ce que la base ouvre à la SESSION
+  jamais modifier un contact rangé —, à l'écran depuis A4b3b (« Importer des clients »). L'onglet Accès dit ce que la
+  base ouvre à la SESSION
   du client, écran ou non, dans les
   quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
   chaque mot confronté à l'export) →
@@ -540,6 +541,23 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   « comme recommandé ») : un particulier ou un client établi hors de France d'un dossier de soins reçoit une information
   (`.note-info`, teinte neutre) qui ne redit pas le refus d'« Enregistrer ce client », dit sous le bouton aux mots de la
   base → « UN CLIENT DANS LA FACTURE ».
+- **« Importer des clients » (A4b3b, 15/10/2026)** : un geste de la vue « Clients » (au cabinet et au client
+  « Ventes »), sous `IMPORT_CONTACTS_EXPORTE`, sur une liste lue EN ENTIER seulement, qui ouvre `ContactsImportModal`
+  (`espace` OBLIGATOIRE). Le fichier est lu dans le navigateur et ne part nulle part (`lib/contactsImportFichier.ts`,
+  pur) : la borne (10 Mio, A4B3B-Q1) jugée avant toute lecture ; l'encodage DIT — une marque d'ordre (UTF-8, UTF-16 LE
+  ou BE) décide, en strict, sans elle l'UTF-8 strict puis windows-1252 (le jumeau du `decoder` de `BalanceCard`) — ; un
+  U+0000 refuse le fichier avant tout envoi, sa ligne et sa cause probable dites ; un découpage À PART de `parseCsv`
+  (séparateur proposé sur la première ligne hors guillemets, `;`, tabulation ou `,`, dit et changeable ; un guillemet
+  jamais fermé refusé ; les lignes blanches comptées) ; l'en-tête oui par défaut (A4B3-Q6 ouverte : aucun nom de
+  l'ancien logiciel supposé). Chaque colonne va à UN champ (« proposé » d'après son nom, casse, accents et ponctuation
+  ignorés, contre les libellés de l'application) ou, explicitement, à « Ne pas importer », nommée par l'aperçu ; une
+  colonne « à choisir » fait attendre l'aperçu. Le type : une colonne dont chaque valeur se fait correspondre (non
+  reconnue : SA ligne refusée, dite), sinon un type unique choisi (A4B3B-Q2). Les valeurs prennent les formes de
+  `saisieQuiPart`, sans qu'un champ que le type n'ouvre pas soit écarté : le module le refuse sur sa ligne (A4B3B-Q3).
+  L'aperçu : `refusDesLignes` contre la liste lue, « Ligne N : » et la ligne du fichier ; aucune ligne ou plus de mille,
+  refusé avant tout (`refusDuNombreDeLignes`) ; « Importer N clients » sans aucun refus seulement, « ne se défait pas »
+  (A4B3-Q4). `importer_contacts` seule (`importerContacts`), sous le verrou `gesteEnCours` des quatre gestes, relâché
+  après la relecture ; le refus de la base dit dans la fenêtre → « IMPORTER DES CLIENTS, À L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -620,7 +638,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   formulaire d'une facture, « Choisir un client », « Enregistrer ce client », l'échéance proposée par le délai du
   contact et la règle des soins dite (A4b2, 15/10/2026) ; l'import d'un fichier de clients, en base — mille lignes au
   plus, tout ou rien, par la fonction d'un contact saisi —, que le cabinet et le client « Ventes » font par une
-  fonction (A4b3a, 15/10/2026), son écran à venir (A4b3b) ;
+  fonction (A4b3a, 15/10/2026), et son écran, « Importer des clients » — un fichier CSV lu dans le navigateur, ses
+  colonnes choisies, l'aperçu ligne par ligne, l'import d'un seul tenant (A4b3b, 15/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -870,9 +889,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   fichier de clients en base — `importer_contacts`, tout ou rien, chaque ligne par `enregistrer_contact` elle-même —,
   appliquée le 15/10/2026 sur l'accord du cabinet (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même
   jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`) en ligne : l'onglet Accès dit que « Ventes » ouvre l'import →
-  « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». Restent, dans l'ordre recommandé, A4b3b (l'écran de l'import — le
-  fichier et son encodage, ses colonnes, l'aperçu ligne par ligne — et l'export d'une fiche ; A4B3-Q6, la ligne
-  d'en-tête et les noms des colonnes du fichier de l'ancien logiciel), A5 (les paramètres de facturation ; MEG1-Q12 à
+  « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». A4b3b, son écran — le fichier et son encodage, ses colonnes, l'aperçu
+  ligne par ligne —, le 15/10/2026 (six questions, A4B3B-Q1 à Q6) → « IMPORTER DES CLIENTS, À L'ÉCRAN ». Restent, dans
+  l'ordre recommandé, A4b3c (l'export d'une fiche ; A4B3-Q6, la ligne d'en-tête et les noms des colonnes du fichier de
+  l'ancien logiciel, reste ouverte), A5 (les paramètres de facturation ; MEG1-Q12 à
   Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur la ligne
   enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans activité depuis trois ans,
   qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
@@ -1747,13 +1767,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   jusqu'à la fin de l'import ; un import se reconnaît à son auteur et à son instant, et ne se défait pas d'un geste
   (A4B3-Q4). Le module redit le premier refus (`refusImportContacts`) et l'aperçu ligne par ligne (`refusDesLignes`),
   chaque ligne par `refusEnregistrementContact` contre la liste lue AUGMENTÉE des lignes qui la précèdent, jamais une
-  règle recopiée ; un U+0000 fait refuser le JSON entier avant la fonction (22P05) : à l'écran (A4b3b) de le dire.
+  règle recopiée ; un U+0000 fait refuser le JSON entier avant la fonction (22P05) : « Importer des clients » (A4b3b)
+  refuse le fichier avant tout envoi et le dit.
   `contactsImport.test.ts` confronte le module au texte exporté et rejoue l'essai → « L'IMPORT D'UN FICHIER DE
   CLIENTS, EN BASE ».
 
 ## Tests
 
-Vitest, 11 594 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 663 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
