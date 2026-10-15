@@ -861,8 +861,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   Factures et de « Mes ventes » — la liste et ses gestes, l'effacement confirmé, le signalement d'un contact rangé avant
   le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, tranchées « comme
   recommandé » le même jour) → « « MES VENTES › CLIENTS » ». A4b2, un client dans la facture — « Choisir un client »,
-  « Enregistrer ce client », l'échéance proposée, la règle des soins dite —, le 15/10/2026 (A4B2-Q2, avertir seulement,
-  tranchée « comme recommandé » le même jour ; A4B2-Q1, Q3 et Q4 au cabinet) → « UN CLIENT DANS LA FACTURE ». Restent,
+  « Enregistrer ce client », l'échéance proposée, la règle des soins dite —, le 15/10/2026 (ses quatre lectures,
+  A4B2-Q1 à A4B2-Q4, tranchées « comme recommandé » le même jour) → « UN CLIENT DANS LA FACTURE ». Restent,
   dans l'ordre recommandé, A4b3 (l'import d'un fichier de clients, l'export d'une fiche), A5 (les paramètres de
   facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et
   l'article sur la ligne enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans
@@ -1736,6 +1736,9 @@ Vitest, 11 547 tests, posés à côté de leur module ; `tsc -b` les type-vérif
   s'arrête à `src/lib` ».
 - **Deux `fireEvent.click` de suite ne sont pas un double clic** : les deux dans le MÊME `act`. Un élément qui paraît
   après chargement se cherche HORS de l'`act`.
+- **Ce qu'un effet consigne se lit sous `waitFor`** quand le rendu vient de lectures finies hors d'un `act` (après un
+  `render`, pas après un `act` qui les attend) : `findBy…` voit le rendu commis, l'effet passe dans une autre tâche de
+  l'ordonnanceur, et sous la charge la liste se lit sans lui → « UN TEST LISAIT SES RENDUS AVANT LEUR EFFET ».
 - **Un faux client APPLIQUE les filtres** qui décident de ce que l'écran voit (`src/test/filtresPostgrest.ts`, qui lève
   sur une forme inconnue), annonce un `count`, et se charge DANS la fabrique de `vi.mock`. Les jeux d'essai sont typés
   `Partial<T> => T`, sans `as`.
