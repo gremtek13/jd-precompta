@@ -229,11 +229,11 @@ export function ceQueDisentLesCases(
       + 'ou effacer un contact ; effacer en vide les données, et une facture garde la copie qu’elle en a prise.'
     : ''
   // L'import (étape A4b3a) : ce que la fonction fait — mille lignes au plus, d'un seul tenant, rien de rangé qui change —,
-  // et son écran, qui reste à venir.
+  // et son écran, « Importer des clients » (étape A4b3b), qui lit le fichier dans le navigateur sans le garder.
   const importContacts = avecLesContacts && importOuvert
-    ? ' Par la base, il peut aussi importer d’un coup la liste de clients de son ancien logiciel, mille lignes au plus, '
-      + 'd’un seul tenant : si une ligne est refusée, l’import entier l’est, et un contact déjà rangé n’est jamais '
-      + 'modifié ; l’écran de l’import viendra ensuite.'
+    ? ' Dans « Mes ventes › Clients » (« Importer des clients ») comme par la base, il peut aussi importer d’un coup la liste '
+      + 'de clients de son ancien logiciel, mille lignes au plus, d’un seul tenant : si une ligne est refusée, l’import entier '
+      + 'l’est, et un contact déjà rangé n’est jamais modifié ; le fichier est lu dans son navigateur et n’est pas gardé.'
     : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque

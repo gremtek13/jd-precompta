@@ -520,9 +520,11 @@ describe('ce que disent les cases, l’import des contacts ouvert (étape A4b3a)
       expect(ajout).toContain(`, ${BORNES_EN_LETTRES[LIGNES_PAR_IMPORT_MAX]} lignes au plus, `)
       expect(ajout).toContain('d’un seul tenant : si une ligne est refusée, l’import entier l’est')
       expect(ajout).toContain('un contact déjà rangé n’est jamais modifié')
-      // L'écran de l'import n'existe pas encore (étape A4b3b) : la phrase le dit à venir, dans la phrase de l'import ; la fin
-      // de la phrase entière ne change pas (l'égalité plus haut).
-      expect(ajout.endsWith(' l’écran de l’import viendra ensuite.')).toBe(true)
+      // L'écran de l'import existe (étape A4b3b) : la phrase dit où, et que le fichier n'est pas gardé ; la fin de la phrase
+      // entière ne change pas (l'égalité plus haut).
+      expect(ajout.startsWith(' Dans « Mes ventes › Clients » (« Importer des clients ») comme par la base,')).toBe(true)
+      expect(ajout.endsWith(' le fichier est lu dans son navigateur et n’est pas gardé.')).toBe(true)
+      expect(ajout).not.toMatch(/viendr|ensuite/)
       // Aucun mot que le garde des écrans tient pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
       expect(ajout).not.toMatch(/\b(aucun|aucune|rien)\b/i)
       // « Clients » n'y est suivi d'aucun « à venir » : l'écran des clients existe (étape A4b1).

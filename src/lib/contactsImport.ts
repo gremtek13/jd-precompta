@@ -178,6 +178,17 @@ export function refusImportContacts(
 }
 
 /**
+ * Le refus que la base opposerait au SEUL nombre de lignes d'un import — aucune, ou plus de `LIGNES_PAR_IMPORT_MAX` —, ou
+ * null : celui de `refusImportContacts` sur un tableau de cette longueur (ajouté pour l'écran, étape A4b3b, qui le dit avant
+ * tout aperçu, sans construire les lignes d'un fichier trop long).
+ */
+export function refusDuNombreDeLignes(nombre: number): RefusImportContacts | null {
+  if (nombre === 0) return refusDeLImport('vide')
+  if (nombre > LIGNES_PAR_IMPORT_MAX) return refusDeLImport('trop_de_lignes', String(nombre))
+  return null
+}
+
+/**
  * Pour l'aperçu de l'écran (étape A4b3b) : chaque ligne avec le refus que la base lui opposerait si les lignes qui la
  * précèdent ET qu'elle accepterait étaient rangées — une ligne refusée ne compte pas pour les suivantes, comme si on
  * l'ôtait du fichier. Le premier refus de la liste est celui de l'import (`refusImportContacts`) ; les suivants disent ce

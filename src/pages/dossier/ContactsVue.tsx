@@ -7,21 +7,24 @@ import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace } from '../../lib/espaceVentes'
 import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
 import { nomDansUnRefus } from '../../lib/articles'
-import { saisieQuiPart, type SaisieContact } from '../../lib/contacts'
+import { saisieQuiPart, type ContactEnvoye, type SaisieContact } from '../../lib/contacts'
+import { IMPORT_CONTACTS_EXPORTE, refusImportContacts } from '../../lib/contactsImport'
 import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
-import { effacerContact, enregistrerContact, reprendreContact, retirerContact } from '../../lib/contactsEcriture'
+import { effacerContact, enregistrerContact, importerContacts, reprendreContact, retirerContact } from '../../lib/contactsEcriture'
 import {
   LIBELLES_TYPE_CONTACT, champsDeRechercheContact, confirmationDeLEffacement, contactsAffichables, contactsAffiches, delaiAffiche,
   gestesDuContact, identifiantAffiche, infoDesSoins, mentionContactParLeClient, refusDeLaSaisieContact, signalementDesSoins,
 } from '../../lib/contactsVue'
 import type { ArticleExoneration, Contact } from '../../lib/types'
 import ContactSaisieModal from './ContactSaisieModal'
+import ContactsImportModal from './ContactsImportModal'
 
 // « CLIENTS » (espace client, étape A4b1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE
 // PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4) : le fichier des clients du client — la liste et ses gestes (nouveau client,
 // modifier, retirer, reprendre, effacer). La vue « Clients » de l'onglet Factures, à côté de « Factures », « Règlements » et
 // « Articles » : au cabinet dans l'onglet, au client « Ventes » dans « Mes ventes ». Le choix d'un client dans le formulaire d'une
-// facture (étape A4b2), l'import d'un fichier et les clients sans activité depuis trois ans (étape A4b3) ne sont pas d'ici.
+// facture (étape A4b2), l'export d'une fiche et les clients sans activité depuis trois ans ne sont pas d'ici ; l'import d'un
+// fichier (étape A4b3b, `ContactsImportModal`) s'ouvre d'ici, sous le même verrou que les quatre gestes.
 //
 // QUI ÉCRIT : le cabinet ET le client « Ventes », par les mêmes fonctions de la base (MEG1-Q1) ; ce que chacune refuserait est
 // dit avant le clic par le module `lib/contacts.ts`, et la base juge encore — son refus se dit sous ses mots. Le client répond
@@ -32,7 +35,7 @@ import ContactSaisieModal from './ContactSaisieModal'
 // se dit que d'une liste lue en entier ; lue en partie, la liste porte son bandeau et AUCUN geste (l'unicité d'un SIRET ne se
 // juge pas sur des contacts qu'on n'a pas lus). Un contact effacé est LU et ne se MONTRE jamais.
 //
-// UN SEUL VERROU POUR LES QUATRE GESTES (`gesteEnCours`, un `useRef` posé AVANT le `try`) : relâché dans le `finally`, APRÈS la
+// UN SEUL VERROU POUR LES QUATRE GESTES ET L'IMPORT (`gesteEnCours`, un `useRef` posé AVANT le `try`) : relâché dans le `finally`, APRÈS la
 // relecture de la liste — un second clic pendant qu'elle court écrirait sur ce que la liste montrait avant —, relue aussi sur
 // un refus, pour que la liste dise ce que la base a gardé.
 type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client' }
@@ -61,6 +64,8 @@ export default function ContactsVue(props: Props) {
   const [fenetre, setFenetre] = useState<{ contact: Contact | null } | null>(null)
   // L'effacement proposé : le contact tel que la liste l'a lu, que la confirmation nomme.
   const [aEffacer, setAEffacer] = useState<Contact | null>(null)
+  // La fenêtre « Importer des clients » est ouverte.
+  const [importOuvert, setImportOuvert] = useState(false)
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -180,6 +185,26 @@ export default function ContactsVue(props: Props) {
     if (efface) setAEffacer(null)
   }
 
+  async function importer(envoyees: ContactEnvoye[]) {
+    // Seconde ceinture : le bouton n'est offert que sur un aperçu sans aucun refus.
+    const refus = refusImportContacts(dossierId, articleExoneration, envoyees, contacts)
+    if (refus) {
+      setErreur(dire(refus.message))
+      return
+    }
+    const fait = await sousVerrou('L’import n’a pas pu se faire.', async () => {
+      const ids = await importerContacts(dossierId, envoyees)
+      return ids.length > 1 ? `${ids.length} clients importés.` : `${ids.length} client importé.`
+    })
+    if (fait) setImportOuvert(false)
+  }
+
+  function ouvrirLImport() {
+    setErreur(null)
+    setMessage(null)
+    setImportOuvert(true)
+  }
+
   function ouvrir(contact: Contact | null) {
     setErreur(null)
     setMessage(null)
@@ -230,16 +255,23 @@ export default function ContactsVue(props: Props) {
           Retirés
         </label>
         {peutEcrire && (
-          <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => ouvrir(null)}>
-            + Nouveau client
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {IMPORT_CONTACTS_EXPORTE && (
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={ouvrirLImport}>
+                Importer des clients
+              </button>
+            )}
+            <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={() => ouvrir(null)}>
+              + Nouveau client
+            </button>
+          </div>
         )}
       </div>
       <p className="muted" style={{ margin: '-8px 0 14px', fontSize: '0.82rem' }}>
         Sans « Retirés », les clients retirés ne se montrent pas ; ils gardent leur SIRET.
       </p>
 
-      {!fenetre && !aEffacer && erreur && <p className="error-text" role="alert">{erreur}</p>}
+      {!fenetre && !aEffacer && !importOuvert && erreur && <p className="error-text" role="alert">{erreur}</p>}
       {message && <p role="status">{message}</p>}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
@@ -335,6 +367,19 @@ export default function ContactsVue(props: Props) {
           erreur={erreur}
           onEnregistrer={(saisie) => enregistrer(saisie, fenetre.contact)}
           onClose={() => setFenetre(null)}
+        />
+      )}
+
+      {importOuvert && peutEcrire && IMPORT_CONTACTS_EXPORTE && (
+        <ContactsImportModal
+          dossierId={dossierId}
+          espace={espace}
+          articleExoneration={articleExoneration}
+          contacts={contacts}
+          occupe={occupe}
+          erreur={erreur}
+          onImporter={importer}
+          onClose={() => setImportOuvert(false)}
         />
       )}
 

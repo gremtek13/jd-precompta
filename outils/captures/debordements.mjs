@@ -940,6 +940,37 @@ const VISITES = [
       await page.getByRole('heading', { name: 'Nouvel article' }).waitFor({ timeout: 10000 })
     },
   },
+  // « IMPORTER DES CLIENTS » (espace client, étape A4b3b), sur l'atelier (d7) : la fenêtre ouverte, avant tout fichier ; un fichier
+  // dont deux colonnes restent à choisir et dont la colonne du type porte une valeur non reconnue (l'aperçu attend) ; un fichier
+  // dont des lignes sont refusées (le SIRET d'un client déjà rangé, une adresse absente, un délai en mots, un nom très long) ; un
+  // fichier prêt. Les fichiers sont FICTIFS et donnés à la page par Playwright : rien ne part, la fenêtre ne fait que lire.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-import', fenetre: FENETRE_FACTURE,
+    apres: async (page) => { await ouvrirLImport(page, null) },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-import-correspondance', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_CORRESPONDANCE)
+      await page.getByText(/^L’aperçu attend : les colonnes/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-import-refus', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_REFUS)
+      await page.locator('#contacts-import-type-unique').selectOption('assujetti')
+      await page.getByText(/^Ligne 1 : Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-import-prêt', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_PRET)
+      await page.locator('#contacts-import-type-unique').selectOption('assujetti')
+      await page.getByRole('button', { name: 'Importer 3 clients', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -1289,6 +1320,34 @@ const VISITES_CLIENT = [
       await page.getByRole('heading', { name: 'Nouvel article' }).waitFor({ timeout: 10000 })
     },
   },
+  // « Importer des clients » (étape A4b3b), aux mots du client : la fenêtre, la correspondance, les refus, l'aperçu prêt.
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-import', fenetre: FENETRE_FACTURE,
+    apres: async (page) => { await ouvrirLImport(page, null) },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-import-correspondance', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_CORRESPONDANCE)
+      await page.getByText(/^L’aperçu attend : les colonnes/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-import-refus', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_REFUS)
+      await page.locator('#contacts-import-type-unique').selectOption('assujetti')
+      await page.getByText(/^Ligne 1 : Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-import-prêt', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await ouvrirLImport(page, IMPORT_PRET)
+      await page.locator('#contacts-import-type-unique').selectOption('assujetti')
+      await page.getByRole('button', { name: 'Importer 3 clients', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 // « Ma banque » (espace client, étape P9), pour la seule passe `client-banque` : le relevé, puis le détail d'un mouvement
@@ -1362,6 +1421,32 @@ async function choisirUnClient(page, nom) {
   await page.getByRole('button', { name: 'Choisir un client', exact: true }).click()
   await page.getByRole('dialog', { name: 'Choisir un client' }).getByRole('button', { name: nom }).click()
 }
+
+// « Importer des clients » (étape A4b3b) : la vue « Clients », la fenêtre, et un fichier FICTIF donné à la page, ou aucun.
+async function ouvrirLImport(page, texte) {
+  await fermerLesFenetres(page)
+  await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+  await page.getByRole('button', { name: 'Importer des clients', exact: true }).click()
+  await page.getByRole('heading', { name: 'Importer des clients' }).waitFor({ timeout: 10000 })
+  if (texte == null) return
+  await page.locator('#contacts-import-fichier').setInputFiles({ name: 'clients.csv', mimeType: 'text/csv', buffer: Buffer.from(texte, 'utf8') })
+  await page.getByRole('table', { name: 'Colonnes du fichier' }).waitFor({ timeout: 10000 })
+}
+
+// Les trois fichiers de l'import, FICTIFS : des noms longs pour le passage à la ligne, des identifiants des essais du dépôt.
+const IMPORT_CORRESPONDANCE = 'Nom;Type;Adresse;SIREN;SIRET;Téléphone portable du contact principal;Courriel de facturation\n'
+  + 'Société Bêta Ingénierie;une entreprise établie en France;3 rue des Essais, 13999 Démoville;;;06 00 00 00 00;compta@beta.example\n'
+  + 'Établissement public fictif de coopération intercommunale, nom volontairement long;Collectivité;Hôtel de la communauté;;;;\n'
+  + 'Association Gamma;Particulier;1 place Fictive;987654324;;;\n'
+const IMPORT_REFUS = 'Nom;Adresse;SIREN;SIRET;E-mail;Délai\n'
+  + 'Doublon fictif de la société Alpha;Zone d’activité des Essais;123456782;12345678200010;;30\n'
+  + 'Client sans adresse;;;;;\n'
+  + 'Client au délai écrit en mots, nom volontairement long pour éprouver le passage à la ligne de l’aperçu;Rue Fictive;;;;trente jours\n'
+  + 'Client prêt;Rue Fictive;;;client.pret@exemple.example;45\n'
+const IMPORT_PRET = 'Nom;Adresse;SIREN;SIRET;E-mail;Délai;Observations\n'
+  + 'Société Delta Services, nom volontairement long pour éprouver le passage à la ligne de l’aperçu;4 rue Fictive, 13999 Démoville;;;delta@exemple.example;30;Relance au trentième jour\n'
+  + 'Société Epsilon;5 rue Fictive;;;;0;\n'
+  + 'Société Zêta;6 rue Fictive;;;;60;\n'
 
 // Une ligne du formulaire de facture : la page porte, derrière lui, le tableau des factures, dont les lignes sont aussi des `tr`.
 function ligneDuFormulaire(page, n) {
