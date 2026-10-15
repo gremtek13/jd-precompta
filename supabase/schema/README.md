@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 126 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -292,6 +292,19 @@ avait relevé sur sa réplique après la migration : les neuf familles changent.
 `supabase/essais/etatFactureElectronique.sql`, rejoué en production sans ses lignes de commentaire (65 027 caractères,
 reçus tels quels), rend ses 129 verdicts justes, mutations comprises, et rien n'est resté en base ; `rls.sql`, sa copie
 adaptée (63 449 caractères, `990deaf1…`), 35 lignes, 0 en faute, 35 mutations sur 35.
+
+**Rejoué le 15/10/2026 après `contacts`** (espace client, étape A4a), appliquée par la session sous la version
+`20261015070431` sur l'accord du cabinet (A4-Q6), sans confirmation demandée (aucune suppression), AVANT la mise en
+ligne de la bascule qui la lit ; son fichier a quitté la version PROVISOIRE `20261015090000` pour celle-ci, texte
+inchangé (34 682 caractères, empreinte `c3e40fea599d388822fe457b73955b6a`, celle que rend sa ligne d'historique) :
+134 fichiers, 134 migrations, empreinte globale `c9cda2ac36b708e6996da2d527e2a240` des deux côtés, aucune divergence. Le
+socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 2 015 objets, `5f618670d9c591b1cce51e23533903ef`
+des deux côtés — la table `contacts`, ses vingt et une colonnes, ses vingt-deux contraintes, ses trois policies, sa RLS
+et ses quatre fonctions en plus. `signature.sql` rend en production ce que l'étape avait relevé sur sa réplique après la
+migration : huit familles changent, pas les déclencheurs. L'essai `supabase/essais/contacts.sql`, rejoué en production
+sans ses lignes de commentaire (86 512 caractères, reçus tels quels), rend ses 224 verdicts justes, mutations comprises,
+et rien n'est resté en base ; `rls.sql`, sa copie adaptée (65 724 caractères, `0705e4a7…`), 35 lignes, 0 en faute, 37
+mutations sur 37.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

@@ -228,6 +228,16 @@
 -- lignes, dont les trois adresses en trois vagues), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
 -- colonne générée justes. Planté — les adresses ancrées avant le dossier —, le script s'arrête sur leur clé (23503).
 -- Sur une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier (135 clés, 71 tables IDENTIQUES).
+--
+-- 15/10/2026, espace client, étape A4a (migration `contacts`, préparée, non appliquée) : `contacts` entre au plan par son
+-- bloc à part dès que sa table existe (79 tables, 82 avec les devis), juste avant `exercices_valides` — après les adresses
+-- de réception, avant les devis —, sans vague ; seuls les rangs des devis et d'`exercices_valides` changent. Rejoué sur la
+-- réplique de l'étape, égale à la production à 133 migrations plus celle-ci (signature.sql, neuf familles, et
+-- l'historique), le dossier `test` portant quatre contacts rangés par leurs fonctions (une entreprise modifiée, un
+-- particulier retiré, un organisme public, un contact effacé) : 138 clés recopiées, 73 tables restaurées et IDENTIQUES à
+-- la source (70 lignes, dont les quatre contacts), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
+-- colonne générée justes. Planté — les contacts ancrés avant le dossier —, le script s'arrête sur leur clé (23503). Sur
+-- une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier (137 clés, 72 tables IDENTIQUES).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -348,6 +358,23 @@ begin
      ('adresses_reception','direct',null,null);
     insert into essai_restauration._vagues (table_nom, colonne) values
      ('adresses_reception','remplace_id');
+  end if;
+end $$;
+
+-- ══ Les contacts (espace client, étape A4a) ══ Au plan du code quand `CONTACTS_EXPORTES` est levé — c'est-à-dire quand
+-- leur migration est en base : le script les y met dès que leur table existe, juste avant `exercices_valides`
+-- (ORDRE_RESTAURATION_PREVU : après les adresses de réception, que leur bloc vient d'y mettre, avant les devis, que leur
+-- bloc met ensuite au même endroit), `exercices_valides` reculant d'un rang ; leur chemin. Aucune vague : un contact ne
+-- pointe aucun contact. Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte
+-- ce bloc au plan prévu du code.
+do $$
+begin
+  if to_regclass('public.contacts') is not null then
+    update essai_restauration._ordre set rang = rang + 1 where table_nom = 'exercices_valides';
+    insert into essai_restauration._ordre (rang, table_nom)
+      select o.rang - 1, 'contacts' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('contacts','direct',null,null);
   end if;
 end $$;
 

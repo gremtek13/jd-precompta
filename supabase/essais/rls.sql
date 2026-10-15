@@ -34,6 +34,7 @@
 --      Les articles (espace client, étape A1) aussi, dès la leur, avec une mutation à eux (M3bis-membre (articles)).
 --      Les adresses de réception (espace client, étape A6a) aussi, dès la leur, avec une mutation à elles
 --      (M3bis-membre (adresses de réception)).
+--      Les contacts (espace client, étape A4a) aussi, dès la leur, avec une mutation à eux (M3bis-membre (contacts)).
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -409,6 +410,25 @@
 -- des blancs reçus tels quels) y rend 35 lignes, 0 en faute, 35 mutations sur 35 (78 tables, dont 69 portant un
 -- `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (adresses de réception) voit les deux adresses du
 -- jeu). `etatFactureElectronique.sql` y rend ses 129 verdicts, 0 en faute.
+--
+-- 15/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape A4a : migration `contacts`, préparée, présentée
+-- au cabinet, non appliquée), qui crée `contacts` — lecture du cabinet (`admin_du_dossier`), lecture du droit « Ventes »
+-- (`contacts_lecture_ventes`), insertion de restauration réservée au super-administrateur, aucune autre policy ; quatre
+-- fonctions l'écrivent, dont l'effacement. Le bloc « Les ventes du client » la prend dès qu'elle existe (3bis, 4bis,
+-- M4bis, et une mutation à elle, M3bis-membre (contacts)) ; avant, une ligne « EN ATTENTE ». Joué ENTIER par psql sur la
+-- réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la production à 133 migrations) : sans
+-- la migration, 36 lignes de verdict (78 tables, dont 69 portant un `dossier_id`), 0 en faute, 35 mutations sur 35 qui
+-- mordent ; avec elle, 35 lignes (79 tables, dont 70 portant un `dossier_id` ; 3bis sur douze tables des ventes, 4bis sur
+-- dix-huit écritures directes), 0 en faute, 37 mutations sur 37 (M3bis-membre (contacts) voit les deux contacts du jeu).
+-- Ce que les fonctions refusent et acceptent, profil par profil et par leur raison, est éprouvé par `contacts.sql`. Le
+-- passage en production suivra l'application et se notera ici.
+--
+-- 15/10/2026 — LA MIGRATION APPLIQUÉE EN PRODUCTION, `contacts` (`20261015070431`, sur l'accord du cabinet, A4-Q6) :
+-- 134 migrations ; la signature de la production (signature.sql : huit familles changent, pas les déclencheurs) est
+-- celle de la réplique migrée. La copie adaptée (65 724 caractères, `0705e4a7…`, ce que rend la ligne TEXTE — les
+-- échappements de la classe des blancs reçus tels quels) y rend 35 lignes, 0 en faute, 37 mutations sur 37 (79 tables,
+-- dont 70 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (contacts) voit les deux
+-- contacts du jeu). `contacts.sql` y rend ses 224 verdicts, 0 en faute.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1294,6 +1314,14 @@ end $$;
 -- l'essai, super-administrateur, fait passer l'insertion de M4bis par la policy de la restauration. Une mutation à elle,
 -- M3bis-membre (adresses de réception), compte ce que le client sans droit voit de CETTE table quand sa policy passe à
 -- « membre ». Avant la migration, une ligne dit que les adresses de réception attendent.
+-- LES CONTACTS (étape A4a) rejoignent ce domaine dès que la migration `contacts` est en base (son témoin : la table
+-- `contacts`) : la table entre dans la liste attendue ; le jeu d'essai y range deux contacts du dossier du client, par leur
+-- fonction et sous le chef — deux entreprises, que la règle des soins admet quel que soit le statut du dossier —, dont un
+-- retiré (le client qui porte « Ventes » lit aussi les retirés) ; 4bis y tente l'insertion directe d'un contact valide et
+-- une mise à jour. Le cabinet n'a AUCUNE policy d'écriture sur cette table : le chef de l'essai, super-administrateur, fait
+-- passer l'insertion de M4bis par la policy de la restauration. Une mutation à elle, M3bis-membre (contacts), compte ce
+-- que le client sans droit voit de CETTE table quand sa policy passe à « membre ». Avant la migration, une ligne dit que
+-- les contacts attendent.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -1329,6 +1357,8 @@ declare
   -- mutation à part voit de la table.
   adr uuid; siren_du_client text; ecritures_adresses jsonb := '[]'::jsonb; mises_a_jour_adresses jsonb := '[]'::jsonb;
   adresses_membre bigint;
+  -- Les contacts (étape A4a) : celui du jeu, ce que 4bis tentera, et ce que la mutation à part voit de la table.
+  ct uuid; ecritures_contacts jsonb := '[]'::jsonb; mises_a_jour_contacts jsonb := '[]'::jsonb; contacts_membre bigint;
 begin
   if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                   and not attisdropped) then
@@ -1357,6 +1387,13 @@ begin
   else
     insert into rls_verdict values ('3bis et 4bis. les adresses de réception : EN ATTENTE de la migration adresses_reception',
       'public.adresses_reception', 'absente : les adresses de réception se jugent avec les ventes dès que la migration y est', true);
+  end if;
+  -- Les contacts (étape A4a), dès que leur migration est en base ; avant, une ligne le dit.
+  if to_regclass('public.contacts') is not null then
+    attendues := array(select x from unnest(attendues || array['contacts']) x order by 1);
+  else
+    insert into rls_verdict values ('3bis et 4bis. les contacts : EN ATTENTE de la migration contacts',
+      'public.contacts', 'absente : les contacts se jugent avec les ventes dès que la migration y est', true);
   end if;
   -- Le catalogue, tel qu'il est.
   execute catalogue_sql into tables_ventes, hors_lecture;
@@ -1458,6 +1495,24 @@ begin
       mises_a_jour_adresses := jsonb_build_array(
         jsonb_build_object('nom', 'adresses_reception', 'ordre', format('update adresses_reception set plateforme = plateforme where dossier_id = %L', dossier_du_client)));
     end if;
+    -- Les contacts (étape A4a) : deux entreprises du dossier du client, rangées par le chef par leur fonction, dont une
+    -- retirée — sans SIRET, qu'aucun contact du dossier ne leur dispute.
+    if to_regclass('public.contacts') is not null then
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select c.id into ct from enregistrer_contact(dossier_du_client, null,
+        '{"nom":"ESSAI RLS","type_client":"assujetti","adresse":"Adresse fictive"}'::jsonb) c;
+      perform retirer_contact(dossier_du_client, ct);
+      perform enregistrer_contact(dossier_du_client, null,
+        '{"nom":"ESSAI RLS 2","type_client":"assujetti","adresse":"Adresse fictive","delai_paiement_jours":30}'::jsonb);
+      reset role;
+      -- Ce que 4bis tentera : un contact valide, que les contraintes de la table laissent passer, et une mise à jour.
+      ecritures_contacts := jsonb_build_array(
+        jsonb_build_object('nom', 'contacts', 'ordre', format('insert into contacts (dossier_id, nom, type_client, adresse) values (%L, %L, %L, %L)',
+          dossier_du_client, 'ESSAI RLS 4bis', 'assujetti', 'Adresse fictive')));
+      mises_a_jour_contacts := jsonb_build_array(
+        jsonb_build_object('nom', 'contacts', 'ordre', format('update contacts set nom = nom where dossier_id = %L', dossier_du_client)));
+    end if;
     construit := true;
 
     -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
@@ -1511,6 +1566,8 @@ begin
       select d.nom, d.ordre from jsonb_to_recordset(ecritures_articles) as d(nom text, ordre text)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(ecritures_adresses) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(ecritures_contacts) as d(nom text, ordre text)
     loop
       -- Sous le client portant les deux droits : refusé par la RLS, nommément.
       accepte := false; motif := null;
@@ -1552,6 +1609,8 @@ begin
       select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_articles) as d(nom text, ordre text)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_adresses) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_contacts) as d(nom text, ordre text)
     loop
       touchees := -1; motif := null;
       begin
@@ -1588,6 +1647,8 @@ begin
         if t = 'articles' then articles_membre := vus; end if;
         -- Les adresses de réception (étape A6a) aussi.
         if t = 'adresses_reception' then adresses_membre := vus; end if;
+        -- Les contacts (étape A4a) aussi.
+        if t = 'contacts' then contacts_membre := vus; end if;
       end loop;
       raise exception 'ANNULATION_ESSAI';
     exception when sqlstate 'P0001' then null;
@@ -1600,6 +1661,10 @@ begin
     if to_regclass('public.adresses_reception') is not null then
       mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre (adresses de réception) — 3bis sans droit, la policy des adresses sur « membre »',
         'attendu', 'des adresses vues', 'observe', coalesce(adresses_membre::text, '?') || ' adresse(s) vue(s)', 'mord', coalesce(adresses_membre > 0, false));
+    end if;
+    if to_regclass('public.contacts') is not null then
+      mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre (contacts) — 3bis sans droit, la policy des contacts sur « membre »',
+        'attendu', 'des contacts vus', 'observe', coalesce(contacts_membre::text, '?') || ' contact(s) vu(s)', 'mord', coalesce(contacts_membre > 0, false));
     end if;
     mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre — 3bis sans droit, les policies sur « membre »',
       'attendu', 'des lignes vues', 'observe', total || ' ligne(s) vue(s)', 'mord', total > 0);

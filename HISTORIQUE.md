@@ -24450,8 +24450,139 @@ rejoué par la session sur l'arbre intégré : 0 débordement et 0 bouton recouv
 cabinet, à 390 et à 720 px ; 80 dans 18 chez le client, à 390 px, avec et sans « Banque ». Dans la même demande, la mise
 en ligne d'A6b2 et les réponses du cabinet à A6B2-Q1 à Q5.
 
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #170 (`58a17bc`) vers 0 h 25 à Paris, quand `verifier` a été vert sur
+ses deux passes ; le site sert `index-CjpFe_PJ.js`, le paquet de la barrière et celui d'avant — rien dans `src/` n'a
+changé (déploiement 38647851996) ; `main` reste linéaire, la branche réalignée. La feuille de route : la ligne 34.93
+fermée — « Fait », phase « 0 — Livré », retitrée « Sur téléphone, la barre du bas ne recouvre pas les boutons d'une
+fenêtre (mesuré) » ; son texte dit le résultat négatif, la lecture fausse de la session et le point NON VÉRIFIÉ de
+l'iPhone, et le texte ENVOYÉ comme la page RELUE sont égaux au fichier préparé, caractère pour caractère. Les barres
+recomptées par requête : 140 chantiers livrés sur 183 (77 %) ; pour un dossier BNC, 140 sur 170 (82 %). Le worktree de
+l'agent retiré (son diff identique au correctif livré, comparé par `git -C`), comme celui de l'intégration.
+
 **RESTE.** La ligne 34.93 se ferme sur la mesure : aucun correctif, la mesure reste au banc. NON VÉRIFIÉ : l'iPhone — le
 banc n'a que Chromium ; la question est posée au cabinet (dans Safari, et non dans l'application installée, les boutons
 du bas d'une longue fenêtre s'atteignent-ils ?). L'hypothèse la plus plausible d'un défaut de WebKit est la hauteur `vh`
 des cartes contre le voile, et son remède une classe commune de voile et de carte (`dvh`), une étape de `dev`, seulement
 si l'iPhone la confirme. Les fenêtres que le banc n'ouvre pas (une dizaine) ne sont pas sondées.
+
+### 15/10/2026 — LES CONTACTS, EN BASE — ESPACE CLIENT, ÉTAPE A4a (LIGNE 51.5)
+
+(La migration `contacts`, préparée sous la version PROVISOIRE `20261015090000`, présentée au cabinet, puis appliquée sur
+son accord (A4-Q6) sous la version `20261015070431` : elle ouvre au client qui porte la case « Ventes » la lecture du
+fichier des clients de son dossier et quatre fonctions, dont l'effacement. Préparée par l'agent S239 sur `58a17bc`.
+Fichiers : `src/lib/contacts.ts`, son test, `src/test/contacts.ts`, `src/lib/sauvegardeContacts.test.ts`,
+`supabase/essais/contacts.sql` (nouveaux) ; `src/lib/types.ts`, `src/lib/sauvegarde.ts`, `src/lib/droitsAcces.ts`,
+`supabase/essais/rls.sql`, `supabase/essais/restauration.sql`, `RGPD.md`, et les tests `droitsAcces.test.ts`,
+`sauvegardeDevis.test.ts`, `sauvegardeAdressesReception.test.ts`, `restaurationEssai.test.ts`,
+`AccesTab.casesOuvertes.test.tsx`. La bascule — le fichier dans l'export, le drapeau levé — part dans la même demande.)
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 15/10/2026 (133 migrations, la dernière `adresses_reception`,
+lecture seule du catalogue) : `gere_les_ventes` (le cabinet OU `client_du_dossier(…, 'ventes')`) ; les contraintes du
+client d'une facture — `type_client` NULLABLE dans les quatre valeurs, `tiers_siren_check` (neuf chiffres),
+`siret_du_siren` (si les deux sont donnés : quatorze chiffres, le SIREN en tête ; un SIRET SEUL n'est pas contrôlé),
+`adresse_electronique_check` (la forme large de l'annuaire), `adresse_electronique_routee` (entreprise ou organisme
+public), `code_service_check`, `organisme_public` — et aucune clé de Luhn en base : la facture ne les juge qu'avant sa
+transmission. Trois points de la conception (§A.4) ne tenaient pas, écrits corrigés et soumis au cabinet : (1) le code
+service n'est admis que pour un ORGANISME PUBLIC (la contrainte `organisme_public` de la facture), pas « pour une
+entreprise ou un organisme public » ; (2) `dossiers_article_exoneration_coherent` admet l'article des soins aussi pour
+un dossier REDEVABLE (une activité en partie exonérée) : la règle des soins suit l'ARTICLE, quel que soit le statut
+(A4-Q1) ; (3) « particulier » n'est pas un type : `non_assujetti` est « un particulier, ou un autre non-assujetti » —
+une association a un SIREN (A4-Q2) —, et un client établi hors de France peut en être un sans que rien ne le distingue
+(A4-Q3). Le délai : la conception le bornait à 60 jours « pour une entreprise » ; il l'est pour TOUS (A4-Q5).
+
+**LES SOURCES.** C. com., art. L441-10, I (soixante jours après l'émission ; la dérogation de quarante-cinq jours fin de
+mois, qu'un nombre de jours n'écrit pas), lu par le résumé de recherche de Légifrance — la fiche refuse l'outil (403) :
+la version du 26/04/2019 s'arrête au 01/01/2027, la suivante NON LUE ; code de la commande publique, art. R2192-10 et
+R2192-11 (trente, cinquante, soixante jours), même lecture ; le « valid e-mail address » du HTML Living Standard
+(WHATWG), et la RFC 5321, §4.5.3.1.3 (254 caractères) ; la clé de Luhn et la règle de La Poste, celles de
+`lib/factureCii.ts` (INSEE). Le RGPD (art. 6, 9, 17, 28) et le référentiel de la CNIL cités par la conception.
+
+**LA TABLE ET SES FONCTIONS.** `contacts` : vingt et une colonnes — `genre` (`client` seul, MEG1-Q9), `type_client` (les
+quatre de la facture, NOT NULL tant que le contact n'est pas effacé), `nom` (200) et `adresse` (1 000), non vides aux
+blancs `E' \t\n\r'` près, `siren`, `siret`, `adresse_electronique`, `code_service`, `email` (la forme du WHATWG, 254),
+`delai_paiement_jours` (0 à 60), `observations` (1 000), le retrait, l'effacement, la création, la modification (jour et
+auteur, sans clé vers les comptes). Les contraintes de la facture recopiées telles quelles, les noms de colonnes ôtés de
+`tiers_` ; l'unicité TOTALE `(dossier_id, siret)` (deux NULL ne se heurtent pas) ; retiré et effacé s'excluent ; un
+effacé ne garde que son nom « Contact effacé le … », son genre, ses auteurs et ses instants. Trois policies
+`to authenticated` : la lecture du cabinet, celle du droit « Ventes », l'insertion de restauration au
+super-administrateur ; aucune autre écriture. `enregistrer_contact` (douze rangs, vingt-sept messages : l'accès
+d'abord — `gere_les_ventes` et le dossier existe, 42501 pour tous —, puis un verrou consultatif par dossier, puis le
+contact du dossier, retiré, effacé, le nom puis l'adresse, le type, les identifiants dans l'ordre de la facture — ni
+SIREN ni SIRET hors de France, le SIREN et sa clé, le SIRET et sa clé, son SIREN, le SIRET pris NOMMÉ en 23505 —,
+l'adresse électronique puis le code service, l'e-mail, le délai, les observations, la règle des soins),
+`retirer_contact`, `reprendre_contact` (sous la règle des soins), `effacer_contact` (une MISE À JOUR : toutes les
+données vidées, le nom au jour de Paris, le retrait effacé) : SECURITY DEFINER, `search_path` fixé, l'exécution retirée
+à PUBLIC et `anon`. Aucune instruction qui retire quoi que ce soit : `apply_migration` la prend ; le retour arrière est
+à part. UN PIÈGE PLPGSQL : un `case … then … end` dans la condition d'un `if` coupe la condition au premier `then`
+(« syntax error at end of input ») — mis entre parenthèses.
+
+**LE MODULE, LE DRAPEAU, LA SAUVEGARDE, L'ONGLET ACCÈS.** `lib/contacts.ts` (pur) : les refus des quatre fonctions dans
+leur ordre et sous leurs mots, sur la saisie jugée après l'aller-retour JSON, comptée par point de code ; les formes et
+les clés EMPRUNTÉES (`sirenValide`, `siretValide`, les formes de `lib/mentionsFacture.ts`), jamais recopiées ; la règle
+des soins (`regleDesSoins`, que l'écran A4b lira pour A4-Q4) ; le nom d'un effacé ; la saisie telle qu'elle part (les
+blancs des bords retirés, ceux d'un identifiant tous, un champ que le type ne lui ouvre pas à nul, le délai en nombre).
+Son test lit l'essai, exige chaque refus d'un contrôle sous son code et ses mots, et REJOUE les 136 écritures jugées (0
+écart). `CONTACTS_EXPORTES`, baissé : la table déclarée au plan PRÉVU (sa relation, son rang après les adresses de
+réception, son chemin, aucune vague) et retirée tant qu'il l'est (`auPlanDesContacts`) ; `ceQueDisentLesCases` prend un
+cinquième paramètre, et la phrase dit, avec « Ventes », le fichier de ses clients, chaque colonne, les quatre gestes, ce
+que fait l'effacement, et l'écran « Mes ventes › Clients » à venir ; `restauration.sql` met la table au plan par un bloc
+à part dès qu'elle existe.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et l'historique) :
+l'essai `contacts.sql` (six dossiers jetables, dont un de soins exonéré, un redevable de soins, un exonéré d'un autre
+article et un qui passe aux soins en cours d'essai ; une facture BROUILLON au nom d'un contact, son empreinte inchangée
+par l'effacement), sans la migration 1 verdict « EN ATTENTE », avec 224 verdicts (209 justes + 15 mutations qui
+mordent), 0 en faute, vide et semée, rien resté en base, et sa copie sans commentaires jouée d'un seul tenant ; hors
+production : aucune suppression pour le chef ni le client « Ventes », la cascade du dossier, La Poste (SIREN réel,
+jamais en production), LA COURSE de deux écritures au même SIRET (la seconde attend le verrou, 1,6 s, puis nomme la
+première ; sans le verrou, le refus brut de l'unicité, rien de faux écrit) ; 66 mutations de la migration sur 66 vues
+(celle du jour de l'effacement pris à l'horloge de la base ne se voit qu'entre minuit et deux heures à Paris : le test
+du module lit le texte de la fonction) ; `rls.sql` ENTIER, 35 lignes, 0 en faute, 37 mutations sur 37 (sans la
+migration : 36, 0, 35 sur 35) ; la restauration, 138 clés, 73 tables IDENTIQUES dont quatre contacts (une entreprise
+modifiée, un particulier retiré, un organisme public, un effacé), et planté l'arrêt sur leur clé ; le retour arrière,
+les neuf familles revenues ; les trois contrôles de l'export à la version provisoire. Le code : 63 mutations ciblées,
+toutes mordent (deux après deux cas ajoutés : un SIRET au neuvième chiffre près, un domaine d'e-mail à tiret final) ; la
+suite entière, 375 fichiers, 11 217 tests ; la bascule en simulation — la suite entière verte au premier passage, les
+trois contrôles de l'export avec le fichier (134 = 134, socle inchangé, inventaire 2 015, +51), 14 mutations de la
+bascule sur 14.
+
+**LES QUESTIONS AU CABINET.** A4-Q6, l'accord pour appliquer ; MEG1-Q9 à Q11 prises comme hypothèses (les clients
+seulement ; un dossier de soins ne range aucun particulier ; le client répond des données de ses clients, un contact
+s'efface, la liste des inactifs depuis trois ans est un écran) ; A4-Q1, la règle des soins suit l'article, exonéré ou
+redevable ; A4-Q2, un particulier est un non-assujetti SANS SIREN ; A4-Q3, un client établi hors de France ne se range
+pas dans un dossier de soins ; A4-Q4, un contact rangé avant le passage aux soins reste, ne se modifie plus tel quel ni
+ne se reprend, l'écran proposera de l'effacer ; A4-Q5, le délai de 0 à 60 jours pour tous, « fin de mois » non écrit.
+Recommandations : oui à chacune. NON VÉRIFIÉ : la version de l'article L441-10 en vigueur au 01/01/2027.
+
+**LES RÉPONSES DU CABINET, LE 15/10/2026 (« comme recommandé »).** A4-Q6 : l'accord pour appliquer la migration. MEG1-Q9
+à Q11 et A4-Q1 à A4-Q5 : les recommandations retenues — les clients seulement ; un dossier de soins ne range aucun
+particulier ; le client répond des données de ses clients, un contact s'efface, la liste des inactifs depuis trois ans
+est un écran ; la règle des soins suit l'article, exonéré ou redevable ; un particulier est un non-assujetti sans
+SIREN ; un client établi hors de France ne se range pas dans un dossier de soins ; un contact rangé avant le passage aux
+soins reste, ne se modifie plus tel quel ni ne se reprend ; le délai de 0 à 60 jours pour tous, « fin de mois » non
+écrit. Rien ne change dans la migration, l'essai ni le module.
+
+**L'APPLICATION, LE 15/10/2026.** `apply_migration`, nom `contacts`, le texte du fichier tel quel : aucune confirmation
+demandée (aucune suppression) ; version `20261015070431`, 134 migrations, la ligne d'historique rend l'empreinte du
+fichier (34 682 caractères, `c3e40fea599d388822fe457b73955b6a`). Puis, en production : l'essai `contacts.sql` sans ses
+lignes de commentaire, d'un seul `execute_sql` (86 512 caractères reçus tels quels, `4efda3fb…`) — 224 verdicts, 209
+justes et 15 mutations qui mordent, 0 en faute, rien de resté en base (les six compteurs égaux avant et après) ;
+`signature.sql` — les huit familles qu'annonçait la réplique migrée (colonnes 827, contraintes 631, index 226, policies
+154, fonctions 165, droits des fonctions 165, RLS 79, droits des tables 79), les déclencheurs inchangés (54) ;
+`rls.sql`, sa copie adaptée (65 724 caractères, `0705e4a7…`, les dix échappements de la classe des blancs envoyés sous
+leur forme échappée et reçus tels quels) — 35 lignes, 0 en faute sur 385 vérifications, 37 mutations sur 37 (79 tables,
+dont 70 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (contacts) voit les deux contacts
+du jeu) ; les advisors — `authenticated_security_definer_function_executable` 50 (les quatre fonctions des contacts en
+plus), `anon_security_definer_function_executable` 5, rien d'autre de nouveau. Le fichier de la migration RENOMMÉ à sa
+version réelle, texte inchangé : les trois contrôles de l'export égaux des deux côtés — 134 = 134 (`c9cda2ac…`), socle
+78 (`91ae95ec…`), inventaire 2 015 (`5f618670…`).
+
+**L'INTÉGRATION, LE 15/10/2026.** Le correctif puis la bascule appliqués sur `58a17bc` : l'arbre obtenu (`507b4dd3…`)
+est celui que l'étape avait éprouvé ; puis le fichier renommé. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge
+25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 217 tests chacun ; construction verte
+(`index-DOhLMe2v.js`). Dans la même demande, la mise en ligne de la ligne 34.93 (S238) et les réponses du cabinet.
+
+**RESTE.** A4b : « Mes ventes › Clients » et la liste du cabinet, l'effacement confirmé, la liste des inactifs depuis
+trois ans, le libellé des observations (le client « Ventes » les lit), « Choisir un client » et « Enregistrer ce
+client » dans la facture, l'import CSV ; puis A5 (MEG1-Q12 à Q14), MEG1-Q5 et A7. NON VÉRIFIÉ : la version de l'article
+L441-10 du code de commerce en vigueur au 01/01/2027.

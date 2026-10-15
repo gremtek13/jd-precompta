@@ -12,6 +12,7 @@
 
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -62,11 +63,23 @@ export function auPlanDesAdressesReception(table: string, adressesExportees: boo
   return adressesExportees || !TABLES_DES_ADRESSES_RECEPTION.includes(table)
 }
 
+// LES CONTACTS (espace client, étape A4a ; migration `contacts`, présentée au cabinet et appliquée sur son accord) : le
+// patron des adresses de réception, sous leur propre drapeau (`CONTACTS_EXPORTES`, src/lib/contacts.ts), levé. Leur
+// table est déclarée ci-dessous à sa place — sa relation, son rang, son chemin ; aucune vague, un contact ne pointe aucun
+// contact — et serait RETIRÉE du plan le drapeau rebaissé (avant tout retour arrière de la migration) ;
+// sauvegardeContacts.test.ts éprouve le plan prévu et le plan du jour.
+export const TABLES_DES_CONTACTS: readonly string[] = ['contacts']
+
+/** Une table au plan, côté contacts : toutes, sauf la leur tant que sa migration n'est pas exportée. */
+export function auPlanDesContacts(table: string, contactsExportes: boolean): boolean {
+  return contactsExportes || !TABLES_DES_CONTACTS.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
- *  adresses de réception. */
+ *  adresses de réception, les contacts. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
-    && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES)
+    && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -218,10 +231,12 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // Les adresses de réception (espace client, étape A6a) : leur dossier, et la version qu'une adresse remplace.
   { enfant: 'adresses_reception', parent: 'adresses_reception', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'adresses_reception', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les contacts (espace client, étape A4a) : seulement leur dossier — une facture n'en garde que la copie.
+  { enfant: 'contacts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
-// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles ni des adresses de réception tant
-// que leurs migrations ne sont pas exportées.
+// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception ni des
+// contacts tant que leurs migrations ne sont pas exportées.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
@@ -357,6 +372,12 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // leur garde, à l'insertion, ne lit que la version remplacée — déjà écrite. Le jour où leur table existe, l'essai de
 // restauration les met à cette place : seuls les rangs des devis et d'`exercices_valides` changent.
 // `sauvegardeAdressesReception.test.ts` garde cet ordre.
+//
+// Les contacts (espace client, étape A4a) viennent après les adresses de réception, à la fin de ce qui ne dépend que du
+// dossier : leur seul parent est le dossier, rien ne les lit à l'insertion d'une autre ligne — une facture ne garde que la
+// COPIE de son client, sans clé vers lui —, aucune validation ne les fige ; un contact retiré ou effacé se réinsère tel
+// quel, par la policy du super-administrateur. Le jour où leur table existe, l'essai de restauration les met à cette place :
+// seuls les rangs des devis et d'`exercices_valides` changent. `sauvegardeContacts.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -435,14 +456,15 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'dossier_permanent',
   'pieces_jointes_ecartees',
   'adresses_reception',
+  'contacts',
   'devis_numerotation',
   'devis',
   'devis_factures',
   'exercices_valides',
 ]
 
-// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles ni des adresses de réception tant que
-// leurs migrations ne sont pas exportées.
+// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception ni des
+// contacts tant que leurs migrations ne sont pas exportées.
 export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
@@ -690,7 +712,7 @@ export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>>
 }
 
 // Les clés telles qu'elles s'appliquent AUJOURD'HUI : sans la série des devis tant que ses migrations ne sont pas exportées.
-// (Les articles ont la clé commune, `id` : ils n'ont pas de ligne ici.)
+// (Les articles ont la clé commune, `id` : ils n'ont pas de ligne ici ; les contacts non plus.)
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
   Object.entries(CLES_PRIMAIRES_PREVUES).filter(([table]) => auPlanAujourdHui(table)),
 )
@@ -923,10 +945,11 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   pieces_jointes_ecartees: { acces: 'direct' },
   articles: { acces: 'direct' },
   adresses_reception: { acces: 'direct' },
+  contacts: { acces: 'direct' },
 }
 
-// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles ni des adresses de réception
-// tant que leurs migrations ne sont pas exportées.
+// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception ni
+// des contacts tant que leurs migrations ne sont pas exportées.
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
   Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlanAujourdHui(table)),
 )

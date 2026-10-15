@@ -31,6 +31,13 @@ le relevé SNIR, sans identité de patient, qui justifie les recettes auprès de
 bordereau y est déposé par erreur. Il n'a alors aucun compte, aucun écran, aucun moyen de savoir que
 ses données sont là. Voir §6 et §8.7.
 
+Un quatrième acteur est entré avec le fichier des clients du client (espace client, étape A4a,
+appliquée sur l'accord du cabinet) : **les clients et les prospects du client**. La configuration
+écrite pour les devis (§8.9) s'y étend — le client est responsable des données de SES clients, le
+cabinet, qui lui fournit l'outil et agit pour lui, son sous-traitant (art. 28), l'éditeur un
+sous-traitant ultérieur ; la clause tient dans la lettre de mission (hypothèse MEG1-Q11, question
+au cabinet). Voir §6 et §8.7.
+
 ---
 
 ## 2. Registre des traitements
@@ -62,6 +69,7 @@ ses données sont là. Voir §6 et §8.7.
 | **Devis** *(préparés le 10/10/2026, espace client P5 — deux migrations présentées au cabinet, NON APPLIQUÉES ; aucun écran encore)* | Établir, émettre et suivre les devis que le client adresse à SES clients — par le cabinet, ou par le client qui porte le droit « Ventes » —, enregistrer leur réponse, et tirer la facture d'un devis accepté | Pour le client : l'exécution de mesures précontractuelles prises à la demande de son propre client (RGPD, art. 6, 1, b) ; pour le cabinet : l'exécution du contrat de mission — la qualification de chacun est une question au cabinet (§8.9) | Client ; les clients du client — le destinataire de chaque devis, une personne physique quand c'est un particulier ; membres du cabinet et client (auteurs) | `devis` : le destinataire (nom, adresse, SIRET, e-mail) et ses mentions (SIREN, adresse de facturation électronique, code service et numéro d'engagement d'un organisme public, nature des opérations, date ou période d'exécution PRÉVUE, adresse de livraison), l'objet, les lignes (désignation, quantité, prix, taux), les montants, les conditions, les mentions légales, des notes PARTAGÉES — le client qui porte « Ventes » les lit comme le cabinet —, l'émetteur figé à l'émission, le numéro, les dates (du devis, de validité, de la réponse), la réponse, et qui a créé, émis, répondu (identifiants des comptes, horodatages) ; `devis_factures` : le lien d'un devis accepté à la facture qui en est tirée, et qui l'a tirée ; `devis_numerotation` : le dernier numéro de la série, par année. Lus par le cabinet du dossier et par l'accès qui porte « Ventes » ; écrits par quatre fonctions seules. Aucune donnée de patient : l'information écrite préalable d'un professionnel de santé n'est pas un devis de l'application (§8.7, §8.9). Durée de conservation : question au cabinet (§8.9) |
 | **Catalogue d'articles** *(en base, espace client A1 — migration `articles`, présentée au cabinet et appliquée sur son accord ; à l'écran depuis A2a : la vue « Articles » de l'onglet Factures et de « Mes ventes », la liste et ses gestes ; depuis A2b, le choix d'un article dans le formulaire d'une facture)* | Pré-remplir les lignes des factures du client à partir d'un catalogue qu'il tient avec le cabinet | Exécution du contrat de mission | Client ; membres du cabinet et client (auteurs) | `articles` range, par dossier, une désignation et sa description, une référence, une unité, un prix hors taxes, un taux de TVA et une nature — aucune donnée personnelle attendue, hors l'identifiant du compte qui a créé, changé ou retiré chaque article — ; le cabinet du dossier et l'accès client qui porte « Ventes » la lisent, trois fonctions seules l'écrivent ; un article ne se supprime pas : il part avec le dossier, et la sauvegarde d'un dossier l'emporte |
 | **Adresse de réception des factures électroniques** *(en base, espace client A6a — migration `adresses_reception`, présentée au cabinet et appliquée sur son accord ; à l'écran depuis A6b1, le 14/10/2026 : la fenêtre « Adresse de réception » de Justificatifs, au cabinet, et le bloc « Ton adresse de réception » de « Tes plateformes », chez le client qui porte « Ventes »)* | Garder, version par version, l'adresse à laquelle le client reçoit ses factures électroniques, telle que le cabinet ou le client qui porte « Ventes » la déclare après l'avoir vérifiée sur l'annuaire ou sur sa plateforme, pour dire si sa facture électronique est en place | Exécution du contrat de mission ; obligation légale du client (réforme de la facturation électronique) | Client — une personne physique quand il exerce en nom propre ; membres du cabinet et client (auteurs) | `adresses_reception` range, par dossier, un identifiant d'adressage de l'annuaire qui commence par le SIREN du dossier (une donnée personnelle quand l'entreprise est individuelle), sa maille, le nom de la plateforme, la date de prise d'effet, la source et le jour de la vérification, l'identifiant du compte qui l'a déclarée et l'instant ; le cabinet du dossier et l'accès client qui porte « Ventes » la lisent, la fonction `declarer_adresse_reception` seule l'écrit, une version ne se modifie ni ne se supprime — elle part avec le dossier —, et la sauvegarde d'un dossier l'emporte ; l'écran lit la table en entier et le SIRET du dossier, n'écrit que par cette fonction, sur un clic, et n'appelle jamais l'annuaire — son portail public ne s'ouvre que sur un clic, dans une autre page, hors de l'application ; l'auteur d'une version n'y est montré qu'au cabinet, et seulement comme « par le client » |
+| **Fichier des clients du client (contacts)** *(en base, espace client A4a — migration `contacts`, présentée au cabinet et appliquée sur son accord ; aucun écran encore : « Mes ventes › Clients » et le choix d'un client dans la facture viendront avec l'étape A4b)* | Tenir les clients et les prospects du client, pour remplir ses factures — et ses devis, quand ils existeront — sans ressaisie | Pour le client : l'exécution du contrat avec son client (RGPD, art. 6, 1, b), l'intérêt légitime pour un prospect (art. 6, 1, f) ; pour le cabinet : l'exécution du contrat de mission, comme sous-traitant du client (§1, hypothèse MEG1-Q11) | Les clients et les prospects du client — une personne physique quand c'est un particulier ou un entrepreneur individuel —, JAMAIS des patients : un dossier qui dispense des soins exonérés n'y range aucun particulier, et la fonction le refuse nommément (§8.7) ; membres du cabinet et client (auteurs) | `contacts` range, par dossier, le nom, le type (entreprise assujettie, organisme public, non-assujetti, client établi hors de France), l'adresse, le SIREN et le SIRET, l'adresse de facturation électronique et le code service d'un organisme public, l'e-mail, le délai de paiement, des observations PARTAGÉES — le client qui porte « Ventes » les lit comme le cabinet —, et qui a créé, changé, retiré ou effacé chaque contact (identifiants des comptes, horodatages) ; aucun téléphone, aucune date de naissance. Le cabinet du dossier et l'accès client qui porte « Ventes » la lisent, quatre fonctions seules l'écrivent ; un contact ne se supprime pas : il se retire, se reprend, ou s'EFFACE — ses données vidées, la ligne gardée sous « Contact effacé le … » —, part avec le dossier, et la sauvegarde d'un dossier l'emporte. Une facture ne pointe pas son contact : elle garde la COPIE de son client, et ses dix ans. Durée : la relation, puis trois ans sans facture ni devis (le référentiel de la CNIL cité au §8.9), au terme desquels l'écran PROPOSERA l'effacement, jamais seul (étape A4b) |
 
 **Aucune décision automatisée au sens de l'article 22.** C'est une propriété du produit, pas un
 hasard : l'application signale et propose, elle ne tranche jamais — une pièce importée arrive
@@ -226,6 +234,12 @@ un flux du traitement.
 praticien.* C'est cette rédaction qui plaçait l'application dans le champ de l'hébergement de
 données de santé (§8.7) : elle décrivait l'erreur d'envoi comme si c'était la règle. La
 minimisation (§5) reste la réponse pour ce qui arrive malgré la consigne.
+
+Pour les **clients du client** (le fichier des contacts, étape A4a), les droits s'exercent auprès
+du client, responsable de leurs données (§1). L'application lui donne, par la base, l'effacement
+d'un contact — ses données vidées, la ligne gardée — sans toucher aux factures, qui
+gardent leur copie et leurs dix ans (C. com., art. L123-22) ; l'export d'une fiche viendra avec son
+écran (étape A4b).
 
 ---
 
@@ -559,6 +573,15 @@ est le seul hébergeur vérifié à proposer du PostgreSQL managé dans sa régi
 son stockage objet mais pas ses bases managées ; chaque offre impose un contrat HDS et un support
 payant, de l'ordre de 200 à 300 € par mois avant la première ressource. AWS n'est certifié que pour
 une liste de services et de régions : il faudrait y vérifier Textract.
+
+**La règle des soins, pour le fichier des clients du client** (étape A4a ; hypothèse MEG1-Q10) : un dossier qui dispense des soins exonérés (CGI, art. 261, 4, 1° — l'article
+d'exonération du dossier, quel que soit son statut de TVA, question A4-Q1) ne range aucun
+particulier dans ses contacts — ni un non-assujetti sans SIREN, ni un client établi hors de France
+(questions A4-Q2 et A4-Q3) —, et la fonction le refuse nommément : un patient n'entre pas dans le
+fichier des clients. Ce que devient un particulier déjà rangé quand l'article du dossier change
+ensuite est la question A4-Q4. **La facture, elle, le permet encore** : rien n'empêche un brouillon
+de nommer un particulier dans un dossier de soins (trouvé en passant par la conception de l'espace
+client) ; à trancher avec l'écran de la facture (étape A4b).
 
 ### 8.8 — Connexion bancaire : ce qui reste avant la production *(ouvert le 30/09/2026)*
 

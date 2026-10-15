@@ -1756,3 +1756,44 @@ export interface EtatFactureElectroniqueLu {
   }
   adresse: Omit<AdresseReception, 'dossier_id' | 'remplace_id'> | null
 }
+
+// LES CONTACTS D'UN DOSSIER, LES CLIENTS DE SON CLIENT (espace client, étape A4a ; migration `contacts`, présentée au cabinet
+// et appliquée sur son accord ; aucun écran ne la lit encore, ils viendront avec l'étape A4b). Un contact PRÉ-REMPLIRA le client d'une facture, qui en garde sa copie ; il se modifie, se retire, se reprend et
+// s'efface — ses données vidées, la ligne gardée —, ne se supprime jamais. Le cabinet et le client qui porte le droit
+// « Ventes » le lisent, toutes colonnes ; seules `enregistrer_contact`, `retirer_contact`, `reprendre_contact` et
+// `effacer_contact` l'écrivent.
+// Les clients seulement (MEG1-Q9, hypothèse) : les fournisseurs viendront avec les achats, et élargiront ce type.
+export type GenreContact = 'client'
+export interface Contact {
+  id: string
+  dossier_id: string
+  genre: GenreContact
+  // Le type que la facture connaît ; nul pour un contact effacé seulement.
+  type_client: TypeClient | null
+  // Deux cents caractères au plus ; « Contact effacé le JJ/MM/AAAA » pour un contact effacé.
+  nom: string
+  // Texte libre, comme `factures_emises.tiers_adresse` ; nul pour un contact effacé seulement.
+  adresse: string | null
+  siren: string | null
+  // Il commence par le SIREN ; unique dans le dossier, retirés compris.
+  siret: string | null
+  // À la forme de l'annuaire, pour une entreprise ou un organisme public.
+  adresse_electronique: string | null
+  // Pour un organisme public.
+  code_service: string | null
+  email: string | null
+  // De 0 à 60 jours : il proposera l'échéance d'une facture.
+  delai_paiement_jours: number | null
+  // Mille caractères au plus, que le client « Ventes » lit comme le cabinet (le nom `notes` est réservé).
+  observations: string | null
+  // Le retrait et l'effacement, chacun entier ou absent, et jamais les deux.
+  retire_le: string | null
+  retire_par: string | null
+  efface_le: string | null
+  efface_par: string | null
+  // Qui l'a créé et changé — un identifiant de compte, sans clé vers les comptes ; la reprise est une modification.
+  cree_par: string | null
+  cree_le: string
+  modifie_par: string | null
+  modifie_le: string | null
+}
