@@ -383,8 +383,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'adresse de réception de son dossier, son histoire et sa déclaration, à l'écran depuis A6b1 (« Tes plateformes »), et
   l'état de sa facture électronique, à l'écran depuis A6b2 (l'encart de son accueil), jamais un secret des connexions
   (`etat_facture_electronique`) ; depuis A4a (15/10/2026), le fichier des clients de son dossier — toutes ses
-  colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), sans écran
-  encore. L'onglet Accès dit ce que la base ouvre à la SESSION du client, écran ou non, dans les
+  colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), à l'écran
+  depuis A4b1 (« Mes ventes › Clients »). L'onglet Accès dit ce que la base ouvre à la SESSION du client, écran ou
+  non, dans les
   quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
   chaque mot confronté à l'export) →
   « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
@@ -509,6 +510,19 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   le titre et l'état en une ligne, le corps replié par une requête de conteneur sur `.bento`, le lien qui la couvre. Les
   factures qui relèvent de la facture électronique et attendent leur transmission ne se comptent pas (A6B2-Q1) →
   « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ».
+- **« Clients » (A4b1, 15/10/2026)** : la quatrième vue de l'onglet Factures, sous `CONTACTS_EXPORTES`, au cabinet dans
+  l'onglet et au client « Ventes » dans « Mes ventes » (`ContactsVue`, `ContactSaisieModal` ; `lib/contactsVue.ts`,
+  pur ; `lib/contactsLecture.ts`, `lib/contactsEcriture.ts`). La liste est lue en entier, effacés compris (l'unicité
+  d'un SIRET s'y juge), et un effacé ne s'AFFICHE jamais, ni dans la recherche (nom, SIREN, SIRET) ; les retirés sous
+  « Retirés ». Nouveau client et modifier écrivent TOUS les champs par `enregistrer_contact` (`saisieQuiPart`), le refus
+  du module dit avant le clic, un champ que le type n'ouvre pas caché, aucune validation native ; retirer, reprendre et
+  EFFACER — une confirmation qui nomme le contact et ce qui part, les factures gardant leur copie, dix ans — sous un
+  verrou `useRef` relâché après la relecture ; rien avant la lecture, aucun geste sur une lecture partielle. Un dossier
+  de soins dit sa règle au-dessus de la liste et signale le contact rangé avant le passage aux soins (A4-Q4) :
+  « Modifier » offert (la règle refuse la saisie TELLE QUELLE), « Reprendre » grisé, « Effacer » proposé, jamais
+  d'office ; ses deux refus se réécrivent pour le client (`REECRITURES_CLIENT`). Le nom, l'adresse et les observations
+  disent qui les lit (`LIBELLE_*_CONTACT`) ; « par le client » au cabinet seul, sur le dernier geste → « « MES VENTES ›
+  CLIENTS » ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -583,7 +597,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   qui manque, l'adresse et les plateformes, et pour le client ce qui attend —, à l'accueil du client « Ventes », une
   tuile sur téléphone, et dans la Vue d'ensemble du cabinet (A6b2, 14/10/2026) ; le fichier des clients d'un dossier,
   en base — ranger, modifier, retirer, reprendre ou effacer un contact —, que le cabinet et le client « Ventes »
-  tiennent par quatre fonctions (A4a, 15/10/2026) ;
+  tiennent par quatre fonctions (A4a, 15/10/2026), et sa vue « Clients » dans l'onglet Factures et « Mes ventes » —
+  la liste, la recherche, le filtre « Retirés », nouveau client, modifier, retirer, reprendre, effacer après une
+  confirmation, le signalement d'un contact rangé avant le passage aux soins (A4b1, 15/10/2026) ;
   client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
@@ -824,11 +840,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   ÉLECTRONIQUE », À L'ÉCRAN ». A4a, les contacts en base, appliquée le 15/10/2026 sur l'accord du cabinet (A4-Q6 ;
   MEG1-Q9 à Q11 et A4-Q1 à A4-Q5 tranchées « comme recommandé » le même jour), et la bascule (`CONTACTS_EXPORTES`) en
   ligne : la sauvegarde d'un dossier emporte ses contacts ; l'onglet Accès dit que « Ventes » ouvre le fichier de ses
-  clients et ses quatre gestes, l'effacement compris ; les écrans viendront avec A4b → « LES CONTACTS, EN BASE ».
-  Restent, dans l'ordre recommandé, A4b (« Mes ventes › Clients », la liste du cabinet, « Choisir un client » et
-  « Enregistrer ce client » dans la facture, l'import CSV, les inactifs depuis trois ans), A5 (les paramètres de
-  facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et
-  l'article sur la ligne enregistrée —, une migration) et la suite du premier groupe.
+  clients et ses quatre gestes, l'effacement compris → « LES CONTACTS, EN BASE ». A4b1, la vue « Clients » de l'onglet
+  Factures et de « Mes ventes » — la liste et ses gestes, l'effacement confirmé, le signalement d'un contact rangé avant
+  le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, au cabinet) → « « MES
+  VENTES › CLIENTS » ». Restent, dans l'ordre recommandé, A4b2 (« Choisir un client » et « Enregistrer ce client » dans
+  la facture, l'échéance proposée, la règle des soins dite dans la facture), A4b3 (l'import d'un fichier de clients,
+  l'export d'une fiche), A5 (les paramètres de facturation ; MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige
+  ses mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client —, une
+  migration), la liste des clients sans activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et
+  la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1684,12 +1704,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   de son dossier, retirés et effacés compris, et y écrit par les mêmes fonctions (MEG1-Q11). La règle des soins
   (MEG1-Q10 ; A4-Q1 à A4-Q4) : un dossier qui porte l'article des soins, exonéré ou redevable, ne range ni un
   non-assujetti sans SIREN ni un client établi hors de France, à l'écriture comme à la reprise ; la fonction ne réécrit
-  rien d'elle-même. `contacts.test.ts` confronte le module au texte exporté et rejoue l'essai ; à l'écran (A4b), les
-  observations que le cabinet saisit diront que le client « Ventes » les lit → « LES CONTACTS, EN BASE ».
+  rien d'elle-même. `contacts.test.ts` confronte le module au texte exporté et rejoue l'essai ; à l'écran (A4b1), le
+  nom, l'adresse et les observations que le cabinet saisit disent que le client « Ventes » les lit (`LIBELLE_*_CONTACT`)
+  → « LES CONTACTS, EN BASE », « « MES VENTES › CLIENTS » ».
 
 ## Tests
 
-Vitest, 11 217 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 382 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

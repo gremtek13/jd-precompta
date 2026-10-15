@@ -89,8 +89,8 @@ export default function ClientVentes() {
           demande à ton cabinet d’ajouter « Ventes » à ton accès.
         </p>
       ) : (
-        // « Factures », « Règlements » (étape A3) et « Articles » (étape A2a) : les vues de l'onglet, que son sélecteur nomme — un
-        // titre « Factures » au-dessus mentirait sur les autres.
+        // « Factures », « Règlements » (étape A3), « Articles » (étape A2a) et « Clients » (étape A4b1) : les vues de l'onglet, que son
+        // sélecteur nomme — un titre « Factures » au-dessus mentirait sur les autres.
         <>
           <FacturesTab
             espace="client"

@@ -171,10 +171,10 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // depuis l'étape A6b2 : la phrase dit l'un et l'autre, et ne garde « ensuite » que pour ce qui reste à venir.
 // DEPUIS L'ÉTAPE A4a, un cinquième : la migration `contacts` (`CONTACTS_EXPORTES`, lib/contacts.ts) ouvre au client
 // « Ventes », par la base, le fichier de ses clients — la lecture de toute la table de son dossier, effacés et retirés
-// compris, et ses quatre gestes, l'effacement compris —, avant l'écran qui le montrera (étape A4b, « Mes ventes ›
-// Clients ») : la phrase le dit à venir. Elle exige aussi celles des ventes. Le tenir « avec toi » suit le patron des
-// articles (MEG1-Q1) ; que le client du cabinet réponde des données de ses clients, et que le cabinet agisse pour lui, est
-// l'hypothèse MEG1-Q11 (lib/contacts.ts, `HYPOTHESES_DES_CONTACTS`).
+// compris, et ses quatre gestes, l'effacement compris. L'écran qui le montre (étape A4b1, « Mes ventes › Clients ») existe
+// depuis : la phrase le nomme, comme celle des articles nomme le sien, et ne le dit plus à venir. Elle exige aussi celles
+// des ventes. Le tenir « avec toi » suit le patron des articles (MEG1-Q1) ; que le client du cabinet réponde des données de
+// ses clients, et que le cabinet agisse pour lui, est l'hypothèse MEG1-Q11 (lib/contacts.ts, `HYPOTHESES_DES_CONTACTS`).
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -217,7 +217,7 @@ export function ceQueDisentLesCases(
   // l'effacement fait et ne fait pas : la ligne reste, ses données partent, une facture garde la copie qu'elle a prise.
   const avecLesContacts = ventesOuvertes && contactsOuverts
   const contacts = avecLesContacts
-    ? ' Il tient aussi avec toi, par les fonctions de la base, le fichier de ses clients : il le lit en entier — nom, '
+    ? ' Il tient aussi avec toi, dans « Mes ventes › Clients » et par les fonctions de la base, le fichier de ses clients : il le lit en entier — nom, '
       + 'type, adresse, SIREN et SIRET, adresse de facturation électronique et code service, e-mail, délai de paiement, '
       + 'observations, et qui a créé, changé, retiré ou effacé chaque contact — et peut créer, modifier, retirer, reprendre '
       + 'ou effacer un contact ; effacer en vide les données, et une facture garde la copie qu’elle en a prise.'
@@ -239,18 +239,14 @@ export function ceQueDisentLesCases(
   // choix d'un article dans la facture, n'est pas un écran de plus.
   // L'encart de sa facture électronique est sur son accueil depuis l'étape A6b2 : la phrase ne le dit plus à venir, et ne garde
   // « ensuite » que pour ce qui l'est encore — la connexion de sa banque, l'écran « Banque », ou les écrans « Ventes » et « Banque ».
-  // L'écran de ses clients (étape A4b, « Mes ventes › Clients ») vient après ce que la base lui ouvre (étape A4a) : à venir,
-  // avec ce qui l'était déjà.
+  // L'écran de ses clients existe depuis l'étape A4b1 (la vue « Clients » de « Mes ventes »), comme celui de ses articles :
+  // la phrase le nomme plus haut et ne le dit plus à venir.
   const aVenir = simulationSousBanque
     ? (ventesOuvertes
-      ? (avecLesContacts
-        ? ' L’écran « Mes ventes › Clients » et la connexion de sa banque depuis son espace viendront ensuite.'
-        : ' La connexion de sa banque depuis son espace viendra ensuite.')
+      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
       : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
     : (ventesOuvertes
-      ? (avecLesContacts
-        ? ' L’écran « Banque » de son espace et l’écran « Mes ventes › Clients » viendront ensuite.'
-        : ' L’écran « Banque » de son espace viendra ensuite.')
+      ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts + banque
     + ventesFermees + aVenir
@@ -323,6 +319,22 @@ export const LIBELLE_DESCRIPTION_ARTICLE_CLIENT = `Description (facultative ; ${
 export const LIBELLE_PLATEFORME_ADRESSE = `Plateforme de réception (son nom ; ${LE_CLIENT_VENTES} le lit)`
 
 export const LIBELLE_PLATEFORME_ADRESSE_CLIENT = `Plateforme de réception (son nom ; ${TON_CABINET} le lit aussi)`
+
+// Les trois textes libres d'un CONTACT (étape A4b1) : le nom, l'adresse et les observations, que le cabinet saisit dans le
+// fichier des clients que `contacts_lecture_ventes` ouvre au client « Ventes » — la même condition, le même mot. Les
+// identifiants (SIREN, SIRET, adresse de facturation électronique, code service) et l'e-mail n'en portent pas : ce ne sont pas
+// des textes libres, mais des formes que la base vérifie (le nom `notes` est réservé : les observations s'appellent ainsi).
+export const LIBELLE_NOM_CONTACT = `Nom ou raison sociale (${LE_CLIENT_VENTES} le lit)`
+
+export const LIBELLE_ADRESSE_CONTACT = `Adresse (${LE_CLIENT_VENTES} la lit)`
+
+export const LIBELLE_OBSERVATIONS_CONTACT = `Observations (facultatives ; ${LE_CLIENT_VENTES} les lit)`
+
+export const LIBELLE_NOM_CONTACT_CLIENT = `Nom ou raison sociale (${TON_CABINET} le lit aussi)`
+
+export const LIBELLE_ADRESSE_CONTACT_CLIENT = `Adresse (${TON_CABINET} la lit aussi)`
+
+export const LIBELLE_OBSERVATIONS_CONTACT_CLIENT = `Observations (facultatives ; ${TON_CABINET} les lit aussi)`
 
 // ── Ce que le client « Banque » lit de la main du cabinet (espace client, étape P9b) ──────────────────────────────────
 // La migration `banque_du_client` ouvre le fil d'un mouvement (`precisions_mouvements`) au cabinet et au client qui porte

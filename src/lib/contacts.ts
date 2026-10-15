@@ -21,7 +21,8 @@ import type { ArticleExoneration, Contact, GenreContact, TypeClient } from './ty
 // La migration `contacts` OUVRE une lecture au client qui porte la case « Ventes », et quatre fonctions dont l'effacement :
 // présentée au cabinet, elle a été appliquée sur son accord, et l'export (supabase/schema) la porte. Ce drapeau est donc
 // levé : le plan de sauvegarde compte la table (src/lib/sauvegarde.ts), la phrase de l'onglet Accès dit ce que la case
-// « Ventes » ouvre de plus (src/lib/droitsAcces.ts), et aucun écran ne les offre encore (étape A4b). contacts.test.ts
+// « Ventes » ouvre de plus (src/lib/droitsAcces.ts) ; la vue « Clients » de l'onglet Factures les offre depuis l'étape A4b1
+// (c'est ce drapeau qui la montre), le choix d'un client dans la facture viendra avec A4b2. contacts.test.ts
 // confronte ce drapeau à l'export, et les refus ci-dessous au texte même des fonctions comme à l'essai
 // supabase/essais/contacts.sql. Un retour arrière de la migration ne viendrait qu'APRÈS le drapeau rebaissé en ligne :
 // sinon chaque sauvegarde lirait une table absente.

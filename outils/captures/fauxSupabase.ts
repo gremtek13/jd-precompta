@@ -1482,6 +1482,81 @@ const ARTICLES_D7: Ligne[] = [
   }),
 ]
 
+// LE FICHIER DES CLIENTS du client (espace client, étape A4b1), vu du cabinet (l'onglet Factures › Clients) et de son client « Ventes »
+// (« Mes ventes › Clients »). Les identifiants sont ceux des jeux d'essai du dépôt (`src/test/contacts.ts`, `src/test/facturesCii.ts`),
+// jamais un SIREN pris au hasard : 123456782 et son établissement 12345678200010, 100000207 et son établissement 10000020700017
+// (la commune de `facturesCii.ts`, avec son code service), 987654324. Aucune donnée réelle.
+//  - l'atelier de conseil (d7) : une entreprise (e-mail long), un organisme public (code service, observations longues), une
+//    association avec son SIREN seul, un particulier au nom très long, un client établi hors de France, un client retiré par son
+//    titulaire (« par le client » au cabinet), un autre retiré par le cabinet, et un EFFACÉ qui ne doit paraître nulle part ;
+//  - le cabinet infirmier (d1, dossier de SOINS) : une entreprise, une association avec son SIREN (admissible), et deux contacts
+//    rangés avant le passage aux soins — un particulier et un client établi hors de France —, plus un particulier retiré (« Reprendre »
+//    refusé), pour éprouver le signalement d'A4-Q4 et la ligne d'information.
+const contactDuBanc = (o: Ligne): Ligne => ({
+  dossier_id: 'd7', genre: 'client', adresse_electronique: null, code_service: null, email: null, observations: null, siren: null, siret: null,
+  delai_paiement_jours: 30, retire_le: null, retire_par: null, efface_le: null, efface_par: null, modifie_par: null, modifie_le: null, ...o,
+})
+const CONTACTS_DU_BANC: Ligne[] = [
+  contactDuBanc({
+    id: 'ct1', type_client: 'assujetti', nom: 'Société Alpha Conseil', adresse: 'Zone d’activité des Essais, 13999 Démoville',
+    siren: '123456782', siret: '12345678200010', email: 'comptabilite.fournisseurs@alpha-conseil-exemple.fr',
+    cree_par: 'u1', cree_le: '2026-09-02T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct2', type_client: 'organisme_public', nom: 'Commune de Démoville — service des achats et de la commande publique',
+    adresse: 'Hôtel de ville, place de la Mairie, 13999 Démoville', siren: '100000207', siret: '10000020700017',
+    adresse_electronique: '100000207', code_service: 'SERVICE-ACHATS', delai_paiement_jours: 45,
+    observations: 'Numéro d’engagement juridique obligatoire sur chaque facture ; dépôt sur Chorus Pro uniquement, jamais par e-mail.',
+    cree_par: 'u-bernard', cree_le: '2026-09-03T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct3', type_client: 'non_assujetti', nom: 'Association fictive des amis de l’atelier', adresse: 'Rue des Essais, 13999 Démoville',
+    siren: '987654324', delai_paiement_jours: null, cree_par: 'u-bernard', cree_le: '2026-09-04T09:00:00Z', modifie_par: 'u1', modifie_le: '2026-09-21T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct4', type_client: 'non_assujetti', nom: 'Client particulier fictif au nom volontairement très long pour éprouver le passage à la ligne',
+    adresse: 'Impasse fictive, 13999 Démoville', email: 'particulier.fictif@exemple.fr', delai_paiement_jours: 0,
+    cree_par: 'u1', cree_le: '2026-09-05T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct5', type_client: 'etranger', nom: 'Fictive Workshop Limited', adresse: '1 Example Street, Fictiveland', delai_paiement_jours: 60,
+    cree_par: 'u1', cree_le: '2026-09-06T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct6', type_client: 'assujetti', nom: 'Ancienne société cliente', adresse: 'Avenue du Passé, 13999 Démoville',
+    cree_par: 'u1', cree_le: '2026-01-10T09:00:00Z', retire_par: 'u-bernard', retire_le: '2026-09-10T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct7', type_client: 'assujetti', nom: 'Autre ancienne société cliente', adresse: 'Boulevard des Archives, 13999 Démoville',
+    cree_par: 'u-bernard', cree_le: '2026-01-11T09:00:00Z', retire_par: 'u1', retire_le: '2026-09-11T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'ct8', type_client: null, nom: 'Contact effacé le 12/10/2026', adresse: null, delai_paiement_jours: null,
+    cree_par: 'u-bernard', cree_le: '2026-01-12T09:00:00Z', efface_par: 'u1', efface_le: '2026-10-12T09:00:00Z',
+  }),
+  // Le cabinet infirmier (d1), dossier de soins.
+  contactDuBanc({
+    id: 'cs1', dossier_id: 'd1', type_client: 'assujetti', nom: 'Mutuelle fictive santé', adresse: '2 rue de la Prévoyance, 13999 Démoville',
+    siren: '987654324', siret: '98765432400019', email: 'gestion@mutuelle-fictive-exemple.fr', cree_par: 'u-claire', cree_le: '2026-02-01T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'cs2', dossier_id: 'd1', type_client: 'non_assujetti', nom: 'Association fictive des patients', adresse: 'Salle des fêtes, 13999 Démoville',
+    siren: '123456782', delai_paiement_jours: null, cree_par: 'u1', cree_le: '2026-02-02T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'cs3', dossier_id: 'd1', type_client: 'non_assujetti', nom: 'Particulier fictif rangé avant les soins', adresse: 'Impasse fictive, 13999 Démoville',
+    delai_paiement_jours: null, cree_par: 'u1', cree_le: '2026-02-03T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'cs4', dossier_id: 'd1', type_client: 'etranger', nom: 'Fictive Health Limited', adresse: '3 Example Street, Fictiveland',
+    delai_paiement_jours: null, cree_par: 'u1', cree_le: '2026-02-04T09:00:00Z',
+  }),
+  contactDuBanc({
+    id: 'cs5', dossier_id: 'd1', type_client: 'non_assujetti', nom: 'Ancien particulier fictif', adresse: 'Allée fictive, 13999 Démoville',
+    delai_paiement_jours: null, cree_par: 'u1', cree_le: '2026-02-05T09:00:00Z', retire_par: 'u1', retire_le: '2026-08-01T09:00:00Z',
+  }),
+]
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1784,6 +1859,8 @@ const TABLES: Record<string, Ligne[]> = {
   adresses_reception: ADRESSES_RECEPTION_DU_BANC.map((a) => ({ ...a })),
   // Le catalogue d'articles de l'atelier (espace client, étape A2a) : voir ARTICLES_D7.
   articles: ARTICLES_D7.map((a) => ({ ...a })),
+  // Le fichier des clients (espace client, étape A4b1) : voir CONTACTS_DU_BANC.
+  contacts: CONTACTS_DU_BANC.map((c) => ({ ...c })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

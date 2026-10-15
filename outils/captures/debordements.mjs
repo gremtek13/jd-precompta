@@ -683,6 +683,92 @@ const VISITES = [
       await page.getByRole('heading', { name: 'Modifier l’article' }).waitFor({ timeout: 10000 })
     },
   },
+  // « CLIENTS » (espace client, étape A4b1) : le fichier des clients de l'atelier (d7) dans la vue « Clients » de l'onglet Factures —
+  // sept clients fictifs en cours ou retirés (une entreprise à l'e-mail long, un organisme public à code service, une association avec
+  // son SIREN seul, un particulier au nom très long, un client établi hors de France, deux retirés) et UN EFFACÉ qui ne doit paraître
+  // nulle part —, avec « par le client » sur ceux que son titulaire a créés ou retirés en dernier ; puis le filtre « Retirés » ; puis la
+  // saisie d'un client neuf (un organisme public, le SIRET d'un autre refusé, le refus du module dit avant le clic), celle d'un client lu
+  // à modifier, et la confirmation de l'effacement. Chaque visite choisit sa vue : la page ne se recharge pas entre deux visites du même
+  // onglet — la visite suivante qui veut les factures (`ouvrirLaFacture`) reprend la vue « Factures ».
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      // Les accès du dossier se lisent à part : « par le client » paraît quand ils sont revenus.
+      await page.getByText('par le client').first().waitFor({ timeout: 10000 })
+      // Un contact effacé ne se montre jamais.
+      if ((await page.getByText(/Contact effacé/).count()) > 0) throw new Error('un contact effacé paraît dans la liste des clients')
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-retirés',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByRole('checkbox', { name: 'Retirés', exact: true }).check()
+      await page.getByText(/^Retiré le /).first().waitFor({ timeout: 10000 })
+      if ((await page.getByText(/Contact effacé/).count()) > 0) throw new Error('un contact effacé paraît sous « Retirés »')
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-nouveau', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('button', { name: '+ Nouveau client', exact: true }).click()
+      await page.locator('#contact-nom').fill('Service des achats d’une communauté de communes fictive, nom volontairement long pour éprouver le passage à la ligne')
+      await page.locator('#contact-type').selectOption('organisme_public')
+      await page.locator('#contact-adresse').fill('Hôtel de la communauté, place de la Mairie, 13999 Démoville')
+      await page.locator('#contact-siren').fill('123456782')
+      await page.locator('#contact-siret').fill('12345678200010')
+      await page.getByText(/^Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-modifier', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Modifier', exact: true }).click()
+      await page.getByRole('heading', { name: 'Modifier le client' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-effacer', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Effacer', exact: true }).click()
+      await page.getByRole('alertdialog').getByRole('heading', { name: /^Effacer le client/ }).waitFor({ timeout: 10000 })
+    },
+  },
+  // Le cabinet infirmier (d1), dossier de SOINS : la ligne d'information au-dessus de la liste, le signalement d'un particulier et
+  // d'un client établi hors de France rangés avant le passage aux soins (A4-Q4), « Effacer » offert ; puis, sous « Retirés », un
+  // particulier retiré dont « Reprendre » est grisé ; puis la fenêtre d'un particulier rangé avant, qui dit son refus avant le clic.
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/clients-soins',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Ce dossier dispense des soins exonérés/).waitFor({ timeout: 10000 })
+      await page.getByText(/^Rangé avant que le dossier passe aux soins exonérés/).first().waitFor({ timeout: 10000 })
+      await page.getByRole('checkbox', { name: 'Retirés', exact: true }).check()
+      await page.getByText(/^Retiré le /).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/clients-soins-modifier', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.locator('tr', { hasText: 'Particulier fictif rangé avant les soins' }).getByRole('button', { name: 'Modifier', exact: true }).click()
+      await page.getByText(/^Un dossier qui dispense des soins exonérés/).waitFor({ timeout: 10000 })
+    },
+  },
   // « ADRESSE DE RÉCEPTION » (espace client, étape A6b1), côté cabinet : le bouton de Justificatifs ouvre la fenêtre — l'adresse
   // courante à venir de l'atelier (d7), son historique de trois versions (un identifiant et un nom de plateforme LONGS, « par le
   // client »), le lien du portail —, puis le formulaire d'une nouvelle adresse (un identifiant qui s'écrit de deux façons : la maille
@@ -1001,6 +1087,43 @@ const VISITES_CLIENT = [
       await page.locator('#article-designation').fill('Intervention de dépannage en urgence, déplacement, main-d’œuvre et fournitures courantes comprises')
       await page.locator('#article-reference').fill('CONS-H')
       await page.getByText(/^La référence « CONS-H » est déjà celle/).waitFor({ timeout: 10000 })
+    },
+  },
+  // « Mes ventes › Clients » (étape A4b1) : le même fichier aux mots du client — sans « par le client », ton cabinet le lit aussi —,
+  // sous « Retirés » ; puis la saisie d'un client neuf aux libellés du client (le SIRET d'un autre refusé) ; puis la confirmation de
+  // l'effacement, aux mots du client (« Tes factures… »).
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients', nav: true,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByRole('checkbox', { name: 'Retirés', exact: true }).check()
+      await page.getByText(/^Retiré le /).first().waitFor({ timeout: 10000 })
+      if ((await page.getByText(/Contact effacé/).count()) > 0) throw new Error('un contact effacé paraît dans la liste des clients')
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-nouveau', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('button', { name: '+ Nouveau client', exact: true }).click()
+      await page.locator('#contact-nom').fill('Service des achats d’une communauté de communes fictive, nom volontairement long pour éprouver le passage à la ligne')
+      await page.locator('#contact-type').selectOption('assujetti')
+      await page.locator('#contact-adresse').fill('Hôtel de la communauté, place de la Mairie, 13999 Démoville')
+      await page.locator('#contact-siren').fill('123456782')
+      await page.locator('#contact-siret').fill('12345678200010')
+      await page.getByText(/^Le SIRET « 12345678200010 » est déjà celui du contact « Société Alpha Conseil »/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-effacer', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Effacer', exact: true }).click()
+      await page.getByRole('alertdialog').getByText(/^Tes factures qui le nomment gardent leur copie/).waitFor({ timeout: 10000 })
     },
   },
   // « Un article dans la facture » (étape A2b), aux mots du client : le choix, la ligne remplie, la confirmation d'une ligne déjà

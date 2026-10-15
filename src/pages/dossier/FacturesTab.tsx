@@ -16,7 +16,9 @@ import TransmissionFactureModal from './TransmissionFactureModal'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
+import ContactsVue from './ContactsVue'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
+import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
   ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
@@ -50,7 +52,7 @@ type QuiRegarde =
   | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
   | { espace: 'client'; banque: boolean }
 
-type VueDeLOnglet = 'factures' | 'reglements' | 'articles'
+type VueDeLOnglet = 'factures' | 'reglements' | 'articles' | 'clients'
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -124,7 +126,8 @@ export default function FacturesTab(props: Props) {
   // La case « Émises par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des accès lus en entier.
   const [filtreClient, setFiltreClient] = useState(false)
   const filtre = etatDuFiltre(acces)
-  // La vue : les factures, les règlements de tout le dossier (étape A3) ou le catalogue d'articles (étape A2a).
+  // La vue : les factures, les règlements de tout le dossier (étape A3), le catalogue d'articles (étape A2a) ou le fichier des
+  // clients (étape A4b1).
   const [vue, setVue] = useState<VueDeLOnglet>('factures')
 
   async function load() {
@@ -263,8 +266,8 @@ export default function FacturesTab(props: Props) {
 
   return (
     <>
-      {/* « Factures », « Règlements » (étape A3) et « Articles » (étape A2a) : la liste de tous les encaissements du dossier et le
-          catalogue, à côté de celle des factures.
+      {/* « Factures », « Règlements » (étape A3), « Articles » (étape A2a) et « Clients » (étape A4b1) : la liste de tous les
+          encaissements du dossier, le catalogue et le fichier des clients, à côté de celle des factures.
           Une vue à la fois ; revenir aux factures relit leurs pastilles, que la fenêtre ouverte depuis la liste a pu changer. */}
       <div className="segmented" role="tablist" aria-label={espace === 'client' ? 'Mes ventes' : 'Factures du dossier'} style={{ marginBottom: 14 }}>
         <button type="button" role="tab" aria-selected={vue === 'factures'} className={vue === 'factures' ? 'active' : ''} onClick={() => changerDeVue('factures')}>
@@ -280,6 +283,13 @@ export default function FacturesTab(props: Props) {
             Articles
           </button>
         )}
+        {/* « Clients » (étape A4b1) : le fichier des clients du client, que lit et tient aussi le client « Ventes » — offert
+            seulement quand la migration des contacts est en base (`CONTACTS_EXPORTES`) : sans elle, la lecture de la table échouerait. */}
+        {CONTACTS_EXPORTES && (
+          <button type="button" role="tab" aria-selected={vue === 'clients'} className={vue === 'clients' ? 'active' : ''} onClick={() => changerDeVue('clients')}>
+            Clients
+          </button>
+        )}
       </div>
 
       {vue === 'reglements' ? (
@@ -292,6 +302,12 @@ export default function FacturesTab(props: Props) {
         <ArticlesVue
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
           dossierId={dossierId}
+        />
+      ) : vue === 'clients' ? (
+        <ContactsVue
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
+          dossierId={dossierId}
+          articleExoneration={articleExoneration}
         />
       ) : (
         <>

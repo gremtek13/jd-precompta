@@ -41,6 +41,7 @@ import EcrituresTab from './dossier/EcrituresTab'
 import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
 import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
+import ContactsVue from './dossier/ContactsVue'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import EncartFactureElectronique from './dossier/EncartFactureElectronique'
 import EreportingCard from './dossier/EreportingCard'
@@ -390,6 +391,14 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'ArticlesVue (client)', fichier: 'pages/dossier/ArticlesVue.tsx', rendre: () => (
     <Dossier1><ArticlesVue espace="client" dossierId="d1" /></Dossier1>
+  ) },
+  // « Clients » (étape A4b1) : la vue du fichier des clients, montée seule — au cabinet, et au client « Ventes ». Un dossier de soins
+  // pour le cabinet : sa ligne d'information ne se dit pas non plus avant la lecture.
+  { nom: 'ContactsVue', fichier: 'pages/dossier/ContactsVue.tsx', rendre: () => (
+    <Dossier1><ContactsVue espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" articleExoneration="cgi_261_4_1" /></Dossier1>
+  ) },
+  { nom: 'ContactsVue (client)', fichier: 'pages/dossier/ContactsVue.tsx', rendre: () => (
+    <Dossier1><ContactsVue espace="client" dossierId="d1" articleExoneration={null} /></Dossier1>
   ) },
   // « Adresse de réception » (étape A6b1) : la fenêtre, montée seule — au cabinet, et chez le client « Ventes ». Rien ne se dit ni
   // ne s'offre avant la lecture des adresses et du SIRET du dossier.
