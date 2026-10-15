@@ -24685,7 +24685,18 @@ police refusée ; ses captures, prises après la dernière retouche, montrent le
 **LES QUESTIONS AU CABINET.** A4B1-Q1 : « Modifier » reste offert sur un contact rangé avant le passage aux soins (la
 fenêtre dit le refus), plutôt que grisé. A4B1-Q2 : « Retirer » part sans confirmation, comme pour les articles.
 A4B1-Q3 : la liste ne montre pas l'adresse ni les observations (elles sont dans « Modifier »). Recommandation : les
-trois telles quelles.
+trois telles quelles. TRANCHÉES PAR LE CABINET LE 15/10/2026, COMME RECOMMANDÉ : les trois se gardent telles quelles,
+rien ne change à l'écran.
+
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #172 (`520f472`) à 12 h 58 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `f550e82` ; l'arbre de `main` (`8f05a790…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-D_3S6frv.js`, le paquet de la barrière (déploiement 38724081173) ; la branche réalignée sur `520f472`,
+arbres égaux. Le worktree de l'agent retiré (son contenu, mis dans un index temporaire, rend l'arbre `157ebd86…` du
+correctif livré, comparé par `git -C`), comme celui de l'intégration (ses 173 liens d'abord) ; aucune réplique en
+marche. La feuille de route : la ligne 51.5 reçoit le paragraphe d'A4b1 — les questions A4B1-Q1 à Q3 et l'ordre qui
+change — et un « RESTE » qui nomme A4b2 et A4b3 ; la propriété réécrite entière (32 203 caractères), le texte ENVOYÉ et
+la page RELUE égaux au fichier préparé. Les barres recomptées par requête : inchangées, 140 sur 183 (77 %) et, pour un
+dossier BNC, 140 sur 170 (82 %).
 
 **RESTE.** A4b2 : « Choisir un client » et « Enregistrer ce client » dans le formulaire d'une facture, l'échéance
 proposée (la date d'émission et le délai du contact), la règle des soins dite dans la facture (RGPD.md, §8.7) ; l'e-mail
@@ -24693,3 +24704,125 @@ d'un contact ne se recopie pas, la facture n'en ayant pas : la fenêtre d'envoi 
 provenance (A7). A4b3 : l'import d'un fichier de clients (un aperçu, les refus redits ligne par ligne, tout ou rien) et
 l'export d'une fiche. Puis A5 (MEG1-Q12 à Q14), MEG1-Q5 et A7 ; après A7, la liste des clients sans activité depuis
 trois ans. NON VÉRIFIÉ : la version de l'article L441-10 du code de commerce en vigueur au 01/01/2027.
+
+### 15/10/2026 — UN CLIENT DANS LA FACTURE — ESPACE CLIENT, ÉTAPE A4b2 (LIGNE 51.5)
+
+(Préparée le 15/10/2026 par l'agent S241 sur `520f472`. Fichiers nouveaux : `src/lib/contactsFacture.ts` et son test,
+`src/pages/dossier/ContactChoixModal.tsx`, `FactureFormModalContacts.test.tsx`. Modifiés : `FactureFormModal.tsx`,
+`ContactSaisieModal.tsx` (une propriété), `FactureFormModal.test.tsx` et `FactureFormModalArticles.test.tsx` (la table
+des contacts, vide), `contacts.ts` (un commentaire devenu faux), `src/index.css` (une classe, `.note-info`, par ajout),
+`RGPD.md`, `outils/captures/debordements.mjs` (par AJOUT). Aucune migration, aucune policy, aucune Edge Function.)
+
+**LA DÉLIMITATION.** A4b2 : le CLIENT d'une facture tiré du fichier des clients, et l'inverse. Ni l'import d'un fichier
+de clients ni l'export d'une fiche (A4b3), ni la liste des clients sans activité (après A7), ni la mise à jour d'un
+contact depuis la facture (la conception ne la prévoit pas) ; la facture ne GARDE pas le contact — c'est A7 : la
+provenance n'est qu'une mémoire d'écran.
+
+**LA LECTURE.** Le formulaire d'une facture, au cabinet et au client « Ventes », lit les contacts EN ENTIER à son
+ouverture (`lireLesContacts`, sous `CONTACTS_EXPORTES`), gardés avec le dossier lu, relus après chaque écriture ;
+« Clients : Chargement… » avant le retour, le bandeau d'une lecture partielle (et aucun geste), le message d'une lecture
+refusée ou qui lève, « aucun client en cours » d'un fichier lu en entier seulement.
+
+**« CHOISIR UN CLIENT ».** Sous le champ « Client » : `ContactChoixModal`, les contacts EN COURS (`contactsAffiches`,
+jamais un retiré ni un effacé), la recherche commune (nom, SIREN, SIRET), chaque ligne avec son identifiant, son type
+aux mots du formulaire et l'échéance que son délai donnerait. Dans un dossier de soins, ceux que la règle refuse (rangés
+avant le passage aux soins, `soinsDuContact`) ne sont pas proposés ; une ligne le dit, avec leur nombre, et renvoie à
+« Clients », où ils s'effacent (« N sur M » ne compte que ceux qu'on propose). Le choix remplit le client ENTIER — nom,
+adresse, SIRET, type, SIREN, adresse de facturation électronique, code service ; un champ que le contact n'a pas est
+VIDÉ, jamais un reste du client précédent ; un champ que le type n'ouvre pas reste caché et ne part pas
+(`mentionsAEnregistrer`) ; le numéro d'engagement, qui est celui de la commande et non du contact, n'est pas touché — et
+l'ÉCHÉANCE : la date d'émission plus le délai (`ajouterJours`, calendrier civil), quand le contact en a un ; sans délai,
+l'échéance saisie reste. Un client déjà saisi qui DIFFÈRE ne se remplace qu'après une confirmation qui nomme ce qui part
+(le nom, le type, le SIREN, le SIRET, l'adresse, l'adresse électronique, le code service, l'échéance — seulement ce que
+le formulaire MONTRE, et les champs saisis que le contact n'a pas, qui seraient vidés) ; un formulaire vide, ou qui dit
+déjà ce que le contact apporte, se remplit sans. L'e-mail du contact ne se recopie pas : la facture n'a pas de champ
+pour lui.
+
+**L'ÉCHÉANCE, JAMAIS EN SILENCE.** Le choix retient le délai et la date d'émission d'alors. Si l'émission change
+ensuite, le formulaire DIT ce que le délai donnerait (« La date d'émission a changé depuis le choix du client « X » :
+son délai de paiement (30 jours) donnerait une échéance au … ») et offre « Recalculer l'échéance » ; rien n'est appliqué
+seul. Rien à dire quand l'émission est revenue à celle du choix, quand l'échéance est déjà celle du délai, ou quand le
+contact n'a pas de délai.
+
+**« ENREGISTRER CE CLIENT ».** Sur un client saisi à la main (aucune provenance) qui porte un nom : `ContactSaisieModal`
+PRÉREMPLIE des sept champs de la facture (une propriété `saisieDeDepart`, comme `ArticleSaisieModal` en A2b ; e-mail,
+délai et observations vides). Le refus du module (`refusDeLaSaisieContact`, dans l'ordre de la base, sous ses mots) se
+dit avant le clic — l'adresse, facultative sur la facture, est exigée du contact ; un SIRET déjà pris NOMME le contact
+qui le porte ; écriture par `enregistrer_contact` seule, sous un verrou `useRef` (`gesteContactEnCours`) EXCLUSIF dans
+les deux sens de l'enregistrement de la facture et des gestes d'article, relâché après la relecture des contacts, relue
+aussi sur un refus. Enregistré, le contact devient la provenance du client de la facture, qui ne change pas.
+
+**LA RÈGLE DES SOINS, DITE (RGPD.md, §8.7).** Dans un dossier de soins, quand le client de la facture est un particulier
+(un non-assujetti sans SIREN) ou établi hors de France (`regleDesSoins`, lue sur la saisie telle qu'elle part), le
+formulaire DIT ce que la règle des contacts refuse et pourquoi (« une facture à un particulier y nomme un patient ») :
+une INFORMATION, rien n'est refusé — le brouillon s'enregistre, la facture se valide ; seul « Enregistrer ce client »
+est refusé, avant le clic, sous les mots de la base. Aux mots du client (« Ta société… », « Ton fichier de clients… »).
+
+**LES DEUX ESPACES.** La même propriété `espace` ; les mots du client (tutoiement, `MOTS_DU_CABINET`, jamais « le
+client » pour le titulaire) sont gardés sur chaque texte du module et de l'écran, éprouvés sur les mêmes états montés
+pour le cabinet ; les deux refus des soins se réécrivent à l'affichage (`REECRITURES_CLIENT`, déjà là depuis A4b1).
+
+**LES PREUVES.** Tests de logique (`contactsFacture.test.ts`, 57 cas : les contacts du choix, le client entier, un champ
+absent vidé, l'échéance au calendrier civil sous quatre fuseaux, ce que le choix remplace, le suivi de l'échéance, les
+soins confrontés à `refusEnregistrementContact`, les mots, la pureté du module — aucun message de refus ni borne
+recopiés) et d'écran des deux espaces (`FactureFormModalContacts.test.tsx`, 108 cas : la lecture, le choix, la
+confirmation, l'échéance, les soins, « Enregistrer ce client », les verrous et leurs exclusions dans les deux sens, les
+mots du client). 44 mutations ciblées (le module : 20 ; le formulaire : 22 ; la fenêtre du choix : 2) : 43 mordent, une
+est équivalente (la seconde ceinture d'`enregistrerCommeContact`, que le bouton grisé sous le même refus rend
+inatteignable par l'écran, comme celle d'A2b) ; quatre survivaient à la première passe — un recalcul silencieux de
+l'échéance dont la mutation était trop faible, l'échéance retouchée à la main sans que l'émission ait bougé, les blancs
+des bords d'une adresse, et l'écriture d'un article en vol qui doit refuser celle du client — : un cas chacune, et elles
+mordent. Le banc : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 pixels et aux quatre combinaisons des volets, passes
+du cabinet et du client (six visites du cabinet — le choix, le client rempli puis l'échéance proposée, la confirmation
+d'un remplacement, « Enregistrer ce client » au SIRET d'un autre refusé, et, sur le cabinet infirmier, l'information des
+soins et le choix qui écarte les clients refusés —, quatre du client), 0 bouton de fenêtre recouvert — 200 sondés dans
+42 fenêtres au cabinet, 104 dans 24 chez le client —, aucune police refusée ; les captures (1 440 et 390 pixels, les
+deux espaces) relues après la dernière retouche. Barrière : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint
+63 avertissements, les mêmes ; construction verte ; suite entière sous Paris 382 fichiers, 11 547 tests (+2 fichiers,
++165) ; les sept fichiers touchés sous les quatre fuseaux, 463 tests chacun.
+
+**RÉSULTATS NÉGATIFS, À NE PAS RÉENQUÊTER.** L'information des soins sous `.alerte-tva` (rouge) se lisait, aux captures,
+comme un refus ; elle a sa teinte neutre, `.note-info` (index.css, par ajout), et un test refuse qu'elle prenne un jeton
+de danger. Le reporter de la suite tait `console.log` : pour lire une valeur dans un test, faire lever une erreur qui la
+porte. Un faux client des essais dont deux contacts partagent un SIRET fait refuser « Enregistrer ce client » : le SIRET
+du client saisi d'un test est celui d'un autre jeu (987654324 et 98765432400019, valides ; 98765432400010 ne passe pas
+sa clé).
+
+**LA RELECTURE, LE 15/10/2026.** Le correctif relu en entier par la session : douze fichiers, 2 331 lignes ajoutées et
+15 retirées ; la copie de l'agent, mise dans un index temporaire, rend l'arbre du correctif appliqué sur `520f472`
+(`ad274c65…`). Le module pur (aucune règle recopiée : la règle des soins par `regleDesSoins`, son message par sa clé
+dans `REFUS_ENREGISTREMENT_CONTACT`, les états par `contactsAffiches`), le formulaire (la lecture gardée avec le
+dossier, les trois verrous qui s'excluent dans les deux sens, le client entier, l'échéance suivie et jamais recalculée
+seule), la fenêtre du choix, la propriété `saisieDeDepart`, la classe `.note-info` (des jetons seuls), le registre et
+les visites du banc. Une retouche : sur un téléphone, la règle des soins se disait deux fois de suite — sous le bouton
+grisé, aux mots de la base, puis dans l'information, qui finissait sur « « Enregistrer ce client » est donc refusé ; la
+facture, elle, reste possible : rien n'est refusé ici » ; l'information ne redit plus le refus et ne se contredit plus :
+« La facture reste possible — elle s'enregistre et se valide —, mais ce client ne se range pas dans le fichier des
+clients du dossier » (« dans ton fichier de clients », chez le client) ; ses deux tests suivent, et le banc est rejoué
+après elle. La provenance reste quand on retouche le client choisi, comme celle d'un article (A2b) : « Enregistrer ce
+client » ne s'offre alors pas, et le client changé se range depuis la vue « Clients ».
+
+**L'INTÉGRATION, LE 15/10/2026.** Le correctif appliqué sur `520f472` : l'arbre obtenu est celui de l'agent. Barrière
+sur l'arbre intégré, avant la retouche : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ;
+quatre fuseaux, 11 547 tests chacun ; construction verte (`index-CF6yfIrM.js`). Après la retouche, ses deux fichiers de
+test sous les quatre fuseaux, 165 tests chacun ; le banc, rejoué après elle, 0 débordement aux onze passes (1 440,
+1 280, 1 024, 720 et 390 pixels, les quatre combinaisons des volets, les deux passes du client), 0 bouton de fenêtre
+recouvert — 200 sondés dans 42 fenêtres au cabinet, 104 dans 24 chez le client —, aucune police refusée, et les captures
+des deux visites des soins relues. Après les documents, `tsc -b`, le lint, la construction et la suite entière sous
+Paris, rejoués : verts. Dans la même demande, la mise en ligne d'A4b1 (S240) et la réponse du cabinet à A4B1-Q1 à Q3.
+
+**LES QUESTIONS AU CABINET.** A4B2-Q2 : la règle des soins dans la facture avertit seulement (une information) ; la
+refuser à la validation serait le choix du cabinet. TRANCHÉE LE 15/10/2026, COMME RECOMMANDÉ : avertir seulement (la
+réponse du cabinet au message qui l'annonçait avec A4B1-Q1 à Q3, entendue ainsi et dite au cabinet). Restent : A4B2-Q1 :
+l'e-mail d'un contact ne se recopie pas dans la facture (elle n'a pas de champ pour lui) ; la fenêtre d'envoi le
+proposera quand la facture gardera la provenance (A7) — la conception le recopiait. A4B2-Q3 : « Enregistrer ce client »
+ne remplit pas la facture de ce que la fenêtre a ajouté (l'adresse, par exemple) : le client de la facture reste ce
+qu'il était. A4B2-Q4 : le numéro d'engagement d'un organisme public n'est pas touché par le choix d'un client.
+Recommandation : les trois telles quelles.
+
+**RESTE.** A4b3 (l'import d'un fichier de clients, l'export d'une fiche) ; A5 (les paramètres de facturation ; MEG1-Q12
+à Q14) ; MEG1-Q5 ; A7 (la facture fige ses mentions et le contact d'où vient son client — d'où la liste des clients sans
+activité depuis trois ans). NON VÉRIFIÉ : `enregistrer_contact` n'a été jouée depuis ce formulaire que par le faux
+client des tests (la fonction, sa policy et ses refus sont éprouvés en production depuis A4a) ; le formulaire d'un
+client « Ventes » d'un dossier de soins n'est photographié par aucune passe du banc (son compte n'est rattaché qu'à
+l'atelier) : ses mots sont gardés par les tests d'écran ; Chromium seul.

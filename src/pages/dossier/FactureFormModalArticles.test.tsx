@@ -77,6 +77,12 @@ vi.mock('../../lib/supabase', async () => {
         return { data: ecrit, error: null }
       },
       from: (table: string) => {
+        // Les clients du dossier, lus en entier à l'ouverture (étape A4b2) : le fichier est vide ici ; leurs cas sont dans
+        // FactureFormModalContacts.test.tsx.
+        if (table === 'contacts') {
+          const contacts = { select: () => contacts, eq: () => contacts, order: () => contacts, range: () => Promise.resolve({ data: [], error: null, count: 0 }) }
+          return contacts
+        }
         if (table !== 'articles' && table !== 'facture_lignes') throw new Error(`Table non attendue dans ce test : ${table}`)
         const predicats: Predicat[] = []
         let debut = 0

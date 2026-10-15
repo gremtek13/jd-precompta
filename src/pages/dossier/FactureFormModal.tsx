@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, lignesSaisies, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney, formaterPrixUnitaire } from '../../lib/format'
-import type { Article, ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
+import type { Article, ArticleExoneration, Contact, FactureEmise, FactureLigne, StatutTva } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
@@ -15,10 +15,21 @@ import {
   avecProvenance, ceQueLeChoixRemplace, choixDArticle, enumeration, gestePrixDeLArticle, peutEnregistrerCommeArticle, saisieDeLaLigne,
   garderProvenance, type Provenance,
 } from '../../lib/articlesFacture'
+import { CONTACTS_EXPORTES, saisieQuiPart, type SaisieContact } from '../../lib/contacts'
+import { lireLesContacts, type LectureDesContacts } from '../../lib/contactsLecture'
+import { enregistrerContact } from '../../lib/contactsEcriture'
+import { refusDeLaSaisieContact } from '../../lib/contactsVue'
+import {
+  ceQueLeChoixDeContactRemplace, choixDeContact, clientEnSaisie, confirmationDuChoixDeContact, contactDeLaProvenance, contactsEnCours,
+  echeanceARecalculer, infoDesSoinsDansLaFacture, mentionsAvecLeClient, peutEnregistrerCommeContact, phraseDeLEcheanceARecalculer,
+  phraseDuFichierVide, refusDesSoinsDuClient, saisieDuClient, suiviDeLEcheance, type ChoixDeContact, type SuiviDeLEcheance,
+} from '../../lib/contactsFacture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
 import ConfirmationArticle from './ConfirmationArticle'
+import ContactChoixModal from './ContactChoixModal'
+import ContactSaisieModal from './ContactSaisieModal'
 import {
   apercuDeTransmission, livraisonOuverte, mentionsAEnregistrer, refusDesMentions, saisieDesMentions, sirenDuSiret, sirenOuvert,
   siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
@@ -45,6 +56,19 @@ type FenetreArticle =
   | { genre: 'saisie'; cle: string; depart: SaisieArticle }
   | { genre: 'remplacer'; cle: string; article: Article; remplace: string[] }
   | { genre: 'prix'; cle: string }
+
+// La lecture des contacts, gardée avec le dossier pour lequel elle a été faite : lue, ou ratée avec son motif.
+type LectureContacts = { cle: string; lu: LectureDesContacts } | { cle: string; echec: string }
+
+// La fenêtre de client ouverte, une seule à la fois : le choix, la saisie d'un contact neuf tiré du client de la facture, et la
+// confirmation d'un remplacement (le client déjà saisi, et ce que le choix en remplace).
+type FenetreContact =
+  | { genre: 'choix' }
+  | { genre: 'saisie'; depart: SaisieContact }
+  | { genre: 'remplacer'; contact: Contact; choix: ChoixDeContact; remplace: string[] }
+
+const CONSEQUENCE_CONTACTS_PARTIELS = 'Aucun client ne peut donc être choisi ni enregistré d’ici : une liste tronquée dirait « libre » '
+  + 'un SIRET déjà pris.'
 
 const CONSEQUENCE_ARTICLES_PARTIELS = 'Aucun article ne peut donc être choisi ni enregistré d’ici : une liste tronquée dirait « libre » '
   + 'une référence déjà prise.'
@@ -116,6 +140,17 @@ export default function FactureFormModal(props: Props) {
   const provenance = garderProvenance(provenanceBrute, lignes.map((l) => l.cle))
   // Les articles du dossier, lus EN ENTIER à l'ouverture et relus après chaque écriture ; gardés AVEC le dossier lu.
   const [lectureArticles, setLectureArticles] = useState<LectureArticles | null>(null)
+  // Les contacts du dossier, lus EN ENTIER à l'ouverture et relus après chaque écriture ; gardés AVEC le dossier lu (étape A4b2).
+  const [lectureContacts, setLectureContacts] = useState<LectureContacts | null>(null)
+  const [fenetreContact, setFenetreContact] = useState<FenetreContact | null>(null)
+  const [contactOccupe, setContactOccupe] = useState(false)
+  const [erreurContact, setErreurContact] = useState<string | null>(null)
+  const [messageContact, setMessageContact] = useState<string | null>(null)
+  // Le contact qui a rempli le client, EN MÉMOIRE seulement : rien ne s'enregistre avant A7. Une facture rouverte n'en a pas.
+  const [contactChoisi, setContactChoisi] = useState<string | null>(null)
+  // Ce que le choix a retenu de l'échéance (le délai du contact, la date d'émission d'alors) : la date d'émission qui change ensuite
+  // le DIT, elle ne recalcule rien d'elle-même.
+  const [suiviEcheance, setSuiviEcheance] = useState<SuiviDeLEcheance | null>(null)
   const dossierAffiche = useRef(dossierId)
 
   // UNE LECTURE REFUSÉE NE DOIT PAS PASSER POUR « CETTE FACTURE N'A AUCUNE LIGNE ».
@@ -154,6 +189,18 @@ export default function FactureFormModal(props: Props) {
     lireLesArticles(dossierId).then(
       (lu) => { if (!annule) setLectureArticles({ cle: dossierId, lu }) },
       (e: unknown) => { if (!annule) setLectureArticles({ cle: dossierId, echec: messageErreur(e, 'les articles n’ont pas pu être lus') }) },
+    )
+    return () => { annule = true }
+  }, [dossierId])
+
+  // Les contacts : lus à l'ouverture, jamais avant que l'espace les ouvre (`CONTACTS_EXPORTES`). Même garde que les articles.
+  useEffect(() => {
+    if (!CONTACTS_EXPORTES) return
+    let annule = false
+    dossierAffiche.current = dossierId
+    lireLesContacts(dossierId).then(
+      (lu) => { if (!annule) setLectureContacts({ cle: dossierId, lu }) },
+      (e: unknown) => { if (!annule) setLectureContacts({ cle: dossierId, echec: messageErreur(e, 'les clients n’ont pas pu être lus') }) },
     )
     return () => { annule = true }
   }, [dossierId])
@@ -293,6 +340,8 @@ export default function FactureFormModal(props: Props) {
   // s'efface devant l'enregistrement de la facture, et l'enregistrement devant lui : aucun geste d'article pendant l'un, ni
   // l'inverse.
   const gesteArticleEnCours = useRef(false)
+  // Celui du client (enregistrer le client de la facture comme contact) : le même, à lui, exclusif des deux autres dans les deux sens.
+  const gesteContactEnCours = useRef(false)
 
   async function relireArticles() {
     try {
@@ -306,7 +355,7 @@ export default function FactureFormModal(props: Props) {
   }
 
   async function sousVerrou<T>(repli: string, ecrire: () => Promise<T>, message: (ecrit: T) => string): Promise<T | null> {
-    if (gesteArticleEnCours.current || enregistrementEnCours.current) return null
+    if (gesteArticleEnCours.current || gesteContactEnCours.current || enregistrementEnCours.current) return null
     gesteArticleEnCours.current = true
     setArticleOccupe(true)
     setErreurArticle(null)
@@ -326,8 +375,8 @@ export default function FactureFormModal(props: Props) {
     return resultat
   }
 
-  // Aucun geste pendant l'enregistrement de la facture, ni pendant un geste d'article (le temps de sa relecture compris).
-  const gesteBloque = articleOccupe || !!saving
+  // Aucun geste pendant l'enregistrement de la facture, ni pendant un geste d'article ou de client (le temps de sa relecture compris).
+  const gesteBloque = articleOccupe || contactOccupe || !!saving
 
   function ouvrirFenetre(fenetre: FenetreArticle) {
     setErreurArticle(null)
@@ -452,6 +501,150 @@ export default function FactureFormModal(props: Props) {
     )
   }
 
+  // ── UN CLIENT DANS LA FACTURE (espace client, étape A4b2 ; lib/contactsFacture.ts, conception : HISTORIQUE.md, §A.4) ─────────────
+  // « Choisir un client » remplit le client ENTIER (le nom, l'adresse, le SIRET, le type, le SIREN, l'adresse de facturation
+  // électronique, le code service : un champ que le contact n'a pas est vidé) et propose l'échéance — la date d'émission plus son délai,
+  // calculée AU CHOIX, que la date d'émission changée ensuite DIT sans la recalculer. La facture garde sa COPIE du client : la changer
+  // ne change jamais le contact, et rien ne s'écrit au choix. « Enregistrer ce client », sur un client saisi à la main, est un geste
+  // à part, par `enregistrer_contact` seule. Rien n'est offert avant la lecture des contacts, ni sur une lecture partielle ou refusée
+  // (l'unicité d'un SIRET ne se juge pas sur une liste tronquée).
+  //
+  // LA RÈGLE DES SOINS se DIT ici et ne REFUSE rien : la facture reste enregistrable et validable ; seul « Enregistrer ce client » est
+  // refusé, avant le clic, sous les mots de la base.
+  const contactsCourants = lectureContacts?.cle === dossierId ? lectureContacts : null
+  const contactsLus = contactsCourants != null && 'lu' in contactsCourants ? contactsCourants.lu : null
+  const contactsEntiers: readonly Contact[] | null = contactsLus?.complete ? contactsLus.lignes : null
+  const nombreDeContactsEnCours = contactsEntiers == null ? 0 : contactsEnCours(contactsEntiers).length
+  const clientSaisi = clientEnSaisie({ tiersNom, tiersAdresse, tiersSiret }, mentions)
+  const contactDeLaSaisie = contactDeLaProvenance(contactChoisi, contactsEntiers)
+  const refusDesSoins = CONTACTS_EXPORTES ? refusDesSoinsDuClient(articleExoneration, clientSaisi) : null
+  const echeanceDuContact = echeanceARecalculer(suiviEcheance, dateEmission, dateEcheance)
+
+  async function relireContacts() {
+    try {
+      const lu = await lireLesContacts(dossierId)
+      if (dossierAffiche.current === dossierId) setLectureContacts({ cle: dossierId, lu })
+    } catch (e) {
+      if (dossierAffiche.current === dossierId) {
+        setLectureContacts({ cle: dossierId, echec: messageErreur(e, 'les clients n’ont pas pu être lus') })
+      }
+    }
+  }
+
+  // Le verrou de l'écriture du client, en `useRef` et POSÉ AVANT LE `try` : relâché dans le `finally`, APRÈS la relecture des contacts,
+  // relue aussi sur un refus. Il s'efface devant l'enregistrement de la facture et devant un geste d'article, qui s'effacent devant lui.
+  async function sousVerrouContact<T>(repli: string, ecrire: () => Promise<T>, message: (ecrit: T) => string): Promise<T | null> {
+    if (gesteContactEnCours.current || gesteArticleEnCours.current || enregistrementEnCours.current) return null
+    gesteContactEnCours.current = true
+    setContactOccupe(true)
+    setErreurContact(null)
+    setMessageContact(null)
+    let resultat: T | null = null
+    try {
+      const ecrit = await ecrire()
+      setMessageContact(message(ecrit))
+      resultat = ecrit
+    } catch (e) {
+      // Le refus de la base se lit sous ses mots, réécrits pour le client quand ils parlent du « dossier ».
+      setErreurContact(pourLEspace(espace, messageErreur(e, repli)))
+    } finally {
+      await relireContacts()
+      gesteContactEnCours.current = false
+      setContactOccupe(false)
+    }
+    return resultat
+  }
+
+  function ouvrirFenetreContact(fenetre: FenetreContact) {
+    setErreurContact(null)
+    setMessageContact(null)
+    setFenetreContact(fenetre)
+  }
+
+  function appliquerChoixContact(contact: Contact, choix: ChoixDeContact) {
+    const { client } = choix
+    setTiersNom(client.tiersNom)
+    setTiersAdresse(client.tiersAdresse)
+    setTiersSiret(client.tiersSiret)
+    setMentions((m) => mentionsAvecLeClient(m, client))
+    // Sans délai, ou sans date d'émission lisible, l'échéance saisie reste.
+    if (choix.echeance?.date != null) setDateEcheance(choix.echeance.date)
+    setContactChoisi(contact.id)
+    setSuiviEcheance(suiviDeLEcheance(contact, choix, dateEmission))
+  }
+
+  // Un client déjà saisi ne se remplace qu'après une confirmation qui nomme ce qui part ; une saisie vide se remplit sans.
+  function choisirContact(contact: Contact) {
+    const choix = choixDeContact(contact, dateEmission)
+    const remplace = ceQueLeChoixDeContactRemplace(clientSaisi, dateEcheance, choix)
+    if (remplace.length > 0) { setFenetreContact({ genre: 'remplacer', contact, choix, remplace }); return }
+    appliquerChoixContact(contact, choix)
+    setFenetreContact(null)
+  }
+
+  function recalculerEcheance() {
+    if (echeanceDuContact == null) return
+    setDateEcheance(echeanceDuContact.date)
+    setSuiviEcheance({ nom: echeanceDuContact.nom, delai: echeanceDuContact.delai, emission: dateEmission })
+  }
+
+  async function enregistrerCommeContact(saisie: SaisieContact) {
+    if (contactsEntiers == null) return
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    const refus = refusDeLaSaisieContact(dossierId, articleExoneration, { nouveau: true }, saisie, contactsEntiers)
+    if (refus) {
+      setErreurContact(pourLEspace(espace, refus.message))
+      return
+    }
+    const ecrit = await sousVerrouContact(
+      'Le client n’a pas pu être enregistré.',
+      () => enregistrerContact(dossierId, null, saisieQuiPart(saisie)),
+      (c) => `Client « ${nomDansUnRefus(c.nom)} » enregistré.`,
+    )
+    if (ecrit) {
+      // Le client de la facture prend le nouveau contact pour provenance ; son échéance, elle, n'a pas de délai à suivre.
+      setContactChoisi(ecrit.id)
+      setSuiviEcheance(null)
+      setFenetreContact(null)
+    }
+  }
+
+  // Ce que le client offre sous son champ : ses deux gestes, et le contact d'où il vient.
+  function gestesDuClient() {
+    if (!CONTACTS_EXPORTES || contactsEntiers == null) return null
+    const peutEnregistrer = contactDeLaSaisie == null && peutEnregistrerCommeContact(clientSaisi)
+    return (
+      <>
+        {contactDeLaSaisie && (
+          <span className="muted" style={{ fontSize: '0.78rem' }}>Client du fichier : {nomDansUnRefus(contactDeLaSaisie.nom)}</span>
+        )}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {nombreDeContactsEnCours > 0 && (
+            <button
+              type="button" className="btn btn-outline btn-sm" disabled={gesteBloque} aria-label="Choisir un client"
+              onClick={() => ouvrirFenetreContact({ genre: 'choix' })}
+            >
+              Choisir un client
+            </button>
+          )}
+          {peutEnregistrer && (
+            <button
+              type="button" className="btn btn-outline btn-sm" disabled={gesteBloque || refusDesSoins != null} aria-label="Enregistrer ce client"
+              title={refusDesSoins ? pourLEspace(espace, refusDesSoins.message) : undefined}
+              onClick={() => ouvrirFenetreContact({ genre: 'saisie', depart: saisieDuClient(clientSaisi) })}
+            >
+              Enregistrer ce client
+            </button>
+          )}
+        </div>
+        {/* Le refus des soins se lit aussi sous le bouton : une infobulle ne se voit pas au doigt. */}
+        {peutEnregistrer && refusDesSoins && (
+          <span className="muted" style={{ fontSize: '0.78rem' }}>{pourLEspace(espace, refusDesSoins.message)}</span>
+        )}
+      </>
+    )
+  }
+
   async function enregistrer(statutCible: 'brouillon' | 'validee') {
     if (!tiersNom.trim()) {
       setError('Le nom du client est obligatoire.')
@@ -471,7 +664,7 @@ export default function FactureFormModal(props: Props) {
       setError(refusMentions[0])
       return
     }
-    if (enregistrementEnCours.current || gesteArticleEnCours.current) return
+    if (enregistrementEnCours.current || gesteArticleEnCours.current || gesteContactEnCours.current) return
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
     // validée : la validation se confirme, et la confirmation dit ce qu'on perd.
     if (statutCible === 'validee' && nonTransmissible) {
@@ -556,6 +749,7 @@ export default function FactureFormModal(props: Props) {
               <div className="field">
                 <label htmlFor="tiers-nom">Client</label>
                 <input id="tiers-nom" required value={tiersNom} onChange={(e) => setTiersNom(e.target.value)} />
+                {gestesDuClient()}
               </div>
               <div className="field">
                 <label htmlFor="type-client">Le client est</label>
@@ -568,6 +762,30 @@ export default function FactureFormModal(props: Props) {
                 </select>
               </div>
             </div>
+            {CONTACTS_EXPORTES && (contactsCourants == null
+              ? <p className="muted" style={{ marginTop: 0 }}>Clients : Chargement…</p>
+              : 'echec' in contactsCourants
+                ? (
+                  <p className="error-text" style={{ marginTop: 0 }}>
+                    {espace === 'client' ? 'Tes clients ne se lisent pas' : 'Les clients ne se lisent pas'} : {contactsCourants.echec}. Aucun
+                    client ne peut être choisi ni enregistré d’ici ; rouvre la facture pour les relire.
+                  </p>
+                )
+                : (
+                  <>
+                    <BandeauLecturePartielle
+                      quoi={espace === 'client' ? 'Tes clients' : 'Les clients du dossier'} accord="lus"
+                      motif={contactsCourants.lu.complete ? null : (contactsCourants.lu.motif ?? 'lecture incomplète')}
+                      consequence={CONSEQUENCE_CONTACTS_PARTIELS} technique={espace === 'cabinet'}
+                    />
+                    {contactsEntiers != null && nombreDeContactsEnCours === 0 && (
+                      <p className="muted" style={{ marginTop: 0 }}>{phraseDuFichierVide(espace)}</p>
+                    )}
+                  </>
+                ))}
+            {messageContact && <p role="status" style={{ marginTop: 0 }}>{messageContact}</p>}
+            {erreurContact && !fenetreContact && <p className="error-text" role="alert" style={{ marginTop: 0 }}>{erreurContact}</p>}
+            {refusDesSoins && <p className="note-info" role="note">{infoDesSoinsDansLaFacture(espace, refusDesSoins.cle)}</p>}
             <div className="field-row">
               {sirenOuvert(mentions.typeClient) && (
                 <div className="field">
@@ -623,6 +841,12 @@ export default function FactureFormModal(props: Props) {
                 <input id="date-echeance" type="date" value={dateEcheance} onChange={(e) => setDateEcheance(e.target.value)} />
               </div>
             </div>
+            {echeanceDuContact && (
+              <p className="alerte-tva" role="status" style={{ marginTop: 0, marginBottom: 12 }}>
+                {phraseDeLEcheanceARecalculer(echeanceDuContact)}{' '}
+                <button type="button" className="btn btn-outline btn-sm" onClick={recalculerEcheance}>Recalculer l’échéance</button>
+              </p>
+            )}
             <div className="field-row">
               <div className="field">
                 <label htmlFor="nature-operation">La facture porte sur</label>
@@ -849,16 +1073,43 @@ export default function FactureFormModal(props: Props) {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>
-              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || refusMentions.length > 0}>
+              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>
           </form>
         )}
       </div>
+      {fenetreContact?.genre === 'choix' && contactsEntiers != null && (
+        <ContactChoixModal
+          espace={espace} articleExoneration={articleExoneration} contacts={contactsEntiers} dateEmission={dateEmission}
+          onChoisir={choisirContact} onClose={() => setFenetreContact(null)}
+        />
+      )}
+      {fenetreContact?.genre === 'saisie' && contactsEntiers != null && (
+        <ContactSaisieModal
+          dossierId={dossierId} espace={espace} articleExoneration={articleExoneration} contact={null} saisieDeDepart={fenetreContact.depart}
+          contacts={contactsEntiers} occupe={contactOccupe} erreur={erreurContact}
+          onEnregistrer={enregistrerCommeContact} onClose={() => setFenetreContact(null)}
+        />
+      )}
+      {fenetreContact?.genre === 'remplacer' && (() => {
+        const { contact, choix, remplace } = fenetreContact
+        const confirmation = confirmationDuChoixDeContact(espace, contact, remplace)
+        return (
+          <ConfirmationArticle
+            titre={confirmation.titre} boutonLabel="Remplacer" occupe={false} refus={null} erreur={null}
+            onConfirmer={() => { appliquerChoixContact(contact, choix); setFenetreContact(null) }}
+            onAnnuler={() => setFenetreContact(null)}
+          >
+            <p>{confirmation.phrase}</p>
+            <p className="muted">{confirmation.reste}</p>
+          </ConfirmationArticle>
+        )
+      })()}
       {fenetreArticle?.genre === 'choix' && articlesEntiers != null && (
         <ArticleChoixModal
           espace={espace} articles={articlesEntiers}

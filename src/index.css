@@ -2239,3 +2239,13 @@ a.btn { text-decoration: none; }
   background: var(--color-surface-2); border: 1px solid var(--color-border);
   font-size: 0.86rem; overflow-wrap: anywhere;
 }
+
+/* Une information qui n'est ni un refus ni une anomalie : la règle des soins, dite dans le formulaire d'une facture et dans le choix
+   d'un client (espace client, étape A4b2). La teinte neutre de `.bloc-devise`, en bloc de texte : l'alerte rouge de `.alerte-tva`
+   se lirait comme un refus, et rien n'est refusé. Le texte passe à la ligne (`overflow-wrap`), jamais ne déborde. */
+.note-info {
+  margin: 0 0 12px; padding: 9px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2); color: var(--color-text);
+  font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere;
+}

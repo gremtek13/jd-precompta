@@ -46,7 +46,9 @@ vi.mock('../../lib/supabase', () => ({
     from: (table: string) => {
       // Les articles du dossier, lus en entier à l'ouverture (étape A2b) : le catalogue est vide ici ; leurs cas sont dans
       // FactureFormModalArticles.test.tsx.
-      if (table === 'articles') {
+      // Les clients du dossier, lus en entier à l'ouverture (étape A4b2) : le fichier est vide ici ; leurs cas sont dans
+      // FactureFormModalContacts.test.tsx.
+      if (table === 'articles' || table === 'contacts') {
         const articles = { select: () => articles, eq: () => articles, order: () => articles, range: () => Promise.resolve({ data: [], error: null, count: 0 }) }
         return articles
       }
