@@ -96,7 +96,9 @@ describe('le plan prévu, adresses de réception comprises', () => {
   it('après les pièces jointes écartées, à la fin de ce qui ne dépend que du dossier — avant les devis et `exercices_valides`', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('adresses_reception') - 1]).toBe('pieces_jointes_ecartees')
-    expect(ORDRE_RESTAURATION_PREVU[rang('adresses_reception') + 1]).toBe('devis_numerotation')
+    // Depuis l'étape A4a, les contacts les suivent (sauvegardeContacts.test.ts), puis les devis.
+    expect(ORDRE_RESTAURATION_PREVU[rang('adresses_reception') + 1]).toBe('contacts')
+    expect(rang('adresses_reception')).toBeLessThan(rang('devis_numerotation'))
     expect(rang('adresses_reception')).toBeGreaterThan(rang('dossiers'))
     expect(rang('adresses_reception')).toBeLessThan(rang('exercices_valides'))
   })

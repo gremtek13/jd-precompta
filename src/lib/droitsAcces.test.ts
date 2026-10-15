@@ -8,8 +8,10 @@ import {
 } from './droitsAcces'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CONTACTS_EXPORTES } from './contacts'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
+import { contact } from '../test/contacts'
 import { QUI_PEUT_QUOI_ATTENDU } from '../test/quiPeutQuoi'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
@@ -273,7 +275,7 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
   ]
 
   it.each(ETATS)('banque ouverte : $banque, ventes ouvertes : $ventes — ce que la base ouvre, et rien d’autre', ({ banque, ventes }) => {
-    const phrase = ceQueDisentLesCases(banque, ventes, false, false)
+    const phrase = ceQueDisentLesCases(banque, ventes, false, false, false)
     expect(phrase.startsWith(PREFIXE)).toBe(true)
     const suite = phrase.slice(PREFIXE.length)
     // Les devis n'existent pas encore (étape P5) : seul le préfixe, qui dit ce que la case OUVRIRA, les nomme.
@@ -328,12 +330,13 @@ describe('ce que disent les cases, dans les quatre états des deux étapes', () 
   })
 
   it('les quatre états ont quatre phrases', () => {
-    expect(new Set(ETATS.map(({ banque, ventes }) => ceQueDisentLesCases(banque, ventes, false, false))).size).toBe(4)
+    expect(new Set(ETATS.map(({ banque, ventes }) => ceQueDisentLesCases(banque, ventes, false, false, false))).size).toBe(4)
   })
 
-  it('ce que l’onglet affiche est la phrase de l’état des quatre drapeaux', () => {
-    expect(CE_QUE_DISENT_LES_CASES)
-      .toBe(ceQueDisentLesCases(COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES))
+  it('ce que l’onglet affiche est la phrase de l’état des cinq drapeaux', () => {
+    expect(CE_QUE_DISENT_LES_CASES).toBe(ceQueDisentLesCases(
+      COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
+    ))
   })
 })
 
@@ -353,8 +356,8 @@ describe('ce que disent les cases, les adresses de réception ouvertes (étape A
   it.each([false, true].flatMap((banque) => [false, true].map((articles) => ({ banque, articles }))))(
     'banque ouverte : $banque, articles : $articles — la phrase d’avant, puis l’adresse, son histoire, sa déclaration, l’état et leur encart',
     ({ banque, articles }) => {
-      const avant = ceQueDisentLesCases(banque, true, articles, false)
-      const phrase = ceQueDisentLesCases(banque, true, articles, true)
+      const avant = ceQueDisentLesCases(banque, true, articles, false, false)
+      const phrase = ceQueDisentLesCases(banque, true, articles, true, false)
       // Rien de ce que la phrase disait ne se perd : les ventes et les articles, mot pour mot, puis la banque ; la phrase de ce
       // qui vient ensuite ne change PAS — l'encart (étape A6b2) est à l'écran, il n'est plus « à venir ».
       const finAvant = banque
@@ -387,18 +390,104 @@ describe('ce que disent les cases, les adresses de réception ouvertes (étape A
   it('sans les ventes, le drapeau des adresses ne change rien : leur migration exige celles des ventes', () => {
     for (const banque of [false, true]) {
       for (const articles of [false, true]) {
-        expect(ceQueDisentLesCases(banque, false, articles, true)).toBe(ceQueDisentLesCases(banque, false, articles, false))
+        expect(ceQueDisentLesCases(banque, false, articles, true, false)).toBe(ceQueDisentLesCases(banque, false, articles, false, false))
       }
-      expect(ceQueDisentLesCases(banque, false, false, true)).not.toMatch(/adresse de réception|encart/)
+      expect(ceQueDisentLesCases(banque, false, false, true, false)).not.toMatch(/adresse de réception|encart/)
     }
   })
 
   it('les dix états possibles ont dix phrases', () => {
     const phrases = [false, true].flatMap((banque) => [
-      ceQueDisentLesCases(banque, false, false, false),
-      ...[false, true].flatMap((articles) => [false, true].map((adresses) => ceQueDisentLesCases(banque, true, articles, adresses))),
+      ceQueDisentLesCases(banque, false, false, false, false),
+      ...[false, true].flatMap((articles) => [false, true].map((adresses) => ceQueDisentLesCases(banque, true, articles, adresses, false))),
     ])
     expect(new Set(phrases).size).toBe(10)
+  })
+})
+
+// LES CONTACTS (espace client, étape A4a) : leur migration ouvre au client « Ventes », par la base, le fichier de ses
+// clients — la lecture de la table de son dossier, effacés et retirés compris, et ses quatre gestes, l'effacement compris —,
+// avant l'écran qui le montrera (étape A4b, « Mes ventes › Clients »). Elle exige les migrations des ventes : sans elles, le
+// drapeau ne change rien à la phrase. Ce que la phrase nomme est confronté à l'export dès qu'il porte la migration, et les
+// colonnes qu'elle dit lues, à celles d'un contact (`src/test/contacts.ts`, que contacts.test.ts confronte à l'essai).
+const LU_AVEC_CONTACTS: Record<string, readonly string[]> = {
+  'le fichier de ses clients': ['contacts'],
+}
+const GESTES_AVEC_CONTACTS: Record<string, readonly string[]> = {
+  'peut créer, modifier, retirer, reprendre ou effacer un contact': [
+    'enregistrer_contact', 'retirer_contact', 'reprendre_contact', 'effacer_contact',
+  ],
+}
+// Chaque colonne d'un contact, et les mots qui la disent lue ; celles qui ne portent ni une donnée du client du client ni
+// un auteur (la clé, le dossier, le genre, les instants) sont nommées à part, et toutes ensemble font la ligne.
+const COLONNES_DITES: Record<string, string> = {
+  nom: 'nom', type_client: 'type', adresse: 'adresse', siren: 'SIREN', siret: 'SIRET',
+  adresse_electronique: 'adresse de facturation électronique', code_service: 'code service', email: 'e-mail',
+  delai_paiement_jours: 'délai de paiement', observations: 'observations', cree_par: 'qui a créé', modifie_par: 'changé',
+  retire_par: 'retiré', efface_par: 'effacé',
+}
+const COLONNES_SANS_MOT = ['id', 'dossier_id', 'genre', 'retire_le', 'efface_le', 'cree_le', 'modifie_le']
+
+describe('ce que disent les cases, les contacts ouverts (étape A4a)', () => {
+  const ETATS_DES_AUTRES = [false, true].flatMap((banque) => [false, true].flatMap((articles) => [false, true]
+    .map((adresses) => ({ banque, articles, adresses }))))
+
+  it.each(ETATS_DES_AUTRES)(
+    'banque ouverte : $banque, articles : $articles, adresses : $adresses — la phrase d’avant, puis le fichier de ses clients, ses colonnes et ses gestes, et son écran à venir',
+    ({ banque, articles, adresses }) => {
+      const avant = ceQueDisentLesCases(banque, true, articles, adresses, false)
+      const phrase = ceQueDisentLesCases(banque, true, articles, adresses, true)
+      // Rien de ce que la phrase disait ne se perd : les ventes, les articles et les adresses, mot pour mot, puis la
+      // banque ; seule la phrase de ce qui vient ensuite change, l'écran de ses clients (étape A4b) à venir avec ce qui
+      // l'était déjà.
+      const finAvant = banque
+        ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+        : ' L’écran « Banque » de son espace viendra ensuite.'
+      const finPhrase = banque
+        ? ' L’écran « Mes ventes › Clients » et la connexion de sa banque depuis son espace viendront ensuite.'
+        : ' L’écran « Banque » de son espace et l’écran « Mes ventes › Clients » viendront ensuite.'
+      expect(avant.endsWith(finAvant)).toBe(true)
+      const debutBanque = (texte: string) => texte.indexOf(banque ? ' « Banque » ouvre au client' : ' « Banque » ne change encore')
+      const ajout = phrase.slice(debutBanque(avant), debutBanque(phrase))
+      expect(phrase).toBe(avant.slice(0, debutBanque(avant)) + ajout + avant.slice(debutBanque(avant), -finAvant.length) + finPhrase)
+      expect(ajout.startsWith(' Il tient aussi avec toi, par les fonctions de la base, le fichier de ses clients : ')).toBe(true)
+      for (const lu of Object.keys(LU_AVEC_CONTACTS)) expect(ajout).toContain(lu)
+      for (const geste of Object.keys(GESTES_AVEC_CONTACTS)) expect(ajout).toContain(geste)
+      // Tout ce que la base lui ouvre, colonne par colonne, et les auteurs — effacés et retirés compris.
+      const lues = ajout.slice(ajout.indexOf('il le lit en entier — '), ajout.indexOf(' — et peut'))
+      for (const [colonne, mots] of Object.entries(COLONNES_DITES)) expect(lues, colonne).toContain(mots)
+      // Ce que l'effacement fait, et ce qu'il ne fait pas : une facture garde la copie de son client.
+      expect(ajout).toContain('effacer en vide les données, et une facture garde la copie qu’elle en a prise.')
+      // L'écran n'existe pas encore : nommé à venir, jamais comme le lieu où il le tient.
+      expect(ajout).not.toMatch(/Mes ventes › Clients/)
+      // Aucun mot que le garde des écrans tient pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
+      expect(ajout).not.toMatch(/\b(aucun|aucune|rien)\b/i)
+    },
+  )
+
+  it('les colonnes que la phrase dit lues, et celles qu’elle tait, font la ligne d’un contact', () => {
+    expect([...Object.keys(COLONNES_DITES), ...COLONNES_SANS_MOT].sort()).toEqual(Object.keys(contact()).sort())
+  })
+
+  it('sans les ventes, le drapeau des contacts ne change rien : leur migration exige celles des ventes', () => {
+    for (const { banque, articles, adresses } of ETATS_DES_AUTRES) {
+      expect(ceQueDisentLesCases(banque, false, articles, adresses, true))
+        .toBe(ceQueDisentLesCases(banque, false, articles, adresses, false))
+      expect(ceQueDisentLesCases(banque, false, articles, adresses, true)).not.toMatch(/contact|clients/)
+    }
+  })
+
+  it('les dix-huit états possibles ont dix-huit phrases', () => {
+    const phrases = [false, true].flatMap((banque) => [
+      ceQueDisentLesCases(banque, false, false, false, false),
+      ...[false, true].flatMap((articles) => [false, true].flatMap((adresses) => [false, true]
+        .map((contacts) => ceQueDisentLesCases(banque, true, articles, adresses, contacts)))),
+    ])
+    expect(new Set(phrases).size).toBe(18)
+  })
+
+  it('la case « Ventes » ouvre ce que la phrase nomme : le fichier de ses clients et ses gestes, sous la même case', () => {
+    expect(ceQueDisentLesCases(true, true, true, true, true)).toContain('« Ventes » ouvre au client « Mes ventes »')
   })
 })
 
@@ -414,8 +503,8 @@ const GESTES_AVEC_ARTICLES: Record<string, readonly string[]> = {
 
 describe('ce que disent les cases, les articles ouverts (étape A1)', () => {
   it.each([false, true])('banque ouverte : %s — la phrase des ventes, puis le catalogue, ses colonnes et ses gestes, et son écran à venir', (banque) => {
-    const avant = ceQueDisentLesCases(banque, true, false, false)
-    const phrase = ceQueDisentLesCases(banque, true, true, false)
+    const avant = ceQueDisentLesCases(banque, true, false, false, false)
+    const phrase = ceQueDisentLesCases(banque, true, true, false, false)
     // Rien de ce que la phrase disait ne se perd : celle des ventes, celle de la banque, mot pour mot.
     const ventes = avant.slice(0, avant.indexOf(banque ? ' « Banque » ouvre au client' : ' « Banque » ne change encore'))
     expect(phrase.startsWith(ventes)).toBe(true)
@@ -439,20 +528,20 @@ describe('ce que disent les cases, les articles ouverts (étape A1)', () => {
 
   it('sans les ventes, le drapeau des articles ne change rien : leur migration exige celles des ventes', () => {
     for (const banque of [false, true]) {
-      expect(ceQueDisentLesCases(banque, false, true, false)).toBe(ceQueDisentLesCases(banque, false, false, false))
-      expect(ceQueDisentLesCases(banque, false, true, false)).not.toMatch(/article/)
+      expect(ceQueDisentLesCases(banque, false, true, false, false)).toBe(ceQueDisentLesCases(banque, false, false, false, false))
+      expect(ceQueDisentLesCases(banque, false, true, false, false)).not.toMatch(/article/)
     }
   })
 
   it('les six états possibles ont six phrases', () => {
     const phrases = [false, true].flatMap((banque) => [
-      ceQueDisentLesCases(banque, false, false, false), ceQueDisentLesCases(banque, true, false, false), ceQueDisentLesCases(banque, true, true, false),
+      ceQueDisentLesCases(banque, false, false, false, false), ceQueDisentLesCases(banque, true, false, false, false), ceQueDisentLesCases(banque, true, true, false, false),
     ])
     expect(new Set(phrases).size).toBe(6)
   })
 
   it('la case « Ventes » ouvre ce que la phrase nomme : la lecture du catalogue et ses gestes, sous la même case', () => {
-    expect(ceQueDisentLesCases(true, true, true, false)).toContain('« Ventes » ouvre au client « Mes ventes »')
+    expect(ceQueDisentLesCases(true, true, true, false, false)).toContain('« Ventes » ouvre au client « Mes ventes »')
   })
 })
 
@@ -477,7 +566,7 @@ describe('ce que « Ventes » ouvre dans les fonctions de la vente (P3), confron
   it('le plafond que la phrase dit est celui de send-email', () => {
     const source = readFileSync(resolve(process.cwd(), 'supabase/functions/send-email/index.ts'), 'utf8')
     expect(source.match(/const PLAFOND_CLIENT_PAR_JOUR = (\d+)\n/)?.[1]).toBe('30')
-    expect(ceQueDisentLesCases(false, true, false, false)).toContain('trente par dossier et par jour au plus')
+    expect(ceQueDisentLesCases(false, true, false, false, false)).toContain('trente par dossier et par jour au plus')
   })
 })
 
@@ -502,12 +591,13 @@ describe('ce que disent les cases, confronté à l’export', () => {
     for (const [, table, predicat] of policies) {
       expect(predicat, table).toMatch(/client_du_dossier\((f\.)?dossier_id, 'ventes'\)/)
     }
-    // Depuis l'étape A1, la lecture des articles aussi, et depuis l'étape A6a celle des adresses de réception, le jour où
-    // l'export porte leur migration.
+    // Depuis l'étape A1, la lecture des articles aussi, depuis l'étape A6a celle des adresses de réception, et depuis
+    // l'étape A4a celle des contacts, le jour où l'export porte leur migration.
     expect(policies.map((p) => p[1]).sort()).toEqual([
       ...Object.values(LU_AVEC_VENTES).flat(),
       ...(ARTICLES_EXPORTES ? Object.values(LU_AVEC_ARTICLES).flat() : []),
       ...(ADRESSES_RECEPTION_EXPORTEES ? Object.values(LU_AVEC_ADRESSES).flat() : []),
+      ...(CONTACTS_EXPORTES ? Object.values(LU_AVEC_CONTACTS).flat() : []),
     ].sort())
     for (const fonction of new Set(Object.values(GESTES_AVEC_VENTES).flat())) {
       expect(derniereDefinitionSql(fonction), fonction).toMatch(/if not public\.gere_les_ventes\((p_dossier_id|v_transmission\.dossier_id)\) then/)
@@ -558,6 +648,24 @@ describe('ce que disent les cases, confronté à l’export', () => {
         .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
     }
   })
+
+  // LES CONTACTS (étape A4a) : le drapeau dit ce que porte l'export (contacts.test.ts le garde aussi) ; levé, la lecture
+  // que la phrase nomme est ouverte au droit « Ventes », et chacun des quatre gestes est une fonction qui l'accepte,
+  // l'accès d'abord.
+  it('les contacts ouverts (A4a) : la lecture du fichier de ses clients et ses quatre gestes, l’export les ouvre à « Ventes »', () => {
+    expect(porte(/create table public\.contacts \(/), 'CONTACTS_EXPORTES ne dit plus ce que porte l’export').toBe(CONTACTS_EXPORTES)
+    if (!CONTACTS_EXPORTES) return
+    expect(premiereDesVentes, 'la migration des contacts exige celles des ventes').toBe(true)
+    for (const table of Object.values(LU_AVEC_CONTACTS).flat()) {
+      expect(porte(new RegExp(`create policy ${table}_lecture_ventes on public\\.${table}\\s+for select to authenticated\\s+using \\(public\\.client_du_dossier\\(dossier_id, 'ventes'\\)\\);`)), table)
+        .toBe(true)
+    }
+    for (const fonction of Object.values(GESTES_AVEC_CONTACTS).flat()) {
+      // Le PREMIER `begin` du corps, sans rien entre lui et le contrôle d'accès.
+      expect(derniereDefinitionSql(fonction), fonction)
+        .toMatch(/\$\$\s*(declare\s(?:(?!\bbegin\b)[\s\S])*)?\bbegin\s+if not public\.gere_les_ventes\(p_dossier_id\) or not exists/)
+    }
+  })
 })
 
 // CE QUE LE CLIENT « VENTES » LIT DE LA MAIN DU CABINET (espace client, étape P2 ; conception, §3.6). Le cabinet a accepté
@@ -589,7 +697,7 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
   it('la phrase des cases dit lus les textes que les libellés disent lus', () => {
     for (const banque of [false, true]) {
       for (const articles of [false, true]) {
-        expect(ceQueDisentLesCases(banque, true, articles, false)).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
+        expect(ceQueDisentLesCases(banque, true, articles, false, false)).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
       }
     }
   })

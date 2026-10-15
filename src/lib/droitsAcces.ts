@@ -22,6 +22,7 @@
 // de son champ (les libellés en fin de module).
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CONTACTS_EXPORTES } from './contacts'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 
@@ -168,11 +169,18 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // (étape A6b). Elle exige aussi celles des ventes. La déclarer « avec toi » est la décision MEG1-Q16 du cabinet.
 // L'adresse se lit et se déclare à l'écran depuis l'étape A6b1 (« Tes plateformes »), et l'encart de l'état est sur l'accueil
 // depuis l'étape A6b2 : la phrase dit l'un et l'autre, et ne garde « ensuite » que pour ce qui reste à venir.
+// DEPUIS L'ÉTAPE A4a, un cinquième : la migration `contacts` (`CONTACTS_EXPORTES`, lib/contacts.ts) ouvre au client
+// « Ventes », par la base, le fichier de ses clients — la lecture de toute la table de son dossier, effacés et retirés
+// compris, et ses quatre gestes, l'effacement compris —, avant l'écran qui le montrera (étape A4b, « Mes ventes ›
+// Clients ») : la phrase le dit à venir. Elle exige aussi celles des ventes. Le tenir « avec toi » suit le patron des
+// articles (MEG1-Q1) ; que le client du cabinet réponde des données de ses clients, et que le cabinet agisse pour lui, est
+// l'hypothèse MEG1-Q11 (lib/contacts.ts, `HYPOTHESES_DES_CONTACTS`).
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
   articlesOuverts: boolean,
   adressesOuvertes: boolean,
+  contactsOuverts: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -205,6 +213,15 @@ export function ceQueDisentLesCases(
       + 'l’adresse et ce qui attend — les encaissements à déclarer et les factures refusées sur sa plateforme —, et mène à '
       + '« Mes ventes ».'
     : ''
+  // Les contacts (étape A4a) : tout ce que la base ouvre — les colonnes, les auteurs, les quatre gestes — et ce que
+  // l'effacement fait et ne fait pas : la ligne reste, ses données partent, une facture garde la copie qu'elle a prise.
+  const avecLesContacts = ventesOuvertes && contactsOuverts
+  const contacts = avecLesContacts
+    ? ' Il tient aussi avec toi, par les fonctions de la base, le fichier de ses clients : il le lit en entier — nom, '
+      + 'type, adresse, SIREN et SIRET, adresse de facturation électronique et code service, e-mail, délai de paiement, '
+      + 'observations, et qui a créé, changé, retiré ou effacé chaque contact — et peut créer, modifier, retirer, reprendre '
+      + 'ou effacer un contact ; effacer en vide les données, et une facture garde la copie qu’elle en a prise.'
+    : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
     ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
@@ -222,22 +239,30 @@ export function ceQueDisentLesCases(
   // choix d'un article dans la facture, n'est pas un écran de plus.
   // L'encart de sa facture électronique est sur son accueil depuis l'étape A6b2 : la phrase ne le dit plus à venir, et ne garde
   // « ensuite » que pour ce qui l'est encore — la connexion de sa banque, l'écran « Banque », ou les écrans « Ventes » et « Banque ».
+  // L'écran de ses clients (étape A4b, « Mes ventes › Clients ») vient après ce que la base lui ouvre (étape A4a) : à venir,
+  // avec ce qui l'était déjà.
   const aVenir = simulationSousBanque
     ? (ventesOuvertes
-      ? ' La connexion de sa banque depuis son espace viendra ensuite.'
+      ? (avecLesContacts
+        ? ' L’écran « Mes ventes › Clients » et la connexion de sa banque depuis son espace viendront ensuite.'
+        : ' La connexion de sa banque depuis son espace viendra ensuite.')
       : ' L’écran « Ventes » de son espace et la connexion de sa banque viendront ensuite.')
     : (ventesOuvertes
-      ? ' L’écran « Banque » de son espace viendra ensuite.'
+      ? (avecLesContacts
+        ? ' L’écran « Banque » de son espace et l’écran « Mes ventes › Clients » viendront ensuite.'
+        : ' L’écran « Banque » de son espace viendra ensuite.')
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
-  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + banque + ventesFermees + aVenir
+  return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts + banque
+    + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 
 // L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
-// des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a).
+// des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
+// contacts, de la leur (étape A4a).
 export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
-  COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES,
+  COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
 )
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
