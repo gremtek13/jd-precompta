@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
-  LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOTE_DECLARATION, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
+  LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
@@ -433,24 +433,22 @@ describe('ce que disent les cases, les contacts ouverts (étape A4a)', () => {
     .map((adresses) => ({ banque, articles, adresses }))))
 
   it.each(ETATS_DES_AUTRES)(
-    'banque ouverte : $banque, articles : $articles, adresses : $adresses — la phrase d’avant, puis le fichier de ses clients, ses colonnes et ses gestes, et son écran à venir',
+    'banque ouverte : $banque, articles : $articles, adresses : $adresses — la phrase d’avant, puis le fichier de ses clients, son écran, ses colonnes et ses gestes',
     ({ banque, articles, adresses }) => {
       const avant = ceQueDisentLesCases(banque, true, articles, adresses, false)
       const phrase = ceQueDisentLesCases(banque, true, articles, adresses, true)
       // Rien de ce que la phrase disait ne se perd : les ventes, les articles et les adresses, mot pour mot, puis la
-      // banque ; seule la phrase de ce qui vient ensuite change, l'écran de ses clients (étape A4b) à venir avec ce qui
-      // l'était déjà.
+      // banque ; la phrase de ce qui vient ensuite ne change PAS — l'écran de ses clients (étape A4b1) existe, il n'est plus
+      // « à venir », comme celui de ses articles.
       const finAvant = banque
         ? ' La connexion de sa banque depuis son espace viendra ensuite.'
         : ' L’écran « Banque » de son espace viendra ensuite.'
-      const finPhrase = banque
-        ? ' L’écran « Mes ventes › Clients » et la connexion de sa banque depuis son espace viendront ensuite.'
-        : ' L’écran « Banque » de son espace et l’écran « Mes ventes › Clients » viendront ensuite.'
+      const finPhrase = finAvant
       expect(avant.endsWith(finAvant)).toBe(true)
       const debutBanque = (texte: string) => texte.indexOf(banque ? ' « Banque » ouvre au client' : ' « Banque » ne change encore')
       const ajout = phrase.slice(debutBanque(avant), debutBanque(phrase))
       expect(phrase).toBe(avant.slice(0, debutBanque(avant)) + ajout + avant.slice(debutBanque(avant), -finAvant.length) + finPhrase)
-      expect(ajout.startsWith(' Il tient aussi avec toi, par les fonctions de la base, le fichier de ses clients : ')).toBe(true)
+      expect(ajout.startsWith(' Il tient aussi avec toi, dans « Mes ventes › Clients » et par les fonctions de la base, le fichier de ses clients : ')).toBe(true)
       for (const lu of Object.keys(LU_AVEC_CONTACTS)) expect(ajout).toContain(lu)
       for (const geste of Object.keys(GESTES_AVEC_CONTACTS)) expect(ajout).toContain(geste)
       // Tout ce que la base lui ouvre, colonne par colonne, et les auteurs — effacés et retirés compris.
@@ -458,8 +456,8 @@ describe('ce que disent les cases, les contacts ouverts (étape A4a)', () => {
       for (const [colonne, mots] of Object.entries(COLONNES_DITES)) expect(lues, colonne).toContain(mots)
       // Ce que l'effacement fait, et ce qu'il ne fait pas : une facture garde la copie de son client.
       expect(ajout).toContain('effacer en vide les données, et une facture garde la copie qu’elle en a prise.')
-      // L'écran n'existe pas encore : nommé à venir, jamais comme le lieu où il le tient.
-      expect(ajout).not.toMatch(/Mes ventes › Clients/)
+      // L'écran existe depuis l'étape A4b1 : nommé comme le lieu où il le tient, plus jamais « à venir ».
+      expect(phrase).not.toMatch(/Clients[^.]*(viendr|ensuite)/)
       // Aucun mot que le garde des écrans tient pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
       expect(ajout).not.toMatch(/\b(aucun|aucune|rien)\b/i)
     },
@@ -682,6 +680,11 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     // plus bas confronte sa policy à l'export).
     [LIBELLE_DESIGNATION_ARTICLE, 'le nom de l’article', 'la lit'],
     [LIBELLE_DESCRIPTION_ARTICLE, 'facultative', 'la lit'],
+    // Les trois textes libres d'un contact (étape A4b1) : la table `contacts` est ouverte à « Ventes » par sa migration (le test
+    // plus bas confronte sa policy et ses colonnes à l'export).
+    [LIBELLE_NOM_CONTACT, 'Nom ou raison sociale', 'le lit'],
+    [LIBELLE_ADRESSE_CONTACT, 'Adresse', 'la lit'],
+    [LIBELLE_OBSERVATIONS_CONTACT, 'facultatives', 'les lit'],
   ]
 
   it('aucun ne se dit interne ; chacun dit où le texte va, et que le client qui porte la case le lit', () => {
@@ -691,7 +694,7 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
       expect(libelle).toContain(ou)
       expect(libelle).toContain(lit)
     }
-    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(6)
+    expect(new Set(LIBELLES.map(([l]) => l)).size).toBe(9)
   })
 
   it('la phrase des cases dit lus les textes que les libellés disent lus', () => {
@@ -719,6 +722,14 @@ describe('ce que le client « Ventes » lit de la main du cabinet : chaque libel
     if (!ARTICLES_EXPORTES) return
     expect(fichiersDuSchema().some((f) => f.texte.includes('create policy articles_lecture_ventes on public.articles'))).toBe(true)
     expect(fichiersDuSchema().some((f) => /create table public\.articles \([^;]*\bdesignation text\b[^;]*\bdescription text\b/.test(f.texte))).toBe(true)
+  })
+
+  // Le nom, l'adresse et les observations d'un contact (étape A4b1) vivent dans `contacts`, que « Ventes » lit dès l'export de sa
+  // migration, colonnes comprises : sans cela, leurs libellés diraient lu ce que le client ne lit pas.
+  it('le nom, l’adresse et les observations d’un contact vivent dans une table que l’export ouvre à « Ventes »', () => {
+    if (!CONTACTS_EXPORTES) return
+    expect(fichiersDuSchema().some((f) => f.texte.includes('create policy contacts_lecture_ventes on public.contacts'))).toBe(true)
+    expect(fichiersDuSchema().some((f) => /create table public\.contacts \([^;]*\bnom text\b[^;]*\badresse text\b[^;]*\bobservations text\b/.test(f.texte))).toBe(true)
   })
 })
 

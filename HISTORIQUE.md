@@ -24459,11 +24459,16 @@ l'iPhone, et le texte ENVOYÉ comme la page RELUE sont égaux au fichier prépar
 recomptées par requête : 140 chantiers livrés sur 183 (77 %) ; pour un dossier BNC, 140 sur 170 (82 %). Le worktree de
 l'agent retiré (son diff identique au correctif livré, comparé par `git -C`), comme celui de l'intégration.
 
-**RESTE.** La ligne 34.93 se ferme sur la mesure : aucun correctif, la mesure reste au banc. NON VÉRIFIÉ : l'iPhone — le
-banc n'a que Chromium ; la question est posée au cabinet (dans Safari, et non dans l'application installée, les boutons
-du bas d'une longue fenêtre s'atteignent-ils ?). L'hypothèse la plus plausible d'un défaut de WebKit est la hauteur `vh`
-des cartes contre le voile, et son remède une classe commune de voile et de carte (`dvh`), une étape de `dev`, seulement
-si l'iPhone la confirme. Les fenêtres que le banc n'ouvre pas (une dizaine) ne sont pas sondées.
+**L'IPHONE, LE 15/10/2026.** La question posée au cabinet (S238-Q1) : sur son iPhone, dans Safari et non dans
+l'application installée, la fenêtre « Nouvel article » (Docs › Factures émises › Articles, dossier `test`), défilée
+jusqu'en bas — ses boutons « Annuler » et « Enregistrer » sont-ils entiers, visibles au-dessus de la barre de Safari, et
+« Annuler » se touche-t-il ? Réponse : « oui c'est visible ». L'hypothèse d'un défaut propre à WebKit (la hauteur `vh`
+des cartes contre le voile) n'a donc pas lieu d'être, et l'étape `dvh` ne s'ouvre pas. La ligne 34.93 de la feuille de
+route le dit (propriété réécrite entière, le texte ENVOYÉ et la page RELUE égaux au fichier préparé).
+
+**RESTE.** La ligne 34.93 se ferme sur la mesure : aucun correctif, la mesure reste au banc. L'iPhone a répondu
+(ci-dessus) : aucun défaut sur la fenêtre éprouvée, et aucune étape `dvh`. Les fenêtres que le banc n'ouvre pas (une
+dizaine) ne sont pas sondées.
 
 ### 15/10/2026 — LES CONTACTS, EN BASE — ESPACE CLIENT, ÉTAPE A4a (LIGNE 51.5)
 
@@ -24582,7 +24587,109 @@ est celui que l'étape avait éprouvé ; puis le fichier renommé. Barrière sur
 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 217 tests chacun ; construction verte
 (`index-DOhLMe2v.js`). Dans la même demande, la mise en ligne de la ligne 34.93 (S238) et les réponses du cabinet.
 
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #171 (`9305253`) à 9 h 58 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `ae7c6b9` ; l'arbre de `main` (`c60bddfd…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-DOhLMe2v.js`, le paquet de la barrière (déploiement 38702397620) ; la branche réalignée sur `9305253`,
+arbres égaux. Le worktree de l'agent retiré (son contenu, mis dans un index temporaire, rend l'arbre `654c699e…` du
+correctif livré, comparé par `git -C`), comme celui de l'intégration (ses 173 liens d'abord) ; aucune réplique en
+marche. La feuille de route : la ligne 51.5 reçoit le paragraphe d'A4a, les décisions du 15/10/2026 comprises, et un
+« RESTE » qui nomme A4b ; la propriété réécrite entière (30 556 caractères), le texte ENVOYÉ et la page RELUE égaux au
+fichier préparé. Les barres recomptées par requête : inchangées, 140 sur 183 (77 %) et, pour un dossier BNC, 140 sur 170
+(82 %).
+
 **RESTE.** A4b : « Mes ventes › Clients » et la liste du cabinet, l'effacement confirmé, la liste des inactifs depuis
 trois ans, le libellé des observations (le client « Ventes » les lit), « Choisir un client » et « Enregistrer ce
 client » dans la facture, l'import CSV ; puis A5 (MEG1-Q12 à Q14), MEG1-Q5 et A7. NON VÉRIFIÉ : la version de l'article
 L441-10 du code de commerce en vigueur au 01/01/2027.
+
+### 15/10/2026 — « MES VENTES › CLIENTS » : LE FICHIER DES CLIENTS, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A4b1 (LIGNE 51.5)
+
+(Préparée le 15/10/2026 par l'agent S240 sur `9305253`. Fichiers nouveaux : `src/lib/contactsLecture.ts`,
+`contactsEcriture.ts`, `contactsVue.ts` et leurs trois tests, `src/pages/dossier/ContactsVue.tsx`,
+`ContactSaisieModal.tsx`, `ContactsVue.test.tsx`, `FacturesTabContacts.test.tsx`. Modifiés : `FacturesTab.tsx`,
+`ClientVentes.tsx` (un commentaire), `src/lib/droitsAcces.ts` et son test, `espaceVentes.ts` et son test, `contacts.ts`
+(un commentaire devenu faux), `FacturesTabArticles.test.tsx` (la liste des onglets), `ecransAvantLecture.test.tsx`,
+`RGPD.md`, `outils/captures/fauxSupabase.ts` et `debordements.mjs` (par AJOUT). Aucune migration, aucune policy, aucune
+Edge Function.)
+
+**LA DÉLIMITATION.** A4b est découpée : A4b1, la vue « Clients » — la liste et ses gestes ; A4b2, le formulaire de
+facture (« Choisir un client », « Enregistrer ce client », l'échéance proposée, la règle des soins dite dans la
+facture) ; A4b3, l'import CSV et les clients sans activité depuis trois ans. Aucune fiche qui montrerait les factures
+d'un contact : rien ne relie encore une facture à un contact (A7).
+
+**LA VUE.** « Clients » est la quatrième vue du sélecteur de l'onglet Factures (« Factures » reste la vue par défaut),
+au cabinet dans l'onglet et au client « Ventes » dans « Mes ventes », sous `CONTACTS_EXPORTES` (rebaissé : aucun onglet,
+aucune lecture de la table, éprouvé par un accesseur). La liste est lue en entier, retirés ET effacés compris
+(`lib/contactsLecture.ts`) : l'unicité d'un SIRET se juge sur ce qui est lu. Un effacé ne s'AFFICHE jamais — ni dans la
+liste, ni sous « Retirés », ni dans la recherche —, et ne compte pas pour dire « aucun client ». Colonnes : nom
+(« Retiré le … », « par le client »), type (les quatre libellés du formulaire de la facture, confrontés à sa source),
+SIRET sinon SIREN, e-mail, délai (« 30 jours », « 0 jour »). La recherche lit le nom, le SIREN et le SIRET ; « N sur M »
+compte avant la recherche.
+
+**LES GESTES.** Nouveau client et modifier écrivent TOUS les champs par `enregistrer_contact` (`saisieQuiPart`, la
+saisie telle qu'elle part), le premier refus du module dit avant le clic, bouton grisé ; un champ que le type n'ouvre
+pas ne s'affiche pas (SIREN et SIRET hors de France, adresse électronique hors entreprise et organisme public, code
+service hors organisme public) et part à nul ; AUCUNE validation native (pas de formulaire, ni `required`, ni `pattern`,
+ni type courriel ou nombre : la leçon d'A2b). Retirer et reprendre par leurs fonctions ; EFFACER par `effacer_contact`
+après une confirmation qui NOMME le contact, liste ce que CE contact porte et qui part, dit que les factures gardent
+leur copie, dix ans, et que le geste ne se défait pas ; offert aussi sur un retiré. Un seul verrou `useRef` pour les
+quatre gestes, relâché après la relecture, relue aussi sur un refus ; l'écriture vérifie la ligne rendue (l'identifiant
+visé, retiré ou non, effacé ou non).
+
+**LA RÈGLE DES SOINS (A4-Q4).** Dans un dossier de soins, une ligne d'information au-dessus de la liste dit ce que la
+règle refuse ; chaque contact qu'elle refuse (rangé avant le passage aux soins) est signalé, « Effacer » offert, jamais
+fait d'office. LECTURE de « ne se modifie plus tel quel » : « Modifier » reste OFFERT — la règle refuse de réécrire le
+contact tel quel, pas de le changer : un SIREN donné à un non-assujetti le rend admissible —, la fenêtre dit le refus
+avant le clic, bouton grisé tant que la saisie est celle d'avant ; « Reprendre » est grisé sous les mots du module. Les
+deux refus des soins parlent d'« un dossier » et de « ses patients » : réécrits pour le client (`REECRITURES_CLIENT`,
+deux entrées).
+
+**LES LIBELLÉS.** Le nom, l'adresse et les observations disent qui les lit (`LIBELLE_NOM_CONTACT`,
+`LIBELLE_ADRESSE_CONTACT`, `LIBELLE_OBSERVATIONS_CONTACT`, leurs variantes `_CLIENT`) ; les identifiants et l'e-mail
+n'en portent pas. La phrase de l'onglet Accès nomme « Mes ventes › Clients » et ne le dit plus à venir.
+
+**LES PREUVES.** Tests de logique (la lecture, l'écriture, le module pur) et d'écran des deux espaces ; l'écran est
+inscrit dans `ecransAvantLecture.test.tsx` ; les scanners passent sans exception nouvelle. 53 mutations ciblées : 52
+mordent, une est équivalente (le premier argument de la règle des soins, que `gestesDuContact` écarte pour
+« Modifier »). Le banc : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 pixels et aux combinaisons extrêmes des volets,
+passes du cabinet et du client (sept visites du cabinet — cinq de l'atelier : la liste, « Retirés », un client neuf, une
+modification, l'effacement ; deux du cabinet infirmier, dossier de soins : la liste et la fenêtre d'un contact rangé
+avant —, trois du client), la fenêtre de saisie et la confirmation ouvertes ; le contact effacé du faux Supabase n'y
+paraît nulle part (la visite le vérifie). Les identifiants fictifs sont ceux des jeux d'essai du dépôt : 123456782 et
+12345678200010, 987654324, 100000207 et 10000020700017. Barrière : `tsc -b` 0 (il a vu une valeur d'union inventée
+qu'aucun test n'avait vue) ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; construction verte ; suite
+entière 380 fichiers, 11 382 tests.
+
+**RÉSULTATS NÉGATIFS, À NE PAS RÉENQUÊTER.** Vitest ne type-vérifie pas : une valeur d'union inventée dans un test
+(`ArticleExoneration`) n'a été vue que par `tsc -b`.
+
+**LA RELECTURE, LE 15/10/2026.** Le correctif relu en entier par la session : vingt-deux fichiers, 3 084 lignes ajoutées
+et 39 retirées ; la copie de l'agent, mise dans un index temporaire, rend l'arbre du correctif appliqué sur `9305253`
+(`157ebd86…`). Les modules de lecture et d'écriture (les quatre fonctions et leurs paramètres, la ligne rendue
+vérifiée — un contact effacé n'est plus retiré, comme le veut la base), le module pur, l'écran et sa fenêtre, la phrase
+de l'onglet Accès, les deux réécritures du client, le registre et les visites du banc. Un écart : la dernière retouche
+de `ContactsVue.tsx` est postérieure aux captures de l'agent : le bouton de l'effacement y paraît encore sous le style
+principal, quand le code le pose en `btn-danger`. Le banc est donc rejoué par la session sur l'arbre intégré. L'export
+d'une fiche, que le registre disait « à placer », va à A4b3, avec l'import ; la liste des clients sans activité depuis
+trois ans attend A7, qui reliera une facture au contact d'où vient son client : d'ici là, rien ne se devine (ni un nom,
+ni un SIREN rapproché).
+
+**L'INTÉGRATION, LE 15/10/2026.** Le correctif appliqué sur `9305253` : l'arbre obtenu est celui de l'agent. Barrière
+sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux,
+11 382 tests chacun ; construction verte (`index-D_3S6frv.js`). Le banc rejoué par la session sur l'arbre intégré : 0
+débordement aux onze passes (1 440, 1 280, 1 024, 720 et 390 pixels, les quatre combinaisons des volets, les deux passes
+du client), 0 bouton de fenêtre recouvert — 170 sondés dans 36 fenêtres au cabinet, 84 dans 20 chez le client —, aucune
+police refusée ; ses captures, prises après la dernière retouche, montrent le bouton de l'effacement sous le style
+`btn-danger`. Dans la même demande, la mise en ligne d'A4a (S239) et la réponse du cabinet à S238-Q1 (l'iPhone).
+
+**LES QUESTIONS AU CABINET.** A4B1-Q1 : « Modifier » reste offert sur un contact rangé avant le passage aux soins (la
+fenêtre dit le refus), plutôt que grisé. A4B1-Q2 : « Retirer » part sans confirmation, comme pour les articles.
+A4B1-Q3 : la liste ne montre pas l'adresse ni les observations (elles sont dans « Modifier »). Recommandation : les
+trois telles quelles.
+
+**RESTE.** A4b2 : « Choisir un client » et « Enregistrer ce client » dans le formulaire d'une facture, l'échéance
+proposée (la date d'émission et le délai du contact), la règle des soins dite dans la facture (RGPD.md, §8.7) ; l'e-mail
+d'un contact ne se recopie pas, la facture n'en ayant pas : la fenêtre d'envoi le proposera quand la facture gardera la
+provenance (A7). A4b3 : l'import d'un fichier de clients (un aperçu, les refus redits ligne par ligne, tout ou rien) et
+l'export d'une fiche. Puis A5 (MEG1-Q12 à Q14), MEG1-Q5 et A7 ; après A7, la liste des clients sans activité depuis
+trois ans. NON VÉRIFIÉ : la version de l'article L441-10 du code de commerce en vigueur au 01/01/2027.

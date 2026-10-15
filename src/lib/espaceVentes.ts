@@ -115,6 +115,21 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
       + 'de réception.',
   },
   { de: 'le SIREN du dossier', vers: 'le SIREN de ta société' },
+  // lib/contacts.ts, `REFUS_ENREGISTREMENT_CONTACT` et `REFUS_REPRISE_CONTACT` (étape A4b1) : les deux refus de la règle des soins
+  // parlent d'« un dossier » et de « ses patients » ; les vingt-cinq autres se lisent tels quels. Aucun des deux ne renvoie à un
+  // onglet : le client ne range pas un particulier, ni un client établi hors de France, dans SES clients.
+  {
+    de: 'Un dossier qui dispense des soins exonérés (art. 261, 4, 1° du CGI) ne range pas de particulier dans ses contacts : '
+      + "ce seraient ses patients. Un autre non-assujetti, une association par exemple, s'y range avec son SIREN.",
+    vers: 'Ta société dispense des soins exonérés (art. 261, 4, 1° du CGI) : tu ne ranges pas de particulier dans tes clients, '
+      + 'ce seraient tes patients. Un autre non-assujetti, une association par exemple, s’y range avec son SIREN.',
+  },
+  {
+    de: 'Un dossier qui dispense des soins exonérés (art. 261, 4, 1° du CGI) ne range pas de client établi hors de France dans '
+      + 'ses contacts : il pourrait être un particulier, donc un patient.',
+    vers: 'Ta société dispense des soins exonérés (art. 261, 4, 1° du CGI) : tu ne ranges pas de client établi hors de France '
+      + 'dans tes clients, il pourrait être un particulier, donc un patient.',
+  },
 ]
 
 /** Le texte tel que l'espace le lit : celui du cabinet tel quel ; pour le client, ses phrases du cabinet réécrites. */

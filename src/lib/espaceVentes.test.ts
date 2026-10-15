@@ -10,7 +10,10 @@ import {
   LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT, LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT,
   LIBELLE_NOTE_DECLARATION, LIBELLE_NOTE_DECLARATION_CLIENT, LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT,
   LIBELLE_PLATEFORME_ADRESSE, LIBELLE_PLATEFORME_ADRESSE_CLIENT,
+  LIBELLE_ADRESSE_CONTACT, LIBELLE_ADRESSE_CONTACT_CLIENT, LIBELLE_NOM_CONTACT, LIBELLE_NOM_CONTACT_CLIENT,
+  LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_OBSERVATIONS_CONTACT_CLIENT,
 } from './droitsAcces'
+import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import { obligationEncaissee } from './encaissementsFactures'
@@ -58,6 +61,10 @@ const PRODUITES: Record<string, () => string> = {
   // Les refus de la déclaration d'une adresse de réception (étape A6b1) : les dix-neuf messages de la base, tels que le module
   // les dit ; deux nomment « le dossier ».
   'REFUS_DECLARATION_ADRESSE': () => REFUS_DECLARATION_ADRESSE.map((r) => r.modele).join('\n'),
+  // Les refus du fichier des clients (étape A4b1) : les vingt-sept messages d'`enregistrer_contact` et les six de
+  // `reprendre_contact`, tels que le module les dit ; les deux de la règle des soins nomment « un dossier » et « ses patients ».
+  'REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT': () => [...REFUS_ENREGISTREMENT_CONTACT, ...REFUS_REPRISE_CONTACT]
+    .map((r) => r.modele).join('\n'),
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
   // Les refus de la fonction que la liaison du client rencontre (étape P4b) : lus dans sa source, au caractère près.
@@ -183,6 +190,9 @@ describe('les libellés des textes que le client écrit', () => {
     [LIBELLE_DESIGNATION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE_CLIENT],
     [LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESCRIPTION_ARTICLE_CLIENT],
     [LIBELLE_PLATEFORME_ADRESSE, LIBELLE_PLATEFORME_ADRESSE_CLIENT],
+    [LIBELLE_NOM_CONTACT, LIBELLE_NOM_CONTACT_CLIENT],
+    [LIBELLE_ADRESSE_CONTACT, LIBELLE_ADRESSE_CONTACT_CLIENT],
+    [LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_OBSERVATIONS_CONTACT_CLIENT],
   ])('« %s » se dit au client : ton cabinet le lit aussi', (cabinet, client) => {
     expect(motsDuCabinet(cabinet).length).toBeGreaterThan(0)
     expect(motsDuCabinet(client)).toEqual([])
