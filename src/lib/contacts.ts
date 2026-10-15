@@ -188,9 +188,10 @@ function refusDe<C extends string>(liste: readonly { cle: C; modele: string }[],
 // ── Lire la saisie comme la fonction la lit ─────────────────────────────────────────────────────────────────────────
 // La saisie part en JSON : une clé `undefined` disparaît, NaN et l'infini deviennent `null`. Le module la juge donc APRÈS
 // cet aller-retour, telle que la base la reçoit, champ par champ et par son TYPE JSON d'abord ; il compte les caractères
-// comme `char_length` (par point de code) et ne retire aux bords que les quatre blancs de `BLANCS`.
+// comme `char_length` (par point de code) et ne retire aux bords que les quatre blancs de `BLANCS`. L'import d'un fichier
+// (src/lib/contactsImport.ts) juge son tableau entier par le même aller-retour.
 
-function commeLaBaseLaRecoit(saisie: unknown): unknown {
+export function commeLaBaseLaRecoit(saisie: unknown): unknown {
   try {
     const texte = JSON.stringify(saisie)
     return texte === undefined ? null : JSON.parse(texte)
