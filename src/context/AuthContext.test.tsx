@@ -465,8 +465,11 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
     render(<AuthProvider><SondeDroits /></AuthProvider>)
     expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
     expect(faux.lecturesAcces).toEqual([{ colonnes: 'dossier_id, droit_ventes, droit_banque', filtre: 'user_id=u3' }])
-    // Jamais un rendu avec les accès et sans leurs droits, ni avec les droits d'un autre compte.
-    expect(vus.filter((v) => v !== 'chargement')).toEqual(['client | d1,d2 | d1=V d2='])
+    // Jamais un rendu avec les accès et sans leurs droits, ni avec les droits d'un autre compte. Ces rendus viennent de
+    // lectures finies HORS d'un `act` : `findByText` voit le dernier dès qu'il est commis, et l'effet qui le consigne
+    // passe dans une tâche à part — sous la charge, la liste lue aussitôt ne l'avait pas encore (CI du 15/10/2026).
+    // Ailleurs, `vus` se lit après `evenement`, dont l'`act` passe aussi les effets.
+    await waitFor(() => expect(vus.filter((v) => v !== 'chargement')).toEqual(['client | d1,d2 | d1=V d2=']))
   })
 
   it('une valeur qui n’est pas strictement vraie n’accorde rien', async () => {

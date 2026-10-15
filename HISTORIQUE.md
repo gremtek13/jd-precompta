@@ -24818,7 +24818,20 @@ l'e-mail d'un contact ne se recopie pas dans la facture (elle n'a pas de champ p
 proposera quand la facture gardera la provenance (A7) — la conception le recopiait. A4B2-Q3 : « Enregistrer ce client »
 ne remplit pas la facture de ce que la fenêtre a ajouté (l'adresse, par exemple) : le client de la facture reste ce
 qu'il était. A4B2-Q4 : le numéro d'engagement d'un organisme public n'est pas touché par le choix d'un client.
-Recommandation : les trois telles quelles.
+Recommandation : les trois telles quelles. TRANCHÉES PAR LE CABINET LE 15/10/2026, COMME RECOMMANDÉ : les trois se
+gardent telles quelles, rien ne change à l'écran.
+
+**LA MISE EN LIGNE, LE 15/10/2026.** Fusionnée par #173 (`a10398b`) à 16 h 56 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `fe6410b` — la seconde après une relance : sa première tentative avait échoué, sous le fuseau de New
+York, sur un test qu'A4b2 ne touche pas (l'entrée suivante) ; l'arbre de `main` (`557b01ce…`) est celui de la tête
+poussée, `main` reste linéaire. Le site sert `index-DgUeavnO.js`, le paquet de la barrière (déploiement 38755943714) ;
+la branche réalignée sur `a10398b`, arbres égaux. Le worktree de l'agent était retiré dès l'intégration, celui de
+l'intégration l'est (ses 173 liens d'abord) ; aucune réplique en marche. La feuille de route : la ligne 51.5 reçoit le
+paragraphe d'A4b2 — les décisions du cabinet sur A4B1-Q1 à Q3 et A4B2-Q2, les questions A4B2-Q1, Q3 et Q4 — et un
+« RESTE » qui commence par A4b3 ; la propriété réécrite entière (34 085 caractères), le texte ENVOYÉ et la page RELUE
+égaux au fichier préparé ; puis, sur la réponse du cabinet, la décision sur A4B2-Q1, Q3 et Q4 ajoutée de même
+(34 207 caractères). Les barres recomptées par requête : inchangées, 140 sur 183 (77 %) et, pour un dossier BNC, 140 sur
+170 (82 %).
 
 **RESTE.** A4b3 (l'import d'un fichier de clients, l'export d'une fiche) ; A5 (les paramètres de facturation ; MEG1-Q12
 à Q14) ; MEG1-Q5 ; A7 (la facture fige ses mentions et le contact d'où vient son client — d'où la liste des clients sans
@@ -24826,3 +24839,34 @@ activité depuis trois ans). NON VÉRIFIÉ : `enregistrer_contact` n'a été jou
 client des tests (la fonction, sa policy et ses refus sont éprouvés en production depuis A4a) ; le formulaire d'un
 client « Ventes » d'un dossier de soins n'est photographié par aucune passe du banc (son compte n'est rattaché qu'à
 l'atelier) : ses mots sont gardés par les tests d'écran ; Chromium seul.
+
+### 15/10/2026 — UN TEST LISAIT SES RENDUS AVANT LEUR EFFET (LIGNE 24.19)
+
+**LE SYMPTÔME.** Sur #173 (A4b2), la seconde passe de `verifier` a échoué une fois, sous le fuseau de New York, sur un
+test qu'A4b2 ne touche pas : « lit les droits de chaque accès dans la même requête que les accès, filtrée sur le
+compte » (`src/context/AuthContext.test.tsx`, P1) — `expected [] to deeply equal [ 'client | d1,d2 | d1=V d2=' ]`. La
+première passe, sur la même tête, était verte sous les quatre fuseaux, et la seconde, relancée, l'a été aussi ;
+vingt-quatre exécutions locales sous charge n'avaient rien reproduit.
+
+**LA CAUSE.** La sonde du test consigne chaque rendu commis dans un `useEffect` (`vus`), et le test lisait la liste
+aussitôt après `findByText`. Le rendu attendu vient de lectures finies HORS d'un `act` : `render` les lance, la session
+puis les accès répondent ensuite. React le commet dans une tâche de son ordonnanceur et passe ses effets dans une AUTRE
+tâche quand la première a dépassé sa tranche de 5 ms ; `findByText` voit le rendu dès qu'il est commis, et Testing
+Library rend la main après une minuterie à zéro. Sous la charge, la minuterie échoit avant la tâche des effets : la
+liste se lisait sans le dernier rendu, ici le seul qui ne soit pas « chargement ». Les autres lectures de `vus`, et
+celles des sondes semblables (`rendus` et `affichages` dans le même fichier, `faux.ecrans` dans `src/App.test.tsx`),
+suivent un `act` qui attend les lectures et passe aussi les effets (`evenement`, `act(async () => …)`), ou n'affirment
+qu'une absence : elles ne courent pas ce risque. Aucune autre sonde de ce genre dans `src/`.
+
+**LA REPRODUCTION.** Une copie instrumentée du test, posée puis retirée hors de tout commit : le dernier rendu dure 8 ms
+(l'ordonnanceur rend la main) et chaque minuterie à zéro est suivie de 3 ms de calcul (la charge). Trois exécutions sur
+trois échouent, sur le message de la CI ; la même copie du test corrigé passe trois fois sur trois.
+
+**LE CORRECTIF.** Cette lecture seule attend son effet : `await waitFor(() => expect(vus.filter(…)).toEqual([…]))`, et
+un commentaire dit pourquoi elle, et pourquoi pas les autres. Le test garde son mordant : un `AuthContext` qui poserait
+les droits APRÈS les rôles, une tâche plus tard, fait échouer les deux tests de la règle — celui-ci, une fois l'attente
+écoulée, et « un AUTRE compte repart de ses propres droits » ; la source restaurée, comparée à sa copie. Le fichier sous
+les quatre fuseaux, 27 tests chacun. Barrière : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les
+mêmes ; quatre fuseaux, 11 547 tests chacun ; construction verte (`index-DgUeavnO.js`, le paquet de `main` : le
+correctif ne touche qu'un test). La règle rejoint CLAUDE.md (Tests). Dans la même demande, la mise en ligne d'A4b2
+(S241) et la réponse du cabinet à A4B2-Q1, Q3 et Q4.
