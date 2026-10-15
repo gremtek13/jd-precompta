@@ -971,6 +971,22 @@ const VISITES = [
       await page.getByRole('button', { name: 'Importer 3 clients', exact: true }).waitFor({ timeout: 10000 })
     },
   },
+  // « EXPORTER LA FICHE » (espace client, étape A4b3c), sur l'atelier (d7) : la liste des clients avec le geste sur chaque ligne (quatre
+  // boutons par ligne : la rangée passe à la ligne), la phrase unique au-dessus d'elle, puis, après le clic, le message qui nomme le
+  // fichier. Le fichier se compose dans le navigateur (rien ne part) et Chromium le télécharge sans fenêtre.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-exporter',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^« Exporter la fiche » télécharge toute la fiche d’un contact/).waitFor({ timeout: 10000 })
+      await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Exporter la fiche', exact: true }).click()
+      await page.getByText(/^Fiche de « Commune de Démoville[^»]*» exportée : fiche-client-commune-de-demoville-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.csv\./).waitFor({ timeout: 10000 })
+      // Le clic a fait défiler jusqu'à la ligne : la capture montre aussi la phrase et le message, au-dessus de la liste.
+      await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -1346,6 +1362,19 @@ const VISITES_CLIENT = [
       await ouvrirLImport(page, IMPORT_PRET)
       await page.locator('#contacts-import-type-unique').selectOption('assujetti')
       await page.getByRole('button', { name: 'Importer 3 clients', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  // « Exporter la fiche » (étape A4b3c), aux mots du client : la phrase tutoyée, le geste sur chaque ligne, le message après le clic.
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-exporter',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^« Exporter la fiche » télécharge toute la fiche d’un de tes clients/).waitFor({ timeout: 10000 })
+      await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Exporter la fiche', exact: true }).click()
+      await page.getByText(/^Fiche de « Commune de Démoville[^»]*» exportée : fiche-client-commune-de-demoville-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.csv\./).waitFor({ timeout: 10000 })
+      await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
     },
   },
 ]
