@@ -6,6 +6,7 @@ import {
   LIBELLE_ESCOMPTE_PARAMETRES, LIBELLE_ESCOMPTE_PARAMETRES_CLIENT, LIBELLE_MENTIONS_PARAMETRES, LIBELLE_MENTIONS_PARAMETRES_CLIENT,
   LIBELLE_PENALITES_PARAMETRES, LIBELLE_PENALITES_PARAMETRES_CLIENT, LIBELLE_PIED_DE_PAGE_PARAMETRES, LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT,
   LIBELLE_TITULAIRE_PARAMETRES, LIBELLE_TITULAIRE_PARAMETRES_CLIENT,
+  LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE,
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
@@ -963,5 +964,38 @@ describe('les textes libres des paramètres de facturation : chaque libellé dit
   it('la table qu’ils décrivent est ouverte à « Ventes » par l’export', () => {
     const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261016064317_parametres_facturation.sql'), 'utf8')
     expect(migration).toMatch(/create policy parametres_facturation_lecture_ventes on public\.parametres_facturation\s+for select to authenticated using \(public\.client_du_dossier\(dossier_id, 'ventes'\)\)/)
+  })
+})
+
+// Les trois textes libres de l'IDENTITÉ du dossier (étape A5b2) : l'adresse, la dénomination imprimée et la ville du greffe
+// vivent sur `dossiers`, que la dernière policy de lecture ouvre à tout compte qui porte un accès du dossier — pas au seul
+// client « Ventes » : le libellé dit « le client du dossier », jamais la case.
+describe('les textes libres de l’identité du dossier : chaque libellé dit que le client du dossier les lit', () => {
+  it('nomme le client du dossier et le champ — sans parler d’une case, que `dossiers_select` ne connaît pas', () => {
+    expect(LIBELLE_ADRESSE_IDENTITE).toBe('Adresse (le client du dossier la lit)')
+    expect(LIBELLE_DENOMINATION_IDENTITE).toBe('Dénomination imprimée (facultative ; le client du dossier la lit)')
+    expect(LIBELLE_RCS_VILLE_IDENTITE).toBe('Ville du greffe (RCS ; facultative ; le client du dossier la lit)')
+    for (const libelle of [LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE]) {
+      expect(libelle).not.toMatch(/case|intern/i)
+    }
+  })
+
+  it('la dernière policy de lecture de `dossiers` ouvre la ligne à tout accès du dossier, la dernière d’écriture au cabinet seul', () => {
+    const derniere = (motif: RegExp) => {
+      const trouvees = fichiersDuSchema().filter((f) => motif.test(f.texte))
+      const texte = trouvees[trouvees.length - 1]?.texte ?? ''
+      return (texte.match(new RegExp(motif.source + '[^;]*;', 'g')) ?? []).pop() ?? ''
+    }
+    expect(derniere(/create policy dossiers_select on (?:public\.)?dossiers for select/))
+      .toMatch(/using \(admin_du_dossier\(id\) or exists \(select 1 from memberships m where m\.dossier_id = dossiers\.id and m\.user_id = auth\.uid\(\)\)\)/)
+    expect(derniere(/create policy dossiers_update on (?:public\.)?dossiers for update/))
+      .toMatch(/using \(admin_du_dossier\(id\)\) with check \(admin_du_dossier\(id\)\)/)
+  })
+
+  it('les quatre colonnes de l’identité légale vivent sur `dossiers`, dans l’export', () => {
+    const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261016064317_parametres_facturation.sql'), 'utf8')
+    for (const colonne of ['denomination_imprimee text', 'rcs_ville text', 'forme_juridique text', 'capital numeric']) {
+      expect(migration, colonne).toContain(`add column ${colonne}`)
+    }
   })
 })

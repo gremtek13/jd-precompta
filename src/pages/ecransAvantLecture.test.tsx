@@ -328,7 +328,7 @@ const ECRANS: Ecran[] = [
   { nom: 'FinancementTab', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
-    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} modele={TRESORERIE} onIdentiteUpdated={rien} /></Dossier1>
+    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} /></Dossier1>
   ) },
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" /></Dossier1> },

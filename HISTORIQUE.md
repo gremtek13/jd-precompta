@@ -25503,9 +25503,124 @@ client), 0 police refusée. Dans les documents, la dernière phrase du brouillon
 « comme recommandé » » et renvoyait au rapport de l'agent : elles sont posées, pas tranchées, et le paragraphe des
 questions les dit une à une.
 
+**LA MISE EN LIGNE, LE 16/10/2026.** Fusionnée par #179 (`656dad0`) à 13 h 52 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `fee9152` ; l'arbre de `main` (`a858269d…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-P_dceRpe.js` (déploiement 38896632606, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`656dad0`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration (ses 173 liens
+d'abord) et celui de l'agent retirés, après avoir vérifié que la copie de l'agent est exactement `15e98c2` plus le
+correctif intégré (vingt fichiers). La feuille de route : la ligne 51.5 complétée (43 134 caractères, envoyée et relue à
+l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141
+sur 171 (82 %, huit cases).
+
 **RESTE.** A5b2, l'identité légale du dossier dans ses informations (dénomination imprimée, ville du greffe, forme
 juridique, capital ; le cabinet seul) ; A5b3, l'avis d'un changement de RIB sur les accueils du cabinet et des accès
 « Ventes » et « Banque », et la fonction qui le dit à un accès « Banque » seul (A5-Q2 ; une migration, présentée au
 cabinet avant d'être appliquée) ; A5c, le logo et son seau ; A4B3-Q6 ; A7, où la facture fige ses mentions, le RIB et
 les conditions en vigueur compris ; A9, la numérotation qui continue et la série du mandataire (MEG1-Q5). La mise en
 ligne de cette demande se consigne au prochain commit de documents.
+
+### 16/10/2026 — L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A5b2 (LIGNE 51.5)
+
+(Préparé par l'agent S247 sur `656dad0`. Aucune migration, aucune policy, aucune Edge Function. Fichier nouveau :
+`src/lib/identiteLegaleVue.ts` (pur) et son test. Modifiés : `src/pages/dossier/InformationsTab.tsx` (la carte
+« Identité du dossier »), `src/pages/DossierDetail.tsx` (quatre props, la fusion des valeurs rendues),
+`src/lib/types.ts` (le commentaire des quatre champs), `src/lib/droitsAcces.ts` (trois libellés en fin de fichier) et
+son test, `src/lib/verrousEcritures.test.ts` (« mise à jour » 23 → 22), `src/pages/ecransAvantLecture.test.tsx` (les
+quatre props), `InformationsTab.test.tsx` et `DossierDetail.test.tsx`, `outils/captures/fauxSupabase.ts` et
+`debordements.mjs` (par ajout), `RGPD.md` (la rangée des paramètres). Pas de `src/index.css`.)
+
+**LA DÉLIMITATION.** Les quatre colonnes d'identité légale de `dossiers` (A5a) dans la carte « Identité du dossier » de
+l'onglet Informations du CABINET, écrites avec le SIRET et l'adresse en UNE écriture. Ni l'espace du client, ni ce
+qu'une facture imprime ou fige, ni la forme abrégée qu'elle imprimera (« SAS », « SELARL » : A7 — le commentaire de
+`categoriesJuridiques.ts` qui l'annonce « par l'écran (étape A5b) » se corrige alors), ni le bilan, ni l'avis d'un
+changement de RIB (A5b3), ni le logo (A5c).
+
+**L'ÉCRITURE.** Un `.update()` direct sous `dossiers_update` (`admin_du_dossier`), des six colonnes, relu par
+`.select(…).maybeSingle()` : aucune ligne rendue (une policy filtre sans erreur), rien n'est écrit et la carte le dit,
+sans « Enregistré ✓ ». `onIdentiteUpdated` reçoit les valeurs TELLES QUE LA BASE LES A RENDUES, `DossierDetail` les
+fusionne, le formulaire en repart. Le verrou `identiteEnCours` est un `useRef` posé avant le `try` ; le garde des
+verrous compte une mise à jour nue de moins (23 → 22). Une COLONNE ABSENTE de la lecture du dossier (`undefined`, que
+`DossierDetail` ne convertit plus en nul) n'est pas une colonne nulle : les quatre champs ne s'offrent pas — toutes ou
+aucune —, la carte le dit, l'écriture et la relecture ne portent que le SIRET et l'adresse.
+
+**CE QUE LA CARTE DIT** (`lib/identiteLegaleVue.ts`, aucune règle ni aucun message du module de paramètres recopié). Le
+capital est lu FIDÈLEMENT (`lireCapital`) : des chiffres, la virgule ou le point une fois, deux décimales au plus TELLES
+QUE TAPÉES, les espaces et « € » ignorés ; « 12,345 », « 0,10000000000000000001 », « -5 », « 1e3 » sont illisibles,
+jamais arrondis (`lireMontantSaisi` lit « 12,345 », `lirePrix` admet un signe et six décimales : aucun n'a ce contrat,
+d'où un lecteur à part) ; il s'écrit au centime pour la saisie (`capitalPourSaisie`, « 150000,00 »), et l'aller-retour
+rend la même valeur de 0,01 à 9 999 999 999 999,99 (balayage de plus de soixante-dix valeurs). Le refus avant le clic :
+le capital illisible d'abord, puis `refusIdentiteLegale` sur l'identité telle qu'elle part (blancs des bords retirés, un
+champ vide vaut nul) ; « Enregistrer » est grisé. La forme : « Non renseignée », puis les 260 catégories de l'INSEE dans
+l'ordre de la nomenclature sous leur code ; un code lu que la nomenclature ne connaît pas se dit tel quel, en tête, et
+retient l'enregistrement. Le refus de la base (23514 qui nomme l'une des cinq contraintes de `REFUS_IDENTITE_LEGALE`) se
+dit sous les mots du module ; toute autre erreur, par `messageErreur`.
+
+**L'ENTREPRENEUR INDIVIDUEL (la forme 1000).** La dénomination « <nom du dossier> EI » est PROPOSÉE avec sa raison
+(C. com., art. R526-27 : la dénomination incorpore le nom, précédé ou suivi immédiatement des initiales « EI » ou des
+mots « entrepreneur individuel ») et un bouton, « Utiliser « … » », la reprend — jamais d'elle-même, jamais tant que la
+forme n'est pas connue, jamais quand la saisie est déjà celle-là. Son capital est REMIS À NUL dans la même écriture,
+même si le champ caché porte une saisie illisible (qui ne retient donc rien), et la carte le dit avant le clic : le
+capital enregistré sera effacé, ou le capital saisi ne sera pas écrit.
+
+**LA PHRASE, LES LIBELLÉS.** Une phrase, sous celle de la carte qui dit déjà le SIRET et l'adresse repris sur chaque
+nouvelle facture : aucune facture ne lit ni n'imprime encore ces quatre champs (A7). L'adresse, la dénomination et la
+ville du greffe disent que « le client du dossier » les lit : `dossiers_select` ouvre la ligne à tout compte qui porte
+un accès du dossier, pas au seul client qui porte « Ventes » — le libellé ne nomme donc aucune case
+(`LIBELLE_*_IDENTITE`, la policy confrontée à l'export).
+
+**LA MISE EN PAGE.** Un premier essai plaçait la ville du greffe et la forme côte à côte (`.field-row`) : le `<select>`
+prenait la largeur du plus long libellé de l'INSEE (141 caractères) et débordait de 381 pixels du panneau à 1 440 et
+1 024. Chaque champ a désormais sa ligne : le libellé se coupe dans le `<select>` fermé, entier dans la liste ; aucune
+règle CSS neuve.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Le module (76 tests : le lecteur du capital à ses bords, l'aller-retour, l'ordre des refus, la
+proposition, le capital remis à nul, les 260 choix, le refus de la base pour chacune des cinq contraintes et pour une
+erreur inconnue), l'écran (28 tests de plus : le formulaire prérempli, les six colonnes écrites d'un coup, la ligne
+rendue passée à la page, aucune ligne rendue, « Enregistrer » grisé, deux clics puis trois dans le même `act`, le verrou
+relâché, une colonne absente, l'entrepreneur individuel, les libellés), la page (3 : l'absence passée telle quelle, la
+fusion des six valeurs, aucun mélange d'un dossier à l'autre), les libellés et la policy (3). 57 mutations ciblées : 56
+mordent ; une équivalente — la seconde ceinture de `enregistrerIdentite` (`if (refusIdentite) return`) : le bouton est
+déjà grisé sous un refus, et un clic sur un bouton grisé n'atteint pas le gestionnaire. La suite entière sous Paris :
+394 fichiers, 12 001 tests, 0 échec ; les sept fichiers touchés sous les quatre fuseaux (489 tests chacun) ; `tsc -b` 0,
+Edge 25 erreurs (celles de la base), lint 63 avertissements (ceux de la base), build vert. Le banc : 0 débordement aux
+onze passes (1 440, 1 280, 1 024, 720, 390, quatre combinaisons des volets, client 390 et 1 440) et aux trois de
+captures, 0 bouton recouvert, le premier essai à 381 px de débordement ayant mené à la mise en page ci-dessus.
+
+**LES RETOUCHES DE LA SESSION.** (1) Le bouton de la proposition disait « Proposer « … » » : c'est l'écran qui propose,
+et le bouton reprend la proposition dans le champ — il dit désormais « Utiliser « … » » (le banc l'attend sous ce nom).
+(2) La raison redit l'article R526-27 de plus près : la dénomination INCORPORE le nom, précédé ou suivi IMMÉDIATEMENT de
+la mention. (3) La phrase des quatre champs ne redit plus que le SIRET et l'adresse sont repris sur chaque nouvelle
+facture : la phrase de la carte qui la précède le dit déjà, et la consigne, qui demandait les deux dans la même phrase,
+les faisait dire deux fois. Trois mutations, une par retouche (la phrase rallongée, « immédiatement » retiré, l'ancien
+nom du bouton) : chacune fait rougir un test.
+
+**TROUVÉ EN PASSANT.** Dans la carte, le SIRET n'a toujours ni refus avant le clic ni forme vérifiée (hors de l'étape) ;
+le commentaire de `categoriesJuridiques.ts` qui annonce la forme imprimée « par l'écran (étape A5b) » se corrige en A7,
+qui l'imprimera.
+
+**LES QUESTIONS AU CABINET.** A5B2-Q1, la place : la carte « Identité du dossier » de l'onglet Informations, un seul
+formulaire avec le SIRET et l'adresse et une seule écriture — une écriture en deux temps laisserait une identité à
+moitié enregistrée ; A5B2-Q2, la dénomination d'un entrepreneur individuel proposée par un bouton (« <nom du dossier>
+EI », avec la raison de l'article R526-27), jamais d'elle-même ni tant que la forme n'est pas connue — le nom du dossier
+n'est pas toujours celui de l'état civil ; A5B2-Q3, son capital remis à nul dans la même écriture et dit avant le clic,
+plutôt qu'un refus qui ferait vider le champ ; A5B2-Q4, la forme sous son code et son libellé de l'INSEE, dans un
+`<select>` sans recherche, et sans forme abrégée (« SAS ») avant A7 ; A5B2-Q5, l'adresse, la dénomination et la ville du
+greffe disent que « le client du dossier » les lit — tout accès du dossier, pas la seule case « Ventes », comme
+`dossiers_select` ouvre la ligne ; A5B2-Q6, le capital au centime, deux décimales au plus telles que tapées, jamais
+arrondi (« 12,345 » refusé), treize chiffres entiers au plus (la borne de la base) ; A5B2-Q7, une colonne que la lecture
+du dossier n'a pas portée : les quatre champs ne s'offrent pas, toutes ou aucune, et l'écriture ne porte que le SIRET et
+l'adresse. Recommandations : les sept telles quelles.
+
+**L'INTÉGRATION, LE 16/10/2026.** Le correctif de l'agent appliqué sur `656dad0` tel qu'il l'a rendu (ses quatorze
+fichiers identiques à sa copie, aucun caractère invisible ajouté), puis les trois retouches de la session (ci-dessus).
+Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre
+fuseaux, 12 001 tests chacun (394 fichiers) ; construction verte (`index-pCpImOkn.js`). Le banc rejoué par la session
+sur l'arbre intégré, retouches comprises : 0 débordement aux onze passes, 0 bouton de fenêtre recouvert (212 sondés dans
+48 fenêtres à chaque passe du cabinet, 114 dans 29 chez le client), 0 police refusée. Dans les documents, le paragraphe
+des questions du brouillon renvoyait au rapport de l'agent : il les dit une à une.
+
+**RESTE.** A5b3, l'avis d'un changement de RIB sur les accueils du cabinet et des accès « Ventes » et « Banque », et la
+fonction qui le dit à un accès « Banque » seul (A5-Q2 ; une migration, présentée au cabinet avant d'être appliquée) ;
+A5c, le logo et son seau ; A4B3-Q6 ; A7, où la facture fige ses mentions — l'identité légale et la forme abrégée qu'elle
+imprime comprises, le RIB et les conditions en vigueur aussi ; A9, la numérotation qui continue et la série du
+mandataire (MEG1-Q5). La mise en ligne de cette demande se consigne au prochain commit de documents.

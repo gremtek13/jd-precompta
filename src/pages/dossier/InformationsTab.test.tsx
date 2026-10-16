@@ -1,6 +1,11 @@
+import type { ComponentProps } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InformationsTab from './InformationsTab'
+import { CAPITAL_ILLISIBLE, IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE, PHRASE_IDENTITE_LEGALE_NON_LUE, RAISON_DENOMINATION_EI } from '../../lib/identiteLegaleVue'
+import { LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE } from '../../lib/droitsAcces'
+import { CATEGORIES_JURIDIQUES } from '../../lib/categoriesJuridiques'
+import { REFUS_IDENTITE_LEGALE } from '../../lib/parametresFacturation'
 import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 
@@ -40,6 +45,15 @@ const faux = vi.hoisted(() => ({
   suppressions: 0,
   porteSuppression: null as Promise<void> | null,
   erreurSuppression: null as Error | null,
+  // L'écriture de l'identité du dossier (`dossiers`, une seule fois pour les six colonnes) : ce qui est parti avec ses colonnes
+  // relues, la porte qui la retient, la réponse de la base (une erreur, aucune ligne, ou une ligne qui n'est pas celle qu'on a
+  // envoyée), et ce que la page en a reçu.
+  ecritures: [] as { mise: Record<string, unknown>; colonnes: string }[],
+  porteIdentite: null as Promise<void> | null,
+  erreurIdentite: null as { message: string; code?: string } | null,
+  aucuneLigne: false,
+  reponseIdentite: null as ((mise: Record<string, unknown>) => Record<string, unknown>) | null,
+  identitesRendues: [] as unknown[],
 }))
 
 vi.mock('../../lib/informationsDossier', () => ({
@@ -93,11 +107,23 @@ vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => {
       const chaine: Record<string, unknown> = {}
+      let mise: Record<string, unknown> | null = null
+      let colonnes = ''
       Object.assign(chaine, {
-        select: () => chaine,
+        select: (lues?: string) => { colonnes = lues ?? ''; return chaine },
         eq: () => chaine,
-        maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        update: () => chaine,
+        // La base rend la ligne qu'elle a écrite, limitée aux colonnes demandées ; sans `update`, rien à rendre.
+        maybeSingle: async () => {
+          if (mise === null) return { data: null, error: null }
+          faux.ecritures.push({ mise, colonnes })
+          await faux.porteIdentite
+          if (faux.erreurIdentite) return { data: null, error: faux.erreurIdentite }
+          if (faux.aucuneLigne) return { data: null, error: null }
+          const ecrite = faux.reponseIdentite ? faux.reponseIdentite(mise) : mise
+          const demandees = colonnes.split(',').map((c) => c.trim())
+          return { data: Object.fromEntries(demandees.map((c) => [c, ecrite[c] ?? null])), error: null }
+        },
+        update: (valeurs: Record<string, unknown>) => { mise = valeurs; return chaine },
         // La ligne `packs` de l'export : rien d'autre ne s'insère depuis cet onglet.
         insert: () => {
           faux.insertionsPacks += 1
@@ -136,15 +162,23 @@ async function supprimer(nom: string) {
   await act(async () => { confirmer.click() })
 }
 
-function monter(modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }) {
+function monter(
+  modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT },
+  identite: Partial<ComponentProps<typeof InformationsTab>> = {},
+) {
   return render(
     <InformationsTab
       dossierId="d1"
       dossierNom="Cabinet Martin"
       dossierSiret={null}
       dossierAdresse={null}
+      dossierDenomination={null}
+      dossierRcsVille={null}
+      dossierFormeJuridique={null}
+      dossierCapital={null}
       modele={modele}
-      onIdentiteUpdated={() => {}}
+      onIdentiteUpdated={(rendue) => { faux.identitesRendues.push(rendue) }}
+      {...identite}
     />,
   )
 }
@@ -165,6 +199,12 @@ beforeEach(() => {
   faux.suppressions = 0
   faux.porteSuppression = null
   faux.erreurSuppression = null
+  faux.ecritures = []
+  faux.porteIdentite = null
+  faux.erreurIdentite = null
+  faux.aucuneLigne = false
+  faux.reponseIdentite = null
+  faux.identitesRendues = []
   window.open = ((url: string) => {
     faux.ouvertures.push(url)
     return faux.ouvertureBloquee ? null : { opener: window as unknown } as Window
@@ -345,7 +385,7 @@ describe('la carte Véhicules reçoit le modèle comptable du dossier', () => {
 // la seconde, qui ne trouve plus les fichiers que la première vient de retirer, compte `retires < demandes` et
 // affirme qu'ils sont restés (« préviens l'administrateur »), sur un dossier proprement supprimé. Le cas à TROIS clics est
 // le seul à distinguer un verrou posé dans le `try`.
-function retenir(porte: 'porteGeneration' | 'porteSuppression'): () => Promise<void> {
+function retenir(porte: 'porteGeneration' | 'porteSuppression' | 'porteIdentite'): () => Promise<void> {
   let ouvrir = () => {}
   faux[porte] = new Promise<void>((resolve) => { ouvrir = resolve })
   return async () => {
@@ -440,5 +480,316 @@ describe('le verrou de la suppression définitive', () => {
 
     expect(faux.suppressions).toBe(2)
     expect(faux.navigations).toEqual([])
+  })
+})
+
+// L'IDENTITÉ DU DOSSIER, EN UNE ÉCRITURE (espace client, étape A5b2). La carte « Identité du dossier » écrit le SIRET, l'adresse
+// et les quatre colonnes d'identité légale d'un seul tenant, relit la ligne que la base rend, et ne s'offre pas d'écrire une
+// colonne que la lecture du dossier n'a pas portée. Le module (`lib/identiteLegaleVue.ts`) garde ce que la carte DIT ; ce qui
+// suit garde le câblage : la ligne rendue, le verrou, le refus avant le clic, la colonne absente.
+describe('l’identité du dossier : six colonnes, une écriture', () => {
+  const SAS = '5710'
+  const LIGNE_COMPLETE: Partial<ComponentProps<typeof InformationsTab>> = {
+    dossierSiret: '12345678901234', dossierAdresse: '1 rue des Essais, 69000 Lyon', dossierDenomination: 'Société Fictive',
+    dossierRcsVille: 'Lyon', dossierFormeJuridique: SAS, dossierCapital: 150000,
+  }
+
+  const formulaire = () => {
+    const form = screen.getByLabelText('SIRET').closest('form')
+    if (!form) throw new Error('formulaire de l’identité introuvable')
+    return form
+  }
+  const bouton = () => within(formulaire()).getByRole('button', { name: /^Enregistrer$|^Enregistrement…$/ }) as HTMLButtonElement
+  const champ = (libelle: string | RegExp) => screen.getByLabelText(libelle) as HTMLInputElement
+  const saisir = (libelle: string | RegExp, valeur: string) => { fireEvent.change(champ(libelle), { target: { value: valeur } }) }
+  const choisirForme = (code: string) => { fireEvent.change(champ('Forme juridique'), { target: { value: code } }) }
+
+  async function montee(identite: Partial<ComponentProps<typeof InformationsTab>> = LIGNE_COMPLETE) {
+    monter(undefined, identite)
+    await act(async () => {})
+  }
+
+  it('préremplit le formulaire avec ce que le dossier porte, le capital au centime', async () => {
+    await montee()
+    expect(champ('SIRET').value).toBe('12345678901234')
+    expect(champ(LIBELLE_ADRESSE_IDENTITE).value).toBe('1 rue des Essais, 69000 Lyon')
+    expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('Société Fictive')
+    expect(champ(LIBELLE_RCS_VILLE_IDENTITE).value).toBe('Lyon')
+    expect(champ('Forme juridique').value).toBe(SAS)
+    expect(champ(/^Capital social/).value).toBe('150000,00')
+  })
+
+  it('garde le contrôle inverse : un dossier neuf offre les quatre champs vides, la forme « Non renseignée »', async () => {
+    await montee({})
+    expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('')
+    expect(champ('Forme juridique').value).toBe('')
+    expect(champ(/^Capital social/).value).toBe('')
+    expect(screen.getByText(PHRASE_IDENTITE_LEGALE)).toBeTruthy()
+    // La phrase des quatre champs ne redit pas le SIRET et l'adresse : la phrase qui la précède le dit, une fois.
+    expect(screen.getAllByText(/repris automatiquement sur chaque nouvelle facture émise/)).toHaveLength(1)
+    expect(bouton().disabled).toBe(false)
+  })
+
+  it('dit, dans les libellés, que le client du dossier lit l’adresse, la dénomination et la ville du greffe', async () => {
+    await montee()
+    expect(screen.getByText(LIBELLE_ADRESSE_IDENTITE)).toBeTruthy()
+    expect(screen.getByText(LIBELLE_DENOMINATION_IDENTITE)).toBeTruthy()
+    expect(screen.getByText(LIBELLE_RCS_VILLE_IDENTITE)).toBeTruthy()
+    expect(LIBELLE_ADRESSE_IDENTITE).toContain('le client du dossier')
+  })
+
+  it('offre la forme sous son code et son libellé de l’INSEE : « Non renseignée », puis les 260 catégories dans l’ordre', async () => {
+    await montee({})
+    const options = Array.from((champ('Forme juridique') as unknown as HTMLSelectElement).options)
+    expect(options).toHaveLength(261)
+    expect(options[0].textContent).toBe('Non renseignée')
+    expect(options.slice(1).map((o) => o.value)).toEqual(CATEGORIES_JURIDIQUES.map((c) => c.code))
+    expect(options[2].textContent).toBe('1000 — Entrepreneur individuel')
+  })
+
+  it('écrit les six colonnes EN UNE FOIS, telles qu’elles partent : blancs retirés, vide nul, capital en nombre', async () => {
+    await montee({})
+    saisir('SIRET', ' 12345678901234 ')
+    saisir(LIBELLE_ADRESSE_IDENTITE, '  1 rue des Essais  ')
+    saisir(LIBELLE_DENOMINATION_IDENTITE, '  Société Fictive ')
+    saisir(LIBELLE_RCS_VILLE_IDENTITE, '   ')
+    choisirForme(SAS)
+    saisir(/^Capital social/, '1 500,50')
+    await act(async () => { bouton().click() })
+
+    expect(faux.ecritures).toEqual([{
+      mise: {
+        siret: '12345678901234', adresse: '1 rue des Essais', denomination_imprimee: 'Société Fictive', rcs_ville: null,
+        forme_juridique: SAS, capital: 1500.5,
+      },
+      colonnes: 'siret, adresse, denomination_imprimee, rcs_ville, forme_juridique, capital',
+    }])
+    expect(screen.getByText('Enregistré ✓')).toBeTruthy()
+  })
+
+  it('passe à la page les six valeurs TELLES QUE LA BASE LES A RENDUES, et le formulaire repart de la ligne rendue', async () => {
+    await montee({})
+    // La base garde autre chose que ce qu'on lui a envoyé (une normalisation, un déclencheur) : c'est ce qu'elle rend qui fait foi.
+    faux.reponseIdentite = (mise) => ({ ...mise, denomination_imprimee: 'RENDUE PAR LA BASE', capital: 1500.5 })
+    saisir(LIBELLE_DENOMINATION_IDENTITE, 'Tapée')
+    choisirForme(SAS)
+    await act(async () => { bouton().click() })
+
+    expect(faux.identitesRendues).toEqual([{
+      siret: null, adresse: null, denomination_imprimee: 'RENDUE PAR LA BASE', rcs_ville: null, forme_juridique: SAS, capital: 1500.5,
+    }])
+    expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('RENDUE PAR LA BASE')
+    expect(champ(/^Capital social/).value).toBe('1500,50')
+  })
+
+  it('retire « Enregistré ✓ » dès qu’on retouche un champ : il ne parle que de ce qui a été écrit', async () => {
+    await montee({})
+    await act(async () => { bouton().click() })
+    expect(screen.getByText('Enregistré ✓')).toBeTruthy()
+    saisir(LIBELLE_RCS_VILLE_IDENTITE, 'Lyon')
+    expect(screen.queryByText('Enregistré ✓')).toBeNull()
+  })
+
+  it('AUCUNE ligne rendue : rien n’est écrit, la carte le dit, sans « Enregistré ✓», et ne passe rien à la page', async () => {
+    await montee({})
+    faux.aucuneLigne = true
+    saisir(LIBELLE_DENOMINATION_IDENTITE, 'Société Fictive')
+    await act(async () => { bouton().click() })
+
+    expect(faux.ecritures).toHaveLength(1)
+    expect(screen.getByText(IDENTITE_NON_ENREGISTREE)).toBeTruthy()
+    expect(screen.queryByText('Enregistré ✓')).toBeNull()
+    expect(faux.identitesRendues).toEqual([])
+    // Le formulaire garde la saisie : rien n'a été relu.
+    expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('Société Fictive')
+  })
+
+  it.each(REFUS_IDENTITE_LEGALE.map((r) => [r.contrainte, r.message]))('le refus de la base « %s » se dit sous les mots du module', async (contrainte, message) => {
+    await montee({})
+    faux.erreurIdentite = { code: '23514', message: `new row for relation "dossiers" violates check constraint "${contrainte}"` }
+    saisir(LIBELLE_DENOMINATION_IDENTITE, 'Société Fictive')
+    await act(async () => { bouton().click() })
+
+    expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.queryByText(/violates check constraint/)).toBeNull()
+    expect(screen.queryByText('Enregistré ✓')).toBeNull()
+    expect(faux.identitesRendues).toEqual([])
+  })
+
+  it('toute autre erreur de la base se dit par son message', async () => {
+    await montee({})
+    faux.erreurIdentite = { code: '23505', message: 'duplicate key value violates unique constraint "dossiers_siret_key"' }
+    await act(async () => { bouton().click() })
+    expect(screen.getByText(/duplicate key value violates unique constraint/)).toBeTruthy()
+    expect(faux.identitesRendues).toEqual([])
+  })
+
+  it('« Enregistrer » est grisé sous un refus dit avant le clic, et ne part pas', async () => {
+    await montee({})
+    choisirForme(SAS)
+    saisir(/^Capital social/, '12,345')
+    expect(screen.getByText(CAPITAL_ILLISIBLE)).toBeTruthy()
+    expect(bouton().disabled).toBe(true)
+    await act(async () => { bouton().click() })
+    expect(faux.ecritures).toEqual([])
+
+    // Le refus d'une contrainte, redit par le module : une dénomination trop longue.
+    saisir(/^Capital social/, '1500')
+    expect(screen.queryByText(CAPITAL_ILLISIBLE)).toBeNull()
+    expect(bouton().disabled).toBe(false)
+    saisir(LIBELLE_DENOMINATION_IDENTITE, 'x'.repeat(201))
+    expect(screen.getByText(/deux cents caractères au plus/)).toBeTruthy()
+    expect(bouton().disabled).toBe(true)
+    await act(async () => { bouton().click() })
+    expect(faux.ecritures).toEqual([])
+  })
+
+  it('refuse un capital à zéro, avant le clic', async () => {
+    await montee({})
+    choisirForme(SAS)
+    saisir(/^Capital social/, '0')
+    expect(screen.getByText(/strictement positif/)).toBeTruthy()
+    expect(bouton().disabled).toBe(true)
+  })
+
+  it('un code de forme que la nomenclature ne connaît pas se dit tel quel, et retient l’enregistrement', async () => {
+    await montee({ ...LIGNE_COMPLETE, dossierFormeJuridique: '9999' })
+    const select = champ('Forme juridique') as unknown as HTMLSelectElement
+    expect(select.value).toBe('9999')
+    expect(select.options[1].textContent).toContain('9999 — code que la nomenclature de l’INSEE ne connaît pas')
+    expect(bouton().disabled).toBe(true)
+    choisirForme(SAS)
+    expect(bouton().disabled).toBe(false)
+  })
+
+  // LE VERROU : `savingIdentite` ne prend effet qu'au rendu suivant, et deux clics du même rendu écrivaient deux fois.
+  it('n’écrit qu’une fois quand le bouton part deux fois dans le même rendu', async () => {
+    await montee({})
+    const liberer = retenir('porteIdentite')
+    const b = bouton()
+    await act(async () => { b.click(); b.click() })
+
+    expect(faux.ecritures).toHaveLength(1)
+    expect(b.disabled).toBe(true)
+    expect(b.textContent).toBe('Enregistrement…')
+    await liberer()
+    expect(faux.identitesRendues).toHaveLength(1)
+  })
+
+  it('trois clics dans le même rendu n’en font qu’une, et le verrou se relâche ensuite', async () => {
+    await montee({})
+    const liberer = retenir('porteIdentite')
+    const b = bouton()
+    await act(async () => { b.click(); b.click(); b.click() })
+    expect(faux.ecritures).toHaveLength(1)
+    await liberer()
+
+    saisir(LIBELLE_DENOMINATION_IDENTITE, 'Autre')
+    await act(async () => { bouton().click() })
+    expect(faux.ecritures).toHaveLength(2)
+  })
+
+  it('relâche le verrou sur un refus de la base, pour laisser réessayer', async () => {
+    await montee({})
+    faux.erreurIdentite = { message: 'permission denied' }
+    await act(async () => { bouton().click() })
+    expect(screen.getByText(/permission denied/)).toBeTruthy()
+
+    faux.erreurIdentite = null
+    await act(async () => { bouton().click() })
+    expect(faux.ecritures).toHaveLength(2)
+    expect(screen.getByText('Enregistré ✓')).toBeTruthy()
+  })
+
+  describe('une colonne que la lecture du dossier n’a pas portée', () => {
+    const SANS_IDENTITE_LEGALE: Partial<ComponentProps<typeof InformationsTab>> = {
+      dossierSiret: '12345678901234', dossierAdresse: '1 rue des Essais',
+      dossierDenomination: undefined, dossierRcsVille: undefined, dossierFormeJuridique: undefined, dossierCapital: undefined,
+    }
+
+    it('n’offre pas les quatre champs, dit pourquoi, et n’écrit que le SIRET et l’adresse', async () => {
+      await montee(SANS_IDENTITE_LEGALE)
+      expect(screen.queryByLabelText(LIBELLE_DENOMINATION_IDENTITE)).toBeNull()
+      expect(screen.queryByLabelText(LIBELLE_RCS_VILLE_IDENTITE)).toBeNull()
+      expect(screen.queryByLabelText('Forme juridique')).toBeNull()
+      expect(screen.queryByLabelText(/^Capital social/)).toBeNull()
+      expect(screen.getByText(PHRASE_IDENTITE_LEGALE_NON_LUE)).toBeTruthy()
+      expect(screen.queryByText(PHRASE_IDENTITE_LEGALE)).toBeNull()
+
+      saisir('SIRET', ' 99999999999999 ')
+      await act(async () => { bouton().click() })
+      expect(faux.ecritures).toEqual([{ mise: { siret: '99999999999999', adresse: '1 rue des Essais' }, colonnes: 'siret, adresse' }])
+      // Jamais nul sur ce qu'on n'a pas lu : la clé n'est même pas dans l'écriture.
+      expect(Object.keys(faux.ecritures[0].mise)).toEqual(['siret', 'adresse'])
+      expect(faux.identitesRendues).toEqual([{ siret: '99999999999999', adresse: '1 rue des Essais' }])
+    })
+
+    it('une seule colonne absente suffit : rien ne s’offre', async () => {
+      await montee({ ...LIGNE_COMPLETE, dossierCapital: undefined })
+      expect(screen.queryByLabelText(LIBELLE_DENOMINATION_IDENTITE)).toBeNull()
+      await act(async () => { bouton().click() })
+      expect(Object.keys(faux.ecritures[0].mise)).toEqual(['siret', 'adresse'])
+    })
+  })
+
+  describe('l’entrepreneur individuel', () => {
+    it('propose « <nom> EI » avec sa raison, sans rien écrire ; le bouton remplit le champ', async () => {
+      await montee({})
+      expect(screen.queryByText(RAISON_DENOMINATION_EI)).toBeNull()
+      choisirForme('1000')
+      expect(screen.getByText(RAISON_DENOMINATION_EI)).toBeTruthy()
+      expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('')
+
+      await act(async () => { screen.getByRole('button', { name: /^Utiliser « Cabinet Martin EI »$/ }).click() })
+      expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('Cabinet Martin EI')
+      expect(faux.ecritures).toEqual([])
+      // Déjà reprise : plus de proposition.
+      expect(screen.queryByText(RAISON_DENOMINATION_EI)).toBeNull()
+    })
+
+    it('ne propose rien tant que la forme n’est pas connue, ni pour une société', async () => {
+      await montee({})
+      expect(screen.queryByRole('button', { name: /^Utiliser « / })).toBeNull()
+      choisirForme(SAS)
+      expect(screen.queryByRole('button', { name: /^Utiliser « / })).toBeNull()
+    })
+
+    it('cache le capital, dit qu’il sera effacé, et l’écrit nul dans la même écriture', async () => {
+      await montee(LIGNE_COMPLETE)
+      expect(screen.queryByText(/capital enregistré/)).toBeNull()
+      choisirForme('1000')
+
+      expect(screen.queryByLabelText(/^Capital social/)).toBeNull()
+      // `getByText` ramène l'insécable à une espace (CLAUDE.md : « UN MONTANT SE COUPAIT EN FIN DE LIGNE »).
+      expect(screen.getByText(/le capital enregistré \(150 000,00 €\) sera effacé/)).toBeTruthy()
+      await act(async () => { bouton().click() })
+
+      expect(faux.ecritures).toHaveLength(1)
+      expect(faux.ecritures[0].mise).toMatchObject({ forme_juridique: '1000', capital: null })
+      expect(faux.identitesRendues).toEqual([expect.objectContaining({ forme_juridique: '1000', capital: null })])
+      // Une fois écrit, il n'y a plus rien à effacer : la phrase n'est plus dite.
+      expect(screen.queryByText(/capital enregistré/)).toBeNull()
+    })
+
+    it('un capital seulement tapé : dit qu’il ne sera pas écrit, retrouvé en revenant à une société', async () => {
+      await montee({})
+      choisirForme(SAS)
+      saisir(/^Capital social/, '5000')
+      choisirForme('1000')
+      expect(screen.getByText(/capital saisi ne sera pas enregistré/)).toBeTruthy()
+      await act(async () => { bouton().click() })
+      expect(faux.ecritures[0].mise.capital).toBeNull()
+    })
+
+    it('un capital illisible dans le champ caché ne retient pas l’enregistrement', async () => {
+      await montee({})
+      choisirForme(SAS)
+      saisir(/^Capital social/, 'abc')
+      expect(bouton().disabled).toBe(true)
+      choisirForme('1000')
+      expect(bouton().disabled).toBe(false)
+      choisirForme(SAS)
+      expect(champ(/^Capital social/).value).toBe('abc')
+    })
   })
 })

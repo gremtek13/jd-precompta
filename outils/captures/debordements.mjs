@@ -1021,6 +1021,45 @@ const VISITES = [
       await page.getByRole('alertdialog').getByText('FR12 9999 9000 0100 0000 0000 200').waitFor({ timeout: 10000 })
     },
   },
+  // L'IDENTITÉ LÉGALE du dossier (espace client, étape A5b2), dans la carte « Identité du dossier » de l'onglet Informations : une
+  // société (forme et capital), un entrepreneur individuel (la dénomination PROPOSÉE avec sa raison, le capital absent), la forme
+  // dont le libellé de l'INSEE est le plus long (141 caractères, dans le `<select>`) avec un capital de treize chiffres, un capital
+  // illisible (le refus dit, « Enregistrer » grisé), et un dossier dont la lecture n'a pas porté les quatre colonnes.
+  {
+    dossier: 'd8', onglet: 'informations', nom: 'informations/identite',
+    apres: async (page) => {
+      await page.locator('#identite-capital').waitFor({ timeout: 10000 })
+      await page.locator('#identite-forme').scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'informations', nom: 'informations/identite-ei',
+    apres: async (page) => {
+      await page.getByRole('button', { name: /^Utiliser « /u }).waitFor({ timeout: 10000 })
+      await page.locator('#identite-forme').scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd5', onglet: 'informations', nom: 'informations/identite-longue',
+    apres: async (page) => {
+      await page.locator('#identite-forme').waitFor({ timeout: 10000 })
+      await page.locator('#identite-capital').scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd8', onglet: 'informations', nom: 'informations/identite-refus',
+    apres: async (page) => {
+      await page.locator('#identite-capital').fill('12,345')
+      await page.getByText(/^Le capital n’est pas un montant que l’écran sait lire/u).waitFor({ timeout: 10000 })
+      await page.getByText(/^Le capital n’est pas un montant que l’écran sait lire/u).scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd6', onglet: 'informations', nom: 'informations/identite-non-lue',
+    apres: async (page) => {
+      await page.getByText(/n’ont pas été lus avec ce dossier/u).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
