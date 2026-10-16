@@ -177,7 +177,8 @@ supabase/
                     identiteFacturesRecues, revisionSoldes, revisionCycles, revueAnalytique, cotisationPersonnelle,
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
-                    piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts ;
+                    piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts,
+                    parametresFacturation ;
                     bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
                     `bornes_du_stockage`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
@@ -286,18 +287,19 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   (3bis, 4bis, douze mutations), que les devis rejoignent dès leur migration (P5 ; témoin : la table `devis` ; avant,
   une ligne « EN ATTENTE »), et les articles dès la leur (A1 ; témoin : la table `articles` ; deux mutations de
   plus), et les adresses de réception dès la leur (A6a ; témoin : la table `adresses_reception` ; deux mutations
-  de plus), et les contacts dès la leur (A4a ; témoin : la table `contacts` ; deux mutations de plus) —, qui se
-  disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la
-  banque se juge entier depuis le 10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en
-  production), celui des ventes depuis le même jour (les deux migrations de P2 en base : 35 lignes, 0 en faute,
-  31 mutations sur 31 en production ; les devis EN ATTENTE), et le 14/10/2026 avec les articles (35 lignes, 0 en
-  faute, 33 mutations sur 33 en production), puis avec les adresses de réception (35 lignes, 0 en faute,
-  35 mutations sur 35 en production), et le 15/10/2026 avec les contacts (35 lignes, 0 en faute, 37 mutations
-  sur 37 en production). Le fichier
-  se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
-  19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
-  l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en
-  P0001, donc on exige la RAISON → « CE QUI CONTOURNE LA RLS ».
+  de plus), et les contacts dès la leur (A4a ; témoin : la table `contacts` ; deux mutations de plus), et les paramètres
+  de facturation dès la leur (A5a ; témoin : la table `parametres_facturation` ; deux mutations de plus) —, qui se
+  disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la banque se juge entier depuis le
+  10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en production), celui des ventes
+  depuis le même jour (les deux migrations de P2 en base : 35 lignes, 0 en faute, 31 mutations sur 31 en production ;
+  les devis EN ATTENTE), et le 14/10/2026 avec les articles (35 lignes, 0 en faute, 33 mutations sur 33 en production),
+  puis avec les adresses de réception (35 lignes, 0 en faute, 35 mutations sur 35 en production), et le 15/10/2026 avec
+  les contacts (35 lignes, 0 en faute, 37 mutations sur 37 en production), et le 16/10/2026 avec les paramètres de
+  facturation (35 lignes, 0 en faute, 39 mutations sur 39 en production). Le fichier se rejoue ENTIER (le 08/10/2026,
+  pour la première fois depuis le 19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`,
+  et une ligne TEXTE qui rend l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS
+  (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en P0001, donc on exige la RAISON → « CE QUI CONTOURNE
+  LA RLS ».
 - **Stockage** : le premier segment du chemin EST le dossier (`(storage.foldername(name))[1]::uuid`) — un chemin non-UUID
   fait lever le cast pour tout le monde. Une suppression de fichier ne se teste pas en SQL (`protect_objects_delete`
   refuse en 42501 pour tous) : gardée par une lecture du catalogue (RGPD.md §8.6).
@@ -386,15 +388,18 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   colonnes, retirés et effacés compris — et ses quatre fonctions, l'effacement compris (MEG1-Q11), à l'écran
   depuis A4b1 (« Mes ventes › Clients ») et, depuis A4b2, dans le formulaire d'une facture ; depuis A4b3a
   (15/10/2026), l'import d'un fichier de clients par `importer_contacts` — mille lignes au plus, tout ou rien, sans
-  jamais modifier un contact rangé —, à l'écran depuis A4b3b (« Importer des clients »). L'onglet Accès dit ce que la
-  base ouvre à la SESSION
-  du client, écran ou non, dans les
-  quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`,
-  chaque mot confronté à l'export) →
-  « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet
-  saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
-  « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
-  déclaration ; `LIBELLE_*` de `lib/droitsAcces.ts`).
+  jamais modifier un contact rangé —, à l'écran depuis A4b3b (« Importer des clients ») ; depuis A5a (16/10/2026), les
+  paramètres de facturation de son dossier — toutes leurs versions, le RIB, son état et ses auteurs compris — et leur
+  enregistrement, un RIB qu'il pose ou change n'étant que PROPOSÉ jusqu'à ce que le cabinet le confirme
+  (`confirmer_rib`, le cabinet seul ; MEG1-Q12), sans écran encore (A5b) ; un accès qui ne porte que « Banque » ne les
+  lit pas (A5-Q2) ; l'identité légale du dossier (dénomination imprimée, ville du greffe, forme juridique, capital), le
+  client la lit comme toute la fiche de son dossier et ne l'écrit jamais (MEG1-Q14). L'onglet Accès dit ce que la base
+  ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux
+  `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) → « LES DROITS D'UN ACCÈS
+  CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet saisit dans une table qu'un
+  droit du client ouvre le dit dans son libellé** (« … le client qui porte la case « Ventes » les lit » : les notes
+  d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une déclaration ; `LIBELLE_*` de
+  `lib/droitsAcces.ts`).
   **La banque sous la case « Banque »** (P7, les deux migrations appliquées le 10/10/2026) : un ordre, et il est la
   règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule
   de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un
@@ -653,8 +658,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   plus, tout ou rien, par la fonction d'un contact saisi —, que le cabinet et le client « Ventes » font par une
   fonction (A4b3a, 15/10/2026), et son écran, « Importer des clients » — un fichier CSV lu dans le navigateur, ses
   colonnes choisies, l'aperçu ligne par ligne, l'import d'un seul tenant (A4b3b, 15/10/2026) ; « Exporter la fiche » —
-  la fiche complète d'un client dans un CSV que l'import relit, composé dans le navigateur (A4b3c, 15/10/2026) ;
-  client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
+  la fiche complète d'un client dans un CSV que l'import relit, composé dans le navigateur (A4b3c, 15/10/2026) ; les
+  paramètres de facturation d'un dossier, en base — délai, moyen, escompte, pénalités, mentions, pied de page et RIB,
+  versionnés, le RIB proposé par le client « Ventes » et confirmé par le cabinet —, et l'identité légale du dossier
+  (dénomination, ville du greffe, forme juridique, capital), écrite par le cabinet seul (A5a, 16/10/2026) ; client à
+  plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer »
   dit la même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail,
   nouveau mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
   (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
@@ -904,13 +912,24 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   appliquée le 15/10/2026 sur l'accord du cabinet (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même
   jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`) en ligne : l'onglet Accès dit que « Ventes » ouvre l'import →
   « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». A4b3b, son écran — le fichier et son encodage, ses colonnes, l'aperçu
-  ligne par ligne —, le 15/10/2026 (six questions, A4B3B-Q1 à Q6) → « IMPORTER DES CLIENTS, À L'ÉCRAN ». A4b3c,
-  « Exporter la fiche » — la copie fidèle de la fiche d'un client, dans un CSV que l'import relit —, le 15/10/2026 (six
-  questions, A4B3C-Q1 à Q6) → « EXPORTER LA FICHE D'UN CLIENT ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne
-  d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte), A5 (les paramètres de facturation ;
-  MEG1-Q12 à Q14), MEG1-Q5 tranchée, puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur la
-  ligne enregistrée, le contact d'où vient son client —, une migration), la liste des clients sans activité depuis trois
-  ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  ligne par ligne —, le 15/10/2026 (ses six questions, A4B3B-Q1 à Q6, tranchées « comme recommandé » le 16/10/2026) →
+  « IMPORTER DES CLIENTS, À L'ÉCRAN ». A4b3c, « Exporter la fiche » — la copie fidèle de la fiche d'un client, dans un
+  CSV que l'import relit —, le 15/10/2026 (ses six questions, A4B3C-Q1 à Q6, tranchées « comme recommandé » le
+  16/10/2026) → « EXPORTER LA FICHE D'UN CLIENT ». A5a, les paramètres de facturation en base — par dossier, des
+  versions : le délai, le moyen, l'escompte, les pénalités, des mentions, un pied de page et le RIB, proposé par le
+  client « Ventes » et confirmé par le cabinet ; sur `dossiers`, l'identité légale —, appliquée le 16/10/2026 sur
+  l'accord du cabinet (A5-Q1 ; MEG1-Q12 à Q14 et A5-Q2 à A5-Q10 tranchées « comme recommandé » le même jour), et la
+  bascule (`PARAMETRES_FACTURATION_EXPORTES`) en ligne : la sauvegarde d'un dossier emporte ses versions, par vagues ;
+  l'onglet Accès dit que « Ventes » ouvre les paramètres, leur histoire et leur enregistrement, et qu'un RIB que le
+  client pose n'est que proposé → « LES PARAMÈTRES DE FACTURATION, EN BASE ». MEG1-Q5, la numérotation, tranchée le même
+  jour « comme recommandé » : deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide
+  — le client valide ses factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui
+  continue ; rien n'en est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms
+  des colonnes du fichier de l'ancien logiciel, ouverte), A5b (l'écran des paramètres, et la fonction qui dit à un accès
+  « Banque » le dernier changement de RIB, A5-Q2) et A5c (le logo et son seau), puis A7 (la facture fige ses mentions —
+  l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et les
+  conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité
+  depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -954,7 +973,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 51 fonctions au 15/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 53 fonctions au 16/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -964,23 +983,23 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `retirer_regime_ereporting`, `ecarter_piece_ereporting`, `reprendre_piece_ereporting`,
   `declarer_ereporting_hors_application`, `consigner_au_dossier_permanent`, `retirer_du_dossier_permanent`,
   `marquer_pieces_jointes_vues`, `enregistrer_article`, `retirer_article`, `reprendre_article`,
-  `declarer_adresse_reception`, `enregistrer_contact`, `retirer_contact`, `reprendre_contact`, `effacer_contact` et
-  `importer_contacts` écrivent, chacune avec son propre contrôle d'accès (les trois de R4 : `admin_du_dossier`
-  du dossier annoncé pour conclure et noter, le chef du cabinet du dossier — `est_chef_du_cabinet` — pour revoir ;
-  depuis P2, les sept des ventes : `gere_les_ventes` du dossier annoncé, ou de celui de la transmission pour l'abandon ;
-  les trois d'A1, celle d'A6a, les quatre d'A4a et celle d'A4b3a : `gere_les_ventes` du dossier annoncé, et qu'il
-  existe, avant toute lecture ;
-  les deux de R5, les quatre d'e5a, celle d'e5b1, les deux de R7 et celle de la ligne 22.7 : `admin_du_dossier` du
-  dossier annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`,
-  gardes `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`,
-  `gere_la_banque` et `droits_sur_le_dossier` ne lisent que les droits de l'appelant (`droitsAcces.sql`),
-  `couverture_du_releve` que les mois du relevé d'un dossier où il a accès (`banqueClient.sql`),
-  `pieces_jointes_ecartees_du_client` que le jour, la raison et le poids des pièces jointes écartées des 90 derniers
-  jours d'un dossier où il a accès (`piecesJointesEcartees.sql`, 38a à 38r), `etat_facture_electronique` que des
-  booléens, un nom et des dates des deux connexions et l'adresse courante d'un dossier où il a `gere_les_ventes`
-  (`etatFactureElectronique.sql`) ; plus aucun rôle n'exécute
-  `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction
-  `SECURITY DEFINER` n'écrive pas sans contrôle interne.
+  `declarer_adresse_reception`, `enregistrer_contact`, `retirer_contact`, `reprendre_contact`, `effacer_contact`,
+  `importer_contacts`, `enregistrer_parametres_facturation` et `confirmer_rib` écrivent, chacune avec son propre
+  contrôle d'accès (les trois de R4 : `admin_du_dossier` du dossier annoncé pour conclure et noter, le chef du cabinet
+  du dossier — `est_chef_du_cabinet` — pour revoir ; depuis P2, les sept des ventes : `gere_les_ventes` du dossier
+  annoncé, ou de celui de la transmission pour l'abandon ; les trois d'A1, celle d'A6a, les quatre d'A4a, celle d'A4b3a
+  et `enregistrer_parametres_facturation` (A5a) : `gere_les_ventes` du dossier annoncé, et qu'il existe, avant toute
+  lecture ; `confirmer_rib` (A5a) : `admin_du_dossier` du dossier annoncé, et qu'il existe, avant toute lecture ; les
+  deux de R5, les quatre d'e5a, celle d'e5b1, les deux de R7 et celle de la ligne 22.7 : `admin_du_dossier` du dossier
+  annoncé, avant toute lecture ; `garder_piece_ecartee`, `garder_piece_declaree` et `garder_source_citee`, gardes
+  `SECURITY DEFINER`, ne sont exécutées par aucun rôle) ; `client_du_dossier`, `gere_les_ventes`, `gere_la_banque` et
+  `droits_sur_le_dossier` ne lisent que les droits de l'appelant (`droitsAcces.sql`), `couverture_du_releve` que les
+  mois du relevé d'un dossier où il a accès (`banqueClient.sql`), `pieces_jointes_ecartees_du_client` que le jour, la
+  raison et le poids des pièces jointes écartées des 90 derniers jours d'un dossier où il a accès
+  (`piecesJointesEcartees.sql`, 38a à 38r), `etat_facture_electronique` que des booléens, un nom et des dates des deux
+  connexions et l'adresse courante d'un dossier où il a `gere_les_ventes` (`etatFactureElectronique.sql`) ; plus aucun
+  rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE
+  fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -1020,9 +1039,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   sauvegarde, et lever le drapeau suffit le jour de l'application ; `restauration.sql` la met au plan quand elle existe,
   ses rangs comptés depuis celui d'`exercices_valides` ; un drapeau par migration préparée (A1 : `auPlanDesArticles`,
   `sauvegardeArticles.test.ts` ; A6a : `auPlanDesAdressesReception`, `sauvegardeAdressesReception.test.ts` ; A4a :
-  `auPlanDesContacts`, `sauvegardeContacts.test.ts`), réunis par `auPlanAujourdHui` ; une table auto-référencée y
-  déclare d'avance sa vague (`TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES`) → « LES DEVIS, EN BASE », « LES ARTICLES, EN
-  BASE », « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE », « LES CONTACTS, EN BASE ».
+  `auPlanDesContacts`, `sauvegardeContacts.test.ts` ; A5a : `auPlanDesParametresFacturation`,
+  `sauvegardeParametresFacturation.test.ts`), réunis par `auPlanAujourdHui` ; une table auto-référencée y déclare
+  d'avance sa vague (`TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES`) → « LES DEVIS, EN BASE », « LES ARTICLES, EN BASE »,
+  « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE », « LES CONTACTS, EN BASE », « LES PARAMÈTRES
+  DE FACTURATION, EN BASE ».
 - **Un type de `types.ts` décrit la table**, colonnes NOT NULL comprises — et les déclencheurs comptent : ceux de
   `dossiers` remplissent `cabinet_id` et `code_email` seulement s'ils sont nuls.
 - **`pack_pieces` a été supprimée** (jamais écrite) : la composition d'un pack n'est pas modélisée. Avant de supprimer
@@ -1510,8 +1531,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - **La racine du mandataire (G1.45)** : une facture que le cabinet valide au nom du client est émise sous mandat, et la
   DGFiP demande alors une racine de numéro propre au mandataire ; l'hypothèse d'une seule série (P2, EC-Q2) ne la donne
-  pas. À trancher (MEG1-Q5) avant toute facture réelle validée par le cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU
-  CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
+  pas. Tranchée par le cabinet le 16/10/2026 (MEG1-Q5, « comme recommandé ») : deux séries par dossier, celle du client
+  et celle du mandataire, choisie selon QUI valide ; le client valide ses factures, la série du cabinet ne sert qu'à le
+  dépanner ; le client qui quitte son ancien logiciel continue sa série. Rien n'en est encore écrit : la série du
+  mandataire vient avec A9, ou avant si le cabinet doit valider une facture réelle d'ici là → « L'ESPACE CLIENT,
+  LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
 - **Pièges EN 16931 / Super PDP** : la TVA sur chaque ligne (BR-S-08), l'unité `C62` (BR-23), le n° de TVA du vendeur
   (BR-S-02), `is_valid=false` porté aussi par un rapport fait d'avertissements, le SIRET du vendeur = l'entreprise
   authentifiée, le motif d'une ligne à 0 % selon le statut de TVA → « Pièges EN16931/Super PDP ».
@@ -1786,10 +1810,24 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   refuse le fichier avant tout envoi et le dit.
   `contactsImport.test.ts` confronte le module au texte exporté et rejoue l'essai → « L'IMPORT D'UN FICHIER DE
   CLIENTS, EN BASE ».
+- **Les paramètres de facturation** (A5a, en base depuis le 16/10/2026, `lib/parametresFacturation.ts`, pur ;
+  `lib/categoriesJuridiques.ts`) : par dossier, une VERSION — le délai (0 à 60 jours), le moyen proposé (les huit du
+  registre), l'escompte et les pénalités (300), des mentions (1 000), un pied de page (500), le RIB (l'IBAN sous sa
+  forme électronique, sa clé ISO 13616 vérifiée en SQL ; le BIC, ISO 9362 ; le titulaire, 70, EPC AT-21 ; le BIC et le
+  titulaire avec l'IBAN seulement), son état, ses auteurs ; une saisie REMPLACE la courante (`remplace_id`, une chaîne),
+  rien ne se modifie sauf le RIB PROPOSÉ de la courante, que `confirmer_rib` confirme (le cabinet seul) ;
+  `enregistrer_parametres_facturation` (sept rangs, dix-sept messages, l'accès d'abord — `gere_les_ventes` —, sous un
+  verrou par dossier ; une clé inconnue NOMMÉE) : un RIB inchangé garde son état et sa confirmation, posé ou changé par
+  le cabinet il est confirmé d'emblée, par le client seulement proposé (MEG1-Q12) ; le RIB qu'une facture verra remonte
+  la chaîne au-delà des proposés (`ribEnVigueur`). Sur `dossiers`, la dénomination imprimée, la ville du greffe, la
+  forme juridique (les 260 catégories de l'INSEE au niveau III, une liste FERMÉE, la même pour la ligne 33) et le
+  capital (au centime, jamais pour un entrepreneur individuel), écrits par la policy du cabinet seule (MEG1-Q14). Les
+  mentions proposées (MEG1-Q13) vivent dans le module. `parametresFacturation.test.ts` confronte le module au texte
+  exporté et rejoue l'essai → « LES PARAMÈTRES DE FACTURATION, EN BASE ».
 
 ## Tests
 
-Vitest, 11 696 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 11 786 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
@@ -1857,8 +1895,9 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
 - Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** toutes
-  ses mutations qui mordent — trente-sept depuis A4a : dix-neuf avec P7, douze de plus avec les ventes, deux avec les
-  articles, deux avec les adresses de réception, deux avec les contacts) ; la CI n'a pas accès à la base.
+  ses mutations qui mordent — trente-neuf depuis A5a : dix-neuf avec P7, douze de plus avec les ventes, deux avec les
+  articles, deux avec les adresses de réception, deux avec les contacts, deux avec les paramètres de facturation) ; la
+  CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

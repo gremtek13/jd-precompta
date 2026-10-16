@@ -63,6 +63,17 @@ export interface Dossier {
   // Adresse de l'émetteur — mention obligatoire sur une facture (voir FacturesTab). Absente du modèle
   // jusqu'à l'ajout de la facturation : nom/siret suffisaient à tout ce qui existait avant.
   adresse: string | null
+  // L'identité légale que la facture imprimera (espace client, étape A5a ; MEG1-Q14, hypothèse) : la dénomination (pour un
+  // entrepreneur individuel, son nom suivi de « EI »), la ville du greffe après « RCS », la catégorie juridique de l'INSEE
+  // au niveau III (lib/categoriesJuridiques.ts) et le capital d'une société, en euros au centime. Écrites par le cabinet
+  // seul (la policy `dossiers_update`), lues par le client comme tout son dossier. FACULTATIVES dans ce type : la migration
+  // `parametres_facturation` les a posées (`PARAMETRES_FACTURATION_EXPORTES`, lib/parametresFacturation.ts), mais une
+  // sauvegarde faite avant elle ne les porte pas, et aucun code ne les lit ni ne les écrit encore (les écrans viendront avec
+  // l'étape A5b).
+  denomination_imprimee?: string | null
+  rcs_ville?: string | null
+  forme_juridique?: string | null
+  capital?: number | null
 }
 
 export interface Categorie {
@@ -1796,4 +1807,44 @@ export interface Contact {
   cree_le: string
   modifie_par: string | null
   modifie_le: string | null
+}
+
+// LES PARAMÈTRES DE FACTURATION D'UN DOSSIER (espace client, étape A5a ; migration `parametres_facturation`, présentée au
+// cabinet et appliquée sur son accord : `PARAMETRES_FACTURATION_EXPORTES`, lib/parametresFacturation.ts). Une
+// VERSION : ce que les factures du dossier proposeront ou imprimeront de ses conditions, et le RIB imprimé. Une saisie
+// nouvelle remplace la courante (`remplace_id`, une chaîne par dossier) ; rien ne se modifie, sauf le RIB PROPOSÉ de la
+// courante, que le cabinet confirme. Le cabinet et le client qui porte le droit « Ventes » la lisent, toutes colonnes ;
+// seules `enregistrer_parametres_facturation` et `confirmer_rib` l'écrivent.
+// L'état du RIB (MEG1-Q12, hypothèse) : proposé quand un client « Ventes » l'a posé ou changé, confirmé quand le cabinet
+// l'a posé ou confirmé ; nul sans IBAN.
+export type EtatRib = 'propose' | 'confirme'
+export interface ParametresFacturation {
+  id: string
+  dossier_id: string
+  // De 0 à 60 jours (C. com., art. L441-10, I) : il proposera l'échéance d'une facture.
+  delai_paiement_jours: number | null
+  // L'un des huit moyens du registre des encaissements.
+  moyen_prefere: MoyenEncaissement | null
+  // Trois cents caractères au plus, chacun ; jamais faits que de blancs.
+  escompte: string | null
+  penalites: string | null
+  // Mille caractères au plus.
+  mentions_complementaires: string | null
+  // Cinq cents caractères au plus.
+  pied_de_page: string | null
+  // Sous sa forme électronique (sans espace, en majuscules), sa clé ISO 13616 vérifiée par la fonction.
+  iban: string | null
+  // Huit ou onze caractères (ISO 9362), avec l'IBAN seulement.
+  bic: string | null
+  // Soixante-dix caractères au plus (EPC069-12, AT-21), avec l'IBAN seulement.
+  titulaire_compte: string | null
+  rib_etat: EtatRib | null
+  // Qui a confirmé le RIB et quand — tous deux nuls tant qu'il n'est que proposé ; repris tels quels par une version qui
+  // ne change pas le RIB.
+  rib_confirme_par: string | null
+  rib_confirme_le: string | null
+  remplace_id: string | null
+  // Qui a enregistré la version — un identifiant de compte, sans clé vers les comptes —, et quand.
+  auteur: string
+  cree_le: string
 }

@@ -33,6 +33,7 @@ import {
   type Relation,
 } from './sauvegarde'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
+import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { derniereDefinitionSql } from '../test/schema'
 
 // Ces tests sont la RÉPÉTITION de la restauration. Une sauvegarde jamais restaurée n'est pas une
@@ -131,8 +132,10 @@ describe('ordre de restauration', () => {
       'encaissements_factures.annule_id', 'revision_justifications.remplace_id', 'revision_justifications.reprise_de',
       'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
       'revision_explications.remplace_id', 'declarations_ereporting.remplace_id', 'dossier_permanent.remplace_id',
-      // Depuis l'étape A6a, les adresses de réception, le jour où leur migration est exportée.
+      // Depuis l'étape A6a, les adresses de réception, le jour où leur migration est exportée ; depuis l'étape A5a, les
+      // paramètres de facturation, de même.
       ...(ADRESSES_RECEPTION_EXPORTEES ? ['adresses_reception.remplace_id'] : []),
+      ...(PARAMETRES_FACTURATION_EXPORTES ? ['parametres_facturation.remplace_id'] : []),
     ])
   })
 

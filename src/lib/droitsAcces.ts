@@ -26,6 +26,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
+import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
 export type Domaine = 'ventes' | 'banque'
 
@@ -180,6 +181,12 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // ouvre au client « Ventes », par la base, un geste de plus sur le fichier de ses clients — importer d'un coup les lignes
 // d'un fichier, d'un seul tenant, sans jamais modifier un contact rangé. Elle exige celle des contacts : sans elle, ce
 // drapeau ne change rien à la phrase. L'écran de l'import (étape A4b3b) vient après : la phrase le dit à venir.
+// DEPUIS L'ÉTAPE A5a, un septième : la migration `parametres_facturation` (`PARAMETRES_FACTURATION_EXPORTES`,
+// lib/parametresFacturation.ts) — présentée au cabinet et appliquée sur son accord — ouvre au client « Ventes », par la base, les
+// paramètres de facturation du dossier, toutes leurs versions et leurs auteurs, et la fonction qui en enregistre une ; un
+// RIB qu'il pose ou change n'y est que PROPOSÉ, et seul le cabinet le confirme (MEG1-Q12, hypothèse). Elle exige celles des
+// ventes : sans elles, ce drapeau ne change rien à la phrase. L'écran qui les montre (étape A5b) vient après : la phrase le
+// dit à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -187,6 +194,7 @@ export function ceQueDisentLesCases(
   adressesOuvertes: boolean,
   contactsOuverts: boolean,
   importOuvert: boolean,
+  parametresOuverts: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -235,6 +243,15 @@ export function ceQueDisentLesCases(
       + 'de clients de son ancien logiciel, mille lignes au plus, d’un seul tenant : si une ligne est refusée, l’import entier '
       + 'l’est, et un contact déjà rangé n’est jamais modifié ; le fichier est lu dans son navigateur et n’est pas gardé.'
     : ''
+  // Les paramètres de facturation (étape A5a) : la lecture de toutes les versions — le RIB, son état et les auteurs
+  // compris —, l'enregistrement d'une version, et la règle du RIB (MEG1-Q12, hypothèse). L'écran (étape A5b) est à venir.
+  const parametres = ventesOuvertes && parametresOuverts
+    ? ' Par la base, il lit aussi les paramètres de facturation du dossier, version après version — délai de paiement, '
+      + 'moyen de paiement proposé, conditions d’escompte, pénalités de retard, mentions complémentaires, pied de page, et '
+      + 'le RIB imprimé (IBAN, BIC, titulaire) avec son état, qui a enregistré chaque version et qui a confirmé chaque RIB — '
+      + 'et peut en enregistrer une avec toi : un RIB qu’il pose ou change n’est que proposé, jusqu’à ce que tu le '
+      + 'confirmes. L’écran qui les montre viendra ensuite.'
+    : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
     ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
@@ -262,17 +279,18 @@ export function ceQueDisentLesCases(
       ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts
-    + importContacts + banque + ventesFermees + aVenir
+    + importContacts + parametres + banque + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 
 // L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
 // des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
-// contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a).
+// contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a) ; celui des paramètres de
+// facturation, de la leur (étape A5a).
 export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
   COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
-  IMPORT_CONTACTS_EXPORTE,
+  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES,
 )
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */

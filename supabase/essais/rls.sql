@@ -35,6 +35,8 @@
 --      Les adresses de réception (espace client, étape A6a) aussi, dès la leur, avec une mutation à elles
 --      (M3bis-membre (adresses de réception)).
 --      Les contacts (espace client, étape A4a) aussi, dès la leur, avec une mutation à eux (M3bis-membre (contacts)).
+--      Les paramètres de facturation (espace client, étape A5a) aussi, dès la leur, avec une mutation à eux
+--      (M3bis-membre (paramètres de facturation)).
 --   5. `prochain_numero_facture` ne s'appelle pas. Malgré son nom elle CONSOMME un numéro : un appel
 --      réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
 --   5bis. `attribuer_numero_facture`, qui l'enveloppe, non plus. Depuis la migration
@@ -429,6 +431,27 @@
 -- échappements de la classe des blancs reçus tels quels) y rend 35 lignes, 0 en faute, 37 mutations sur 37 (79 tables,
 -- dont 70 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (contacts) voit les deux
 -- contacts du jeu). `contacts.sql` y rend ses 224 verdicts, 0 en faute.
+--
+-- 16/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape A5a : migration `parametres_facturation`,
+-- préparée, présentée au cabinet, non appliquée), qui crée `parametres_facturation` — lecture du cabinet
+-- (`admin_du_dossier`), lecture du droit « Ventes » (`parametres_facturation_lecture_ventes`), insertion de restauration
+-- réservée au super-administrateur, aucune autre policy ; deux fonctions l'écrivent, la confirmation du RIB au cabinet
+-- seul — et pose sur `dossiers` quatre colonnes d'identité légale, sans policy neuve. Le bloc « Les ventes du client » la
+-- prend dès qu'elle existe (3bis, 4bis, M4bis, et une mutation à elle, M3bis-membre (paramètres de facturation)) ; avant,
+-- une ligne « EN ATTENTE ». Joué ENTIER par psql sur la réplique de l'étape (signature.sql : les neuf familles, et
+-- l'historique, égaux à la production à 135 migrations) : sans la migration, 36 lignes de verdict (79 tables, dont 70
+-- portant un `dossier_id`), 0 en faute, 37 mutations sur 37 qui mordent ; avec elle, 35 lignes (80 tables, dont 71
+-- portant un `dossier_id` ; 3bis sur treize tables des ventes, 4bis sur vingt écritures directes), 0 en faute, 39
+-- mutations sur 39 (M3bis-membre (paramètres de facturation) voit les deux versions du jeu). Ce que les fonctions refusent
+-- et acceptent, profil par profil et par leur raison, et l'identité légale que le client n'écrit pas, sont éprouvés par
+-- `parametresFacturation.sql`. Le passage en production suivra l'application et se notera ici.
+--
+-- 16/10/2026 — LA MIGRATION APPLIQUÉE EN PRODUCTION, `parametres_facturation` (`20261016064317`, sur l'accord du
+-- cabinet, A5-Q1) : 136 migrations ; la signature de la production (signature.sql : les neuf familles changent) est
+-- celle de la réplique migrée. La copie adaptée (68 363 caractères, `747866d5…`, ce que rend la ligne TEXTE — les
+-- échappements de la classe des blancs reçus tels quels) y rend 35 lignes, 0 en faute, 39 mutations sur 39 (80 tables,
+-- dont 71 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (paramètres de facturation) voit
+-- les deux versions du jeu). `parametresFacturation.sql` y rend ses 204 verdicts, 0 en faute.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1322,6 +1345,16 @@ end $$;
 -- passer l'insertion de M4bis par la policy de la restauration. Une mutation à elle, M3bis-membre (contacts), compte ce
 -- que le client sans droit voit de CETTE table quand sa policy passe à « membre ». Avant la migration, une ligne dit que
 -- les contacts attendent.
+-- LES PARAMÈTRES DE FACTURATION (étape A5a) rejoignent ce domaine dès que la migration `parametres_facturation` est en base
+-- (son témoin : la table `parametres_facturation`) : la table entre dans la liste attendue ; le jeu d'essai y enregistre
+-- deux versions du dossier du client, par leur fonction et sous le chef, la seconde remplaçant la première — un RIB
+-- confirmé, puis des conditions seules (le client qui porte « Ventes » lit toute l'histoire) ; 4bis y tente l'insertion
+-- directe d'une version qui remplace la courante (valide : sa garde la laisse passer) et une mise à jour. Le cabinet n'a
+-- AUCUNE policy d'écriture sur cette table : le chef de l'essai, super-administrateur, fait passer l'insertion de M4bis par
+-- la policy de la restauration. Une mutation à elle, M3bis-membre (paramètres de facturation), compte ce que le client
+-- sans droit voit de CETTE table quand sa policy passe à « membre ». Avant la migration, une ligne dit que les paramètres
+-- de facturation attendent. L'identité légale que la migration pose sur `dossiers` n'ouvre rien : sa seule écriture est
+-- `dossiers_update`, qu'aucun profil client ne passe (parametresFacturation.sql, 80 à 84).
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -1359,6 +1392,9 @@ declare
   adresses_membre bigint;
   -- Les contacts (étape A4a) : celui du jeu, ce que 4bis tentera, et ce que la mutation à part voit de la table.
   ct uuid; ecritures_contacts jsonb := '[]'::jsonb; mises_a_jour_contacts jsonb := '[]'::jsonb; contacts_membre bigint;
+  -- Les paramètres de facturation (étape A5a) : la courante du jeu, ce que 4bis tentera, et ce que la mutation à part voit
+  -- de la table.
+  pf uuid; ecritures_parametres jsonb := '[]'::jsonb; mises_a_jour_parametres jsonb := '[]'::jsonb; parametres_membre bigint;
 begin
   if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                   and not attisdropped) then
@@ -1394,6 +1430,13 @@ begin
   else
     insert into rls_verdict values ('3bis et 4bis. les contacts : EN ATTENTE de la migration contacts',
       'public.contacts', 'absente : les contacts se jugent avec les ventes dès que la migration y est', true);
+  end if;
+  -- Les paramètres de facturation (étape A5a), dès que leur migration est en base ; avant, une ligne le dit.
+  if to_regclass('public.parametres_facturation') is not null then
+    attendues := array(select x from unnest(attendues || array['parametres_facturation']) x order by 1);
+  else
+    insert into rls_verdict values ('3bis et 4bis. les paramètres de facturation : EN ATTENTE de la migration parametres_facturation',
+      'public.parametres_facturation', 'absente : les paramètres de facturation se jugent avec les ventes dès que la migration y est', true);
   end if;
   -- Le catalogue, tel qu'il est.
   execute catalogue_sql into tables_ventes, hors_lecture;
@@ -1513,6 +1556,26 @@ begin
       mises_a_jour_contacts := jsonb_build_array(
         jsonb_build_object('nom', 'contacts', 'ordre', format('update contacts set nom = nom where dossier_id = %L', dossier_du_client)));
     end if;
+    -- Les paramètres de facturation (étape A5a) : deux versions du dossier du client, par leur fonction et sous le chef, la
+    -- première remplaçant la courante s'il en a une — un RIB fictif à clé juste, confirmé d'emblée, puis des conditions
+    -- seules, sans RIB.
+    if to_regclass('public.parametres_facturation') is not null then
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select p.id into pf from enregistrer_parametres_facturation(dossier_du_client,
+        (select c.id from parametres_facturation c where c.dossier_id = dossier_du_client
+          and not exists (select 1 from parametres_facturation s where s.remplace_id = c.id)),
+        '{"delai_paiement_jours":30,"iban":"FR9399999000010000000000100","titulaire_compte":"ESSAI RLS"}'::jsonb) p;
+      select p.id into pf from enregistrer_parametres_facturation(dossier_du_client, pf,
+        '{"delai_paiement_jours":45,"escompte":"Pas d''escompte pour paiement anticipé."}'::jsonb) p;
+      reset role;
+      -- Ce que 4bis tentera : une version qui remplace la courante, que la garde laisse passer, et une mise à jour.
+      ecritures_parametres := jsonb_build_array(
+        jsonb_build_object('nom', 'parametres_facturation', 'ordre', format('insert into parametres_facturation (dossier_id, remplace_id, auteur) values (%L, %L, %L)',
+          dossier_du_client, pf, client)));
+      mises_a_jour_parametres := jsonb_build_array(
+        jsonb_build_object('nom', 'parametres_facturation', 'ordre', format('update parametres_facturation set escompte = escompte where dossier_id = %L', dossier_du_client)));
+    end if;
     construit := true;
 
     -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
@@ -1568,6 +1631,8 @@ begin
       select d.nom, d.ordre from jsonb_to_recordset(ecritures_adresses) as d(nom text, ordre text)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(ecritures_contacts) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(ecritures_parametres) as d(nom text, ordre text)
     loop
       -- Sous le client portant les deux droits : refusé par la RLS, nommément.
       accepte := false; motif := null;
@@ -1611,6 +1676,8 @@ begin
       select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_adresses) as d(nom text, ordre text)
       union all
       select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_contacts) as d(nom text, ordre text)
+      union all
+      select d.nom, d.ordre from jsonb_to_recordset(mises_a_jour_parametres) as d(nom text, ordre text)
     loop
       touchees := -1; motif := null;
       begin
@@ -1649,6 +1716,8 @@ begin
         if t = 'adresses_reception' then adresses_membre := vus; end if;
         -- Les contacts (étape A4a) aussi.
         if t = 'contacts' then contacts_membre := vus; end if;
+        -- Les paramètres de facturation (étape A5a) aussi.
+        if t = 'parametres_facturation' then parametres_membre := vus; end if;
       end loop;
       raise exception 'ANNULATION_ESSAI';
     exception when sqlstate 'P0001' then null;
@@ -1665,6 +1734,10 @@ begin
     if to_regclass('public.contacts') is not null then
       mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre (contacts) — 3bis sans droit, la policy des contacts sur « membre »',
         'attendu', 'des contacts vus', 'observe', coalesce(contacts_membre::text, '?') || ' contact(s) vu(s)', 'mord', coalesce(contacts_membre > 0, false));
+    end if;
+    if to_regclass('public.parametres_facturation') is not null then
+      mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre (paramètres de facturation) — 3bis sans droit, la policy des paramètres sur « membre »',
+        'attendu', 'des versions vues', 'observe', coalesce(parametres_membre::text, '?') || ' version(s) vue(s)', 'mord', coalesce(parametres_membre > 0, false));
     end if;
     mutations := mutations || jsonb_build_object('mutation', 'M3bis-membre — 3bis sans droit, les policies sur « membre »',
       'attendu', 'des lignes vues', 'observe', total || ' ligne(s) vue(s)', 'mord', total > 0);

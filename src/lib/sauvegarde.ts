@@ -14,6 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
+import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -75,11 +76,25 @@ export function auPlanDesContacts(table: string, contactsExportes: boolean): boo
   return contactsExportes || !TABLES_DES_CONTACTS.includes(table)
 }
 
+// LES PARAMÈTRES DE FACTURATION (espace client, étape A5a ; migration `parametres_facturation`, présentée au cabinet et
+// appliquée sur son accord) : le patron des adresses de réception, sous leur propre drapeau
+// (`PARAMETRES_FACTURATION_EXPORTES`, src/lib/parametresFacturation.ts), levé. Leur table est déclarée ci-dessous à sa
+// place — ses deux relations, son rang, son chemin, et sa vague (une version remplace la courante, `remplace_id`) — et
+// serait RETIRÉE du plan le drapeau rebaissé (avant tout retour arrière de la migration) ;
+// sauvegardeParametresFacturation.test.ts éprouve le plan prévu et le plan du jour.
+export const TABLES_DES_PARAMETRES_FACTURATION: readonly string[] = ['parametres_facturation']
+
+/** Une table au plan, côté paramètres de facturation : toutes, sauf la leur tant que sa migration n'est pas exportée. */
+export function auPlanDesParametresFacturation(table: string, parametresExportes: boolean): boolean {
+  return parametresExportes || !TABLES_DES_PARAMETRES_FACTURATION.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
- *  adresses de réception, les contacts. */
+ *  adresses de réception, les contacts, les paramètres de facturation. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
     && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
+    && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -233,10 +248,13 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'adresses_reception', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les contacts (espace client, étape A4a) : seulement leur dossier — une facture n'en garde que la copie.
   { enfant: 'contacts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les paramètres de facturation (espace client, étape A5a) : leur dossier, et la version qu'une version remplace.
+  { enfant: 'parametres_facturation', parent: 'parametres_facturation', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'parametres_facturation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
-// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception ni des
-// contacts tant que leurs migrations ne sont pas exportées.
+// Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
+// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
@@ -378,6 +396,13 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // COPIE de son client, sans clé vers lui —, aucune validation ne les fige ; un contact retiré ou effacé se réinsère tel
 // quel, par la policy du super-administrateur. Le jour où leur table existe, l'essai de restauration les met à cette place :
 // seuls les rangs des devis et d'`exercices_valides` changent. `sauvegardeContacts.test.ts` garde cet ordre.
+//
+// Les paramètres de facturation (espace client, étape A5a) viennent après les contacts, à la fin de ce qui ne dépend que du
+// dossier : leur seul parent est le dossier — et la version qu'une version remplace, écrite par la vague d'avant —, rien
+// ne les lit à l'insertion d'une autre ligne avant l'étape A7, aucune validation ne les fige ; une version se réinsère
+// telle quelle, son RIB proposé ou confirmé et ses auteurs compris, par la policy du super-administrateur. Le jour où leur
+// table existe, l'essai de restauration les met à cette place : seuls les rangs des devis et d'`exercices_valides`
+// changent. `sauvegardeParametresFacturation.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -457,14 +482,15 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'pieces_jointes_ecartees',
   'adresses_reception',
   'contacts',
+  'parametres_facturation',
   'devis_numerotation',
   'devis',
   'devis_factures',
   'exercices_valides',
 ]
 
-// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception ni des
-// contacts tant que leurs migrations ne sont pas exportées.
+// L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
+// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
 export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
@@ -530,10 +556,14 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // L'adresse de réception d'un dossier (espace client, étape A6a) : une version en remplace une autre de son dossier
   // (`remplace_id`) ; immuable, elle ne part pas à NULL, et sa garde lit la version remplacée.
   { table: 'adresses_reception', colonne: 'remplace_id' },
+  // Les paramètres de facturation d'un dossier (espace client, étape A5a) : une version en remplace une autre de son
+  // dossier (`remplace_id`) ; immuable hors de la confirmation de son RIB, elle ne part pas à NULL, et sa garde lit la
+  // version remplacée.
+  { table: 'parametres_facturation', colonne: 'remplace_id' },
 ]
 
-// Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception tant que leur migration n'est
-// pas exportée.
+// Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception, ni celle des paramètres de
+// facturation, tant que leur migration n'est pas exportée.
 export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] =
   TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table))
 
@@ -946,10 +976,11 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   articles: { acces: 'direct' },
   adresses_reception: { acces: 'direct' },
   contacts: { acces: 'direct' },
+  parametres_facturation: { acces: 'direct' },
 }
 
-// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception ni
-// des contacts tant que leurs migrations ne sont pas exportées.
+// Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
+// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
   Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlanAujourdHui(table)),
 )

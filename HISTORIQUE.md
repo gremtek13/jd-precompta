@@ -25111,6 +25111,13 @@ d'abord) et celui de l'agent retirés. La feuille de route : la ligne 51.5 compl
 l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141
 sur 171 (82 %, huit cases).
 
+**LES RÉPONSES DU CABINET, LE 16/10/2026 (« comme recommandé »).** A4B3B-Q1 à A4B3B-Q6 : les six lectures telles quelles
+— la borne de 10 Mio par fichier ; le type lu dans une colonne dont chaque valeur se fait correspondre, sinon un type
+unique choisi pour tout le fichier ; une valeur dans un champ que le type de sa ligne n'ouvre pas fait refuser cette
+ligne, sans être écartée ; les lignes blanches ignorées et comptées ; un U+0000 n'importe où refuse le fichier entier,
+avant tout envoi ; pas de confirmation en deux temps avant l'import. Rien ne change dans le code. A4B3-Q6 reste
+ouverte : les noms des colonnes de l'export de l'ancien logiciel, sans aucune donnée.
+
 **RESTE.** A4b3c, l'export d'une fiche (RGPD.md, §6 : les droits des clients du client s'exercent auprès du client) ;
 A4B3-Q6, les noms des colonnes de l'export de l'ancien logiciel, pour proposer d'emblée la correspondance ; puis A5
 (MEG1-Q12 à Q14), MEG1-Q5, A7 et la liste des clients sans activité depuis trois ans. La mise en ligne de cette demande
@@ -25196,6 +25203,181 @@ l'export de toute la liste non offert ; A4B3C-Q5, le nom du client dans le nom d
 tableur lirait comme des formules (`=`, `+`, `-`, `@`) et le zéro initial d'un SIREN, qu'un tableur perd en
 réenregistrant le fichier : le fichier reste fidèle, rien n'est neutralisé. Recommandations : les six telles quelles.
 
+**LA MISE EN LIGNE, LE 16/10/2026.** Fusionnée par #177 (`683a4de`) à 0 h 32 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `c27982f` ; l'arbre de `main` (`0355b91b…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-BxQtn7iT.js` (déploiement 38817866757, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`683a4de`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration (ses 173 liens
+d'abord) et celui de l'agent retirés, après avoir vérifié que la copie de l'agent ne diffère de la fusion que par les
+trois retouches de la session. La feuille de route : la ligne 51.5 complétée (38 965 caractères, relue à l'identique) ;
+l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141 sur 171 (82 %,
+huit cases).
+
+**LES RÉPONSES DU CABINET, LE 16/10/2026 (« comme recommandé »).** A4B3C-Q1 à A4B3C-Q6 : les six telles quelles — un CSV
+que l'import relit, plutôt qu'un JSON ou un PDF ; la fiche sans l'état du contact, ses dates ni qui l'a rangé ; les
+factures qui nomment la personne absentes jusqu'à A7 ; pas d'export de toute la liste d'un coup ; le nom du client dans
+le nom du fichier ; le fichier fidèle, rien de neutralisé — une cellule qu'un tableur lirait comme une formule, le zéro
+initial d'un SIREN. Rien ne change dans le code.
+
 **RESTE.** A4B3-Q6 (les noms des colonnes de l'export de l'ancien logiciel) ; A5 (MEG1-Q12 à Q14), MEG1-Q5, A7, puis la
 liste des clients sans activité depuis trois ans. La mise en ligne de cette demande se consigne au prochain commit de
 documents.
+
+### 16/10/2026 — LES PARAMÈTRES DE FACTURATION, EN BASE — ESPACE CLIENT, ÉTAPE A5a (LIGNE 51.5)
+
+(La migration `parametres_facturation`, préparée sous la version PROVISOIRE `20261016080000` et éprouvée sur une
+réplique de la production, présentée au cabinet, puis appliquée par la session sur son accord (A5-Q1), le 16/10/2026,
+sous la version `20261016064317` : elle ouvre au client qui porte la case « Ventes » la lecture d'une table et une
+fonction. Préparée par l'agent S245 sur `683a4de`. Fichiers : `src/lib/parametresFacturation.ts`, son test,
+`src/lib/categoriesJuridiques.ts`, `src/test/parametresFacturation.ts`,
+`src/lib/sauvegardeParametresFacturation.test.ts`, `supabase/essais/parametresFacturation.sql` (nouveaux) ;
+`src/lib/types.ts`, `src/lib/sauvegarde.ts`, `src/lib/droitsAcces.ts`, `supabase/essais/rls.sql`,
+`supabase/essais/restauration.sql`, `RGPD.md`, et les tests `droitsAcces.test.ts`, `sauvegarde.test.ts`,
+`sauvegardeContacts.test.ts`, `sauvegardeDevis.test.ts`, `restaurationEssai.test.ts`,
+`AccesTab.casesOuvertes.test.tsx` ; puis la bascule — le fichier de la migration dans l'export, sous sa version réelle,
+et le drapeau levé —, dans la même demande.)
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 15/10/2026 (135 migrations, la dernière `importer_contacts`,
+lecture seule du catalogue) : `dossiers` n'a AUCUNE colonne de forme juridique, de capital, de greffe ni de RIB (21
+colonnes ; aucune autre table non plus) ; ses policies : `dossiers_update` (`admin_du_dossier`, en lecture comme en
+vérification), `dossiers_write` et `dossiers_delete` (le chef), `dossiers_select` (le cabinet ou tout accès client) ;
+aucune fonction du schéma n'écrit `dossiers`, aucune Edge Function non plus (elles le lisent) : le seul chemin
+d'écriture des quatre colonnes nouvelles est la policy du cabinet. La conception (§A.5.1, §A.5.2) est suivie ; l'état
+réel y ajoute trois refus à leur place — la saisie (un objet aux seuls champs d'une version), le moyen de paiement, le
+titulaire du compte.
+
+**LES SOURCES.** C. com., art. L441-9, I (date de règlement, escompte, pénalités, indemnité), L441-10 (I : soixante
+jours ; II : la BCE majorée de dix points, jamais moins de trois fois l'intérêt légal), D441-5 (40 €), R123-237, 2°
+(« RCS » et la ville du greffe, version du 15/05/2022), R526-27 (la dénomination de l'EI) — lus par le résumé de
+recherche de Légifrance, dont les fiches refusent l'outil (403) ; R123-238 (la forme et le capital) NON RELU (A-NV9) ;
+la version de L441-10 au 01/01/2027 NON VÉRIFIÉE. L'INSEE, « Catégories juridiques », `cj_septembre_2022.xls` (mise à
+jour du 01/09/2022, md5 `e3ccbc85…`), lu par un lecteur BIFF8 écrit pour l'occasion (bibliothèque standard ; LibreOffice
+n'avait pas Calc) : 260 positions au niveau III. L'ISO 20022 (schéma `pain.007.001.09`) : `IBAN2007Identifier` (ISO
+13616) et `BICFIDec2014Identifier` (ISO 9362:2014) ; le registre IBAN de SWIFT (Release 36, copie publique ; la page de
+SWIFT refuse l'outil), qui renvoie à l'ISO/IEC 7064 MOD 97-10 ; l'EPC069-12 v3.0 (AT-21, 70 caractères). Chaque fichier
+téléchargé dans son dossier, lu comme donnée.
+
+**LA TABLE ET SES FONCTIONS.** `parametres_facturation` : dix-sept colonnes — le délai (0 à 60), le moyen (les huit du
+registre des encaissements), l'escompte et les pénalités (300), les mentions complémentaires (1 000), le pied de page
+(500) — jamais faits que des blancs `E' \t\n\r'` —, l'IBAN (forme électronique, en majuscules), le BIC, le titulaire
+(70), l'état du RIB (`propose`, `confirme`), qui l'a confirmé et quand, la version remplacée, l'auteur, l'instant ;
+aucun logo (A5c). Ses contraintes disent ce que la fonction dit, pour ce que la restauration réinsère ; une chaîne par
+dossier (`remplace_id` unique, une seule première par un index unique PARTIEL qu'aucun upsert ne vise) ; une garde
+refuse toute mise à jour — sauf le passage du RIB proposé de la COURANTE à confirmé, rien d'autre ne changeant — et
+toute suppression hors de la cascade du dossier. Trois policies `to authenticated` (la lecture du cabinet, celle du
+droit « Ventes », l'insertion de restauration au super-administrateur), aucune autre.
+`enregistrer_parametres_facturation` (sept rangs, dix-sept messages : l'accès d'abord — `gere_les_ventes` et le dossier
+existe, 42501 pour tous —, puis un verrou consultatif par dossier, la version remplacée — de ce dossier, puis la
+COURANTE, sinon la saisie passée entre-temps nommée par son jour et son heure à Paris —, la saisie et ses champs — une
+clé inconnue NOMMÉE, la première dans l'ordre des octets (`collate "C"`), coupée à quatre-vingts caractères —, les
+textes, le délai, le moyen, l'IBAN — sa forme, puis sa clé MOD 97-10 calculée en SQL —, le BIC et le titulaire avec
+lui) ; l'état du RIB (MEG1-Q12) : inchangé (l'IBAN, le BIC ET le titulaire), il garde son état et sa confirmation, même
+quand le cabinet réenregistre — un RIB proposé ne se confirme jamais en passant ; posé ou changé par le cabinet,
+confirmé d'emblée, par lui ; par le client, PROPOSÉ. `confirmer_rib` (le cabinet seul : l'accès, la version du dossier
+en P0002, la courante, un RIB, pas déjà confirmé). Sur `dossiers` : `denomination_imprimee` (200), `rcs_ville` (100),
+`forme_juridique` (les 260 codes de l'INSEE, une liste FERMÉE), `capital` (au centime, strictement positif, sous 10¹³ ;
+jamais pour l'entrepreneur individuel, 1000). Aucune instruction ne retire quoi que ce soit (le mot n'y paraît que dans
+`on delete cascade`, `before … or delete` et `tg_op = 'DELETE'`) ; 38 450 caractères, md5
+`4acf9cbd940ec7d5072e2a01f6c45ff7`. Le retour arrière, à part et DESTRUCTIF (3 448 caractères, `4eaaa7c5…`).
+
+**LE MODULE.** `lib/parametresFacturation.ts` (pur) : les refus des deux fonctions dans leur ordre et sous leurs mots
+(`REFUS_ENREGISTREMENT_PARAMETRES`, `REFUS_CONFIRMATION_RIB`), la clé de l'IBAN de proche en proche (confrontée au
+calcul sur le grand nombre), la version courante (`rompue` sur une chaîne qui n'en est pas une), l'état que la base
+donnera au RIB (`etatDuRibEnregistre`), le RIB qu'une facture verra (`ribEnVigueur`), ce qu'une version dit de son RIB —
+qui l'a posé (la première version de la suite qui le porte tel quel : l'auteur d'une version n'est pas toujours celui
+qui a posé son RIB), qui l'a confirmé, d'un même geste ou ensuite —, les mentions proposées (MEG1-Q13 : trente jours,
+« Pas d'escompte pour paiement anticipé. », la BCE majorée de dix points), la saisie telle qu'elle part (l'IBAN et le
+BIC sans aucun blanc, en majuscules), les refus des contraintes de l'identité légale dans l'ordre où Postgres les juge —
+celui de leurs NOMS — et la dénomination proposée d'un EI (« <nom> EI »). Son test rejoue l'essai appel par appel (87
+appels, le même premier refus au même appel, l'état écrit, le RIB en vigueur relu cinq fois par la base) ; il lit aussi
+les Edge Functions : chaque requête sur `dossiers` commence par une lecture.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et l'historique,
+135) : l'essai (deux dossiers jetables, IBAN fictifs à clé juste du code banque 99999), sans la migration 1 verdict « EN
+ATTENTE », avec 204 verdicts (192 justes + 12 mutations qui mordent), 0 en faute, vide et semée, rien resté en base, et
+sa copie sans commentaires d'un seul tenant ; hors production : la suppression refusée même au propriétaire, la cascade
+du dossier, et DEUX COURSES — deux enregistrements partis de la même version (le second attend le verrou, puis est
+refusé, la première nommée) ; une confirmation tenue ouverte et un enregistrement qui garde le RIB (il attend, puis
+HÉRITE de la confirmation ; sans l'un des deux verrous, la nouvelle version naît « proposée » : la confirmation est
+perdue) ; 73 mutations de la migration sur 73 vues (une seule invisible au premier passage — le propriétaire qui
+re-signe une confirmation déjà faite —, vue après l'ajout du contrôle 62f), 4 sur 4 hors production ; `rls.sql` ENTIER,
+35 lignes, 0 en faute, 39 mutations sur 39 (sans la migration : 36, 0, 37 sur 37) ; la restauration, 74 tables
+IDENTIQUES dont les quatre versions (en quatre vagues) et le dossier avec son identité légale, et planté l'arrêt sur
+leur clé ; le retour arrière, les neuf familles revenues ; les trois contrôles de l'export (avec le fichier : 136 = 136,
+socle inchangé, inventaire 2 071, +55). Le code : 49 mutations ciblées, 48 mordent (une après un cas ajouté : « d'un
+même geste » exige le même instant ET le même compte) et une équivalente (deux suites d'une même version : le compte des
+versions atteintes la voit déjà) ; la suite entière, 388 fichiers, 11 786 tests ; la bascule en simulation — la suite
+entière verte après un correctif d'application (la liste des vagues de `sauvegarde.test.ts`), 15 mutations de la bascule
+sur 15.
+
+**TROIS FAITS APPRIS.** (1) À l'insertion, la garde (BEFORE) passe AVANT la policy : une version qui en remplace une que
+l'appelant ne lit pas tombe sur la garde, pas sur la RLS — un essai qui veut le refus de la RLS insère une version sans
+version remplacée. (2) Postgres juge les contraintes CHECK d'une table dans l'ordre de leurs NOMS (un `strcmp`, sans
+collation) : le module redit cet ordre, et l'essai le prouve sur quatre fautes croisées. (3) `pg_get_constraintdef`
+déparse une borne de 10¹³ en `('10000000000000'::bigint)::numeric` et rend de VRAIS caractères de contrôle pour
+`E' \t\n\r'` : l'essai les rend « · ». Et un artefact de la réplique : elle n'a pas les huit policies de
+`storage.objects` (l'inventaire 2 008 contre 2 016 en production) — l'inventaire de l'export se confronte à la
+PRODUCTION (2 016 `d152ddd5…`, égal), celui de la réplique à elle-même.
+
+**LES QUESTIONS AU CABINET.** A5-Q1, l'accord pour appliquer ; A5-Q2, ce qu'un accès « Banque » seul apprend d'un
+changement de RIB (recommandé : une fonction qui ne rend que le jour, qui — le cabinet ou le client — et l'état du
+dernier changement, jamais l'IBAN, avec l'étape A5b) ; A5-Q3, la forme juridique : les 260 catégories de l'INSEE au
+niveau III, une seule colonne pour la facture et pour la ligne 33 (33-Q6) ; A5-Q4, le cabinet qui réenregistre sans
+toucher au RIB proposé ne le confirme pas ; A5-Q5, le client qui retire le RIB : effet immédiat ; A5-Q6, une clé
+inconnue refusée plutôt qu'ignorée ; A5-Q7, les bornes ; A5-Q8, pas de capital pour l'EI ; A5-Q9, les autres mentions de
+R123-237 (liquidation, location-gérance), le capital variable et le répertoire des métiers, hors de l'étape ; A5-Q10,
+les textes non relus (R123-238, L441-10 au 01/01/2027). MEG1-Q12 à Q14 prises comme hypothèses. Recommandations : oui à
+chacune, A5-Q9 avec l'étape A7.
+
+**LES RÉPONSES DU CABINET, LE 16/10/2026 (« comme recommandé »).** Une réponse, « Comme recommandé », que la session a
+prise pour toutes les questions en attente, comme elle l'a dit au cabinet. A5-Q1, l'accord pour appliquer ; A5-Q2 à
+A5-Q10 telles que recommandées — un accès « Banque » seul n'apprendra d'un changement de RIB que le jour, son auteur (le
+cabinet ou un accès client) et son état, jamais l'IBAN, par une fonction de l'étape A5b ; les 260 catégories de l'INSEE
+au niveau III, une seule colonne pour la facture et pour la ligne 33 ; réenregistrer sans toucher au RIB proposé ne le
+confirme pas ; le client retire le RIB, avec effet immédiat ; une clé inconnue refusée et nommée ; les bornes telles
+quelles ; pas de capital pour l'entrepreneur individuel ; les autres mentions possibles (liquidation, locataire-gérant,
+capital variable, répertoire des métiers, numéro d'agrément) avec l'étape A7 ; R123-238 et L441-10 au 01/01/2027 à
+relire avant A7. MEG1-Q12 à Q14, prises comme hypothèses par la migration, deviennent des décisions : le client
+« Ventes » propose le RIB et le cabinet le confirme ; les mentions de paiement proposées ; l'identité légale réglée par
+le cabinet seul. Dans la même réponse, A4B3B-Q1 à Q6 et A4B3C-Q1 à Q6 (consignées dans leurs entrées), et MEG1-Q5, la
+numérotation : (b), avec (a) comme usage courant — deux séries par dossier, celle du client (`F…`) et celle du
+mandataire (`M…`, ou le préfixe que le cabinet choisira), choisie selon QUI valide ; le client valide ses factures, la
+série du cabinet ne sert qu'à le dépanner ; le client qui quitte son ancien logiciel continue sa série (même format,
+compteur repris, suite sans trou vérifiée). Rien de MEG1-Q5 n'est écrit : elle se range dans A9, ou avant si le cabinet
+doit valider une facture réelle d'ici là. A4B3-Q6 reste ouverte.
+
+**L'APPLICATION ET LA PRODUCTION, LE 16/10/2026.** `apply_migration` a pris le texte du fichier sans demander de
+confirmation : version `20261016064317`, 136 migrations ; sa ligne d'historique rend l'empreinte du fichier (38 450
+caractères, `4acf9cbd940ec7d5072e2a01f6c45ff7`). L'essai `parametresFacturation.sql`, rejoué en production sans ses
+lignes de commentaire, d'un seul `execute_sql`, rend ses 204 verdicts justes — 157 contrôles, 23 valeurs, 12 faits, 12
+mutations sur 12 qui mordent —, sa ligne « 0 » rendant le texte du fichier (82 633 caractères,
+`5249edd5ca8636df2c1192f179a9fe8b`) et rien n'étant resté en base (4/3/1/0/0 avant et après : dossiers, accès, membres
+du cabinet, affectations, versions). `rls.sql`, sa copie adaptée (68 363 caractères, `747866d54b22bebc97feffc5321c5770`,
+les dix échappements de la classe des blancs envoyés sous leur forme échappée et reçus tels quels) : 35 lignes, 0 en
+faute, 39 mutations sur 39 (80 tables, dont 71 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ;
+M3bis-membre (paramètres de facturation) voit les deux versions du jeu). `signature.sql` rend ce que la réplique avait
+relevé après la migration, les neuf familles : colonnes 848 `bac41af9…`, contraintes 655 `1ea79a5c…`, index 230
+`84a4c97e…`, déclencheurs 55 `67616f3e…`, fonctions 169 `766d9130…`, droits d'exécution des fonctions 169 `ebab16b8…`,
+policies 157 `58878930…`, RLS 80 `9e8ffc97…`, droits des tables 80 `c7ec7672…`. Les trois contrôles de l'export, le
+fichier renommé à sa version réelle, texte inchangé : 136 fichiers, 136 migrations, empreinte globale
+`8e9f22d28681ab79500a7016488e5d55` des deux côtés ; socle inchangé, 78 instructions, `91ae95ec…` ; inventaire, 2 071
+objets, `8ae741818f072e89fefe83835e096552` des deux côtés (55 de plus). Les advisors :
+`authenticated_security_definer_function_executable` 53 (`enregistrer_parametres_facturation` et `confirmer_rib` en
+plus, qui vérifient l'accès avant toute lecture), `anon_security_definer_function_executable` 5, rien d'autre de
+nouveau.
+
+**L'INTÉGRATION, LE 16/10/2026.** Le correctif puis la bascule appliqués sur `683a4de` tels que l'agent les a rendus ;
+le fichier de la migration renommé de sa version PROVISOIRE à `20261016064317`, texte inchangé. Une retouche : la ligne
+vide en fin de `src/lib/parametresFacturation.ts`, que `git apply` signalait, retirée. Barrière sur l'arbre intégré :
+`tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, les mêmes ; quatre fuseaux, 11 786 tests chacun (388
+fichiers) ; construction verte (`index-BueHWlcw.js`). Dans les documents, une phrase du brouillon de CLAUDE.md
+corrigée : elle disait du client « jamais l'identité légale du dossier, que le cabinet écrit seul », comme s'il ne la
+lisait pas ; il la LIT, comme toute la fiche de son dossier (`dossiers_select`), et ne l'écrit jamais (`dossiers_update`
+est la policy du cabinet). Dans la même demande, la mise en ligne de A4b3c (S244) et les réponses du cabinet à A4B3B et
+A4B3C.
+
+**RESTE.** A5b, l'écran des paramètres — au cabinet et au client « Ventes » —, avec la fonction qui dit à un accès
+« Banque » le dernier changement de RIB (A5-Q2) ; A5c, le logo et son seau ; A4B3-Q6 (les noms des colonnes de l'export
+de l'ancien logiciel) ; A7, où la facture fige ses mentions — le RIB et les conditions en vigueur compris, et les autres
+mentions de R123-237 (A5-Q9), R123-238 et L441-10 au 01/01/2027 relus d'abord (A5-Q10) — ; A9, la numérotation qui
+continue et la série du mandataire (MEG1-Q5) ; puis la liste des clients sans activité depuis trois ans. La mise en
+ligne de cette demande se consigne au prochain commit de documents.
