@@ -91,7 +91,9 @@ describe('le plan prévu, contacts compris', () => {
   it('après les adresses de réception, à la fin de ce qui ne dépend que du dossier — avant les devis et `exercices_valides`', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('contacts') - 1]).toBe('adresses_reception')
-    expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 1]).toBe('devis_numerotation')
+    // Depuis l'étape A5a, les paramètres de facturation les suivent (sauvegardeParametresFacturation.test.ts), puis les devis.
+    expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 1]).toBe('parametres_facturation')
+    expect(rang('contacts')).toBeLessThan(rang('devis_numerotation'))
     expect(rang('contacts')).toBeGreaterThan(rang('dossiers'))
     expect(rang('contacts')).toBeLessThan(rang('exercices_valides'))
   })

@@ -319,6 +319,21 @@ quels), rend ses 73 verdicts justes, mutations comprises, et rien n'est resté e
 premier comparait un contrôle à un message que la session avait mal recopié, et sa ligne « 0 » le disait (HISTORIQUE.md,
 « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE »).
 
+**Rejoué le 16/10/2026 après `parametres_facturation`** (espace client, étape A5a), appliquée par la session sous la
+version `20261016064317` sur l'accord du cabinet (A5-Q1), sans confirmation demandée (aucune suppression : le mot n'y
+paraît que dans la cascade et la garde), AVANT la mise en ligne de la bascule qui la lit ; son fichier a quitté la
+version PROVISOIRE `20261016080000` pour celle-ci, texte inchangé (38 450 caractères, empreinte
+`4acf9cbd940ec7d5072e2a01f6c45ff7`, celle que rend sa ligne d'historique) : 136 fichiers, 136 migrations, empreinte
+globale `8e9f22d28681ab79500a7016488e5d55` des deux côtés, aucune divergence. Le socle est inchangé (78 instructions,
+`91ae95ec…`) ; l'inventaire compte 2 071 objets, `8ae741818f072e89fefe83835e096552` des deux côtés — la table
+`parametres_facturation`, ses dix-sept colonnes, ses dix-neuf contraintes, deux index, sa garde (le déclencheur et sa
+fonction), ses trois policies, sa RLS et ses deux fonctions, et les quatre colonnes de `dossiers` avec leurs cinq
+contraintes, en plus (55 objets). `signature.sql` rend en production ce que l'étape avait relevé sur sa réplique après
+la migration : les neuf familles changent. L'essai `supabase/essais/parametresFacturation.sql`, rejoué en production
+sans ses lignes de commentaire (82 633 caractères, reçus tels quels), rend ses 204 verdicts justes, mutations comprises,
+et rien n'est resté en base ; `rls.sql`, sa copie adaptée (68 363 caractères, `747866d5…`), 35 lignes, 0 en faute, 39
+mutations sur 39.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

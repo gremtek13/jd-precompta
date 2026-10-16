@@ -3,12 +3,14 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
+import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
   auPlan,
   auPlanAujourdHui,
   auPlanDesAdressesReception,
   auPlanDesArticles,
   auPlanDesContacts,
+  auPlanDesParametresFacturation,
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
   CLES_PRIMAIRES,
@@ -45,10 +47,12 @@ describe('le filtre du plan', () => {
   it('le plan effectif est le plan prévu filtré par les drapeaux, liste par liste', () => {
     // Depuis l'étape A1, le filtre du jour compose celui des devis et celui des articles (sauvegardeArticles.test.ts) ;
     // depuis l'étape A6a, celui des adresses de réception (sauvegardeAdressesReception.test.ts) ; depuis l'étape A4a, celui
-    // des contacts (sauvegardeContacts.test.ts).
+    // des contacts (sauvegardeContacts.test.ts) ; depuis l'étape A5a, celui des paramètres de facturation
+    // (sauvegardeParametresFacturation.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
-        && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES))
+        && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
+        && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))

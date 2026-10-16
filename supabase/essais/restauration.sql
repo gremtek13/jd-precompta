@@ -378,6 +378,25 @@ begin
   end if;
 end $$;
 
+-- ══ Les paramètres de facturation (espace client, étape A5a) ══ Au plan du code quand `PARAMETRES_FACTURATION_EXPORTES` est
+-- levé — c'est-à-dire quand leur migration est en base : le script les y met dès que leur table existe, juste avant
+-- `exercices_valides` (ORDRE_RESTAURATION_PREVU : après les contacts, que leur bloc vient d'y mettre, avant les devis, que
+-- leur bloc met ensuite au même endroit), `exercices_valides` reculant d'un rang ; leur chemin, et leur vague (une version
+-- remplace la courante, `remplace_id`). Absente de la base, rien n'entre : le plan est celui d'hier.
+-- restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+begin
+  if to_regclass('public.parametres_facturation') is not null then
+    update essai_restauration._ordre set rang = rang + 1 where table_nom = 'exercices_valides';
+    insert into essai_restauration._ordre (rang, table_nom)
+      select o.rang - 1, 'parametres_facturation' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('parametres_facturation','direct',null,null);
+    insert into essai_restauration._vagues (table_nom, colonne) values
+     ('parametres_facturation','remplace_id');
+  end if;
+end $$;
+
 -- ══ Les devis (espace client, étape P5) ══ Au plan du code quand `DEVIS_EXPORTES` est levé — c'est-à-dire quand leurs
 -- migrations sont en base : le script les y met dès que leurs tables existent, juste avant `exercices_valides`, qui ferme
 -- la marche (ORDRE_RESTAURATION_PREVU), leurs rangs calculés pour qu'aucune table d'hier ne change de place. Absentes de

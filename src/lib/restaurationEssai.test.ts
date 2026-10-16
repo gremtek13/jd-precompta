@@ -4,6 +4,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
+import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -18,6 +19,7 @@ import {
   TABLES_DES_ARTICLES,
   TABLES_DES_CONTACTS,
   TABLES_DES_DEVIS,
+  TABLES_DES_PARAMETRES_FACTURATION,
   type CheminDossier,
 } from './sauvegarde'
 
@@ -225,11 +227,40 @@ function blocDesContacts(texte: string): BlocDesAdresses {
 /** Le plan que le script joue quand la table des contacts existe : le même geste que pour les adresses. */
 const avecLesContacts = avecLesAdresses
 
-/** Le plan que le script joue avec les tables des quatre blocs, dans l'ordre où il les joue : les articles, les adresses
- *  de réception, les contacts, les devis. */
+// LES PARAMÈTRES DE FACTURATION (espace client, étape A5a) : un cinquième bloc à part les met au plan quand leur table
+// existe, juste avant `exercices_valides` — après les contacts, que leur bloc vient d'y mettre ; le bloc des devis, joué
+// ensuite, met les siennes au même endroit, donc après eux —, avec leur chemin et leur vague. Il se lit comme celui des
+// adresses, sous sa marque et sa table, et se joue du même geste.
+const MARQUE_DES_PARAMETRES = '-- ══ Les paramètres de facturation (espace client, étape A5a) ══'
+
+function blocDesParametres(texte: string): BlocDesAdresses {
+  const debut = texte.indexOf(MARQUE_DES_PARAMETRES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  const decalage = /set rang = rang \+ (\d+) where table_nom = 'exercices_valides'/.exec(corps)
+  const retrait = /select o\.rang - (\d+), '\w+' from essai_restauration\._ordre o where o\.table_nom = 'exercices_valides';/.exec(corps)
+  return {
+    tables: [...corps.matchAll(/select o\.rang - \d+, '(\w+)' from/g)].map((m) => m[1]),
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    decalage: decalage ? Number(decalage[1]) : null,
+    retrait: retrait ? Number(retrait[1]) : null,
+    conditionne: corps.includes("if to_regclass('public.parametres_facturation') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des paramètres existe : le même geste que pour les adresses. */
+const avecLesParametres = avecLesAdresses
+
+/** Le plan que le script joue avec les tables des cinq blocs, dans l'ordre où il les joue : les articles, les adresses
+ *  de réception, les contacts, les paramètres de facturation, les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai =>
-  avecLesDevis(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte), blocDesArticles(texte)), blocDesAdresses(texte)),
-    blocDesContacts(texte)), blocDesDevis(texte))
+  avecLesDevis(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte), blocDesArticles(texte)),
+    blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDesDevis(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -286,14 +317,16 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const articles = blocDesArticles(texteDeLEssai)
   const adresses = blocDesAdresses(texteDeLEssai)
   const contacts = blocDesContacts(texteDeLEssai)
-  // Le plan que le script joue sur une base qui a les tables des quatre blocs, et celui qu'il joue AUJOURD'HUI : le même que
-  // le code, selon que `ARTICLES_EXPORTES`, `ADRESSES_RECEPTION_EXPORTEES`, `CONTACTS_EXPORTES` et `DEVIS_EXPORTES` sont
-  // levés ou non.
+  const parametres = blocDesParametres(texteDeLEssai)
+  // Le plan que le script joue sur une base qui a les tables des cinq blocs, et celui qu'il joue AUJOURD'HUI : le même que
+  // le code, selon que `ARTICLES_EXPORTES`, `ADRESSES_RECEPTION_EXPORTEES`, `CONTACTS_EXPORTES`,
+  // `PARAMETRES_FACTURATION_EXPORTES` et `DEVIS_EXPORTES` sont levés ou non.
   const prevu = avecLesBlocs(texteDeLEssai)
   const avecLesArticlesDuJour = ARTICLES_EXPORTES ? avecLesArticles(plan, articles) : plan
   const avecLesAdressesDuJour = ADRESSES_RECEPTION_EXPORTEES ? avecLesAdresses(avecLesArticlesDuJour, adresses) : avecLesArticlesDuJour
   const avecLesContactsDuJour = CONTACTS_EXPORTES ? avecLesContacts(avecLesAdressesDuJour, contacts) : avecLesAdressesDuJour
-  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLesContactsDuJour, devis) : avecLesContactsDuJour
+  const avecLesParametresDuJour = PARAMETRES_FACTURATION_EXPORTES ? avecLesParametres(avecLesContactsDuJour, parametres) : avecLesContactsDuJour
+  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLesParametresDuJour, devis) : avecLesParametresDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -348,7 +381,18 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(contacts.conditionne).toBe(true)
   })
 
-  it('avec les tables des quatre blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
+  it('le bloc des paramètres de facturation a été lu : sa table, son chemin, sa vague, des rangs qui tombent juste', () => {
+    expect(parametres.tables).toEqual([...TABLES_DES_PARAMETRES_FACTURATION])
+    expect(Object.keys(parametres.chemins).sort()).toEqual([...TABLES_DES_PARAMETRES_FACTURATION].sort())
+    expect(parametres.vagues)
+      .toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => TABLES_DES_PARAMETRES_FACTURATION.includes(a.table)))
+    // `exercices_valides` recule d'autant de rangs qu'il entre de tables, et la table prend l'avant-dernier rang.
+    expect(parametres.decalage).toBe(parametres.tables.length)
+    expect(parametres.retrait).toBe(1)
+    expect(parametres.conditionne).toBe(true)
+  })
+
+  it('avec les tables des cinq blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
     expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)).toEqual([])
   })
 
@@ -372,6 +416,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     // une base qui ne les a pas, ses vagues comprises.
     const horsDesBlocs = (t: string) => !TABLES_DES_DEVIS.includes(t) && !TABLES_DES_ARTICLES.includes(t)
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
+      && !TABLES_DES_PARAMETRES_FACTURATION.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))
@@ -438,6 +483,21 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       const sansLeBloc = texteDeLEssai.slice(0, marque) + texteDeLEssai.slice(texteDeLEssai.indexOf('end $$;', marque) + 'end $$;'.length)
       expect(ecartsAuCode(avecLesBlocs(sansLeBloc), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)
         .join('\n')).toContain('manquantes : contacts')
+    })
+
+    it('les paramètres de facturation sans leur chemin, sans leur vague, mal placés, joués sans leur table, ou leur bloc oublié', () => {
+      expect(remplacerDevis("\n     ('parametres_facturation','direct',null,null);", '').join('\n')).toContain('_chemins : parametres_facturation manque')
+      expect(remplacerDevis("\n     ('parametres_facturation','remplace_id');", '').join('\n')).toContain('_vagues vaut')
+      const ancre = "select o.rang - 1, 'parametres_facturation' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';"
+      expect(blocDesParametres(texteDeLEssai.replace(ancre, ancre.replace('rang - 1', 'rang - 2'))).retrait).not.toBe(1)
+      const marque = texteDeLEssai.indexOf(MARQUE_DES_PARAMETRES)
+      const decale = texteDeLEssai.slice(0, marque) + texteDeLEssai.slice(marque).replace('set rang = rang + 1 where', 'set rang = rang + 2 where')
+      expect(blocDesParametres(decale).decalage).not.toBe(1)
+      expect(blocDesParametres(texteDeLEssai.replace("if to_regclass('public.parametres_facturation') is not null then", 'if true then'))
+        .conditionne).toBe(false)
+      const sansLeBloc = texteDeLEssai.slice(0, marque) + texteDeLEssai.slice(texteDeLEssai.indexOf('end $$;', marque) + 'end $$;'.length)
+      expect(ecartsAuCode(avecLesBlocs(sansLeBloc), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)
+        .join('\n')).toContain('manquantes : parametres_facturation')
     })
 
     it('un décalage ou un rang de départ qui ne tombent pas juste', () => {
