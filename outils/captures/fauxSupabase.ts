@@ -59,6 +59,19 @@ const CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorag
 // d'AuthContext (`jd-precompta-dossier-actif`).
 const VENTES_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-client-ventes')
 
+// L'identité LÉGALE des dossiers du banc (étape A5b2, onglet Informations) : quatre colonnes de `dossiers`, que l'onglet lit et écrit
+// avec le SIRET et l'adresse. Une société (forme et capital), un entrepreneur individuel (sa dénomination en « EI », aucun
+// capital), et la catégorie dont le libellé de l'INSEE est le plus long (141 caractères : le `<select>` à 390 px) ; le dossier
+// d6 n'en porte AUCUNE colonne, comme une lecture d'avant la migration — la carte dit alors qu'elle ne les a pas lues. Les autres
+// les ont nulles. Rien d'autre ne les lit : ajouté après coup, la table des dossiers ci-dessous les range par identifiant.
+const IDENTITE_LEGALE_DU_BANC: Record<string, Record<string, unknown>> = {
+  d1: { denomination_imprimee: 'Claire Moreau EI', rcs_ville: null, forme_juridique: '1000', capital: null },
+  d8: { denomination_imprimee: 'LUMEN STUDIO', rcs_ville: 'Lyon', forme_juridique: '5710', capital: 150000 },
+  d5: { denomination_imprimee: 'SCM Les Oliviers', rcs_ville: 'Aix-en-Provence', forme_juridique: '5570', capital: 9999999999999.99 },
+  d6: {},
+}
+const IDENTITE_LEGALE_VIDE = { denomination_imprimee: null, rcs_ville: null, forme_juridique: null, capital: null }
+
 const dossiers: Ligne[] = [
   ['d1', 'Cabinet infirmier Moreau', '12345678900012', '86.90D', 'Activités des infirmiers et des sages-femmes'],
   ['d2', 'Sophie Lambert', null, null, null],
@@ -94,6 +107,7 @@ const dossiers: Ligne[] = [
   statut_tva: id === 'd7' || id === 'd8' ? 'redevable' : id === 'd1' ? 'exonere' : id === 'd3' ? 'franchise' : null,
   article_exoneration: id === 'd1' ? 'cgi_261_4_1' : null, adresse: null,
   numero_tva_attribue: id === 'd3',
+  ...(IDENTITE_LEGALE_DU_BANC[id as string] ?? IDENTITE_LEGALE_VIDE),
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))

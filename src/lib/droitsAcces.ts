@@ -400,3 +400,15 @@ export const LIBELLE_MENTIONS_PARAMETRES_CLIENT = `Mentions complémentaires (fa
 export const LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT = `Pied de page (facultatif ; ${TON_CABINET} le lit aussi)`
 
 export const LIBELLE_TITULAIRE_PARAMETRES_CLIENT = `Titulaire du compte (${TON_CABINET} le lit aussi)`
+
+// Les trois textes libres de l'IDENTITÉ du dossier (étape A5b2) : l'adresse, la dénomination imprimée et la ville du greffe,
+// que le cabinet saisit dans l'onglet Informations. Ils vivent sur `dossiers`, que `dossiers_select` ouvre à TOUT compte qui
+// porte un accès du dossier — et non au seul client « Ventes » : le libellé nomme donc « le client du dossier », sans case. Le
+// SIRET, la forme juridique et le capital n'en portent pas : ce sont des formes et des choix que la base vérifie.
+const LE_CLIENT_DU_DOSSIER = 'le client du dossier'
+
+export const LIBELLE_ADRESSE_IDENTITE = `Adresse (${LE_CLIENT_DU_DOSSIER} la lit)`
+
+export const LIBELLE_DENOMINATION_IDENTITE = `Dénomination imprimée (facultative ; ${LE_CLIENT_DU_DOSSIER} la lit)`
+
+export const LIBELLE_RCS_VILLE_IDENTITE = `Ville du greffe (RCS ; facultative ; ${LE_CLIENT_DU_DOSSIER} la lit)`

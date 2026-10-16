@@ -19,6 +19,9 @@ interface LigneDossier {
   statut_tva: 'redevable' | 'franchise' | 'exonere' | null; article_exoneration: string | null; numero_tva_attribue: boolean
   tva_periodicite: 'mensuelle' | 'trimestrielle'; tva_sur_debits: boolean
   mode_comptable: 'tresorerie' | 'engagement'; compte_notes_de_frais: '455000' | '108000' | '467000'
+  // L'identité légale (A5b2) : FACULTATIVE, comme dans `Dossier` — une ligne lue sans ces colonnes ne les porte pas.
+  adresse?: string | null
+  denomination_imprimee?: string | null; rcs_ville?: string | null; forme_juridique?: string | null; capital?: number | null
 }
 
 const faux = vi.hoisted(() => ({
@@ -188,15 +191,35 @@ vi.mock('./dossier/FacturesTab', () => ({
 vi.mock('./dossier/InformationsTab', async () => {
   const { useState } = await import('react')
   return {
-    default: function InformationsDouble({ dossierSiret, modele }: {
+    default: function InformationsDouble({
+      dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital, modele, onIdentiteUpdated,
+    }: {
       dossierSiret: string | null
+      dossierAdresse: string | null
+      dossierDenomination: string | null | undefined
+      dossierRcsVille: string | null | undefined
+      dossierFormeJuridique: string | null | undefined
+      dossierCapital: number | null | undefined
       modele: { mode: string; compteNotesDeFrais: string }
+      onIdentiteUpdated: (identite: Record<string, unknown>) => void
     }) {
       const [siret] = useState(dossierSiret ?? '')
+      // Ce que la page PASSE : une colonne que la lecture n'a pas portée arrive `undefined` (dite « non lue »), jamais nulle.
+      const dit = (v: unknown) => (v === undefined ? 'non lue' : v === null ? '(vide)' : String(v))
       return (
         <>
           <p>Formulaire d’identité — SIRET {siret || '(vide)'}</p>
           <p>Informations — {modele.mode} — {modele.compteNotesDeFrais}</p>
+          <p>
+            Identité légale — {dit(dossierDenomination)} — {dit(dossierRcsVille)} — {dit(dossierFormeJuridique)} — {dit(dossierCapital)}
+            {' '}— adresse {dit(dossierAdresse)} — SIRET passé {dit(dossierSiret)}
+          </p>
+          {/* Les six valeurs que la base a RENDUES après l'écriture : la page les fusionne dans le dossier lu. */}
+          <button onClick={() => onIdentiteUpdated({
+            siret: '33333333333333', adresse: '3 rue du Double', denomination_imprimee: 'Rendue', rcs_ville: 'Nantes',
+            forme_juridique: '5710', capital: 1500.5,
+          })}>Écrire l’identité (double)</button>
+          <button onClick={() => onIdentiteUpdated({ siret: '44444444444444', adresse: null })}>Écrire le SIRET seul (double)</button>
         </>
       )
     },
@@ -401,6 +424,7 @@ beforeEach(() => {
       id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, statut_tva: 'redevable',
       article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'mensuelle',
       tva_sur_debits: true, mode_comptable: 'engagement', compte_notes_de_frais: '108000',
+      adresse: '2 rue des Essais', denomination_imprimee: 'Bravo Santé SELARL', rcs_ville: 'Lille', forme_juridique: '5485', capital: 40000,
     },
   }
   faux.retenuesIdentite = {}
@@ -778,6 +802,35 @@ describe('Page d’un dossier — le modèle comptable', () => {
 
     await afficher('/dossiers/d2/informations')
     expect(screen.getByText('Informations — engagement — 108000')).toBeTruthy()
+  })
+
+  // L'IDENTITÉ LÉGALE (A5b2) : l'onglet Informations reçoit les quatre colonnes du dossier AFFICHÉ — `undefined` quand la lecture
+  // ne les portait pas, jamais nul — et la page fusionne dans son dossier ce que la base a rendu après l'écriture.
+  it('l’onglet Informations reçoit l’identité légale du dossier affiché, et « non lue » une colonne que la lecture n’a pas portée', async () => {
+    await afficher('/dossiers/d2/informations')
+    expect(screen.getByText(/Identité légale — Bravo Santé SELARL — Lille — 5485 — 40000 — adresse 2 rue des Essais/)).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d1/informations')
+    expect(screen.getByText(/Identité légale — non lue — non lue — non lue — non lue — adresse \(vide\)/)).toBeTruthy()
+  })
+
+  it('fusionne dans le dossier les six valeurs que la base a rendues, et rien d’autre', async () => {
+    await afficher('/dossiers/d2/informations')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Écrire l’identité (double)' })) })
+    expect(screen.getByText(/Identité légale — Rendue — Nantes — 5710 — 1500.5 — adresse 3 rue du Double — SIRET passé 33333333333333/)).toBeTruthy()
+
+    // Une écriture qui ne portait que le SIRET et l'adresse laisse les quatre colonnes comme elles étaient.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Écrire le SIRET seul (double)' })) })
+    expect(screen.getByText(/Identité légale — Rendue — Nantes — 5710 — 1500.5 — adresse \(vide\) — SIRET passé 44444444444444/)).toBeTruthy()
+  })
+
+  it('ne fusionne pas dans l’autre dossier : l’identité écrite sur d2 ne touche pas d1', async () => {
+    await afficher('/dossiers/d2/informations')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Écrire l’identité (double)' })) })
+    cleanup()
+    await afficher('/dossiers/d1/informations')
+    expect(screen.getByText(/Identité légale — non lue — non lue — non lue — non lue/)).toBeTruthy()
   })
 
   it('un modèle changé dans l’onglet Écritures se voit aussitôt dans l’en-tête', async () => {

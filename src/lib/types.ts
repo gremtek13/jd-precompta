@@ -68,8 +68,9 @@ export interface Dossier {
   // au niveau III (lib/categoriesJuridiques.ts) et le capital d'une société, en euros au centime. Écrites par le cabinet
   // seul (la policy `dossiers_update`), lues par le client comme tout son dossier. FACULTATIVES dans ce type : la migration
   // `parametres_facturation` les a posées (`PARAMETRES_FACTURATION_EXPORTES`, lib/parametresFacturation.ts), mais une
-  // sauvegarde faite avant elle ne les porte pas, et aucun code ne les lit ni ne les écrit encore (les écrans viendront avec
-  // l'étape A5b).
+  // sauvegarde faite avant elle ne les porte pas — une colonne absente d'une lecture n'est pas une colonne nulle. Depuis A5b2,
+  // l'onglet Informations du cabinet les lit et les écrit (lib/identiteLegaleVue.ts), avec le SIRET et l'adresse, en une seule
+  // écriture ; aucune facture ne les lit ni ne les imprime encore (A7).
   denomination_imprimee?: string | null
   rcs_ville?: string | null
   forme_juridique?: string | null

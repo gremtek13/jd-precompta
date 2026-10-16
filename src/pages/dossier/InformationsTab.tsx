@@ -14,6 +14,13 @@ import BalanceCard from './BalanceCard'
 import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
+import {
+  IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE, PHRASE_IDENTITE_LEGALE_NON_LUE,
+  choixDeForme, colonnesEcrites, ecritureQuiPart, estEntrepreneurIndividuel, identiteDepuisLaReponse, identiteLegaleLue,
+  phraseDuCapitalRemisANul, propositionDeDenomination, refusDeLIdentite, refusDeLaBase, saisieDepuisLaLigne,
+  type IdentiteRendue, type SaisieIdentite,
+} from '../../lib/identiteLegaleVue'
+import { LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE } from '../../lib/droitsAcces'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -29,18 +36,33 @@ import { chargerInformationsDossier, enregistrerInformationsDossier } from '../.
 // SIRET manquant a bloqué une émission Super PDP sans qu'il y ait où le renseigner après coup. Vivent
 // ici plutôt que dans "Informations du client" ci-dessous (données déclaratives différentes, propre
 // table `informations_dossier`) : siret/adresse sont des colonnes de `dossiers` lui-même.
+//
+// L'identité LÉGALE (espace client, étape A5b2) vit dans la même carte et dans la même écriture : la dénomination imprimée,
+// la ville du greffe, la forme juridique de l'INSEE et le capital, que la migration `parametres_facturation` a posés sur
+// `dossiers` (lib/identiteLegaleVue.ts dit ce que la carte en montre ; lib/parametresFacturation.ts, ce que la base refuse).
+// Une colonne ABSENTE de la lecture du dossier (`undefined`) n'est pas une colonne nulle : les quatre champs ne s'offrent
+// pas, et l'écriture ne porte alors que le SIRET et l'adresse.
 interface Props {
   dossierId: string
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
+  // L'identité légale, telle que `DossierDetail` l'a lue : `undefined` quand la lecture ne portait pas la colonne.
+  dossierDenomination: string | null | undefined
+  dossierRcsVille: string | null | undefined
+  dossierFormeJuridique: string | null | undefined
+  dossierCapital: number | null | undefined
   // Le modèle comptable du dossier : le forfait kilométrique s'écrit face au compte du dirigeant qu'il désigne
   // (voir VehiculesCard).
   modele: ModeleComptable
-  onIdentiteUpdated: (siret: string | null, adresse: string | null) => void
+  // Les colonnes écrites, TELLES QUE LA BASE LES A RENDUES (les six, ou le SIRET et l'adresse seuls).
+  onIdentiteUpdated: (identite: Partial<IdentiteRendue>) => void
 }
 
-export default function InformationsTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, modele, onIdentiteUpdated }: Props) {
+export default function InformationsTab({
+  dossierId, dossierNom, dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
+  modele, onIdentiteUpdated,
+}: Props) {
   const { estChef } = useAuth()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -48,11 +70,22 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  const [siret, setSiret] = useState(dossierSiret ?? '')
-  const [adresse, setAdresse] = useState(dossierAdresse ?? '')
+  // Les quatre colonnes ont-elles été LUES ? Sinon l'écran ne les offre pas et ne les écrit pas.
+  const ligneLue = {
+    siret: dossierSiret, adresse: dossierAdresse, denomination_imprimee: dossierDenomination, rcs_ville: dossierRcsVille,
+    forme_juridique: dossierFormeJuridique, capital: dossierCapital,
+  }
+  const identiteLue = identiteLegaleLue(ligneLue)
+  const [saisie, setSaisie] = useState<SaisieIdentite>(() => saisieDepuisLaLigne(ligneLue))
+  // Le capital ENREGISTRÉ, que la carte dit effacer pour un entrepreneur individuel : lu avec le dossier, puis tel que la
+  // base l'a rendu après chaque écriture (le parent le fusionne aussi, mais l'écran n'attend pas son rendu pour le dire juste).
+  const [capitalEnregistre, setCapitalEnregistre] = useState(dossierCapital)
   const [savingIdentite, setSavingIdentite] = useState(false)
   const [erreurIdentite, setErreurIdentite] = useState<string | null>(null)
   const [identiteEnregistree, setIdentiteEnregistree] = useState(false)
+  // Le verrou d'exécution de l'identité, en `useRef` : `savingIdentite` ne prend effet qu'au rendu suivant, et deux clics du
+  // même rendu écrivaient deux fois.
+  const identiteEnCours = useRef(false)
 
   const [exportEnCours, setExportEnCours] = useState(false)
   const [exportErreur, setExportErreur] = useState<string | null>(null)
@@ -96,21 +129,54 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
 
   useEffect(() => { load() }, [dossierId])
 
+  // Ce que l'enregistrement refuserait, dit avant le clic (lib/identiteLegaleVue.ts : le module juge, jamais l'écran).
+  const refusIdentite = refusDeLIdentite(saisie, identiteLue)
+  const proposition = identiteLue ? propositionDeDenomination(dossierNom, saisie) : null
+  const phraseCapital = identiteLue ? phraseDuCapitalRemisANul(saisie, capitalEnregistre) : null
+  const entrepreneurIndividuel = estEntrepreneurIndividuel(saisie.forme)
+
+  function changerSaisie(modification: Partial<SaisieIdentite>) {
+    setSaisie((precedente) => ({ ...precedente, ...modification }))
+    setIdentiteEnregistree(false)
+  }
+
   async function enregistrerIdentite(e: FormEvent) {
     e.preventDefault()
+    // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
+    // premier, encore en cours.
+    if (identiteEnCours.current) return
+    // Seconde ceinture : le bouton est déjà grisé sous un refus.
+    if (refusIdentite) return
+    identiteEnCours.current = true
     setSavingIdentite(true)
     setErreurIdentite(null)
     setIdentiteEnregistree(false)
-    const siretNettoye = siret.trim() || null
-    const adresseNettoyee = adresse.trim() || null
-    const { error: updateError } = await supabase.from('dossiers').update({ siret: siretNettoye, adresse: adresseNettoyee }).eq('id', dossierId)
-    setSavingIdentite(false)
-    if (updateError) {
-      setErreurIdentite(updateError.message)
-      return
+    try {
+      // Une seule écriture pour les six colonnes, relue avec la ligne modifiée : une policy qui écarte la ligne ne lève rien,
+      // et PostgREST rend un succès sur zéro ligne — sans ligne rendue, rien n'est écrit et la carte ne le prétend pas.
+      const { data, error: updateError } = await supabase.from('dossiers')
+        .update(ecritureQuiPart(saisie, identiteLue)).eq('id', dossierId)
+        .select(colonnesEcrites(identiteLue)).maybeSingle()
+      if (updateError) {
+        setErreurIdentite(refusDeLaBase(updateError, 'L’identité du dossier n’a pas pu être enregistrée.'))
+        return
+      }
+      if (!data) {
+        setErreurIdentite(IDENTITE_NON_ENREGISTREE)
+        return
+      }
+      const rendue = data as unknown as Partial<IdentiteRendue>
+      const relue = identiteDepuisLaReponse(rendue, identiteLue)
+      setSaisie(saisieDepuisLaLigne(relue))
+      setCapitalEnregistre(relue.capital)
+      setIdentiteEnregistree(true)
+      onIdentiteUpdated(rendue)
+    } catch (err) {
+      setErreurIdentite(messageErreur(err, 'L’identité du dossier n’a pas pu être enregistrée.'))
+    } finally {
+      identiteEnCours.current = false
+      setSavingIdentite(false)
     }
-    setIdentiteEnregistree(true)
-    onIdentiteUpdated(siretNettoye, adresseNettoyee)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -237,20 +303,66 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
         SIRET et adresse de "{dossierNom}" — repris automatiquement sur chaque nouvelle facture émise
         et requis pour la transmettre via Super PDP.
       </p>
+      <p className="muted" style={{ marginTop: -4 }}>
+        {identiteLue ? PHRASE_IDENTITE_LEGALE : PHRASE_IDENTITE_LEGALE_NON_LUE}
+      </p>
       <form onSubmit={enregistrerIdentite}>
         <div className="field-row">
           <div className="field">
             <label htmlFor="identite-siret">SIRET</label>
-            <input id="identite-siret" value={siret} onChange={(e) => setSiret(e.target.value)} placeholder="14 chiffres" />
+            <input id="identite-siret" value={saisie.siret} onChange={(e) => changerSaisie({ siret: e.target.value })} placeholder="14 chiffres" />
           </div>
         </div>
         <div className="field">
-          <label htmlFor="identite-adresse">Adresse</label>
-          <textarea id="identite-adresse" rows={2} value={adresse} onChange={(e) => setAdresse(e.target.value)} />
+          <label htmlFor="identite-adresse">{LIBELLE_ADRESSE_IDENTITE}</label>
+          <textarea id="identite-adresse" rows={2} value={saisie.adresse} onChange={(e) => changerSaisie({ adresse: e.target.value })} />
         </div>
+        {identiteLue && (
+          <>
+            <div className="field">
+              <label htmlFor="identite-denomination">{LIBELLE_DENOMINATION_IDENTITE}</label>
+              <input
+                id="identite-denomination" value={saisie.denomination}
+                onChange={(e) => changerSaisie({ denomination: e.target.value })}
+              />
+            </div>
+            {proposition && (
+              <div className="note-info">
+                <p style={{ margin: '0 0 8px' }}>{proposition.raison}</p>
+                <button
+                  type="button" className="btn btn-outline btn-sm"
+                  onClick={() => changerSaisie({ denomination: proposition.texte })}
+                >
+                  Utiliser « {proposition.texte} »
+                </button>
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="identite-rcs-ville">{LIBELLE_RCS_VILLE_IDENTITE}</label>
+              <input id="identite-rcs-ville" value={saisie.rcsVille} onChange={(e) => changerSaisie({ rcsVille: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="identite-forme">Forme juridique</label>
+              <select id="identite-forme" value={saisie.forme} onChange={(e) => changerSaisie({ forme: e.target.value })}>
+                {choixDeForme(saisie.forme).map((c) => <option key={c.valeur} value={c.valeur}>{c.libelle}</option>)}
+              </select>
+            </div>
+            {!entrepreneurIndividuel && (
+              <div className="field">
+                <label htmlFor="identite-capital">Capital social (en euros, facultatif)</label>
+                <input
+                  id="identite-capital" inputMode="decimal" value={saisie.capital} placeholder="par exemple 150 000,00"
+                  onChange={(e) => changerSaisie({ capital: e.target.value })} style={{ maxWidth: 240 }}
+                />
+              </div>
+            )}
+            {phraseCapital && <p className="note-info">{phraseCapital}</p>}
+          </>
+        )}
+        {refusIdentite && <p className="error-text">{refusIdentite.message}</p>}
         {erreurIdentite && <p className="error-text">{erreurIdentite}</p>}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button className="btn btn-primary btn-sm" type="submit" disabled={savingIdentite}>
+          <button className="btn btn-primary btn-sm" type="submit" disabled={savingIdentite || refusIdentite !== null}>
             {savingIdentite ? 'Enregistrement…' : 'Enregistrer'}
           </button>
           {identiteEnregistree && <span className="muted">Enregistré ✓</span>}

@@ -436,8 +436,15 @@ export default function DossierDetail() {
                 dossierNom={dossier?.nom ?? ''}
                 dossierSiret={dossier?.siret ?? null}
                 dossierAdresse={dossier?.adresse ?? null}
+                // Sans `?? null` : une colonne que la lecture du dossier n'a pas portée reste ABSENTE (`undefined`), et
+                // l'onglet n'offre pas de l'écrire — nulle, il l'écraserait d'une valeur qu'il ignore.
+                dossierDenomination={dossier?.denomination_imprimee}
+                dossierRcsVille={dossier?.rcs_ville}
+                dossierFormeJuridique={dossier?.forme_juridique}
+                dossierCapital={dossier?.capital}
                 modele={modele}
-                onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
+                // Les valeurs que la base a RENDUES après l'écriture : le dossier lu les prend telles quelles.
+                onIdentiteUpdated={(identite) => modifierDossier(id, identite)}
               />
             )}
             {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}

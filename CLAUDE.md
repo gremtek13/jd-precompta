@@ -597,6 +597,23 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   vérifier par un autre moyen que l'application ; le client lit « en attente de la confirmation de ton cabinet ». Les
   deux fonctions seules, sous le verrou `gesteEnCours` relâché après la relecture, relue aussi sur un refus ; les cinq
   textes libres disent qui les lit (`LIBELLE_*_PARAMETRES`) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ».
+- **« Identité du dossier » (A5b2, 16/10/2026)** : la carte de l'onglet Informations du cabinet porte, avec le SIRET et
+  l'adresse, la dénomination imprimée, la ville du greffe, la forme juridique (un `<select>` : « Non renseignée », puis
+  les 260 catégories de l'INSEE sous leur code) et le capital (caché pour la forme `1000`) : UN formulaire, UNE écriture
+  des six colonnes de `dossiers` (`.update()` sous `dossiers_update`, verrou `identiteEnCours` en `useRef`), relue par
+  `.select(…).maybeSingle()` — aucune ligne rendue, rien d'écrit, dit ; `onIdentiteUpdated` et `DossierDetail` reçoivent
+  les valeurs TELLES QUE LA BASE LES A RENDUES, le formulaire en repart. `lib/identiteLegaleVue.ts`, pur : le capital lu
+  FIDÈLEMENT (`lireCapital` : chiffres, virgule ou point, deux décimales au plus telles que tapées, « 12,345 » et
+  « 0,10000000000000000001 » illisibles, jamais arrondis), écrit au centime (`capitalPourSaisie`) ; le refus avant le
+  clic = capital illisible, puis `refusIdentiteLegale` (aucun message recopié), « Enregistrer » grisé ; le refus de la
+  base (23514 sous le nom d'une contrainte de `REFUS_IDENTITE_LEGALE`) dit sous les mots du module. Un entrepreneur
+  individuel : la dénomination PROPOSÉE (« <nom> EI », R526-27) par un bouton, « Utiliser « … » », jamais d'elle-même,
+  seulement si elle diffère ; son capital, lu ou saisi, est REMIS À NUL dans la même écriture et la carte le dit avant
+  le clic. Une colonne ABSENTE de la lecture du dossier (`undefined`) n'est pas nulle : les quatre champs ne s'offrent
+  pas (toutes ou aucune), la carte le dit, l'écriture ne porte que le SIRET et l'adresse. UNE phrase : aucune facture ne
+  les lit ni ne les imprime encore (A7). L'adresse, la dénomination et la ville du greffe disent que « le client du
+  dossier » les lit (`LIBELLE_*_IDENTITE` : `dossiers_select` ouvre la ligne à tout accès du dossier, pas au seul
+  « Ventes ») → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -682,7 +699,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   la fiche complète d'un client dans un CSV que l'import relit, composé dans le navigateur (A4b3c, 15/10/2026) ; les
   paramètres de facturation d'un dossier, en base — délai, moyen, escompte, pénalités, mentions, pied de page et RIB,
   versionnés, le RIB proposé par le client « Ventes » et confirmé par le cabinet —, et l'identité légale du dossier
-  (dénomination, ville du greffe, forme juridique, capital), écrite par le cabinet seul (A5a, 16/10/2026), et leur vue
+  (dénomination, ville du greffe, forme juridique, capital), écrite par le cabinet seul (A5a, 16/10/2026), son écran —
+  les quatre champs dans la carte « Identité du dossier » de l'onglet Informations, écrits avec le SIRET et l'adresse,
+  la dénomination d'un entrepreneur individuel proposée, son capital remis à nul (A5b2, 16/10/2026) —, et leur vue
   « Paramètres » dans l'onglet Factures et « Mes ventes » — la version courante et l'état de son RIB, le RIB en vigueur,
   l'historique, une version nouvelle, la confirmation d'un RIB par le cabinet (A5b1, 16/10/2026) ; client à plusieurs
   sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la
@@ -947,16 +966,17 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   client pose n'est que proposé → « LES PARAMÈTRES DE FACTURATION, EN BASE ». A5b1, l'écran des paramètres — la vue
   « Paramètres » de l'onglet Factures et de « Mes ventes » : la version courante et l'état de son RIB, l'historique, une
   version nouvelle, la confirmation d'un RIB par le cabinet —, le 16/10/2026 (ses huit questions, A5B1-Q1 à Q8, posées
-  au cabinet) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». MEG1-Q5, la numérotation, tranchée le même jour « comme
-  recommandé » : deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide — le client
-  valide ses factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ;
-  rien n'en est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des
-  colonnes du fichier de l'ancien logiciel, ouverte), A5b2 (l'identité légale, dans les informations du dossier), A5b3
-  (l'avis d'un changement de RIB sur les accueils, et la fonction qui le dit à un accès « Banque », A5-Q2 — une
-  migration) et A5c (le logo et son seau), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article
-  sur la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, les autres mentions
-  de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité depuis trois ans, qui lit les factures d'un
-  contact (A7 les relie), et la suite du premier groupe.
+  au cabinet) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». A5b2, l'identité légale dans l'onglet Informations — les
+  quatre champs avec le SIRET et l'adresse —, le 16/10/2026 (ses sept questions, A5B2-Q1 à Q7, posées au cabinet) →
+  « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » :
+  deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses
+  factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en
+  est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du
+  fichier de l'ancien logiciel, ouverte), A5b3 (l'avis d'un changement de RIB sur les accueils, et la fonction qui le
+  dit à un accès « Banque », A5-Q2 — une migration) et A5c (le logo et son seau), puis A7 (la facture fige ses mentions
+  — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et les
+  conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité
+  depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1854,7 +1874,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 11 892 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 001 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
