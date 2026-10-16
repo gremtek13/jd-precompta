@@ -83,6 +83,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '
       + '`plan_comptable_des_dossiers`, ligne 43, étape PC1), lu avec le dossier par `DossierDetail` (étape PC3).',
   },
+  'rpc:dernier_changement_de_rib': {
+    nature: 'lecture',
+    raison: 'Le jour, l’auteur et l’état du dernier changement du RIB des factures d’un dossier, jamais l’IBAN (fonction '
+      + '`stable`, `security definer`, sans écriture ; migration `dernier_changement_de_rib`, étape A5b3a), lu par le crochet '
+      + 'de l’avis (`lib/changementDeRibLecture.ts`) — derrière `CHANGEMENT_DE_RIB_EXPORTE`.',
+  },
   'fonction:superpdp-credentials:status': {
     nature: 'lecture',
     raison: 'L’action « status » ne lit que `superpdp_credentials` en base : aucun appel à Super PDP.',

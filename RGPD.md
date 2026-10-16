@@ -415,6 +415,19 @@ Ce qui est **prouvé**, pas seulement affirmé :
   et l'encart n'appelle aucune plateforme. Il montre l'adresse (identifiant, maille, plateforme, prise d'effet,
   vérification) et le nom de la plateforme, jamais l'auteur de l'adresse ; « ce qui attend », chez le client seul, se
   compte des listes de ventes que l'onglet Factures lit déjà, par UNE lecture partagée avec les tuiles de l'accueil.
+- **Le dernier changement du RIB des factures d'un dossier** (espace client, étape A5b3a : la migration
+  `dernier_changement_de_rib`, préparée le 16/10/2026 et éprouvée sur une réplique, présentée au cabinet, appliquée sur
+  son accord le 17/10/2026 sous la version `20261016220724` (A5B3-Q1) ; art. 5 § 1 c, 25 § 2 et 32 § 1 b ; décision du
+  cabinet A5-Q2) : une fonction de lecture seule, `dernier_changement_de_rib` (`SECURITY DEFINER`, l'accès vérifié avant
+  toute lecture — le cabinet du dossier, ou l'accès client qui porte « Ventes » ou « Banque »), rend le JOUR à Paris du
+  dernier changement du RIB des factures — une version qui pose, change ou retire le RIB, ou la confirmation d'un RIB
+  proposé —, son geste, son AUTEUR — le cabinet ou un accès client, « inconnu » quand la base ne l'écrit pas, jamais la
+  personne —, son ÉTAT et ce qu'il a fait au RIB en vigueur ; jamais l'IBAN, le BIC, le titulaire, l'identifiant d'un
+  compte ou d'une version, ni l'heure, que l'essai `supabase/essais/dernierChangementDeRib.sql` cherche, plantés, dans
+  chaque réponse de chaque profil. L'accès qui ne porte que « Banque » ne lit toujours pas la table des paramètres : il
+  n'en apprend que cela. Écartée : une policy de lecture, qui lui aurait ouvert toutes les colonnes de toutes les
+  versions (le cabinet et le client sont le même rôle). Rien ne s'écrit ; aucun écran ne la lit avant l'étape A5b3b
+  (`CHANGEMENT_DE_RIB_EXPORTE`, levé avec la migration : l'onglet Accès dit ce que la case « Banque » ouvre de plus).
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

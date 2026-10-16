@@ -178,7 +178,7 @@ supabase/
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
                     piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts,
-                    parametresFacturation ;
+                    parametresFacturation, dernierChangementDeRib ;
                     bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
                     `bornes_du_stockage`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
@@ -392,14 +392,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   paramètres de facturation de son dossier — toutes leurs versions, le RIB, son état et ses auteurs compris — et leur
   enregistrement, un RIB qu'il pose ou change n'étant que PROPOSÉ jusqu'à ce que le cabinet le confirme
   (`confirmer_rib`, le cabinet seul ; MEG1-Q12), à l'écran depuis A5b1 (« Mes ventes › Paramètres ») ; un accès qui ne
-  porte que « Banque » ne les lit pas (A5-Q2) ; l'identité légale du dossier (dénomination imprimée, ville du greffe,
-  forme juridique, capital), le client la lit comme toute la fiche de son dossier et ne l'écrit jamais (MEG1-Q14).
-  L'onglet Accès dit ce que la base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes
-  (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à
-  l'export) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le
-  cabinet saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
-  « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
-  déclaration ; `LIBELLE_*` de `lib/droitsAcces.ts`).
+  porte que « Banque » ne les lit pas : il n'en apprend, par `dernier_changement_de_rib` seule, que le jour, l'auteur —
+  le cabinet ou un accès client — et l'état du dernier changement du RIB, jamais le RIB (A5-Q2 ; A5b3a, 17/10/2026) ;
+  l'identité légale du dossier (dénomination imprimée, ville du greffe, forme juridique, capital), le client la lit
+  comme toute la fiche de son dossier et ne l'écrit jamais (MEG1-Q14). L'onglet Accès dit ce que la base ouvre à la
+  SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux
+  `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) → « LES DROITS D'UN ACCÈS
+  CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet saisit dans une table qu'un
+  droit du client ouvre le dit dans son libellé** (« … le client qui porte la case « Ventes » les lit » : les notes
+  d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une déclaration ; `LIBELLE_*` de
+  `lib/droitsAcces.ts`).
   **La banque sous la case « Banque »** (P7, les deux migrations appliquées le 10/10/2026) : un ordre, et il est la
   règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule
   de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un
@@ -703,13 +705,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   les quatre champs dans la carte « Identité du dossier » de l'onglet Informations, écrits avec le SIRET et l'adresse,
   la dénomination d'un entrepreneur individuel proposée, son capital remis à nul (A5b2, 16/10/2026) —, et leur vue
   « Paramètres » dans l'onglet Factures et « Mes ventes » — la version courante et l'état de son RIB, le RIB en vigueur,
-  l'historique, une version nouvelle, la confirmation d'un RIB par le cabinet (A5b1, 16/10/2026) ; client à plusieurs
-  sociétés (sélecteur, `<Outlet key>`) ; accueil client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la
-  même chose que `ClientUpload` et la Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau
-  mot de passe avant tout autre écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès
-  (10/10/2026) ; créer un accès ou un membre ne change plus le mot de passe d'un compte existant, et l'écran le dit
-  (10/10/2026) ; la règle des mots de passe dite avant le clic par les quatre écrans qui en posent un, et le refus du
-  service dit en français (10/10/2026, défaut 23.5).
+  l'historique, une version nouvelle, la confirmation d'un RIB par le cabinet (A5b1, 16/10/2026) ; le dernier changement
+  du RIB des factures, en base — le jour, l'auteur et l'état, jamais le RIB —, que le cabinet et les accès « Ventes » et
+  « Banque » lisent par une fonction (A5b3a, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
+  accueil client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la même chose que `ClientUpload` et la
+  Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau mot de passe avant tout autre
+  écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès (10/10/2026) ; créer un accès ou un
+  membre ne change plus le mot de passe d'un compte existant, et l'écran le dit (10/10/2026) ; la règle des mots de
+  passe dite avant le clic par les quatre écrans qui en posent un, et le refus du service dit en français (10/10/2026,
+  défaut 23.5).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -965,18 +969,24 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'onglet Accès dit que « Ventes » ouvre les paramètres, leur histoire et leur enregistrement, et qu'un RIB que le
   client pose n'est que proposé → « LES PARAMÈTRES DE FACTURATION, EN BASE ». A5b1, l'écran des paramètres — la vue
   « Paramètres » de l'onglet Factures et de « Mes ventes » : la version courante et l'état de son RIB, l'historique, une
-  version nouvelle, la confirmation d'un RIB par le cabinet —, le 16/10/2026 (ses huit questions, A5B1-Q1 à Q8, posées
-  au cabinet) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». A5b2, l'identité légale dans l'onglet Informations — les
-  quatre champs avec le SIRET et l'adresse —, le 16/10/2026 (ses sept questions, A5B2-Q1 à Q7, posées au cabinet) →
-  « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » :
-  deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses
-  factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en
-  est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du
-  fichier de l'ancien logiciel, ouverte), A5b3 (l'avis d'un changement de RIB sur les accueils, et la fonction qui le
-  dit à un accès « Banque », A5-Q2 — une migration) et A5c (le logo et son seau), puis A7 (la facture fige ses mentions
-  — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et les
-  conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité
-  depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  version nouvelle, la confirmation d'un RIB par le cabinet —, le 16/10/2026 (ses huit questions, A5B1-Q1 à Q8,
+  tranchées « comme recommandé » le 17/10/2026) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». A5b2, l'identité légale
+  dans l'onglet Informations — les quatre champs avec le SIRET et l'adresse —, le 16/10/2026 (ses sept questions,
+  A5B2-Q1 à Q7, tranchées « comme recommandé » le 17/10/2026) → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ». A5b3a, le
+  dernier changement du RIB en base — `dernier_changement_de_rib`, une fonction de lecture qui dit au cabinet et aux
+  accès « Ventes » et « Banque » le jour, l'auteur et l'état du dernier changement du RIB des factures, jamais le RIB —,
+  appliquée le 17/10/2026 sur l'accord du cabinet (A5B3-Q1 ; A5B3-Q2 à Q7 tranchées « comme recommandé » le même jour),
+  et la bascule (`CHANGEMENT_DE_RIB_EXPORTE`) en ligne : l'onglet Accès dit ce que « Banque » en apprend → « LE DERNIER
+  CHANGEMENT DU RIB, EN BASE ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » : deux séries par
+  dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses factures, la série du
+  cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en est encore écrit (A9).
+  Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien
+  logiciel, ouverte), A5b3b (l'avis d'un changement de RIB : dans la Vue d'ensemble de chaque dossier pour le cabinet,
+  sur l'accueil des accès « Ventes » et « Banque » ; chez le cabinet, un RIB proposé tant qu'il n'est ni confirmé ni
+  remplacé, le reste trente jours, sans marque « vu » — A5B3-Q4 à Q6) et A5c (le logo et son seau), puis A7 (la facture
+  fige ses mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le
+  RIB et les conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans
+  activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1020,7 +1030,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 53 fonctions au 16/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 54 fonctions au 17/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -1044,9 +1054,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   mois du relevé d'un dossier où il a accès (`banqueClient.sql`), `pieces_jointes_ecartees_du_client` que le jour, la
   raison et le poids des pièces jointes écartées des 90 derniers jours d'un dossier où il a accès
   (`piecesJointesEcartees.sql`, 38a à 38r), `etat_facture_electronique` que des booléens, un nom et des dates des deux
-  connexions et l'adresse courante d'un dossier où il a `gere_les_ventes` (`etatFactureElectronique.sql`) ; plus aucun
-  rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE
-  fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
+  connexions et l'adresse courante d'un dossier où il a `gere_les_ventes` (`etatFactureElectronique.sql`),
+  `dernier_changement_de_rib` que le jour, le geste, l'auteur (le cabinet, un accès client ou « inconnu »), l'état et
+  l'effet sur le RIB en vigueur du dernier changement du RIB d'un dossier dont il est le cabinet ou un accès qui porte
+  « Ventes » ou « Banque » (`dernierChangementDeRib.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni
+  `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans
+  contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -1871,10 +1884,24 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   capital (au centime, jamais pour un entrepreneur individuel), écrits par la policy du cabinet seule (MEG1-Q14). Les
   mentions proposées (MEG1-Q13) vivent dans le module. `parametresFacturation.test.ts` confronte le module au texte
   exporté et rejoue l'essai → « LES PARAMÈTRES DE FACTURATION, EN BASE ».
+- **Le dernier changement du RIB** (A5b3a, en base depuis le 17/10/2026, `lib/changementDeRib.ts`, pur ;
+  `lib/changementDeRibLecture.ts`) : `dernier_changement_de_rib(dossier)` (`SECURITY DEFINER`, `stable`, l'accès d'abord
+  — le cabinet, l'accès « Ventes » ou « Banque », sur un dossier qui existe ; 42501 sinon) rend UNE valeur, toujours un
+  objet : `{changement: null}` (le RIB n'a jamais changé : une affirmation) ou le jour à Paris, le geste (posé, changé,
+  retiré, confirmé), l'auteur (cabinet ou client, tiré de ce que la version a écrit ; un retrait, « inconnu », A5B3-Q3),
+  l'état et l'effet sur le RIB en vigueur (`ribEnVigueur`) — jamais l'IBAN, le BIC, le titulaire, un identifiant ni
+  l'heure (A5-Q2, A5B3-Q7). Un changement : une version qui pose, change (le triplet IBAN, BIC, titulaire) ou retire le
+  RIB, la confirmation d'un RIB proposé (A5B3-Q2) ; le dernier dans l'ordre de la CHAÎNE, jamais des instants (une
+  transaction donne le même à tout ce qu'elle écrit). Le module lit la valeur sans rien deviner — quinze combinaisons,
+  l'image exacte de la règle ; toute autre forme est illisible, jamais « aucun changement » — et écrit les avis du
+  cabinet, du client « Ventes » et du client « Banque » seul ; la lecture, un `.rpc(` sous `CHANGEMENT_DE_RIB_EXPORTE`,
+  ne rejette jamais et se garde avec le dossier. `changementDeRib.test.ts` confronte le module au texte exporté et
+  rejoue l'essai, ses versions par une règle indépendante du SQL ; aucun écran ne l'appelle avant A5b3b → « LE DERNIER
+  CHANGEMENT DU RIB, EN BASE ».
 
 ## Tests
 
-Vitest, 12 001 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 098 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

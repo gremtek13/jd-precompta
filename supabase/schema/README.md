@@ -334,6 +334,19 @@ sans ses lignes de commentaire (82 633 caractères, reçus tels quels), rend ses
 et rien n'est resté en base ; `rls.sql`, sa copie adaptée (68 363 caractères, `747866d5…`), 35 lignes, 0 en faute, 39
 mutations sur 39.
 
+**Rejoué le 17/10/2026 après `dernier_changement_de_rib`** (espace client, étape A5b3a), appliquée par la session sous
+la version `20261016220724` sur l'accord du cabinet (A5B3-Q1), sans confirmation demandée (le texte ne retire rien),
+AVANT la mise en ligne de la bascule qui la lit ; son fichier a quitté la version PROVISOIRE `20261016180000` pour
+celle-ci, texte inchangé (14 420 caractères, empreinte `5a9dda4beb988c79dad67e2481f1c9d0`, celle que rend sa ligne
+d'historique) : 137 fichiers, 137 migrations, empreinte globale `753eda2ca2dce594b5bcdacd0204108f` des deux côtés,
+aucune divergence. Le socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 2 072 objets,
+`987a12dcc11d47b3eb310e022f989e6d` des deux côtés — la fonction, en plus. `signature.sql` rend en production ce que
+l'étape avait relevé sur sa réplique après la migration : seules les fonctions (170, `56bfa578…`) et leurs droits
+d'exécution (170, `0af37f59…`) changent. L'essai `supabase/essais/dernierChangementDeRib.sql`, rejoué en production sans
+ses lignes de commentaire (47 554 caractères, reçus tels quels, `fecdd4f3…`), rend ses 98 verdicts justes, mutations
+comprises, et rien n'est resté en base ; `rls.sql` n'a pas été rejoué en production — la migration ne pose ni table ni
+policy, et la réplique l'a rendu identique sans elle et avec elle : 35 lignes, 0 en faute, 39 mutations sur 39.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

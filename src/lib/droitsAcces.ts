@@ -22,6 +22,7 @@
 // de son champ (les libellés en fin de module).
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CHANGEMENT_DE_RIB_EXPORTE } from './changementDeRib'
 import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
@@ -185,8 +186,15 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // lib/parametresFacturation.ts) — présentée au cabinet et appliquée sur son accord — ouvre au client « Ventes », par la base, les
 // paramètres de facturation du dossier, toutes leurs versions et leurs auteurs, et la fonction qui en enregistre une ; un
 // RIB qu'il pose ou change n'y est que PROPOSÉ, et seul le cabinet le confirme (MEG1-Q12, hypothèse). Elle exige celles des
-// ventes : sans elles, ce drapeau ne change rien à la phrase. L'écran qui les montre (étape A5b) vient après : la phrase le
-// dit à venir.
+// ventes : sans elles, ce drapeau ne change rien à la phrase. Son écran, la vue « Paramètres » de « Mes ventes » (étape
+// A5b1), existe : la phrase le nomme, et ne le dit plus à venir.
+// DEPUIS L'ÉTAPE A5b3a, un huitième : la migration `dernier_changement_de_rib` (`CHANGEMENT_DE_RIB_EXPORTE`,
+// lib/changementDeRib.ts) — présentée au cabinet, appliquée sur son accord — ouvre à la case « Banque », par une fonction de la
+// base, le jour, l'auteur (le cabinet ou un accès client, jamais la personne) et l'état du dernier changement du RIB des
+// factures, jamais le RIB lui-même (A5-Q2). La case « Ventes » n'y gagne rien : elle lit déjà toutes les versions. Elle exige
+// celle des paramètres, donc celles des ventes, et la phrase la dit dans ce que « Banque » ouvre, donc avec la banque du
+// client (P7) : sans l'une d'elles, ce drapeau ne change rien à la phrase. L'avis qui le dira (étape A5b3b) vient après : la
+// phrase le dit à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -195,6 +203,7 @@ export function ceQueDisentLesCases(
   contactsOuverts: boolean,
   importOuvert: boolean,
   parametresOuverts: boolean,
+  changementDeRibOuvert: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -244,13 +253,14 @@ export function ceQueDisentLesCases(
       + 'l’est, et un contact déjà rangé n’est jamais modifié ; le fichier est lu dans son navigateur et n’est pas gardé.'
     : ''
   // Les paramètres de facturation (étape A5a) : la lecture de toutes les versions — le RIB, son état et les auteurs
-  // compris —, l'enregistrement d'une version, et la règle du RIB (MEG1-Q12, hypothèse). L'écran (étape A5b) est à venir.
+  // compris —, l'enregistrement d'une version, et la règle du RIB (MEG1-Q12, hypothèse) ; son écran, « Mes ventes ›
+  // Paramètres » (étape A5b1).
   const parametres = ventesOuvertes && parametresOuverts
-    ? ' Par la base, il lit aussi les paramètres de facturation du dossier, version après version — délai de paiement, '
-      + 'moyen de paiement proposé, conditions d’escompte, pénalités de retard, mentions complémentaires, pied de page, et '
-      + 'le RIB imprimé (IBAN, BIC, titulaire) avec son état, qui a enregistré chaque version et qui a confirmé chaque RIB — '
-      + 'et peut en enregistrer une avec toi : un RIB qu’il pose ou change n’est que proposé, jusqu’à ce que tu le '
-      + 'confirmes. L’écran qui les montre viendra ensuite.'
+    ? ' Dans « Mes ventes › Paramètres » comme par la base, il lit aussi les paramètres de facturation du dossier, version '
+      + 'après version — délai de paiement, moyen de paiement proposé, conditions d’escompte, pénalités de retard, mentions '
+      + 'complémentaires, pied de page, et le RIB imprimé (IBAN, BIC, titulaire) avec son état, qui a enregistré chaque '
+      + 'version et qui a confirmé chaque RIB — et peut en enregistrer une avec toi : un RIB qu’il pose ou change n’est que '
+      + 'proposé, jusqu’à ce que tu le confirmes.'
     : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
@@ -261,6 +271,11 @@ export function ceQueDisentLesCases(
         ? ', y écrire des précisions sur un mouvement et, avec « Ventes », désigner celui qui prouve un encaissement.'
         : ' et y écrire des précisions sur un mouvement.')
       + ' La case lui ouvre aussi sa simulation.'
+      + (ventesOuvertes && parametresOuverts && changementDeRibOuvert
+        ? ' Par la base, elle lui dit aussi le jour, l’auteur — toi, ou un accès client, jamais la personne — et l’état du '
+          + 'dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; l’avis qui le lui dira sur son accueil '
+          + 'viendra ensuite.'
+        : '')
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
   const ventesFermees = ventesOuvertes ? '' : ' Cocher « Ventes » ne change pas encore ce que le client voit ou fait.'
@@ -287,10 +302,10 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
 // des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
 // contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a) ; celui des paramètres de
-// facturation, de la leur (étape A5a).
+// facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a).
 export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
   COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
-  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES,
+  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE,
 )
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
