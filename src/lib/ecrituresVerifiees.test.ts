@@ -125,6 +125,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'réponse illisible ou incomplète ne rendent AUCUN plan, et la page ne monte alors aucun onglet — donc ne compose ' +
       'aucune écriture —, avec son motif',
   },
+  lireLaReponseDuChangement: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `dernier_changement_de_rib` LIT le jour, l’auteur — le cabinet ou un accès client — et ' +
+      'l’état du dernier changement du RIB des factures d’un dossier, jamais l’IBAN (étape A5b3a), par UN crochet ' +
+      '(`lib/changementDeRibLecture.ts`). Il attend la requête et lit son erreur : un refus, une valeur illisible ou une ' +
+      'requête qui lève rendent une lecture ratée que l’avis DIRA, jamais « aucun changement »',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {

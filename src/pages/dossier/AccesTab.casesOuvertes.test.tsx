@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import { ADRESSES_RECEPTION_EXPORTEES } from '../../lib/adressesReception'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
+import { CHANGEMENT_DE_RIB_EXPORTE } from '../../lib/changementDeRib'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { IMPORT_CONTACTS_EXPORTE } from '../../lib/contactsImport'
 import { CE_QUE_DISENT_LES_CASES, ceQueDisentLesCases } from '../../lib/droitsAcces'
@@ -76,11 +77,11 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     await screen.findByText('client@exemple.fr')
     expect(screen.queryByText('autre@exemple.fr')).toBeNull()
     // Les drapeaux des articles (étape A1), des adresses de réception (étape A6a), des contacts (étape A4a), de leur import
-    // (étape A4b3a) et des paramètres de facturation (étape A5a) sont pris tels qu'ils sont : la phrase suit les sept
-    // (droitsAcces.test.ts, leurs états).
+    // (étape A4b3a), des paramètres de facturation (étape A5a) et du dernier changement du RIB (étape A5b3a) sont pris tels
+    // qu'ils sont : la phrase suit les huit (droitsAcces.test.ts, leurs états).
     expect(CE_QUE_DISENT_LES_CASES)
-      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES))
-    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES))
+      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE))
+    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE))
     expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
     expect(phrase.textContent).toContain('et, avec « Ventes », désigner celui qui prouve un encaissement.')

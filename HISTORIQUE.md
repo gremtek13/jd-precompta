@@ -25512,6 +25512,14 @@ correctif intégré (vingt fichiers). La feuille de route : la ligne 51.5 compl�
 l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141
 sur 171 (82 %, huit cases).
 
+**LES RÉPONSES DU CABINET, LE 17/10/2026 (« comme recommandé »).** A5B1-Q1 à A5B1-Q8 : les huit telles quelles — la
+cinquième vue de l'onglet Factures et de « Mes ventes » ; la phrase d'en-tête gardée jusqu'à A7 ; les mots de la
+confirmation d'un RIB, sans case « j'ai vérifié » ; les propositions préremplies seulement quand le dossier n'a aucune
+version ; l'historique dès deux versions, les champs changés nommés, sans les anciennes valeurs ; l'IBAN par groupes de
+quatre, la forme rangée restant l'électronique ; le RIB vidé par le client retiré tout de suite, le cabinet averti avec
+A5b3 (la fonction qui le dit, A5b3a, est en base le même jour ; l'avis vient avec A5b3b) ; le pré-remplissage du
+formulaire de facture avec A7. Rien ne change dans le code.
+
 **RESTE.** A5b2, l'identité légale du dossier dans ses informations (dénomination imprimée, ville du greffe, forme
 juridique, capital ; le cabinet seul) ; A5b3, l'avis d'un changement de RIB sur les accueils du cabinet et des accès
 « Ventes » et « Banque », et la fonction qui le dit à un accès « Banque » seul (A5-Q2 ; une migration, présentée au
@@ -25619,8 +25627,167 @@ sur l'arbre intégré, retouches comprises : 0 débordement aux onze passes, 0 b
 48 fenêtres à chaque passe du cabinet, 114 dans 29 chez le client), 0 police refusée. Dans les documents, le paragraphe
 des questions du brouillon renvoyait au rapport de l'agent : il les dit une à une.
 
+**LA MISE EN LIGNE, LE 16/10/2026.** Fusionnée par #180 (`0fedc97`) à 19 h 53 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `32bc9c9` ; l'arbre de `main` (`0c266af7…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-pCpImOkn.js` (déploiement 38943087433, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`0fedc97`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration retiré (ses 173
+liens d'abord) ; celui de l'agent — exactement `656dad0` plus le correctif intégré, quatorze fichiers, sans liens —
+reste en place tant que l'outil qui l'a créé le tient verrouillé, et l'agent avait laissé tourner deux boucles d'attente
+d'un fichier qui ne viendrait jamais, arrêtées par la session. La feuille de route : la ligne 51.5 complétée (44 952
+caractères, envoyée et relue à l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases)
+et, pour un dossier BNC, 141 sur 171 (82 %, huit cases).
+
+**LES RÉPONSES DU CABINET, LE 17/10/2026 (« comme recommandé »).** A5B2-Q1 à A5B2-Q7 : les sept telles quelles — la
+carte de l'onglet Informations, un seul formulaire et une seule écriture avec le SIRET et l'adresse ; la dénomination
+d'un entrepreneur individuel proposée par un bouton, jamais d'elle-même ; son capital remis à nul et dit avant le clic ;
+la forme sous son code et son libellé de l'INSEE, sans recherche ni forme abrégée avant A7 ; « le client du dossier »
+pour qui lit ces champs ; le capital au centime, deux décimales au plus telles que tapées ; une colonne non lue, les
+quatre champs non offerts. Rien ne change dans le code.
+
 **RESTE.** A5b3, l'avis d'un changement de RIB sur les accueils du cabinet et des accès « Ventes » et « Banque », et la
 fonction qui le dit à un accès « Banque » seul (A5-Q2 ; une migration, présentée au cabinet avant d'être appliquée) ;
 A5c, le logo et son seau ; A4B3-Q6 ; A7, où la facture fige ses mentions — l'identité légale et la forme abrégée qu'elle
 imprime comprises, le RIB et les conditions en vigueur aussi ; A9, la numérotation qui continue et la série du
 mandataire (MEG1-Q5). La mise en ligne de cette demande se consigne au prochain commit de documents.
+
+### 16/10/2026 — LE DERNIER CHANGEMENT DU RIB, EN BASE — ESPACE CLIENT, ÉTAPE A5b3a (LIGNE 51.5)
+
+(La migration `dernier_changement_de_rib`, préparée sous la version PROVISOIRE `20261016180000` et éprouvée sur une
+réplique de la production, présentée au cabinet, puis appliquée sur son accord le 17/10/2026 sous la version
+`20261016220724` : elle ouvre à l'accès client qui porte la case « Banque » une lecture qu'il n'a pas. Préparée par
+l'agent S248 sur `0fedc97`. Fichiers nouveaux : `src/lib/changementDeRib.ts`, `src/lib/changementDeRibLecture.ts`, leurs
+trois tests, `supabase/essais/dernierChangementDeRib.sql`. Modifiés, par AJOUT : `src/lib/droitsAcces.ts` (un huitième
+argument de `ceQueDisentLesCases` et sa phrase) et son test, `src/pages/dossier/AccesTab.casesOuvertes.test.tsx` (le
+drapeau), `src/lib/ecrituresVerifiees.test.ts` (le consommateur), `src/lib/verrousEcritures.test.ts` (la porte de
+lecture), `RGPD.md` (§7). Puis la bascule — le fichier de la migration dans l'export, sous sa version réelle, et le
+drapeau levé —, intégrée avec elle, ainsi qu'une phrase de l'onglet Accès que l'étape avait trouvée périmée.)
+
+**LA DÉLIMITATION.** La FONCTION qui dit le dernier changement du RIB des factures d'un dossier (A5-Q2, décidée le
+16/10/2026 : à un accès « Banque » seul, le jour, l'auteur — le cabinet ou un accès client, jamais la personne — et
+l'état, jamais l'IBAN), son essai, le module PUR qui lit ce qu'elle rend et écrit les avis, le module de lecture, et la
+bascule. Ni l'avis sur les accueils (A5b3b), ni une table (une marque « vu » en serait une : A5B3-Q4), ni un changement
+des fonctions d'A5a, ni le logo (A5c).
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 16/10/2026 (136 migrations, la dernière
+`parametres_facturation`, lecture seule du catalogue) : `parametres_facturation` vide ; `client_du_dossier(d, droit)`
+lit l'accès de l'APPELANT (`memberships.user_id = auth.uid()`, `droit_ventes`, `droit_banque`, « membre » pour tout
+accès) ; une version a son état de RIB (`propose`, `confirme`), qui l'a confirmé et quand, son auteur et son instant ;
+`enregistrer_parametres_facturation` confirme d'emblée le RIB posé ou changé par le cabinet (`admin_du_dossier`), ne
+fait que PROPOSER celui d'un accès client, et un RIB inchangé garde état et confirmation ; `confirmer_rib` (le cabinet
+seul) ne confirme que la COURANTE, et la garde de la table l'impose. Ce que la base ÉCRIT dit donc l'auteur d'un RIB
+posé ou changé (confirmé d'emblée par son auteur, à l'instant de la version : le cabinet ; proposé : un accès client) et
+d'une confirmation (le cabinet) — mais rien de l'auteur d'un RETRAIT, qui n'a pas d'état.
+
+**LA FONCTION.** `dernier_changement_de_rib(p_dossier_id)` — `SECURITY DEFINER`, `stable`, `search_path` fixé, fermée à
+l'anonyme et à PUBLIC — vérifie l'accès d'abord (le cabinet du dossier, `client_du_dossier(…, 'ventes')` ou
+`client_du_dossier(…, 'banque')`, sur un dossier qui existe ; sinon « Accès refusé à ce dossier. », 42501, sans dire si
+le dossier existe), puis parcourt la CHAÎNE des versions dans son ordre (`remplace_id`, un `with recursive`), jamais
+dans celui des instants : une même transaction donne le même instant à tout ce qu'elle écrit, et un RIB ne se confirme
+que sur la courante. Un CHANGEMENT : une version qui pose, change (l'IBAN, le BIC ou le titulaire, ensemble, comme A5a
+juge un RIB « inchangé ») ou retire le RIB ; la confirmation d'un RIB qui était proposé. Pas une version qui ne touche
+pas au RIB, ni le cabinet qui réenregistre un RIB proposé sans le confirmer (A5-Q4). Elle rend UNE valeur, toujours un
+objet : `{"changement": null}` — le RIB n'a jamais changé, une AFFIRMATION qu'une lecture ratée ne peut pas imiter — ou
+le jour à Paris, le geste (`pose`, `change`, `retire`, `confirme`), l'auteur (`cabinet`, `client`, `inconnu` : un
+retrait, ou une confirmation datée d'avant sa version, que les fonctions n'écrivent jamais), l'état (`propose`,
+`confirme`, `retire`) et ce qu'il a fait au RIB EN VIGUEUR — celui qu'une facture verrait, `ribEnVigueur` d'A5a :
+`aucun`, `inchange`, `pose`, `change`, `retire` —, sans quoi un écran ne saurait pas dire si les factures gardent leur
+RIB. Jamais l'IBAN, le BIC, le titulaire, un identifiant de compte ou de version, ni l'heure. Pourquoi une fonction et
+non une policy : une policy de lecture aurait ouvert à « Banque » toutes les colonnes de toutes les versions (le cabinet
+et le client sont le même rôle). Le texte ne retire rien ; 14 420 caractères, md5 `5a9dda4beb988c79dad67e2481f1c9d0`. Le
+retour arrière, à part, ne retire que la fonction (1 238 caractères, `34ef7a80…`).
+
+**LE MODULE ET LA LECTURE.** `lib/changementDeRib.ts` (pur) lit la valeur SANS RIEN DEVINER : `{ changement: null }`
+seulement de l'objet qui le dit ; sinon chaque clé, aucune de plus, chaque mot de sa liste, un jour civil qui existe, et
+une des QUINZE combinaisons que la fonction rend — l'image exacte de sa règle (une proposition n'est jamais « du
+cabinet », un retrait jamais « du client », une confirmation laisse toujours un RIB en vigueur) ; toute autre forme est
+illisible, jamais « aucun changement ». Il écrit l'avis de chacun — le cabinet (vouvoyé ; devant un RIB proposé, le
+conseil de la vue des paramètres), le client « Ventes » et le client « Banque » seul (tutoyés, aucun mot du cabinet,
+« un accès client de ton dossier », jamais la personne ; « préviens ton cabinet » toujours, « Ventes » sachant où lire
+le détail) —, et ce que les factures porteront se dit au futur, « quand elles porteront un RIB » (A7).
+`lib/changementDeRibLecture.ts` : un `.rpc(`, quatre états (en cours, lue, illisible, refusée), ne rejette jamais,
+gardée avec le dossier, et derrière `CHANGEMENT_DE_RIB_EXPORTE` : drapeau baissé, rien ne se lit et rien ne se dit.
+
+**L'ONGLET ACCÈS.** `ceQueDisentLesCases` reçoit un huitième argument : drapeau levé, ce que « Banque » ouvre gagne une
+phrase — le jour, l'auteur (« toi, ou un accès client, jamais la personne ») et l'état du dernier changement du RIB,
+sans jamais lui montrer ce RIB, l'avis à venir. Sans les ventes, les paramètres ou la banque du client, le drapeau ne
+change rien. Drapeau baissé, la phrase est celle d'hier, au caractère près.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et l'historique, 136,
+`8e9f22d2…`) : la migration ne change que deux familles (fonctions et leurs droits, 169 → 170) ; l'essai (trois dossiers
+jetables, IBAN fictifs à clé juste du code banque 99999, plantés et cherchés dans CHAQUE réponse de chaque profil, avec
+leur forme par quatre ; deux contrôles y cherchent aussi md5, SHA-256, les identifiants des comptes, un nombre, une clé
+de trop), sans la migration 1 verdict « EN ATTENTE », avec 98 verdicts — 93 justes + 5 mutations qui mordent —, 0 en
+faute, vide et semée, rien resté en base, et sa copie sans commentaires d'un seul tenant ; chacune des quinze
+combinaisons y est exigée de la base ; 57 mutations de la migration sur 58 vues (O03, le rang qui n'avance plus,
+équivalente : PostgreSQL rend un `with recursive` dans l'ordre de ses itérations, et son tri laisse en place une entrée
+déjà triée ; O02, à rebours, prouve que le tri sert) ; le premier bloc arrête la migration sur une base sans A5a ;
+`rls.sql` ENTIER inchangé, 35 lignes, 0 en faute, 39 mutations sur 39, avec et sans ; le retour arrière, les neuf
+familles revenues ; le bloc à coller (inutile : aucun mot que le détecteur retient). Le code : le test du module rejoue
+les versions de l'essai étape par étape par une règle écrite dans le test — le RIB en vigueur par `ribEnVigueur`, l'état
+d'un RIB enregistré par `etatDuRibEnregistre` — et retrouve chaque valeur au mot près ; il parcourt toutes les chaînes
+de un à quatre gestes et retrouve les quinze combinaisons, ni plus ni moins ; il épingle les avis, combinaison par
+combinaison. 36 mutations du code sur 37 mordent (K10 équivalente : la combinaison refuse déjà un geste inconnu). La
+barrière sur l'état livré : `tsc -b` sans erreur, le compilateur des Edge Functions et le lint sans rien de nouveau (les
+25 erreurs connues ; 0 erreur et 63 avertissements, les mêmes qu'à la base), la construction verte ; les huit fichiers
+de test touchés sous les quatre fuseaux (296 tests) ; la suite entière sous Paris, 397 fichiers et 12 098 tests, verte
+drapeau baissé comme drapeau levé. La bascule en simulation (le fichier dans l'export, le drapeau levé) : les trois
+contrôles de l'export égaux (dérive 137, socle 78, inventaire 2 072 objets) ; 13 mutations de la bascule sur 13 mordent
+(le drapeau rebaissé, la migration ôtée de l'export, la phrase de l'onglet, et neuf sur le texte exporté de la
+fonction). La production relue en fin d'étape : toujours 136 migrations, les neuf familles égales à la réplique.
+
+**TROIS FAITS APPRIS.** (1) Dans un essai joué d'une seule transaction, `now()` est le même pour toutes les versions et
+toutes les confirmations : « confirmé d'emblée » se juge au compte ET à l'instant (le même instant seul confondrait la
+confirmation du cabinet avec une pose du cabinet) ; l'essai restaure des versions à des instants choisis pour juger le
+jour et l'ordre. (2) `pg_proc.provolatile` est de type `"char"` : `||` le refuse sans conversion (42725). (3) Le banc
+des mutations a fait voir trois branches que rien ne peut observer (l'auteur d'une version suivie de sa confirmation,
+« aucun » et « retiré » après une confirmation) et trois réaffectations redondantes : retirées, et deux cas manquants à
+l'essai, ajoutés.
+
+**TROUVÉ EN PASSANT.** La phrase de l'onglet Accès disait encore des paramètres de facturation « L'écran qui les montre
+viendra ensuite. », et `droitsAcces.test.ts` l'exigeait — alors que la vue « Mes ventes › Paramètres » existe depuis
+A5b1. Corrigé par la session à l'intégration : la phrase dit « Dans « Mes ventes › Paramètres » comme par la base, il
+lit aussi les paramètres… », comme celle de l'import nomme « Importer des clients », et le test exige qu'elle finisse
+sur la règle du RIB, sans plus rien dire « ensuite ».
+
+**LES QUESTIONS AU CABINET.** A5B3-Q1, l'accord pour appliquer ; A5B3-Q2, ce qui compte pour un changement (le BIC et le
+titulaire compris) ; A5B3-Q3, l'auteur d'un retrait, « inconnu » (si le cabinet veut le savoir, que chaque version
+écrive le rôle de son auteur, une migration d'A5a, jamais le deviner des accès d'aujourd'hui) ; A5B3-Q4, combien de
+temps l'avis reste sur un accueil (recommandé : un RIB proposé, chez le cabinet, jusqu'à sa confirmation ou son
+remplacement ; le reste, 30 jours ; pas de marque « vu ») ; A5B3-Q5, où le cabinet le lit (recommandé : la Vue
+d'ensemble du dossier maintenant, son tableau de bord plus tard par une fonction qui dit en une fois quels dossiers ont
+un RIB qui l'attend) ; A5B3-Q6, les mots dits au client « Banque » seul et au client « Ventes » ; A5B3-Q7, le jour seul,
+sans l'heure.
+
+**LES RÉPONSES DU CABINET, LE 17/10/2026 (« comme recommandé »).** A5B3-Q1 : oui — la migration est appliquée
+(ci-dessous). A5B3-Q2 à Q7, telles quelles : un changement est une version qui pose, change — l'IBAN, le BIC ou le
+titulaire — ou retire le RIB, ou la confirmation d'un RIB proposé ; l'auteur d'un retrait reste « inconnu », et le jour
+où le cabinet voudra le savoir, chaque version écrira le rôle de son auteur, jamais deviné ; l'avis reste, chez le
+cabinet, tant qu'un RIB proposé n'est ni confirmé ni remplacé, et trente jours depuis le jour du changement pour tout le
+reste, sans marque « vu » ; le cabinet le lit dans la Vue d'ensemble de chaque dossier à A5b3b, son tableau de bord plus
+tard ; les mots des avis tels que le module les écrit ; le jour seul. La même réponse tranche A5B1-Q1 à Q8 et A5B2-Q1 à
+Q7, telles quelles (leurs entrées le disent).
+
+**L'APPLICATION, LE 17/10/2026.** La production relue d'abord : 136 migrations, la dernière `parametres_facturation`,
+`dernier_changement_de_rib` absente, aucune version de paramètres. Appliquée par `apply_migration`
+(`dernier_changement_de_rib`), sans confirmation demandée, sous la version `20261016220724` (0 h 07 à Paris) ; sa ligne
+d'historique rend, saut final compris, `5a9dda4beb988c79dad67e2481f1c9d0` — le fichier, au caractère près. L'essai
+rejoué en production sans ses lignes de commentaire (47 554 caractères reçus, `fecdd4f3…`, le texte envoyé) : 98
+verdicts justes — 93 contrôles et 5 mutations qui mordent —, rien resté en base (4/3/1/0/0 avant et après), le jour
+d'aujourd'hui lu à Paris (le 17/10). `signature.sql` en production : ce que la réplique migrée rendait — fonctions 170
+`56bfa578…`, leurs droits 170 `0af37f59…`, les sept autres familles inchangées. Les trois contrôles de l'export, le
+fichier renommé à sa version : dérive 137 = 137 (`753eda2c…`), socle 78 (`91ae95ec…`) et inventaire 2 072 objets
+(`987a12dc…`) des deux côtés. Les fonctions `SECURITY DEFINER` exécutables : 5 par l'anonyme, inchangé, 54 par un compte
+connecté (53 avant). `rls.sql` n'a pas été rejoué en production : la migration ne pose ni table ni policy, et la
+réplique l'a rendu identique sans elle et avec elle.
+
+**L'INTÉGRATION, LE 17/10/2026.** Les deux correctifs de l'agent appliqués sur `0fedc97` tels qu'il les a rendus
+(`s248.patch`, puis `bascule.patch`), le fichier de la migration renommé à sa version réelle (`20261016220724`, texte
+inchangé), puis la phrase périmée de l'onglet Accès corrigée (ci-dessus) et les documents. Barrière sur l'arbre
+intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, aucune erreur ; quatre fuseaux, 12 098 tests
+chacun (397 fichiers) ; construction verte (`index-B00FDKGI.js`). Le banc rejoué : 0 débordement aux onze passes, 0
+bouton de fenêtre recouvert (212 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
+
+**RESTE.** A5b3b, l'avis d'un changement de RIB : dans la Vue d'ensemble de chaque dossier pour le cabinet (A5B3-Q5),
+sur l'accueil des accès « Ventes » et « Banque » ; chez le cabinet, un RIB proposé tant qu'il n'est ni confirmé ni
+remplacé, le reste trente jours depuis le jour du changement, sans marque « vu » (A5B3-Q4) ; les mots du module
+(A5B3-Q6). Puis A5c, le logo et son seau ; A7, la facture fige ses mentions ; A9, la numérotation qui continue.
