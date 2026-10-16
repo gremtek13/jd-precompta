@@ -3,6 +3,9 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   AUCUN_DROIT, CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
+  LIBELLE_ESCOMPTE_PARAMETRES, LIBELLE_ESCOMPTE_PARAMETRES_CLIENT, LIBELLE_MENTIONS_PARAMETRES, LIBELLE_MENTIONS_PARAMETRES_CLIENT,
+  LIBELLE_PENALITES_PARAMETRES, LIBELLE_PENALITES_PARAMETRES_CLIENT, LIBELLE_PIED_DE_PAGE_PARAMETRES, LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT,
+  LIBELLE_TITULAIRE_PARAMETRES, LIBELLE_TITULAIRE_PARAMETRES_CLIENT,
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus,
 } from './droitsAcces'
@@ -11,6 +14,7 @@ import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE, LIGNES_PAR_IMPORT_MAX } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
+import { motsDuCabinet } from './espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { contact } from '../test/contacts'
@@ -931,5 +935,33 @@ describe('ce que le client « Banque » lit de la main du cabinet : la question 
     expect(fichiers.some((f) => /create policy precisions_mouvements_lecture on public\.precisions_mouvements\s+for select to authenticated using \(gere_la_banque\(dossier_id\)\);/.test(f.texte)))
       .toBe(true)
     expect(derniereDefinitionSql('ecrire_precision_mouvement')).toContain('if not public.gere_la_banque(p_dossier_id)')
+  })
+})
+
+// Les cinq textes libres des PARAMÈTRES DE FACTURATION (étape A5b1) : au cabinet, chacun dit que le client qui porte « Ventes »
+// le lit ; au client, que son cabinet le lit aussi — et la policy qui l'ouvre à « Ventes » est dans l'export.
+describe('les textes libres des paramètres de facturation : chaque libellé dit qui le lit', () => {
+  const PAIRES: [string, string, string, string][] = [
+    [LIBELLE_ESCOMPTE_PARAMETRES, LIBELLE_ESCOMPTE_PARAMETRES_CLIENT, 'Conditions d’escompte', 'les lit'],
+    [LIBELLE_PENALITES_PARAMETRES, LIBELLE_PENALITES_PARAMETRES_CLIENT, 'Pénalités de retard', 'les lit'],
+    [LIBELLE_MENTIONS_PARAMETRES, LIBELLE_MENTIONS_PARAMETRES_CLIENT, 'Mentions complémentaires', 'les lit'],
+    [LIBELLE_PIED_DE_PAGE_PARAMETRES, LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT, 'Pied de page', 'le lit'],
+    [LIBELLE_TITULAIRE_PARAMETRES, LIBELLE_TITULAIRE_PARAMETRES_CLIENT, 'Titulaire du compte', 'le lit'],
+  ]
+
+  it('au cabinet, le client qui porte « Ventes » ; au client, son cabinet aussi — jamais un mot du cabinet', () => {
+    for (const [cabinet, client, champ, lit] of PAIRES) {
+      expect(cabinet).toContain(champ)
+      expect(cabinet).toContain(`le client qui porte la case « ${definitionDe('ventes').libelle} » ${lit}`)
+      expect(client).toContain(champ)
+      expect(client).toContain(`ton cabinet ${lit} aussi`)
+      expect(motsDuCabinet(client)).toEqual([])
+    }
+    expect(new Set(PAIRES.flatMap(([a, b]) => [a, b])).size).toBe(10)
+  })
+
+  it('la table qu’ils décrivent est ouverte à « Ventes » par l’export', () => {
+    const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261016064317_parametres_facturation.sql'), 'utf8')
+    expect(migration).toMatch(/create policy parametres_facturation_lecture_ventes on public\.parametres_facturation\s+for select to authenticated using \(public\.client_du_dossier\(dossier_id, 'ventes'\)\)/)
   })
 })

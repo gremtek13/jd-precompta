@@ -987,6 +987,40 @@ const VISITES = [
       await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
     },
   },
+  // « PARAMÈTRES » (espace client, étape A5b1) : les paramètres de facturation de l'atelier (d7) dans la cinquième vue de l'onglet
+  // Factures — le sélecteur à cinq boutons, qui passe à la ligne ; la courante, dont le RIB n'est que PROPOSÉ par son titulaire
+  // (« par le client »), le RIB confirmé d'avant en vigueur, l'historique ; puis le formulaire « Modifier les paramètres », et la
+  // confirmation du RIB, qui le nomme.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/parametres',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByText('Paramètres en cours', { exact: true }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Proposé par le client le /).first().waitFor({ timeout: 10000 })
+      await page.getByRole('table', { name: 'Historique des paramètres' }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/parametres-modifier', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByRole('button', { name: 'Modifier les paramètres', exact: true }).click()
+      await page.getByRole('heading', { name: 'Modifier les paramètres' }).waitFor({ timeout: 10000 })
+      await page.locator('#parametres-delai').fill('61')
+      await page.getByText('Le délai de paiement est un nombre entier de jours, de 0 à 60.').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/parametres-confirmer', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByRole('button', { name: 'Confirmer le RIB', exact: true }).click()
+      await page.getByRole('alertdialog').getByText('FR12 9999 9000 0100 0000 0000 200').waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -1375,6 +1409,29 @@ const VISITES_CLIENT = [
       await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Exporter la fiche', exact: true }).click()
       await page.getByText(/^Fiche de « Commune de Démoville[^»]*» exportée : fiche-client-commune-de-demoville-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.csv\./).waitFor({ timeout: 10000 })
       await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
+    },
+  },
+  // « Paramètres » (étape A5b1), aux mots du client : son RIB proposé « en attente de la confirmation de ton cabinet », sans
+  // « Confirmer le RIB » ; puis le formulaire, qui dit ce que deviendra le RIB changé.
+  {
+    chemin: '#/mes-ventes', nom: 'client/parametres',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByText('Paramètres en cours', { exact: true }).waitFor({ timeout: 10000 })
+      await page.getByText(/en attente de la confirmation de ton cabinet\.$/).first().waitFor({ timeout: 10000 })
+      if ((await page.getByRole('button', { name: 'Confirmer le RIB' }).count()) > 0) throw new Error('« Confirmer le RIB » paraît chez le client')
+    },
+  },
+  {
+    chemin: '#/mes-ventes', nom: 'client/parametres-modifier', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByRole('button', { name: 'Modifier les paramètres', exact: true }).click()
+      await page.getByRole('heading', { name: 'Modifier les paramètres' }).waitFor({ timeout: 10000 })
+      await page.locator('#parametres-iban').fill('FR93 9999 9000 0100 0000 0000 100')
+      await page.getByText(/^Le RIB change : il ne sera que proposé/).waitFor({ timeout: 10000 })
     },
   },
 ]

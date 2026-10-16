@@ -376,3 +376,27 @@ const LE_CLIENT_BANQUE = `le client qui porte la case « ${definitionDe('banque'
 
 export const LIBELLE_QUESTION_MOUVEMENT =
   `Ta question sur ce mouvement (${LE_CLIENT_BANQUE} la lit et y répond ; envoyée, elle reste telle quelle)`
+
+// Les cinq textes libres des PARAMÈTRES DE FACTURATION (étape A5b1) : les conditions d'escompte, les pénalités de retard, les
+// mentions complémentaires, le pied de page et le titulaire du compte, que le cabinet saisit dans la table que
+// `parametres_facturation_lecture_ventes` ouvre au client « Ventes » — la même condition, le même mot. Le délai, le moyen,
+// l'IBAN et le BIC n'en portent pas : ce sont un nombre, un choix et des formes que la base vérifie.
+export const LIBELLE_ESCOMPTE_PARAMETRES = `Conditions d’escompte (${LE_CLIENT_VENTES} les lit)`
+
+export const LIBELLE_PENALITES_PARAMETRES = `Pénalités de retard (${LE_CLIENT_VENTES} les lit)`
+
+export const LIBELLE_MENTIONS_PARAMETRES = `Mentions complémentaires (facultatives ; ${LE_CLIENT_VENTES} les lit)`
+
+export const LIBELLE_PIED_DE_PAGE_PARAMETRES = `Pied de page (facultatif ; ${LE_CLIENT_VENTES} le lit)`
+
+export const LIBELLE_TITULAIRE_PARAMETRES = `Titulaire du compte (${LE_CLIENT_VENTES} le lit)`
+
+export const LIBELLE_ESCOMPTE_PARAMETRES_CLIENT = `Conditions d’escompte (${TON_CABINET} les lit aussi)`
+
+export const LIBELLE_PENALITES_PARAMETRES_CLIENT = `Pénalités de retard (${TON_CABINET} les lit aussi)`
+
+export const LIBELLE_MENTIONS_PARAMETRES_CLIENT = `Mentions complémentaires (facultatives ; ${TON_CABINET} les lit aussi)`
+
+export const LIBELLE_PIED_DE_PAGE_PARAMETRES_CLIENT = `Pied de page (facultatif ; ${TON_CABINET} le lit aussi)`
+
+export const LIBELLE_TITULAIRE_PARAMETRES_CLIENT = `Titulaire du compte (${TON_CABINET} le lit aussi)`

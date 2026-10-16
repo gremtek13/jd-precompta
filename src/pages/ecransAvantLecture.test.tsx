@@ -43,6 +43,7 @@ import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
 import ContactsVue from './dossier/ContactsVue'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
+import ParametresVue from './dossier/ParametresVue'
 import EncartFactureElectronique from './dossier/EncartFactureElectronique'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
@@ -407,6 +408,14 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'AdresseReceptionModal (client)', fichier: 'pages/dossier/AdresseReceptionModal.tsx', rendre: () => (
     <Dossier1><AdresseReceptionModal espace="client" dossierId="d1" onClose={rien} /></Dossier1>
+  ) },
+  // « Paramètres » (étape A5b1) : la vue des paramètres de facturation, montée seule — au cabinet, et au client « Ventes ». Rien ne
+  // se dit ni ne s'offre avant la lecture des versions.
+  { nom: 'ParametresVue', fichier: 'pages/dossier/ParametresVue.tsx', rendre: () => (
+    <Dossier1><ParametresVue espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" /></Dossier1>
+  ) },
+  { nom: 'ParametresVue (client)', fichier: 'pages/dossier/ParametresVue.tsx', rendre: () => (
+    <Dossier1><ParametresVue espace="client" dossierId="d1" /></Dossier1>
   ) },
 ]
 
