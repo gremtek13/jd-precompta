@@ -1557,6 +1557,58 @@ const CONTACTS_DU_BANC: Ligne[] = [
   }),
 ]
 
+// LES PARAMÈTRES DE FACTURATION de l'atelier (espace client, étape A5b1), vus du cabinet (l'onglet Factures › Paramètres) et de
+// son client « Ventes » (« Mes ventes › Paramètres ») : une première version du cabinet, son RIB confirmé d'un même geste ; puis
+// une version de son titulaire (u-bernard) qui change le RIB — seulement PROPOSÉ, le premier restant en vigueur —, avec des
+// mentions et un titulaire longs, pour éprouver le passage à la ligne. IBAN FICTIFS (le code banque 99999, à clé juste, ceux des
+// essais du dépôt) ; aucune donnée réelle.
+const PARAMETRES_DU_BANC: Ligne[] = [
+  {
+    id: 'pf1', dossier_id: 'd7', delai_paiement_jours: 30, moyen_prefere: 'virement', escompte: 'Pas d’escompte pour paiement anticipé.',
+    penalites: 'Pénalités de retard : taux d’intérêt appliqué par la Banque centrale européenne à son opération de refinancement la plus récente, majoré de 10 points de pourcentage (C. com., art. L441-10, II).',
+    mentions_complementaires: null, pied_de_page: null, iban: 'FR9399999000010000000000100', bic: 'ESSAFR10', titulaire_compte: 'Atelier de conseil fictif',
+    rib_etat: 'confirme', rib_confirme_par: 'u1', rib_confirme_le: '2026-09-01T08:00:00Z', remplace_id: null, auteur: 'u1', cree_le: '2026-09-01T08:00:00Z',
+  },
+  {
+    id: 'pf2', dossier_id: 'd7', delai_paiement_jours: 45, moyen_prefere: 'virement', escompte: 'Pas d’escompte pour paiement anticipé.',
+    penalites: 'Pénalités de retard : taux d’intérêt appliqué par la Banque centrale européenne à son opération de refinancement la plus récente, majoré de 10 points de pourcentage (C. com., art. L441-10, II).',
+    mentions_complementaires: 'Indemnité forfaitaire pour frais de recouvrement en cas de retard de paiement : quarante euros. Toute réclamation se fait par écrit dans les huit jours.',
+    pied_de_page: 'Atelier de conseil fictif — société fictive au capital fictif — 13999 Démoville',
+    iban: 'FR1299999000010000000000200', bic: null, titulaire_compte: 'Atelier de conseil fictif, compte professionnel principal de l’atelier',
+    rib_etat: 'propose', rib_confirme_par: null, rib_confirme_le: null, remplace_id: 'pf1', auteur: 'u-bernard', cree_le: '2026-10-12T14:30:00Z',
+  },
+]
+
+// `enregistrer_parametres_facturation` et `confirmer_rib` (étape A5b1), comme leurs fonctions en base pour ce que le banc montre :
+// la version nouvelle remplace la courante, son RIB gardé tel quel garde son état, posé ou changé par le cabinet il est confirmé,
+// par le client proposé ; la confirmation passe la courante à « confirmé ». Les refus, l'essai en base les juge.
+function rpcDesParametres(nom: string, args?: Ligne): { data: unknown; error: null } | null {
+  const versions = () => TABLES.parametres_facturation ?? []
+  if (nom === 'enregistrer_parametres_facturation' && args) {
+    const p = (args.p_parametres ?? {}) as Ligne
+    const courante = versions().find((v) => v.dossier_id === args.p_dossier_id && !versions().some((s) => s.remplace_id === v.id))
+    const garde = courante !== undefined && p.iban === courante.iban && p.bic === courante.bic && p.titulaire_compte === courante.titulaire_compte
+    const etat = p.iban == null ? null : garde ? courante.rib_etat : CLIENT_DU_BANC ? 'propose' : 'confirme'
+    const confirme = etat === 'confirme' && !garde
+    const ecrite: Ligne = {
+      id: `pf${versions().length + 1}`, dossier_id: args.p_dossier_id, ...p, rib_etat: etat,
+      rib_confirme_par: garde ? courante.rib_confirme_par : confirme ? session.user.id : null,
+      rib_confirme_le: garde ? courante.rib_confirme_le : confirme ? new Date().toISOString() : null,
+      remplace_id: args.p_remplace_id ?? null, auteur: session.user.id, cree_le: new Date().toISOString(),
+    }
+    TABLES.parametres_facturation = [...versions(), ecrite]
+    return { data: ecrite, error: null }
+  }
+  if (nom === 'confirmer_rib' && args) {
+    const v = versions().find((x) => x.id === args.p_version_id)
+    if (!v) return null
+    const ecrite = { ...v, rib_etat: 'confirme', rib_confirme_par: session.user.id, rib_confirme_le: new Date().toISOString() }
+    TABLES.parametres_facturation = versions().map((x) => (x.id === v.id ? ecrite : x))
+    return { data: ecrite, error: null }
+  }
+  return null
+}
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -1861,6 +1913,8 @@ const TABLES: Record<string, Ligne[]> = {
   articles: ARTICLES_D7.map((a) => ({ ...a })),
   // Le fichier des clients (espace client, étape A4b1) : voir CONTACTS_DU_BANC.
   contacts: CONTACTS_DU_BANC.map((c) => ({ ...c })),
+  // Les paramètres de facturation (espace client, étape A5b1) : voir PARAMETRES_DU_BANC.
+  parametres_facturation: PARAMETRES_DU_BANC.map((v) => ({ ...v })),
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte
@@ -2106,7 +2160,7 @@ export const supabase = {
   },
   // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; la couverture du relevé et les droits de
   // l'appelant (espace client, étape P7), comme leurs fonctions en base ; tout autre appel, faux.
-  rpc: (nom: string, args?: { p_dossier_id?: string }) => Promise.resolve(rpcDuBanc(nom, args?.p_dossier_id)),
+  rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id)),
   from: (table: string) => requete(table),
   storage: {
     from: () => ({

@@ -1383,6 +1383,9 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .segmented button:hover { color: var(--color-text); }
 .segmented button.active { color: var(--color-primary); background: var(--color-surface); border-color: var(--color-border); box-shadow: var(--shadow-xs); }
 .segmented button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-primary); }
+/* Un sélecteur dont les boutons ne tiennent plus sur une ligne de téléphone — les cinq vues de l'onglet Factures (étape A5b1) —
+   passe à la ligne plutôt que de défiler : un bouton poussé hors de vue ne se devine pas. */
+.segmented.segmented-a-la-ligne { flex-wrap: wrap; overflow-x: visible; }
 
 /* ---------- Cockpit du dossier (en-tête DossierDetail) ---------- */
 .retour { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); text-decoration: none; margin-bottom: 14px; }

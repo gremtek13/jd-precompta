@@ -17,8 +17,10 @@ import EncaissementsFactureModal from './EncaissementsFactureModal'
 import ReglementsSection from './ReglementsSection'
 import ArticlesVue from './ArticlesVue'
 import ContactsVue from './ContactsVue'
+import ParametresVue from './ParametresVue'
 import { ARTICLES_EXPORTES } from '../../lib/articles'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
+import { PARAMETRES_FACTURATION_EXPORTES } from '../../lib/parametresFacturation'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import {
   ETATS_TRANSMISSION, annuleeSurSaPlateforme, libelleCourtCanal, transmissionCourante,
@@ -52,7 +54,7 @@ type QuiRegarde =
   | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
   | { espace: 'client'; banque: boolean }
 
-type VueDeLOnglet = 'factures' | 'reglements' | 'articles' | 'clients'
+type VueDeLOnglet = 'factures' | 'reglements' | 'articles' | 'clients' | 'parametres'
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -266,10 +268,11 @@ export default function FacturesTab(props: Props) {
 
   return (
     <>
-      {/* « Factures », « Règlements » (étape A3), « Articles » (étape A2a) et « Clients » (étape A4b1) : la liste de tous les
-          encaissements du dossier, le catalogue et le fichier des clients, à côté de celle des factures.
+      {/* « Factures », « Règlements » (étape A3), « Articles » (étape A2a), « Clients » (étape A4b1) et « Paramètres » (étape
+          A5b1) : la liste de tous les encaissements du dossier, le catalogue, le fichier des clients et les paramètres de
+          facturation, à côté de celle des factures.
           Une vue à la fois ; revenir aux factures relit leurs pastilles, que la fenêtre ouverte depuis la liste a pu changer. */}
-      <div className="segmented" role="tablist" aria-label={espace === 'client' ? 'Mes ventes' : 'Factures du dossier'} style={{ marginBottom: 14 }}>
+      <div className="segmented segmented-a-la-ligne" role="tablist" aria-label={espace === 'client' ? 'Mes ventes' : 'Factures du dossier'} style={{ marginBottom: 14 }}>
         <button type="button" role="tab" aria-selected={vue === 'factures'} className={vue === 'factures' ? 'active' : ''} onClick={() => changerDeVue('factures')}>
           Factures
         </button>
@@ -290,6 +293,13 @@ export default function FacturesTab(props: Props) {
             Clients
           </button>
         )}
+        {/* « Paramètres » (étape A5b1) : les paramètres de facturation du dossier, que lit et tient aussi le client « Ventes » —
+            offert seulement quand leur migration est en base (`PARAMETRES_FACTURATION_EXPORTES`) : sans elle, la lecture échouerait. */}
+        {PARAMETRES_FACTURATION_EXPORTES && (
+          <button type="button" role="tab" aria-selected={vue === 'parametres'} className={vue === 'parametres' ? 'active' : ''} onClick={() => changerDeVue('parametres')}>
+            Paramètres
+          </button>
+        )}
       </div>
 
       {vue === 'reglements' ? (
@@ -308,6 +318,11 @@ export default function FacturesTab(props: Props) {
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
           dossierId={dossierId}
           articleExoneration={articleExoneration}
+        />
+      ) : vue === 'parametres' ? (
+        <ParametresVue
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const })}
+          dossierId={dossierId}
         />
       ) : (
         <>

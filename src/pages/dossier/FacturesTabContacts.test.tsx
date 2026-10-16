@@ -119,10 +119,10 @@ async function monter(espace: 'cabinet' | 'client', articleExoneration: ArticleE
 const vers = (nom: string) => fireEvent.click(screen.getByRole('tab', { name: nom }))
 
 describe.each(['cabinet', 'client'] as const)('Clients dans l’onglet Factures — %s', (espace) => {
-  it('le sélecteur nomme les quatre vues, « Factures » reste la vue par défaut, et la table des contacts n’est pas lue', async () => {
+  it('le sélecteur nomme les cinq vues, « Factures » reste la vue par défaut, et la table des contacts n’est pas lue', async () => {
     await monter(espace)
     const onglets = screen.getAllByRole('tab').map((t) => t.textContent)
-    expect(onglets).toEqual(['Factures', 'Règlements', 'Articles', 'Clients'])
+    expect(onglets).toEqual(['Factures', 'Règlements', 'Articles', 'Clients', 'Paramètres'])
     expect(screen.getByRole('tab', { name: 'Factures' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tab', { name: 'Clients' }).getAttribute('aria-selected')).toBe('false')
     // Rien ne part vers la table des contacts avant le clic : ni lecture, ni liste.
@@ -148,7 +148,7 @@ describe.each(['cabinet', 'client'] as const)('Clients dans l’onglet Factures 
   it('le drapeau d’export rebaissé : aucun onglet « Clients », aucune lecture de la table', async () => {
     faux.drapeau = false
     await monter(espace)
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Factures', 'Règlements', 'Articles'])
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Factures', 'Règlements', 'Articles', 'Paramètres'])
     expect(screen.queryByRole('tab', { name: 'Clients' })).toBeNull()
     expect(faux.lectures).not.toContain('contacts')
   })

@@ -25375,9 +25375,137 @@ lisait pas ; il la LIT, comme toute la fiche de son dossier (`dossiers_select`),
 est la policy du cabinet). Dans la même demande, la mise en ligne de A4b3c (S244) et les réponses du cabinet à A4B3B et
 A4B3C.
 
+**LA MISE EN LIGNE, LE 16/10/2026.** Fusionnée par #178 (`15e98c2`) à 10 h 23 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `f4811f6` ; l'arbre de `main` (`c67fdbce…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-BueHWlcw.js` (déploiement 38873354452, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`15e98c2`, arbres égaux (`checkout -B` sur `origin/main`, poussée avec bail). Le worktree d'intégration (ses 173 liens
+d'abord) et celui de l'agent retirés, après avoir vérifié que la copie de l'agent est exactement `683a4de` plus le
+correctif intégré (dix-huit fichiers). La feuille de route : la ligne 51.5 complétée (41 114 caractères, envoyée et
+relue à l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier
+BNC, 141 sur 171 (82 %, huit cases).
+
 **RESTE.** A5b, l'écran des paramètres — au cabinet et au client « Ventes » —, avec la fonction qui dit à un accès
 « Banque » le dernier changement de RIB (A5-Q2) ; A5c, le logo et son seau ; A4B3-Q6 (les noms des colonnes de l'export
 de l'ancien logiciel) ; A7, où la facture fige ses mentions — le RIB et les conditions en vigueur compris, et les autres
 mentions de R123-237 (A5-Q9), R123-238 et L441-10 au 01/01/2027 relus d'abord (A5-Q10) — ; A9, la numérotation qui
 continue et la série du mandataire (MEG1-Q5) ; puis la liste des clients sans activité depuis trois ans. La mise en
+ligne de cette demande se consigne au prochain commit de documents.
+
+### 16/10/2026 — LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A5b1 (LIGNE 51.5)
+
+(Préparé par l'agent S246 sur `15e98c2`. Aucune migration, aucune policy, aucune Edge Function. Fichiers nouveaux :
+`src/lib/parametresFacturationLecture.ts`, `src/lib/parametresFacturationEcriture.ts`,
+`src/lib/parametresFacturationVue.ts`, `src/pages/dossier/ParametresVue.tsx`,
+`src/pages/dossier/ParametresSaisieModal.tsx` et leurs tests, `src/pages/dossier/FacturesTabParametres.test.tsx`.
+Modifiés, par AJOUT : `src/pages/dossier/FacturesTab.tsx` (le cinquième bouton et sa vue), `src/lib/droitsAcces.ts` (dix
+libellés en fin de liste) et son test, `src/index.css` (une règle, `.segmented-a-la-ligne`),
+`src/pages/ecransAvantLecture.test.tsx` (deux entrées), `outils/captures/fauxSupabase.ts` (la table et les deux
+fonctions), `outils/captures/debordements.mjs` (cinq visites), `RGPD.md` (la rangée des paramètres) ; et la liste
+attendue des onglets dans `FacturesTabArticles.test.tsx` et `FacturesTabContacts.test.tsx`.)
+
+**LA DÉLIMITATION.** La cinquième vue de l'onglet Factures, « Paramètres », après « Clients » — au cabinet dans
+l'onglet, au client « Ventes » dans « Mes ventes » (`espace` obligatoire, union typée), sous
+`PARAMETRES_FACTURATION_EXPORTES` : la version courante et l'état de son RIB, l'historique, une version nouvelle, la
+confirmation d'un RIB (le cabinet seul). Ni l'identité légale du dossier (A5b2), ni l'avis d'un changement de RIB sur
+les accueils ni la fonction qui le dit à un accès « Banque » (A5b3, une migration), ni le pré-remplissage du formulaire
+de facture (A5B1-Q8), ni le logo (A5c), ni rien qu'une facture lise ou imprime (A7).
+
+**LA LECTURE ET L'ÉCRITURE.** `lireLesParametresFacturation` : les versions du dossier par `lireTout` (compte exact, tri
+`cree_le` puis `id`), et elle ne REJETTE jamais — une requête qui lève ou qu'on refuse tombe du côté signalé avec son
+motif ; la vue la garde avec le dossier pour lequel elle l'a lue. `enregistrerParametresFacturation` et `confirmerRib` :
+les deux fonctions par `.rpc(` seulement, l'erreur dite par `messageErreur`, et la version rendue vérifiée (du dossier,
+qui remplace celle qu'on annonçait ; la confirmée, « confirmé »).
+
+**CE QUE LA VUE DIT** (`lib/parametresFacturationVue.ts`, pur, sans aucune règle recopiée). Lue en partie ou refusée :
+le bandeau, rien d'autre ; rompue : une phrase ; sans aucune version lue en entier : « aucun paramètre » et « Renseigner
+les paramètres ». La courante : chaque champ en mots (le délai en jours, le moyen sous le libellé du registre des
+encaissements, « Non renseigné ») ; l'IBAN par groupes de quatre à l'AFFICHAGE seulement — la saisie le reprend ainsi,
+`saisieQuiPart` le renvoie sans blanc —, le BIC, le titulaire ; l'état par `ceQueDitLeRib` — proposé (au cabinet « en
+attente de votre confirmation », chez le client « en attente de la confirmation de ton cabinet »), posé et confirmé d'un
+même geste, ou posé puis confirmé —, au jour et à l'heure de Paris (`jourEtHeureAParis`) ; d'une courante proposée, le
+RIB EN VIGUEUR (`ribEnVigueur`) : le confirmé d'avant, nommé, ou aucun — dit comme celui que les factures porteront
+QUAND elles porteront un RIB, jamais imprimé. L'historique dès deux versions : la courante d'abord, l'instant, « par le
+client », l'état du RIB et ce qu'elle a changé (chaque condition sous son libellé ; « RIB posé », « RIB retiré », « RIB
+changé (IBAN, BIC, titulaire du compte) » ; « Première version »). « Par le client » au cabinet seul, sur des accès lus
+en entier (`estLeClient`) — l'auteur d'une version, qui a posé et qui a confirmé un RIB —, jamais « par le cabinet ».
+
+**LE FORMULAIRE.** Sans aucune version : les `PROPOSITIONS_PAR_DEFAUT` (trente jours, l'escompte, les pénalités de la
+loi), dites propositions, rien d'écrit avant « Enregistrer ». « Modifier les paramètres » : la saisie part de la
+COURANTE, tous les champs, et la version remplacée est RETENUE à l'ouverture (`p_remplace_id`) ; le refus du module sur
+la saisie TELLE QU'ELLE PART, avant le clic ; « Enregistrer » grisé sous un refus et tant que rien ne diffère (jugé sur
+ce qui part : des blancs ne changent rien ; une première tout vidée n'a « rien de saisi ») ; aucune validation native,
+pas de `<form>`. Ce que deviendra le RIB, d'après `etatDuRibEnregistre`, et seulement d'une saisie que la base
+accepterait : changé par le client, seulement proposé jusqu'à la confirmation de son cabinet ; changé ou posé par le
+cabinet, confirmé d'emblée, en son nom ; vidé, retiré dès l'enregistrement (A5-Q5) ; inchangé, son état gardé — proposé,
+le cabinet qui réenregistre ne le confirme pas (A5-Q4). Les cinq textes libres disent qui les lit
+(`LIBELLE_*_PARAMETRES` et leurs jumeaux `_CLIENT`).
+
+**LA CONFIRMATION D'UN RIB.** Au cabinet seul, sur une courante dont le RIB est proposé ; dans la page
+(`ConfirmationArticle`, réemployé tel quel) : l'IBAN par quatre, le BIC, le titulaire, qui l'a proposé et quand, ce que
+la confirmation fait, et le conseil de le vérifier auprès du client par un autre moyen que l'application (A5B1-Q3) ; le
+refus de `refusConfirmationRib` grise le bouton, une autre saisie passée entre-temps comprise.
+
+**LE VERROU.** `gesteEnCours`, un `useRef` posé avant le `try`, relâché dans le `finally` après la relecture — relue
+aussi sur un refus, que la fenêtre ou la confirmation dit, et qui reste ouverte : la version retenue rend alors le refus
+« entre-temps » du module avant le clic.
+
+**LE SÉLECTEUR.** Cinq boutons ne tiennent plus sur une ligne de téléphone : le `.segmented` défilait et cachait
+« Factures » (vu au premier banc, à 390 pixels). Une règle par AJOUT, `.segmented.segmented-a-la-ligne` (`flex-wrap`),
+posée sur le sélecteur de l'onglet Factures seul — les autres `.segmented` (les exercices…) ne changent pas.
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** La lecture (6 cas, sous un faux client qui applique les filtres : entière, partielle, refusée,
+qui lève), l'écriture (13), le module de la vue (31 : chaque état du RIB, le RIB en vigueur, les champs changés,
+« rompue », « par le client » sur des accès lus en entier seulement, les mots du client), l'écran des deux espaces (40 :
+rien avant la lecture, aucun geste sur une lecture partielle, refusée ou rompue, le refus avant le clic, trois clics
+dans le même `act` pour un seul appel, la relecture après une écriture et après un refus, « Confirmer le RIB » absent
+chez le client, la confirmation qui nomme l'IBAN, les propositions sans version seulement, ce que deviendra le RIB dans
+chaque cas, aucune validation native), l'onglet (6 : le drapeau dans ses deux états), `ecransAvantLecture` (deux
+entrées), les libellés (`droitsAcces.test.ts`, la policy confrontée à l'export). 65 mutations ciblées : 64 mordent ; une
+équivalente — la vue qui relirait au clic la courante au lieu de la version retenue (le bouton est déjà grisé par le
+refus « entre-temps » que la version retenue fait dire : la seconde ceinture n'est pas atteignable par l'écran). La
+suite entière sous Paris : 393 fichiers, 11 890 tests (+5, +104) ; les neuf fichiers voisins sous les quatre fuseaux ;
+`tsc -b` 0, Edge 25 erreurs (celles de la base), lint 63 avertissements (ceux de la base), build vert. Le banc : 0
+débordement aux onze passes, 0 bouton recouvert (212 sondés dans 48 fenêtres à chaque passe du cabinet), 0 police
+refusée ; un premier passage avait montré le sélecteur défilant à 390 pixels.
+
+**LES RETOUCHES DE LA SESSION.** (1) Un chemin de la confirmation que l'écran taisait : au cabinet, « Modifier les
+paramètres » sur une courante dont le RIB est PROPOSÉ, en ne changeant que le BIC ou le titulaire, garde l'IBAN proposé
+— et l'enregistrement le CONFIRME d'emblée (MEG1-Q12 : un RIB que le cabinet pose ou change est confirmé), sans passer
+par « Confirmer le RIB » ni par son conseil ; c'est pourtant cet IBAN qu'un faux RIB détourne. La fenêtre le dit
+désormais avant le clic, avec le même conseil (`CONSEIL_VERIFICATION_RIB`, une seule phrase pour les deux chemins) ;
+deux tests (le module, l'écran) et deux mutations, qui mordent (la condition retirée ; l'IBAN changé dit comme gardé).
+La règle de la base ne change pas. (2) Dans RGPD.md, « à un accès « Banque » » était écrit deux fois de suite.
+
+**TROUVÉ EN PASSANT.** `ecransAvantLecture.test.tsx` compte parmi les écrans qui lisent la base tout écran qui importe
+un module de `lib/` qui importe un module de lecture, même par un `import type` : le scanner est prudent, pas faux. Le
+module de la vue décrit donc la lecture sans l'importer (`VersionsLues`), et `ParametresSaisieModal`, qui ne lit rien,
+n'y est pas compté.
+
+**LES QUESTIONS AU CABINET.** A5B1-Q1, la place : une cinquième vue de l'onglet Factures et de « Mes ventes », comme
+« Articles » et « Clients », plutôt qu'une fenêtre ou une section des informations du dossier ; A5B1-Q2, la phrase
+d'en-tête « Aucune facture ne lit ni n'imprime encore ces paramètres », gardée jusqu'à A7, qui la retirera ; A5B1-Q3,
+les mots de la confirmation d'un RIB — l'IBAN par quatre, le BIC, le titulaire, qui l'a proposé et quand, et le conseil
+de le vérifier auprès du client par un autre moyen que l'application (à un numéro de téléphone déjà connu) —, sans case
+« j'ai vérifié », qui ne prouverait rien ; A5B1-Q4, les propositions préremplies seulement quand le dossier n'a aucune
+version ; A5B1-Q5, l'historique dès deux versions, les champs changés nommés, sans les anciennes valeurs (un « avant /
+après » seulement si le cabinet le demande) ; A5B1-Q6, l'IBAN par groupes de quatre, à l'affichage et dans la saisie, la
+forme rangée restant l'électronique ; A5B1-Q7, le RIB vidé par le client, retiré tout de suite et dit avant le clic, le
+cabinet n'en étant averti qu'avec A5b3 ; A5B1-Q8, le pré-remplissage du formulaire de facture (échéance, moyen,
+mentions) avec A7 plutôt que maintenant — une facture préremplie d'un paramètre qu'elle ne garde pas mentirait sur sa
+source. Recommandations : les huit telles quelles.
+
+**L'INTÉGRATION, LE 16/10/2026.** Le correctif de l'agent appliqué sur `15e98c2` tel qu'il l'a rendu, puis les deux
+retouches de la session (ci-dessus). Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63
+avertissements, les mêmes ; quatre fuseaux, 11 892 tests chacun (393 fichiers) ; construction verte
+(`index-P_dceRpe.js`). Le banc rejoué par la session sur l'arbre intégré, retouches comprises : 0 débordement aux onze
+passes, 0 bouton de fenêtre recouvert (212 sondés dans 48 fenêtres à chaque passe du cabinet, 114 dans 29 chez le
+client), 0 police refusée. Dans les documents, la dernière phrase du brouillon disait les huit questions « toutes
+« comme recommandé » » et renvoyait au rapport de l'agent : elles sont posées, pas tranchées, et le paragraphe des
+questions les dit une à une.
+
+**RESTE.** A5b2, l'identité légale du dossier dans ses informations (dénomination imprimée, ville du greffe, forme
+juridique, capital ; le cabinet seul) ; A5b3, l'avis d'un changement de RIB sur les accueils du cabinet et des accès
+« Ventes » et « Banque », et la fonction qui le dit à un accès « Banque » seul (A5-Q2 ; une migration, présentée au
+cabinet avant d'être appliquée) ; A5c, le logo et son seau ; A4B3-Q6 ; A7, où la facture fige ses mentions, le RIB et
+les conditions en vigueur compris ; A9, la numérotation qui continue et la série du mandataire (MEG1-Q5). La mise en
 ligne de cette demande se consigne au prochain commit de documents.
