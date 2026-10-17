@@ -168,8 +168,10 @@ vi.mock('./supabase', () => ({
 }))
 
 const {
-  exporterDossier, lotsDEcriture, restaurerSauvegarde, verifierRestauration, TAILLE_LOT_ECRITURE, TAILLE_PAGE, VERSION_SAUVEGARDE,
+  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, verifierRestauration, LOGO_HORS_PERIMETRE, TAILLE_LOT_ECRITURE,
+  TAILLE_PAGE, VERSION_SAUVEGARDE,
 } = await import('./sauvegardeDonnees')
+const { LOGO_DES_FACTURES_EXPORTE } = await import('./logoDesFactures')
 
 const DOSSIER = 'd1'
 const CABINET = 'cab1'
@@ -198,12 +200,26 @@ describe('export d’un dossier', () => {
     expect(contenu.pieces).toHaveLength(1)
     // Ce qu'une sauvegarde de données ne remplace pas doit être écrit, pas sous-entendu : les
     // fichiers, les comptes, la ligne du cabinet et le catalogue des rôles comptables (ligne 43, PC1).
-    expect(manifeste.horsPerimetre).toHaveLength(4)
+    // Le logo des factures (A5c1) s'y ajoute le jour où sa migration est en base : le manifeste suit le drapeau.
+    expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE))
+    expect(manifeste.horsPerimetre).toHaveLength(LOGO_DES_FACTURES_EXPORTE ? 5 : 4)
     expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
     expect(manifeste.comptes.facultatifs).toEqual(['u1'])
     expect(manifeste.referencesExternes).toEqual([
       { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: [CABINET] },
     ])
+  })
+
+  it('dit le logo des factures hors de son périmètre dès que sa migration est en base, et seulement alors', () => {
+    // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : la sauvegarde ne lit pas le stockage et l'export de pack
+    // ne le porte pas. La version des paramètres garde le chemin et l'empreinte : c'est ce que le manifeste doit dire.
+    expect(horsPerimetre(false)).toHaveLength(4)
+    expect(horsPerimetre(false).some((ligne) => /logo/i.test(ligne))).toBe(false)
+    expect(horsPerimetre(true)).toEqual([...horsPerimetre(false), LOGO_HORS_PERIMETRE])
+    expect(LOGO_HORS_PERIMETRE).toMatch(/seau `ventes`/)
+    expect(LOGO_HORS_PERIMETRE).toMatch(/chemin et l’empreinte SHA-256/)
+    // Deux appels ne partagent pas le tableau : un manifeste qu'on retoucherait ne retoucherait pas l'autre.
+    expect(horsPerimetre(true)).not.toBe(horsPerimetre(true))
   })
 
   it('recolle une table plus grande qu’une tranche, sans doublon ni trou', async () => {

@@ -25889,7 +25889,154 @@ erreur ; quatre fuseaux, 12 161 tests chacun (399 fichiers) ; construction verte
 par la session, passes « client-banque » comprises : 0 débordement aux treize passes, 0 bouton de fenêtre recouvert (212
 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
 
+**LES RÉPONSES DU CABINET, LE 17/10/2026 (« comme recommandé »).** A5B3B-Q1 à A5B3B-Q7 : les sept telles que livrées —
+l'avis en tête de la Vue d'ensemble et sous la salutation du client ; « trente jours », du jour du changement (J) à
+J + 29 ; une ligne discrète quand la lecture manque, jamais le silence ; « Aller aux factures » ; le client qui porte
+les deux cases lit l'avis « Ventes » ; la phrase de « Ventes » dans l'onglet Accès inchangée ; la pastille d'attention
+aussi chez le client, devant une proposition. Rien ne change dans le code.
+
+**LA MISE EN LIGNE, LE 17/10/2026.** Fusionnée par #182 (`0c7a18a`) à 10 h 16 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `669f1db` ; l'arbre de `main` (`c9bd1f86…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-CIxGOski.js` (déploiement 39016752354, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`0c7a18a`, arbres égaux. La copie d'intégration retirée (ses 173 liens d'abord) ; celle de l'agent — `5c6b2dd` plus
+quinze fichiers, sans liens, chacun identique à l'arbre intégré — retirée avant la fusion, avec sa branche locale, vide,
+et l'archive et l'export de la base qu'il avait faits pour vérifier son correctif. La feuille de route : la ligne 51.5
+complétée (48 617 caractères, envoyée et relue à l'identique) ; l'en-tête recompté par requête, inchangé : 141 sur 184
+(77 %, huit cases) et, pour un dossier BNC, 141 sur 171 (82 %, huit cases).
+
 **RESTE.** Le tableau de bord du cabinet (quels dossiers ont un RIB qui attend : une fonction qui le dit en une fois) ;
 l'ouverture directe de « Paramètres » depuis le bouton (un paramètre de l'adresse, ou un état levé) ; puis A5c (le logo
 et son seau), A7 (la facture fige ses mentions et son RIB : « quand elles porteront un RIB » deviendra « elles
 portent »), A9.
+
+### 17/10/2026 — LE LOGO DES FACTURES ET SON SEAU, EN BASE — ESPACE CLIENT, ÉTAPE A5c1 (LIGNE 51.5)
+
+(La migration `logo_des_factures`, préparée sous la version PROVISOIRE `20261017120000` et éprouvée sur une réplique de
+la production, présentée au cabinet, puis appliquée sur son accord le 17/10/2026 sous la version `20261017120403` : elle
+ouvre au client qui porte la case « Ventes » un seau du stockage, en lecture et en dépôt. Préparée par l'agent S250 sur
+`0c7a18a`. Fichiers nouveaux : `src/lib/logoDesFactures.ts` et son test, `src/pages/dossier/ParametresVueLogo.test.tsx`,
+`supabase/essais/logoDesFactures.sql`, `supabase/essais/logoDesFacturesSuppression.sql` (réplique SEULEMENT). Modifiés :
+`bornesStockage.ts` (le quatrième seau, `preparerLogoDeFacture`), `parametresFacturation.ts` (le huitième rang, derrière
+le drapeau), `parametresFacturationVue.ts` (l'historique du logo, `parametresEnvoyes`),
+`parametresFacturationEcriture.ts` (le type), `ParametresVue.tsx` (une ligne : ce qui part), `suppressionDossier.ts` (le
+seau vidé avec le dossier), `sauvegardeDonnees.ts` (le manifeste), `droitsAcces.ts` (un neuvième argument de
+`ceQueDisentLesCases`), `types.ts` (deux colonnes facultatives), leurs tests, `src/test/bornesStockage.ts`, les essais
+`rls.sql` (un bloc, « Le seau des ventes »), `bornesStockage.sql` (quatre seaux), `parametresFacturation.sql` (deux
+contrôles rendus indifférents à la migration), `restauration.sql` (un passage daté), RGPD.md (§2, §7, §8.6). Puis la
+bascule — le fichier de la migration dans l'export, sous sa version réelle, le drapeau levé, RGPD.md §4 et
+PLAN_DE_REPRISE.md —, appliquée avec elle.)
+
+**LA DÉLIMITATION.** La BASE du logo : le seau, ses règles d'accès, les deux colonnes et ce que la fonction des
+paramètres en juge ; son essai ; ce que le code doit savoir du seau (bornes, dépôt préparé, module pur des refus, plan
+de sauvegarde, suppression d'un dossier). Ni l'écran du logo (A5c2), ni ce qu'une facture imprime ou fige (A7), ni un
+changement des refus d'A5a.
+
+**CE QUE LA PRODUCTION A DIT (catalogue seul, le 17/10/2026).** 137 migrations ; trois seaux bornés ; huit policies sur
+`storage.objects` ; `parametres_facturation` vide ; aucun objet sous un seau `ventes`. Les tables du stockage
+appartiennent à `supabase_storage_admin` ; les migrations tournent sous `postgres`, qui pose une policy sur
+`storage.objects` par supautils (`supautils.policy_grants`), comme les huit d'aujourd'hui ; une suppression SQL de
+`storage.objects` ou de `storage.buckets` est refusée par `storage.protect_delete` (42501) hors du réglage que l'API
+pose elle-même (`storage.allow_delete_query`) ; le versionnage des seaux est éteint.
+
+**LA RÉPLIQUE.** Le stockage d'une réplique locale n'est qu'un talon : il a fallu le COMPLÉTER — les colonnes de
+`storage.objects` (`metadata`…), son unicité (seau, nom), sa clé vers les seaux, `storage.protect_delete` et ses deux
+déclencheurs (textes de la production) —, et rendre le propriétaire de la réplique propriétaire des deux tables (ce que
+supautils donne à `postgres`). Une signature du stockage (policies, seaux, déclencheurs de suppression) égale à la
+production s'ajoute à `signature.sql` (neuf familles égales).
+
+**LES CHOIX.** Le seau PRIVÉ. Lire : `gere_les_ventes` sur le PRÉFIXE du dossier ; déposer : la forme EXACTE d'un logo
+(`<uuid minuscule>/logos/<64 hexadécimaux>.png|jpg`) ; chaque policy juge la forme dans un `case` avant de tirer le
+dossier (un cast qui lèverait casserait la lecture du seau pour tous). AUCUNE mise à jour (un fichier ne s'écrase pas ;
+un second dépôt sous un même nom bute sur l'unicité). Supprimer : le chef du cabinet du dossier seul — celui qui
+supprime le dossier, dont la suppression vide désormais aussi ce seau. La fonction juge le logo au HUITIÈME rang, après
+le RIB : un enregistrement refusé hier l'est aujourd'hui par le même premier message, et ce qui lit le stockage vient
+après ce qui ne lit que la saisie ; le type et la borne se lisent dans le catalogue, jamais recopiés ; un logo inchangé
+ne se rejuge pas (son fichier a été jugé quand il a été posé) ; une clé absente vaut « aucun logo ».
+
+**CE QUE L'ESSAI A APPRIS.** (1) Une suppression qui nomme ses lignes (`where`, `returning`) ne voit que ce que les
+policies de LECTURE ouvrent : le droit réel de supprimer est celui de supprimer ET de lire — d'où le contrôle d'un chef
+d'un AUTRE cabinet qui porte « Ventes » sur le dossier : il lit, il ne supprime pas. (2) La mutation qui pose la lecture
+à PUBLIC fait LEVER la section S de `rls.sql` : l'anonyme n'exécute pas `gere_les_ventes`, et toute lecture de
+`storage.objects` lui échouerait — ce que `to authenticated` évite. (3) Le moteur des essais ne peut pas supprimer en
+production (l'outil retient tout `delete`) : les suppressions vivent dans un essai à part, joué sur une réplique, sous
+le réglage de l'API.
+
+**LES CHIFFRES.** Essai `logoDesFactures.sql` : 126 verdicts, 115 justes et 11 mutations qui mordent, 0 en faute, rien
+resté ; sans la migration, une ligne « EN ATTENTE ». Essai des suppressions : 19 verdicts, 16 justes, 3 mutations, 0 en
+faute. Mutations de la migration : 50 sur 50 vues par les deux essais (7 sur le seau, 16 sur les policies, 4 sur les
+contraintes, 23 sur la fonction ; une vue au catalogue seulement, équivalente en comportement). `rls.sql` ENTIER : avant
+le bloc, 35 lignes, 0 en faute, 39 mutations sur 39, sans la migration comme avec, sorties identiques ; avec le bloc, 36
+lignes et 39 sur 39 sans la migration, 46 lignes et 43 sur 43 avec ; sept mutations de la migration le font virer au
+rouge. `parametresFacturation.sql` (204 verdicts) et `dernierChangementDeRib.sql` (98) justes avec et sans la migration.
+`restauration.sql` : 140 clés, 74 tables IDENTIQUES (70 lignes, dont quatre versions qui posent, gardent, changent et
+retirent un logo, en quatre vagues). Retour arrière : la signature revenue à la production (neuf familles et le
+stockage), ses deux gardes éprouvées (des fichiers dans le seau ; des versions qui désignent un logo). Le texte à coller
+éprouvé : la signature égale à celle de l'outil, l'empreinte de la ligne d'historique celle du texte. Mutations du
+code : 45 sur 45.
+
+**LE CODE, DERRIÈRE `LOGO_DES_FACTURES_EXPORTE`.** Baissé : la base refuse `logo_chemin` comme un champ inconnu, le
+module avec elle ; la suppression d'un dossier ne lit pas le seau ; le manifeste ne parle pas du logo ; l'onglet Accès
+n'en dit rien. Levé (la bascule, éprouvée en simulation : la suite entière, les trois contrôles de l'export) : le
+huitième rang, le seau vidé avec le dossier, le logo hors du périmètre de la sauvegarde, la phrase de l'onglet Accès, et
+le formulaire d'A5b1 qui REPREND le logo de la version qu'il remplace — sans quoi chaque modification des paramètres le
+retirerait en silence.
+
+**DÉFAUT TROUVÉ EN PASSANT.** `delete-cabinet` ne supprime que la ligne du cabinet : le logo PUBLIC du cabinet (seau
+`cabinet-logos`) lui survit, orphelin (existait avant A5c1 ; rien de l'étape ne l'aggrave).
+
+**LA FEUILLE DE ROUTE, LE 17/10/2026.** Ce défaut reçoit sa ligne : 22.61, « La suppression d'un cabinet laisse son logo
+public dans le stockage » (phase « 1 — Fiabiliser l'existant », à faire, en jours, P2, case « Hors BNC » décochée).
+L'en-tête recompté par requête (GROUP BY phase, état, effort, « Hors BNC ») : 141 sur 185 (76 %, huit cases) et, pour un
+dossier BNC, 141 sur 172 (82 %, huit cases) ; 44 restants, dont 16 en cours, 7 en trimestres, 18 en mois ; 13 « Hors
+BNC », 4 hors d'atteinte. Envoyé et relu à l'identique.
+
+**QUESTIONS AU CABINET** : A5C-Q1 (l'accord pour appliquer), A5C-Q2 (qui dépose : le cabinet et le client « Ventes »),
+A5C-Q3 (un logo qu'aucune version ne désigne : le garder jusqu'à la suppression du dossier), A5C-Q4 (PNG et JPEG,
+500 Kio, jamais WebP ni SVG), A5C-Q5 (la sauvegarde garde le chemin et l'empreinte, pas le fichier), A5C-Q6 (le client
+« Ventes » lit tout le préfixe de son dossier dans le seau).
+
+**LES RÉPONSES DU CABINET, LE 17/10/2026 (« comme recommandé »).** A5C-Q1 : oui — la migration est appliquée
+(ci-dessous). A5C-Q2 à Q6, telles quelles : déposent un logo le cabinet et le client « Ventes », jamais un accès
+« Banque » seul ; un logo qu'aucune version ne désigne plus reste dans le seau jusqu'à la suppression du dossier ; PNG
+ou JPEG, 500 Ko, jamais WebP ni SVG ; la sauvegarde garde le chemin et l'empreinte, pas le fichier, qui la rejoindra
+avec l'écran du logo (A5c2) ; le client « Ventes » lit tout le préfixe de son dossier dans le seau. La même réponse
+tranche A5B3B-Q1 à Q7, telles que livrées (son entrée le dit) ; A4B3-Q6 reste ouverte.
+
+**L'APPLICATION, LE 17/10/2026.** La production relue d'abord : 137 migrations, la dernière
+`dernier_changement_de_rib` ; trois seaux, huit policies sur `storage.objects`, aucune colonne du logo ; la policy de
+suppression d'un dossier, `est_chef_du_cabinet(cabinet_id)` ; `postgres`, propriétaire de la fonction, contourne la RLS
+et lit `storage.objects` et `storage.buckets` (la fonction voit donc les fichiers déposés). Appliquée par
+`apply_migration` (`logo_des_factures`), sans confirmation demandée, sous la version `20261017120403` (14 h 04 à Paris).
+Sa ligne d'historique rend 27 904 caractères, `ef14fed6ceb407e6598af2e06b9653b2` : le fichier préparé, au caractère
+près, MOINS le point-virgule final de sa dernière instruction (le `comment on function` de
+`enregistrer_parametres_facturation`), omis par la session en transcrivant le texte vers l'outil — sans effet sur le SQL
+(le commentaire est posé), vérifié en local ; le fichier de l'export est le texte de l'historique, et la dérive les
+compare. Les objets relus : le seau `ventes` privé, 512 000 octets, PNG et JPEG ; ses trois policies `to authenticated`
+(onze sur `storage.objects`) ; quatre seaux ; les deux colonnes et leurs trois contraintes ; la fonction
+`SECURITY DEFINER` avec le logo, son commentaire posé, exécutable par un compte connecté, jamais par l'anonyme ; 138
+migrations. L'essai rejoué en production sans ses lignes de commentaire (54 455 caractères reçus, `1c8690ba…`, la copie
+envoyée) : 126 verdicts justes — 89 contrôles, 13 valeurs, 13 faits et 11 mutations qui mordent —, rien resté en base.
+`rls.sql` ENTIER, sa copie adaptée (81 101 caractères, `506f61be…` ; l'outil qui la compose redonne au caractère près
+celle d'A5a) : 46 lignes, 0 en faute, 43 mutations sur 43. Ceux que la fonction remplacée concerne aussi :
+`parametresFacturation.sql`, 204 verdicts justes, rien resté (la session a ajouté une ligne qui ne montre que les
+fautes : le texte reçu, 82 856 caractères, `6a1c7bb1…`, est la copie plus cette ligne, vérifié en local) ;
+`dernierChangementDeRib.sql`, 98 verdicts justes (47 555 caractères, `79f95471…`, la copie) ; `bornesStockage.sql`, les
+quatre seaux « ok », aucun seau sans borne, aucun fichier hors des bornes. `signature.sql` et la signature du stockage :
+celles de la réplique migrée. Les trois contrôles de l'export, le fichier renommé : dérive 138 = 138 (`ead34785…`),
+socle 78 (`91ae95ec…`) et inventaire 2 080 objets (`7939e510…`) des deux côtés. Les fonctions `SECURITY DEFINER`
+exécutables : 5 par l'anonyme et 54 par un compte connecté, inchangées (la fonction est remplacée à signature égale).
+
+**L'INTÉGRATION, LE 17/10/2026.** Les deux correctifs de l'agent appliqués sur `0c7a18a` tels qu'il les a rendus
+(`s250.patch`, vingt-sept fichiers, puis `bascule.patch`, sept), le fichier de la migration renommé à sa version réelle
+et porté au texte de sa ligne d'historique ; la copie de l'agent comparée fichier par fichier à l'arbre intégré —
+identique, à la bascule près —, puis retirée avec sa branche locale. Les documents : cette entrée, CLAUDE.md, RGPD.md
+(dont deux phrases du registre qui disaient encore à venir l'avis d'un changement de RIB, en ligne depuis A5b3b), le
+journal des contrôles de l'export et la note de production de `rls.sql`. Barrière sur l'arbre intégré : `tsc -b` 0 ;
+Edge 25 erreurs, les mêmes ; lint 63 avertissements, aucune erreur ; quatre fuseaux, 12 225 tests chacun (401
+fichiers) ; construction verte (`index-D8KsrOl2.js`). Le banc rejoué par la session : 0 débordement aux treize passes, 0
+bouton de fenêtre recouvert (212 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
+
+**RESTE.** A5c2, l'écran du logo — le déposer (par `preparerLogoDeFacture`), le voir, le changer — et le fichier dans la
+sauvegarde (A5C-Q5) ; le tableau de bord du cabinet (les dossiers dont un RIB proposé attend) ; 22.61 (le logo public
+d'un cabinet supprimé) ; puis A7 (la facture fige ses mentions, son RIB et le logo qu'elle imprime), A9 (la numérotation
+qui continue).

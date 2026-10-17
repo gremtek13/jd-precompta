@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
+import type { LogoEnvoye } from './logoDesFactures'
 import type { ParametresEnvoyes } from './parametresFacturation'
 import type { ParametresFacturation } from './types'
 
@@ -22,10 +23,11 @@ function versionEcrite(data: unknown, dossierId: string, attendu: { remplace: st
 
 /**
  * Enregistre une version : la première (`remplaceId` nul) ou celle qui REMPLACE la courante, tous ses champs (la saisie telle
- * qu'elle part, `saisieQuiPart`). Rend la version écrite ; lève le refus de la base.
+ * qu'elle part, `saisieQuiPart`) et, la migration du logo en base, son logo (étape A5c1 : celui de la version remplacée
+ * repris, `parametresEnvoyes`). Rend la version écrite ; lève le refus de la base.
  */
 export async function enregistrerParametresFacturation(
-  dossierId: string, remplaceId: string | null, parametres: ParametresEnvoyes,
+  dossierId: string, remplaceId: string | null, parametres: ParametresEnvoyes & LogoEnvoye,
 ): Promise<ParametresFacturation> {
   const { data, error } = await supabase.rpc('enregistrer_parametres_facturation', {
     p_dossier_id: dossierId, p_remplace_id: remplaceId, p_parametres: parametres,

@@ -1,4 +1,5 @@
-// LES BORNES DES TROIS SEAUX DU STOCKAGE (ligne 22.6 de la feuille de route, 12/10/2026).
+// LES BORNES DES SEAUX DU STOCKAGE (ligne 22.6 de la feuille de route, 12/10/2026 ; le quatrième, `ventes`, étape A5c1 de
+// l'espace client, 17/10/2026).
 //
 // Jusqu'ici aucun seau ne bornait ni la taille ni le type de ce qu'on y dépose, et `cabinet-logos`, PUBLIC, acceptait un
 // SVG — qui peut porter du script, servi depuis le domaine du stockage. Les bornes vivent à DEUX endroits : ici, où
@@ -14,11 +15,18 @@
 // `text/comma-separated-values` (Android) ou rien du tout. Borner le seau sur ces variantes, c'était une liste ouverte,
 // ou refuser en production un relevé qui passait la veille. Chaque dépôt part donc dans un Blob RÉÉTIQUETÉ ici, d'un type
 // de la liste de son seau : `preparerPiece` (un fichier choisi ou reçu), `preparerLogo`, `preparerContenu` (ce que
-// l'application construit elle-même — un pack, une facture reçue d'une plateforme).
+// l'application construit elle-même — un pack, une facture reçue d'une plateforme), `preparerLogoDeFacture` (le logo des
+// factures d'un dossier, seau `ventes`).
+//
+// LE SEAU `ventes` (étape A5c1) : PRIVÉ, le logo des factures d'un dossier, PNG ou JPEG, 500 Kio au plus, jamais un SVG.
+// Ses bornes vivent ici et dans la migration `logo_des_factures`, appliquée sur l'accord du cabinet et portée par l'export :
+// bornesStockage.test.ts confronte le module à elle et à l'essai supabase/essais/bornesStockage.sql
+// (`LOGO_DES_FACTURES_EXPORTE`, src/lib/logoDesFactures.ts). Aucun dépôt de la source n'y écrit avant l'écran du logo
+// (étape A5c2).
 //
 // Ce module ne dépose rien : il rend le corps à envoyer, ou le refus à dire. Il n'importe pas le client Supabase.
 
-export type Seau = 'pieces' | 'packs' | 'cabinet-logos'
+export type Seau = 'pieces' | 'packs' | 'cabinet-logos' | 'ventes'
 
 // ── DÉBUT COPIE bornesDesPieces ──────────────────────────────────────────────────────────────────────────────────────
 // LA BORNE D'UNE PIÈCE ET LE TYPE SOUS LEQUEL ELLE SE DÉPOSE (ligne 22.6). L'original vit dans src/lib/bornesStockage.ts ;
@@ -59,11 +67,17 @@ export function typeDUnePiece(nom: string, debut: Uint8Array): string | null {
 }
 // ── FIN COPIE bornesDesPieces ────────────────────────────────────────────────────────────────────────────────────────
 
-/** Les types que chaque seau admet : la liste de la migration `bornes_du_stockage`, et rien d'autre. */
+/**
+ * Les types que chaque seau admet : la liste de la migration `bornes_du_stockage` — et, pour `ventes`, celle de la migration
+ * `logo_des_factures` —, rien d'autre.
+ */
 export const TYPES_ADMIS = {
   pieces: ['application/pdf', 'image/jpeg', 'image/png', 'text/csv', 'text/plain'],
   packs: ['application/zip', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
   'cabinet-logos': ['image/png', 'image/jpeg', 'image/webp'],
+  // Le logo des factures : deux formats que tout PDF sait porter (le JPEG par `DCTDecode`, le PNG par `FlateDecode` et ses
+  // prédicteurs, ISO 32000-1, §7.4) ; ni WebP, qu'aucun filtre du PDF ne lit, ni SVG, qui porte du script.
+  ventes: ['image/png', 'image/jpeg'],
 } as const satisfies Record<Seau, readonly string[]>
 
 /** La plus grande taille que chaque seau admet, en octets : la valeur de la migration. */
@@ -74,6 +88,8 @@ export const TAILLE_MAX = {
   packs: 50 * 1024 * 1024,
   // Un logo s'affiche dans la barre latérale de chaque page : 500 Kio suffisent, et le logo d'aujourd'hui en pèse 26.
   'cabinet-logos': 500 * 1024,
+  // Le logo des factures : la même borne, celle de la conception (§A.5.2) — une en-tête de facture, pas une photographie.
+  ventes: 500 * 1024,
 } as const satisfies Record<Seau, number>
 
 export type TypeAdmis<S extends Seau> = (typeof TYPES_ADMIS)[S][number]
@@ -86,6 +102,9 @@ export const TYPES_DES_FICHIERS_DE_PIECE = ['application/pdf', 'image/jpeg', 'im
 
 /** Ce que `preparerLogo` peut envoyer. */
 export const TYPES_DES_LOGOS = TYPES_ADMIS['cabinet-logos']
+
+/** Ce que `preparerLogoDeFacture` peut envoyer. */
+export const TYPES_DES_LOGOS_DE_FACTURE = TYPES_ADMIS.ventes
 
 /** Ce qu'un seau refuse, et pourquoi. */
 export interface RefusDuDepot {
@@ -110,6 +129,7 @@ const CE_QU_IL_CONTIENT: Record<Seau, string> = {
   pieces: 'une pièce',
   packs: 'un pack',
   'cabinet-logos': 'un logo',
+  ventes: 'un logo de facture',
 }
 
 /** Les formats d'un seau, dits à qui dépose. */
@@ -117,6 +137,7 @@ const FORMATS_DITS: Record<Seau, string> = {
   pieces: 'une pièce se dépose en PDF, JPEG, PNG ou CSV',
   packs: 'un pack est une archive ZIP et son récapitulatif Excel',
   'cabinet-logos': 'un logo se dépose en PNG, JPEG ou WebP',
+  ventes: 'un logo de facture se dépose en PNG ou en JPEG',
 }
 
 const KIO = 1024
@@ -213,6 +234,25 @@ export async function preparerLogo(fichier: Blob): Promise<IssueDuDepot> {
 export async function refusDUnLogo(fichier: Blob): Promise<RefusDuDepot | null> {
   const issue = await preparerLogo(fichier)
   return 'refus' in issue ? issue.refus : null
+}
+
+/**
+ * Le type du logo des factures, lu à sa SIGNATURE et jamais à son nom ni au type que déclare le navigateur : PNG (ses huit
+ * octets) ou JPEG ; un WebP, un SVG ou tout autre fichier n'en est pas un. Le jumeau de `typeDUnLogo`, sans le WebP.
+ */
+export function typeDUnLogoDeFacture(o: Uint8Array): TypeAdmis<'ventes'> | null {
+  const type = typeDUnLogo(o)
+  return type === 'image/png' || type === 'image/jpeg' ? type : null
+}
+
+/**
+ * Le logo des factures d'un dossier (seau `ventes`, privé) : PNG ou JPEG, 500 Kio au plus, rendu dans un Blob RÉÉTIQUETÉ
+ * du type que dit sa signature — celui que le stockage jugera, et que le chemin du logo dira (src/lib/logoDesFactures.ts).
+ */
+export async function preparerLogoDeFacture(fichier: Blob): Promise<IssueDuDepot> {
+  const type = typeDUnLogoDeFacture(await premiersOctets(fichier))
+  if (type === null) return { refus: refusDeFormat('ventes', fichier.size) }
+  return borner('ventes', fichier, type)
 }
 
 /** `type/sous-type`, en minuscules, sans paramètres : ce que le stockage compare (RFC 9110, § 8.3.1). */

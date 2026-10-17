@@ -7,6 +7,7 @@ import { CHANGEMENT_DE_RIB_EXPORTE } from '../../lib/changementDeRib'
 import { CONTACTS_EXPORTES } from '../../lib/contacts'
 import { IMPORT_CONTACTS_EXPORTE } from '../../lib/contactsImport'
 import { CE_QUE_DISENT_LES_CASES, ceQueDisentLesCases } from '../../lib/droitsAcces'
+import { LOGO_DES_FACTURES_EXPORTE } from '../../lib/logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from '../../lib/parametresFacturation'
 
 // L'ONGLET ACCÈS, LES DEUX ÉTAPES DE L'ESPACE CLIENT EN BASE (P7, la banque, et P2, les ventes : drapeaux levés). La
@@ -77,11 +78,11 @@ describe('AccesTab — la phrase des cases, les deux étapes en base', () => {
     await screen.findByText('client@exemple.fr')
     expect(screen.queryByText('autre@exemple.fr')).toBeNull()
     // Les drapeaux des articles (étape A1), des adresses de réception (étape A6a), des contacts (étape A4a), de leur import
-    // (étape A4b3a), des paramètres de facturation (étape A5a) et du dernier changement du RIB (étape A5b3a) sont pris tels
-    // qu'ils sont : la phrase suit les huit (droitsAcces.test.ts, leurs états).
+    // (étape A4b3a), des paramètres de facturation (étape A5a), du dernier changement du RIB (étape A5b3a) et du logo des
+    // factures (étape A5c1) sont pris tels qu'ils sont : la phrase suit les neuf (droitsAcces.test.ts, leurs états).
     expect(CE_QUE_DISENT_LES_CASES)
-      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE))
-    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE))
+      .toBe(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE))
+    const phrase = screen.getByText(ceQueDisentLesCases(true, true, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES, IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE))
     expect(phrase.textContent).toContain('« Ventes » ouvre au client « Mes ventes », où il lit ses ventes')
     expect(phrase.textContent).toContain('avec ce que le cabinet y a écrit (notes et motifs)')
     expect(phrase.textContent).toContain('et, avec « Ventes », désigner celui qui prouve un encaissement.')

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import {
   clePrimaire,
   comptesRequis,
@@ -74,6 +75,16 @@ const HORS_PERIMETRE = [
   'La ligne du cabinet propriétaire n’est pas incluse : elle doit exister dans la base d’arrivée. Voir `referencesExternes`.',
   'Le catalogue des rôles comptables n’est pas inclus : une migration le pose dans toute base, qui doit connaître chaque rôle que le plan du dossier désigne. Voir `referencesExternes`.',
 ]
+
+// Le logo des factures (étape A5c1, seau `ventes`) n'est ni une pièce ni un pack : ni cette sauvegarde ni l'export de pack
+// ne le portent. Chaque version des paramètres de facturation en garde le chemin et l'empreinte, que la restauration
+// réinsère tels quels, sans relire le stockage ; le manifeste le dit dès que la migration est en base.
+export const LOGO_HORS_PERIMETRE = 'Le logo des factures (seau `ventes`) reste dans le stockage, et l’export de pack ne le porte pas : chaque version des paramètres de facturation en garde le chemin et l’empreinte SHA-256, qui disent quel fichier redéposer, et où. Une version restaurée désigne son logo même si le fichier n’est plus là.'
+
+/** Ce qu'une sauvegarde de données ne remplace pas, selon que la migration du logo est en base. */
+export function horsPerimetre(logo: boolean): string[] {
+  return logo ? [...HORS_PERIMETRE, LOGO_HORS_PERIMETRE] : [...HORS_PERIMETRE]
+}
 
 type Ligne = Record<string, unknown>
 
@@ -242,7 +253,7 @@ export async function exporterDossier(
       comptes: comptesRequis(contenu),
       referencesExternes: referencesExternes(contenu),
       liensPerdus: liensPerdus(contenu),
-      horsPerimetre: HORS_PERIMETRE,
+      horsPerimetre: horsPerimetre(LOGO_DES_FACTURES_EXPORTE),
     },
     contenu,
   }

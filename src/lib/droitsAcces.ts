@@ -27,6 +27,7 @@ import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
+import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
 export type Domaine = 'ventes' | 'banque'
@@ -197,6 +198,12 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // A5B3-Q4 : trente jours depuis le jour du changement, aucune marque « vu ») : la phrase le dit, et ne le dit plus à venir. Elle
 // ne promet rien d'autre — ni lien, ni écran des paramètres pour « Banque » seul. La phrase de « Ventes » ne nomme pas l'avis :
 // cette case lit déjà les paramètres, toutes leurs versions, dans « Mes ventes › Paramètres » (question A5B3B-Q6).
+// DEPUIS L'ÉTAPE A5c1, un neuvième : la migration `logo_des_factures` (`LOGO_DES_FACTURES_EXPORTE`, lib/logoDesFactures.ts)
+// — présentée au cabinet, appliquée sur son accord — ouvre au client « Ventes », par le stockage et par la base, la
+// lecture du seau des ventes de son dossier, le dépôt d'un logo (une image PNG ou JPEG de 500 Kio au plus, sous la forme du
+// chemin d'un logo), et sa désignation dans une version des paramètres. Aucun fichier ne s'y met à jour, pour personne ; seul
+// le chef du cabinet en supprime, avec le dossier. Elle exige celle des paramètres, donc celles des ventes : sans elles, ce
+// drapeau ne change rien à la phrase. L'écran du logo (étape A5c2) n'existe pas encore : la phrase le dit à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -206,6 +213,7 @@ export function ceQueDisentLesCases(
   importOuvert: boolean,
   parametresOuverts: boolean,
   changementDeRibOuvert: boolean,
+  logoOuvert: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -264,6 +272,15 @@ export function ceQueDisentLesCases(
       + 'version et qui a confirmé chaque RIB — et peut en enregistrer une avec toi : un RIB qu’il pose ou change n’est que '
       + 'proposé, jusqu’à ce que tu le confirmes.'
     : ''
+  // Le logo des factures (étape A5c1) : la base ouvre au client « Ventes » la lecture du stockage des ventes de son dossier
+  // et le dépôt d'un logo sous sa forme ; il le désigne dans une version des paramètres. Aucune mise à jour d'un fichier,
+  // pour personne ; la suppression, au chef du cabinet seul. Sa migration exige celle des paramètres. L'écran du logo
+  // (étape A5c2) n'existe pas encore : la phrase le dit à venir.
+  const logo = ventesOuvertes && parametresOuverts && logoOuvert
+    ? ' Par la base, il peut aussi déposer le logo de ses factures — une image PNG ou JPEG de 500 Ko au plus — dans le '
+      + 'stockage des ventes du dossier, où il lit ce qui y est déposé, et le désigner dans une version des paramètres ; un '
+      + 'fichier déposé ne se remplace pas, et lui ne peut pas l’effacer. L’écran du logo viendra ensuite.'
+    : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque
     ? ' « Banque » ouvre au client « Ma banque », où il voit les mouvements du relevé que le cabinet a importé — date, '
@@ -296,7 +313,7 @@ export function ceQueDisentLesCases(
       ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts
-    + importContacts + parametres + banque + ventesFermees + aVenir
+    + importContacts + parametres + logo + banque + ventesFermees + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
@@ -304,10 +321,11 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // L'état des ventes est celui de leur première migration : la seconde est dans le même export, ou aucune n'y est. Celui
 // des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
 // contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a) ; celui des paramètres de
-// facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a).
+// facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a) ; celui du logo des
+// factures, de la sienne (étape A5c1).
 export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
   COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
-  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE,
+  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE,
 )
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */

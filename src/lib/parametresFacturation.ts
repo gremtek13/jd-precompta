@@ -2,6 +2,7 @@ import { nomDansUnRefus, sansBlancsAuxBords } from './articles'
 import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL, categorieJuridique } from './categoriesJuridiques'
 import { commeLaBaseLaRecoit } from './contacts'
 import { MOYENS_ENCAISSEMENT, remplirModele } from './encaissementsFactures'
+import { CHAMPS_DU_LOGO, LOGO_DES_FACTURES_EXPORTE, REFUS_DU_LOGO, refusDuLogo, type CleRefusDuLogo, type FichierDuSeau } from './logoDesFactures'
 import type { EtatRib, MoyenEncaissement, ParametresFacturation } from './types'
 
 // LES PARAMÈTRES DE FACTURATION D'UN DOSSIER (espace client, étape A5a ; conception : HISTORIQUE.md, « L'ESPACE CLIENT,
@@ -149,7 +150,21 @@ export const REFUS_CONFIRMATION_RIB = [
   { cle: 'deja_confirme', rang: 5, code: '22023', modele: 'Le RIB de cette version est déjà confirmé.' },
 ] as const
 
-export type CleRefusEnregistrementParametres = (typeof REFUS_ENREGISTREMENT_PARAMETRES)[number]['cle']
+export type CleRefusEnregistrementParametres = (typeof REFUS_ENREGISTREMENT_PARAMETRES)[number]['cle'] | CleRefusDuLogo
+
+/**
+ * Les refus d'`enregistrer_parametres_facturation` dans l'ordre de son texte, selon que la base porte la migration du logo
+ * (étape A5c1, `LOGO_DES_FACTURES_EXPORTE`) : sans elle, les dix-sept d'A5a ; avec elle, les mêmes puis les huit du logo, au
+ * huitième rang (src/lib/logoDesFactures.ts). Une fonction, et non une constante : le test juge les deux états.
+ */
+export function refusDeLEnregistrement(logo: boolean): readonly { cle: CleRefusEnregistrementParametres; rang: number; code: string; modele: string }[] {
+  return logo ? [...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO] : REFUS_ENREGISTREMENT_PARAMETRES
+}
+
+/** Les champs qu'admet la fonction : ceux d'une version, puis, la migration du logo en base, son chemin et son empreinte. */
+export function champsAdmisParLaBase(logo: boolean): readonly string[] {
+  return logo ? [...CHAMPS_DES_PARAMETRES, ...CHAMPS_DU_LOGO] : CHAMPS_DES_PARAMETRES
+}
 export type CleRefusConfirmationRib = (typeof REFUS_CONFIRMATION_RIB)[number]['cle']
 
 export interface RefusParametres<C extends string> {
@@ -163,8 +178,11 @@ function refusDe<C extends string>(liste: readonly { cle: C; modele: string }[],
 }
 
 // ── La chaîne des versions ──────────────────────────────────────────────────────────────────────────────────────────
-/** Ce qu'il faut d'une version pour suivre la chaîne de son dossier. */
-export type VersionDeLaChaine = Pick<ParametresFacturation, 'id' | 'dossier_id' | 'remplace_id' | 'cree_le'>
+/**
+ * Ce qu'il faut d'une version pour suivre la chaîne de son dossier — et son logo, quand la lecture l'a rendu : un logo
+ * inchangé ne se rejuge pas (src/lib/logoDesFactures.ts).
+ */
+export type VersionDeLaChaine = Pick<ParametresFacturation, 'id' | 'dossier_id' | 'remplace_id' | 'cree_le' | 'logo_chemin' | 'logo_sha256'>
 
 /**
  * La version COURANTE des paramètres d'un dossier — celle qu'aucune ne remplace —, nulle quand le dossier n'en a aucune,
@@ -215,7 +233,7 @@ const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const absent = (v: unknown) => v === undefined || v === null
 const caracteres = (texte: string) => Array.from(texte).length
 const texteJuste = (v: unknown, max: number) => typeof v === 'string' && sansBlancsAuxBords(v) !== '' && caracteres(v) <= max
-const CHAMPS_ADMIS: ReadonlySet<string> = new Set(CHAMPS_DES_PARAMETRES)
+const CHAMPS_ADMIS: ReadonlySet<string> = new Set(champsAdmisParLaBase(LOGO_DES_FACTURES_EXPORTE))
 
 // L'ordre des OCTETS de la base (`collate "C"`, en UTF-8) est celui des POINTS DE CODE : une comparaison de chaînes
 // JavaScript, qui compare des unités UTF-16, rangerait un caractère hors du plan de base avant U+E000 à U+FFFF. Le jumeau
@@ -235,15 +253,18 @@ export function avantEnPointsDeCode(a: string, b: string): number {
  * null quand elle l'accepterait ; `rompue` quand les versions lues ne font pas une chaîne (le module ne dit alors rien).
  * `remplaceId` : la version que la saisie remplace — la courante, que l'écran a lue — ou null pour une première ;
  * `versionsDuDossier` : les versions du dossier LUES EN ENTIER — la courante s'y juge ; sur une lecture partielle,
- * l'appelant ne demande rien à ce module. La saisie est jugée telle que la base la reçoit, après l'aller-retour JSON.
+ * l'appelant ne demande rien à ce module ; `fichiersDuSeau` : les fichiers du seau des ventes que l'appelant connaît
+ * (celui qu'il vient de déposer), où la base cherche le logo — vide pour une saisie sans logo. La saisie est jugée telle
+ * que la base la reçoit, après l'aller-retour JSON ; le logo, au huitième rang, seulement la migration du logo en base.
  */
 export function refusEnregistrementParametres(
   dossierId: string,
   remplaceId: string | null,
   saisie: unknown,
   versionsDuDossier: readonly VersionDeLaChaine[],
+  fichiersDuSeau: readonly FichierDuSeau[],
 ): RefusParametres<CleRefusEnregistrementParametres> | null | 'rompue' {
-  const refus = (cle: CleRefusEnregistrementParametres, ...valeurs: string[]) => refusDe(REFUS_ENREGISTREMENT_PARAMETRES, cle, valeurs)
+  const refus = (cle: CleRefusEnregistrementParametres, ...valeurs: string[]) => refusDe(refusDeLEnregistrement(true), cle, valeurs)
   // 2. La version remplacée : une version de ce dossier, et la courante — sinon la saisie passée entre-temps se nomme.
   const duDossier = versionsDuDossier.filter((v) => v.dossier_id === dossierId)
   if (remplaceId !== null && !duDossier.some((v) => v.id === remplaceId)) return refus('remplacee_d_un_autre_dossier')
@@ -287,6 +308,11 @@ export function refusEnregistrementParametres(
   if (!absent(titulaire)) {
     if (absent(iban)) return refus('titulaire_sans_iban')
     if (!texteJuste(titulaire, TITULAIRE_MAX)) return refus('titulaire')
+  }
+  // 8. Le logo (étape A5c1), la migration en base : sans elle, ses deux champs sont déjà refusés au rang 3.
+  if (LOGO_DES_FACTURES_EXPORTE) {
+    const logo = refusDuLogo(dossierId, courante, recue, fichiersDuSeau)
+    if (logo) return refus(logo.cle, ...logo.valeurs)
   }
   return null
 }

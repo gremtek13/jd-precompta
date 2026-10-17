@@ -2,8 +2,11 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, typeSansParametres } from './bornesStockage'
-import { bornesDeLaMigration, texteDeLaMigration, type BornesLues } from '../test/bornesStockage'
+import { TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, typeSansParametres } from './bornesStockage'
+import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import {
+  bornesDeLaMigration, fichierDeLaMigrationDuLogo, seauDeLaMigrationDuLogo, texteDeLaMigration, type BornesLues,
+} from '../test/bornesStockage'
 
 // TOUT DÉPÔT DANS UN SEAU ENVOIE UN TYPE QUE LA MIGRATION ADMET POUR CE SEAU (ligne 22.6).
 //
@@ -71,6 +74,8 @@ export interface Analyse { depots: Depot[]; fautes: string[]; lus: number }
 const PREPARATEURS_A_SEAU_FIXE: Record<string, { seau: string; types: readonly string[] }> = {
   preparerPiece: { seau: 'pieces', types: TYPES_DES_FICHIERS_DE_PIECE },
   preparerLogo: { seau: 'cabinet-logos', types: TYPES_DES_LOGOS },
+  // Le logo des factures (étape A5c1) : le seau privé des ventes. Aucun dépôt ne l'appelle avant l'écran du logo (A5c2).
+  preparerLogoDeFacture: { seau: 'ventes', types: TYPES_DES_LOGOS_DE_FACTURE },
 }
 
 function litteral(n: ts.Node | undefined): string | null {
@@ -235,6 +240,23 @@ export function ecarts(depots: Depot[], bornes: BornesLues[]): string[] {
   return rendu
 }
 
+/**
+ * Les bornes de tous les seaux : les trois de `bornes_du_stockage` et, quand l'export porte la migration du logo (étape
+ * A5c1), le seau des ventes qu'elle crée.
+ */
+function bornesDesSeaux(): BornesLues[] {
+  const logo = fichierDeLaMigrationDuLogo()
+  const ventes = logo === null ? [] : [seauDeLaMigrationDuLogo(readFileSync(logo, 'utf8'))]
+  return [...bornesDeLaMigration(texteDeLaMigration()), ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types }))]
+}
+
+// Le seau des ventes existe dès que sa migration est en base, avec ses deux types ; rien ne s'y dépose avant l'écran du
+// logo (étape A5c2). Ses deux types admis que nul n'envoie sont donc des écarts ATTENDUS, nommés et comptés — deux,
+// la migration dans l'export ; aucun sans elle —, que l'écran du logo fera disparaître : ce test le dira alors.
+const ADMIS_SANS_DEPOT_JUSQU_A_L_ECRAN_DU_LOGO = LOGO_DES_FACTURES_EXPORTE
+  ? ['ventes : « image/png » est admis, nul dépôt ne l’envoie', 'ventes : « image/jpeg » est admis, nul dépôt ne l’envoie']
+  : []
+
 /** Les dépôts au type littéral (sans borne de taille), par fichier, avec leur raison ET leur nombre. */
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
   'supabase/functions/superpdp-sync/index.ts': {
@@ -254,7 +276,7 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     analyses = tout.map((source) => ({ source, ...analyser(source) }))
   }, 60_000)
   const depots = () => analyses.flatMap((a) => a.depots)
-  const bornes = bornesDeLaMigration(texteDeLaMigration())
+  const bornes = bornesDesSeaux()
 
   it('part de toute la source — et le plancher distingue « zéro faute » d’« aveugle »', () => {
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
@@ -282,7 +304,9 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
   })
 
   it('seau par seau, ce que les dépôts envoient est exactement ce que la migration admet', () => {
-    expect(ecarts(depots(), bornes)).toEqual([])
+    // Le seau des ventes, sans dépôt jusqu'à l'écran du logo : ses deux types, et eux seuls (voir plus haut).
+    expect(ecarts(depots(), bornes)).toEqual(ADMIS_SANS_DEPOT_JUSQU_A_L_ECRAN_DU_LOGO)
+    expect(bornes.some((b) => b.seau === 'ventes')).toBe(LOGO_DES_FACTURES_EXPORTE)
   })
 
   it('le seau public des logos ne reçoit que des logos préparés — et jamais un SVG', () => {
@@ -332,6 +356,19 @@ describe('le garde mord (défauts plantés)', () => {
   it('un SVG déposé par une Edge Function dans le seau public', () => {
     const a = plante('const r = await admin.storage.from("cabinet-logos").upload(p, new Blob([t], { type: "image/svg+xml" }))', 'fonction', 'supabase/functions/x/index.ts')
     expect(ecarts(a.depots, bornes.filter((b) => b.seau === 'cabinet-logos'))).toContain('cabinet-logos : « image/svg+xml » est envoyé, la migration ne l’admet pas')
+  })
+
+  it('un logo de facture préparé : le seau des ventes, PNG ou JPEG — et jamais un autre seau', () => {
+    const juste = plante("async function f(file: File) { const pret = await preparerLogoDeFacture(file); if ('refus' in pret) return; await supabase.storage.from('ventes').upload('p', pret.corps) }")
+    expect(juste.fautes).toEqual([])
+    expect(juste.depots.map((d) => [d.seau, d.forme, d.types])).toEqual([['ventes', 'préparé', ['image/png', 'image/jpeg']]])
+    const ventes = { seau: 'ventes', taille: 512_000, types: ['image/png', 'image/jpeg'] }
+    expect(ecarts(juste.depots, [ventes])).toEqual([])
+    expect(ecarts([], [ventes])).toEqual([
+      'ventes : « image/png » est admis, nul dépôt ne l’envoie', 'ventes : « image/jpeg » est admis, nul dépôt ne l’envoie',
+    ])
+    const ailleurs = plante("async function f(file: File) { const pret = await preparerLogoDeFacture(file); await supabase.storage.from('cabinet-logos').upload('p', pret.corps) }")
+    expect(ailleurs.fautes).toEqual([expect.stringMatching(/préparé pour le seau « ventes », déposé dans « cabinet-logos »/)])
   })
 
   it('un Blob littéral dans le navigateur : pas de borne de taille, donc une faute', () => {

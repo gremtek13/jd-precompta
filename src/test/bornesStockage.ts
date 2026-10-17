@@ -62,3 +62,32 @@ export function bornesDeLEssai(texte: string): (BornesLues & { publique: boolean
 export function texteDeLEssai(): string {
   return readFileSync(new URL('../../supabase/essais/bornesStockage.sql', import.meta.url), 'utf8')
 }
+
+// ── Le quatrième seau, `ventes` (étape A5c1, migration `logo_des_factures`) ─────────────────────────────────────────────
+// La migration du logo CRÉE son seau, bornes comprises, par un `insert into storage.buckets` — elle ne touche à aucun autre
+// seau. Préparée et pas encore appliquée, elle n'est pas dans l'export : le seau se lit alors dans l'essai seul.
+
+/** La migration du logo dans l'export — UNE au plus, au nom `<version>_logo_des_factures.sql` —, ou null avant elle. */
+export function fichierDeLaMigrationDuLogo(): URL | null {
+  const noms = readdirSync(SCHEMA).filter((nom) => /^\d{14}_logo_des_factures\.sql$/.test(nom))
+  if (noms.length > 1) throw new Error(`la migration logo_des_factures doit être UNE dans l'export : ${noms.length} trouvées`)
+  return noms.length === 1 ? new URL(noms[0], SCHEMA) : null
+}
+
+/**
+ * Le seau que la migration du logo crée : son nom, son accès public, sa taille et ses types. UN `insert into storage.buckets`,
+ * à la forme que le fichier lui donne, et aucun `update storage.buckets` — une autre forme, ou un autre nombre, LÈVE.
+ */
+export function seauDeLaMigrationDuLogo(texte: string): BornesLues & { publique: boolean } {
+  const code = sansCommentairesSql(texte)
+  const forme = /insert\s+into\s+storage\.buckets\s*\(\s*id\s*,\s*name\s*,\s*public\s*,\s*file_size_limit\s*,\s*allowed_mime_types\s*\)\s*values\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*(true|false)\s*,\s*(\d+)\s*,\s*array\[([^\]]*)\]\s*\)\s*;/gi
+  const lues = [...code.matchAll(forme)]
+  const inserts = [...code.matchAll(/\binsert\s+into\s+storage\.buckets\b/gi)].length
+  const updates = [...code.matchAll(/\bupdate\s+storage\.buckets\b/gi)].length
+  if (lues.length !== 1 || inserts !== 1 || updates !== 0) {
+    throw new Error(`${inserts} insert into storage.buckets, dont ${lues.length} de la forme attendue, et ${updates} update storage.buckets`)
+  }
+  const [, id, nom, publique, taille, types] = lues[0]
+  if (id !== nom) throw new Error(`le seau ${id} porte un autre nom : ${nom}`)
+  return { seau: id, publique: publique === 'true', taille: Number(taille), types: elements(types) }
+}

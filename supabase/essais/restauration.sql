@@ -238,6 +238,17 @@
 -- la source (70 lignes, dont les quatre contacts), 0 écart, aucun arrêt, les contrôles du catalogue des rôles et de la
 -- colonne générée justes. Planté — les contacts ancrés avant le dossier —, le script s'arrête sur leur clé (23503). Sur
 -- une base qui n'a pas la migration, rien n'entre : le plan est celui d'hier (137 clés, 72 tables IDENTIQUES).
+--
+-- 17/10/2026, espace client, étape A5c1 (migration `logo_des_factures`, préparée, non appliquée) : aucune table de plus,
+-- deux colonnes — `parametres_facturation.logo_chemin` et `logo_sha256`, sans clé vers une autre table — et trois
+-- contraintes, que la copie des contraintes emporte ; le plan ne change pas, la sauvegarde recopiant des lignes entières.
+-- Le FICHIER du logo, dans le seau `ventes`, n'est pas une ligne : ni la sauvegarde ni ce script ne le portent (le
+-- manifeste le dit, `horsPerimetre`). Rejoué sur une copie de la réplique de l'étape (signature.sql : les neuf familles
+-- égales à la production à 137 migrations, plus celle-ci), le dossier `test` semé PAR LA FONCTION de quatre versions — un
+-- logo posé, gardé, changé, retiré — : 140 clés recopiées, 74 tables restaurées et IDENTIQUES à la source (70 lignes,
+-- dont les quatre versions en quatre vagues), 0 écart, aucun arrêt, les contrôles du catalogue des rôles justes ; celui
+-- de la colonne générée sans objet (aucun texte OCR dans le dossier de la réplique). Sans la migration : 140 clés, 74
+-- tables IDENTIQUES, 66 lignes.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
