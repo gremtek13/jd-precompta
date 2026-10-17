@@ -62,6 +62,41 @@ export async function empreinteSha256(corps: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+// ── Le fichier d'un logo, relu dans le seau ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Ce que la lecture du fichier qu'une version désigne a rendu (src/lib/logoDesFacturesLecture.ts) : le fichier, dont
+ * l'empreinte recalculée est celle que la version porte ; ou la raison pour laquelle l'écran n'en montre rien. « Autre
+ * empreinte » n'est jamais une image à montrer : ce n'est pas le fichier que la version désigne.
+ */
+export type LogoLu =
+  | { etat: 'verifie'; corps: Blob; type: TypeDuLogo; taille: number }
+  | { etat: 'absent' }
+  | { etat: 'refuse'; motif: string }
+  | { etat: 'illisible' }
+  | { etat: 'autre_empreinte' }
+
+// ── Un fichier déjà là ───────────────────────────────────────────────────────────────────────────────────────────────
+// Le nom d'un logo est son empreinte : le reposer, c'est viser un fichier qui existe peut-être déjà, et le seau n'admet
+// aucune mise à jour — le second dépôt bute sur l'unicité (seau, nom). Le stockage le dit d'une façon que seul le SDK
+// installé (storage-js 2.112.4, `handleError`) permet de lire : l'erreur est une `StorageApiError` dont `status` est celui
+// de la réponse HTTP (409, ou 400 pour les versions du service qui rendent le doublon ainsi) et `statusCode` celui du CORPS
+// (`{ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }`) ; un corps sans `message` fait de son
+// `error` le message. `code` n'est là que si le corps le porte. bornesStockageClient.test.ts joue chaque forme contre ce SDK.
+const CODES_D_UN_DOUBLON: readonly string[] = ['Duplicate', 'ResourceAlreadyExists', 'KeyAlreadyExists']
+
+/**
+ * L'erreur d'un dépôt dit-elle « ce nom existe déjà » ? Lu sur ce que la valeur PORTE (`__isStorageError`, posé par le
+ * constructeur du SDK), jamais sur sa classe — comme `messageErreur` —, et jamais sur la phrase anglaise du service seule.
+ * Un autre refus (413, 415, 401…), ou un objet qui ne vient pas du stockage, n'est pas un doublon.
+ */
+export function estUnDoublonDuStockage(erreur: unknown): boolean {
+  if (erreur === null || typeof erreur !== 'object') return false
+  const e = erreur as { __isStorageError?: unknown; status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
+  if (e.__isStorageError !== true) return false
+  return e.status === 409 || e.statusCode === '409' || e.statusCode === 409
+    || (typeof e.code === 'string' && CODES_D_UN_DOUBLON.includes(e.code)) || e.message === 'Duplicate'
+}
+
 /** Le logo prêt à déposer : le corps réétiqueté, son type et sa taille, son empreinte et son chemin. */
 export interface LogoPret extends DepotPret {
   type: TypeDuLogo
@@ -70,7 +105,7 @@ export interface LogoPret extends DepotPret {
 }
 
 /**
- * Ce que l'écran déposera (étape A5c2) : le fichier jugé et réétiqueté par `preparerLogoDeFacture` (le type à sa signature,
+ * Ce que l'écran du logo dépose (étape A5c2a, src/lib/logoDesFacturesEcriture.ts) : le fichier jugé et réétiqueté par `preparerLogoDeFacture` (le type à sa signature,
  * la borne du seau), puis son empreinte, calculée sur le corps TEL QU'IL PART, et son chemin. Le refus du seau sinon,
  * dit comme celui d'un dépôt.
  */

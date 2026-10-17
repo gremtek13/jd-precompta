@@ -21,8 +21,8 @@
 // LE SEAU `ventes` (étape A5c1) : PRIVÉ, le logo des factures d'un dossier, PNG ou JPEG, 500 Kio au plus, jamais un SVG.
 // Ses bornes vivent ici et dans la migration `logo_des_factures`, appliquée sur l'accord du cabinet et portée par l'export :
 // bornesStockage.test.ts confronte le module à elle et à l'essai supabase/essais/bornesStockage.sql
-// (`LOGO_DES_FACTURES_EXPORTE`, src/lib/logoDesFactures.ts). Aucun dépôt de la source n'y écrit avant l'écran du logo
-// (étape A5c2).
+// (`LOGO_DES_FACTURES_EXPORTE`, src/lib/logoDesFactures.ts). Un seul dépôt de la source y écrit : celui de l'écran du logo
+// (src/lib/logoDesFacturesEcriture.ts, étape A5c2a), qui passe par `logoPret`.
 //
 // Ce module ne dépose rien : il rend le corps à envoyer, ou le refus à dire. Il n'importe pas le client Supabase.
 

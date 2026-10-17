@@ -2274,3 +2274,16 @@ a.btn { text-decoration: none; }
   background: var(--color-surface-2); color: var(--color-text);
   font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere;
 }
+
+/* Le bloc « Logo des factures » de la vue « Paramètres » (espace client, étape A5c2a). L'image est montrée TELLE QUELLE, sans
+   recadrage ni redimensionnement forcé : une boîte bornée (280 × 140 px) dans laquelle elle se range en gardant ses
+   proportions (`object-fit: contain`), jamais plus large que sa carte. Son fond est BLANC dans les deux thèmes : un logo
+   s'imprime sur du papier blanc, et un PNG transparent à traits sombres disparaîtrait sur le fond du thème sombre. La
+   légende et le champ de fichier passent à la ligne plutôt que de déborder. */
+.logo-facture { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.logo-facture-image {
+  display: block; width: auto; height: auto; max-width: min(100%, 280px); max-height: 140px; object-fit: contain;
+  padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #ffffff;
+}
+.logo-facture-legende { margin: 6px 0 8px; font-size: 0.82rem; color: var(--color-text-light); overflow-wrap: anywhere; }
+.logo-facture-champ { max-width: 100%; }

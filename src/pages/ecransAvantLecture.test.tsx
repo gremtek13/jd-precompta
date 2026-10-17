@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { etat, libererRetenues, libererTout, reinitialiser } from '../test/clientRetenu'
 import { MENTIONS_VIDES } from '../test/factures'
+import { versionParametres } from '../test/parametresFacturation'
 import type { Dossier, FactureEmise, Piece } from '../lib/types'
 import type { ModeleComptable } from '../lib/engagement'
 import { refusDeLaRegle } from '../lib/recuperationMotDePasse'
@@ -44,6 +45,7 @@ import ArticlesVue from './dossier/ArticlesVue'
 import ContactsVue from './dossier/ContactsVue'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import ParametresVue from './dossier/ParametresVue'
+import LogoDesFactures from './dossier/LogoDesFactures'
 import EncartFactureElectronique from './dossier/EncartFactureElectronique'
 import EreportingCard from './dossier/EreportingCard'
 import EreportingModal from './dossier/EreportingModal'
@@ -175,6 +177,12 @@ const DOSSIER_EREPORTING = {
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
 } as const
 const rien = () => {}
+// Le dossier du logo des factures (étape A5c2a) : un identifiant à la forme de la base, puisque le chemin d'un logo commence par
+// lui et qu'une version ne désigne un logo que sous cette forme (`logoDeLaVersion`). La version courante désigne un logo.
+const DOSSIER_DU_LOGO = 'a5c00000-0000-4000-8000-0000000000d1'
+const VERSION_AVEC_LOGO = versionParametres({
+  dossier_id: DOSSIER_DU_LOGO, logo_chemin: `${DOSSIER_DU_LOGO}/logos/${'1'.repeat(64)}.png`, logo_sha256: '1'.repeat(64),
+})
 // La fiche « hors de France » d'une pièce reçoit les fiches du dossier de l'onglet des pièces (monté ici, qui les lit) :
 // montée seule, elle les reçoit lues — un dossier sans fiche. Elle lit elle-même le texte de la pièce, que ce garde retient.
 const FICHES_RECUES: DonneesHorsDeFrance = {
@@ -416,6 +424,21 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'ParametresVue (client)', fichier: 'pages/dossier/ParametresVue.tsx', rendre: () => (
     <Dossier1><ParametresVue espace="client" dossierId="d1" /></Dossier1>
+  ) },
+  // « Logo des factures » (étape A5c2a) : le bloc de la carte « Paramètres en cours », monté seul sur une version qui désigne un
+  // logo — au cabinet, et au client « Ventes ». Le fichier se lit dans le seau ; avant son retour, ni image, ni « aucun logo »,
+  // ni geste de dépôt.
+  { nom: 'LogoDesFactures', fichier: 'pages/dossier/LogoDesFactures.tsx', rendre: () => (
+    <Dossier1>
+      <LogoDesFactures dossierId={DOSSIER_DU_LOGO} espace="cabinet" courante={VERSION_AVEC_LOGO} versions={[VERSION_AVEC_LOGO]}
+        occupe={false} erreur={null} message={null} onPoser={rien} onProposerLeRetrait={rien} />
+    </Dossier1>
+  ) },
+  { nom: 'LogoDesFactures (client)', fichier: 'pages/dossier/LogoDesFactures.tsx', rendre: () => (
+    <Dossier1>
+      <LogoDesFactures dossierId={DOSSIER_DU_LOGO} espace="client" courante={VERSION_AVEC_LOGO} versions={[VERSION_AVEC_LOGO]}
+        occupe={false} erreur={null} message={null} onPoser={rien} onProposerLeRetrait={rien} />
+    </Dossier1>
   ) },
 ]
 

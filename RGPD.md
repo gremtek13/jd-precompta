@@ -459,8 +459,10 @@ Ce qui est **prouvé**, pas seulement affirmé :
   l'empreinte de chaque version, jamais le fichier, et son manifeste le dit (`horsPerimetre`). Prouvé par impersonation
   sur une réplique égale à la production, puis en production le 17/10/2026 (`supabase/essais/logoDesFactures.sql`, 126
   verdicts, `rls.sql` et son bloc « Le seau des ventes ») ; les SUPPRESSIONS, sur la réplique seulement
-  (`supabase/essais/logoDesFacturesSuppression.sql`, §8.6). Aucun écran ne dépose ni ne montre un logo avant l'étape
-  A5c2 ; aucune facture ne l'imprime avant l'étape A7.
+  (`supabase/essais/logoDesFacturesSuppression.sql`, §8.6). Depuis l'étape A5c2a (17/10/2026), le bloc « Logo des
+  factures » de la vue « Paramètres » le montre au cabinet et au client « Ventes » — le fichier relu dans le seau et son
+  empreinte recalculée avant toute image, l'image gardée dans le navigateur le temps de l'écran (une adresse d'objet
+  locale, révoquée ensuite) —, le dépose, le change ou le retire ; aucune facture ne l'imprime avant l'étape A7.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

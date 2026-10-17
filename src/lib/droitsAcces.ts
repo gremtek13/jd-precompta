@@ -203,7 +203,8 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // lecture du seau des ventes de son dossier, le dépôt d'un logo (une image PNG ou JPEG de 500 Kio au plus, sous la forme du
 // chemin d'un logo), et sa désignation dans une version des paramètres. Aucun fichier ne s'y met à jour, pour personne ; seul
 // le chef du cabinet en supprime, avec le dossier. Elle exige celle des paramètres, donc celles des ventes : sans elles, ce
-// drapeau ne change rien à la phrase. L'écran du logo (étape A5c2) n'existe pas encore : la phrase le dit à venir.
+// drapeau ne change rien à la phrase. L'écran du logo est dans « Mes ventes › Paramètres » depuis l'étape A5c2a : la phrase
+// l'y situe, et ne le dit plus à venir.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -274,12 +275,12 @@ export function ceQueDisentLesCases(
     : ''
   // Le logo des factures (étape A5c1) : la base ouvre au client « Ventes » la lecture du stockage des ventes de son dossier
   // et le dépôt d'un logo sous sa forme ; il le désigne dans une version des paramètres. Aucune mise à jour d'un fichier,
-  // pour personne ; la suppression, au chef du cabinet seul. Sa migration exige celle des paramètres. L'écran du logo
-  // (étape A5c2) n'existe pas encore : la phrase le dit à venir.
+  // pour personne ; la suppression, au chef du cabinet seul. Sa migration exige celle des paramètres. Son écran est le bloc
+  // « Logo des factures » de « Mes ventes › Paramètres » (étape A5c2a).
   const logo = ventesOuvertes && parametresOuverts && logoOuvert
-    ? ' Par la base, il peut aussi déposer le logo de ses factures — une image PNG ou JPEG de 500 Ko au plus — dans le '
-      + 'stockage des ventes du dossier, où il lit ce qui y est déposé, et le désigner dans une version des paramètres ; un '
-      + 'fichier déposé ne se remplace pas, et lui ne peut pas l’effacer. L’écran du logo viendra ensuite.'
+    ? ' Dans « Mes ventes › Paramètres » comme par la base, il peut aussi déposer le logo de ses factures — une image PNG ou '
+      + 'JPEG de 500 Ko au plus — dans le stockage des ventes du dossier, où il lit ce qui y est déposé, et le désigner dans '
+      + 'une version des paramètres ; un fichier déposé ne se remplace pas, et lui ne peut pas l’effacer.'
     : ''
   // Depuis l'étape P9, « Ma banque » montre ce que la base ouvre à la case : plus rien de la banque n'est « sans écran ».
   const banque = simulationSousBanque

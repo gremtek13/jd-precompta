@@ -3,7 +3,6 @@ import { join, relative } from 'node:path'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, TYPES_DES_LOGOS_DE_FACTURE, typeSansParametres } from './bornesStockage'
-import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import {
   bornesDeLaMigration, fichierDeLaMigrationDuLogo, seauDeLaMigrationDuLogo, texteDeLaMigration, type BornesLues,
 } from '../test/bornesStockage'
@@ -17,7 +16,8 @@ import {
 //   - une lecture (`download`, `list`, les adresses) et un retrait (`remove`) ne déposent rien : nommés, laissés ;
 //   - un dépôt (`upload`, `update`) se juge : son seau doit être écrit en toutes lettres, et son corps d'une forme
 //     reconnue, dont on sait quels types il peut porter :
-//       · `<x>.corps`, `<x>` venant de `preparerPiece` (les types d'une pièce), `preparerLogo` (ceux d'un logo) ou
+//       · `<x>.corps`, `<x>` venant de `preparerPiece` (les types d'une pièce), `preparerLogo` (ceux d'un logo),
+//         `preparerLogoDeFacture` ou `logoPret` (ceux d'un logo de facture : PNG ou JPEG, seau `ventes`) ou
 //         `preparerContenu('<seau>', …, <type>)` (le type, littéral ou constante faite de littéraux) — le préparateur
 //         nomme le MÊME seau que le dépôt ;
 //       · dans une Edge Function seulement, `new Blob([…], { type })` dont le type vient de `typeDUnePiece` (la copie
@@ -74,8 +74,11 @@ export interface Analyse { depots: Depot[]; fautes: string[]; lus: number }
 const PREPARATEURS_A_SEAU_FIXE: Record<string, { seau: string; types: readonly string[] }> = {
   preparerPiece: { seau: 'pieces', types: TYPES_DES_FICHIERS_DE_PIECE },
   preparerLogo: { seau: 'cabinet-logos', types: TYPES_DES_LOGOS },
-  // Le logo des factures (étape A5c1) : le seau privé des ventes. Aucun dépôt ne l'appelle avant l'écran du logo (A5c2).
+  // Le logo des factures (étape A5c1) : le seau privé des ventes.
   preparerLogoDeFacture: { seau: 'ventes', types: TYPES_DES_LOGOS_DE_FACTURE },
+  // `logoPret` (src/lib/logoDesFactures.ts) APPELLE `preparerLogoDeFacture` puis y ajoute l'empreinte et le chemin : son corps
+  // est le même Blob réétiqueté, PNG ou JPEG. C'est lui que le dépôt du logo (étape A5c2a) envoie.
+  logoPret: { seau: 'ventes', types: TYPES_DES_LOGOS_DE_FACTURE },
 }
 
 function litteral(n: ts.Node | undefined): string | null {
@@ -244,18 +247,11 @@ export function ecarts(depots: Depot[], bornes: BornesLues[]): string[] {
  * Les bornes de tous les seaux : les trois de `bornes_du_stockage` et, quand l'export porte la migration du logo (étape
  * A5c1), le seau des ventes qu'elle crée.
  */
-function bornesDesSeaux(): BornesLues[] {
+function bornesDesSeaux(texteDesTroisSeaux: string = texteDeLaMigration()): BornesLues[] {
   const logo = fichierDeLaMigrationDuLogo()
   const ventes = logo === null ? [] : [seauDeLaMigrationDuLogo(readFileSync(logo, 'utf8'))]
-  return [...bornesDeLaMigration(texteDeLaMigration()), ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types }))]
+  return [...bornesDeLaMigration(texteDesTroisSeaux), ...ventes.map(({ seau, taille, types }) => ({ seau, taille, types }))]
 }
-
-// Le seau des ventes existe dès que sa migration est en base, avec ses deux types ; rien ne s'y dépose avant l'écran du
-// logo (étape A5c2). Ses deux types admis que nul n'envoie sont donc des écarts ATTENDUS, nommés et comptés — deux,
-// la migration dans l'export ; aucun sans elle —, que l'écran du logo fera disparaître : ce test le dira alors.
-const ADMIS_SANS_DEPOT_JUSQU_A_L_ECRAN_DU_LOGO = LOGO_DES_FACTURES_EXPORTE
-  ? ['ventes : « image/png » est admis, nul dépôt ne l’envoie', 'ventes : « image/jpeg » est admis, nul dépôt ne l’envoie']
-  : []
 
 /** Les dépôts au type littéral (sans borne de taille), par fichier, avec leur raison ET leur nombre. */
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
@@ -282,11 +278,12 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
     expect(tout.filter((s) => s.cote === 'navigateur').length).toBeGreaterThan(250)
     expect(tout.filter((s) => s.cote === 'fonction').length).toBeGreaterThanOrEqual(16)
     expect(analyses.reduce((n, a) => n + a.lus, 0)).toBeGreaterThanOrEqual(20)
-    // Onze dépôts : les sept chemins du navigateur (deux pour une facture reçue, deux pour un pack) et les deux fonctions.
+    // Douze dépôts : les huit chemins du navigateur (deux pour une facture reçue, deux pour un pack) et les deux fonctions.
     // Un dépôt de plus se juge ici comme les autres ; ce nombre dit seulement qu'on les voit tous.
     expect(depots().map((d) => `${d.chemin} → ${d.seau}`).sort()).toEqual([
       'src/lib/depot.ts → pieces',
       'src/lib/importFichiers.ts → pieces',
+      'src/lib/logoDesFacturesEcriture.ts → ventes',
       'src/lib/packGenerator.ts → packs',
       'src/lib/packGenerator.ts → packs',
       'src/lib/receptionPlateforme.ts → pieces',
@@ -304,9 +301,9 @@ describe('tout dépôt dans un seau envoie un type que la migration admet pour c
   })
 
   it('seau par seau, ce que les dépôts envoient est exactement ce que la migration admet', () => {
-    // Le seau des ventes, sans dépôt jusqu'à l'écran du logo : ses deux types, et eux seuls (voir plus haut).
-    expect(ecarts(depots(), bornes)).toEqual(ADMIS_SANS_DEPOT_JUSQU_A_L_ECRAN_DU_LOGO)
-    expect(bornes.some((b) => b.seau === 'ventes')).toBe(LOGO_DES_FACTURES_EXPORTE)
+    // Le seau des ventes compris : depuis l'écran du logo (étape A5c2a), son dépôt envoie PNG et JPEG, et rien d'autre.
+    expect(ecarts(depots(), bornes)).toEqual([])
+    expect(bornes.some((b) => b.seau === 'ventes')).toBe(true)
   })
 
   it('le seau public des logos ne reçoit que des logos préparés — et jamais un SVG', () => {
@@ -371,6 +368,17 @@ describe('le garde mord (défauts plantés)', () => {
     expect(ailleurs.fautes).toEqual([expect.stringMatching(/préparé pour le seau « ventes », déposé dans « cabinet-logos »/)])
   })
 
+  it('un logo de facture déposé après `logoPret` : le seau des ventes, PNG ou JPEG — et jamais un autre seau', () => {
+    const juste = plante("async function f(dossier: string, file: File) { const pret = await logoPret(dossier, file); if ('refus' in pret) return; await supabase.storage.from('ventes').upload(pret.chemin, pret.corps, { upsert: false }) }")
+    expect(juste.fautes).toEqual([])
+    expect(juste.depots.map((d) => [d.seau, d.forme, d.types])).toEqual([['ventes', 'préparé', ['image/png', 'image/jpeg']]])
+    const ailleurs = plante("async function f(dossier: string, file: File) { const pret = await logoPret(dossier, file); await supabase.storage.from('cabinet-logos').upload(pret.chemin, pret.corps) }")
+    expect(ailleurs.fautes).toEqual([expect.stringMatching(/préparé pour le seau « ventes », déposé dans « cabinet-logos »/)])
+    // Le fichier tel quel, sans passer par `logoPret` : le garde ne sait pas le suivre, donc le refuse.
+    const nu = plante("async function f(file: File) { await supabase.storage.from('ventes').upload('p', file) }")
+    expect(nu.fautes).toEqual([expect.stringMatching(/un corps que le garde ne sait pas suivre/)])
+  })
+
   it('un Blob littéral dans le navigateur : pas de borne de taille, donc une faute', () => {
     const a = plante("await supabase.storage.from('pieces').upload('p', new Blob([t], { type: 'text/plain' }))")
     expect(a.fautes).toHaveLength(1)
@@ -396,8 +404,8 @@ describe('le garde mord (défauts plantés)', () => {
 
   it('une migration à qui il manque un type envoyé, ou qui en admet un de trop', () => {
     const texte = texteDeLaMigration()
-    const sansCsv = bornesDeLaMigration(texte.replace("'text/csv', ", ''))
-    const avecGif = bornesDeLaMigration(texte.replace("'image/webp']", "'image/webp', 'image/gif']"))
+    const sansCsv = bornesDesSeaux(texte.replace("'text/csv', ", ''))
+    const avecGif = bornesDesSeaux(texte.replace("'image/webp']", "'image/webp', 'image/gif']"))
     const reels = sources().map(analyser).flatMap((a) => a.depots)
     expect(ecarts(reels, sansCsv)).toEqual(['pieces : « text/csv » est envoyé, la migration ne l’admet pas'])
     expect(ecarts(reels, avecGif)).toEqual(['cabinet-logos : « image/gif » est admis, nul dépôt ne l’envoie'])

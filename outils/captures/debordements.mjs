@@ -1013,6 +1013,8 @@ const VISITES = [
       await page.getByText('Paramètres en cours', { exact: true }).waitFor({ timeout: 10000 })
       await page.getByText(/^Proposé par le client le /).first().waitFor({ timeout: 10000 })
       await page.getByRole('table', { name: 'Historique des paramètres' }).waitFor({ timeout: 10000 })
+      // Le logo des factures (étape A5c2a) : le fichier relu dans le seau, son empreinte recalculée, puis l'image.
+      await page.getByAltText('Logo des factures', { exact: true }).waitFor({ timeout: 10000 })
     },
   },
   {
@@ -1033,6 +1035,18 @@ const VISITES = [
       await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
       await page.getByRole('button', { name: 'Confirmer le RIB', exact: true }).click()
       await page.getByRole('alertdialog').getByText('FR12 9999 9000 0100 0000 0000 200').waitFor({ timeout: 10000 })
+    },
+  },
+  // Le retrait du logo des factures (étape A5c2a) : la confirmation dans la page, qui dit ce qui change, ce qui reste (le fichier
+  // dans l'espace du dossier, la trace dans l'historique) et que les factures ne l'impriment pas encore.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/parametres-retirer-logo', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Paramètres', exact: true }).click()
+      await page.getByAltText('Logo des factures', { exact: true }).waitFor({ timeout: 10000 })
+      await page.getByRole('button', { name: 'Retirer le logo', exact: true }).click()
+      await page.getByRole('alertdialog').getByText(/^Le fichier reste dans l’espace du dossier/).waitFor({ timeout: 10000 })
     },
   },
   // L'IDENTITÉ LÉGALE du dossier (espace client, étape A5b2), dans la carte « Identité du dossier » de l'onglet Informations : une
@@ -1480,6 +1494,10 @@ const VISITES_CLIENT = [
       await page.getByText('Paramètres en cours', { exact: true }).waitFor({ timeout: 10000 })
       await page.getByText(/en attente de la confirmation de ton cabinet\.$/).first().waitFor({ timeout: 10000 })
       if ((await page.getByRole('button', { name: 'Confirmer le RIB' }).count()) > 0) throw new Error('« Confirmer le RIB » paraît chez le client')
+      // Le logo des factures (étape A5c2a), aux mots du client : la passe du client voit la courante sans logo (fauxSupabase.ts dit
+      // pourquoi), le bloc dit qu'aucun n'est posé et offre le choix d'un fichier.
+      await page.getByText('Ton cabinet voit ce logo et peut le changer, comme toi.', { exact: false }).waitFor({ timeout: 10000 })
+      await page.getByText('Aucun logo n’est posé.', { exact: true }).waitFor({ timeout: 10000 })
     },
   },
   {

@@ -321,7 +321,7 @@ export function refusDeLaSaisieParametres(
   dossierId: string, remplaceId: string | null, saisie: SaisieParametresFacturation, versions: readonly ParametresFacturation[],
 ): RefusParametres<CleRefusEnregistrementParametres> | null | 'rompue' {
   // Le logo repris est celui de la version remplacée : la base ne relit pas son fichier, aucun fichier du seau n'a donc à
-  // être connu ici (l'étape A5c2 dira celui qu'elle dépose). Une version qu'on ne trouve pas se refuse au deuxième rang.
+  // être connu ici (le bloc du logo, étape A5c2a, juge celui qu'il dépose : `refusDuNouveauLogo`). Une version qu'on ne trouve pas se refuse au deuxième rang.
   const remplacee = remplaceId === null ? null : versions.find((v) => v.id === remplaceId && v.dossier_id === dossierId) ?? null
   return refusEnregistrementParametres(dossierId, remplaceId, parametresEnvoyes(remplacee, saisie), versions, [])
 }

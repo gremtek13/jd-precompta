@@ -3,6 +3,12 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace } from '../../lib/espaceVentes'
 import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
+import { deposerLeLogo } from '../../lib/logoDesFacturesEcriture'
+import { logoDeLaVersion, type LogoPret } from '../../lib/logoDesFactures'
+import {
+  confirmationDuRetraitDuLogo, messageDuLogoPose, messageDuLogoRetire, messageFichierDeposeSansVersion, parametresAvecLogo,
+  parametresSansLogo, refusDuNouveauLogo, refusDuRetraitDuLogo,
+} from '../../lib/logoDesFacturesVue'
 import { jourEtHeureAParis, type SaisieParametresFacturation } from '../../lib/parametresFacturation'
 import { lireLesParametresFacturation, type LectureDesParametres } from '../../lib/parametresFacturationLecture'
 import { confirmerRib, enregistrerParametresFacturation } from '../../lib/parametresFacturationEcriture'
@@ -13,6 +19,7 @@ import {
 } from '../../lib/parametresFacturationVue'
 import type { ParametresFacturation } from '../../lib/types'
 import ConfirmationArticle from './ConfirmationArticle'
+import LogoDesFactures from './LogoDesFactures'
 import ParametresSaisieModal from './ParametresSaisieModal'
 
 // « PARAMÈTRES » (espace client, étape A5b1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE
@@ -21,15 +28,21 @@ import ParametresSaisieModal from './ParametresSaisieModal'
 // et le RIB. La cinquième vue de l'onglet Factures, après « Clients » : au cabinet dans l'onglet, au client « Ventes » dans
 // « Mes ventes ». Elle montre la version COURANTE et l'état de son RIB, l'historique dès deux versions, et offre « Modifier les
 // paramètres » (une version NOUVELLE, tous les champs) et, au cabinet seul, « Confirmer le RIB ». L'identité légale du dossier,
-// l'avis d'un changement de RIB sur les accueils, le logo et tout ce qu'une facture lira sont d'autres étapes.
+// l'avis d'un changement de RIB sur les accueils et tout ce qu'une facture lira sont d'autres étapes ; le logo des factures est un
+// bloc de la carte de la courante depuis l'étape A5c2a (voir plus bas).
 //
 // RIEN AVANT LA LECTURE, RIEN SUR UNE LECTURE PARTIELLE : « Chargement… » tant que les versions ne sont pas revenues ; lue en
 // partie, refusée ou en versions qui ne font pas une chaîne, la vue le dit et n'offre AUCUN geste — une version qu'on n'aurait
 // pas lue ferait dire « courante » d'une version remplacée, et « en vigueur » d'un RIB qui ne l'est plus.
 //
-// UN SEUL VERROU POUR LES DEUX GESTES (`gesteEnCours`, un `useRef` posé AVANT le `try`) : relâché dans le `finally`, APRÈS la
+// UN SEUL VERROU POUR TOUS LES GESTES (`gesteEnCours`, un `useRef` posé AVANT le `try`) : relâché dans le `finally`, APRÈS la
 // relecture — un second clic pendant qu'elle court écrirait sur ce que la vue montrait avant —, relue aussi sur un refus, pour
 // que la vue dise ce que la base a gardé (une autre saisie passée entre-temps, que le module nomme alors avant le clic).
+//
+// LE LOGO (étape A5c2a) : un bloc de la carte « Paramètres en cours » (`LogoDesFactures`) le montre et en juge le fichier choisi ;
+// ses trois gestes sont d'ICI, sous ce même verrou — poser ou changer (le fichier est déposé dans le seau, PUIS une version
+// nouvelle qui ne change que le logo est écrite), et retirer (une version nouvelle sans logo, après une confirmation dans la
+// page). Le fichier déposé dont la version est refusée reste dans le seau : la vue le dit.
 type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client' }
 
 type Props = QuiRegarde & { dossierId: string }
@@ -53,6 +66,10 @@ export default function ParametresVue(props: Props) {
   const [fenetre, setFenetre] = useState<Fenetre | null>(null)
   // La confirmation ouverte : la version telle que la vue l'a lue à l'ouverture, que la confirmation nomme.
   const [aConfirmer, setAConfirmer] = useState<ParametresFacturation | null>(null)
+  // Le retrait du logo à confirmer : la version telle que la vue l'a lue à l'ouverture, que la nouvelle version remplacera.
+  const [aRetirer, setARetirer] = useState<ParametresFacturation | null>(null)
+  // Le dernier geste est-il un geste du logo ? Son erreur et son message se disent alors DANS le bloc du logo, sous le bouton.
+  const [duLogo, setDuLogo] = useState(false)
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -77,9 +94,10 @@ export default function ParametresVue(props: Props) {
 
   // Le verrou des deux gestes. Posé avant le `try` : dans le `try`, le `return` du deuxième clic sortirait par le `finally` et
   // relâcherait le verrou du PREMIER, encore en cours.
-  async function sousVerrou(repli: string, ecrire: () => Promise<string>): Promise<boolean> {
+  async function sousVerrou(repli: string, ecrire: () => Promise<string>, geste: 'logo' | 'autre' = 'autre'): Promise<boolean> {
     if (gesteEnCours.current) return false
     gesteEnCours.current = true
+    setDuLogo(geste === 'logo')
     setOccupe(true)
     setErreur(null)
     setMessage(null)
@@ -133,13 +151,62 @@ export default function ParametresVue(props: Props) {
     if (fait) setAConfirmer(null)
   }
 
+  // Poser ou changer le logo : le fichier d'abord (`deposerLeLogo`, qui le rejuge et reconnaît un fichier déjà là), puis UNE
+  // version nouvelle qui ne change que le logo — tous les autres champs de la courante, tels qu'elle les porte. Un dépôt
+  // réussi dont la version est refusée laisse le fichier dans le seau (A5C-Q3) : la vue le dit.
+  async function poserLeLogo(version: ParametresFacturation, fichier: File, pret: LogoPret) {
+    // Seconde ceinture : le bouton est déjà grisé sous ce refus.
+    const refus = refusDuNouveauLogo(dossierId, version, versions, pret)
+    if (refus) {
+      setDuLogo(true)
+      setErreur(refus === 'rompue' ? TEXTE_ROMPUE : dire(refus.message))
+      return
+    }
+    const avait = logoDeLaVersion(version) !== null
+    await sousVerrou('Le logo n’a pas pu être posé.', async () => {
+      const depot = await deposerLeLogo(dossierId, fichier, pret.empreinte)
+      let ecrite
+      try {
+        ecrite = await enregistrerParametresFacturation(
+          dossierId, version.id, parametresAvecLogo(version, { logo_chemin: depot.pret.chemin, logo_sha256: depot.pret.empreinte }),
+        )
+      } catch (e) {
+        throw new Error(messageFichierDeposeSansVersion(espace, messageErreur(e, 'Les paramètres de facturation n’ont pas pu être enregistrés.')))
+      }
+      return messageDuLogoPose(avait ? 'change' : 'pose', ecrite.cree_le, depot.dejaLa)
+    }, 'logo')
+  }
+
+  async function retirerLeLogo(version: ParametresFacturation) {
+    const refus = refusDuRetraitDuLogo(dossierId, version, versions)
+    if (refus) {
+      setDuLogo(true)
+      setErreur(refus === 'rompue' ? TEXTE_ROMPUE : dire(refus.message))
+      return
+    }
+    const fait = await sousVerrou('Le logo n’a pas pu être retiré.', async () => {
+      const ecrite = await enregistrerParametresFacturation(dossierId, version.id, parametresSansLogo(version))
+      return messageDuLogoRetire(ecrite.cree_le)
+    }, 'logo')
+    if (fait) setARetirer(null)
+  }
+
+  function proposerLeRetrait(version: ParametresFacturation) {
+    setDuLogo(true)
+    setErreur(null)
+    setMessage(null)
+    setARetirer(version)
+  }
+
   function ouvrir(remplace: ParametresFacturation | null) {
+    setDuLogo(false)
     setErreur(null)
     setMessage(null)
     setFenetre({ remplace, depart: remplace ? saisieDeLaVersion(remplace) : saisieProposee() })
   }
 
   function proposerLaConfirmation(version: ParametresFacturation) {
+    setDuLogo(false)
     setErreur(null)
     setMessage(null)
     setAConfirmer(version)
@@ -148,6 +215,15 @@ export default function ParametresVue(props: Props) {
   const historique = historiqueDesParametres(versions, dossierId, espace, acces)
   const confirmation = aConfirmer ? confirmationDuRib(versions, dossierId, aConfirmer, acces) : null
   const refusConfirmation = aConfirmer ? refusDeLaConfirmation(dossierId, aConfirmer.id, versions) : null
+  const retrait = aRetirer ? confirmationDuRetraitDuLogo() : null
+  const refusRetrait = aRetirer ? refusDuRetraitDuLogo(dossierId, aRetirer, versions) : null
+  // Le bloc du logo dit l'erreur et le message d'un geste du logo, sauf quand la confirmation du retrait, ouverte, les dit.
+  const blocDuLogo = <LogoDesFactures
+    key={resume.etat === 'courante' ? `${dossierId}:${resume.version.id}` : `${dossierId}:aucune`}
+    dossierId={dossierId} espace={espace} courante={resume.etat === 'courante' ? resume.version : null} versions={versions}
+    occupe={occupe} erreur={duLogo && !aRetirer ? erreur : null} message={duLogo ? message : null}
+    onPoser={(version, fichier, pret) => { void poserLeLogo(version, fichier, pret) }} onProposerLeRetrait={proposerLeRetrait}
+  />
 
   return (
     <>
@@ -159,8 +235,8 @@ export default function ParametresVue(props: Props) {
       />
       {resume.etat === 'rompue' && <p className="error-text">{TEXTE_ROMPUE}</p>}
 
-      {!fenetre && !aConfirmer && erreur && <p className="error-text" role="alert">{erreur}</p>}
-      {message && <p role="status">{message}</p>}
+      {!fenetre && !aConfirmer && !aRetirer && !duLogo && erreur && <p className="error-text" role="alert">{erreur}</p>}
+      {!duLogo && message && <p role="status">{message}</p>}
 
       {resume.etat === 'aucune' && (
         <div className="card">
@@ -172,6 +248,7 @@ export default function ParametresVue(props: Props) {
               Renseigner les paramètres
             </button>
           </div>
+          {blocDuLogo}
         </div>
       )}
 
@@ -215,6 +292,8 @@ export default function ParametresVue(props: Props) {
                 </button>
               )}
             </div>
+
+            {blocDuLogo}
           </div>
         )
       })()}
@@ -263,6 +342,20 @@ export default function ParametresVue(props: Props) {
           onEnregistrer={(saisie) => enregistrer(saisie, fenetre.remplace)}
           onClose={() => setFenetre(null)}
         />
+      )}
+
+      {aRetirer && retrait && peutEcrire && (
+        <ConfirmationArticle
+          titre={retrait.titre}
+          boutonLabel="Retirer le logo"
+          occupe={occupe}
+          refus={refusRetrait === 'rompue' ? TEXTE_ROMPUE : refusRetrait ? dire(refusRetrait.message) : null}
+          erreur={erreur}
+          onConfirmer={() => { void retirerLeLogo(aRetirer) }}
+          onAnnuler={() => setARetirer(null)}
+        >
+          {retrait.paragraphes.map((p) => <p key={p}>{p}</p>)}
+        </ConfirmationArticle>
       )}
 
       {aConfirmer && !client && peutEcrire && (
