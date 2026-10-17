@@ -1,6 +1,7 @@
 import { StorageClient } from '@supabase/storage-js'
 import { describe, expect, it } from 'vitest'
 import { preparerLogo, preparerPiece } from './bornesStockage'
+import { estUnDoublonDuStockage } from './logoDesFactures'
 import { messageErreur } from './messageErreur'
 
 // LE SDK INSTALLÉ, JOUÉ CONTRE UN SERVEUR FACTICE (ligne 22.6). Deux faits décident de la conception de
@@ -101,5 +102,65 @@ describe('un refus du stockage se dit en français', () => {
     const { error } = await stockage.from('pieces').upload('d1/f.pdf', new Blob(['x'], { type: 'application/pdf' }))
     expect(messageErreur(error, 'repli')).toBe('The resource already exists')
     expect(messageErreur({ code: 'EntityTooLarge', status: 413, message: 'payload' }, 'repli')).toBe('payload')
+  })
+})
+
+// UN NOM DÉJÀ PRIS (étape A5c2a). Le nom d'un logo de facture est son empreinte : le reposer bute sur l'unicité du seau, qui
+// n'admet aucune mise à jour. Ce que le SDK installé rapporte d'un doublon, joué contre lui — les formes que le service
+// rend selon sa version : un 409 ; un 400 dont le CORPS porte `statusCode: '409'` (le SDK garde le statut de la réponse dans
+// `status` et celui du corps dans `statusCode`) ; un corps sans `message`, dont `error: 'Duplicate'` devient le message — et
+// ce qui n'en est pas un.
+describe('un nom déjà pris se reconnaît sur ce que le SDK en rapporte', () => {
+  const depot = async (reponse: () => Response) => {
+    const { stockage } = client(reponse)
+    const { error } = await stockage.from('ventes').upload('d1/logos/f.png', new Blob(['x'], { type: 'image/png' }), { upsert: false })
+    return error
+  }
+
+  it('409 avec le corps ordinaire du service', async () => {
+    const error = await depot(() => Response.json({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }, { status: 409 }))
+    expect(error).toMatchObject({ status: 409, statusCode: '409' })
+    expect(estUnDoublonDuStockage(error)).toBe(true)
+  })
+
+  it('400 dont le corps porte le statut 409 : le statut de la réponse n’est pas celui du corps', async () => {
+    const error = await depot(() => Response.json({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }, { status: 400 }))
+    expect(error).toMatchObject({ status: 400, statusCode: '409' })
+    expect(estUnDoublonDuStockage(error)).toBe(true)
+  })
+
+  it('un corps sans message : l’erreur « Duplicate » devient le message', async () => {
+    const error = await depot(() => Response.json({ statusCode: '400', error: 'Duplicate' }, { status: 400 }))
+    expect(error).toMatchObject({ message: 'Duplicate' })
+    expect(estUnDoublonDuStockage(error)).toBe(true)
+  })
+
+  it('un corps qui donne le code du service', async () => {
+    const error = await depot(() => Response.json({ statusCode: '400', code: 'ResourceAlreadyExists', message: 'Resource exists' }, { status: 400 }))
+    expect(estUnDoublonDuStockage(error)).toBe(true)
+  })
+
+  it('un 409 sans corps JSON (une passerelle) aussi', async () => {
+    const error = await depot(() => new Response('<html>Conflict</html>', { status: 409, statusText: 'Conflict' }))
+    expect(estUnDoublonDuStockage(error)).toBe(true)
+  })
+
+  it.each<[string, () => Response]>([
+    ['413 : trop gros', refus(413, 'EntityTooLarge', 'The object exceeded the maximum allowed size')],
+    ['415 : format refusé', refus(415, 'InvalidMimeType', 'mime type image/svg+xml is not supported')],
+    ['403 : la policy refuse', () => Response.json({ statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, { status: 403 })],
+    ['404 : le seau n’existe pas', () => Response.json({ statusCode: '404', error: 'Bucket not found', message: 'Bucket not found' }, { status: 404 })],
+    ['500 sans corps', () => new Response('erreur', { status: 500 })],
+  ])('%s n’est pas un doublon', async (_quoi, reponse) => {
+    expect(estUnDoublonDuStockage(await depot(reponse))).toBe(false)
+  })
+
+  it('un objet qui ne vient pas du stockage n’est pas pris pour lui — ni null, ni un texte, ni une erreur de Postgrest', () => {
+    expect(estUnDoublonDuStockage({ status: 409, statusCode: '409', message: 'Duplicate' })).toBe(false)
+    expect(estUnDoublonDuStockage({ code: '23505', message: 'duplicate key value violates unique constraint' })).toBe(false)
+    expect(estUnDoublonDuStockage(new Error('409'))).toBe(false)
+    expect(estUnDoublonDuStockage('409')).toBe(false)
+    expect(estUnDoublonDuStockage(null)).toBe(false)
+    expect(estUnDoublonDuStockage(undefined)).toBe(false)
   })
 })

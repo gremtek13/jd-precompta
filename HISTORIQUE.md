@@ -26036,7 +26036,150 @@ Edge 25 erreurs, les mêmes ; lint 63 avertissements, aucune erreur ; quatre fus
 fichiers) ; construction verte (`index-D8KsrOl2.js`). Le banc rejoué par la session : 0 débordement aux treize passes, 0
 bouton de fenêtre recouvert (212 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
 
+**LA MISE EN LIGNE, LE 17/10/2026.** Fusionnée par #183 (`4e72109`) à 16 h 03 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `059eb2d` ; l'arbre de `main` (`50732cc3…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-D8KsrOl2.js` (déploiement 39039111124, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`4e72109`, arbres égaux. La copie d'intégration retirée (ses 173 liens d'abord) ; celle de l'agent retirée avant la
+fusion, avec sa branche. La feuille de route : la ligne 51.5 complétée (50 426 caractères, envoyée et relue à
+l'identique ; elle reste « En cours ») ; l'en-tête recompté par requête, inchangé depuis la création de la ligne 22.61 :
+141 sur 185 (76 %, huit cases) et, pour un dossier BNC, 141 sur 172 (82 %, huit cases).
+
 **RESTE.** A5c2, l'écran du logo — le déposer (par `preparerLogoDeFacture`), le voir, le changer — et le fichier dans la
 sauvegarde (A5C-Q5) ; le tableau de bord du cabinet (les dossiers dont un RIB proposé attend) ; 22.61 (le logo public
 d'un cabinet supprimé) ; puis A7 (la facture fige ses mentions, son RIB et le logo qu'elle imprime), A9 (la numérotation
 qui continue).
+
+### 17/10/2026 — LE LOGO DES FACTURES, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A5c2a (LIGNE 51.5)
+
+(Préparée par un agent `dev` à partir de `4e72109`, relue et intégrée par la session. Nouveaux :
+`src/lib/logoDesFacturesLecture.ts`, `logoDesFacturesEcriture.ts`, `logoDesFacturesVue.ts`,
+`src/pages/dossier/LogoDesFactures.tsx`, leurs tests, `src/test/logoFictif.ts` et `src/test/stockageFactice.ts`.
+Modifiés : `logoDesFactures.ts` (`LogoLu`, `estUnDoublonDuStockage`), `ParametresVue.tsx`, `index.css`,
+`droitsAcces.ts`, `depotsDansLesSeaux.test.ts`, `ecransAvantLecture.test.tsx`, `bornesStockageClient.test.ts`,
+`ParametresVueLogo.test.tsx`, le banc. Aucune migration, aucune policy, aucune fonction.)
+
+**LA DÉLIMITATION.** L'écran du logo seul : le voir, le choisir, le poser ou le changer, le retirer. Ni le fichier dans
+la sauvegarde (A5c2b, A5C-Q5), ni ce qu'une facture imprime (A7), ni le logo public d'un cabinet supprimé (22.61).
+
+**LES CHOIX.** Un bloc « Logo des factures » dans la carte « Paramètres en cours », sous le RIB, au cabinet et chez le
+client « Ventes » ; le formulaire « Modifier les paramètres » ne change pas. Sans aucune version, une phrase seule dit
+de renseigner d'abord les paramètres. VOIR : le fichier que la version désigne est relu dans le seau `ventes`, son
+SHA-256 recalculé sur les octets reçus et comparé à `logo_sha256`, son type relu à sa signature (il doit être celui que
+dit le nom du chemin) ; l'image ne se montre qu'après, par une adresse d'objet créée avec la réponse et révoquée au
+changement comme au démontage ; absent, refusé, illisible ou d'une autre empreinte, une ligne le dit et les gestes
+restent. POSER OU CHANGER, en deux temps : le choix ne fait rien partir — `logoPret` juge le fichier (signature, borne
+du seau), son refus se dit tout de suite, puis le refus de la base est prédit par `refusEnregistrementParametres` sur ce
+qui partirait, le fichier compté comme il sera dans le seau (son chemin, son type, son poids) ; un fichier identique au
+logo en cours ne part pas. Le geste, sous le verrou `gesteEnCours` de la vue (posé avant le `try`, relâché après la
+relecture) : le dépôt (`upsert: false`, le corps réétiqueté que `logoPret` rend), puis UNE version qui ne change que le
+logo — tous les autres champs de la courante tels qu'elle les porte (`saisieQuiPart(saisieDeLaVersion(…))`) : un RIB
+proposé reste proposé. Un nom déjà pris est reconnu sur ce que le SDK en rapporte (`estUnDoublonDuStockage`) et le
+fichier présent est relu : la même empreinte, il est désigné sans nouveau dépôt ; autre chose, refusé. Un dépôt réussi
+dont la version est refusée laisse le fichier dans le seau (A5C-Q3), et l'écran le dit. RETIRER : une version sans logo,
+après une confirmation dans la page (`ConfirmationArticle`) qui dit ce qui change, ce qui reste — le fichier, la trace
+dans l'historique — et que les factures ne l'impriment pas encore. Les mots : au cabinet, « le client qui porte la case
+« Ventes » voit ce logo et peut le changer, comme vous » ; au client, « ton cabinet voit ce logo et peut le changer,
+comme toi ».
+
+**CE QUE LE SDK A DIT.** storage-js 2.112.4 (`handleError`) : `status` est le statut de la réponse, `statusCode` celui
+du corps, `code` celui du corps s'il en porte un ; `error: 'Duplicate'` n'est gardé que comme message d'un corps sans
+`message`. La reconnaissance du doublon est jouée contre ce SDK, un faux `fetch` devant lui
+(`bornesStockageClient.test.ts`, `src/test/stockageFactice.ts`) : 409, 400 au corps « 409 », corps sans message, corps à
+`code`, 409 sans JSON ; et rien de ce qui n'en est pas un (413, 415, 403, 404, 500, un objet qui ne vient pas du
+stockage). Un objet que la RLS cache se dit comme un objet absent : « absent » veut dire « pas rendu ».
+
+**LES GARDES.** `logoPret` est un préparateur du seau `ventes` pour `depotsDansLesSeaux.test.ts` (défauts plantés : un
+autre seau, un corps nu) ; ses deux attentes « admis, nul dépôt ne l'envoie » disparaissent, le seau des ventes reçoit
+désormais ce que la migration admet, ni plus ni moins. Le garde « avant lecture » monte le bloc seul, au cabinet et au
+client, sur une version qui désigne un logo ; ses phrases fixes évitent « aucun » et « rien ». Les secondes ceintures et
+le verrou ne se voient qu'en appelant le gestionnaire d'un bouton grisé. 37 mutations, 36 mordent ; l'équivalente, la
+garde de la lecture par son chemin, double la clé du bloc par version.
+
+**LA RELECTURE ET L'INTÉGRATION, PAR LA SESSION.** Le commit de l'agent repris tel quel sur `4e72109` (son diff égal au
+correctif rendu, `10227040…`), puis trois retouches. La phrase de l'onglet Accès disait encore « L'écran du logo viendra
+ensuite » : elle situe désormais l'écran (« Dans « Mes ventes › Paramètres » comme par la base, il peut aussi déposer le
+logo de ses factures… »), et son test la confronte ainsi et refuse « viendra » (A5C2-Q9, relevée par l'agent : une
+phrase devenue fausse se corrige, sans question au cabinet). Le commentaire de `lireLeLogo` cite la raison exacte pour
+laquelle la lecture ne rejuge pas le dossier du chemin : la contrainte `parametres_facturation_logo_chemin_forme` le
+tient pour toute ligne, restaurée comprise (A5C2-Q10, relevée par l'agent, gardée telle que codée : la ceinture serait
+redondante, et le banc, dont les dossiers ne sont pas des identifiants de la base, n'en montrerait plus le logo). Un
+commentaire du garde « avant lecture » qui disait encore le contraire. Un cas relevé à la relecture, laissé à A5c2b :
+quand le fichier de la version courante est ABSENT du seau (une restauration sans lui), choisir ce même fichier dit « Ce
+fichier est déjà le logo en cours » et n'offre rien ; il se redépose aujourd'hui par le tableau de bord
+(PLAN_DE_REPRISE.md, §4, point 6).
+
+**LA BARRIÈRE ET LE BANC.** `tsc -b` 0 ; les Edge Functions, les 25 erreurs connues ; le lint 0 erreur et 63
+avertissements ; la suite sous les quatre fuseaux, 12 375 tests (404 fichiers) chacun ; le build `index-B2RJJgqz.js`. Le
+banc : 0 débordement aux neuf passes du cabinet, 0 police refusée. Les quatre passes du client échouaient d'abord, à la
+visite « Modifier les paramètres » : le logo du banc vit sous un dossier qui n'est pas celui de sa version (les dossiers
+du banc ne sont pas des identifiants de la base, et un chemin de logo ne se lit que sous un identifiant), donc toute
+version nouvelle y était refusée d'avance (`logo_autre_dossier`) et ce que deviendra le RIB ne se disait plus — un état
+que la base refuse (`parametres_facturation_logo_chemin_forme`), pas un défaut de l'écran. La passe du client voit
+désormais la courante sans logo (« Aucun logo n’est posé. ») ; celle du cabinet garde le logo et son retrait, l'état
+impossible restant sans effet sur ses visites (la première faute que dit « Modifier les paramètres » y est celle du
+délai). Puis 0 débordement aux quatre passes du client, 0 police refusée.
+
+**LA CI.** La première passe de `verifier` a échoué une fois, sous le fuseau de Paris, sur « rien avant la lecture du
+fichier : « Chargement du logo… », puis l'image » (client) — `expected [] to deeply equal [ Array(1) ]`. Le test lisait
+la liste des téléchargements aussitôt après `findByText`, alors que le téléchargement part d'un EFFET : la lecture des
+paramètres finit hors d'un `act`, `findByText` voit « Chargement du logo… » dès qu'il est commis, et l'effet passe dans
+une tâche à part — la cause de la ligne 24.19. Les deux lectures de ce genre (ce test, et « une réponse tardive d'un
+autre dossier ») attendent désormais l'effet (`waitFor`), avec un commentaire qui dit pourquoi ; les autres lisent la
+liste après l'image, qui suppose le téléchargement, ou n'affirment qu'une absence. Reproduit par une copie instrumentée,
+retirée hors de tout commit, où le téléchargement part deux minuteries à zéro après l'effet : les deux tests d'avant y
+échouent — trois échecs, deux sur le message de la CI, le troisième sur un téléchargement laissé en vol par l'échec qui
+le précède —, ceux d'après passent. Puis le fichier sous les quatre fuseaux, `tsc -b`, le lint et la suite.
+
+**QUESTIONS AU CABINET** (posées dans la page des arbitrages, recommandées telles que codées) : A5C2-Q1, la place du
+bloc ; A5C2-Q2, rien sans version ; A5C2-Q3, choisir puis poser ; A5C2-Q4, le retrait confirmé ; A5C2-Q5, le fichier
+vérifié avant d'être montré ; A5C2-Q6, le même fichier déjà déposé, désigné sans nouveau dépôt ; A5C2-Q7, l'image telle
+quelle ; A5C2-Q8, les mots.
+
+**RESTE.** A5c2b (le fichier du logo dans la sauvegarde, et le redépôt d'un fichier absent) ; le tableau de bord du
+cabinet (les dossiers dont un RIB proposé attend sa confirmation) ; 22.61 ; puis A7 (la facture imprime le logo).
+
+### 17/10/2026 — LES RÉPONSES DU CABINET DANS LA PAGE DES ARBITRAGES, ET LA PAGE RASSEMBLÉE
+
+**LA PAGE.** Le 09/10/2026, la session avait ouvert un artefact privé, « Arbitrages du cabinet » : une fiche par
+question que les chantiers de ce jour-là laissaient au cabinet, sa recommandation, un bouton par réponse, enregistrée
+dans la collection `reponses` de la page. Le cabinet y a répondu le 17/10/2026, entre 14 h 21 et 14 h 24 à Paris : 82
+réponses sur 95 questions, toutes la recommandée, sans note. La session ne les a vues que quand le cabinet le lui a
+dit : aucune reprise ne relisait la page. CLAUDE.md porte désormais la règle (« Les questions au cabinet ont leur page
+») ; l'adresse de la page n'entre pas au dépôt, public.
+
+**LES 82 RÉPONSES.** Espace client (51.5) : EC-Q1, deux cases, la simulation sous « Banque » ; EC-Q2, une série unique,
+la mention du mandataire, le mandat et la clause RGPD ; EC-Q3, la facture émise source de sa vente, maintenant ; EC-Q4,
+le client et le cabinet relient la plateforme ; EC-Q5, oui aux trois ; EC-Q6, un compte bancaire suffit ; EC-Q7,
+déplacer puis supprimer l'ancien champ des notes. CFE et CVAE (48) : Q1, Q2, Q6, Q7, Q8, Q10 et Q11 oui ; Q3 laisser ;
+Q4 et Q5 non ; Q9 plus tard. Bilan (33) : Q1 à Q9 — Q3, la case 166 ; Q4, d'accord pour l'instant ; les autres oui.
+Ligne 26.6 : A2 et A3 oui, A4 non ; B1, une 2035 rectificative de N ; B2, B3, B4, B7, B8, B11 et B12 oui ; B5 bloquer ;
+B6, le chef du cabinet seul ; B10 non ; B13 avertir ; B9, pour l'expert-comptable, sans réponse. Plan comptable (43) :
+Q1 à Q12 — Q3, comme le modèle comptable ; Q4, l'accord pour la migration de PC4 ; Q5, six chiffres ; Q8, aucun
+sous-compte pour commencer ; Q9, « a » oui et « b » sur une ligne à part ; les autres oui. E-reporting (28.5 e) : Q2 à
+Q7 oui ; Q1, Q8, Q9 et Q10 sans réponse. Révision (41) : Q1 à Q12 — Q5, la présentation des comptes avec attestation (NP
+2300) ; Q8 et Q10 non ; les autres oui —, et les quatre lectures de R2 confirmées. Vente entrée deux fois (28.6) : Q1
+oui, Q2 et Q3 pas maintenant. Cycle de vie (28.5 d7) : la pastille montre d'abord le refus (210) ou le rejet (213), et
+un refus lu sur la plateforme du client vaut refus chez Super PDP. Déclaration hors application (28.5 d4) : la date
+d'une contre-passation est celle du décaissement.
+
+**CE QU'ELLES OUVRENT.** EC-Q7 : la suppression des anciennes colonnes de notes (la migration écrite le 09/10/2026, à
+rejouer sur une réplique de la base d'aujourd'hui avant que le cabinet la colle) ; EC-Q2 : la mention du mandataire à
+l'impression, le mandat de facturation et la clause RGPD de la lettre de mission ; EC-Q5 : P8, qui attend le
+prestataire ; 28.6-Q1 : désigner le PDF d'une facture émise (une migration) ; 26.6-B1 à B13 : la régularisation, la
+trésorerie d'abord ; 48-Q1, Q2 et Q11 : deux tables de saisie ; 33-Q6 : le bilan lit la forme juridique du dossier,
+posée par A5b2 ; 33-Q9 : la reprise ramène ses comptes à ceux que l'application écrit ; 43-Q4 : l'accord pour PC4 ;
+43-Q12 : le 468 sur un mouvement du relevé se traite comme le 467, à part ; 43-Q7 : le 468 permis pour le dirigeant non
+associé ; 28.5e-Q5 : la case « a aussi des opérations taxables » ; 28.5e-Q6 : e5b2 ; 41-Q1 : R6, après un premier
+exercice réel révisé ; 41-Q5, Q6 et Q9 : le type de mission par dossier, « Finaliser le dossier de travail », R8. Les
+hypothèses que le code avait prises sont confirmées : EC-Q1, EC-Q4 à EC-Q6, 28.5e-Q3, Q4 et Q7, 41-Q2, Q3, Q7, Q8 et
+Q11, 43-Q3 et Q5, et la date d'une contre-passation.
+
+**DEUX CONTRADICTIONS.** EC-Q3 (« oui, maintenant ») contredit 28.6-Q2 (« pas maintenant »), retenue dans la même
+minute ; EC-Q2 (« série unique ») contredit MEG1-Q5, tranchée le 16/10/2026 (deux séries par dossier, G1.45). Chacune
+des deux paires porte la recommandation de son auteur, écrite à des dates différentes. Rien n'est commencé sur elles :
+la page les repose en tête (ARB-EC-Q3, ARB-EC-Q2), et d'ici là MEG1-Q5 vaut.
+
+**LA PAGE RASSEMBLÉE.** À la demande du cabinet, la page porte depuis le 17/10/2026 toutes les questions encore ouvertes
+— celles de Miro, des échanges et des chantiers depuis le 09/10/2026, celles de l'écran du logo, les deux contradictions
+en tête, les gestes qui attendent le cabinet en fin de liste — : 120 questions ouvertes, puis les 82 tranchées, 202 en
+tout ; 23-motDePasse, tranchée le 10/10/2026, en sort. Les réponses gardent leur clé : aucune n'a été touchée.

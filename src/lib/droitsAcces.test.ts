@@ -1069,10 +1069,11 @@ describe('ce que disent les cases, le dernier changement du RIB ouvert (étape A
 // la lecture du seau des ventes de son dossier, le dépôt d'un logo et sa désignation dans une version des paramètres ; aucun
 // fichier ne s'y met à jour, et seul le chef du cabinet en supprime. La phrase le dit après les paramètres, dans ce que
 // « Ventes » ouvre ; elle exige les paramètres (A5a), donc les ventes : sans eux, le drapeau ne change rien à la phrase. Ce
-// qu'elle nomme est confronté à l'export dès qu'il porte la migration.
-const PHRASE_DU_LOGO = ' Par la base, il peut aussi déposer le logo de ses factures — une image PNG ou JPEG de 500 Ko au plus — dans le '
-  + 'stockage des ventes du dossier, où il lit ce qui y est déposé, et le désigner dans une version des paramètres ; un '
-  + 'fichier déposé ne se remplace pas, et lui ne peut pas l’effacer. L’écran du logo viendra ensuite.'
+// qu'elle nomme est confronté à l'export dès qu'il porte la migration. Depuis l'étape A5c2a, elle situe l'écran du logo
+// (« Mes ventes › Paramètres ») et ne le dit plus à venir.
+const PHRASE_DU_LOGO = ' Dans « Mes ventes › Paramètres » comme par la base, il peut aussi déposer le logo de ses factures — une image PNG ou '
+  + 'JPEG de 500 Ko au plus — dans le stockage des ventes du dossier, où il lit ce qui y est déposé, et le désigner dans '
+  + 'une version des paramètres ; un fichier déposé ne se remplace pas, et lui ne peut pas l’effacer.'
 
 describe('ce que disent les cases, le logo des factures ouvert (étape A5c1)', () => {
   const ETATS_DES_AUTRES = [false, true].flatMap((banque) => [false, true].flatMap((articles) => [false, true]
@@ -1087,14 +1088,15 @@ describe('ce que disent les cases, le logo des factures ouvert (étape A5c1)', (
       // Rien de ce que la phrase disait ne se perd : le logo s'insère juste après les paramètres, avant la banque.
       expect(phrase).toBe(avant.slice(0, finDesParametres(avant)) + PHRASE_DU_LOGO + avant.slice(finDesParametres(avant)))
       // Ce qu'il ouvre : la lecture, le dépôt, la désignation ; ce qu'il ferme : remplacer, effacer.
-      for (const mot of ['déposer le logo de ses factures', 'PNG ou JPEG', '500 Ko', 'où il lit ce qui y est déposé',
-        'le désigner dans une version des paramètres', 'ne se remplace pas', 'ne peut pas l’effacer']) {
+      for (const mot of ['« Mes ventes › Paramètres »', 'déposer le logo de ses factures', 'PNG ou JPEG', '500 Ko',
+        'où il lit ce qui y est déposé', 'le désigner dans une version des paramètres', 'ne se remplace pas', 'ne peut pas l’effacer']) {
         expect(PHRASE_DU_LOGO, mot).toContain(mot)
       }
-      // Jamais le SVG ni le WebP ; l'écran à venir (A5c2) ; aucun mot que le garde des écrans tient pour une affirmation
-      // avant lecture (ecransAvantLecture.test.tsx).
+      // Jamais le SVG ni le WebP ; l'écran existe (A5c2a) : rien n'en est dit à venir ; aucun mot que le garde des écrans tient
+      // pour une affirmation avant lecture (ecransAvantLecture.test.tsx).
       expect(PHRASE_DU_LOGO).not.toMatch(/SVG|WebP/)
-      expect(PHRASE_DU_LOGO).toMatch(/L’écran du logo viendra ensuite\.$/)
+      expect(PHRASE_DU_LOGO).not.toMatch(/viendra|à venir/)
+      expect(PHRASE_DU_LOGO).toMatch(/ne peut pas l’effacer\.$/)
       expect(PHRASE_DU_LOGO).not.toMatch(/\b(aucun|aucune|rien)\b/i)
     },
   )

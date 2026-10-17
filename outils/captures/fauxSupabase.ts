@@ -1576,12 +1576,25 @@ const CONTACTS_DU_BANC: Ligne[] = [
 // une version de son titulaire (u-bernard) qui change le RIB — seulement PROPOSÉ, le premier restant en vigueur —, avec des
 // mentions et un titulaire longs, pour éprouver le passage à la ligne. IBAN FICTIFS (le code banque 99999, à clé juste, ceux des
 // essais du dépôt) ; aucune donnée réelle.
+// LE LOGO DES FACTURES de l'atelier (espace client, étape A5c2a) : la version courante désigne un petit PNG FICTIF de 160 × 48 pixels,
+// construit ici de ses octets (une chaîne en base64, aucun fichier ajouté) et d'empreinte JUSTE — son SHA-256, calculé hors du banc sur
+// ces mêmes octets : l'écran le recalcule avant de montrer l'image. Le chemin a la forme d'un logo (`<identifiant>/logos/<empreinte>.png`,
+// l'identifiant au format de la base : ceux du banc, « d7 », ne l'ont pas). Le seau `ventes` du banc le rend ; un dépôt y range le fichier.
+// Ce chemin ne commence donc pas par le dossier de sa version, ce que la base interdit (`parametres_facturation_logo_chemin_forme`) :
+// toute version nouvelle tirée de la courante, logo repris, se dirait refusée (« le logo d'un autre dossier »). La passe du client, dont
+// une visite remplit le formulaire « Modifier les paramètres » jusqu'à ce qu'il dise ce que deviendra le RIB, voit donc la même courante
+// SANS logo ; celle du cabinet montre le logo et sa confirmation de retrait, et ne fait partir aucune version qui le reprendrait.
+const EMPREINTE_DU_LOGO_DU_BANC = '14cafec1fc00ea04927c25274520f59c039061cf7c7595040682a5b10a4480d9'
+const CHEMIN_DU_LOGO_DU_BANC = `a5c00000-0000-4000-8000-0000000000d7/logos/${EMPREINTE_DU_LOGO_DU_BANC}.png`
+const OCTETS_DU_LOGO_DU_BANC = 'iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAIAAAAZy+Y5AAAAlUlEQVR42u3cMQ3AIBRFURzVERbQhwdGlBDYcdBuhMJJrgLO9n5CeFLUwQVPAFiABViAtQS4j7ZhqADrz8C5Fn0GGDBgwIABAwYMGDBgwDoF2GRhyRJgwIABAwYMGDBgwIDdg2XJAgwYMGDAgAEDBgwYsNyDBRgwYMCAAQMGDBgwYMByDzZ0AL4DWH7ZEWABFmAB1msTjfYX2XeSUEUAAAAASUVORK5CYII='
+
 const PARAMETRES_DU_BANC: Ligne[] = [
   {
     id: 'pf1', dossier_id: 'd7', delai_paiement_jours: 30, moyen_prefere: 'virement', escompte: 'Pas d’escompte pour paiement anticipé.',
     penalites: 'Pénalités de retard : taux d’intérêt appliqué par la Banque centrale européenne à son opération de refinancement la plus récente, majoré de 10 points de pourcentage (C. com., art. L441-10, II).',
     mentions_complementaires: null, pied_de_page: null, iban: 'FR9399999000010000000000100', bic: 'ESSAFR10', titulaire_compte: 'Atelier de conseil fictif',
     rib_etat: 'confirme', rib_confirme_par: 'u1', rib_confirme_le: '2026-09-01T08:00:00Z', remplace_id: null, auteur: 'u1', cree_le: '2026-09-01T08:00:00Z',
+    logo_chemin: null, logo_sha256: null,
   },
   {
     id: 'pf2', dossier_id: 'd7', delai_paiement_jours: 45, moyen_prefere: 'virement', escompte: 'Pas d’escompte pour paiement anticipé.',
@@ -1590,8 +1603,20 @@ const PARAMETRES_DU_BANC: Ligne[] = [
     pied_de_page: 'Atelier de conseil fictif — société fictive au capital fictif — 13999 Démoville',
     iban: 'FR1299999000010000000000200', bic: null, titulaire_compte: 'Atelier de conseil fictif, compte professionnel principal de l’atelier',
     rib_etat: 'propose', rib_confirme_par: null, rib_confirme_le: null, remplace_id: 'pf1', auteur: 'u-bernard', cree_le: '2026-10-12T14:30:00Z',
+    logo_chemin: CLIENT_DU_BANC ? null : CHEMIN_DU_LOGO_DU_BANC, logo_sha256: CLIENT_DU_BANC ? null : EMPREINTE_DU_LOGO_DU_BANC,
   },
 ]
+
+// Le seau `ventes` du banc (étape A5c2a) : le logo ci-dessus, et ce qu'un dépôt y range. Comme le service : un nom déjà pris bute
+// (une `StorageApiError` du SDK, que l'application reconnaît à ce qu'elle porte), un objet absent se dit « Object not found ».
+function octetsDeBase64(texte: string): Uint8Array<ArrayBuffer> {
+  const binaire = atob(texte)
+  const octets = new Uint8Array(binaire.length)
+  for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i)
+  return octets
+}
+const SEAU_VENTES = new Map<string, Blob>([[CHEMIN_DU_LOGO_DU_BANC, new Blob([octetsDeBase64(OCTETS_DU_LOGO_DU_BANC)], { type: 'image/png' })]])
+const erreurDuStockage = (status: number, statusCode: string, message: string) => ({ __isStorageError: true, status, statusCode, message })
 
 // `enregistrer_parametres_facturation` et `confirmer_rib` (étape A5b1), comme leurs fonctions en base pour ce que le banc montre :
 // la version nouvelle remplace la courante, son RIB gardé tel quel garde son état, posé ou changé par le cabinet il est confirmé,
@@ -1605,7 +1630,8 @@ function rpcDesParametres(nom: string, args?: Ligne): { data: unknown; error: nu
     const etat = p.iban == null ? null : garde ? courante.rib_etat : CLIENT_DU_BANC ? 'propose' : 'confirme'
     const confirme = etat === 'confirme' && !garde
     const ecrite: Ligne = {
-      id: `pf${versions().length + 1}`, dossier_id: args.p_dossier_id, ...p, rib_etat: etat,
+      id: `pf${versions().length + 1}`, dossier_id: args.p_dossier_id, ...p, logo_chemin: p.logo_chemin ?? null, logo_sha256: p.logo_sha256 ?? null,
+      rib_etat: etat,
       rib_confirme_par: garde ? courante.rib_confirme_par : confirme ? session.user.id : null,
       rib_confirme_le: garde ? courante.rib_confirme_le : confirme ? new Date().toISOString() : null,
       remplace_id: args.p_remplace_id ?? null, auteur: session.user.id, cree_le: new Date().toISOString(),
@@ -2200,12 +2226,22 @@ export const supabase = {
   rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id)),
   from: (table: string) => requete(table),
   storage: {
-    from: () => ({
+    // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.
+    from: (seau: string) => ({
       getPublicUrl: () => ({ data: { publicUrl: LOGO_DU_BANC ?? '' } }),
       createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'maquette' } }),
-      download: () => Promise.resolve({ data: null, error: { message: 'maquette' } }),
+      download: (chemin: string) => {
+        if (seau !== 'ventes') return Promise.resolve({ data: null, error: { message: 'maquette' } })
+        const fichier = SEAU_VENTES.get(chemin)
+        return Promise.resolve(fichier ? { data: fichier, error: null } : { data: null, error: erreurDuStockage(400, '404', 'Object not found') })
+      },
       list: () => Promise.resolve({ data: [], error: null }),
-      upload: () => Promise.resolve({ data: null, error: { message: 'maquette' } }),
+      upload: (chemin: string, corps: Blob) => {
+        if (seau !== 'ventes') return Promise.resolve({ data: null, error: { message: 'maquette' } })
+        if (SEAU_VENTES.has(chemin)) return Promise.resolve({ data: null, error: erreurDuStockage(409, '409', 'The resource already exists') })
+        SEAU_VENTES.set(chemin, corps)
+        return Promise.resolve({ data: { path: chemin }, error: null })
+      },
       remove: () => Promise.resolve({ data: null, error: null }),
     }),
   },
