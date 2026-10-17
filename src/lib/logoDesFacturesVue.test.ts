@@ -3,10 +3,10 @@ import { TAILLE_MAX } from './bornesStockage'
 import { motsDuCabinet } from './espaceVentes'
 import { cheminDuLogo, type LogoLu } from './logoDesFactures'
 import {
-  PHRASE_AUCUN_LOGO, PHRASE_LOGO_EN_LECTURE, PHRASE_LOGO_IDENTIQUE, PHRASE_LOGO_NON_LU, TITRE_DU_LOGO, confirmationDuRetraitDuLogo,
-  ditLeLogoNonMontre, estLeLogoCourant, gesteDuLogo, legendeDuChoix, legendeDuLogo, libelleDuTypeDuLogo, messageDuLogoPose,
-  messageDuLogoRetire, messageFichierDeposeSansVersion, parametresAvecLogo, parametresSansLogo, phraseDuLogo, phraseSansVersion,
-  refusDuFichierChoisi, refusDuNouveauLogo, refusDuRetraitDuLogo,
+  GESTE_DU_REDEPOT, PHRASE_AUCUN_LOGO, PHRASE_LOGO_EN_LECTURE, PHRASE_LOGO_IDENTIQUE, PHRASE_LOGO_NON_LU, PHRASE_REDEPOT, TITRE_DU_LOGO,
+  confirmationDuRetraitDuLogo, ditLeLogoNonMontre, estLeLogoCourant, estUnRedepot, gesteDuLogo, legendeDuChoix, legendeDuLogo,
+  libelleDuTypeDuLogo, messageDuLogoPose, messageDuLogoRetire, messageDuRedepot, messageFichierDeposeSansVersion, parametresAvecLogo,
+  parametresSansLogo, phraseDuLogo, phraseSansVersion, refusDuFichierChoisi, refusDuNouveauLogo, refusDuRetraitDuLogo,
 } from './logoDesFacturesVue'
 import { rienNeChange, champsChanges, saisieDeLaVersion } from './parametresFacturationVue'
 import type { ParametresFacturation } from './types'
@@ -239,5 +239,38 @@ describe('ce que les gestes disent', () => {
       'Le fichier reste dans l’espace du dossier : il n’est pas supprimé, et l’historique des paramètres garde la trace de ce retrait (« Logo retiré »).',
       'Aucune facture n’imprime encore ce logo : elles le feront avec une étape à venir.',
     ])
+  })
+})
+
+// Étape A5c2b : le fichier que la version courante désigne, absent du seau, choisi de nouveau.
+describe('redéposer le fichier absent', () => {
+  const absent: LogoLu = { etat: 'absent' }
+
+  it('seulement le fichier que la version désigne, et seulement quand la relecture l’a dit ABSENT', () => {
+    expect(estUnRedepot(AVEC_LOGO, pret(H1), absent)).toBe(true)
+    // Un autre fichier : un changement de logo.
+    expect(estUnRedepot(AVEC_LOGO, pret(H2), absent)).toBe(false)
+    // Le même nom d'empreinte, en JPEG : un autre chemin, donc un autre fichier.
+    expect(estUnRedepot(AVEC_LOGO, pret(H1, { type: 'image/jpeg' }), absent)).toBe(false)
+    // Avant le retour de la relecture, ou quand elle n'a pas dit « absent » : on ne sait pas que le fichier manque.
+    expect(estUnRedepot(AVEC_LOGO, pret(H1), null)).toBe(false)
+    const autres: LogoLu[] = [
+      { etat: 'verifie', corps: new Blob([]), type: 'image/png', taille: 1 }, { etat: 'refuse', motif: 'x' }, { etat: 'illisible' },
+      { etat: 'autre_empreinte' },
+    ]
+    for (const lu of autres) expect(estUnRedepot(AVEC_LOGO, pret(H1), lu), lu.etat).toBe(false)
+    // Une version sans logo n'a rien à redéposer.
+    expect(estUnRedepot(PLEINE, pret(H1), absent)).toBe(false)
+  })
+
+  it('les mots : le geste, la phrase dite avant le clic, les deux issues — sans personne, lisibles au cabinet comme au client', () => {
+    expect(GESTE_DU_REDEPOT).toBe('Redéposer le fichier')
+    expect(PHRASE_REDEPOT).toBe('Ce fichier est celui que la version désigne, et l’espace du dossier ne le rend plus : « Redéposer le '
+      + 'fichier » le remet à sa place, sans version nouvelle des paramètres.')
+    expect(messageDuRedepot(false)).toBe('Fichier du logo redéposé dans l’espace du dossier, sous le nom que la version désigne : '
+      + 'aucune version nouvelle des paramètres n’a été enregistrée.')
+    expect(messageDuRedepot(true)).toBe('Le fichier du logo était déjà dans l’espace du dossier : son empreinte a été vérifiée, rien '
+      + 'n’a été déposé ni enregistré.')
+    expect(motsDuCabinet([PHRASE_REDEPOT, messageDuRedepot(false), messageDuRedepot(true)].join(' '))).toEqual([])
   })
 })

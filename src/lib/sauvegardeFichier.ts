@@ -1,5 +1,6 @@
 import { dateLocaleDe, slugify } from './format'
 import type { Manifeste, SauvegardeDossier } from './sauvegardeDonnees'
+import { VERSION_SAUVEGARDE, incoherencesDesLogos, type FichierDeSauvegarde } from './sauvegardeLogos'
 
 // Le fichier de sauvegarde lui-même : ce qui sort de la plateforme, et ce qui permettra d'y rentrer.
 //
@@ -21,6 +22,12 @@ import type { Manifeste, SauvegardeDossier } from './sauvegardeDonnees'
 //     fichier. Sans cela, ouvrir la sauvegarde dans un éditeur et l'enregistrer suffirait à la faire
 //     déclarer corrompue — et un contrôle qui accuse à tort finit désactivé, ce qui est bien pire que
 //     de ne pas l'avoir.
+//
+// Le format 2 (étape A5c2b) ajoute les FICHIERS des logos des factures, en base64, à la fin (`fichiers`), toujours dans ce
+// seul JSON : un fichier de sauvegarde reste un fichier, lisible sans outil. L'empreinte ne les couvre pas, et c'est voulu :
+// chaque logo se vérifie par la sienne — son nom EST son SHA-256, que les lignes couvertes par l'empreinte désignent —, et
+// un logo abîmé se dit à la restauration sans faire déclarer corrompu ce qui ne l'est pas ; un code qui ne connaît que le
+// format 1 lit encore le fichier, et la restauration le refuse sur sa version, en le disant.
 
 /** Ce qui est réellement écrit sur le disque. */
 export interface EnveloppeSauvegarde {
@@ -28,6 +35,8 @@ export interface EnveloppeSauvegarde {
   /** SHA-256 de la forme canonique de `contenu`. Recalculée et comparée à la lecture. */
   empreinte: string
   contenu: Record<string, Record<string, unknown>[]>
+  /** Format 2 : les fichiers des logos des factures ; absent au format 1. */
+  fichiers?: FichierDeSauvegarde[]
 }
 
 // Sérialisation canonique : clés triées à tous les niveaux, aucun espace. Deux sauvegardes du même
@@ -62,6 +71,8 @@ export async function serialiserSauvegarde(sauvegarde: SauvegardeDossier): Promi
     manifeste: sauvegarde.manifeste,
     empreinte: await empreinte(serialiserCanonique(sauvegarde.contenu)),
     contenu: sauvegarde.contenu,
+    // En dernier : les octets des logos, longs et illisibles à l'œil, ne cachent pas le manifeste et les lignes.
+    ...(sauvegarde.fichiers !== undefined ? { fichiers: sauvegarde.fichiers } : {}),
   }
   // Indenté : une sauvegarde se lit aussi à l'œil, pour vérifier qu'on tient bien le bon dossier
   // avant d'écraser quoi que ce soit.
@@ -88,6 +99,20 @@ export async function lireSauvegarde(texte: string): Promise<SauvegardeDossier> 
     throw new Error("Ce fichier n'est pas une sauvegarde : il lui manque son manifeste ou son contenu.")
   }
 
+  // Le format AVANT l'empreinte : un format plus récent peut l'écrire autrement, et se dirait « corrompu » à tort. Celui
+  // qu'on ne connaît pas se refuse ici, en le disant ; l'interpréter quand même ferait lire ses fichiers sous des règles
+  // qui ne sont plus les siennes.
+  const version = (enveloppe.manifeste as { version?: unknown }).version
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) {
+    throw new Error("Ce fichier n'est pas une sauvegarde lisible : son format (« version ») manque ou n'est pas un entier.")
+  }
+  if (version > VERSION_SAUVEGARDE) {
+    throw new Error(
+      `Cette sauvegarde est au format ${version}, ce code n'en connaît que ${VERSION_SAUVEGARDE} : elle porte peut-être ce que ` +
+        'cette version ne saurait pas réinsérer. Restaurer avec une version à jour de l’application.',
+    )
+  }
+
   const attendue = enveloppe.empreinte
   const calculee = await empreinte(serialiserCanonique(enveloppe.contenu))
   if (attendue !== calculee) {
@@ -110,9 +135,16 @@ export async function lireSauvegarde(texte: string): Promise<SauvegardeDossier> 
       ecarts.push(`${table} : présente dans le contenu, absente du manifeste`)
     }
   }
+  // Les logos (format 2) : chaque fichier porté annoncé tel quel et désigné par une version, chaque logo désigné porté ou
+  // dit manquant (src/lib/sauvegardeLogos.ts). Les octets se vérifient à la restauration, chacun par son empreinte.
+  ecarts.push(...incoherencesDesLogos(version, enveloppe.manifeste.logos, enveloppe.fichiers, enveloppe.contenu))
   if (ecarts.length > 0) {
     throw new Error(`Sauvegarde incohérente avec son manifeste :\n- ${ecarts.join('\n- ')}`)
   }
 
-  return { manifeste: enveloppe.manifeste, contenu: enveloppe.contenu }
+  return {
+    manifeste: enveloppe.manifeste,
+    contenu: enveloppe.contenu,
+    ...(enveloppe.fichiers !== undefined ? { fichiers: enveloppe.fichiers } : {}),
+  }
 }

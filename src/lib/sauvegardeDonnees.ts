@@ -1,5 +1,13 @@
 import { supabase } from './supabase'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import { lireLeLogo } from './logoDesFacturesLecture'
+import { deposerLeLogo } from './logoDesFacturesEcriture'
+import { messageErreur } from './messageErreur'
+import {
+  EXPLICATION_DEJA_LA, EXPLICATION_REDEPOSE, VERSION_SAUVEGARDE, bilanDesLogos, ecartsDesLogos, explicationDuDepotEchoue,
+  logoInclus, logoSauvegarde, logosDesVersions, planDesLogos, type FichierDeSauvegarde, type LogoManquant, type LogoRestaure,
+  type LogosDuManifeste,
+} from './sauvegardeLogos'
 import {
   clePrimaire,
   comptesRequis,
@@ -27,10 +35,11 @@ import {
 // contrôles sont de la logique pure, donc rejoués à chaque exécution de la suite de tests. Ici il n'y
 // a que l'accès à la base — et c'est la partie qui se trompe le moins.
 //
-// Ce que cette sauvegarde contient : les lignes de base d'un dossier. Ce qu'elle ne contient pas, et
-// qui est dit en toutes lettres dans son manifeste : les fichiers du stockage (l'export de pack les
-// couvre déjà), les comptes utilisateurs, la ligne `cabinets` du cabinet propriétaire, et le catalogue des
-// rôles comptables (`roles_comptables`), posé par migration dans toute base.
+// Ce que cette sauvegarde contient : les lignes de base d'un dossier, et depuis le format 2 (étape A5c2b) le fichier de
+// chaque logo des factures que ses versions des paramètres désignent (src/lib/sauvegardeLogos.ts). Ce qu'elle ne contient
+// pas, et qui est dit en toutes lettres dans son manifeste : les autres fichiers du stockage (l'export de pack les couvre
+// déjà), les comptes utilisateurs, la ligne `cabinets` du cabinet propriétaire, et le catalogue des rôles comptables
+// (`roles_comptables`), posé par migration dans toute base.
 
 /** Nombre de lignes lues par aller-retour. Voir `lireToutesLesLignes` pour ce qui en dépend. */
 export const TAILLE_PAGE = 500
@@ -56,15 +65,23 @@ export interface Manifeste {
   liensPerdus: LienPerdu[]
   /** Ce que cette sauvegarde ne contient pas, dit plutôt que sous-entendu. */
   horsPerimetre: string[]
+  /**
+   * Format 2 (étape A5c2b) : les logos des factures que les versions désignent — ceux que la sauvegarde porte (`fichiers`),
+   * et ceux qui lui manquent, avec leur raison. Absent d'une sauvegarde au format 1, qui ne porte aucun fichier.
+   */
+  logos?: LogosDuManifeste
 }
 
 export interface SauvegardeDossier {
   manifeste: Manifeste
   contenu: Record<string, Record<string, unknown>[]>
+  /** Format 2 : le fichier de chaque logo porté, ses octets en base64 ; absent d'une sauvegarde au format 1. */
+  fichiers?: FichierDeSauvegarde[]
 }
 
-/** Version du format. À incrémenter dès que la forme du fichier change. */
-export const VERSION_SAUVEGARDE = 1
+// La version du format : 2 depuis l'étape A5c2b (les fichiers des logos). Elle vit dans le module pur des logos, que la
+// lecture du fichier de sauvegarde juge sans importer le client de la base. À incrémenter dès que la forme du fichier change.
+export { VERSION_SAUVEGARDE }
 
 // Ce qu'une sauvegarde de données ne remplace pas. Écrit dans le manifeste, et pas seulement ici :
 // une sauvegarde qu'on croit complète est pire qu'une sauvegarde qu'on sait partielle, parce qu'on
@@ -76,15 +93,34 @@ const HORS_PERIMETRE = [
   'Le catalogue des rôles comptables n’est pas inclus : une migration le pose dans toute base, qui doit connaître chaque rôle que le plan du dossier désigne. Voir `referencesExternes`.',
 ]
 
-// Le logo des factures (étape A5c1, seau `ventes`) n'est ni une pièce ni un pack : ni cette sauvegarde ni l'export de pack
-// ne le portent. Chaque version des paramètres de facturation en garde le chemin et l'empreinte, que la restauration
-// réinsère tels quels, sans relire le stockage ; le manifeste le dit dès que la migration est en base.
-export const LOGO_HORS_PERIMETRE = 'Le logo des factures (seau `ventes`) reste dans le stockage, et l’export de pack ne le porte pas : chaque version des paramètres de facturation en garde le chemin et l’empreinte SHA-256, qui disent quel fichier redéposer, et où. Une version restaurée désigne son logo même si le fichier n’est plus là.'
+// Le logo des factures (seau `ventes`) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2
+// (étape A5c2b), cette sauvegarde porte le fichier de chaque logo qu'une version désigne ; ce qu'elle ne porte pas du seau —
+// un fichier qu'aucune version ne désigne, un logo désigné qui n'a pas pu être lu — se dit ici et dans `logos.manquants`,
+// dès que la migration est en base.
+export const LOGO_HORS_PERIMETRE = 'Du seau `ventes`, cette sauvegarde ne porte que le logo des factures que les versions des paramètres désignent (`fichiers`, leur empreinte SHA-256 vérifiée à la lecture) : un fichier du seau qu’aucune version ne désigne n’y est pas, et un logo désigné qui n’a pas pu être lu est nommé dans `logos.manquants`, avec sa raison.'
 
 /** Ce qu'une sauvegarde de données ne remplace pas, selon que la migration du logo est en base. */
 export function horsPerimetre(logo: boolean): string[] {
   return logo ? [...HORS_PERIMETRE, LOGO_HORS_PERIMETRE] : [...HORS_PERIMETRE]
 }
+
+// LES LOGOS D'UN DOSSIER, LUS POUR SA SAUVEGARDE (étape A5c2b). Un à un, par la session de qui sauvegarde : le seau ne rend
+// un fichier qu'à une session que ses policies admettent (le cabinet du dossier). Chaque logo désigné est relu et vérifié par
+// `lireLeLogo` — le même juge que l'écran du logo —, qui ne rejette jamais : un fichier absent, refusé, illisible ou d'une
+// autre empreinte devient un MANQUE nommé, et la sauvegarde continue (question A5C2B-Q1).
+async function lireLesLogos(contenu: Record<string, Ligne[]>): Promise<{ logos: LogosDuManifeste; fichiers: FichierDeSauvegarde[] }> {
+  const fichiers: FichierDeSauvegarde[] = []
+  const manquants: LogoManquant[] = []
+  for (const logo of logosDesVersions(contenu)) {
+    const issue = await logoSauvegarde(logo, await lireLeLogo(logo))
+    if ('fichier' in issue) fichiers.push(issue.fichier)
+    else manquants.push(issue.manquant)
+  }
+  return { logos: { inclus: fichiers.map(logoInclus), manquants }, fichiers }
+}
+
+/** L'étape des logos, annoncée à la progression après les tables. */
+export const ETAPE_DES_LOGOS = 'ventes (logos des factures)'
 
 type Ligne = Record<string, unknown>
 
@@ -230,16 +266,22 @@ export async function exporterDossier(
   const plan = planExportDossier()
   const contenu: Record<string, Ligne[]> = {}
   const lignesParTable: Record<string, number> = {}
+  // Les tables, puis une étape de plus : les logos des factures que les versions lues désignent.
+  const total = plan.length + 1
 
   let fait = 0
   for (const etape of plan) {
-    onProgression?.(fait, plan.length, etape.table)
+    onProgression?.(fait, total, etape.table)
     const lignes = await lireSelonChemin(etape.table, etape.chemin, dossierId, contenu)
     contenu[etape.table] = lignes
     lignesParTable[etape.table] = lignes.length
     fait += 1
   }
-  onProgression?.(fait, plan.length, '')
+  onProgression?.(fait, total, ETAPE_DES_LOGOS)
+  // Après les tables : ce sont les versions LUES qui disent quels fichiers emporter.
+  const { logos, fichiers } = await lireLesLogos(contenu)
+  fait += 1
+  onProgression?.(fait, total, '')
 
   return {
     manifeste: {
@@ -254,8 +296,10 @@ export async function exporterDossier(
       referencesExternes: referencesExternes(contenu),
       liensPerdus: liensPerdus(contenu),
       horsPerimetre: horsPerimetre(LOGO_DES_FACTURES_EXPORTE),
+      logos,
     },
     contenu,
+    fichiers,
   }
 }
 
@@ -272,12 +316,20 @@ export interface ResultatRestauration {
   partageesConservees: number
   /** Liens auto-référencés reposés au second passage (les avoirs vers leur facture d'origine). */
   liensReposes: number
+  /**
+   * Les logos des factures (étape A5c2b), chacun avec son issue : redéposé, déjà là, non redéposé et pourquoi, ou absent de
+   * la sauvegarde — rangés par chemin. Un logo qui n'a pas pu revenir se dit ici, jamais en silence.
+   */
+  logos: LogoRestaure[]
 }
 
-/** Un écart entre ce que la sauvegarde contenait et ce que la base contient après restauration. */
+/**
+ * Un écart entre ce que la sauvegarde contenait et ce que la base contient après restauration. Pour un fichier de logo
+ * (`fichier_absent`), `table` est le seau (`ventes`) et `identite` son chemin.
+ */
 export interface EcartRestauration {
   table: string
-  motif: 'ligne_absente' | 'ligne_en_trop' | 'lien_non_repose'
+  motif: 'ligne_absente' | 'ligne_en_trop' | 'lien_non_repose' | 'fichier_absent'
   identite: string
 }
 
@@ -407,11 +459,18 @@ export async function restaurerSauvegarde(
     throw new Error(`Restauration refusée, rien n'a été écrit :\n- ${refus.join('\n- ')}`)
   }
 
-  const resultat: ResultatRestauration = { lignesParTable: {}, partageesConservees: 0, liensReposes: 0 }
+  // Les logos des factures (format 2, étape A5c2b), jugés AVANT la première écriture et sans réseau : chaque fichier porté
+  // se décode, est un logo que le seau admet, a l'empreinte de la version qui le désigne et se range au chemin qu'elle
+  // désigne — sinon il ne sera pas redéposé, et le bilan dira pourquoi. Aucun n'arrête la restauration (question A5C2B-Q2).
+  const logosPrevus = await planDesLogos(sauvegarde)
+
+  const resultat: ResultatRestauration = { lignesParTable: {}, partageesConservees: 0, liensReposes: 0, logos: [] }
+  // Les étapes des tables, puis celle des logos.
+  const total = plan.etapes.length + 1
   let fait = 0
 
   for (const etape of plan.etapes) {
-    onProgression?.(fait, plan.etapes.length, etape.table)
+    onProgression?.(fait, total, etape.table)
 
     // Une ligne partagée appartient à tout le cabinet : si elle est déjà là, on la laisse. Une
     // catégorie renommée depuis la sauvegarde, ou dont le compte comptable a été corrigé, sert tous
@@ -444,7 +503,32 @@ export async function restaurerSauvegarde(
     }
   }
 
-  onProgression?.(fait, plan.etapes.length, '')
+  // LES FICHIERS DES LOGOS, APRÈS TOUTES LES LIGNES (question A5C2B-Q4). Le dossier existe donc, et ses versions des
+  // paramètres aussi : les policies du seau passent par `gere_les_ventes`, que le super-administrateur qui restaure satisfait
+  // (`admin_du_dossier` → `is_super_admin`, migration `logo_des_factures`). Un dépôt refusé ne défait rien de ce qui précède
+  // et n'arrête pas les autres : il se dit au bilan, et la vérification le compte. Le dépôt est celui de l'écran du logo
+  // (`deposerLeLogo`) : le fichier rejugé à sa signature, son empreinte exigée, jamais d'écrasement (`upsert: false`), et un
+  // nom déjà pris relu — la même empreinte n'est pas un échec.
+  onProgression?.(fait, total, ETAPE_DES_LOGOS)
+  const logos: LogoRestaure[] = [...logosPrevus.nonRedeposes]
+  for (const logo of logosPrevus.aRedeposer) {
+    try {
+      const depot = await deposerLeLogo(logo.dossierId, logo.corps, logo.empreinte)
+      logos.push({
+        chemin: logo.chemin, empreinte: logo.empreinte, issue: depot.dejaLa ? 'deja_la' : 'redepose',
+        explication: depot.dejaLa ? EXPLICATION_DEJA_LA : EXPLICATION_REDEPOSE,
+      })
+    } catch (e) {
+      logos.push({
+        chemin: logo.chemin, empreinte: logo.empreinte, issue: 'non_redepose',
+        explication: explicationDuDepotEchoue(messageErreur(e, 'le stockage n’a pas répondu')),
+      })
+    }
+  }
+  resultat.logos = bilanDesLogos(logos)
+  fait += 1
+
+  onProgression?.(fait, total, '')
   return resultat
 }
 
@@ -487,6 +571,9 @@ export async function verifierRestauration(
       }
     }
   }
+  // Les fichiers des logos (étape A5c2b) : chacun de ceux que la sauvegarde porte doit se relire dans le seau, à son chemin,
+  // de la même empreinte — la relecture les vérifie comme la sauvegarde les a vérifiés (`lireLeLogo`).
+  ecarts.push(...ecartsDesLogos(sauvegarde, relu))
   return ecarts
 }
 

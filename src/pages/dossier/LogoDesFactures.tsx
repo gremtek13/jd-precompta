@@ -3,8 +3,9 @@ import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import { logoDeLaVersion, logoPret, type LogoLu, type LogoPret } from '../../lib/logoDesFactures'
 import { lireLeLogo } from '../../lib/logoDesFacturesLecture'
 import {
-  PHRASE_AUCUN_LOGO, PHRASE_LOGO_EN_LECTURE, PHRASE_LOGO_IDENTIQUE, PHRASE_LOGO_NON_LU, TITRE_DU_LOGO, ditLeLogoNonMontre, estLeLogoCourant,
-  gesteDuLogo, legendeDuChoix, legendeDuLogo, phraseDuLogo, phraseSansVersion, refusDuFichierChoisi, refusDuNouveauLogo,
+  GESTE_DU_REDEPOT, PHRASE_AUCUN_LOGO, PHRASE_LOGO_EN_LECTURE, PHRASE_LOGO_IDENTIQUE, PHRASE_LOGO_NON_LU, PHRASE_REDEPOT, TITRE_DU_LOGO,
+  ditLeLogoNonMontre, estLeLogoCourant, estUnRedepot, gesteDuLogo, legendeDuChoix, legendeDuLogo, phraseDuLogo, phraseSansVersion,
+  refusDuFichierChoisi, refusDuNouveauLogo,
 } from '../../lib/logoDesFacturesVue'
 import { TEXTE_ROMPUE } from '../../lib/parametresFacturationVue'
 import { messageErreur } from '../../lib/messageErreur'
@@ -25,7 +26,8 @@ import type { ParametresFacturation } from '../../lib/types'
 //
 // CHOISIR NE FAIT RIEN PARTIR : le fichier est jugé (`logoPret` : sa signature, la borne du seau) — le refus du format ou du
 // poids se dit tout de suite —, puis, d'après `refusDuNouveauLogo`, ce que la base opposerait à la version qui le désignerait,
-// avant le clic. Un fichier identique au logo en cours ne part pas : le bloc le dit.
+// avant le clic. Un fichier identique au logo en cours ne part pas : le bloc le dit — sauf quand la relecture a dit ce fichier
+// ABSENT du seau (étape A5c2b) : « Redéposer le fichier » le remet à sa place, un dépôt sans version nouvelle, geste de la vue.
 //
 // RIEN AVANT LA LECTURE, RIEN SUR UNE LECTURE PARTIELLE : le bloc n'est monté que sur une version courante lue en entier
 // (ou, sans version, pour dire de renseigner d'abord les paramètres) ; une version dont la lecture n'a pas rendu les colonnes
@@ -41,6 +43,8 @@ interface Props {
   erreur: string | null
   message: string | null
   onPoser: (version: ParametresFacturation, fichier: File, pret: LogoPret) => void
+  // Le fichier que la version désigne, absent du seau, choisi de nouveau : le redéposer, rien de plus (étape A5c2b).
+  onRedeposer: (version: ParametresFacturation, fichier: File, pret: LogoPret) => void
   onProposerLeRetrait: (version: ParametresFacturation) => void
 }
 
@@ -50,7 +54,9 @@ type Lecture = { cle: string; lu: LogoLu; url: string | null }
 // Le fichier choisi, jugé, et l'adresse d'objet de son aperçu (révoquée quand il est remplacé, et au démontage).
 type Choix = { fichier: File; pret: LogoPret; url: string }
 
-export default function LogoDesFactures({ dossierId, espace, courante, versions, occupe, erreur, message, onPoser, onProposerLeRetrait }: Props) {
+export default function LogoDesFactures({
+  dossierId, espace, courante, versions, occupe, erreur, message, onPoser, onRedeposer, onProposerLeRetrait,
+}: Props) {
   const logo = courante === null ? null : logoDeLaVersion(courante)
   const designe = logo !== null && logo !== 'non lu' ? logo : null
   const chemin = designe?.chemin ?? null
@@ -124,6 +130,8 @@ export default function LogoDesFactures({ dossierId, espace, courante, versions,
   const image = lectureDuLogo?.etat === 'verifie' ? lecture?.url ?? null : null
 
   const identique = courante !== null && choix !== null && estLeLogoCourant(courante, choix.pret)
+  // Rien avant la relecture du fichier : tant qu'elle n'a pas dit « absent », le même fichier n'a rien à poser.
+  const redepot = courante !== null && choix !== null && estUnRedepot(courante, choix.pret, lectureDuLogo)
   const refus = courante !== null && choix !== null && !identique ? refusDuNouveauLogo(dossierId, courante, versions, choix.pret) : null
   const refusDit = refus === 'rompue' ? TEXTE_ROMPUE : refus ? pourLEspace(espace, refus.message) : null
   const geste = courante === null ? 'Poser ce logo' : gesteDuLogo(courante)
@@ -162,20 +170,32 @@ export default function LogoDesFactures({ dossierId, espace, courante, versions,
           {choix && (
             <div style={{ marginTop: 10 }}>
               <img className="logo-facture-image" src={choix.url} alt="Aperçu du logo choisi" />
-              <p className="logo-facture-legende">{legendeDuChoix(choix.pret, geste)}</p>
-              {identique && <p className="note-info">{PHRASE_LOGO_IDENTIQUE}</p>}
+              <p className="logo-facture-legende">{legendeDuChoix(choix.pret, redepot ? GESTE_DU_REDEPOT : geste)}</p>
+              {identique && !redepot && <p className="note-info">{PHRASE_LOGO_IDENTIQUE}</p>}
+              {redepot && <p className="note-info">{PHRASE_REDEPOT}</p>}
               {refusDit && <p className="error-text">{refusDit}</p>}
             </div>
           )}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-            <button
-              type="button" className="btn btn-primary btn-sm" title={refusDit ?? undefined}
-              disabled={occupe || choix === null || identique || refus !== null}
-              onClick={() => { if (choix) onPoser(courante, choix.fichier, choix.pret) }}
-            >
-              {geste}
-            </button>
+            {/* Le même fichier, absent du seau : le seul geste qui a un sens est de le redéposer ; « Changer le logo » n'aurait
+                rien à changer. */}
+            {redepot ? (
+              <button
+                type="button" className="btn btn-primary btn-sm" disabled={occupe}
+                onClick={() => { if (choix) onRedeposer(courante, choix.fichier, choix.pret) }}
+              >
+                {GESTE_DU_REDEPOT}
+              </button>
+            ) : (
+              <button
+                type="button" className="btn btn-primary btn-sm" title={refusDit ?? undefined}
+                disabled={occupe || choix === null || identique || refus !== null}
+                onClick={() => { if (choix) onPoser(courante, choix.fichier, choix.pret) }}
+              >
+                {geste}
+              </button>
+            )}
             {designe !== null && (
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => onProposerLeRetrait(courante)}>
                 Retirer le logo

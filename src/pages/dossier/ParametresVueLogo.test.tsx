@@ -4,7 +4,7 @@ import ParametresVue from './ParametresVue'
 import { TAILLE_MAX } from '../../lib/bornesStockage'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import { cheminDuLogo } from '../../lib/logoDesFactures'
-import { PHRASE_LOGO_IDENTIQUE } from '../../lib/logoDesFacturesVue'
+import { PHRASE_LOGO_IDENTIQUE, PHRASE_REDEPOT } from '../../lib/logoDesFacturesVue'
 import { champsChanges } from '../../lib/parametresFacturationVue'
 import type { ParametresFacturation } from '../../lib/types'
 import { empreinteDe, logoDe } from '../../test/logoFictif'
@@ -793,5 +793,158 @@ describe.each(['cabinet', 'client'] as const)('retirer le logo, après une confi
     const ouvert = screen.getByRole('alertdialog')
     expect((within(ouvert).getByRole('button', { name: 'Retirer le logo' }) as HTMLButtonElement).disabled).toBe(true)
     expect(ouvert.textContent).toMatch(/enregistrés entre-temps/)
+  })
+})
+
+// Étape A5c2b : REDÉPOSER LE FICHIER que la version courante désigne quand le seau ne le rend plus (une restauration faite d'une
+// sauvegarde qui ne le portait pas). Choisir CE fichier — la même empreinte — n'est pas un changement de logo : le dépôt seul,
+// au chemin que la version désigne, sans écrasement, aucune version ; puis le bloc relit le fichier. Offert seulement quand la
+// relecture a dit le fichier ABSENT.
+describe.each(['cabinet', 'client'] as const)('redéposer le fichier que la version désigne, absent du seau (%s)', (espace) => {
+  const absent = /n’est pas \(ou plus\) rendu par le stockage du dossier/
+
+  it('le même fichier choisi : « Redéposer le fichier », dit avant le clic ; rien ne part avant lui', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    expect(bloc().getByText(PHRASE_REDEPOT).className).toBe('note-info')
+    expect(bloc().queryByText(PHRASE_LOGO_IDENTIQUE)).toBeNull()
+    // Le seul geste qui a un sens : « Changer le logo » n'aurait rien à changer.
+    expect(screen.queryByRole('button', { name: 'Changer le logo' })).toBeNull()
+    expect(bouton('Redéposer le fichier').disabled).toBe(false)
+    expect(lisible(bloc().getByText(/^Logo choisi/).textContent))
+      .toBe(`Logo choisi : PNG · ${OCTETS_A.byteLength} octets. Rien n’est enregistré avant « Redéposer le fichier ».`)
+    await ticks()
+    expect(faux.depots).toEqual([])
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('le clic : le dépôt seul, au chemin de la version, sans écrasement, aucune version ; le bloc relit le fichier et le montre', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    const avant = faux.lectures
+    await cliquer('Redéposer le fichier', /^Fichier du logo redéposé/)
+    expect(faux.journal).toEqual(['depot'])
+    expect(faux.depots).toEqual([{ chemin: CHEMIN_A, type: 'image/png', upsert: false }])
+    expect(faux.rpcs).toEqual([])
+    expect(faux.versions).toHaveLength(2)
+    // La vue relue sous le verrou, puis le bloc reparti : il relit le fichier, le vérifie et le montre.
+    expect(faux.lectures).toBe(avant + 1)
+    expect(await screen.findByAltText('Logo des factures')).toBeTruthy()
+    expect(faux.telechargements).toEqual([CHEMIN_A, CHEMIN_A])
+    expect(screen.queryByText(absent)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Redéposer le fichier' })).toBeNull()
+    expect(screen.queryByAltText('Aperçu du logo choisi')).toBeNull()
+    expect(bouton('Changer le logo')).toBeTruthy()
+    const message = screen.getByRole('status').textContent ?? ''
+    expect(message).toBe('Fichier du logo redéposé dans l’espace du dossier, sous le nom que la version désigne : aucune version '
+      + 'nouvelle des paramètres n’a été enregistrée.')
+    if (espace === 'client') expect(motsDuCabinet(`${message} ${PHRASE_REDEPOT}`)).toEqual([])
+  })
+
+  it('trois clics du même rendu : un seul dépôt', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    const redeposer = bouton('Redéposer le fichier')
+    await act(async () => {
+      fireEvent.click(redeposer)
+      fireEvent.click(redeposer)
+      fireEvent.click(redeposer)
+    })
+    expect(await screen.findByText(/^Fichier du logo redéposé/)).toBeTruthy()
+    expect(faux.depots).toHaveLength(1)
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('le verrou tient jusqu’à la fin de la relecture : un clic entre le dépôt et la relecture ne dépose rien de plus', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    const redeposer = bouton('Redéposer le fichier')
+    faux.retenirLecture = true
+    await act(async () => {
+      fireEvent.click(redeposer)
+      for (let i = 0; i < 400 && faux.depots.length === 0; i++) await new Promise<void>((r) => setTimeout(r, 5))
+      expect(faux.depots).toHaveLength(1)
+      await new Promise<void>((r) => setTimeout(r, 30))
+      // Le gestionnaire du bouton d'avant est atteint : le verrou seul l'arrête.
+      declencher(redeposer)
+      await new Promise<void>((r) => setTimeout(r, 120))
+    })
+    expect(faux.lecturesEnAttente.length).toBeGreaterThan(0)
+    expect(faux.depots).toHaveLength(1)
+    await libererLecture()
+    expect(await screen.findByText(/^Fichier du logo redéposé/)).toBeTruthy()
+    expect(faux.depots).toHaveLength(1)
+  })
+
+  it('un dépôt refusé par le stockage : dit dans le bloc, aucune version, le geste reste offert pour réessayer', async () => {
+    faux.seau.clear()
+    faux.erreurDepot = { __isStorageError: true, status: 403, statusCode: '403', message: 'new row violates row-level security policy' }
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    await act(async () => { fireEvent.click(bouton('Redéposer le fichier')) })
+    expect((await bloc().findByRole('alert')).textContent).toBe('new row violates row-level security policy')
+    expect(faux.rpcs).toEqual([])
+    expect(faux.seau.has(CHEMIN_A)).toBe(false)
+    expect(bouton('Redéposer le fichier').disabled).toBe(false)
+  })
+
+  it('le fichier revenu entre-temps, le même : relu, vérifié, « déjà là », rien de déposé', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_A))
+    faux.seau.set(CHEMIN_A, new Blob([OCTETS_A]))
+    await cliquer('Redéposer le fichier', /^Le fichier du logo était déjà dans l’espace du dossier/)
+    expect(faux.depots).toHaveLength(1)
+    expect(faux.rpcs).toEqual([])
+    expect(await screen.findByAltText('Logo des factures')).toBeTruthy()
+  })
+
+  it('avant le retour de la relecture du fichier : le même fichier ne propose rien ; « absent » revenu, le redépôt s’offre', async () => {
+    faux.seau.clear()
+    faux.retenirTelechargement = true
+    monter(espace)
+    await screen.findByText('Chargement du logo…')
+    await choisir(png(OCTETS_A))
+    expect(bloc().getByText(PHRASE_LOGO_IDENTIQUE)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Redéposer le fichier' })).toBeNull()
+    await libererTelechargements()
+    expect(await bloc().findByText(PHRASE_REDEPOT)).toBeTruthy()
+    expect(bouton('Redéposer le fichier').disabled).toBe(false)
+  })
+
+  it.each([
+    ['présent et vérifié', () => {}],
+    ['refusé', () => { faux.erreurLecture = { __isStorageError: true, status: 403, statusCode: '403', message: 'permission refusée' } }],
+    ['illisible', () => { faux.seau.set(CHEMIN_A, new Blob([])) }],
+    ['d’une autre empreinte', () => { faux.seau.set(CHEMIN_A, new Blob([OCTETS_B])) }],
+  ])('le fichier %s : le même fichier n’offre aucun redépôt', async (_quoi, preparer) => {
+    preparer()
+    monter(espace)
+    await screen.findByText(/^(PNG ·|Le stockage n’a pas rendu|Le fichier du logo a été rendu|Le fichier rendu n’est pas celui)/)
+    await choisir(png(OCTETS_A))
+    expect(bloc().getByText(PHRASE_LOGO_IDENTIQUE)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Redéposer le fichier' })).toBeNull()
+    expect(bouton('Changer le logo').disabled).toBe(true)
+  })
+
+  it('un AUTRE fichier, le logo désigné absent : c’est un changement de logo, comme avant', async () => {
+    faux.seau.clear()
+    monter(espace)
+    await screen.findByText(absent)
+    await choisir(png(OCTETS_B))
+    expect(screen.queryByRole('button', { name: 'Redéposer le fichier' })).toBeNull()
+    expect(bloc().queryByText(PHRASE_REDEPOT)).toBeNull()
+    await cliquer('Changer le logo', /^Logo changé le/)
+    expect(faux.journal).toEqual(['depot', 'version'])
   })
 })
