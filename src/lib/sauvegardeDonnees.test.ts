@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clePrimaire } from './sauvegarde'
 
 // Le client Supabase est simulé, mais pas en rendant des réponses toutes faites : le faux client
@@ -163,15 +163,23 @@ function ecrivain(table: string) {
   }
 }
 
-vi.mock('./supabase', () => ({
-  supabase: { from: (table: string) => ({ select: () => constructeur(table), ...ecrivain(table) }) },
+// Le seau `ventes` (étape A5c2b) : le vrai SDK du stockage devant un seau factice (src/test/stockageFactice.ts), pour que la
+// lecture et le dépôt des logos aient les verdicts du SDK installé.
+vi.mock('./supabase', async () => ({
+  supabase: {
+    from: (table: string) => ({ select: () => constructeur(table), ...ecrivain(table) }),
+    storage: (await import('../test/stockageFactice')).mondeDuSeau.stockage,
+  },
 }))
 
 const {
-  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, verifierRestauration, LOGO_HORS_PERIMETRE, TAILLE_LOT_ECRITURE,
-  TAILLE_PAGE, VERSION_SAUVEGARDE,
+  exporterDossier, horsPerimetre, lotsDEcriture, restaurerSauvegarde, verifierRestauration, ETAPE_DES_LOGOS, LOGO_HORS_PERIMETRE,
+  TAILLE_LOT_ECRITURE, TAILLE_PAGE, VERSION_SAUVEGARDE,
 } = await import('./sauvegardeDonnees')
-const { LOGO_DES_FACTURES_EXPORTE } = await import('./logoDesFactures')
+const { LOGO_DES_FACTURES_EXPORTE, cheminDuLogo } = await import('./logoDesFactures')
+const { enBase64, explicationDuManque } = await import('./sauvegardeLogos')
+const { mondeDuSeau: seau } = await import('../test/stockageFactice')
+const { empreinteDe, logoDe } = await import('../test/logoFictif')
 
 const DOSSIER = 'd1'
 const CABINET = 'cab1'
@@ -187,6 +195,7 @@ beforeEach(() => {
   journal.length = 0
   ecritures.length = 0
   for (const table of Object.keys(envoyees)) delete envoyees[table]
+  seau.reinitialiser()
 })
 
 describe('export d’un dossier', () => {
@@ -210,14 +219,15 @@ describe('export d’un dossier', () => {
     ])
   })
 
-  it('dit le logo des factures hors de son périmètre dès que sa migration est en base, et seulement alors', () => {
-    // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : la sauvegarde ne lit pas le stockage et l'export de pack
-    // ne le porte pas. La version des paramètres garde le chemin et l'empreinte : c'est ce que le manifeste doit dire.
+  it('dit ce qu’elle ne porte pas du seau des ventes dès que la migration du logo est en base, et seulement alors', () => {
+    // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2 (A5c2b),
+    // la sauvegarde porte le logo que les versions désignent ; le manifeste dit ce qu'elle ne porte pas du seau.
     expect(horsPerimetre(false)).toHaveLength(4)
     expect(horsPerimetre(false).some((ligne) => /logo/i.test(ligne))).toBe(false)
     expect(horsPerimetre(true)).toEqual([...horsPerimetre(false), LOGO_HORS_PERIMETRE])
     expect(LOGO_HORS_PERIMETRE).toMatch(/seau `ventes`/)
-    expect(LOGO_HORS_PERIMETRE).toMatch(/chemin et l’empreinte SHA-256/)
+    expect(LOGO_HORS_PERIMETRE).toMatch(/aucune version ne désigne n’y est pas/)
+    expect(LOGO_HORS_PERIMETRE).toMatch(/`logos\.manquants`, avec sa raison/)
     // Deux appels ne partagent pas le tableau : un manifeste qu'on retoucherait ne retoucherait pas l'autre.
     expect(horsPerimetre(true)).not.toBe(horsPerimetre(true))
   })
@@ -366,13 +376,19 @@ describe('export d’un dossier', () => {
     await expect(exporterDossier(DOSSIER)).rejects.toThrow(/permission denied/)
   })
 
-  it('annonce sa progression table par table', async () => {
+  it('annonce sa progression table par table, puis les logos des factures', async () => {
     const vues: string[] = []
-    await exporterDossier(DOSSIER, (_fait, _total, table) => { if (table) vues.push(table) })
+    const totaux = new Set<number>()
+    let derniere: [number, number] = [0, 0]
+    await exporterDossier(DOSSIER, (fait, total, table) => { if (table) vues.push(table); totaux.add(total); derniere = [fait, total] })
     expect(vues[0]).toBe('dossiers')
     expect(vues).toContain('pieces')
     // Le parent avant l'enfant, sans quoi la lecture par parent se ferait sur une liste vide.
     expect(vues.indexOf('factures_emises')).toBeLessThan(vues.indexOf('facture_lignes'))
+    // Les logos après toutes les tables : ce sont les versions lues qui disent quels fichiers emporter.
+    expect(vues.at(-1)).toBe(ETAPE_DES_LOGOS)
+    expect(totaux.size).toBe(1)
+    expect(derniere[0]).toBe(derniere[1])
   })
 })
 
@@ -1090,6 +1106,235 @@ describe('restauration d’un dossier qui a des textes lus', () => {
     await restaurerSauvegarde(sauvegarde)
     expect(base.tables.piece_textes_ocr.map((l) => l.texte_md5)).toEqual(sauvegarde.contenu.piece_textes_ocr.map((l) => l.texte_md5))
     expect(await verifierRestauration(sauvegarde)).toEqual([])
+  })
+})
+
+// LE LOGO DES FACTURES DANS LA SAUVEGARDE (étape A5c2b ; décision du cabinet A5C-Q5). La sauvegarde porte le fichier de chaque
+// logo que les versions des paramètres désignent, relu dans le seau et vérifié ; ce qu'elle n'a pas pu lire, elle le dit sans
+// échouer. La restauration redépose les fichiers APRÈS toutes les lignes, au chemin que la version désigne, sans écraser, et
+// dit chacun au bilan ; la relecture compte un fichier qui n'est pas revenu. Le seau : le vrai SDK devant un faux `fetch`.
+describe('le logo des factures dans la sauvegarde (format 2)', () => {
+  const DL = 'a5c00000-0000-4000-8000-0000000000d1'
+  let OA: Uint8Array<ArrayBuffer>
+  let OB: Uint8Array<ArrayBuffer>
+  let HA: string
+  let HB: string
+  let CA: string
+  let CB: string
+
+  beforeAll(async () => {
+    OA = logoDe(1)
+    OB = logoDe(2)
+    HA = await empreinteDe(OA)
+    HB = await empreinteDe(OB)
+    CA = cheminDuLogo(DL, HA, 'image/png')
+    CB = cheminDuLogo(DL, HB, 'image/png')
+  })
+
+  // Quatre versions : aucun logo, le logo A posé, changé pour B, puis A de nouveau — deux fichiers distincts.
+  const versions = (): Ligne[] => [
+    { id: 'v1', dossier_id: DL, logo_chemin: null, logo_sha256: null, remplace_id: null },
+    { id: 'v2', dossier_id: DL, logo_chemin: CA, logo_sha256: HA, remplace_id: 'v1' },
+    { id: 'v3', dossier_id: DL, logo_chemin: CB, logo_sha256: HB, remplace_id: 'v2' },
+    { id: 'v4', dossier_id: DL, logo_chemin: CA, logo_sha256: HA, remplace_id: 'v3' },
+  ]
+  function semer() {
+    base.tables = { dossiers: [{ id: DL, nom: 'Atelier fictif', cabinet_id: CABINET }], parametres_facturation: versions() }
+    seau.seau.set(CA, new Blob([OA]))
+    seau.seau.set(CB, new Blob([OB]))
+  }
+  // La base d'arrivée : le cabinet, aucun dossier, un seau vide.
+  function baseDArrivee() {
+    base.tables = { cabinets: [{ id: CABINET, nom: 'Cabinet fictif' }], dossiers: [] }
+    seau.reinitialiser()
+  }
+  const depots = () => seau.envois.filter((e) => e.methode === 'POST')
+  const octetsDuSeau = async (chemin: string) => new Uint8Array(await (seau.seau.get(chemin) as Blob).arrayBuffer())
+
+  describe('la sauvegarde', () => {
+    it('porte chaque logo désigné, une fois, vérifié ; le manifeste les annonce ; rien n’est déposé', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      expect(s.manifeste.version).toBe(2)
+      const attendus = [
+        { seau: 'ventes', chemin: CA, empreinte: HA, type: 'image/png', octets: OA.length, base64: enBase64(OA) },
+        { seau: 'ventes', chemin: CB, empreinte: HB, type: 'image/png', octets: OB.length, base64: enBase64(OB) },
+      ].sort((a, b) => (a.chemin < b.chemin ? -1 : 1))
+      expect(s.fichiers).toEqual(attendus)
+      expect(s.manifeste.logos).toEqual({ inclus: attendus.map(({ seau: _s, base64: _b, ...l }) => l), manquants: [] })
+      // Une lecture par fichier distinct, aucun dépôt.
+      expect(seau.envois.map((e) => [e.methode, e.chemin])).toEqual(attendus.map((f) => ['GET', f.chemin]))
+      // Les lignes, elles, sont toutes là.
+      expect(s.contenu.parametres_facturation).toHaveLength(4)
+    })
+
+    it('un dossier sans logo : aucune lecture du seau, des listes vides', async () => {
+      semer()
+      base.tables.parametres_facturation = [versions()[0]]
+      const s = await exporterDossier(DL)
+      expect(s.fichiers).toEqual([])
+      expect(s.manifeste.logos).toEqual({ inclus: [], manquants: [] })
+      expect(seau.envois).toEqual([])
+    })
+
+    it('un logo absent du seau : la sauvegarde est faite, et son manifeste le nomme avec sa raison', async () => {
+      semer()
+      seau.seau.delete(CB)
+      const s = await exporterDossier(DL)
+      expect(s.fichiers?.map((f) => f.chemin)).toEqual([CA])
+      expect(s.manifeste.logos?.manquants).toEqual([{ chemin: CB, empreinte: HB, raison: 'absent', explication: explicationDuManque({ etat: 'absent' }) }])
+      expect(s.contenu.parametres_facturation).toHaveLength(4)
+    })
+
+    it.each([
+      ['d’une autre empreinte', () => { seau.seau.set(CB, new Blob([logoDe(9)])) }, 'autre_empreinte'],
+      ['vide, donc illisible', () => { seau.seau.set(CB, new Blob([])) }, 'illisible'],
+    ])('un fichier %s : nommé, jamais porté', async (_quoi, preparer, raison) => {
+      semer()
+      preparer()
+      const s = await exporterDossier(DL)
+      expect(s.fichiers?.map((f) => f.chemin)).toEqual([CA])
+      expect(s.manifeste.logos?.manquants.map((m) => [m.chemin, m.raison])).toEqual([[CB, raison]])
+    })
+
+    it('le stockage qui refuse de rendre les fichiers : chacun nommé, avec le motif du stockage', async () => {
+      semer()
+      seau.reponseLecture = () => Response.json({ statusCode: '500', error: 'internal', message: 'panne du stockage' }, { status: 500 })
+      const s = await exporterDossier(DL)
+      expect(s.fichiers).toEqual([])
+      expect(s.manifeste.logos?.manquants.map((m) => m.raison)).toEqual(['refuse', 'refuse'])
+      expect(s.manifeste.logos?.manquants[0].explication).toMatch(/\(panne du stockage\)/)
+    })
+  })
+
+  describe('la restauration', () => {
+    it('aller-retour : les fichiers reviennent au chemin de leur version, APRÈS toutes les lignes, sans écrasement ; la relecture le prouve', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      baseDArrivee()
+      // Le nombre de lignes écrites au moment de chaque dépôt : toutes, déjà.
+      const lignesAuDepot: number[] = []
+      const pousser = seau.envois.push
+      seau.envois.push = function (...e) {
+        if (e.some((x) => x.methode === 'POST')) lignesAuDepot.push(ecritures.length)
+        return pousser.apply(this, e)
+      }
+      let r
+      try {
+        r = await restaurerSauvegarde(s)
+      } finally {
+        seau.envois.push = pousser
+      }
+      expect(depots().map((d) => [d.chemin, d.type, d.upsert])).toEqual(
+        [CA, CB].sort().map((c) => [c, 'image/png', 'false']),
+      )
+      expect(lignesAuDepot).toHaveLength(2)
+      expect(lignesAuDepot.every((n) => n === ecritures.length)).toBe(true)
+      expect(ecritures.map((e) => e.table)).toContain('parametres_facturation')
+      expect(await octetsDuSeau(CA)).toEqual(OA)
+      expect(await octetsDuSeau(CB)).toEqual(OB)
+      expect(r.logos.map((l) => [l.chemin, l.issue])).toEqual([CA, CB].sort().map((c) => [c, 'redepose']))
+      expect(await verifierRestauration(s)).toEqual([])
+    })
+
+    it('un fichier déjà dans le seau, de la même empreinte : relu, vérifié — pas un échec, et rien d’écrasé', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      baseDArrivee()
+      seau.seau.set(CA, new Blob([OA]))
+      const r = await restaurerSauvegarde(s)
+      expect(r.logos.find((l) => l.chemin === CA)?.issue).toBe('deja_la')
+      expect(r.logos.find((l) => l.chemin === CB)?.issue).toBe('redepose')
+      expect(await verifierRestauration(s)).toEqual([])
+    })
+
+    it('un autre fichier sous le même nom : non redéposé, dit, la restauration va au bout, et la relecture compte l’écart', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      baseDArrivee()
+      seau.seau.set(CA, new Blob([logoDe(9)]))
+      const r = await restaurerSauvegarde(s)
+      const a = r.logos.find((l) => l.chemin === CA)
+      expect(a?.issue).toBe('non_redepose')
+      expect(a?.explication).toMatch(/^Le dépôt a échoué : Un fichier de ce nom est déjà dans l’espace du dossier, mais ce n’est pas ce logo/)
+      expect(base.tables.parametres_facturation).toHaveLength(4)
+      expect(await octetsDuSeau(CA)).toEqual(logoDe(9))
+      expect(await verifierRestauration(s)).toEqual([{ table: 'ventes', motif: 'fichier_absent', identite: CA }])
+    })
+
+    it('un dépôt que le stockage refuse : dit au bilan sous ses mots, les lignes restent écrites', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      baseDArrivee()
+      seau.reponseDepot = () => Response.json({ statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }, { status: 403 })
+      const r = await restaurerSauvegarde(s)
+      expect(r.logos.map((l) => l.issue)).toEqual(['non_redepose', 'non_redepose'])
+      expect(r.logos[0].explication).toMatch(/^Le dépôt a échoué : new row violates row-level security policy\. La version restaurée le désigne/)
+      expect(r.lignesParTable.parametres_facturation).toBe(4)
+    })
+
+    it('des octets abîmés dans le fichier de sauvegarde : jamais déposés, dits, et comptés à la relecture', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      const abime = s.fichiers?.find((f) => f.chemin === CA)
+      if (!abime) throw new Error('attendu : le fichier A')
+      abime.base64 = enBase64(OB)
+      baseDArrivee()
+      const r = await restaurerSauvegarde(s)
+      expect(depots().map((d) => d.chemin)).toEqual([CB])
+      expect(r.logos.find((l) => l.chemin === CA)?.explication).toMatch(/n’ont pas l’empreinte que la version désigne/)
+      expect(await verifierRestauration(s)).toEqual([{ table: 'ventes', motif: 'fichier_absent', identite: CA }])
+    })
+
+    it('un fichier qu’aucune version de la sauvegarde ne désigne — un autre dossier — n’est jamais déposé', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      const autre = 'a5c00000-0000-4000-8000-0000000000d2'
+      const intrus = { ...(s.fichiers ?? [])[0], chemin: cheminDuLogo(autre, (s.fichiers ?? [])[0].empreinte, 'image/png') }
+      s.fichiers = [...(s.fichiers ?? []), intrus]
+      baseDArrivee()
+      const r = await restaurerSauvegarde(s)
+      expect(depots().map((d) => d.chemin).some((c) => c.startsWith(autre))).toBe(false)
+      expect(r.logos.find((l) => l.chemin === intrus.chemin)?.issue).toBe('non_redepose')
+    })
+
+    it('une sauvegarde au format 1 se restaure toujours : sans fichier, chaque logo désigné dit à redéposer', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      const { logos: _logos, ...manifeste } = s.manifeste
+      const ancienne = { manifeste: { ...manifeste, version: 1 }, contenu: s.contenu }
+      baseDArrivee()
+      const r = await restaurerSauvegarde(ancienne)
+      expect(depots()).toEqual([])
+      expect(r.lignesParTable.parametres_facturation).toBe(4)
+      expect(r.logos.map((l) => l.issue)).toEqual(['absent_de_la_sauvegarde', 'absent_de_la_sauvegarde'])
+      expect(r.logos[0].explication).toMatch(/^Une sauvegarde au format 1 ne porte aucun fichier\. La version restaurée le désigne/)
+      // Ce qu'elle ne portait pas n'est pas un écart : la relecture ne peut pas trouver ce qu'elle n'a pas reçu.
+      expect(await verifierRestauration(ancienne)).toEqual([])
+    })
+
+    it('un logo que la sauvegarde ne portait pas : le bilan redit sa raison, et rien n’est déposé pour lui', async () => {
+      semer()
+      seau.seau.delete(CB)
+      const s = await exporterDossier(DL)
+      baseDArrivee()
+      const r = await restaurerSauvegarde(s)
+      expect(depots().map((d) => d.chemin)).toEqual([CA])
+      const b = r.logos.find((l) => l.chemin === CB)
+      expect(b?.issue).toBe('absent_de_la_sauvegarde')
+      expect(b?.explication.startsWith(explicationDuManque({ etat: 'absent' }))).toBe(true)
+      expect(await verifierRestauration(s)).toEqual([])
+    })
+
+    it('une restauration refusée ne dépose rien', async () => {
+      semer()
+      const s = await exporterDossier(DL)
+      seau.envois.length = 0
+      // Le dossier existe encore : la restauration n'écrase jamais.
+      await expect(restaurerSauvegarde(s)).rejects.toThrow(/existe déjà/)
+      expect(depots()).toEqual([])
+      expect(ecritures).toEqual([])
+    })
   })
 })
 

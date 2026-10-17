@@ -94,6 +94,33 @@ export function estLeLogoCourant(courante: Pick<ParametresFacturation, 'logo_che
   return logo !== 'non lu' && logo !== null && logo.chemin === pret.chemin && logo.empreinte === pret.empreinte
 }
 
+// ── Redéposer un fichier absent (étape A5c2b) ─────────────────────────────────────────────────────────────────────────
+// Une version peut désigner un logo dont le fichier n'est plus dans le seau : une restauration faite d'une sauvegarde qui ne
+// le portait pas (format 1, ou un logo qu'elle n'avait pas pu lire). Choisir CE fichier — la même empreinte, donc le même
+// nom — ne change pas le logo : il le remet à sa place. Rien qu'un dépôt, au chemin que la version désigne, aucune version
+// nouvelle. Offert seulement quand la relecture a dit le fichier ABSENT : refusé ou illisible, on ne sait pas s'il manque ;
+// d'une autre empreinte, un fichier occupe déjà le nom, et le seau n'admet aucun écrasement.
+
+export const GESTE_DU_REDEPOT = 'Redéposer le fichier'
+
+export const PHRASE_REDEPOT = 'Ce fichier est celui que la version désigne, et l’espace du dossier ne le rend plus : « Redéposer le '
+  + 'fichier » le remet à sa place, sans version nouvelle des paramètres.'
+
+/** Le fichier choisi est-il celui que la version désigne, alors que la relecture l'a dit absent du seau ? */
+export function estUnRedepot(
+  courante: Pick<ParametresFacturation, 'logo_chemin' | 'logo_sha256'>, pret: Pick<LogoPret, 'chemin' | 'empreinte'>, lu: LogoLu | null,
+): boolean {
+  return lu?.etat === 'absent' && estLeLogoCourant(courante, pret)
+}
+
+/** Le message d'un redépôt : rien que le fichier ; s'il était déjà là (relu, la même empreinte), rien n'a été déposé. */
+export function messageDuRedepot(dejaLa: boolean): string {
+  return dejaLa
+    ? 'Le fichier du logo était déjà dans l’espace du dossier : son empreinte a été vérifiée, rien n’a été déposé ni enregistré.'
+    : 'Fichier du logo redéposé dans l’espace du dossier, sous le nom que la version désigne : aucune version nouvelle des '
+      + 'paramètres n’a été enregistrée.'
+}
+
 /** Le libellé du geste : poser s'il n'y a pas de logo, changer sinon. */
 export function gesteDuLogo(courante: Pick<ParametresFacturation, 'logo_chemin' | 'logo_sha256'>): 'Poser ce logo' | 'Changer le logo' {
   const logo = logoDeLaVersion(courante)

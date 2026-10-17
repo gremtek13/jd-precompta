@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { cheminDuLogo } from './logoDesFactures'
 import {
   empreinte,
   lireSauvegarde,
@@ -7,6 +8,8 @@ import {
   serialiserSauvegarde,
 } from './sauvegardeFichier'
 import type { Manifeste, SauvegardeDossier } from './sauvegardeDonnees'
+import { VERSION_SAUVEGARDE, enBase64, logoInclus, type FichierDeSauvegarde } from './sauvegardeLogos'
+import { empreinteDe, logoDe } from '../test/logoFictif'
 
 const manifeste = (o: Partial<Manifeste> = {}): Manifeste => ({
   version: 1,
@@ -130,6 +133,100 @@ describe('écriture et relecture d’une sauvegarde', () => {
     vide.contenu.categories = []
     vide.manifeste = manifeste({ lignesParTable: { dossiers: 1, pieces: 2, categories: 0 } })
     expect((await lireSauvegarde(await serialiserSauvegarde(vide))).contenu.categories).toEqual([])
+  })
+})
+
+// LE FORMAT 2 (étape A5c2b) : les fichiers des logos des factures, en base64, à la fin du même JSON ; le manifeste les annonce.
+// Le format se juge AVANT l'empreinte ; les logos se jugent à leur cohérence (src/lib/sauvegardeLogos.ts), leurs octets à la
+// restauration.
+describe('le format 2 : les logos des factures dans le fichier', () => {
+  const D = 'a5c00000-0000-4000-8000-0000000000d1'
+  let OCTETS: Uint8Array<ArrayBuffer>
+  let FICHIER: FichierDeSauvegarde
+
+  beforeAll(async () => {
+    OCTETS = logoDe(4)
+    const h = await empreinteDe(OCTETS)
+    FICHIER = { seau: 'ventes', chemin: cheminDuLogo(D, h, 'image/png'), empreinte: h, type: 'image/png', octets: OCTETS.length, base64: enBase64(OCTETS) }
+  })
+
+  const deuxieme = (): SauvegardeDossier => ({
+    manifeste: manifeste({
+      version: 2, dossierId: D, lignesParTable: { dossiers: 1, parametres_facturation: 1 },
+      logos: { inclus: [logoInclus(FICHIER)], manquants: [] },
+    }),
+    contenu: {
+      dossiers: [{ id: D, nom: 'Atelier fictif', cabinet_id: 'cab1' }],
+      parametres_facturation: [{ id: 'v1', dossier_id: D, logo_chemin: FICHIER.chemin, logo_sha256: FICHIER.empreinte }],
+    },
+    fichiers: [FICHIER],
+  })
+
+  it('rend exactement ce qu’on lui a donné, fichiers compris, et les écrit après les lignes', async () => {
+    expect(VERSION_SAUVEGARDE).toBe(2)
+    const original = deuxieme()
+    const texte = await serialiserSauvegarde(original)
+    expect(await lireSauvegarde(texte)).toEqual(original)
+    expect(Object.keys(JSON.parse(texte))).toEqual(['manifeste', 'empreinte', 'contenu', 'fichiers'])
+  })
+
+  it('l’empreinte ne couvre que les lignes : remis en forme, le fichier reste lisible ; un format 1 s’écrit sans « fichiers »', async () => {
+    const texte = await serialiserSauvegarde(deuxieme())
+    expect((await lireSauvegarde(JSON.stringify(JSON.parse(texte)))).fichiers).toEqual([FICHIER])
+    expect(Object.keys(JSON.parse(await serialiserSauvegarde(sauvegarde())))).toEqual(['manifeste', 'empreinte', 'contenu'])
+    expect('fichiers' in await lireSauvegarde(await serialiserSauvegarde(sauvegarde()))).toBe(false)
+  })
+
+  it('un format plus récent que le code est refusé à la lecture, AVANT l’empreinte, en le disant', async () => {
+    const recente = deuxieme()
+    recente.manifeste = { ...recente.manifeste, version: VERSION_SAUVEGARDE + 1 }
+    // Une empreinte qu'un format futur écrirait autrement : le refus dit le format, jamais « corrompue ».
+    const texte = (await serialiserSauvegarde(recente)).replace(/"empreinte": "[0-9a-f]{64}"/, '"empreinte": "autre"')
+    await expect(lireSauvegarde(texte)).rejects.toThrow(`Cette sauvegarde est au format 3, ce code n'en connaît que 2`)
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['un texte', '2'],
+    ['zéro', 0],
+    ['un nombre à virgule', 1.5],
+  ])('un format %s : le fichier n’est pas une sauvegarde lisible', async (_quoi, version) => {
+    const texte = JSON.parse(await serialiserSauvegarde(sauvegarde())) as { manifeste: Record<string, unknown> }
+    texte.manifeste.version = version
+    await expect(lireSauvegarde(JSON.stringify(texte))).rejects.toThrow(/son format \(« version »\) manque ou n'est pas un entier/)
+  })
+
+  it('un fichier porté que le manifeste n’annonce pas : refusé comme une table qu’il n’annonce pas', async () => {
+    const fautive = deuxieme()
+    fautive.manifeste = { ...fautive.manifeste, logos: { inclus: [], manquants: [] } }
+    await expect(lireSauvegarde(await serialiserSauvegarde(fautive)))
+      .rejects.toThrow(`Sauvegarde incohérente avec son manifeste :\n- logos : le fichier « ${FICHIER.chemin} » est porté sans être annoncé au manifeste`)
+  })
+
+  it('un logo désigné que la sauvegarde ne porte ni ne dit manquant : refusé — elle le tairait', async () => {
+    const fautive = deuxieme()
+    fautive.fichiers = []
+    fautive.manifeste = { ...fautive.manifeste, logos: { inclus: [], manquants: [] } }
+    await expect(lireSauvegarde(await serialiserSauvegarde(fautive))).rejects.toThrow(/n’est ni porté ni dit manquant/)
+  })
+
+  it('un format 2 sans ce qu’il dit des logos : refusé', async () => {
+    const fautive = deuxieme()
+    const { logos: _logos, ...sansLogos } = fautive.manifeste
+    fautive.manifeste = sansLogos
+    await expect(lireSauvegarde(await serialiserSauvegarde(fautive))).rejects.toThrow(/le manifeste ne dit pas les logos des factures/)
+  })
+
+  it('des octets abîmés ne font pas refuser le fichier : chaque logo se vérifie à la restauration, qui le dit', async () => {
+    const abimee = deuxieme()
+    abimee.fichiers = [{ ...FICHIER, base64: enBase64(logoDe(5)) }]
+    expect((await lireSauvegarde(await serialiserSauvegarde(abimee))).fichiers).toEqual(abimee.fichiers)
+  })
+
+  it('un format 1 qui porterait des fichiers : refusé, ils ne seraient redéposés nulle part', async () => {
+    const texte = JSON.parse(await serialiserSauvegarde(sauvegarde())) as Record<string, unknown>
+    texte.fichiers = [FICHIER]
+    await expect(lireSauvegarde(JSON.stringify(texte))).rejects.toThrow(/une sauvegarde au format 1 ne porte aucun fichier/)
   })
 })
 

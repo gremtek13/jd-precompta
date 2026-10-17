@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { exporterDossier, telechargerSauvegarde, type SauvegardeDossier } from '../../lib/sauvegardeDonnees'
+import { phraseDesLogosManquants } from '../../lib/sauvegardeLogos'
 import { messageErreur } from '../../lib/messageErreur'
 
 // La sauvegarde des données d'un dossier, sous forme de fichier qui QUITTE la plateforme.
@@ -9,6 +10,8 @@ import { messageErreur } from '../../lib/messageErreur'
 // de la même chose, et l'écran doit le dire : un pack contient les FICHIERS (les justificatifs), une
 // sauvegarde contient les LIGNES (catégories, écritures, rapprochements, factures). Ni l'un ni
 // l'autre ne suffit seul, et c'est la confusion la plus coûteuse qu'on puisse laisser s'installer ici.
+// Depuis l'étape A5c2b, la sauvegarde porte aussi le logo des factures (le seau `ventes`, qu'aucun pack ne porte) ; un
+// logo qu'elle n'a pas pu lire se dit en clair sous le nom du fichier téléchargé, jamais seulement dans le repli.
 export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: string; dossierNom: string }) {
   const [enCours, setEnCours] = useState(false)
   const [progression, setProgression] = useState<{ fait: number; total: number; table: string } | null>(null)
@@ -41,20 +44,22 @@ export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: s
 
   const manifeste = resultat?.sauvegarde.manifeste
   const totalLignes = manifeste ? Object.values(manifeste.lignesParTable).reduce((s, n) => s + n, 0) : 0
+  const logosManquants = manifeste ? phraseDesLogosManquants(manifeste.logos) : null
 
   return (
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0 }}>Sauvegarde des données</h3>
       <p className="muted" style={{ marginTop: -8 }}>
         Télécharge sur ton ordinateur toutes les LIGNES de "{dossierNom}" — catégories, pièces,
-        mouvements bancaires, écritures, factures, cotisations, rapprochements — dans un seul fichier
-        JSON lisible tel quel. C'est ce qui permettrait de reconstruire le dossier si ce compte
-        Supabase devenait inaccessible.
+        mouvements bancaires, écritures, factures, cotisations, rapprochements — et, s'il en a un, le
+        logo de ses factures, dans un seul fichier JSON lisible tel quel. C'est ce qui permettrait de
+        reconstruire le dossier si ce compte Supabase devenait inaccessible.
       </p>
       <p className="muted">
         <strong>À ne pas confondre avec un pack.</strong> Un pack contient les fichiers
-        (les justificatifs eux-mêmes) ; cette sauvegarde contient les données qui les relient. Il faut
-        les deux pour repartir de zéro.
+        (les justificatifs eux-mêmes) ; cette sauvegarde contient les données qui les relient, et le
+        seul fichier qu'aucun pack ne porte : le logo des factures. Il faut les deux pour repartir de
+        zéro.
       </p>
       {/* Le fichier porte le texte OCR intégral des pièces, qui sur un dossier de santé contient des
           noms de patients et des numéros de sécurité sociale. Le dire ici, au moment du
@@ -66,9 +71,10 @@ export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: s
           restauration les perd, et il faut les refaire. */}
       <p className="muted">
         <strong>Ce fichier est confidentiel.</strong> Il contient le texte intégral lu sur chaque pièce
-        — donc, sur un dossier de santé, des données de patients. Il se range comme se rangerait le
-        dossier papier du client. Il ne contient ni les identifiants Super PDP ni la connexion bancaire
-        du dossier : après une restauration, ils se refont.
+        — donc, sur un dossier de santé, des données de patients — et le logo des factures, qui peut
+        porter le nom d'un entrepreneur individuel. Il se range comme se rangerait le dossier papier du
+        client. Il ne contient ni les identifiants Super PDP ni la connexion bancaire du dossier :
+        après une restauration, ils se refont.
       </p>
 
       {erreur && <p className="error-text">{erreur}</p>}
@@ -102,6 +108,10 @@ export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: s
               {manifeste.liensPerdus[0].parent}.
             </p>
           )}
+
+          {/* Un logo des factures que la sauvegarde n'a pas pu lire : elle est faite, et elle le dit ici, en clair — une
+              sauvegarde qu'on croirait complète ne ferait rien préparer pour la reprise (question A5C2B-Q1). */}
+          {logosManquants && <p className="alerte-tva" role="status">{logosManquants}</p>}
 
           <details>
             <summary className="muted">Ce que ce fichier ne contient pas</summary>

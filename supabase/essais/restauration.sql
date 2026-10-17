@@ -249,6 +249,13 @@
 -- dont les quatre versions en quatre vagues), 0 écart, aucun arrêt, les contrôles du catalogue des rôles justes ; celui
 -- de la colonne générée sans objet (aucun texte OCR dans le dossier de la réplique). Sans la migration : 140 clés, 74
 -- tables IDENTIQUES, 66 lignes.
+--
+-- 17/10/2026, espace client, étape A5c2b : la SAUVEGARDE porte désormais le fichier de chaque logo qu'une version
+-- désigne (format 2, src/lib/sauvegardeLogos.ts), et la restauration de l'application le redépose dans le seau `ventes`
+-- après les lignes. Ce script n'en joue rien, et ne le simule pas : un fichier du stockage n'est pas une ligne, et ce
+-- script recopie des lignes. Aucune table n'entre au plan, rien n'y change. Le dépôt à la restauration est éprouvé par
+-- sauvegardeDonnees.test.ts, contre le SDK installé du stockage devant un seau factice ; son premier dépôt réel reste à
+-- faire (PLAN_DE_REPRISE.md, §6).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés

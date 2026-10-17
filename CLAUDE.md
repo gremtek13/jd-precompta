@@ -650,7 +650,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   le logo, sous le verrou `gesteEnCours` relâché après la relecture ; un nom déjà pris (`estUnDoublonDuStockage`, sur ce
   que le SDK porte) fait relire le fichier, désigné s'il a la même empreinte ; un dépôt dont la version est refusée
   laisse le fichier (A5C-Q3), et l'écran le dit. « Retirer le logo » : une version sans logo, après une confirmation
-  dans la page → « LE LOGO DES FACTURES, À L'ÉCRAN ».
+  dans la page → « LE LOGO DES FACTURES, À L'ÉCRAN ». Depuis A5c2b (17/10/2026), le fichier que la version désigne,
+  choisi de nouveau quand la relecture l'a dit ABSENT (et lui seul : ni refusé, ni illisible, ni d'une autre empreinte),
+  offre « Redéposer le fichier » : le dépôt seul (`deposerLeLogo`), aucune version, sous `gesteEnCours` ; le bloc,
+  dont la clé change, relit le fichier → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -747,7 +750,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   confirmation, le reste trente jours (A5b3b, 17/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
   `ventes`, où le cabinet et le client « Ventes » lisent et déposent, le logo désigné par une version des paramètres, le
   seau vidé avec le dossier (A5c1, 17/10/2026), et son écran — le voir, son empreinte vérifiée, le poser, le changer, le
-  retirer, dans la vue « Paramètres » (A5c2a, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
+  retirer, dans la vue « Paramètres » (A5c2a, 17/10/2026) —, et le fichier du logo dans la sauvegarde d'un dossier,
+  redéposé par sa restauration, et « Redéposer le fichier » quand le seau ne le rend plus (A5c2b, 17/10/2026) ;
+  client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
   accueil
   client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la même chose que `ClientUpload` et la Checklist
   (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau mot de passe avant tout autre écran,
@@ -809,9 +814,11 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   texte OCR des pièces sensibles après clôture, 22/09/2026), Estimation, Balance des comptes (pilotage, comptes de tiers
   à une date), Virements ; assistant comptable IA avec plafond de coût.
 - **Exports** : pack (ZIP + Excel), export d'un cabinet, sauvegarde et restauration d'un dossier — **une sauvegarde
-  n'est pas un pack** : le pack porte les fichiers, la sauvegarde les lignes qui les relient (PLAN_DE_REPRISE.md) ; le
-  logo des factures n'est ni dans l'un ni dans l'autre : chaque version des paramètres en garde le chemin et
-  l'empreinte, le manifeste le dit (`horsPerimetre`), et PLAN_DE_REPRISE.md (§4, point 6) dit de le redéposer.
+  n'est pas un pack** : le pack porte les fichiers, la sauvegarde les lignes qui les relient (PLAN_DE_REPRISE.md) ;
+  depuis son format 2 (A5c2b), la sauvegarde porte aussi le fichier de chaque logo des factures qu'une version désigne
+  — aucun pack ne le porte —, vérifié par son empreinte, et la restauration le redépose après les lignes ; un logo
+  qu'elle n'a pas pu lire se nomme dans son manifeste (`logos.manquants`), et PLAN_DE_REPRISE.md (§4, point 6) dit
+  comment le redéposer.
 - **Nouvelles clés d'API de Supabase** (30/09/2026).
 
 ## Fonctionnalités actuellement en cours
@@ -1039,8 +1046,10 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   l'empreinte du logo, pas le fichier, l'onglet Accès dit ce que « Ventes » ouvre de plus → « LE LOGO DES FACTURES ET
   SON SEAU, EN BASE ». A5c2a, l'écran du logo — le voir (son fichier relu, son empreinte recalculée), le poser ou le
   changer, le retirer, dans le bloc « Logo des factures » de « Paramètres » —, le 17/10/2026 (A5C2-Q1 à Q8 posées au
-  cabinet) → « LE LOGO DES FACTURES, À L'ÉCRAN ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les
-  noms des colonnes du fichier de l'ancien logiciel, ouverte), A5c2b (le fichier du logo dans la sauvegarde, A5C-Q5) et
+  cabinet) → « LE LOGO DES FACTURES, À L'ÉCRAN ». A5c2b, le fichier du logo dans la sauvegarde (format 2 : porté,
+  vérifié, redéposé par la restauration, chaque logo dit au bilan) et « Redéposer le fichier », le 17/10/2026 (A5C-Q5 ;
+  A5C2B-Q1 à Q6 posées au cabinet) → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ». Restent, dans l'ordre recommandé,
+  A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) et
   le tableau de bord du cabinet (les dossiers dont un RIB proposé attend sa confirmation, dits en
   une fois par une fonction — A5B3-Q5), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur
   la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, le logo qu'elle imprime,
@@ -1136,6 +1145,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `generated` (une seule : `piece_textes_ocr.texte_md5`), et `restauration.sql` en porte la génération (`_generees`,
   insertions par liste de colonnes). Une empreinte qu'une GARDE doit vérifier reste une colonne ordinaire qu'elle
   recalcule (`declarations_ereporting.empreinte`) → « UNE COLONNE GÉNÉRÉE NE SE RESTAURE PAS, ELLE SE RECALCULE ».
+- **Le fichier de sauvegarde a deux formats** (`VERSION_SAUVEGARDE`, `lib/sauvegardeLogos.ts`) : 1, les lignes ; 2
+  (A5c2b), les lignes et, à la fin, les fichiers des logos des factures en base64 (`fichiers`), que l'empreinte ne
+  couvre pas — chacun se vérifie par la sienne, son nom — et que le manifeste annonce (`logos`) ; un format 1 se
+  restaure toujours, sans fichier ; un format plus récent se refuse à la LECTURE, avant l'empreinte → « LE LOGO DES
+  FACTURES DANS LA SAUVEGARDE ».
 - **Ce qui doit être tout ou rien vit dans une fonction SQL** (`SECURITY DEFINER` qui vérifie l'accès et énumère les
   colonnes qu'elle écrit). Ce qui est testé en TypeScript n'est pas réécrit en SQL — sauf quand la base doit VÉRIFIER
   une écriture : le calcul est alors le même des deux côtés, en entiers, confronté par un test à une table relevée en
@@ -1230,7 +1244,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `bornesStockageClient.test.ts`). Pièces : PDF, JPEG, PNG, CSV (+ `text/plain` des plateformes), 20 Mio (S226-Q1,
   décision du cabinet du 13/10/2026 ; aucun autre format, S226-Q2) ; packs : ZIP et XLSX, 50 Mio ; logos : PNG, JPEG,
   WebP, 500 Kio, jamais de SVG (le seau est public) ; logos des factures (seau `ventes`, privé, A5c1) : PNG ou JPEG,
-  500 Kio, par `preparerLogoDeFacture`, que `logoPret` appelle pour le dépôt de l'écran du logo (A5c2a). Les mêmes
+  500 Kio, par `preparerLogoDeFacture`, que `logoPret` appelle pour le seul dépôt du seau, `deposerLeLogo` — l'écran du
+  logo (A5c2a), son redépôt et la restauration (A5c2b). Les mêmes
   valeurs en base depuis le 13/10/2026 (migration `bornes_du_stockage`, et `logo_des_factures` pour `ventes` le
   17/10/2026 ; essai `bornesStockage.sql`), confrontées par `bornesStockage.test.ts` ; `depotsDansLesSeaux.test.ts` lit
   l'arbre de toute la source et exige que chaque dépôt envoie un type que la migration admet pour son seau — ni plus, ni
@@ -1977,14 +1992,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rang (huit messages, après les dix-sept d'A5a, inchangés) — l'ensemble, l'empreinte, le chemin, le dossier, le nom,
   puis le fichier dans le seau, son type et son poids tels que le catalogue les dit ; un logo inchangé ne se rejuge
   pas ; une clé absente vaut « aucun logo » (le formulaire d'A5b1 reprend celui de la version remplacée,
-  `parametresEnvoyes`). La sauvegarde en garde le chemin et l'empreinte, pas le fichier (A5C-Q5). Le module redit les
-  refus (`refusDuLogo`) ; `logoDesFactures.test.ts` le confronte au texte exporté et REJOUE les appels de l'essai ; les
-  suppressions se jouent sur une réplique seulement (`logoDesFacturesSuppression.sql`) → « LE LOGO DES FACTURES ET SON
-  SEAU, EN BASE » ; à l'écran depuis A5c2a → « LE LOGO DES FACTURES, À L'ÉCRAN ».
+  `parametresEnvoyes`). Le module redit les refus (`refusDuLogo`) ; `logoDesFactures.test.ts` le confronte au texte
+  exporté et REJOUE les appels de l'essai ; les suppressions se jouent sur une réplique seulement
+  (`logoDesFacturesSuppression.sql`) → « LE LOGO DES FACTURES ET SON SEAU, EN BASE » ; à l'écran depuis A5c2a → « LE
+  LOGO DES FACTURES, À L'ÉCRAN ». La sauvegarde en porte le fichier depuis A5c2b (A5C-Q5 ; `lib/sauvegardeLogos.ts`,
+  pur) : chaque logo qu'une version désigne, relu par `lireLeLogo` et encodé ; un manque nommé, la sauvegarde faite
+  (A5C2B-Q1). La restauration juge chaque fichier AVANT d'écrire — désigné par une version du dossier restauré,
+  décodable, admis par le seau, de l'empreinte de la version, au chemin qu'elle désigne (le super-administrateur peut
+  déposer partout : ces contrôles l'en gardent) —, le redépose APRÈS les lignes par `deposerLeLogo`, sans écraser, et
+  dit chacun au bilan sans jamais s'arrêter (A5C2B-Q2, Q4) ; `verifierRestauration` compte `fichier_absent` →
+  « LE LOGO DES FACTURES DANS LA SAUVEGARDE ».
 
 ## Tests
 
-Vitest, 12 375 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 480 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

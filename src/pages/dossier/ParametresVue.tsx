@@ -6,8 +6,8 @@ import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
 import { deposerLeLogo } from '../../lib/logoDesFacturesEcriture'
 import { logoDeLaVersion, type LogoPret } from '../../lib/logoDesFactures'
 import {
-  confirmationDuRetraitDuLogo, messageDuLogoPose, messageDuLogoRetire, messageFichierDeposeSansVersion, parametresAvecLogo,
-  parametresSansLogo, refusDuNouveauLogo, refusDuRetraitDuLogo,
+  confirmationDuRetraitDuLogo, messageDuLogoPose, messageDuLogoRetire, messageDuRedepot, messageFichierDeposeSansVersion,
+  parametresAvecLogo, parametresSansLogo, refusDuNouveauLogo, refusDuRetraitDuLogo,
 } from '../../lib/logoDesFacturesVue'
 import { jourEtHeureAParis, type SaisieParametresFacturation } from '../../lib/parametresFacturation'
 import { lireLesParametresFacturation, type LectureDesParametres } from '../../lib/parametresFacturationLecture'
@@ -40,9 +40,10 @@ import ParametresSaisieModal from './ParametresSaisieModal'
 // que la vue dise ce que la base a gardé (une autre saisie passée entre-temps, que le module nomme alors avant le clic).
 //
 // LE LOGO (étape A5c2a) : un bloc de la carte « Paramètres en cours » (`LogoDesFactures`) le montre et en juge le fichier choisi ;
-// ses trois gestes sont d'ICI, sous ce même verrou — poser ou changer (le fichier est déposé dans le seau, PUIS une version
+// ses gestes sont d'ICI, sous ce même verrou — poser ou changer (le fichier est déposé dans le seau, PUIS une version
 // nouvelle qui ne change que le logo est écrite), et retirer (une version nouvelle sans logo, après une confirmation dans la
-// page). Le fichier déposé dont la version est refusée reste dans le seau : la vue le dit.
+// page). Le fichier déposé dont la version est refusée reste dans le seau : la vue le dit. Et depuis l'étape A5c2b, redéposer
+// le fichier que la version courante désigne quand le seau ne le rend plus : le dépôt seul, aucune version, puis le bloc relu.
 type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client' }
 
 type Props = QuiRegarde & { dossierId: string }
@@ -70,6 +71,9 @@ export default function ParametresVue(props: Props) {
   const [aRetirer, setARetirer] = useState<ParametresFacturation | null>(null)
   // Le dernier geste est-il un geste du logo ? Son erreur et son message se disent alors DANS le bloc du logo, sous le bouton.
   const [duLogo, setDuLogo] = useState(false)
+  // Un redépôt ne change pas la version, donc pas la clé du bloc du logo : ce compteur la change, pour que le bloc reparte de
+  // zéro et RELISE le fichier qu'on vient de remettre — sans quoi il dirait encore « absent ».
+  const [relectureDuLogo, setRelectureDuLogo] = useState(0)
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -177,6 +181,18 @@ export default function ParametresVue(props: Props) {
     }, 'logo')
   }
 
+  // Redéposer le fichier que la version désigne, absent du seau (étape A5c2b) : `deposerLeLogo` le rejuge, exige l'empreinte
+  // que le bloc a vue — celle de la version, le bouton n'existant que pour elle —, ne l'écrase jamais (`upsert: false`) et
+  // relit un nom déjà pris. Le chemin est donc celui que la version désigne : le même dossier, le même nom d'empreinte, le
+  // même type. Aucune version n'est écrite ; le bloc repart et relit le fichier.
+  async function redeposerLeLogo(fichier: File, pret: LogoPret) {
+    await sousVerrou('Le fichier du logo n’a pas pu être redéposé.', async () => {
+      const depot = await deposerLeLogo(dossierId, fichier, pret.empreinte)
+      setRelectureDuLogo((n) => n + 1)
+      return messageDuRedepot(depot.dejaLa)
+    }, 'logo')
+  }
+
   async function retirerLeLogo(version: ParametresFacturation) {
     const refus = refusDuRetraitDuLogo(dossierId, version, versions)
     if (refus) {
@@ -219,10 +235,12 @@ export default function ParametresVue(props: Props) {
   const refusRetrait = aRetirer ? refusDuRetraitDuLogo(dossierId, aRetirer, versions) : null
   // Le bloc du logo dit l'erreur et le message d'un geste du logo, sauf quand la confirmation du retrait, ouverte, les dit.
   const blocDuLogo = <LogoDesFactures
-    key={resume.etat === 'courante' ? `${dossierId}:${resume.version.id}` : `${dossierId}:aucune`}
+    key={resume.etat === 'courante' ? `${dossierId}:${resume.version.id}:${relectureDuLogo}` : `${dossierId}:aucune`}
     dossierId={dossierId} espace={espace} courante={resume.etat === 'courante' ? resume.version : null} versions={versions}
     occupe={occupe} erreur={duLogo && !aRetirer ? erreur : null} message={duLogo ? message : null}
-    onPoser={(version, fichier, pret) => { void poserLeLogo(version, fichier, pret) }} onProposerLeRetrait={proposerLeRetrait}
+    onPoser={(version, fichier, pret) => { void poserLeLogo(version, fichier, pret) }}
+    onRedeposer={(_version, fichier, pret) => { void redeposerLeLogo(fichier, pret) }}
+    onProposerLeRetrait={proposerLeRetrait}
   />
 
   return (

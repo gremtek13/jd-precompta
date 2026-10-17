@@ -431,13 +431,13 @@ const ECRANS: Ecran[] = [
   { nom: 'LogoDesFactures', fichier: 'pages/dossier/LogoDesFactures.tsx', rendre: () => (
     <Dossier1>
       <LogoDesFactures dossierId={DOSSIER_DU_LOGO} espace="cabinet" courante={VERSION_AVEC_LOGO} versions={[VERSION_AVEC_LOGO]}
-        occupe={false} erreur={null} message={null} onPoser={rien} onProposerLeRetrait={rien} />
+        occupe={false} erreur={null} message={null} onPoser={rien} onRedeposer={rien} onProposerLeRetrait={rien} />
     </Dossier1>
   ) },
   { nom: 'LogoDesFactures (client)', fichier: 'pages/dossier/LogoDesFactures.tsx', rendre: () => (
     <Dossier1>
       <LogoDesFactures dossierId={DOSSIER_DU_LOGO} espace="client" courante={VERSION_AVEC_LOGO} versions={[VERSION_AVEC_LOGO]}
-        occupe={false} erreur={null} message={null} onPoser={rien} onProposerLeRetrait={rien} />
+        occupe={false} erreur={null} message={null} onPoser={rien} onRedeposer={rien} onProposerLeRetrait={rien} />
     </Dossier1>
   ) },
 ]

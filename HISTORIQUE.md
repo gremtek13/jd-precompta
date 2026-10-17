@@ -26135,6 +26135,18 @@ bloc ; A5C2-Q2, rien sans version ; A5C2-Q3, choisir puis poser ; A5C2-Q4, le re
 vérifié avant d'être montré ; A5C2-Q6, le même fichier déjà déposé, désigné sans nouveau dépôt ; A5C2-Q7, l'image telle
 quelle ; A5C2-Q8, les mots.
 
+**LA MISE EN LIGNE, LE 17/10/2026.** Fusionnée par #184 (`f3e4651`) à 20 h 43 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `e513328` ; sur la première tête (`13c5c03`), une passe rouge — le test qui lisait la liste des
+téléchargements avant l'effet (LA CI, ci-dessus) —, l'autre, en cours, remplacée. L'arbre de `main` (`09b7facf…`) est
+celui de la tête poussée, `main` reste linéaire. Le site sert `index-B2RJJgqz.js` (déploiement 39059394247, HTTP 200),
+le paquet de la barrière : le correctif ne touche qu'un test. La branche réalignée sur `f3e4651`, arbres égaux. La copie
+d'intégration et celle de l'agent retirées (leurs liens d'abord), la branche de l'agent supprimée. La feuille de route :
+la ligne 51.5 complétée (52 569 caractères, envoyée et relue à l'identique ; elle reste « En cours ») ; l'en-tête
+recompté par requête, inchangé : 141 sur 185 (76 %, huit cases) et, pour un dossier BNC, 141 sur 172 (82 %, huit cases).
+Les six « Décisions en attente » de la page de suivi disent où chacune se tranche dans la page des arbitrages (la
+connexion bancaire : le chemin du client et la mise à jour au clic tranchés par EC-Q5, seul le prestataire reste ;
+l'inscription publique, fermée depuis le 10/10/2026), et le lien de cette page est en tête de la page de suivi.
+
 **RESTE.** A5c2b (le fichier du logo dans la sauvegarde, et le redépôt d'un fichier absent) ; le tableau de bord du
 cabinet (les dossiers dont un RIB proposé attend sa confirmation) ; 22.61 ; puis A7 (la facture imprime le logo).
 
@@ -26183,3 +26195,103 @@ la page les repose en tête (ARB-EC-Q3, ARB-EC-Q2), et d'ici là MEG1-Q5 vaut.
 — celles de Miro, des échanges et des chantiers depuis le 09/10/2026, celles de l'écran du logo, les deux contradictions
 en tête, les gestes qui attendent le cabinet en fin de liste — : 120 questions ouvertes, puis les 82 tranchées, 202 en
 tout ; 23-motDePasse, tranchée le 10/10/2026, en sort. Les réponses gardent leur clé : aucune n'a été touchée.
+
+### 17/10/2026 — LE LOGO DES FACTURES DANS LA SAUVEGARDE — ESPACE CLIENT, ÉTAPE A5c2b (LIGNE 51.5)
+
+(Préparée par un agent `architecte` à partir de `13c5c03` — A5c2a, demande de fusion #184 —, un commit dans sa copie que
+la session intègre. Nouveaux : `src/lib/sauvegardeLogos.ts` (pur) et son test,
+`src/pages/dossier/SauvegardeCard.test.tsx`, `src/pages/RestaurationCard.test.tsx`. Modifiés : `sauvegardeDonnees.ts`,
+`sauvegardeFichier.ts`, `logoDesFacturesVue.ts`, `LogoDesFactures.tsx`, `ParametresVue.tsx`, `SauvegardeCard.tsx`,
+`RestaurationCard.tsx`, leurs tests, une propriété dans `ecransAvantLecture.test.tsx`, un passage daté en commentaire de
+`supabase/essais/restauration.sql`, CLAUDE.md, PLAN_DE_REPRISE.md, RGPD.md. Aucune migration, aucune policy, aucune
+fonction, aucune Edge Function.)
+
+**LA DÉLIMITATION.** Trois choses : le fichier de chaque logo des factures dans la sauvegarde d'un dossier (A5C-Q5 : il
+la rejoint avec l'écran du logo) ; la restauration, qui le redépose ; et, à l'écran, « Redéposer le fichier » quand le
+seau ne rend plus celui que la version courante désigne — le cas laissé à cette étape par la relecture d'A5c2a. Ni les
+autres fichiers du stockage (pièces, documents, packs : le pack les porte), ni ce qu'une facture imprime (A7), ni le
+logo public d'un cabinet supprimé (22.61).
+
+**CE QUE L'EXPORT A DIT.** Le super-administrateur, qui restaure, dépose et lit dans `ventes` : `ventes_depot_d_un_logo`
+et `ventes_lecture` passent par `gere_les_ventes` (migration `droits_des_acces_clients`), donc par `admin_du_dossier`
+(`hierarchie_comptables`), qui commence par `is_super_admin()` (`multi_cabinet_schema`) — vrai pour lui quel que soit le
+dossier, avant même que sa ligne existe. Aucune migration n'est à écrire. Le revers : il peut déposer sous TOUT
+dossier ; ce sont les contrôles de la restauration qui l'en gardent (ci-dessous). Les trois contraintes du logo sur
+`parametres_facturation` ne jugent que la forme du chemin et de l'empreinte ; seule la fonction lit le seau : une
+version se réinsère avant son fichier.
+
+**LES CHOIX.** LE FORMAT 2. La sauvegarde porte, à la fin du même JSON (`fichiers`), le fichier de chaque logo qu'une
+version désigne — la courante comme les remplacées, un logo désigné deux fois porté une fois —, relu par la session du
+cabinet qui sauvegarde avec le juge de l'écran (`lireLeLogo` : le SHA-256 recalculé égal à `logo_sha256`, le type relu à
+la signature égal à celui du nom), en base64 ; le manifeste les annonce (`logos.inclus`) et nomme chaque logo désigné
+qu'elle ne porte pas, avec sa raison (`logos.manquants` : absent, refusé, illisible, d'une autre empreinte). Un fichier
+du seau qu'aucune version ne désigne n'y entre pas (rien ne le lit). L'empreinte de l'enveloppe ne couvre que les
+lignes, comme avant : chaque logo se vérifie par la sienne — son nom, que les lignes couvertes désignent —, un logo
+abîmé ne fait pas déclarer corrompu ce qui ne l'est pas, et un code qui ne connaît que le format 1 lit encore le fichier
+puis refuse de le restaurer sur sa version, en le disant. `VERSION_SAUVEGARDE` passe à 2 ; elle vit dans le module pur,
+que la lecture du fichier juge sans importer le client de la base, et `sauvegardeDonnees.ts` la réexporte. UN MANQUE SE
+DIT, LA SAUVEGARDE SE FAIT (A5C2B-Q1) : les lignes sont ce qu'on ne retrouverait nulle part, le logo une image que le
+client garde ; la carte le dit en clair sous le nom du fichier téléchargé, hors du repli « Ce que ce fichier ne contient
+pas ». LA LECTURE D'UN FICHIER juge le format AVANT l'empreinte — un format plus récent se refuse en le disant, jamais
+« corrompu » ; un format qui n'est pas un entier n'est pas une sauvegarde lisible — puis la cohérence des logos : chaque
+fichier a la forme d'un logo, annoncé tel qu'il est porté, désigné par une version ; chaque logo désigné porté ou dit
+manquant ; rien deux fois ; un format 1 ne porte aucun fichier. Pas les octets. LA RESTAURATION juge chaque fichier
+AVANT la première écriture, sans réseau (`planDesLogos`) : désigné par une version DU DOSSIER RESTAURÉ, décodable, admis
+par le seau (`logoPret` : signature, borne), de l'empreinte de la version, rangé au chemin qu'elle désigne — celui que
+`logoPret` tire du dossier, de l'empreinte et du type des OCTETS, jamais celui que le fichier annonce. Puis, APRÈS
+toutes les lignes et la seconde passe (A5C2B-Q4), elle le dépose par `deposerLeLogo`, le seul dépôt du seau (rejugé,
+empreinte exigée, `upsert: false`, un nom déjà pris relu : la même empreinte n'est pas un échec). Rien n'arrête la
+restauration (A5C2B-Q2) : un fichier non redéposé, un dépôt refusé, un logo absent de la sauvegarde se disent au bilan
+(`ResultatRestauration.logos`, une issue et une phrase chacun, que la carte de la restauration affiche), et
+`verifierRestauration` compte `fichier_absent` pour un fichier porté qui ne se relit pas à son chemin et de son
+empreinte — la restauration se dit alors « INCOMPLÈTE ». Une sauvegarde au format 1 se restaure sans fichier, chaque
+logo désigné dit à redéposer. L'ÉCRAN (A5C2B-Q5) : choisir le fichier que la version courante désigne, quand la
+relecture l'a dit ABSENT, n'est plus « déjà le logo en cours » : « Redéposer le fichier », le dépôt seul, aucune
+version, sous le verrou `gesteEnCours` de la vue relâché après la relecture ; un compteur change la clé du bloc, qui
+repart et relit le fichier — sans quoi il dirait encore « absent ». Refusé, illisible ou d'une autre empreinte, rien de
+plus n'est offert : on ne sait pas que le fichier manque, ou un fichier occupe déjà le nom et le seau n'écrase rien.
+Avant le retour de la relecture, rien non plus. Les phrases servent aux deux espaces, sans personne. LE FORMAT DES
+OCTETS (A5C2B-Q6) : du base64 dans le même JSON — un seul fichier, lisible sans outil, d'un tiers plus lourd (683 Ko au
+plus par logo) — plutôt qu'une archive, un mode de panne de plus pour la chose dont le seul but est de survivre.
+
+**CE QUI EST GARDÉ.** `sauvegardeLogos.test.ts`, 45 cas : le base64 confronté à celui de Node, à la borne du seau ; les
+logos désignés, un fichier relu forgé ; chaque refus de la lecture d'un fichier ; chaque refus du plan, dont le fichier
+d'un autre dossier et des octets JPEG sous un nom en « .png » ; le bilan, les écarts, les phrases.
+`sauvegardeDonnees.test.ts`, 15 cas de plus, le vrai SDK du stockage devant le seau factice
+(`src/test/stockageFactice.ts`) : l'aller-retour — les dépôts APRÈS toutes les lignes, sans écrasement, la relecture
+juste —, le fichier déjà là, un autre fichier sous le nom, un dépôt refusé, des octets abîmés jamais déposés, un intrus
+jamais déposé, le format 1, un manque redit, une restauration refusée qui ne dépose rien. `sauvegardeFichier.test.ts`,
+12 de plus ; `logoDesFacturesVue.test.ts`, 2 ; `ParametresVueLogo.test.tsx`, 24 (au cabinet et au client : le redépôt
+dit avant le clic, le dépôt seul et la relecture du bloc, trois clics, le verrou jusqu'à la fin de la relecture, un
+dépôt refusé, le fichier revenu entre-temps, rien avant le retour de la relecture, rien pour un fichier présent, refusé,
+illisible ou d'une autre empreinte, un autre fichier qui reste un changement de logo) ; les deux cartes, 7. Les scanners
+de la suite, inchangés, verts : aucun dépôt ni aucune lecture du stockage de plus dans la source (`deposerLeLogo` et
+`lireLeLogo` servent tout). 36 mutations, 36 tuées.
+
+**LA BARRIÈRE.** `tsc -b` 0 ; le lint 0 erreur et 63 avertissements, aucun dans un fichier touché ; la suite entière
+sous Europe/Paris, 12 480 tests (407 fichiers), 105 de plus. Ni les quatre fuseaux, ni le build, ni le banc : la session
+les joue (deux cartes et le bloc du logo changent).
+
+**QUESTIONS AU CABINET** (recommandées telles que codées) : A5C2B-Q1, un logo que la sauvegarde n'a pas pu lire — la
+sauvegarde se fait et le dit, plutôt que de se refuser ; A5C2B-Q2, à la restauration, un fichier qui ne se vérifie pas
+ou un dépôt refusé — les lignes reviennent, le logo non, le bilan et la relecture le disent, plutôt qu'un refus entier ;
+A5C2B-Q3, les logos que les versions désignent, et non tout le préfixe du dossier dans le seau ; A5C2B-Q4, les dépôts
+après toutes les lignes ; A5C2B-Q5, « Redéposer le fichier » au cabinet et au client « Ventes », seulement sur un
+fichier dit absent et pour ce même fichier, sans version ; A5C2B-Q6, du base64 dans le même JSON.
+
+**L'INTÉGRATION, LE 17/10/2026.** Le commit de l'agent relu contre la consigne — le code, les tests, les documents —,
+puis rejoué tel quel sur `f3e4651` (la mise en ligne d'A5c2a), sans conflit : le test du bloc du logo garde les deux
+attentes de l'effet que la CI d'A5c2a avait demandées (`waitFor`) et reçoit le bloc du redépôt ; la copie de l'agent,
+comparée fichier par fichier à l'arbre intégré — n'en diffèrent que ces deux attentes et HISTORIQUE.md —, retirée avec
+sa branche. Les documents : cette entrée — deux comptes corrigés, mesurés fichier par fichier sur les deux arbres : 105
+tests de plus, non 103, dont 24 pour l'écran du logo (douze par espace), non 22 — et la mise en ligne d'A5c2a. Barrière
+sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, aucune erreur ; quatre fuseaux,
+12 480 tests chacun (407 fichiers) ; construction verte (`index-DcgbCk1P.js`). Le banc rejoué par la session : 0
+débordement aux treize passes, 0 bouton de fenêtre recouvert (214 sondés dans 49 fenêtres au cabinet, 114 dans 29 chez
+le client), 0 police refusée. Six mutations de plus, jouées par la session dans une copie à part sur ce qui garde le
+seau et le fichier — le dossier de la version, l'empreinte des octets, le chemin tiré des octets, le redépôt sur un
+fichier absent seulement, l'écart `fichier_absent`, le format jugé avant l'empreinte — : six tuées, le témoin vert avant
+elles.
+
+**RESTE.** Le premier dépôt réel d'une restauration, par le super-administrateur ; le tableau de bord du cabinet (les
+dossiers dont un RIB proposé attend sa confirmation) ; 22.61 ; puis A7 (la facture imprime le logo).

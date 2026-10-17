@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { restaurerSauvegarde, verifierRestauration, type SauvegardeDossier } from '../lib/sauvegardeDonnees'
 import { lireSauvegarde } from '../lib/sauvegardeFichier'
+import { phrasesDuBilanDesLogos, resumeDesLogos } from '../lib/sauvegardeLogos'
 import { messageErreur } from '../lib/messageErreur'
 
 // La restauration d'une sauvegarde, réservée au super-admin.
@@ -13,11 +14,16 @@ import { messageErreur } from '../lib/messageErreur'
 // Le fichier est LU et VÉRIFIÉ avant d'offrir quoi que ce soit — empreinte, cohérence avec son
 // manifeste, liens, comptes exigés. Ce que l'écran montre alors n'est pas un résumé décoratif : c'est
 // ce qui permet de reconnaître qu'on tient le bon fichier et la bonne base avant d'écrire.
+//
+// Les logos des factures (étape A5c2b) : ce qu'une sauvegarde au format 2 porte se redépose après les lignes, et le bilan
+// dit chaque logo — redéposé, déjà là, non redéposé et pourquoi, absent de la sauvegarde —, que la relecture soit juste ou non.
 export default function RestaurationCard() {
   const [sauvegarde, setSauvegarde] = useState<SauvegardeDossier | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [enCours, setEnCours] = useState(false)
   const [resultat, setResultat] = useState<string | null>(null)
+  // Ce que la restauration a fait des logos, une ligne par logo : dit dans les deux issues de la relecture.
+  const [bilanDesLogos, setBilanDesLogos] = useState<string[]>([])
   const verrou = useRef(false)
 
   async function choisirFichier(e: ChangeEvent<HTMLInputElement>) {
@@ -27,6 +33,7 @@ export default function RestaurationCard() {
     setSauvegarde(null)
     setErreur(null)
     setResultat(null)
+    setBilanDesLogos([])
     if (!fichier) return
     try {
       setSauvegarde(await lireSauvegarde(await fichier.text()))
@@ -40,8 +47,10 @@ export default function RestaurationCard() {
     verrou.current = true
     setEnCours(true)
     setErreur(null)
+    setBilanDesLogos([])
     try {
       const bilan = await restaurerSauvegarde(sauvegarde)
+      setBilanDesLogos(phrasesDuBilanDesLogos(bilan.logos))
       const ecrites = Object.values(bilan.lignesParTable).reduce((s, n) => s + n, 0)
       // Le verdict ne vient pas du compteur d'écriture mais d'une RELECTURE du dossier restauré :
       // un compteur ne mesure que ce que le code croit avoir fait.
@@ -68,6 +77,7 @@ export default function RestaurationCard() {
 
   const m = sauvegarde?.manifeste
   const total = m ? Object.values(m.lignesParTable).reduce((s, n) => s + n, 0) : 0
+  const logos = sauvegarde ? resumeDesLogos(sauvegarde) : null
 
   return (
     <div className="card" style={{ marginTop: 20 }}>
@@ -82,6 +92,14 @@ export default function RestaurationCard() {
 
       {erreur && <p className="error-text" style={{ whiteSpace: 'pre-wrap' }}>{erreur}</p>}
       {resultat && <p style={{ color: 'var(--color-success, inherit)' }}>{resultat}</p>}
+      {bilanDesLogos.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <p style={{ marginBottom: 4 }}><strong>Logos des factures</strong></p>
+          <ul aria-label="Bilan des logos des factures" className="nom-fichier" style={{ marginTop: 0 }}>
+            {bilanDesLogos.map((ligne) => <li key={ligne}>{ligne}</li>)}
+          </ul>
+        </div>
+      )}
 
       {m && (
         <div style={{ marginTop: 14 }}>
@@ -101,6 +119,8 @@ export default function RestaurationCard() {
               restauration s'arrêtera sur les accès clients, les affectations d'équipe ou les packs.
             </p>
           )}
+
+          {logos && <p className="muted nom-fichier">{logos}</p>}
 
           <details>
             <summary className="muted">Le détail, table par table</summary>

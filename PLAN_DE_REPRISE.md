@@ -35,8 +35,8 @@ Trois choses différentes, trois mécanismes différents. Aucun ne couvre les au
 
 | Ce qu'il faut | Où c'est | Comment on le récupère |
 |---|---|---|
-| **Les lignes** (dossiers, pièces, mouvements, écritures, factures, catégories, rapprochements) | Base Postgres | Onglet **Informations** d'un dossier → « Télécharger la sauvegarde ». Un fichier JSON par dossier. |
-| **Les fichiers** (justificatifs, documents, packs, logos des factures) | Supabase Storage — 4 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public), `ventes` (privé, le logo des factures d'un dossier, depuis l'étape A5c1). 148 fichiers, 23 Mo au 18/09/2026 | Export de pack (onglet Informations, « Exporter avant suppression ») ou export global d'un cabinet (écran super-admin). |
+| **Les lignes** (dossiers, pièces, mouvements, écritures, factures, catégories, rapprochements), **et le logo des factures** (depuis l'étape A5c2b) | Base Postgres ; le logo, dans le seau `ventes` | Onglet **Informations** d'un dossier → « Télécharger la sauvegarde ». Un fichier JSON par dossier, qui porte aussi, en base64, le fichier de chaque logo des factures qu'une version des paramètres désigne (format 2). |
+| **Les fichiers** (justificatifs, documents, packs, logos des factures) | Supabase Storage — 4 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public), `ventes` (privé, le logo des factures d'un dossier, depuis l'étape A5c1). 148 fichiers, 23 Mo au 18/09/2026 | Export de pack (onglet Informations, « Exporter avant suppression ») ou export global d'un cabinet (écran super-admin) ; le logo des factures, qu'aucun pack ne porte, par la sauvegarde du dossier (ligne au-dessus). |
 | **Le code** (application, Edge Functions, schéma des migrations) | Dépôt Git GitHub | `git clone`. |
 
 **Une sauvegarde de lignes sans les fichiers rend un dossier où chaque pièce pointe un justificatif
@@ -46,7 +46,9 @@ même jour.
 ### Le fichier de sauvegarde est une donnée sensible
 
 Il contient, en clair, le texte OCR intégral des pièces (`piece_textes_ocr`), qui sur les dossiers de
-santé porte des noms de patients, des dates de naissance et des numéros de sécurité sociale.
+santé porte des noms de patients, des dates de naissance et des numéros de sécurité sociale. Et depuis
+l'étape A5c2b (17/10/2026), le logo des factures du dossier — pour un entrepreneur individuel, une image
+qui peut porter son nom, sa signature ou son visage.
 
 Il ne contient PAS le `client_secret` OAuth Super PDP (`superpdp_credentials`), la connexion
 bancaire (`connexions_bancaires`) ni la connexion à la plateforme agréée du client
@@ -279,11 +281,19 @@ incompréhensible trois étapes plus loin.
    un CSV de Windows (`application/vnd.ms-excel`) ou l'original XML d'une facture reçue d'une
    plateforme (`text/xml`) y serait refusé. Lever les bornes le temps de reverser (le retour
    arrière écrit en tête de la migration), reverser, puis rejouer la migration et
-   `supabase/essais/bornesStockage.sql`. **Le logo des factures** (seau `ventes`, étape A5c1) n'est dans aucun pack ni
-   dans la sauvegarde : chaque version restaurée des paramètres de facturation en porte le CHEMIN
-   (`<dossier>/logos/<empreinte>.png` ou `.jpg`) et l'EMPREINTE SHA-256. Redéposer le fichier que le client ou le cabinet
-   a gardé à ce chemin exact — son empreinte dit si c'est le bon ; sans lui, les versions désignent un fichier absent
-   (la base l'admet : un logo inchangé ne se rejuge pas), et une version nouvelle peut en poser un autre.
+   `supabase/essais/bornesStockage.sql`. **Le logo des factures** (seau `ventes`, étape A5c1) n'est dans aucun pack ;
+   depuis l'étape A5c2b, la sauvegarde (format 2) porte le fichier de chaque logo qu'une version des paramètres de
+   facturation désigne, et **l'étape 5 le redépose elle-même** : après toutes les lignes, au CHEMIN que la version
+   désigne (`<dossier>/logos/<empreinte>.png` ou `.jpg`), son EMPREINTE SHA-256 vérifiée avant le dépôt, sans jamais
+   écraser un fichier ; le bilan de la restauration dit chaque logo — redéposé, déjà là, non redéposé et pourquoi,
+   absent de la sauvegarde —, et la vérification compte celui qui n'est pas revenu (`fichier_absent`). Rien à lever :
+   le seau `ventes` est borné comme le logo, et le super-administrateur y dépose (`gere_les_ventes`). Un logo que la
+   restauration n'a pas remis — une sauvegarde au format 1, qui n'en porte aucun ; un logo que la sauvegarde n'avait
+   pas pu lire, nommé dans son manifeste (`logos.manquants`) ; un dépôt refusé — se redépose depuis l'application :
+   vue « Paramètres » de l'onglet Factures, choisir le fichier que le client ou le cabinet a gardé, « Redéposer le
+   fichier » (offert seulement quand le seau ne rend plus ce fichier, et pour ce fichier-là : son empreinte dit si
+   c'est le bon). Sans lui, les versions désignent un fichier absent (la base l'admet : un logo inchangé ne se rejuge
+   pas), et une version nouvelle peut en poser un autre.
 7. **Les secrets, le domaine d'envoi et le webhook de réception** (§3.3, §3.4 et l'inventaire des
    variables en fin de §3).
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
@@ -301,13 +311,15 @@ La restauration ne se croit pas sur parole : elle **relit** le dossier par le ch
 compare à la sauvegarde (`verifierRestauration`). L'écran affiche le verdict. Un compteur d'écriture
 ne mesurerait que ce que le code croit avoir fait.
 
-Trois écarts sont signalés nommément :
+Quatre écarts sont signalés nommément :
 
 - `ligne_absente` — une ligne de la sauvegarde n'est pas arrivée ;
 - `ligne_en_trop` — la base en contient une que la sauvegarde n'avait pas (restauration rejouée, base
   pas vide) ;
 - `lien_non_repose` — le cas que le compte de lignes ne peut PAS voir : toutes les factures sont là,
-  et l'avoir ne désigne plus la facture qu'il annule.
+  et l'avoir ne désigne plus la facture qu'il annule ;
+- `fichier_absent` (depuis l'étape A5c2b) — un logo des factures que la sauvegarde portait ne se relit
+  pas dans le seau `ventes`, à son chemin et de son empreinte ; le bilan de la restauration dit pourquoi.
 
 Puis, dans l'application : ouvrir la Banque du dossier et vérifier que les mouvements rapprochés le
 sont encore. C'est le contrôle humain le plus rentable, parce que le rapprochement est justement ce
@@ -421,8 +433,20 @@ seule policy d'insertion de la table) ; la garde ne regarde que la mise à jour.
 `test` portant deux pièces jointes écartées, dont une marquée vue par la fonction : 70 tables restaurées, 70 identiques,
 0 écart ; la table réinsérée avant son dossier arrête l'essai sur sa clé.
 
+Le 17/10/2026 (espace client, étape A5c2b), la sauvegarde porte le logo des factures : le fichier de chaque logo qu'une
+version des paramètres désigne, relu dans le seau `ventes` et vérifié, en base64 à la fin du fichier (format 2) ; la
+restauration le redépose après les lignes et le dit au bilan, et la vérification compte `fichier_absent`. Aucune table
+n'entre au plan. Rejoué par `npm test`, contre le SDK installé du stockage devant un seau factice
+(`src/test/stockageFactice.ts`) : l'aller-retour (deux logos portés, redéposés, relus identiques), le fichier déjà là de
+la même empreinte, un autre fichier sous le même nom, un dépôt refusé, des octets abîmés jamais déposés, un fichier d'un
+autre dossier jamais déposé, une sauvegarde au format 1 restaurée sans fichier (`sauvegardeDonnees.test.ts`,
+`sauvegardeLogos.test.ts`, `sauvegardeFichier.test.ts`). `supabase/essais/restauration.sql` ne joue pas le stockage : il
+n'est pas une table, et ce script recopie des lignes.
+
 Ce que ces deux répétitions ne couvrent pas, et qu'il faut donc éprouver à la main au moins une fois :
-recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage.
+recréer des comptes utilisateurs avec leurs UUID d'origine, et reverser les fichiers dans le stockage — les pièces à la
+main ; le logo des factures, la restauration le redépose elle-même, mais seulement éprouvée contre un seau factice : son
+premier dépôt réel, par le super-administrateur, reste à faire.
 
 ---
 
