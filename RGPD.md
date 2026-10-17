@@ -426,8 +426,15 @@ Ce qui est **prouvé**, pas seulement affirmé :
   compte ou d'une version, ni l'heure, que l'essai `supabase/essais/dernierChangementDeRib.sql` cherche, plantés, dans
   chaque réponse de chaque profil. L'accès qui ne porte que « Banque » ne lit toujours pas la table des paramètres : il
   n'en apprend que cela. Écartée : une policy de lecture, qui lui aurait ouvert toutes les colonnes de toutes les
-  versions (le cabinet et le client sont le même rôle). Rien ne s'écrit ; aucun écran ne la lit avant l'étape A5b3b
-  (`CHANGEMENT_DE_RIB_EXPORTE`, levé avec la migration : l'onglet Accès dit ce que la case « Banque » ouvre de plus).
+  versions (le cabinet et le client sont le même rôle). Rien ne s'écrit ; `CHANGEMENT_DE_RIB_EXPORTE`, levé avec la
+  migration : l'onglet Accès dit ce que la case « Banque » ouvre de plus. **Depuis l'étape A5b3b (17/10/2026), deux
+  écrans la lisent** — la Vue d'ensemble de chaque dossier du cabinet, et l'accueil du client qui porte « Ventes » ou
+  « Banque » sur la société affichée — pour dire ce changement en une ligne (le jour, l'auteur — « un accès client de
+  ton dossier », jamais la personne —, ce que les factures porteront, un conseil) : chez le cabinet, un RIB proposé tant
+  qu'il n'est ni confirmé ni remplacé, le reste trente jours depuis le jour du changement ; chez le client, tout
+  changement trente jours (décision du cabinet A5B3-Q4). Une lecture par écran, à son ouverture et pour son dossier ; un
+  client sans l'une des deux cases n'appelle pas la fonction. Aucune marque « vu », aucune table, aucune donnée de plus
+  stockée ni transmise : l'avis se calcule de la valeur lue et du jour de Paris, à chaque affichage.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

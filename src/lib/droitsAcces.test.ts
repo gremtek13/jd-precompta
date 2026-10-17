@@ -12,7 +12,7 @@ import {
 } from './droitsAcces'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
-import { CHANGEMENT_DE_RIB_EXPORTE } from './changementDeRib'
+import { CHANGEMENT_DE_RIB_EXPORTE, DUREE_DE_L_AVIS_EN_JOURS } from './changementDeRib'
 import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE, LIGNES_PAR_IMPORT_MAX } from './contactsImport'
 import { COUVERTURE_EXPORTEE } from './couvertureReleve'
@@ -1009,8 +1009,8 @@ describe('les textes libres de l’identité du dossier : chaque libellé dit qu
 // donc les ventes, et la banque du client (P7) : sans l'une d'elles, le drapeau ne change rien à la phrase. Ce qu'elle nomme
 // est confronté à l'export dès qu'il porte la migration.
 const PHRASE_DU_CHANGEMENT_DE_RIB = ' Par la base, elle lui dit aussi le jour, l’auteur — toi, ou un accès client, jamais la personne — et '
-  + 'l’état du dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; l’avis qui le lui dira sur son '
-  + 'accueil viendra ensuite.'
+  + 'l’état du dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; son accueil le lui dit pendant '
+  + 'trente jours.'
 
 describe('ce que disent les cases, le dernier changement du RIB ouvert (étape A5b3a)', () => {
   const ETATS_DES_AUTRES = [false, true].flatMap((articles) => [false, true].flatMap((adresses) => [false, true]
@@ -1027,6 +1027,12 @@ describe('ce que disent les cases, le dernier changement du RIB ouvert (étape A
       // Jamais le RIB, jamais la personne ; aucun mot que le garde des écrans tient pour une affirmation avant lecture.
       expect(PHRASE_DU_CHANGEMENT_DE_RIB).not.toMatch(/IBAN|BIC|titulaire/)
       expect(PHRASE_DU_CHANGEMENT_DE_RIB).not.toMatch(/\b(aucun|aucune|rien)\b/i)
+      // L'avis est sur l'accueil (étape A5b3b) : la phrase ne le dit plus à venir, et ne promet rien d'autre (ni lien, ni écran).
+      expect(PHRASE_DU_CHANGEMENT_DE_RIB).not.toMatch(/viendr|ensuite|dira/)
+      expect(PHRASE_DU_CHANGEMENT_DE_RIB).not.toMatch(/\b(lien|écran|bouton)\b/)
+      // Sa durée est celle du module (A5B3-Q4) : elle est dite en jours, et le nombre est celui de la règle.
+      expect(DUREE_DE_L_AVIS_EN_JOURS).toBe(30)
+      expect(PHRASE_DU_CHANGEMENT_DE_RIB).toContain('pendant trente jours')
     },
   )
 

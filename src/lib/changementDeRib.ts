@@ -1,5 +1,5 @@
 import { estUnJourCivil } from './adressesReception'
-import { formatDate } from './format'
+import { ajouterJours, formatDate } from './format'
 import { CONSEIL_VERIFICATION_RIB } from './parametresFacturationVue'
 
 // LE DERNIER CHANGEMENT DU RIB DES FACTURES D'UN DOSSIER (espace client, étape A5b3a ; conception : HISTORIQUE.md, « LA
@@ -244,5 +244,88 @@ export function avisDuChangement(c: ChangementDeRib, destinataire: DestinataireD
     phrase: phraseDuClient(c, j),
     factures: facturesDuClient(c),
     conseil: destinataire === 'ventes' ? CONSEIL_AU_CLIENT_VENTES : CONSEIL_AU_CLIENT_BANQUE,
+  }
+}
+
+// ── Combien de temps l'avis reste, et à qui il parle (espace client, étape A5b3b) ─────────────────────────────────────
+// Décisions du cabinet du 17/10/2026 (A5B3-Q4, Q5, Q7 : « comme recommandé »). L'avis n'a pas de marque « vu » : rien ne
+// s'écrit, aucune table. Il dure tant que la règle ci-dessous le dit, jugée à CHAQUE rendu sur le jour que l'appelant donne.
+//  · chez le CABINET, un RIB PROPOSÉ reste affiché tant qu'il est le dernier changement — une confirmation, un retrait ou un
+//    autre RIB est un changement NOUVEAU, qui prend sa place, et une version qui ne touche pas au RIB n'en est pas un (la
+//    fonction ne la rend pas) : il attend son geste, quel que soit son âge ;
+//  · tout le reste — chez le cabinet un changement qui n'est pas une proposition, chez le client TOUT changement, proposition
+//    comprise (son cabinet en est averti à part) — reste TRENTE JOURS, le jour du changement compris : du J au J + 29.
+/** Combien de jours un changement reste affiché, quand rien ne le retient. */
+export const DUREE_DE_L_AVIS_EN_JOURS = 30
+
+/**
+ * Le changement à montrer, ou rien. `aujourdhui` (AAAA-MM-JJ, le jour à Paris) est DONNÉ par l'appelant : ce module ne lit pas
+ * l'horloge. `{ changement: null }` ne montre rien ; chez le cabinet, un RIB proposé se montre toujours ; sinon le changement
+ * se montre tant que `aujourdhui < jour + 30 jours` (J + 29 est le dernier jour). Un jour POSTÉRIEUR à aujourd'hui — l'horloge
+ * de l'appareil en retard — se montre : un avis ne se tait jamais sur un jour qu'on ne sait pas placer. Pour la même raison,
+ * un « aujourd'hui » qui n'est pas un jour civil ne tait rien.
+ */
+export function changementAMontrer(lu: DernierChangementLu, destinataire: DestinataireDuChangement, aujourdhui: string): ChangementDeRib | null {
+  const c = lu.changement
+  if (c === null) return null
+  if (destinataire === 'cabinet' && c.etat === 'propose') return c
+  if (!estUnJourCivil(aujourdhui)) return c
+  return aujourdhui < ajouterJours(c.jour, DUREE_DE_L_AVIS_EN_JOURS) ? c : null
+}
+
+/**
+ * L'avis que lit un client, selon les cases de la société AFFICHÉE : « Ventes » (avec ou sans « Banque » : qui porte les deux
+ * lit l'avis « Ventes ») ou « Banque » seul ; aucun sinon — et alors AUCUN appel, la base refuserait (42501). Les cases sont
+ * celles que l'accueil décide déjà (`mesVentesOuvertes`, `maBanqueOuverte`), drapeaux d'export compris.
+ */
+export function destinataireDuClient(ventesOuvertes: boolean, banqueOuverte: boolean): Exclude<DestinataireDuChangement, 'cabinet'> | null {
+  if (ventesOuvertes) return 'ventes'
+  return banqueOuverte ? 'banque' : null
+}
+
+// Quand la lecture n'a pas pu se faire : une ligne DISCRÈTE, jamais le silence qu'on prendrait pour « aucun changement », jamais
+// une alarme. Elle n'affirme rien, ne nomme ni IBAN ni personne, et dit où regarder quand il y a un endroit.
+export const LECTURE_MANQUEE_AU_CABINET =
+  'Le dernier changement du RIB des factures n’a pas pu être lu pour l’instant : l’historique des paramètres (Factures › Paramètres) le dit.'
+export const LECTURE_MANQUEE_AU_CLIENT = 'Le dernier changement du RIB de tes factures n’a pas pu être lu pour l’instant : recharge la page.'
+
+/** Le bouton du cabinet : il mène à l'onglet Factures (la vue « Paramètres » est un état local de l'onglet, qu'il n'ouvre pas). */
+export const LIBELLE_ALLER_AUX_FACTURES = 'Aller aux factures'
+/** Le lien du client « Ventes » : il mène à « Mes ventes » ; « Banque » seul n'a pas d'écran des paramètres, donc aucun lien. */
+export const LIBELLE_OUVRIR_MES_VENTES = 'Ouvrir « Mes ventes »'
+/** Le nom accessible de la ligne, par lecteur. */
+export const NOM_DE_L_AVIS_DU_CABINET = 'Dernier changement du RIB des factures'
+export const NOM_DE_L_AVIS_DU_CLIENT = 'Dernier changement du RIB de tes factures'
+
+/** Une lecture du changement, telle que `lib/changementDeRibLecture.ts` la rend (structure seule : ce module n'importe pas la base). */
+export type LectureDeLAvis =
+  | { etat: 'en_cours' }
+  | { etat: 'lue'; lu: DernierChangementLu }
+  | { etat: 'illisible' }
+  | { etat: 'refusee'; motif: string }
+
+/** Ce que l'écran dit : rien, l'avis (avec son attente de confirmation), ou la ligne discrète d'une lecture manquée. */
+export type CeQueDitLAvis =
+  | { genre: 'rien' }
+  | { genre: 'avis'; changement: ChangementDeRib; avis: AvisDuChangement; attend: boolean }
+  | { genre: 'lecture_manquee'; phrase: string; motif: string | null }
+
+/**
+ * Ce qu'un écran dit de la lecture du dernier changement. `null` — drapeau baissé, pas de dossier, aucune case : rien, et
+ * aucun appel n'a eu lieu. `en_cours` : RIEN (ni squelette ni « aucun » : aucune affirmation avant la lecture, et l'écran qui
+ * porte l'avis ne l'attend pas). `lue` : l'avis seulement si la règle de durée en donne un, `{ changement: null }` ou un
+ * changement passé ne disent rien. `illisible` et `refusee` : la ligne discrète, `refusee` portant son motif pour l'infobulle.
+ * `attend` : le RIB est proposé — la pastille d'attention.
+ */
+export function ceQueDitLAvis(lecture: LectureDeLAvis | null, destinataire: DestinataireDuChangement, aujourdhui: string): CeQueDitLAvis {
+  if (lecture === null || lecture.etat === 'en_cours') return { genre: 'rien' }
+  if (lecture.etat === 'lue') {
+    const c = changementAMontrer(lecture.lu, destinataire, aujourdhui)
+    return c === null ? { genre: 'rien' } : { genre: 'avis', changement: c, avis: avisDuChangement(c, destinataire), attend: c.etat === 'propose' }
+  }
+  return {
+    genre: 'lecture_manquee',
+    phrase: destinataire === 'cabinet' ? LECTURE_MANQUEE_AU_CABINET : LECTURE_MANQUEE_AU_CLIENT,
+    motif: lecture.etat === 'refusee' ? lecture.motif : null,
   }
 }

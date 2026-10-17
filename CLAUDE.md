@@ -616,6 +616,23 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   les lit ni ne les imprime encore (A7). L'adresse, la dénomination et la ville du greffe disent que « le client du
   dossier » les lit (`LIBELLE_*_IDENTITE` : `dossiers_select` ouvre la ligne à tout accès du dossier, pas au seul
   « Ventes ») → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ».
+- **« L'avis d'un changement de RIB » (A5b3b, 17/10/2026)** : une ligne pour les deux espaces
+  (`components/AvisChangementDeRib.tsx`, `espace` OBLIGATOIRE, union typée) — EN TÊTE de la Vue d'ensemble du cabinet
+  (`ChecklistTab`, `span-12`, au-dessus des tuiles), et sous la salutation de l'accueil du client (`ClientHome`, à côté
+  de la ligne des pièces jointes écartées) pour la case que la société AFFICHÉE lui ouvre : « Ventes » — seule ou avec
+  « Banque », elle lit l'avis « Ventes » — ou « Banque » seul, aucune sinon et alors AUCUN appel
+  (`destinataireDuClient`). L'écran LIT par `useDernierChangementDeRib` (le seul `.rpc(`, A5b3a) et passe la lecture ;
+  la règle et les mots vivent dans `lib/changementDeRib.ts` (pur) : `changementAMontrer(lu, destinataire, aujourdhui)` —
+  le jour de Paris DONNÉ, lu au rendu —, `ceQueDitLAvis`, `DUREE_DE_L_AVIS_EN_JOURS = 30`. Durée (A5B3-Q4) : chez le
+  cabinet, un RIB PROPOSÉ reste tant qu'il est le dernier changement (une confirmation, un retrait, un autre RIB est un
+  changement nouveau) ; tout le reste — chez le client tout changement, proposition comprise — trente jours, le jour du
+  changement compris (du J au J + 29) ; un jour futur et un « aujourd'hui » illisible se montrent ; aucune marque
+  « vu », rien ne s'écrit. Rien avant le retour (la Vue d'ensemble ne l'attend pas) ni sur « le RIB n'a jamais
+  changé » ; illisible ou refusée, UNE LIGNE DISCRÈTE (le motif en infobulle), jamais le silence. Pastille d'attention
+  devant un RIB proposé, neutre sinon ; le cabinet est mené à l'onglet Factures (« Aller aux factures » : la vue
+  « Paramètres » est un état local de l'onglet), le client « Ventes » à « Mes ventes », « Banque » seul n'a aucun lien.
+  Les phrases sont celles d'`avisDuChangement`, jamais réécrites ; celles du client passent `MOTS_DU_CABINET` → « L'AVIS
+  D'UN CHANGEMENT DE RIB, À L'ÉCRAN ».
 - **Les pièces jointes écartées, dites au client** (ligne 22.9, 13/10/2026 ; migration
   `pieces_jointes_ecartees_au_client`, appliquée sur l'accord du cabinet, S228B-Q1 à Q4 tranchées « comme
   recommandé ») : la table reste fermée au client ; `pieces_jointes_ecartees_du_client` (`SECURITY DEFINER`,
@@ -707,7 +724,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   « Paramètres » dans l'onglet Factures et « Mes ventes » — la version courante et l'état de son RIB, le RIB en vigueur,
   l'historique, une version nouvelle, la confirmation d'un RIB par le cabinet (A5b1, 16/10/2026) ; le dernier changement
   du RIB des factures, en base — le jour, l'auteur et l'état, jamais le RIB —, que le cabinet et les accès « Ventes » et
-  « Banque » lisent par une fonction (A5b3a, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
+  « Banque » lisent par une fonction (A5b3a, 17/10/2026), et son avis à l'écran — en tête de la Vue d'ensemble du
+  cabinet et sur l'accueil du client « Ventes » ou « Banque » ; chez le cabinet, un RIB proposé tant qu'il attend sa
+  confirmation, le reste trente jours (A5b3b, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
   accueil client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la même chose que `ClientUpload` et la
   Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau mot de passe avant tout autre
   écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès (10/10/2026) ; créer un accès ou un
@@ -977,15 +996,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   accès « Ventes » et « Banque » le jour, l'auteur et l'état du dernier changement du RIB des factures, jamais le RIB —,
   appliquée le 17/10/2026 sur l'accord du cabinet (A5B3-Q1 ; A5B3-Q2 à Q7 tranchées « comme recommandé » le même jour),
   et la bascule (`CHANGEMENT_DE_RIB_EXPORTE`) en ligne : l'onglet Accès dit ce que « Banque » en apprend → « LE DERNIER
-  CHANGEMENT DU RIB, EN BASE ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » : deux séries par
-  dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses factures, la série du
-  cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en est encore écrit (A9).
-  Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien
-  logiciel, ouverte), A5b3b (l'avis d'un changement de RIB : dans la Vue d'ensemble de chaque dossier pour le cabinet,
-  sur l'accueil des accès « Ventes » et « Banque » ; chez le cabinet, un RIB proposé tant qu'il n'est ni confirmé ni
-  remplacé, le reste trente jours, sans marque « vu » — A5B3-Q4 à Q6) et A5c (le logo et son seau), puis A7 (la facture
-  fige ses mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le
-  RIB et les conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans
+  CHANGEMENT DU RIB, EN BASE ». A5b3b, l'avis de ce changement à l'écran — en tête de la Vue d'ensemble du cabinet, sur
+  l'accueil du client « Ventes » ou « Banque » —, le 17/10/2026 (ses sept questions, A5B3B-Q1 à Q7, posées au cabinet) →
+  « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » :
+  deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses
+  factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en
+  est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du
+  fichier de l'ancien logiciel, ouverte), A5c (le logo et son seau) et le tableau de bord du cabinet (les dossiers dont
+  un RIB proposé attend sa confirmation, dits en une fois par une fonction — A5B3-Q5), puis A7 (la facture fige ses
+  mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et
+  les conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans
   activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
@@ -1896,12 +1916,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   l'image exacte de la règle ; toute autre forme est illisible, jamais « aucun changement » — et écrit les avis du
   cabinet, du client « Ventes » et du client « Banque » seul ; la lecture, un `.rpc(` sous `CHANGEMENT_DE_RIB_EXPORTE`,
   ne rejette jamais et se garde avec le dossier. `changementDeRib.test.ts` confronte le module au texte exporté et
-  rejoue l'essai, ses versions par une règle indépendante du SQL ; aucun écran ne l'appelle avant A5b3b → « LE DERNIER
-  CHANGEMENT DU RIB, EN BASE ».
+  rejoue l'essai, ses versions par une règle indépendante du SQL ; l'avis de la Vue d'ensemble du cabinet et de
+  l'accueil du client la lit depuis A5b3b → « LE DERNIER CHANGEMENT DU RIB, EN BASE », « L'AVIS D'UN CHANGEMENT DE RIB,
+  À L'ÉCRAN ».
 
 ## Tests
 
-Vitest, 12 098 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 161 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

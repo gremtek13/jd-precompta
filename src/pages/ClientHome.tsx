@@ -21,6 +21,9 @@ import AccueilVentesClient from './AccueilVentesClient'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
 import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
+import AvisChangementDeRib from '../components/AvisChangementDeRib'
+import { destinataireDuClient } from '../lib/changementDeRib'
+import { useDernierChangementDeRib } from '../lib/changementDeRibLecture'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -62,6 +65,11 @@ export default function ClientHome() {
   // fois (lib/piecesJointesEcarteesClientLecture.ts), À PART de `load` — sa panne n'en fausse aucune autre, et la panne des
   // autres ne la tait pas —, gardée avec la société et annulée à son changement. Lue ici pour dire LE COMBIEN d'une ligne.
   const ecartees = useEcarteesDuClient(dossierId)
+  // Le dernier changement du RIB de ses factures (étape A5b3b), pour la case qu'il porte sur la société AFFICHÉE : « Ventes » (seule
+  // ou avec « Banque ») ou « Banque » seul, d'après les mêmes cases que ses tuiles. Sans l'une ni l'autre, le crochet reçoit `null`
+  // et AUCUN appel ne part (la base refuserait). Lue à part, gardée avec la société : sa panne ne tait que sa ligne.
+  const destinataireDuRib = destinataireDuClient(ventesOuvertes, banqueOuverte)
+  const changementDuRib = useDernierChangementDeRib(destinataireDuRib === null ? null : dossierId)
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
@@ -284,6 +292,13 @@ export default function ClientHome() {
       {/* Au-dessus des tuiles, sous la salutation : une pièce attendue qui n'est pas arrivée se voit d'abord. Rien de plus
           que cette ligne ; « Mes pièces » dit le reste. Drapeau baissé : la lecture reste nulle, donc ni appel ni ligne. */}
       <PiecesJointesEcarteesAccueil lecture={ecartees} />
+
+      {/* Le dernier changement du RIB de ses factures (étape A5b3b), à côté de cette ligne : un RIB proposé depuis un accès de son
+          dossier, ou posé, changé, confirmé, retiré par son cabinet, trente jours durant. Muet avant la lecture et sur « aucun
+          changement » ; « Ventes » est mené à « Mes ventes », « Banque » seul n'a pas de lien. Rien ne s'écrit d'ici. */}
+      {destinataireDuRib !== null && (
+        <AvisChangementDeRib espace="client" destinataire={destinataireDuRib} lecture={changementDuRib} className="avis-rib-accueil" />
+      )}
 
       <div className="tuiles">
         <label className={`tuile tuile-principale${capturing ? ' tuile-desactivee' : ''}`}>

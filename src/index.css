@@ -1615,6 +1615,28 @@ a.btn { text-decoration: none; }
 }
 .client-signalement-discret { border-color: var(--color-border); background: var(--color-surface); }
 .client-signalement-texte { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 0.9rem; line-height: 1.4; overflow-wrap: anywhere; }
+/* L'avis du dernier changement du RIB des factures (étape A5b3b), en tête de la Vue d'ensemble du cabinet et sur l'accueil du
+   client « Ventes » ou « Banque » : la même ligne que ci-dessus, avec trois phrases (le changement, ce que les factures
+   porteront, le conseil) dans un corps qui prend la largeur et passe à la ligne, le bouton sous lui plutôt que d'en sortir.
+   Teintée d'avertissement devant un RIB proposé (il attend la confirmation du cabinet), neutre sinon ; discrète — sans
+   pastille — quand la lecture a manqué. Le texte garde sa couleur : le statut se lit à la pastille. */
+.avis-rib {
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface);
+}
+.avis-rib-attente {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning-light) 55%, var(--color-surface));
+}
+.avis-rib > .check-dot { margin-top: 6px; }
+.avis-rib > .btn { margin-left: auto; }
+.avis-rib-corps { display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px; min-width: 0; }
+.avis-rib-phrase { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 0.9rem; line-height: 1.4; overflow-wrap: anywhere; }
+.avis-rib-corps > .avis-rib-phrase { flex: none; font-weight: 600; }
+.avis-rib-texte { margin: 0; font-size: 0.85rem; line-height: 1.4; overflow-wrap: anywhere; }
+.avis-rib-accueil { margin-bottom: 20px; }
+.check-dot.check-neutre { background: var(--color-text-light); }
 .tuile {
   display: flex; flex-direction: column; gap: 12px; text-align: left;
   padding: 18px; text-decoration: none; color: var(--color-text); cursor: pointer;
