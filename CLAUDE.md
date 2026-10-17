@@ -178,7 +178,7 @@ supabase/
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
                     piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts,
-                    parametresFacturation, dernierChangementDeRib, logoDesFactures ;
+                    parametresFacturation, dernierChangementDeRib, logoDesFactures, dossiersAuRibAConfirmer ;
                     bornesStockage (le catalogue des quatre seaux, en LECTURE SEULE, après les migrations
                     `bornes_du_stockage` et `logo_des_factures`) ; logoDesFacturesSuppression (les suppressions du
                     seau des ventes, profil par profil : sur une RÉPLIQUE seulement, il porte des `delete`) ;
@@ -747,7 +747,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   du RIB des factures, en base — le jour, l'auteur et l'état, jamais le RIB —, que le cabinet et les accès « Ventes » et
   « Banque » lisent par une fonction (A5b3a, 17/10/2026), et son avis à l'écran — en tête de la Vue d'ensemble du
   cabinet et sur l'accueil du client « Ventes » ou « Banque » ; chez le cabinet, un RIB proposé tant qu'il attend sa
-  confirmation, le reste trente jours (A5b3b, 17/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
+  confirmation, le reste trente jours (A5b3b, 17/10/2026) ; les dossiers dont un RIB proposé attend la confirmation du
+  cabinet, en base — dits en une fois au cabinet seul, par une fonction qui appelle celle du dernier changement pour
+  chaque dossier qu'il administre (A5b3c, 18/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
   `ventes`, où le cabinet et le client « Ventes » lisent et déposent, le logo désigné par une version des paramètres, le
   seau vidé avec le dossier (A5c1, 17/10/2026), et son écran — le voir, son empreinte vérifiée, le poser, le changer, le
   retirer, dans la vue « Paramètres » (A5c2a, 17/10/2026) —, et le fichier du logo dans la sauvegarde d'un dossier,
@@ -1048,10 +1050,13 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   changer, le retirer, dans le bloc « Logo des factures » de « Paramètres » —, le 17/10/2026 (A5C2-Q1 à Q8 posées au
   cabinet) → « LE LOGO DES FACTURES, À L'ÉCRAN ». A5c2b, le fichier du logo dans la sauvegarde (format 2 : porté,
   vérifié, redéposé par la restauration, chaque logo dit au bilan) et « Redéposer le fichier », le 17/10/2026 (A5C-Q5 ;
-  A5C2B-Q1 à Q6 posées au cabinet) → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ». Restent, dans l'ordre recommandé,
-  A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) et
-  le tableau de bord du cabinet (les dossiers dont un RIB proposé attend sa confirmation, dits en
-  une fois par une fonction — A5B3-Q5), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur
+  A5C2B-Q1 à Q6 posées au cabinet) → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ». A5b3c, les dossiers au RIB à
+  confirmer en base — `dossiers_au_rib_a_confirmer`, une fonction de lecture, le cabinet seul, qui appelle
+  `dernier_changement_de_rib` pour chaque dossier qu'il administre —, appliquée le 18/10/2026 sur l'accord du cabinet
+  (A5B3C-Q1), et la bascule (`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`) en ligne, aucun écran ne la lisant encore →
+  « LES DOSSIERS AU RIB À CONFIRMER, EN BASE ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les
+  noms des colonnes du fichier de l'ancien logiciel, ouverte) et A5b3d (le tableau de bord du cabinet, qui lit cette
+  liste — A5B3C-Q2 à Q4), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur
   la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, le logo qu'elle imprime,
   les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité depuis trois ans, qui
   lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
@@ -1099,7 +1104,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 - `auth_leaked_password_protection` : réservé au plan Pro (organisation `dloewvpmposfbvdwtqfz` en free). Réglable
   gratuitement : longueur minimale et classes de caractères des mots de passe.
-- `anon_/authenticated_security_definer_function_executable` (5 et 54 fonctions au 17/10/2026) : vérifiés bénins par
+- `anon_/authenticated_security_definer_function_executable` (5 et 55 fonctions au 18/10/2026) : vérifiés bénins par
   impersonation. Seules `enregistrer_facture`, `valider_exercice`, `abandonner_transmission`,
   `enregistrer_encaissement`, `retirer_encaissement`, `declarer_encaissement_hors_application`, `annuler_encaissement`,
   `justifier_solde`, `enregistrer_paiement_personnel_cotisation`, `retirer_paiement_personnel_cotisation`,
@@ -1126,9 +1131,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   connexions et l'adresse courante d'un dossier où il a `gere_les_ventes` (`etatFactureElectronique.sql`),
   `dernier_changement_de_rib` que le jour, le geste, l'auteur (le cabinet, un accès client ou « inconnu »), l'état et
   l'effet sur le RIB en vigueur du dernier changement du RIB d'un dossier dont il est le cabinet ou un accès qui porte
-  « Ventes » ou « Banque » (`dernierChangementDeRib.sql`) ; plus aucun rôle n'exécute `prochain_numero_facture` ni
-  `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans
-  contrôle interne.
+  « Ventes » ou « Banque » (`dernierChangementDeRib.sql`), `dossiers_au_rib_a_confirmer` que l'identifiant, le nom, la
+  marque « archivé » et ce que `dernier_changement_de_rib` en dit, des seuls dossiers que l'appelant administre et dont
+  le dernier changement du RIB est un RIB proposé, pour le cabinet seul (`dossiersAuRibAConfirmer.sql`) ; plus aucun
+  rôle n'exécute `prochain_numero_facture` ni `attribuer_numero_facture`. Ce qu'il faut revérifier : qu'une NOUVELLE
+  fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `connexions_bancaires`,
   `connexions_plateformes` : volontaire (refus total au client).
 - `function_search_path_mutable` sur `retour_declencheur` : bénin (fonction `immutable` qui ne nomme aucun objet).
@@ -1981,6 +1988,20 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rejoue l'essai, ses versions par une règle indépendante du SQL ; l'avis de la Vue d'ensemble du cabinet et de
   l'accueil du client la lit depuis A5b3b → « LE DERNIER CHANGEMENT DU RIB, EN BASE », « L'AVIS D'UN CHANGEMENT DE RIB,
   À L'ÉCRAN ».
+- **Les dossiers au RIB à confirmer** (A5b3c, en base depuis le 18/10/2026, `lib/dossiersAuRibAConfirmer.ts`, pur ;
+  `lib/dossiersAuRibAConfirmerLecture.ts`) : `dossiers_au_rib_a_confirmer()` (`SECURITY DEFINER`, `stable`, sans
+  argument ; le cabinet seul — le super-administrateur ou un compte de `cabinet_admins` —, 42501 « Seul le cabinet lit
+  les RIB à confirmer. » sinon, jamais une liste vide) parcourt les dossiers que `admin_du_dossier` ouvre à l'appelant,
+  APPELLE `dernier_changement_de_rib` pour chacun et garde ceux dont le dernier changement est un RIB proposé : UNE
+  seule règle, celle d'A5b3a, sans lire la table des paramètres (une boucle, et non un filtre que le planificateur
+  pourrait évaluer dans un autre ordre). Elle rend `{dossiers: [...]}` (vide : une affirmation), chaque élément
+  l'identifiant, le nom, la marque `archive` (les archivés rendus, A5B3C-Q2) et l'objet `changement` tel quel ; le plus
+  ancien d'abord, puis l'identifiant (un jour, puis un uuid : aucune collation). Le module la lit sans rien deviner —
+  `lireLeChangementDeRib` pour chaque élément, une proposition seulement, l'ordre vérifié — et dit le compte et une
+  ligne par dossier par `avisDuChangement(…, 'cabinet')`, les mots de la Vue d'ensemble ; la lecture, un `.rpc(` gardé
+  avec une clé, ne rejette jamais. `dossiersAuRibAConfirmer.test.ts` confronte le module au texte exporté et rejoue les
+  listes de l'essai, profil par profil, par une règle indépendante du SQL → « LES DOSSIERS AU RIB À CONFIRMER, EN
+  BASE ».
 - **Le logo des factures** (A5c1, en base depuis le 17/10/2026, `lib/logoDesFactures.ts`, pur) : un seau PRIVÉ,
   `ventes`, borné en base (500 Kio, PNG ou JPEG : un PDF ne porte une image que par `DCTDecode` ou `FlateDecode`,
   ISO 32000-1 §7.4 — ni WebP, ni SVG, qui porte du script ; A5C-Q4) ; le logo sous
@@ -2005,7 +2026,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 12 480 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 552 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

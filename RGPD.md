@@ -470,6 +470,21 @@ Ce qui est **prouvé**, pas seulement affirmé :
   locale, révoquée ensuite) —, le dépose, le change ou le retire, et, depuis l'étape A5c2b, redépose le fichier qu'une
   version désigne quand le seau ne le rend plus (le même fichier, reconnu à son empreinte) ; aucune facture ne
   l'imprime avant l'étape A7.
+- **Les dossiers dont un RIB proposé attend la confirmation du cabinet** (espace client, étape A5b3c : la migration
+  `dossiers_au_rib_a_confirmer`, préparée le 17/10/2026 et éprouvée sur une réplique, présentée au cabinet, appliquée
+  sur son accord (A5B3C-Q1) ; art. 5 § 1 c, 25 § 2 et 32 § 1 b ; décision du cabinet A5B3-Q5) : une fonction de lecture seule,
+  `dossiers_au_rib_a_confirmer` (`SECURITY DEFINER`, l'accès vérifié avant toute lecture), réservée au CABINET — le
+  super-administrateur, le chef d'un cabinet, un membre de son équipe ; un accès client, quelles que soient ses cases, ou
+  un compte rattaché à rien est refusé, jamais servi d'une liste vide —, rend, pour chaque dossier que l'appelant
+  administre (`admin_du_dossier` : les dossiers de son cabinet pour le chef, ceux qui lui sont affectés pour un membre) et
+  dont le dernier changement du RIB des factures est un RIB proposé, l'identifiant et le nom du dossier, s'il est
+  archivé, et ce que `dernier_changement_de_rib` en dit — le jour, le geste, l'auteur (un accès client, jamais la
+  personne), l'état, ce qu'il a fait au RIB en vigueur ; jamais l'IBAN, le BIC, le titulaire, l'identifiant d'un compte
+  ou d'une version, ni rien d'un dossier que l'appelant n'administre pas, que l'essai
+  `supabase/essais/dossiersAuRibAConfirmer.sql` cherche, plantés, dans chaque réponse de chaque profil. Rien de plus
+  n'est ouvert : le cabinet lit déjà ces paramètres (la policy de lecture de l'étape A5a) et ce dernier changement
+  (étape A5b3a) ; la fonction les dit en une fois, pour son tableau de bord (étape A5b3d). Rien ne s'écrit ;
+  `DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`, levé avec la migration : aucun écran ne la lit avant l'étape A5b3d.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

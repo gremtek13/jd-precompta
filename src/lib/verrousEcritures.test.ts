@@ -89,6 +89,13 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + '`stable`, `security definer`, sans écriture ; migration `dernier_changement_de_rib`, étape A5b3a), lu par le crochet '
       + 'de l’avis (`lib/changementDeRibLecture.ts`) — derrière `CHANGEMENT_DE_RIB_EXPORTE`.',
   },
+  'rpc:dossiers_au_rib_a_confirmer': {
+    nature: 'lecture',
+    raison: 'Les dossiers du cabinet dont un RIB proposé attend sa confirmation, et ce que `dernier_changement_de_rib` en dit, '
+      + 'jamais l’IBAN (fonction `stable`, `security definer`, sans écriture ; migration `dossiers_au_rib_a_confirmer`, étape '
+      + 'A5b3c), lus par le crochet du tableau de bord (`lib/dossiersAuRibAConfirmerLecture.ts`) — derrière '
+      + '`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`.',
+  },
   'fonction:superpdp-credentials:status': {
     nature: 'lecture',
     raison: 'L’action « status » ne lit que `superpdp_credentials` en base : aucun appel à Super PDP.',
