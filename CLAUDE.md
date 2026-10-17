@@ -178,9 +178,10 @@ supabase/
                     categoriesCommunes, notesInternes, droitsAcces, piecesHorsDeFrance, planComptable,
                     laBaseLitLePlan, regimesEreporting, declarationsEreporting, dossierPermanent,
                     piecesJointesEcartees, articles, etatFactureElectronique, contacts, importContacts,
-                    parametresFacturation, dernierChangementDeRib ;
-                    bornesStockage (le catalogue des trois seaux, en LECTURE SEULE, après la migration
-                    `bornes_du_stockage`) ;
+                    parametresFacturation, dernierChangementDeRib, logoDesFactures ;
+                    bornesStockage (le catalogue des quatre seaux, en LECTURE SEULE, après les migrations
+                    `bornes_du_stockage` et `logo_des_factures`) ; logoDesFacturesSuppression (les suppressions du
+                    seau des ventes, profil par profil : sur une RÉPLIQUE seulement, il porte des `delete`) ;
                     validationExercice, liquidationTva et factures se jouent en UNE transaction (psql -1 hors de l'outil).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
@@ -288,21 +289,23 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   une ligne « EN ATTENTE »), et les articles dès la leur (A1 ; témoin : la table `articles` ; deux mutations de
   plus), et les adresses de réception dès la leur (A6a ; témoin : la table `adresses_reception` ; deux mutations
   de plus), et les contacts dès la leur (A4a ; témoin : la table `contacts` ; deux mutations de plus), et les paramètres
-  de facturation dès la leur (A5a ; témoin : la table `parametres_facturation` ; deux mutations de plus) —, qui se
-  disent EN ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la banque se juge entier depuis le
-  10/10/2026 (les deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en production), celui des ventes
-  depuis le même jour (les deux migrations de P2 en base : 35 lignes, 0 en faute, 31 mutations sur 31 en production ;
-  les devis EN ATTENTE), et le 14/10/2026 avec les articles (35 lignes, 0 en faute, 33 mutations sur 33 en production),
-  puis avec les adresses de réception (35 lignes, 0 en faute, 35 mutations sur 35 en production), et le 15/10/2026 avec
-  les contacts (35 lignes, 0 en faute, 37 mutations sur 37 en production), et le 16/10/2026 avec les paramètres de
-  facturation (35 lignes, 0 en faute, 39 mutations sur 39 en production). Le fichier se rejoue ENTIER (le 08/10/2026,
-  pour la première fois depuis le 19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`,
-  et une ligne TEXTE qui rend l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS
-  (`SECURITY DEFINER`) se rejoue aussi ; un refus plpgsql arrive en P0001, donc on exige la RAISON → « CE QUI CONTOURNE
-  LA RLS ».
+  de facturation dès la leur (A5a ; témoin : la table `parametres_facturation` ; deux mutations de plus) —, et depuis
+  A5c1 un troisième, « Le seau des ventes » (SV0 à SV6, quatre mutations ; témoin : le seau `ventes`), qui se disent EN
+  ATTENTE ou SANS OBJET tant que leurs migrations manquent ; celui de la banque se juge entier depuis le 10/10/2026 (les
+  deux migrations de P7 en base : 0 en faute, 19 mutations sur 19 en production), celui des ventes depuis le même jour
+  (les deux migrations de P2 en base : 35 lignes, 0 en faute, 31 mutations sur 31 en production ; les devis EN ATTENTE),
+  et le 14/10/2026 avec les articles (35 lignes, 0 en faute, 33 mutations sur 33 en production), puis avec les adresses
+  de réception (35 lignes, 0 en faute, 35 mutations sur 35 en production), et le 15/10/2026 avec les contacts (35
+  lignes, 0 en faute, 37 mutations sur 37 en production), et le 16/10/2026 avec les paramètres de facturation (35
+  lignes, 0 en faute, 39 mutations sur 39 en production), et le 17/10/2026 avec le seau des ventes (46 lignes, 0 en
+  faute, 43 mutations sur 43 en production). Le fichier se rejoue ENTIER (le 08/10/2026, pour la première fois depuis le
+  19/09) : sans son en-tête ni ses `drop table`, tables de résultats `on commit drop`, et une ligne TEXTE qui rend
+  l'empreinte du texte reçu, comparée à la copie transmise. Ce qui contourne la RLS (`SECURITY DEFINER`) se rejoue
+  aussi ; un refus plpgsql arrive en P0001, donc on exige la RAISON → « CE QUI CONTOURNE LA RLS ».
 - **Stockage** : le premier segment du chemin EST le dossier (`(storage.foldername(name))[1]::uuid`) — un chemin non-UUID
-  fait lever le cast pour tout le monde. Une suppression de fichier ne se teste pas en SQL (`protect_objects_delete`
-  refuse en 42501 pour tous) : gardée par une lecture du catalogue (RGPD.md §8.6).
+  fait lever le cast pour tout le monde ; le seau `ventes` (A5c1) juge d'abord la FORME du chemin dans un `case` : un
+  chemin qui n'est pas celui d'un dossier n'y ouvre rien et ne fait rien lever. Une suppression de fichier ne se teste
+  pas en SQL (`protect_objects_delete` refuse en 42501 pour tous) : gardée par une lecture du catalogue (RGPD.md §8.6).
 - **Une table que le CLIENT écrit** liste ses droits un par un (`piece_commentaires` : auteur = `auth.uid()`,
   `origine = 'cabinet'` ⇔ `admin_du_dossier`, cible du dossier annoncé). Une parole datée ne se réécrit pas : aucune
   policy `UPDATE` sur `piece_commentaires`.
@@ -395,13 +398,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   porte que « Banque » ne les lit pas : il n'en apprend, par `dernier_changement_de_rib` seule, que le jour, l'auteur —
   le cabinet ou un accès client — et l'état du dernier changement du RIB, jamais le RIB (A5-Q2 ; A5b3a, 17/10/2026) ;
   l'identité légale du dossier (dénomination imprimée, ville du greffe, forme juridique, capital), le client la lit
-  comme toute la fiche de son dossier et ne l'écrit jamais (MEG1-Q14). L'onglet Accès dit ce que la base ouvre à la
-  SESSION du client, écran ou non, dans les quatre états des deux étapes (`ceQueDisentLesCases`, drapeaux
-  `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à l'export) → « LES DROITS D'UN ACCÈS
-  CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le cabinet saisit dans une table qu'un
-  droit du client ouvre le dit dans son libellé** (« … le client qui porte la case « Ventes » les lit » : les notes
-  d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une déclaration ; `LIBELLE_*` de
-  `lib/droitsAcces.ts`).
+  comme toute la fiche de son dossier et ne l'écrit jamais (MEG1-Q14) ; depuis A5c1 (17/10/2026), le seau des ventes de
+  son dossier — y lire ce qui est déposé, y déposer un logo (PNG ou JPEG, 500 Kio), le désigner dans une version des
+  paramètres, jamais modifier ni supprimer un fichier ; un accès qui ne porte que « Banque » n'y lit rien. L'onglet
+  Accès dit ce que la base ouvre à la SESSION du client, écran ou non, dans les quatre états des deux étapes
+  (`ceQueDisentLesCases`, drapeaux `COUVERTURE_EXPORTEE` et `VENTES_DU_CLIENT_EXPORTEES`, chaque mot confronté à
+  l'export) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE », « AVANT LES VENTES DU CLIENT ». **Un texte libre que le
+  cabinet saisit dans une table qu'un droit du client ouvre le dit dans son libellé** (« … le client qui porte la case
+  « Ventes » les lit » : les notes d'une facture, le motif d'un avoir et d'une contre-passation, la note d'une
+  déclaration ; `LIBELLE_*` de `lib/droitsAcces.ts`).
   **La banque sous la case « Banque »** (P7, les deux migrations appliquées le 10/10/2026) : un ordre, et il est la
   règle — d'abord ce qui s'ajoute (la couverture du relevé, des MOIS en un `date[]`, pour tout accès), puis la bascule
   de l'application, puis seulement le resserrement : une lecture que la RLS refuse rend ZÉRO ligne, sans erreur, et un
@@ -726,13 +731,15 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   du RIB des factures, en base — le jour, l'auteur et l'état, jamais le RIB —, que le cabinet et les accès « Ventes » et
   « Banque » lisent par une fonction (A5b3a, 17/10/2026), et son avis à l'écran — en tête de la Vue d'ensemble du
   cabinet et sur l'accueil du client « Ventes » ou « Banque » ; chez le cabinet, un RIB proposé tant qu'il attend sa
-  confirmation, le reste trente jours (A5b3b, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ;
-  accueil client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la même chose que `ClientUpload` et la
-  Checklist (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau mot de passe avant tout autre
-  écran, 09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès (10/10/2026) ; créer un accès ou un
-  membre ne change plus le mot de passe d'un compte existant, et l'écran le dit (10/10/2026) ; la règle des mots de
-  passe dite avant le clic par les quatre écrans qui en posent un, et le refus du service dit en français (10/10/2026,
-  défaut 23.5).
+  confirmation, le reste trente jours (A5b3b, 17/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
+  `ventes`, où le cabinet et le client « Ventes » lisent et déposent, le logo désigné par une version des paramètres, le
+  seau vidé avec le dossier (A5c1, 17/10/2026) ; client à plusieurs sociétés (sélecteur, `<Outlet key>`) ; accueil
+  client en tableau de bord, dont « Ce qu'il reste à envoyer » dit la même chose que `ClientUpload` et la Checklist
+  (`lib/resteAEnvoyer.ts`) ; mot de passe oublié (lien par e-mail, nouveau mot de passe avant tout autre écran,
+  09/10/2026), et le même lien envoyé par le cabinet depuis l'onglet Accès (10/10/2026) ; créer un accès ou un membre ne
+  change plus le mot de passe d'un compte existant, et l'écran le dit (10/10/2026) ; la règle des mots de passe dite
+  avant le clic par les quatre écrans qui en posent un, et le refus du service dit en français (10/10/2026, défaut
+  23.5).
 - **Dossiers** : création, checklist, informations, code NAF ; interface d'ordinateur en trois volets (25/09/2026),
   volets redimensionnables (05/10/2026), application installable (PWA, 25/09/2026).
 - **Pièces et documents** : dépôt, import en masse, OCR et citation des champs, classification, doublons (fichier et
@@ -787,7 +794,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   texte OCR des pièces sensibles après clôture, 22/09/2026), Estimation, Balance des comptes (pilotage, comptes de tiers
   à une date), Virements ; assistant comptable IA avec plafond de coût.
 - **Exports** : pack (ZIP + Excel), export d'un cabinet, sauvegarde et restauration d'un dossier — **une sauvegarde
-  n'est pas un pack** : le pack porte les fichiers, la sauvegarde les lignes qui les relient (PLAN_DE_REPRISE.md).
+  n'est pas un pack** : le pack porte les fichiers, la sauvegarde les lignes qui les relient (PLAN_DE_REPRISE.md) ; le
+  logo des factures n'est ni dans l'un ni dans l'autre : chaque version des paramètres en garde le chemin et
+  l'empreinte, le manifeste le dit (`horsPerimetre`), et PLAN_DE_REPRISE.md (§4, point 6) dit de le redéposer.
 - **Nouvelles clés d'API de Supabase** (30/09/2026).
 
 ## Fonctionnalités actuellement en cours
@@ -997,16 +1006,24 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   appliquée le 17/10/2026 sur l'accord du cabinet (A5B3-Q1 ; A5B3-Q2 à Q7 tranchées « comme recommandé » le même jour),
   et la bascule (`CHANGEMENT_DE_RIB_EXPORTE`) en ligne : l'onglet Accès dit ce que « Banque » en apprend → « LE DERNIER
   CHANGEMENT DU RIB, EN BASE ». A5b3b, l'avis de ce changement à l'écran — en tête de la Vue d'ensemble du cabinet, sur
-  l'accueil du client « Ventes » ou « Banque » —, le 17/10/2026 (ses sept questions, A5B3B-Q1 à Q7, posées au cabinet) →
-  « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». MEG1-Q5, la numérotation, tranchée le même jour « comme recommandé » :
-  deux séries par dossier, celle du client et celle du mandataire, choisie selon qui valide — le client valide ses
-  factures, la série du cabinet ne sert qu'à le dépanner —, et la série de l'ancien logiciel qui continue ; rien n'en
-  est encore écrit (A9). Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du
-  fichier de l'ancien logiciel, ouverte), A5c (le logo et son seau) et le tableau de bord du cabinet (les dossiers dont
-  un RIB proposé attend sa confirmation, dits en une fois par une fonction — A5B3-Q5), puis A7 (la facture fige ses
-  mentions — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et
-  les conditions en vigueur, les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans
-  activité depuis trois ans, qui lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  l'accueil du client « Ventes » ou « Banque » —, le 17/10/2026 (ses sept questions, A5B3B-Q1 à Q7, tranchées « comme
+  recommandé » le même jour : rien ne change) → « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». MEG1-Q5, la numérotation,
+  tranchée le même jour « comme recommandé » : deux séries par dossier, celle du client et celle du mandataire, choisie
+  selon qui valide — le client valide ses factures, la série du cabinet ne sert qu'à le dépanner —, et la série de
+  l'ancien logiciel qui continue ; rien n'en est encore écrit (A9). A5c1, le logo des factures et son seau en base — le
+  seau privé `ventes` (500 Kio, PNG ou JPEG), ses trois policies (lire et déposer sous `<dossier>/logos/` :
+  `gere_les_ventes` ; supprimer : le chef du cabinet du dossier ; aucune mise à jour), `logo_chemin` et `logo_sha256`
+  sur `parametres_facturation`, le huitième rang d'`enregistrer_parametres_facturation` —, appliquée le 17/10/2026 sur
+  l'accord du cabinet (A5C-Q1 ; A5C-Q2 à Q6 tranchées « comme recommandé » le même jour), et la bascule
+  (`LOGO_DES_FACTURES_EXPORTE`) en ligne : la suppression d'un dossier vide le seau, la sauvegarde garde le chemin et
+  l'empreinte du logo, pas le fichier, l'onglet Accès dit ce que « Ventes » ouvre de plus → « LE LOGO DES FACTURES ET
+  SON SEAU, EN BASE ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier
+  de l'ancien logiciel, ouverte), A5c2 (l'écran du logo : le déposer, le voir, le changer ; le fichier rejoint alors la
+  sauvegarde, A5C-Q5) et le tableau de bord du cabinet (les dossiers dont un RIB proposé attend sa confirmation, dits en
+  une fois par une fonction — A5B3-Q5), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur
+  la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, le logo qu'elle imprime,
+  les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité depuis trois ans, qui
+  lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions au cabinet, et deux sur
   l'ouverture (O33-Q1 : un écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
@@ -1181,18 +1198,22 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « UNE ÉCRITURE COMMANDÉE PAR UNE LISTE PAS ENCORE REVENUE ».
 - **Stockage** : tout retrait passe par `lib/stockage.ts::retirerFichiers` (journalise, ne lève jamais) ; plus aucun
   `.catch(() => {})` (`retraitsStockage.test.ts`) ; `list()` se pagine ; la suppression d'un dossier rend un bilan que
-  l'écran montre ; un fichier sans ligne est un orphelin → « LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE ».
+  l'écran montre ; un fichier sans ligne est un orphelin ; la suppression d'un cabinet laisse encore son logo PUBLIC
+  dans `cabinet-logos`, orphelin (ligne 22.61) → « LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE ».
 - **Les bornes des seaux** (ligne 22.6, `lib/bornesStockage.ts`) : tout dépôt passe par `preparerPiece`, `preparerLogo`
   ou `preparerContenu`, qui jugent AVANT l'envoi le type — décidé par l'application (extension, sinon signature ; un
   logo à sa seule signature), jamais `file.type` ni le type que déclare un expéditeur — et la taille, disent le refus
   avec le poids et la borne, et rendent un Blob RÉÉTIQUETÉ (storage-js ignore `contentType` pour un Blob,
   `bornesStockageClient.test.ts`). Pièces : PDF, JPEG, PNG, CSV (+ `text/plain` des plateformes), 20 Mio (S226-Q1,
   décision du cabinet du 13/10/2026 ; aucun autre format, S226-Q2) ; packs : ZIP et XLSX, 50 Mio ; logos : PNG, JPEG,
-  WebP, 500 Kio, jamais de SVG (le seau est public). Les mêmes valeurs en base depuis le 13/10/2026 (migration
-  `bornes_du_stockage`, essai `bornesStockage.sql`), confrontées par `bornesStockage.test.ts` ;
-  `depotsDansLesSeaux.test.ts` lit l'arbre de toute la source et exige que chaque dépôt envoie un type que la migration
-  admet pour son seau — ni plus, ni moins ; un refus 413 ou 415 du stockage se dit en français (`messageErreur`) → « LES
-  BORNES DES SEAUX DU STOCKAGE », « LES BORNES DES SEAUX DU STOCKAGE, EN BASE ».
+  WebP, 500 Kio, jamais de SVG (le seau est public) ; logos des factures (seau `ventes`, privé, A5c1) : PNG ou JPEG,
+  500 Kio, par `preparerLogoDeFacture`, qu'aucun dépôt n'appelle avant l'écran du logo (A5c2). Les mêmes valeurs en base
+  depuis le 13/10/2026 (migration `bornes_du_stockage`, et `logo_des_factures` pour `ventes` le 17/10/2026 ; essai
+  `bornesStockage.sql`), confrontées par `bornesStockage.test.ts` ; `depotsDansLesSeaux.test.ts` lit l'arbre de toute la
+  source et exige que chaque dépôt envoie un type que la migration admet pour son seau — ni plus, ni moins (le seau
+  `ventes`, sans dépôt jusqu'à A5c2 : ses deux types dits admis et jamais envoyés) ; un refus 413 ou 415 du stockage se
+  dit en français (`messageErreur`) → « LES BORNES DES SEAUX DU STOCKAGE », « LES BORNES DES SEAUX DU STOCKAGE, EN
+  BASE ».
 - **Une pièce jointe écartée se dit** (ligne 22.7, `pieces_jointes_ecartees`) : `receive-email` l'écrit à la clé secrète
   par un `upsert` qui ne fait rien sur la clé (le dossier, l'empreinte SHA-256 des identifiants Resend) — un rejeu de
   Resend n'écrit rien de plus, et un identifiant Resend gardé tel quel désignerait un e-mail relisible ; jamais le nom,
@@ -1919,10 +1940,25 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   rejoue l'essai, ses versions par une règle indépendante du SQL ; l'avis de la Vue d'ensemble du cabinet et de
   l'accueil du client la lit depuis A5b3b → « LE DERNIER CHANGEMENT DU RIB, EN BASE », « L'AVIS D'UN CHANGEMENT DE RIB,
   À L'ÉCRAN ».
+- **Le logo des factures** (A5c1, en base depuis le 17/10/2026, `lib/logoDesFactures.ts`, pur) : un seau PRIVÉ,
+  `ventes`, borné en base (500 Kio, PNG ou JPEG : un PDF ne porte une image que par `DCTDecode` ou `FlateDecode`,
+  ISO 32000-1 §7.4 — ni WebP, ni SVG, qui porte du script ; A5C-Q4) ; le logo sous
+  `<dossier>/logos/<empreinte>.png|jpg`, l'empreinte = le SHA-256 du fichier tel qu'il part ; lire (tout le préfixe du
+  dossier, A5C-Q6) et déposer (la forme exacte d'un logo) : `gere_les_ventes` (le cabinet et le client « Ventes »,
+  A5C-Q2) ; supprimer : le chef du cabinet du dossier seul, avec le dossier ; aucune mise à jour ; un logo qu'aucune
+  version ne désigne plus reste dans le seau jusqu'à la suppression du dossier (A5C-Q3). Une version des paramètres le
+  désigne (`logo_chemin`, `logo_sha256`, trois contraintes) ; `enregistrer_parametres_facturation` le juge au HUITIÈME
+  rang (huit messages, après les dix-sept d'A5a, inchangés) — l'ensemble, l'empreinte, le chemin, le dossier, le nom,
+  puis le fichier dans le seau, son type et son poids tels que le catalogue les dit ; un logo inchangé ne se rejuge
+  pas ; une clé absente vaut « aucun logo » (le formulaire d'A5b1 reprend celui de la version remplacée,
+  `parametresEnvoyes`). La sauvegarde en garde le chemin et l'empreinte, pas le fichier (A5C-Q5). Le module redit les
+  refus (`refusDuLogo`) ; `logoDesFactures.test.ts` le confronte au texte exporté et REJOUE les appels de l'essai ; les
+  suppressions se jouent sur une réplique seulement (`logoDesFacturesSuppression.sql`) → « LE LOGO DES FACTURES ET SON
+  SEAU, EN BASE ».
 
 ## Tests
 
-Vitest, 12 161 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 225 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un
@@ -1990,9 +2026,9 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
 - Toute nouvelle table métier d'un dossier suit la convention `admin_du_dossier(dossier_id)`, porte `to authenticated`,
   et est vérifiée par impersonation réelle avant d'être crue.
 - Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql` (invariants à 0 en faute **et** toutes
-  ses mutations qui mordent — trente-neuf depuis A5a : dix-neuf avec P7, douze de plus avec les ventes, deux avec les
-  articles, deux avec les adresses de réception, deux avec les contacts, deux avec les paramètres de facturation) ; la
-  CI n'a pas accès à la base.
+  ses mutations qui mordent — quarante-trois depuis A5c1 : dix-neuf avec P7, douze de plus avec les ventes, deux avec
+  les articles, deux avec les adresses de réception, deux avec les contacts, deux avec les paramètres de facturation,
+  quatre avec le seau des ventes) ; la CI n'a pas accès à la base.
 - Toute Edge Function reste auto-porteuse ; lit les clés de Supabase par le bloc `cleSupabase` (jamais
   `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`) ; une nouvelle clé ne voyage que dans `apikey`, donc une fonction
   appelée sans session d'utilisateur passe à `verify_jwt = false` avec son propre contrôle avant toute dépense.

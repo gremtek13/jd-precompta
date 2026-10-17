@@ -1,6 +1,7 @@
 import { estLeClient, PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import type { EspaceVentes } from './espaceVentes'
+import { LOGO_DES_FACTURES_EXPORTE, changementDuLogo, logoRepris, type LogoEnvoye } from './logoDesFactures'
 import {
   CHAMPS_DES_PARAMETRES, PROPOSITIONS_PAR_DEFAUT, ceQueDitLeRib, etatDuRibEnregistre, jourEtHeureAParis, refusConfirmationRib,
   refusEnregistrementParametres, ribEnVigueur, saisieQuiPart, versionCourante, type CleRefusConfirmationRib,
@@ -208,8 +209,10 @@ const minuscule = (texte: string) => texte.charAt(0).toLowerCase() + texte.slice
 
 /**
  * Ce qu'une version a CHANGÉ par rapport à celle qu'elle remplace, nommé : chaque condition sous son libellé ; le RIB
- * nommément — « RIB posé », « RIB retiré », ou « RIB changé (IBAN, BIC…) ». Vide quand rien n'a changé ; null pour la
- * première (rien à quoi la comparer). La confirmation d'un RIB n'est pas un changement de version : elle se dit par l'état.
+ * nommément — « RIB posé », « RIB retiré », ou « RIB changé (IBAN, BIC…) » ; le logo (étape A5c1) — « Logo posé »,
+ * « Logo changé », « Logo retiré » —, quand la lecture a rendu ses colonnes des deux versions (`changementDuLogo` : une
+ * colonne absente n'est pas un logo retiré). Vide quand rien n'a changé ; null pour la première (rien à quoi la comparer).
+ * La confirmation d'un RIB n'est pas un changement de version : elle se dit par l'état.
  */
 export function champsChanges(v: ParametresFacturation, remplacee: ParametresFacturation | null): string[] | null {
   if (remplacee === null) return null
@@ -220,6 +223,10 @@ export function champsChanges(v: ParametresFacturation, remplacee: ParametresFac
     const parties = CHAMPS_DU_RIB.filter((c) => v[c] !== remplacee[c]).map((c) => (c === 'titulaire_compte' ? minuscule(LIBELLES_DES_CHAMPS[c]) : LIBELLES_DES_CHAMPS[c]))
     if (parties.length > 0) changes.push(`RIB changé (${parties.join(', ')})`)
   }
+  const logo = changementDuLogo(v, remplacee)
+  if (logo === 'pose') changes.push('Logo posé')
+  else if (logo === 'change') changes.push('Logo changé')
+  else if (logo === 'retire') changes.push('Logo retiré')
   return changes
 }
 
@@ -297,11 +304,26 @@ export function rienNeChange(remplacee: ParametresFacturation | null, saisie: Sa
   return CHAMPS_DES_PARAMETRES.every((c) => part[c] === (remplacee === null ? null : remplacee[c]))
 }
 
-/** Le premier refus de la base sur la saisie TELLE QU'ELLE PART ; null quand elle l'accepterait ; `rompue`. */
+/**
+ * Ce que le formulaire ENVOIE : la saisie telle qu'elle part, et le logo de la version remplacée REPRIS tel quel (étape
+ * A5c1). La base lit la saisie EN ENTIER — une clé absente y vaut « aucun logo », et la version neuve le retirerait — : ce
+ * formulaire, qui n'offre pas le logo, le garde ainsi d'une version à l'autre. Rien de plus tant que la migration du logo
+ * n'est pas en base, que la version remplacée n'en a pas, ou que ses colonnes n'ont pas été lues (`logoRepris`).
+ */
+export function parametresEnvoyes(
+  remplacee: ParametresFacturation | null, saisie: SaisieParametresFacturation,
+): ParametresEnvoyes & LogoEnvoye {
+  return { ...saisieQuiPart(saisie), ...logoRepris(remplacee, LOGO_DES_FACTURES_EXPORTE) }
+}
+
+/** Le premier refus de la base sur la saisie TELLE QU'ELLE PART (`parametresEnvoyes`) ; null quand elle l'accepterait ; `rompue`. */
 export function refusDeLaSaisieParametres(
   dossierId: string, remplaceId: string | null, saisie: SaisieParametresFacturation, versions: readonly ParametresFacturation[],
 ): RefusParametres<CleRefusEnregistrementParametres> | null | 'rompue' {
-  return refusEnregistrementParametres(dossierId, remplaceId, saisieQuiPart(saisie), versions)
+  // Le logo repris est celui de la version remplacée : la base ne relit pas son fichier, aucun fichier du seau n'a donc à
+  // être connu ici (l'étape A5c2 dira celui qu'elle dépose). Une version qu'on ne trouve pas se refuse au deuxième rang.
+  const remplacee = remplaceId === null ? null : versions.find((v) => v.id === remplaceId && v.dossier_id === dossierId) ?? null
+  return refusEnregistrementParametres(dossierId, remplaceId, parametresEnvoyes(remplacee, saisie), versions, [])
 }
 
 /**

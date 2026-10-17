@@ -26,11 +26,13 @@ import {
   TITULAIRE_MAX,
   avantEnPointsDeCode,
   ceQueDitLeRib,
+  champsAdmisParLaBase,
   cleIbanValide,
   denominationProposee,
   etatDuRibEnregistre,
   jourEtHeureAParis,
   refusConfirmationRib,
+  refusDeLEnregistrement,
   refusEnregistrementParametres,
   refusIdentiteLegale,
   ribEnVigueur,
@@ -40,6 +42,7 @@ import {
   type SaisieParametresFacturation,
   type VersionDuRib,
 } from './parametresFacturation'
+import { CHAMPS_DU_LOGO, LOGO_DES_FACTURES_EXPORTE, REFUS_DU_LOGO } from './logoDesFactures'
 import { versionParametres } from '../test/parametresFacturation'
 import { decouper } from '../test/essaiSql'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -321,11 +324,11 @@ function rejouer(): { rejeux: Rejeu[]; instantanes: Instantane[] } {
       if (courante === 'rompue') throw new Error(`${e.num} : chaîne rompue`)
       const cible = a.courante ? courante?.id ?? null : a.version
       const verdict = a.fonction === 'enregistrer_parametres_facturation'
-        ? refusEnregistrementParametres(a.dossier, cible, a.saisie, versions)
+        ? refusEnregistrementParametres(a.dossier, cible, a.saisie, versions, [])
         : refusConfirmationRib(a.dossier, cible as string, versions)
       if (verdict === 'rompue') throw new Error(`${e.num} : chaîne rompue`)
       if (verdict) {
-        const liste = a.fonction === 'enregistrer_parametres_facturation' ? REFUS_ENREGISTREMENT_PARAMETRES : REFUS_CONFIRMATION_RIB
+        const liste = a.fonction === 'enregistrer_parametres_facturation' ? refusDeLEnregistrement(true) : REFUS_CONFIRMATION_RIB
         refus = { ...verdict, code: (liste as readonly { cle: string; code: string }[]).find((r) => r.cle === verdict.cle)?.code ?? '?' }
         rangDuRefus = i
         break
@@ -524,7 +527,7 @@ describe('l’identité légale du dossier, rejouée dans le module', () => {
 const DA = 'DA'
 const premiere = (o: Partial<VersionDuRib> = {}): VersionDuRib => versionParametres({ id: 'p1', dossier_id: DA, ...o })
 const refus = (saisie: unknown, versions: readonly VersionDuRib[] = [], remplace: string | null = null) => {
-  const r = refusEnregistrementParametres(DA, remplace, saisie, versions)
+  const r = refusEnregistrementParametres(DA, remplace, saisie, versions, [])
   return r === null || r === 'rompue' ? r : r.cle
 }
 // Des IBAN fictifs à clé juste (le code banque 99999, celui des essais) ; un compte qui porte des lettres ; un autre pays.
@@ -593,16 +596,32 @@ describe('la saisie, lue comme la base la reçoit', () => {
   })
 
   it('un champ inconnu se nomme — le premier dans l’ordre des points de code, coupé à quatre-vingts caractères', () => {
-    expect(refusEnregistrementParametres(DA, null, { logo_chemin: 'x' }, [])).toEqual({
-      cle: 'champ_inconnu', message: "Le champ « logo_chemin » n'est pas un paramètre de facturation.",
+    expect(refusEnregistrementParametres(DA, null, { logo: 'x' }, [], [])).toEqual({
+      cle: 'champ_inconnu', message: "Le champ « logo » n'est pas un paramètre de facturation.",
     })
-    expect((refusEnregistrementParametres(DA, null, { alpha: 1, Zeta: 2 }, []) as { message: string }).message).toContain('« Zeta »')
-    const long = (refusEnregistrementParametres(DA, null, { ['x'.repeat(100)]: 1 }, []) as { message: string }).message
+    expect((refusEnregistrementParametres(DA, null, { alpha: 1, Zeta: 2 }, [], []) as { message: string }).message).toContain('« Zeta »')
+    const long = (refusEnregistrementParametres(DA, null, { ['x'.repeat(100)]: 1 }, [], []) as { message: string }).message
     expect(long).toContain(`« ${'x'.repeat(79)}… »`)
     // Un caractère hors du plan de base vient APRÈS U+FFFD dans l'ordre des octets, avant lui en unités UTF-16.
     const astral = String.fromCodePoint(0x1f600)
-    expect((refusEnregistrementParametres(DA, null, { [astral]: 1, '�': 2 }, []) as { message: string }).message).toContain('« � »')
+    expect((refusEnregistrementParametres(DA, null, { [astral]: 1, '�': 2 }, [], []) as { message: string }).message).toContain('« � »')
     for (const cle of ['id', 'rib_etat', 'auteur', 'remplace_id', 'dossier_id']) expect(refus({ [cle]: 'x' }), cle).toBe('champ_inconnu')
+  })
+
+  it('les deux champs du logo (étape A5c1) : inconnus tant que sa migration n’est pas en base, jugés au huitième rang ensuite', () => {
+    // Le module suit la base : sans la migration `logo_des_factures`, elle refuse `logo_chemin` comme un champ inconnu ;
+    // avec elle, un chemin sans son empreinte se refuse au huitième rang, après les sept d'A5a.
+    expect(refus({ logo_chemin: 'x' })).toBe(LOGO_DES_FACTURES_EXPORTE ? 'logo_ensemble' : 'champ_inconnu')
+    expect(refus({ logo_sha256: 'x', escompte: '' })).toBe(LOGO_DES_FACTURES_EXPORTE ? 'escompte' : 'champ_inconnu')
+    expect(champsAdmisParLaBase(false)).toEqual(CHAMPS_DES_PARAMETRES)
+    expect(champsAdmisParLaBase(true)).toEqual([...CHAMPS_DES_PARAMETRES, ...CHAMPS_DU_LOGO])
+    expect(refusDeLEnregistrement(false)).toEqual(REFUS_ENREGISTREMENT_PARAMETRES)
+    expect(refusDeLEnregistrement(true)).toEqual([...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO])
+    // Les huit du logo forment le huitième rang, après le septième (le RIB) ; aucune clé ne se répète d'une liste à l'autre.
+    expect(Math.max(...REFUS_ENREGISTREMENT_PARAMETRES.map((r) => r.rang))).toBe(7)
+    expect(new Set(REFUS_DU_LOGO.map((r) => r.rang))).toEqual(new Set([8]))
+    const cles = refusDeLEnregistrement(true).map((r) => r.cle)
+    expect(new Set(cles).size).toBe(cles.length)
   })
 
   it('l’ordre des points de code est celui de l’import des contacts, son jumeau', () => {
@@ -687,7 +706,7 @@ describe('la chaîne des versions', () => {
     expect(refus({}, [v1, v2], 'p2')).toBeNull()
     expect(refus({}, [v1, v2], 'inconnue')).toBe('remplacee_d_un_autre_dossier')
     expect(refus({}, [v1, v2, premiere({ id: 'b1', dossier_id: 'DB' })], 'b1')).toBe('remplacee_d_un_autre_dossier')
-    expect(refusEnregistrementParametres(DA, 'p1', {}, [v1, v2])).toEqual({
+    expect(refusEnregistrementParametres(DA, 'p1', {}, [v1, v2], [])).toEqual({
       cle: 'remplacee_pas_courante',
       message: "D'autres paramètres de facturation ont été enregistrés entre-temps (le 16/10/2026 à 10:05) : relire avant d'enregistrer.",
     })
@@ -856,7 +875,8 @@ describe('PARAMETRES_FACTURATION_EXPORTES dit ce que porte l’export', () => {
 
   it('exportée, les fonctions disent les refus du module, dans le même ordre et sous les mêmes codes', () => {
     if (!PARAMETRES_FACTURATION_EXPORTES) return
-    for (const [fonction, liste] of [['enregistrer_parametres_facturation', REFUS_ENREGISTREMENT_PARAMETRES],
+    // La dernière définition de la fonction : celle d'A5a, ou celle de `logo_des_factures` quand l'export la porte (A5c1).
+    for (const [fonction, liste] of [['enregistrer_parametres_facturation', refusDeLEnregistrement(LOGO_DES_FACTURES_EXPORTE)],
       ['confirmer_rib', REFUS_CONFIRMATION_RIB]] as const) {
       expect(messagesSql(derniereDefinitionSql(fonction)), fonction).toEqual(liste.map((r) => r.modele))
       expect(codesSql(derniereDefinitionSql(fonction)), fonction).toEqual(liste.map((r) => r.code))
@@ -868,7 +888,7 @@ describe('PARAMETRES_FACTURATION_EXPORTES dit ce que porte l’export', () => {
     const texte = migration()
     const enregistrer = derniereDefinitionSql('enregistrer_parametres_facturation')
     const liste = (motif: RegExp, source: string) => [...(motif.exec(source)?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
-    expect(liste(/where k not in \(([^)]*)\)/, enregistrer)).toEqual([...CHAMPS_DES_PARAMETRES])
+    expect(liste(/where k not in \(([^)]*)\)/, enregistrer)).toEqual([...champsAdmisParLaBase(LOGO_DES_FACTURES_EXPORTE)])
     expect(liste(/p_parametres->>'moyen_prefere' not in \(([^)]*)\)/, enregistrer)).toEqual([...MOYENS_PROPOSABLES])
     expect(liste(/check \(moyen_prefere in \(([^)]*)\)\)/, texte)).toEqual([...MOYENS_PROPOSABLES])
     for (const [champ, max] of [['escompte', ESCOMPTE_MAX], ['penalites', PENALITES_MAX], ['mentions_complementaires', MENTIONS_MAX],

@@ -1848,4 +1848,10 @@ export interface ParametresFacturation {
   // Qui a enregistré la version — un identifiant de compte, sans clé vers les comptes —, et quand.
   auteur: string
   cree_le: string
+  // Le logo des factures de la version (étape A5c1, migration `logo_des_factures`) : son chemin dans le seau `ventes`,
+  // `<dossier>/logos/<empreinte>.png` ou `.jpg`, et son empreinte SHA-256 — ensemble ou nuls. ABSENTS de la lecture
+  // (`undefined`) tant que la migration n'est pas en base : une colonne qu'on n'a pas lue n'est pas un logo retiré
+  // (src/lib/logoDesFactures.ts ne dit alors rien du logo).
+  logo_chemin?: string | null
+  logo_sha256?: string | null
 }

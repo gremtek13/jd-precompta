@@ -3,12 +3,12 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace } from '../../lib/espaceVentes'
 import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
-import { jourEtHeureAParis, saisieQuiPart, type SaisieParametresFacturation } from '../../lib/parametresFacturation'
+import { jourEtHeureAParis, type SaisieParametresFacturation } from '../../lib/parametresFacturation'
 import { lireLesParametresFacturation, type LectureDesParametres } from '../../lib/parametresFacturationLecture'
 import { confirmerRib, enregistrerParametresFacturation } from '../../lib/parametresFacturationEcriture'
 import {
   TEXTE_ROMPUE, conditionsDeLaVersion, confirmationDuRib, etatDuRibDit, historiqueDesParametres, mentionVersionParLeClient,
-  pastilleDuRib, phraseDEnTete, refusDeLaConfirmation, refusDeLaSaisieParametres, resumeDesParametres, ribDeLaVersion,
+  parametresEnvoyes, pastilleDuRib, phraseDEnTete, refusDeLaConfirmation, refusDeLaSaisieParametres, resumeDesParametres, ribDeLaVersion,
   ribEnVigueurDit, saisieDeLaVersion, saisieProposee, type ChampAffiche,
 } from '../../lib/parametresFacturationVue'
 import type { ParametresFacturation } from '../../lib/types'
@@ -113,7 +113,8 @@ export default function ParametresVue(props: Props) {
       return
     }
     const fait = await sousVerrou('Les paramètres de facturation n’ont pas pu être enregistrés.', async () => {
-      const ecrite = await enregistrerParametresFacturation(dossierId, remplace?.id ?? null, saisieQuiPart(saisie))
+      // La saisie et le logo de la version remplacée, repris (étape A5c1) : ce formulaire ne l'offre pas, il ne le retire pas.
+      const ecrite = await enregistrerParametresFacturation(dossierId, remplace?.id ?? null, parametresEnvoyes(remplace, saisie))
       return `Paramètres enregistrés le ${jourEtHeureAParis(ecrite.cree_le)}.`
     })
     if (fait) setFenetre(null)

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
-  bilanDesRefus, extensionDuLogo, poids, preparerContenu, preparerLogo, preparerPiece, refusDUnePiece, refusDUnLogo,
-  TAILLE_MAX, TAILLE_MAX_PIECE, TYPES_ADMIS, TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS, typeDUnePiece, typeDUnLogo,
-  typeSansParametres, type IssueDuDepot, type Seau,
+  bilanDesRefus, extensionDuLogo, poids, preparerContenu, preparerLogo, preparerLogoDeFacture, preparerPiece, refusDUnePiece,
+  refusDUnLogo, TAILLE_MAX, TAILLE_MAX_PIECE, TYPES_ADMIS, TYPES_DES_FICHIERS_DE_PIECE, TYPES_DES_LOGOS,
+  TYPES_DES_LOGOS_DE_FACTURE, typeDUnePiece, typeDUnLogo, typeDUnLogoDeFacture, typeSansParametres, type IssueDuDepot, type Seau,
 } from './bornesStockage'
-import { bornesDeLaMigration, bornesDeLEssai, sansCommentairesSql, texteDeLaMigration, texteDeLEssai } from '../test/bornesStockage'
+import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
+import {
+  bornesDeLaMigration, bornesDeLEssai, fichierDeLaMigrationDuLogo, sansCommentairesSql, seauDeLaMigrationDuLogo, texteDeLaMigration,
+  texteDeLEssai,
+} from '../test/bornesStockage'
 
 // LES BORNES DES TROIS SEAUX (ligne 22.6) : ce que l'application vérifie avant l'envoi, et ce qu'elle envoie.
 //   1. Les frontières : une taille ÉGALE à la borne passe, un octet de plus est refusé — le stockage juge de même (la
@@ -216,8 +221,9 @@ describe('la borne écrite ici est celle de la migration et de l’essai', () =>
     expect(new Set(lue.types).size).toBe(lue.types.length)
   })
 
-  it('l’essai garde le seau des logos public, les deux autres privés', () => {
-    expect(Object.fromEntries(essai.map((b) => [b.seau, b.publique]))).toEqual({ pieces: false, packs: false, 'cabinet-logos': true })
+  it('l’essai garde le seau des logos public, les trois autres privés — celui des ventes compris (étape A5c1)', () => {
+    expect(Object.fromEntries(essai.map((b) => [b.seau, b.publique])))
+      .toEqual({ pieces: false, packs: false, 'cabinet-logos': true, ventes: false })
   })
 
   it('la migration ne fait rien d’autre : ni suppression, ni policy, ni accès public, et elle exige les trois seaux', () => {
@@ -236,3 +242,74 @@ describe('la borne écrite ici est celle de la migration et de l’essai', () =>
     expect(() => bornesDeLaMigration(`${texte}\nupdate storage.buckets set public = true where id = 'pieces';`)).toThrow(/forme attendue/)
   })
 })
+
+// ── Le quatrième seau, `ventes` : le logo des factures (étape A5c1) ──────────────────────────────────────────────────
+// Sa migration, `logo_des_factures`, est PRÉPARÉE : tant que l'export ne la porte pas, la borne se confronte à l'essai
+// (supabase/essais/bornesStockage.sql, qui l'attend « EN ATTENTE ») ; le jour où il la porte, à elle aussi.
+describe('le seau des ventes et le logo des factures', () => {
+  const essai = bornesDeLEssai(texteDeLEssai())
+  const fichier = fichierDeLaMigrationDuLogo()
+
+  it('la migration du logo est dans l’export si et seulement si son drapeau est levé', () => {
+    expect(fichier !== null).toBe(LOGO_DES_FACTURES_EXPORTE)
+  })
+
+  it('même taille, mêmes types, dans le module et l’essai — et dans la migration quand l’export la porte : privé', () => {
+    const attendue = essai.find((b) => b.seau === 'ventes')!
+    expect(attendue).toEqual({ seau: 'ventes', publique: false, taille: TAILLE_MAX.ventes, types: [...TYPES_ADMIS.ventes] })
+    expect(TAILLE_MAX.ventes).toBe(512_000)
+    expect([...TYPES_ADMIS.ventes]).toEqual(['image/png', 'image/jpeg'])
+    if (fichier === null) return
+    expect(seauDeLaMigrationDuLogo(readFileSync(fichier, 'utf8'))).toEqual(attendue)
+  })
+
+  it('le lecteur du seau de la migration mord : une autre forme, un second seau, un seau retouché, un autre nom — il lève', () => {
+    const juste = "insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)\nvalues ('ventes', 'ventes', false, 512000, array['image/png', 'image/jpeg']);"
+    expect(seauDeLaMigrationDuLogo(juste)).toEqual({ seau: 'ventes', publique: false, taille: 512000, types: ['image/png', 'image/jpeg'] })
+    expect(seauDeLaMigrationDuLogo(`-- insert into storage.buckets (commentaire)\n${juste}`).seau).toBe('ventes')
+    expect(() => seauDeLaMigrationDuLogo(juste.replace('512000, ', ''))).toThrow(/forme attendue/)
+    expect(() => seauDeLaMigrationDuLogo(`${juste}\n${juste}`)).toThrow(/2 insert/)
+    expect(() => seauDeLaMigrationDuLogo(`${juste}\nupdate storage.buckets set public = true where id = 'ventes';`)).toThrow(/1 update/)
+    expect(() => seauDeLaMigrationDuLogo(juste.replace("('ventes', 'ventes'", "('ventes', 'logos'"))).toThrow(/autre nom/)
+    expect(seauDeLaMigrationDuLogo(juste.replace('false', 'true')).publique).toBe(true)
+  })
+
+  it('la taille égale à la borne passe, un octet de plus est refusé', () => {
+    expect('refus' in preparerContenu('ventes', pesant(new Blob(['x']), TAILLE_MAX.ventes), 'image/png')).toBe(false)
+    const refuse = preparerContenu('ventes', pesant(new Blob(['x']), TAILLE_MAX.ventes + 1), 'image/png')
+    expect('refus' in refuse && refuse.refus).toEqual(expect.objectContaining({ raison: 'taille', taille: TAILLE_MAX.ventes + 1 }))
+  })
+
+  it('un logo de facture se reconnaît à sa SIGNATURE : PNG ou JPEG ; ni WebP, ni GIF, ni SVG, ni HEIC, ni PDF', () => {
+    expect(typeDUnLogoDeFacture(new Uint8Array(PNG))).toBe('image/png')
+    expect(typeDUnLogoDeFacture(new Uint8Array(JPEG))).toBe('image/jpeg')
+    for (const octets of [WEBP, GIF, SVG, HEIC, PDF, TIFF, []]) expect(typeDUnLogoDeFacture(new Uint8Array(octets)), String(octets.slice(0, 4))).toBeNull()
+    const rendus = [PNG, JPEG, WEBP, GIF, SVG, PDF].map((o) => typeDUnLogoDeFacture(new Uint8Array(o))).filter((t) => t !== null)
+    expect([...new Set(rendus)].sort()).toEqual([...TYPES_DES_LOGOS_DE_FACTURE].sort())
+  })
+
+  it('le nom et le type du navigateur ne comptent pas : un SVG nommé .png est refusé, un PNG nommé .svg part RÉÉTIQUETÉ en PNG', async () => {
+    const refus = await preparerLogoDeFacture(fichier_('logo.png', SVG, 'image/png'))
+    expect('refus' in refus && refus.refus).toEqual(expect.objectContaining({
+      raison: 'format', message: 'format non pris en charge (un logo de facture se dépose en PNG ou en JPEG)',
+    }))
+    const webp = await preparerLogoDeFacture(fichier_('logo.webp', WEBP, 'image/webp'))
+    expect('refus' in webp && webp.refus.raison).toBe('format')
+    const pret = corpsDe(await preparerLogoDeFacture(fichier_('logo.svg', PNG, 'image/svg+xml')))
+    expect([pret.type, pret.corps.type, pret.taille]).toEqual(['image/png', 'image/png', PNG.length])
+    expect([...new Uint8Array(await pret.corps.arrayBuffer())]).toEqual(PNG)
+    const jpeg = corpsDe(await preparerLogoDeFacture(fichier_('photo', JPEG, '')))
+    expect(jpeg.corps.type).toBe('image/jpeg')
+  })
+
+  it('le format se juge avant la taille, et la borne se dit à l’octet quand une décimale la confondrait', async () => {
+    const lourd = await preparerLogoDeFacture(pesant(fichier_('logo.gif', GIF), 2 * 1024 * 1024))
+    expect('refus' in lourd && lourd.refus.raison).toBe('format')
+    const trop = await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX.ventes + 1))
+    expect('refus' in trop && trop.refus.message).toBe('il pèse 512\u202f001\u00a0octets, au-delà des 512\u202f000\u00a0octets qu’un logo de facture peut peser')
+    expect('refus' in (await preparerLogoDeFacture(pesant(fichier_('logo.png', PNG), TAILLE_MAX.ventes)))).toBe(false)
+  })
+})
+
+/** Un fichier fictif pour le seau des ventes (le nom `fichier` y est pris par la migration lue). */
+const fichier_ = (nom: string, octets: number[] = [], typeDuNavigateur = '') => new File([new Uint8Array(octets)], nom, { type: typeDuNavigateur })

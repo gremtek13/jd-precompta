@@ -1,7 +1,9 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
+import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 
-// Retire tous les fichiers de stockage d'un dossier (pièces + packs) avant de supprimer sa ligne —
+// Retire tous les fichiers de stockage d'un dossier (pièces + packs, et le logo de ses factures dans le seau `ventes` dès
+// que sa migration est en base, étape A5c1) avant de supprimer sa ligne —
 // la suppression de `dossiers` fait cascader toutes les autres tables (voir migration
 // informations_dossier_cascade_suppression, la seule qui manquait), mais Storage n'est pas lié par une
 // contrainte de base : sans ce nettoyage explicite, les fichiers resteraient orphelins indéfiniment.
@@ -59,8 +61,14 @@ function fusionner(a: NettoyageStockage, b: NettoyageStockage): NettoyageStockag
  * lecture dont l'échec ressemble à un résultat vide ». Confondre les deux ferait retirer ZÉRO fichier
  * en annonçant que tout est propre.
  */
+// Les seaux qu'un dossier occupe sous `<dossier>/`. Le seau `ventes` (le logo des factures, `<dossier>/logos/…`) n'en est
+// que sa migration en base (`LOGO_DES_FACTURES_EXPORTE`) : avant, le lister rendrait une erreur — un seau absent —, et
+// chaque suppression dirait un inventaire incomplet. Seul le chef du cabinet du dossier y supprime un fichier — celui qui
+// seul supprime un dossier (`dossiers_delete`) : c'est ce geste-ci qui le vide.
+type SeauDuDossier = 'pieces' | 'packs' | 'ventes'
+
 async function listerTout(
-  bucket: 'pieces' | 'packs',
+  bucket: SeauDuDossier,
   chemin: string,
 ): Promise<{ entrees: { name: string; id: string | null }[]; complete: boolean }> {
   const tout: { name: string; id: string | null }[] = []
@@ -73,7 +81,7 @@ async function listerTout(
   }
 }
 
-async function viderDossierDuStockage(bucket: 'pieces' | 'packs', dossierId: string): Promise<NettoyageStockage> {
+async function viderDossierDuStockage(bucket: SeauDuDossier, dossierId: string): Promise<NettoyageStockage> {
   const resultat = vide()
   try {
     const { entrees, complete } = await listerTout(bucket, dossierId)
@@ -84,7 +92,8 @@ async function viderDossierDuStockage(bucket: 'pieces' | 'packs', dossierId: str
     for (const entree of entrees) {
       // Un id null signale un sous-dossier (convention Supabase Storage) — un pack range son
       // ZIP/Excel sous `dossierId/période-timestamp/`, jamais directement sous `dossierId/` (voir
-      // packGenerator.ts) ; une pièce, elle, est toujours un fichier direct.
+      // packGenerator.ts), un logo de facture sous `dossierId/logos/` (logoDesFactures.ts) ; une
+      // pièce, elle, est toujours un fichier direct.
       if (entree.id === null) {
         const sous = await listerTout(bucket, `${dossierId}/${entree.name}`)
         if (!sous.complete) resultat.inventaireIncomplet = true
@@ -131,13 +140,11 @@ async function viderDossierDuStockage(bucket: 'pieces' | 'packs', dossierId: str
  * `nettoyageAMontrer`.
  */
 export async function supprimerDossierDefinitivement(dossierId: string): Promise<NettoyageStockage> {
-  const [pieces, packs] = await Promise.all([
-    viderDossierDuStockage('pieces', dossierId),
-    viderDossierDuStockage('packs', dossierId),
-  ])
+  const seaux: SeauDuDossier[] = LOGO_DES_FACTURES_EXPORTE ? ['pieces', 'packs', 'ventes'] : ['pieces', 'packs']
+  const bilans = await Promise.all(seaux.map((seau) => viderDossierDuStockage(seau, dossierId)))
   const { error } = await supabase.from('dossiers').delete().eq('id', dossierId)
   if (error) throw error
-  return fusionner(pieces, packs)
+  return bilans.reduce(fusionner, vide())
 }
 
 /**

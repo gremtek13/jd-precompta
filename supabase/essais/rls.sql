@@ -49,6 +49,11 @@
 --      les données identifiantes de ce projet — plus un contrôle POSITIF (S3bis : le client voit
 --      bien ses propres fichiers), sans lequel un bucket devenu illisible à tous passerait pour un
 --      succès sur toute la section.
+--   6bis. Le seau des VENTES (espace client, étape A5c1 ; bloc « Le seau des ventes », en fin de fichier) : SV0 à SV6, les
+--      mêmes questions posées au seau privé du logo des factures — privé, rien sans le droit « Ventes », le dossier du client
+--      seul avec lui (contrôle positif), aucun dépôt ailleurs que sous `<son dossier>/logos/`, aucune mise à jour, la suppression
+--      au chef du cabinet du dossier (lue au catalogue) — et quatre mutations à lui ; avant sa migration, une ligne « EN
+--      ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -452,6 +457,32 @@
 -- échappements de la classe des blancs reçus tels quels) y rend 35 lignes, 0 en faute, 39 mutations sur 39 (80 tables,
 -- dont 71 portant un `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M3bis-membre (paramètres de facturation) voit
 -- les deux versions du jeu). `parametresFacturation.sql` y rend ses 204 verdicts, 0 en faute.
+--
+-- 17/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (espace client, étape A5c1 : migration `logo_des_factures`, préparée,
+-- présentée au cabinet, non appliquée), qui pose le seau PRIVÉ `ventes` et trois policies sur `storage.objects` — la
+-- lecture et le dépôt d'un logo au cabinet du dossier et au client « Ventes » (`gere_les_ventes`), la suppression au chef
+-- du cabinet du dossier seul, aucune mise à jour — et deux colonnes sur `parametres_facturation`, sans policy neuve dans
+-- le schéma public. Le bloc « Le seau des ventes », en fin de fichier, le juge dès que le seau existe (SV0 à SV6 et quatre
+-- mutations : M-SV1, M-SV3, M-SV4, M-SV5) ; avant, une ligne « EN ATTENTE ». Joué ENTIER par psql sur la réplique de l'étape
+-- (signature.sql : les neuf familles, et l'historique, égaux à la production à 137 migrations ; le talon du stockage, ses
+-- huit policies, ses trois seaux et sa protection des suppressions égaux à ceux de la production) : ce fichier sans le
+-- bloc, sans la migration puis avec elle, 35 lignes de verdict, 0 en faute, 39 mutations sur 39, sorties identiques ligne
+-- à ligne ; avec le bloc, sans la migration, 36 lignes (la ligne « EN ATTENTE » en plus), 0 en faute, 39 sur 39 ; avec
+-- elle, 46 lignes, 0 en faute, 43 mutations sur 43 — les lignes d'avant identiques ; joué contre des mutations de la
+-- migration, le bloc vire au rouge (la lecture ouverte à tout accès, le dépôt ouvert sans le droit, une policy de mise à
+-- jour, la suppression élargie, le seau public, le dépôt hors de logos/), et une lecture ouverte à PUBLIC fait LEVER la
+-- section S elle-même : l'anonyme n'exécute pas `gere_les_ventes`, et toute lecture de `storage.objects` lui échoue. Ce
+-- que le seau, ses policies et la fonction des paramètres refusent et acceptent, profil par profil et par leur raison,
+-- est éprouvé par `logoDesFactures.sql` ; la suppression, sur une réplique seulement, par
+-- `logoDesFacturesSuppression.sql`. Le passage en production suivra l'application et se notera ici.
+--
+-- 17/10/2026 — LA MIGRATION APPLIQUÉE EN PRODUCTION, `logo_des_factures` (`20261017120403`, sur l'accord du cabinet,
+-- A5C-Q1) : 138 migrations ; la signature de la production (signature.sql : les colonnes, les contraintes et les
+-- fonctions changent ; celle du stockage : deux déclencheurs, onze policies, quatre seaux) est celle de la réplique
+-- migrée. La copie adaptée (81 101 caractères, `506f61be…`, ce que rend la ligne TEXTE — les échappements de la classe
+-- des blancs reçus tels quels) y rend 46 lignes, 0 en faute, 43 mutations sur 43 (80 tables, dont 71 portant un
+-- `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M-SV1, M-SV3, M-SV4 et M-SV5 mordent). `logoDesFactures.sql` y
+-- rend ses 126 verdicts, 0 en faute.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -1785,6 +1816,212 @@ begin
   end loop;
   mutations := mutations || jsonb_build_object('mutation', 'M3bis — le contrôle positif de 3bis, le droit retiré au profil',
     'attendu', 'aucune table où le compte tombe juste', 'observe', coalesce('juste sur : ' || mauvais, 'aucune'), 'mord', mauvais is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ═══ Le seau des ventes (espace client, étape A5c1) ═══════════════════════════════════════════
+--
+-- Le seau `ventes` (migration `logo_des_factures`) range le logo des factures d'un dossier, sous `<dossier>/logos/`. Il est
+-- PRIVÉ, et ses trois policies ne valent que pour lui : la lecture et le dépôt d'un logo au cabinet du dossier et à l'accès
+-- client qui porte « Ventes » (`gere_les_ventes`), la suppression au chef du cabinet du dossier seul ; aucune mise à jour.
+-- Les questions de la section S, posées à ce seau : il est privé (SV0) ; l'anonyme et un compte rattaché à rien n'y voient
+-- rien (SV1, SV2) ; le client sans le droit « Ventes » — aucune case, ou « Banque » seul — rien, pas même de son dossier
+-- (SV3) ; avec lui, les fichiers de son dossier, et ceux-là seuls (SV3bis, le contrôle POSITIF) ; il dépose sous `<son
+-- dossier>/logos/`, jamais ailleurs, et sans le droit pas même là (SV4) ; personne ne modifie un fichier (SV5) ; la policy
+-- de suppression porte encore le chef du cabinet du dossier (SV6, une lecture du catalogue : le stockage refuse toute
+-- suppression SQL, voir S5 — ce qu'elle rencontre se joue sur une réplique par `logoDesFacturesSuppression.sql`). Le jeu :
+-- deux logos d'essai rangés par le propriétaire, l'un dans le dossier du client, l'autre dans un autre dossier, et les
+-- droits du client posés pour chaque contrôle — le tout dans une sous-transaction annulée ; les verdicts voyagent dans une
+-- variable. Quatre mutations, qui doivent mordre. Avant la migration, une ligne dit que le seau attend. Ce que le seau, ses
+-- policies et la fonction des paramètres refusent et acceptent, profil par profil, est éprouvé par `logoDesFactures.sql`.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  autre_dossier     uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  chemin_sien text := 'ac538d93-7da3-4403-bca6-2d7836810a6f/logos/' || repeat('e', 64) || '.png';
+  chemin_autre text := '001c7ed7-c23b-4590-901e-693489f8af24/logos/' || repeat('e', 64) || '.png';
+  n bigint; sien bigint; autre bigint; touchees int; accepte boolean; motif text; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if not exists (select 1 from storage.buckets where id = 'ventes') then
+    insert into rls_verdict values ('SV. le seau des ventes : EN ATTENTE de la migration logo_des_factures',
+      'storage.buckets (ventes)', 'absent : le seau se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    insert into storage.objects (bucket_id, name, metadata) values
+      ('ventes', chemin_sien, '{"size": 10, "mimetype": "image/png"}'), ('ventes', chemin_autre, '{"size": 10, "mimetype": "image/png"}');
+    construit := true;
+
+    -- SV1 et SV2 : l'anonyme, puis un compte rattaché à rien.
+    set local role anon;
+    perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV1. anonyme ne voit aucun fichier du seau des ventes', 'cible', 'ventes',
+      'observe', n::text, 'ok', n = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV2. inconnu authentifié ne voit aucun fichier du seau des ventes', 'cible', 'ventes',
+      'observe', n::text, 'ok', n = 0);
+    -- M-SV1 : SV1 rejoué sous le chef, qui voit les deux.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SV1 — SV1 rejoué sous le chef', 'attendu', 'les deux fichiers vus',
+      'observe', n || ' vu(s)', 'mord', n = 2);
+
+    -- SV3 : le client sans le droit « Ventes » — aucune case, puis « Banque » seul.
+    update memberships set droit_ventes = false, droit_banque = false where user_id = client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV3. client sans le droit « Ventes » ne voit aucun fichier du seau, même de son dossier',
+      'cible', 'ventes (aucune case)', 'observe', n::text, 'ok', n = 0);
+    update memberships set droit_ventes = false, droit_banque = true where user_id = client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV3. client sans le droit « Ventes » ne voit aucun fichier du seau, même de son dossier',
+      'cible', 'ventes (« Banque » seul)', 'observe', n::text, 'ok', n = 0);
+
+    -- SV3bis : avec « Ventes », le fichier de son dossier, et lui seul.
+    update memberships set droit_ventes = true, droit_banque = false where user_id = client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) filter (where name = chemin_sien), count(*) filter (where name = chemin_autre) into sien, autre
+      from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV3bis. avec le droit « Ventes », le fichier de son dossier, et lui seul (contrôle positif)',
+      'cible', 'ventes', 'observe', sien || ' du sien, ' || autre || ' d''un autre', 'ok', sien = 1 and autre = 0);
+
+    -- SV4 : il dépose sous son dossier, jamais ailleurs.
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('ventes', autre_dossier || '/logos/' || repeat('d', 64) || '.png', '{"size": 10, "mimetype": "image/png"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV4. client « Ventes » ne dépose pas dans un autre dossier, ni hors de logos/',
+      'cible', 'ventes (insert, autre dossier)', 'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end,
+      'ok', (not accepte) and motif = '42501');
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('ventes', dossier_du_client || '/autre/' || repeat('d', 64) || '.png', '{"size": 10, "mimetype": "image/png"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV4. client « Ventes » ne dépose pas dans un autre dossier, ni hors de logos/',
+      'cible', 'ventes (insert, hors de logos/)', 'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end,
+      'ok', (not accepte) and motif = '42501');
+    -- Sans le droit « Ventes », il ne dépose pas même dans son dossier.
+    update memberships set droit_ventes = false, droit_banque = true where user_id = client;
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('ventes', dossier_du_client || '/logos/' || repeat('d', 64) || '.png', '{"size": 10, "mimetype": "image/png"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV4. sans le droit « Ventes », le client ne dépose pas, même dans son dossier',
+      'cible', 'ventes (insert, « Banque » seul)', 'observe', case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif, '?') end,
+      'ok', (not accepte) and motif = '42501');
+    update memberships set droit_ventes = true, droit_banque = false where user_id = client;
+    -- M-SV4 : SV4 rejoué dans son dossier, sous logos/ — il dépose.
+    accepte := false; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into storage.objects (bucket_id, name, metadata) values ('ventes', dossier_du_client || '/logos/' || repeat('d', 64) || '.png', '{"size": 10, "mimetype": "image/png"}');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SV4 — SV4 rejoué dans son dossier, sous logos/', 'attendu', 'le dépôt accepté',
+      'observe', case when accepte then 'accepté' else 'refusé par ' || coalesce(motif, '?') end, 'mord', accepte);
+
+    -- SV5 : personne ne modifie un fichier — le client « Ventes », puis le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    update storage.objects set metadata = '{"size": 20, "mimetype": "image/png"}' where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    get diagnostics touchees = row_count;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV5. personne ne modifie un fichier du seau des ventes', 'cible', 'ventes (client « Ventes »)',
+      'observe', touchees || ' ligne(s) touchée(s)', 'ok', touchees = 0);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    update storage.objects set metadata = '{"size": 20, "mimetype": "image/png"}' where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    get diagnostics touchees = row_count;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SV5. personne ne modifie un fichier du seau des ventes', 'cible', 'ventes (chef)',
+      'observe', touchees || ' ligne(s) touchée(s)', 'ok', touchees = 0);
+    -- M-SV5 : SV5 rejoué par le propriétaire, qui touche les deux lignes.
+    update storage.objects set metadata = '{"size": 20, "mimetype": "image/png"}' where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    get diagnostics touchees = row_count;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SV5 — SV5 rejoué par le propriétaire', 'attendu', 'les deux lignes touchées',
+      'observe', touchees || ' ligne(s)', 'mord', touchees = 2);
+
+    -- M-SV3 : SV3 rejoué avec « Ventes » : le client voit le fichier de son dossier.
+    update memberships set droit_ventes = true, droit_banque = false where user_id = client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into n from storage.objects where bucket_id = 'ventes' and name in (chemin_sien, chemin_autre);
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SV3 — SV3 rejoué avec le droit « Ventes »', 'attendu', 'le fichier de son dossier vu',
+      'observe', n || ' vu(s)', 'mord', n = 1);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- SV0 : le seau est privé — un seau public servirait ses fichiers à quiconque en tient l'adresse, sans policy.
+  select count(*) into n from storage.buckets where id = 'ventes' and not public;
+  verdicts := verdicts || jsonb_build_object('controle', 'SV0. le seau des ventes est privé (lecture du catalogue)', 'cible', 'storage.buckets (ventes)',
+    'observe', case when n = 1 then 'privé' else 'PUBLIC' end, 'ok', n = 1);
+  -- SV6 : la policy de suppression garde son prédicat — le chef du cabinet du dossier —, et aucune policy de mise à jour
+  -- n'atteint le seau (lectures du catalogue).
+  select count(*) into n from pg_policy
+   where polrelid = 'storage.objects'::regclass and polname = 'ventes_suppression_par_le_chef' and polcmd = 'd'
+     and pg_get_expr(polqual, polrelid) like '%est\_chef\_du\_cabinet(d.cabinet\_id)%'
+     and pg_get_expr(polqual, polrelid) like '%''ventes''%';
+  verdicts := verdicts || jsonb_build_object('controle', 'SV6. la suppression du seau des ventes reste au chef du cabinet du dossier (lecture du catalogue)',
+    'cible', 'ventes_suppression_par_le_chef', 'observe', case when n = 1 then 'présente, est_chef_du_cabinet' else 'ABSENTE OU ÉLARGIE' end,
+    'ok', n = 1);
+  select count(*) into n from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('w', '*')
+     and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''))
+         !~ 'bucket_id = ''(pieces|packs|cabinet-logos)''::text';
+  verdicts := verdicts || jsonb_build_object('controle', 'SV6. aucune policy de mise à jour n''atteint le seau des ventes (lecture du catalogue)',
+    'cible', 'storage.objects', 'observe', n || ' policy(s)', 'ok', n = 0);
+  verdicts := verdicts || jsonb_build_object('controle', 'SV. le jeu d''essai du seau des ventes s''est construit', 'cible', 'ventes',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);

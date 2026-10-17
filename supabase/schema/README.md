@@ -347,6 +347,24 @@ ses lignes de commentaire (47 554 caractères, reçus tels quels, `fecdd4f3…`)
 comprises, et rien n'est resté en base ; `rls.sql` n'a pas été rejoué en production — la migration ne pose ni table ni
 policy, et la réplique l'a rendu identique sans elle et avec elle : 35 lignes, 0 en faute, 39 mutations sur 39.
 
+**Rejoué le 17/10/2026 après `logo_des_factures`** (espace client, étape A5c1), appliquée par la session sous la version
+`20261017120403` sur l'accord du cabinet (A5C-Q1), sans confirmation demandée (le mot « delete » n'y paraît que dans la
+policy qui dit QUI supprime un fichier), AVANT la mise en ligne de la bascule qui la lit ; son fichier a quitté la
+version PROVISOIRE `20261017120000` pour celle-ci, et il porte le texte que rend sa ligne d'historique (27 904
+caractères, empreinte `ef14fed6ceb407e6598af2e06b9653b2`) — le fichier préparé moins le point-virgule final de sa
+dernière instruction (un `comment on function`), omis en le transcrivant vers l'outil, sans effet sur ce que la base a
+posé : 138 fichiers, 138 migrations, empreinte globale `ead3478579601fce363bdf790bfeb920` des deux côtés, aucune
+divergence. Le socle est inchangé (78 instructions, `91ae95ec…`) ; l'inventaire compte 2 080 objets,
+`7939e5104bf063d6faf7bf06df7cb30c` des deux côtés — les deux colonnes du logo, leurs trois contraintes et les trois
+policies du seau `ventes`, en plus. `signature.sql` rend en production ce que l'étape avait relevé sur sa réplique après
+la migration : les colonnes (850, `7280745b…`), les contraintes (658, `aa4ece0d…`) et les fonctions (170, `29fee672…`)
+changent, ainsi que la signature du stockage (onze policies, quatre seaux). L'essai
+`supabase/essais/logoDesFactures.sql`, rejoué en production sans ses lignes de commentaire (54 455 caractères, reçus
+tels quels, `1c8690ba…`), rend ses 126 verdicts justes, mutations comprises, et rien n'est resté en base ; ceux que la
+fonction remplacée concerne aussi : `parametresFacturation.sql` (204 verdicts) et `dernierChangementDeRib.sql` (98),
+justes, et `bornesStockage.sql`, les quatre seaux « ok » ; `rls.sql`, sa copie adaptée (81 101 caractères, `506f61be…`),
+46 lignes, 0 en faute, 43 mutations sur 43.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

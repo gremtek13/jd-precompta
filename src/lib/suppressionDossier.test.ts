@@ -19,8 +19,19 @@ const etat = {
   removePartiel: false,
   listeLeve: false,
   deleteError: null as Error | null,
+  // Le drapeau du logo des factures (étape A5c1), lu à chaque suppression : ses deux états se jouent ici, l'état réel
+  // par défaut.
+  logo: false,
 }
 const journal: { action: string; cible: string }[] = []
+// Les lectures du stockage, seau et chemin : un seau qu'on ne doit pas lire ne se lit pas.
+const listes: string[] = []
+
+vi.mock('./logoDesFactures', () => ({
+  get LOGO_DES_FACTURES_EXPORTE() {
+    return etat.logo
+  },
+}))
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -35,6 +46,7 @@ vi.mock('./supabase', () => ({
     storage: {
       from: (bucket: string) => ({
         list: (chemin: string, options: { limit: number; offset: number }) => {
+          listes.push(`${bucket}/${chemin}`)
           if (etat.listeLeve) throw new Error('réseau coupé')
           const toutes = etat.entrees[`${bucket}/${chemin}`]
           if (toutes === undefined) return Promise.resolve({ data: [], error: null })
@@ -59,6 +71,7 @@ vi.mock('./supabase', () => ({
 
 const { supprimerDossierDefinitivement, nettoyageAMontrer, messageNettoyage } =
   await import('./suppressionDossier')
+const { LOGO_DES_FACTURES_EXPORTE: LOGO_REEL } = await vi.importActual<typeof import('./logoDesFactures')>('./logoDesFactures')
 
 const D = 'dossier-1'
 const fichiers = (n: number) =>
@@ -70,7 +83,9 @@ beforeEach(() => {
   etat.removePartiel = false
   etat.listeLeve = false
   etat.deleteError = null
+  etat.logo = LOGO_REEL
   journal.length = 0
+  listes.length = 0
 })
 
 describe('nettoyage du stockage à la suppression d’un dossier', () => {
@@ -157,6 +172,49 @@ describe('nettoyage du stockage à la suppression d’un dossier', () => {
     // n'est pas chef du cabinet, et l'écran doit le dire comme une erreur.
     etat.deleteError = new Error('new row violates row-level security policy')
     await expect(supprimerDossierDefinitivement(D)).rejects.toThrow('row-level security')
+  })
+})
+
+// Le seau des ventes (le logo des factures, étape A5c1) : un dossier y range ses logos sous `<dossier>/logos/`. Sa
+// migration en base, la suppression du dossier le vide comme les deux autres — les données d'un client partent toutes
+// avec lui ; avant elle, le seau n'existe pas, et le lire ferait dire à chaque suppression un inventaire incomplet.
+describe('le seau des ventes, selon que sa migration est en base', () => {
+  const logos = () => {
+    etat.entrees[`ventes/${D}`] = [{ name: 'logos', id: null }]
+    etat.entrees[`ventes/${D}/logos`] = [{ name: `${'1'.repeat(64)}.png`, id: 'l1' }, { name: `${'2'.repeat(64)}.jpg`, id: 'l2' }]
+  }
+
+  it('sa migration en base : ses logos partent avec le dossier, sous-dossier compris, AVANT la ligne du dossier', async () => {
+    etat.logo = true
+    etat.entrees[`pieces/${D}`] = fichiers(1)
+    logos()
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 3, retires: 3, echecs: [], inventaireIncomplet: false })
+    expect(journal.find((j) => j.action === 'remove:ventes')?.cible).toBe(`${D}/logos/${'1'.repeat(64)}.png,${D}/logos/${'2'.repeat(64)}.jpg`)
+    expect(journal.map((j) => j.action).indexOf('delete:dossiers')).toBe(journal.length - 1)
+    expect(listes).toEqual(expect.arrayContaining([`pieces/${D}`, `packs/${D}`, `ventes/${D}`, `ventes/${D}/logos`]))
+  })
+
+  it('sa migration en base : une lecture refusée du seau des ventes se DIT, et le dossier part quand même', async () => {
+    etat.logo = true
+    etat.entrees[`ventes/${D}`] = null
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan.inventaireIncomplet).toBe(true)
+    expect(messageNettoyage(bilan)).toContain('on ne sait pas combien de fichiers y restent')
+    expect(journal.filter((j) => j.action === 'delete:dossiers')).toHaveLength(1)
+  })
+
+  it('sans sa migration : le seau des ventes n’est ni lu ni vidé — un seau absent ne fait pas dire un inventaire incomplet', async () => {
+    etat.logo = false
+    logos()
+    const bilan = await supprimerDossierDefinitivement(D)
+    expect(bilan).toEqual({ demandes: 0, retires: 0, echecs: [], inventaireIncomplet: false })
+    expect(listes.filter((l) => l.startsWith('ventes/'))).toEqual([])
+    expect(journal.map((j) => j.action)).toEqual(['delete:dossiers'])
+  })
+
+  it('l’état réel du drapeau est celui que ces cas jouent par défaut', () => {
+    expect(etat.logo).toBe(LOGO_REEL)
   })
 })
 

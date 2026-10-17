@@ -63,6 +63,12 @@
 -- src/lib/parametresFacturation.test.ts lit les étapes ici : chaque refus que src/lib/parametresFacturation.ts redit avant
 -- le clic doit y être exigé de la base, sous les mêmes mots ; chaque écriture de l'essai, rejouée dans le module, y reçoit
 -- le même premier refus, ou aucun ; et le RIB qu'une facture verrait, après chaque geste, est celui que le module déduit.
+--
+-- LE LOGO (étape A5c1, migration `logo_des_factures`, préparée le 17/10/2026) : il ajoute deux colonnes à la table et un
+-- huitième rang à la fonction, que supabase/essais/logoDesFactures.sql éprouve. Cet essai se joue À L'IDENTIQUE avant et
+-- après elle : le contrôle 0f lit les colonnes SANS les deux du logo, et le contrôle 23 nomme un champ qu'aucun des deux
+-- états n'admet (« logo ») — il nommait `logo_chemin`, que la migration rend admis. Rejoué le 17/10/2026 sur une réplique
+-- égale à la production, sans la migration puis avec : les mêmes verdicts, 0 en faute.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -157,9 +163,10 @@ begin
                || ' ; ' || (select pg_get_constraintdef(co.oid) from pg_constraint co where co.conrelid = 'public.parametres_facturation'::regclass and co.contype = 'f' and co.confrelid = co.conrelid)
                || ' ; ' || (select string_agg(pg_get_triggerdef(t.oid), ' ; ') from pg_trigger t where t.tgrelid = 'public.parametres_facturation'::regclass and not t.tgisinternal)$q$,
         'OK', 'UNIQUE (remplace_id) ; CREATE UNIQUE INDEX parametres_facturation_une_premiere ON public.parametres_facturation USING btree (dossier_id) WHERE (remplace_id IS NULL) ; FOREIGN KEY (remplace_id) REFERENCES parametres_facturation(id) ; CREATE TRIGGER parametres_facturation_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.parametres_facturation FOR EACH ROW EXECUTE FUNCTION garder_parametres_facturation()', null),
-      ('0f', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle) — sans le logo (étape A5c)', 'proprietaire', null,
+      ('0f', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle) — hors les deux du logo, que logoDesFactures.sql juge (étape A5c1)', 'proprietaire', null,
         $q$select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then '!' else '' end, ',' order by a.attnum)
-             from pg_attribute a where a.attrelid = 'public.parametres_facturation'::regclass and a.attnum > 0 and not a.attisdropped$q$,
+             from pg_attribute a where a.attrelid = 'public.parametres_facturation'::regclass and a.attnum > 0 and not a.attisdropped
+              and a.attname not in ('logo_chemin', 'logo_sha256')$q$,
         'OK', 'id:uuid!,dossier_id:uuid!,delai_paiement_jours:integer,moyen_prefere:text,escompte:text,penalites:text,mentions_complementaires:text,pied_de_page:text,iban:text,bic:text,titulaire_compte:text,rib_etat:text,rib_confirme_par:uuid,rib_confirme_le:timestamp with time zone,remplace_id:uuid,auteur:uuid!,cree_le:timestamp with time zone!', null),
       ('0g', 'valeur', 'les quatre colonnes d''identité légale de dossiers, facultatives', 'proprietaire', null,
         $q$select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then '!' else '' end, ',' order by a.attnum)
@@ -410,9 +417,9 @@ begin
       ('22d', 'controle', 'une saisie vide : une version sans aucun paramètre passe', 'chef', null,
         $q$select coalesce(p.delai_paiement_jours::text, 'nul') || '|' || coalesce(p.iban, 'nul') from public.enregistrer_parametres_facturation('{DA}', '{V7}', '{}'::jsonb) p$q$,
         'OK', 'nul|nul', null),
-      ('23', 'controle', 'un champ qu''une version n''a pas — le logo, à venir', 'chef', null,
-        $q$select p.id::text from public.enregistrer_parametres_facturation('{DA}', '{V7}', '{"delai_paiement_jours":30,"logo_chemin":"essai.png"}'::jsonb) p$q$,
-        '22023', 'Le champ « logo_chemin » n''est pas un paramètre de facturation.', null),
+      ('23', 'controle', 'un champ qu''une version n''a pas — « logo » : le logo se donne par logo_chemin et logo_sha256 (étape A5c1)', 'chef', null,
+        $q$select p.id::text from public.enregistrer_parametres_facturation('{DA}', '{V7}', '{"delai_paiement_jours":30,"logo":"essai.png"}'::jsonb) p$q$,
+        '22023', 'Le champ « logo » n''est pas un paramètre de facturation.', null),
       ('M8', 'mutation', 'le contrôle 23 rejoué sans le champ : il enregistre', 'chef', null,
         $q$select p.id::text from public.enregistrer_parametres_facturation('{DA}', '{V7}', '{"delai_paiement_jours":30}'::jsonb) p$q$,
         'OK', null, null),

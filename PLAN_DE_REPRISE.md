@@ -36,7 +36,7 @@ Trois choses différentes, trois mécanismes différents. Aucun ne couvre les au
 | Ce qu'il faut | Où c'est | Comment on le récupère |
 |---|---|---|
 | **Les lignes** (dossiers, pièces, mouvements, écritures, factures, catégories, rapprochements) | Base Postgres | Onglet **Informations** d'un dossier → « Télécharger la sauvegarde ». Un fichier JSON par dossier. |
-| **Les fichiers** (justificatifs, documents, packs) | Supabase Storage — 3 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public). 148 fichiers, 23 Mo au 18/09/2026 | Export de pack (onglet Informations, « Exporter avant suppression ») ou export global d'un cabinet (écran super-admin). |
+| **Les fichiers** (justificatifs, documents, packs, logos des factures) | Supabase Storage — 4 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public), `ventes` (privé, le logo des factures d'un dossier, depuis l'étape A5c1). 148 fichiers, 23 Mo au 18/09/2026 | Export de pack (onglet Informations, « Exporter avant suppression ») ou export global d'un cabinet (écran super-admin). |
 | **Le code** (application, Edge Functions, schéma des migrations) | Dépôt Git GitHub | `git clone`. |
 
 **Une sauvegarde de lignes sans les fichiers rend un dossier où chaque pièce pointe un justificatif
@@ -279,7 +279,11 @@ incompréhensible trois étapes plus loin.
    un CSV de Windows (`application/vnd.ms-excel`) ou l'original XML d'une facture reçue d'une
    plateforme (`text/xml`) y serait refusé. Lever les bornes le temps de reverser (le retour
    arrière écrit en tête de la migration), reverser, puis rejouer la migration et
-   `supabase/essais/bornesStockage.sql`.
+   `supabase/essais/bornesStockage.sql`. **Le logo des factures** (seau `ventes`, étape A5c1) n'est dans aucun pack ni
+   dans la sauvegarde : chaque version restaurée des paramètres de facturation en porte le CHEMIN
+   (`<dossier>/logos/<empreinte>.png` ou `.jpg`) et l'EMPREINTE SHA-256. Redéposer le fichier que le client ou le cabinet
+   a gardé à ce chemin exact — son empreinte dit si c'est le bon ; sans lui, les versions désignent un fichier absent
+   (la base l'admet : un logo inchangé ne se rejuge pas), et une version nouvelle peut en poser un autre.
 7. **Les secrets, le domaine d'envoi et le webhook de réception** (§3.3, §3.4 et l'inventaire des
    variables en fin de §3).
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
