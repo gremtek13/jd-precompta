@@ -14,6 +14,11 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 import type { FacturePourJumelle } from '../../lib/ventesJumelles'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { ETAT_FICTIF, ETAT_NEUF, adresseFictive, etatFictif } from '../../test/etatFactureElectronique'
+import {
+  CONSEIL_D_UN_RETRAIT, LECTURE_MANQUEE_AU_CABINET, LIBELLE_ALLER_AUX_FACTURES, NOM_DE_L_AVIS_DU_CABINET, avisDuChangement,
+} from '../../lib/changementDeRib'
+import { CONSEIL_VERIFICATION_RIB } from '../../lib/parametresFacturationVue'
+import { changementFictif, toutesLesCombinaisons, valeurRendue } from '../../test/changementDeRib'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -45,6 +50,12 @@ const faux = vi.hoisted(() => ({
   // La réponse de l'état retenue tant que le cas ne la libère pas (la Vue d'ensemble, elle, se lit sans l'attendre).
   retenirEtatFE: false,
   libererEtatFE: [] as (() => void)[],
+  // Le dernier changement du RIB que rend la base à l'avis de la Vue d'ensemble (étape A5b3b) : la valeur de la fonction, ou son refus ;
+  // par défaut « le RIB n'a jamais changé », qui ne dit rien. La réponse peut être retenue tant que le cas ne la libère pas.
+  changementRib: { changement: null } as unknown,
+  refusChangementRib: null as string | null,
+  retenirChangementRib: false,
+  libererChangementRib: [] as (() => void)[],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -59,6 +70,10 @@ vi.mock('../../lib/supabase', async () => {
     supabase: {
       rpc: async (nom: string, args: unknown) => {
         faux.rpcs.push({ nom, args })
+        if (nom === 'dernier_changement_de_rib') {
+          if (faux.retenirChangementRib) await new Promise<void>((r) => { faux.libererChangementRib.push(r) })
+          return faux.refusChangementRib ? { data: null, error: { message: faux.refusChangementRib } } : { data: faux.changementRib, error: null }
+        }
         if (nom !== 'etat_facture_electronique') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
         if (faux.retenirEtatFE) await new Promise<void>((r) => { faux.libererEtatFE.push(r) })
         return faux.refusEtatFE ? { data: null, error: { message: faux.refusEtatFE } } : { data: faux.etatFE, error: null }
@@ -211,6 +226,10 @@ function poser(pieces: {
   faux.rpcs = []
   faux.retenirEtatFE = false
   faux.libererEtatFE = []
+  faux.changementRib = { changement: null }
+  faux.refusChangementRib = null
+  faux.retenirChangementRib = false
+  faux.libererChangementRib = []
 }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
@@ -2487,7 +2506,12 @@ describe('ChecklistTab — la carte « Facture électronique »', () => {
     poser({})
     monter()
     await screen.findByText('Active')
-    expect(faux.rpcs).toEqual([{ nom: 'etat_facture_electronique', args: { p_dossier_id: 'dossier-de-test' } }])
+    // Les deux lectures de la Vue d'ensemble qui passent par une fonction, et elles seules : le dernier changement du RIB (l'avis, étape
+    // A5b3b, lu avec l'onglet) puis l'état de la facture électronique (la carte, lue après les points).
+    expect(faux.rpcs).toEqual([
+      { nom: 'dernier_changement_de_rib', args: { p_dossier_id: 'dossier-de-test' } },
+      { nom: 'etat_facture_electronique', args: { p_dossier_id: 'dossier-de-test' } },
+    ])
     expect(carte()?.textContent).toContain('Plateforme agréée : reliée (Plateforme fictive Alpha).')
     expect(carte()?.textContent).toContain('Non vérifiée : simple déclaration.')
     expect(carte()?.textContent).not.toMatch(/attend|refusée ou rejetée/)
@@ -2551,5 +2575,185 @@ describe('ChecklistTab — la carte « Facture électronique »', () => {
     for (const ligne of lignes) act(() => { (ligne as HTMLElement).click() })
     act(() => { screen.getByRole('button', { name: 'Justificatifs' }).click() })
     expect(onglets).toEqual([...lignes.map(() => 'pieces'), 'pieces'])
+  })
+})
+
+// L'AVIS DU DERNIER CHANGEMENT DU RIB, EN TÊTE DE LA VUE D'ENSEMBLE (espace client, étape A5b3b ; décisions du cabinet du 17/10/2026,
+// A5B3-Q4 et Q5) : le cabinet le lit dans la Vue d'ensemble de chaque dossier. Un RIB PROPOSÉ par un accès client y reste tant qu'il est
+// le dernier changement ; tout le reste trente jours, le jour du changement compris. Sa lecture est la sienne : sa panne ne tait que
+// l'avis, jamais la Vue d'ensemble, qui ne l'attend pas. Son bouton mène à l'onglet Factures, rien ne s'écrit d'ici. Les mots : ceux
+// du module (changementDeRib.test.ts), jamais réécrits.
+describe('ChecklistTab — l’avis du dernier changement du RIB', () => {
+  // Le 17 octobre 2026 à Paris ; un changement du 12 est à J + 5.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-17T10:00:00Z')) })
+  afterEach(() => { vi.useRealTimers() })
+
+  const avis = () => screen.queryByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+  const PROPOSE = changementFictif({ jour: '2026-10-12', geste: 'pose', auteur: 'client', etat: 'propose', ribEnVigueur: 'aucun' })
+  const CONFIRME = changementFictif({ jour: '2026-10-12', geste: 'confirme', auteur: 'cabinet', etat: 'confirme', ribEnVigueur: 'pose' })
+  const appels = () => faux.rpcs.filter((r) => r.nom === 'dernier_changement_de_rib')
+
+  it('rien avant le retour de la lecture : la Vue d’ensemble se monte sans l’attendre, aucune affirmation', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(PROPOSE)
+    faux.retenirChangementRib = true
+    monter()
+    expect(await screen.findByText('Travail à effectuer')).toBeTruthy()
+    await act(async () => {})
+    expect(appels()).toEqual([{ nom: 'dernier_changement_de_rib', args: { p_dossier_id: 'dossier-de-test' } }])
+    expect(avis()).toBeNull()
+    expect(document.body.textContent).not.toMatch(/RIB/)
+    await act(async () => { for (const rendre of faux.libererChangementRib.splice(0)) rendre() })
+    expect(await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })).toBeTruthy()
+  })
+
+  it('un RIB proposé : la pastille d’attention, la phrase, ce que les factures porteront, le conseil, et le bouton', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(PROPOSE)
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    const a = avisDuChangement(PROPOSE, 'cabinet')
+    expect(a.conseil).toBe(CONSEIL_VERIFICATION_RIB)
+    expect(bloc.textContent).toBe(`${a.phrase}${a.factures}${CONSEIL_VERIFICATION_RIB}${LIBELLE_ALLER_AUX_FACTURES}`)
+    expect(bloc.querySelector('.check-dot.check-attention')).not.toBeNull()
+    expect(bloc.className).toContain('avis-rib-attente')
+    // Aux mots du cabinet : vouvoyé, jamais le RIB lui-même ni la personne.
+    expect(bloc.textContent).not.toMatch(/(?<![\p{L}])(tu|ta|ton|tes|te|toi)(?![\p{L}])/iu)
+    expect(bloc.textContent).not.toMatch(/IBAN|BIC|titulaire/)
+  })
+
+  it('il est EN TÊTE : de toute la largeur, avant les tuiles chiffrées', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(PROPOSE)
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    expect(bloc.classList.contains('span-12')).toBe(true)
+    const grille = document.querySelector('.bento') as Element
+    expect(grille.firstElementChild).toBe(bloc)
+    const premiereTuile = screen.getByText('Pièces à valider')
+    expect(bloc.compareDocumentPosition(premiereTuile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('son bouton mène à l’onglet Factures — pas à la vue « Paramètres », que son libellé ne promet pas', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(PROPOSE)
+    const onglets: DossierTab[] = []
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', (t) => onglets.push(t))
+    await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    act(() => { screen.getByRole('button', { name: LIBELLE_ALLER_AUX_FACTURES }).click() })
+    expect(onglets).toEqual(['factures'])
+    expect(LIBELLE_ALLER_AUX_FACTURES).not.toMatch(/Paramètres/)
+  })
+
+  it('un RIB confirmé par le cabinet : la pastille neutre, la phrase du module, pas de conseil de vérification', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(CONFIRME)
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    expect(bloc.textContent).toContain(avisDuChangement(CONFIRME, 'cabinet').phrase)
+    expect(bloc.querySelector('.check-dot.check-neutre')).not.toBeNull()
+    expect(bloc.querySelector('.check-attention')).toBeNull()
+    expect(bloc.textContent).not.toContain(CONSEIL_VERIFICATION_RIB)
+    expect(bloc.className).not.toContain('avis-rib-attente')
+  })
+
+  it('un retrait : le conseil du retrait', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(changementFictif({ jour: '2026-10-12', geste: 'retire', auteur: 'inconnu', etat: 'retire', ribEnVigueur: 'retire' }))
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    expect(bloc.textContent).toContain(CONSEIL_D_UN_RETRAIT)
+  })
+
+  it('chaque combinaison que la fonction rend se dit, avec sa phrase', async () => {
+    for (const c of toutesLesCombinaisons('2026-10-12')) {
+      poser({})
+      faux.changementRib = valeurRendue(c)
+      const { unmount } = monter()
+      const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+      const a = avisDuChangement(c, 'cabinet')
+      expect(bloc.textContent, `${c.geste}|${c.auteur}|${c.etat}|${c.ribEnVigueur}`).toBe(`${a.phrase}${a.factures}${a.conseil ?? ''}${LIBELLE_ALLER_AUX_FACTURES}`)
+      expect(bloc.querySelector('.check-attention') !== null, `${c.geste}|${c.auteur}`).toBe(c.etat === 'propose')
+      unmount()
+    }
+  })
+
+  it('« le RIB n’a jamais changé » : rien — ni avis, ni « aucun », ni ligne discrète — et la Vue d’ensemble est là', async () => {
+    poser({})
+    faux.changementRib = { changement: null }
+    monter()
+    expect(await screen.findByText('Travail à effectuer')).toBeTruthy()
+    await act(async () => {})
+    expect(appels()).toHaveLength(1)
+    expect(avis()).toBeNull()
+    expect(document.body.textContent).not.toMatch(/RIB/)
+  })
+
+  it('un changement du cabinet de plus de trente jours ne dit plus rien ; à J + 29, il se dit encore', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(CONFIRME)
+    vi.setSystemTime(new Date('2026-11-10T10:00:00Z'))
+    const premier = monter()
+    expect(await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })).toBeTruthy()
+    premier.unmount()
+
+    poser({})
+    faux.changementRib = valeurRendue(CONFIRME)
+    vi.setSystemTime(new Date('2026-11-11T10:00:00Z'))
+    monter()
+    expect(await screen.findByText('Travail à effectuer')).toBeTruthy()
+    await act(async () => {})
+    expect(appels()).toHaveLength(1)
+    expect(avis()).toBeNull()
+    expect(document.body.textContent).not.toMatch(/RIB/)
+  })
+
+  it('chez le cabinet, un RIB PROPOSÉ reste affiché des mois plus tard : il attend toujours sa confirmation', async () => {
+    poser({})
+    faux.changementRib = valeurRendue(PROPOSE)
+    vi.setSystemTime(new Date('2027-11-16T10:00:00Z'))
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    expect(bloc.textContent).toContain(avisDuChangement(PROPOSE, 'cabinet').phrase)
+    expect(bloc.querySelector('.check-attention')).not.toBeNull()
+  })
+
+  it.each([
+    ['refusée', { refus: 'permission denied', valeur: null }, 'permission denied'],
+    ['illisible', { refus: null, valeur: { changement: { jour: '2026-10-12', iban: 'FR76 0000' } } }, null],
+  ])('%s : une ligne discrète — jamais le silence d’un « aucun changement » —, la Vue d’ensemble intacte', async (_nom, { refus, valeur }, motif) => {
+    poser({})
+    faux.refusChangementRib = refus
+    faux.changementRib = valeur
+    monter()
+    const bloc = await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    expect(bloc.textContent).toBe(`${LECTURE_MANQUEE_AU_CABINET}${LIBELLE_ALLER_AUX_FACTURES}`)
+    expect(bloc.className).toContain('avis-rib-discret')
+    expect(bloc.querySelector('.check-dot')).toBeNull()
+    const phrase = screen.getByText(LECTURE_MANQUEE_AU_CABINET)
+    if (motif === null) expect(phrase.getAttribute('title')).toBeNull()
+    else expect(phrase.getAttribute('title')).toContain(motif)
+    // Sa panne ne tait que l'avis : les tuiles, les points et la carte de la facture électronique sont là.
+    expect(screen.getByText('Pièces à valider')).toBeTruthy()
+    expect(screen.getByText('Travail à effectuer')).toBeTruthy()
+    expect(await screen.findByText('Active')).toBeTruthy()
+  })
+
+  it('la lecture survit à la relecture des points (la coche d’un justificatif) : un seul appel pour le dossier', async () => {
+    poser({})
+    faux.parTable.informations_dossier = [{
+      id: 'infos-1', dossier_id: 'dossier-de-test', vehicule_type: 'aucun', vehicule_libelle: null,
+      jours_travailles_an: null, tickets_restaurant: true, justificatif_tickets_restaurant_recu: false,
+      cheques_vacances: false, justificatif_cheques_vacances_recu: false, notes: null,
+      updated_at: '2026-09-16T09:00:00Z',
+    } satisfies InformationsDossier]
+    faux.changementRib = valeurRendue(PROPOSE)
+    monter()
+    await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })
+    await screen.findByText('Justificatif titres-restaurant reçu')
+    await act(async () => { screen.getByTitle('Cliquer pour marquer comme reçu/non reçu').click() })
+    // La coche a relu les points (la Vue d'ensemble repasse par ses squelettes) ; l'avis, lui, n'a pas été relu.
+    expect(await screen.findByRole('region', { name: NOM_DE_L_AVIS_DU_CABINET })).toBeTruthy()
+    expect(appels()).toHaveLength(1)
   })
 })

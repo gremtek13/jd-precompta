@@ -25787,7 +25787,109 @@ intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, a
 chacun (397 fichiers) ; construction verte (`index-B00FDKGI.js`). Le banc rejoué : 0 débordement aux onze passes, 0
 bouton de fenêtre recouvert (212 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
 
+**LA MISE EN LIGNE, LE 17/10/2026.** Fusionnée par #181 (`5c6b2dd`) à 1 h 32 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `1c33310` ; l'arbre de `main` (`3b3d40a3…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-B00FDKGI.js` (déploiement 38981972258, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`5c6b2dd`, arbres égaux. Le worktree d'intégration retiré (ses 173 liens d'abord) ; celui de l'agent — `0fedc97` plus
+douze fichiers, sans liens, chacun identique à la fusion ou version antérieure de ce qu'elle porte (le drapeau levé, la
+date d'application dans RGPD.md, la phrase corrigée de l'onglet Accès) — retiré aussi, l'outil ne le tenant plus
+verrouillé. La feuille de route : la ligne 51.5 complétée (46 934 caractères, envoyée et relue à l'identique) ;
+l'en-tête recompté par requête, inchangé : 141 sur 184 (77 %, huit cases) et, pour un dossier BNC, 141 sur 171 (82 %,
+huit cases).
+
 **RESTE.** A5b3b, l'avis d'un changement de RIB : dans la Vue d'ensemble de chaque dossier pour le cabinet (A5B3-Q5),
 sur l'accueil des accès « Ventes » et « Banque » ; chez le cabinet, un RIB proposé tant qu'il n'est ni confirmé ni
 remplacé, le reste trente jours depuis le jour du changement, sans marque « vu » (A5B3-Q4) ; les mots du module
 (A5B3-Q6). Puis A5c, le logo et son seau ; A7, la facture fige ses mentions ; A9, la numérotation qui continue.
+
+### 17/10/2026 — L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN — ESPACE CLIENT, ÉTAPE A5b3b (LIGNE 51.5)
+
+(Préparé par l'agent S249 sur `5c6b2dd`. Aucune migration, aucune policy, aucune Edge Function, aucune écriture en
+production. Fichiers nouveaux : `src/components/AvisChangementDeRib.tsx`, `src/lib/changementDeRibAvis.test.ts`,
+`src/test/changementDeRib.ts`, `src/pages/ClientHome.avisRib.test.tsx`. Modifiés : `src/lib/changementDeRib.ts` (par
+ajout : la règle de la durée, le destinataire, ce que l'écran dit de la lecture), `src/pages/dossier/ChecklistTab.tsx`
+et `src/pages/ClientHome.tsx` (la ligne et sa lecture), `src/index.css` (par ajout : `.avis-rib*`, `.check-neutre`),
+`src/lib/droitsAcces.ts` (la phrase de « Banque ») et son test, `ChecklistTab.test.tsx` (le double répond à la
+fonction ; +13 cas), `ecransAvantLecture.test.tsx` (la fonction est une lecture), `outils/captures/fauxSupabase.ts` et
+`debordements.mjs` (par ajout), `RGPD.md` (§7, la rangée d'A5b3a).)
+
+**LA DÉLIMITATION.** L'avis du dernier changement du RIB des factures sur les deux écrans que le cabinet a désignés
+(A5B3-Q5) : la Vue d'ensemble de chaque dossier du cabinet, et l'accueil du client qui porte « Ventes » ou « Banque »
+sur la société affichée. Ni le tableau de bord du cabinet (une fonction qui dirait en une fois quels dossiers ont un RIB
+qui attend : plus tard), ni « Ma banque » et « Mes ventes » (ils ne portent pas l'avis), ni une marque « vu » (aucune
+table), ni l'ouverture directe de la vue « Paramètres » de l'onglet Factures (son état est local), ni un changement de
+la fonction, de sa lecture ou des phrases du module (A5B3-Q6 : « les mots des avis tels que le module les écrit »), ni
+le logo (A5c), ni A7.
+
+**LA RÈGLE DE LA DURÉE** (`lib/changementDeRib.ts`, pur ; A5B3-Q4, « comme recommandé » le 17/10/2026).
+`changementAMontrer(lu, destinataire, aujourdhui)` — le jour de Paris DONNÉ par l'appelant, jamais lu dans le module :
+rien sur `{ changement: null }` ; chez le cabinet, un RIB PROPOSÉ se montre toujours (il attend son geste, et une
+confirmation, un retrait ou un autre RIB est un changement nouveau qui prend sa place) ; tout le reste — chez le cabinet
+un changement qui n'est pas une proposition, chez le client tout changement, proposition comprise — se montre tant que
+`aujourdhui < jour + 30 jours` : le jour du changement compris, du J au J + 29. Un jour POSTÉRIEUR à aujourd'hui
+(l'horloge de l'appareil en retard) se montre ; un « aujourd'hui » qui n'est pas un jour civil ne tait rien : un avis ne
+se tait jamais sur ce qu'on ne sait pas placer. `destinataireDuClient(ventes, banque)` : « Ventes » (seule ou avec
+« Banque » : qui porte les deux lit l'avis « Ventes »), sinon « Banque » seul, sinon personne — et alors AUCUN appel, la
+base refuserait (42501). `ceQueDitLAvis(lecture, destinataire, aujourdhui)` : `null` et `en_cours`, rien (aucune
+affirmation avant la lecture, et l'écran qui porte l'avis ne l'attend pas) ; `lue`, l'avis du module ou rien ;
+`illisible` et `refusee`, UNE LIGNE DISCRÈTE (une phrase au cabinet vouvoyé, une au client tutoyé, le motif en
+infobulle) — jamais le silence d'un « aucun changement » qu'on croirait lu, jamais une alarme.
+
+**LES ÉCRANS.** UN composant pour les deux espaces (`AvisChangementDeRib`, `espace` obligatoire, union typée), qui ne
+fait que dire la lecture que l'écran lui passe : une pastille (d'attention devant un RIB proposé, qui attend la
+confirmation du cabinet ; neutre sinon — le texte garde sa couleur), la phrase, ce que les factures porteront, le
+conseil, et un bouton. Au cabinet, EN TÊTE de la grille de la Vue d'ensemble (`span-12`, avant les tuiles) : « Aller aux
+factures » mène à l'onglet Factures (la vue « Paramètres » est un état local de l'onglet : le libellé ne la promet
+pas) ; la lecture est celle de l'écran, prise au montage avec le dossier et gardée à travers les relectures des points —
+sa panne ne tait que l'avis. Chez le client, sous la salutation, à côté de la ligne des pièces jointes écartées :
+« Ouvrir « Mes ventes » » pour « Ventes », aucun lien pour « Banque » seul (il n'a pas d'écran des paramètres) ; une
+société changée relit, et la réponse d'une société quittée ne s'inscrit pas. Aucune fenêtre, aucune écriture, aucun
+appel de plus que le crochet d'A5b3a. Les phrases du client passent `MOTS_DU_CABINET`, éprouvées sur les quinze
+combinaisons.
+
+**L'ONGLET ACCÈS.** La phrase de ce que « Banque » ouvre ne dit plus « l'avis qui le lui dira sur son accueil viendra
+ensuite » : elle dit « son accueil le lui dit pendant trente jours », sans rien promettre d'autre (ni lien, ni écran).
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Le module : 33 tests (`changementDeRibAvis.test.ts`) — la durée à ses bords (J et J + 29
+montrés, J + 30 non ; au passage d'une année et d'un mois bissextile ; un jour futur montré ; un « aujourd'hui »
+illisible qui ne tait rien), sur les quinze combinaisons et les trois destinataires (à J + 400, seule la proposition se
+montre, et seulement chez le cabinet), les quatre combinaisons des deux cases, la lecture dite, les phrases discrètes
+passées au garde des mots du cabinet. Les écrans : 17 cas sur l'accueil du client (`ClientHome.avisRib.test.tsx` : rien
+avant le retour, « Ventes », « Banque » seul sans lien, les deux cases, aucune case = aucun appel, une société qui
+change, drapeau baissé) et 13 sur la Vue d'ensemble (`ChecklistTab.test.tsx` : en tête, le bouton, les quinze
+combinaisons, trente jours, la proposition de l'an dernier, la ligne discrète sans que la Vue d'ensemble en souffre, la
+lecture qui survit à la relecture des points). Les gardes existants : `ecransAvantLecture.test.tsx` (la fonction est une
+lecture), les sept scanners d'écriture, de lecture, de verrou, de date et de recherche, tous verts sans exception
+nouvelle ni compte changé ; le double de `ChecklistTab.test.tsx` répond à la fonction (sans quoi chaque cas verrait la
+ligne discrète d'une fonction « inattendue »), et son assertion sur les fonctions appelées nomme maintenant les DEUX
+lectures, dans leur ordre. 40 mutations ciblées sur 40 mordent (le bord `<`/`<=`, la durée à 29 et à 31, l'exemption de
+la proposition retirée, étendue aux clients, réécrite sur d'autres critères, le destinataire — l'ordre, une case
+supposée, une case oubliée —, la lecture en cours dite manquée, la lecture manquée tue, le motif, l'avis écrit pour le
+mauvais lecteur, l'appel sans case, le lien de « Banque » seul, le bouton, la pastille, le jour figé, la phrase de
+l'onglet Accès) ; M10 (le changement nul se montre) mord par un plantage de tous les écrans, 147 tests rouges.
+Barrière : `tsc -b` 0 ; compilateur des Edge Functions 25 erreurs, les mêmes ; lint 63 avertissements, aucune erreur,
+aucun dans les fichiers neufs ; construction verte (`index-CIxGOski.js`) ; les douze fichiers touchés sous les quatre
+fuseaux (572 tests chacun) ; la suite entière sous Paris, 399 fichiers et 12 161 tests (+63), verte. Le banc (port
+5349) : 0 débordement aux treize passes (1 440, 1 280, 1 024, 720, 390, quatre combinaisons des volets, client et
+client-banque à 390 et 1 440), 0 bouton de fenêtre recouvert (212 sondés dans 48 fenêtres au cabinet, 114 dans 29 chez
+le client), 0 police refusée ; sept visites de la Vue d'ensemble (RIB proposé il y a 3 jours et il y a 40 jours, posé,
+retiré, illisible, J + 29, J + 30 qui ne dit rien) et la visite de l'accueil du client, photographiées après la dernière
+retouche d'un écran.
+
+**LES QUESTIONS AU CABINET.** A5B3B-Q1, la place ; A5B3B-Q2, « trente jours » et le jour du changement compris ;
+A5B3B-Q3, la ligne discrète d'une lecture manquée ; A5B3B-Q4, le bouton qui mène à l'onglet Factures ; A5B3B-Q5, le
+client qui porte les deux cases lit l'avis « Ventes » ; A5B3B-Q6, la phrase de « Ventes » dans l'onglet Accès ;
+A5B3B-Q7, la pastille d'attention aussi chez le client devant une proposition. Recommandées telles que livrées.
+
+**L'INTÉGRATION, LE 17/10/2026.** Le correctif de l'agent relu contre la consigne, puis appliqué sur `5c6b2dd` tel qu'il
+l'a rendu (`s249.patch`, quinze fichiers ; sa copie, comparée fichier par fichier à l'arbre intégré, puis retirée) ; les
+documents, dont cette entrée — un compte corrigé (treize cas à la Vue d'ensemble, non quatorze) — et la mise en ligne
+d'A5b3a. Barrière sur l'arbre intégré : `tsc -b` 0 ; Edge 25 erreurs, les mêmes ; lint 63 avertissements, aucune
+erreur ; quatre fuseaux, 12 161 tests chacun (399 fichiers) ; construction verte (`index-CIxGOski.js`). Le banc rejoué
+par la session, passes « client-banque » comprises : 0 débordement aux treize passes, 0 bouton de fenêtre recouvert (212
+sondés dans 48 fenêtres au cabinet, 114 dans 29 chez le client), 0 police refusée.
+
+**RESTE.** Le tableau de bord du cabinet (quels dossiers ont un RIB qui attend : une fonction qui le dit en une fois) ;
+l'ouverture directe de « Paramètres » depuis le bouton (un paramètre de l'adresse, ou un état levé) ; puis A5c (le logo
+et son seau), A7 (la facture fige ses mentions et son RIB : « quand elles porteront un RIB » deviendra « elles
+portent »), A9.

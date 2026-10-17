@@ -888,6 +888,20 @@ const VISITES = [
     dossier, onglet: 'checklist', nom: `checklist/facture-électronique-${dossier}`,
     apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasText: etat }).waitFor({ timeout: 10000 }),
   })),
+  // L'AVIS DU DERNIER CHANGEMENT DU RIB, en tête de la Vue d'ensemble (espace client, étape A5b3b), aux mots du cabinet : un RIB proposé
+  // depuis un accès client, il y a trois jours sur l'atelier (d7) et il y a quarante jours sur le cabinet infirmier (d1 : il attend
+  // toujours son geste) ; un RIB posé par le cabinet (d2) ; un retrait (d3) et son conseil ; une réponse illisible, la ligne
+  // discrète (d4) ; le dernier jour des trente (d5) ; le trente et unième, qui ne dit plus rien (d6). Chaque visite attend l'avis (ou,
+  // pour d6, la carte qui se lit après lui).
+  ...[['d7', 'section.avis-rib-attente'], ['d1', 'section.avis-rib-attente'], ['d2', 'section.avis-rib'], ['d3', 'section.avis-rib'],
+    ['d4', 'section.avis-rib-discret'], ['d5', 'section.avis-rib']].map(([dossier, avis]) => ({
+    dossier, onglet: 'checklist', nom: `checklist/avis-rib-${dossier}`,
+    apres: (page) => page.locator(avis).first().waitFor({ timeout: 10000 }),
+  })),
+  {
+    dossier: 'd6', onglet: 'checklist', nom: 'checklist/avis-rib-d6-rien',
+    apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasNotText: 'Chargement' }).waitFor({ timeout: 10000 }),
+  },
   // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
   // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
   // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six
@@ -1136,6 +1150,12 @@ const VISITES_CLIENT = [
   {
     chemin: '#/accueil', nom: 'client/accueil',
     apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasText: /^(Active|À compléter)/ }).waitFor({ timeout: 10000 }),
+  },
+  // L'avis du dernier changement du RIB de ses factures (étape A5b3a/b), sous la salutation : un RIB proposé depuis un accès de son
+  // dossier, il y a trois jours (d7) — « Ventes » dans les deux passes, avec ou sans « Banque » — et son lien vers « Mes ventes ».
+  {
+    chemin: '#/accueil', nom: 'client/accueil-avis-rib',
+    apres: (page) => page.locator('section.avis-rib-attente').waitFor({ timeout: 10000 }),
   },
   {
     chemin: '#/mes-ventes', nom: 'client/plateforme', fenetre: '.plateforme-client',

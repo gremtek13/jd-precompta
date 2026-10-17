@@ -17,6 +17,8 @@ import { lireLaChecklist, type LectureDeLaChecklist } from '../../lib/checklistL
 import { pointsDeLaChecklist, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import EncartFactureElectronique from './EncartFactureElectronique'
+import AvisChangementDeRib from '../../components/AvisChangementDeRib'
+import { useDernierChangementDeRib } from '../../lib/changementDeRibLecture'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -52,6 +54,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // la première lecture : rien ne s'affirme d'une liste pas encore revenue.
   const [lecture, setLecture] = useState<LectureDeLaChecklist | null>(null)
   const [loading, setLoading] = useState(true)
+  // Le dernier changement du RIB des factures (étape A5b3b), lu À PART des points : sa panne ne tait que son avis, jamais la Vue
+  // d'ensemble, qui ne l'attend pas — et la lecture survit aux relectures des points (elle ne repart qu'avec le dossier).
+  const changementDuRib = useDernierChangementDeRib(dossierId)
 
   async function load() {
     setLoading(true)
@@ -178,6 +183,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
         </p>
       )}
       <div className="bento">
+        {/* L'avis d'un changement du RIB des factures (étape A5b3a/b), AU-DESSUS des tuiles : un RIB proposé par un accès client
+            attend le cabinet tant qu'il n'est ni confirmé ni remplacé, le reste trente jours. Rien d'écrit, aucune fenêtre ; son
+            bouton mène à l'onglet Factures. Muet tant que la lecture n'est pas revenue et sur « aucun changement ». */}
+        <AvisChangementDeRib espace="cabinet" lecture={changementDuRib} className="span-12" onNavigate={onNavigate} />
         <div className="span-3">
           <KpiTile
             libelle="Pièces à valider"

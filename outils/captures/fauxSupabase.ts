@@ -2136,6 +2136,29 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       error: null,
     }
   }
+  // `dernier_changement_de_rib` (espace client, étape A5b3b) : le jour à Paris, le geste, l'auteur, l'état et l'effet du dernier
+  // changement du RIB des factures, jamais le RIB — comme la fonction en base. Les jours se comptent à partir d'AUJOURD'HUI (l'avis
+  // dure trente jours : des dates figées s'éteindraient). L'atelier de conseil (d7), que le client des passes porte : un RIB proposé
+  // depuis un accès client, il y a trois jours, sur un RIB confirmé qui reste en vigueur — attente au cabinet comme chez le client.
+  // Le cabinet infirmier (d1) : un RIB proposé il y a quarante jours, que le cabinet voit encore (il attend son geste) et que le
+  // client — qui n'y porte aucune case — ne lit pas. d2 : posé par le cabinet il y a dix jours ; d3 : retiré il y a deux jours ;
+  // d4 : une réponse illisible (la ligne discrète) ; d5 : changé il y a vingt-neuf jours (le dernier jour) ; d6 : il y a trente
+  // jours (plus rien) ; les autres dossiers n'ont jamais changé de RIB.
+  if (nom === 'dernier_changement_de_rib') {
+    const jourDeParis = (decalage: number) => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(Date.now() - decalage * 86_400_000))
+    const rendu = (jour: string, geste: string, auteur: string, etat: string, ribEnVigueur: string) =>
+      ({ data: { changement: { jour, geste, auteur, etat, rib_en_vigueur: ribEnVigueur } }, error: null })
+    if (dossierId === 'd7') return rendu(jourDeParis(3), 'change', 'client', 'propose', 'inchange')
+    if (dossierId === 'd1') return rendu(jourDeParis(40), 'pose', 'client', 'propose', 'aucun')
+    if (dossierId === 'd2') return rendu(jourDeParis(10), 'pose', 'cabinet', 'confirme', 'pose')
+    if (dossierId === 'd3') return rendu(jourDeParis(2), 'retire', 'inconnu', 'retire', 'retire')
+    if (dossierId === 'd4') return { data: { changement: { jour: jourDeParis(1) } }, error: null }
+    if (dossierId === 'd5') return rendu(jourDeParis(29), 'confirme', 'cabinet', 'confirme', 'change')
+    if (dossierId === 'd6') return rendu(jourDeParis(30), 'confirme', 'cabinet', 'confirme', 'change')
+    return { data: { changement: null }, error: null }
+  }
   // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
   // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base.
   if (nom === 'plan_du_dossier') {

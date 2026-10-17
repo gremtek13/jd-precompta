@@ -193,8 +193,10 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // base, le jour, l'auteur (le cabinet ou un accès client, jamais la personne) et l'état du dernier changement du RIB des
 // factures, jamais le RIB lui-même (A5-Q2). La case « Ventes » n'y gagne rien : elle lit déjà toutes les versions. Elle exige
 // celle des paramètres, donc celles des ventes, et la phrase la dit dans ce que « Banque » ouvre, donc avec la banque du
-// client (P7) : sans l'une d'elles, ce drapeau ne change rien à la phrase. L'avis qui le dira (étape A5b3b) vient après : la
-// phrase le dit à venir.
+// client (P7) : sans l'une d'elles, ce drapeau ne change rien à la phrase. L'avis est sur l'accueil depuis l'étape A5b3b (17/10/2026,
+// A5B3-Q4 : trente jours depuis le jour du changement, aucune marque « vu ») : la phrase le dit, et ne le dit plus à venir. Elle
+// ne promet rien d'autre — ni lien, ni écran des paramètres pour « Banque » seul. La phrase de « Ventes » ne nomme pas l'avis :
+// cette case lit déjà les paramètres, toutes leurs versions, dans « Mes ventes › Paramètres » (question A5B3B-Q6).
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -273,8 +275,8 @@ export function ceQueDisentLesCases(
       + ' La case lui ouvre aussi sa simulation.'
       + (ventesOuvertes && parametresOuverts && changementDeRibOuvert
         ? ' Par la base, elle lui dit aussi le jour, l’auteur — toi, ou un accès client, jamais la personne — et l’état du '
-          + 'dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; l’avis qui le lui dira sur son accueil '
-          + 'viendra ensuite.'
+          + 'dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; son accueil le lui dit '
+          + 'pendant trente jours.'
         : '')
     : ' « Banque » ne change encore qu’une chose, et seulement avec « Ventes » : le client peut désigner le mouvement du '
       + 'relevé qui prouve un encaissement.'
