@@ -133,6 +133,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       '(`lib/changementDeRibLecture.ts`). Il attend la requête et lit son erreur : un refus, une valeur illisible ou une ' +
       'requête qui lève rendent une lecture ratée que l’avis DIRA, jamais « aucun changement »',
   },
+  lireLaReponseDesDossiersAuRib: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `dossiers_au_rib_a_confirmer` LIT les dossiers du cabinet dont un RIB proposé attend sa ' +
+      'confirmation, et ce que `dernier_changement_de_rib` dit de chacun, jamais l’IBAN (étape A5b3c), par UN crochet ' +
+      '(`lib/dossiersAuRibAConfirmerLecture.ts`). Il attend la requête et lit son erreur : un refus, une valeur illisible ou ' +
+      'une requête qui lève rendent une lecture ratée que l’écran DIRA, jamais « aucun dossier »',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {

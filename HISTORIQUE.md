@@ -26293,5 +26293,108 @@ seau et le fichier — le dossier de la version, l'empreinte des octets, le chem
 fichier absent seulement, l'écart `fichier_absent`, le format jugé avant l'empreinte — : six tuées, le témoin vert avant
 elles.
 
+**LA MISE EN LIGNE, LE 17/10/2026.** Fusionnée par #185 (`51fa3ae`) à 22 h 34 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `9995fee` ; l'arbre de `main` (`b0641463…`) est celui de la tête poussée, `main` reste linéaire. Le
+site sert `index-DcgbCk1P.js` (déploiement 39067286748, HTTP 200), le paquet de la barrière. La branche réalignée sur
+`51fa3ae`, arbres égaux. La copie d'intégration retirée (son lien d'abord), comme celle des mutations ; celle de l'agent
+retirée avant la fusion, avec sa branche. La page des arbitrages porte les six questions (A5C2B-Q1 à Q6, version 4, 208
+questions). La feuille de route : la ligne 51.5 complétée (54 323 caractères, envoyée et relue à l'identique) ;
+l'en-tête recompté par requête, inchangé : 141 sur 185 (76 %, huit cases) et, pour un dossier BNC, 141 sur 172 (82 %,
+huit cases).
+
 **RESTE.** Le premier dépôt réel d'une restauration, par le super-administrateur ; le tableau de bord du cabinet (les
 dossiers dont un RIB proposé attend sa confirmation) ; 22.61 ; puis A7 (la facture imprime le logo).
+
+### 17/10/2026 — LES DOSSIERS AU RIB À CONFIRMER, EN BASE — ESPACE CLIENT, ÉTAPE A5b3c (LIGNE 51.5)
+
+(Préparée par l'agent S253 sur `51fa3ae`, éprouvée sur une réplique de la production, présentée au cabinet ; la
+migration `dossiers_au_rib_a_confirmer` appliquée le 18/10/2026 sur son accord (A5B3C-Q1), version `20261017221532`.
+Fichiers nouveaux : `src/lib/dossiersAuRibAConfirmer.ts`, `src/lib/dossiersAuRibAConfirmerLecture.ts`, leurs trois
+tests, `supabase/essais/dossiersAuRibAConfirmer.sql`, le fichier de la migration dans l'export. Modifiés, par AJOUT :
+`src/lib/ecrituresVerifiees.test.ts` (le consommateur), `src/lib/verrousEcritures.test.ts` (la porte de lecture),
+`RGPD.md` (§7). Aucun écran, aucune policy, aucune Edge Function.)
+
+**LA DÉLIMITATION.** La FONCTION qui dit au cabinet, en une fois, quels dossiers ont un RIB proposé qui attend sa
+confirmation (A5B3-Q5, décidée le 17/10/2026 : la Vue d'ensemble d'abord, faite à A5b3b, puis le tableau de bord), son
+essai, le module PUR qui lit ce qu'elle rend et dit ce qu'un écran en dira, le module de lecture, la bascule. Ni l'écran
+du tableau de bord (A5b3d), ni une table, ni un changement de `dernier_changement_de_rib`, de sa lecture, de ses phrases
+ou des fonctions d'A5a, ni l'onglet Accès (la fonction n'ouvre rien au client), ni le logo, ni A7.
+
+**LA CONCEPTION RELUE CONTRE LA BASE.** La production du 17/10/2026 (138 migrations, la dernière `logo_des_factures`,
+lecture seule du catalogue) : `admin_du_dossier(d)` = le super-administrateur, ou un compte de `cabinet_admins` du
+cabinet du dossier qui en est le chef (`comptable_en_chef`) ou qui y est affecté (`dossier_assignations`) ;
+`cabinet_admins` a pour clé le compte (un cabinet par compte), rôles `comptable_en_chef` et `comptable` ; un accès
+client est une ligne de `memberships`, sans rang au cabinet ; le tableau de bord (`DossiersList`) ne lit que les
+dossiers `archive = false`.
+
+**LA FONCTION.** `dossiers_au_rib_a_confirmer()` — sans argument, `SECURITY DEFINER`, `stable`, `search_path` fixé,
+fermée à l'anonyme et à PUBLIC — vérifie d'abord que l'appelant est du CABINET (le super-administrateur, ou un compte de
+`cabinet_admins`) ; sinon « Seul le cabinet lit les RIB à confirmer. » (42501) : un accès client, quelles que soient ses
+cases, et un compte rattaché à rien sont REFUSÉS plutôt que servis d'une liste vide qu'ils prendraient pour une réponse.
+Puis une boucle parcourt les dossiers que `admin_du_dossier` lui ouvre (le chef : ceux de son cabinet ; un membre : ceux
+qui lui sont affectés, et la liste vide s'il n'en a aucun ; le super-administrateur : tous ; jamais un dossier dont le
+même compte n'est qu'un accès client), APPELLE `dernier_changement_de_rib` pour chacun, et garde ceux dont le dernier
+changement est un RIB PROPOSÉ — son objet `changement` TEL QUEL. UNE seule règle : elle ne lit pas la table des
+paramètres, ne recopie pas la règle de la chaîne ; le tableau de bord et la Vue d'ensemble ne peuvent pas dire deux
+choses du même dossier. Une boucle, et non un filtre SQL : l'ordre des conditions d'un `where` appartient au
+planificateur, qui pourrait appeler `dernier_changement_de_rib` sur un dossier que l'appelant n'administre pas — elle
+lèverait. Elle rend UNE valeur, toujours un objet : `{"dossiers": [...]}` (vide : une AFFIRMATION) ; chaque élément,
+l'identifiant du dossier, son nom (le tableau de bord ne lit que les dossiers non archivés), sa marque `archive` (les
+archivés sont rendus, marqués : A5B3C-Q2), l'objet `changement` ; le plus ancien changement d'abord, puis l'identifiant
+(un jour, puis un uuid : aucune collation n'y entre). Jamais l'IBAN, le BIC, le titulaire, l'identifiant d'un compte ou
+d'une version, l'heure. Un premier bloc arrête la migration sans A5b3a. Le texte ne retire rien ; 8 252 caractères, md5
+`8f21f0d02244e77557aca30aa78ecd64`. Le retour arrière, à part, ne retire que la fonction (1 258 caractères,
+`d17dcea6…`).
+
+**LE MODULE ET LA LECTURE.** `lib/dossiersAuRibAConfirmer.ts` (pur) lit la valeur SANS RIEN DEVINER : la liste vide
+seulement de l'objet qui la porte ; sinon chaque élément à ses quatre clés, un identifiant canonique et unique, un nom,
+une marque booléenne, et un changement que `lireLeChangementDeRib` (A5b3a, réutilisé, jamais recopié) lit et qui est une
+proposition ; dans l'ordre de la fonction, vérifié et jamais refait ; toute autre forme est illisible, jamais « aucun ».
+Il dit le compte (« 3 dossiers ont un RIB proposé qui attend votre confirmation, dont un archivé. »), une ligne par
+dossier par `avisDuChangement(…, 'cabinet')` — les mots mêmes de la Vue d'ensemble —, la marque « Dossier archivé », la
+phrase de la liste vide et la ligne discrète d'une lecture manquée, qui renvoie à la Vue d'ensemble.
+`lib/dossiersAuRibAConfirmerLecture.ts` : un `.rpc(`, quatre états (en cours, lue, illisible, refusée), ne rejette
+jamais, gardée avec une clé que l'écran choisit (une clé nulle ne lit rien), derrière
+`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`.
+
+**CE QUI A ÉTÉ ÉPROUVÉ PAR L'AGENT.** Sur une réplique égale à la production (`signature.sql`, neuf familles, et
+l'historique, 138, `ead34785…`, relus au début et à la fin) : la migration ne change que deux familles (fonctions et
+leurs droits, 170 → 171) ; l'essai (deux cabinets et onze dossiers jetables ; les profils du cabinet joués par le compte
+du client, rangé à `cabinet_admins`, `dossier_assignations` ou `super_admins` le temps d'un contrôle ; des IBAN, BIC et
+titulaires fictifs du code banque 99999 plantés et cherchés dans chaque réponse), sans la migration 1 verdict « EN
+ATTENTE », avec 65 verdicts — 60 justes + 5 mutations qui mordent —, 0 en faute, vide et semée, rien resté en base, et
+sa copie sans commentaires d'un seul tenant ; chaque liste confrontée, profil par profil et dossier par dossier, à
+`dernier_changement_de_rib` ; 38 mutations de la migration sur 39 vues (O05, le jour comparé comme un texte,
+équivalente : un jour s'écrit toujours `AAAA-MM-JJ`) ; `rls.sql` ENTIER inchangé, 46 lignes, 0 en faute, 43 mutations
+sur 43, avec et sans ; le retour arrière, les neuf familles revenues. Le code : le test du module lit chaque liste de
+l'essai et la REJOUE par une règle écrite dans le test ; 34 mutations du code sur 34 mordent ; la bascule en simulation
+(dérive 139, socle 78, inventaire 2 081 objets), 16 mutations sur 16.
+
+**DEUX FAITS APPRIS.** (1) Le chef de l'essai est à la fois super-administrateur et chef de cabinet : un essai qui ne
+joue que lui ne voit pas un super-administrateur SANS cabinet ; le compte du client, rangé aux super-administrateurs le
+temps d'un contrôle, le joue — les essais voisins qui ne jouent que ce compte ont peut-être le même angle mort. (2) Un
+jeu inséré dans l'ordre de ses identifiants rend l'ordre de la base égal à l'ordre attendu : une fonction sans tri
+passerait ; les dossiers jetables s'insèrent à rebours.
+
+**L'INTÉGRATION ET L'APPLICATION, LES 17 ET 18/10/2026.** La migration, l'essai, le code et les documents relus par la
+session ; le correctif appliqué sur `51fa3ae` ; la barrière, drapeau baissé : `tsc -b` 0, Edge 25 erreurs (les mêmes),
+lint 63 avertissements (les mêmes), 12 552 tests sous chacun des quatre fuseaux (410 fichiers), construction verte
+(`index-DcgbCk1P.js`, le paquet en ligne : aucun écran ne change). La migration présentée au cabinet, qui a donné son
+accord (A5B3C-Q1) ; appliquée par `apply_migration` le 18/10/2026 à 0 h 15 à Paris : version `20261017221532` (l'heure
+UTC), le texte enregistré de 8 252 caractères et d'empreinte `8f21f0d0…`, celle du fichier relu ; 139 migrations. La
+signature de la production après elle : les sept autres familles inchangées, fonctions 171 `6e7bddf3…` et droits des
+fonctions 171 `95a7e64a…` — celles de la réplique après la migration, au caractère près. L'essai joué en production le
+18/10/2026 (sa copie sans commentaires, 53 233 caractères, empreinte `f55a5dbd…`, celle que la base dit avoir reçue) :
+66 lignes — 60 justes, 5 mutations qui mordent, une information —, 0 en faute, rien resté en base (cabinets, dossiers,
+accès, équipe, affectations, paramètres : 1/4/3/1/0/0 avant comme après). Les trois contrôles de l'export, le fichier
+renommé à sa version appliquée : dérive 139 = 139 (`bb9f224f…`), socle 78 = 78 (`91ae95ec…`), inventaire 2 081 = 2 081
+(`de8d87d9…`), égaux des deux côtés. Les avertissements de sécurité : 55 fonctions `SECURITY DEFINER` exécutables par un
+compte connecté (54 avant ; la nouvelle seule), 5 par l'anonyme, inchangé. La bascule : le drapeau levé.
+
+**LES QUESTIONS AU CABINET.** A5B3C-Q1, l'accord pour appliquer : oui, le 18/10/2026. Ouvertes, pour l'étape A5b3d :
+A5B3C-Q2, les dossiers archivés (rendus, marqués ; à montrer, recommandé) ; A5B3C-Q3, ce que le tableau de bord dira
+(une ligne par dossier sous un titre qui donne le compte, recommandé) ; A5B3C-Q4, où mène chaque ligne (l'onglet
+Factures, recommandé).
+
+**RESTE.** A5b3d, le tableau de bord du cabinet : la liste lue par le crochet, dite par le module, selon les réponses
+A5B3C-Q2 à Q4. Puis A7, la facture fige ses mentions ; A9, la numérotation qui continue.
