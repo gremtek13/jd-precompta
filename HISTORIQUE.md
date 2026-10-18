@@ -29169,3 +29169,118 @@ la mesure ne porte que des comptes, sans valeur ni nom. Trois points à tenir av
   ils vont à l'expert-comptable du cabinet, avec les dossiers de référence.
 - **Le remplacement de `lignes_bancaires_un_seul_rapprochement` (VF2)** est un `drop constraint` : présenté au cabinet,
   collé si l'outil retient le texte, et tous les essais des classements du relevé rejoués.
+
+### 18/10/2026 — L'EXEMPLAIRE D'UNE FACTURE, EN BASE — CHANTIER EC-Q3, ÉTAPE VF1a (LIGNE 28.6)
+
+(La migration `exemplaires_des_factures`, préparée par l'agent architecte de VF1a sur `1e57d29` sous une version
+PROVISOIRE, `20261018120000`, et éprouvée sur une réplique de la production ; présentée au cabinet ; appliquée par la
+session sur son accord (VF1A-Q1, « Oui, appliquer ») sous la version `20261018142041`, sans confirmation demandée.
+Fichiers nouveaux : `src/lib/exemplairesDesFactures.ts` et son test, `src/lib/sauvegardeExemplaires.test.ts`,
+`supabase/essais/exemplairesDesFactures.sql`, `supabase/schema/20261018142041_exemplaires_des_factures.sql`. Modifiés :
+`src/lib/ventesJumelles.ts`, `ventesJumellesLecture.ts`, `sauvegarde.ts`, `types.ts`, leurs tests,
+`prealablesValidation.test.ts`, `sauvegardeDevis.test.ts`, `pages/dossier/PlateformeClientModal.test.tsx` (le texte de
+la lecture des pièces suit le drapeau), `supabase/essais/restauration.sql` (un contrôle, un passage),
+`supabase/schema/README.md`, `RGPD.md` (le registre, la facturation électronique), CLAUDE.md. Deux commits : le code tel
+que l'agent l'a rendu, drapeau baissé ; puis la bascule — le fichier de la migration dans l'export, le drapeau levé, les
+commentaires qui disaient la migration en attente.)
+
+**LA DÉLIMITATION.** La base et le module de VF1 (§ 14 de la conception) : `pieces.facture_id`, sa garde, les deux
+fonctions du cabinet, le pont qui en fait sa quatrième preuve, la lecture du pont, le plan de sauvegarde, l'essai. Ni
+les écrans (VF1b : la fiche d'une pièce, la liste des pièces), ni rien de la bascule d'un dossier (VF2), ni l'exemplaire
+d'une facture SOURCE (VF6 : G3, G4), ni une Edge Function.
+
+**LA BASE RELUE.** La production du 18/10/2026 (139 migrations, la dernière `dossiers_au_rib_a_confirmer` ; catalogue et
+comptes seulement) : 6 factures émises, toutes validées, dans un bac à sable ; 6 pièces de vente, dont une validée ;
+aucune jumelle. `garder_piece_validee` compare la ligne entière d'une pièce figée (moins notes, sous-dossier, confiance,
+horodatage de mise à jour) : une colonne de plus y entre d'elle-même. `exercice_figeant_la_piece` (e2) est le critère du
+gel. `garder_factures_validees` ne laisse supprimer une facture validée qu'avec son dossier. La policy de lecture de
+`pieces` ouvre la ligne entière à tout accès du dossier ; celle d'insertion du client ne nomme pas de colonne.
+
+**LA MIGRATION.** `pieces.facture_id uuid references factures_emises (id)` — sans action à la suppression —, un index
+partiel ; la garde `garder_exemplaire_facture` (aux droits de l'appelant, `search_path` fixé, hors de portée en RPC),
+sur `before insert or update of facture_id, dossier_id, type_piece` : une pièce ne naît désignée que réinsérée par le
+super-administrateur (42501 sinon) ; la désignation ne change que sous le réglage `jd.exemplaire_facture` posé par les
+deux fonctions POUR LA PIÈCE qu'elles écrivent, retiré aussitôt (le patron de `jd.validation_facture`) ; toute
+désignation qui se pose — par une fonction ou par la restauration — exige une facture du même dossier (23514), validée
+(23514), sur une pièce de vente (23514) ; une pièce désignée ne change ni de dossier ni de nature, « défaire d'abord »
+(23514). Deux fonctions du cabinet (`admin_du_dossier`), `SECURITY DEFINER`, fermées à l'anonyme, qui rendent la pièce
+écrite, sous le verrou PARTAGÉ de la validation puis celui de la ligne : `designer_exemplaire_facture(dossier, pièce,
+facture)` — 1. l'accès au dossier annoncé, un dossier qui n'existe pas comme un dossier interdit (42501) ; 2. la pièce,
+dans ce dossier (P0002) ; 3. une vente (22023) ; 4. le gel, son exercice dit (22023) ; 5. déjà désignée, à cette facture
+ou à une autre, le numéro dit (22023) ; 6. la facture, dans ce dossier (P0002) ; 7. validée (22023) — et
+`defaire_exemplaire_facture (dossier, pièce)` — 1. l'accès ; 2. la pièce ; 3. désignée ; 4. le gel. Aucune policy
+nouvelle ni changée. Aucun effet sur ce qui se compte. 17 700 caractères, aucun des mots que le détecteur retient.
+
+**TROIS CHOIX.** (1) Un AVOIR a son exemplaire : il est une facture émise, transmis et revenu comme elle, le pont le
+reconnaît déjà par son identité, son PDF compterait deux fois avec sa jumelle — le même trou ; et il sera source de sa
+vente à la bascule. (2) La clé, SANS ACTION : une facture validée ne se supprime qu'avec son dossier, dont la cascade
+emporte aussi les pièces (la clé ne se vérifie qu'à la fin de l'instruction : éprouvé sur la réplique) ; écartées, la
+cascade (elle emporterait un justificatif) et la remise à nul (elle perdrait le lien sans le dire ; la famille est
+close). Le patron de `statuts_factures_recus.facture_id`. (3) Le GEL de la pièce fige la désignation :
+`garder_piece_validee` le tenait déjà (la ligne entière), et les deux fonctions le disent avant d'écrire, au critère de
+la garde ; un réglage forgé ne l'ouvre pas (contrôle 81). Écarté aussi : juger en base la cohérence de la désignation
+avec le flux, Super PDP ou l'identité — le pont la dit « à vérifier », la base ne refuse pas ; VF6 la tiendra pour une
+facture source.
+
+**LE MODULE.** `lib/exemplairesDesFactures.ts`, pur : `refusDeLaDesignation`, `refusDuRetraitDeLaDesignation` (sauf
+l'accès, que l'écran ne peut pas dire), `refusDeLaPieceDesignee` (la garde, pour la fiche d'une pièce), les arguments
+des deux fonctions ; le drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES`. Avant la bascule, la RÉFÉRENCE était l'essai :
+`exemplairesDesFactures.test.ts` exige que chaque refus du module y soit exigé de la base (et l'inverse), et REJOUE dans
+le module les 49 appels aux deux fonctions et les 10 écritures directes d'une pièce des étapes d'une seule instruction,
+sur le jeu de l'essai — le module dit ce que la base a dit, le refus au mot près ; des défauts plantés dans l'essai (un
+message, un accepté, un refus, une désignation du jeu retirée) se voient. Le drapeau levé, il confronte aussi le module
+au texte exporté des deux fonctions et de la garde : messages, codes, valeurs, ordre, l'accès avant toute lecture, le
+réglage, les droits.
+
+**LE PONT.** La désignation est la quatrième preuve de `jumellesDuDossier`, la plus forte, dite LA PREMIÈRE ; elle ne
+fait pas taire les trois autres : désignée à une facture et rattachée à une autre, la pièce est incohérente ; désignée à
+une facture dont son original dit l'autre nature, aussi. `ventesEnDouble` voit la jumelle ET le PDF désigné. La marque
+dit « désignée comme son exemplaire » ; un exemplaire désigné seul est « un exemplaire de la facture F… », non « revenue
+comme pièce ». Une pièce lue sans la colonne n'est désignée à rien. La lecture du pont (`ventesJumellesLecture.ts`) ne
+nomme `facture_id` que le drapeau levé : nommée sans la migration, elle échouerait ; les deux états sont éprouvés, la
+base de chaque état comprise (42703 sur une colonne absente). Les lectures `select('*')` (Checklist, Justificatifs)
+portent la colonne depuis l'application : le préalable `ventes-en-double` voit le PDF désigné.
+
+**LA SAUVEGARDE.** Ni table, ni rang, ni chemin : la relation `pieces.facture_id → factures_emises (bloque)` est au
+graphe PRÉVU, et au graphe du jour le drapeau levé (`auGrapheDesExemplaires`) ; les factures précèdent déjà les pièces ;
+la sauvegarde recopie des lignes entières ; une pièce désignée se réinsère désignée par la porte du
+super-administrateur, que la restauration des factures validées exige déjà. `liensPerdus` refuse avant toute écriture la
+sauvegarde d'une pièce dont la facture manque, jamais « effaçable ».
+
+**CE QUI A ÉTÉ PROUVÉ SUR LA RÉPLIQUE.** Réplique égale à la production relue — 139 migrations `bb9f224f…`, les neuf
+familles de `signature.sql` égales ; la migration en ajoute : colonnes 851, contraintes 659, déclencheurs 56, fonctions
+174, droits des fonctions 174, index 231, le reste inchangé. L'essai (`exemplairesDesFactures.sql`, quatre profils et
+leurs variantes) : 102 lignes, 0 en faute, dont 10 mutations qui mordent, rien resté ; sans la migration, « EN ATTENTE
+», juste ; sa copie sans commentaires, d'un seul tenant, idem. `identiteFacturesRecues.sql` : 38 lignes, 0 en faute,
+avant et après. `rls.sql` entier : 46 lignes, 0 en faute, 43 mutations sur 43, avant et après, sorties identiques. 37
+mutations de la migration : 36 mordent ; la dernière (le `grant` aux connectés retiré) est équivalente — les privilèges
+par défaut du schéma l'accordent déjà. `restauration.sql`, le dossier `test` semé d'une facture validée, de son avoir et
+de deux pièces désignées par la fonction : 141 clés, 74 tables IDENTIQUES (68 lignes), le contrôle de la désignation 2
+sur 2 ; les factures placées après les pièces, arrêt sur `pieces_facture_id_fkey` ; sans la migration, 140 clés, 74
+IDENTIQUES. Le retour arrière, sur des copies : refusé tant qu'une pièce est désignée ; sans désignation, la signature
+redevient celle d'avant et l'essai se dit « EN ATTENTE » ; il n'est pas au dépôt, et ne s'appliquerait que sur un accord
+explicite du cabinet, le drapeau rebaissé en ligne d'abord. La bascule simulée, suite entière : un seul test à reprendre
+(PlateformeClientModal, le texte de la lecture des pièces), repris avant le commit ; 11 mutants de la bascule sur 11 et
+23 du code sur 23 mordent.
+
+**EN PRODUCTION, APRÈS L'APPLICATION.** La ligne d'historique rend l'empreinte du fichier (`4413a733…`) : 140
+migrations. L'essai, sans ses lignes de commentaire, d'un seul tenant (40 417 caractères, reçus tels quels :
+`c1d06812…`) : 102 lignes, 0 en faute, dont les 10 mutations, rien resté (les neuf comptes égaux avant et après).
+L'inventaire : 2 088 objets, `6a5c889d…` ; le socle : 78 instructions, `91ae95ec…` ; la dérive : 140, `d22b3bc5…` —
+chacun égal à ce que l'export rend. `signature.sql` : colonnes 851, contraintes 659, index 231, déclencheurs 56,
+fonctions et droits des fonctions 174 — les nombres de la réplique migrée ; policies (157, `58878930…`), RLS (80,
+`9e8ffc97…`) et droits des tables (80, `c7ec7672…`) gardent l'empreinte d'avant. `rls.sql` n'y est pas rejoué : la
+migration ne crée ni ne change aucune policy (le contrôle 156 l'a vérifié en production), et il l'a été entier sur la
+réplique, avant et après. Les advisors : les fonctions `SECURITY DEFINER` exécutables, 5 par l'anonyme (inchangé) et 57
+par les connectés (les deux nouvelles) ; la garde n'y paraît pas, aux droits de l'appelant.
+
+**CE QUI RESTE, ET LES RISQUES.** VF1b, les écrans : la fiche d'une pièce désigne et défait, et dit avant le clic les
+refus du module et ceux de la garde (une pièce désignée qui changerait de nature) ; DÉFAIRE la désignation d'un PDF qui
+double sa jumelle fait taire « Comptée deux fois » sans retirer le double compte : la confirmation doit le dire ; la
+fenêtre des encaissements lit les pièces par une liste de colonnes qui ne nomme pas `facture_id` : elle ne verra le PDF
+désigné qu'en la nommant ; le type `Piece.facture_id`, facultatif jusque-là, devient obligatoire avec le premier écran
+qui le lit. Une pièce de vente figée avant d'avoir été désignée ne se désigne plus : un double compte découvert après la
+validation relève de l'opération découverte après coup. Le retour arrière détruit les désignations, et une sauvegarde
+prise pendant que la colonne existait ne se restaure plus telle quelle après lui. Le cabinet a tranché le 18/10/2026 :
+VF1A-Q1, « Oui, appliquer » ; VF1A-Q2, « Pas maintenant » — garder qui a désigné, et quand, se reprend à VF6, avec
+l'exemplaire d'une facture source.
