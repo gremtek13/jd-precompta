@@ -761,9 +761,11 @@ const LECTURES_PAR_FONCTION = new Set([
 // de la Vue d'ensemble du cabinet.
 // Et le dernier changement du RIB des factures (`dernier_changement_de_rib`, étape A5b3b), lu par l'avis de la Vue d'ensemble du
 // cabinet et de l'accueil du client « Ventes » ou « Banque » : une fonction de LECTURE (`stable`), qui n'écrit rien.
+// Et les dossiers dont un RIB proposé attend le cabinet (`dossiers_au_rib_a_confirmer`, étape A5b3d), lus par son tableau de bord :
+// une lecture aussi (`stable`).
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
-  'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib',
+  'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

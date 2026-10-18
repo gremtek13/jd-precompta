@@ -483,8 +483,14 @@ Ce qui est **prouvé**, pas seulement affirmé :
   ou d'une version, ni rien d'un dossier que l'appelant n'administre pas, que l'essai
   `supabase/essais/dossiersAuRibAConfirmer.sql` cherche, plantés, dans chaque réponse de chaque profil. Rien de plus
   n'est ouvert : le cabinet lit déjà ces paramètres (la policy de lecture de l'étape A5a) et ce dernier changement
-  (étape A5b3a) ; la fonction les dit en une fois, pour son tableau de bord (étape A5b3d). Rien ne s'écrit ;
-  `DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`, levé avec la migration : aucun écran ne la lit avant l'étape A5b3d.
+  (étape A5b3a) ; la fonction les dit en une fois, pour son tableau de bord. Rien ne s'écrit ;
+  `DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`, levé avec la migration. **À l'écran depuis l'étape A5b3d** (18/10/2026) : le tableau
+  de bord du cabinet (`DossiersList`, `components/RibsAConfirmer.tsx`) la lit à chaque affichage, gardée avec le compte
+  connecté, à part de ses autres lectures — le compte, puis une ligne par dossier (son nom, la marque d'un dossier archivé, le jour et
+  la phrase de l'avis de la Vue d'ensemble, un lien vers l'onglet Factures de ce dossier), dans l'ordre que la fonction rend
+  (le plus ancien d'abord) et le conseil de vérification du RIB dit une fois ; rien quand aucun RIB n'attend, une ligne
+  discrète quand la liste n'a pas pu être lue. Aucune donnée de plus que celles que la fonction rend : jamais le RIB ; rien
+  ne s'écrit, aucune marque « vu » ; la liste vit dans le navigateur le temps de l'écran.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 

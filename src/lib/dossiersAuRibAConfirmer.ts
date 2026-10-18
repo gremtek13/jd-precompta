@@ -2,7 +2,8 @@ import { avisDuChangement, lireLeChangementDeRib, type AvisDuChangement, type Ch
 
 // LES DOSSIERS DONT UN RIB PROPOSÉ ATTEND LA CONFIRMATION DU CABINET (espace client, étape A5b3c ; décision du cabinet du
 // 17/10/2026, A5B3-Q5 : le tableau de bord du cabinet dit EN UNE FOIS quels dossiers ont un RIB qui l'attend). Un module
-// PUR — il ne lit rien en base, n'appelle personne, ne lit pas l'horloge — que le tableau de bord de l'étape A5b3d lira :
+// PUR — il ne lit rien en base, n'appelle personne, ne lit pas l'horloge — que le tableau de bord du cabinet lit depuis
+// l'étape A5b3d (components/RibsAConfirmer.tsx) :
 // la valeur que rend la fonction `dossiers_au_rib_a_confirmer`, LUE SANS RIEN DEVINER, et ce qu'un écran en dira.
 //
 // UNE SEULE RÈGLE. La fonction n'en a pas d'autre que celle de l'étape A5b3a : un dossier figure dans la liste si et
@@ -93,8 +94,8 @@ export function lireLesDossiersAuRibAConfirmer(rendu: unknown): DossiersAuRibACo
 // Au cabinet, vouvoyé, comme l'avis de la Vue d'ensemble. Le compte, puis une ligne par dossier : son nom, la marque
 // « archivé » s'il l'est, et l'avis de son dernier changement, au caractère près (`avisDuChangement`, destinataire
 // « cabinet » : « Un accès client a proposé un nouveau RIB pour les factures le … : il attend votre confirmation. », ce que
-// les factures porteront, le conseil de la vue des paramètres). Aucun écran n'est écrit ici (le tableau de bord : étape
-// A5b3d) ; aucun IBAN ni aucune personne : la fonction n'en rend pas.
+// les factures porteront, le conseil de la vue des paramètres). Aucun écran n'est écrit ici (le tableau de bord :
+// components/RibsAConfirmer.tsx, étape A5b3d) ; aucun IBAN ni aucune personne : la fonction n'en rend pas.
 
 /** La liste vide, lue en entier : la base AFFIRME qu'aucun dossier n'attend. */
 export const AUCUN_RIB_A_CONFIRMER = 'Aucun RIB proposé n’attend votre confirmation.'

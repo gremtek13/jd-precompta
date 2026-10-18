@@ -2287,3 +2287,22 @@ a.btn { text-decoration: none; }
 }
 .logo-facture-legende { margin: 6px 0 8px; font-size: 0.82rem; color: var(--color-text-light); overflow-wrap: anywhere; }
 .logo-facture-champ { max-width: 100%; }
+
+/* Les RIB proposés qui attendent la confirmation du cabinet, en tête de son tableau de bord (étape A5b3d) : la ligne `.avis-rib`
+   (pastille, corps qui prend la largeur) avec, dans le corps, une rangée par dossier — son nom, la marque d'un dossier archivé,
+   la phrase de l'avis, le lien vers ses factures — qui passe à la ligne plutôt que de déborder. Un nom long se coupe
+   (`overflow-wrap`), il ne pousse pas la ligne hors de sa carte. Sur téléphone la rangée devient une colonne : la phrase, puis
+   le lien dessous. */
+.ribs-a-confirmer-tete { margin-bottom: 20px; }
+.ribs-a-confirmer-lignes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ribs-a-confirmer-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-width: 0; }
+/* Les trois colonnes d'une rangée ont les mêmes bases et les mêmes parts dans chaque rangée : les phrases et les liens s'alignent d'une
+   rangée à l'autre ; étroite, la rangée passe à la ligne (le lien sous la phrase) plutôt que de déborder. */
+.ribs-a-confirmer-qui { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 1 1 200px; min-width: 0; }
+.ribs-a-confirmer-nom { font-size: 0.9rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.ribs-a-confirmer-avis { flex: 2 1 260px; min-width: 0; font-size: 0.85rem; line-height: 1.4; overflow-wrap: anywhere; }
+.ribs-a-confirmer-ligne > .btn { flex: none; }
+@media (max-width: 720px) {
+  .ribs-a-confirmer-ligne { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; }
+  .ribs-a-confirmer-qui, .ribs-a-confirmer-avis { flex: none; }
+}

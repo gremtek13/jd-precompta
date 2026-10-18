@@ -31,8 +31,13 @@ const faux = vi.hoisted(() => ({
 // ici est que la création la PRÉVIENNE — on compte les signaux au lieu de monter la barre.
 vi.mock('../lib/listeDossiers', () => ({ signalerMajDossiers: () => { faux.signaux++ } }))
 
+// Le tableau de bord lit le compte connecté (la clé de la liste des RIB proposés, étape A5b3d) : un chef de cabinet de test. Ce fichier
+// ne juge pas cette liste (DossiersList.ribsAConfirmer.test.tsx) ; sa fonction lui répond « aucun », qui ne se dit pas.
+vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'u-chef' } } }) }))
+
 vi.mock('../lib/supabase', () => ({
   supabase: {
+    rpc: () => Promise.resolve({ data: { dossiers: [] }, error: null }),
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       // Le faux client honore `range` et annonce un `count` : sans quoi `lireTout` déclarerait toute
