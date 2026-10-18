@@ -168,7 +168,9 @@ async function lireDonnees(
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ) : pasLue<ReglementEcran>(),
     gereLaBanque ? lireTout<PieceEcran>((debut, fin) =>
-      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, tiers, nom_fichier', { count: 'exact' })
+      // `facture_id` : la désignation du cabinet, la première preuve du pont (VF1a) — sans elle, le PDF désigné exemplaire de la
+      // facture ne serait pas vu comme sa pièce, et sa proposition de mouvement manquerait.
+      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, facture_id, tiers, nom_fichier', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ) : pasLue<PieceEcran>(),
     // Les déclarations du DOSSIER, échouées et rejetées comprises : le module décide lui-même de ce qui compte.

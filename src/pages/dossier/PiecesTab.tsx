@@ -33,6 +33,7 @@ import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
+import { lireLesFacturesProposees, type FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
 import { lireEcarts } from '../../lib/regimesEreportingLecture'
@@ -139,6 +140,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // transmissions, pour marquer la pièce qui EST une facture émise, et celles qui la comptent deux fois. Nulle avant sa
   // première lecture : aucune marque ne se pose sur une liste pas encore revenue.
   const [ventesEmises, setVentesEmises] = useState<LectureVentesEmises | null>(null)
+  // LES FACTURES QU'UNE PIÈCE DE VENTE PEUT DÉSIGNER (ligne 28.6, étape VF1b, lib/exemplairesDesFacturesLecture.ts) : les factures
+  // émises VALIDÉES du dossier, avec leur client et leur montant, pour que la fiche d'une pièce de vente désigne son exemplaire
+  // ou défasse la désignation. Nulle avant sa première lecture : la fiche n'offre alors aucun geste.
+  const [facturesProposees, setFacturesProposees] = useState<LectureComplete<FactureProposee> | null>(null)
+  const relireLesFactures = useCallback(async () => {
+    setFacturesProposees(await lireLesFacturesProposees(dossierId))
+  }, [dossierId])
   // CE QUE LA RÉVISION DES SOLDES CITE (ligne 41, lib/citationsRevisionLecture.ts) : une pièce citée par une décision ne
   // se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8). Lue pour que la fiche et la
   // suppression de la sélection le disent AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
@@ -160,6 +168,26 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   // LES DÉCLARATIONS D'E-REPORTING ET LEURS SOURCES (étape e5c) : une pièce dont la fiche est déclarée ne se supprime plus
   // (hypothèse E5-Q6) — la fiche et la suppression le disent avant le clic. Nulles avant leur première lecture.
   const [declarationsEreporting, setDeclarationsEreporting] = useState<LectureDesDeclarations | null>(null)
+
+  // Relit UNE pièce après un geste de sa fiche (désigner, défaire l'exemplaire d'une facture) : la liste prend la ligne relue,
+  // et la fiche ouverte sa désignation — seulement elle : le reste de la saisie reste celui de la fiche. Une pièce quittée
+  // entre-temps n'est pas déplacée (la fiche n'est remplacée que si elle porte encore cette pièce). Ne rejette jamais : le
+  // motif d'un échec revient à la fiche, qui le dit.
+  const relirePiece = useCallback(async (pieceId: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.from('pieces').select('*').eq('id', pieceId).eq('dossier_id', dossierId).maybeSingle()
+      if (error) return messageErreur(error, 'lecture refusée par la base')
+      if (!data) return 'la pièce n’est plus dans ce dossier'
+      const relue: Piece = data
+      setPieces((prec) => prec.map((p) => (p.id === relue.id ? relue : p)))
+      setEditing((prec) => (prec !== null && prec.id === relue.id
+        ? { ...prec, facture_id: relue.facture_id, updated_at: relue.updated_at }
+        : prec))
+      return null
+    } catch (err) {
+      return messageErreur(err, 'lecture impossible')
+    }
+  }, [dossierId])
 
   async function load() {
     setLoading(true)
@@ -243,6 +271,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     setFigees(lectureFigees.figees)
     setFigeesIncompletes(lectureFigees.motif)
     setVentesEmises(await lireVentesEmises(dossierId))
+    setFacturesProposees(await lireLesFacturesProposees(dossierId))
     setCitations(await lireCitationsDeLaRevision(dossierId))
     setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
     setEcartsEreporting(await lireEcarts(dossierId))
@@ -1096,6 +1125,13 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
                 autres: marque.autresPieces.map((id) => pieces.find((x) => x.id === id)?.nom_fichier ?? id),
               } : null
             })()}
+            exemplaire={{
+              factures: facturesProposees,
+              relireLesFactures,
+              anneeFigeante: figees.get(editing.id) ?? null,
+              gelIncomplet: figeesIncompletes,
+              relirePiece,
+            }}
             horsDeFrance={{
               lecture: fichesHorsDeFrance,
               relire: relireFichesHorsDeFrance,

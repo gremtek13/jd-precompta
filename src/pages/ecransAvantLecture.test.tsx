@@ -165,7 +165,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null,
     conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
     statut: 'a_valider', notes: null, confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
-    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
     created_at: '2026-09-10T09:00:00Z', updated_at: '2026-09-10T09:00:00Z', ...o,
   }
 }
@@ -330,6 +330,23 @@ const ECRANS: Ecran[] = [
       />
     </Dossier1>
   ) },
+  // L'exemplaire d'une facture dans la fiche d'une pièce de VENTE (étape VF1b), les factures émises du dossier lues en partie :
+  // désigner ou défaire ne s'offre pas, le garde tente chaque geste, et aucune écriture ne doit partir
+  // (`designer_exemplaire_facture`, `defaire_exemplaire_facture`). Pas encore lues, la fiche reste « en cours » jusqu'à ce que
+  // l'écran appelant les rende : ce cas est joué par ExemplaireDeLaFacture.test.tsx, la lecture n'étant pas la sienne.
+  { nom: 'FichePiece (exemplaire : factures lues en partie)', fichier: 'pages/dossier/FichePiece.tsx', rendre: () => (
+    <Dossier1>
+      <FichePiece
+        dossierId="d1" categories={[]} sousDossiers={[]} tiersCategories={[]} tiersCategoriesCabinet={[]} tiersConnus={[]}
+        piece={piece({ type_piece: 'vente' })} commentaires={[]} onClose={rien} onSaved={rien}
+        onCommentaireAjoute={rien} onCommentaireSupprime={rien} horsDeFrance={FICHES_RECUES}
+        exemplaire={{
+          factures: { lignes: [facture()], complete: false, motif: '1 ligne(s) lue(s) sur 2 annoncée(s)' },
+          relireLesFactures: async () => {}, anneeFigeante: null, gelIncomplet: null, relirePiece: async () => null,
+        }}
+      />
+    </Dossier1>
+  ) },
   { nom: 'FicheHorsDeFrance', fichier: 'pages/dossier/FicheHorsDeFrance.tsx', rendre: () => (
     <Dossier1><FicheHorsDeFrance dossierId="d1" piece={piece()} pieceModifiee={false} donnees={FICHES_RECUES} sansTexteLu={false} /></Dossier1>
   ) },
@@ -461,6 +478,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/BilanReleveStatuts.tsx': 'reçoit le relevé des statuts que l’écran qui l’offre a lancé sur un clic (FacturesTab, EncaissementsFactureModal, PlateformeClientModal, montés ici)',
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
   'pages/TuilesVentesClient.tsx': 'ne lit plus (étape A6b2) : reçoit la lecture des ventes de l’accueil (AccueilVentesClient, montée ici) et ne fait que compter ses pastilles ; n’écrit rien',
+  'pages/dossier/ExemplaireDeLaFacture.tsx': 'reçoit de la fiche d’une pièce (FichePiece, montée ici, que PiecesTab ouvre) les factures émises validées et le gel de la pièce, « en cours » tant qu’ils ne sont pas revenus ; ne désigne et ne défait qu’au clic confirmé, et seulement sur des factures lues en entier (ExemplaireDeLaFacture.test.tsx)',
   'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif, n’écarte une proposition et ne supprime un message que sur un clic confirmé, et seulement sur des envois lus en entier',
 }
 
@@ -733,11 +751,13 @@ const ECRITURES_AU_MONTAGE: Record<string, { ecritures: string[]; raison: string
 }
 
 // Les gestes qui LÈVENT sous jsdom, avec leur raison : ce qu'ils auraient fait après n'est pas vu.
+const REMPLACER_LE_FICHIER = {
+  geste: 'input[.pdf,.jpg,.jpeg,.png]',
+  raison: 'remplacer le fichier d’une pièce lit le PDF fictif par pdf.js, que jsdom ne porte pas ; le fichier ne part qu’à « Enregistrer »',
+}
 const GESTES_QUI_LEVENT: Record<string, { geste: string; raison: string }> = {
-  FichePiece: {
-    geste: 'input[.pdf,.jpg,.jpeg,.png]',
-    raison: 'remplacer le fichier d’une pièce lit le PDF fictif par pdf.js, que jsdom ne porte pas ; le fichier ne part qu’à « Enregistrer »',
-  },
+  FichePiece: REMPLACER_LE_FICHIER,
+  'FichePiece (exemplaire : factures lues en partie)': REMPLACER_LE_FICHIER,
 }
 
 // Mesurés le 09/10/2026 : 126 gestes tentés sur tous les écrans, et 26 écrans qui en offrent avant leurs lectures. Un peu
