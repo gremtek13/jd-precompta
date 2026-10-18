@@ -2114,7 +2114,7 @@ const session = { user: { id: 'u1', email: CLIENT_DU_BANC ? 'client@exemple.fr' 
 // `couverture_du_releve` : les mois (au premier jour) où le relevé du dossier porte un mouvement ;
 // `droits_sur_le_dossier` : comme en base, le cabinet gère les ventes et la banque ; un client, selon les cases de son
 // accès (`memberships`).
-function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown; error: null } {
+function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown; error: null | { message: string } } {
   if (nom === 'couverture_du_releve') {
     const mois = new Set((TABLES.lignes_bancaires ?? []).filter((l) => l.dossier_id === dossierId)
       .map((l) => String(l.date).slice(0, 7) + '-01'))
@@ -2183,7 +2183,35 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
     if (dossierId === 'd4') return { data: { changement: { jour: jourDeParis(1) } }, error: null }
     if (dossierId === 'd5') return rendu(jourDeParis(29), 'confirme', 'cabinet', 'confirme', 'change')
     if (dossierId === 'd6') return rendu(jourDeParis(30), 'confirme', 'cabinet', 'confirme', 'change')
+    // d11 : un dossier ARCHIVÉ (il n'est pas dans la liste des dossiers du banc, qui n'offre que les dossiers en cours) dont un RIB
+    // proposé attend toujours, depuis cinquante-cinq jours — la liste de `dossiers_au_rib_a_confirmer` le rend, marqué.
+    if (dossierId === 'd11') return rendu(jourDeParis(55), 'pose', 'client', 'propose', 'aucun')
     return { data: { changement: null }, error: null }
+  }
+  // `dossiers_au_rib_a_confirmer` (espace client, étape A5b3d) : les dossiers dont le dernier changement du RIB est un RIB PROPOSÉ,
+  // le plus ancien d'abord, puis l'identifiant — comme la fonction en base. Chaque élément reprend la réponse de
+  // `dernier_changement_de_rib` ci-dessus (la même, jamais une seconde copie) : le tableau de bord et la Vue d'ensemble ne peuvent pas
+  // se contredire. Le cabinet infirmier (d1, 40 jours), l'atelier (d7, 3 jours) et un dossier archivé (d11, 55 jours, au nom long).
+  // Le levier `banc-rib-liste` (localStorage, lu à chaque appel) joue les autres états : « refusee » (le refus de la fonction),
+  // « illisible » (une valeur d'une autre forme), « vide » (aucun dossier n'attend).
+  if (nom === 'dossiers_au_rib_a_confirmer') {
+    const levier = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-rib-liste')
+    if (levier === 'refusee') return { data: null, error: { message: 'Seul le cabinet lit les RIB à confirmer.' } }
+    if (levier === 'illisible') return { data: { dossiers: 'pas une liste' }, error: null }
+    if (levier === 'vide') return { data: { dossiers: [] }, error: null }
+    const uuid = (texte: string) => {
+      const hex = [...texte].map((c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').padEnd(32, '0').slice(0, 32)
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+    }
+    const NOMS_ARCHIVES: Record<string, string> = { d11: 'Société civile de moyens des cabinets infirmiers associés de la vallée' }
+    const elements = ['d11', 'd1', 'd7'].map((id) => {
+      const rendu = rpcDuBanc('dernier_changement_de_rib', id).data as { changement: { jour: string } }
+      return {
+        jour: rendu.changement.jour, dossier_id: uuid(id), archive: id in NOMS_ARCHIVES,
+        nom: NOMS_ARCHIVES[id] ?? String(dossiers.find((d) => d.id === id)?.nom), changement: rendu.changement,
+      }
+    }).sort((a, b) => (a.jour < b.jour ? -1 : a.jour > b.jour ? 1 : a.dossier_id < b.dossier_id ? -1 : 1))
+    return { data: { dossiers: elements.map((e) => ({ dossier_id: e.dossier_id, nom: e.nom, archive: e.archive, changement: e.changement })) }, error: null }
   }
   // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
   // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base.

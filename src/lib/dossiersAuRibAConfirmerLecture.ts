@@ -5,8 +5,8 @@ import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
 
 // LES DOSSIERS DONT UN RIB PROPOSÉ ATTEND LA CONFIRMATION DU CABINET, LUS POUR L'ÉCRAN (espace client, étape A5b3c). Le
-// tableau de bord du cabinet (étape A5b3d) les lira par ce crochet : une seule copie de l'appel, de sa garde et de son
-// annulation (le patron de lib/changementDeRibLecture.ts).
+// tableau de bord du cabinet (pages/DossiersList.tsx, étape A5b3d) les lit par ce crochet : une seule copie de l'appel, de
+// sa garde et de son annulation (le patron de lib/changementDeRibLecture.ts).
 //
 // La fonction `dossiers_au_rib_a_confirmer` (migration du même nom) rend UNE valeur, l'accès d'abord : le cabinet seul — un
 // accès client reçoit un refus (42501), jamais une liste vide. Ce module l'appelle par UN `.rpc(`, lit son erreur, et passe

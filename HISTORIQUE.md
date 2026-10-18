@@ -26396,5 +26396,93 @@ A5B3C-Q2, les dossiers archivés (rendus, marqués ; à montrer, recommandé) ; 
 (une ligne par dossier sous un titre qui donne le compte, recommandé) ; A5B3C-Q4, où mène chaque ligne (l'onglet
 Factures, recommandé).
 
+**LA MISE EN LIGNE, LE 18/10/2026.** Fusionnée par #186 (`10d6c42`) à 1 h 03 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `dbd28ae`, sans conflit ni fil de revue ; l'arbre de `main` (`2788fc5a…`) est celui de la tête
+poussée, `main` reste linéaire. Le site sert `index-DcgbCk1P.js` (déploiement 39077509792, HTTP 200), le paquet de la
+barrière, inchangé depuis A5c2b : aucun écran ne lit encore la fonction. La branche réalignée sur `10d6c42`, arbres
+égaux. La copie d'intégration retirée (ses liens d'abord), comme celle de l'agent, dont les fichiers ne différaient de
+`main` que par la bascule (le drapeau, son commentaire et son test, la phrase du RGPD). Le point de contrôle de la
+demande retiré et son suivi arrêté. La page des arbitrages relue : aucune réponse nouvelle (82, celles du dernier
+relevé) ; A5B3C-Q2 à Q4 restent ouvertes. La feuille de route : la ligne 51.5 complétée (56 118 caractères) ; l'en-tête
+recompté par requête, inchangé : 141 sur 185 (76 %, huit cases) et, pour un dossier BNC, 141 sur 172 (82 %, huit cases).
+
 **RESTE.** A5b3d, le tableau de bord du cabinet : la liste lue par le crochet, dite par le module, selon les réponses
 A5B3C-Q2 à Q4. Puis A7, la facture fige ses mentions ; A9, la numérotation qui continue.
+
+### 18/10/2026 — LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD — ESPACE CLIENT, ÉTAPE A5b3d (LIGNE 51.5)
+
+(Préparé par l'agent S254 sur `10d6c42`. Aucune migration, aucune policy, aucune Edge Function, aucune écriture en
+production. Fichiers nouveaux : `src/components/RibsAConfirmer.tsx`, `src/components/RibsAConfirmer.test.tsx`,
+`src/pages/DossiersList.ribsAConfirmer.test.tsx`, `src/test/dossiersAuRibAConfirmer.ts`. Modifiés :
+`src/pages/DossiersList.tsx` (la lecture du compte connecté et la liste), `src/index.css` (par ajout :
+`.ribs-a-confirmer*`), `DossiersList.test.tsx` (le compte connecté et la fonction, doublés : aucune assertion changée),
+`ecransAvantLecture.test.tsx` (la fonction est une lecture), `outils/captures/fauxSupabase.ts` et `debordements.mjs`
+(par ajout), `RGPD.md` (§7, la rangée d'A5b3c devient vraie à l'écran).)
+
+**LA DÉLIMITATION.** La liste que la fonction `dossiers_au_rib_a_confirmer` (A5b3c) rend, sur le tableau de bord du
+cabinet — le chef, un membre de l'équipe (la fonction ne lui rend que les dossiers qui lui sont affectés), le
+super-administrateur. Ni la fonction, ni sa lecture, ni les phrases des deux modules (aucune phrase de plus : celles de
+`lib/dossiersAuRibAConfirmer.ts` et `CONSEIL_VERIFICATION_RIB`, `LIBELLE_ALLER_AUX_FACTURES`) ; ni la Vue d'ensemble ni
+l'accueil du client ; aucune marque « vu », aucune écriture, aucune fenêtre ; pas l'ouverture directe de la vue
+« Paramètres » (son état est local à l'onglet).
+
+**LES TROIS QUESTIONS D'A5B3C, CODÉES TELLES QUE RECOMMANDÉES** (le cabinet a demandé de continuer et d'arbitrer plus
+tard) : Q2, les archivés sont dans la liste, marqués ; Q3, une ligne par dossier — nom, marque, phrase de l'avis qui
+porte le jour —, dans l'ORDRE rendu (le plus ancien d'abord, jamais retrié), sous un titre qui donne le compte, rien
+quand aucun RIB n'attend, une ligne discrète quand la liste n'a pas pu être lue ; Q4, chaque ligne mène à
+`/dossiers/<id>/factures`.
+
+**L'ÉCRAN.** `RibsAConfirmer` ne lit rien : il dit la lecture que `DossiersList` lui passe, par `ceQueDitLaListe` —
+quatre états, jamais un cinquième : `rien` (drapeau baissé, pas de session, pas revenue) et `aucun` (la liste vide, lue
+en entier) ne montrent RIEN, comme l'avis de la Vue d'ensemble sur « le RIB n'a jamais changé » ; la liste — la pastille
+d'attention, le compte, les lignes, le conseil de vérification du RIB dit UNE fois (chaque ligne est une proposition :
+l'avis le répéterait) ; la ligne discrète (`lecture_manquee`, le motif en infobulle). Le titre nomme la section
+(`aria-labelledby`), le nom de chaque dossier DÉCRIT son lien (`aria-describedby` : le libellé reste celui du module, et
+plusieurs liens de même nom restent distincts pour qui les entend). La lecture est la SIENNE :
+`useDossiersAuRibAConfirmer(session?.user.id ?? null)` — gardée avec le compte (un autre compte repart de « en cours »,
+la réponse tardive d'un compte quitté ne s'inscrit pas), `null` sans session ou drapeau baissé (AUCUN appel). Le tableau
+de bord ne l'attend pas, sa panne ne tait que cette liste, et la panne de ses autres lectures (`erreurChargement`,
+`erreurIndicateurs`) ne la tait pas : elle est rendue AU-DESSUS de la grille et hors d'elle (une liste dans la grille
+aurait dépendu de son chargement), de toute la largeur, comme l'avis en tête de la Vue d'ensemble. La recherche du
+tableau de bord ne la filtre pas. Les rangées passent à la ligne (`flex-wrap`, mêmes bases d'une rangée à l'autre pour
+que les phrases et les liens s'alignent), un nom long se coupe, et sur téléphone la rangée devient une colonne (nom et
+marque, phrase, lien dessous).
+
+**CE QUI A ÉTÉ ÉPROUVÉ.** Le composant seul, état par état (`RibsAConfirmer.test.tsx`) ; l'écran avec la base
+(`DossiersList. ribsAConfirmer.test.tsx`, 14 cas : rien avant le retour, la liste, le vide, illisible, refusée, drapeau
+baissé, sans session, un autre compte, la réponse tardive, la page en chargement, la panne des dossiers et celle des
+indicateurs, la réciproque, la recherche). `DossiersList.test.tsx`, dont le faux client ne connaissait ni le compte
+connecté ni la fonction : doublés par AJOUT (un `useAuth` de chef de cabinet et un `rpc` qui rend la liste vide), aucune
+assertion changée. `ecransAvantLecture.test.tsx` : la fonction est une lecture (`rpc:dossiers_au_rib_a_confirmer` ajouté
+à `LECTURES_PAR_RPC` — sans elle, le second garde échoue sur DossiersList : un `.rpc(` est compté comme une écriture
+possible tant qu'on ne l'a pas nommé). 32 mutations ciblées sur 32 mordent (« aucun » affiché ou tu, la ligne discrète
+tue, le motif, la marque d'un archivé sur toute ligne, jamais et sur la voisine, la cible du lien — la première ligne
+pour toutes, un autre onglet —, l'ordre trié par nom ou par identifiant et inversé, le conseil répété ou absent, le
+compte, la pastille, l'appel sans session, la clé figée, la liste derrière le chargement ou sous la panne ou la
+recherche, le drapeau baissé, la clé nulle, la réponse tardive, la clé gardée).
+
+**LE BANC.** Le faux Supabase rend la liste dans le format exact de la fonction, bâtie sur `dernier_changement_de_rib`
+(jamais une seconde copie) : un dossier archivé au nom long (55 jours), le cabinet infirmier (40) et l'atelier (3).
+Quatre visites du tableau de bord (jusque-là jamais mesuré au cabinet) : la liste, puis, par un levier `banc-rib-liste`,
+le refus, la valeur illisible et la liste vide, qui ne dit rien ; un drapeau `sansAssistant` : le bouton « Assistant »
+est celui d'un dossier. 0 débordement et 0 bouton recouvert (214 sondés dans 49 fenêtres) aux neuf passes (1 440, 1 280,
+1 024, 720, 390, quatre combinaisons des volets), captures relues.
+
+**À DÉCIDER** (A5B3D-Q1 à Q4, au cabinet, dans la page des arbitrages) : la place — en tête du tableau de bord, hors de
+la grille (recommandé : oui) ; le conseil de vérification du RIB dit une fois sous la liste (recommandé : une fois) ; le
+nom du dossier, simple texte ou lien vers sa Vue d'ensemble (recommandé : simple texte, le lien de la ligne restant le
+seul geste) ; la liste vide tue ou dite (recommandé : tue, la phrase `AUCUN_RIB_A_CONFIRMER` existe si le cabinet
+préfère une assurance). A5B3C-Q2 à Q4, codées telles que recommandées, restent ouvertes.
+
+**L'INTÉGRATION, LE 18/10/2026.** Le correctif relu par la session et appliqué sur `10d6c42` : ses onze fichiers
+identiques, octet pour octet, à la copie de l'agent. Trois retouches de la session : la phrase du RGPD (§7) dit que le
+tableau de bord lit la liste « à chaque affichage, gardée avec le compte connecté », et non « une fois par compte
+connecté » (elle se relit à chaque affichage du tableau de bord) ; les en-têtes des deux modules d'A5b3c passent au
+présent (le tableau de bord les lit). Le journal du banc relu (neuf passes, code 0, 0 débordement, 0 bouton recouvert
+sur 214 sondés dans 49 fenêtres, 0 police refusée) et deux captures regardées (1 440 et 390 px). La barrière sur l'arbre
+intégré : `tsc -b` 0, Edge 25 erreurs (les mêmes), lint 0 erreur et 63 avertissements (les mêmes), 12 577 tests sous
+chacun des quatre fuseaux (412 fichiers), construction verte (`index-Z4bMIVVQ.js`).
+
+**RESTE.** A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; A7, la
+facture fige ses mentions ; A9, la numérotation qui continue. Les réponses à A5B3C-Q2 à Q4 et à A5B3D-Q1 à Q4, si elles
+s'écartent des recommandations, ne toucheront que l'écran.

@@ -639,6 +639,16 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   « Paramètres » est un état local de l'onglet), le client « Ventes » à « Mes ventes », « Banque » seul n'a aucun lien.
   Les phrases sont celles d'`avisDuChangement`, jamais réécrites ; celles du client passent `MOTS_DU_CABINET` → « L'AVIS
   D'UN CHANGEMENT DE RIB, À L'ÉCRAN ».
+- **« Les RIB à confirmer » sur le tableau de bord (A5b3d, 18/10/2026)** : EN TÊTE du tableau de bord du cabinet
+  (`DossiersList`, qui appelle `useDossiersAuRibAConfirmer(<compte connecté>)` : le seul `.rpc(`, A5b3c, `null` sans
+  session ; `components/RibsAConfirmer.tsx`, qui reçoit la lecture et ne lit rien), de toute la largeur, AU-DESSUS de
+  la grille et hors d'elle : elle n'attend aucune lecture du tableau de bord, aucune panne ne la tait, la recherche ne
+  la filtre pas, ni l'inverse. Rien avant le retour ni sur la liste vide lue en entier ; la liste — la pastille
+  d'attention, le compte (`phraseDuCompte`), une ligne par dossier DANS L'ORDRE rendu (jamais retriée) : son nom, la
+  marque `MENTION_DOSSIER_ARCHIVE` (A5B3C-Q2), la phrase de l'avis (`avisDuChangement`, qui porte le jour), « Aller aux
+  factures » vers `/dossiers/<id>/factures` (A5B3C-Q4) —, puis `CONSEIL_VERIFICATION_RIB` UNE fois ; illisible ou
+  refusée, UNE LIGNE DISCRÈTE (le motif en infobulle), jamais le silence. Aucune phrase de plus, rien ne s'écrit,
+  aucune marque « vu », aucune fenêtre → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ».
 - **« Le logo des factures » (A5c2a, 17/10/2026)** : un bloc de la carte « Paramètres en cours », sous le RIB, pour les
   deux espaces (`LogoDesFactures`, `espace` OBLIGATOIRE ; `lib/logoDesFacturesVue.ts`, pur ;
   `lib/logoDesFacturesLecture.ts`, qui ne rejette jamais ; `lib/logoDesFacturesEcriture.ts`) ; rien sans version des
@@ -749,7 +759,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   cabinet et sur l'accueil du client « Ventes » ou « Banque » ; chez le cabinet, un RIB proposé tant qu'il attend sa
   confirmation, le reste trente jours (A5b3b, 17/10/2026) ; les dossiers dont un RIB proposé attend la confirmation du
   cabinet, en base — dits en une fois au cabinet seul, par une fonction qui appelle celle du dernier changement pour
-  chaque dossier qu'il administre (A5b3c, 18/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
+  chaque dossier qu'il administre (A5b3c, 18/10/2026), et leur liste à l'écran, en tête du tableau de bord du cabinet
+  (A5b3d, 18/10/2026) ; le logo des factures d'un dossier, en base — un seau privé,
   `ventes`, où le cabinet et le client « Ventes » lisent et déposent, le logo désigné par une version des paramètres, le
   seau vidé avec le dossier (A5c1, 17/10/2026), et son écran — le voir, son empreinte vérifiée, le poser, le changer, le
   retirer, dans la vue « Paramètres » (A5c2a, 17/10/2026) —, et le fichier du logo dans la sauvegarde d'un dossier,
@@ -1053,10 +1064,13 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   A5C2B-Q1 à Q6 posées au cabinet) → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ». A5b3c, les dossiers au RIB à
   confirmer en base — `dossiers_au_rib_a_confirmer`, une fonction de lecture, le cabinet seul, qui appelle
   `dernier_changement_de_rib` pour chaque dossier qu'il administre —, appliquée le 18/10/2026 sur l'accord du cabinet
-  (A5B3C-Q1), et la bascule (`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`) en ligne, aucun écran ne la lisant encore →
-  « LES DOSSIERS AU RIB À CONFIRMER, EN BASE ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne d'en-tête et les
-  noms des colonnes du fichier de l'ancien logiciel, ouverte) et A5b3d (le tableau de bord du cabinet, qui lit cette
-  liste — A5B3C-Q2 à Q4), puis A7 (la facture fige ses mentions — l'unité, la référence et l'article sur
+  (A5B3C-Q1), et la bascule (`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`) en ligne →
+  « LES DOSSIERS AU RIB À CONFIRMER, EN BASE ». A5b3d, leur liste à l'écran — en tête du tableau de bord du cabinet : le
+  compte, une ligne par dossier (nom, marque d'un archivé, phrase de l'avis, lien vers ses factures), le conseil une
+  fois, rien quand aucun n'attend —, le 18/10/2026 (A5B3C-Q2 à Q4 codées telles que recommandées, A5B3D-Q1 à Q4 posées
+  au cabinet) → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne
+  d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte), puis A7 (la facture fige ses mentions —
+  l'unité, la référence et l'article sur
   la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, le logo qu'elle imprime,
   les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité depuis trois ans, qui
   lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
@@ -2000,8 +2014,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `lireLeChangementDeRib` pour chaque élément, une proposition seulement, l'ordre vérifié — et dit le compte et une
   ligne par dossier par `avisDuChangement(…, 'cabinet')`, les mots de la Vue d'ensemble ; la lecture, un `.rpc(` gardé
   avec une clé, ne rejette jamais. `dossiersAuRibAConfirmer.test.ts` confronte le module au texte exporté et rejoue les
-  listes de l'essai, profil par profil, par une règle indépendante du SQL → « LES DOSSIERS AU RIB À CONFIRMER, EN
-  BASE ».
+  listes de l'essai, profil par profil, par une règle indépendante du SQL ; le tableau de bord du cabinet la lit depuis
+  A5b3d → « LES DOSSIERS AU RIB À CONFIRMER, EN BASE », « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ».
 - **Le logo des factures** (A5c1, en base depuis le 17/10/2026, `lib/logoDesFactures.ts`, pur) : un seau PRIVÉ,
   `ventes`, borné en base (500 Kio, PNG ou JPEG : un PDF ne porte une image que par `DCTDecode` ou `FlateDecode`,
   ISO 32000-1 §7.4 — ni WebP, ni SVG, qui porte du script ; A5C-Q4) ; le logo sous
@@ -2026,7 +2040,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ## Tests
 
-Vitest, 12 552 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
+Vitest, 12 577 tests, posés à côté de leur module ; `tsc -b` les type-vérifie avec le reste.
 
 - **Deux projets** (`vitest.config.ts`) : « logique » (`src/**/*.test.ts`, node) et « écrans » (`src/**/*.test.tsx`, jsdom,
   Testing Library ; `src/test/ecrans.ts` démonte). Un test d'écran garde ce qu'aucun calcul pur ne voit : un verrou, un

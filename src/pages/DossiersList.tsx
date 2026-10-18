@@ -11,6 +11,9 @@ import Avatar from '../components/widgets/Avatar'
 import { IconChevron, IconPieces } from '../components/icons'
 import { lireTout } from '../lib/lectureComplete'
 import { signalerMajDossiers } from '../lib/listeDossiers'
+import { useAuth } from '../context/AuthContext'
+import { useDossiersAuRibAConfirmer } from '../lib/dossiersAuRibAConfirmerLecture'
+import RibsAConfirmer from '../components/RibsAConfirmer'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -58,6 +61,11 @@ function depotsParSemaine(depots: DepotRecent[], nbSemaines: number): number[] {
 // préalable (véhicule, tickets restaurant... restent spécifiques à la Checklist du dossier).
 // Présenté en tableau de bord (tuiles chiffrées, priorités, activité récente) puis la liste complète.
 export default function DossiersList() {
+  // Les RIB proposés qui attendent le cabinet (étape A5b3d) : une lecture à part, gardée avec le compte connecté — un autre compte
+  // repart de « en cours » —, que le tableau de bord n'attend pas et que la panne de ses autres lectures ne tait pas (ni
+  // l'inverse). `null` sans session : aucun appel.
+  const { session } = useAuth()
+  const ribsAConfirmer = useDossiersAuRibAConfirmer(session?.user.id ?? null)
   const [dossiers, setDossiers] = useState<DossierRow[]>([])
   const [depotsRecents, setDepotsRecents] = useState<DepotRecent[]>([])
   const [loading, setLoading] = useState(true)
@@ -215,6 +223,10 @@ export default function DossiersList() {
           <button className="btn btn-primary" onClick={() => setParametres({ nouveau: '1' })}>+ Nouveau dossier</button>
         </div>
       </div>
+
+      {/* Hors de la grille, au-dessus d'elle et de toute sa largeur : elle ne dépend d'aucune des lectures du tableau de bord (ni
+          chargement, ni panne ne la retardent ou ne la taisent), et ce qu'elle dit vaut pour tous les dossiers. */}
+      <RibsAConfirmer lecture={ribsAConfirmer} className="ribs-a-confirmer-tete" />
 
       {erreurChargement && (
         <div className="card">

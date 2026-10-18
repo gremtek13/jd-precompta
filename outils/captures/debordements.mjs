@@ -902,6 +902,38 @@ const VISITES = [
     dossier: 'd6', onglet: 'checklist', nom: 'checklist/avis-rib-d6-rien',
     apres: (page) => page.locator('section.encart-fe .widget-sous-titre', { hasNotText: 'Chargement' }).waitFor({ timeout: 10000 }),
   },
+  // LES RIB PROPOSÉS QUI ATTENDENT LE CABINET, en tête de son tableau de bord (espace client, étape A5b3d) : trois dossiers (un archivé au
+  // nom long, le cabinet infirmier depuis quarante jours, l'atelier depuis trois), leur conseil dit une fois ; puis, par le levier
+  // `banc-rib-liste` de la doublure (localStorage, lu à chaque appel), la fonction qui REFUSE et la valeur illisible — la ligne
+  // discrète, le motif en infobulle —, et la liste vide, qui ne dit rien. La première visite remet la liste complète (le levier survit
+  // aux visites dans le contexte du navigateur).
+  {
+    chemin: '#/dossiers', nom: 'tableau-de-bord/rib-a-confirmer', sansAssistant: true,
+    apres: async (page) => {
+      await page.evaluate(() => localStorage.removeItem('banc-rib-liste'))
+      await page.reload()
+      await page.locator('section.ribs-a-confirmer-tete.avis-rib-attente').waitFor({ timeout: 10000 })
+    },
+  },
+  ...['refusee', 'illisible'].map((levier) => ({
+    chemin: '#/dossiers', nom: `tableau-de-bord/rib-a-confirmer-${levier}`, sansAssistant: true,
+    apres: async (page) => {
+      await page.evaluate((l) => localStorage.setItem('banc-rib-liste', l), levier)
+      await page.reload()
+      await page.locator('section.ribs-a-confirmer-tete.avis-rib-discret').waitFor({ timeout: 10000 })
+    },
+  })),
+  {
+    chemin: '#/dossiers', nom: 'tableau-de-bord/rib-a-confirmer-vide', sansAssistant: true,
+    apres: async (page) => {
+      await page.evaluate(() => localStorage.setItem('banc-rib-liste', 'vide'))
+      await page.reload()
+      await page.getByText('Dossiers suivis').waitFor({ timeout: 10000 })
+      await page.waitForTimeout(600)
+      if ((await page.locator('section.ribs-a-confirmer-tete').count()) > 0) throw new Error('une liste vide ne doit rien dire')
+      await page.evaluate(() => localStorage.removeItem('banc-rib-liste'))
+    },
+  },
   // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
   // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
   // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six
@@ -1748,10 +1780,11 @@ let fenetresSondees = 0
 let boutonsSondes = 0
 let boutonsRecouverts = 0
 const visitesDuClient = passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
-for (const { dossier, onglet, chemin, nom, apres, fenetre, nav } of passeClient ? visitesDuClient : VISITES) {
+for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of passeClient ? visitesDuClient : VISITES) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)
-  if (panneauOuvert) {
+  // Le bouton « Assistant » est celui d'un dossier : le tableau de bord n'en a pas (`sansAssistant`), son volet de droite reste fermé.
+  if (panneauOuvert && !sansAssistant) {
     const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
     if ((await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
   }
