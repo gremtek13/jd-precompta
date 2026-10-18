@@ -26483,6 +26483,91 @@ sur 214 sondés dans 49 fenêtres, 0 police refusée) et deux captures regardée
 intégré : `tsc -b` 0, Edge 25 erreurs (les mêmes), lint 0 erreur et 63 avertissements (les mêmes), 12 577 tests sous
 chacun des quatre fuseaux (412 fichiers), construction verte (`index-Z4bMIVVQ.js`).
 
+**LA MISE EN LIGNE, LE 18/10/2026.** Fusionnée par #187 (`7ea572b`) à 8 h 34 à Paris, quand `verifier` a été vert sur
+ses deux passes sur `c6342cb`, sans conflit ni fil de revue ; l'arbre de `main` (`4ca90111…`) est celui de la tête
+poussée, `main` reste linéaire. Le site sert `index-Z4bMIVVQ.js` (déploiement 39104538873, HTTP 200), le paquet de la
+barrière. La branche réalignée sur `7ea572b`, arbres égaux. La copie d'intégration retirée (ses liens d'abord), comme
+celle de l'agent, dont les fichiers ne différaient de `main` que par la phrase du RGPD retouchée à l'intégration. Le
+point de contrôle de la demande retiré et son suivi arrêté. La page des arbitrages relue : 108 réponses nouvelles,
+toutes comme recommandé et sans note (190 en tout ; 25 questions restent ouvertes, dont quatorze gestes du cabinet),
+consignées à part ; A5B3C-Q2 à Q4 et A5B3D-Q1 à Q4 en sont : rien ne change. La feuille de route : la ligne 51.5
+complétée (la mise en ligne, puis les décisions du jour qui la concernent) ; l'en-tête recompté par requête, inchangé :
+141 sur 185 (76 %, huit cases) et, pour un dossier BNC, 141 sur 172 (82 %, huit cases).
+
 **RESTE.** A4B3-Q6 (la ligne d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; A7, la
 facture fige ses mentions ; A9, la numérotation qui continue. Les réponses à A5B3C-Q2 à Q4 et à A5B3D-Q1 à Q4, si elles
 s'écartent des recommandations, ne toucheront que l'écran.
+
+### 18/10/2026 — LES RÉPONSES DU CABINET DU 18/10/2026 : CENT HUIT, TOUTES COMME RECOMMANDÉ
+
+**LES RÉPONSES.** Relue à la reprise qui a suivi la fusion d'A5b3d, la collection `reponses` de la page des arbitrages
+porte 108 réponses nouvelles, données le 18/10/2026 entre 8 h 31 et 8 h 36 à Paris : toutes la recommandée, aucune
+note ; 190 en tout, les 82 du 17/10/2026 inchangées. Restent ouvertes 25 questions : A4B3-Q6 et MEG2-Q10 (l'espace
+client) ; 28.5e-Q1, Q8, Q9, Q10 et le point 15 (l'e-reporting) ; 26.6-B9, FEC-22 et FEC-devise (pour
+l'expert-comptable) ; 24-prestataire (la connexion bancaire) ; et quatorze gestes du cabinet.
+
+**LES DEUX CONTRADICTIONS.** ARB-EC-Q2 : deux séries par dossier (MEG1-Q5), celle du client et celle du cabinet qui le
+dépanne ; la mention du mandataire, le mandat et la clause d'EC-Q2 restent. ARB-EC-Q3 : EC-Q3, maintenant — une facture
+validée dans l'application devient la source de sa vente (2035, CA3, écritures), un chantier comptable à part, fini
+avant que les clients facturent réellement ici ; 28.6-Q2 cède.
+
+**L'ESPACE CLIENT (51.5).** Le logo des factures (A5C2-Q1 à Q8, A5C2B-Q1 à Q6) et les RIB à confirmer (A5B3C-Q2 à Q4,
+A5B3D-Q1 à Q4), tels qu'ils sont en ligne. Les devis : P5-migrations, oui, après les avoir rejouées sur une réplique de
+la base d'aujourd'hui ; EC-D1, un mois de validité proposé, modifiable ; EC-D2, aucun modèle par métier pour l'instant,
+le champ libre suffisant ; EC-D3, l'acompte, une facture d'acompte puis une facture de solde ; EC-D4, un devis refusé ou
+expiré gardé trois ans, puis proposé à l'effacement, jamais effacé seul, et la clause de sous-traitance avec celle
+d'EC-Q2 ; P5-soins, les devis de soins hors de l'application, la consigne aux clients le disant ; P5-horsValidite, une
+acceptation après la validité refusée sans une confirmation explicite. Le premier groupe : MEG1-Q2, l'unité, la
+référence et l'article sur la facture, dans A7 ; MEG1-Q3, un virement qui règle plusieurs factures, à la demande d'un
+premier client réel ; MEG1-Q4 et Q6 à Q8, les factures importées sous un état « importée », importées par le client
+« Ventes » ou par le cabinet, la bascule confirmée par le cabinet seul, au premier jour d'une période d'e-reporting
+(exigé pour les opérations du 01/09/2027), une facture importée recevant encaissements et avoirs, jamais aperçu,
+transmission ni déclaration « Encaissée » d'ici. P1-trace : garder qui a coché ou décoché les droits d'un accès, et
+quand. P2 : les phrases de l'onglet Accès et les libellés des textes que le client lit, gardés. P9 : « Ma banque » telle
+qu'elle est (une proposition sur un mouvement que le cabinet n'a ni rapproché ni écarté ; une pièce montrée sans
+montant). La parité (B1 à B9, MEG2) : trois cases de plus, « Achats », « Notes de frais » et « Documents », l'analyse
+sans case ; les pièces resserrées au droit « Achats », en trois temps ; le client « Achats » fait entrer ses factures
+reçues, « Reprendre du début » restant au cabinet ; l'échéance d'un achat lue sur la facture électronique ou saisie,
+jamais devinée ; « Je l'ai payée », une proposition, jamais une écriture ; les notes de frais — chaque accès les
+siennes, le dirigeant les approuve et les rembourse —, celle d'un salarié au 421000 par défaut, réglable par dossier,
+ses kilomètres au barème fiscal, la paie hors de l'application ; les documents du cabinet sous la case « Documents »,
+avec un accusé de lecture ; le journal des évènements tiré d'abord des colonnes d'auteur ; la barre du bas du téléphone
+du client, le banc décidant. Aller plus loin (C1 à C8, MEG3) : l'échéancier fiscal et social d'abord ; les chiffres du
+cabinet montrés par une situation qu'il publie, datée et figée ; les relances des clients du client, sur un clic,
+plafonnées et tracées ; la double authentification des accès « Banque », « Achats » et « Documents » avant d'ouvrir les
+achats et les documents à un client réel ; l'état du dossier, sans aucun chiffre ; le rapprochement proposé par
+l'encaissement, une fois EC-Q3 faite ; le paiement en ligne et la signature du devis, pas maintenant.
+
+**LES AUTRES CHANTIERS.** Comptes et fonctions (23) : 23-journalEmail, `receive-email` ne journalise plus que des
+comptes ; 23-tauxBce, `taux-change-bce` se referme par la désactivation des clés historiques, le geste déjà demandé ;
+23-Q2, un compte que le cabinet ne connaît pas, ou plus, se rattache après une confirmation qui nomme l'adresse et ce
+qu'elle ouvre ; 23-Q5, un mot de passe de plus de 72 octets se refuse avant l'appel, en français. L'e-reporting (28.5
+e) : 28.5e-Q4b, E5-Q1 à Q7 et E5B-Q1 à Q4, telles que le code les avait prises ; 28.5e-Q6b, un encaissement retiré après
+la déclaration rend la période « à rectifier » ; 28.5e4-ecarter et 28.5e4-aValider, oui ; E6-Q1, l'émetteur du fichier
+demandé à la première plateforme essayée, à défaut celle du dossier ; E6-Q2, Paris ; E6-Q3, le code 5 ; E6-Q4, un
+paiement négatif avec son signe, vérifié au premier essai réel ; E6-Q5, la raison sociale telle quelle ; E6-Q6, oui ;
+E6-Q7, au premier essai réel ; E6-Q8, l'identifiant tiré au téléchargement, puis donné à la base. Le statut
+« Encaissée » (28.5 d4, d5) : aucun « dépôt hors application » d'une facture jamais transmise d'ici (à rouvrir avec
+d6) ; la note d'une déclaration, gardée ; le profil, la date, les parties, le fuseau et MDT-95 du message, au premier
+essai réel ; le matricule d'une plateforme, une colonne de la connexion. 28.5d4-replique : la ligne qui rejouera
+l'export dans une base vide existe depuis le 29/09/2026 (20.6, « Reconstruire le schéma depuis l'export »), confirmée,
+sans urgence. Les verrous (28.8-ClientUpload) : changer — un même fichier ne fait ni deux pièces ni deux lectures
+facturées, les empreintes « en vol » partagées d'un lot à l'autre. Le dossier permanent (R7) : R7-Q1 à Q6 telles que le
+code les avait prises — une entrée retirée ne se remplace plus, une version nouvelle peut changer la nature, 500 et 8
+000 caractères, la date de début d'une lettre de mission facultative, le dossier permanent modifiable après la
+validation jusqu'à R9, une lettre de mission absente dite comme une information, puis un préalable avec R6 ; R7C-Q3,
+gardée ainsi. Le bilan (33) : O33-Q1, un écart d'ouverture retient la validation de N ; O33-Q2, plus tard. Le plan
+comptable (43) : PC3-Q1, la fonction qui réglera le plan (PC4) déplace le compte des notes de frais du dirigeant dans la
+même transaction. L'engagement (31) : le change et les frais bancaires à part (666, 766, 627). Les données de test :
+supprimées le jour où le premier dossier réel arrive, les autorisations permanentes de la session resserrées alors.
+
+**CE QU'ELLES OUVRENT.** À écrire : EC-Q3, la facture émise source de sa vente, à concevoir d'abord (ligne 28.6) ; les
+devis (P5) — les deux migrations rejouées sur une réplique de la base d'aujourd'hui, l'acompte d'EC-D3 ajouté
+(`facturer_devis` ne tire qu'une facture) et l'effacement proposé d'EC-D4, puis leur application, la seconde collée par
+le cabinet ; P1-trace, une migration ; 23-journalEmail (`receive-email`, un redéploiement : un défaut connu de moins) ;
+23-Q2 (les deux fonctions qui créent des accès, et l'onglet Accès) ; 23-Q5 (la règle des mots de passe et les quatre
+écrans qui la disent) ; 28.8-ClientUpload (l'écran du dépôt) ; O33-Q1 (un préalable de la validation) ; E6-Q8 (une
+migration, avec e6b) ; le matricule d'une plateforme (avec d6) ; le change et les frais (ligne 31) ; la parité (B1 à B9)
+et « aller plus loin » (C1 à C8), l'échéancier d'abord. Rien ne change dans ce qui est en ligne : le logo, les RIB à
+confirmer, l'e-reporting, le dossier permanent, « Ma banque » et l'onglet Accès font déjà ce que le cabinet a retenu.
+CLAUDE.md le dit à chaque endroit qui disait la question ouverte ; la feuille de route, sur ses lignes.
