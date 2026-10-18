@@ -39,6 +39,8 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 - Mesurer sur `test`, jamais sur l'ensemble des dossiers.
 - Un défaut trouvé dans un ancien dossier reste un défaut du CODE, mais ne se raconte pas comme un préjudice comptable.
 - RGPD.md décrit la FORME de ce que l'application stockera, pas une exposition constatée (son §4).
+- Les dossiers de test se suppriment le jour où le premier dossier réel arrive, et les autorisations permanentes de la
+  session se resserrent alors (décision du cabinet du 18/10/2026).
 
 ## Architecture actuelle
 
@@ -851,9 +853,9 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
 - **Télédéclaration de la TVA** (ligne 28) : étape 2, la transmission par un partenaire EDI — Teledec choisi, qui veut
   voir l'application fonctionner avant d'ouvrir son API ; ASPOne.fr l'autre voie. Rien n'est écrit.
 - **Comptabilité d'engagement** (ligne 31) : restent les écarts de change et les frais bancaires (le rapprochement règle
-  encore la pièce sur la banque — à trancher avec le cabinet), les auxiliaires des à-nouveaux et des soldes reportés,
-  l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse (2033 ou 2050), les exercices
-  décalés.
+  encore la pièce sur la banque ; à écrire à part, aux comptes 666, 766 et 627 : 31-changeFrais, tranchée le
+  18/10/2026), les auxiliaires des à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA
+  des livraisons de biens, la liasse (2033 ou 2050), les exercices décalés.
 - **FEC** : restent les vingt-deux champs d'un BNC en trésorerie et les montants en devise (réponse de
   l'expert-comptable du cabinet attendue).
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue,
@@ -862,7 +864,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
 - **Connexion bancaire** (ligne 24) : le prestataire définitif et son contrat ; le chemin du CLIENT, conçu avec l'espace
   client le 09/10/2026 (seul le titulaire donne l'accord ; le serveur importe ; étapes P8 et P9) ; la récupération
   automatique ou au clic (RGPD.md §8.8).
-- **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet.
+- **Clés historiques de Supabase** : reste leur désactivation dans le tableau de bord, un clic du cabinet ; elle referme
+  aussi `taux-change-bce` (23-tauxBce, 18/10/2026).
 - **Les pièces jointes écartées** (ligne 22.7, S226-Q3) : en base, dans `receive-email` et à l'écran le 13/10/2026 ; ses
   six questions tranchées par le cabinet le même jour, comme recommandé — la porte de la restauration au
   super-administrateur et le geste « vue » gardés (S227-Q1, Q2), la durée de conservation celle du dossier (Q4), les
@@ -887,15 +890,18 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français ; l'inscription publique
   est fermée et les sortes de caractères exigées depuis le 10/10/2026. Un mot de passe de plus de 72 octets reçoit
-  encore le refus anglais du service, en 500 (question au cabinet, défaut 23.5). Un compte dont le dernier accès au
-  cabinet a été retiré n'y est plus « rattaché » : lui recréer un accès bute sur le 409 (question au cabinet, Q-23.2) →
-  « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
+  encore le refus anglais du service, en 500 (défaut 23.5 ; le refuser avant l'appel, en français : 23-Q5, tranchée le
+  18/10/2026, à écrire). Un compte dont le dernier accès au cabinet a été retiré n'y est plus « rattaché » : lui recréer
+  un accès bute sur le 409 (Q-23.2 ; le rattacher après une confirmation qui nomme l'adresse et ce qu'elle ouvre :
+  23-Q2, tranchée le 18/10/2026, à écrire) → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN
+  COMPTE EXISTANT ».
 - **Facturation électronique** (ligne 28.5, décisions du cabinet du 07/10/2026) : (a), (b) et (c) en ligne — la
   réception et le dépôt à éprouver sur la plateforme réelle d'un client ; puis (d) le statut « Encaissée » — d1, le
   registre des encaissements, en base, d2, son module, et d3, son écran, le 08/10/2026 ; d4, la déclaration hors application et la contre-passation, en base le 08/10/2026
   et à l'écran le 09/10/2026 (la date d'une contre-passation confirmée le 17/10/2026) (décisions du cabinet du
-  08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix à trancher par un premier
-  essai réel) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base, dans
+  08/10/2026) ; d5, le message CDAR du statut, en module le 09/10/2026 (ses quatre choix et MDT-95 tranchés par le
+  premier essai réel, ce que le cabinet a confirmé le 18/10/2026 ; le matricule d'une plateforme, une colonne de la
+  connexion) ; d7, le cycle de vie des factures émises lu sur la plateforme du client, en base, dans
   `plateforme-agreee` et à l'écran le 09/10/2026 (le premier relevé réel reste à faire) ; l'essai réel sur le bac à sable de Super PDP — et (e)
   l'e-reporting, conçu le 09/10/2026 : onze étapes ; les soins exonérés n'y entrent pas, les achats à l'étranger d'un
   dossier, même exonéré, si (opérations du 01/09/2027) ; dix questions au cabinet, Q2 à Q7 tranchées le 17/10/2026 ;
@@ -912,22 +918,25 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   recommandations ; la rectificative à zéro opération dite et jamais offerte) ; e6, le fichier FRR d'une déclaration, en
   module et instrument le 11/10/2026 (`lib/fluxEreporting.ts`, `outils/facturation/ereporting/valider.mjs`, six
   exemples fictifs validés par les XSD officiels ; quatre choix non vérifiés en paramètres et quatre questions de plus,
-  E6-Q1 à E6-Q8) ; restent e5b2 (Q6), e6b (le bouton qui télécharge le fichier) et la suite → « LE FICHIER D'UNE
-  DÉCLARATION D'E-REPORTING », « L'E-REPORTING : LA CONCEPTION », « LES ÉCRANS DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE
-  PIÈCE », « L'E-REPORTING :
-  L'OBLIGATION DITE JUSTE », « LA FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À
-  L'ÉCRAN », « LE CONTENU DES DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
+  E6-Q1 à E6-Q8 — tranchées le 18/10/2026 comme recommandé, avec E5-Q1 à E5-Q7 et E5B-Q1 à Q4 ; E6-Q8 : l'identifiant
+  tiré au téléchargement, donné ensuite à la base, une migration) ; restent e5b2 (Q6), e6b (le bouton qui télécharge le
+  fichier) et la suite → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « L'E-REPORTING : LA CONCEPTION », « LES ÉCRANS
+  DE L'E-REPORTING : LA CARTE, LA FENÊTRE, L'ÉCART D'UNE PIÈCE », « L'E-REPORTING : L'OBLIGATION DITE JUSTE », « LA
+  FICHE D'UN ACHAT HORS DE FRANCE, EN BASE », « LA FICHE D'UN ACHAT HORS DE FRANCE, À L'ÉCRAN », « LE CONTENU DES
+  DÉCLARATIONS D'E-REPORTING », « LE RÉGIME D'E-REPORTING CONFIRMÉ ET LA PIÈCE ÉCARTÉE, EN
   BASE », « LA DÉCLARATION D'E-REPORTING HORS APPLICATION, EN BASE ».
-- **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : deux décisions du cabinet seulement — l'objet et
-  l'expéditeur d'un e-mail reçu au journal (`receive-email`), `taux-change-bce` sans contrôle d'appelant (l'inscription
-  publique, fermée le 10/10/2026, n'admet plus un inconnu ; les clés historiques restent à désactiver). Plus aucune
+- **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : deux décisions du cabinet, prises le 18/10/2026 —
+  l'objet et l'expéditeur d'un e-mail reçu au journal (`receive-email`) : ne plus journaliser que des comptes, à
+  écrire ; `taux-change-bce` sans contrôle d'appelant (l'inscription publique, fermée le 10/10/2026, n'admet plus un
+  inconnu) : la désactivation des clés historiques, un clic du cabinet, le referme. Plus aucune
   fonction ne lève ni ne répond en anglais sur un corps mal formé (JSON `null`, tableau, texte, nombre, champ d'une autre
   forme qu'un texte) : toutes le refusent en 400 français avant toute dépense (les quatre dernières, `delete-cabinet`,
   `superpdp-sync`, `proposer-categorie` et `evaluer-extraction`, le 11/10/2026) ; `evaluer-extraction` ne journalise
   plus la réponse illisible du modèle, seulement sa longueur → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
 - **Une vente entrée deux fois** (ligne 28.6) : le pont, la Checklist et l'écran (phase C) en ligne le 09/10/2026 ;
   reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1, « oui » le 17/10/2026 : une migration, à
-  écrire ; Q2, « pas maintenant », contredit EC-Q3 : la question est reposée au cabinet).
+  écrire) ; Q2 cède à EC-Q3, retranchée le 18/10/2026 (ARB-EC-Q3) : la facture validée dans l'application devient la
+  source de sa vente, maintenant — un chantier comptable à part, fini avant que les clients facturent réellement ici.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41) : conçue le 09/10/2026 — une décision immuable par solde de bilan, le travail et
   la revue par cycle, des preuves proposées et jamais appliquées seules, la mémoire d'un exercice à l'autre ; neuf
@@ -942,24 +951,26 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   « LA REVUE ANALYTIQUE, EN BASE », « L'ÉCRAN DE LA REVUE ANALYTIQUE » ; R7, le dossier permanent — une entrée par
   élément de A9 (lettre de mission, description de l'entité, organisation comptable, statuts, baux et contrats), datée,
   valable pour une période, citant au plus une pièce ou un document, qui se remplace ou se retire et ne se modifie
-  jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 confirmées ; R7-Q1 à R7-Q6 au cabinet), et à l'écran le
-  même jour (phase C), puis ses deux retouches (R7C-Q1 et R7C-Q2 tranchées « option B » par le cabinet le 12/10/2026,
-  R7C2-Q1 « oui » le même jour ; R7C-Q3 reste ouverte) → « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE », « L'ÉCRAN DU
-  DOSSIER PERMANENT DE LA RÉVISION », « LES DEUX RETOUCHES DU DOSSIER PERMANENT » ; R6 (Q1 : la révision retient la
-  validation) attend un premier exercice réel révisé → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION »,
-  « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
+  jamais —, en base le 12/10/2026 (Q2, Q7, Q8 et Q9 confirmées ; R7-Q1 à R7-Q6 tranchées le 18/10/2026 comme recommandé,
+  telles que le code les avait prises), et à l'écran le même jour (phase C), puis ses deux retouches (R7C-Q1 et R7C-Q2
+  tranchées « option B » par le cabinet le 12/10/2026, R7C2-Q1 « oui » le même jour ; R7C-Q3, gardée ainsi le
+  18/10/2026) → « LE DOSSIER PERMANENT DE LA RÉVISION, EN BASE », « L'ÉCRAN DU DOSSIER PERMANENT DE LA RÉVISION », « LES
+  DEUX RETOUCHES DU DOSSIER PERMANENT » ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel
+  révisé → « LA BASE DES SOLDES RÉVISÉS », « LE MODULE DE LA RÉVISION », « L'ÉCRAN DE LA RÉVISION », « LES CYCLES DE LA
+  RÉVISION », « L'ÉCRAN DES CYCLES DE LA RÉVISION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture
   électronique, vue de la banque) : conçu le 09/10/2026 — des droits par accès (Ventes, Banque) tenus en base, les
   portes du cabinet ouvertes au client, une série de factures par dossier, les devis, la banque du client (accord du
   titulaire, import par le serveur sur un lot signé, pièce déposée à côté du mouvement) ; onze étapes P0 à P10, sept
-  questions au cabinet, tranchées le 17/10/2026 (EC-Q2 contredit MEG1-Q5, EC-Q3 contredit 28.6-Q2 : reposées) →
-  « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU CLIENT : LA CONCEPTION » ; P0, les notes
-  internes hors de portée du client, en base et à l'écran le 09/10/2026 — reste la suppression des anciennes colonnes,
-  écrite et éprouvée sur une réplique, que le cabinet a acceptée le 17/10/2026 (EC-Q7) et qui reste à appliquer (avec
-  elle : trois essais, `types.ts`, `inventaire.py` et le socle) → « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU
-  CLIENT » ; P1, les droits d'un accès, en base, dans
+  questions au cabinet, tranchées le 17/10/2026 (EC-Q2 et EC-Q3, qui contredisaient MEG1-Q5 et 28.6-Q2, retranchées le
+  18/10/2026 : deux séries par dossier, MEG1-Q5 ; EC-Q3, maintenant) → « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION
+  DU CLIENT : LA CONCEPTION » ; P0, les notes internes hors de portée du client, en base et à l'écran le 09/10/2026 —
+  reste la suppression des anciennes colonnes, écrite et éprouvée sur une réplique, que le cabinet a acceptée le
+  17/10/2026 (EC-Q7) et qui reste à appliquer (avec elle : trois essais, `types.ts`, `inventaire.py` et le socle) →
+  « LES NOTES INTERNES DU CABINET, HORS DE PORTÉE DU CLIENT » ; P1, les droits d'un accès, en base, dans
   l'onglet Accès et dans `AuthContext` le 09/10/2026, sans rien ouvrir encore (EC-Q1, confirmée le 17/10/2026 ;
-  l'invariant 3 bis de `rls.sql` se juge depuis P7 et P2) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
+  l'invariant 3 bis de `rls.sql` se juge depuis P7 et P2 ; garder qui a changé les droits d'un accès, et quand :
+  P1-trace, tranchée le 18/10/2026, une migration à écrire) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ».
   P7, la banque du client en base (décision du cabinet du 10/10/2026 : les deux migrations, EC-Q1, les relevés déposés
   en fichier lisibles par tout accès) : FAITE le 10/10/2026 — `banque_du_client` (deux registres écrits par trois
   fonctions, la couverture du relevé), la bascule `COUVERTURE_EXPORTEE` en ligne, puis le resserrement
@@ -986,99 +997,105 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   UN MESSAGE ».
   P5,
   les devis en base, préparée et éprouvée sur une réplique le 10/10/2026 : deux migrations (la seconde à coller, P2
-  d'abord) et un retour arrière, présentés au cabinet, PAS appliqués ; le code suit derrière `DEVIS_EXPORTES`
-  (`lib/devis.ts`, sa sauvegarde déclarée au plan PRÉVU) ; quatre questions au cabinet (EC-D1 la validité proposée,
-  EC-D2 les mentions d'un métier, EC-D3 l'acompte, EC-D4 les données des clients du client) → « LES DEVIS, EN BASE ».
-  La suite, conçue le 11/10/2026 en trois parties à la demande du cabinet (« au minimum faire comme le logiciel du
-  client, et aller plus loin ») : dans les domaines ouverts, les articles, les règlements, les factures importées et la
-  numérotation qui continue, les contacts, les paramètres de facturation, l'encart « Facture électronique » (A1 à A11) ;
-  la parité — achats, notes de frais, analyse, documents du cabinet, trois cases neuves (« Achats », « Notes de frais »,
-  « Documents »), le resserrement des pièces (B1 à B9) ; « aller plus loin » — l'échéancier, l'état du dossier, les
-  situations publiées (C1 à C8) ; trente-cinq questions au cabinet → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT :
-  LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (ses quatre questions, A3-Q1 à
-  A3-Q4, tranchées « comme recommandé » le même jour : rien ne change) → « « MES VENTES › RÈGLEMENTS » ».
-  A1, les articles en base, appliquée le 14/10/2026 sur l'accord du cabinet (A1-Q1 ; MEG1-Q1 et A1-Q2 à A1-Q4 tranchées
-  « comme recommandé » le même jour), et la bascule (`ARTICLES_EXPORTES`) en ligne : la sauvegarde d'un dossier les
-  emporte, l'onglet Accès dit que « Ventes » ouvre le catalogue et ses quatre gestes → « LES ARTICLES, EN BASE ». A2a,
-  la vue « Articles » de l'onglet Factures et de « Mes ventes », la liste et ses gestes, le 14/10/2026 (ses cinq
-  lectures de la conception, A2-Q1 à A2-Q5, tranchées « comme recommandé » le même jour) → « LA LISTE DES ARTICLES, À
-  L'ÉCRAN ». A2b, un article dans le formulaire de facture, le 14/10/2026 (ses huit lectures, A2B-Q1 à A2B-Q8, tranchées
-  « comme recommandé » le même jour) → « UN ARTICLE DANS LA FACTURE ». A6a, l'adresse de réception et l'état de la
-  facture électronique en base, appliquée le 14/10/2026 sur l'accord du cabinet (A6-Q1 ; MEG1-Q16 et A6-Q2 à A6-Q4
-  tranchées « comme recommandé » le même jour), et la bascule (`ADRESSES_RECEPTION_EXPORTEES`) en ligne : la sauvegarde
-  d'un dossier emporte son adresse et son historique, par vagues ; l'onglet Accès dit que « Ventes » ouvre l'adresse,
-  son histoire, sa déclaration et l'état → « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE ».
-  A6b1, l'adresse de réception à l'écran — sa fenêtre, au cabinet depuis Justificatifs et au client « Ventes » depuis
-  « Tes plateformes » —, le 14/10/2026 (ses six lectures de la conception, A6B1-Q1 à A6B1-Q6, tranchées « comme
-  recommandé » le même jour) → « L'ADRESSE DE RÉCEPTION, À L'ÉCRAN ». A6b2, l'encart « Facture électronique » — à
-  l'accueil du client « Ventes » avec sa tuile du téléphone, et dans la Vue d'ensemble du cabinet —, le 14/10/2026 (ses
-  cinq lectures de la conception, A6B2-Q1 à A6B2-Q5, tranchées « comme recommandé » le même jour) → « L'ENCART « FACTURE
-  ÉLECTRONIQUE », À L'ÉCRAN ». A4a, les contacts en base, appliquée le 15/10/2026 sur l'accord du cabinet (A4-Q6 ;
-  MEG1-Q9 à Q11 et A4-Q1 à A4-Q5 tranchées « comme recommandé » le même jour), et la bascule (`CONTACTS_EXPORTES`) en
-  ligne : la sauvegarde d'un dossier emporte ses contacts ; l'onglet Accès dit que « Ventes » ouvre le fichier de ses
-  clients et ses quatre gestes, l'effacement compris → « LES CONTACTS, EN BASE ». A4b1, la vue « Clients » de l'onglet
-  Factures et de « Mes ventes » — la liste et ses gestes, l'effacement confirmé, le signalement d'un contact rangé avant
-  le passage aux soins —, le 15/10/2026 (ses trois lectures de la conception, A4B1-Q1 à A4B1-Q3, tranchées « comme
-  recommandé » le même jour) → « « MES VENTES › CLIENTS » ». A4b2, un client dans la facture — « Choisir un client »,
-  « Enregistrer ce client », l'échéance proposée, la règle des soins dite —, le 15/10/2026 (ses quatre lectures,
-  A4B2-Q1 à A4B2-Q4, tranchées « comme recommandé » le même jour) → « UN CLIENT DANS LA FACTURE ». A4b3a, l'import d'un
-  fichier de clients en base — `importer_contacts`, tout ou rien, chaque ligne par `enregistrer_contact` elle-même —,
-  appliquée le 15/10/2026 sur l'accord du cabinet (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même
-  jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`) en ligne : l'onglet Accès dit que « Ventes » ouvre l'import →
-  « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». A4b3b, son écran — le fichier et son encodage, ses colonnes, l'aperçu
-  ligne par ligne —, le 15/10/2026 (ses six questions, A4B3B-Q1 à Q6, tranchées « comme recommandé » le 16/10/2026) →
-  « IMPORTER DES CLIENTS, À L'ÉCRAN ». A4b3c, « Exporter la fiche » — la copie fidèle de la fiche d'un client, dans un
-  CSV que l'import relit —, le 15/10/2026 (ses six questions, A4B3C-Q1 à Q6, tranchées « comme recommandé » le
-  16/10/2026) → « EXPORTER LA FICHE D'UN CLIENT ». A5a, les paramètres de facturation en base — par dossier, des
-  versions : le délai, le moyen, l'escompte, les pénalités, des mentions, un pied de page et le RIB, proposé par le
-  client « Ventes » et confirmé par le cabinet ; sur `dossiers`, l'identité légale —, appliquée le 16/10/2026 sur
-  l'accord du cabinet (A5-Q1 ; MEG1-Q12 à Q14 et A5-Q2 à A5-Q10 tranchées « comme recommandé » le même jour), et la
-  bascule (`PARAMETRES_FACTURATION_EXPORTES`) en ligne : la sauvegarde d'un dossier emporte ses versions, par vagues ;
-  l'onglet Accès dit que « Ventes » ouvre les paramètres, leur histoire et leur enregistrement, et qu'un RIB que le
-  client pose n'est que proposé → « LES PARAMÈTRES DE FACTURATION, EN BASE ». A5b1, l'écran des paramètres — la vue
-  « Paramètres » de l'onglet Factures et de « Mes ventes » : la version courante et l'état de son RIB, l'historique, une
-  version nouvelle, la confirmation d'un RIB par le cabinet —, le 16/10/2026 (ses huit questions, A5B1-Q1 à Q8,
-  tranchées « comme recommandé » le 17/10/2026) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». A5b2, l'identité légale
-  dans l'onglet Informations — les quatre champs avec le SIRET et l'adresse —, le 16/10/2026 (ses sept questions,
-  A5B2-Q1 à Q7, tranchées « comme recommandé » le 17/10/2026) → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ». A5b3a, le
-  dernier changement du RIB en base — `dernier_changement_de_rib`, une fonction de lecture qui dit au cabinet et aux
-  accès « Ventes » et « Banque » le jour, l'auteur et l'état du dernier changement du RIB des factures, jamais le RIB —,
-  appliquée le 17/10/2026 sur l'accord du cabinet (A5B3-Q1 ; A5B3-Q2 à Q7 tranchées « comme recommandé » le même jour),
-  et la bascule (`CHANGEMENT_DE_RIB_EXPORTE`) en ligne : l'onglet Accès dit ce que « Banque » en apprend → « LE DERNIER
-  CHANGEMENT DU RIB, EN BASE ». A5b3b, l'avis de ce changement à l'écran — en tête de la Vue d'ensemble du cabinet, sur
-  l'accueil du client « Ventes » ou « Banque » —, le 17/10/2026 (ses sept questions, A5B3B-Q1 à Q7, tranchées « comme
-  recommandé » le même jour : rien ne change) → « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». MEG1-Q5, la numérotation,
-  tranchée le même jour « comme recommandé » : deux séries par dossier, celle du client et celle du mandataire, choisie
-  selon qui valide — le client valide ses factures, la série du cabinet ne sert qu'à le dépanner —, et la série de
-  l'ancien logiciel qui continue ; rien n'en est encore écrit (A9). A5c1, le logo des factures et son seau en base — le
-  seau privé `ventes` (500 Kio, PNG ou JPEG), ses trois policies (lire et déposer sous `<dossier>/logos/` :
-  `gere_les_ventes` ; supprimer : le chef du cabinet du dossier ; aucune mise à jour), `logo_chemin` et `logo_sha256`
-  sur `parametres_facturation`, le huitième rang d'`enregistrer_parametres_facturation` —, appliquée le 17/10/2026 sur
-  l'accord du cabinet (A5C-Q1 ; A5C-Q2 à Q6 tranchées « comme recommandé » le même jour), et la bascule
-  (`LOGO_DES_FACTURES_EXPORTE`) en ligne : la suppression d'un dossier vide le seau, la sauvegarde garde le chemin et
-  l'empreinte du logo, pas le fichier, l'onglet Accès dit ce que « Ventes » ouvre de plus → « LE LOGO DES FACTURES ET
-  SON SEAU, EN BASE ». A5c2a, l'écran du logo — le voir (son fichier relu, son empreinte recalculée), le poser ou le
-  changer, le retirer, dans le bloc « Logo des factures » de « Paramètres » —, le 17/10/2026 (A5C2-Q1 à Q8 posées au
-  cabinet) → « LE LOGO DES FACTURES, À L'ÉCRAN ». A5c2b, le fichier du logo dans la sauvegarde (format 2 : porté,
-  vérifié, redéposé par la restauration, chaque logo dit au bilan) et « Redéposer le fichier », le 17/10/2026 (A5C-Q5 ;
-  A5C2B-Q1 à Q6 posées au cabinet) → « LE LOGO DES FACTURES DANS LA SAUVEGARDE ». A5b3c, les dossiers au RIB à
-  confirmer en base — `dossiers_au_rib_a_confirmer`, une fonction de lecture, le cabinet seul, qui appelle
-  `dernier_changement_de_rib` pour chaque dossier qu'il administre —, appliquée le 18/10/2026 sur l'accord du cabinet
-  (A5B3C-Q1), et la bascule (`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`) en ligne →
+  d'abord) et un retour arrière, présentés au cabinet, PAS appliqués — accordées le 18/10/2026 (P5-migrations), à
+  rejouer d'abord sur une réplique de la base d'aujourd'hui ; le code suit derrière `DEVIS_EXPORTES` (`lib/devis.ts`, sa
+  sauvegarde déclarée au plan PRÉVU) ; EC-D1 à EC-D4 tranchées le même jour : un mois de validité proposé, modifiable ;
+  aucun modèle par métier pour l'instant ; l'acompte, une facture d'acompte puis une facture de solde (à ajouter :
+  `facturer_devis` ne tire qu'une facture) ; un devis refusé ou expiré gardé trois ans, puis proposé à l'effacement,
+  jamais effacé seul ; les devis de soins hors de l'application ; une acceptation après la validité, sur une
+  confirmation explicite → « LES DEVIS, EN BASE ». La suite, conçue le 11/10/2026 en trois parties à la demande du
+  cabinet (« au minimum faire comme le logiciel du client, et aller plus loin ») : dans les domaines ouverts, les
+  articles, les règlements, les factures importées et la numérotation qui continue, les contacts, les paramètres de
+  facturation, l'encart « Facture électronique » (A1 à A11) ; la parité — achats, notes de frais, analyse, documents du
+  cabinet, trois cases neuves (« Achats », « Notes de frais », « Documents »), le resserrement des pièces (B1 à B9) ;
+  « aller plus loin » — l'échéancier, l'état du dossier, les situations publiées (C1 à C8) ; trente-cinq questions au
+  cabinet, toutes tranchées comme recommandé — les dernières le 18/10/2026 — sauf MEG2-Q10 (combien de temps garder les
+  documents du cabinet et ses demandes), ouverte → « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE,
+  LA PARITÉ, ET AU-DELÀ ». A3, « Règlements », le 13/10/2026 (ses quatre questions, A3-Q1 à A3-Q4, tranchées « comme
+  recommandé » le même jour : rien ne change) → « « MES VENTES › RÈGLEMENTS » ». A1, les articles en base, appliquée le
+  14/10/2026 sur l'accord du cabinet (A1-Q1 ; MEG1-Q1 et A1-Q2 à A1-Q4 tranchées « comme recommandé » le même jour), et
+  la bascule (`ARTICLES_EXPORTES`) en ligne : la sauvegarde d'un dossier les emporte, l'onglet Accès dit que « Ventes »
+  ouvre le catalogue et ses quatre gestes → « LES ARTICLES, EN BASE ». A2a, la vue « Articles » de l'onglet Factures et
+  de « Mes ventes », la liste et ses gestes, le 14/10/2026 (ses cinq lectures de la conception, A2-Q1 à A2-Q5, tranchées
+  « comme recommandé » le même jour) → « LA LISTE DES ARTICLES, À L'ÉCRAN ». A2b, un article dans le formulaire de
+  facture, le 14/10/2026 (ses huit lectures, A2B-Q1 à A2B-Q8, tranchées « comme recommandé » le même jour) → « UN
+  ARTICLE DANS LA FACTURE ». A6a, l'adresse de réception et l'état de la facture électronique en base, appliquée le
+  14/10/2026 sur l'accord du cabinet (A6-Q1 ; MEG1-Q16 et A6-Q2 à A6-Q4 tranchées « comme recommandé » le même jour), et
+  la bascule (`ADRESSES_RECEPTION_EXPORTEES`) en ligne : la sauvegarde d'un dossier emporte son adresse et son
+  historique, par vagues ; l'onglet Accès dit que « Ventes » ouvre l'adresse, son histoire, sa déclaration et l'état →
+  « L'ADRESSE DE RÉCEPTION ET L'ÉTAT DE LA FACTURE ÉLECTRONIQUE, EN BASE ». A6b1, l'adresse de réception à l'écran — sa
+  fenêtre, au cabinet depuis Justificatifs et au client « Ventes » depuis « Tes plateformes » —, le 14/10/2026 (ses six
+  lectures de la conception, A6B1-Q1 à A6B1-Q6, tranchées « comme recommandé » le même jour) → « L'ADRESSE DE RÉCEPTION,
+  À L'ÉCRAN ». A6b2, l'encart « Facture électronique » — à l'accueil du client « Ventes » avec sa tuile du téléphone, et
+  dans la Vue d'ensemble du cabinet —, le 14/10/2026 (ses cinq lectures de la conception, A6B2-Q1 à A6B2-Q5, tranchées
+  « comme recommandé » le même jour) → « L'ENCART « FACTURE ÉLECTRONIQUE », À L'ÉCRAN ». A4a, les contacts en base,
+  appliquée le 15/10/2026 sur l'accord du cabinet (A4-Q6 ; MEG1-Q9 à Q11 et A4-Q1 à A4-Q5 tranchées « comme recommandé »
+  le même jour), et la bascule (`CONTACTS_EXPORTES`) en ligne : la sauvegarde d'un dossier emporte ses contacts ;
+  l'onglet Accès dit que « Ventes » ouvre le fichier de ses clients et ses quatre gestes, l'effacement compris → « LES
+  CONTACTS, EN BASE ». A4b1, la vue « Clients » de l'onglet Factures et de « Mes ventes » — la liste et ses gestes,
+  l'effacement confirmé, le signalement d'un contact rangé avant le passage aux soins —, le 15/10/2026 (ses trois
+  lectures de la conception, A4B1-Q1 à A4B1-Q3, tranchées « comme recommandé » le même jour) → « « MES VENTES ›
+  CLIENTS » ». A4b2, un client dans la facture — « Choisir un client », « Enregistrer ce client », l'échéance proposée,
+  la règle des soins dite —, le 15/10/2026 (ses quatre lectures, A4B2-Q1 à A4B2-Q4, tranchées « comme recommandé » le
+  même jour) → « UN CLIENT DANS LA FACTURE ». A4b3a, l'import d'un fichier de clients en base — `importer_contacts`,
+  tout ou rien, chaque ligne par `enregistrer_contact` elle-même —, appliquée le 15/10/2026 sur l'accord du cabinet
+  (A4B3-Q5 ; A4B3-Q1 à A4B3-Q4 tranchées « comme recommandé » le même jour), et la bascule (`IMPORT_CONTACTS_EXPORTE`)
+  en ligne : l'onglet Accès dit que « Ventes » ouvre l'import → « L'IMPORT D'UN FICHIER DE CLIENTS, EN BASE ». A4b3b,
+  son écran — le fichier et son encodage, ses colonnes, l'aperçu ligne par ligne —, le 15/10/2026 (ses six questions,
+  A4B3B-Q1 à Q6, tranchées « comme recommandé » le 16/10/2026) → « IMPORTER DES CLIENTS, À L'ÉCRAN ». A4b3c, « Exporter
+  la fiche » — la copie fidèle de la fiche d'un client, dans un CSV que l'import relit —, le 15/10/2026 (ses six
+  questions, A4B3C-Q1 à Q6, tranchées « comme recommandé » le 16/10/2026) → « EXPORTER LA FICHE D'UN CLIENT ». A5a, les
+  paramètres de facturation en base — par dossier, des versions : le délai, le moyen, l'escompte, les pénalités, des
+  mentions, un pied de page et le RIB, proposé par le client « Ventes » et confirmé par le cabinet ; sur `dossiers`,
+  l'identité légale —, appliquée le 16/10/2026 sur l'accord du cabinet (A5-Q1 ; MEG1-Q12 à Q14 et A5-Q2 à A5-Q10
+  tranchées « comme recommandé » le même jour), et la bascule (`PARAMETRES_FACTURATION_EXPORTES`) en ligne : la
+  sauvegarde d'un dossier emporte ses versions, par vagues ; l'onglet Accès dit que « Ventes » ouvre les paramètres,
+  leur histoire et leur enregistrement, et qu'un RIB que le client pose n'est que proposé → « LES PARAMÈTRES DE
+  FACTURATION, EN BASE ». A5b1, l'écran des paramètres — la vue « Paramètres » de l'onglet Factures et de « Mes
+  ventes » : la version courante et l'état de son RIB, l'historique, une version nouvelle, la confirmation d'un RIB par
+  le cabinet —, le 16/10/2026 (ses huit questions, A5B1-Q1 à Q8, tranchées « comme recommandé » le 17/10/2026) → « LES
+  PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». A5b2, l'identité légale dans l'onglet Informations — les quatre champs avec le
+  SIRET et l'adresse —, le 16/10/2026 (ses sept questions, A5B2-Q1 à Q7, tranchées « comme recommandé » le 17/10/2026) →
+  « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ». A5b3a, le dernier changement du RIB en base —
+  `dernier_changement_de_rib`, une fonction de lecture qui dit au cabinet et aux accès « Ventes » et « Banque » le jour,
+  l'auteur et l'état du dernier changement du RIB des factures, jamais le RIB —, appliquée le 17/10/2026 sur l'accord du
+  cabinet (A5B3-Q1 ; A5B3-Q2 à Q7 tranchées « comme recommandé » le même jour), et la bascule
+  (`CHANGEMENT_DE_RIB_EXPORTE`) en ligne : l'onglet Accès dit ce que « Banque » en apprend → « LE
+  DERNIER CHANGEMENT DU RIB, EN BASE ». A5b3b, l'avis de ce changement à l'écran — en tête de la Vue d'ensemble du
+  cabinet, sur l'accueil du client « Ventes » ou « Banque » —, le 17/10/2026 (ses sept questions, A5B3B-Q1 à Q7,
+  tranchées « comme recommandé » le même jour : rien ne change) → « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». MEG1-Q5,
+  la numérotation, tranchée le même jour « comme recommandé » : deux séries par dossier, celle du client et celle du
+  mandataire, choisie selon qui valide — le client valide ses factures, la série du cabinet ne sert qu'à le dépanner —,
+  et la série de l'ancien logiciel qui continue ; rien n'en est encore écrit (A9). A5c1, le logo des factures et son
+  seau en base — le seau privé `ventes` (500 Kio, PNG ou JPEG), ses trois policies (lire et déposer sous
+  `<dossier>/logos/` : `gere_les_ventes` ; supprimer : le chef du cabinet du dossier ; aucune mise à jour),
+  `logo_chemin` et `logo_sha256` sur `parametres_facturation`, le huitième rang d'`enregistrer_parametres_facturation`
+  —, appliquée le 17/10/2026 sur l'accord du cabinet (A5C-Q1 ; A5C-Q2 à Q6 tranchées « comme recommandé » le même jour),
+  et la bascule (`LOGO_DES_FACTURES_EXPORTE`) en ligne : la suppression d'un dossier vide le seau, la sauvegarde garde
+  le chemin et l'empreinte du logo, pas le fichier, l'onglet Accès dit ce que « Ventes » ouvre de plus → « LE LOGO DES
+  FACTURES ET SON SEAU, EN BASE ». A5c2a, l'écran du logo — le voir (son fichier relu, son empreinte recalculée), le
+  poser ou le changer, le retirer, dans le bloc « Logo des factures » de « Paramètres » —, le 17/10/2026 (A5C2-Q1 à Q8
+  tranchées le 18/10/2026 comme recommandé) → « LE LOGO DES FACTURES, À L'ÉCRAN ». A5c2b, le fichier du logo dans la
+  sauvegarde (format 2 : porté, vérifié, redéposé par la restauration, chaque logo dit au bilan) et « Redéposer le
+  fichier », le 17/10/2026 (A5C-Q5 ; A5C2B-Q1 à Q6 tranchées le 18/10/2026 comme recommandé) → « LE LOGO DES FACTURES
+  DANS LA SAUVEGARDE ». A5b3c, les dossiers au RIB à confirmer en base — `dossiers_au_rib_a_confirmer`, une fonction de
+  lecture, le cabinet seul, qui appelle `dernier_changement_de_rib` pour chaque dossier qu'il administre —, appliquée le
+  18/10/2026 sur l'accord du cabinet (A5B3C-Q1), et la bascule (`DOSSIERS_AU_RIB_A_CONFIRMER_EXPORTE`) en ligne →
   « LES DOSSIERS AU RIB À CONFIRMER, EN BASE ». A5b3d, leur liste à l'écran — en tête du tableau de bord du cabinet : le
   compte, une ligne par dossier (nom, marque d'un archivé, phrase de l'avis, lien vers ses factures), le conseil une
-  fois, rien quand aucun n'attend —, le 18/10/2026 (A5B3C-Q2 à Q4 codées telles que recommandées, A5B3D-Q1 à Q4 posées
-  au cabinet) → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne
+  fois, rien quand aucun n'attend —, le 18/10/2026 (A5B3C-Q2 à Q4 et A5B3D-Q1 à Q4 tranchées le même jour comme
+  recommandé) → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ». Restent, dans l'ordre recommandé, A4B3-Q6 (la ligne
   d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte), puis A7 (la facture fige ses mentions —
   l'unité, la référence et l'article sur
   la ligne enregistrée, le contact d'où vient son client, le RIB et les conditions en vigueur, le logo qu'elle imprime,
   les autres mentions de R123-237 (A5-Q9) —, une migration), la liste des clients sans activité depuis trois ans, qui
-  lit les factures d'un contact (A7 les relie), et la suite du premier groupe.
+  lit les factures d'un contact (A7 les relie), et la suite du premier groupe ; les devis (P5, accordés le 18/10/2026) ;
+  la trace de qui change les droits d'un accès (P1-trace, une migration).
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier, l'impôt sur les
   sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ; neuf questions tranchées le 17/10/2026 (la
-  forme juridique, posée au dossier par A5b2, que le bilan lira : 33-Q6), et deux sur l'ouverture, ouvertes (O33-Q1 : un
-  écart retient-il la validation de N ; O33-Q2 : confronter une balance reprise) → « LE BILAN
-  SE LIT DANS LES RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE ».
+  forme juridique, posée au dossier par A5b2, que le bilan lira : 33-Q6), et deux sur l'ouverture, tranchées le
+  18/10/2026 (O33-Q1 : un écart retient la validation de N, à écrire ; O33-Q2 : confronter une balance reprise, plus
+  tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE ».
 - **Plan comptable personnalisable** (ligne 43) : conçu le 09/10/2026 — le plan du dossier, sous les racines du PCG,
   lu par la base, figé à la première écriture ; étapes PC1 à PC9, douze questions tranchées le 17/10/2026 → « LE PLAN
   COMPTABLE PERSONNALISABLE : LA CONCEPTION » ; PC1, le catalogue des rôles et le plan d'un dossier, en base le
@@ -1089,7 +1106,8 @@ outils/references/  les dossiers de référence (12/10/2026) : quatre dossiers f
   « LA BASE LIT LE PLAN, APPLIQUÉE ET INTÉGRÉE » ; PC3a, l'application lit le plan, le 12/10/2026 — NEUTRE : lu avec le
   dossier, entier ou rien, il atteint chaque écriture composée (§ 2.1) et chaque contrôle qui la recompose ; restent la
   § 2.4 et la § 2.5 (13 fichiers, 63 emplois comptés par `comptesEnDur.test.ts`) et les libellés du plan (§ 3.9), puis
-  PC3b, l'assistant (121) ; une question au cabinet (PC3-Q1) → « L'APPLICATION LIT LE PLAN ».
+  PC3b, l'assistant (121) ; PC3-Q1 tranchée le 18/10/2026 (la fonction qui réglera le plan, PC4, déplace le compte des
+  notes de frais du dirigeant dans la même transaction) → « L'APPLICATION LIT LE PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour
 
@@ -1159,7 +1177,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un export de schéma n'est pas un schéma** : douze tables (`socle/1_tables_sans_migration.sql`) et onze objets
   (`socle/2_objets_sans_migration.sql`) avaient été créés hors migration ; `socle.py/.sql` les compare au caractère près
   et `inventaire.py/.sql` tout le reste nom par nom. La procédure qui rejouerait l'export dans une base vide n'a jamais
-  tourné (PLAN_DE_REPRISE.md §4) → « UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ».
+  tourné (PLAN_DE_REPRISE.md §4) ; sa ligne de la feuille de route (20.6, ouverte le 29/09/2026) est confirmée par le
+  cabinet le 18/10/2026, sans urgence (28.5d4-replique) → « UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ».
 - **Une colonne GÉNÉRÉE ne se restaure pas, elle se recalcule** (Postgres refuse toute insertion qui la nomme, 428C9,
   même NULL, même à zéro ligne) : la sauvegarde la lit, le plan de réinsertion la retire de chaque ligne envoyée
   (`COLONNES_GENEREES`, `planReinsertion`) ; `sauvegardeColonnesGenerees.test.ts` la tire de l'export en partant du mot
@@ -1433,8 +1452,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dans la même écriture.
 - **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente (`ClientUpload`) : une vérification en
   base ne protège pas des branches parties ensemble.
-  Entre deux lots, rien ne la réserve : le même fichier déposé deux fois, le premier encore en vol, entre deux fois
-  (question au cabinet → « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU »).
+  Entre deux lots, rien ne la réserve encore : le même fichier déposé deux fois, le premier encore en vol, entre deux
+  fois ; le cabinet a décidé le 18/10/2026 que les empreintes « en vol » se partagent d'un lot à l'autre
+  (28.8-ClientUpload, à écrire) → « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU ».
 - **Un constructeur de requête n'est pas une promesse** : `.then(f)` sur lui rend ce que SON `then` rend — rien, pour
   la doublure qui retient (`clientRetenu`). Un module qui reçoit une requête l'ATTEND (`await`), et une requête qui lève
   tombe du côté signalé (`lireLaCouverture`, `lireLeDroitBanque`) → « LA BANQUE DU CLIENT EN BASE ».
@@ -1694,8 +1714,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   pas. Tranchée par le cabinet le 16/10/2026 (MEG1-Q5, « comme recommandé ») : deux séries par dossier, celle du client
   et celle du mandataire, choisie selon QUI valide ; le client valide ses factures, la série du cabinet ne sert qu'à le
   dépanner ; le client qui quitte son ancien logiciel continue sa série. Le 17/10/2026, la page des arbitrages a reçu
-  pour EC-Q2 la réponse d'avant, « série unique » : la contradiction est reposée (ARB-EC-Q2), MEG1-Q5 vaut d'ici là.
-  Rien n'en est encore écrit : la série du
+  pour EC-Q2 la réponse d'avant, « série unique » ; reposée (ARB-EC-Q2), la contradiction est tranchée le 18/10/2026 :
+  deux séries (MEG1-Q5), la mention, le mandat et la clause d'EC-Q2 restant. Rien n'en est encore écrit : la série du
   mandataire vient avec A9, ou avant si le cabinet doit valider une facture réelle d'ici là → « L'ESPACE CLIENT,
   LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
 - **Pièges EN 16931 / Super PDP** : la TVA sur chaque ligne (BR-S-08), l'unité `C62` (BR-23), le n° de TVA du vendeur
@@ -1832,10 +1852,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `lib/regimesEreporting.ts`) : le régime est une DONNÉE que le dossier a déclarée à sa plateforme (impots.gouv.fr,
   22/09/2026), confirmée par le cabinet et DATÉE — son histoire est celle du statut de TVA, jamais pour l'avenir ; une
   période se juge sous le régime de son premier jour (fréquence confirmée, statut, numéro de TVA de la période) ; à
-  cheval sur deux régimes, elle se refuse (NON VÉRIFIÉ, E5-Q1) ; un onglet TVA qui le contredit la fait reconfirmer. Les
-  fréquences des textes sont des contraintes de la table, celle d'un exonéré confirmée « chaque mois » par la fonction
-  (Q4). Un régime et un écart ne se modifient pas : ils se RETIRENT ; seules `confirmer_regime_ereporting` (seize refus),
-  `retirer_regime_ereporting`, `ecarter_piece_ereporting` et `reprendre_piece_ereporting` écrivent ; le client n'en voit
+  cheval sur deux régimes, elle se refuse (NON VÉRIFIÉ ; E5-Q1, confirmée le 18/10/2026 jusqu'à une source qui dise
+  autrement) ; un onglet TVA qui le contredit la fait reconfirmer. Les fréquences des textes sont des contraintes de la
+  table, celle d'un exonéré confirmée « chaque mois » par la fonction (Q4). Un régime et un écart ne se modifient pas :
+  ils se RETIRENT ; seules `confirmer_regime_ereporting` (seize refus), `retirer_regime_ereporting`,
+  `ecarter_piece_ereporting` et `reprendre_piece_ereporting` écrivent ; le client n'en voit
   rien. Une pièce qui a une fiche « hors de France » ne s'écarte pas, une fiche posée après l'écart l'emporte ; une pièce
   écartée ne change plus de dossier. Le module redit les refus et REJOUE l'essai appel par appel
   (`src/test/essaiSql.ts`) ; `lib/regimesEreportingLecture.ts` lit les deux tables en entier → « LE RÉGIME
@@ -1867,10 +1888,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   chacun sa règle — celle du flux 10 : l'annexe 7 a une jumelle par flux (G1.43 pour la facture, G1.44 pour
   l'e-reporting), la colonne « RG applicable au F10 » tranche, et un test la confronte —, dits avant tout fichier ;
   l'émetteur (TG-3), le fuseau de TT-3, le code de l'option pour les débits et un paiement négatif sont des PARAMÈTRES
-  sans défaut (`ChoixFrr`, E6-Q1 à E6-Q4) ; la raison sociale du déclarant (TT-14) n'est pas figée, l'appelant la donne ;
-  G1.53 se juge sans sa tolérance d'un centime. Le bloc `fluxEreporting` (bornes posées, recopié à e9) ne nomme que
-  cinq exports du bloc factureCii (`fluxEreportingCopie.test.ts`) ; `outils/facturation/ereporting/valider.mjs` en juge
-  les exemples par les XSD de l'archive officielle → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING ».
+  sans défaut (`ChoixFrr`, E6-Q1 à E6-Q4, tranchées le 18/10/2026 : l'émetteur et le signe au premier essai réel, Paris,
+  le code 5 ; l'appelant les donnera à e6b) ; la raison sociale du déclarant (TT-14) n'est pas figée, l'appelant la
+  donne ; G1.53 se juge sans sa tolérance d'un centime. Le bloc `fluxEreporting` (bornes posées, recopié à e9) ne nomme
+  que cinq exports du bloc factureCii (`fluxEreportingCopie.test.ts`) ; `outils/facturation/ereporting/valider.mjs` en
+  juge les exemples par les XSD de l'archive officielle → « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING ».
 - **Les statuts du cycle de vie s'affichent sous les libellés de la DGFiP** (tableau 8 des spécifications externes v3.2,
   § 3.6.4 ; 501 : annexe 2) — « Déposée », « Approuvée », « En litige », « Paiement transmis », « Encaissée »… :
   `superpdpStatuts.test.ts` les garde, recopiés de la source et non du module.
