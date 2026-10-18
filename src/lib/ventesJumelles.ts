@@ -27,9 +27,17 @@ import type { FactureEmise, Piece, TransmissionFacture } from './types'
 // Un lien déduit ne vieillit pas : une transmission enregistrée après l'import, une facture validée après, le font
 // apparaître sans rien réécrire, et une sauvegarde n'a rien d'autre à emporter que les faits.
 //
-// CE QUI NE SE RECONNAÎT PAS : une pièce DÉPOSÉE — un PDF de la même vente, un e-mail. Rien ne la relie à sa facture
-// émise sans lire son texte ou rapprocher montant, date et client, ce que le pont s'interdit : une vente portée par sa
-// jumelle ET par un PDF ne se voit pas ici (note de la ligne 28.6, question au cabinet).
+// LA DÉSIGNATION, la quatrième preuve et la plus forte (chantier EC-Q3, étape VF1a ; décision du cabinet du 17/10/2026,
+// 28.6-Q1 ; migration `exemplaires_des_factures`, lib/exemplairesDesFactures.ts) : le cabinet DÉSIGNE la pièce EXEMPLAIRE
+// d'une facture émise (`pieces.facture_id`) — l'original revenu de la plateforme, ou le PDF qu'il a déposé, qu'aucun des
+// trois autres faits ne relie à sa facture : rien ne la relie sans lire son texte ou rapprocher montant, date et client, ce
+// que le pont s'interdit. La plus forte : c'est un geste du cabinet, que la base tient — une facture validée du même
+// dossier, sur une pièce de vente, figée avec la pièce —, et elle se dit la première. Elle ne fait pas taire les autres :
+// une pièce désignée à une facture que son flux, Super PDP ou son identité rattache à une autre reste incohérente, et
+// l'écran la dit « à vérifier » ; la base ne juge pas cette cohérence (l'étape VF6 le fera pour une facture source). Ce
+// que la désignation change : le pont voit le PDF, et une vente portée par sa jumelle ET par le PDF désigné se dit
+// comptée deux fois — le trou que 28.6-Q1 ferme. Ce qu'elle ne change pas : ce qui se compte. Une pièce dont la colonne
+// n'a pas été lue (`facture_id` absent) n'est désignée à rien : le pont ne la nomme que là où la lecture la porte.
 //
 // DEUX PREUVES QUI SE CONTREDISENT NE FONT PAS UNE JUMELLE : une pièce que ses preuves rattachent à deux factures, ou
 // dont l'identité désigne une facture d'une autre nature (un avoir pour une facture), n'est la jumelle d'aucune — elle
@@ -42,18 +50,30 @@ export type FacturePourJumelle = Pick<FactureEmise,
 /** Une transmission de la facture : son flux, et son canal (le flux d'une transmission `superpdp` est l'identifiant de Super PDP). */
 export type TransmissionPourJumelle = Pick<TransmissionFacture, 'facture_id' | 'canal' | 'hote' | 'flux_id'>
 
-/** La pièce, telle que le pont la lit (colonnes de `pieces`). */
+/** La pièce, telle que le pont la lit (colonnes de `pieces`). `facture_id`, la désignation, est facultatif : une lecture
+ * qui ne nomme pas la colonne (drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES` baissé) ne la porte pas. */
 export type PiecePourJumelle = Pick<Piece,
   'id' | 'dossier_id' | 'flux_hote' | 'flux_id' | 'superpdp_invoice_id'
-  | 'identite_numero' | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature'>
+  | 'identite_numero' | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature' | 'facture_id'>
 
-/** Ce qui relie une pièce à sa facture : le flux de sa transmission, l'identifiant de Super PDP, l'identité G1.42. */
-export type PreuveJumelle = 'flux' | 'superpdp' | 'identite'
+/**
+ * Les colonnes de `pieces` que le pont lit, celles de `PiecePourJumelle` — sans la désignation, puis avec elle : une lecture
+ * ne nomme `facture_id` que sa migration en base (`EXEMPLAIRES_DES_FACTURES_EXPORTES`, lib/exemplairesDesFactures.ts) ;
+ * nommée avant, elle ferait échouer la lecture. Deux textes et non un texte composé à la volée : le client typé de
+ * Supabase lit la liste des colonnes dans le TYPE du texte, et un texte quelconque lui ferait rendre des lignes d'erreur.
+ */
+export const COLONNES_DES_PIECES_DU_PONT =
+  'id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature'
+export const COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION = `${COLONNES_DES_PIECES_DU_PONT}, facture_id` as const
+
+/** Ce qui relie une pièce à sa facture : la désignation par le cabinet, le flux de sa transmission, l'identifiant de
+ * Super PDP, l'identité G1.42. */
+export type PreuveJumelle = 'designation' | 'flux' | 'superpdp' | 'identite'
 
 export interface Jumelle {
   pieceId: string
   factureId: string
-  /** Toutes les preuves qui tiennent, dans l'ordre flux, Super PDP, identité. */
+  /** Toutes les preuves qui tiennent, dans l'ordre désignation, flux, Super PDP, identité. */
   preuves: PreuveJumelle[]
 }
 
@@ -72,7 +92,7 @@ export interface JumellesDuDossier {
   incoherentes: IncoherenceJumelle[]
 }
 
-const ORDRE_DES_PREUVES: readonly PreuveJumelle[] = ['flux', 'superpdp', 'identite']
+const ORDRE_DES_PREUVES: readonly PreuveJumelle[] = ['designation', 'flux', 'superpdp', 'identite']
 
 const cleFlux = (hote: string, id: string) => `${hote} ${id}`
 
@@ -126,6 +146,9 @@ export function jumellesDuDossier(
       if (ensemble) ensemble.add(preuve)
       else preuves.set(factureId, new Set([preuve]))
     }
+    // La désignation : la base la tient pour une facture validée du même dossier ; le pont n'en juge que ce qu'il lit — une
+    // facture absente des factures données ne se rattache à rien, comme pour les trois autres preuves.
+    if (p.facture_id != null) noter(p.facture_id, 'designation')
     if (p.flux_hote != null && p.flux_id != null) {
       for (const id of parFlux.get(cleFlux(p.flux_hote, p.flux_id)) ?? []) noter(id, 'flux')
     }
@@ -177,9 +200,11 @@ export interface VenteEnDouble {
 
 /**
  * LES VENTES COMPTÉES PLUSIEURS FOIS : une facture émise que plusieurs pièces portent — sa jumelle reçue de la
- * plateforme ET celle de la synchronisation Super PDP, le plus souvent. Validées, chacune compte la vente dans la 2035,
- * la CA3 et le brouillon. Dit sur les deux piles, validées comme à valider : un doublon est un fait, et c'est avant la
- * validation qu'il se corrige le mieux. Dans l'ordre des factures données.
+ * plateforme ET celle de la synchronisation Super PDP, ou sa jumelle ET le PDF que le cabinet a désigné exemplaire de la
+ * facture (étape VF1a). Validées, chacune compte la vente dans la 2035, la CA3 et le brouillon : tant que le dossier n'a
+ * pas basculé (étape VF2), une facture émise ne compte nulle part, ses exemplaires si. Dit sur les deux piles, validées
+ * comme à valider : un doublon est un fait, et c'est avant la validation qu'il se corrige le mieux. Dans l'ordre des
+ * factures données.
  */
 export function ventesEnDouble(factures: readonly FacturePourJumelle[], jumelles: JumellesDuDossier): VenteEnDouble[] {
   return factures.flatMap((f) => {
@@ -266,7 +291,8 @@ export const PASTILLE_DE_LA_MARQUE: Record<GenreMarque, string> = {
   incoherente: 'badge-warning',
 }
 
-const PREUVE_DITE: Record<PreuveJumelle, string> = {
+// Les trois faits que le pont DÉDUIT ; la désignation, un geste du cabinet, se dit à part et la première.
+const PREUVE_DITE: Record<Exclude<PreuveJumelle, 'designation'>, string> = {
   flux: 'par le flux de sa transmission',
   superpdp: 'par l’identifiant de Super PDP',
   identite: 'par son numéro, son vendeur et son année',
@@ -274,6 +300,17 @@ const PREUVE_DITE: Record<PreuveJumelle, string> = {
 
 const enumerer = (mots: readonly string[]) =>
   (mots.length <= 1 ? mots.join('') : `${mots.slice(0, -1).join(', ')} et ${mots[mots.length - 1]}`)
+
+const DESIGNEE = 'désignée comme son exemplaire'
+
+/** Ce qui relie la pièce à sa facture, dit : « désignée comme son exemplaire », puis « reconnue par … » — les deux, l'un
+ * ou l'autre. */
+function preuvesDites(preuves: readonly PreuveJumelle[]): string {
+  const deduites = preuves.filter((p): p is Exclude<PreuveJumelle, 'designation'> => p !== 'designation')
+  const reconnue = deduites.length > 0 ? `reconnue ${enumerer(deduites.map((p) => PREUVE_DITE[p]))}` : ''
+  if (!preuves.includes('designation')) return reconnue
+  return reconnue === '' ? DESIGNEE : `${DESIGNEE}, et ${reconnue}`
+}
 
 const fois = (n: number) => (n === 2 ? 'deux' : n === 3 ? 'trois' : String(n))
 
@@ -296,14 +333,16 @@ export function marquesDesPieces(
 
   const marques = new Map<string, MarqueDeLaPiece>()
   for (const [pieceId, j] of jumelles.parPiece) {
-    const reconnue = `reconnue ${enumerer(j.preuves.map((p) => PREUVE_DITE[p]))}`
+    const dites = preuvesDites(j.preuves)
     const portees = jumelles.parFacture.get(j.factureId) ?? []
+    // Revenue de la plateforme : un des trois faits le prouve. Désignée seulement : un exemplaire que le cabinet a déposé.
+    const revenue = j.preuves.some((p) => p !== 'designation')
     if (portees.length > 1) {
       marques.set(pieceId, {
         genre: 'double',
         libelle: `Comptée ${fois(portees.length)} fois`,
         explication: `La facture ${nom(j.factureId)} émise dans l’application est portée par ${portees.length} pièces, dont `
-          + `celle-ci, ${reconnue}. Validées, elles la comptent ${fois(portees.length)} fois dans la 2035, la CA3 et les `
+          + `celle-ci, ${dites}. Validées, elles la comptent ${fois(portees.length)} fois dans la 2035, la CA3 et les `
           + 'écritures : gardez une seule pièce par facture — celle reçue de la plateforme du client porte l’original.',
         numeros: numeros([j.factureId]),
         autresPieces: portees.filter((x) => x.pieceId !== pieceId).map((x) => x.pieceId),
@@ -312,8 +351,10 @@ export function marquesDesPieces(
       marques.set(pieceId, {
         genre: 'jumelle',
         libelle: `Facture émise ${nom(j.factureId)}`,
-        explication: `Cette pièce est la facture ${nom(j.factureId)} émise dans l’application, revenue comme pièce — `
-          + `${reconnue}. C’est la même vente : elle ne se compte qu’une fois.`,
+        explication: (revenue
+          ? `Cette pièce est la facture ${nom(j.factureId)} émise dans l’application, revenue comme pièce — ${dites}.`
+          : `Cette pièce est un exemplaire de la facture ${nom(j.factureId)} émise dans l’application — ${dites}.`)
+          + ' C’est la même vente : elle ne se compte qu’une fois.',
         numeros: numeros([j.factureId]),
         autresPieces: [],
       })

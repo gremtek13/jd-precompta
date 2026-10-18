@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COLONNES_DES_PIECES_DU_PONT, COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION,
   detailJumellesIncoherentes, detailVentesEnDouble, jumellesDeLaFacture, jumellesDuDossier, jumellesImportees,
   marquesDesPieces, PASTILLE_DE_LA_MARQUE, phrasesJumellesImportees, ventesEnDouble,
   type FacturePourJumelle, type PiecePourJumelle, type TransmissionPourJumelle,
@@ -188,6 +189,78 @@ describe('jumellesDuDossier — plusieurs preuves', () => {
   })
 })
 
+// LA DÉSIGNATION (chantier EC-Q3, étape VF1a) : la quatrième preuve, et la plus forte — un geste du cabinet que la base
+// tient (lib/exemplairesDesFactures.ts). Elle se dit la première, et ne fait pas taire les trois autres.
+describe('jumellesDuDossier — la désignation par le cabinet', () => {
+  it('une pièce désignée exemplaire d’une facture validée du dossier est sa jumelle, sans autre fait', () => {
+    expect(jumelleDe([facture()], [], piece({ facture_id: 'f1' }))).toEqual({ pieceId: 'p1', factureId: 'f1', preuves: ['designation'] })
+    // Un avoir a son exemplaire comme une facture.
+    const avoir = facture({ id: 'a1', type: 'avoir', numero: 'A2026-0001' })
+    expect(jumelleDe([facture(), avoir], [], piece({ facture_id: 'a1' }))?.factureId).toBe('a1')
+  })
+
+  it('la désignation d’une facture absente des factures données, d’un brouillon ou d’un autre dossier ne relie rien', () => {
+    // La base ne la permettrait pas (sa garde) ; le pont n'en juge que ce qu'il lit, comme des trois autres preuves.
+    expect(jumelleDe([facture()], [], piece({ facture_id: 'f9' }))).toBeNull()
+    expect(jumelleDe([facture({ statut: 'brouillon' })], [], piece({ facture_id: 'f1' }))).toBeNull()
+    const j = jumellesDuDossier([facture({ dossier_id: AUTRE })], [], [piece({ facture_id: 'f1' })])
+    expect([j.parPiece.size, j.incoherentes]).toEqual([0, []])
+  })
+
+  it('une pièce lue sans la colonne — ou que rien ne désigne — n’est désignée à rien', () => {
+    const sansLaColonne: PiecePourJumelle = {
+      id: 'p1', dossier_id: D, flux_hote: null, flux_id: null, superpdp_invoice_id: null,
+      identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+    }
+    expect('facture_id' in sansLaColonne).toBe(false)
+    expect(jumelleDe([facture()], [], sansLaColonne)).toBeNull()
+    expect(jumelleDe([facture()], [], piece({ facture_id: null }))).toBeNull()
+  })
+
+  it('les preuves de la même facture se cumulent, la désignation la première', () => {
+    expect(jumelleDe([facture()], [], piece({ ...IDENTITE_F1, facture_id: 'f1' }))?.preuves).toEqual(['designation', 'identite'])
+    const f = facture({ superpdp_invoice_id: 4242 })
+    const toutes = piece({ ...IDENTITE_F1, facture_id: 'f1', superpdp_invoice_id: 4242, flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' })
+    expect(jumelleDe([f], [transmission()], toutes)?.preuves).toEqual(['designation', 'flux', 'superpdp', 'identite'])
+  })
+
+  it('désignée à une facture, rattachée à une autre par son identité, son flux ou Super PDP : incohérente, jumelle d’aucune', () => {
+    const f1 = facture()
+    const f2 = facture({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: 4242 })
+    const parIdentite = piece({ ...IDENTITE_F1, identite_numero: 'F2026-0008', facture_id: 'f1' })
+    const parFlux = piece({ id: 'p2', flux_hote: 'pa.exemple.fr', flux_id: 'flux-1', facture_id: 'f2' })
+    const parSuperpdp = piece({ id: 'p3', superpdp_invoice_id: 4242, facture_id: 'f1' })
+    const j = jumellesDuDossier([f2, f1], [transmission()], [parIdentite, parFlux, parSuperpdp])
+    expect(j.parPiece.size).toBe(0)
+    expect(j.parFacture.size).toBe(0)
+    expect(j.incoherentes).toEqual([
+      { pieceId: 'p1', motif: 'plusieurs_factures', factureIds: ['f1', 'f2'] },
+      { pieceId: 'p2', motif: 'plusieurs_factures', factureIds: ['f1', 'f2'] },
+      { pieceId: 'p3', motif: 'plusieurs_factures', factureIds: ['f1', 'f2'] },
+    ])
+  })
+
+  it('désignée à une facture dont son original dit l’autre nature : incohérente, comme sans la désignation', () => {
+    const j = jumellesDuDossier([facture()], [], [piece({ ...IDENTITE_F1, identite_nature: 'avoir', facture_id: 'f1' })])
+    expect(j.parPiece.size).toBe(0)
+    expect(j.incoherentes).toEqual([{ pieceId: 'p1', motif: 'nature', factureId: 'f1' }])
+  })
+
+  it('les exemplaires d’une facture, désignés ou reconnus, sont tous ses jumelles', () => {
+    const pieces = [piece({ id: 'pdf', facture_id: 'f1' }), piece({ id: 'original', ...IDENTITE_F1 }), piece({ id: 'autre' })]
+    expect(jumellesDeLaFacture(facture(), [], pieces).map((j) => [j.pieceId, j.preuves]))
+      .toEqual([['pdf', ['designation']], ['original', ['identite']]])
+  })
+
+  it('les colonnes que le pont lit : celles de la pièce telle qu’il la lit, la désignation en dernier, seulement dans la seconde', () => {
+    const cles = Object.keys(piece()).sort()
+    expect(COLONNES_DES_PIECES_DU_PONT.split(', ').sort()).toEqual(cles)
+    expect(COLONNES_DES_PIECES_DU_PONT).toBe(
+      'id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature')
+    expect(COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION.split(', ')).toEqual([...COLONNES_DES_PIECES_DU_PONT.split(', '), 'facture_id'])
+  })
+})
+
 describe('ventesEnDouble — la même vente portée par plusieurs pièces', () => {
   const f1 = facture({ superpdp_invoice_id: 4242 })
   const f2 = facture({ id: 'f2', numero: 'F2026-0008' })
@@ -199,6 +272,16 @@ describe('ventesEnDouble — la même vente portée par plusieurs pièces', () =
     const j = jumellesDuDossier([f1, f2], [], [recue, synchronisee, seule])
     expect(j.parFacture.get('f1')?.map((x) => x.pieceId)).toEqual(['p-plateforme', 'p-superpdp'])
     expect(ventesEnDouble([f1, f2], j)).toEqual([{ factureId: 'f1', pieceIds: ['p-plateforme', 'p-superpdp'] }])
+  })
+
+  it('la jumelle reçue de la plateforme et le PDF que le cabinet a désigné : comptée deux fois — le trou que 28.6-Q1 ferme', () => {
+    const pdf = piece({ id: 'p-pdf', facture_id: 'f1' })
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, pdf, seule])))
+      .toEqual([{ factureId: 'f1', pieceIds: ['p-plateforme', 'p-pdf'] }])
+    // Le même PDF, non désigné : rien ne le relie à sa facture, et la vente comptée deux fois ne se voit pas.
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, piece({ id: 'p-pdf' }), seule]))).toEqual([])
+    // Désigné seul, sans jumelle revenue : une seule pièce porte la vente.
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [pdf, seule]))).toEqual([])
   })
 
   it('une facture portée par une seule pièce n\'est pas en double ; rien n\'est en double sans jumelle', () => {
@@ -296,6 +379,44 @@ describe('marquesDesPieces — la pastille de chaque pièce, et ce qu’elle veu
     const toutes = piece({ ...IDENTITE_F1, superpdp_invoice_id: 4242, flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' })
     expect(marques([f1], [transmission()], [toutes]).get('p1')?.explication).toContain('— reconnue par le flux de sa '
       + 'transmission, par l’identifiant de Super PDP et par son numéro, son vendeur et son année. C’est')
+  })
+
+  it('la désignation se dit la première : un exemplaire désigné seul, ou un original désigné et reconnu', () => {
+    expect(marques([f1], [], [piece({ facture_id: 'f1' })]).get('p1')).toEqual({
+      genre: 'jumelle',
+      libelle: 'Facture émise F2026-0007',
+      explication: 'Cette pièce est un exemplaire de la facture F2026-0007 émise dans l’application — désignée comme son '
+        + 'exemplaire. C’est la même vente : elle ne se compte qu’une fois.',
+      numeros: ['F2026-0007'],
+      autresPieces: [],
+    })
+    expect(marques([f1], [], [piece({ ...IDENTITE_F1, facture_id: 'f1' })]).get('p1')?.explication).toBe(
+      'Cette pièce est la facture F2026-0007 émise dans l’application, revenue comme pièce — désignée comme son exemplaire, '
+      + 'et reconnue par son numéro, son vendeur et son année. C’est la même vente : elle ne se compte qu’une fois.')
+    const toutes = piece({ ...IDENTITE_F1, facture_id: 'f1', superpdp_invoice_id: 4242, flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' })
+    expect(marques([f1], [transmission()], [toutes]).get('p1')?.explication).toContain('— désignée comme son exemplaire, et '
+      + 'reconnue par le flux de sa transmission, par l’identifiant de Super PDP et par son numéro, son vendeur et son année. C’est')
+  })
+
+  it('la jumelle et le PDF désigné : chacune dit la vente comptée deux fois, et ce qui la relie', () => {
+    const m = marques([f1], [], [piece({ id: 'p-plateforme', ...IDENTITE_F1 }), piece({ id: 'p-pdf', facture_id: 'f1' })])
+    expect(m.get('p-pdf')).toEqual({
+      genre: 'double',
+      libelle: 'Comptée deux fois',
+      explication: 'La facture F2026-0007 émise dans l’application est portée par 2 pièces, dont celle-ci, désignée comme '
+        + 'son exemplaire. Validées, elles la comptent deux fois dans la 2035, la CA3 et les écritures : gardez une seule '
+        + 'pièce par facture — celle reçue de la plateforme du client porte l’original.',
+      numeros: ['F2026-0007'],
+      autresPieces: ['p-plateforme'],
+    })
+    expect(m.get('p-plateforme')?.explication).toContain('dont celle-ci, reconnue par son numéro, son vendeur et son année.')
+  })
+
+  it('désignée à une facture, rattachée à une autre : à vérifier, les deux numéros', () => {
+    const p = piece({ ...IDENTITE_F1, identite_numero: 'F2026-0008', facture_id: 'f1' })
+    expect(marques([f1, f2], [], [p]).get('p1')).toMatchObject({
+      genre: 'incoherente', libelle: 'À vérifier : désigne F2026-0007 et F2026-0008', numeros: ['F2026-0007', 'F2026-0008'],
+    })
   })
 
   it('la vente comptée deux fois : chaque pièce le dit, et nomme les autres', () => {

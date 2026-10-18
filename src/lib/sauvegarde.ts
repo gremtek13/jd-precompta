@@ -14,6 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
+import { EXEMPLAIRES_DES_FACTURES_EXPORTES } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -95,6 +96,23 @@ export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
     && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
     && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
+}
+
+// L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, PRÉPARÉE, pas appliquée) :
+// ni table, ni rang, ni chemin nouveaux — une COLONNE de plus sur une table au plan, `pieces.facture_id`, et sa clé vers
+// `factures_emises`, sans action à la suppression (une facture validée ne se supprime qu'avec son dossier). Les factures
+// précèdent déjà les pièces dans l'ordre de restauration, ce que la clé exige, et la sauvegarde recopie des lignes entières
+// (`select('*')`) : une pièce désignée se réinsère désignée, par la porte que la garde ouvre au super-administrateur. La
+// relation est déclarée ci-dessous à sa place, et RETIRÉE du graphe du jour tant que `EXEMPLAIRES_DES_FACTURES_EXPORTES`
+// (src/lib/exemplairesDesFactures.ts) est baissé : l'export ne porte pas la clé, et sauvegardeRelations.test.ts juge le
+// graphe du jour contre lui. Levé, `liensPerdus` refuse avant toute écriture la sauvegarde d'une pièce désignée dont la
+// facture manque. sauvegardeExemplaires.test.ts éprouve le graphe prévu et le graphe du jour.
+export const RELATIONS_DES_EXEMPLAIRES: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [{ enfant: 'pieces', colonne: 'facture_id' }]
+
+/** Une relation au graphe, côté exemplaires : toutes, sauf la désignation tant que sa migration n'est pas exportée. */
+export function auGrapheDesExemplaires(relation: Pick<Relation, 'enfant' | 'colonne'>, exemplairesExportes: boolean): boolean {
+  return exemplairesExportes
+    || !RELATIONS_DES_EXEMPLAIRES.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -251,11 +269,15 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // Les paramètres de facturation (espace client, étape A5a) : leur dossier, et la version qu'une version remplace.
   { enfant: 'parametres_facturation', parent: 'parametres_facturation', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'parametres_facturation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // L'exemplaire d'une facture (chantier EC-Q3, étape VF1a) : la facture émise validée dont la pièce est un exemplaire.
+  { enfant: 'pieces', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
-// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
-export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES.filter((r) => auPlanAujourdHui(r.enfant))
+// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées, ni celle de l'exemplaire d'une
+// facture tant que la sienne ne l'est pas.
+export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
+  .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à

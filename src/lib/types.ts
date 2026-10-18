@@ -377,6 +377,14 @@ export interface Piece {
   identite_siren_vendeur: string | null
   identite_date: string | null
   identite_nature: 'facture' | 'avoir' | null
+  // L'EXEMPLAIRE D'UNE FACTURE ÉMISE (chantier EC-Q3, étape VF1a ; migration exemplaires_des_factures, PRÉPARÉE) : la
+  // facture validée du même dossier dont cette pièce de vente est un exemplaire — l'original revenu de la plateforme, ou le
+  // PDF —, que le cabinet désigne par `designer_exemplaire_facture` et défait par `defaire_exemplaire_facture`, seules ;
+  // figée avec la pièce. Le pont en fait sa quatrième preuve (lib/ventesJumelles.ts). FACULTATIF tant que la migration
+  // attend l'accord du cabinet : les lignes lues avant elle n'ont pas la colonne, et le type décrit la table telle qu'elle
+  // est des deux côtés (le patron de `FactureEmise.valide_par` à l'étape P2) ; aucune lecture ne la nomme avant la bascule
+  // (`EXEMPLAIRES_DES_FACTURES_EXPORTES`). Il deviendra obligatoire avec le premier écran qui la lit (étape VF1b).
+  facture_id?: string | null
   created_at: string
   updated_at: string
 }

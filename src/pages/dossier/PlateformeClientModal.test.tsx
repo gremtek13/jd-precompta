@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PlateformeClientModal from './PlateformeClientModal'
+import { EXEMPLAIRES_DES_FACTURES_EXPORTES } from '../../lib/exemplairesDesFactures'
+import { COLONNES_DES_PIECES_DU_PONT, COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION } from '../../lib/ventesJumelles'
 import type {
   BilanReception, ConnexionPlateformeVue, DrapeauxPlateforme, FluxVu, ListeFlux, PlanReception, ReleveStatuts,
 } from '../../lib/receptionPlateforme'
@@ -406,12 +408,13 @@ describe('chercher puis importer', () => {
       expect(screen.getByText('4 factures importées, « à valider » dans Justificatifs.')).toBeTruthy()
       expect(screen.getByText('2 ventes reconnues comme des factures émises de l’application, dont 1 déjà portée par une '
         + 'autre pièce : ne validez qu’une pièce par facture ; la Checklist le signale.')).toBeTruthy()
-      // Les trois lectures du pont, une fois chacune, et rien d'autre.
+      // Les trois lectures du pont, une fois chacune, et rien d'autre. Celle des pièces nomme la désignation (étape VF1a)
+      // le drapeau de sa migration levé, et pas avant (lib/ventesJumellesLecture.ts ; les deux textes : ventesJumelles.test.ts).
       expect([...base.lectures].sort()).toEqual([
-        'id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature',
+        EXEMPLAIRES_DES_FACTURES_EXPORTES ? COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION : COLONNES_DES_PIECES_DU_PONT,
         'id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id',
         'id, facture_id, canal, hote, flux_id',
-      ])
+      ].sort())
       expect(onImported).toHaveBeenCalledTimes(1)
     })
 

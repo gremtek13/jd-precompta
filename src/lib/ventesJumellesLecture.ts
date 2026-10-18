@@ -1,7 +1,9 @@
 import { supabase } from './supabase'
+import { EXEMPLAIRES_DES_FACTURES_EXPORTES } from './exemplairesDesFactures'
 import { lireTout } from './lectureComplete'
 import {
-  jumellesDuDossier, type FacturePourJumelle, type JumellesDuDossier, type PiecePourJumelle, type TransmissionPourJumelle,
+  COLONNES_DES_PIECES_DU_PONT, COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION, jumellesDuDossier, type FacturePourJumelle,
+  type JumellesDuDossier, type PiecePourJumelle, type TransmissionPourJumelle,
 } from './ventesJumelles'
 
 // CE QUE LE PONT DE LA LIGNE 28.6 LIT (lib/ventesJumelles.ts), pour les écrans qui marquent la pièce jumelle : l'onglet
@@ -11,6 +13,9 @@ import {
 //
 // `motif` : non nul quand l'une des lectures est partielle. L'écran se TAIT alors sur les jumelles — une facture non lue
 // ferait passer pour la jumelle d'une autre une pièce dont les preuves se contredisent — et dit pourquoi.
+//
+// LA DÉSIGNATION (étape VF1a) : les pièces se lisent avec `facture_id` seulement le drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES`
+// levé, lu à CHAQUE lecture : baissé, la colonne n'existe pas en base, et la nommer ferait échouer la lecture.
 
 export interface LectureVentesEmises {
   /** Les factures émises VALIDÉES du dossier : seule une facture validée a une jumelle. */
@@ -45,9 +50,11 @@ export interface LectureJumelles {
 /** Les jumelles du dossier entier : ses factures émises validées, leurs transmissions et TOUTES ses pièces. */
 export async function lireJumellesDuDossier(dossierId: string): Promise<LectureJumelles> {
   const ventes = await lireVentesEmises(dossierId)
-  const lecturePieces = await lireTout<PiecePourJumelle>((debut, fin) =>
-    supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature', { count: 'exact' })
-      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  const lecturePieces = await lireTout<PiecePourJumelle>((debut, fin) => (EXEMPLAIRES_DES_FACTURES_EXPORTES
+    ? supabase.from('pieces').select(COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION, { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin)
+    : supabase.from('pieces').select(COLONNES_DES_PIECES_DU_PONT, { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin)),
   )
   const motif = ventes.motif ?? (lecturePieces.complete ? null : lecturePieces.motif)
   return {

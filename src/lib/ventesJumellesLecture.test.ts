@@ -5,11 +5,24 @@ import { lireJumellesDuDossier, lireVentesEmises } from './ventesJumellesLecture
 // CE QUE LE PONT LIT POUR LES ÉCRANS (lib/ventesJumellesLecture.ts) : les factures émises VALIDÉES du dossier, ses
 // transmissions, ses pièces, chacune EN ENTIER — ou un motif, et rien sur les jumelles. Le faux client APPLIQUE les
 // filtres (src/test/filtresPostgrest.ts) et ne rend que les colonnes demandées, comme PostgREST. Données FICTIVES.
+//
+// LA DÉSIGNATION (étape VF1a) : le drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES` se joue dans ses deux états, par un
+// accesseur lu à chaque accès ; et la base de chaque état aussi — sans la migration, la colonne `facture_id` n'existe
+// pas, et PostgREST refuse une lecture qui la nomme (42703), comme il le ferait.
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, Record<string, unknown>[]>,
   // Lecture partielle : la table cesse de rendre des lignes au-delà de ce rang, en annonçant le vrai total.
   muetApres: {} as Record<string, number>,
   refus: {} as Record<string, string>,
+  // Les colonnes qui n'existent pas en base : les nommer fait refuser la lecture.
+  absentes: {} as Record<string, string[]>,
+  drapeau: false,
+  // Ce que chaque lecture a demandé, table et colonnes.
+  demandes: [] as string[],
+}))
+
+vi.mock('./exemplairesDesFactures', () => ({
+  get EXEMPLAIRES_DES_FACTURES_EXPORTES() { return faux.drapeau },
 }))
 
 vi.mock('./supabase', async () => {
@@ -21,11 +34,19 @@ vi.mock('./supabase', async () => {
         const predicats: ((l: Record<string, unknown>) => boolean)[] = []
         let colonnes: string[] | null = null
         const q: Record<string, unknown> = {
-          select: (liste: string) => { colonnes = liste === '*' ? null : liste.split(',').map((x) => x.trim()); return q },
+          select: (liste: string) => {
+            colonnes = liste === '*' ? null : liste.split(',').map((x) => x.trim())
+            faux.demandes.push(`${table}: ${liste}`)
+            return q
+          },
           eq: (c: string, v: unknown) => { predicats.push(predicatEq(c, v)); return q },
           order: () => q,
           range: (debut: number, fin: number) => {
             if (faux.refus[table]) return Promise.resolve({ data: null, error: { message: faux.refus[table] }, count: null })
+            const absente = (faux.absentes[table] ?? []).find((c) => colonnes?.includes(c))
+            if (absente !== undefined) {
+              return Promise.resolve({ data: null, error: { code: '42703', message: `column ${table}.${absente} does not exist` }, count: null })
+            }
             const toutes = filtrer(faux.tables[table], predicats)
             const rendu = toutes.slice(debut, Math.min(fin + 1, faux.muetApres[table] ?? Infinity))
               .map((l) => (colonnes ? Object.fromEntries(colonnes.map((k) => [k, l[k]])) : l))
@@ -54,6 +75,9 @@ const piece = (o: Partial<PiecePourJumelle> = {}): PiecePourJumelle => ({
 beforeEach(() => {
   faux.muetApres = {}
   faux.refus = {}
+  faux.absentes = {}
+  faux.drapeau = false
+  faux.demandes = []
   faux.tables = {
     factures_emises: [
       facture(),
@@ -104,5 +128,39 @@ describe('lireJumellesDuDossier', () => {
       expect(l.jumelles, table).toBeNull()
       expect(l.motif, table).toMatch(/ligne\(s\) lue\(s\) sur \d annoncée\(s\)/)
     }
+  })
+})
+
+describe('lireJumellesDuDossier — la désignation, dans les deux états du drapeau', () => {
+  beforeEach(() => {
+    // Un PDF déposé, que le cabinet a désigné exemplaire de f1 — dans une base qui porte la migration.
+    faux.tables.pieces.push(piece({ id: 'p-pdf', facture_id: 'f1' }))
+  })
+
+  it('le drapeau baissé : la lecture ne nomme pas la colonne — une base sans la migration la lit, et le PDF n’est désigné à rien', async () => {
+    faux.absentes = { pieces: ['facture_id'] }
+    const l = await lireJumellesDuDossier(D)
+    expect(l.motif).toBeNull()
+    expect(faux.demandes.find((x) => x.startsWith('pieces: '))).not.toContain('facture_id')
+    expect(l.jumelles?.parFacture.get('f1')?.map((j) => j.pieceId)).toEqual(['p-superpdp', 'p-flux'])
+  })
+
+  it('le drapeau levé : la lecture nomme la colonne, et le PDF désigné est un exemplaire de sa facture', async () => {
+    faux.drapeau = true
+    const l = await lireJumellesDuDossier(D)
+    expect(l.motif).toBeNull()
+    expect(faux.demandes.find((x) => x.startsWith('pieces: '))).toMatch(/, facture_id$/)
+    expect(l.jumelles?.parFacture.get('f1')?.map((j) => [j.pieceId, j.preuves])).toEqual([
+      ['p-superpdp', ['superpdp']], ['p-flux', ['flux']], ['p-pdf', ['designation']],
+    ])
+  })
+
+  it('le drapeau levé sur une base qui ne porte pas la migration : la lecture échoue, et le dit — jamais des jumelles', async () => {
+    // Ce que la bascule avant l'application ferait : l'ordre de la consigne (appliquer, PUIS lever le drapeau) le garde.
+    faux.drapeau = true
+    faux.absentes = { pieces: ['facture_id'] }
+    const l = await lireJumellesDuDossier(D)
+    expect(l.jumelles).toBeNull()
+    expect(l.motif).toContain('facture_id')
   })
 })
