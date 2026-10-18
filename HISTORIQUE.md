@@ -28774,3 +28774,398 @@ utilisée, et `supabase/config.toml` ne porte que `verify_jwt`.
   Functions) — et distinguer « vide » (rien ne l'a exercée) de « morte » (contournée alors que sa fonctionnalité a
   tourné).
 - **Ce fichier reste court** : une entrée nouvelle tient en quelques lignes et renvoie à son récit dans HISTORIQUE.md.
+
+### 18/10/2026 — LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION (EC-Q3, LIGNE 28.6)
+
+(Conception, sur `258b118` ; rien d'écrit, ni dans le dépôt ni en base. Production lue le 18/10/2026, comptes et
+catalogue seulement (§ 1). Sources au § 17 ; les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+Légifrance refuse les lectures automatiques (403) : les articles du CGI sont cités par la doctrine du BOFiP qui les
+reproduit, elle lue.) La décision du cabinet (ARB-EC-Q3, 18/10/2026) : « EC-Q3, maintenant — une facture validée dans
+l'application devient la source de sa vente (2035, CA3, écritures), un chantier comptable à part, fini avant que les
+clients facturent réellement ici ; 28.6-Q2 cède. »
+
+#### 0. Le résumé en douze lignes
+
+1. Une facture émise ne compte NULLE PART : une vente n'entre que par une pièce de vente validée ou une recette du
+   relevé. Mesuré : aucune vente réelle ne passe par une facture de l'application ; le défaut est LATENT (§ 1).
+2. La source est double : la FACTURE, figée, dit quoi et combien, taux par taux ; le REGISTRE des encaissements (d1) dit
+   quand l'argent est reçu — la date de la 2035 (CGI, art. 93), de la TVA des services (art. 269, 2-c) et du statut
+   « Encaissée » que l'administration reçoit (§ 3).
+3. Les moteurs lisent la facture et le registre, comme ils lisent déjà les parts du relevé : une source et un paramètre
+   obligatoire de plus. La pièce dérivée est écartée : un seul taux, datée par la banque seule (§ 4).
+4. En trésorerie l'encaissement écrit la recette à sa date ; en engagement la facture écrit la créance et l'encaissement
+   la solde. Un taux soldé porte exactement la TVA facturée : le cumul s'arrondit, pas chaque encaissement (§ 5, § 6).
+5. Le double compte devient impossible en base : le mouvement d'un encaissement ne porte rien d'autre ; la pièce de
+   vente d'un dossier basculé se désigne ou se déclare ; l'exemplaire ne se rapproche ni ne s'écrit ; la validation
+   refuse (§ 7).
+6. La jumelle et le PDF deviennent des EXEMPLAIRES de la facture : désignés, ils prouvent et ne comptent plus (§ 8).
+7. La bascule se règle par dossier, par le cabinet : chaque facture fige à sa validation qu'elle est source ; celles
+   d'avant restent comptées par leurs pièces ; irréversible dès la première (§ 9).
+8. Le client « Ventes » valide et encaisse ; ses ventes comptent sans visa, ses écritures s'écrivent sur le clic du
+   cabinet, le mouvement qu'il désigne est réservé et proposé, jamais classé par lui (§ 10).
+9. La validation d'un exercice fige les encaissements de ses dates et leurs écritures (§ 11).
+10. Six rôles nouveaux au plan comptable : 706, 707, la TVA en attente, 511, 53 et 627 (§ 12).
+11. Neuf étapes, VF1 à VF9 : l'exemplaire d'abord (28.6-Q1), la base neutre, les moteurs, les écritures, la banque, la
+    jumelle inversée, la validation, la bascule, l'assistant (§ 14).
+12. Douze questions au cabinet, EC3-Q1 à EC3-Q12 (§ 16).
+
+#### 1. La mesure (production, 18/10/2026 ; des comptes)
+
+Quatre dossiers, tous en trésorerie, aucun sur les débits, aucun exercice validé, aucun plan réglé, aucun accès qui
+porte « Ventes » ou « Banque ». Six factures émises, toutes validées, toutes dans le bac à sable `ac538d93` : aucun
+avoir ni brouillon, aucune nature d'opération ni option pour les débits (validées avant le 07/10/2026), aucune validée
+par un accès, aucune à plusieurs taux ; aucune transmission, aucun statut reçu, aucun encaissement, aucune déclaration
+d'encaissement. Six pièces de vente, une validée (dans `001c7ed7`, le dossier vivant, déposée) ; aucune ne porte
+d'identité ni de flux, quatre un identifiant Super PDP qu'aucune facture ne porte : aucune jumelle. Sur 998 mouvements
+(389 crédits), aucun n'est affecté ni ventilé en recette, aucun rapproché d'une pièce de vente ; aucune écriture de
+classe 7. Le catalogue a 26 rôles, aucun pour 706, 707, 4458, 511, 53 ni 627. La bascule ne trouvera rien à reprendre.
+
+#### 2. Ce que le code fait aujourd'hui : tout ce qui compte une vente
+
+Recherche partie de toute la source (`'vente'`, `type_piece`, `natureDuCompte`, les lecteurs de `factures_emises` et
+d'`encaissements_factures`, les appelants de chaque moteur). Une vente se reconnaît de trois façons, et d'aucune autre :
+une pièce validée de type « vente » ; une part du relevé sur un compte de classe 7 (`affectationBanque.ts:33`) ; une
+écriture de classe 7, que lisent les états tirés du brouillon.
+- **2035** : la pièce en recette (`declaration2035.ts:376`), au montant retenu, à la date de ses paiements (`:334-388`),
+  puis les parts du relevé (`:394`) ; lue par Clôture (`ClotureTab.tsx:404-440`), la 2035-E (`declaration2035E.ts:153`),
+  le volet social (`voletSocialPamc.ts:73`), la revue analytique (`revueAnalytiqueEcran.ts:65-92`), la 2035 validée
+  (`validationExercice.ts:235`).
+- **Date** : `paiementsDesPieces` ne connaît que les mouvements rapprochés et les parts groupées
+  (`rattachement.ts:67`) ; sans eux la pièce compte « sans paiement » à sa date de facture (`:148-158`) ; en engagement,
+  à sa date (`:187`).
+- **Montant** : `montantRetenu`, le HT d'un assujetti, le TTC sinon, au statut d'aujourd'hui (`montantRetenu.ts:54`).
+- **CA3** : une recette est une prestation, exigible au paiement, à la date de la pièce sur les débits
+  (`declarationTva.ts:165, 189, 422`) ; un taux par pièce, sinon écartée (`:82, 507`) ; le relevé (`:531`) ; la
+  liquidation sur les centimes du brouillon (`liquidationTva.ts:73, 237`) ; l'écran (`TvaTab.tsx:347-361`).
+- **Écritures** : la vente au crédit du compte de sa catégorie (`ecritures.ts:80-86`), le 411 en engagement
+  (`engagement.ts:142, 165, 191`) ; génération et contrôles (`ecritures.ts:201, 294, 365, 415, 556`), contrepartie
+  (`contrepartieBanque.ts:53`) ; balance (`ecritures.ts:812`), bilan (`bilan.ts:490`), pilotage (`tableauPilotage.ts:29,
+  52`), plan de trésorerie sur les lignes du 512 (`FinancementTab.tsx:211-218`).
+- **FEC, piste, lettrage** : une clé par pièce et par date, le journal VE pour une vente (`fec.ts:225, 293`) ;
+  l'auxiliaire tiré du nom (`engagement.ts:245`) ; la piste (`pisteAudit.ts:67, 203`) ; le lettrage par pièce
+  (`lettrage.ts:110`) ; la concordance de la 2035 sur la classe 7 (`concordance2035.ts:187, 244`).
+- **Situation, ratios, prévisionnel, estimation, simulation** : `situationIntermediaire.ts:93-114`,
+  `FinancementTab.tsx:180-183, 511-515, 717, 810-815`, `estimation.ts:24-66` (les charges sans les ventes, `:162`),
+  `EstimationTab.tsx:101, 178-183, 261`, `ClientSimulation.tsx:89, 180-184`.
+- **Relevé et rapprochement** : `affectationBanque.ts:160, 205`, `ventilationBanque.ts:160, 239`, `tvaDuReleve.ts:43`,
+  `reglesAffectation.ts:200, 261` ; candidats et lots (`appariementBanque.ts:187, 212, 334, 402`) ; règlement groupé
+  (`reglementGroupe.ts:48`).
+- **Checklist, préalables, révision** : `pointsDeLaChecklist.ts:194, 206, 276-277, 416, 499`,
+  `prealablesValidation.ts:260, 448-449, 471-477`, `revisionCycles.ts:171`.
+- **Le pont 28.6** : `ventesJumelles.ts:85, 164, 184, 286, 359`, `ventesJumellesLecture.ts`,
+  `encaissementsFactures.ts:909, 1042`, `PiecesTab.tsx:311-313`, `PlateformeClientModal.tsx:229`.
+- **L'assistant** : copies du sens, du 411, de la TVA collectée, des paiements et des affectations
+  (`agent-comptable/index.ts:195, 225, 327, 399, 491, 867`), lectures (`:2630-2776`) ; aucune facture lue.
+- **La sauvegarde** : relations et ordre (`sauvegarde.ts:141-154, 406-470`) — les factures avant les pièces, les
+  mouvements avant les encaissements, les encaissements avant le brouillon.
+Lisent les ventes facturées SANS les compter : l'e-reporting (10.3, `ereporting.ts:812, 825` ; 10.4, `:924`), les
+pastilles et les tuiles (`encaissementsAffichage.ts:36`, `tuilesVentes.ts:59`), les règlements. Formes non reconnues,
+nommées : la facture émise et son encaissement ne sont une vente pour AUCUN moteur ; une pièce « autre » compte en
+dépense (`declaration2035.ts:376`) ; une pièce payée par chèque compte au jour de son crédit, non de sa remise (§ 15).
+
+#### 3. Les règles et leurs sources
+
+- **BNC, la recette encaissée** : « toutes les recettes encaissées au cours de l'année », quel que soit le mode de
+  perception ; encaissée « à la date où le bénéficiaire en a la libre disposition » — le chèque à sa remise (ou à la
+  réception de la lettre), le virement à l'inscription au crédit, l'effet à son échéance (CGI, art. 93, 1 et art. 12 ;
+  BOI-BNC-BASE-20-10-10, § 1, 10, 20, 40). La 2035 prend la date de l'encaissement, jamais celle de la facture.
+- **BIC et IS, la créance acquise** : le produit se rattache à l'exercice de la livraison ou de l'achèvement de la
+  prestation (art. 38, 2 bis ; BOI-BIC-BASE-20-10). En engagement, la facture s'écrit à sa date, comme une pièce
+  aujourd'hui ; le rattachement fin (418, 487) est un travail d'inventaire (ligne 35) : EC3-Q12.
+- **TVA des services** : exigible à l'encaissement des acomptes et du prix, ou sur option d'après les débits (art. 269,
+  2-c ; BOI-TVA-BASE-20-20, § 30) ; le chèque le jour de sa remise, et s'il revient impayé la taxe s'impute sur la plus
+  prochaine déclaration (§ 40) ; le virement à l'inscription au compte (§ 50) ; l'effet escompté au paiement (§ 60).
+- **TVA des biens** : exigible à la livraison ; un acompte encaissé avant elle l'est à son encaissement, à concurrence
+  de son montant, depuis le 01/01/2023 (art. 269, 1-a et 2-a ; BOI-TVA-BASE-20-10, § 1, 10, 65).
+- **La TVA facturée est due** du seul fait de sa facturation (art. 283, 3 ; BOI-TVA-DECLA-30-20-20-30, § 350) : un taux
+  soldé rend exigible la TVA de la facture, au centime, quelle que soit la répartition de ses encaissements.
+- **Facture et avoir** : la facture s'émet dès la livraison ou la prestation (art. 289, I) ; elle se corrige par un
+  avoir qui la cite (ann. II, art. 242 nonies A ; art. 272, 1) — la règle que la base tient depuis le 07/10/2026.
+- **Le statut « Encaissée »** porte la date et le montant encaissé par taux (ann. II, art. 242 nonies P ;
+  BOI-TVA-DECLA-20-30-60, § 50 et 120, sources de d1) : une CA3 qui lit le registre dit ce que l'administration reçoit.
+- **Le plan comptable du 1er janvier 2026** (règlement ANC n° 2014-03 consolidé) : 411 débité des factures par le crédit
+  du 70 hors taxes et du 4457, crédité par la trésorerie (art. 1214-41) ; 4191 « avances et acomptes reçus » ; 44571
+  « TVA collectée » (art. 1214-44) ; 4458 « taxes sur le chiffre d'affaires à régulariser ou en attente », dont 44587
+  « sur factures à établir » — 44574 n'est PAS dans la nomenclature ; 511 « valeurs à l'encaissement », débité des
+  chèques et effets remis (art. 1215-51), 5112 « chèques à encaisser » ; 53 « caisse », débité des espèces encaissées,
+  solde débiteur ou nul (art. 1215-53) ; 627 « services bancaires et assimilés » ; 706 « prestations de services » ; 707
+  « ventes de marchandises » ; les comptes divisionnaires (art. 1131-1).
+- **Le FEC** : une écriture, une date, une pièce (LPF, art. A47 A-1 ; « LE FEC SUIT L'ARTICLE A47 A-1 »).
+
+#### 4. Les voies
+
+Critères : le double compte impossible en base ; les moteurs éprouvés réutilisés ; rien d'automatique ; la facture et
+l'exercice figés ; le client qui valide ses factures (MEG1-Q5) ; le coût.
+- **(1) Une pièce dérivée**, créée à la validation, comptée comme une autre. Écartée : une pièce porte UN montant de
+  TVA, et la CA3 écarte une facture à plusieurs taux (`declarationTva.ts:507`) ; elle ne se date que par la banque
+  (`rattachement.ts:67`) — l'espèce, le chèque remis avant son crédit, l'encaissement d'un client sans « Banque », qui
+  ne cite jamais de mouvement, la feraient compter « sans paiement » à la date de la facture, ce qui est faux en BNC et
+  contraire au statut déclaré ; `storage_path` est NOT NULL, et l'application ne garde ni le PDF ni le CII d'une
+  facture ; `pieces_source_check` serait à remplacer, une garde à écrire pour la figer comme sa facture, et le pont la
+  prendrait pour une troisième jumelle. Lever les deux premiers points, c'est apprendre le registre aux moteurs : la
+  voie (2).
+- **(2) Les moteurs lisent la facture et le registre** : une SOURCE de plus, sur le modèle des parts du relevé (« une
+  source s'ajoute ICI, et tous les moteurs la comptent », `partsDuReleve.ts:18`) ; exacte par taux, datée par le
+  registre, sur deux tables déjà figées en base ; la CA3 et le statut « Encaissée » lisent le même registre (d9 tenu par
+  construction) ; l'e-reporting les lit déjà. Coût : un paramètre par moteur, deux sources d'écriture, des clés du FEC,
+  les copies de l'assistant.
+- **(3) Un mélange** : le registre pour la 2035 et la CA3, une pièce dérivée pour les écritures — deux calculs, la
+  concordance perdue ; ou la pièce dérivée pour seul justificatif — l'exemplaire désigné l'est déjà (§ 8).
+**RECOMMANDATION : (2)**, la jumelle et le PDF devenus exemplaires, le double compte fermé par cinq gardes (§ 7).
+
+#### 5. Ce qui s'écrit, en trésorerie et en engagement
+
+p : la part TTC d'un encaissement à un taux (le registre) ; v : sa TVA (§ 6) ; h = p − v. [T], le compte de trésorerie
+de l'encaissement : 512 quand il cite un mouvement du même jour ; 511 quand ce mouvement est d'un autre jour ou pas
+encore cité ; 53 pour des espèces ; pour une compensation ou « autre », un compte de bilan que le cabinet choisit, comme
+pour un mouvement écrit sur un compte de bilan (ligne 26.7). EC3-Q7.
+- **La facture** — trésorerie : rien, une recette n'existe qu'encaissée ; sauf la TVA due AVANT l'encaissement (biens,
+  option pour les débits) : 411 au débit, 44571 au crédit, à sa date. Engagement : 411 au débit (TTC), 706 ou 707 au
+  crédit (HT, par taux), la TVA au 44571 (biens, débits) ou au compte de la TVA en attente (services), à sa date.
+- **L'avoir** : l'inverse de l'écriture de sa facture, à sa date (en trésorerie, pour des services : rien).
+- **L'encaissement**, à sa date — trésorerie : [T] au débit (p), 706 ou 707 au crédit (h), 44571 au crédit (v) — ou 411
+  pour un bien ou sur les débits, la TVA déjà due s'y soldant ; engagement : [T] au débit, 411 au crédit (p), et pour
+  des services la TVA passe du compte d'attente au 44571 (v).
+- **Le mouvement que des encaissements citent**, à sa date : 512 au débit pour ce que les encaissements du même jour
+  n'ont pas porté, 511 au crédit pour ceux qui y sont passés, 627 pour l'écart sous le seuil des frais (min(2 %, 5 €),
+  la règle d'`alignementBanque.ts` que tient le registre ; 31-changeFrais : « à part, au 627 ») ; rien quand tout est du
+  même jour et sans écart. Le 512 d'un mouvement fait exactement son montant.
+- **La contre-passation** : l'inverse de l'encaissement, à sa date ; quand elle défait de l'argent (chèque impayé, somme
+  rendue), elle cite le mouvement de débit, ce qu'interdit aujourd'hui
+  `encaissements_factures_annulation_sans_mouvement` (remplacée en VF2, présentée).
+- **Le retrait** (jamais déclaré) emporte son écriture ; refusé dans un exercice validé (§ 11).
+- **Le paiement partiel** : chaque encaissement sa part ; le reste est une créance (411 en engagement, rien en
+  trésorerie).
+- **Le trop-perçu** : le registre plafonne à la facture ; l'excédent d'un mouvement reste « à traiter » (hors du
+  chantier).
+- **HT ou TTC : la facture le dit elle-même.** Sa TVA est due parce que facturée : la recette est son hors taxe et sa
+  TVA va au 44571, quel que soit le statut du dossier aujourd'hui ; `montantRetenu`, qui suit le droit à déduction d'un
+  achat, ne s'applique pas. Franchise ou exonéré : des lignes à 0 %, la recette au TTC, aucune TVA.
+- **L'exigibilité que la facture ne dit pas** : une facture source dit « biens » ou « services », sinon elle ne se
+  valide pas ; une facture « mixte » se refuse tant qu'A7 ne fige pas la nature de chaque ligne (EC3-Q8). Le compte suit
+  la nature : 706 pour des services, 707 pour des biens.
+- **FEC** : facture, avoir et encaissement de trésorerie au journal VE ; règlement d'engagement et mouvement au journal
+  BQ ; PieceRef, le numéro de la facture (le relevé pour un mouvement) ; PieceDate, sa date d'émission ; l'auxiliaire du
+  411, « C » et la clé du nom (`cleFournisseur`), celle d'une pièce : un client ne change pas de compte à la bascule.
+
+#### 6. La TVA d'une vente facturée (CA3)
+
+- Services : à chaque encaissement, à sa date, la base h et la taxe v sur la ligne de son taux ; une contre-passation en
+  B5 et 21 à sa date (§ 40). Sur les débits ou pour un bien, l'impayé ne rend la taxe que la créance devenue
+  irrécouvrable (hors du chantier).
+- Option pour les débits : à la date de la facture ; son avoir en B5 et 21 à la sienne.
+- Biens : à la livraison — la date de livraison que porte la facture (`date_prestation`), sinon sa date d'émission (art.
+  289, I) ; un encaissement antérieur, comme un acompte, à sa propre date (BOI-TVA-BASE-20-10, § 65).
+- Les opérations exonérées d'un redevable : E2 et F8, aux mêmes dates.
+- **La règle du cumul** : pour un taux, V et T la TVA et le TTC de la facture (nets de ses avoirs datés au plus tard du
+  jour de l'encaissement), P le cumul net de ses encaissements ; la TVA cumulée vaut V × P / T arrondi au centime, et
+  chaque encaissement prend la différence. Un taux soldé porte exactement V : la règle des dotations (« le cumul
+  s'arrondit, pas l'annuité »), refaite en entiers par la base et confrontée à une table relevée en base.
+- La CA3 et les écritures sortent du même module : ses centimes sont ceux du brouillon, la liquidation reste juste.
+
+#### 7. Le double compte rendu impossible en base
+
+Une vente facturée compterait une seconde fois par (a) sa jumelle validée, (b) son PDF validé, (c) le mouvement de son
+encaissement affecté, ventilé ou pris dans une règle en recette, (d) ce mouvement rapproché d'une pièce de vente, (e)
+une seconde écriture. Cinq gardes :
+- **G1** (VF2) — `lignes_bancaires.encaissements_de_factures` entre dans `lignes_bancaires_un_seul_rapprochement` : un
+  mouvement classé par ses encaissements ne porte rien d'autre (c, d).
+- **G2** (VF2) — les gardes des encaissements et des mouvements : un mouvement cité par un encaissement vivant d'une
+  facture source est RÉSERVÉ, même avant que le cabinet le classe — ni pièce, ni catégorie, ni ventilation, ni règlement
+  groupé, ni compte de bilan ; un mouvement déjà classé ne se cite pas (23514).
+- **G3** (VF6) — la garde des pièces de vente : dans un dossier basculé, une pièce de vente ne se valide que DÉSIGNÉE
+  exemplaire d'une facture, ou DÉCLARÉE vente qu'aucune facture source ne porte (EC3-Q3) ; celle que le pont rattache à
+  une facture source (flux, Super PDP, identité G1.42 : le jumeau SQL de `jumellesDuDossier`, confronté par un test) ne
+  se valide que désignée à elle (a, b).
+- **G4** (VF6) — l'exemplaire d'une facture source ne se rapproche pas, n'entre dans aucun règlement groupé, ne porte
+  aucune écriture.
+- **G5** (VF4, VF7) — une écriture de vente facturée ne s'écrit que par la fonction qui la vérifie et remplace celles de
+  la même source (e) ; `valider_exercice` refuse un exercice dont une vente facturée n'est pas écrite, dont un mouvement
+  réservé n'est pas couvert, ou dont un encaissement par virement ou prélèvement n'a pas son mouvement.
+Restent des affirmations humaines, dites plutôt que promises : une pièce déclarée « hors facture » qui serait le PDF
+d'une facture source ; un encaissement enregistré sans mouvement dont le crédit serait affecté en recette — G5 le
+retient à la validation pour un virement ou un prélèvement. Un point de la Checklist dit le symptôme, sans rien décider.
+
+#### 8. La jumelle inversée
+
+Désignée, la pièce est un EXEMPLAIRE : l'original revenu de la plateforme, ou le PDF. Elle prouve — son empreinte va à
+la piste d'audit — et ne compte plus. Ce que devient `ventesJumelles.ts` :
+- `jumellesDuDossier` : une quatrième preuve, la désignation, la plus forte ; deux preuves contraires restent
+  incohérentes. `jumellesDeLaFacture` : inchangée.
+- `ventesEnDouble` : pour une facture qui n'est pas source, plus d'une pièce, le PDF désigné compris (le trou que
+  fermait 28.6-Q1) ; pour une facture source, une pièce validée non désignée — G3 l'empêche, le contrôle reste en
+  témoin.
+- `marquesDesPieces`, `PASTILLE_DE_LA_MARQUE` : « Exemplaire de la facture F… — la vente est comptée par la facture »
+  (neutre), « À désigner : c'est la facture F… » (attention) ; les mots de `detailVentesEnDouble` et de
+  `detailJumellesIncoherentes` suivent.
+- `jumellesImportees`, `phrasesJumellesImportees` : le bilan d'un import dit « à désigner à la validation ».
+- `piecesJumelles` (d2) : pour une facture source, l'exemplaire ne se rapproche plus ; les propositions viennent du
+  relevé.
+- La Checklist garde `ventes-en-double` pour les deux régimes et gagne `exemplaires-a-designer` (attention) ; le
+  préalable bloquant `ventes-en-double` ne change pas.
+
+#### 9. La transition et la bascule
+
+- **Le réglage** : `dossiers.ventes_par_les_factures`, faux partout, posé par le cabinet (la mise à jour d'un dossier
+  lui est réservée, MEG1-Q14). **La facture fige à sa validation** `source_de_la_vente` — un déclencheur de la
+  validation, que la garde du 07/10/2026 fige ensuite ; l'avoir prend celui de sa facture. Aucune rétroactivité.
+- **Irréversible** dès qu'une facture source existe, comme le modèle comptable dès la première écriture (EC3-Q1).
+- **Les factures validées avant** restent comptées par leurs pièces et le pont, comme aujourd'hui ; les recettes du
+  relevé (l'Assurance maladie d'un infirmier) restent légitimes.
+- **Les factures reprises de l'ancien logiciel** (A8, « importée ») ne sont jamais la source de leur vente ; leurs
+  encaissements d'après la bascule, si : en trésorerie une recette, en engagement le règlement de la créance reprise à
+  l'ouverture (EC3-Q9). La conception MEG disait « ne compte pas » : A8 l'écrira ainsi.
+- **Les données d'aujourd'hui**, fictives : les six factures du bac à sable restent non sources et partiront avec lui.
+- **Quand** : avant la première facture réelle d'un client ; pour un dossier qui facture déjà, au premier jour d'un
+  exercice. **Le resserrement** : la case « Ventes » ne se coche plus sur un dossier qui n'a pas basculé (EC3-Q2).
+
+#### 10. Le client « Ventes »
+
+Il valide ses factures, dans sa série (MEG1-Q5) : sources, figées. Ses encaissements comptent aussitôt dans la 2035, la
+CA3 et les états que le cabinet prépare, sans visa (EC3-Q5) : la facture est figée, l'encaissement est ce que
+l'administration recevra, une erreur se corrige par un avoir, un retrait ou une contre-passation ; les écritures
+s'écrivent sur le clic du cabinet, comme celles des pièces. Le mouvement qu'il cite (avec « Banque ») est réservé (G2)
+et PROPOSÉ au cabinet, qui seul le classe (EC3-Q4, MEG3-Q7). La base lui refuse un encaissement, un retrait ou une
+contre-passation datés d'un exercice validé, et une facture source qui ne dit pas sa nature. S'ouvre de plus, présenté
+avant d'être appliqué : la policy d'insertion d'une pièce par le client, resserrée (aucune désignation) ; une fonction
+qui rend à « Ma simulation » le total mensuel des ventes facturées encaissées, sans détail (EC3-Q11). Rien des comptes.
+
+#### 11. La validation d'un exercice
+
+Se figent : les factures sources (déjà, depuis le 07/10/2026) ; leurs encaissements, contre-passations, retraits et
+rattachements datés jusqu'à la frontière (une garde, l'exception de la restauration comprise) ; la désignation des
+pièces de l'exercice ; les écritures. Une facture source datée avant la frontière ne se valide plus. `valider_exercice`
+refuse les trois manques de G5 ; les préalables les disent avant le clic : `ventes-facturees-a-ecrire`,
+`mouvements-reserves`, `encaissements-sans-mouvement` (bloquant pour un virement ou un prélèvement ; une information
+pour un chèque, un effet ou une carte, le 511 du 31 décembre étant un en-cours légitime). La concordance compare la
+source nouvelle ; la 2035 validée compte ses encaissements (`nbEncaissements`, à côté de `nbPieces` et `nbMouvements`).
+
+#### 12. Le plan comptable : six rôles
+
+Tout compte que l'application écrit est un rôle (PC1, PC3a). Six de plus au catalogue, par une insertion neutre (aucun
+plan n'est réglé, et la lecture du plan ignore un rôle que l'application ne connaît pas) : `prestations_de_services`
+706000 (racine 706) ; `ventes_de_biens` 707000 (701, 707) ; `tva_collectee_en_attente` 445800 (4457, 4458 : EC3-Q6) ;
+`valeurs_a_l_encaissement` 511000 (511) ; `caisse` 530000 (53) ; `services_bancaires` 627000 (627). `ROLES_COMPTABLES`,
+`PLAN_PAR_DEFAUT`, `PLAN_DECALE` et les cas de `compositionsAuPlan.test.ts` les portent (26 → 32) ;
+`comptesEnDur.test.ts` refuse ces numéros hors du catalogue ; `planComptable.sql` et `laBaseLitLePlan.sql` suivent son
+empreinte ; les fonctions qui vérifient lisent `compte_du_role`. PC4 permettra de les régler par dossier.
+
+#### 13. Ce qu'A7 doit figer de plus, et l'ordre avec A7 et les devis
+
+A7 (« A.5.3 Ce qu'une facture validée fige ») gagne la nature, biens ou services, de chaque ligne : sans elle une
+facture mixte ne se place ni dans la CA3 ni entre 706 et 707. Le contact d'où vient le client, déjà prévu, donnera plus
+tard un auxiliaire stable. Sont déjà figés l'option pour les débits, la date de livraison et le type de client ;
+`source_de_la_vente` l'est par EC-Q3 lui-même (un déclencheur, VF2) : EC-Q3 ne dépend pas de la collée d'A7. L'ordre :
+VF1 tout de suite ; VF2 à VF8 ; A7 avant ou après VF2 (avant, la mixte s'ouvre dès VF2) ; VF9 avec PC3b. Les devis (P5)
+n'entrent jamais en comptabilité, leur acompte (EC-D3) est une facture, donc une source : ils suivent A7, comme prévu,
+sans attendre EC-Q3.
+
+#### 14. Les étapes (chacune livrable seule : ce qui s'ajoute, puis la bascule, puis le resserrement)
+
+- **VF1 — L'exemplaire d'une facture (28.6-Q1).** `pieces.facture_id` (une facture validée du même dossier, une pièce de
+  vente) et sa garde ; une fonction du cabinet pour désigner et défaire ; le pont et ses marques ; la fiche d'une pièce.
+  Base : `apply_migration`. Écrans : FichePiece, PiecesTab. Edge Functions : non. Preuves :
+  `exemplairesDesFactures.sql`, `identiteFacturesRecues.sql`, `rls.sql` entier, les trois contrôles de l'export, le pont
+  et ses mutations. Double compte : le PDF d'une facture non source devient visible du préalable. Dépend de : rien.
+- **VF2 — La source en base, neutre.** Le réglage et sa garde ; `source_de_la_vente` et le déclencheur de la validation
+  (nature exigée, mixte refusée, frontière) ; `encaissements_de_factures` et la contrainte d'un seul rapprochement
+  remplacée ; G2 ; le plafond d'un encaissement net des avoirs ; dans `enregistrer_encaissement`, `retirer_encaissement`
+  et `annuler_encaissement`, le mouvement classé ailleurs et la frontière refusés, la contre-passation qui cite un
+  débit ; `rattacher_mouvement_encaissement` (une fois, de nul à un mouvement) et le classement d'un mouvement par ses
+  encaissements, par le cabinet ; `ecritures_brouillon.encaissement_id` et `facture_id` ; les six rôles ; le drapeau
+  `VENTES_PAR_LES_FACTURES_EXPORTEES`, et le module d2 qui redit les refus neufs. Base : `apply_migration`, deux
+  contraintes remplacées (des `drop constraint`, aucune donnée perdue), présentées ; COLLÉE si l'outil retient le texte.
+  Écrans : non. Preuves : `ventesFacturees.sql` (le réglage posé dans des dossiers jetables) ; les essais des
+  contraintes de `lignes_bancaires` ; `encaissementsFactures.sql`, `transmissionsEncaissements.sql`, `ventesClient.sql`,
+  `planComptable.sql`, `laBaseLitLePlan.sql`, `restauration.sql` ; `batterieEncaissements.mjs` sur une réplique ;
+  `rls.sql` entier ; l'export. Double compte : G1, G2. Dépend de : VF1.
+- **VF3 — Les moteurs lisent la source.** `lib/ventesFacturees.ts`, pur (les parts par encaissement et par taux, la
+  règle du cumul, les dates de la CA3), et sa lecture (`lireTout`, gardée avec le dossier ; partielle, rien ne se
+  calcule) ; un paramètre obligatoire de la 2035 (une source « encaissement »), de la CA3, de la situation, de
+  l'estimation et de la simulation ; l'exemplaire d'une facture source ignoré. Base : non. Écrans : Clôture, TVA,
+  Financement, Estimation, Révision. Preuves : le module, `ecransAvantLecture.test.tsx`, `recherchesEtTotaux`,
+  `lecturesPaginees`, les mutations ; neutre, aucun test existant ne change. Double compte : aucun moteur ne lit deux
+  fois une vente. Dépend de : VF2.
+- **VF4 — Les écritures d'une vente facturée.** La composition du § 5, pure ; `ecrire_vente_facturee` et
+  `retirer_ecriture_vente_facturee`, qui vérifient en entiers et remplacent ; Écritures : « à écrire », « à réécrire »,
+  « sans objet », sous verrou ; le FEC (clés `facture`, `encaissement`, `mouvement-encaissements`), la piste d'audit
+  (l'empreinte de l'exemplaire ou du CII transmis), le lettrage par facture, la concordance. Base : COLLÉE (une
+  suppression dans le corps). Preuves : `ecrituresVentesFacturees.sql`, la table relevée de la règle du cumul,
+  `validationExercice.sql` en une transaction, `anomaliesDgfip`. Double compte : G5. Dépend de : VF3.
+- **VF5 — La banque.** La fiche d'un crédit : « Encaissement d'une facture » (l'enregistrer avec son mouvement,
+  rattacher un encaissement sans mouvement, classer la proposition du client) ; d'un débit : la contre-passation ; les
+  candidats et les lots (`justificatifPossible` apprend les factures ouvertes et les encaissements sans mouvement) ; la
+  Checklist ; « Ma banque ». Base : non. Preuves : tests d'écran, verrous (deux puis trois clics), le banc. Dépend de :
+  VF4.
+- **VF6 — La jumelle inversée.** `pieces.vente_sans_facture_source` ; G3 et G4 ; la fiche (« Exemplaire de… », « Vente
+  hors des factures de l'application ») ; les marques, le bilan d'un import, la Checklist et son symptôme. Base :
+  `apply_migration` ; la policy d'insertion du client, resserrée, présentée. Preuves : `exemplairesDesFactures.sql`
+  étendu, `receptionPlateforme.sql`, `reglementGroupe.sql`, `rls.sql` entier ; le jumeau SQL du pont confronté au
+  module. Double compte : G3, G4. Dépend de : VF1, VF2.
+- **VF7 — La validation fige la source.** La garde de la frontière des encaissements ; `valider_exercice` et les
+  préalables du § 11 ; le gel des désignations. Base : `apply_migration`. Preuves : `validationExercice.sql`,
+  `restauration.sql`, `prealablesValidation.test.ts`. Double compte : G5. Dépend de : VF4, VF6.
+- **VF8 — La bascule.** Le réglage à l'écran (Informations), dit avant le clic, irréversible ; les phrases de l'onglet
+  Accès et de « Mes ventes » ; la lecture de « Ma simulation » ; `changer_droits_acces` qui refuse « Ventes » sur un
+  dossier non basculé (le resserrement). Base : `apply_migration`, présentée. Preuves : tests d'écran,
+  `droitsAcces.sql`, `rls.sql` entier. Dépend de : VF2 à VF7, EC3-Q1, Q2 et Q11.
+- **VF9 — L'assistant.** Les blocs copiés (la source, les écritures, les points) et sa consigne ; redéployé avec
+  `verify_jwt` à faux, l'aller-retour et les bordures. Preuves : ses gardes de copie. Dépend de : VF3, VF4 ; avec PC3b.
+Chaque étape met à jour RGPD.md (aucune donnée personnelle nouvelle : des liens et des drapeaux), CLAUDE.md,
+HISTORIQUE.md et la feuille de route.
+
+#### 15. Les risques, et ce qui reste hors du chantier
+
+- Un client « Ventes » sans « Banque » n'enregistre que des encaissements sans mouvement : le 511 attend le rattachement
+  du cabinet. Parade : la Checklist, `justificatifPossible`, G5 à la validation.
+- Une pièce déclarée « hors facture » qui serait l'exemplaire d'une facture source : une affirmation fausse, que le
+  symptôme signale sans la juger.
+- Le remplacement de `lignes_bancaires_un_seul_rapprochement` touche tous les classements d'un mouvement : présenté, et
+  les essais du relevé rejoués.
+- La restauration écrit un mouvement réservé avant ses encaissements : sa garde ne juge l'encaissement qu'à la mise à
+  jour ; le contrôle des rapprochés sans objet voit le reste.
+- Deux gestes concurrents sur un mouvement, du client et du cabinet : le verrou du mouvement, comme en d1.
+- Un écran qui oublierait la source nouvelle : le paramètre obligatoire, sans valeur par défaut.
+- Une CA3 déposée qu'un encaissement retiré ou ajouté contredit : la comparaison le dit, comme pour une pièce ; la
+  régularisation (5B, 2C) n'est pas modélisée.
+- Le retour arrière : jusqu'à VF7 aucun dossier n'a basculé, rien ne change ; le code se retire, les colonnes restent
+  inertes ; après VF8, un dossier basculé ne revient pas, par décision.
+Hors du chantier : le trop-perçu (4191, 419) ; le remboursement partiel d'une somme encaissée (une contre-passation est
+totale) ; les débours (ligne AB) ; le rattachement fin de l'engagement (418, 487, ligne 35) ; la créance irrécouvrable
+(art. 272, 1) ; l'escompte accordé ; la régularisation d'une CA3 déposée ; un virement pour plusieurs factures à l'écran
+(A11 ; la base l'admet déjà) ; le statut déclaré par API (d6) ; la preuve de révision des 411, 4458, 511 et 53 ; la date
+du chèque d'une PIÈCE de vente, comptée à son crédit plutôt qu'à sa remise.
+
+#### 16. Les questions au cabinet
+
+Douze, rédigées pour le cabinet et posées sur la page des arbitrages (version 8), chacune avec sa recommandation et
+l'hypothèse retenue d'ici là : EC3-Q1 la bascule ; Q2 la case « Ventes » ; Q3 la pièce de vente après la bascule ; Q4 le
+mouvement que le client désigne ; Q5 le visa ; Q6 le compte de la TVA en attente ; Q7 le chèque, les espèces et le 511 ;
+Q8 la facture mixte ; Q9 la facture reprise ; Q10 l'avoir et le reste à encaisser ; Q11 « Ma simulation » ; Q12 la date
+du produit en engagement.
+
+#### 17. Sources
+
+CGI, art. 12, 38 (2 bis), 93 (1), 269 (1-a, 2-a, 2-c), 272 (1), 283 (3), 289 (I) ; annexe II, art. 242 nonies A et 242
+nonies P — cités par la doctrine qui les reproduit. BOI-BNC-BASE-20-10-10 (version du 06/07/2016, § 1, 10, 20, 40) ;
+BOI-TVA-BASE-20-20 (07/11/2018, § 30 à 60) ; BOI-TVA-BASE-20-10 (21/12/2022, § 1, 10, 65) ; BOI-TVA-DECLA-30-20-20-30
+(08/01/2025, § 350) ; BOI-BIC-BASE-20-10 (lu par le moteur de recherche du BOFiP, non téléchargé) ;
+BOI-TVA-DECLA-20-30-60 (§ 50, 120 : sources de d1, non relues). Plan comptable général, règlement ANC n° 2014-03
+consolidé au 1er janvier 2026 (ANC, 183 pages, empreinte `55c824b25472fb4f…`) : nomenclature des classes 4, 5 et 7, art.
+1131-1, 1214-41, 1214-44, 1215-51, 1215-53. LPF, art. A47 A-1. DGFiP, spécifications externes v3.2 (§ 3.6.4, § 3.6.7
+note 109 ; annexe 7, G1.42).
+
+#### 18. La relecture de la session
+
+Vérifiés dans le code et l'export : `pieces.storage_path` NOT NULL, `pieces_source_check`,
+`encaissements_factures_annulation_sans_mouvement`, la pièce écartée de la CA3 sur un taux qu'elle ne reconnaît pas ;
+la mesure ne porte que des comptes, sans valeur ni nom. Trois points à tenir avant d'écrire :
+- **VF3 et la doctrine des parts du relevé.** `partsDuReleve.ts` dit « LES MOTEURS NE LISENT QUE CETTE FORME » et « Une
+  source s'ajoute ICI » : la forme commune existe pour éviter « un paramètre par source » à quatre moteurs et sept
+  écrans. VF3 en ajoute un. Avant tout code, VF3 tranche et le dit : élargir la forme commune (une part d'origine
+  « encaissement », sans mouvement obligatoire), ou garder une seconde forme et dire pourquoi (une part par taux, une
+  exigibilité de TVA, une date sans mouvement) ; dans les deux cas obligatoire, sans valeur par défaut.
+- **Le 511 (EC3-Q7) et la règle du cumul de la TVA (§ 6)** sont les deux points dont la conception est la moins sûre :
+  ils vont à l'expert-comptable du cabinet, avec les dossiers de référence.
+- **Le remplacement de `lignes_bancaires_un_seul_rapprochement` (VF2)** est un `drop constraint` : présenté au cabinet,
+  collé si l'outil retient le texte, et tous les essais des classements du relevé rejoués.

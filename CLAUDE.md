@@ -397,9 +397,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : l'objet et l'expéditeur d'un e-mail reçu au journal
   (`receive-email`) : ne plus journaliser que des comptes, à écrire ; `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
-- **Une vente entrée deux fois** (ligne 28.6) : reste le PDF d'une facture émise, que rien ne relie encore à elle (Q1 :
-  une migration, à écrire) ; EC-Q3, retranchée le 18/10/2026 : la facture validée dans l'application devient la source
-  de sa vente, maintenant — un chantier comptable à part, fini avant que les clients facturent réellement ici.
+- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6, EC-Q3) : rien d'écrit ; CONÇUE le
+  18/10/2026 — les moteurs lisent la facture et le registre des encaissements (la recette à sa date d'encaissement en
+  trésorerie, la créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le
+  PDF désignés « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par
+  le cabinet, sans effet rétroactif, irréversible ; neuf étapes, VF1 (l'exemplaire d'une facture, 28.6-Q1 : une
+  migration, à écrire) à VF9 ; douze questions, EC3-Q1 à Q12 ; avant VF3, trancher entre la forme commune des parts du
+  relevé et une seconde forme ; fini avant que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA
+  VENTE : LA CONCEPTION ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
