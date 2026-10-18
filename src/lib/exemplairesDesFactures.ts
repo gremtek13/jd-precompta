@@ -15,22 +15,20 @@ import type { FactureEmise, Piece, TypePiece } from './types'
 // pièce désignée change de dossier ou de nature ; le gel de la pièce fige la désignation. Ce que la désignation CHANGE :
 // le pont (lib/ventesJumelles.ts) en fait sa quatrième preuve. Ce qu'elle ne change pas : ce qui se compte.
 //
-// LA RÉFÉRENCE. Tant que l'export (supabase/schema) ne porte pas la migration — elle attend l'accord du cabinet —, ce que
-// la base refuse ne peut pas s'y relire : la référence est l'essai `supabase/essais/exemplairesDesFactures.sql`, joué sur
-// une réplique de la production munie de la migration, dont chaque contrôle exige de la base un code ET des mots.
-// exemplairesDesFactures.test.ts exige que chaque refus du module y soit exigé de la fonction qui le lève, et rejoue dans
-// le module, appel par appel, ce que l'essai a demandé à la base. Le drapeau levé, il confronte aussi le module au texte
-// même des fonctions et de la garde.
+// LA RÉFÉRENCE. Le texte même des deux fonctions et de la garde, que l'export (supabase/schema) porte depuis l'application
+// de la migration (18/10/2026, sur l'accord du cabinet, VF1A-Q1), et l'essai `supabase/essais/exemplairesDesFactures.sql`,
+// joué sur une réplique puis en production, dont chaque contrôle exige de la base un code ET des mots.
+// exemplairesDesFactures.test.ts confronte le module au premier — messages, codes, valeurs, ordre —, exige que chaque refus
+// du module soit exigé par le second de la fonction qui le lève, et rejoue dans le module, appel par appel, ce que l'essai
+// a demandé à la base.
 
 // ── Est-ce en base ? ──────────────────────────────────────────────────────────────────────────────────────────────────
-// La migration `exemplaires_des_factures` est PRÉPARÉE, éprouvée sur une réplique et présentée au cabinet ; elle n'est ni
-// appliquée ni dans l'export. Tant que ce drapeau est baissé, aucune lecture ne NOMME la colonne `facture_id` (nommée dans
-// un `select` avant la migration, elle ferait échouer la lecture), le plan de sauvegarde ne connaît pas sa clé, et
-// exemplairesDesFactures.test.ts ne confronte le module qu'à l'essai. La bascule — le fichier de la migration dans l'export,
-// sous sa version appliquée, et ce drapeau levé — ne vient qu'APRÈS l'application ; un retour arrière de la migration, qu'après
-// le drapeau rebaissé en ligne. Les lectures `select('*')` de `pieces`, elles, porteront la colonne dès l'application : le
-// pont la lit quand elle est là (`facture_id` facultatif), et aucune désignation n'existe avant que la migration le permette.
-export const EXEMPLAIRES_DES_FACTURES_EXPORTES: boolean = false
+// La migration `exemplaires_des_factures`, présentée au cabinet, a été appliquée sur son accord (VF1A-Q1), et l'export
+// (supabase/schema) la porte. Ce drapeau est donc levé : la lecture du pont (lib/ventesJumellesLecture.ts) nomme la colonne
+// `facture_id`, le plan de sauvegarde connaît sa clé, et exemplairesDesFactures.test.ts confronte le module au texte même
+// des deux fonctions et de la garde, en plus de l'essai. Un retour arrière de la migration — DESTRUCTIF : il perd les
+// désignations — ne viendrait qu'APRÈS le drapeau rebaissé en ligne : sinon la lecture du pont échouerait, et le dirait.
+export const EXEMPLAIRES_DES_FACTURES_EXPORTES: boolean = true
 
 // ── Les refus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

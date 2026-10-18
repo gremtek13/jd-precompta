@@ -336,8 +336,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   exercice ; engagement, étape 1 ; lettrage ; TVA liquidée ; report des soldes ; 2035, volet social et estimation
   Urssaf, CA3, FEC et piste d'audit, à-nouveaux, 2035-E et calendrier CFE-CVAE.
 - **Facturation** : factures, avoirs, e-mail ; statut de TVA, CII, facture figée ; transmission et réception (plateforme
-  du client, Super PDP) ; encaissements et leur déclaration ; cycle de vie ; vente entrée deux fois ; e-reporting e1 à
-  e6.
+  du client, Super PDP) ; encaissements et leur déclaration ; cycle de vie ; vente entrée deux fois, et l'exemplaire
+  d'une facture ; e-reporting e1 à e6.
 - **Bilan**, **révision**, **plan comptable** lu par la base et l'application ; financement ; immobilisations,
   cotisations, Clôture, Estimation, Balance, Virements ; assistant IA.
 - **Exports** : pack, export d'un cabinet, sauvegarde et restauration — **une sauvegarde n'est pas un pack** : le pack
@@ -397,14 +397,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : l'objet et l'expéditeur d'un e-mail reçu au journal
   (`receive-email`) : ne plus journaliser que des comptes, à écrire ; `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
-- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6, EC-Q3) : rien d'écrit ; CONÇUE le
-  18/10/2026 — les moteurs lisent la facture et le registre des encaissements (la recette à sa date d'encaissement en
-  trésorerie, la créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le
-  PDF désignés « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par
-  le cabinet, sans effet rétroactif, irréversible ; neuf étapes, VF1 (l'exemplaire d'une facture, 28.6-Q1 : une
-  migration, à écrire) à VF9 ; douze questions, EC3-Q1 à Q12 ; avant VF3, trancher entre la forme commune des parts du
-  relevé et une seconde forme ; fini avant que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA
-  VENTE : LA CONCEPTION ».
+- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6, EC-Q3) : CONÇUE le 18/10/2026 —
+  les moteurs lisent la facture et le registre des encaissements (la recette à sa date d'encaissement en trésorerie, la
+  créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le PDF désignés
+  « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
+  sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; douze questions, EC3-Q1 à Q12 ; avant VF3, trancher
+  entre la forme commune des parts du relevé et une seconde forme ; fini avant que les clients facturent réellement ici
+  → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1a en ligne le 18/10/2026 (28.6-Q1, l'exemplaire d'une
+  facture en base) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE » ; restent VF1b (la fiche d'une pièce et la liste des
+  pièces ; défaire la désignation d'un PDF qui double sa jumelle retire l'alerte, pas le double compte, et la
+  confirmation le dit), puis VF2 à VF9 ; qui a désigné, et quand : à VF6 (VF1A-Q2).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -740,7 +742,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Réception par la plateforme du client** : le point de reprise ne recule jamais → « LA RÉCEPTION PAR LA PLATEFORME DU
   CLIENT ». **La pièce jumelle** : une facture émise ne compte nulle part, sa vente entre par la pièce qui revient,
   marquée, jamais refusée ; le lien se DÉDUIT, jamais d'un montant, d'une date ni d'un nom → « UNE VENTE PEUT ENTRER
-  DEUX FOIS ». **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  DEUX FOIS ». **L'exemplaire d'une facture** (`pieces.facture_id`) : la jumelle ou le PDF, DÉSIGNÉ par le cabinet seul
+  (`designer_exemplaire_facture`, `defaire_exemplaire_facture`), sur une facture VALIDÉE du même dossier et une pièce de
+  VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
+  dite la première, sans faire taire les autres ; rien de ce qui se compte ne change → « L'EXEMPLAIRE D'UNE FACTURE, EN
+  BASE ». **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact

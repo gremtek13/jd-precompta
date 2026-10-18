@@ -20,13 +20,13 @@ import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // L'EXEMPLAIRE D'UNE FACTURE ÉMISE (chantier EC-Q3, étape VF1a), confronté à ce qui fait foi. La migration
-// `exemplaires_des_factures` attend l'accord du cabinet : tant que l'export (supabase/schema) ne la porte pas, ce que la base
-// refuse ne peut pas s'y relire, et la RÉFÉRENCE est l'essai `supabase/essais/exemplairesDesFactures.sql`, joué sur une
-// réplique de la production munie de la migration (102 lignes, 0 en faute, dont dix mutations qui mordent) : chacun de ses
-// contrôles exige de la base un code ET des mots. Ce test exige que chaque refus du module y soit exigé, et rejoue dans le
-// module, appel par appel, ce que l'essai a demandé à la base — sur le même jeu et dans le même ordre : le module doit dire
-// ce que la base a dit, le refus au mot près, ou rien quand elle a accepté. Le drapeau levé — la bascule —, il confronte
-// aussi le module au texte même des deux fonctions et de la garde. CHAQUE AUTRE ATTENDU EST ÉCRIT À LA MAIN, depuis la
+// `exemplaires_des_factures` est en base et dans l'export (supabase/schema) depuis le 18/10/2026, sur l'accord du cabinet
+// (VF1A-Q1). Ce test confronte le module au texte même des deux fonctions et de la garde (§ 5, le drapeau levé), et à
+// l'essai `supabase/essais/exemplairesDesFactures.sql`, joué sur une réplique puis en production (102 lignes, 0 en faute,
+// dont dix mutations qui mordent) : chacun de ses contrôles exige de la base un code ET des mots. Il exige que chaque refus
+// du module y soit exigé, et rejoue dans le module, appel par appel, ce que l'essai a demandé à la base — sur le même jeu
+// et dans le même ordre : le module doit dire ce que la base a dit, le refus au mot près, ou rien quand elle a accepté.
+// Drapeau baissé (avant un retour arrière), seul l'essai ferait foi. CHAQUE AUTRE ATTENDU EST ÉCRIT À LA MAIN, depuis la
 // migration (son en-tête dit l'ordre des refus) et la conception (HISTORIQUE.md, « LA FACTURE VALIDÉE, SOURCE DE SA
 // VENTE : LA CONCEPTION », § 8 et § 14).
 

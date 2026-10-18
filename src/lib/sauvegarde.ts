@@ -98,15 +98,16 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
 }
 
-// L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, PRÉPARÉE, pas appliquée) :
-// ni table, ni rang, ni chemin nouveaux — une COLONNE de plus sur une table au plan, `pieces.facture_id`, et sa clé vers
-// `factures_emises`, sans action à la suppression (une facture validée ne se supprime qu'avec son dossier). Les factures
-// précèdent déjà les pièces dans l'ordre de restauration, ce que la clé exige, et la sauvegarde recopie des lignes entières
-// (`select('*')`) : une pièce désignée se réinsère désignée, par la porte que la garde ouvre au super-administrateur. La
-// relation est déclarée ci-dessous à sa place, et RETIRÉE du graphe du jour tant que `EXEMPLAIRES_DES_FACTURES_EXPORTES`
-// (src/lib/exemplairesDesFactures.ts) est baissé : l'export ne porte pas la clé, et sauvegardeRelations.test.ts juge le
-// graphe du jour contre lui. Levé, `liensPerdus` refuse avant toute écriture la sauvegarde d'une pièce désignée dont la
-// facture manque. sauvegardeExemplaires.test.ts éprouve le graphe prévu et le graphe du jour.
+// L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
+// depuis le 18/10/2026) : ni table, ni rang, ni chemin nouveaux — une COLONNE de plus sur une table au plan,
+// `pieces.facture_id`, et sa clé vers `factures_emises`, sans action à la suppression (une facture validée ne se supprime
+// qu'avec son dossier). Les factures précèdent déjà les pièces dans l'ordre de restauration, ce que la clé exige, et la
+// sauvegarde recopie des lignes entières (`select('*')`) : une pièce désignée se réinsère désignée, par la porte que la
+// garde ouvre au super-administrateur. La relation est déclarée ci-dessous à sa place ; elle quitterait le graphe du jour si
+// `EXEMPLAIRES_DES_FACTURES_EXPORTES` (src/lib/exemplairesDesFactures.ts) était rebaissé, avant un retour arrière de la
+// migration — sauvegardeRelations.test.ts juge ce graphe contre l'export. Levé, `liensPerdus` refuse avant toute écriture
+// la sauvegarde d'une pièce désignée dont la facture manque. sauvegardeExemplaires.test.ts éprouve le graphe prévu et le
+// graphe du jour, sous chaque état du drapeau.
 export const RELATIONS_DES_EXEMPLAIRES: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [{ enfant: 'pieces', colonne: 'facture_id' }]
 
 /** Une relation au graphe, côté exemplaires : toutes, sauf la désignation tant que sa migration n'est pas exportée. */

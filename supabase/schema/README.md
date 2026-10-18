@@ -365,6 +365,24 @@ fonction remplacée concerne aussi : `parametresFacturation.sql` (204 verdicts) 
 justes, et `bornesStockage.sql`, les quatre seaux « ok » ; `rls.sql`, sa copie adaptée (81 101 caractères, `506f61be…`),
 46 lignes, 0 en faute, 43 mutations sur 43.
 
+**Rejoué le 18/10/2026 après `exemplaires_des_factures`** (chantier EC-Q3, étape VF1a), appliquée par la session sous la
+version `20261018142041` sur l'accord du cabinet (VF1A-Q1), sans confirmation demandée (aucun des mots que le détecteur
+retient), AVANT la mise en ligne de la bascule qui la lit ; son fichier a quitté la version PROVISOIRE `20261018120000`
+sous laquelle sa réplique l'avait éprouvée, et il porte le texte appliqué, octet pour octet (17 700 caractères, 18 234
+octets, saut de ligne final compris, aucun retour chariot) : sa ligne d'historique rend son empreinte,
+`4413a7330c46f3bd0216c760519577f5`. 140 fichiers, 140 migrations, empreinte globale `d22b3bc540aea2dfef7db79b108ba889`
+des deux côtés, aucune divergence. Le socle est inchangé (78 instructions, `91ae95ec…` — la migration ne touche aucune
+table du socle) ; l'inventaire compte 2 088 objets, `6a5c889df10eaa2fb3c8ce47b0eb083f` des deux côtés (2 081 avant elle)
+— une colonne, sa clé, un index, un déclencheur et trois fonctions, en plus. `signature.sql` rend en production ce que
+l'étape avait relevé sur sa réplique après la migration : les colonnes (851), les contraintes (659), les index (231), les
+déclencheurs (56), les fonctions et leurs droits (174) changent ; les policies (157, `58878930…`), la RLS (80,
+`9e8ffc97…`) et les droits des tables (80, `c7ec7672…`) gardent l'empreinte d'avant. L'essai
+`supabase/essais/exemplairesDesFactures.sql`, rejoué en production sans ses lignes de commentaire (40 417 caractères,
+reçus tels quels, `c1d06812…`), rend ses 102 verdicts justes, mutations comprises, et rien n'est resté en base ;
+`rls.sql`, rejoué entier sur la réplique avant et après la migration (46 lignes, 0 en faute, 43 mutations sur 43,
+sorties identiques), ne l'est pas en production : la migration ne crée ni ne change aucune policy, ce que le contrôle 156
+de l'essai vérifie en production (les quatre policies de `pieces`, `95217063…`, celles d'avant).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

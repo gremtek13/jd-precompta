@@ -14,11 +14,11 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// L'EXEMPLAIRE D'UNE FACTURE AU PLAN DE SAUVEGARDE (chantier EC-Q3, étape VF1a). La migration `exemplaires_des_factures`
-// est PRÉPARÉE, pas appliquée : ni table, ni rang, ni chemin nouveaux — une colonne de plus sur `pieces`, et sa clé vers
+// L'EXEMPLAIRE D'UNE FACTURE AU PLAN DE SAUVEGARDE (chantier EC-Q3, étape VF1a). La migration `exemplaires_des_factures`,
+// appliquée le 18/10/2026 : ni table, ni rang, ni chemin nouveaux — une colonne de plus sur `pieces`, et sa clé vers
 // `factures_emises`, sans action à la suppression. La relation est déclarée au graphe PRÉVU ; le graphe du jour ne la porte
-// que le drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES` levé (l'export ne porte pas encore la clé, et
-// sauvegardeRelations.test.ts juge le graphe du jour contre lui). Ici : la relation telle que la migration la pose, le
+// que le drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES` levé (sauvegardeRelations.test.ts juge le graphe du jour contre
+// l'export, qui porte la clé depuis la bascule). Ici : la relation telle que la migration la pose, le
 // filtre dans ses deux états, l'ordre de restauration qu'elle exige, et ce que `liensPerdus` en dit — le module rechargé
 // sous chaque état du drapeau, le graphe étant calculé au chargement.
 
