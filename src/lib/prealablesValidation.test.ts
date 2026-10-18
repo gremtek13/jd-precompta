@@ -678,6 +678,18 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       .not.toContain('ventes-en-double')
   })
 
+  // LE PDF DÉSIGNÉ (chantier EC-Q3, étape VF1a) : la jumelle revenue de Super PDP et le PDF que le cabinet a déposé puis
+  // désigné exemplaire de la même facture — le trou que 28.6-Q1 ferme. Le PDF que rien ne désigne ne se voit toujours pas.
+  it('« ventes-en-double » : la jumelle et le PDF désigné exemplaire de la même facture bloquent ; le PDF non désigné, rien', () => {
+    const jumelle = piece('v1', { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242 })
+    const pdf = (o: Partial<Piece> = {}) => piece('v2', { type_piece: 'vente', date_piece: '2025-06-01', ...o })
+    expect(prealable(donnees({ piecesValidees: [P1, jumelle], piecesAValider: [pdf({ statut: 'a_valider', facture_id: 'f1' })],
+      facturesEmises: [factureEmise()] }), 'ventes-en-double')).toMatchObject({ nb: 1, bloquant: true, cible: 'pieces' })
+    expect(ids(donnees({ piecesValidees: [P1, jumelle, pdf()], facturesEmises: [factureEmise()] }))).not.toContain('ventes-en-double')
+    expect(ids(donnees({ piecesValidees: [P1, pdf({ facture_id: 'f1' })], facturesEmises: [factureEmise()] })))
+      .not.toContain('ventes-en-double')
+  })
+
   // L'écart se juge sur le TOTAL payé de la pièce : réglée par un acompte puis par la part d'un virement groupé, elle
   // n'a rien à reprendre — le contrôle d'avant comparait chaque mouvement à la pièce, et refusait cette validation.
   it('« pieces-payees-en-partie » se tait sur une pièce réglée en deux fois', () => {

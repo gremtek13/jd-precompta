@@ -256,6 +256,21 @@
 -- script recopie des lignes. Aucune table n'entre au plan, rien n'y change. Le dépôt à la restauration est éprouvé par
 -- sauvegardeDonnees.test.ts, contre le SDK installé du stockage devant un seau factice ; son premier dépôt réel reste à
 -- faire (PLAN_DE_REPRISE.md, §6).
+--
+-- 18/10/2026, chantier EC-Q3, étape VF1a (migration `exemplaires_des_factures`, préparée, non appliquée) : aucune table de
+-- plus — une colonne, `pieces.facture_id`, et sa clé vers `factures_emises`, sans action à la suppression, que la copie
+-- des clés recopie : les factures précèdent déjà les pièces ; le plan ne change pas, la sauvegarde recopiant des lignes
+-- entières. Un contrôle de plus suit le verdict : chaque pièce désignée, restaurée désignée à la même facture, la clé
+-- recopiée. Rejoué sur une copie de la réplique de l'étape (signature.sql : les neuf familles égales à la production à 139
+-- migrations, plus celle-ci), le dossier `test` semé d'une facture validée et de son avoir (la porte de la restauration,
+-- sous la session du super-administrateur) et de deux pièces de vente désignées par `designer_exemplaire_facture`, l'une
+-- de la facture, l'autre de l'avoir : 141 clés recopiées, 74 tables restaurées et IDENTIQUES à la source (68 lignes),
+-- 0 écart, aucun arrêt, le contrôle de la désignation juste (2 sur 2), ceux du catalogue des rôles justes ; celui de la
+-- colonne générée sans objet (aucun texte OCR dans le dossier de la réplique). Planté — les factures restaurées après les
+-- pièces —, le script s'arrête sur `pieces` (23503, `pieces_facture_id_fkey`). Sans la migration : 140 clés, 74 tables
+-- IDENTIQUES, 68 lignes, et le contrôle se tait. Ce script recopie les clés, pas les gardes : la réinsertion d'une pièce
+-- désignée par la porte du super-administrateur, et son refus pour la facture d'un autre dossier, un brouillon ou une
+-- pièce qui n'est pas une vente, sont joués par exemplairesDesFactures.sql (contrôles 71 à 75).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -683,6 +698,27 @@ begin
       case when n > 0 then n || ' sur ' || n else 'au moins une ligne restaurée' end,
       case when n > 0 then egales || ' sur ' || n else 'aucune ligne restaurée : rien n''est prouvé' end);
   end loop;
+end $$;
+
+-- L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`) : une colonne de plus sur
+-- une table au plan, `pieces.facture_id`, et sa clé vers `factures_emises`, que la copie des clés recopie — les factures
+-- précèdent déjà les pièces. Ce contrôle dit que la désignation a été restaurée telle qu'elle était, chaque pièce désignée
+-- à la même facture que dans la source, la clé recopiée : au moins une pièce désignée, ou rien n'est prouvé, et le
+-- contrôle le dit. Sans la migration, il ne dit rien : la colonne n'existe pas.
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint; cle boolean;
+begin
+  if exists (select 1 from pg_attribute where attrelid = 'public.pieces'::regclass and attname = 'facture_id' and not attisdropped) then
+    execute 'select count(*), count(*) filter (where e.facture_id = s.facture_id) from public.pieces s'
+            || ' left join essai_restauration.pieces e on e.id = s.id where s.dossier_id = $1 and s.facture_id is not null'
+      into n, egales using d;
+    select exists (select 1 from pg_constraint c where c.conrelid = 'essai_restauration.pieces'::regclass and c.contype = 'f'
+                     and c.confrelid = 'essai_restauration.factures_emises'::regclass) into cle;
+    insert into essai_restauration._controles values ('pieces.facture_id : chaque pièce désignée restaurée désignée à sa facture, la clé recopiée',
+      case when n > 0 then n || ' sur ' || n || ', clé recopiée' else 'au moins une pièce désignée' end,
+      case when n > 0 then egales || ' sur ' || n || ', clé ' || case when cle then 'recopiée' else 'absente' end
+           else 'aucune pièce désignée dans le dossier : rien n''est prouvé' end);
+  end if;
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;
