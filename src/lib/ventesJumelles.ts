@@ -54,7 +54,7 @@ export type TransmissionPourJumelle = Pick<TransmissionFacture, 'facture_id' | '
  * qui ne nomme pas la colonne (drapeau `EXEMPLAIRES_DES_FACTURES_EXPORTES` baissé) ne la porte pas. */
 export type PiecePourJumelle = Pick<Piece,
   'id' | 'dossier_id' | 'flux_hote' | 'flux_id' | 'superpdp_invoice_id'
-  | 'identite_numero' | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature' | 'facture_id'>
+  | 'identite_numero' | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature'> & Partial<Pick<Piece, 'facture_id'>>
 
 /**
  * Les colonnes de `pieces` que le pont lit, celles de `PiecePourJumelle` — sans la désignation, puis avec elle : une lecture

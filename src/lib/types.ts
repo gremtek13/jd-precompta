@@ -381,9 +381,11 @@ export interface Piece {
   // l'export depuis le 18/10/2026) : la facture validée du même dossier dont cette pièce de vente est un exemplaire —
   // l'original revenu de la plateforme, ou le PDF —, que le cabinet désigne par `designer_exemplaire_facture` et défait par
   // `defaire_exemplaire_facture`, seules ; figée avec la pièce. Le pont en fait sa quatrième preuve (lib/ventesJumelles.ts).
-  // FACULTATIF jusqu'au premier écran qui la lit (étape VF1b), comme `FactureEmise.valide_par` l'est resté de P2 à P4c :
-  // une lecture qui ne nomme pas la colonne ne la porte pas ; l'écran qui la lira la rendra obligatoire.
-  facture_id?: string | null
+  // OBLIGATOIRE depuis le premier écran qui la lit (étape VF1b : la fiche d'une pièce, la liste des pièces, la fenêtre des
+  // encaissements), comme `FactureEmise.valide_par` l'est devenu à l'étape P4c : un type décrit la table, et une lecture
+  // qui ne nomme pas la colonne (la lecture du pont, sans sa désignation) se type sur sa propre sélection
+  // (`PiecePourJumelle`), jamais sur celle-ci.
+  facture_id: string | null
   created_at: string
   updated_at: string
 }

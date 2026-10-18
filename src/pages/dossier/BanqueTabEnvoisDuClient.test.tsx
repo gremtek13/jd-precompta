@@ -150,7 +150,7 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
     montant_ttc: 100, devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null,
     sous_dossier_id: null, type_piece: 'achat', statut: 'a_valider', notes: null, confiance: null, superpdp_invoice_id: null,
     flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null,
-    identite_nature: null, created_at: '2026-06-01T09:00:00Z', updated_at: '2026-06-01T09:00:00Z', ...o,
+    identite_nature: null, facture_id: null, created_at: '2026-06-01T09:00:00Z', updated_at: '2026-06-01T09:00:00Z', ...o,
   }
 }
 

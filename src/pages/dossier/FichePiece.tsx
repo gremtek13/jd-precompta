@@ -23,6 +23,8 @@ import { enregistrerNoteInterne, lireNoteInterne, noteModifiee, type LectureNote
 import { ficheEmporteeParLaSuppression } from '../../lib/propositionsHorsDeFrance'
 import { pieceDeclaree } from '../../lib/ereportingEcran'
 import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './FicheHorsDeFrance'
+import ExemplaireDeLaFacture, { type DonneesExemplaire } from './ExemplaireDeLaFacture'
+import { refusDuFormulaireDeLaPiece } from '../../lib/exemplairesDesFacturesEcran'
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
@@ -93,9 +95,14 @@ interface Props {
   // l'écran appelant, de quoi les relire, le gel de la pièce et les pièces du dossier. Obligatoire : la confirmation de
   // la suppression nomme la fiche qu'elle emporte (la clé est en cascade), et un appelant qui l'oublierait la tairait.
   horsDeFrance: DonneesHorsDeFrance
+  // L'EXEMPLAIRE D'UNE FACTURE ÉMISE (ligne 28.6, étape VF1b) : les factures validées du dossier lues par l'écran appelant, le
+  // gel de la pièce et de quoi relire la pièce après un geste. FACULTATIF, et sa seule absence suffit : sans lui la fiche
+  // n'offre ni de désigner ni de défaire la désignation d'une pièce de vente — un geste ne s'offre jamais sur des données
+  // que l'appelant n'a pas lues. Le cabinet seul ouvre cette fiche (l'onglet des justificatifs) ; l'espace du client ne la monte pas.
+  exemplaire?: DonneesExemplaire | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // LA PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING ne se supprime plus (hypothèse E5-Q6, `garder_piece_declaree`) : la
   // fiche le dit sous les mots de la base et n'offre pas « Supprimer ». Les fiches ou les déclarations lues en partie ne
@@ -200,6 +207,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   )
   // Démontée — remplacée, fermée —, elle n'a plus rien à protéger.
   useEffect(() => () => onModifiee?.(false), [onModifiee])
+
+  // La désignation d'une facture se joue dans la base, sur la pièce ENREGISTRÉE : le formulaire dit avant l'enregistrement ce
+  // que la garde refuserait, sans toucher au reste de la saisie.
+  const refusDeLaDesignee = piece !== null ? refusDuFormulaireDeLaPiece(piece, typePiece, exemplaire?.factures?.lignes ?? null) : null
 
   // La note de CETTE pièce, lue à l'ouverture. Une réponse qui arrive pour une pièce déjà quittée est sans effet : le
   // drapeau d'annulation l'écarte, et ni la lecture ni le texte du champ ne passent à la pièce suivante.
@@ -483,6 +494,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
   async function save(statut: 'a_valider' | 'validee') {
     if (enregistrementEnCours.current) return
+    // Une pièce désignée exemplaire d'une facture reste une pièce de vente : le refus de la garde est dit sous le champ, et
+    // rien ne part qu'elle refuserait.
+    if (refusDeLaDesignee !== null) return
     enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
@@ -762,6 +776,14 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               )}
             </div>
           )}
+          {piece && exemplaire && (
+            <ExemplaireDeLaFacture
+              dossierId={dossierId}
+              piece={piece}
+              donnees={exemplaire}
+              autresPieces={venteEmise?.genre === 'double' ? venteEmise.autres : null}
+            />
+          )}
           {(previewUrl || previewError) && (
             <div className="field fiche-piece-apercu">
               {previewError ? (
@@ -845,6 +867,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               </select>
             </div>
           </div>
+
+          {refusDeLaDesignee !== null && <p className="error-text" style={{ marginTop: -8 }}>{refusDeLaDesignee}</p>}
 
           <div className="field">
             <label htmlFor="tiers">Tiers (fournisseur / client)</label>
@@ -1044,11 +1068,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           ) : <span />}
           <div className="fiche-piece-actions">
             {!fige && (
-              <button type="button" className="btn btn-outline btn-sm" disabled={occupee} onClick={() => save('a_valider')}>
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupee || refusDeLaDesignee !== null} onClick={() => save('a_valider')}>
                 Enregistrer brouillon
               </button>
             )}
-            <button type="submit" className="btn btn-primary btn-sm" disabled={occupee}>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={occupee || refusDeLaDesignee !== null}>
               {saving ? 'Enregistrement…' : fige ? 'Enregistrer' : 'Valider'}
             </button>
           </div>

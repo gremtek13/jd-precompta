@@ -175,10 +175,10 @@ const part = (o: Partial<EncaissementFactureTaux> = {}): EncaissementFactureTaux
 
 // Une pièce du dossier, telle que la fenêtre la lit : ce que le pont de la ligne 28.6 reconnaît, son tiers et son fichier.
 type PieceEssai = Pick<Piece, 'id' | 'dossier_id' | 'flux_hote' | 'flux_id' | 'superpdp_invoice_id' | 'identite_numero'
-  | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature' | 'tiers' | 'nom_fichier'>
+  | 'identite_siren_vendeur' | 'identite_date' | 'identite_nature' | 'facture_id' | 'tiers' | 'nom_fichier'>
 const pieceEssai = (o: Partial<PieceEssai> = {}): PieceEssai => ({
   id: 'p1', dossier_id: 'd1', flux_hote: null, flux_id: null, superpdp_invoice_id: null, identite_numero: null,
-  identite_siren_vendeur: null, identite_date: null, identite_nature: null, tiers: null, nom_fichier: 'piece.pdf', ...o,
+  identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, tiers: null, nom_fichier: 'piece.pdf', ...o,
 })
 
 const onUpdated = vi.fn()
@@ -409,6 +409,24 @@ describe('EncaissementsFactureModal — la pièce que le mouvement paie déjà',
       + 'cette facture (CLIENT FICTIF SAS) : c’est la même vente.')
     // Rien n'est refusé de plus : l'enregistrement reste ouvert au moyen près.
     screen.getByText('Le moyen de paiement est inconnu.')
+  })
+
+  // LA DÉSIGNATION (étape VF1b) : la fenêtre lit la colonne `facture_id` des pièces. Le faux client ne rend que les colonnes
+  // demandées : sans elle, le PDF que le cabinet a désigné exemplaire de la facture paraîtrait « une autre pièce, que rien ne
+  // relie à la facture », et le crédit qui le paie ne serait pas reconnu comme la même vente.
+  it('le PDF désigné exemplaire de la facture est sa pièce : la même vente, attendu — et la pièce d’une autre facture, non', async () => {
+    const designe = pieceEssai({ id: 'p-designe', tiers: 'CLIENT PDF', nom_fichier: 'vente-0042.pdf', facture_id: 'f1' })
+    monter({ facture: AVEC_SUPERPDP, pieces: [designe, pdf], mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p-designe' })] })
+    await choisir()
+    expect(proposition().textContent).toContain('Ce mouvement paie la pièce jumelle de cette facture (CLIENT PDF) : c’est la même vente.')
+    expect(screen.queryByText(/que rien ne relie à cette facture/)).toBeNull()
+  })
+
+  it('une pièce désignée exemplaire d’une AUTRE facture n’est pas celle-ci', async () => {
+    const autre = pieceEssai({ id: 'p-autre-facture', tiers: 'CLIENT PDF', nom_fichier: 'vente-0099.pdf', facture_id: 'f-autre' })
+    monter({ facture: AVEC_SUPERPDP, pieces: [autre], mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p-autre-facture' })] })
+    await choisir()
+    expect(screen.queryByText(/paie la pièce jumelle/)).toBeNull()
   })
 
   it('une autre pièce, que rien ne relie à la facture : peut-être son PDF, qui la compterait deux fois', async () => {

@@ -40,6 +40,13 @@ const faux = vi.hoisted(() => ({
   sansEffet: new Set<string>(),
   // La base refuse les mises à jour de pièces (validation, catégorie suggérée), avec cette raison.
   refusMaj: null as string | null,
+  // L'EXEMPLAIRE D'UNE FACTURE (étape VF1b) : les appels aux deux fonctions de la base, leur refus éventuel, de quoi retenir
+  // leur réponse (la fenêtre pendant laquelle l'opérateur peut ouvrir une autre pièce), et la relecture de la pièce refusée.
+  rpcs: [] as { nom: string; args: Record<string, unknown> }[],
+  refusRpc: null as string | null,
+  retenueRpc: null as Promise<void> | null,
+  refusRelecturePiece: null as string | null,
+  relecturesDeLaPiece: 0,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -83,6 +90,14 @@ vi.mock('../../lib/supabase', async () => {
         // La suppression d'une pièce rend la ligne supprimée (`.select('id').maybeSingle()`) : ce que la base rend
         // décide du retrait de ses fichiers. Une ligne que la base écarte sans erreur (`sansEffet`) rend `null`.
         maybeSingle: () => {
+          // La relecture d'UNE pièce par son identifiant (après un geste de sa fiche) : la ligne, ou le refus programmé. Les
+          // autres lectures d'une ligne (la note interne, le texte lu) ne portent pas `id` : elles ne rendent rien ici.
+          if (operation === 'select' && table === 'pieces') {
+            faux.relecturesDeLaPiece += 1
+            if (faux.refusRelecturePiece) return Promise.resolve({ data: null, error: { message: faux.refusRelecturePiece } })
+            const lue = ((faux.parTable.pieces ?? []) as { id: unknown }[]).find((l) => idsVises.includes(l.id))
+            return Promise.resolve({ data: lue ?? null, error: null })
+          }
           if (operation !== 'delete') return Promise.resolve({ data: null, error: null })
           if (faux.refusSuppression) return Promise.resolve({ data: null, error: { message: faux.refusSuppression } })
           const lignes = (faux.parTable[table] ?? []) as { id: unknown }[]
@@ -132,7 +147,19 @@ vi.mock('../../lib/supabase', async () => {
       return chaine
     },
     // L'écart d'une pièce (e-reporting, étape e5c) : la base l'écrit, la relecture des écarts le voit.
-    rpc: (nom: string, args: Record<string, unknown>) => {
+    rpc: async (nom: string, args: Record<string, unknown>) => {
+      if (nom === 'designer_exemplaire_facture' || nom === 'defaire_exemplaire_facture') {
+        faux.rpcs.push({ nom, args })
+        await faux.retenueRpc
+        if (faux.refusRpc) return { data: null, error: { message: faux.refusRpc } }
+        // Ce que font les deux fonctions de la base : la désignation s'écrit sur la pièce, et la pièce change de date.
+        faux.parTable.pieces = (faux.parTable.pieces ?? []).map((l) => (
+          (l as { id: unknown }).id === args.p_piece_id
+            ? { ...(l as object), facture_id: nom === 'designer_exemplaire_facture' ? args.p_facture_id : null, updated_at: '2026-09-17T09:00:00Z' }
+            : l
+        ))
+        return { data: {}, error: null }
+      }
       if (nom === 'ecarter_piece_ereporting') {
         faux.parTable.pieces_ecartees_ereporting = [...(faux.parTable.pieces_ecartees_ereporting ?? []), {
           id: 'x-ecrit', dossier_id: args.p_dossier_id, piece_id: args.p_piece_id, motif: args.p_motif, cree_par: null,
@@ -211,7 +238,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     // `superpdp_invoice_id`. Aucune n'était visible en relisant.
     uploaded_by: null, source: 'upload', conversion_source: null,
     notes: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, updated_at: '2026-09-16T09:00:00Z',
-    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
     created_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
@@ -227,6 +254,11 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.retraits = []
   faux.sansEffet = new Set()
   faux.refusMaj = null
+  faux.rpcs = []
+  faux.refusRpc = null
+  faux.retenueRpc = null
+  faux.refusRelecturePiece = null
+  faux.relecturesDeLaPiece = 0
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -974,7 +1006,9 @@ describe('PiecesTab — la pièce jumelle d’une facture émise', () => {
   const D = 'dossier-de-test'
   const facture = (o: Record<string, unknown> = {}) => ({
     id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
-    emetteur_siret: '12345678900012', superpdp_invoice_id: null, ...o,
+    emetteur_siret: '12345678900012', superpdp_invoice_id: null,
+    // Le client et le montant, que la fiche d'une pièce de vente lit pour proposer la facture (étape VF1b).
+    tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, ...o,
   })
   const IDENTITE: Partial<Piece> = {
     identite_numero: 'F2026-0007', identite_siren_vendeur: '123456789', identite_date: '2026-03-14', identite_nature: 'facture',
@@ -1567,5 +1601,252 @@ describe('PiecesTab — la fiche d’une pièce candidate à l’e-reporting', (
     monter('toutes')
     await ouvrir('LOCAL')
     expect(within(volet()).queryByRole('button', { name: 'Écarter de l’e-reporting…' })).toBeNull()
+  })
+})
+
+// L'EXEMPLAIRE D'UNE FACTURE ÉMISE, À L'ÉCRAN (ligne 28.6, chantier EC-Q3, étape VF1b ; la base : VF1a). Ce que ces cas gardent
+// et qu'aucun test du pont ne voit : la liste marque une pièce DÉSIGNÉE par le cabinet (« Facture émise F… », « Comptée deux
+// fois » quand elle double sa jumelle) et la recherche la retrouve par le numéro de sa facture ; la fiche d'une pièce de vente
+// désigne et défait — les factures validées lues en entier, le gel de la pièce lu, sinon aucun geste —, et la ligne comme la
+// fiche prennent la désignation sans relire l'onglet ni déplacer la fiche ouverte. Données FICTIVES.
+describe('PiecesTab — l’exemplaire d’une facture émise', () => {
+  const D = 'dossier-de-test'
+  const facture = (o: Record<string, unknown> = {}) => ({
+    id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: null, tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, ...o,
+  })
+  const vente = (o: Partial<Piece> = {}) => piece({ type_piece: 'vente', tiers: 'CLIENT FICTIF', nom_fichier: 'vente-0007.pdf', ...o })
+  function poserVentes(pieces: Piece[], factures: unknown[] = [facture()]) {
+    poser(pieces)
+    faux.parTable.factures_emises = factures
+    faux.parTable.transmissions_factures = []
+  }
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const ligne = (tiers: string) => screen.getByText(tiers, { selector: 'td' }).closest('tr')!
+  const choix = () => within(volet()).getByLabelText('Facture dont cette pièce est l’exemplaire') as HTMLSelectElement
+  const sansGeste = () => {
+    expect(within(volet()).queryByLabelText('Facture dont cette pièce est l’exemplaire')).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: /Désigner comme exemplaire|Défaire la désignation/ })).toBeNull()
+  }
+
+  describe('la liste', () => {
+    it('une pièce désignée seule se marque « Facture émise F… », un exemplaire de la facture, désigné par le cabinet', async () => {
+      poserVentes([vente({ id: 'p-pdf', facture_id: 'f1' }), piece({ id: 'p-achat', tiers: 'FOURNISSEUR' })])
+      monter('toutes')
+      const pastille = await screen.findByText('Facture émise F2026-0007')
+      expect(pastille.className).toBe('badge badge-neutral')
+      expect(pastille.getAttribute('title')).toContain('Cette pièce est un exemplaire de la facture F2026-0007 émise dans l’application')
+      expect(pastille.getAttribute('title')).toContain('désignée comme son exemplaire.')
+      expect(within(ligne('CLIENT FICTIF')).getByText('Facture émise F2026-0007')).toBe(pastille)
+      expect(within(ligne('FOURNISSEUR')).queryByText(/Facture émise/)).toBeNull()
+    })
+
+    it('une jumelle doublée d’un PDF désigné se marque « Comptée deux fois » sur les deux pièces', async () => {
+      poserVentes(
+        [
+          vente({ id: 'p-sync', tiers: 'CLIENT SYNCHRONISE', source: 'superpdp', superpdp_invoice_id: 4242, nom_fichier: 'super-pdp-0007.txt' }),
+          vente({ id: 'p-pdf', facture_id: 'f1' }),
+        ],
+        [facture({ superpdp_invoice_id: 4242 })],
+      )
+      monter('toutes')
+      const pastilles = await screen.findAllByText('Comptée deux fois')
+      expect(pastilles).toHaveLength(2)
+      expect(pastilles.every((p) => p.className === 'badge badge-danger')).toBe(true)
+      expect(within(ligne('CLIENT FICTIF')).getByText('Comptée deux fois').getAttribute('title'))
+        .toContain('La facture F2026-0007 émise dans l’application est portée par 2 pièces')
+      expect(screen.queryByText(/Facture émise F2026-0007/)).toBeNull()
+    })
+
+    it('la recherche trouve le numéro de la facture d’une pièce désignée, comme celui d’une jumelle', async () => {
+      poserVentes(
+        [
+          vente({ id: 'p-pdf', facture_id: 'f1' }),
+          vente({ id: 'p-sync', tiers: 'AUTRE CLIENT', superpdp_invoice_id: 4243 }),
+          piece({ id: 'p-achat', tiers: 'FOURNISSEUR' }),
+        ],
+        [facture(), facture({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: 4243 })],
+      )
+      monter('toutes')
+      await screen.findByText('FOURNISSEUR')
+      const recherche = screen.getByLabelText(/^Rechercher un fichier/)
+      fireEvent.change(recherche, { target: { value: 'f2026-0007' } })
+      expect(screen.getByText('CLIENT FICTIF', { selector: 'td' })).toBeTruthy()
+      expect(screen.queryByText('AUTRE CLIENT', { selector: 'td' })).toBeNull()
+      expect(screen.queryByText('FOURNISSEUR', { selector: 'td' })).toBeNull()
+      fireEvent.change(recherche, { target: { value: 'f2026-0008' } })
+      expect(screen.getByText('AUTRE CLIENT', { selector: 'td' })).toBeTruthy()
+      expect(screen.queryByText('CLIENT FICTIF', { selector: 'td' })).toBeNull()
+    })
+
+    it('les factures émises lues en partie : aucune pièce désignée n’est marquée, et la fiche n’offre aucun geste', async () => {
+      poserVentes([vente({ id: 'p-pdf', facture_id: 'f1' })], [facture(), facture({ id: 'f2', numero: 'F2026-0008' })])
+      faux.muetApres = { factures_emises: 1 }
+      monter('toutes')
+      expect(await screen.findByText(/^Les factures émises du dossier et leurs transmissions n'ont pas pu être lues en entier/)).toBeTruthy()
+      expect(screen.queryByText(/Comptée|Facture émise|À vérifier/)).toBeNull()
+      await ouvrir('CLIENT FICTIF')
+      expect(within(volet()).getByText(/^Les factures émises du dossier n’ont pas pu être lues en entier/)).toBeTruthy()
+      sansGeste()
+    })
+  })
+
+  describe('la fiche d’une pièce de vente', () => {
+    it('désigne : le choix, la confirmation qui nomme, un appel ; la ligne et la fiche prennent la désignation sans relire l’onglet', async () => {
+      poserVentes([vente({ id: 'p-pdf' }), piece({ id: 'p-achat', tiers: 'FOURNISSEUR' })])
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      // Une saisie en cours dans la fiche : le geste ne la touche pas.
+      fireEvent.change(within(volet()).getByLabelText('Tiers (fournisseur / client)'), { target: { value: 'SAISIE EN COURS' } })
+      expect(within(ligne('CLIENT FICTIF')).queryByText(/Facture émise/)).toBeNull()
+      expect([...choix().options].map((o) => o.textContent)).toEqual([
+        '— Choisir la facture —', expect.stringContaining('Facture F2026-0007 — 14/03/2026 — CLIENT FICTIF SAS'),
+      ])
+      const relecturesAvant = faux.relecturesDeLaPiece
+
+      fireEvent.change(choix(), { target: { value: 'f1' } })
+      await act(async () => { within(volet()).getByRole('button', { name: 'Désigner comme exemplaire' }).click() })
+
+      expect(String(confirmation.mock.calls[0][0])).toContain('la facture F2026-0007')
+      expect(String(confirmation.mock.calls[0][0])).toContain('CLIENT FICTIF SAS')
+      expect(faux.rpcs).toEqual([{ nom: 'designer_exemplaire_facture', args: { p_dossier_id: D, p_piece_id: 'p-pdf', p_facture_id: 'f1' } }])
+      // La pièce relue (une seule fois), la ligne marquée, la fiche passée à « Défaire » — et la saisie en cours, intacte.
+      expect(faux.relecturesDeLaPiece).toBe(relecturesAvant + 1)
+      expect(within(ligne('CLIENT FICTIF')).getByText('Facture émise F2026-0007')).toBeTruthy()
+      expect(within(volet()).getByText('Cette pièce est désignée comme l’exemplaire de la facture F2026-0007.')).toBeTruthy()
+      expect(within(volet()).getByRole('button', { name: 'Défaire la désignation' })).toBeTruthy()
+      expect((within(volet()).getByLabelText('Tiers (fournisseur / client)') as HTMLInputElement).value).toBe('SAISIE EN COURS')
+    })
+
+    it('défait : la confirmation nomme, un appel, la ligne perd sa marque et la fiche revient au choix', async () => {
+      poserVentes([vente({ id: 'p-pdf', facture_id: 'f1' })])
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      monter('toutes')
+      await screen.findByText('Facture émise F2026-0007')
+      await ouvrir('CLIENT FICTIF')
+      await act(async () => { within(volet()).getByRole('button', { name: 'Défaire la désignation' }).click() })
+      expect(String(confirmation.mock.calls[0][0])).toContain('la facture F2026-0007')
+      expect(faux.rpcs).toEqual([{ nom: 'defaire_exemplaire_facture', args: { p_dossier_id: D, p_piece_id: 'p-pdf' } }])
+      expect(screen.queryByText('Facture émise F2026-0007')).toBeNull()
+      expect(choix().value).toBe('')
+    })
+
+    it('défaire le PDF d’une vente comptée deux fois : la confirmation dit que le double compte reste, et nomme l’autre pièce', async () => {
+      poserVentes(
+        [
+          vente({ id: 'p-sync', tiers: 'CLIENT SYNCHRONISE', source: 'superpdp', superpdp_invoice_id: 4242, nom_fichier: 'super-pdp-0007.txt' }),
+          vente({ id: 'p-pdf', facture_id: 'f1' }),
+        ],
+        [facture({ superpdp_invoice_id: 4242 })],
+      )
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      monter('toutes')
+      await screen.findAllByText('Comptée deux fois')
+      await ouvrir('CLIENT FICTIF')
+      await act(async () => { within(volet()).getByRole('button', { name: 'Défaire la désignation' }).click() })
+      const texte = String(confirmation.mock.calls[0][0])
+      expect(texte).toContain('« super-pdp-0007.txt »')
+      expect(texte).toContain('NE RETIRE PAS le double compte : les deux pièces continuent de compter la vente')
+      expect(faux.rpcs).toEqual([])
+    })
+
+    it('un refus de la base se dit avec sa raison, et la pièce reste ce qu’elle était', async () => {
+      poserVentes([vente({ id: 'p-pdf' })])
+      faux.refusRpc = 'Facture introuvable dans ce dossier.'
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      fireEvent.change(choix(), { target: { value: 'f1' } })
+      await act(async () => { within(volet()).getByRole('button', { name: 'Désigner comme exemplaire' }).click() })
+      expect(within(volet()).getByText('Facture introuvable dans ce dossier.')).toBeTruthy()
+      expect(within(ligne('CLIENT FICTIF')).queryByText(/Facture émise/)).toBeNull()
+      expect(choix().value).toBe('f1')
+    })
+
+    it('la relecture de la pièce refusée : la fiche le dit, n’offre plus aucun geste, et la relit sur un clic', async () => {
+      poserVentes([vente({ id: 'p-pdf' })])
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      fireEvent.change(choix(), { target: { value: 'f1' } })
+      faux.refusRelecturePiece = 'lecture refusée par la base'
+      await act(async () => { within(volet()).getByRole('button', { name: 'Désigner comme exemplaire' }).click() })
+      expect(within(volet()).getAllByText(/La pièce n’a pas pu être relue après le dernier geste \(lecture refusée par la base\)/).length).toBeGreaterThan(0)
+      sansGeste()
+      faux.refusRelecturePiece = null
+      await act(async () => { within(volet()).getByRole('button', { name: 'Relire la pièce' }).click() })
+      expect(within(volet()).getByRole('button', { name: 'Défaire la désignation' })).toBeTruthy()
+    })
+
+    it('une réponse qui arrive pour une pièce quittée ne déplace pas la fiche : la ligne prend la désignation, la fiche ouverte reste', async () => {
+      poserVentes([vente({ id: 'p-pdf' }), vente({ id: 'p-autre', tiers: 'AUTRE CLIENT', nom_fichier: 'vente-0008.pdf' })])
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let liberer: () => void = () => {}
+      faux.retenueRpc = new Promise<void>((resolve) => { liberer = resolve })
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      fireEvent.change(choix(), { target: { value: 'f1' } })
+      await act(async () => { within(volet()).getByRole('button', { name: 'Désigner comme exemplaire' }).click() })
+      await ouvrir('AUTRE CLIENT')
+      expect(within(volet()).getByText('AUTRE CLIENT')).toBeTruthy()
+      await act(async () => { liberer() })
+      // La ligne de la première pièce est marquée ; la fiche ouverte est celle de la seconde, que rien ne désigne.
+      expect(within(ligne('CLIENT FICTIF')).getByText('Facture émise F2026-0007')).toBeTruthy()
+      expect(within(volet()).getByText('AUTRE CLIENT')).toBeTruthy()
+      expect(within(volet()).queryByText('Cette pièce est désignée comme l’exemplaire de la facture F2026-0007.')).toBeNull()
+      expect(within(volet()).getByRole('button', { name: 'Désigner comme exemplaire' })).toBeTruthy()
+    })
+
+    it('une pièce qui n’est pas une vente n’offre rien', async () => {
+      poserVentes([piece({ id: 'p-achat', tiers: 'FOURNISSEUR' })])
+      monter('toutes')
+      await ouvrir('FOURNISSEUR')
+      expect(within(volet()).queryByText('Exemplaire d’une facture émise')).toBeNull()
+      sansGeste()
+    })
+
+    it('une pièce figée par un exercice validé le dit avant le clic, sous les mots de la base, et n’offre aucun geste', async () => {
+      poserVentes([vente({ id: 'p-pdf', statut: 'validee', date_piece: '2025-12-30' })])
+      faux.parTable.ecritures_brouillon = [{ id: 'ev-1', statut: 'validee', date: '2025-12-30', piece_id: 'p-pdf', immobilisation_id: null }]
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      expect(within(volet()).getByText("Cette pièce porte une écriture validée de l'exercice 2025 : sa désignation ne change plus.")).toBeTruthy()
+      sansGeste()
+    })
+
+    it('les écritures validées lues en partie : on ne sait pas si la pièce est figée, aucun geste', async () => {
+      poserVentes([vente({ id: 'p-pdf' })])
+      faux.parTable.ecritures_brouillon = [
+        { id: 'ev-1', statut: 'validee', date: '2025-12-30', piece_id: 'autre', immobilisation_id: null },
+        { id: 'ev-2', statut: 'validee', date: '2025-12-31', piece_id: 'autre-2', immobilisation_id: null },
+      ]
+      faux.muetApres = { ecritures_brouillon: 1 }
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      expect(within(volet()).getByText(/faute de savoir si un exercice validé fige cette pièce, sa désignation ne se pose ni ne se défait d’ici/)).toBeTruthy()
+      sansGeste()
+    })
+
+    it('un dossier sans facture validée : rien à désigner', async () => {
+      poserVentes([vente({ id: 'p-pdf' })], [])
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      expect(within(volet()).getByText('Ce dossier n’a aucune facture émise validée : il n’y a rien à désigner.')).toBeTruthy()
+      sansGeste()
+    })
+
+    it('une facture en brouillon ou d’un autre dossier ne se propose pas', async () => {
+      poserVentes([vente({ id: 'p-pdf' })], [
+        facture(), facture({ id: 'f-brouillon', statut: 'brouillon', numero: null }), facture({ id: 'f-ailleurs', dossier_id: 'autre', numero: 'F2026-0100' }),
+      ])
+      monter('toutes')
+      await ouvrir('CLIENT FICTIF')
+      expect([...choix().options].map((o) => o.value)).toEqual(['', 'f1'])
+    })
   })
 })
