@@ -403,10 +403,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
   sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; douze questions, EC3-Q1 à Q12 ; avant VF3, trancher
   entre la forme commune des parts du relevé et une seconde forme ; fini avant que les clients facturent réellement ici
-  → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1a en ligne le 18/10/2026 (28.6-Q1, l'exemplaire d'une
-  facture en base) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE » ; restent VF1b (la fiche d'une pièce et la liste des
-  pièces ; défaire la désignation d'un PDF qui double sa jumelle retire l'alerte, pas le double compte, et la
-  confirmation le dit), puis VF2 à VF9 ; qui a désigné, et quand : à VF6 (VF1A-Q2).
+  → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire
+  d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE
+  D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN » ; restent VF2 à VF9 — à VF3, la confirmation qui
+  dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; qui a désigné, et quand : à VF6 (VF1A-Q2).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -745,8 +745,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   DEUX FOIS ». **L'exemplaire d'une facture** (`pieces.facture_id`) : la jumelle ou le PDF, DÉSIGNÉ par le cabinet seul
   (`designer_exemplaire_facture`, `defaire_exemplaire_facture`), sur une facture VALIDÉE du même dossier et une pièce de
   VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
-  dite la première, sans faire taire les autres ; rien de ce qui se compte ne change → « L'EXEMPLAIRE D'UNE FACTURE, EN
-  BASE ». **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  dite la première, sans faire taire les autres ; rien de ce qui se compte ne change ; à l'écran, la fiche d'une pièce
+  de vente seule, côté cabinet, sur des factures lues en entier, et défaire ne retire pas le double compte, ce que sa
+  confirmation dit → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **Connexion
+  bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact

@@ -29284,3 +29284,57 @@ validation relève de l'opération découverte après coup. Le retour arrière d
 prise pendant que la colonne existait ne se restaure plus telle quelle après lui. Le cabinet a tranché le 18/10/2026 :
 VF1A-Q1, « Oui, appliquer » ; VF1A-Q2, « Pas maintenant » — garder qui a désigné, et quand, se reprend à VF6, avec
 l'exemplaire d'une facture source.
+
+**LA MISE EN LIGNE.** Demande #190, ouverte sur `8f58101` après la barrière locale (`tsc -b` ; lint, 0 erreur et les 63
+avertissements d'avant ; 414 fichiers et 12 634 tests sous Paris, UTC, New York et Auckland ; le build) ; les deux
+passes de `verifier` vertes ; fusionnée en « Rebase and merge » le 18/10/2026 à 15 h 16 UTC (`4f14d56`, `536ab19`),
+`main` linéaire, son arbre égal à celui de la branche ; le déploiement vert à 15 h 22, et le site sert
+`index-Di1MxuPM.js`, le bundle du build local du même arbre ; la ligne 28.6 de la feuille de route relue à l'identique.
+
+### 18/10/2026 — L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN — CHANTIER EC-Q3, ÉTAPE VF1b (LIGNE 28.6)
+
+(Écrit par l'agent dev de VF1b sur `536ab19`, relu et intégré par la session ; aucune migration, aucune Edge Function.
+Fichiers nouveaux : `src/pages/dossier/ExemplaireDeLaFacture.tsx`, `src/lib/exemplairesDesFacturesLecture.ts`,
+`src/lib/exemplairesDesFacturesEcran.ts`, leurs tests, `src/lib/exemplaireCabinetSeul.test.ts`,
+`src/pages/dossier/FichePiece.exemplaire.test.tsx`. Modifiés : `FichePiece.tsx`, `PiecesTab.tsx`,
+`EncaissementsFactureModal.tsx`, `types.ts` (`Piece.facture_id` obligatoire), `ventesJumelles.ts` (un type),
+`ecransAvantLecture.test.tsx`, et les fabriques de pièces de 34 fichiers de tests, qui reçoivent `facture_id: null`.)
+
+**CE QUE LE CABINET VOIT.** Dans la fiche d'une pièce de vente — l'onglet des justificatifs l'ouvre seul, jamais
+l'espace du client —, une section « Exemplaire d'une facture émise ». Pour une pièce que rien ne désigne : le choix
+parmi les factures et les avoirs VALIDÉS du dossier, aucun choisi d'avance ; la confirmation NOMME la pièce et la
+facture (numéro, client, montant TTC, date). Pour une pièce désignée : sa facture, et « Défaire la désignation », dont
+la confirmation dit que défaire ne change rien à ce qui se compte — et, quand le pont dit la vente « Comptée deux fois
+», nomme l'autre pièce et dit que défaire peut faire taire l'alerte, jamais retirer le double compte. Les refus du
+module (la pièce, la vente, le gel, une désignation déjà posée, la facture) se disent avant le clic, sous les mots de la
+base. Le formulaire d'une pièce désignée dit sous le champ « Type » que sa nature ne change pas (le refus de la garde) :
+ni « Valider » ni « Enregistrer brouillon » ne partent tant qu'il tient, et le reste de la saisie reste intact.
+
+**CE QU'ELLE NE FAIT JAMAIS.** Aucun geste sur des factures pas encore revenues, lues en partie ou refusées — l'écran le
+dit et offre de les relire —, ni quand les écritures validées sont lues en partie (on ne sait pas si la pièce est
+figée), ni après une relecture de la pièce qui a échoué (« Relire la pièce ») ; rien sans un clic confirmé ; aucune
+facture proposée à la place du cabinet ; un numéro jamais inventé quand la facture désignée manque à la liste lue.
+
+**LA LECTURE ET LE VERROU.** `lireLesFacturesProposees` lit les factures validées du dossier, en entier, triées sur la
+date d'émission puis la clé, avec les colonnes de la confirmation : une lecture à part de celle du pont, que la
+Checklist et la Clôture partagent ; `PiecesTab` la fait à son chargement. Un verrou `useRef` sert les deux gestes, posé
+avant le `try` et relâché après la relecture de LA pièce, par son identifiant : la liste prend la ligne relue, la fiche
+ouverte sa seule désignation (`facture_id`, `updated_at`), et une réponse pour une pièce quittée ne déplace rien. La
+fenêtre des encaissements nomme `facture_id` : le PDF désigné y est la pièce de sa facture. `Piece.facture_id` devient
+obligatoire ; `PiecePourJumelle` garde la désignation facultative, pour la lecture du pont qui ne nomme pas la colonne.
+
+**LES GARDES.** `exemplaireCabinetSeul.test.ts` suit les imports des six écrans du client et de la coque : aucun
+n'atteint les deux fonctions, la fiche ni la section, que le cabinet atteint. `verrousEcritures` voit les deux gestes.
+`ecransAvantLecture` : la section, qui ne lit rien elle-même, est inscrite parmi les écrans sans lecture au montage,
+avec sa raison ; une entrée nouvelle monte la fiche sur des factures lues en partie, et le second garde y tente chaque
+geste sans qu'aucune écriture parte ; le cas « factures pas encore revenues » est joué par le test de la section. Mesuré
+par l'agent : `tsc -b` 0, lint 0 erreur, la suite entière sous Paris (419 fichiers, 12 710 tests), les suites touchées
+sous Auckland ; 25 mutations, 22 qui mordent — les trois qui survivent (le verrou relu dans `designer`, le refus du
+module relu au clic, le gel relu au clic) sont doublées par le bouton grisé ou absent : de la défense en profondeur, sur
+le patron de `FicheHorsDeFrance`. Le banc n'a pas tourné : `index.css` n'est pas touché.
+
+**À REVOIR.** La confirmation de la désignation dit « Désigner ne change rien à ce qui se compte aujourd'hui » : vrai
+jusqu'à VF3, où les moteurs cesseront de compter les exemplaires — la phrase se revoit alors. La section emprunte les
+classes `.fiche-hdf*` de la fiche d'un achat hors de France, pour ne pas toucher à `index.css` : un nom neutre suivra,
+avec une passe du banc. La fenêtre des encaissements nomme `facture_id` sans le drapeau : un retour arrière de la
+migration (destructif, sur un accord explicite du cabinet seulement) devrait aussi la reprendre.
