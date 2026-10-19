@@ -393,6 +393,9 @@ function declarationD7(id: string, debut: string, fin: string, depot: string) {
     // L'ordinateur du dossier, immobilisé (`i-d7`) : sa TVA va en ligne 19.
     pieceIdsImmobilisees: new Set(['a2']),
     releve: partsDuReleve(lignes, categories as unknown as Categorie[], RELEVE_D7.ventilations as unknown as VentilationBancaire[], true),
+    // Aucune facture du banc n'est SOURCE de sa vente : les ventes facturées que l'onglet TVA lirait sont vides, et la
+    // valeur vide le dit (étape VF3b2).
+    ventesFacturees: ventesFactureesVides('d7'),
   }
   const ca3 = calculerCa3(donnees, { debut, fin }, false, 0, 0)
   const liquidee = declarationDeLaCa3(ca3, { debut, fin })

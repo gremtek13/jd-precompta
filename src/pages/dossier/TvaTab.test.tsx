@@ -12,6 +12,7 @@ import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { regime as regimeDEreporting } from '../../test/ereportingEcran'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from '../../lib/planComptable'
+import { encaissementVendu, factureVendue, ligneVendue } from '../../test/ventesFacturees'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET lib/liquidationTva.ts, ET SE TESTE LÀ. Ce qui se joue ici est ce
 // qu'aucun test des modules ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
@@ -37,6 +38,9 @@ const faux = vi.hoisted(() => ({
   rpcRefuse: null as string | null,
   // Non nul : toutes les lectures attendent qu'on le libère — c'est ainsi qu'on regarde l'onglet PENDANT sa première lecture.
   porte: null as Promise<void> | null,
+  // Une lecture de cette table attend la promesse posée au moment où elle part : de quoi voir l'onglet avant qu'elle revienne,
+  // ou faire revenir la lecture d'un dossier quitté APRÈS celle du dossier ouvert (étape VF3b2).
+  attentes: {} as Record<string, Promise<void> | undefined>,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -53,7 +57,18 @@ vi.mock('../../lib/supabase', async () => {
         const lecture: Record<string, unknown> = {}
         Object.assign(lecture, {
           select: () => lecture,
-          eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return lecture },
+          // Les lignes d'une facture n'ont pas de dossier : la base les filtre par leur facture (`factures_emises!inner`,
+          // lib/ventesFactureesLecture.ts), et le faux aussi.
+          eq: (colonne: string, valeur: unknown) => {
+            if (table === 'facture_lignes' && colonne.startsWith('factures_emises.')) {
+              const champ = colonne.slice('factures_emises.'.length)
+              predicats.push((l) => (faux.tables.factures_emises ?? []).some((f) =>
+                (f as Record<string, unknown>).id === l.facture_id && (f as Record<string, unknown>)[champ] === valeur))
+            } else {
+              predicats.push(predicatEq(colonne, valeur))
+            }
+            return lecture
+          },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return lecture },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return lecture },
           order: () => lecture,
@@ -70,6 +85,8 @@ vi.mock('../../lib/supabase', async () => {
               }
             }
             if (faux.porte) return faux.porte.then(() => reponse()).then(suite)
+            const attente = faux.attentes[table]
+            if (attente) return attente.then(() => reponse()).then(suite)
             const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.rpcs.length > 0
             if (!suspendre) return Promise.resolve(reponse()).then(suite)
             return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
@@ -189,8 +206,10 @@ const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 function Hote({
   periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, numero = false, siret = null, valides = [],
-  espion, plan = PLAN_PAR_DEFAUT,
+  espion, plan = PLAN_PAR_DEFAUT, dossier = 'd',
 }: {
+  // Le dossier ouvert : « d », sauf mention contraire.
+  dossier?: string
   // Le plan comptable du dossier (ligne 43, étape PC3) : le défaut, sauf mention contraire.
   plan?: PlanComptable
   periodicite?: PeriodiciteTva
@@ -216,7 +235,7 @@ function Hote({
   return (
     <AvecExercicesValides annees={valides}>
       <TvaTab
-        dossierId="d"
+        dossierId={dossier}
         plan={plan}
         assujettiTva={tva.assujetti_tva}
         statutTva={tva.statut_tva}
@@ -255,6 +274,7 @@ beforeEach(() => {
   faux.miseAJourRefusee = false
   faux.rpcRefuse = null
   faux.porte = null
+  faux.attentes = {}
 })
 
 afterEach(() => {
@@ -947,5 +967,209 @@ describe('TvaTab — sous le plan du dossier', () => {
       { compte: '445511', sens: 'credit', montant: 150, libelle },
       { compte: '758100', sens: 'credit', montant: 0.08, libelle },
     ])
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b2). Le moteur est éprouvé à part (declarationTva.test.ts,
+// liquidationTva.test.ts) ; ce qui se joue ici est le CÂBLAGE : que l'onglet LISE les ventes facturées du dossier, les passe
+// à la CA3 et à la comparaison, dise ce qu'elles écartent et l'enregistrement qu'elles retiennent, et qu'une lecture
+// incomplète, pas encore revenue ou d'un autre dossier ne laisse ni chiffre ni geste. Données FICTIVES.
+describe('TvaTab — les ventes facturées', () => {
+  // Une facture SOURCE de services : 500 € HT à 20 %, encaissée entière le 10 mars 2027 — 100 € de TVA au premier trimestre.
+  const FACTURE_SOURCE = factureVendue({
+    id: 'fs', dossier_id: 'd', numero: 'F2027-0042', date_emission: '2027-03-01', tiers_nom: 'CLIENT FICTIF',
+  })
+  const LIGNE_FS = { ...ligneVendue('fs', 500, 20), id: 'lfs' }
+  const ENCAISSEMENT = encaissementVendu({ id: 'enc', dossier_id: 'd', facture_id: 'fs', date_encaissement: '2027-03-10', montant: 600 })
+  // La pièce désignée comme son exemplaire, payée en mars : elle ne compte plus.
+  const EXEMPLAIRE = piece({ id: 'px', tiers: 'Exemplaire CLIENT FICTIF', date_piece: '2027-03-01', montant_ht: 500, montant_tva: 100, montant_ttc: 600, facture_id: 'fs' })
+
+  function poserLesVentes() {
+    faux.tables.pieces = [...faux.tables.pieces, EXEMPLAIRE]
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, paiement('px', 600, '2027-03-12')]
+    faux.tables.factures_emises = [FACTURE_SOURCE]
+    faux.tables.facture_lignes = [LIGNE_FS]
+    faux.tables.encaissements_factures = [ENCAISSEMENT.encaissement]
+    faux.tables.encaissements_factures_taux = [ENCAISSEMENT.part]
+  }
+  const LIGNES_DISCRETES = [
+    /Exemplaires d’une facture source, que la CA3 ne compte pas/, /Ventes facturées que la CA3 ne compte pas/,
+    /vente\(s\) facturée\(s\) de la période ne sont pas dans les cases/, /Les ventes facturées ne s’écrivent pas encore/,
+  ]
+
+  it('lit les ventes facturées du dossier à côté de ses autres entrées', async () => {
+    await afficher()
+    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']) {
+      expect(faux.tablesLues, table).toContain(table)
+    }
+  })
+
+  it('compte la facture source à son encaissement, ne compte plus son exemplaire — il se dit —, et retient l’enregistrement', async () => {
+    poserLesVentes()
+    await afficher()
+    // 1 000 € de la vente par sa pièce, 500 € de la facture source : 1 500 € à 20 %. Compté aussi, l'exemplaire en aurait
+    // ajouté 500 ; la facture oubliée, 1 000 seulement.
+    const l08 = ligneDe('Taux normal 20 %')
+    expect(within(l08).getByText(MONTANT('1 500,00 €'))).toBeTruthy()
+    expect(within(l08).getByText(MONTANT('300,00 €'))).toBeTruthy()
+    expect(within(ligneDe('TVA nette due')).getByText(MONTANT('250,00 €'))).toBeTruthy()
+    expect(screen.getByText(/Exemplaires d’une facture source, que la CA3 ne compte pas/).textContent)
+      .toMatch(/\(1\) : Exemplaire CLIENT FICTIF\.$/)
+    // La vente facturée retenue, ligne par ligne.
+    fireEvent.click(screen.getByText('Les 1 vente(s) facturée(s) retenues, ligne par ligne'))
+    const retenue = ligneDe('F2027-0042 (CLIENT FICTIF)')
+    expect(within(retenue).getByText('encaissement')).toBeTruthy()
+    expect(within(retenue).getByText(MONTANT('500,00 €'))).toBeTruthy()
+    expect(within(retenue).getByText(MONTANT('100,00 €'))).toBeTruthy()
+    // L'enregistrement attend leurs écritures : dit avant le clic, le bouton grisé, et rien ne part.
+    expect(screen.getByText(/^Les ventes facturées ne s’écrivent pas encore : la liquidation attend leurs écritures\./)).toBeTruthy()
+    const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('une période sans vente facturée s’enregistre comme hier, même quand le dossier en compte ailleurs', async () => {
+    poserLesVentes()
+    // L'encaissement au deuxième trimestre, et l'exemplaire payé avec lui : le premier n'en porte rien.
+    faux.tables.encaissements_factures = [{ ...ENCAISSEMENT.encaissement, date_encaissement: '2027-04-10', cree_le: '2027-04-10T10:00:00Z' }]
+    faux.tables.lignes_bancaires = [paiement('vente', 1200, '2027-02-20'), paiement('achat', -300, '2027-03-05'), paiement('px', 600, '2027-04-12')]
+    await afficher()
+    expect(within(ligneDe('TVA nette due')).getByText(MONTANT('150,00 €'))).toBeTruthy()
+    for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    expect(faux.rpcs.map((r) => [r.nom, r.args.p_tva_declaree])).toEqual([['enregistrer_declaration_tva', 150]])
+  })
+
+  it('dit les ventes facturées écartées et celles qu’aucune ligne ne reçoit, une ligne chacune, et se tait sans elles', async () => {
+    poserLesVentes()
+    // Une facture source sans ligne, écartée par le module ; une autre à 2,1 %, que la CA3 ne place pas d'office.
+    faux.tables.factures_emises = [
+      FACTURE_SOURCE,
+      factureVendue({ id: 'fv', dossier_id: 'd', numero: 'F2027-0043', tiers_nom: 'CLIENT SANS LIGNE' }),
+      factureVendue({ id: 'fp', dossier_id: 'd', numero: 'F2027-0044', tiers_nom: 'CLIENT PRESSE' }),
+    ]
+    faux.tables.facture_lignes = [LIGNE_FS, { ...ligneVendue('fp', 1000, 2.1), id: 'lfp' }]
+    const presse = encaissementVendu({ id: 'enc-p', dossier_id: 'd', facture_id: 'fp', date_encaissement: '2027-02-15', montant: 1021 }, 2.1)
+    faux.tables.encaissements_factures = [ENCAISSEMENT.encaissement, presse.encaissement]
+    faux.tables.encaissements_factures_taux = [ENCAISSEMENT.part, presse.part]
+    await afficher()
+    expect(screen.getByText(/Ventes facturées que la CA3 ne compte pas \(1\)/).textContent)
+      .toContain("F2027-0043 (CLIENT SANS LIGNE) — la facture n'a aucune ligne")
+    const nonPlacee = screen.getByText(/1 vente\(s\) facturée\(s\) de la période ne sont pas dans les cases ci-dessus/)
+    expect(nonPlacee.textContent).toMatch(/F2027-0044 \(CLIENT PRESSE\) à 2,1 %, 1\s000,00\s€ hors taxe et 21,00\s€ de TVA \(2,1 % : ligne T6/)
+    // Écartée, elle n'entre dans aucune case : la ligne 20 % reste celle de la pièce et de la facture source.
+    expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('1 500,00 €'))).toBeTruthy()
+  })
+
+  it('sans vente facturée, aucune de ces lignes', async () => {
+    await afficher()
+    expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy()
+    for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+    expect(screen.queryByText(/vente\(s\) facturée\(s\) retenues/)).toBeNull()
+  })
+
+  it('compare chaque déclaration déposée au calcul qui lit les ventes facturées', async () => {
+    poserLesVentes()
+    // Déposée à 150 € avant que la facture source soit encaissée : le trimestre en porte 250 aujourd'hui.
+    faux.tables.declarations_tva = [declaration({
+      id: 't1', periode_debut: '2027-01-01', periode_fin: '2027-03-31', tva_declaree: 150, cases: {}, tva_collectee: 200,
+      tva_deductible: 50, tva_deductible_immobilisations: 0,
+    })]
+    await afficher()
+    const ligne = screen.getAllByText('1er trimestre 2027').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligne).getByText(MONTANT('250,00 €'))).toBeTruthy()
+    expect(within(ligne).getByText(MONTANT('-100,00 €'))).toBeTruthy()
+  })
+
+  it('propose l’année d’une exigibilité que rien d’autre ne date', async () => {
+    poserLesVentes()
+    faux.tables.encaissements_factures = [{ ...ENCAISSEMENT.encaissement, date_encaissement: '2025-06-10', cree_le: '2025-06-10T10:00:00Z' }]
+    await afficher()
+    const annees = [...(screen.getByLabelText('Année') as HTMLSelectElement).options].map((o) => o.value)
+    expect(annees).toContain('2025')
+  })
+
+  // Le second garde du câblage : une lecture des ventes facturées qui ne revient pas entière.
+  it.each(['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'])(
+    'lue en partie (%s) : le bandeau, et ni CA3, ni enregistrement, ni comparaison',
+    async (table) => {
+      poserLesVentes()
+      faux.tables.declarations_tva = [declaration({ id: 't4' })]
+      faux.tronquees = new Set([table])
+      await afficher()
+      expect(screen.getByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+      expect(screen.queryByText(/^CA3 — /)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Enregistrer/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Retirer' })).toBeNull()
+      expect(screen.queryByText(/Recalculée aujourd’hui/)).toBeNull()
+      expect(screen.getByText(/Les déclarations déposées ne se comparent pas au calcul sans les ventes facturées du dossier/)).toBeTruthy()
+      for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+    },
+  )
+
+  it('pas encore revenues : l’attente, et rien de la CA3 ni de l’historique', async () => {
+    poserLesVentes()
+    faux.tables.declarations_tva = [declaration({ id: 't4' })]
+    let liberer: () => void = () => {}
+    faux.attentes.encaissements_factures_taux = new Promise<void>((r) => { liberer = r })
+    render(<Hote />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+    expect(document.querySelectorAll('[aria-busy="true"] .skeleton').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/^CA3 — /)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Enregistrer comme/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retirer' })).toBeNull()
+    await act(async () => { liberer() })
+    await waitFor(() => expect(document.querySelectorAll('.skeleton')).toHaveLength(0))
+    expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Retirer' })).toBeTruthy()
+  })
+
+  it('un dossier changé en cours de route ne reprend pas la lecture de l’autre', async () => {
+    // Le dossier quitté a une facture source sans ligne — sa vente écartée se dirait — ; le dossier ouvert n'en a aucune.
+    faux.tables.factures_emises = [factureVendue({ id: 'fa', dossier_id: 'quitte', numero: 'F2027-9999', tiers_nom: 'CLIENT QUITTÉ' })]
+    let liberer: () => void = () => {}
+    faux.attentes.factures_emises = new Promise<void>((r) => { liberer = r })
+    const vue = render(<Hote dossier="quitte" />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+    // Le dossier ouvert répond tout de suite ; celui qu'on a quitté, après lui.
+    faux.attentes = {}
+    vue.rerender(<Hote dossier="d" />)
+    await waitFor(() => expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy())
+    await act(async () => { liberer() })
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+    // La réponse tardive ne remplace rien : la CA3 du dossier ouvert reste, sans la vente écartée de l'autre.
+    expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy()
+    expect(within(ligneDe('TVA nette due')).getByText(MONTANT('150,00 €'))).toBeTruthy()
+    expect(screen.queryByText(/CLIENT QUITTÉ/)).toBeNull()
+    for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+  })
+
+  it('pendant la lecture du dossier ouvert, rien de celui qu’on vient de quitter ne se dit', async () => {
+    // Le dossier quitté a ses justificatifs lus en partie : son bandeau ne doit pas rester sous le dossier ouvert, dont la
+    // lecture n'est pas revenue.
+    faux.tronquees = new Set(['pieces'])
+    const vue = render(<Hote dossier="quitte" />)
+    await waitFor(() => expect(screen.getByText(/Les justificatifs n'ont pas pu être lus en entier/)).toBeTruthy())
+    let liberer: () => void = () => {}
+    faux.attentes.encaissements_factures_taux = new Promise<void>((r) => { liberer = r })
+    faux.tronquees = new Set()
+    vue.rerender(<Hote dossier="d" />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+    expect(screen.queryByText(/Les justificatifs n'ont pas pu être lus en entier/)).toBeNull()
+    expect(document.querySelectorAll('[aria-busy="true"] .skeleton').length).toBeGreaterThan(0)
+    await act(async () => { liberer() })
+    await waitFor(() => expect(screen.getByText('CA3 — 1er trimestre 2027')).toBeTruthy())
+  })
+
+  // Le régime de la facture, et non l'option d'aujourd'hui du dossier : sur les débits, le dossier compterait l'exemplaire à
+  // sa date de pièce et écarterait une recette du relevé — la facture source, elle, reste au régime qu'elle a figé.
+  it('l’option du dossier pour les débits ne déplace pas une facture source sur le régime de l’encaissement', async () => {
+    poserLesVentes()
+    faux.tables.encaissements_factures = [{ ...ENCAISSEMENT.encaissement, date_encaissement: '2027-04-10', cree_le: '2027-04-10T10:00:00Z' }]
+    await afficher({ surDebits: true })
+    // Facturée en mars sur le régime de l'encaissement, encaissée en avril : rien au premier trimestre.
+    expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('1 000,00 €'))).toBeTruthy()
+    expect(screen.queryByText(/vente\(s\) facturée\(s\) retenues/)).toBeNull()
   })
 })

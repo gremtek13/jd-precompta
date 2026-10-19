@@ -13,6 +13,7 @@ import {
   libellePeriode,
   LIGNES_CA3,
   periodesDeLAnnee,
+  type CasesCa3,
   type DonneesTva,
   type LigneAffichee,
   type MotifNonPlacee,
@@ -40,6 +41,8 @@ import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
 import { declarationDuNonRedevable } from '../../lib/statutTva'
+import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import type { ExigibiliteVenteFacturee } from '../../lib/ventesFacturees'
 import type {
   ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
   VentilationBancaire,
@@ -64,6 +67,12 @@ import EreportingCard from './EreportingCard'
 // l'euro au 658000 ou au 758000. L'écran la montre avant le clic, et dit ce que la base refuserait. Une période
 // antérieure à l'ouverture d'un dossier repris se saisit à la main, sans liquidation : sa TVA est dans les
 // à-nouveaux. Le paiement d'une déclaration se rapproche dans Banque ; l'historique dit ce qui en reste dû.
+//
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b2 ; lib/ventesFactureesLecture.ts) : une facture SOURCE de sa
+// vente compte dans la CA3 par ses exigibilités, et son exemplaire ne compte plus. Lues tout ou rien à côté des autres
+// entrées, et gardées AVEC le dossier qui les a demandées : tant qu'elles ne sont pas revenues entières pour ce dossier,
+// ni CA3, ni enregistrement, ni comparaison des déclarations déposées. Aucune écriture ne les porte avant l'étape VF4 :
+// la déclaration d'une période qui en compte ne s'enregistre pas encore, et l'écran le dit avant le clic.
 
 interface Props {
   dossierId: string
@@ -102,8 +111,19 @@ const nomPiece = (p: Piece) => p.tiers ?? p.nom_fichier
 const pourcentage = (part: number) => `${Math.round(part * 100)} %`
 // Une recette du relevé se reconnaît à sa catégorie et au libellé du mouvement.
 const nomRecette = (p: PartDuReleve) => `${p.libelle} — ${p.ligne.libelle}`
+// Une vente facturée se reconnaît à son numéro et à son client.
+const nomDeLaFacture = (v: { numero: string | null; tiers: string }) => `${v.numero ?? 'sans numéro'} (${v.tiers})`
+const ORIGINE_EXIGIBILITE: Record<ExigibiliteVenteFacturee['origine'], string> = {
+  encaissement: 'encaissement',
+  livraison: 'livraison',
+  facture: 'facture (option pour les débits)',
+  avoir: 'avoir',
+}
+const tauxEnClair = (taux: number) => `${String(taux).replace('.', ',')} %`
 
 interface Lu {
+  // Le dossier pour lequel ces lignes ont été lues : celles d'un autre dossier ne valent jamais pour celui qui est ouvert.
+  dossierId: string
   pieces: Piece[]
   lignesBancaires: LigneBancaire[]
   // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune rend sa pièce
@@ -170,6 +190,7 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
     ),
   ])
   return {
+    dossierId,
     pieces: lecturePieces.lignes,
     lignesBancaires: lectureLignes.lignes,
     reglements: lectureReglements.lignes,
@@ -222,6 +243,9 @@ export default function TvaTab({
   const { anneesValidees, frontiere } = useExercicesValides()
   // Nul tant que la première lecture n'est pas revenue : l'écran montre alors ses squelettes.
   const [lu, setLu] = useState<Lu | null>(null)
+  // Les ventes facturées du dossier, lues tout ou rien (lib/ventesFactureesLecture.ts) : nulles tant qu'elles ne sont pas
+  // revenues.
+  const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [erreurRegime, setErreurRegime] = useState<string | null>(null)
   // La période choisie, AVEC la périodicité pour laquelle elle l'a été : passer de trimestrielle à
@@ -243,16 +267,28 @@ export default function TvaTab({
   // régime se reconfirme à partir du jour du changement (étape e5c ; hypothèse E5-Q2).
   const [statutChange, setStatutChange] = useState(false)
 
+  // LA DERNIÈRE LECTURE DEMANDÉE ÉCRIT SEULE : une lecture plus lente — celle d'un dossier quitté, ou celle d'avant un
+  // enregistrement — ne remplace pas, en arrivant après, celle qui l'a suivie. Le numéro se prend avant la première attente :
+  // un dossier changé relance une lecture, qui l'avance.
+  const derniereLecture = useRef(0)
+
+  async function lire(dossier: string) {
+    const demande = ++derniereLecture.current
+    // `lireLesVentesFacturees` ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
+    const [donnees, ventes] = await Promise.all([lireDonnees(dossier), lireLesVentesFacturees(dossier)])
+    if (demande !== derniereLecture.current) return
+    setLu(donnees)
+    setLectureVentes(ventes)
+  }
+
   useEffect(() => {
     if (!assujettiTva) return
-    let annule = false
-    lireDonnees(dossierId).then((donnees) => { if (!annule) setLu(donnees) })
-    return () => { annule = true }
+    void lire(dossierId)
   }, [dossierId, assujettiTva])
 
   // Après une écriture : l'écran garde ses chiffres pendant la relecture, puis les remplace.
   async function recharger() {
-    setLu(await lireDonnees(dossierId))
+    await lire(dossierId)
   }
 
   async function changerRegime(modification: { tva_periodicite?: PeriodiciteTva; tva_sur_debits?: boolean }) {
@@ -312,12 +348,20 @@ export default function TvaTab({
     )
   }
 
-  const loading = lu === null
-  const pieces = lu?.pieces ?? []
-  const lignesBancaires = lu?.lignesBancaires ?? []
-  const declarations = lu?.declarations ?? []
-  const ouverture = lu?.ouverture ?? null
-  const lectures = lu?.lectures ?? {
+  // Les lignes lues pour CE dossier, ou rien : celles d'un dossier quitté ne valent pas pour celui qui est ouvert.
+  const luDuDossier = lu?.dossierId === dossierId ? lu : null
+  const loading = luDuDossier === null
+  // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
+  const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
+  const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
+  // Tant que l'une ou l'autre n'est pas revenue, l'onglet attend : ni CA3, ni enregistrement, ni comparaison.
+  const enAttente = loading || lectureVentesDuDossier === null
+  const pieces = luDuDossier?.pieces ?? []
+  const lignesBancaires = luDuDossier?.lignesBancaires ?? []
+  const declarations = luDuDossier?.declarations ?? []
+  const ouverture = luDuDossier?.ouverture ?? null
+  const lectures = luDuDossier?.lectures ?? {
     pieces: null, lignes: null, reglements: null, immobilisations: null, declarations: null, categories: null, ventilations: null,
     ouverture: null,
   }
@@ -340,13 +384,18 @@ export default function TvaTab({
     ...declarations.map((d) => anneeDe(d.periode_debut)),
     ...pieces.map((p) => p.date_piece).filter((d): d is string => !!d).map(anneeDe),
     ...lignesBancaires.map((l) => anneeDe(l.date)),
+    // Et une année qui n'a que des exigibilités de factures sources : un acompte, une livraison.
+    ...(ventesFacturees?.exigibilites ?? []).map((e) => anneeDe(e.date)),
   ])].sort((a, b) => b - a)
 
-  const donnees: DonneesTva = {
+  // Sans les ventes facturées du dossier lues en entier, AUCUNE CA3 : une déclaration sans elles serait plausible, fausse et
+  // déposée, et le moteur n'a pas de valeur par défaut à leur donner.
+  const donnees: DonneesTva | null = ventesFacturees === null ? null : {
     pieces,
-    paiements: paiementsDesPieces(lignesBancaires, lu?.reglements ?? []),
-    pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set(),
-    releve: partsDuReleve(lignesBancaires, lu?.categories ?? [], lu?.ventilations ?? [], assujettiTva),
+    paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? []),
+    pieceIdsImmobilisees: luDuDossier?.pieceIdsImmobilisees ?? new Set(),
+    releve: partsDuReleve(lignesBancaires, luDuDossier?.categories ?? [], luDuDossier?.ventilations ?? [], assujettiTva),
+    ventesFacturees,
   }
   // Une période antérieure à l'ouverture d'un dossier repris se saisit à la main : sa TVA est dans les à-nouveaux,
   // et le calcul n'a rien à en dire.
@@ -358,12 +407,13 @@ export default function TvaTab({
   const creditValide = creditLu !== null && creditLu >= 0
   const remboursementTexte = saisieRemboursement[periode.debut] ?? '0'
   const remboursementLu = montantSaisi(remboursementTexte)
-  const ca3 = calculerCa3(
+  const ca3 = donnees === null ? null : calculerCa3(
     donnees, periode, surDebits, creditValide ? creditLu : 0, remboursementLu !== null && remboursementLu > 0 ? remboursementLu : 0,
   )
   const montantTexte = saisieMontant[periode.debut] ?? ''
   const dejaDeposees = declarations.filter((d) => d.periode_debut === periode.debut && d.periode_fin === periode.fin)
-  const comparees = comparerDeclarations(declarations, donnees, surDebits)
+  // Le recalcul des déclarations déposées lit les ventes facturées comme la CA3 qu'il refait : sans elles, aucun.
+  const comparees = donnees === null ? [] : comparerDeclarations(declarations, donnees, surDebits)
   const suivis = suiviDesDeclarations(declarations, lignesBancaires)
 
   // CE QUE L'ENREGISTREMENT ÉCRIRA, et ce que la base refuserait — dit avant le clic, dans son ordre
@@ -371,18 +421,19 @@ export default function TvaTab({
   // trois montants tapés.
   // Sans crédit dans la période (ligne 25), le champ du remboursement n'est pas proposé : ce qu'il gardait d'une saisie
   // antérieure ne compte plus.
-  const demande: DemandeDeDeclaration = aLaMain
+  // Rien à enregistrer tant que les ventes facturées ne sont pas revenues entières : ni CA3, ni saisie à la main.
+  const demande: DemandeDeDeclaration | null = ca3 === null ? null : aLaMain
     ? { periode, ca3: null, remboursement: remboursementLu, tvaDeclaree: montantSaisi(montantTexte), credit: creditValide ? creditLu : null }
     : { periode, ca3, remboursement: ca3.cases.l25 > 0 ? remboursementLu : 0, tvaDeclaree: null, credit: null }
-  const refus = refusEnregistrement(demande, {
+  const refus = demande === null ? null : refusEnregistrement(demande, {
     assujettiTva, aujourdhui: aujourdHuiAParis(), declarations, ouverture, anneesValidees,
   })
-  const liquidee = aLaMain ? null : declarationDeLaCa3(ca3, periode)
+  const liquidee = aLaMain || ca3 === null ? null : declarationDeLaCa3(ca3, periode)
   const liquidation = liquidee ? ecritureDeLaLiquidation(liquidee, plan) : []
   const arrondi = liquidee ? arrondiDeLaLiquidation(liquidee) : 0
   // Le remboursement que la déclaration demandera : borné au crédit de la période pour une CA3 préparée.
-  const remboursementDemande = aLaMain ? (remboursementLu ?? 0) : ca3.cases.l26
-  const piecesHorsDeLaDeclaration = ca3.ecartees.length + ca3.releveEcartees.length + ca3.aValider.length
+  const remboursementDemande = aLaMain ? (remboursementLu ?? 0) : (ca3?.cases.l26 ?? 0)
+  const piecesHorsDeLaDeclaration = ca3 === null ? 0 : ca3.ecartees.length + ca3.releveEcartees.length + ca3.aValider.length
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : la déclaration proposée vient d'un calcul qui ne voit qu'une
   // partie des pièces, le crédit proposé d'un historique qui peut en manquer une, et l'ouverture décide de ce qui se
@@ -391,7 +442,7 @@ export default function TvaTab({
     ?? lectures.categories ?? lectures.ventilations ?? lectures.ouverture
 
   async function enregistrer() {
-    if (ecriture.current || lectureIncomplete || !creditValide || refus) return
+    if (ecriture.current || lectureIncomplete || !creditValide || refus || demande === null) return
     ecriture.current = true
     setEcritureEnCours(true)
     setErreur(null)
@@ -449,8 +500,8 @@ export default function TvaTab({
     }
   }
 
-  const lignesAffichees = (cadre: LigneAffichee['cadre']) =>
-    LIGNES_CA3.filter((l) => l.cadre === cadre && (TOUJOURS_AFFICHEES.has(l.ligne) || ca3.cases[l.montant] !== 0))
+  const lignesAffichees = (cadre: LigneAffichee['cadre'], cases: CasesCa3) =>
+    LIGNES_CA3.filter((l) => l.cadre === cadre && (TOUJOURS_AFFICHEES.has(l.ligne) || cases[l.montant] !== 0))
 
   const champCredit = (
     <div className="field">
@@ -496,7 +547,7 @@ export default function TvaTab({
     <button
       className="btn btn-primary btn-sm"
       onClick={enregistrer}
-      disabled={ecritureEnCours || !!lectureIncomplete || !creditValide || refus !== null}
+      disabled={ecritureEnCours || !!lectureIncomplete || !creditValide || refus !== null || demande === null}
     >
       {ecritureEnCours ? 'Enregistrement…' : libelle}
     </button>
@@ -593,8 +644,9 @@ export default function TvaTab({
           Une recette compte à la date de son encaissement, c’est-à-dire du mouvement bancaire rapproché
           — ou à la date de sa facture sur option pour les débits. Une recette encaissée sans facture,
           affectée ou ventilée depuis le relevé, compte à la date du mouvement, au taux choisi en
-          l’affectant. Un achat compte à la date de son paiement ; une note de frais, payée hors du
-          compte professionnel, à sa date. À partir du 1er janvier 2027 le régime simplifié disparaît :
+          l’affectant. Une facture émise dans l’application, source de sa vente, suit le régime qu’elle a
+          figé à sa validation, quel que soit ce choix aujourd’hui. Un achat compte à la date de son paiement ;
+          une note de frais, payée hors du compte professionnel, à sa date. À partir du 1er janvier 2027 le régime simplifié disparaît :
           la CA3 devient trimestrielle, mensuelle sur demande.
         </p>
       </div>
@@ -623,11 +675,24 @@ export default function TvaTab({
           </div>
         </div>
 
-        {loading ? (
-          <div style={{ marginTop: 16 }}>
+        {enAttente ? (
+          <div style={{ marginTop: 16 }} aria-busy="true">
             <div className="skeleton skeleton-ligne" style={{ width: '60%' }} />
             <div className="skeleton skeleton-ligne" style={{ width: '40%' }} />
             <div className="skeleton skeleton-ligne" style={{ width: '50%' }} />
+          </div>
+        ) : ca3 === null ? (
+          // Les ventes facturées de ce dossier ne sont pas revenues entières : rien ne se calcule, et rien ne s'offre.
+          <div style={{ marginTop: 16 }}>
+            <BandeauLecturePartielle
+              quoi="Les ventes facturées du dossier"
+              accord="lues"
+              motif={ventesIncompletes}
+              consequence={
+                'La CA3 ne se calcule pas sans elles : ni ses cases, ni son enregistrement, ni la comparaison des déclarations '
+                + 'déposées ne s’affichent. Rechargez la page.'
+              }
+            />
           </div>
         ) : aLaMain ? (
           <>
@@ -696,7 +761,7 @@ export default function TvaTab({
                   </thead>
                   <tbody>
                     {CADRES.map(({ cadre, titre }) => {
-                      const lignes = lignesAffichees(cadre)
+                      const lignes = lignesAffichees(cadre, ca3.cases)
                       if (lignes.length === 0) return null
                       return [
                         <tr key={`titre-${cadre}`}><td colSpan={5}><strong>{titre}</strong></td></tr>,
@@ -779,6 +844,29 @@ export default function TvaTab({
                   </table>
                 </div>
               </div>
+            )}
+
+            {ca3.exigibilitesEcartees.length > 0 && (
+              <p className="error-text">
+                {ca3.exigibilitesEcartees.length} vente(s) facturée(s) de la période ne sont pas dans les cases ci-dessus,
+                faute de ligne certaine pour leur taux — reportez-les à la main :{' '}
+                {ca3.exigibilitesEcartees.map(({ exigibilite: e, detail }) =>
+                  `${nomDeLaFacture(e)} à ${tauxEnClair(e.taux)}, ${formatMoney(e.baseCentimes / 100)} hors taxe et ${formatMoney(e.tvaCentimes / 100)} de TVA (${detail})`).join(' ; ')}.
+              </p>
+            )}
+
+            {ca3.ventesFactureesEcartees.length > 0 && (
+              <p className="error-text">
+                Ventes facturées que la CA3 ne compte pas ({ca3.ventesFactureesEcartees.length}) :{' '}
+                {ca3.ventesFactureesEcartees.map((v) => `${nomDeLaFacture(v)} — ${v.detail}`).join(' ; ')}.
+              </p>
+            )}
+
+            {ca3.exemplairesDeFacturesSources.length > 0 && (
+              <p className="muted">
+                Exemplaires d’une facture source, que la CA3 ne compte pas — la vente l’est par sa facture
+                ({ca3.exemplairesDeFacturesSources.length}) : {ca3.exemplairesDeFacturesSources.map(nomPiece).join(', ')}.
+              </p>
             )}
 
             {ca3.aValider.length > 0 && (
@@ -887,6 +975,31 @@ export default function TvaTab({
               </details>
             )}
 
+            {ca3.exigibilitesRetenues.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary>Les {ca3.exigibilitesRetenues.length} vente(s) facturée(s) retenues, ligne par ligne</summary>
+                {/* Repliée en fiches, comme les pièces retenues plus haut. Une régularisation se lit en négatif. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
+                    <thead><tr><th>Ligne</th><th>Date</th><th>Facture</th><th>Exigible à</th><th>Taux</th><th>HT</th><th>TVA</th></tr></thead>
+                    <tbody>
+                      {ca3.exigibilitesRetenues.map(({ exigibilite: e, ligne }, i) => (
+                        <tr key={`${e.factureId}-${e.encaissementId ?? e.avoirId ?? e.origine}-${e.taux}-${i}`}>
+                          <td data-libelle="Ligne">{ligne}</td>
+                          <td data-libelle="Date">{formatDate(e.date)}</td>
+                          <td data-libelle="Facture">{nomDeLaFacture(e)}</td>
+                          <td data-libelle="Exigible à">{ORIGINE_EXIGIBILITE[e.origine]}</td>
+                          <td data-libelle="Taux">{tauxEnClair(e.taux)}</td>
+                          <td data-libelle="HT">{formatMoney(e.baseCentimes / 100)}</td>
+                          <td data-libelle="TVA">{formatMoney(e.tvaCentimes / 100)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+
             <details style={{ marginTop: 12 }}>
               <summary>Ce que ce calcul ne fait pas</summary>
               <ul className="muted">
@@ -901,9 +1014,13 @@ export default function TvaTab({
                 <li>Les taxes assimilées (ligne 29, annexe 3310-A).</li>
                 <li>La régularisation d’une période déjà déposée (lignes 5B et 2C).</li>
                 <li>
-                  Les factures émises dans l’application : une recette n’est comptée que si son justificatif est
-                  dans Justificatifs, ou si son encaissement est affecté ou ventilé depuis le relevé, comme pour
-                  la 2035.
+                  Les factures émises dans l’application qui ne sont pas sources de leur vente : une recette n’est
+                  comptée que si son justificatif est dans Justificatifs, ou si son encaissement est affecté ou
+                  ventilé depuis le relevé, comme pour la 2035.
+                </li>
+                <li>
+                  L’enregistrement d’une période qui compte une facture source de sa vente : ses écritures ne
+                  s’écrivent pas encore, et sa TVA ne se liquide pas sans elles.
                 </li>
                 <li>La dernière CA12 (régime simplifié, exercice 2026), à déposer au plus tard le 4 mai 2027.</li>
               </ul>
@@ -967,11 +1084,17 @@ export default function TvaTab({
         <h3 style={{ margin: 16 }}>Déclarations déposées</h3>
         {/* Pendant la première lecture, ni « Aucune déclaration » ni un tableau sans ligne — qui se lisait de même : les
             squelettes de la carte d'au-dessus. */}
-        {loading ? (
-          <div style={{ margin: 16 }}>
+        {enAttente ? (
+          <div style={{ margin: 16 }} aria-busy="true">
             <div className="skeleton skeleton-ligne" style={{ width: '60%' }} />
             <div className="skeleton skeleton-ligne" style={{ width: '40%' }} />
           </div>
+        ) : ventesIncompletes ? (
+          // Le recalcul de chaque déclaration lit les ventes facturées : lues en partie, ni recalcul ni écart, et aucun geste.
+          <p className="muted" style={{ margin: 16 }}>
+            Les déclarations déposées ne se comparent pas au calcul sans les ventes facturées du dossier, qui n’ont pas pu être
+            lues en entier : rechargez la page.
+          </p>
         ) : declarations.length === 0 ? (
           <div className="empty-state">
             {lectures.declarations ? 'Les déclarations déposées n’ont pas pu être lues.' : 'Aucune déclaration enregistrée pour ce dossier.'}

@@ -7,6 +7,9 @@ import {
 } from './rattachement'
 import { horsTaxeEtTva } from './tvaDuReleve'
 import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
+import {
+  exemplaireDUneFactureSource, type ExigibiliteVenteFacturee, type VenteEcartee, type VentesFacturees,
+} from './ventesFacturees'
 
 // LA CA3 CASE PAR CASE — le formulaire 3310-CA3-SD (millésime 2026), préparé depuis les pièces
 // validées et les paiements qui les rattachent au relevé bancaire.
@@ -48,6 +51,20 @@ import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 // côté, et une recette exonérée en E2. Deux cas les écartent, et l'écran les montre : une recette sans
 // taux (affectée avant que le dossier devienne assujetti), et toute recette du relevé sur option pour les
 // débits — la TVA y est due à la date de la facture, que le relevé ne donne pas.
+//
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b2 ; conception : HISTORIQUE.md, « LA FACTURE VALIDÉE, SOURCE
+// DE SA VENTE : LA CONCEPTION », § 6 et 8). Une facture validée SOURCE de sa vente compte par ses EXIGIBILITÉS
+// (lib/ventesFacturees.ts) : des services à chaque encaissement ; un bien à sa livraison, un acompte d'avant à sa
+// perception ; sur l'option pour les débits à la date de la facture, un acompte d'avant à sa perception ; un avoir d'après
+// à sa date. Chacune compte dans la période de sa date, à son taux, pour la base et la TVA que le module porte — la règle
+// du cumul, qu'aucun recalcul ici ne doit défaire (un taux soldé porte exactement la TVA facturée). Le RÉGIME est celui
+// que la facture a figé à sa validation (`nature_operation`, `option_debits`), jamais l'option d'aujourd'hui du dossier :
+// `surDebits` ne s'applique pas à elles. Le taux à sa ligne ; 2,1 % se place à la main, comme pour une pièce ; 0 %, une
+// opération non imposable (E2) ; une exigibilité négative, une régularisation (B5 et 21 ; F8 à 0 %), jamais une somme
+// négative sur la ligne d'un taux. La pièce désignée comme l'EXEMPLAIRE d'une facture source ne compte plus, ni comme
+// opération, ni comme pièce à valider : sa facture compte la vente. Elle se dit, dans la période où elle aurait compté.
+// Ces exigibilités n'ont AUCUNE écriture avant l'étape VF4 : elles n'entrent pas dans `tvaDesComptes`, et la déclaration
+// d'une période qui en porte ne s'enregistre pas encore (`refusEnregistrement`, lib/liquidationTva.ts).
 //
 // LE REMBOURSEMENT D'UN CRÉDIT (ligne 26, formulaire 3519) se demande : c'est le cabinet qui le choisit, dans
 // la limite du crédit de la période (ligne 25), et le reste se reporte (ligne 27). Sa liquidation le porte au
@@ -329,6 +346,30 @@ export interface PieceNonPlacee {
   motif: MotifNonPlacee
 }
 
+// L'exigibilité d'une vente facturée retenue, et la ligne où elle est allée : de la case jusqu'à la facture et à son
+// encaissement, sa livraison, sa date ou son avoir. Une régularisation se déclare comme un avoir consenti : sa base en B5,
+// sa taxe en 21 ; à 0 %, en F8.
+export interface ExigibiliteRetenue {
+  exigibilite: ExigibiliteVenteFacturee
+  ligne: LigneTaux | 'E2' | 'F8' | 'B5'
+}
+
+export type MotifExigibiliteEcartee = 'taux_a_placer' | 'taux_non_reconnu'
+
+// L'exigibilité d'une vente facturée qu'on ne sait pas mettre dans une case sans deviner : un taux que la facture porte, que
+// la DGFiP admet (G1.24), mais qui n'a pas de ligne certaine sur la CA3 de l'application — 2,1 % en a trois, et les taux de
+// la Corse ou d'outre-mer n'y sont pas. Rendue avec sa base et sa taxe, pour que le cabinet la reporte lui-même.
+export interface ExigibiliteEcartee {
+  exigibilite: ExigibiliteVenteFacturee
+  motif: MotifExigibiliteEcartee
+  detail: string
+}
+
+export const LIBELLE_MOTIF_EXIGIBILITE: Record<MotifExigibiliteEcartee, string> = {
+  taux_a_placer: '2,1 % : ligne T6 en France continentale, 11 dans les DOM, T4 en Corse',
+  taux_non_reconnu: 'un taux que la CA3 de l’application ne range sur aucune ligne (Corse, outre-mer, taux anciens) : à reporter à la main',
+}
+
 export interface DeclarationCa3 {
   periode: { debut: string; fin: string }
   cases: CasesCa3
@@ -349,10 +390,24 @@ export interface DeclarationCa3 {
   // Les recettes du relevé encaissées dans la période : retenues à leur taux, ou écartées avec leur motif.
   releveRetenues: RecetteDuReleveRetenue[]
   releveEcartees: RecetteDuReleveEcartee[]
+  // LES VENTES FACTURÉES DE LA PÉRIODE (lib/ventesFacturees.ts) : leurs exigibilités datées dans la période, retenues à leur
+  // ligne ou écartées avec leur motif. Ni les unes ni les autres n'ont encore d'écriture (VF4).
+  exigibilitesRetenues: ExigibiliteRetenue[]
+  exigibilitesEcartees: ExigibiliteEcartee[]
+  // Les factures sources que le module ne sait pas compter sans deviner : rien d'elles n'entre, un vrai trou dans les
+  // opérations. DU DOSSIER, TOUTES PÉRIODES : le module ne date pas une facture qu'il écarte — un acompte peut précéder la
+  // facture —, et la dire dans une seule période la ferait taire dans les autres.
+  ventesFactureesEcartees: VenteEcartee[]
+  // Les pièces désignées comme l'exemplaire d'une facture source, que la CA3 ne compte plus et qu'elle DIT, dans la période
+  // où elles auraient compté — par leur paiement, ou par leur date quand aucun paiement ne les date.
+  exemplairesDeFacturesSources: Piece[]
   // CE QUE LA LIQUIDATION RETIRE DES COMPTES DE TVA, au centime, en euros (lib/liquidationTva.ts) : la TVA
   // collectée nette (445710), déductible (445660) et déductible sur immobilisations (445620) que portent les
   // écritures des pièces et des recettes du relevé retenues — signées comme ces écritures, un avoir en moins.
-  // Ce qui sépare ces montants des lignes de la CA3 est l'arrondi à l'euro de chaque ligne, et lui seul.
+  // Ce qui sépare ces montants des lignes de la CA3 est l'arrondi à l'euro de chaque ligne, et lui seul — sauf la TVA
+  // des ventes facturées, que les lignes comptent et qu'aucune écriture ne porte avant l'étape VF4 : elle n'est PAS ici,
+  // et une déclaration qui en porte ne s'enregistre pas (`refusEnregistrement`), faute de quoi la liquidation solderait au
+  // 445710 une TVA qu'aucune écriture n'y a créditée, ou l'arrondi l'absorberait sous dix euros.
   tvaDesComptes: TvaDesComptes
 }
 
@@ -375,6 +430,13 @@ export interface DonneesTva {
   // dépenses sans facture n'ouvrant aucun droit à déduction. Sans valeur par défaut, comme partout : une
   // liste oubliée ferait disparaître de la CA3, en silence, la TVA collectée sur les encaissements.
   releve: readonly PartDuReleve[]
+  // LES VENTES FACTURÉES du dossier (lib/ventesFacturees.ts, lues entières par lib/ventesFactureesLecture.ts) : une facture
+  // validée SOURCE de sa vente compte par ses exigibilités, à leur date et sous le régime qu'elle a figé, et la pièce
+  // désignée comme son exemplaire ne compte plus. Sans valeur par défaut, comme le reste : un appelant qui les oublierait
+  // rendrait la CA3 d'un dossier qui facture dans l'application sans la TVA de ses ventes — plausible, sous-évaluée, et
+  // déposée ; et des ventes vides par commodité compteraient l'exemplaire à la place de sa facture, c'est-à-dire la même
+  // vente à la date du paiement de la pièce au lieu de celle de son exigibilité, et sous l'option d'aujourd'hui du dossier.
+  ventesFacturees: VentesFacturees
 }
 
 const centimes = (euros: number) => Math.round(euros * 100)
@@ -416,13 +478,28 @@ export function calculerCa3(
   const achatsEnDeviseSansTva: Piece[] = []
   const releveRetenues: RecetteDuReleveRetenue[] = []
   const releveEcartees: RecetteDuReleveEcartee[] = []
+  const exigibilitesRetenues: ExigibiliteRetenue[] = []
+  const exigibilitesEcartees: ExigibiliteEcartee[] = []
+  const exemplairesDeFacturesSources: Piece[] = []
   // La TVA des comptes, en centimes signés comme les écritures (voir `tvaDesComptes`).
   const comptes = { collectee: 0, deductible: 0, immobilisations: 0 }
+  const dansLaPeriode = (date: string) => date >= periode.debut && date <= periode.fin
 
   for (const piece of donnees.pieces) {
     const recette = piece.type_piece === 'vente'
     const paiements = donnees.paiements.get(piece.id) ?? []
     const parts = partsExigibles(piece, paiements, surDebits)
+    // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS (§ 8) : sa facture compte la vente, par ses exigibilités, plus bas.
+    // Il sort AVANT tout le reste — ni opération, ni pièce à valider, ni pièce sans paiement : rien n'y manque. Il se dit
+    // dans la période où il aurait compté, par la même règle de date qu'une autre pièce ; quand aucun paiement ne le date, à
+    // sa date de pièce, la première période où il se serait dit « rattaché à aucun paiement ».
+    if (exemplaireDUneFactureSource(piece, donnees.ventesFacturees)) {
+      const auraitCompte = typeof parts === 'string'
+        ? piece.date_piece != null && dansLaPeriode(piece.date_piece)
+        : parts.filter((f) => dansLaPeriode(f.date!)).reduce((s, f) => s + f.part, 0) !== 0
+      if (auraitCompte) exemplairesDeFacturesSources.push(piece)
+      continue
+    }
     if (typeof parts === 'string') {
       const concernee = recette || (piece.montant_tva ?? 0) !== 0
       const dansLeTemps = piece.date_piece == null || piece.date_piece <= periode.fin
@@ -563,6 +640,48 @@ export function calculerCa3(
     releveRetenues.push({ part, ligne: ligneDuTauxReleve })
   }
 
+  // LES VENTES FACTURÉES, APRÈS LE RELEVÉ (étape VF3b2). Chaque exigibilité datée dans la période, à son taux, pour la base et
+  // la TVA que le module porte, au centime et SANS RECALCUL : la règle du cumul (§ 6) fait porter à un taux soldé exactement
+  // la TVA facturée, et refaire la TVA d'une part depuis son montant et son taux la ferait s'écarter d'un centime à chaque
+  // paiement partiel. Le régime est celui de la facture, déjà appliqué par le module : `surDebits` n'a rien à faire ici —
+  // une facture source de services sur le régime de l'encaissement compte à ses encaissements, même si le dossier a opté
+  // depuis pour les débits, et inversement. Et rien n'entre dans `comptes` : aucune écriture ne les porte avant VF4.
+  for (const e of donnees.ventesFacturees.exigibilites) {
+    if (!dansLaPeriode(e.date)) continue
+    const { baseCentimes: base, tvaCentimes: tva } = e
+    // Zéro : une franchise, une exonération ou une opération que la facture ne taxe pas, aucune ligne de taux. Négative,
+    // c'est la régularisation d'une opération non imposable.
+    if (e.taux === 0) {
+      if (base < 0) {
+        cumul.F8 -= base
+        exigibilitesRetenues.push({ exigibilite: e, ligne: 'F8' })
+      } else {
+        cumul.E2 += base
+        exigibilitesRetenues.push({ exigibilite: e, ligne: 'E2' })
+      }
+      continue
+    }
+    const ligne = TAUX_RECONNUS.find((r) => r.taux === e.taux)?.ligne
+    if (!ligne) {
+      const motif: MotifExigibiliteEcartee = e.taux === TAUX_A_PLACER ? 'taux_a_placer' : 'taux_non_reconnu'
+      exigibilitesEcartees.push({ exigibilite: e, motif, detail: LIBELLE_MOTIF_EXIGIBILITE[motif] })
+      continue
+    }
+    // Négative — un avoir daté après le fait générateur, une contre-passation, ou ce qui reste d'une facture que ses avoirs
+    // ont réduite sous ses acomptes —, c'est une régularisation, comme un avoir consenti : sa base en B5, sa taxe en 21. Le
+    // signe se juge à la TAXE, comme pour une pièce ; une taxe nulle, à la base.
+    if (tva < 0 || (tva === 0 && base < 0)) {
+      cumul.B5 -= base
+      cumul.l21 -= tva
+      exigibilitesRetenues.push({ exigibilite: e, ligne: 'B5' })
+      continue
+    }
+    cumul.A1 += base
+    cumul[`base${ligne}`] += base
+    cumul[`taxe${ligne}`] += tva
+    exigibilitesRetenues.push({ exigibilite: e, ligne })
+  }
+
   const arrondis = Object.fromEntries(Object.entries(cumul).map(([cle, total]) => [cle, arrondiFiscal(total)])) as typeof cumul
   const l22 = Math.max(0, Math.round(creditAnterieur))
   const l16 = arrondis.taxe08 + arrondis.taxe09 + arrondis.taxe9B + arrondis.taxe10 + arrondis.l15
@@ -584,6 +703,10 @@ export function calculerCa3(
     achatsEnDeviseSansTva,
     releveRetenues,
     releveEcartees,
+    exigibilitesRetenues,
+    exigibilitesEcartees,
+    ventesFactureesEcartees: [...donnees.ventesFacturees.ecartees],
+    exemplairesDeFacturesSources,
     tvaDesComptes: {
       collectee: comptes.collectee / 100,
       deductible: comptes.deductible / 100,
@@ -629,6 +752,11 @@ export interface DeclarationComparee {
 // différence est à régulariser sur une déclaration suivante (ligne 5B si le calcul a augmenté, 2C
 // s'il a baissé). Moins d'un euro n'est pas un écart : les deux côtés sont en euros entiers, et une
 // déclaration saisie à la main avant ce calcul pouvait porter des centimes.
+//
+// LE RECALCUL LIT LES VENTES FACTURÉES (`donnees.ventesFacturees`, étape VF3b2), comme la CA3 qu'il refait : une déclaration
+// d'une période où aucune exigibilité de vente facturée ne tombe, et dont aucune pièce n'est devenue l'exemplaire d'une
+// facture source, se recalcule à l'identique ; une période qu'une facture source touche après coup — un acompte daté
+// d'avant, un exemplaire désigné depuis — montre l'écart, qui est à régulariser comme un autre.
 export function comparerDeclarations(declarations: DeclarationTva[], donnees: DonneesTva, surDebits: boolean): DeclarationComparee[] {
   return declarations.map((declaration) => {
     const recalcul = calculerCa3(
