@@ -29338,3 +29338,158 @@ jusqu'à VF3, où les moteurs cesseront de compter les exemplaires — la phrase
 classes `.fiche-hdf*` de la fiche d'un achat hors de France, pour ne pas toucher à `index.css` : un nom neutre suivra,
 avec une passe du banc. La fenêtre des encaissements nomme `facture_id` sans le drapeau : un retour arrière de la
 migration (destructif, sur un accord explicite du cabinet seulement) devrait aussi la reprendre.
+
+**LA MISE EN LIGNE.** Demande #191, ouverte sur `f7e893f` après la barrière locale ; les deux passes de `verifier`
+vertes (la branche, poussée à 15 h 54 UTC, verte à 16 h 11 ; la demande, de 16 h 09 à 16 h 26) ; fusionnée en « Rebase
+and merge » le 18/10/2026 à 16 h 31 UTC (`c14310f`, `646ae12`), `main` linéaire ; le déploiement vert à 16 h 37, et le
+site sert `index-DWclpy3Y.js` ; la copie de l'agent retirée, son arbre (`76c56725…`) égal à celui de `c14310f` ; la
+ligne 28.6 de la feuille de route mise à jour, puis relue (4 264 caractères, liens intacts) ; les barres d'avancement
+inchangées.
+
+### 19/10/2026 — LA SOURCE DE LA VENTE, EN BASE — CHANTIER EC-Q3, ÉTAPE VF2 (LIGNE 28.6)
+
+(Deux migrations préparées par l'agent architecte de VF2 sur `646ae12`, sous des versions PROVISOIRES
+(`20261018200000`, `20261018200100`), et éprouvées sur une réplique de la production ; présentées au cabinet, qui les a
+accordées toutes deux (VF2-Q1, « Oui, les deux ») ; la première appliquée par la session, la seconde collée par le
+cabinet. Le code, les tests et les essais de l'étape, que l'agent avait laissés hors de tout commit, ont disparu avec le
+conteneur pendant la nuit ; refaits le 19/10/2026 par un second agent architecte, sur les textes appliqués et sur ce que
+le journal de la session avait gardé. Fichiers nouveaux : `src/lib/sourceDeLaVente.ts` et son test,
+`src/lib/encaissementsVenteFacturee.test.ts`, `src/lib/sauvegardeVenteFacturee.test.ts`, `src/test/essaiVentesFacturees.ts`,
+`supabase/essais/ventesFacturees.sql`, et les deux migrations dans l'export. Modifiés : `src/lib/encaissementsFactures.ts`,
+`planComptable.ts`, `sauvegarde.ts`, `types.ts` et leurs tests ; les fabriques de 74 autres tests et de cinq aides (les
+cinq colonnes, obligatoires) ; `outils/captures/fauxSupabase.ts` ; les essais `encaissementsFactures.sql`, `factures.sql`,
+`planComptable.sql`, `restauration.sql` et `socle.sql` ; le socle ; `supabase/schema/README.md`, `RGPD.md`, CLAUDE.md.)
+
+**LA DÉLIMITATION.** La base de VF2 (§ 5, 7, 9 à 15 de la conception) et ce qui la redit : le réglage d'un dossier, la
+source qu'une facture prend à sa validation et ses refus, les deux colonnes des écritures (fermées), les six rôles du
+catalogue ; les encaissements d'une facture source — le mouvement réservé (G2), classé par ses encaissements (G1),
+rattaché une fois, les plafonds nets des avoirs, la frontière d'un exercice validé ; les refus dits avant le clic par
+les modules, le plan de sauvegarde, les essais. Ni les moteurs (VF3 : rien de ce qui se compte ne change), ni les
+écritures de la vente facturée (VF4), ni un écran (VF5, VF8), ni une Edge Function.
+
+**LA PREMIÈRE MIGRATION, `source_de_la_vente`** (15 343 caractères, `afd3abea…`). Le réglage `dossiers.ventes_par_les_factures`,
+faux partout, posé par le cabinet (la policy de mise à jour d'un dossier), IRRÉVERSIBLE dès qu'une facture source
+existe (`garder_ventes_par_les_factures`, EC3-Q1). La source `factures_emises.source_de_la_vente`, fixée à la validation
+par `fixer_source_de_la_vente` — le réglage du dossier pour une facture, la source de sa facture pour un avoir —, puis
+figée avec la facture par `garder_factures_validees` ; un brouillon ne la porte jamais (une contrainte), personne ne la
+pose. Les refus de la validation d'une facture source, en 23514, remontés d'`enregistrer_facture` : la nature de ses
+opérations absente ; une facture MIXTE (EC3-Q8 : elle se scinde en deux tant que l'étape A7 ne fige pas la nature de
+chaque ligne) ; une date que la frontière d'un exercice validé fige. Les colonnes `ecritures_brouillon.encaissement_id`
+et `facture_id`, sans action à la suppression, FERMÉES (`garder_ecriture_vente_facturee` : seulement sous le réglage
+`jd.ecriture_vente_facturee` que posera la fonction de VF4, ou à la restauration du super-administrateur). Six rôles au
+catalogue (§ 12) : `prestations_de_services` (706), `ventes_de_biens` (701, 707), `tva_collectee_en_attente` (44580,
+44574 ; défaut 445800, EC3-Q6), `valeurs_a_l_encaissement` (511), `caisse` (53), `services_bancaires` (627) — hors de
+`ROLES_COMPTABLES` jusqu'à VF4, la lecture du plan ignorant un rôle qu'elle ne connaît pas. Les racines 4457 et 4458
+de la conception commenceraient celles de la TVA collectée (44571) et du remboursement demandé (44583), ce que la règle
+du catalogue refuse : d'où 44580 et 44574, soumis au cabinet (EC3-Q6b).
+
+**LA SECONDE, `encaissements_de_la_vente_facturee`** (67 129 caractères, `719aaf05…`), qui vérifie d'abord que la
+première est en base. G1 : `lignes_bancaires.encaissements_de_factures` entre dans `lignes_bancaires_un_seul_rapprochement`
+(la contrainte REMPLACÉE), un mouvement ainsi classé est rapproché et jamais personnel
+(`lignes_bancaires_encaissements_rapproches`). G2 : `garder_mouvement_reserve` — un mouvement qui justifie un
+encaissement non retiré d'une facture source ne reçoit aucun autre classement, par la policy comme par les fonctions du
+relevé ; le drapeau ne change que par les deux fonctions du cabinet, sous `jd.classement_encaissements`. Ce qu'un
+mouvement justifie (`encaissement_justifie_son_mouvement`) : un encaissement, tant qu'aucune contre-passation vivante
+SANS mouvement ne l'annule ; une contre-passation qui cite un DÉBIT dit que l'argent est venu puis reparti. La garde des
+encaissements reprend la contrainte `encaissements_factures_annulation_sans_mouvement`, RETIRÉE : une contre-passation
+ne cite un mouvement que pour une facture source, et c'est un débit de son dossier ; elle admet le RATTACHEMENT, une fois,
+de nul à un mouvement, sous `jd.rattachement_encaissement`. Pour une facture source seulement : `enregistrer_encaissement`
+refuse la frontière (rang 11) et un mouvement déjà classé (17), et plafonne NET des avoirs validés (27, 29 ; EC3-Q10) ;
+`retirer_encaissement` refuse la frontière (6) et un mouvement classé (7) ; `annuler_encaissement` reçoit un cinquième
+paramètre, nul par défaut (la signature RECRÉÉE : l'appel d'hier fait ce qu'il faisait), le débit qui défait
+l'encaissement (rangs 11, 14 à 19). Trois fonctions neuves, le cabinet seul (`admin_du_dossier`) :
+`rattacher_mouvement_encaissement`, `classer_mouvement_par_encaissements` (à l'écart des frais près, la règle
+min(2 %, 5 €)), `retirer_classement_par_encaissements`. Le mouvement que le client désigne est réservé et proposé,
+jamais classé par lui (EC3-Q4).
+
+**NEUTRES.** Aucun dossier n'a basculé : aucune facture n'est source, et toute écriture qui passait passe encore, au même
+résultat ; un seul refus change de MOTS (la contre-passation qui citerait un mouvement, sous ceux de la garde). Aucune
+policy nouvelle ni changée ; aucune donnée lue, écrite ni retirée, hors des six lignes du catalogue.
+
+**LE DÉCOUPAGE, ET LE DÉTECTEUR.** La première ne retire rien : appliquée par la session le 18/10/2026 à 20 h 13 UTC, sous
+la version `20261018201312`, sans confirmation demandée. La seconde retire deux contraintes et une signature de
+fonction, aucune donnée : l'outil l'a retenue — l'appel a expiré au bout de soixante secondes, et rien n'était appliqué
+(vérifié en base). Le texte à coller de l'agent (137 477 octets) portait la migration deux fois ; la session en a
+composé un de 69 510 octets (`a29fbb16…`) : une transaction, la migration UNE fois dans un littéral `$vf2_m2$`, qui
+vérifie sa propre empreinte (`719aaf05…`, les fins de ligne `\r\n` ramenées à `\n`), puis la ligne d'historique de la
+première migration, exécute le texte et pose sa propre ligne sous la version de l'heure du collage, au nom du compte qui
+a posé la première — rien à remplacer à la main. Éprouvé sur la réplique : la même signature et la même ligne
+d'historique qu'une migration posée par l'outil, l'essai 225 sur 225 ; une copie altérée d'un caractère, refusée ;
+sans la première migration, refusé ; en fins de ligne Windows, accepté. Collé par le cabinet le 19/10/2026 : version
+`20261019070229`, le texte enregistré à l'empreinte attendue, le même auteur que la première.
+
+**CE QUE LA NUIT A EMPORTÉ.** La session a attendu le collage une dizaine d'heures, le travail de l'agent hors de tout
+commit : dans sa copie de travail, et dans le dossier de travail de la session (le correctif de 304 Ko, la bascule, les
+textes à coller, les retours arrière, la réplique et ses outils). Le conteneur, repris pendant cette inactivité, s'est
+rouvert neuf au message suivant : tout cela avait disparu. N'ont pas été perdus : les deux migrations, en base et dans
+le journal de la session, dont la session les a tirées à l'octet près (empreintes confrontées à l'historique) ; le
+rapport de l'agent et une part de son code (le module de la source de la vente entier, les changements de la
+sauvegarde, des types et du plan, quatre cents lignes de ceux des encaissements), que la session avait affichés en le
+relisant. La règle qui en sort, dans CLAUDE.md : avant toute attente, la session pousse sur sa branche ce qui n'est pas
+commité, même inachevé. La réplique de l'agent n'est pas remontée pour refaire ce que le 18/10/2026 avait prouvé sur
+des textes identiques à l'octet — les cinquante autres essais inchangés par les deux migrations, `rls.sql` entier
+(46 lignes, 0 en faute, 43 mutations sur 43, sorties identiques avant et après), 154 mutations des deux migrations sur
+158 tuées (2 hors d'atteinte d'un essai de production, tuées à part ; 2 équivalentes), neuf courses de deux sessions
+justes, la batterie des encaissements sans écart.
+
+**EN PRODUCTION, LE 19/10/2026.** Les trois contrôles de l'export : dérive 142 = 142 (`4dacd12e…`) ; socle 80 = 80
+(`5d53eea2…`), RÉGÉNÉRÉ — les trois colonnes, les deux clés, les deux index et les deux contraintes que les migrations
+ajoutent ou changent sur deux de ses tables ; inventaire 2 111 = 2 111 (`5cf5d6e5…`). `signature.sql` : colonnes 856
+(cinq de plus), contraintes 662 (quatre posées, une retirée), index 233 (+2), déclencheurs 60 (+4), fonctions 183 (+9) ;
+les policies (157, `58878930…`), la RLS (80, `9e8ffc97…`) et les droits des tables (80, `c7ec7672…`) gardent
+l'empreinte d'avant. Les advisors : les trois fonctions neuves et la nouvelle signature d'`annuler_encaissement` parmi
+celles qu'un compte connecté exécute, chacune jugeant l'accès avant toute lecture ; aucune de plus pour un anonyme.
+L'essai `supabase/essais/ventesFacturees.sql`, rejoué en production sans ses lignes de commentaire (59 764 caractères,
+reçus tels quels, `1a9d47e6…`), rend ses 164 verdicts justes — 128 contrôles, 21 faits, 10 valeurs, 4 lectures et « rien
+n'est resté » —, ses dix mutations comprises. Les quatre essais adaptés, `rls.sql` entier (46 lignes, 0 en faute, 43
+mutations sur 43) et `restauration.sql` l'ont été sur la réplique du second agent, ses neuf familles égales à la
+production : les migrations ne créent ni ne changent aucune policy, ce que la signature dit en production.
+
+**LE CODE ET LES ESSAIS, REFAITS.** Le second agent a travaillé sur `5ff7d10` (l'export et le socle déjà rétablis), dans
+l'état FINAL : les migrations étant appliquées, aucun drapeau d'export, aucun chemin « avant » ; ses commits locaux ont été
+mis à l'abri sur la branche au fil de l'eau. Les types : les cinq colonnes, obligatoires (un type décrit la table). La
+sauvegarde : les deux clés des écritures (`bloque`) au graphe, sans condition. Le plan : `ROLES_DE_LA_VENTE_FACTUREE`,
+hors de `ROLES_COMPTABLES` jusqu'à VF4. `encaissementsFactures.ts` : les refus neufs à leur rang, sous leurs mots et leurs
+codes (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`), à côté des fonctions d'hier, qui
+rendent pour une facture qui n'est pas source exactement ce qu'elles rendaient ; les trois fonctions neuves
+(`refusRattachement`, `refusClassement`, `refusRetraitDuClassement`) et la garde G2 (`refusDuClassementDuReleve`) ; ce
+qu'un mouvement justifie se lit partout par le prédicat de la base (`justifieSonMouvement`), identique sur les données
+d'hier (la batterie le prouve). `sourceDeLaVente.ts` : la source à la validation et ses trois refus, celui du réglage —
+la facture qu'il nomme, dans l'ordre de la base, octet par octet —, ceux des écritures fermées. Les deux modules sont
+confrontés au texte des fonctions dans l'export (ordre, mots, codes, une dérive plantée) et à l'essai : chacun des 47
+refus neufs y est exigé, et chaque refus exigé est un `raise` de l'export. L'essai neuf (67 474 caractères ; celui de la
+veille en faisait 120 000) ne joue qu'un état, les deux migrations en base. Les essais adaptés : `encaissementsFactures.sql`
+57 (le refus sous les mots de la garde ; 109 sur 109), `factures.sql` 105 (le déclencheur neuf ; 118 sur 118),
+`planComptable.sql` (32 rôles, six comptes décalés de plus ; 59 sur 59), `restauration.sql` (cinq contrôles de la vente
+facturée ; semé, 143 clés et 74 tables identiques, 11 contrôles sur 11 ; planté, l'arrêt sur
+`ecritures_brouillon_encaissement_id_fkey`). Les mutations des deux migrations, rejouées contre les essais : 251 sur 253
+tuées, dont 201 par le seul essai neuf ; les deux survivantes, équivalentes (deux `coalesce` de
+`fixer_source_de_la_vente` dont la valeur nulle ne se rencontre pas). La barrière de l'agent, sous Node 22.23.3 : `tsc -b`
+0, lint 0 erreur (les 63 avertissements d'avant), la suite sous les quatre fuseaux (422 fichiers, 12 788 tests chacun),
+le build. Relu par la session : les refus d'une facture source, ce qu'un mouvement justifie, les plafonds nets des avoirs,
+l'écart des frais et le départage de G2, sur le texte des migrations.
+
+**CE QUI A ÉTÉ TRANCHÉ, SUR LES RECOMMANDATIONS.** EC3-Q1 (irréversible dès la première facture source), EC3-Q4 (le
+mouvement que cite le client est réservé ; le cabinet seul rattache et classe), EC3-Q5 (aucun état « visé » en base),
+EC3-Q6 (le 445800 par défaut, sous les racines 44580 et 44574 : EC3-Q6b), EC3-Q7 (511000 et 530000 inscrits), EC3-Q8
+(la facture mixte refusée à la validation jusqu'à A7), EC3-Q10 (plafonds nets des avoirs validés). Hors des questions :
+G2 en un seul déclencheur plutôt que dans les huit fonctions du relevé ; la frontière dans les fonctions (sa garde est
+VF7) ; `mouvement_libre` exécutable par un compte connecté (un prédicat pur, appelé par la garde des encaissements, qui
+s'exécute aux droits de l'appelant). Deux questions entrent dans la page des arbitrages, sans rien à décider avant une
+bascule : EC3-Q6b et VF2-Q2 — un même crédit pour une facture d'avant la bascule et une facture source, réservé par G2
+et qui ne se classe pas par ses encaissements (recommandé : que le classement compte aussi l'encaissement de la facture
+d'avant, à concevoir avec VF3, VF5 et l'expert-comptable).
+
+**À REVOIR**, avec VF3 et VF5 — aucun de ces points ne fausse un chiffre aujourd'hui, VF2 n'écrivant aucune écriture.
+Les refus de G2 ne se disent pas encore avant le clic dans les écrans de la banque (VF5). Retirer une contre-passation
+sans mouvement peut faire justifier à un mouvement libre plus qu'il ne porte : la base l'admet, le classement le refuse
+ensuite. Une contre-passation citée ou rattachée peut dépasser son débit de l'écart des frais, que le classement refuse :
+un tel débit se cite, il ne se classe pas. Sur un crédit partagé avec une facture d'avant la bascule (VF2-Q2), la
+contre-passation de l'autre facture passe sans débit. En direct, le propriétaire peut encore citer un mouvement classé
+par ses encaissements ; les fonctions le refusent. G2 départage deux encaissements du même instant par leur identifiant,
+tiré au hasard : la facture qu'il nomme peut alors varier. Une écriture qui porte un encaissement reste supprimable par
+sa policy (VF4, G5). Deux fautes d'avant VF2, identiques avant et après : `ventesClient.sql` 0c attend 8 fonctions sous
+`gere_les_ventes`, la base en a 19 depuis les étapes A1 à A6 (sa liste est à mettre à jour), et `validationExercice.sql`
+141. Le Node
+22.22.0 d'une image de conteneur décodait windows-1252 comme latin-1 (`contactsImportFichier.test.ts` y échouait, la
+CI sous 22.23.3 non) : la barrière locale s'est jouée sous le Node de la CI.

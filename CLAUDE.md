@@ -336,8 +336,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   exercice ; engagement, étape 1 ; lettrage ; TVA liquidée ; report des soldes ; 2035, volet social et estimation
   Urssaf, CA3, FEC et piste d'audit, à-nouveaux, 2035-E et calendrier CFE-CVAE.
 - **Facturation** : factures, avoirs, e-mail ; statut de TVA, CII, facture figée ; transmission et réception (plateforme
-  du client, Super PDP) ; encaissements et leur déclaration ; cycle de vie ; vente entrée deux fois, et l'exemplaire
-  d'une facture ; e-reporting e1 à e6.
+  du client, Super PDP) ; encaissements et leur déclaration ; cycle de vie ; vente entrée deux fois, l'exemplaire
+  d'une facture, la source de la vente en base ; e-reporting e1 à e6.
 - **Bilan**, **révision**, **plan comptable** lu par la base et l'application ; financement ; immobilisations,
   cotisations, Clôture, Estimation, Balance, Virements ; assistant IA.
 - **Exports** : pack, export d'un cabinet, sauvegarde et restauration — **une sauvegarde n'est pas un pack** : le pack
@@ -405,8 +405,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   entre la forme commune des parts du relevé et une seconde forme ; fini avant que les clients facturent réellement ici
   → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire
   d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE
-  D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN » ; restent VF2 à VF9 — à VF3, la confirmation qui
-  dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; qui a désigné, et quand : à VF6 (VF1A-Q2).
+  D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre (le réglage du
+  dossier, la source fixée à la validation, les encaissements d'une facture source, le mouvement réservé puis classé
+  par ses encaissements ; EC3-Q6b et VF2-Q2 ouvertes) → « LA SOURCE DE LA VENTE, EN BASE » ; restent VF3 à VF9 — à
+  VF3, la confirmation qui dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; qui a désigné,
+  et quand : à VF6 (VF1A-Q2).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -747,8 +750,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
   dite la première, sans faire taire les autres ; rien de ce qui se compte ne change ; à l'écran, la fiche d'une pièce
   de vente seule, côté cabinet, sur des factures lues en entier, et défaire ne retire pas le double compte, ce que sa
-  confirmation dit → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **Connexion
-  bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  confirmation dit → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source
+  de la vente** : le réglage d'un dossier, irréversible dès sa première facture source ; la source fixée à la
+  validation, puis figée ; un mouvement qui justifie un encaissement d'une facture source est RÉSERVÉ (G2) et ne se
+  classe que par ses encaissements, par le cabinet seul (G1) ; les colonnes des écritures fermées jusqu'à VF4 ;
+  `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ».
+  **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact
@@ -875,6 +882,9 @@ et `supabase/config.toml` ne porte que `verify_jwt`.
   rouge n'est pas forcément une action : vérifier d'abord s'il est verrouillé par le plan ou volontaire.
 - **Deux sessions ne poussent jamais sur la même branche.** Une session qui travaille depuis une autre machine prend sa
   propre branche.
+- **Rien n'attend sur le disque seul** : avant toute attente (une réponse du cabinet, un collage), la session pousse sur
+  SA branche ce qui n'est pas commité, même inachevé — le conteneur est repris après une inactivité, et le 19/10/2026
+  il a emporté le code de VF2 → « LA SOURCE DE LA VENTE, EN BASE ».
 - **`main` reste linéaire** (`git rev-list --count --merges origin/main` = 0) et **protégée** : rien n'y arrive sans une
   demande de fusion, fusionnée en « Rebase and merge » quand `verifier` est vert. **C'est la session qui fusionne**
   (décision du cabinet du 25/09/2026) : elle pousse sur SA branche, ouvre la demande quand la barrière passe en local
