@@ -77,8 +77,8 @@ function ecrit(v: VehiculeDossier, montant: number, o: Partial<EcritureBrouillon
     created_at: '2026-01-02T09:00:00Z',
   }
   return [
-    { ...base, id: `${v.id}-d`, compte: '625110', sens: 'debit', ...o },
-    { ...base, id: `${v.id}-c`, compte: credit, sens: 'credit', ...o },
+    { ...base, id: `${v.id}-d`, compte: '625110', sens: 'debit', encaissement_id: null, facture_id: null, ...o },
+    { ...base, id: `${v.id}-c`, compte: credit, sens: 'credit', encaissement_id: null, facture_id: null, ...o },
   ]
 }
 

@@ -75,6 +75,12 @@ export interface Dossier {
   rcs_ville?: string | null
   forme_juridique?: string | null
   capital?: number | null
+  // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
+  // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
+  // par le cabinet (la policy `dossiers_update`) ; irréversible dès qu'une facture source existe
+  // (`garder_ventes_par_les_factures`). Aucun écran ne le lit ni ne l'écrit avant l'étape VF8 ; les lectures qui typent une
+  // ligne entière sur ce type la lisent par `select('*')`, qui la porte.
+  ventes_par_les_factures: boolean
 }
 
 export interface Categorie {
@@ -269,6 +275,14 @@ export interface LigneBancaire {
   // personnel (`lignes_bancaires_declaration_tva_rapprochee`), et l'exclusivité avec tout autre lien
   // (`lignes_bancaires_un_seul_rapprochement`). Ni charge ni recette : la 2035 ne le voit pas.
   declaration_tva_id: string | null
+  // CLASSÉ PAR SES ENCAISSEMENTS (chantier EC-Q3, étape VF2 ; migration `encaissements_de_la_vente_facturee`, en base et
+  // dans l'export depuis le 19/10/2026) : le cabinet a classé ce mouvement par les encaissements de factures sources qu'il
+  // justifie, à l'écart des frais près (`classer_mouvement_par_encaissements` et `retirer_classement_par_encaissements`,
+  // seules). Exclusif de tout autre lien (`lignes_bancaires_un_seul_rapprochement`), rapproché et jamais personnel
+  // (`lignes_bancaires_encaissements_rapproches`) ; un mouvement qui justifie un encaissement d'une facture source ne
+  // reçoit aucun autre classement, même avant d'être classé (`garder_mouvement_reserve`). Aucun écran ne le lit avant
+  // l'étape VF5 ; les refus qu'il ouvre, lib/encaissementsFactures.ts les dit (`mouvementLibre`).
+  encaissements_de_factures: boolean
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien
@@ -442,6 +456,13 @@ export interface EcritureBrouillon {
   // cascade : supprimer l'échéance emporte son écriture, et la base ne la laisse écrire, modifier ou retirer qu'avec ce
   // paiement.
   cotisation_id: string | null
+  // L'ENCAISSEMENT, ou la FACTURE, d'une vente facturée que l'écriture porte (chantier EC-Q3, étape VF4 ; colonnes posées
+  // par la migration `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026) : écrites par la seule fonction
+  // de la vente facturée, sous son réglage, ou réinsérées par la restauration du super-administrateur
+  // (`garder_ecriture_vente_facturee`). Nulles sur toute autre écriture, et sur toutes jusqu'à VF4, qui les écrira. Clés
+  // sans action à la suppression : un encaissement, une facture validée ne disparaissent qu'avec leur dossier.
+  encaissement_id: string | null
+  facture_id: string | null
   // Ce que porte une écriture VALIDÉE (ligne 26.6, étape d — voir supabase/essais/validationExercice.sql) :
   // sa date de validation, son journal et son numéro définitif, et les champs du FEC qui se lisaient ailleurs
   // — la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire —, pour que le FEC
@@ -982,6 +1003,11 @@ export interface FactureEmise {
   created_by: string | null
   created_at: string
   validated_at: string | null
+  // LA SOURCE DE SA VENTE (chantier EC-Q3, étape VF2 ; migration `source_de_la_vente`, en base et dans l'export depuis le
+  // 18/10/2026) : fixée à la validation — le réglage du dossier ; pour un avoir, la source de sa facture — par
+  // `fixer_source_de_la_vente`, puis figée avec la facture ; faux pour un brouillon. Aucun moteur ne la lit avant l'étape
+  // VF3 ; les refus qu'elle ouvre, lib/encaissementsFactures.ts et lib/sourceDeLaVente.ts les disent avant le clic.
+  source_de_la_vente: boolean
   // LES MENTIONS DE LA FACTURE ÉLECTRONIQUE (ligne 28.5, étape c ; migration mentions_de_la_facture). Nulles sur
   // une facture d'avant : on ne devine pas ce qui n'a pas été saisi. Un avoir les reprend de sa facture
   // d'origine, dans la base.

@@ -70,6 +70,27 @@ export const ROLES_COMPTABLES = [
 
 export type CleRoleComptable = (typeof ROLES_COMPTABLES)[number]['role']
 
+// LES SIX RÔLES DE LA VENTE FACTURÉE (chantier EC-Q3, étape VF2 ; conception, § 12) : le catalogue de la base les porte
+// depuis la migration `source_de_la_vente` (en base et dans l'export depuis le 18/10/2026), aux rangs 270 à 320 — les
+// intitulés de la nomenclature du PCG consolidé au 1er janvier 2026 (classes 4, 5, 6 et 7). Ils restent HORS de
+// `ROLES_COMPTABLES` jusqu'à l'étape VF4, la première qui écrira sur eux : un rôle de ce catalogue est un rôle que la
+// lecture du plan exige (`planDeLaReponse`), dont lib/comptes.ts porte la constante et le libellé (`LIBELLES_COMPTES`, que
+// planComptable.test.ts confronte au catalogue) et que les comptes en dur guettent (comptesEnDur.test.ts) ; d'ici là, la
+// lecture du plan ignore ces six rôles de la base, comme tout rôle que l'application ne connaît pas, et rien ne change pour
+// aucun dossier. La racine 4457 qu'évoquait la conception commencerait
+// celle de la TVA collectée (44571), et 4458 celle du remboursement demandé (44583) : la TVA en attente se tient sous 44580
+// (le 445800 recommandé, EC3-Q6) et 44574 (le 445740 des cabinets qui le tiennent), qu'aucune autre racine ne commence.
+// planComptable.test.ts les confronte au texte de la migration, à l'empreinte du catalogue vivant que planComptable.sql
+// exige, et aux règles du catalogue.
+export const ROLES_DE_LA_VENTE_FACTUREE = [
+  { role: 'prestations_de_services', racines: ['706'], compteDefaut: '706000', libelleDefaut: 'Prestations de services', prefixeAuxiliaireDefaut: null, ordre: 270 },
+  { role: 'ventes_de_biens', racines: ['701', '707'], compteDefaut: '707000', libelleDefaut: 'Ventes de marchandises', prefixeAuxiliaireDefaut: null, ordre: 280 },
+  { role: 'tva_collectee_en_attente', racines: ['44580', '44574'], compteDefaut: '445800', libelleDefaut: "Taxes sur le chiffre d'affaires à régulariser ou en attente", prefixeAuxiliaireDefaut: null, ordre: 290 },
+  { role: 'valeurs_a_l_encaissement', racines: ['511'], compteDefaut: '511000', libelleDefaut: "Valeurs à l'encaissement", prefixeAuxiliaireDefaut: null, ordre: 300 },
+  { role: 'caisse', racines: ['53'], compteDefaut: '530000', libelleDefaut: 'Caisse', prefixeAuxiliaireDefaut: null, ordre: 310 },
+  { role: 'services_bancaires', racines: ['627'], compteDefaut: '627000', libelleDefaut: 'Services bancaires et assimilés', prefixeAuxiliaireDefaut: null, ordre: 320 },
+] as const satisfies readonly DefinitionRoleComptable[]
+
 /** Un plan comptable : le compte de chaque rôle. */
 export type PlanComptable = Readonly<Record<CleRoleComptable, string>>
 

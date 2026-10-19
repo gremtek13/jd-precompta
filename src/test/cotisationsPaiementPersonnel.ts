@@ -66,7 +66,7 @@ function executerRpc(nom: string, args: Record<string, unknown>): Promise<Repons
       id: `perso-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
       date, compte: e.compte as string, libelle: e.libelle as string, montant: e.montant as number,
       sens: e.sens as 'debit' | 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
-      declaration_tva_id: null, cotisation_id: id, ...NON_VALIDEE, created_at: '2026-10-09T10:00:00Z',
+      declaration_tva_id: null, cotisation_id: id, encaissement_id: null, facture_id: null, ...NON_VALIDEE, created_at: '2026-10-09T10:00:00Z',
     })))
   } else if (nom === 'retirer_paiement_personnel_cotisation') {
     faux.cotisations = faux.cotisations.map((c) => (c.id === id ? { ...c, paiement_personnel_le: null } : c))
@@ -172,14 +172,14 @@ export const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   libelle: 'PRLV', libelle_brut: null, statut: 'rapprochee',
   piece_id: null, cotisation_id: 'cot-1', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
-  compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-06T09:00:00Z', ...o,
+  compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-06T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 export const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id: 'e-1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: '2026-03-10',
   compte: '646000', libelle: 'Cotisation', montant: 700, sens: 'debit', statut: 'proposee',
   immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: 'cot-1', ...NON_VALIDEE,
-  created_at: '2026-03-10T10:00:00Z', ...o,
+  created_at: '2026-03-10T10:00:00Z', encaissement_id: null, facture_id: null, ...o,
 })
 
 // L'écriture juste de l'échéance `cot-1` (1 000 €, dont 300 € de CSG-CRDS) payée le 10/03/2026, en trésorerie.

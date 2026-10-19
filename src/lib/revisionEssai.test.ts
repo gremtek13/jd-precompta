@@ -205,7 +205,7 @@ function inserer(monde: Monde, requete: string): void {
           id: s(l.id ?? nouvelId()), dossier_id: s(l.dossier_id), piece_id: null, ligne_bancaire_id: null, date: s(l.date),
           compte: s(l.compte), libelle: s(l.libelle), montant: Number(l.montant), sens: l.sens === 'debit' ? 'debit' : 'credit',
           statut: 'proposee', created_at: '2026-10-09T10:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
-          cotisation_id: null, ...NON_VALIDEE,
+          cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
         })
         break
       case 'a_nouveaux':

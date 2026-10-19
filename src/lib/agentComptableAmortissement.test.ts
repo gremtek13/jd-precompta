@@ -92,8 +92,8 @@ function ecrite(id: string, annee: number, montant: number, o: Partial<EcritureB
     statut: 'proposee' as const, immobilisation_id: id, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-01-02T09:00:00Z',
   }
   return [
-    { ...base, id: `${id}-${annee}-d`, compte: '681100', sens: 'debit', ...o },
-    { ...base, id: `${id}-${annee}-c`, compte: '281830', sens: 'credit', ...o },
+    { ...base, id: `${id}-${annee}-d`, compte: '681100', sens: 'debit', encaissement_id: null, facture_id: null, ...o },
+    { ...base, id: `${id}-${annee}-c`, compte: '281830', sens: 'credit', encaissement_id: null, facture_id: null, ...o },
   ]
 }
 

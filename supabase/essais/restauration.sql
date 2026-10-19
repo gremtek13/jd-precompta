@@ -271,6 +271,25 @@
 -- IDENTIQUES, 68 lignes, et le contrôle se tait. Ce script recopie les clés, pas les gardes : la réinsertion d'une pièce
 -- désignée par la porte du super-administrateur, et son refus pour la facture d'un autre dossier, un brouillon ou une
 -- pièce qui n'est pas une vente, sont joués par exemplairesDesFactures.sql (contrôles 71 à 75).
+--
+-- 19/10/2026, chantier EC-Q3, étape VF2 (migrations `source_de_la_vente` et `encaissements_de_la_vente_facturee`, en
+-- base) : aucune table de plus — cinq colonnes (`dossiers.ventes_par_les_factures`, `factures_emises.source_de_la_vente`,
+-- `lignes_bancaires.encaissements_de_factures`, `ecritures_brouillon.encaissement_id` et `facture_id`) et deux clés des
+-- écritures, vers l'encaissement et vers la facture qu'elles portent, sans action à la suppression, que la copie des clés
+-- recopie : les factures (rang 21) et les encaissements (rang 51) précèdent déjà les écritures (rang 60) ; le plan ne
+-- change pas, la sauvegarde recopiant des lignes entières. Cinq contrôles de plus suivent le verdict : chaque valeur de
+-- la vente facturée restaurée telle qu'elle était, les deux clés recopiées. Rejoué sur une réplique égale à la production
+-- (signature.sql, neuf familles), dans une transaction annulée, le dossier `test` semé PAR LES FONCTIONS : le réglage
+-- posé, une facture source validée, son encaissement sur un mouvement que le cabinet classe par ses encaissements, et les
+-- trois lignes de l'écriture de la vente, posées sous le réglage de leur encaissement (et, pour les contrôles d'avant,
+-- une pièce désignée et un texte lu) : 143 clés recopiées, 74 tables restaurées et IDENTIQUES à la source (27 lignes),
+-- 0 écart, aucun arrêt ; les cinq contrôles de la vente facturée justes (3 sur 3 pour chaque clé, 1 sur 1 pour chaque
+-- colonne), ceux d'avant aussi. Sans le semis : 143 clés, 74 tables IDENTIQUES (18 lignes), et les cinq contrôles disent
+-- que rien n'est prouvé. Planté — les écritures restaurées avant les encaissements —, le script s'arrête sur
+-- `ecritures_brouillon` (23503, `ecritures_brouillon_encaissement_id_fkey`). Ce script recopie les clés, pas les gardes :
+-- la réinsertion par la porte du super-administrateur — une facture source dans un dossier qui a basculé, jamais
+-- ailleurs ; un mouvement classé ; un encaissement qui cite un mouvement classé ; une écriture qui porte un encaissement
+-- — est jouée par ventesFacturees.sql (contrôles 20, 21, 42, 64 et 35).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -719,6 +738,39 @@ begin
       case when n > 0 then egales || ' sur ' || n || ', clé ' || case when cle then 'recopiée' else 'absente' end
            else 'aucune pièce désignée dans le dossier : rien n''est prouvé' end);
   end if;
+end $$;
+
+-- LA VENTE FACTURÉE (chantier EC-Q3, étape VF2) : cinq colonnes de tables au plan, et deux clés des écritures — vers
+-- l'encaissement et vers la facture qu'elles portent —, que la copie des clés recopie. Ces contrôles disent que chaque
+-- valeur de la vente facturée a été restaurée telle qu'elle était, et que les deux clés l'ont été : au moins une ligne
+-- chacun, ou rien n'est prouvé, et le contrôle le dit.
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint; cle boolean; c record;
+begin
+  for c in select * from (values ('encaissement_id', 'encaissements_factures'), ('facture_id', 'factures_emises')) as v(col, parent) loop
+    execute format('select count(*), count(*) filter (where e.%1$I = s.%1$I) from public.ecritures_brouillon s'
+                   || ' left join essai_restauration.ecritures_brouillon e on e.id = s.id where s.dossier_id = $1 and s.%1$I is not null', c.col)
+      into n, egales using d;
+    select exists (select 1 from pg_constraint k
+                    where k.conrelid = 'essai_restauration.ecritures_brouillon'::regclass and k.contype = 'f'
+                      and k.confrelid = format('essai_restauration.%I', c.parent)::regclass
+                      and k.conkey = array[(select a.attnum from pg_attribute a
+                                             where a.attrelid = 'essai_restauration.ecritures_brouillon'::regclass and a.attname = c.col)]::int2[])
+      into cle;
+    insert into essai_restauration._controles values ('ecritures_brouillon.' || c.col || ' : chaque écriture restaurée la porte, la clé recopiée',
+      case when n > 0 then n || ' sur ' || n || ', clé recopiée' else 'au moins une écriture' end,
+      case when n > 0 then egales || ' sur ' || n || ', clé ' || case when cle then 'recopiée' else 'absente' end
+           else 'aucune écriture de la vente facturée dans le dossier : rien n''est prouvé' end);
+  end loop;
+  for c in select * from (values ('dossiers', 'ventes_par_les_factures', 'id'), ('factures_emises', 'source_de_la_vente', 'dossier_id'),
+                                 ('lignes_bancaires', 'encaissements_de_factures', 'dossier_id')) as v(t, col, lien) loop
+    execute format('select count(*), count(*) filter (where e.%1$I) from public.%2$I s left join essai_restauration.%2$I e on e.id = s.id'
+                   || ' where s.%3$I = $1 and s.%1$I', c.col, c.t, c.lien)
+      into n, egales using d;
+    insert into essai_restauration._controles values (c.t || '.' || c.col || ' : chaque ligne qui la porte, restaurée la portant',
+      case when n > 0 then n || ' sur ' || n else 'au moins une ligne' end,
+      case when n > 0 then egales || ' sur ' || n else 'aucune ligne qui la porte dans le dossier : rien n''est prouvé' end);
+  end loop;
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;

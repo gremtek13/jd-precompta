@@ -25,7 +25,7 @@ const INFORMATIQUE: NatureImmobilisation = {
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: 'i1', vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, date: '2025-12-31',
   compte: COMPTE_DOTATIONS_AMORTISSEMENTS, libelle: 'Dotation 2025 — Ordinateur portable', montant: 200, sens: 'debit',
-  statut: 'proposee', created_at: '2026-01-05T10:00:00Z', ...o,
+  statut: 'proposee', created_at: '2026-01-05T10:00:00Z', encaissement_id: null, facture_id: null, ...o,
 })
 
 // La dotation écrite d'un exercice, telle que la base la garde : le 681100 au débit, le 28 au crédit.

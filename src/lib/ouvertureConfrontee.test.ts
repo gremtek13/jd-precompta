@@ -23,6 +23,7 @@ function ecrire(date: string, lignes: Ligne[], piece_id: string | null = null): 
       id: `e${String(numero).padStart(5, '0')}`, dossier_id: 'd1', piece_id, ligne_bancaire_id: null, date, compte,
       libelle: 'Écriture d’essai', montant, sens: sens === 'D' ? 'debit' : 'credit', statut: 'proposee',
       created_at: `${date}T10:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
+      encaissement_id: null, facture_id: null,
       ...NON_VALIDEE,
     } satisfies EcritureBrouillon
   })

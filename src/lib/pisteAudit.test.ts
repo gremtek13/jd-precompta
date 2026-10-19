@@ -149,7 +149,7 @@ const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  created_at: '2026-03-12T00:00:00Z', ...o,
+  created_at: '2026-03-12T00:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
@@ -534,7 +534,7 @@ describe('pisteAudit — la liquidation de la TVA', () => {
       piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,
-      source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z',
+      source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z', encaissements_de_factures: false,
     } satisfies LigneBancaire
     const paiement = ecriture({ id: 'p1', piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', compte: '445510', montant: 79 })
     expect(rupturesPisteAudit([paiement], new Set(['l-tva']))).toEqual([])

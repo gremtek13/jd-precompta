@@ -39,7 +39,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    source_fichier: null, libelle_brut: null, created_at: '2026-04-21T09:00:00Z', ...o,
+    source_fichier: null, libelle_brut: null, created_at: '2026-04-21T09:00:00Z', encaissements_de_factures: false, ...o,
   }
 }
 
@@ -47,7 +47,7 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2026-03-31', compte: '445710',
     libelle: 'CA3', montant: 0, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
-    declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-04-15T10:00:00Z', ...o,
+    declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-04-15T10:00:00Z', encaissement_id: null, facture_id: null, ...o,
   }
 }
 

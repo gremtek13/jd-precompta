@@ -58,6 +58,11 @@
 -- reçu est la copie adaptée de la tête 0a711c7, ses lignes de commentaire retirées et une ligne qui rend le texte reçu
 -- ajoutée au verdict (47 819 caractères, empreinte 18ee1b25b70510a80dd0aef0fe2ed7df) ; sur une réplique égale à la
 -- production, la copie et ce fichier rendent les mêmes verdicts, à l'octet.
+--
+-- ADAPTÉ LE 19/10/2026 À L'ÉTAPE VF2 (chantier EC-Q3 ; migration `source_de_la_vente`, en base) : un déclencheur de plus
+-- sur les factures, `factures_emises_source_de_la_vente` (avant l'insertion et la modification, ligne par ligne : 23),
+-- qui fixe la source de la vente à la validation. Le contrôle 105 le compte ; rien d'autre ne change — aucun dossier
+-- de l'essai n'a basculé, ses factures se valident comme hier. supabase/essais/ventesFacturees.sql éprouve le reste.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -262,7 +267,7 @@ begin
     array['controle', '104. un numéro de sa série et de son année passe', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-0001', now(), '2026-03-01')$q$, 'OK', ''],
 
     -- ══ Ce que la production ne peut que lire ══════════
-    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal$q$, '', 'facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31']
+    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal$q$, '', 'facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31|factures_emises_source_de_la_vente=23']
   ];
 
   begin

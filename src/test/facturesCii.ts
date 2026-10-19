@@ -69,6 +69,7 @@ export function facture(lignes: LigneCii[], o: Partial<FactureEmise> = {}): Fact
     type_client: 'assujetti',
     tiers_siren: SIREN_CLIENT,
     nature_operation: 'services',
+    source_de_la_vente: false,
     ...o,
   }
 }

@@ -116,7 +116,7 @@ const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-  created_at: '2026-01-06T09:00:00Z', ...o,
+  created_at: '2026-01-06T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 describe("calculerDeclaration2035 — l'exercice est celui du paiement", () => {

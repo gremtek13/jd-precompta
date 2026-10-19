@@ -51,7 +51,7 @@ function ecriture(o: Partial<EcritureBrouillon> = {}): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2026-03-10', compte: COMPTE_COTISATIONS_EXPLOITANT,
     libelle: 'Cotisation', montant: 700, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
-    declaration_tva_id: null, cotisation_id: 'c1', ...NON_VALIDEE, created_at: '2026-03-11T10:00:00Z', ...o,
+    declaration_tva_id: null, cotisation_id: 'c1', ...NON_VALIDEE, created_at: '2026-03-11T10:00:00Z', encaissement_id: null, facture_id: null, ...o,
   }
 }
 

@@ -383,6 +383,24 @@ reçus tels quels, `c1d06812…`), rend ses 102 verdicts justes, mutations compr
 sorties identiques), ne l'est pas en production : la migration ne crée ni ne change aucune policy, ce que le contrôle 156
 de l'essai vérifie en production (les quatre policies de `pieces`, `95217063…`, celles d'avant).
 
+**Rejoué le 19/10/2026 après `source_de_la_vente` et `encaissements_de_la_vente_facturee`** (chantier EC-Q3, étape VF2),
+accordées par le cabinet (VF2-Q1). La première, appliquée par la session sous la version `20261018201312`, sans
+confirmation demandée ; la seconde, qui retire deux contraintes et une signature de fonction (aucune donnée), retenue par
+le détecteur, puis collée par le cabinet dans l'éditeur SQL sous la version `20261019070229` — dans un texte qui vérifiait
+sa propre empreinte et la présence de la première, et posait sa ligne d'historique. Les deux fichiers portent les textes
+appliqués, octet pour octet (15 343 et 67 129 caractères, aucun retour chariot) : leurs lignes d'historique rendent
+`afd3abea…` et `719aaf05…`. 142 fichiers, 142 migrations, empreinte globale `4dacd12eddaf5676031e86f83c40b274` des deux
+côtés, aucune divergence. Le socle est RÉGÉNÉRÉ (80 instructions, `5d53eea28b1dc7dca878423222ed744d` des deux côtés ; 78
+avant) : les migrations ajoutent à deux de ses tables, `ecritures_brouillon` et `lignes_bancaires`, trois colonnes, deux
+clés, deux index partiels et une contrainte, et en remplacent une ; l'inventaire compte 2 111 objets,
+`5cf5d6e54235089da651c868beccc2d2` des deux côtés (2 088 avant elles). `signature.sql` : les colonnes (856), les
+contraintes (662), les index (233), les déclencheurs (60), les fonctions et leurs droits (183) changent ; les policies
+(157, `58878930…`), la RLS (80, `9e8ffc97…`) et les droits des tables (80, `c7ec7672…`) gardent l'empreinte d'avant.
+L'essai `supabase/essais/ventesFacturees.sql`, rejoué en production sans ses lignes de commentaire (59 764 caractères,
+reçus tels quels, `1a9d47e6…`), rend ses 164 verdicts justes, mutations comprises, et rien n'est resté en base ;
+`rls.sql`, rejoué entier sur une réplique dont les neuf familles égalaient la production (46 lignes, 0 en faute, 43
+mutations sur 43), ne l'est pas en production : les migrations ne créent ni ne changent aucune policy.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

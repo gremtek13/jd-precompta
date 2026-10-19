@@ -405,6 +405,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: '274100', declaration_tva_id: null, id_externe: null, source_fichier: null, libelle_brut: null,
       created_at: '2026-02-11T00:00:00Z',
+      encaissements_de_factures: false,
     }
     const ecritures = [
       ligne('', { id: 'r1', piece_id: null, ligne_bancaire_id: 'l-rb', compte: '274100', sens: 'credit', montant: 500, date: '2026-02-10' }),
@@ -678,7 +679,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
+    source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', encaissements_de_factures: false, ...o,
   })
   const cpam = mouvement('l-cpam')
   const frais = mouvement('l-frais', { date: '2026-02-28', montant: -8.5, libelle: 'FRAIS TENUE', categorie_id: 'c-frais', source_fichier: null })
@@ -963,7 +964,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,
-    source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z',
+    source_fichier: 'releve-avril-2026.pdf', libelle_brut: null, created_at: '2026-04-21T00:00:00Z', encaissements_de_factures: false,
   }
   const paiement = ecritureDuPaiementTva(prelevement, PLAN_PAR_DEFAUT).map((l, i) => ligne('', {
     id: `p-${i}`, piece_id: null, ligne_bancaire_id: 'l-tva', date: '2026-04-20', ...l,

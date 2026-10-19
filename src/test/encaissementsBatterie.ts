@@ -171,7 +171,8 @@ export function lecturesDuMonde(m: Monde): {
   const factures = new Map(m.factures.map((f) => [f.id, {
     id: f.id, dossier_id: DOSSIERS[f.dossier], statut: f.statut, type: f.type, numero: null, date_emission: f.date,
     emetteur_siret: null, montant_ht: f.entete.ht, montant_tva: f.entete.tva, montant_ttc: f.entete.ttc, superpdp_invoice_id: null,
-    tiers_nom: 'Essai',
+    // Aucun dossier de la batterie n'a basculé (étape VF2) : aucune facture n'y est source, comme en base.
+    tiers_nom: 'Essai', source_de_la_vente: false,
   } satisfies FacturePourEncaissement]))
   const dossierDe = (factureId: string) => (factures.get(factureId) as FacturePourEncaissement).dossier_id
   return {
