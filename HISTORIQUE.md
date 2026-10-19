@@ -29795,3 +29795,93 @@ Node 22.23.3 : `tsc -b` 0, lint 0 erreur (les 63 avertissements d'avant), 12 917
 - Une facture écartée par le module ne retient pas l'enregistrement, faute de date.
 - Une écriture qu'un exemplaire aurait déjà au brouillon y reste : G4 (VF6) lui interdit d'en porter une.
 - La phrase de VF1b « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit à VF3b3.
+
+**LA MISE EN LIGNE.** Demande #195, ouverte sur `07700fb` après la barrière locale sous Node 22.23.3 (`tsc -b` ; lint, 0
+erreur et les 63 avertissements d'avant ; 424 fichiers et 12 917 tests sous Paris, UTC, New York et Auckland ; le
+build) ; les deux passes de `verifier` vertes (la branche, de 19 h 29 à 19 h 42 UTC ; la demande, de 19 h 44 à 19 h
+58) ; fusionnée en « Rebase and merge » le 19/10/2026 à 19 h 58 UTC (`a631d96`, `70e1aa5`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 20 h 04, et le site sert `index-DBV7I-02.js`, le bundle du build
+local ; la ligne 28.6 de la feuille de route mise à jour, puis relue (6 762 positions, liens intacts) ; les barres
+d'avancement inchangées.
+
+### 19/10/2026 — LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES FACTURÉES — CHANTIER EC-Q3, ÉTAPE VF3b3 (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF3b3 sur `70e1aa5`, relue par la session. Vingt fichiers : la situation
+intermédiaire, l'estimation, le module des ventes facturées, la lecture et les phrases de VF1b, les onglets Financement
+et Estimation, « Ma simulation », la fiche de l'exemplaire, et leurs tests. Ni base, ni migration, ni Edge Function, ni
+policy, ni lecture de production.)
+
+**LA DÉLIMITATION.** Le dernier des trois lots de VF3b : la situation intermédiaire (`calculerSituationIntermediaire`)
+et les trois fenêtres de l'onglet Financement qui l'appellent ; l'estimation (`totauxPourAnnee`, `projectionAnnuelle`)
+et ses deux appelants, l'onglet Estimation et « Ma simulation » ; puis les phrases de VF1b, devenues fausses pour une
+facture source. NEUTRE en production : aucune facture n'est source, et chaque chiffre est celui d'hier.
+
+**LA SITUATION INTERMÉDIAIRE.** `calculerSituationIntermediaire` reçoit les ventes facturées, obligatoires, sans valeur
+par défaut.
+- En trésorerie, les parts des encaissements datées dans la fenêtre, pour leur hors-taxe ; en engagement, la facture et
+  ses avoirs à leur date d'émission (EC3-Q12). Les deux par `recettesFactureesDeLaPeriode`, en centimes jusqu'au bout,
+  au poste de la case AA (`POSTE_VENTES_FACTUREES`, celui de la 2035). Une fenêtre sans aucune n'a pas de ligne : un
+  dossier qui n'a pas basculé garde ses lignes d'hier.
+- L'exemplaire d'une facture source ne compte plus ; validé, il se dit dans la fenêtre où il aurait compté. Les factures
+  écartées et les excédents, ceux du dossier, remontent comme dans la 2035.
+- L'onglet Financement les lit avec le reste, sous la garde de la dernière lecture (désormais sur toute sa lecture) et
+  `lectureDuDossier`. Pas encore revenues : les trois « Générer » attendent (`aria-busy`). Lues en partie : le bandeau ;
+  la situation et les ratios restent fermés ; le prévisionnel s'ouvre, sans préremplissage. Lues entières : la
+  situation, la CAF des ratios et le préremplissage les comptent, et une ligne discrète dit les écartées, les excédents
+  et les exemplaires. `previsionnel.ts` ne change pas : le préremplissage passe par la situation.
+
+**L'ESTIMATION.** La forme recommandée, retenue : un total hors taxe par mois (`recettesFactureesParMois`, la règle de
+`recettesFactureesDeLaPeriode` sommée par mois ; les mois d'une année refont la recette de l'année), la forme que « Ma
+simulation » d'un client « Banque » recevra de la base à VF8 (EC3-Q11) — le cabinet et le client feront le même calcul.
+- `RecettesFacturees` a deux états : « comptées » (le total par mois et les sources) et « non comptées », un état que
+  l'appelant choisit et que son écran dit, jamais une valeur par défaut. `totauxPourAnnee` et `projectionAnnuelle` le
+  reçoivent, obligatoire ; à l'état « comptées », l'exemplaire d'une facture source ne compte plus.
+- La projection « à date » compte le mois du jour en entier : exact en trésorerie, la base refusant un encaissement daté
+  dans l'avenir ; en engagement, une facture datée plus tard dans le mois compte déjà.
+- L'onglet Estimation les lit sous les mêmes gardes : avant leur retour, « Chargement… » ; lues en partie, le bandeau,
+  ni projection ni repère calculé — le détail par poste, qui ne lit que des charges, reste offert ; une ligne dit les
+  ventes écartées.
+
+**« MA SIMULATION ».** La session du client lit la ligne entière de son dossier (`dossiers_select`), donc
+`ventes_par_les_factures` : une colonne de plus sur une ligne déjà lue, aucune lecture nouvelle ; les factures ne lui
+sont ouvertes qu'avec « Ventes ». Jusqu'à VF8, la simulation passe « non comptées » : elle compte ses pièces comme hier,
+l'exemplaire compris, faute de savoir lequel est source — la vente l'est alors une fois, par la pièce —, et dit en une
+ligne qu'elle ne compte pas les factures validées dans l'application, quand le dossier a basculé ou quand le réglage n'a
+pas pu être lu. Un test vérifie qu'aucune table des ventes facturées n'est demandée.
+
+**LES PHRASES DE VF1b.** `lireLesFacturesProposees` lit `source_de_la_vente` dans sa lecture entière.
+- Pour une facture source : désigner dit que la pièce cessera de compter dans la 2035, la CA3, la situation et
+  l'estimation, la vente l'étant par la facture ; défaire, que la pièce y comptera de nouveau EN PLUS de la facture, la
+  vente comptée deux fois ; la fiche d'une pièce désignée dit qu'elle ne compte pas.
+- Pour une autre facture, les phrases d'avant, mot pour mot. Le paragraphe de la fiche, écrit avant tout choix, dit les
+  deux cas.
+- La base ne refuse pas de défaire : la confirmation le dit. La question entre dans la page des arbitrages (VF6-Q1).
+
+**LES PREUVES.** 59 tests neufs : l'estimation 8, la situation 7, les phrases de VF1b 8, le Financement 15, l'Estimation
+10, la fiche de l'exemplaire 5, « Ma simulation » 4, le garde transversal des écrans 2. La suite a été comparée test par
+test, avant (`70e1aa5`, 12 917 tests) et après (12 976) : aucun verdict changé ni disparu. Les tests d'avant ne
+reçoivent que la valeur vide — `ventesFactureesVides`, et `recettesFactureesVides`, l'état « comptées », nul : le chemin
+du cabinet — et, pour les factures proposées, `source_de_la_vente: false` ; une assertion change de texte sans changer
+de verdict (les colonnes de la lecture). Mutations : 69, dont 65 tuées ; une survivante a reçu son cas (deux événements
+dans un même mois) ; les quatre qui restent sont équivalentes (`lectureDuDossier` seule quand la garde de la dernière
+lecture tient, deux fois, et retirer les deux est tué ; un contrôle redondant du préremplissage ; l'attente de
+l'Estimation, que tient un seul `Promise.all`). La barrière de la session, sous Node 22.23.3, sur le commit du code
+(`593580d`) : `tsc -b` 0, lint 0 erreur (les 63 avertissements d'avant), 426 fichiers et 12 976 tests sous les quatre
+fuseaux, le build (`index-CZiTvJ2w.js`). Relu par la session : les deux moteurs, les trois écrans, les phrases ; une
+tournure de la confirmation de « défaire » reprise (« la désignation défaite »).
+
+**À REVOIR.**
+- Défaire l'exemplaire d'une facture source fait compter la vente deux fois, et la base l'accepte. Recommandé : à VF6,
+  avec G3, refuser de défaire une pièce validée désignée à une facture source ; une désignation erronée se corrige par
+  un seul geste — désigner l'autre facture, ou déclarer la vente hors des factures de l'application
+  (`vente_sans_facture_source`). Question VF6-Q1 au cabinet.
+- À VF8, le total mensuel rendu au client ne lui dira pas quelle pièce est l'exemplaire d'une facture source : s'il
+  compte ce total ET ses pièces, l'exemplaire compterait la vente deux fois. VF8 rend aussi de quoi l'ignorer, présenté
+  au cabinet avec sa lecture.
+- En engagement, la projection « à date » compte une facture datée plus tard dans le mois du jour.
+- Le poste de la case AA (« Recettes encaissées… ») sert aussi en engagement, où « encaissées » est impropre ; après la
+  bascule, la situation peut montrer deux lignes de recettes, comme la revue analytique (VF3b1).
+- Une fenêtre où un encaissement et sa contre-passation s'annulent n'a pas de ligne.
+- Le plan de trésorerie et les formulaires de l'Estimation attendent aussi les ventes facturées : une seule vague de
+  lectures.
+- Le pont (« Comptée deux fois ») ignore encore la source jusqu'à VF6 : la confirmation dit ce qu'il affichera.
