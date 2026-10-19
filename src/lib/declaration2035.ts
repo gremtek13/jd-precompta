@@ -10,6 +10,9 @@ import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, Piece, VehiculeDossier } from './types'
+import {
+  exemplaireDUneFactureSource, type ExcedentVenteFacturee, type PartVenteFacturee, type VenteEcartee, type VentesFacturees,
+} from './ventesFacturees'
 
 // Moteur de la déclaration 2035 (bénéfices non commerciaux, régime de la déclaration contrôlée).
 //
@@ -40,6 +43,12 @@ export const POSTE_INDEMNITES_KM = 'Indemnités kilométriques'
 // période, celle de l'écriture. Deux postes ordinaires, qu'une catégorie peut aussi porter.
 export const POSTE_ARRONDIS_TVA_PRODUIT = 'Gains divers'
 export const POSTE_ARRONDIS_TVA_CHARGE = 'Autres frais divers de gestion'
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1) : la recette d'une facture validée SOURCE de sa vente,
+// encaissement par encaissement (lib/ventesFacturees.ts). Ligne 1 du 2035-A, case AA, sous son libellé officiel — celui
+// que le rattachement des postes connaît déjà (lib/cases2035.ts, qui l'importe d'ici). Un poste à lui, et non celui de
+// la catégorie des ventes d'un dossier : il n'en a pas, et le libellé du formulaire ne laisse aucun doute sur la case. Les
+// débours (ligne 2, AB) restent hors du chantier.
+export const POSTE_VENTES_FACTUREES = 'Recettes encaissées y compris les remboursements de frais'
 
 // Un poste de la déclaration. `montant` est positif : c'est `nature` qui porte le sens. Mélanger les deux
 // (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à refaire la même convention
@@ -82,6 +91,17 @@ export interface ExclusionsDeclaration {
   // Un mouvement affecté à une catégorie dont le compte n'est plus un compte de résultat : il a changé
   // depuis l'affectation, que la base aurait refusée sinon. Ni recette ni dépense — donc dit.
   mouvementsHorsResultat: PartDuReleve[]
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE (lib/ventesFacturees.ts, `exemplaireDUneFactureSource` ; conception, § 8) : désignée,
+  // la pièce prouve la vente et ne la compte plus — c'est sa facture qui la compte, par ses encaissements. Rien n'y manque
+  // et rien n'est à compléter : elle est DITE, dans l'exercice où elle aurait compté, pour qu'une vente ne sorte pas de la
+  // liste des pièces sans que l'écran le montre. Ni sans date, ni sans montant, ni sans poste : ces défauts ne la
+  // concernent plus.
+  exemplairesDeFacturesSources: Piece[]
+  // Une facture source que le module ne sait pas compter sans deviner (`ecartees`) : rien d'elle n'entre, un vrai trou dans
+  // les recettes. DU DOSSIER, TOUS EXERCICES : le module ne date pas une facture qu'il écarte — ses encaissements peuvent
+  // tomber dans n'importe quel exercice, un acompte avant même la facture —, et la dire dans un seul la ferait taire dans
+  // l'autre.
+  ventesFactureesEcartees: VenteEcartee[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -93,8 +113,8 @@ export interface PieceSansPaiement {
 }
 
 // D'OÙ VIENT CHAQUE CENTIME DE LA DÉCLARATION. Une pièce, un mouvement du relevé (affecté, ventilé, une
-// échéance d'emprunt), la dotation d'un bien, le forfait d'un véhicule, une échéance de cotisation, et la
-// CSG déductible. La concordance de la 2035 avec les écritures (lib/concordance2035.ts) les retrouve une à
+// échéance d'emprunt), la dotation d'un bien, le forfait d'un véhicule, une échéance de cotisation, la
+// CSG déductible, et l'encaissement d'une facture source. La concordance de la 2035 avec les écritures (lib/concordance2035.ts) les retrouve une à
 // une dans le brouillon : un total qui diffère ne dit pas où chercher, une source oui.
 export type SourceDeclaration =
   | { type: 'piece'; id: string; piece: Piece }
@@ -113,6 +133,9 @@ export type SourceDeclaration =
   | { type: 'csg' }
   // L'arrondi de la liquidation d'une déclaration de TVA (lib/liquidationTva.ts).
   | { type: 'declaration'; id: string; declaration: DeclarationTva }
+  // La part d'un encaissement d'une facture source, à un taux (lib/ventesFacturees.ts) : `id` est l'encaissement — une
+  // contre-passation est le sien —, et la part nomme sa facture.
+  | { type: 'encaissement'; id: string; part: PartVenteFacturee }
 
 export interface ContributionDeclaration {
   source: SourceDeclaration
@@ -123,6 +146,12 @@ export interface ContributionDeclaration {
   // 616800). Nul pour une catégorie sans compte, que rien ne peut écrire, et pour la CSG déductible,
   // qu'aucune écriture ne porte : la CSG-CRDS passe entière au 108000, et seule sa part déductible entre en
   // BV — la présentation relevée sur la 2035 déposée par le cabinet (voir plus bas).
+  //
+  // NUL AUSSI POUR LA PART D'UNE VENTE FACTURÉE, JUSQU'À L'ÉTAPE VF4. Aucune écriture ne la porte encore : les écritures
+  // d'une vente facturée (706000 pour des services, 707000 pour des biens, au § 5 de la conception) viennent avec VF4, et
+  // leurs rôles — `prestations_de_services`, `ventes_de_biens` — n'entrent au catalogue de l'application
+  // (`ROLES_COMPTABLES`) qu'avec la première écriture qui les emploie. Un numéro écrit ici serait un compte en dur, que
+  // rien ne relie au plan du dossier ; la concordance dit la part « sans écriture encore » (lib/concordance2035.ts).
   compte: string | null
   // En centimes, signé comme ce que la source fait à son poste : un avoir ou un remboursement le diminue.
   centimes: number
@@ -147,6 +176,11 @@ export interface Declaration2035 {
   indemnitesKilometriques: TotalKilometrique | null
   // Chaque montant des postes, avec sa source : leur somme par poste EST le poste, au centime.
   contributions: ContributionDeclaration[]
+  // Un taux d'une facture source encaissé au-delà de ce que la facture porte nette de ses avoirs — un avoir émis après le
+  // paiement, que rien n'a encore remboursé (lib/ventesFacturees.ts, `excedents`). COMPTÉ — l'argent a été reçu — et
+  // remonté pour que l'écran le dise : le trop-perçu est hors du chantier (EC3-Q10). Du dossier, tous exercices, comme les
+  // ventes écartées.
+  ventesFactureesEnExcedent: ExcedentVenteFacturee[]
 }
 
 function arrondi(n: number): number {
@@ -290,6 +324,13 @@ export function calculerDeclaration2035(
   // RÔLES —, et c'est sur lui que la concordance retrouve les écritures (lib/concordance2035.ts). Sans valeur par
   // défaut : un plan oublié ferait chercher les écritures d'un dossier qui en règle d'autres sur les comptes par défaut.
   plan: PlanComptable,
+  // Les ventes facturées du dossier (lib/ventesFacturees.ts, lues par lib/ventesFactureesLecture.ts) : une facture validée
+  // SOURCE de sa vente compte par ses encaissements, à leur date — la règle de la 2035 (CGI, art. 93, 1) —, et la pièce
+  // désignée comme son exemplaire ne compte plus. Sans valeur par défaut, comme le reste : un appelant qui les oublierait
+  // rendrait la 2035 d'un dossier qui facture dans l'application sans aucune de ses ventes, plausible et signée ; et des
+  // ventes vides par commodité compteraient l'exemplaire à la place de sa facture, c'est-à-dire la même vente à sa date de
+  // pièce au lieu de celle de ses encaissements.
+  ventesFacturees: VentesFacturees,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -299,6 +340,7 @@ export function calculerDeclaration2035(
 
   const exclusions: ExclusionsDeclaration = {
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
+    exemplairesDeFacturesSources: [], ventesFactureesEcartees: [...ventesFacturees.ecartees],
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
   const contributions: ContributionDeclaration[] = []
@@ -344,6 +386,13 @@ export function calculerDeclaration2035(
     // anomalie, elle n'a juste rien à faire ici — elle sort avant d'être comptée comme un défaut.
     const paiementsPiece = paiements.get(piece.id) ?? []
     const rattachements = rattachementsTresorerie(piece, paiementsPiece)
+    // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS (§ 8) : sa facture compte la vente, par ses encaissements, plus bas.
+    // Dit dans l'exercice où la pièce aurait compté, par la même règle de date qu'une autre ; une pièce qui n'y aurait pas
+    // compté n'a rien à y faire, et sortie AVANT les contrôles, elle ne se dit ni sans date ni sans montant ni sans poste.
+    if (exemplaireDUneFactureSource(piece, ventesFacturees)) {
+      if (partDeLAnnee(rattachements, annee) !== 0) exclusions.exemplairesDeFacturesSources.push(piece)
+      continue
+    }
     if (rattachements.some((r) => r.date === null)) exclusions.sansDate.push(piece)
     const part = partDeLAnnee(rattachements, annee)
     if (part === 0) continue
@@ -408,6 +457,25 @@ export function calculerDeclaration2035(
       compte: p.role ? plan[p.role] : p.compte,
       centimes: enCentimes(p.montantPoste),
     }, 0, p.ligne.id)
+  }
+
+  // LES VENTES FACTURÉES, APRÈS LE RELEVÉ (ligne 28.6, étape VF3b1). Ce moteur est celui d'une comptabilité de TRÉSORERIE —
+  // il date une pièce par son paiement, et aucun écran ne l'appelle pour un dossier en engagement (Clôture, la Révision) :
+  // il compte les PARTS, jamais les documents. Chaque part de l'exercice, un encaissement à un taux daté du jour de
+  // l'encaissement (art. 93, 1), est UNE contribution, une recette au poste de la ligne 1 pour son hors taxe h — la facture
+  // dit elle-même sa TVA (conception, § 5 ; `montantRetenu`, qui suit le droit à déduction d'un achat, ne s'y applique
+  // pas), et à 0 % h est le TTC. Une contre-passation est une part négative : elle diminue le poste, dans l'exercice de sa
+  // date. Ni pièce ni mouvement du relevé : la ligne n'en compte aucun de plus — le mouvement qu'un encaissement cite est
+  // réservé à ses encaissements (G2), il n'est pas une part du relevé.
+  for (const p of ventesFacturees.parts) {
+    if (anneeDe(p.date) !== annee) continue
+    ajouter({
+      source: { type: 'encaissement', id: p.encaissementId, part: p },
+      poste: POSTE_VENTES_FACTUREES,
+      nature: 'recette',
+      compte: null,
+      centimes: p.htCentimes,
+    }, 0)
   }
 
   // Une dotation par bien : la case CH est leur somme, et chacune s'écrit à part au brouillon.
@@ -524,5 +592,6 @@ export function calculerDeclaration2035(
     sansPaiementConnu,
     indemnitesKilometriques,
     contributions,
+    ventesFactureesEnExcedent: [...ventesFacturees.excedents],
   }
 }

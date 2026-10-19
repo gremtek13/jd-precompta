@@ -20,6 +20,7 @@ import { demandeDeValidation } from './validationExercice'
 import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { ventesFactureesVides } from '../test/ventesFacturees'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -125,7 +126,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const paiements = paiementsDesPieces(base.lignes, base.reglements)
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
-    base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT,
+    base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -755,7 +756,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const d = donnees(o)
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
-      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT,
+      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     )
     const concordance = concordance2035(
       declaration, d.ecritures, { piecesValidees: new Set(d.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set() }, null,

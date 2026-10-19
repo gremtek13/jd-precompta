@@ -30,6 +30,7 @@ import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSol
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
 import * as ER from '../../src/test/ereportingEcran'
+import { ventesFactureesVides } from '../../src/test/ventesFacturees'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
@@ -691,6 +692,9 @@ function valider(
     // Ni l'un ni l'autre dossier n'est assujetti : aucune déclaration de TVA, donc aucun arrondi de liquidation.
     [],
     PLAN_PAR_DEFAUT,
+    // Aucune facture du banc n'est SOURCE de sa vente (`source_de_la_vente: false` partout) : les ventes facturées que la
+    // Clôture lirait de ces dossiers sont vides, et la valeur vide le dit (étape VF3b1).
+    ventesFactureesVides(s.dossier),
   )
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!

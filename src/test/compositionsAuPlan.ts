@@ -32,6 +32,7 @@ import type {
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises } from '../lib/ventilationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcrire } from '../lib/virementPersonnel'
 import { NON_VALIDEE } from './ecritures'
+import { ventesFactureesVides } from './ventesFacturees'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -525,7 +526,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
       const vehicule2026: VehiculeDossier = { ...VEHICULE, annee: 2026 }
       return calculerDeclaration2035(
         2026, [], CATEGORIES, [IMMOBILISATION], cotisationsComptees([COTISATION], lignes, 'tresorerie'), [vehicule2026], true,
-        new Map(), parts, [A_PAYER, EN_CREDIT], plan,
+        new Map(), parts, [A_PAYER, EN_CREDIT], plan, ventesFactureesVides('d1'),
       ).contributions
     },
   },

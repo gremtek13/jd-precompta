@@ -13,6 +13,7 @@ import type {
   ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, ReglementGroupe,
   RevisionExplication, RevisionSeuil, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
+import type { VentesFacturees } from './ventesFacturees'
 
 // CE QUE L'ÉCRAN DE LA REVUE ANALYTIQUE (ligne 41, étape R5, phase C) DONNE AU MODULE ET CE QU'IL EN MONTRE. Le calcul, les
 // états et les refus sont ceux de `lib/revueAnalytique.ts` : rien ici ne les réécrit. Ce fichier est PUR (il ne lit rien
@@ -46,6 +47,11 @@ export interface SourcesDeLaRevueAnalytique {
   reperes: ReperesAnnuels
   seuils: readonly RevisionSeuil[]
   explications: readonly RevisionExplication[]
+  // Les ventes facturées du dossier (lib/ventesFacturees.ts), que la 2035 compte par leurs encaissements ; NULLES quand
+  // leur lecture n'est pas revenue entière — la 2035 ne se calcule alors pas, une 2035 sans ses ventes facturées étant
+  // plausible et fausse. L'onglet le dit parmi les lectures de la revue (RevisionTab), qui n'affirme alors rien. Nulle et
+  // non absente : l'appelant dit qu'il ne les a pas, il ne les oublie pas.
+  ventesFacturees: VentesFacturees | null
 }
 
 /**
@@ -59,6 +65,8 @@ export function declarationPourLaRevue(
   modele: ModeleComptable,
   assujettiTva: boolean,
   d: LecturesDuDossierPourLaRevue,
+  // Obligatoires, comme pour le moteur : la revue compare la 2035 que Clôture montre, ventes facturées comprises.
+  ventesFacturees: VentesFacturees,
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
@@ -67,7 +75,7 @@ export function declarationPourLaRevue(
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
     annee, d.piecesValidees, d.categories, d.immobilisations, comptees, d.vehicules, assujettiTva, paiements, parts, d.declarationsTva,
-    modele.plan,
+    modele.plan, ventesFacturees,
   )
 }
 
@@ -86,7 +94,7 @@ export function donneesDeLaRevueAnalytique(
     ecritures: s.dossier.ecritures,
     reprise: s.reprise,
     reportes: s.reportes,
-    declaration: declarationPourLaRevue(annee, modele, assujettiTva, s.dossier),
+    declaration: s.ventesFacturees === null ? null : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

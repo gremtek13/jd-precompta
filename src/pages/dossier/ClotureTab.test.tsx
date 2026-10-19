@@ -42,6 +42,9 @@ const faux = vi.hoisted(() => ({
   // lever pour tout autre (supabase/essais/categoriesCommunes.sql).
   superAdmin: true,
   superAdminEnBase: true,
+  // Une lecture de cette table attend la promesse posée au moment où elle part : de quoi voir l'écran avant qu'elle
+  // revienne, ou faire revenir la lecture d'un dossier quitté APRÈS celle du dossier ouvert.
+  attentes: {} as Record<string, Promise<void> | undefined>,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -78,9 +81,20 @@ vi.mock('../../lib/supabase', async () => {
           // Le statut d'une pièce aussi : la validation lit à part les pièces validées et celles à valider. Et celui
           // d'un mouvement : la validation lit TOUT le relevé, et une lecture restreinte aux rapprochés lui cacherait
           // les mouvements à traiter.
+          // Et la source d'une facture émise : les ventes facturées ne lisent que les factures SOURCES de leur vente
+          // (lib/ventesFactureesLecture.ts) ; non appliqué, le filtre leur rendrait une facture d'avant la bascule, que la
+          // lecture juge étrangère à ce qu'elle a demandé.
+          // Les tables des ventes facturées, entières : chacune rend ses lignes du dossier, et celles d'un autre dossier
+          // ferment la lecture (lib/ventesFactureesLecture.ts). Les lignes d'une facture n'ont pas de dossier : la base les
+          // filtre par leur facture (`factures_emises!inner`), et le faux aussi.
           eq: (colonne: string, valeur: unknown) => {
-            if (table === 'natures_immobilisation' || (['pieces', 'lignes_bancaires'].includes(table) && colonne === 'statut')) {
+            if (table === 'natures_immobilisation' || (['pieces', 'lignes_bancaires'].includes(table) && colonne === 'statut')
+              || ['factures_emises', 'encaissements_factures', 'encaissements_factures_taux'].includes(table)) {
               predicats.push(predicatEq(colonne, valeur))
+            } else if (table === 'facture_lignes' && colonne.startsWith('factures_emises.')) {
+              const champ = colonne.slice('factures_emises.'.length)
+              predicats.push((l) => (faux.parTable.factures_emises ?? []).some((f) =>
+                (f as Record<string, unknown>).id === l.facture_id && (f as Record<string, unknown>)[champ] === valeur))
             }
             if (colonne === 'id') idVise = valeur
             return chaine
@@ -99,14 +113,18 @@ vi.mock('../../lib/supabase', async () => {
             return Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null })
           },
           then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
-            const toutes = filtrer(faux.parTable[table] ?? [], predicats)
-            const muet = faux.muetApresParTable[table]
-            const borne = muet == null ? toutes.length : Math.min(toutes.length, muet)
-            return Promise.resolve({
-              data: toutes.slice(debut, Math.min(debut + (fin - debut + 1), borne)),
-              error: null,
-              count: toutes.length,
-            }).then(suite)
+            const reponse = () => {
+              const toutes = filtrer(faux.parTable[table] ?? [], predicats)
+              const muet = faux.muetApresParTable[table]
+              const borne = muet == null ? toutes.length : Math.min(toutes.length, muet)
+              return {
+                data: toutes.slice(debut, Math.min(debut + (fin - debut + 1), borne)),
+                error: null,
+                count: toutes.length,
+              }
+            }
+            const attente = faux.attentes[table]
+            return (attente ? attente.then(reponse) : Promise.resolve(reponse())).then(suite)
           },
         })
         return chaine
@@ -176,6 +194,7 @@ function poser(
   cotis: Record<string, unknown>[] = [cotisation('c1'), cotisation('c2')],
 ) {
   faux.muetApresParTable = muet
+  faux.attentes = {}
   faux.misesAJour = []
   faux.superAdmin = true
   faux.superAdminEnBase = true
@@ -2379,5 +2398,149 @@ describe('ClotureTab — un exercice validé ne réclame plus rien', () => {
     expect(screen.queryAllByText(/^Voir les écarts/)).toHaveLength(0)
     expect(screen.queryAllByText('Où agir')).toHaveLength(0)
     expect(screen.queryAllByText(/porte des postes de 2 cases différentes/)).toHaveLength(0)
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1). Le moteur est éprouvé à part (declaration2035.test.ts) ;
+// ce qui se joue ici est le CÂBLAGE : que l'écran LISE les ventes facturées du dossier, les passe à la 2035, dise ce
+// qu'elles écartent, et qu'une lecture incomplète, pas encore revenue ou d'un autre dossier ne laisse ni chiffre ni geste.
+// Données FICTIVES.
+describe('ClotureTab — les ventes facturées', () => {
+  // Une facture SOURCE de services : 1 000 € HT à 20 %, encaissée entière le 10 mai 2025 — 1 000 € de recette.
+  const FACTURE_SOURCE = {
+    id: 'fs', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2025-0042', date_emission: '2025-05-02',
+    tiers_nom: 'CLIENT FICTIF', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
+    date_prestation: null, emetteur_siret: '12345678900012', superpdp_invoice_id: null,
+  }
+  const LIGNE_FS = { id: 'lfs', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }
+  const ENCAISSEMENT = {
+    id: 'enc', dossier_id: 'dossier-de-test', facture_id: 'fs', date_encaissement: '2025-05-10', montant: 1200, moyen: 'virement',
+    ligne_bancaire_id: null, annule_id: null, cree_le: '2025-05-10T10:00:00Z', retire_le: null,
+  }
+  const PART = { encaissement_id: 'enc', dossier_id: 'dossier-de-test', taux: 20, montant: 1200 }
+  // La pièce désignée comme son exemplaire : elle ne compte plus.
+  const EXEMPLAIRE = {
+    ...PIECE, id: 'px', nom_fichier: 'F2025-0042.pdf', type_piece: 'vente', date_piece: '2025-05-02', montant_ttc: 1200,
+    tiers: 'CLIENT FICTIF', categorie_id: 'cat-achats', facture_id: 'fs',
+  }
+
+  function poserLesVentes() {
+    poser()
+    faux.parTable.pieces = [PIECE, EXEMPLAIRE]
+    faux.parTable.factures_emises = [FACTURE_SOURCE]
+    faux.parTable.facture_lignes = [LIGNE_FS]
+    faux.parTable.encaissements_factures = [ENCAISSEMENT]
+    faux.parTable.encaissements_factures_taux = [PART]
+  }
+  const LIGNES_DISCRETES = [/Ventes facturées que la 2035 ne compte pas/, /Ventes facturées encaissées au-delà/, /Exemplaires d’une facture source/]
+
+  it('compte l’encaissement de la facture source, et l’exemplaire ne compte plus — il se dit', async () => {
+    poserLesVentes()
+    monter(2025)
+    // 1 000 € de recette facturée, 120 € d'achat et 600 € de cotisations : 280 € de bénéfice. Compté deux fois,
+    // l'exemplaire en aurait ajouté 1 200 ; compté seul, sans la facture, la 2035 serait en déficit.
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Bénéfice de 280 € : case 5QC/)
+    screen.getByText(/Exemplaires d’une facture source, que la 2035 ne compte pas/)
+    expect(screen.getByText(/Exemplaires d’une facture source/).textContent).toMatch(/\(1\) : CLIENT FICTIF\.$/)
+    // La concordance dit la part sans écriture encore, à son motif.
+    screen.getByText(/1 vente facturée, sans écriture encore/)
+  })
+
+  it('dit les ventes écartées et les excédents, une ligne chacun, et se tait sans eux', async () => {
+    poserLesVentes()
+    // Une facture source sans ligne : écartée. Et un avoir de 100 € HT émis après le paiement entier : 120 € de trop.
+    faux.parTable.factures_emises = [
+      FACTURE_SOURCE,
+      { ...FACTURE_SOURCE, id: 'fv', numero: 'F2025-0043', tiers_nom: 'CLIENT SANS LIGNE' },
+      { ...FACTURE_SOURCE, id: 'av', type: 'avoir', numero: 'A2025-0001', facture_origine_id: 'fs', date_emission: '2025-06-01' },
+    ]
+    faux.parTable.facture_lignes = [LIGNE_FS, { ...LIGNE_FS, id: 'lav', facture_id: 'av', prix_unitaire_ht: 100, quantite: -1 }]
+    monter(2025)
+    const ecartees = await screen.findByText(/Ventes facturées que la 2035 ne compte pas \(1\)/)
+    expect(ecartees.textContent).toContain("F2025-0043 (CLIENT SANS LIGNE) — la facture n'a aucune ligne")
+    const excedents = screen.getByText(/Ventes facturées encaissées au-delà de la facture nette de ses avoirs \(1\)/)
+    expect(excedents.textContent).toMatch(/F2025-0042 \(CLIENT FICTIF\) à 20 %, 120,00\s€ de trop/)
+    // L'excédent est compté : l'argent a été reçu.
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Bénéfice de 280 € : case 5QC/)
+  })
+
+  // Un exercice qui n'a qu'un encaissement d'une facture source se propose comme un autre, toutes années affichées : la
+  // liste des exercices ne suivait que les pièces, le relevé, les cotisations, les biens et les véhicules.
+  it('propose l’exercice d’un encaissement que rien d’autre ne date, toutes années affichées', async () => {
+    poserLesVentes()
+    faux.parTable.encaissements_factures = [{ ...ENCAISSEMENT, date_encaissement: '2027-02-10', cree_le: '2027-02-10T10:00:00Z' }]
+    render(
+      <ContexteDossier annee="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2027/)
+    within(titre.parentElement!).getByText(/Bénéfice de 1\s000 € : case 5QC/)
+  })
+
+  it('sans vente facturée, aucune des trois lignes', async () => {
+    poser()
+    monter(2025)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+  })
+
+  // Le second garde du câblage : une lecture des ventes facturées qui ne revient pas entière.
+  it.each(['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'])(
+    'lue en partie (%s) : le bandeau, et ni chiffre, ni formulaire, ni validation',
+    async (table) => {
+      poserLesVentes()
+      faux.muetApresParTable = { [table]: 0 }
+      monter(2025)
+      await screen.findByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier/)
+      expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Valider l’exercice 2025' })).toBeNull()
+      expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+      expect(screen.queryByText(/Rien à regrouper/)).toBeNull()
+      for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+    },
+  )
+
+  it('pas encore revenue : « Chargement… », et rien d’autre de la 2035', async () => {
+    poserLesVentes()
+    let liberer: () => void = () => {}
+    faux.attentes.encaissements_factures_taux = new Promise<void>((r) => { liberer = r })
+    monter(2025)
+    await act(async () => {})
+    expect(screen.getAllByText('Chargement…').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Valider l’exercice 2025' })).toBeNull()
+    expect(screen.queryByText(/Rien à regrouper/)).toBeNull()
+    await act(async () => { liberer() })
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+  })
+
+  it('un dossier changé en cours de route ne reprend pas la lecture de l’autre', async () => {
+    // Le dossier quitté a une facture source sans ligne — sa vente écartée se dirait — ; le dossier ouvert n'en a aucune.
+    poser()
+    faux.parTable.factures_emises = [{ ...FACTURE_SOURCE, id: 'fa', dossier_id: 'dossier-quitte', numero: 'F2025-9999', tiers_nom: 'CLIENT QUITTÉ' }]
+    let liberer: () => void = () => {}
+    faux.attentes.factures_emises = new Promise<void>((r) => { liberer = r })
+    const vue = render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-quitte" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    await act(async () => {})
+    // Le dossier ouvert répond tout de suite ; celui qu'on a quitté, après lui.
+    faux.attentes = {}
+    vue.rerender(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { liberer() })
+    // La réponse tardive ne remplace rien : la 2035 du dossier ouvert reste, sans la vente écartée de l'autre.
+    screen.getByRole('button', { name: /Remplir le formulaire officiel/ })
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Déficit de 720 € : case 5QE/)
+    expect(screen.queryByText(/CLIENT QUITTÉ/)).toBeNull()
+    for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
   })
 })

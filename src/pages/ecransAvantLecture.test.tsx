@@ -1015,3 +1015,44 @@ describe('le plan comptable du dossier : aucun onglet, donc aucun geste, avant s
     journal.mockRestore()
   })
 })
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1) : la 2035 de Clôture et celle de la revue analytique les
+// comptent. Le garde de chaque écran les retient avec le reste ; celui-ci les retient SEULES, tout le reste revenu vide : ni
+// formulaire, ni validation, ni revue ne s'offre avant elles, et aucun geste tenté n'écrit. Revenues, l'écran se lève.
+describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
+  const TABLES_DES_VENTES = ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']
+
+  beforeAll(() => {
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    vi.spyOn(window, 'prompt').mockImplementation(() => 'motif fictif')
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+  })
+  afterAll(() => { vi.restoreAllMocks() })
+
+  for (const nom of ['ClotureTab', 'RevisionTab']) {
+    it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
+      const ecran = ECRANS.find((e) => e.nom === nom)!
+      const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+      reinitialiser('retenir')
+      etat.lignesUniques = { dossiers: dossier() }
+      etat.toujoursRetenues = new Set(TABLES_DES_VENTES)
+      render(<>{ecran.rendre()}</>)
+      await laisserPasser()
+      await act(async () => { libererTout('vide') })
+      await laisserPasser()
+      for (const table of TABLES_DES_VENTES) expect(etat.demandes.has(table), `${table} se demande au montage`).toBe(true)
+      expect(attendEncore(), 'l’écran attend les ventes facturées').toBe(true)
+      const textes = document.body.textContent ?? ''
+      expect(textes).not.toMatch(/Remplir le formulaire officiel|Valider l’exercice|Report sur la déclaration|Rien à regrouper|Revue analytique/)
+      for (const el of gestesOfferts()) {
+        remplirLesChamps()
+        await tenter(el)
+      }
+      expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e)), 'une écriture avant les ventes facturées').toEqual([])
+      await act(async () => { libererRetenues() })
+      await laisserPasser()
+      expect(attendEncore(), 'revenues, l’attente se lève').toBe(false)
+      journal.mockRestore()
+    })
+  }
+})

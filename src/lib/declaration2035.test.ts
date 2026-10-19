@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, csgDeductible, partCsgNonDeductible,
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE,
-  POSTE_INDEMNITES_KM,
+  POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
+import { caseDuPoste, valeursDesCases } from './cases2035'
+import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { lignesChargeProduitPourPiece } from './ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -31,7 +34,7 @@ const calcul = (o: {
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [],
   // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
   cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
-  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
+  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -65,7 +68,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT)
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -265,7 +268,7 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     const encaissement = paiement({ id: 'm', piece_id: null, categorie_id: 'c-honoraires-recus', date: '2025-04-02', montant: 300 })
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
-      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT,
+      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     )
     expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
     expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Honoraires', 80, 1]])
@@ -765,7 +768,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
     const gains = [...categories, { id: 'c-gains', poste_2035: POSTE_ARRONDIS_TVA_PRODUIT } as Categorie]
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'g', type_piece: 'vente', categorie_id: 'c-gains', montant_ht: 10, montant_ttc: 10 })], gains, [], [], [], true,
-      paiementsDesPieces([], []), [], [declaration()], PLAN_PAR_DEFAUT,
+      paiementsDesPieces([], []), [], [declaration()], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     )
     expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0 }])
   })
@@ -870,7 +873,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
     o.annee ?? 2025, o.pieces ?? [], categoriesComptables, o.immos ?? [],
     cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
     paiementsDesPieces(o.paiements ?? [], []),
-    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [], PLAN_PAR_DEFAUT,
+    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
   )
   // Par poste ET par nature : une vente rangée dans la catégorie des achats est une contribution « recette » au
   // poste Achats, et la ligne des dépenses Achats ne la porte pas.
@@ -1000,7 +1003,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
   const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
-    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT,
+    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
   )
 
   it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
@@ -1026,8 +1029,160 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
-    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT)
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
     expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
     expect(d.resultat).toBe(300)
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1). Une facture validée SOURCE de sa vente compte dans la
+// 2035 par ses encaissements, à leur date (CGI, art. 93, 1), et la pièce désignée comme son exemplaire ne compte plus
+// (conception, § 8). Les ventes facturées viennent du VRAI module (lib/ventesFacturees.ts), sur des lignes de la base telles
+// que la lecture les rend : une part écrite à la main ne prouverait rien de ce qu'il rend. Données FICTIVES.
+describe('calculerDeclaration2035 — les ventes facturées', () => {
+  // Une facture de services de 1 000 € HT à 20 % : 1 200 € TTC, 200 € de TVA.
+  const F1 = factureVendue({ id: 'f1', numero: 'F2025-0001', date_emission: '2025-11-10' })
+  const LIGNES_F1 = [ligneVendue('f1', 1000, 20)]
+  const e1 = encaissementVendu({ id: 'e1', date_encaissement: '2025-12-15', montant: 600 })
+  const e2 = encaissementVendu({ id: 'e2', date_encaissement: '2026-01-20', montant: 600 })
+  const ventes = (o: Partial<Parameters<typeof ventesFacturees>[0]> = {}) => ventesFacturees({
+    dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e1.encaissement, e2.encaissement], parts: [e1.part, e2.part], ...o,
+  })
+  const avec = (v: VentesFacturees, o: { pieces?: Piece[]; annee?: number; assujetti?: boolean } = {}) => calculerDeclaration2035(
+    o.annee ?? 2025, o.pieces ?? [], categories, [], [], [], o.assujetti ?? true, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, v,
+  )
+  const desVentes = (d: ReturnType<typeof avec>) => d.contributions.filter((c) => c.source.type === 'encaissement')
+
+  it('la valeur est obligatoire : aucun appel ne compile sans elle, et rien ne la remplace en silence', () => {
+    // Le compilateur refuse l'appel (`tsc -b` vérifie la directive) ; forcé quand même, il lève au lieu de rendre une 2035
+    // sans ventes facturées.
+    // @ts-expect-error — les ventes facturées omises
+    expect(() => calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT)).toThrow()
+  })
+
+  it('une facture encaissée en deux fois, à cheval sur deux années : chaque part dans l’année de son encaissement', () => {
+    const v = ventes()
+    const en2025 = avec(v, { annee: 2025 })
+    const en2026 = avec(v, { annee: 2026 })
+    expect(en2025.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
+    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
+    // Une contribution par part, sous sa source : l'encaissement et sa facture nommée ; aucun compte jusqu'à VF4.
+    expect(desVentes(en2025)).toEqual([{
+      source: { type: 'encaissement', id: 'e1', part: expect.objectContaining({ factureId: 'f1', numero: 'F2025-0001', tiers: 'Client fictif', date: '2025-12-15' }) },
+      poste: POSTE_VENTES_FACTUREES, nature: 'recette', compte: null, centimes: 50_000,
+    }])
+    expect(desVentes(en2026).map((c) => c.source.type === 'encaissement' && c.source.id)).toEqual(['e2'])
+    // Rien d'une autre année.
+    expect(avec(v, { annee: 2024 }).recettes).toEqual([])
+    expect(avec(v, { annee: 2027 }).contributions).toEqual([])
+  })
+
+  it('le poste des ventes facturées est la ligne 1, case AA', () => {
+    expect(caseDuPoste(POSTE_VENTES_FACTUREES)?.code).toBe('AA')
+    expect(valeursDesCases(avec(ventes(), { annee: 2025 })).valeurs.get('AA')).toBe(500)
+  })
+
+  it('la recette est le hors taxe que la facture porte, quel que soit le statut du dossier ; à 0 %, le TTC', () => {
+    // Le dossier exonéré compte ses PIÈCES au TTC (lib/montantRetenu.ts) ; une facture dit elle-même sa TVA.
+    expect(avec(ventes(), { annee: 2025, assujetti: false }).totalRecettes).toBe(500)
+    const f0 = factureVendue({ id: 'f0', numero: 'F2025-0002' })
+    const e0 = encaissementVendu({ id: 'e0', facture_id: 'f0', date_encaissement: '2025-12-01', montant: 300 }, 0)
+    const v = ventes({ factures: [f0], lignes: [ligneVendue('f0', 300, 0)], encaissements: [e0.encaissement], parts: [e0.part] })
+    expect(avec(v, { annee: 2025 }).totalRecettes).toBe(300)
+  })
+
+  it('une contre-passation est une part négative : elle diminue le poste, dans l’année de sa date', () => {
+    const e = encaissementVendu({ id: 'e', date_encaissement: '2025-12-15', montant: 1200 })
+    const c = encaissementVendu({ id: 'c', date_encaissement: '2026-02-01', montant: -1200, annule_id: 'e' })
+    const v = ventes({ encaissements: [e.encaissement, c.encaissement], parts: [e.part, c.part] })
+    expect(avec(v, { annee: 2025 }).totalRecettes).toBe(1000)
+    const en2026 = avec(v, { annee: 2026 })
+    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: -1000, nbPieces: 0, nbMouvements: 0 }])
+    expect(en2026.resultat).toBe(-1000)
+    expect(desVentes(en2026).map((x) => [x.source.type === 'encaissement' && x.source.id, x.centimes])).toEqual([['c', -100_000]])
+    // Le même jour, l'encaissement et sa contre-passation s'annulent : le poste nul ne se déclare pas.
+    const memeJour = encaissementVendu({ id: 'c2', date_encaissement: '2025-12-20', montant: -1200, annule_id: 'e' })
+    const annulee = avec(ventes({ encaissements: [e.encaissement, memeJour.encaissement], parts: [e.part, memeJour.part] }), { annee: 2025 })
+    expect(annulee.recettes).toEqual([])
+    expect(desVentes(annulee).map((x) => x.centimes)).toEqual([100_000, -100_000])
+  })
+
+  it('l’exemplaire d’une facture source ne compte plus, et se dit dans l’année où il aurait compté', () => {
+    const exemplaire = piece({
+      id: 'x', type_piece: 'vente', categorie_id: 'c-recettes', date_piece: '2025-11-10', montant_ht: 1000, montant_ttc: 1200, facture_id: 'f1',
+    })
+    const d = avec(ventes(), { annee: 2025, pieces: [exemplaire] })
+    // La facture compte sa part de 2025, la pièce rien.
+    expect(d.totalRecettes).toBe(500)
+    expect(d.contributions.filter((c) => c.source.type === 'piece')).toEqual([])
+    expect(d.exclusions.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    // Pas dans une année où elle n'aurait pas compté.
+    expect(avec(ventes(), { annee: 2026, pieces: [exemplaire] }).exclusions.exemplairesDeFacturesSources).toEqual([])
+    // Ni un défaut : sans date, sans poste ni sans montant, elle ne se dit pas comme tel.
+    const sansRien = piece({ id: 'y', type_piece: 'vente', categorie_id: 'c-sans-poste', date_piece: null, montant_ht: null, montant_ttc: null, facture_id: 'f1' })
+    const e = avec(ventes(), { annee: 2025, pieces: [sansRien] }).exclusions
+    expect([e.sansDate, e.sansPoste, e.sansMontant, e.exemplairesDeFacturesSources]).toEqual([[], [], [], []])
+  })
+
+  it('l’exemplaire d’une facture écartée ne compte pas non plus : la facture est source, écartée ou non', () => {
+    const exemplaire = piece({ id: 'x', type_piece: 'vente', categorie_id: 'c-recettes', date_piece: '2025-11-10', montant_ht: 1000, facture_id: 'f1' })
+    const d = avec(ventes({ lignes: [] }), { annee: 2025, pieces: [exemplaire] })
+    expect(d.totalRecettes).toBe(0)
+    expect(d.exclusions.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    expect(d.exclusions.ventesFactureesEcartees.map((v) => [v.factureId, v.motif])).toEqual([['f1', 'sans_lignes']])
+  })
+
+  it('la pièce d’une facture qui n’est pas source compte comme hier', () => {
+    const vente = piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', date_piece: '2025-06-01', montant_ht: 300, montant_ttc: 360, facture_id: 'f-avant' })
+    const avant = factureVendue({ id: 'f-avant', numero: 'F2025-0000', source_de_la_vente: false })
+    const avecUneFactureNonSource = avec(ventes({ factures: [avant], encaissements: [], parts: [] }), { pieces: [vente] })
+    const hier = avec(ventesFactureesVides('d1'), { pieces: [vente] })
+    expect(avecUneFactureNonSource).toEqual(hier)
+    expect(hier.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 300, nbPieces: 1, nbMouvements: 0 }])
+    expect(hier.exclusions.exemplairesDeFacturesSources).toEqual([])
+  })
+
+  it('les ventes écartées et les excédents remontent, du dossier, dans chaque déclaration', () => {
+    // Une facture sans ligne : son TTC par taux est inconnu, rien n'en est compté.
+    const sansLigne = factureVendue({ id: 'f2', numero: 'F2025-0003', tiers_nom: 'Client sans ligne' })
+    // Une facture payée entière, puis réduite d'un avoir de 200 € HT émis APRÈS le paiement : 240 € encaissés de trop.
+    const avoir = factureVendue({ id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-02-01' })
+    const paye = encaissementVendu({ id: 'p', date_encaissement: '2025-12-15', montant: 1200 })
+    const v = ventes({
+      factures: [F1, sansLigne, avoir], lignes: [...LIGNES_F1, { ...ligneVendue('a1', 200, 20), quantite: -1 }],
+      encaissements: [paye.encaissement], parts: [paye.part],
+    })
+    for (const annee of [2025, 2026]) {
+      const d = avec(v, { annee })
+      expect(d.exclusions.ventesFactureesEcartees.map((x) => [x.factureId, x.numero, x.motif]), String(annee)).toEqual([['f2', 'F2025-0003', 'sans_lignes']])
+      expect(d.ventesFactureesEnExcedent, String(annee)).toEqual([{ factureId: 'f1', numero: 'F2025-0001', tiers: 'Client fictif', taux: 20, excedentCentimes: 24_000 }])
+    }
+    // L'excédent est COMPTÉ : l'argent a été reçu, la 2035 de 2025 porte les 1 000 € de hors taxe.
+    expect(avec(v, { annee: 2025 }).totalRecettes).toBe(1000)
+    // Sans vente facturée, rien.
+    const vide = avec(ventesFactureesVides('d1'))
+    expect([vide.exclusions.ventesFactureesEcartees, vide.ventesFactureesEnExcedent]).toEqual([[], []])
+  })
+
+  it('le total des recettes et le résultat : pièces, relevé et ventes facturées réunis, au centime', () => {
+    const achat = piece({ id: 'a', montant_ht: 100.1 })
+    const vente = piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 300.2, facture_id: null })
+    // 1 000,01 € HT à 20 % : la part de 600 € porte sa TVA au cumul, et sa recette est le reste.
+    const lignes = [ligneVendue('f1', 1000.01, 20)]
+    const d = avec(ventes({ lignes }), { annee: 2025, pieces: [achat, vente] })
+    const [part] = desVentes(d)
+    expect(part.source.type === 'encaissement' && part.source.part.tvaCentimes + part.source.part.htCentimes).toBe(60_000)
+    const recetteFacturee = part.centimes
+    expect(recetteFacturee).toBe(50_000)
+    expect(d.totalRecettes).toBe(800.2)
+    expect(d.totalDepenses).toBe(100.1)
+    expect(d.resultat).toBe(700.1)
+    // Deux lignes de recettes, une par poste, et la case AA les reçoit toutes les deux.
+    expect(d.recettes.map((l) => l.poste).sort()).toEqual([POSTE_VENTES_FACTUREES, 'Recettes'].sort())
+    expect(valeursDesCases(d).valeurs.get('AA')).toBe(800.2)
+    // Chaque poste est la somme exacte de ses contributions.
+    for (const l of d.recettes) {
+      expect(d.contributions.filter((c) => c.poste === l.poste && c.nature === l.nature).reduce((s, c) => s + c.centimes, 0) / 100).toBe(l.montant)
+    }
   })
 })
