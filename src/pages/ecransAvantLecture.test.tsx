@@ -1016,8 +1016,9 @@ describe('le plan comptable du dossier : aucun onglet, donc aucun geste, avant s
   })
 })
 
-// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étapes VF3b1 et VF3b2) : la 2035 de Clôture et celle de la revue
-// analytique les comptent, et la CA3 de l'onglet TVA. Le garde de chaque écran les retient avec le reste ; celui-ci les retient SEULES, tout le reste revenu vide : ni
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étapes VF3b1 à VF3b3) : la 2035 de Clôture et celle de la revue
+// analytique les comptent, la CA3 de l'onglet TVA, la situation intermédiaire, les ratios et le prévisionnel du Financement, et
+// la projection et le repère calculé de l'Estimation. Le garde de chaque écran les retient avec le reste ; celui-ci les retient SEULES, tout le reste revenu vide : ni
 // formulaire, ni validation, ni revue ne s'offre avant elles, et aucun geste tenté n'écrit. Revenues, l'écran se lève.
 describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   const TABLES_DES_VENTES = ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']
@@ -1029,7 +1030,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   })
   afterAll(() => { vi.restoreAllMocks() })
 
-  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab']) {
+  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab', 'FinancementTab', 'EstimationTab']) {
     it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
       const ecran = ECRANS.find((e) => e.nom === nom)!
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -1045,6 +1046,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
       const textes = document.body.textContent ?? ''
       expect(textes).not.toMatch(/Remplir le formulaire officiel|Valider l’exercice|Report sur la déclaration|Rien à regrouper|Revue analytique/)
       expect(textes).not.toMatch(/CA3 — |Déclaration « néant »|Enregistrer comme déposée|Recalculée aujourd’hui|Aucune déclaration enregistrée/)
+      expect(textes).not.toMatch(/Résultat intermédiaire|CAF annuelle estimée|Précharger depuis cette année|CA encaissé à date|CA projeté|Calculer CA \+ cotisations/)
       for (const el of gestesOfferts()) {
         remplirLesChamps()
         await tenter(el)

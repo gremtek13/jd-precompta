@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
-import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
+import {
+  chargesParPostePourAnnee, ecartPct, projectionAnnuelle, recettesFactureesDuDossier, totauxPourAnnee,
+} from '../../lib/estimation'
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
 import { cotisationsComptees } from '../../lib/cotisationRapprochee'
@@ -13,6 +15,7 @@ import type {
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
+import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 
 // L'exercice qui précède, lu à l'appel : la valeur initiale des formulaires de repère. Une constante
 // de module le figerait pour toute la session (voir src/lib/maintenantFige.test.ts).
@@ -75,8 +78,17 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   const [caSaisi, setCaSaisi] = useState('')
   const [cotisationsSaisies, setCotisationsSaisies] = useState('')
   const [anneeACalculer, setAnneeACalculer] = useState(anneePrecedente)
+  // LES VENTES FACTURÉES DU DOSSIER (ligne 28.6, chantier EC-Q3, étape VF3b3 ; lib/ventesFactureesLecture.ts), lues tout ou
+  // rien avec le reste : une facture validée SOURCE de sa vente compte dans la projection et le repère calculé, et son
+  // exemplaire ne compte plus. Nulles tant qu'elles ne sont pas revenues : l'onglet attend. Lues en partie, ni projection ni
+  // repère calculé : une assiette sans ses ventes facturées a l'air d'une bonne nouvelle.
+  const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
+  // LA DERNIÈRE LECTURE DEMANDÉE ÉCRIT SEULE : celle d'un dossier quitté, ou celle d'avant un enregistrement, ne remplace
+  // pas en arrivant après celle qui l'a suivie. Le numéro se prend avant la première attente.
+  const derniereLecture = useRef(0)
 
   async function load() {
+    const demande = ++derniereLecture.current
     setLoading(true)
     const [
       lectureCotisations,
@@ -89,6 +101,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
       lecturePaiements,
       lectureVentilations,
       lectureReglements,
+      ventesLues,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -140,7 +153,11 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
         supabase.from('reglements_groupes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
+      lireLesVentesFacturees(dossierId),
     ])
+    if (demande !== derniereLecture.current) return
+    setLectureVentes(ventesLues)
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
@@ -180,8 +197,19 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance
   // (lib/cotisationRapprochee.ts) : la règle de la 2035.
   const comptees = cotisationsComptees(cotisations, mouvementsRapproches, modeComptable)
-  const projection = projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
-  const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
+  // Les ventes facturées de CE dossier, ou rien ; lues entières, leurs recettes mois par mois (lib/estimation.ts,
+  // `RecettesFacturees`) — la forme que « Ma simulation » recevra à VF8 —, sinon nulles et le motif.
+  const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
+  const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
+  const recettesFacturees = ventesFacturees === null ? null : recettesFactureesDuDossier(ventesFacturees, modeComptable)
+  const projection = recettesFacturees === null
+    ? null
+    : projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts, recettesFacturees)
+  const referenceN1 = projection === null ? null : references.find((r) => r.annee === projection.annee - 1) ?? null
+  // Le calcul du chiffre d'affaires d'un repère est suspendu sur une lecture partielle, celle des ventes facturées comprise ;
+  // le détail par poste ne lit que des charges, et ne suit que les autres.
+  const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
   // ressaisir les chiffres à la main — jamais un enregistrement automatique, juste un préremplissage
@@ -254,11 +282,11 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // au rechargement de la page.
   async function calculerDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee || lectureIncomplete) return
+    if (!annee || calculDuCaSuspendu || recettesFacturees === null) return
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts, recettesFacturees)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -345,7 +373,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     load()
   }
 
-  if (loading) return <p className="muted">Chargement…</p>
+  // Les ventes facturées font partie de la lecture : avant leur retour, l'onglet attend.
+  if (loading || lectureVentesDuDossier === null) return <p className="muted">Chargement…</p>
 
   return (
     <>
@@ -357,6 +386,14 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
           'cotisations sous-évaluée a exactement l’air d’une bonne nouvelle.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les ventes facturées du dossier"
+        motif={ventesIncompletes}
+        consequence={
+          'La projection et le calcul du chiffre d’affaires d’un repère sont suspendus : sans elles, une assiette de ' +
+          'cotisations sous-évaluée aurait l’air d’une bonne nouvelle. Recharge la page.'
+        }
+      />
 
       <div className="brouillon-banner">
         <strong>Estimation indicative</strong> — une projection pour anticiper, pas un calcul officiel de
@@ -365,42 +402,59 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
         foyer fiscal entier, que ce dossier ne voit jamais).
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Projection {projection.annee}</h3>
-        <p className="muted" style={{ marginTop: -8 }}>
-          {projection.caProjete === null
-            ? "Moins d'un mois écoulé depuis le 1er janvier : la projection attend la fin janvier — ramener "
-              + 'quelques jours à douze mois ferait bouger le chiffre à chaque pièce saisie.'
-            : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
-              + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
-        </p>
-        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-          <div>
-            {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
-                serait faux (lib/rattachement.ts). */}
-            <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
-            <strong>{formatMoney(projection.ca)}</strong>
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
-            <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
-            {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {projection.annee - 1})</span>
-            )}
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
-            <strong>{formatMoney(projection.cotis)}</strong>
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
-            <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
-            {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {projection.annee - 1})</span>
-            )}
-          </div>
+      {projection === null ? (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Projection</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            La projection attend les ventes facturées du dossier, qui n’ont pas pu être lues en entier.
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Projection {projection.annee}</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            {projection.caProjete === null
+              ? "Moins d'un mois écoulé depuis le 1er janvier : la projection attend la fin janvier — ramener "
+                + 'quelques jours à douze mois ferait bouger le chiffre à chaque pièce saisie.'
+              : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
+                + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
+          </p>
+          <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+            <div>
+              {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
+                  serait faux (lib/rattachement.ts). */}
+              <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
+              <strong>{formatMoney(projection.ca)}</strong>
+            </div>
+            <div>
+              <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
+              <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
+              {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
+                <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {projection.annee - 1})</span>
+              )}
+            </div>
+            <div>
+              <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
+              <strong>{formatMoney(projection.cotis)}</strong>
+            </div>
+            <div>
+              <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
+              <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
+              {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
+                <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {projection.annee - 1})</span>
+              )}
+            </div>
+          </div>
+          {/* Celles du dossier, tous exercices : le module ne date pas une facture qu'il écarte. Une ligne, seulement quand il y
+              en a. */}
+          {ventesFacturees !== null && ventesFacturees.ecartees.length > 0 && (
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Ventes facturées que l’estimation ne compte pas ({ventesFacturees.ecartees.length}) :{' '}
+              {ventesFacturees.ecartees.map((v) => `${v.numero ?? 'sans numéro'} (${v.tiers}) — ${v.detail}`).join(' ; ')}.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Repères annuels</h3>
@@ -415,7 +469,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
             <label htmlFor="anneeCalc">Année à calculer depuis ce dossier</label>
             <input id="anneeCalc" type="number" style={{ width: 100 }} value={anneeACalculer} onChange={(e) => setAnneeACalculer(e.target.value)} />
           </div>
-          <button className="btn btn-outline btn-sm" disabled={calculating || lectureIncomplete !== null} onClick={calculerDepuisAppli}>
+          <button className="btn btn-outline btn-sm" disabled={calculating || calculDuCaSuspendu !== null} onClick={calculerDepuisAppli}>
             {calculating ? 'Calcul…' : 'Calculer CA + cotisations'}
           </button>
           <button className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null} onClick={calculerPostesDepuisAppli}>
@@ -427,6 +481,13 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
             Calcul suspendu : une lecture est incomplète ({lectureIncomplete}). Un repère calculé sur une
             partie du dossier serait enregistré trop bas. Recharge la page — la saisie à la main reste
             possible ci-dessous.
+          </p>
+        )}
+        {lectureIncomplete === null && ventesIncompletes !== null && (
+          <p className="error-text" style={{ marginTop: -8 }}>
+            Calcul du chiffre d’affaires suspendu : les ventes facturées du dossier n’ont pas pu être lues en entier
+            ({ventesIncompletes}). Un repère calculé sans elles serait enregistré trop bas. Recharge la page — la saisie à la
+            main reste possible ci-dessous.
           </p>
         )}
 

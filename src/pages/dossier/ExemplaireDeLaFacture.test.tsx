@@ -34,7 +34,7 @@ vi.mock('../../lib/supabase', () => ({
 const D = 'd1'
 const facture = (o: Partial<FactureProposee> = {}): FactureProposee => ({
   id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
-  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, ...o,
+  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, source_de_la_vente: false, ...o,
 })
 const FACTURES = [facture(), facture({ id: 'a1', type: 'avoir', numero: 'A2026-0001', date_emission: '2026-04-02', montant_ttc: -300 })]
 
@@ -329,5 +329,59 @@ describe('ExemplaireDeLaFacture — défaire', () => {
     expect(relirePiece).toHaveBeenCalledTimes(1)
     await act(async () => { defaire().click() })
     expect(faux.rpcs).toHaveLength(2)
+  })
+})
+
+// CE QUI SE COMPTE DÉPEND DE LA FACTURE (étape VF3b3). Les phrases sont dans le module (exemplairesDesFacturesEcran.test.ts) ;
+// ce qui se joue ici est le CÂBLAGE : que l'écran passe à la confirmation la facture CHOISIE, telle que la liste lue la porte
+// (`source_de_la_vente`), et montre le paragraphe des deux cas avant tout choix. Une facture source et une autre, côte à côte.
+describe('ExemplaireDeLaFacture — ce qui se compte, selon la facture', () => {
+  const SOURCE = facture({ id: 'fs', numero: 'F2026-0042', source_de_la_vente: true })
+  const lues = { factures: { lignes: [...FACTURES, SOURCE], complete: true, motif: null } }
+
+  it('avant tout choix, le paragraphe dit les deux cas', () => {
+    monter(piece(), lues)
+    expect(screen.getByText(/Pour une facture source de sa vente, la pièce désignée cesse de compter dans la 2035, la CA3, la situation intermédiaire et l’estimation/)).toBeTruthy()
+    expect(screen.getByText(/Pour une autre facture, désigner ne change rien à ce qui se compte\./)).toBeTruthy()
+    expect(screen.queryByText(/Désigner ne change rien à ce qui se compte aujourd’hui/)).toBeNull()
+  })
+
+  it('la facture source choisie : la confirmation dit que la pièce cessera de compter', async () => {
+    monter(piece(), lues)
+    fireEvent.change(choix(), { target: { value: 'fs' } })
+    await act(async () => { designer().click() })
+    const texte = String(confirmation.mock.calls[0][0])
+    expect(texte).toContain('La facture F2026-0042 est la source de sa vente')
+    expect(texte).toContain('la pièce cessera de compter')
+    expect(texte).not.toContain('ne change rien')
+    expect(faux.rpcs[0].args).toEqual({ p_dossier_id: D, p_piece_id: 'p1', p_facture_id: 'fs' })
+  })
+
+  it('l’autre facture choisie, sur la même liste : rien ne change', async () => {
+    monter(piece(), lues)
+    fireEvent.change(choix(), { target: { value: 'f1' } })
+    await act(async () => { designer().click() })
+    const texte = String(confirmation.mock.calls[0][0])
+    expect(texte).toContain('Désigner ne change rien à ce qui se compte aujourd’hui.')
+    expect(texte).not.toContain('source')
+  })
+
+  it('l’exemplaire d’une facture source : la fiche dit qu’il ne compte pas, et défaire dit la vente comptée deux fois', async () => {
+    monter(piece({ facture_id: 'fs' }), lues)
+    expect(screen.getByText(/La facture F2026-0042 est la source de sa vente : cette pièce ne compte pas/)).toBeTruthy()
+    await act(async () => { defaire().click() })
+    const texte = String(confirmation.mock.calls[0][0])
+    expect(texte).toContain('EN PLUS de la facture — la vente sera comptée deux fois.')
+    expect(texte).not.toContain('ne change rien')
+    // La base ne refuse rien de plus : confirmé, le retrait part.
+    expect(faux.rpcs).toEqual([{ nom: 'defaire_exemplaire_facture', args: argumentsDuRetraitDeLaDesignation(D, 'p1') }])
+  })
+
+  it('l’exemplaire d’une facture qui n’est pas source : la fiche n’en dit rien de plus, et défaire ne change rien', async () => {
+    monter(piece({ facture_id: 'f1' }), lues)
+    expect(screen.getByText('Cette pièce est désignée comme l’exemplaire de la facture F2026-0007.')).toBeTruthy()
+    expect(screen.queryByText(/ne compte pas/)).toBeNull()
+    await act(async () => { defaire().click() })
+    expect(String(confirmation.mock.calls[0][0])).toContain('Défaire ne change rien à ce qui se compte.')
   })
 })

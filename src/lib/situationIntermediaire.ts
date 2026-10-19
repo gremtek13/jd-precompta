@@ -5,6 +5,10 @@ import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { Categorie, Immobilisation, ModeComptable, Piece } from './types'
+import { POSTE_VENTES_FACTUREES } from './declaration2035'
+import {
+  exemplaireDUneFactureSource, recettesFactureesDeLaPeriode, type ExcedentVenteFacturee, type VenteEcartee, type VentesFacturees,
+} from './ventesFacturees'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
 // la CAF. Il le cherchait par une chaîne littérale écrite de son côté : renommer le poste ici aurait
@@ -20,6 +24,15 @@ export interface SituationIntermediaire {
   recettes: number
   charges: number
   resultat: number
+  // LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3), ce qu'elles retirent ou n'ont pas pu compter, pour que
+  // l'écran le DISE — comme la 2035 dont cet état est la version « à ce jour ». Les exemplaires d'une facture source que la
+  // période aurait comptés : la vente l'est par sa facture.
+  exemplairesDeFacturesSources: Piece[]
+  // Les factures sources que le module ne sait pas compter sans deviner : celles du DOSSIER, tous exercices — le module ne
+  // date pas une facture qu'il écarte (lib/declaration2035.ts, `ventesFactureesEcartees`).
+  ventesFactureesEcartees: VenteEcartee[]
+  // Les taux encaissés au-delà de la facture nette de ses avoirs : comptés — l'argent a été reçu —, et dits. Du dossier.
+  ventesFactureesEnExcedent: ExcedentVenteFacturee[]
 }
 
 // Situation intermédiaire — première brique du "dossier bancaire automatisé" (voir CLAUDE.md) :
@@ -85,11 +98,19 @@ export function calculerSituationIntermediaire(
   // la version « à ce jour ». Sans valeur par défaut : les oublier montrerait à une banque un cabinet
   // sans ses encaissements, et sans ses frais financiers.
   partsDuReleve: readonly PartDuReleve[],
+  // Les ventes facturées du dossier (lib/ventesFacturees.ts, lues par lib/ventesFactureesLecture.ts) : une facture validée
+  // SOURCE de sa vente compte elle-même — en trésorerie, les parts de ses encaissements datées dans la période, pour leur
+  // hors-taxe (CGI, art. 93, 1) ; en engagement, la facture et ses avoirs à leur date d'émission (EC3-Q12) —, sous le poste
+  // de la case AA, comme dans la 2035 ; la pièce désignée comme son exemplaire ne compte plus. Sans valeur par défaut : un
+  // appelant qui les oublierait montrerait à une banque un dossier qui facture dans l'application sans ses ventes ; des
+  // ventes vides par commodité compteraient l'exemplaire à la place de sa facture.
+  ventesFacturees: VentesFacturees,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
 
   const totauxParPoste = new Map<string, number>()
+  const exemplairesDeFacturesSources: Piece[] = []
   for (const p of pieces) {
     if (p.statut !== 'validee') continue
     if (immobilisationPieceIds.has(p.id)) continue
@@ -98,6 +119,12 @@ export function calculerSituationIntermediaire(
     // facture de janvier réglée en février, et porte celle de décembre réglée en janvier. En
     // engagement, c'est celle de sa facture.
     const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), periodeDebut, periodeFin)
+    // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS : sa facture compte la vente, plus bas. Dit seulement dans la période
+    // où la pièce aurait compté, par la même règle de date qu'une autre.
+    if (exemplaireDUneFactureSource(p, ventesFacturees)) {
+      if (part !== 0) exemplairesDeFacturesSources.push(p)
+      continue
+    }
     if (part === 0) continue
     const cat = p.categorie_id ? categorieById.get(p.categorie_id) : null
     if (!cat?.poste_2035) continue
@@ -113,6 +140,14 @@ export function calculerSituationIntermediaire(
     if (!p.nature || !p.poste) continue
     const signe = p.nature === 'recette' ? 1 : -1
     totauxParPoste.set(p.poste, (totauxParPoste.get(p.poste) ?? 0) + signe * p.montantPoste)
+  }
+
+  // Les ventes facturées de la période, au poste de la case AA, en centimes entiers jusqu'au bout : la règle de
+  // `recettesFactureesDeLaPeriode`, celle de l'estimation. Une période sans aucune n'a pas de ligne — un dossier qui n'a pas
+  // basculé garde l'état d'hier, ligne pour ligne.
+  const facturees = recettesFactureesDeLaPeriode(ventesFacturees, periodeDebut, periodeFin, mode)
+  if (facturees !== 0) {
+    totauxParPoste.set(POSTE_VENTES_FACTUREES, (totauxParPoste.get(POSTE_VENTES_FACTUREES) ?? 0) + facturees / 100)
   }
 
   // LA DOTATION SUIT LA PÉRIODE ANNONCÉE. Cet état porte en tête « Période du 1er janvier au <date
@@ -145,5 +180,10 @@ export function calculerSituationIntermediaire(
   const recettes = entries.filter(([, m]) => m > 0).reduce((s, [, m]) => s + m, 0)
   const charges = entries.filter(([, m]) => m < 0).reduce((s, [, m]) => s - m, 0)
 
-  return { periodeDebut, periodeFin, totauxParPoste: entries, recettes, charges, resultat: recettes - charges }
+  return {
+    periodeDebut, periodeFin, totauxParPoste: entries, recettes, charges, resultat: recettes - charges,
+    exemplairesDeFacturesSources,
+    ventesFactureesEcartees: [...ventesFacturees.ecartees],
+    ventesFactureesEnExcedent: [...ventesFacturees.excedents],
+  }
 }

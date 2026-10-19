@@ -5,6 +5,7 @@ import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rat
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { ModeComptable, Piece } from './types'
+import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -23,12 +24,74 @@ import type { ModeComptable, Piece } from './types'
 // et le paiement ne date rien. Obligatoire comme les deux autres, dans chaque calcul de ce module.
 function montantDansLaPeriode(
   pieces: Piece[], paiements: PaiementsDesPieces, debut: string, fin: string, assujettiTva: boolean,
-  mode: ModeComptable,
+  mode: ModeComptable, recettesFacturees: RecettesFacturees,
 ): number {
   return pieces.reduce((sum, p) => {
+    // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE PLUS (lib/ventesFacturees.ts, § 8 de la conception) : c'est sa facture qui
+    // compte la vente, dans les recettes facturées. « Non comptées », l'appelant ne sait pas quelle pièce est un exemplaire
+    // — la session d'un client ne lit pas les factures — et la pièce compte comme hier : la vente l'est alors une fois, par
+    // elle, et la facture pas du tout.
+    if (recettesFacturees.etat === 'comptees' && exemplaireDUneFactureSource(p, recettesFacturees)) return sum
     const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), debut, fin)
     return part === 0 ? sum : sum + (montantRetenu(p, assujettiTva) ?? 0) * part
   }, 0)
+}
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3 ; lib/ventesFacturees.ts). Une facture validée SOURCE de sa
+// vente compte elle-même — ses encaissements en trésorerie, la facture et ses avoirs à leur date d'émission en engagement
+// (EC3-Q12) — et la pièce désignée comme son exemplaire ne compte plus.
+//
+// L'estimation les reçoit sous la forme que « Ma simulation » d'un client « Banque » recevra de la base à l'étape VF8
+// (EC3-Q11) : UN TOTAL HORS TAXE PAR MOIS, sans détail — pour que le cabinet et le client fassent le même calcul, celui de ce
+// module. Ou l'état « non comptées », que l'appelant CHOISIT et que son écran DIT : ce n'est pas une valeur par défaut. La
+// simulation du client le passe jusqu'à VF8 (sa session ne lit pas les factures) ; l'Estimation du cabinet, jamais.
+//
+// LA PRÉCISION D'UN MOIS. « À date », la projection compte le mois du jour en entier. En trésorerie, c'est exact : la base ne
+// laisse dater aucun encaissement dans l'avenir (`enregistrer_encaissement`, le jour à Paris). En engagement, une facture
+// datée plus tard dans le mois compterait déjà : la base ne refuse pas une date d'émission à venir.
+export type RecettesFacturees =
+  | {
+      etat: 'comptees'
+      /** « AAAA-MM » → centimes hors taxes (`recettesFactureesParMois`). */
+      parMois: ReadonlyMap<string, number>
+      /** Les factures et avoirs sources : la pièce désignée comme l'exemplaire de l'un d'eux ne compte plus. */
+      sources: ReadonlySet<string>
+    }
+  | { etat: 'non_comptees' }
+
+/** L'état « non comptées » : l'appelant ne compte pas les ventes facturées, et son écran le dit. */
+export const RECETTES_FACTUREES_NON_COMPTEES: RecettesFacturees = { etat: 'non_comptees' }
+
+/**
+ * Ce que « Ma simulation » dit qu'elle ne compte pas, jusqu'à VF8 (EC3-Q11). Juste : elle compte les pièces de vente du client
+ * — l'exemplaire d'une facture compris, faute de savoir laquelle est source — et les recettes que le cabinet a classées sur
+ * son relevé ; une facture validée dans l'application n'y entre pas comme telle. Au tutoiement de l'espace client.
+ */
+export const SIMULATION_SANS_VENTES_FACTUREES = 'Cette simulation ne compte pas encore les factures validées dans '
+  + 'l’application : seulement tes pièces de vente et les recettes que ton cabinet a classées sur ton relevé.'
+
+/**
+ * La simulation le dit-elle ? Quand le dossier a basculé (`dossiers.ventes_par_les_factures`, que la session du client lit
+ * avec le reste de son dossier) — ou quand elle n'a pas pu le lire : on ne tait pas une réserve qu'on ne sait pas écarter.
+ * Avant la bascule, aucune facture n'est source : la simulation compte tout ce qui se compte, et se tait.
+ */
+export function simulationDitNePasCompterLesVentesFacturees(ventesParLesFactures: boolean | null | undefined): boolean {
+  return ventesParLesFactures !== false
+}
+
+/** Les recettes facturées du dossier, telles que le cabinet les compte, dans le modèle comptable du dossier. */
+export function recettesFactureesDuDossier(ventes: VentesFacturees, mode: ModeComptable): RecettesFacturees {
+  return { etat: 'comptees', parMois: recettesFactureesParMois(ventes, mode), sources: ventes.sources }
+}
+
+// Les recettes facturées des mois de `debut` à `fin` (des dates civiles), bornes comprises, en euros.
+function recettesFactureesDesMois(recettesFacturees: RecettesFacturees, debut: string, fin: string): number {
+  if (recettesFacturees.etat === 'non_comptees') return 0
+  const premier = debut.slice(0, 7)
+  const dernier = fin.slice(0, 7)
+  let centimes = 0
+  for (const [mois, c] of recettesFacturees.parMois) if (mois >= premier && mois <= dernier) centimes += c
+  return centimes / 100
 }
 
 // LES ENCAISSEMENTS SANS JUSTIFICATIF (lib/affectationBanque.ts) : un virement de l'Assurance maladie
@@ -57,12 +120,15 @@ export function totauxPourAnnee(
   paiements: PaiementsDesPieces, mode: ModeComptable,
   // Sans valeur par défaut, comme les paiements : voir `recettesAffecteesDansLaPeriode`.
   partsDuReleve: readonly PartDuReleve[],
+  // Sans valeur par défaut non plus : voir `RecettesFacturees`.
+  recettesFacturees: RecettesFacturees,
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode)
-      + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin),
+    ca: montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, recettesFacturees)
+      + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin)
+      + recettesFactureesDesMois(recettesFacturees, debut, fin),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -101,12 +167,15 @@ export function projectionAnnuelle(
   recettes: Piece[], cotisations: readonly CotisationComptee[], dateDuJour: string, assujettiTva: boolean,
   paiements: PaiementsDesPieces, mode: ModeComptable,
   partsDuReleve: readonly PartDuReleve[],
+  recettesFacturees: RecettesFacturees,
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
-  // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères.
-  const ca = montantDansLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode)
+  // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères. Les
+  // recettes facturées, au mois près : celui du jour compte en entier (voir `RecettesFacturees`).
+  const ca = montantDansLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, recettesFacturees)
     + recettesAffecteesDansLaPeriode(partsDuReleve, `${annee}-01-01`, dateDuJour)
+    + recettesFactureesDesMois(recettesFacturees, `${annee}-01-01`, dateDuJour)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)

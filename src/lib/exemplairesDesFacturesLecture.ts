@@ -14,14 +14,17 @@ import type { FactureEmise } from './types'
 //
 // Ce module ne rejette jamais : un constructeur de requête qui lèverait tombe du côté signalé, comme une lecture refusée.
 
+// `source_de_la_vente` (étape VF3b3) : la confirmation dit ce que désigner ou défaire change à ce qui se compte, et cela
+// dépend de la facture — l'exemplaire d'une facture SOURCE de sa vente ne compte plus (lib/ventesFacturees.ts), celui d'une
+// autre compte comme hier. Lue avec le reste, dans la même lecture entière : la phrase ne se devine pas.
 export type FactureProposee = Pick<FactureEmise,
-  'id' | 'dossier_id' | 'statut' | 'type' | 'numero' | 'date_emission' | 'tiers_nom' | 'montant_ttc'>
+  'id' | 'dossier_id' | 'statut' | 'type' | 'numero' | 'date_emission' | 'tiers_nom' | 'montant_ttc' | 'source_de_la_vente'>
 
 export async function lireLesFacturesProposees(dossierId: string): Promise<LectureComplete<FactureProposee>> {
   try {
     const lecture = await lireTout<FactureProposee>((debut, fin) =>
       supabase.from('factures_emises')
-        .select('id, dossier_id, statut, type, numero, date_emission, tiers_nom, montant_ttc', { count: 'exact' })
+        .select('id, dossier_id, statut, type, numero, date_emission, tiers_nom, montant_ttc, source_de_la_vente', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('statut', 'validee')
         .order('date_emission', { ascending: false }).order('id').range(debut, fin),
     )

@@ -53,7 +53,7 @@ const HORS_DE_FRANCE: DonneesHorsDeFrance = {
 }
 const FACTURE: FactureProposee = {
   id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
-  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200,
+  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, source_de_la_vente: false,
 }
 const EXEMPLAIRE: DonneesExemplaire = {
   factures: { lignes: [FACTURE], complete: true, motif: null },
