@@ -69,7 +69,7 @@ export const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l-1', dossier_id: D, date: '2026-03-10', libelle: 'MOUVEMENT FICTIF', montant: -120, statut: 'rapprochee', piece_id: null,
   cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
   emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
-  prelevement_personnel: false, source_fichier: null, libelle_brut: null, id_externe: null, created_at: '2026-03-11T08:00:00Z', ...o,
+  prelevement_personnel: false, source_fichier: null, libelle_brut: null, id_externe: null, created_at: '2026-03-11T08:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 export const categorie = (o: Partial<Categorie> = {}): Categorie => ({
@@ -86,7 +86,7 @@ const CATEGORIES: Categorie[] = [
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id: 'e', dossier_id: D, piece_id: null, ligne_bancaire_id: null, date: '2026-03-10', compte: '606100', libelle: 'Écriture fictive',
   montant: 1, sens: 'debit', statut: 'proposee', created_at: '2026-03-12T08:00:00Z', immobilisation_id: null, vehicule_id: null,
-  declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, ...o,
+  declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, encaissement_id: null, facture_id: null, ...o,
 })
 
 // Le brouillon tel que la génération l'écrit : les lignes composées d'une pièce, chacune son identifiant.

@@ -37,7 +37,7 @@ function ligne(o: Partial<LigneBancaire>): LigneBancaire {
     cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
     emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     prelevement_personnel: false, source_fichier: 'releve.pdf', libelle_brut: 'MOUVEMENT FICTIF', id_externe: null,
-    created_at: '2026-01-16T10:00:00Z', ...o,
+    created_at: '2026-01-16T10:00:00Z', encaissements_de_factures: false, ...o,
   }
 }
 

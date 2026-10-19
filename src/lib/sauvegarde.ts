@@ -150,6 +150,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'ecritures_brouillon', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_brouillon', parent: 'declarations_tva', colonne: 'declaration_tva_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // La vente facturée (chantier EC-Q3, étapes VF2 et VF4 ; migration `source_de_la_vente`) : l'encaissement ou la facture
+  // source qu'une écriture porte, sans action à la suppression. Les encaissements et les factures précèdent déjà le
+  // brouillon dans l'ordre de restauration, ce que les clés exigent ; sauvegardeVenteFacturee.test.ts l'éprouve.
+  { enfant: 'ecritures_brouillon', parent: 'encaissements_factures', colonne: 'encaissement_id', aLaSuppression: 'bloque' },
+  { enfant: 'ecritures_brouillon', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'immobilisations', colonne: 'immobilisation_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'met_a_null' },
   { enfant: 'ecritures_brouillon', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },

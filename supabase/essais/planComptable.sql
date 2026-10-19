@@ -55,13 +55,22 @@
 -- le contrôle 8 voit les cinq fonctions lire `compte_du_dirigeant`, 9 et 44 SANS OBJET ; 0/26/1/0/3/0/0 lignes avant
 -- comme après, les modèles comptables inchangés. Le texte reçu : ce fichier sans ses lignes de commentaire, saut de
 -- ligne final compris (47 786 caractères, empreinte 90678d4b…).
+--
+-- ADAPTÉ LE 19/10/2026 À L'ÉTAPE VF2 (chantier EC-Q3 ; la migration `source_de_la_vente` ajoute six rôles au catalogue) :
+-- le catalogue vivant porte 32 rôles (`roles_du_catalogue`), dont l'empreinte change ; aucun contrôle ne change de sens.
+-- Les six rôles neufs ont chacun un libellé et aucun préfixe, sous leurs racines : les contrôles 2 et 6 les lisent comme
+-- les autres ; le plan décalé du contrôle 32 leur donne un compte, pour s'écrire encore tout entier.
+-- supabase/essais/ventesFacturees.sql les éprouve un par un.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   -- L'empreinte du catalogue : une ligne par rôle, « rôle|racines|compte|libellé|préfixe|ordre », dans l'ordre du
-  -- catalogue. src/lib/planComptable.test.ts la recalcule depuis `ROLES_COMPTABLES` et la lit ici.
-  empreinte_catalogue constant text := '5b9073a0b9331a823cfb6526927183ca';
+  -- catalogue. src/lib/planComptable.test.ts la recalcule depuis `ROLES_COMPTABLES` et `ROLES_DE_LA_VENTE_FACTUREE` et la
+  -- lit ici. Trente-deux rôles depuis la migration `source_de_la_vente` (étape VF2) : les vingt-six de l'application, et
+  -- les six de la vente facturée, que l'application ne lit pas avant l'étape VF4 et que la lecture du plan ignore.
+  empreinte_catalogue constant text := 'c0f5fc674491da296f70afea19e09b0a';
+  roles_du_catalogue constant int := 32;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -108,8 +117,8 @@ begin
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables;
-  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 26 rôles des constantes d''aujourd''hui (son empreinte)',
-    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = 26 and texte = empreinte_catalogue, false));
+  verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte)',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue and texte = empreinte_catalogue, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -153,7 +162,7 @@ begin
   select count(*), count(*) filter (where public.compte_du_role(d2.id, r.role) is distinct from r.compte_defaut)
     into total, ecarts from dossiers d2 cross join roles_comptables r;
   verdicts := verdicts || jsonb_build_object('controle', '6. pour chaque dossier et chaque rôle, compte_du_role rend le défaut d''aujourd''hui',
-    'observe', ecarts || ' écart(s) sur ' || total, 'ok', coalesce(ecarts = 0 and total >= 2 * 26, false));
+    'observe', ecarts || ' écart(s) sur ' || total, 'ok', coalesce(ecarts = 0 and total >= 2 * roles_du_catalogue, false));
 
   code_recu := null; message := null;
   begin
@@ -232,7 +241,7 @@ begin
     into texte from roles_comptables r;
   verdicts := verdicts || jsonb_build_object('controle', '11. plan_du_dossier rend le catalogue, dans son ordre, aux défauts, d''origine « application »',
     'observe', coalesce(n::text, '?') || ' ligne(s), ' || case when obs = texte then 'égales au catalogue' else 'DIFFÉRENTES' end || ', ' || coalesce(code_recu, '?'),
-    'ok', coalesce(n = 26 and obs = texte and code_recu = 'P0001', false));
+    'ok', coalesce(n = roles_du_catalogue and obs = texte and code_recu = 'P0001', false));
 
   -- ══ 12 à 17. La lecture, profil par profil, une ligne réglée dans le dossier libre et une dans celui du client ══
   -- 12. L'anonyme.
@@ -283,7 +292,7 @@ begin
   reset role;
   verdicts := verdicts || jsonb_build_object('controle', '13. un compte rattaché à rien lit le catalogue, aucune ligne du plan, et plan_du_dossier le refuse',
     'observe', coalesce(n::text, '?') || ' rôle(s), ' || coalesce(m::text, '?') || ' ligne(s), ' || coalesce(obs, '?') || ', ' || coalesce(code_recu, '?'),
-    'ok', coalesce(n = 26 and m = 0 and obs = '42501 Accès refusé à ce dossier.' and code_recu = 'P0001', false));
+    'ok', coalesce(n = roles_du_catalogue and m = 0 and obs = '42501 Accès refusé à ce dossier.' and code_recu = 'P0001', false));
 
   -- 14. Le client, sur SON dossier, où un compte est réglé.
   n := null; m := null; obs := null; valeur := null; code_recu := null;
@@ -307,7 +316,7 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '14. le client lit le catalogue, aucune ligne du plan — pas même celle de son dossier —, plan_du_dossier le refuse, et compte_du_role ne lui rend que le défaut',
     'observe', coalesce(n::text, '?') || ' rôle(s), ' || coalesce(m::text, '?') || ' ligne(s), ' || coalesce(obs, '?') || ', banque '
       || coalesce(valeur, '?') || ', ' || coalesce(code_recu, '?'),
-    'ok', coalesce(n = 26 and m = 0 and obs = '42501 Accès refusé à ce dossier.' and valeur = '512000' and code_recu = 'P0001', false));
+    'ok', coalesce(n = roles_du_catalogue and m = 0 and obs = '42501 Accès refusé à ce dossier.' and valeur = '512000' and code_recu = 'P0001', false));
 
   -- 15. Le membre du cabinet affecté à aucun dossier.
   n := null; obs := null; code_recu := null;
@@ -349,7 +358,7 @@ begin
   reset role;
   verdicts := verdicts || jsonb_build_object('controle', '16. le membre affecté au dossier en lit la ligne réglée, et celle-là seule ; plan_du_dossier la lui rend',
     'observe', coalesce(obs, 'aucune ligne') || ', ' || coalesce(n::text, '?') || ' rôle(s), banque ' || coalesce(valeur, '?') || ', ' || coalesce(code_recu, '?'),
-    'ok', coalesce(obs = dossier_libre::text || '/banque/512100' and n = 26 and valeur = '512100' and code_recu = 'P0001', false));
+    'ok', coalesce(obs = dossier_libre::text || '/banque/512100' and n = roles_du_catalogue and valeur = '512100' and code_recu = 'P0001', false));
 
   -- 17. Le chef.
   m := null; n := null; valeur := null; code_recu := null;
@@ -366,7 +375,7 @@ begin
   reset role;
   verdicts := verdicts || jsonb_build_object('controle', '17. le chef lit les lignes réglées de ses dossiers, et plan_du_dossier les lui rend',
     'observe', coalesce(m::text, '?') || ' ligne(s), ' || coalesce(n::text, '?') || ' rôle(s), banque du dossier du client ' || coalesce(valeur, '?') || ', ' || coalesce(code_recu, '?'),
-    'ok', coalesce(m = 2 and n = 26 and valeur = '512200' and code_recu = 'P0001', false));
+    'ok', coalesce(m = 2 and n = roles_du_catalogue and valeur = '512200' and code_recu = 'P0001', false));
 
   -- ══ 18 et 19. Aucune écriture directe par les six profils ══
   -- Le plan : sur un dossier sans écriture, une ligne que la garde accepterait (la restauration du super-administrateur
@@ -544,6 +553,8 @@ begin
     'ok', coalesce(code_recu = '42501' and message = 'Une ligne du plan comptable d''un dossier ne se modifie pas directement.', false));
 
   -- ══ 32. Le plan décalé (`PLAN_DECALE`, src/lib/planComptable.ts) s'écrit, et les trois fonctions le relisent ══
+  -- Les six rôles de la vente facturée (étape VF2), hors de `ROLES_COMPTABLES` jusqu'à VF4, y prennent un compte décalé
+  -- écrit ici : le plan s'écrit tout entier, sur les 32 rôles du catalogue.
   n := null; m := null; k := null; obs := null; valeur := null; attendu := null; texte := null; code_recu := null; message := null;
   begin
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
@@ -558,7 +569,10 @@ begin
       ('cotisations_exploitant', '646100', null), ('dotations_amortissements', '681110', null),
       ('indemnites_kilometriques', '625111', null), ('virements_internes', '580100', null),
       ('depots_cautionnements_verses', '275100', null), ('capital_individuel', '101100', null),
-      ('resultat_benefice', '120100', null), ('resultat_perte', '129100', null)) as v(role, compte, prefixe);
+      ('resultat_benefice', '120100', null), ('resultat_perte', '129100', null),
+      ('prestations_de_services', '706100', null), ('ventes_de_biens', '707100', null),
+      ('tva_collectee_en_attente', '445801', null), ('valeurs_a_l_encaissement', '511100', null),
+      ('caisse', '531000', null), ('services_bancaires', '627100', null)) as v(role, compte, prefixe);
     get diagnostics n = row_count;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)
@@ -581,7 +595,7 @@ begin
     'observe', coalesce(n::text, '?') || ' ligne(s), ' || coalesce(m::text, '?') || ' écart(s) ici, ' || coalesce(k::text, '?') || ' ailleurs, dirigeant '
       || coalesce(valeur, '?') || ' puis ' || coalesce(attendu, '?') || ', plan_du_dossier ' || case when texte = obs then 'égal' else 'DIFFÉRENT' end
       || coalesce(' ' || code_recu || ' ' || message, ''),
-    'ok', coalesce(n = 26 and m = 0 and k = 0 and valeur = '108100' and attendu = '455000' and texte = obs
+    'ok', coalesce(n = roles_du_catalogue and m = 0 and k = 0 and valeur = '108100' and attendu = '455000' and texte = obs
                    and texte like '%fournisseurs=401100=FO=dossier%' and code_recu is null, false));
 
   -- ══ 33. Le catalogue refuse un rôle mal formé (ce qu'une migration future y insérerait) ══
@@ -632,8 +646,8 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '40. MUTATION — le contrôle 12 sans le changement de rôle : il doit lire les 26 rôles',
-    'observe', coalesce(n::text, '?') || ' rôle(s)', 'ok', coalesce(n = 26, false));
+  verdicts := verdicts || jsonb_build_object('controle', '40. MUTATION — le contrôle 12 sans le changement de rôle : il doit lire les 32 rôles',
+    'observe', coalesce(n::text, '?') || ' rôle(s)', 'ok', coalesce(n = roles_du_catalogue, false));
 
   -- 41. Le contrôle 14 joué sous le chef : il voit la ligne du dossier du client.
   m := null;
@@ -712,7 +726,7 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '45. MUTATION — le contrôle 15 affecté au dossier : il doit voir la ligne',
     'observe', coalesce(n::text, '?') || ' ligne(s)', 'ok', coalesce(n = 1, false));
 
-  -- 46. Le contrôle 13 joué sous le chef : plan_du_dossier lui rend les 26 rôles — le refus de 13 n'est pas celui de tous.
+  -- 46. Le contrôle 13 joué sous le chef : plan_du_dossier lui rend les 32 rôles — le refus de 13 n'est pas celui de tous.
   n := null; obs := null;
   begin
     set local role authenticated;
@@ -722,8 +736,8 @@ begin
   exception when others then code_recu := sqlstate; obs := sqlerrm;
   end;
   reset role;
-  verdicts := verdicts || jsonb_build_object('controle', '46. MUTATION — le contrôle 13 joué sous le chef : plan_du_dossier doit rendre les 26 rôles',
-    'observe', coalesce(n::text, '?') || ' rôle(s), ' || coalesce(obs, ''), 'ok', coalesce(n = 26, false));
+  verdicts := verdicts || jsonb_build_object('controle', '46. MUTATION — le contrôle 13 joué sous le chef : plan_du_dossier doit rendre les 32 rôles',
+    'observe', coalesce(n::text, '?') || ' rôle(s), ' || coalesce(obs, ''), 'ok', coalesce(n = roles_du_catalogue, false));
 
   -- ══ 99. Rien n'est resté ══
   select string_agg(id || ':' || mode_comptable || ':' || compte_notes_de_frais, ',' order by id) into texte from dossiers;

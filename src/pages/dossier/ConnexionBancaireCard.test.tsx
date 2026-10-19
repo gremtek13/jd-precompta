@@ -88,7 +88,7 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
     libelle: 'PRLV SEPA FICTIF', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    created_at: '2026-09-01T09:00:00Z', ...o,
+    created_at: '2026-09-01T09:00:00Z', encaissements_de_factures: false, ...o,
   }
 }
 function mouvement(o: Partial<MouvementRecupere> = {}): MouvementRecupere {

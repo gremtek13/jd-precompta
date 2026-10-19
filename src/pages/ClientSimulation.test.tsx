@@ -212,7 +212,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
     piece_id: 'r1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    libelle_brut: null, created_at: `${date}T09:00:00Z`,
+    libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
   })
 
   it('ne compte pas une recette facturée en mars et encaissée en avril', async () => {
@@ -260,7 +260,7 @@ describe('ClientSimulation — des recettes encaissées par un virement groupé'
     id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null, declaration_tva_id: null,
-    id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+    id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
   })
   const part = (id: string, pieceId: string, montant: number): ReglementGroupe => ({
     id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'g', piece_id: pieceId, montant, created_at: '2026-01-06T09:00:00Z',
@@ -376,7 +376,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
     id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false, ...o,
   })
 
   it('compte un encaissement affecté déjà reçu dans le chiffre d’affaires à date', async () => {
@@ -434,7 +434,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
   })
   const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({
     id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
@@ -474,7 +474,7 @@ describe('ClientSimulation — les cotisations prélevées', () => {
     id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-03-06', libelle: 'PRLV URSSAF', montant: -130, statut: 'rapprochee',
     piece_id: null, cotisation_id: 'e2', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    libelle_brut: null, created_at: '2026-03-07T09:00:00Z', ...o,
+    libelle_brut: null, created_at: '2026-03-07T09:00:00Z', encaissements_de_factures: false, ...o,
   })
 
   it('compte une échéance à la date et au montant de son prélèvement', async () => {

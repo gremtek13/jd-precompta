@@ -155,7 +155,7 @@ const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-  created_at: '2025-04-02T09:00:00Z', ...o,
+  created_at: '2025-04-02T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 /**
@@ -1156,6 +1156,7 @@ describe('le garde-fou sait encore échouer', () => {
       piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
       created_at: '2025-04-02T09:00:00Z',
+      encaissements_de_factures: false,
     }]
     expect(derivee.rattachementsTresorerie(p, paye)).not.toEqual(rattachementsTresorerie(p, paye))
   })

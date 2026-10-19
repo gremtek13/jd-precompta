@@ -24,7 +24,7 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
     id: `e${String(numero).padStart(5, '0')}`, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null,
     date: '2026-06-30', compte: '512000', libelle: 'Écriture d’essai', montant: 0, sens: 'debit', statut: 'proposee',
     created_at: '2026-06-30T10:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
-    ...NON_VALIDEE, ...o,
+    ...NON_VALIDEE, encaissement_id: null, facture_id: null, ...o,
   }
 }
 

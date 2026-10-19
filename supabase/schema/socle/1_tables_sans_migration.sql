@@ -211,6 +211,7 @@ create table public.lignes_bancaires (
   taux_tva numeric(4,2),
   compte_bilan text,
   declaration_tva_id uuid,
+  encaissements_de_factures boolean default false not null,
   constraint lignes_bancaires_cotisation_unique UNIQUE (cotisation_id),
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
   constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
@@ -228,10 +229,11 @@ create table public.lignes_bancaires (
   constraint lignes_bancaires_declaration_tva_rapprochee CHECK (((declaration_tva_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_decoupage_emprunt CHECK ((((emprunt_id IS NULL) AND (emprunt_echeance IS NULL) AND (emprunt_interets IS NULL) AND (emprunt_assurance IS NULL)) OR ((emprunt_id IS NOT NULL) AND (emprunt_interets IS NOT NULL) AND (emprunt_assurance IS NOT NULL) AND (emprunt_interets >= (0)::numeric) AND (emprunt_assurance >= (0)::numeric) AND (((montant < (0)::numeric) AND (emprunt_echeance IS NOT NULL) AND (emprunt_echeance >= 1) AND ((emprunt_interets + emprunt_assurance) <= (- montant))) OR ((montant > (0)::numeric) AND (emprunt_echeance IS NULL) AND (emprunt_interets = (0)::numeric) AND (emprunt_assurance = (0)::numeric)))))),
   constraint lignes_bancaires_emprunt_rapproche CHECK (((emprunt_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
+  constraint lignes_bancaires_encaissements_rapproches CHECK (((NOT encaissements_de_factures) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_reglement_groupe_rapproche CHECK (((NOT reglement_groupe) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_statut_check CHECK ((statut = ANY (ARRAY['non_rapprochee'::text, 'rapprochee'::text, 'ignoree'::text]))),
   constraint lignes_bancaires_taux_tva CHECK (((taux_tva IS NULL) OR ((categorie_id IS NOT NULL) AND (taux_tva = ANY (ARRAY[(0)::numeric, 5.5, 8.5, (10)::numeric, (20)::numeric]))))),
-  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
+  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false), NULLIF(encaissements_de_factures, false)) <= 1)),
   constraint lignes_bancaires_ventilation_rapprochee CHECK (((NOT ventilee) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel))))
 );
 
@@ -329,10 +331,14 @@ create table public.ecritures_brouillon (
   comp_aux_lib text,
   declaration_tva_id uuid,
   cotisation_id uuid,
+  encaissement_id uuid,
+  facture_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
+  constraint ecritures_brouillon_encaissement_id_fkey FOREIGN KEY (encaissement_id) REFERENCES encaissements_factures(id),
+  constraint ecritures_brouillon_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES factures_emises(id),
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
@@ -363,6 +369,8 @@ CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_broui
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
 CREATE INDEX ecritures_brouillon_declaration_tva_id_idx ON public.ecritures_brouillon USING btree (declaration_tva_id);
 CREATE INDEX ecritures_brouillon_cotisation_id_idx ON public.ecritures_brouillon USING btree (cotisation_id);
+CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL);
+CREATE INDEX ecritures_brouillon_facture_id_idx ON public.ecritures_brouillon USING btree (facture_id) WHERE (facture_id IS NOT NULL);
 CREATE INDEX ecritures_brouillon_dossier_date_idx ON public.ecritures_brouillon USING btree (dossier_id, date);
 CREATE INDEX ecritures_brouillon_piece_validee_idx ON public.ecritures_brouillon USING btree (piece_id) WHERE (statut = 'validee'::text);
 

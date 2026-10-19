@@ -95,7 +95,7 @@ function brouillon(o: Partial<FactureEmise> = {}): FactureEmise {
     montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, mentions_legales: null, notes: null,
     emetteur_nom: 'Cabinet de test', emetteur_siret: '12345678901234', emetteur_adresse: null,
     superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
-    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: null, ...MENTIONS_VIDES, ...o,
+    created_by: null, valide_par: null, created_at: '2026-03-10T09:00:00Z', validated_at: null, ...MENTIONS_VIDES, source_de_la_vente: false, ...o,
   }
 }
 

@@ -226,6 +226,7 @@ vi.mock('../../lib/supabase', async () => {
             source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
             emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: String(l.id_externe),
             created_at: '2025-06-20T09:00:00Z',
+            encaissements_de_factures: false,
           }))]
           return Promise.resolve({ data: ecrites.map((l) => ({ id_externe: l.id_externe })), error: null }).then(suite)
         }
@@ -428,7 +429,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-    created_at: '2025-06-02T09:00:00Z', ...o,
+    created_at: '2025-06-02T09:00:00Z', encaissements_de_factures: false, ...o,
   }
 }
 
@@ -5109,6 +5110,7 @@ describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouveme
     return {
       id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null,
       date: '2025-06-01', compte, libelle: 'Imprimerie Duval', sens, montant, statut: 'proposee', created_at: '2025-06-02T09:00:00Z',
+      encaissement_id: null, facture_id: null,
       ...NON_VALIDEE,
     }
   }

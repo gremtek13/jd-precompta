@@ -41,13 +41,13 @@ const ligne = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id, dossier_id: 'd1', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
-  id_externe: null, source_fichier: 'releve-2025.pdf', libelle_brut: null, created_at: '2025-04-01T09:00:00Z', ...o,
+  id_externe: null, source_fichier: 'releve-2025.pdf', libelle_brut: null, created_at: '2025-04-01T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 const ecriture = (id: string, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id, dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-12', compte: '606100', libelle: 'Fournisseur',
   montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE,
-  created_at: '2025-04-01T09:00:00Z', ...o,
+  created_at: '2025-04-01T09:00:00Z', encaissement_id: null, facture_id: null, ...o,
 })
 
 const aNouveau = (date: string): ANouveau => ({

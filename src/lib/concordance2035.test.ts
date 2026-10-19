@@ -48,7 +48,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2025-03-15', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
   libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
-  ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-03-16T09:00:00Z', ...o,
+  ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-03-16T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
@@ -75,7 +75,7 @@ const brouillon = (
 ): EcritureBrouillon[] => lignes.map((l) => ({
   id: `e${++numero}`, dossier_id: 'd1', piece_id: l.piece_id ?? null, ligne_bancaire_id: l.ligne_bancaire_id ?? null,
   date: l.date ?? '2025-03-15', compte: l.compte, libelle: l.libelle ?? 'écriture', montant: l.montant, sens: l.sens,
-  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, ...lien,
+  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, encaissement_id: null, facture_id: null, ...lien,
 }))
 
 // UN DOSSIER COMPLET, écrit par l'application : une facture payée, une recette sans paiement rapproché, des

@@ -155,7 +155,7 @@ const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'm1', dossier_id: 'd1', date: '2027-10-15', montant: 1200, libelle: 'VIR SEPA CLIENT FICTIF SAS', libelle_brut: null,
   statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
-  reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2027-10-16T08:00:00Z', ...o,
+  reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2027-10-16T08:00:00Z', encaissements_de_factures: false, ...o,
 })
 const CONNEXION = {
   nom: 'Plateforme fictive', url_flux: `https://${HOTE}/flux`, url_jeton: `https://${HOTE}/jeton`, hote: HOTE, client_id: 'app',

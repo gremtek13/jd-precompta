@@ -69,6 +69,12 @@
 -- commentaire retirées et une ligne qui rend le texte reçu ajoutée au verdict (60 722 caractères, empreinte
 -- c43f32b16f35f271386d080bf729bbb9) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes
 -- verdicts, à l'octet.
+--
+-- ADAPTÉ LE 19/10/2026 À L'ÉTAPE VF2 (chantier EC-Q3 ; migration `encaissements_de_la_vente_facturee`, en base) : la
+-- contrainte `encaissements_factures_annulation_sans_mouvement` est retirée, sa règle reprise par la garde des
+-- encaissements, qui ne laisse une contre-passation citer un mouvement — le débit qui défait l'encaissement — que pour
+-- une facture source de sa vente. Le contrôle 57 attend donc le refus de la garde, sous ses mots (23514) : la facture de
+-- l'essai n'est pas source. Rien d'autre ne change ; supabase/essais/ventesFacturees.sql éprouve la facture source.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -607,7 +613,7 @@ begin
         ('56. une annulation sans motif', format('insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, retire_le) values (%L, %L, %L, -7, ''virement'', %L, now())', dossier_f, fm, jour, ident3),
           '23514', '%'),
         ('57. une annulation justifiée par un mouvement', format('insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif, ligne_bancaire_id, retire_le) values (%L, %L, %L, -7, ''virement'', %L, ''essai'', %L, now())', dossier_f, fm, jour, ident3, m_credit),
-          '23514', '%encaissements_factures_annulation_sans_mouvement%'),
+          '23514', 'Seule la contre-passation d''une facture source de sa vente cite un mouvement : celui qui défait l''encaissement.'),
         ('58. un motif blanc', format('insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif, retire_le) values (%L, %L, %L, -7, ''virement'', %L, ''   '', now())', dossier_f, fm, jour, ident3),
           '23514', '%encaissements_factures_motif%'),
         ('59. un motif de 2 001 caractères', format('insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif, retire_le) values (%L, %L, %L, -7, ''virement'', %L, %L, now())', dossier_f, fm, jour, ident3, repeat('m', 2001)),

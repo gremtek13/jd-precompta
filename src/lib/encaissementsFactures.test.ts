@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF, seuilAlignement } from './alignementBanque'
 import {
-  BORNE_MONTANT_EUROS, DATE_PLANCHER, ETATS_DECLARANTS, LONGUEUR_MAX_TEXTE, MOYENS_ENCAISSEMENT, REFUS_CONTRE_PASSATION,
-  REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
+  BORNE_MONTANT_EUROS, DATE_PLANCHER, ETATS_DECLARANTS, LONGUEUR_MAX_TEXTE, MOYENS_ENCAISSEMENT, REFUS_CLASSEMENT,
+  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
+  REFUS_RETRAIT_CLASSEMENT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
   centimesExacts, contrePassationDe, echeanceDeDeclaration, ecartDeFrais, encaissementsDeclares, euroCommeLaBase,
   obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
   refusContrePassation, refusDeclaration, refusDeLaFacture, refusEnregistrement, refusRetrait, remplirModele,
@@ -54,6 +55,7 @@ function facture(o: Partial<FacturePourEncaissement> = {}): FacturePourEncaissem
     id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2027-0042', date_emission: '2027-10-01',
     emetteur_siret: '12345678200010',
     montant_ht: 1150, montant_tva: 205.5, montant_ttc: 1355.5, superpdp_invoice_id: null, tiers_nom: 'Client Fictif SAS',
+    source_de_la_vente: false,
     ...o,
   }
 }
@@ -330,7 +332,9 @@ describe('obligationEncaissee — le statut « Encaissée » est-il dû pour cet
 describe('les refus de la base, tels que la migration les écrit', () => {
   it('enregistrer_encaissement : les mêmes messages, dans le même ordre', () => {
     const sql = derniereDefinitionSql('enregistrer_encaissement')
-    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 25 : 24)
+    // 25 depuis l'étape P2 ; 29 depuis la migration encaissements_de_la_vente_facturee (étape VF2), ses quatre refus d'une
+    // facture source à leur rang (11, 17, 27 et 29).
+    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 29 : 28)
     expect(REFUS_DE_L_EXPORT.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
   })
@@ -355,7 +359,8 @@ describe('les refus de la base, tels que la migration les écrit', () => {
 
   it('retirer_encaissement : les mêmes messages, dans le même ordre', () => {
     const sql = derniereDefinitionSql('retirer_encaissement')
-    expect(messagesSql(sql)).toHaveLength(5)
+    // 5 hier ; 7 depuis l'étape VF2, ses deux refus d'une facture source à la fin (rangs 6 et 7).
+    expect(messagesSql(sql)).toHaveLength(7)
     expect(REFUS_RETRAIT.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_RETRAIT.map((r) => r.cle)).size).toBe(REFUS_RETRAIT.length)
   })
@@ -385,13 +390,16 @@ describe('les refus de la base, tels que la migration les écrit', () => {
     const TAUX = (x: string) => `replace(trim_scale(${x})::text, '.', ',')`
     const attendus: Record<string, string[]> = {
       date_future: ["to_char(v_aujourd_hui, 'DD/MM/YYYY')"],
+      frontiere: ['public.exercice_fige(p_dossier_id, extract(year from p_date)::integer)'],
       mouvement_depasse: [MONTANT('v_mouvement.montant'), MONTANT('v_total')],
       taux_repete: [TAUX('v_taux')],
       taux_hors_facture: [TAUX('v_taux')],
       taux_non_admis: [TAUX('v_taux')],
       repartition_somme: [MONTANT('v_total'), MONTANT('p_montant')],
       plafond_facture: [MONTANT('greatest(v_facture.montant_ttc - v_deja, 0)')],
+      plafond_facture_net: [MONTANT('greatest(v_plafond - v_deja, 0)')],
       plafond_taux: [TAUX('v_part.taux'), MONTANT('greatest(v_ttc / 100.0 - v_deja, 0)')],
+      plafond_taux_net: [TAUX('v_part.taux'), MONTANT('greatest((v_ttc - v_credite) / 100.0 - v_deja, 0)')],
     }
     const args = argumentsSql(sql)
     expect(args).toHaveLength(REFUS_DE_L_EXPORT.length)
@@ -400,7 +408,13 @@ describe('les refus de la base, tels que la migration les écrit', () => {
       // Autant de « % » à remplir que de valeurs.
       expect(r.modele.replace(/%%/g, '').split('%').length - 1, r.cle).toBe(args[i].length)
     })
-    for (const args2 of argumentsSql(derniereDefinitionSql('retirer_encaissement'))) expect(args2).toEqual([])
+    const retrait = argumentsSql(derniereDefinitionSql('retirer_encaissement'))
+    expect(retrait).toHaveLength(REFUS_RETRAIT.length)
+    REFUS_RETRAIT.forEach((r, i) => {
+      expect(retrait[i], r.cle).toEqual(r.cle === 'frontiere'
+        ? ['public.exercice_fige(p_dossier_id, extract(year from v_encaissement.date_encaissement)::integer)'] : [])
+      expect(r.modele.split('%').length - 1, r.cle).toBe(retrait[i].length)
+    })
   })
 
   it('les bornes et le seuil sont ceux de la fonction', () => {
@@ -778,8 +792,9 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
       corriger()
     }
     expect(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI, banque)).toBeNull()
-    // Toutes les clés que le module juge, dans l'ordre du catalogue : l'accès seul reste à la base.
-    expect(vus).toEqual(REFUS_ENREGISTREMENT.map((r) => r.cle).filter((cle) => cle !== 'acces'))
+    // Toutes les clés que le module juge pour une facture qui n'est pas source, dans l'ordre du catalogue : l'accès seul
+    // reste à la base, et les refus d'une facture source (étape VF2) ont leur parcours dans encaissementsVenteFacturee.test.ts.
+    expect(vus).toEqual(REFUS_ENREGISTREMENT.filter((r) => r.cle !== 'acces' && !('venteFacturee' in r)).map((r) => r.cle))
   })
 })
 
@@ -902,12 +917,17 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
 
   it('annuler_encaissement : les mêmes messages, dans le même ordre, et leurs valeurs écrites comme le module les écrit', () => {
     const sql = derniereDefinitionSql('annuler_encaissement')
-    expect(messagesSql(sql)).toHaveLength(12)
+    // 12 hier ; 19 depuis l'étape VF2 : la frontière (rang 11), le débit cité et ses cinq refus (14 à 18), le mouvement de
+    // l'encaissement classé par ses encaissements (19).
+    expect(messagesSql(sql)).toHaveLength(19)
     expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_CONTRE_PASSATION.map((r) => r.cle)).size).toBe(REFUS_CONTRE_PASSATION.length)
+    const MONTANT = (x: string) => `replace(to_char(${x}, 'FM999999999990.00'), '.', ',')`
     const attendus: Record<string, string[]> = {
       date_avant_encaissement: ["to_char(v_encaissement.date_encaissement, 'DD/MM/YYYY')"],
       date_future: ["to_char(v_aujourd_hui, 'DD/MM/YYYY')"],
+      frontiere: ['public.exercice_fige(p_dossier_id, extract(year from p_date)::integer)'],
+      mouvement_depasse: [MONTANT('abs(v_mouvement.montant)'), MONTANT('abs(v_total)')],
     }
     const args = argumentsSql(sql)
     expect(args).toHaveLength(REFUS_CONTRE_PASSATION.length)
@@ -949,6 +969,177 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
     expect(annuler).toContain(`if length(p_motif) > ${LONGUEUR_MAX_TEXTE} then`)
     expect(annuler).toContain("if p_motif is null or btrim(p_motif) = '' then")
     expect(MIGRATION_D4).toContain(`check (btrim(note) <> '' and length(note) <= ${LONGUEUR_MAX_TEXTE})`)
+  })
+})
+
+// ── La vente facturée (chantier EC-Q3, étape VF2), confrontée au texte des migrations ────────────────────────────────
+//
+// Les deux migrations de l'étape — `source_de_la_vente` et `encaissements_de_la_vente_facturee` — sont en base et dans
+// l'export. Chaque liste du module se confronte au texte de sa fonction (sa dernière définition exportée), messages,
+// codes et valeurs ; et les trois listes d'hier, privées de leurs refus marqués `venteFacturee`, redisent EXACTEMENT la
+// définition qui précédait la migration : pour une facture qui n'est pas source, rien ne s'interpose.
+
+// Le code de chaque `raise exception`, dans l'ordre du texte.
+function codesSql(sql: string): string[] {
+  return [...sql.matchAll(/raise exception '(?:[^']|'')*'[\s\S]*?using errcode = '([0-9A-Z]{5})'/g)].map((m) => m[1])
+}
+
+// La définition d'une fonction AVANT la migration encaissements_de_la_vente_facturee : la dernière des fichiers qui la
+// précèdent — la lecture de `derniereDefinitionSql`, sur les fichiers d'avant.
+function definitionAvantLaVenteFacturee(nom: string): string {
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
+  const fichiers = fichiersDuSchema()
+  const m2 = fichiers.findIndex((f) => /\/\d{14}_encaissements_de_la_vente_facturee\.sql$/.test(f.chemin))
+  expect(m2).toBeGreaterThan(0)
+  const avant = fichiers.slice(0, m2).filter((f) => new RegExp(motif.source).test(f.texte))
+  expect(avant.length, nom).toBeGreaterThan(0)
+  const texte = avant[avant.length - 1].texte
+  const positions = [...texte.matchAll(motif)].map((m) => m.index as number)
+  const debut = positions[positions.length - 1]
+  return texte.slice(debut, texte.indexOf('$$;', debut))
+}
+
+// Le code qu'une fonction des encaissements donne à chaque refus : l'accès et le droit « Banque » en 42501, l'introuvable
+// en P0002, le reste en 22023 (l'en-tête de la migration).
+const codeDeLaFamille = (cle: string) =>
+  cle === 'acces' || cle === 'mouvement_sans_banque' ? '42501' : cle.endsWith('_introuvable') ? 'P0002' : '22023'
+
+const MONTANT_SQL = (x: string) => `replace(to_char(${x}, 'FM999999999990.00'), '.', ',')`
+
+describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne visent qu’une facture source', () => {
+  const LISTES = [
+    ['enregistrer_encaissement', REFUS_ENREGISTREMENT],
+    ['retirer_encaissement', REFUS_RETRAIT],
+    ['annuler_encaissement', REFUS_CONTRE_PASSATION],
+  ] as const
+
+  it('sans leurs refus d’une facture source, les trois listes redisent la définition d’avant la migration, mot pour mot', () => {
+    for (const [nom, liste] of LISTES) {
+      const hier = liste.filter((r) => !('venteFacturee' in r)).map((r) => r.modele)
+      expect(hier, nom).toEqual(messagesSql(definitionAvantLaVenteFacturee(nom)))
+      expect(liste.map((r) => r.modele), nom).toEqual(messagesSql(derniereDefinitionSql(nom)))
+    }
+    const marques = (liste: readonly { cle: string }[]) => liste.filter((r) => 'venteFacturee' in r).map((r) => r.cle)
+    expect(marques(REFUS_ENREGISTREMENT)).toEqual(['frontiere', 'mouvement_classe', 'plafond_facture_net', 'plafond_taux_net'])
+    expect(marques(REFUS_RETRAIT)).toEqual(['frontiere', 'mouvement_classe'])
+    expect(marques(REFUS_CONTRE_PASSATION)).toEqual([
+      'frontiere', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit', 'mouvement_classe', 'mouvement_depasse',
+      'mouvement_encaissement_classe',
+    ])
+  })
+
+  it('chaque refus, d’hier ou neuf, sous le code de sa famille', () => {
+    for (const [nom, liste] of LISTES) {
+      const codes = codesSql(derniereDefinitionSql(nom))
+      expect(codes, nom).toHaveLength(liste.length)
+      liste.forEach((r, i) => expect(codes[i], `${nom} ${r.cle}`).toBe(codeDeLaFamille(r.cle)))
+    }
+  })
+
+  it('le rang de chaque refus neuf est celui que l’en-tête de la migration annonce', () => {
+    const rang = (liste: readonly { cle: string }[], cle: string) => liste.findIndex((r) => r.cle === cle) + 1
+    expect([rang(REFUS_ENREGISTREMENT, 'frontiere'), rang(REFUS_ENREGISTREMENT, 'mouvement_classe'),
+      rang(REFUS_ENREGISTREMENT, 'plafond_facture_net'), rang(REFUS_ENREGISTREMENT, 'plafond_taux_net')]).toEqual([11, 17, 27, 29])
+    expect([rang(REFUS_RETRAIT, 'frontiere'), rang(REFUS_RETRAIT, 'mouvement_classe')]).toEqual([6, 7])
+    expect(['frontiere', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit', 'mouvement_classe',
+      'mouvement_depasse', 'mouvement_encaissement_classe'].map((c) => rang(REFUS_CONTRE_PASSATION, c))).toEqual([11, 14, 15, 16, 17, 18, 19])
+  })
+
+  it('annuler_encaissement prend un cinquième paramètre, le débit, nul par défaut ; l’ancienne signature est retirée', () => {
+    const sql = derniereDefinitionSql('annuler_encaissement')
+    expect(sql).toMatch(/^create function public\.annuler_encaissement\(\s*p_dossier_id uuid,\s*p_encaissement_id uuid,\s*p_date date,\s*p_motif text,\s*p_ligne_bancaire_id uuid default null\s*\)/)
+    const m2 = fichiersDuSchema().find((f) => /\/\d{14}_encaissements_de_la_vente_facturee\.sql$/.test(f.chemin))?.texte ?? ''
+    expect(m2).toContain('drop function public.annuler_encaissement(uuid, uuid, date, text);')
+    expect(m2).toContain('grant execute on function public.annuler_encaissement(uuid, uuid, date, text, uuid) to authenticated;')
+  })
+
+  it('ce qu’un mouvement justifie, et le mouvement libre, sont les prédicats de la base', () => {
+    const justifie = derniereDefinitionSql('encaissement_justifie_son_mouvement')
+    expect(justifie.replace(/\s+/g, ' ')).toContain(
+      'not exists (select 1 from public.encaissements_factures c where c.annule_id = p_encaissement_id and c.retire_le is null and c.ligne_bancaire_id is null)')
+    const libre = derniereDefinitionSql('mouvement_libre').replace(/\s+/g, ' ')
+    expect(libre).toContain("select p_ligne.statut = 'non_rapprochee' and num_nonnulls(")
+    const champs = [...(/num_nonnulls\(([^;]*)\) = 0/.exec(libre) as RegExpExecArray)[1].matchAll(/p_ligne\.(\w+)/g)].map((m) => m[1])
+    expect(champs).toEqual(['piece_id', 'cotisation_id', 'categorie_id', 'emprunt_id', 'compte_bilan', 'declaration_tva_id',
+      'ventilee', 'reglement_groupe', 'prelevement_personnel', 'encaissements_de_factures'])
+  })
+})
+
+describe('les trois fonctions neuves du cabinet et la garde des mouvements, telles que la migration les écrit', () => {
+  const FONCTIONS = [
+    ['rattacher_mouvement_encaissement', REFUS_RATTACHEMENT, 16, {
+      frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_encaissement.date_encaissement)::integer)'],
+      mouvement_depasse: [MONTANT_SQL('v_mouvement.montant'), MONTANT_SQL('v_total')],
+      contre_passations_depassent: [MONTANT_SQL('abs(v_mouvement.montant)'), MONTANT_SQL('abs(v_total)')],
+      origine_depassee: [MONTANT_SQL('v_origine.montant'), MONTANT_SQL('v_total')],
+    }],
+    ['classer_mouvement_par_encaissements', REFUS_CLASSEMENT, 10, {
+      frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_mouvement.date)::integer)'],
+      credit_non_fait: [MONTANT_SQL('v_porte'), MONTANT_SQL('v_mouvement.montant')],
+      credit_ecart: [MONTANT_SQL('v_porte'), MONTANT_SQL('v_mouvement.montant')],
+      debit_depasse: [MONTANT_SQL('abs(v_porte)'), MONTANT_SQL('abs(v_mouvement.montant)')],
+      debit_ecart: [MONTANT_SQL('abs(v_porte)'), MONTANT_SQL('abs(v_mouvement.montant)')],
+    }],
+    ['retirer_classement_par_encaissements', REFUS_RETRAIT_CLASSEMENT, 4, {
+      frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_mouvement.date)::integer)'],
+    }],
+    ['garder_mouvement_reserve', REFUS_GARDE_MOUVEMENTS, 4, { reserve: ['v_numero'] }],
+  ] as const
+
+  it('les mêmes messages, dans le même ordre, sous les mêmes codes, leurs valeurs écrites comme le module les écrit', () => {
+    for (const [nom, liste, nombre, valeurs] of FONCTIONS) {
+      const sql = derniereDefinitionSql(nom)
+      expect(messagesSql(sql), nom).toHaveLength(nombre)
+      expect(liste.map((r) => r.modele), nom).toEqual(messagesSql(sql))
+      expect(liste.map((r) => r.code), nom).toEqual(codesSql(sql))
+      expect(new Set(liste.map((r) => r.cle)).size, nom).toBe(liste.length)
+      const args = argumentsSql(sql)
+      liste.forEach((r, i) => {
+        expect(args[i], `${nom} ${r.cle}`).toEqual((valeurs as Record<string, readonly string[]>)[r.cle] ?? [])
+        expect(r.modele.split('%').length - 1, `${nom} ${r.cle}`).toBe(args[i].length)
+      })
+    }
+  })
+
+  it('vire au rouge sur une dérive plantée : un mot, deux refus permutés, un refus ajouté, un code changé', () => {
+    for (const [nom, liste] of FONCTIONS) {
+      const sql = derniereDefinitionSql(nom)
+      const attendu = liste.map((r) => r.modele)
+      const premier = `raise exception '${liste[0].modele.replace(/'/g, "''")}'`
+      const second = `raise exception '${liste[1].modele.replace(/'/g, "''")}'`
+      expect(sql, nom).toContain(premier)
+      expect(sql, nom).toContain(second)
+      expect(messagesSql(sql.replace(premier, `${premier.slice(0, -1)} !'`)), nom).not.toEqual(attendu)
+      expect(messagesSql(sql.replace(premier, '§').replace(second, premier).replace('§', second)), nom).not.toEqual(attendu)
+      expect(messagesSql(sql.replace(second, `raise exception 'Un refus de plus.' using errcode = '22023'; ${second}`)), nom)
+        .not.toEqual(attendu)
+      const code = `using errcode = '${liste[liste.length - 1].code}'`
+      const dernier = sql.lastIndexOf(code)
+      expect(dernier, nom).toBeGreaterThan(0)
+      expect(codesSql(`${sql.slice(0, dernier)}using errcode = 'XX000'${sql.slice(dernier + code.length)}`), nom)
+        .not.toEqual(liste.map((r) => r.code))
+    }
+  })
+
+  it('le cabinet seul : les trois fonctions jugent l’accès par admin_du_dossier, avant toute lecture', () => {
+    for (const nom of ['rattacher_mouvement_encaissement', 'classer_mouvement_par_encaissements', 'retirer_classement_par_encaissements']) {
+      const sql = derniereDefinitionSql(nom)
+      const acces = sql.indexOf('if not public.admin_du_dossier(p_dossier_id) then')
+      expect(acces, nom).toBeGreaterThan(0)
+      expect(acces, nom).toBeLessThan(sql.indexOf(' from public.', sql.indexOf('begin')))
+    }
+  })
+
+  it('le seuil des frais est celui du module, sur les crédits comme sur les débits', () => {
+    const plafond = SEUIL_PLAFOND_CENTIMES * 100
+    const pourCent = SEUIL_POUR_CENT * 100
+    const rattacher = derniereDefinitionSql('rattacher_mouvement_encaissement')
+    expect(rattacher).toContain(`if v_exces * 100 > least(${plafond}, v_total * ${pourCent}) then`)
+    expect(rattacher).toContain(`if v_exces * 100 > least(${plafond}, abs(v_total) * ${pourCent}) then`)
+    const classer = derniereDefinitionSql('classer_mouvement_par_encaissements')
+    expect(classer).toContain(`v_ecart * 100 * 100 > least(${plafond}, v_porte * ${pourCent})`)
+    expect(classer).toContain(`v_ecart * 100 * 100 > least(${plafond}, abs(v_porte) * ${pourCent})`)
+    expect(derniereDefinitionSql('annuler_encaissement')).toContain(`if v_exces * 100 > least(${plafond}, abs(v_total) * ${pourCent}) then`)
   })
 })
 
@@ -1152,7 +1343,9 @@ describe('refusContrePassation — les refus d’annuler_encaissement', () => {
       corriger()
     }
     expect(refusC(o)).toBeNull()
-    expect(vus).toEqual(REFUS_CONTRE_PASSATION.map((r) => r.cle).filter((cle) => cle !== 'acces'))
+    // Sans débit cité ni facture source : les refus d'hier ; ceux de l'étape VF2 ont leur parcours dans
+    // encaissementsVenteFacturee.test.ts.
+    expect(vus).toEqual(REFUS_CONTRE_PASSATION.filter((r) => r.cle !== 'acces' && !('venteFacturee' in r)).map((r) => r.cle))
   })
 
   it('mesure le motif comme la base, et tient une date qui n’en est pas une pour absente', () => {

@@ -13,6 +13,7 @@ import {
   PLAN_PAR_DEFAUT,
   PREFIXES_DECALES,
   ROLES_COMPTABLES,
+  ROLES_DE_LA_VENTE_FACTUREE,
   ROLES_DU_DIRIGEANT,
   lireLePlanDuDossier,
   planDeLaReponse,
@@ -30,11 +31,17 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 const RACINE = new URL('../../', import.meta.url)
 
-function migrationDuPlan(): string {
-  const nom = readdirSync(new URL('supabase/schema/', RACINE)).filter((n) => /^\d{14}_plan_comptable_des_dossiers\.sql$/.test(n))
-  if (nom.length !== 1) throw new Error(`migration plan_comptable_des_dossiers introuvable ou en double : ${nom.join(', ')}`)
+function migrationNommee(nomDeMigration: string): string {
+  const nom = readdirSync(new URL('supabase/schema/', RACINE)).filter((n) => new RegExp(`^\\d{14}_${nomDeMigration}\\.sql$`).test(n))
+  if (nom.length !== 1) throw new Error(`migration ${nomDeMigration} introuvable ou en double : ${nom.join(', ')}`)
   return readFileSync(new URL(`supabase/schema/${nom[0]}`, RACINE), 'utf8')
 }
+
+const migrationDuPlan = () => migrationNommee('plan_comptable_des_dossiers')
+
+// Le catalogue VIVANT, tel que la base le porte depuis la migration `source_de_la_vente` (étape VF2) : les vingt-six rôles
+// de l'application, puis les six de la vente facturée, que l'application ne lit pas encore (lib/planComptable.ts).
+const CATALOGUE_VIVANT = [...ROLES_COMPTABLES, ...ROLES_DE_LA_VENTE_FACTUREE]
 
 const ESSAI = readFileSync(new URL('supabase/essais/planComptable.sql', RACINE), 'utf8')
 
@@ -164,9 +171,9 @@ describe('le catalogue des rôles comptables', () => {
     expect(migration).toEqual(ROLES_COMPTABLES.map((r) => ({ ...r, racines: [...r.racines] })))
   })
 
-  it('a l’empreinte que l’essai en base exige du catalogue vivant', () => {
+  it('a l’empreinte que l’essai en base exige du catalogue vivant, les six rôles de la vente facturée compris', () => {
     // La même ligne canonique des deux côtés : « rôle|racines|compte|libellé|préfixe|ordre », dans l'ordre du catalogue.
-    const canonique = ROLES_COMPTABLES.map((r) =>
+    const canonique = CATALOGUE_VIVANT.map((r) =>
       [r.role, r.racines.join(','), r.compteDefaut, r.libelleDefaut ?? '', r.prefixeAuxiliaireDefaut ?? '', String(r.ordre)].join('|'),
     ).join('\n')
     const epinglee = /empreinte_catalogue constant text := '([0-9a-f]{32})'/.exec(ESSAI)?.[1]
@@ -267,9 +274,21 @@ describe('le plan décalé (fictif, pour les étapes suivantes)', () => {
     const debut = ESSAI.indexOf(tete)
     expect(debut).toBeGreaterThan(0)
     const lignes = nUplets(ESSAI, debut + tete.length)
-    expect(Object.fromEntries(lignes.map(([role, compte]) => [role, compte]))).toEqual(PLAN_DECALE)
+    const deLaVente = new Set<string>(ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.role))
+    expect(Object.fromEntries(lignes.filter(([role]) => !deLaVente.has(String(role))).map(([role, compte]) => [role, compte])))
+      .toEqual(PLAN_DECALE)
     expect(Object.fromEntries(lignes.filter(([, , prefixe]) => prefixe !== null).map(([role, , prefixe]) => [role, prefixe])))
       .toEqual(PREFIXES_DECALES)
+    // Les six rôles de la vente facturée (étape VF2), hors de l'application jusqu'à VF4, y prennent chacun un compte
+    // décalé, sous l'une de ses racines et autre que son défaut : le plan s'écrit tout entier, sur le catalogue vivant.
+    const six = lignes.filter(([role]) => deLaVente.has(String(role))).map(([role, compte]) => [String(role), String(compte)] as const)
+    expect(six.map(([role]) => role).sort()).toEqual([...deLaVente].sort())
+    for (const [role, compte] of six) {
+      const r = ROLES_DE_LA_VENTE_FACTUREE.find((x) => x.role === role)
+      expect(r?.racines.some((racine) => compte.startsWith(racine)), role).toBe(true)
+      expect(compte, role).not.toBe(r?.compteDefaut)
+    }
+    expect(lignes).toHaveLength(CATALOGUE_VIVANT.length)
   })
 })
 
@@ -586,5 +605,65 @@ describe('le compte du dirigeant se juge dans le plan (conception, § 3.6)', () 
     }
     // Le défaut n'est pas le compte du dirigeant d'un dossier dont le plan en tient un autre.
     expect(roleDuDirigeant(PLAN_DECALE, PLAN_PAR_DEFAUT.associe)).toBeNull()
+  })
+})
+
+// LES SIX RÔLES DE LA VENTE FACTURÉE (chantier EC-Q3, étape VF2 ; migration `source_de_la_vente`, en base et dans
+// l'export) : le catalogue de la base les porte, l'application ne les lit pas avant l'étape VF4. Ce bloc les confronte au
+// texte de la migration, aux règles du catalogue — six chiffres sous une racine, de dix en dix après les vingt-six, aucune
+// racine qui en commence une autre, aucun défaut qui en égale un autre aux zéros près — et dit pourquoi la TVA en attente
+// ne se tient pas sous les racines 4457 et 4458 qu'évoquait la conception.
+describe('les six rôles de la vente facturée (étape VF2), au catalogue de la base, hors de l’application', () => {
+  it('sont ceux que la migration source_de_la_vente insère, rôle par rôle et colonne par colonne', () => {
+    const migration = catalogueDeLaMigration(migrationNommee('source_de_la_vente'))
+    expect(migration).toHaveLength(6)
+    expect(migration).toEqual(ROLES_DE_LA_VENTE_FACTUREE.map((r) => ({ ...r, racines: [...r.racines] })))
+  })
+
+  it('restent hors de ROLES_COMPTABLES jusqu’à l’étape VF4 : la lecture du plan les ignore', () => {
+    for (const r of ROLES_DE_LA_VENTE_FACTUREE) {
+      expect(ROLES as readonly string[], r.role).not.toContain(r.role)
+      expect(definitionDuRole(r.role), r.role).toBeUndefined()
+    }
+    // La réponse de la base porte les trente-deux : le plan lu est celui des vingt-six, inchangé.
+    const lignes = CATALOGUE_VIVANT.map((r) => ({
+      role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
+    }))
+    expect(lignes).toHaveLength(32)
+    expect(planDeLaReponse({ data: lignes, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+  })
+
+  it('suivent les règles du catalogue : de dix en dix après les vingt-six, des racines du PCG, un défaut de six chiffres sous elles', () => {
+    expect(new Set(CATALOGUE_VIVANT.map((r) => r.role)).size).toBe(32)
+    expect(CATALOGUE_VIVANT.map((r) => r.ordre)).toEqual(CATALOGUE_VIVANT.map((_, i) => (i + 1) * 10))
+    for (const r of ROLES_DE_LA_VENTE_FACTUREE) {
+      expect(r.role, r.role).toMatch(/^[a-z][a-z_]*[a-z]$/)
+      for (const racine of r.racines) expect(racine, r.role).toMatch(/^[1-7][0-9]{1,4}$/)
+      expect(r.compteDefaut, r.role).toMatch(FORME_COMPTE_DE_ROLE)
+      expect(r.racines.some((racine) => r.compteDefaut.startsWith(racine)), r.role).toBe(true)
+      expect(r.libelleDefaut, r.role).not.toBeNull()
+      expect(r.prefixeAuxiliaireDefaut, r.role).toBeNull()
+    }
+  })
+
+  it('aucune racine des trente-deux n’en commence une autre, et aucun défaut n’en égale un autre aux zéros près', () => {
+    for (const a of CATALOGUE_VIVANT) {
+      for (const b of CATALOGUE_VIVANT) {
+        if (a.role === b.role) continue
+        for (const ra of a.racines) for (const rb of b.racines) expect(rb.startsWith(ra), `${a.role} ${ra} / ${b.role} ${rb}`).toBe(false)
+        if (a.role < b.role) expect(memeCompteAuxZerosPres(a.compteDefaut, b.compteDefaut), `${a.role} / ${b.role}`).toBe(false)
+      }
+    }
+  })
+
+  it('les racines 4457 et 4458 de la conception commenceraient celles de deux rôles du catalogue (EC3-Q6)', () => {
+    const commencees = (racine: string) => CATALOGUE_VIVANT.flatMap((r) => r.racines.filter((x) => x.startsWith(racine))
+      .map((x) => `${r.role} ${x}`))
+    expect(commencees('4457')).toEqual(['tva_collectee 44571', 'tva_collectee_en_attente 44574'])
+    expect(commencees('4458')).toEqual(['remboursement_tva_demande 44583', 'tva_collectee_en_attente 44580'])
+    // Sans les six : 4457 commence la TVA collectée, 4458 le remboursement demandé — deux rôles d'aujourd'hui.
+    const daujourdhui = (racine: string) => ROLES_COMPTABLES.flatMap((r) => r.racines.filter((x) => x.startsWith(racine)).map(() => r.role))
+    expect(daujourdhui('4457')).toEqual(['tva_collectee'])
+    expect(daujourdhui('4458')).toEqual(['remboursement_tva_demande'])
   })
 })

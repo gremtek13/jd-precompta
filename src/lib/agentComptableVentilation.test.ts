@@ -91,7 +91,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-31', libelle: 'PRLV OPERATEUR', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
-  source_fichier: null, libelle_brut: null, created_at: '2025-04-01T09:00:00Z', ...o,
+  source_fichier: null, libelle_brut: null, created_at: '2025-04-01T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 const part = (
   ligneId: string, categorieId: string | null, montant: number, id = `${ligneId}-${categorieId ?? 'perso'}`, taux: number | null = null,
@@ -101,7 +101,7 @@ const part = (
 })
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2025-03-31', compte: COMPTE_BANQUE,
-  libelle: 'PRLV OPERATEUR', sens: 'credit', montant: 120, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-04-01T09:00:00Z', ...o,
+  libelle: 'PRLV OPERATEUR', sens: 'credit', montant: 120, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2025-04-01T09:00:00Z', encaissement_id: null, facture_id: null, ...o,
 })
 const sansLibelle = (e: { compte: string; sens: string; montant: number }[] | null) =>
   e && e.map(({ compte, sens, montant }) => ({ compte, sens, montant }))

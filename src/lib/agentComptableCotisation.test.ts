@@ -70,7 +70,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2026-03-05', libelle: 'PRLV URSSAF', montant: -500, statut: 'rapprochee',
   piece_id: null, cotisation_id: 'c', categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
-  id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2026-03-06T09:00:00Z', ...o,
+  id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2026-03-06T09:00:00Z', encaissements_de_factures: false, ...o,
 })
 
 const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
@@ -80,7 +80,7 @@ const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2026-03-05', compte: COMPTE_BANQUE,
-  libelle: 'PRLV URSSAF', sens: 'credit', montant: 500, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-06T09:00:00Z', ...o,
+  libelle: 'PRLV URSSAF', sens: 'credit', montant: 500, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, ...NON_VALIDEE, created_at: '2026-03-06T09:00:00Z', encaissement_id: null, facture_id: null, ...o,
 })
 // L'écriture juste d'un rapprochement, telle que src/lib la compose.
 const conforme = (l: LigneBancaire, c: CotisationDeclaree, mode: ModeComptable, date = l.date): EcritureBrouillon[] =>

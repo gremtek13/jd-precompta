@@ -22,6 +22,7 @@ const paiement = (pieceId: string, date: string, montant: number): LigneBancaire
   cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: `${date}T09:00:00Z`,
+  encaissements_de_factures: false,
 })
 
 describe('les repères comptent une pièce à la date de son paiement', () => {

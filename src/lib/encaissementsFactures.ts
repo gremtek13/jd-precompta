@@ -1,11 +1,12 @@
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF } from './alignementBanque'
 import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
-import { dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
+import { anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
 import type { PaiementsDesPieces } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
+import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 import { jumellesDeLaFacture, type PiecePourJumelle } from './ventesJumelles'
 import type {
   EncaissementFacture, EncaissementFactureTaux, EtatTransmission, FactureEmise, FactureLigne, FactureSuperpdpEvent,
@@ -34,7 +35,12 @@ import type {
 //     Super PDP, sous les mêmes mots ;
 //   - depuis l'espace client (étape P2, migration ventes_du_client, `VENTES_DU_CLIENT_EXPORTEES`), qu'un mouvement ne se
 //     désigne qu'avec le droit « Banque » (`gereLaBanque`, obligatoire) : le client qui ne porte que « Ventes » encaisse
-//     sans mouvement, et rien ne lui est proposé.
+//     sans mouvement, et rien ne lui est proposé ;
+//   - depuis le chantier EC-Q3, étape VF2 (migrations source_de_la_vente et encaissements_de_la_vente_facturee), ce que la
+//     base refuse DE PLUS pour une facture SOURCE de sa vente — la frontière d'un exercice validé, un mouvement déjà
+//     classé, les plafonds nets de ses avoirs, la contre-passation qui cite le débit qui défait l'encaissement —, et ce
+//     que refusent les trois fonctions neuves du cabinet (rattacher un encaissement à son mouvement, classer un mouvement
+//     par ses encaissements, retirer ce classement) et la garde des mouvements réservés (G2) : en fin de module.
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -48,10 +54,11 @@ import type {
 // ── Ce que l'écran lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
 /** La facture, telle que les refus, le reste et les propositions la lisent — son numéro et son émetteur figé pour
- * reconnaître sa pièce jumelle par son identité (lib/ventesJumelles.ts). */
+ * reconnaître sa pièce jumelle par son identité (lib/ventesJumelles.ts), et sa source (étape VF2) : une facture source de
+ * sa vente reçoit des refus de plus (`refusEnregistrementVente`). */
 export type FacturePourEncaissement = Pick<FactureEmise,
   'id' | 'dossier_id' | 'statut' | 'type' | 'numero' | 'date_emission' | 'emetteur_siret' | 'montant_ht' | 'montant_tva'
-  | 'montant_ttc' | 'superpdp_invoice_id' | 'tiers_nom'>
+  | 'montant_ttc' | 'superpdp_invoice_id' | 'tiers_nom' | 'source_de_la_vente'>
 
 /** Une ligne de facture : son `facture_id` la rattache, et le module ne garde que celles de SA facture. */
 export type LigneDeFacture = Pick<FactureLigne, 'facture_id' | 'ordre' | 'designation' | 'quantite' | 'prix_unitaire_ht' | 'taux_tva'>
@@ -332,11 +339,12 @@ export function repartitionProposee(
 // tant que ceci est `true`, et le test vire au rouge si l'export et ce drapeau cessent de dire la même chose.
 export const VENTES_DU_CLIENT_EXPORTEES: boolean = true
 
-// Les refus d'`enregistrer_encaissement`, DANS SON ORDRE ET SOUS SES MOTS (supabase/schema/20261008180607_
-// encaissements_des_factures.sql) : l'écran les dit avant le clic, et un refus de la base arrivé après — une écriture
-// concurrente — dit la même chose. Le modèle est le texte de la fonction, apostrophes droites comprises : chaque « % »
-// y reçoit une valeur, « %% » s'y écrit « % ». encaissementsFactures.test.ts extrait les messages de la fonction et
-// les confronte à cette liste, ordre et texte.
+// Les refus d'`enregistrer_encaissement`, DANS SON ORDRE ET SOUS SES MOTS (sa dernière définition exportée, celle de la
+// migration encaissements_de_la_vente_facturee) : l'écran les dit avant le clic, et un refus de la base arrivé après — une
+// écriture concurrente — dit la même chose. Le modèle est le texte de la fonction, apostrophes droites comprises : chaque
+// « % » y reçoit une valeur, « %% » s'y écrit « % ». encaissementsFactures.test.ts extrait les messages de la fonction et
+// les confronte à cette liste, ordre et texte. `venteFacturee` marque les refus qui ne visent qu'une facture SOURCE de sa
+// vente (étape VF2) : pour toute autre facture, la base ne les oppose jamais, et les plafonds sont ceux d'hier.
 export const REFUS_ENREGISTREMENT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
   // Depuis la migration ventes_du_client (`VENTES_DU_CLIENT_EXPORTEES`) : juste après l'accès, avant la facture.
@@ -355,11 +363,19 @@ export const REFUS_ENREGISTREMENT = [
   { cle: 'date_absente', modele: "La date de l'encaissement est à renseigner." },
   { cle: 'date_avant_2000', modele: "Un encaissement ne se date pas avant l'an 2000." },
   { cle: 'date_future', modele: "Un encaissement ne se date pas dans l'avenir : nous sommes le %." },
+  // Rang 11 : son encaissement compte dans l'exercice de sa date, que la validation fige.
+  { cle: 'frontiere', modele: "% : un encaissement de cette facture ne s'y date plus.", venteFacturee: true },
   { cle: 'montant_positif', modele: 'Un encaissement est un montant positif.' },
   { cle: 'montant_centime', modele: 'Un encaissement se compte au centime.' },
   { cle: 'moyen_inconnu', modele: 'Le moyen de paiement est inconnu.' },
   { cle: 'mouvement_hors_dossier', modele: "Ce mouvement n'est pas un mouvement de ce dossier." },
   { cle: 'mouvement_debit', modele: "Un encaissement se justifie par un crédit : ce mouvement n'en est pas un." },
+  // Rang 17 (G2) : le mouvement d'un encaissement d'une facture source ne porte rien d'autre, et n'est pas encore classé.
+  {
+    cle: 'mouvement_classe',
+    modele: "Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement que rien ne classe encore — retirer d'abord ce classement.",
+    venteFacturee: true,
+  },
   { cle: 'mouvement_deja_pris', modele: 'Ce mouvement justifie déjà un encaissement de cette facture.' },
   {
     cle: 'mouvement_depasse',
@@ -372,18 +388,35 @@ export const REFUS_ENREGISTREMENT = [
   { cle: 'part_invalide', modele: 'Chaque part de la répartition est un montant positif, au centime.' },
   { cle: 'repartition_somme', modele: 'La répartition (% €) ne fait pas le montant encaissé (% €).' },
   { cle: 'plafond_facture', modele: "L'encaissement dépasserait le total de la facture : il reste % € à encaisser." },
+  // Rangs 27 et 29 (EC3-Q10) : à la place des plafonds bruts, ceux d'une facture source, nets de ses avoirs validés.
+  {
+    cle: 'plafond_facture_net',
+    modele: "L'encaissement dépasserait le total de la facture, net de ses avoirs : il reste % € à encaisser.",
+    venteFacturee: true,
+  },
   { cle: 'plafond_taux', modele: "À % %%, l'encaissement dépasserait ce que la facture porte : il reste % € à encaisser à ce taux." },
+  {
+    cle: 'plafond_taux_net',
+    modele: "À % %%, l'encaissement dépasserait ce que la facture porte, net de ses avoirs : il reste % € à encaisser à ce taux.",
+    venteFacturee: true,
+  },
 ] as const
 
 export type CleRefusEnregistrement = (typeof REFUS_ENREGISTREMENT)[number]['cle']
 
-// Les refus de `retirer_encaissement`, de même.
+// Les refus de `retirer_encaissement`, de même ; les deux derniers pour une facture source seulement.
 export const REFUS_RETRAIT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
   { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
   { cle: 'deja_retire', modele: 'Cet encaissement est déjà retiré.' },
   { cle: 'declare', modele: "Un encaissement déclaré ne se retire pas : il se contre-passe, et l'annulation se déclare à son tour." },
   { cle: 'annule', modele: "Cet encaissement est annulé par une contre-passation : retirez d'abord celle-ci." },
+  { cle: 'frontiere', modele: '% : cet encaissement ne se retire plus.', venteFacturee: true },
+  {
+    cle: 'mouvement_classe',
+    modele: "Le mouvement dont dépend cet encaissement est classé : le cabinet retire d'abord ce classement.",
+    venteFacturee: true,
+  },
 ] as const
 
 export type CleRefusRetrait = (typeof REFUS_RETRAIT)[number]['cle']
@@ -462,9 +495,22 @@ function dateCivile(date: string): boolean {
   return mois >= 1 && mois <= 12 && Number(date.slice(8, 10)) >= 1 && date <= dernierJourDuMois(date)
 }
 
-// Un encaissement que la contre-passation vivante d'un autre annule : il ne justifie plus rien (refus 10 de la base).
+// Un encaissement que la contre-passation vivante d'un autre annule — avec ou sans mouvement : il ne se retire plus, et ne
+// se contre-passe pas deux fois (les refus de `retirer_encaissement` et d'`annuler_encaissement`).
 function annuleParUneContrePassation(e: Pick<EncaissementLu, 'id'>, encaissements: readonly EncaissementLu[]): boolean {
   return encaissements.some((a) => a.annule_id === e.id && compte(a))
+}
+
+/**
+ * L'encaissement JUSTIFIE-T-IL le mouvement qu'il cite (`encaissement_justifie_son_mouvement` en base, depuis la migration
+ * encaissements_de_la_vente_facturee) ? Oui, tant qu'aucune contre-passation vivante SANS MOUVEMENT ne l'annule : celle-là
+ * dit que l'encaissement n'a pas eu lieu sur ce mouvement — une erreur, une somme jamais reçue. Une contre-passation qui
+ * cite un DÉBIT dit au contraire que l'argent est venu, puis reparti (le chèque revenu impayé) : l'encaissement reste
+ * justifié par son crédit. Seule la contre-passation d'une facture source cite un mouvement : pour toute autre facture, le
+ * prédicat dit exactement ce que disait hier « annulé par une contre-passation vivante ».
+ */
+export function justifieSonMouvement(e: Pick<EncaissementLu, 'id'>, encaissements: readonly EncaissementLu[]): boolean {
+  return !encaissements.some((c) => c.annule_id === e.id && compte(c) && c.ligne_bancaire_id == null)
 }
 
 /**
@@ -512,12 +558,13 @@ export interface SaisieEncaissement {
 }
 
 /**
- * Ce que `enregistrer_encaissement` refuserait de cette saisie : le PREMIER refus, dans l'ordre de la base et sous son
- * message, ou null quand elle l'accepterait. `mouvements` : ceux du dossier, où se cherche le mouvement cité ;
- * `aujourdHui` : la date du jour À PARIS (`aujourdHuiAParis`), celle que la base lit ; `gereLaBanque` : le droit
- * « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base) — le cabinet le porte toujours, un client s'il lui
- * est coché. Passé sans valeur par défaut : un écran du client qui l'oublierait laisserait désigner un mouvement que la
- * base refuse.
+ * Ce que `enregistrer_encaissement` refuserait de cette saisie, pour une facture qui n'est PAS source de sa vente : le
+ * PREMIER refus, dans l'ordre de la base et sous son message, ou null quand elle l'accepterait. `mouvements` : ceux du
+ * dossier, où se cherche le mouvement cité ; `aujourdHui` : la date du jour À PARIS (`aujourdHuiAParis`), celle que la
+ * base lit ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base) — le cabinet le
+ * porte toujours, un client s'il lui est coché. Passé sans valeur par défaut : un écran du client qui l'oublierait
+ * laisserait désigner un mouvement que la base refuse. Pour une facture SOURCE (étape VF2), la base refuse davantage, que
+ * seule `refusEnregistrementVente` dit : elle lit ce qui classe les mouvements, les exercices validés et les avoirs.
  */
 export function refusEnregistrement(
   c: ContexteFacture,
@@ -526,6 +573,38 @@ export function refusEnregistrement(
   aujourdHui: string,
   gereLaBanque: boolean,
 ): RefusEncaissement<CleRefusEnregistrement> | null {
+  return jugerEnregistrement(c, s, mouvements, aujourdHui, gereLaBanque, null)
+}
+
+/**
+ * Ce que `enregistrer_encaissement` refuserait de cette saisie, la facture source ou non : les refus de
+ * `refusEnregistrement`, et, pour une facture SOURCE de sa vente (`facture.source_de_la_vente`), la frontière d'un
+ * exercice validé (rang 11), un mouvement déjà classé (rang 17) et les plafonds nets de ses avoirs validés (rangs 27 et
+ * 29, à la place des plafonds bruts). `mouvements` : ceux du dossier, avec ce qui les classe ; `vente` : les exercices
+ * validés et les factures du dossier — les lignes des avoirs de la facture dans `c.lignes`. Pour une facture qui n'est
+ * pas source, la même chose que `refusEnregistrement`. La fenêtre des encaissements y passera à l'étape VF5.
+ */
+export function refusEnregistrementVente(
+  c: ContexteFacture,
+  s: SaisieEncaissement,
+  mouvements: readonly MouvementClasse[],
+  aujourdHui: string,
+  gereLaBanque: boolean,
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusEnregistrement> | null {
+  return jugerEnregistrement(c, s, mouvements, aujourdHui, gereLaBanque, vente)
+}
+
+// Le jugement d'`enregistrer_encaissement`, dans son ordre. `vente` nul : sans ce qu'une facture source demande de lire
+// de plus — la facture est jugée comme une facture qui n'est pas source.
+function jugerEnregistrement(
+  c: ContexteFacture,
+  s: SaisieEncaissement,
+  mouvements: readonly (MouvementLu | MouvementClasse)[],
+  aujourdHui: string,
+  gereLaBanque: boolean,
+  vente: ContexteVente | null,
+): RefusEncaissement<CleRefusEnregistrement> | null {
   // Juste après l'accès (refus 1, que seule la base juge), avant la facture : le mouvement qui prouve l'encaissement est
   // une donnée de la banque, et sans le droit « Banque » il ne se désigne pas — l'encaissement s'enregistre sans lui
   // (espace client, étape P2 ; migration ventes_du_client).
@@ -533,11 +612,17 @@ export function refusEnregistrement(
   const surLaFacture = refusDeLaFacture(c)
   if (surLaFacture) return surLaFacture
   const f = c.facture
+  const source = vente != null && f.source_de_la_vente
 
-  // 7. La date : renseignée, pas avant l'an 2000, pas dans l'avenir.
+  // 7. La date : renseignée, pas avant l'an 2000, pas dans l'avenir ; pour une facture source, pas dans un exercice que
+  // la validation fige (rang 11 : son encaissement compte dans l'exercice de sa date).
   if (s.date == null || !dateCivile(s.date)) return refus('date_absente')
   if (s.date < DATE_PLANCHER) return refus('date_avant_2000')
   if (s.date > aujourdHui) return refus('date_future', formatDate(aujourdHui))
+  if (vente != null && source) {
+    const fige = dateFigeePourLaVente(s.date, vente.anneesValidees)
+    if (fige) return refus('frontiere', fige)
+  }
 
   // 8. Un montant positif, au centime. NaN et l'infini ne sont pas positifs et bornés — ni pour la base, pour qui NaN
   // dépasse tout nombre.
@@ -548,15 +633,18 @@ export function refusEnregistrement(
   // 9. Un moyen de paiement connu — aucun n'est nul.
   if (!MOYENS_ENCAISSEMENT.some((m) => m.moyen === s.moyen)) return refus('moyen_inconnu')
 
-  // 10. Le mouvement, s'il en cite un : de ce dossier, un crédit, qui ne justifie pas déjà un encaissement de cette
-  // facture, et dont les encaissements — de toutes les factures : un virement peut en régler plusieurs — ne le
-  // dépasseraient pas au-delà de l'écart que des frais expliquent.
+  // 10. Le mouvement, s'il en cite un : de ce dossier, un crédit — pour une facture source, que rien ne classe encore (rang
+  // 17) —, qui ne justifie pas déjà un encaissement de cette facture, et dont les encaissements — de toutes les factures :
+  // un virement peut en régler plusieurs — ne le dépasseraient pas au-delà de l'écart que des frais expliquent. Ce qu'un
+  // mouvement justifie se lit comme la base le lit depuis l'étape VF2 (`justifieSonMouvement`) : pour un mouvement
+  // qu'aucune contre-passation ne cite, comme hier.
   if (s.ligneBancaireId != null) {
     const mouvement = mouvements.find((m) => m.id === s.ligneBancaireId && m.dossier_id === c.dossierId)
     if (!mouvement) return refus('mouvement_hors_dossier')
     if (mouvement.montant <= 0) return refus('mouvement_debit')
+    if (source && !mouvementLibre(mouvement as MouvementClasse)) return refus('mouvement_classe')
     const justifies = c.encaissements.filter((e) =>
-      e.ligne_bancaire_id === mouvement.id && compte(e) && !annuleParUneContrePassation(e, c.encaissements))
+      e.ligne_bancaire_id === mouvement.id && compte(e) && justifieSonMouvement(e, c.encaissements))
     if (justifies.some((e) => e.facture_id === f.id)) return refus('mouvement_deja_pris')
     const total = justifies.reduce((somme, e) => somme + centimes(e.montant), 0) + montant
     const credit = centimes(mouvement.montant)
@@ -588,28 +676,35 @@ export function refusEnregistrement(
   if (somme !== montant) return refus('repartition_somme', euroCommeLaBase(somme), euroCommeLaBase(montant))
 
   // 12. Les plafonds, sur des montants NETS : le reste de la facture, puis celui de chaque taux, dans l'ordre des parts.
-  // Le total de la facture est son en-tête, au centime depuis le refus 6 ; le TTC d'un taux, celui de ses lignes.
+  // Le total de la facture est son en-tête, au centime depuis le refus 6 ; le TTC d'un taux, celui de ses lignes. Pour une
+  // facture source, l'un et l'autre moins ce que ses avoirs validés créditent (EC3-Q10, rangs 27 et 29), tel que leurs
+  // lignes le transmettent.
   const comptes = c.encaissements.filter((e) => e.facture_id === f.id && compte(e))
   const deja = comptes.reduce((total, e) => total + centimes(e.montant), 0)
-  const ttc = centimesExacts(f.montant_ttc) as number
-  if (deja + montant > ttc) return refus('plafond_facture', euroCommeLaBase(Math.max(ttc - deja, 0)))
+  const credites = vente != null && source ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
+  const credite = [...credites.values()].reduce((total, x) => total + x, 0)
+  const ttc = (centimesExacts(f.montant_ttc) as number) - credite
+  if (deja + montant > ttc) {
+    return refus(source ? 'plafond_facture_net' : 'plafond_facture', euroCommeLaBase(Math.max(ttc - deja, 0)))
+  }
   const ids = new Set(comptes.map((e) => e.id))
   const ttcDesTaux = new Map(ttcParTaux(f, c.lignes).map((t) => [t.taux, t.ttcCentimes]))
   for (const [i, p] of r.entries()) {
     // Un taux des lignes de la facture : le refus 11 l'a vérifié.
-    const ttcDuTaux = ttcDesTaux.get(p.taux) as number
+    const ttcDuTaux = (ttcDesTaux.get(p.taux) as number) - (credites.get(p.taux) ?? 0)
     const dejaDuTaux = c.parts.filter((x) => ids.has(x.encaissement_id) && x.taux === p.taux)
       .reduce((total, x) => total + centimes(x.montant), 0)
     if (dejaDuTaux + parts[i] > ttcDuTaux) {
-      return refus('plafond_taux', tauxCommeLaBase(p.taux), euroCommeLaBase(Math.max(ttcDuTaux - dejaDuTaux, 0)))
+      return refus(source ? 'plafond_taux_net' : 'plafond_taux', tauxCommeLaBase(p.taux),
+        euroCommeLaBase(Math.max(ttcDuTaux - dejaDuTaux, 0)))
     }
   }
   return null
 }
 
-function refusR(cle: CleRefusRetrait): RefusEncaissement<CleRefusRetrait> {
+function refusR(cle: CleRefusRetrait, ...valeurs: string[]): RefusEncaissement<CleRefusRetrait> {
   const { modele } = REFUS_RETRAIT.find((r) => r.cle === cle) as (typeof REFUS_RETRAIT)[number]
-  return { cle, message: modele }
+  return { cle, message: remplirModele(modele, valeurs) }
 }
 
 /**
@@ -629,6 +724,34 @@ export function refusRetrait(
   if (!compte(e)) return refusR('deja_retire')
   if (declares.has(e.id)) return refusR('declare')
   if (annuleParUneContrePassation(e, encaissements)) return refusR('annule')
+  return null
+}
+
+/**
+ * Ce que `retirer_encaissement` refuserait, la facture source ou non : les refus de `refusRetrait`, puis, pour un
+ * encaissement d'une facture SOURCE de sa vente, sa date que la frontière d'un exercice validé fige (rang 6), et le
+ * mouvement dont il dépend — le sien, ou, pour une contre-passation sans mouvement, celui de l'encaissement qu'elle
+ * annule — classé (rang 7 : le cabinet retire d'abord ce classement ; par ses encaissements, le retrait changerait ce
+ * qu'il justifie ; autrement, le retrait de la contre-passation le ferait justifier de nouveau l'encaissement, en plus de
+ * son classement). `mouvements` : ceux du dossier, lus en entier, avec ce qui les classe.
+ */
+export function refusRetraitVente(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  declares: ReadonlySet<string>,
+  mouvements: readonly MouvementClasse[],
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusRetrait> | null {
+  const hier = refusRetrait(dossierId, encaissementId, encaissements, declares)
+  if (hier) return hier
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId) as EncaissementPourContrePassation
+  if (!factureSource(e.facture_id, vente)) return null
+  const fige = dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees)
+  if (fige) return refusR('frontiere', fige)
+  const ligne = e.ligne_bancaire_id ?? encaissements.find((x) => x.id === e.annule_id)?.ligne_bancaire_id ?? null
+  const mouvement = ligne == null ? undefined : mouvements.find((m) => m.id === ligne)
+  if (mouvement && !mouvementLibre(mouvement)) return refusR('mouvement_classe')
   return null
 }
 
@@ -722,8 +845,34 @@ export const REFUS_CONTRE_PASSATION = [
   { cle: 'date_absente', modele: 'La date de la contre-passation est à renseigner.' },
   { cle: 'date_avant_encaissement', modele: "Une contre-passation ne se date pas avant l'encaissement qu'elle annule, du %." },
   { cle: 'date_future', modele: "Une contre-passation ne se date pas dans l'avenir : nous sommes le %." },
+  // Depuis la migration encaissements_de_la_vente_facturee (étape VF2) : la frontière, pour une facture source (rang 11) ;
+  // puis, quand la contre-passation cite le DÉBIT qui défait l'encaissement (le cinquième paramètre), ce qui le refuse
+  // (rangs 14 à 18) ; sans débit, le mouvement de l'encaissement d'une facture source classé par ses encaissements (19).
+  { cle: 'frontiere', modele: "% : une contre-passation ne s'y date plus.", venteFacturee: true },
   { cle: 'motif_absent', modele: 'Le motif de la contre-passation est à renseigner.' },
   { cle: 'motif_trop_long', modele: 'Le motif de la contre-passation dépasse 2 000 caractères.' },
+  {
+    cle: 'mouvement_non_source',
+    modele: "Seule la contre-passation d'une facture source de sa vente cite le mouvement qui défait l'encaissement.",
+    venteFacturee: true,
+  },
+  { cle: 'mouvement_hors_dossier', modele: "Ce mouvement n'est pas un mouvement de ce dossier.", venteFacturee: true },
+  { cle: 'mouvement_credit', modele: "Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.", venteFacturee: true },
+  {
+    cle: 'mouvement_classe',
+    modele: "Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement que rien ne classe encore — retirer d'abord ce classement.",
+    venteFacturee: true,
+  },
+  {
+    cle: 'mouvement_depasse',
+    modele: "Ce mouvement de % € justifierait % € de contre-passations : l'écart dépasse ce que des frais bancaires expliquent.",
+    venteFacturee: true,
+  },
+  {
+    cle: 'mouvement_encaissement_classe',
+    modele: "Le mouvement de l'encaissement contre-passé est classé par ses encaissements : la contre-passation cite le débit qui défait l'encaissement, ou le cabinet retire d'abord ce classement.",
+    venteFacturee: true,
+  },
 ] as const
 
 export type CleRefusContrePassation = (typeof REFUS_CONTRE_PASSATION)[number]['cle']
@@ -833,6 +982,63 @@ export function refusContrePassation(
   if (date > aujourdHui) return refusC('date_future', formatDate(aujourdHui))
   if (motif == null || videPourLaBase(motif)) return refusC('motif_absent')
   if (caracteres(motif) > LONGUEUR_MAX_TEXTE) return refusC('motif_trop_long')
+  return null
+}
+
+/**
+ * Ce que `annuler_encaissement` refuserait, depuis la migration encaissements_de_la_vente_facturee (étape VF2), qui lui
+ * donne un CINQUIÈME paramètre : `ligneBancaireId`, le DÉBIT qui défait l'encaissement (le chèque revenu impayé, la somme
+ * rendue), nul pour la contre-passation d'hier. Dans l'ordre de la base : les refus de `refusContrePassation` jusqu'à la
+ * date ; pour une facture source, la frontière d'un exercice validé (rang 11) ; le motif ; s'il cite un mouvement, une
+ * facture qui n'est pas source, un mouvement d'un autre dossier, un crédit, un mouvement déjà classé, des
+ * contre-passations qui dépasseraient le débit au-delà des frais (rangs 14 à 18) ; sans mouvement, pour une facture
+ * source, le mouvement de l'encaissement classé par ses encaissements (rang 19). Sans débit cité et pour une facture qui
+ * n'est pas source, la même chose que `refusContrePassation`. `mouvements` : ceux du dossier, lus en entier, avec ce qui
+ * les classe.
+ */
+export function refusContrePassationVente(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  date: string | null,
+  motif: string | null,
+  aujourdHui: string,
+  ligneBancaireId: string | null,
+  mouvements: readonly MouvementClasse[],
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusContrePassation> | null {
+  // Les refus d'hier jusqu'à la date — un motif valable à la place du sien : la base juge le motif APRÈS la frontière.
+  const avantLeMotif = refusContrePassation(dossierId, encaissementId, encaissements, declarations, date, 'motif', aujourdHui)
+  if (avantLeMotif) return avantLeMotif
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId) as EncaissementPourContrePassation
+  const source = factureSource(e.facture_id, vente)
+  if (source) {
+    // La date est une date civile, que les refus d'hier ont jugée.
+    const fige = dateFigeePourLaVente(date as string, vente.anneesValidees)
+    if (fige) return refusC('frontiere', fige)
+  }
+  if (motif == null || videPourLaBase(motif)) return refusC('motif_absent')
+  if (caracteres(motif) > LONGUEUR_MAX_TEXTE) return refusC('motif_trop_long')
+  if (ligneBancaireId != null) {
+    if (!source) return refusC('mouvement_non_source')
+    const mouvement = mouvements.find((m) => m.id === ligneBancaireId && m.dossier_id === dossierId)
+    if (!mouvement) return refusC('mouvement_hors_dossier')
+    if (mouvement.montant >= 0) return refusC('mouvement_credit')
+    if (!mouvementLibre(mouvement)) return refusC('mouvement_classe')
+    // Comme pour un crédit, en valeur absolue : les contre-passations qui citent ce débit — toutes, non retirées —, et
+    // celle-ci, ne le dépassent que de ce que des frais expliquent.
+    const total = encaissements.filter((x) => x.ligne_bancaire_id === mouvement.id && compte(x))
+      .reduce((somme, x) => somme + centimes(x.montant), 0) - centimes(e.montant)
+    const debit = Math.abs(centimes(mouvement.montant))
+    if (!ecartDeFrais(Math.abs(total) - debit, Math.abs(total))) {
+      return refusC('mouvement_depasse', euroCommeLaBase(debit), euroCommeLaBase(Math.abs(total)))
+    }
+  } else if (source && e.ligne_bancaire_id != null) {
+    if (mouvements.find((m) => m.id === e.ligne_bancaire_id)?.encaissements_de_factures) {
+      return refusC('mouvement_encaissement_classe')
+    }
+  }
   return null
 }
 
@@ -1050,11 +1256,11 @@ export function propositionsEncaissement(
   }
 
   // Un mouvement qui justifie déjà un encaissement vivant, de cette facture ou d'une autre, ne se propose pas : il est
-  // pris. Un encaissement retiré, ou annulé par une contre-passation vivante, l'a libéré. Un débit ne fait jamais le
-  // reste à l'écart des frais près, et un mouvement d'un autre dossier, la base le refuserait : le jugement final les
-  // écarte.
+  // pris. Un encaissement retiré, ou annulé par une contre-passation vivante sans mouvement, l'a libéré
+  // (`justifieSonMouvement`). Un débit ne fait jamais le reste à l'écart des frais près, et un mouvement d'un autre
+  // dossier, la base le refuserait : le jugement final les écarte.
   const pris = new Set(c.encaissements
-    .filter((e) => compte(e) && !annuleParUneContrePassation(e, c.encaissements))
+    .filter((e) => compte(e) && justifieSonMouvement(e, c.encaissements))
     .map((e) => e.ligne_bancaire_id))
   const duReleve: PropositionEncaissement[] = []
   for (const m of mouvements) {
@@ -1069,4 +1275,376 @@ export function propositionsEncaissement(
     || a.date.localeCompare(b.date)
     || (a.ligneBancaireId < b.ligneBancaireId ? -1 : a.ligneBancaireId > b.ligneBancaireId ? 1 : 0))
   return [...deLaJumelle, ...duReleve]
+}
+
+// ── La facture validée, source de sa vente (chantier EC-Q3, étape VF2) ──────────────────────────────────────────────
+//
+// LA DÉCISION DU CABINET DU 18/10/2026 (EC-Q3) : une facture validée dans l'application devient la SOURCE de sa vente — ses
+// encaissements la compteront (étape VF3), et non plus sa pièce jumelle. Les deux migrations de l'étape VF2
+// (`source_de_la_vente` et `encaissements_de_la_vente_facturee`, en base et dans l'export) fixent la source à la
+// validation (lib/sourceDeLaVente.ts), RÉSERVENT à ses encaissements le mouvement qui les justifie (G2), le font CLASSER par
+// eux, par le cabinet seul (G1), et donnent aux fonctions des encaissements leurs refus neufs (ci-dessus, `venteFacturee`).
+// Cette section dit, AVANT le clic, dans l'ordre de la base et sous ses mots, l'accès excepté, ce que refusent les trois
+// fonctions neuves du cabinet et la garde des mouvements ; aucun écran ne les lit encore (la fenêtre des encaissements et
+// la fiche d'un mouvement, étape VF5). Aucun dossier n'a basculé (étape VF8) : aucune facture n'est source, et ces refus
+// ne se rencontrent pas encore. encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes
+// compris, et supabase/essais/ventesFacturees.sql éprouve chaque refus en base.
+
+/** Un mouvement tel que les refus d'une facture source le lisent : ce qui le classe, et s'il l'est par ses encaissements. */
+export type MouvementClasse = MouvementLu & Pick<LigneBancaire,
+  'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'compte_bilan' | 'declaration_tva_id'
+  | 'ventilee' | 'reglement_groupe' | 'prelevement_personnel' | 'encaissements_de_factures'>
+
+/** Une facture du dossier, telle que ces refus la lisent : sa source, son numéro, et la facture que corrige un avoir. */
+export type FactureDuDossier = Pick<FactureEmise,
+  'id' | 'dossier_id' | 'numero' | 'type' | 'statut' | 'facture_origine_id' | 'source_de_la_vente'>
+
+/**
+ * Ce qu'une facture source demande de lire de plus que l'écran d'hier — lu EN ENTIER, comme le reste : une liste partielle
+ * ferait dire un refus faux, et l'écran qui n'a pas tout lu n'offre aucun geste.
+ */
+export interface ContexteVente {
+  /** Les années des exercices validés du dossier (`exercices_valides`) : la frontière, et la phrase d'`exercice_fige`. */
+  anneesValidees: readonly number[]
+  /**
+   * Les factures du dossier, leur source comprise : celle d'un encaissement, et les avoirs validés d'une facture source,
+   * dont le plafond net déduit ce que leurs LIGNES créditent — que `ContexteFacture.lignes` doit donc porter aussi.
+   */
+  factures: readonly FactureDuDossier[]
+}
+
+/** Un encaissement tel que la garde des mouvements l'ordonne : par sa création, puis son identifiant. */
+export type EncaissementDuReleve = EncaissementLu & Pick<EncaissementFacture, 'cree_le'>
+
+/**
+ * Un mouvement LIBRE (`mouvement_libre` en base) : à traiter, que rien ne classe — ni pièce, ni cotisation, ni catégorie,
+ * ni emprunt, ni compte de bilan, ni déclaration de TVA, ni ventilation, ni règlement groupé, ni ses encaissements —, ni
+ * écarté, ni personnel. Le seul qu'un encaissement d'une facture source cite.
+ */
+export function mouvementLibre(m: Pick<MouvementClasse, Exclude<keyof MouvementClasse, keyof MouvementLu>>): boolean {
+  return m.statut === 'non_rapprochee' && m.piece_id == null && m.cotisation_id == null && m.categorie_id == null
+    && m.emprunt_id == null && m.compte_bilan == null && m.declaration_tva_id == null && !m.ventilee && !m.reglement_groupe
+    && !m.prelevement_personnel && !m.encaissements_de_factures
+}
+
+function factureSource(factureId: string, vente: Pick<ContexteVente, 'factures'>): boolean {
+  return vente.factures.some((f) => f.id === factureId && f.source_de_la_vente)
+}
+
+// La phrase de la base pour une date que la frontière d'un exercice validé fige (`exercice_fige`), ou rien.
+function dateFigeePourLaVente(date: string, anneesValidees: readonly number[]): string | null {
+  const frontiere = frontiereDeValidation(anneesValidees)
+  return frontiere != null && date <= frontiere ? exerciceQuiFige(anneeDe(date), anneesValidees) : null
+}
+
+// Ce que les avoirs VALIDÉS d'une facture créditent, par taux et en centimes, tel que leurs lignes le transmettent — dans
+// le sens du document : un avoir s'y lit en montants positifs (`montants_par_taux_facture` en base, EC3-Q10). Tous les
+// taux de tous les avoirs : le plafond de la facture déduit leur somme, celui d'un taux ce qui est à ce taux.
+function creditesDesAvoirs(factureId: string, lignes: readonly LigneDeFacture[], vente: ContexteVente): Map<number, number> {
+  const parTaux = new Map<number, number>()
+  for (const a of vente.factures) {
+    if (a.type !== 'avoir' || a.statut !== 'validee' || a.facture_origine_id !== factureId) continue
+    for (const t of ttcParTaux(a, lignes)) parTaux.set(t.taux, (parTaux.get(t.taux) ?? 0) + t.ttcCentimes)
+  }
+  return parTaux
+}
+
+// Un texte comparé comme la base le compare sous `collate "C"`, ou comme elle compare un identifiant ou un instant écrit
+// en ISO dans un même fuseau : octet par octet — jamais `localeCompare`, qui range la ponctuation autrement.
+function ordreC(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/** Une liste de refus d'une fonction ou d'une garde, avec le code de chacun (`using errcode`). */
+type ListeAvecCodes = readonly { readonly cle: string; readonly modele: string; readonly code: string }[]
+
+function refusDe<C extends string>(liste: ListeAvecCodes, cle: C, ...valeurs: string[]): RefusEncaissement<C> {
+  const { modele } = liste.find((r) => r.cle === cle) as ListeAvecCodes[number]
+  return { cle, message: remplirModele(modele, valeurs) }
+}
+
+// Les refus de `rattacher_mouvement_encaissement`, DANS SON ORDRE, SOUS SES MOTS ET SES CODES : un encaissement — ou une
+// contre-passation — d'une facture source enregistré sans mouvement se rattache UNE FOIS, de nul à un mouvement, par le
+// cabinet seul (`admin_du_dossier`) : le chèque remis avant son crédit, les encaissements d'un client sans « Banque »,
+// l'impayé constaté au relevé.
+export const REFUS_RATTACHEMENT = [
+  { cle: 'acces', modele: 'Accès refusé à ce dossier.', code: '42501' },
+  { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.', code: 'P0002' },
+  { cle: 'retire', modele: 'Cet encaissement est retiré : il ne se rattache plus à un mouvement.', code: '22023' },
+  { cle: 'deja_rattache', modele: "Cet encaissement cite déjà un mouvement : il ne se rattache qu'une fois.", code: '22023' },
+  {
+    cle: 'facture_non_source',
+    modele: "Seul l'encaissement d'une facture source de sa vente se rattache après coup au mouvement qui le prouve.",
+    code: '22023',
+  },
+  { cle: 'frontiere', modele: '% : cet encaissement ne se rattache plus à un mouvement.', code: '22023' },
+  { cle: 'mouvement_absent', modele: 'Le mouvement à rattacher est à désigner.', code: '22023' },
+  { cle: 'mouvement_hors_dossier', modele: "Ce mouvement n'est pas un mouvement de ce dossier.", code: '22023' },
+  { cle: 'mouvement_debit', modele: "Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.", code: '22023' },
+  { cle: 'mouvement_credit', modele: "Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.", code: '22023' },
+  {
+    cle: 'mouvement_classe',
+    modele: "Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement que rien ne classe encore — retirer d'abord ce classement.",
+    code: '22023',
+  },
+  { cle: 'mouvement_deja_pris', modele: 'Ce mouvement justifie déjà un encaissement de cette facture.', code: '22023' },
+  {
+    cle: 'mouvement_depasse',
+    modele: "Ce mouvement de % € justifierait % € d'encaissements : l'écart dépasse ce que des frais bancaires expliquent.",
+    code: '22023',
+  },
+  {
+    cle: 'contre_passations_depassent',
+    modele: "Ce mouvement de % € justifierait % € de contre-passations : l'écart dépasse ce que des frais bancaires expliquent.",
+    code: '22023',
+  },
+  {
+    cle: 'origine_classee',
+    modele: "Le mouvement de l'encaissement contre-passé est classé : rattachée à un débit, la contre-passation le lui ferait justifier de nouveau — le cabinet retire d'abord ce classement.",
+    code: '22023',
+  },
+  {
+    cle: 'origine_depassee',
+    modele: "Le mouvement de l'encaissement contre-passé, de % €, justifierait alors % € d'encaissements : l'écart dépasse ce que des frais bancaires expliquent.",
+    code: '22023',
+  },
+] as const
+
+export type CleRefusRattachement = (typeof REFUS_RATTACHEMENT)[number]['cle']
+
+// Les refus de `classer_mouvement_par_encaissements`, de même : le cabinet classe un mouvement par les encaissements de
+// factures sources qu'il justifie, quand ce qu'ils portent fait son montant à l'écart des frais près — la banque crédite un
+// peu moins que les encaissements, ou débite un peu plus que les contre-passations, jamais l'inverse.
+export const REFUS_CLASSEMENT = [
+  { cle: 'acces', modele: 'Accès refusé à ce dossier.', code: '42501' },
+  { cle: 'mouvement_introuvable', modele: 'Mouvement introuvable dans ce dossier.', code: 'P0002' },
+  { cle: 'frontiere', modele: '% : ce mouvement ne change plus.', code: '22023' },
+  { cle: 'deja_classe_par_ses_encaissements', modele: 'Ce mouvement est déjà classé par ses encaissements.', code: '22023' },
+  { cle: 'deja_classe', modele: "Ce mouvement est déjà classé : retirer d'abord ce classement.", code: '22023' },
+  {
+    cle: 'aucun_encaissement',
+    modele: "Ce mouvement ne justifie aucun encaissement d'une facture source de sa vente : il ne se classe pas par des encaissements.",
+    code: '22023',
+  },
+  {
+    cle: 'credit_non_fait',
+    modele: 'Les encaissements que ce mouvement justifie font % € pour un crédit de % € : ce qui le dépasse reste à traiter.',
+    code: '22023',
+  },
+  {
+    cle: 'credit_ecart',
+    modele: "Les encaissements que ce mouvement justifie font % € pour un crédit de % € : l'écart dépasse ce que des frais bancaires expliquent.",
+    code: '22023',
+  },
+  {
+    cle: 'debit_depasse',
+    modele: 'Les contre-passations que ce mouvement justifie font % € pour un débit de % € : elles le dépassent.',
+    code: '22023',
+  },
+  {
+    cle: 'debit_ecart',
+    modele: "Les contre-passations que ce mouvement justifie font % € pour un débit de % € : l'écart dépasse ce que des frais bancaires expliquent.",
+    code: '22023',
+  },
+] as const
+
+export type CleRefusClassement = (typeof REFUS_CLASSEMENT)[number]['cle']
+
+// Les refus de `retirer_classement_par_encaissements` : le mouvement redevient à traiter, toujours réservé à ses
+// encaissements (G2).
+export const REFUS_RETRAIT_CLASSEMENT = [
+  { cle: 'acces', modele: 'Accès refusé à ce dossier.', code: '42501' },
+  { cle: 'mouvement_introuvable', modele: 'Mouvement introuvable dans ce dossier.', code: 'P0002' },
+  { cle: 'frontiere', modele: '% : ce mouvement ne change plus.', code: '22023' },
+  { cle: 'non_classe', modele: "Ce mouvement n'est pas classé par ses encaissements.", code: '22023' },
+] as const
+
+export type CleRefusRetraitClassement = (typeof REFUS_RETRAIT_CLASSEMENT)[number]['cle']
+
+// Les refus de la garde des mouvements (`garder_mouvement_reserve`, G2), dans l'ordre de son texte : les deux premiers
+// tiennent le drapeau — il ne naît posé qu'à la restauration, et ne change que par les deux fonctions du cabinet — ; les
+// deux derniers, ce que dit à l'avance `refusDuClassementDuReleve`, pour qui classerait le mouvement autrement : par la
+// policy du cabinet comme par une fonction du relevé (affecter, ventiler, rapprocher, régler un groupe…).
+export const REFUS_GARDE_MOUVEMENTS = [
+  {
+    cle: 'naissance_classee',
+    modele: "Un mouvement ne naît pas classé par des encaissements : le cabinet l'y classe ensuite, par sa fonction.",
+    code: '42501',
+  },
+  {
+    cle: 'drapeau_hors_fonction',
+    modele: "Un mouvement ne se classe par ses encaissements, et ne cesse de l'être, que par la fonction du cabinet.",
+    code: '42501',
+  },
+  {
+    cle: 'classe_par_ses_encaissements',
+    modele: "Ce mouvement est classé par ses encaissements : il ne reçoit aucun autre classement — le cabinet retire d'abord celui-ci.",
+    code: '23514',
+  },
+  {
+    cle: 'reserve',
+    modele: "Ce mouvement justifie un encaissement de la facture %, source de sa vente : il se classe par ses encaissements, et par rien d'autre.",
+    code: '23514',
+  },
+] as const
+
+export type CleRefusGardeMouvements = (typeof REFUS_GARDE_MOUVEMENTS)[number]['cle']
+
+/**
+ * Ce que `rattacher_mouvement_encaissement` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message, ou
+ * null — l'accès (refus 1), seule la base le juge : le cabinet seul rattache. Dans l'ordre : l'encaissement introuvable,
+ * retiré, qui cite déjà un mouvement, d'une facture qui n'est pas source, daté d'un exercice que la frontière fige ; aucun
+ * mouvement désigné, un mouvement d'un autre dossier, un débit pour un encaissement, un crédit pour une contre-passation,
+ * un mouvement déjà classé ; pour un encaissement, un mouvement qui justifie déjà un encaissement de cette facture, puis
+ * l'écart des frais sur ce qu'il justifierait — cet encaissement compris s'il le justifie ; pour une contre-passation,
+ * l'écart des frais sur les contre-passations du débit, puis le mouvement de l'encaissement qu'elle annule — classé, ou
+ * qu'il justifierait alors au-delà des frais : rattachée à son débit, elle cesse de dire que l'encaissement n'a pas eu
+ * lieu sur lui, qui le justifie de nouveau. `encaissements` et `mouvements` : ceux du dossier, lus en entier.
+ */
+export function refusRattachement(
+  dossierId: string,
+  encaissementId: string,
+  ligneBancaireId: string | null,
+  encaissements: readonly EncaissementPourContrePassation[],
+  mouvements: readonly MouvementClasse[],
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusRattachement> | null {
+  const refusA = (cle: CleRefusRattachement, ...valeurs: string[]) => refusDe(REFUS_RATTACHEMENT, cle, ...valeurs)
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  if (!e) return refusA('encaissement_introuvable')
+  if (!compte(e)) return refusA('retire')
+  if (e.ligne_bancaire_id != null) return refusA('deja_rattache')
+  if (!factureSource(e.facture_id, vente)) return refusA('facture_non_source')
+  const fige = dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees)
+  if (fige) return refusA('frontiere', fige)
+  if (ligneBancaireId == null) return refusA('mouvement_absent')
+  const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
+  if (!m) return refusA('mouvement_hors_dossier')
+  const contrePassation = e.annule_id != null
+  if (!contrePassation && m.montant <= 0) return refusA('mouvement_debit')
+  if (contrePassation && m.montant >= 0) return refusA('mouvement_credit')
+  if (!mouvementLibre(m)) return refusA('mouvement_classe')
+  const vivants = encaissements.filter((x) => compte(x))
+  if (!contrePassation) {
+    if (vivants.some((x) => x.ligne_bancaire_id === m.id && x.facture_id === e.facture_id && justifieSonMouvement(x, encaissements))) {
+      return refusA('mouvement_deja_pris')
+    }
+    // Ce que le mouvement justifierait : ce qu'il justifie déjà, et cet encaissement s'il le justifie (une contre-passation
+    // sans mouvement dit qu'il n'a pas eu lieu, et il ne pèse alors rien).
+    const total = vivants.filter((x) => (x.ligne_bancaire_id === m.id || x.id === e.id) && justifieSonMouvement(x, encaissements))
+      .reduce((somme, x) => somme + centimes(x.montant), 0)
+    const credit = centimes(m.montant)
+    if (!ecartDeFrais(total - credit, total)) return refusA('mouvement_depasse', euroCommeLaBase(credit), euroCommeLaBase(total))
+    return null
+  }
+  const total = vivants.filter((x) => x.ligne_bancaire_id === m.id).reduce((somme, x) => somme + centimes(x.montant), 0)
+    + centimes(e.montant)
+  const debit = Math.abs(centimes(m.montant))
+  if (!ecartDeFrais(Math.abs(total) - debit, Math.abs(total))) {
+    return refusA('contre_passations_depassent', euroCommeLaBase(debit), euroCommeLaBase(Math.abs(total)))
+  }
+  const ligneOrigine = encaissements.find((x) => x.id === e.annule_id)?.ligne_bancaire_id ?? null
+  const origine = ligneOrigine == null ? undefined : mouvements.find((x) => x.id === ligneOrigine)
+  if (origine) {
+    if (!mouvementLibre(origine)) return refusA('origine_classee')
+    const justifies = vivants.filter((x) => x.ligne_bancaire_id === origine.id
+      && (justifieSonMouvement(x, encaissements) || x.id === e.annule_id))
+      .reduce((somme, x) => somme + centimes(x.montant), 0)
+    const credit = centimes(origine.montant)
+    if (!ecartDeFrais(justifies - credit, justifies)) {
+      return refusA('origine_depassee', euroCommeLaBase(credit), euroCommeLaBase(justifies))
+    }
+  }
+  return null
+}
+
+// Ce que les encaissements de factures SOURCES non retirés qui le justifient portent sur un mouvement, en centimes, et
+// s'il en est au moins un — les encaissements des factures qui ne sont pas sources n'y comptent pas : leurs ventes se
+// comptent par leurs pièces.
+function porteDesSources(mouvementId: string, encaissements: readonly EncaissementLu[], vente: Pick<ContexteVente, 'factures'>) {
+  const justifies = encaissements.filter((x) => x.ligne_bancaire_id === mouvementId && compte(x)
+    && factureSource(x.facture_id, vente) && justifieSonMouvement(x, encaissements))
+  return { aucun: justifies.length === 0, centimes: justifies.reduce((somme, x) => somme + centimes(x.montant), 0) }
+}
+
+/**
+ * Ce que `classer_mouvement_par_encaissements` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message,
+ * ou null — l'accès, seule la base le juge. Dans l'ordre : le mouvement introuvable, daté d'un exercice que la frontière
+ * fige, déjà classé par ses encaissements, classé autrement, qui ne justifie aucun encaissement d'une facture source ;
+ * pour un crédit, des encaissements qui ne le font pas — ce qui le dépasse reste à traiter —, ou qui le dépassent au-delà
+ * des frais ; pour un débit, des contre-passations qui le dépassent, ou qui ne le font pas à l'écart des frais près.
+ */
+export function refusClassement(
+  dossierId: string,
+  ligneBancaireId: string,
+  mouvements: readonly MouvementClasse[],
+  encaissements: readonly EncaissementLu[],
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusClassement> | null {
+  const refusK = (cle: CleRefusClassement, ...valeurs: string[]) => refusDe(REFUS_CLASSEMENT, cle, ...valeurs)
+  const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
+  if (!m) return refusK('mouvement_introuvable')
+  const fige = dateFigeePourLaVente(m.date, vente.anneesValidees)
+  if (fige) return refusK('frontiere', fige)
+  if (m.encaissements_de_factures) return refusK('deja_classe_par_ses_encaissements')
+  if (!mouvementLibre(m)) return refusK('deja_classe')
+  const porte = porteDesSources(m.id, encaissements, vente)
+  if (porte.aucun) return refusK('aucun_encaissement')
+  const montant = centimes(m.montant)
+  const ecart = porte.centimes - montant
+  if (montant > 0 && ecart < 0) return refusK('credit_non_fait', euroCommeLaBase(porte.centimes), euroCommeLaBase(montant))
+  if (montant > 0 && !ecartDeFrais(ecart, porte.centimes)) {
+    return refusK('credit_ecart', euroCommeLaBase(porte.centimes), euroCommeLaBase(montant))
+  }
+  if (montant < 0 && ecart < 0) {
+    return refusK('debit_depasse', euroCommeLaBase(Math.abs(porte.centimes)), euroCommeLaBase(Math.abs(montant)))
+  }
+  if (montant < 0 && !ecartDeFrais(ecart, Math.abs(porte.centimes))) {
+    return refusK('debit_ecart', euroCommeLaBase(Math.abs(porte.centimes)), euroCommeLaBase(Math.abs(montant)))
+  }
+  return null
+}
+
+/**
+ * Ce que `retirer_classement_par_encaissements` refuserait : le mouvement introuvable, daté d'un exercice que la frontière
+ * fige, ou qui n'est pas classé par ses encaissements — l'accès, seule la base le juge.
+ */
+export function refusRetraitDuClassement(
+  dossierId: string,
+  ligneBancaireId: string,
+  mouvements: readonly MouvementClasse[],
+  vente: Pick<ContexteVente, 'anneesValidees'>,
+): RefusEncaissement<CleRefusRetraitClassement> | null {
+  const refusQ = (cle: CleRefusRetraitClassement, ...valeurs: string[]) => refusDe(REFUS_RETRAIT_CLASSEMENT, cle, ...valeurs)
+  const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
+  if (!m) return refusQ('mouvement_introuvable')
+  const fige = dateFigeePourLaVente(m.date, vente.anneesValidees)
+  if (fige) return refusQ('frontiere', fige)
+  if (!m.encaissements_de_factures) return refusQ('non_classe')
+  return null
+}
+
+/**
+ * Ce que la garde des mouvements (G2) opposerait à TOUT AUTRE CLASSEMENT de ce mouvement — l'affecter, le ventiler, le
+ * rapprocher d'une pièce, d'une cotisation, d'un emprunt ou d'une déclaration, l'écrire sur un compte de bilan, régler un
+ * groupe, l'écarter, le dire personnel —, qu'un écran du relevé dira avant le clic (étape VF5) : classé par ses
+ * encaissements, il ne reçoit rien d'autre ; réservé — il justifie un encaissement non retiré d'une facture source —, il
+ * ne se classe que par ses encaissements, et la base nomme la facture du premier de ces encaissements, par sa création
+ * puis son identifiant. Null : la garde laisse passer, comme hier. Le retour à un mouvement libre (retirer un classement)
+ * n'est jamais refusé par elle.
+ */
+export function refusDuClassementDuReleve(
+  mouvement: MouvementClasse,
+  encaissements: readonly EncaissementDuReleve[],
+  vente: Pick<ContexteVente, 'factures'>,
+): RefusEncaissement<CleRefusGardeMouvements> | null {
+  if (mouvement.encaissements_de_factures) return refusDe(REFUS_GARDE_MOUVEMENTS, 'classe_par_ses_encaissements')
+  const premier = encaissements
+    .filter((x) => x.ligne_bancaire_id === mouvement.id && compte(x) && factureSource(x.facture_id, vente)
+      && justifieSonMouvement(x, encaissements))
+    .sort((a, b) => ordreC(a.cree_le, b.cree_le) || ordreC(a.id, b.id))[0]
+  if (!premier) return null
+  // Une facture validée porte toujours son numéro (`factures_emises_figees`) ; un `%` nul, `raise` l'écrirait `<NULL>`.
+  const numero = vente.factures.find((f) => f.id === premier.facture_id)?.numero ?? '<NULL>'
+  return refusDe(REFUS_GARDE_MOUVEMENTS, 'reserve', numero)
 }
