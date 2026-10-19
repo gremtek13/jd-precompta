@@ -8,6 +8,7 @@ import { arrondirPourFormulaire, valeursDesCases } from './cases2035'
 import { calculerDeclaration2035, POSTE_INDEMNITES_KM } from './declaration2035'
 import type { Categorie, Piece } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { ventesFactureesVides } from '../test/ventesFacturees'
 
 // LES ATTENDUS SONT CALCULÉS À LA MAIN, depuis la notice 2035-NOT-SD 2026 (annexe 2035-E, p. 11-12) et le BOFiP
 // (BOI-CVAE-BASE-20-10 § 70-80, BOI-CVAE-BASE-20-20 § 180-370) : chaque nombre attendu est écrit en clair, avec l'opération
@@ -295,7 +296,7 @@ describe('de bout en bout depuis les pièces', () => {
       piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ttc: 160_000 }),
       piece({ id: 'a', categorie_id: 'c-achats', montant_ttc: 1_000.4 }),
       piece({ id: 'l', categorie_id: 'c-loyer', montant_ttc: 9_600 }),
-    ], categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT)
+    ], categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
     const { valeurs } = valeursDesCases(d)
     const a = calculer2035E({
       annee: 2025, cases: valeurs, formulaire: arrondirPourFormulaire(valeurs, 2025),

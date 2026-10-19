@@ -203,10 +203,14 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
     totalRecettes: 5000.4,
     totalDepenses: 120.6,
     resultat: 4879.8,
-    exclusions: { sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [] },
+    exclusions: {
+      sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [], exemplairesDeFacturesSources: [],
+      ventesFactureesEcartees: [],
+    },
     sansPaiementConnu: [],
     indemnitesKilometriques: null,
     contributions: [],
+    ventesFactureesEnExcedent: [],
   }
   const valeurs = new Map([['AG', 5000.4], ['BA', 120.6], ['CP', 4879.8]])
   const formulaire = new Map([['AG', 5000], ['BA', 121], ['CP', 4879]])

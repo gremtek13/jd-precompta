@@ -1,4 +1,4 @@
-import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM } from './declaration2035'
+import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 
 // Rattachement des postes du moteur (voir declaration2035.ts) aux cases du formulaire officiel.
@@ -167,7 +167,9 @@ function cle(poste: string): string {
 const RATTACHEMENTS: [string, string][] = [
   // Recettes
   ['Recettes', 'AA'],
-  ['Recettes encaissées y compris les remboursements de frais', 'AA'],
+  // Le libellé officiel de la ligne 1, qui est aussi le poste des ventes facturées (étape VF3b1) : IMPORTÉ, comme la CSG
+  // déductible plus bas — recopié, il se désynchroniserait d'un renommage, et les ventes facturées perdraient leur case.
+  [POSTE_VENTES_FACTUREES, 'AA'],
   // Pas de rattachement pour « Honoraires » tout court : le mot désigne une recette ligne 1 chez le
   // praticien et une dépense ligne 21 chez celui qui les paie. Mieux vaut le signaler comme non
   // rattaché et laisser trancher que de choisir à pile ou face le sens d'un montant.

@@ -10,6 +10,7 @@ import { DOSSIER, AUTEUR, ecritureEquilibree, ligne } from '../../test/revision'
 import { explication, seuil } from '../../test/revueAnalytique'
 import { conclusion } from '../../test/revisionRevue'
 import { titreDeLaLigne } from '../../lib/revueAnalytiqueEcran'
+import { POSTE_VENTES_FACTUREES } from '../../lib/declaration2035'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { Categorie, ExerciceValide, Piece } from '../../lib/types'
@@ -50,7 +51,14 @@ vi.mock('../../lib/supabase', async () => {
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
-      eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
+      // Un filtre sur une table jointe (`factures_emises!inner`, la lecture des lignes d'une facture) se juge sur la ligne
+      // que la jointure désigne, comme en base.
+      eq: (colonne: string, valeur: unknown) => {
+        const [jointe, champ] = colonne.split('.')
+        predicats.push(champ === undefined ? predicatEq(colonne, valeur)
+          : (l) => (faux.tables[jointe] ?? []).some((x) => (x as Record<string, unknown>).id === l.facture_id && (x as Record<string, unknown>)[champ] === valeur))
+        return c
+      },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
@@ -1215,5 +1223,80 @@ describe('RevisionTab, revue analytique — un libellé de poste commun à une r
     expect(faux.appels[0].args).toMatchObject({ p_objet: 'Remboursements', p_nature: 'depense', p_montant: 30 })
     // L'explication de la dépense ne dit rien de la recette.
     expect(texte(ligneDuTableau('Remboursements (recette)'))).not.toContain('explication')
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1) : la 2035 de la revue les compte comme celle de Clôture. Leur
+// lecture ne sert qu'à la revue analytique : incomplète, ou rendue pour un autre dossier, elle seule se tait — les soldes et
+// les cycles, qui ne la lisent pas, demeurent. Données FICTIVES.
+describe('RevisionTab, revue analytique — les ventes facturées', () => {
+  // Une facture SOURCE de services, 1 000 € HT à 20 %, encaissée entière le 10 mai 2025 : 1 000 € de recette.
+  function avecUneVenteFacturee() {
+    dossier2025()
+    faux.tables.factures_emises = [{
+      id: 'fs', dossier_id: DOSSIER, statut: 'validee', type: 'facture', numero: 'F2025-0042', date_emission: '2025-05-02',
+      tiers_nom: 'CLIENT FICTIF', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
+      date_prestation: null,
+    }]
+    faux.tables.facture_lignes = [{ id: 'lfs', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }]
+    faux.tables.encaissements_factures = [{
+      id: 'enc', dossier_id: DOSSIER, facture_id: 'fs', date_encaissement: '2025-05-10', montant: 1200, moyen: 'virement',
+      ligne_bancaire_id: null, annule_id: null, cree_le: '2025-05-10T10:00:00Z', retire_le: null,
+    }]
+    faux.tables.encaissements_factures_taux = [{ encaissement_id: 'enc', dossier_id: DOSSIER, taux: 20, montant: 1200 }]
+  }
+  const POSTE = titreDeLaLigne({ objet_type: 'poste_2035', objet: POSTE_VENTES_FACTUREES, nature: 'recette' })
+
+  it('la 2035 de la revue compte l’encaissement de la facture source', async () => {
+    avecUneVenteFacturee()
+    rendre()
+    await attendreLaSection()
+    expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
+    expect(texte(ligneDuTableau('Total des recettes'))).toContain('1 000,00 €')
+  })
+
+  // `factures_emises` n'y est pas : la Vue d'ensemble la lit aussi (les jumelles), et refusée elle cache l'onglet entier,
+  // la revue avec lui (« une table de la Vue d’ensemble refusée cache toute la révision », plus haut).
+  it.each(['facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'])(
+    'la table %s refusée : la section le dit, sans tableau ni geste — les cycles demeurent',
+    async (table) => {
+      avecUneVenteFacturee()
+      faux.refusees.add(table)
+      rendre()
+      await attendreLaSection()
+      expect(within(section()).getByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier \(.*permission denied\)/)).toBeDefined()
+      expect(within(section()).queryByRole('table')).toBeNull()
+      expect(within(section()).queryByRole('button')).toBeNull()
+      expect(within(section()).queryByLabelText('Seuil de signification (€)')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Ouvrir le compte 512000' })).toBeDefined()
+    },
+  )
+
+  it('rendue pour un autre dossier — celui qu’on vient de quitter —, elle ne vaut pas : la section le dit', async () => {
+    avecUneVenteFacturee()
+    const vue = rendre()
+    await attendreLaSection()
+    expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
+    // Un autre dossier s'ouvre dans le même onglet, et ses lectures ne sont pas revenues : la revue ne compte pas les ventes
+    // facturées du dossier quitté pour lui.
+    faux.attente = new Promise<void>(() => {})
+    vue.rerender(
+      <FournisseurPanneauDroit>
+        <ExercicesValidesProvider exercices={[exerciceValide(2024)]} relire={async () => {}}>
+          <AnneeProvider defaut={2025}>
+            <RevisionTab
+              dossierId="autre-dossier" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
+              onNavigate={() => {}}
+            />
+          </AnneeProvider>
+        </ExercicesValidesProvider>
+        <AutreContenu />
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+    await act(async () => {})
+    expect(within(section()).getByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier \(la lecture rendue est celle d’un autre dossier\)/)).toBeDefined()
+    expect(within(section()).queryByRole('table')).toBeNull()
+    expect(within(section()).queryByRole('button')).toBeNull()
   })
 })

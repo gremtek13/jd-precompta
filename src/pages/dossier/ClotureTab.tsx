@@ -30,6 +30,7 @@ import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
 import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
+import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
@@ -139,6 +140,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // vente que plusieurs pièces portent. Lues en partie, elles suspendent la validation, pas la 2035, qui ne les lit pas.
   const [facturesEmises, setFacturesEmises] = useState<FacturePourJumelle[]>([])
   const [transmissions, setTransmissions] = useState<TransmissionPourJumelle[]>([])
+  // LES VENTES FACTURÉES (ligne 28.6, étape VF3b1 ; lib/ventesFactureesLecture.ts) : une facture SOURCE de sa vente compte
+  // dans la 2035 par ses encaissements, et son exemplaire ne compte plus. Lues tout ou rien, à côté des autres entrées de la
+  // déclaration, et gardées AVEC le dossier qui les a demandées : tant qu'elles ne sont pas revenues entières pour ce
+  // dossier, aucune 2035 ne se calcule — ni chiffre, ni formulaire, ni validation.
+  const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -172,7 +178,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     await Promise.all([load(), relireExercicesValides()])
   }
 
+  // LA DERNIÈRE LECTURE DEMANDÉE ÉCRIT SEULE : une lecture plus lente — celle d'avant un enregistrement, ou celle d'un dossier
+  // quitté — ne remplace pas, en arrivant après, celle qui l'a suivie. Le numéro se prend avant la première attente.
+  const derniereLecture = useRef(0)
+
   async function load() {
+    const demande = ++derniereLecture.current
     setLoading(true)
     // LES QUATRE ENTRÉES DE LA DÉCLARATION SONT LUES PAR TRANCHES, PAS SEULEMENT LES PIÈCES.
     // PostgREST plafonne le nombre de lignes rendues sans le signaler (voir lib/lectureComplete.ts),
@@ -185,7 +196,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
-      lectureFacturesEmises, lectureTransmissions,
+      lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -291,6 +302,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         supabase.from('transmissions_factures').select('id, facture_id, canal, hote, flux_id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Ne rejette jamais : une lecture refusée ou partielle revient « incomplète », avec son motif.
+      lireLesVentesFacturees(dossierId),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -298,6 +311,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       chargerRelevesIncoherents(dossierId).catch((err) => { console.error(err); return null }),
       chargerDoublonsDeTexte(dossierId).catch((err) => { console.error(err); return null }),
     ])
+    if (demande !== derniereLecture.current) return
+    setLectureVentes(lectureVentesFacturees)
     setRelevesIncoherents(releves)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
@@ -401,6 +416,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // L'année d'une pièce est celle de son paiement, ou de sa facture à défaut (voir lib/rattachement.ts)
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
+  // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
+  const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
+  const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
@@ -421,6 +440,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se
     // proposer comme un autre.
     ...parts.map((m) => anneeDe(m.ligne.date)),
+    // Et un exercice qui n'a que des encaissements de factures sources.
+    ...(ventesFacturees?.parts ?? []).map((p) => anneeDe(p.date)),
     ...comptees.map((c) => anneeDe(c.date)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -436,8 +457,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // annuelle — le moteur exige un exercice précis, et « toutes » n'est qu'un cumul d'exercices pour
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
-  const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan),
+  // Sans les ventes facturées du dossier lues en entier, AUCUNE 2035 : une déclaration sans ses ventes facturées serait
+  // plausible, fausse et signée, et le moteur n'a pas de valeur par défaut à leur donner.
+  const declarations = ventesFacturees === null ? [] : exercices.map((a) =>
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -702,6 +725,18 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ...d.exclusions.mouvementsHorsResultat.map((m) => ({ mouvement: m, raison: 'compte de la catégorie hors charges et produits' })),
   ])
 
+  // CE QUE LES VENTES FACTURÉES ONT D'ÉCARTÉ OU DE TROP (lib/ventesFacturees.ts), et les exemplaires qu'elles retirent du
+  // compte des pièces. Les écartées et les excédents sont ceux du DOSSIER — le module ne date pas une facture qu'il écarte —,
+  // portés à l'identique par chaque déclaration : ils se lisent sur la première ouverte, et se disent une fois. Les
+  // exemplaires, ceux des exercices ouverts affichés, dédoublonnés comme les pièces exclues. Une ligne discrète chacun, et
+  // seulement quand il y en a.
+  const ventesEcartees = declarationsOuvertes[0]?.exclusions.ventesFactureesEcartees ?? []
+  const ventesEnExcedent = declarationsOuvertes[0]?.ventesFactureesEnExcedent ?? []
+  const exemplaires = new Map<string, Piece>()
+  for (const d of declarationsOuvertes) for (const p of d.exclusions.exemplairesDeFacturesSources) exemplaires.set(p.id, p)
+  const exemplairesNonComptes = [...exemplaires.values()]
+  const nomDeLaFacture = (v: { numero: string | null; tiers: string }) => `${v.numero ?? 'sans numéro'} (${v.tiers})`
+
   // Ce qui compte à sa DATE DE FACTURE faute de paiement rapproché, exercice par exercice : une
   // supposition, pas une lecture — la pièce a peut-être été payée une autre année. Dite ici, sur
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
@@ -910,6 +945,26 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             </table>
           </div>
         </div>
+      )}
+
+      {ventesEcartees.length > 0 && (
+        <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+          Ventes facturées que la 2035 ne compte pas ({ventesEcartees.length}) :{' '}
+          {ventesEcartees.map((v) => `${nomDeLaFacture(v)} — ${v.detail}`).join(' ; ')}.
+        </p>
+      )}
+      {ventesEnExcedent.length > 0 && (
+        <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+          Ventes facturées encaissées au-delà de la facture nette de ses avoirs ({ventesEnExcedent.length}) :{' '}
+          {ventesEnExcedent.map((v) => `${nomDeLaFacture(v)} à ${String(v.taux).replace('.', ',')} %, ${formatMoney(v.excedentCentimes / 100)} de trop`).join(' ; ')}
+          {' '}— comptés dans la 2035, l’argent ayant été reçu ; le trop-perçu reste à rembourser ou à régulariser.
+        </p>
+      )}
+      {exemplairesNonComptes.length > 0 && (
+        <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+          Exemplaires d’une facture source, que la 2035 ne compte pas — la vente l’est par les encaissements de sa facture
+          ({exemplairesNonComptes.length}) : {exemplairesNonComptes.map((p) => p.tiers ?? p.nom_fichier).join(', ')}.
+        </p>
       )}
 
       <BandeauLecturePartielle
@@ -1413,6 +1468,21 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
 
       {loading ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
+      ) : ventesFacturees === null ? (
+        // Les ventes facturées de ce dossier ne sont pas revenues entières : rien ne se calcule, et rien ne s'offre.
+        ventesIncompletes ? (
+          <BandeauLecturePartielle
+            quoi="Les ventes facturées du dossier"
+            accord="lues"
+            motif={ventesIncompletes}
+            consequence={
+              'La 2035 ne se calcule pas sans elles : ni ses montants, ni son formulaire, ni la validation de l’exercice ne '
+              + 's’affichent. Recharge la page.'
+            }
+          />
+        ) : (
+          <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
+        )
       ) : formulaires.length === 0 ? (
         <div className="card"><div className="empty-state">Rien à regrouper pour l'instant.</div></div>
       ) : (

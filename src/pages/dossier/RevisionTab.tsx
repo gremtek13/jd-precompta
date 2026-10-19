@@ -23,6 +23,7 @@ import {
   type LigneDeLaRevue, type ReperesAnnuels,
 } from '../../lib/revueAnalytique'
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
+import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import {
   argumentsDeConsigner, argumentsDeRetirer, entreesDuDossierPermanent, type ContexteDuDossierPermanent, type SaisieDuDossierPermanent,
 } from '../../lib/dossierPermanent'
@@ -109,8 +110,12 @@ interface LectureDeLaRevision {
   explications: RevisionExplication[]
   reperes: ReperesAnnuels
   motifs: MotifDeLecture[]
-  // Les motifs des quatre lectures de la revue analytique, À PART : ils ne cachent que sa section.
+  // Les motifs des lectures de la revue analytique, À PART : ils ne cachent que sa section.
   motifsRevue: MotifDeLectureDeLaRevue[]
+  // Les ventes facturées du dossier (ligne 28.6, étape VF3b1) : la 2035 de la revue les compte, comme celle de Clôture.
+  // Elles ne servent qu'à la revue analytique — ni les soldes, ni les cycles, ni le dossier permanent ne les lisent —, et
+  // leur lecture incomplète rejoint donc les motifs de la revue, qui se tait seule.
+  ventesFacturees: LectureVentesFacturees
   // Le dossier permanent (étape R7), tous exercices, À PART : sa lecture ratée ou partielle ne cache que sa section.
   permanent: LectureDuDossierPermanent
   // Ce que la section lit D'AUTRE que ses entrées — les pièces et les documents, de quoi nommer une citation et dire son état —
@@ -139,6 +144,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   const [
     checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
+    ventesFacturees,
   ] = await Promise.all([
     lireLaChecklist(dossierId),
     lireTout<SoldeReporte>((debut, fin) =>
@@ -195,6 +201,8 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
         .eq('dossier_id', dossierId).order('annee').order('poste').order('id').range(debut, fin),
     ),
     lireLePermanent(dossierId),
+    // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
+    lireLesVentesFacturees(dossierId),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -224,6 +232,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
   if (lectureExplications.motif) motifsRevue.push({ quoi: 'Les explications de la revue analytique', accord: 'lues', motif: lectureExplications.motif })
   if (lectureReperes.motif) motifsRevue.push({ quoi: 'Les repères annuels de l’onglet Estimation', accord: 'lus', motif: lectureReperes.motif })
   if (lectureReperesDesPostes.motif) motifsRevue.push({ quoi: 'Les repères par poste de l’onglet Estimation', accord: 'lus', motif: lectureReperesDesPostes.motif })
+  if (ventesFacturees.etat === 'incomplete') motifsRevue.push({ quoi: 'Les ventes facturées du dossier', accord: 'lues', motif: ventesFacturees.motif })
   return {
     checklist: { ...checklist, relevesIncoherents: checklist.relevesIncoherents ?? [], doublonsTexte: checklist.doublonsTexte ?? [] },
     reprise: checklist.aNouveaux,
@@ -240,6 +249,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     reperes: { annuels: lectureReperes.lignes, postes: lectureReperesDesPostes.lignes },
     motifs,
     motifsRevue,
+    ventesFacturees,
     permanent,
     motifsDuPermanent,
   }
@@ -768,12 +778,19 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   // LA REVUE ANALYTIQUE de l'exercice (lib/revueAnalytique.ts) : le module reçoit ce que l'onglet a lu EN ENTIER. Ses quatre
   // lectures propres, ratées ou partielles, lui sont dites — il n'affirme alors rien, et la section nomme ce qui manque.
+  // Les ventes facturées de CE dossier : celles d'un autre — une lecture d'avant un changement de dossier — ne valent pas, et la
+  // revue le dit comme une lecture qui manque, plutôt que de calculer une 2035 sans elles.
+  const lectureDesVentes = lectureDuDossier(lecture.ventesFacturees, dossierId)
+  const ventesDeLaRevue = lectureDesVentes?.etat === 'lue' ? lectureDesVentes.ventes : null
+  const motifsDeLaRevue: MotifDeLectureDeLaRevue[] = lectureDesVentes === null
+    ? [...lecture.motifsRevue, { quoi: 'Les ventes facturées du dossier', accord: 'lues', motif: 'la lecture rendue est celle d’un autre dossier' }]
+    : lecture.motifsRevue
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
-    reperes: lecture.reperes, seuils: lecture.seuils, explications: lecture.explications,
+    reperes: lecture.reperes, seuils: lecture.seuils, explications: lecture.explications, ventesFacturees: ventesDeLaRevue,
   })
-  const lectureDeLaRevueIncomplete = lecture.motifsRevue.length > 0
-    ? lecture.motifsRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')
+  const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
+    ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')
     : null
   const revueAnalytique = revueAnalytiqueDeLExercice(donneesDeLaRevue, lectureDeLaRevueIncomplete)
   // Ce qu'il faut pour dire les refus des deux fonctions : l'accès comme pour les soldes (hypothèse Q2), le dossier en entier.
@@ -888,7 +905,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         dossierId={dossierId}
         annee={annee}
         revue={revueAnalytique}
-        motifs={lecture.motifsRevue}
+        motifs={motifsDeLaRevue}
         enEngagement={modele.mode === 'engagement'}
         contexteDuSeuil={contexteDuSeuil}
         utilisateur={session?.user.id ?? null}

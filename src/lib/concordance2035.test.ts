@@ -19,6 +19,9 @@ import type {
 } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
+import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { formatMoney } from './format'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -120,12 +123,15 @@ type Dossier = ReturnType<typeof dossier>
 function concordance(d: Dossier, o: {
   annee?: number; ouverture?: string | null; immobilisations?: Immobilisation[]; vehicules?: VehiculeDossier[]
   declarationsTva?: DeclarationTva[]
+  // Les ventes facturées du dossier : aucune, sauf dans les tests qui en parlent.
+  ventes?: VentesFacturees
 } = {}) {
   const immobilisations = o.immobilisations ?? [bien]
   const declaration = calculerDeclaration2035(
     o.annee ?? 2025, d.pieces, categories, immobilisations,
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
     paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
+    o.ventes ?? ventesFactureesVides('d1'),
   )
   return concordance2035(
     declaration, d.ecritures,
@@ -603,7 +609,7 @@ describe('ouAgir', () => {
 
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
-    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT,
+    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
   )
 
   it('dit un compte que deux postes de cases différentes partagent', () => {
@@ -627,5 +633,55 @@ describe('comptesPartagesEntreCases', () => {
       { id: 'c2', libelle: 'Assurance', compte_comptable: '616000', poste_2035: "Primes d'assurance" },
     ] as Categorie[]
     expect(comptesPartagesEntreCases(declarer(cats, [piece({ id: 'a', categorie_id: 'c1' }), piece({ id: 'b', categorie_id: 'c2' })]))).toEqual([])
+  })
+})
+
+// LA PART D'UNE VENTE FACTURÉE (ligne 28.6, étape VF3b1) : la 2035 la compte sans compte, et aucune écriture ne la porte
+// avant l'étape VF4. Sur le dossier que l'application a entièrement écrit — qui concorde —, une facture source encaissée
+// fait UN écart par encaissement, à son motif, et rien d'autre ne bouge.
+describe('concordance2035 — la part d’une vente facturée, sans écriture encore', () => {
+  // Une facture à deux taux, encaissée en une fois : 1 310 €, dont 1 200 à 20 % et 110 à 10 % — 1 100 € de recette.
+  const f = factureVendue({ id: 'f1', numero: 'F2025-0007', tiers_nom: 'Client fictif', date_emission: '2025-09-01' })
+  const lignes = [ligneVendue('f1', 1000, 20, 1), ligneVendue('f1', 100, 10, 2)]
+  const e = encaissementVendu({ id: 'enc-1', date_encaissement: '2025-09-15', montant: 1310 })
+  const parts = [{ ...e.part, taux: 20, montant: 1200 }, { ...e.part, taux: 10, montant: 110 }]
+  const ventes = ventesFacturees({ dossierId: 'd1', factures: [f], lignes, encaissements: [e.encaissement], parts })
+
+  it('un écart par encaissement, ses deux taux ensemble, sans compte : « sans écriture encore »', () => {
+    const c = concordance(dossier(), { ventes })
+    expect(c.concorde).toBe(false)
+    expect(c.ecarts).toHaveLength(1)
+    const [ecart] = c.ecarts
+    expect(ecart).toMatchObject({
+      cle: 'encaissement:enc-1', reference: { type: 'encaissement', id: 'enc-1' },
+      libelle: 'Encaissement de la facture F2025-0007 — Client fictif', date: '2025-09-15',
+      declaration: 1100, ecritures: 0, comptesDeclaration: [null], comptesEcritures: [], motif: 'vente_facturee_non_ecrite',
+    })
+    expect(phraseDeLEcart(ecart)).toBe(
+      `La 2035 compte cet encaissement d’une facture (${formatMoney(1100)}) ; l’application n’écrit pas encore les ventes facturées, et la validation de l’exercice attend leurs écritures.`,
+    )
+    expect(ouAgir(ecart)).toBe('Pas encore dans l’application')
+    // Ce n'est pas une catégorie sans compte : le cabinet n'a rien à régler dans Écritures.
+    expect(ouAgir(ecart)).not.toBe('Écritures — Comptes manquants')
+    // Le résultat des écritures ne bouge pas ; celui de la 2035 porte la recette.
+    const sansVente = concordance(dossier())
+    expect(c.ecritures).toEqual(sansVente.ecritures)
+    expect(c.declaration.recettes).toBe(sansVente.declaration.recettes + 1100)
+  })
+
+  it('une contre-passation se dit telle, sous sa propre clé', () => {
+    const cp = encaissementVendu({ id: 'enc-2', date_encaissement: '2025-10-01', montant: -1310, annule_id: 'enc-1' })
+    const partsCp = [{ ...cp.part, taux: 20, montant: -1200 }, { ...cp.part, taux: 10, montant: -110 }]
+    const avecCp = ventesFacturees({ dossierId: 'd1', factures: [f], lignes, encaissements: [e.encaissement, cp.encaissement], parts: [...parts, ...partsCp] })
+    const c = concordance(dossier(), { ventes: avecCp })
+    expect(c.ecarts.map((x) => [x.cle, x.libelle, x.declaration])).toEqual([
+      ['encaissement:enc-1', 'Encaissement de la facture F2025-0007 — Client fictif', 1100],
+      ['encaissement:enc-2', 'Contre-passation d’un encaissement de la facture F2025-0007 — Client fictif', -1100],
+    ])
+  })
+
+  it('aucun compte partagé entre cases : une part sans compte n’en partage aucun', () => {
+    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventes)
+    expect(comptesPartagesEntreCases(declaration)).toEqual([])
   })
 })
