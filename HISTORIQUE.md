@@ -29490,6 +29490,165 @@ par ses encaissements ; les fonctions le refusent. G2 départage deux encaisseme
 tiré au hasard : la facture qu'il nomme peut alors varier. Une écriture qui porte un encaissement reste supprimable par
 sa policy (VF4, G5). Deux fautes d'avant VF2, identiques avant et après : `ventesClient.sql` 0c attend 8 fonctions sous
 `gere_les_ventes`, la base en a 19 depuis les étapes A1 à A6 (sa liste est à mettre à jour), et `validationExercice.sql`
-141. Le Node
-22.22.0 d'une image de conteneur décodait windows-1252 comme latin-1 (`contactsImportFichier.test.ts` y échouait, la
-CI sous 22.23.3 non) : la barrière locale s'est jouée sous le Node de la CI.
+141. Le Node 22.22.0 d'une image de conteneur décodait windows-1252 comme latin-1 (`contactsImportFichier.test.ts` y
+échouait, la CI sous 22.23.3 non) : la barrière locale s'est jouée sous le Node de la CI.
+
+**LA MISE EN LIGNE.** Demande #192, ouverte sur `7706250` après la barrière locale sous Node 22.23.3 (`tsc -b` ; lint,
+0 erreur et les 63 avertissements d'avant ; 422 fichiers et 12 788 tests sous Paris, UTC, New York et Auckland ; le
+build) ; les deux passes de `verifier` vertes (la branche, de 9 h 42 à 9 h 55 UTC ; la demande, de 9 h 56 à 10 h 06) ;
+fusionnée en « Rebase and merge » le 19/10/2026 à 10 h 07 UTC (`a8b2548`, `b8adc7f`), `main` linéaire, son arbre égal à
+celui de la branche ; le déploiement vert à 10 h 12, et le site sert `index-DLhB9Hgi.js`, le bundle du build local du
+même arbre ; la ligne 28.6 de la feuille de route mise à jour, puis relue (4 927 positions, liens intacts) ; les barres
+d'avancement inchangées.
+
+### 19/10/2026 — LES VENTES FACTURÉES, EN MODULE — CHANTIER EC-Q3, ÉTAPE VF3a (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF3a sur `76a5e6b`, relue par la session, qui lui a fait corriger un point : l'option
+pour les débits. Fichiers nouveaux, et seuls changés : `src/lib/ventesFacturees.ts`, `src/lib/ventesFactureesLecture.ts`
+et leurs tests. Ni base, ni migration, ni Edge Function, ni écran ; en production, un seul `SELECT` du catalogue, égal à
+l'export.)
+
+**LA DÉLIMITATION.** La session a coupé VF3 (§ 14 de la conception) en deux lots, pour garder chacun petit et
+contrôlable. VF3a tranche la forme sous laquelle les moteurs liront les ventes facturées (§ 18, premier point), et écrit
+le module pur et sa lecture, sans rien brancher. VF3b branchera la 2035, la CA3, la situation, l'estimation et la
+simulation, puis leurs écrans (Clôture, TVA, Financement, Estimation, Révision). VF3a est NEUTRE : rien ne lit encore le
+module, et aucun test existant ne change.
+
+**LA FORME : UNE SECONDE, `VentesFacturees` ; `PartDuReleve` RESTE TEL QUEL.** La forme commune des parts du relevé
+existe pour qu'une source nouvelle ne soit pas un paramètre de plus, qu'un appelant oublierait. Elle aurait mêlé ici des
+événements de nature différente. Quatre raisons, écrites en tête du module avec leurs sources. (1) La CA3 ne compte pas
+les événements de la 2035 : la TVA d'un bien est due à la livraison, reste non encaissé compris (CGI, art. 269, 1-a et
+2-a), et sur l'option pour les débits à la date de la facture (2-c). Ce ne sont pas des recettes : dans la forme
+commune, les cinq moteurs qui ne sont pas la CA3 devraient tous savoir les écarter, et celui qui l'oublierait compterait
+de la TVA comme une recette, en silence. (2) La TVA d'un paiement partiel suit la règle du cumul (art. 283, 3) : la part
+PORTE sa TVA, que la CA3 ne recalcule pas du TTC comme celle d'une part du relevé (`horsTaxeEtTva`). (3) Un encaissement
+n'a pas toujours de mouvement : espèces, compensation, chèque à sa remise (art. 93, 1). (4) Un encaissement se répartit
+par taux. Ce que l'autre voie aurait coûté à VF3b, mesuré : rendre facultatives vingt lignes de sept fichiers qui lisent
+le mouvement d'une part ; porter la TVA au lieu de la recalculer ; défaire pour cette origine le refus « sur les
+débits » de la CA3 ; ajouter dans cinq moteurs un filtre des parts d'exigibilité. Celle-ci ne change aucun lecteur de la
+forme commune, ni aucun des sept appels de `partsDuReleve` : un paramètre OBLIGATOIRE, sans valeur par défaut, et une
+boucle par moteur. Les écrans à toucher sont les mêmes dans les deux voies.
+
+**LE RÉGIME, LÀ OÙ LA BASE LE FIGE.** Le régime se lit sur la facture, jamais au dossier d'aujourd'hui :
+`nature_operation` (une facture source dit biens ou services, sinon elle ne se valide pas) et `option_debits`, que
+`enregistrer_facture` fige à la validation ; l'avoir prend ceux de sa facture. L'option ne vaut que pour des services :
+un bien reste à la livraison, option ou non. Sa date est celle de la prestation que porte la facture, sinon sa date
+d'émission. Une valeur qui manque écarte la facture : on ne devine pas un régime.
+
+**CE QUE LE MODULE REND** (`ventesFacturees`), en centimes signés :
+- les `parts` : la 2035 en trésorerie, à la date de l'encaissement, par encaissement et par taux — le TTC du registre,
+  la TVA au cumul, et le hors-taxe, qui fait la recette. Une contre-passation donne des parts opposées ; un encaissement
+  retiré ne compte pas. Une franchise ou une exonération, ce sont des lignes à 0 %, dont la recette est le TTC ;
+- les `exigibilites` : la CA3, selon le régime ;
+- les `documents` : la facture et ses avoirs à leur date d'émission, pour l'engagement (EC3-Q12) ;
+- les `ecartees` : une facture qu'on ne sait pas compter sans deviner, entière, et pourquoi — le moteur qui la reçoit la
+  dira ;
+- les `excedents` ;
+- les `sources`, et `exemplaireDUneFactureSource`, le prédicat qui empêchera VF3b de compter une vente deux fois (§ 8) ;
+- `recettesFactureesDeLaPeriode`, pour l'estimation.
+
+**LA RÈGLE DU CUMUL** (§ 6), en centimes entiers. Le calcul se fait en `BigInt` : le produit de deux montants dépasse la
+précision d'un nombre à virgule. Pour un taux, soient V et T la TVA et le TTC de la facture, nets de ses avoirs datés au
+plus tard du jour de l'encaissement, et P le cumul net de ses encaissements à ce jour. La TVA cumulée vaut V × P / T
+arrondi au centime, le demi loin de zéro, et chaque encaissement prend la différence ; un taux soldé porte donc
+exactement V. Les encaissements d'un même jour se rangent par leur création, puis par leur identifiant octet par octet,
+comme dans G2. La session retient deux choix de l'agent :
+- une CONTRE-PASSATION porte l'exact opposé de l'encaissement qu'elle annule, car la taxe de l'impayé est celle qui a
+  été déclarée (BOI-TVA-BASE-20-20, § 40) ; l'encaissement suivant reprend la différence. Le cumul appliqué à la
+  contre-passation elle-même en différerait d'un centime, dans un cas d'égalité au demi ;
+- un EXCÉDENT n'écarte pas la facture : c'est un avoir émis après le paiement, que rien n'a encore remboursé (EC3-Q10).
+  L'argent est reçu et la 2035 le compte, mais l'excédent se dit.
+
+**LA CONCEPTION CORRIGÉE SUR UN POINT : L'OPTION POUR LES DÉBITS.** Le § 6 disait « à la date de la facture », et la
+consigne de l'agent aussi. Or l'option ne retarde jamais l'exigibilité au-delà d'un encaissement qui précède le débit :
+un acompte reçu avant la facture rend la TVA exigible à son encaissement (BOI-TVA-BASE-20-40 ; directive 2006/112/CE,
+art. 65). La base admet un tel encaissement : `enregistrer_encaissement` ne borne sa date qu'au 1er janvier 2000 et à la
+frontière. La session l'a relevé à la relecture. Le régime des débits suit désormais le chemin des biens, la date de la
+facture tenant lieu de livraison :
+- les encaissements d'avant comptent à leur date ;
+- le reste compte à la date de la facture ;
+- les avoirs d'après comptent à leur date ;
+- rien de ce qui s'encaisse ensuite ne compte : l'impayé d'une facture sur les débits ne rend sa taxe qu'une fois la
+  créance devenue irrécouvrable, ce qui est hors du chantier.
+
+**LA LECTURE** (`lireLesVentesFacturees`) fait quatre `lireTout` :
+- les factures et avoirs validés sources ;
+- leurs lignes, par une jointure filtrée en base, chacune confrontée aux factures lues ;
+- le registre ENTIER des encaissements du dossier, retirés et contre-passations compris (le module décide) ;
+- leurs parts par taux.
+
+C'est tout ou rien : une seule lecture partielle, refusée ou rompue, ou une ligne d'un autre dossier, et l'état dit
+« incomplète » en nommant la collection. Une vente dont un encaissement manquerait aurait l'air d'une vente à moitié
+payée. La lecture ne rejette jamais, et `lectureDuDossier` ne la rend qu'au dossier qui l'a demandée.
+
+**LES PREUVES.** Le module a 48 tests : `prorataArrondi` (le demi, les négatifs, dix mille milliards d'euros en
+centimes) ; le régime et la livraison ; le cumul en cas écrits (un paiement, un partiel, trois tiers, deux taux, un
+avoir avant, après ou le jour même, une contre-passation, celle de la première de deux parts, les retraits, le 0 %,
+l'ordre d'un même jour) ; les dates de la CA3 pour chaque régime (sur les débits : l'acompte d'avant la facture, la
+contre-passation d'avant et d'après, la facture sans encaissement) ; les écarts, l'excédent, les filtres, l'exemplaire,
+les recettes d'une période. Un tirage (`tirage(20261019)`) de 3 000 factures, émises entre le 8 et le 27 janvier quand
+les encaissements commencent le 11 — plus de six cents par régime ont des encaissements d'avant leur date —, en éprouve
+les invariants : h + v = p ; les parts font le montant de leur encaissement ; une contre-passation porte l'opposé
+exact ; après chaque encaissement ordinaire (7 532), la TVA cumulée vaut V × P / T, recalculé à part ; un taux soldé au
+jour de son dernier encaissement porte exactement sa TVA nette (2 444) ; pour un bien ou sur les débits, aucun
+encaissement n'est compté au fait générateur ou après, et à toute date d'ensuite la TVA exigible cumulée vaut la TVA
+nette des avoirs de ce jour (9 229) ; les documents égalent la facture électronique ; le calcul ne dépend pas de l'ordre
+de la lecture. La lecture a 9 tests : les colonnes, la pagination, une lecture partielle, refusée ou qui rend une ligne
+d'un autre dossier — chacune des quatre —, le client qui lève, le dossier changé en cours de route. Mutations : 59 sur
+59 tuées (50 du module, 9 de la lecture) ; au premier passage, six survivaient — cinq ont reçu leur cas, la sixième
+était équivalente. La barrière de l'agent, sous Node 22.23.3 : `tsc -b` 0, lint 0 erreur (les 63 avertissements
+d'avant), la suite sous les quatre fuseaux (424 fichiers, 12 845 tests chacun : les 12 788 d'avant et 57 neufs), le
+build.
+
+**CE QUI A ÉTÉ TRANCHÉ, PAR LE CABINET.** Le 19/10/2026 à 14 h 43 UTC, sur la page des arbitrages, le cabinet a répondu
+aux quatorze questions de la conception et de VF2, toutes à la recommandation :
+- EC3-Q1 : la bascule se fait par dossier, par le cabinet, sans effet rétroactif ;
+- EC3-Q2 : la case « Ventes » est refusée sur un dossier qui n'a pas basculé ;
+- EC3-Q3 : après la bascule, une pièce de vente se dit exemplaire ou vente hors de l'application, pièce par pièce ;
+- EC3-Q4 : le mouvement que désigne le client est proposé au cabinet ;
+- EC3-Q5 : les ventes du client entrent sans visa ;
+- EC3-Q6 et EC3-Q6b : le 445800, sous les racines 44580 et 44574 ;
+- EC3-Q7 : le chèque au 511 à sa remise, les espèces au 53 ;
+- EC3-Q8 : la facture mixte est refusée jusqu'à A7 ;
+- EC3-Q9 : l'encaissement d'une facture reprise de l'ancien logiciel compte ;
+- EC3-Q10 : l'avoir réduit ce qui reste à encaisser ;
+- EC3-Q11 : « Ma simulation » d'un client « Banque » reçoit le total mensuel seul, par une lecture présentée avant
+  d'être appliquée, à VF8 ; jusque-là, elle dit qu'elle ne compte pas les ventes facturées ;
+- EC3-Q12 : en engagement, une facture se compte à sa date d'émission — ce que font les `documents` ;
+- VF2-Q2 : le classement d'un virement qui paie une facture d'avant la bascule et une facture source compte aussi
+  l'encaissement de la facture d'avant.
+
+Une question entre dans la page : VF3-Q1, la règle du cumul. Le § 18 la réservait à l'expert-comptable du cabinet, mais
+aucune fiche ne la posait encore.
+
+**CE QUE VF3b BRANCHERA**, lecteur par lecteur :
+- `calculerDeclaration2035`, appelée par Clôture et la Révision :
+  - le paramètre obligatoire ;
+  - les pièces exemplaires d'une facture source, ignorées ;
+  - une contribution par part, sous une source neuve « encaissement » ;
+  - le poste AA (ligne 1, les recettes ; les débours restent hors du chantier) ;
+  - le compte de son rôle : `prestations_de_services` pour des services, `ventes_de_biens` pour des biens ;
+  - les factures écartées et les excédents, dans les exclusions.
+- `calculerCa3` et `comparerDeclarations` :
+  - `DonneesTva.ventesFacturees`, obligatoire ;
+  - les exigibilités de la période, placées par taux sans recalcul de TVA : négatives en B5 et 21, à 0 % en E2 ou F8 ;
+  - le régime de la facture, et non l'option d'aujourd'hui du dossier.
+- `calculerSituationIntermediaire` (Financement, trois fenêtres) : les parts en trésorerie, les documents en engagement.
+- `totauxPourAnnee` et `projectionAnnuelle` (Estimation) : `recettesFactureesDeLaPeriode`, les exemplaires ignorés.
+- « Ma simulation » : rien avant VF8 (EC3-Q11), et elle le dit.
+
+Chaque écran lit sous `lectureDuDossier`, et une lecture incomplète le bloque comme les autres. La phrase de VF1b
+« Désigner ne change rien à ce qui se compte aujourd'hui » devient fausse pour une facture source.
+
+**À REVOIR.**
+- VF2-Q2 et EC3-Q9 font compter des encaissements de factures qui ne sont PAS sources : celui d'une facture d'avant la
+  bascule cité sur un mouvement réservé, et celui d'une facture reprise de l'ancien logiciel (A8). Le module ne lit que
+  les sources : VF3b et VF5 concevront comment ces encaissements entrent sans compter deux fois avec leurs pièces.
+- Un avoir daté du jour d'un encaissement déjà enregistré compte pour lui : P peut dépasser T ce jour-là. Un avoir qui
+  annule le taux écarte la facture (`ttc_nul`) : c'est dit, jamais deviné.
+- Un taux que solde un avoir daté APRÈS le dernier encaissement — le client a payé le net avant que l'avoir soit émis —
+  porte la TVA du cumul au jour de cet encaissement, qui peut s'écarter d'un centime de la TVA nette par l'arrondi des
+  lignes : le tirage ne juge « soldé » qu'au jour du dernier encaissement. À trancher avec VF3-Q1.
+- Les tests prouvent que le module applique la règle du § 6 et ses invariants. Ils ne prouvent ni que cette règle est
+  celle qu'attend l'administration (VF3-Q1), ni que la base de VF4 refera le même calcul : il faudra alors le confronter
+  à une table relevée en base.

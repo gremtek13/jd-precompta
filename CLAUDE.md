@@ -401,15 +401,17 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   les moteurs lisent la facture et le registre des encaissements (la recette à sa date d'encaissement en trésorerie, la
   créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le PDF désignés
   « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
-  sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; douze questions, EC3-Q1 à Q12 ; avant VF3, trancher
-  entre la forme commune des parts du relevé et une seconde forme ; fini avant que les clients facturent réellement ici
-  → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire
-  d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE
-  D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre (le réglage du
-  dossier, la source fixée à la validation, les encaissements d'une facture source, le mouvement réservé puis classé
-  par ses encaissements ; EC3-Q6b et VF2-Q2 ouvertes) → « LA SOURCE DE LA VENTE, EN BASE » ; restent VF3 à VF9 — à
-  VF3, la confirmation qui dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; qui a désigné,
-  et quand : à VF6 (VF1A-Q2).
+  sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées
+  le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul) ouverte ; fini avant que les clients facturent
+  réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) :
+  l'exemplaire d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) →
+  « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre
+  (le réglage du dossier, la source fixée à la validation, les encaissements d'une facture source, le mouvement réservé
+  puis classé par ses encaissements) → « LA SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE
+  forme, `VentesFacturees` (`lib/ventesFacturees.ts`, pur, et sa lecture), que rien ne lit encore → « LES VENTES
+  FACTURÉES, EN MODULE ». Restent VF3b (les moteurs, puis leurs écrans) à VF9 — à VF3b, la confirmation qui dit
+  « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit, et se conçoivent les encaissements de factures
+  non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -754,7 +756,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   de la vente** : le réglage d'un dossier, irréversible dès sa première facture source ; la source fixée à la
   validation, puis figée ; un mouvement qui justifie un encaissement d'une facture source est RÉSERVÉ (G2) et ne se
   classe que par ses encaissements, par le cabinet seul (G1) ; les colonnes des écritures fermées jusqu'à VF4 ;
-  `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ».
+  `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les
+  moteurs la liront par `lib/ventesFacturees.ts`, une SECONDE forme (la CA3 n'y lit pas les événements de la 2035), en
+  paramètre obligatoire : la TVA d'un paiement partiel au cumul, l'exigibilité selon le régime figé sur la facture →
+  « LES VENTES FACTURÉES, EN MODULE ».
   **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
