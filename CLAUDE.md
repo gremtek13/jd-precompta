@@ -402,18 +402,20 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le PDF désignés
   « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
   sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées
-  le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul) ouverte ; fini avant que les clients facturent
-  réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) :
-  l'exemplaire d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) →
-  « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre
-  (le réglage du dossier, la source fixée à la validation, les encaissements d'une facture source, le mouvement réservé
-  puis classé par ses encaissements) → « LA SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE
-  forme, `VentesFacturees` (`lib/ventesFacturees.ts`, pur, et sa lecture) → « LES VENTES FACTURÉES, EN MODULE ». VF3b1
-  et VF3b2 le 19/10/2026 : la 2035 (Clôture, la Révision) et la CA3 (l'onglet TVA) les lisent ; jusqu'à VF4, une part
-  sans compte et une déclaration qui ne s'enregistre pas → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES
-  FACTURÉES ». Restent VF3b3 (la situation, l'estimation, la simulation), puis VF4 à VF9 — à VF3b3, la confirmation qui
-  dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; se conçoivent les encaissements de factures
-  non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2).
+  le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul) et VF6-Q1 (défaire l'exemplaire d'une facture source)
+  ouvertes ; fini avant que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA
+  CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire d'une facture, en base (VF1a) puis désigné et défait
+  depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À
+  L'ÉCRAN ». VF2 en base le 19/10/2026, neutre (le réglage du dossier, la source fixée à la validation, les
+  encaissements d'une facture source, le mouvement réservé puis classé par ses encaissements) → « LA SOURCE DE LA VENTE,
+  EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE forme, `VentesFacturees` (`lib/ventesFacturees.ts`, pur, et sa
+  lecture) → « LES VENTES FACTURÉES, EN MODULE ». VF3b le 19/10/2026, en trois lots : la 2035 (Clôture, la Révision), la
+  CA3 (l'onglet TVA), la situation et l'estimation (Financement, Estimation) les lisent, « Ma simulation » dit ne pas
+  les compter jusqu'à VF8, et les confirmations de VF1b disent ce qui se compte ; jusqu'à VF4, une part sans compte et
+  une déclaration qui ne s'enregistre pas → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES »,
+  « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES FACTURÉES ». Restent VF4 à VF9 — se conçoivent les
+  encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ;
+  à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -752,19 +754,23 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   DEUX FOIS ». **L'exemplaire d'une facture** (`pieces.facture_id`) : la jumelle ou le PDF, DÉSIGNÉ par le cabinet seul
   (`designer_exemplaire_facture`, `defaire_exemplaire_facture`), sur une facture VALIDÉE du même dossier et une pièce de
   VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
-  dite la première, sans faire taire les autres ; rien de ce qui se compte ne change ; à l'écran, la fiche d'une pièce
-  de vente seule, côté cabinet, sur des factures lues en entier, et défaire ne retire pas le double compte, ce que sa
-  confirmation dit → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source
-  de la vente** : le réglage d'un dossier, irréversible dès sa première facture source ; la source fixée à la
-  validation, puis figée ; un mouvement qui justifie un encaissement d'une facture source est RÉSERVÉ (G2) et ne se
-  classe que par ses encaissements, par le cabinet seul (G1) ; les colonnes des écritures fermées jusqu'à VF4 ;
-  `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les
-  moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE forme (la CA3 n'y lit pas les événements de la 2035), en
-  paramètre obligatoire : la TVA d'un paiement partiel au cumul, l'exigibilité selon le régime figé sur la facture →
-  « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1, la CA3 depuis VF3b2 ; avant VF4, aucune écriture ne
-  la porte : la concordance la dit à part (`vente_facturee_non_ecrite`), et une période qui en porte ne s'enregistre pas
-  (`REFUS_VENTES_FACTUREES_NON_ECRITES`) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES ».
-  **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  dite la première, sans faire taire les autres ; l'exemplaire d'une facture SOURCE ne compte plus (VF3b), celui d'une
+  autre compte comme hier ; à l'écran, la fiche d'une pièce de vente seule, côté cabinet, sur des factures lues en
+  entier, et chaque confirmation dit ce que désigner ou défaire change à ce qui se compte — défaire l'exemplaire d'une
+  facture source la fait compter deux fois, ce que la base ne refuse pas encore (VF6-Q1) → « L'EXEMPLAIRE D'UNE FACTURE,
+  EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source de la vente** : le réglage d'un dossier,
+  irréversible dès sa première facture source ; la source fixée à la validation, puis figée ; un mouvement qui justifie
+  un encaissement d'une facture source est RÉSERVÉ (G2) et ne se classe que par ses encaissements, par le cabinet seul
+  (G1) ; les colonnes des écritures fermées jusqu'à VF4 ; `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent
+  leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE
+  forme (la CA3 n'y lit pas les événements de la 2035), en paramètre obligatoire : la TVA d'un paiement partiel au
+  cumul, l'exigibilité selon le régime figé sur la facture → « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis
+  VF3b1, la CA3 depuis VF3b2, la situation et l'estimation depuis VF3b3 ; avant VF4, aucune écriture ne la porte : la
+  concordance la dit à part (`vente_facturee_non_ecrite`), et une période qui en porte ne s'enregistre pas
+  (`REFUS_VENTES_FACTUREES_NON_ECRITES`). L'estimation la reçoit en total hors taxe par mois, ou « non comptées », un
+  état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT LES VENTES
+  FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
+  FACTURÉES ». **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact
