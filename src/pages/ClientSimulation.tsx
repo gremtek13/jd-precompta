@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
-import { ecartPct, projectionAnnuelle } from '../lib/estimation'
+import {
+  ecartPct, projectionAnnuelle, RECETTES_FACTUREES_NON_COMPTEES, SIMULATION_SANS_VENTES_FACTUREES,
+  simulationDitNePasCompterLesVentesFacturees,
+} from '../lib/estimation'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { paiementsDesPieces } from '../lib/rattachement'
 import { cotisationsComptees } from '../lib/cotisationRapprochee'
@@ -68,6 +71,11 @@ export default function ClientSimulation() {
   // Le modèle comptable du dossier : en engagement, une recette compte à la date de sa facture, et
   // non de son encaissement (lib/rattachement.ts). Lu sur la même ligne que le statut TVA.
   const [modeComptable, setModeComptable] = useState<ModeComptable>('tresorerie')
+  // LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3 ; EC3-Q11) : la session du client ne lit pas les
+  // factures — sans « Ventes », aucune —, donc ni lesquelles sont sources ni quelle pièce en est l'exemplaire. Jusqu'à VF8,
+  // qui lui rendra le total mensuel seul, la simulation ne les compte pas, et le DIT quand le dossier a basculé : le réglage
+  // se lit sur la même ligne que le statut TVA, que sa policy lui ouvre déjà. Nul tant qu'il n'est pas lu.
+  const [ventesParLesFactures, setVentesParLesFactures] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -97,7 +105,7 @@ export default function ClientSimulation() {
         supabase.from('references_postes_annuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
-        supabase.from('dossiers').select('assujetti_tva, mode_comptable').eq('id', dossierId).maybeSingle(),
+        supabase.from('dossiers').select('assujetti_tva, mode_comptable, ventes_par_les_factures').eq('id', dossierId).maybeSingle(),
         // Tous les rapprochés : ceux d'une pièce ou d'une échéance de cotisation la datent, ceux affectés
         // à une catégorie comptent eux-mêmes (voir `categories` plus haut).
         lireTout<LigneBancaire>((debut, fin) =>
@@ -140,6 +148,7 @@ export default function ClientSimulation() {
       setReferencesIncompletes(!lectureReferences.complete)
       setAssujettiTva(lectureDossier.data?.assujetti_tva ?? false)
       setModeComptable(lectureDossier.data?.mode_comptable ?? 'tresorerie')
+      setVentesParLesFactures(lectureDossier.data?.ventes_par_les_factures ?? null)
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
       // Le statut TVA non lu la rend incertaine aussi — il décide du montant de chaque recette — et
       // le dire vaut mieux que de supposer : le repli « exonéré » est le cas de la plupart des
@@ -181,6 +190,8 @@ export default function ClientSimulation() {
     recettesValidees, cotisationsComptees(cotisations, mouvementsRapproches, modeComptable), aujourdHuiSql(), assujettiTva,
     paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
+    // Un état choisi, et dit plus bas : pas une valeur par défaut.
+    RECETTES_FACTUREES_NON_COMPTEES,
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
@@ -237,6 +248,9 @@ export default function ClientSimulation() {
             )}
           </div>
         </div>
+        {simulationDitNePasCompterLesVentesFacturees(ventesParLesFactures) && (
+          <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{SIMULATION_SANS_VENTES_FACTUREES}</p>
+        )}
       </div>
 
       <h3>Repères annuels</h3>

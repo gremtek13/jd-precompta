@@ -496,3 +496,25 @@ export function recettesFactureesDeLaPeriode(
     ? ventes.parts.filter(dans).reduce((s, p) => s + p.htCentimes, 0)
     : ventes.documents.filter(dans).reduce((s, d) => s + d.baseCentimes, 0)
 }
+
+/**
+ * Les mêmes recettes, MOIS PAR MOIS : « AAAA-MM » → centimes hors taxes (étape VF3b3). La règle de
+ * `recettesFactureesDeLaPeriode` — les parts de ses encaissements en trésorerie, la facture et ses avoirs à leur date
+ * d'émission en engagement (EC3-Q12) —, sommée par mois : les mois d'une année font la recette de l'année. C'est la forme
+ * que l'estimation reçoit (lib/estimation.ts), un total mensuel sans détail, parce que c'est celle que « Ma simulation »
+ * d'un client « Banque » recevra de la base à l'étape VF8 (EC3-Q11) : le cabinet et le client feront le même calcul. Un
+ * mois sans événement n'a pas d'entrée ; un mois dont les événements s'annulent en a une, à zéro.
+ */
+export function recettesFactureesParMois(
+  ventes: Pick<VentesFacturees, 'parts' | 'documents'>, mode: ModeComptable,
+): Map<string, number> {
+  const parMois = new Map<string, number>()
+  const evenements = mode === 'tresorerie'
+    ? ventes.parts.map((p) => [p.date, p.htCentimes] as const)
+    : ventes.documents.map((d) => [d.date, d.baseCentimes] as const)
+  for (const [date, centimes] of evenements) {
+    const mois = date.slice(0, 7)
+    parMois.set(mois, (parMois.get(mois) ?? 0) + centimes)
+  }
+  return new Map([...parMois].sort(([a], [b]) => ordreC(a, b)))
+}

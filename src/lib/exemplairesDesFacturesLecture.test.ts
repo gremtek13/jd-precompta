@@ -50,7 +50,7 @@ vi.mock('./supabase', async () => {
 const D = 'd1'
 const facture = (o: Partial<FactureProposee> = {}): FactureProposee => ({
   id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
-  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, ...o,
+  tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 1200, source_de_la_vente: false, ...o,
 })
 
 beforeEach(() => {
@@ -76,7 +76,7 @@ describe('lireLesFacturesProposees', () => {
     expect(l.complete).toBe(true)
     expect(l.motif).toBeNull()
     expect(l.lignes).toEqual([facture(), facture({ id: 'a1', type: 'avoir', numero: 'A2026-0001', montant_ttc: -300 })])
-    expect(faux.demandes).toEqual(['factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, montant_ttc'])
+    expect(faux.demandes).toEqual(['factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, montant_ttc, source_de_la_vente'])
   })
 
   it('trie sur la date d’émission, la plus récente d’abord, et termine par la clé primaire (un ordre total)', async () => {

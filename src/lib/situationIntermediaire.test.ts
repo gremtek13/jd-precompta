@@ -4,6 +4,10 @@ import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee }
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from './types'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
+import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
+import { ventesFacturees, type FactureVendue } from './ventesFacturees'
+import type { LigneDeFacture } from './encaissementsFactures'
+import { POSTE_VENTES_FACTUREES } from './declaration2035'
 
 const categorie = { id: 'c1', libelle: 'Achats', poste_2035: 'Achats', compte_comptable: '606100' } as Categorie
 const recette = { id: 'c2', libelle: 'Recettes', poste_2035: 'Recettes', compte_comptable: '706000' } as Categorie
@@ -24,8 +28,8 @@ describe('calculerSituationIntermediaire', () => {
   // comprise pour un dossier exonéré, qui ne la récupère pas, hors taxes pour un assujetti.
   it('retient la TVA comprise pour un dossier exonéré, le hors taxes pour un assujetti', () => {
     const achat = piece({ id: 'a', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, new Map(), 'tresorerie', [])
-    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
+    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
     expect(exonere.charges).toBe(120)
     expect(assujetti.charges).toBe(100)
   })
@@ -38,7 +42,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'c', montant_ttc: 700, date_piece: '2025-12-31' }), // hors période
       ],
       [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(),
-      'tresorerie', [],
+      'tresorerie', [], ventesFactureesVides('d1'),
     )
     expect(s.charges).toBe(100)
     expect(s.resultat).toBe(-100)
@@ -51,7 +55,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'a', montant_ttc: 300 }),
       ],
       [categorie, recette], [], [], '2026-01-01', '2026-12-31', true, new Map(),
-      'tresorerie', [],
+      'tresorerie', [], ventesFactureesVides('d1'),
     )
     expect(s.recettes).toBe(900)
     expect(s.charges).toBe(300)
@@ -73,9 +77,9 @@ describe('calculerSituationIntermediaire', () => {
       piece({ id: 'sans-paiement', date_piece: '2026-01-20', montant_ttc: 7 }),
     ]
     const paiements = [paiement('janvier', '2026-02-03', -100), paiement('decembre', '2026-01-05', -40)]
-    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, []), 'tresorerie', [])
+    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'))
     expect(auJanvier.charges).toBe(47)
-    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, []), 'tresorerie', [])
+    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'))
     expect(auFevrier.charges).toBe(147)
   })
 
@@ -89,7 +93,7 @@ describe('calculerSituationIntermediaire', () => {
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z', encaissements_de_factures: false,
     }
     const partielle = piece({ id: 'partielle', date_piece: '2025-12-15', montant_ttc: 200 })
-    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], []), 'tresorerie', [])
+    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], []), 'tresorerie', [], ventesFactureesVides('d1'))
     expect(s.charges).toBe(80)
   })
 
@@ -98,7 +102,7 @@ describe('calculerSituationIntermediaire', () => {
     // un 1er janvier se lisait dans l'année précédente, ce qui décalait toute la fenêtre
     // d'amortissement d'un an — dotation absente la première année, présente une année de trop.
     const lignes = (annee: number) =>
-      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, new Map(), 'tresorerie', [])
+      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
         .totauxParPoste.find(([poste]) => poste === 'Amortissements')?.[1]
 
     expect(lignes(2025)).toBeUndefined()  // avant l'acquisition
@@ -113,7 +117,7 @@ describe('calculerSituationIntermediaire', () => {
       { id: 'y', dossier_id: 'd1', echeance: '2026-03-05', montant_appele: 400, montant_verse: null },
       { id: 'z', dossier_id: 'd1', echeance: '2027-01-05', montant_appele: 999, montant_verse: null }, // hors période
     ] as CotisationDeclaree[]
-    const s = calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
+    const s = calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
     expect(s.totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]).toBe(-680)
   })
 
@@ -130,7 +134,7 @@ describe('calculerSituationIntermediaire', () => {
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-07-03T09:00:00Z', encaissements_de_factures: false,
     }
     const poste = (fin: string, lignes: LigneBancaire[]) =>
-      calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [])
+      calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
         .totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]
     expect(poste('2026-06-30', [prelevement])).toBeUndefined()
     expect(poste('2026-07-31', [prelevement])).toBe(-290)
@@ -157,14 +161,14 @@ describe('calculerSituationIntermediaire', () => {
       // l'état affichait un RÉSULTAT NÉGATIF de 1 600 € — un déficit entièrement fabriqué par la
       // convention, sur le document qu'on montre à une banque pour obtenir un prêt.
       const s = calculerSituationIntermediaire(
-        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, new Map(), 'tresorerie', [])
+        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(s)).toBe(-200)        // 2 400 € × 1/12
       expect(s.resultat).toBe(600)          // et non −1 600
     })
 
     it('compte la moitié de la dotation sur un premier semestre', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(s)).toBe(-1200)
       expect(s.resultat).toBe(8800)
     })
@@ -175,10 +179,10 @@ describe('calculerSituationIntermediaire', () => {
     it('ne compte un bien que depuis sa mise en service', () => {
       const avril = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-03-20', date_mise_en_service: '2026-04-01' })
       const semestre = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(semestre)).toBe(-600)   // 90 jours sur les 1 800 de la durée
       const annee = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(annee)).toBe(-1800)     // la case CH de la 2035 de l'exercice
     })
 
@@ -189,7 +193,7 @@ describe('calculerSituationIntermediaire', () => {
       const s = calculerSituationIntermediaire(
         [vente(10000, '2026-05-10')], [categorie, recette],
         [immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-12-15' })], [],
-        '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
+        '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(s)).toBeUndefined()
       expect(s.resultat).toBe(10000)
     })
@@ -200,7 +204,7 @@ describe('calculerSituationIntermediaire', () => {
     // cas, « la dotation suit la période » serait satisfait par une fonction qui rabote toujours.
     it('laisse une année civile complète rigoureusement inchangée', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
       expect(dotation(s)).toBe(-2400)
       expect(s.resultat).toBe(7600)
     })
@@ -255,7 +259,7 @@ describe('calculerSituationIntermediaire', () => {
       [categorie],
       [immo({ piece_id: 'p-immo' })],
       [], '2026-01-01', '2026-12-31', true, new Map(),
-      'tresorerie', [],
+      'tresorerie', [], ventesFactureesVides('d1'),
     )
     // La pièce sort des charges courantes ; seule la dotation annuelle reste.
     expect(s.charges).toBe(1000)
@@ -273,10 +277,10 @@ describe('calculerSituationIntermediaire — en engagement', () => {
       encaissements_de_factures: false,
     } satisfies LigneBancaire
     const janvier = (mode: 'tresorerie' | 'engagement') =>
-      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], []), mode, [])
+      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], []), mode, [], ventesFactureesVides('d1'))
     expect(janvier('tresorerie').charges).toBe(300)
     expect(janvier('engagement').charges).toBe(0)
-    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], []), 'engagement', []).charges).toBe(300)
+    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], []), 'engagement', [], ventesFactureesVides('d1')).charges).toBe(300)
   })
 })
 
@@ -294,7 +298,7 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', encaissements_de_factures: false, ...o,
   })
   const situation = (lignes: LigneBancaire[], fin = '2026-01-31') =>
-    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, [], true))
+    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, [], true), ventesFactureesVides('d1'))
 
   it('porte un encaissement affecté en recette', () => {
     const s = situation([mouvement({})])
@@ -355,5 +359,108 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
     expect(s.recettes).toBe(0)
     expect(s.totauxParPoste).toEqual([["Primes d'assurance", -21.03], ['Frais financiers', -36]])
     expect(situation([{ ...echeance, date: '2026-02-05' }]).charges).toBe(0)
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3) : la situation intermédiaire reçoit les ventes facturées du
+// dossier, calculées par le module pur (lib/ventesFacturees.ts) sur des lignes FICTIVES telles que la base les rend — jamais
+// des parts écrites à la main. En trésorerie, les parts de la fenêtre ; en engagement, la facture et ses avoirs de la fenêtre
+// (EC3-Q12) ; l'exemplaire d'une facture source ignoré, et dit ; les écartées et les excédents remontés.
+describe('calculerSituationIntermediaire — les ventes facturées', () => {
+  // Une facture SOURCE de services : 1 000 € HT à 20 %, émise le 10 février 2026, encaissée 600 € le 20 mars et 600 € le
+  // 15 juillet. La règle du cumul : 100 € de TVA par encaissement, donc 500 € de recette chacun.
+  const F = factureVendue({ id: 'fs', dossier_id: 'd1', numero: 'F2026-0001', date_emission: '2026-02-10' })
+  const premier = encaissementVendu({ id: 'e1', facture_id: 'fs', date_encaissement: '2026-03-20', montant: 600 })
+  const second = encaissementVendu({ id: 'e2', facture_id: 'fs', date_encaissement: '2026-07-15', montant: 600 })
+  const ventes = (o: { factures?: FactureVendue[]; lignes?: LigneDeFacture[]; encaissements?: ReturnType<typeof encaissementVendu>[] } = {}) =>
+    ventesFacturees({
+      dossierId: 'd1',
+      factures: o.factures ?? [F],
+      lignes: o.lignes ?? [ligneVendue('fs', 1000, 20)],
+      encaissements: (o.encaissements ?? [premier, second]).map((e) => e.encaissement),
+      parts: (o.encaissements ?? [premier, second]).map((e) => e.part),
+    })
+  const situation = (debut: string, fin: string, mode: 'tresorerie' | 'engagement', pieces: Piece[] = [], v = ventes()) =>
+    calculerSituationIntermediaire(pieces, [categorie, recette], [], [], debut, fin, true, new Map(), mode, [], v)
+  const facturees = (s: ReturnType<typeof calculerSituationIntermediaire>) =>
+    s.totauxParPoste.find(([poste]) => poste === POSTE_VENTES_FACTUREES)?.[1]
+
+  it('en trésorerie, compte les parts encaissées dans la fenêtre, pour leur hors-taxe', () => {
+    expect(facturees(situation('2026-01-01', '2026-02-28', 'tresorerie'))).toBeUndefined()
+    expect(facturees(situation('2026-01-01', '2026-03-19', 'tresorerie'))).toBeUndefined()
+    // Les bornes sont comprises : la part du 20 mars compte dans un état arrêté au 20 mars.
+    expect(facturees(situation('2026-01-01', '2026-03-20', 'tresorerie'))).toBe(500)
+    expect(facturees(situation('2026-03-20', '2026-06-30', 'tresorerie'))).toBe(500)
+    expect(facturees(situation('2026-03-21', '2026-12-31', 'tresorerie'))).toBe(500)
+    const annee = situation('2026-01-01', '2026-12-31', 'tresorerie')
+    expect(facturees(annee)).toBe(1000)
+    expect(annee.recettes).toBe(1000)
+    expect(annee.resultat).toBe(1000)
+  })
+
+  it('en engagement, compte la facture à sa date d’émission, encaissée ou non (EC3-Q12)', () => {
+    expect(facturees(situation('2026-01-01', '2026-02-09', 'engagement'))).toBeUndefined()
+    expect(facturees(situation('2026-01-01', '2026-02-10', 'engagement'))).toBe(1000)
+    // Ni l'encaissement de mars ni celui de juillet n'y ajoutent rien : la recette est la facture.
+    expect(facturees(situation('2026-01-01', '2026-12-31', 'engagement'))).toBe(1000)
+    expect(facturees(situation('2026-02-11', '2026-12-31', 'engagement'))).toBeUndefined()
+    // Sans aucun encaissement aussi.
+    expect(facturees(situation('2026-01-01', '2026-12-31', 'engagement', [], ventes({ encaissements: [] })))).toBe(1000)
+    expect(facturees(situation('2026-01-01', '2026-12-31', 'tresorerie', [], ventes({ encaissements: [] })))).toBeUndefined()
+  })
+
+  it('en engagement, un avoir compte en moins à sa date', () => {
+    const avoir = factureVendue({ id: 'av', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'fs', date_emission: '2026-05-04' })
+    const v = ventes({ factures: [F, avoir], lignes: [ligneVendue('fs', 1000, 20), { ...ligneVendue('av', 200, 20), quantite: -1 }] })
+    expect(facturees(situation('2026-01-01', '2026-04-30', 'engagement', [], v))).toBe(1000)
+    expect(facturees(situation('2026-05-01', '2026-12-31', 'engagement', [], v))).toBe(-200)
+    expect(facturees(situation('2026-01-01', '2026-12-31', 'engagement', [], v))).toBe(800)
+  })
+
+  it('une contre-passation diminue les recettes de sa fenêtre', () => {
+    const annulation = encaissementVendu({ id: 'e3', facture_id: 'fs', date_encaissement: '2026-08-01', montant: -600, annule_id: 'e2' })
+    const v = ventes({ encaissements: [premier, second, annulation] })
+    expect(facturees(situation('2026-01-01', '2026-07-31', 'tresorerie', [], v))).toBe(1000)
+    expect(facturees(situation('2026-08-01', '2026-08-31', 'tresorerie', [], v))).toBe(-500)
+    expect(facturees(situation('2026-01-01', '2026-12-31', 'tresorerie', [], v))).toBe(500)
+  })
+
+  it('ignore l’exemplaire d’une facture source, et le dit dans la fenêtre où il aurait compté', () => {
+    const exemplaire = piece({
+      id: 'px', type_piece: 'vente', categorie_id: 'c2', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200,
+      date_piece: '2026-02-10', facture_id: 'fs',
+    })
+    const s = situation('2026-01-01', '2026-12-31', 'tresorerie', [exemplaire])
+    // Compté, il aurait ajouté 1 000 € de recettes : la vente deux fois.
+    expect(s.recettes).toBe(1000)
+    expect(s.totauxParPoste.find(([poste]) => poste === 'Recettes')).toBeUndefined()
+    expect(s.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['px'])
+    // Hors de la fenêtre où il aurait compté, il ne se dit pas.
+    expect(situation('2026-03-01', '2026-12-31', 'tresorerie', [exemplaire]).exemplairesDeFacturesSources).toEqual([])
+    // Ni s'il n'est pas validé.
+    expect(situation('2026-01-01', '2026-12-31', 'tresorerie', [{ ...exemplaire, statut: 'a_valider' }]).exemplairesDeFacturesSources).toEqual([])
+  })
+
+  it('compte comme hier la pièce désignée à une facture qui n’est pas source', () => {
+    const pdf = piece({
+      id: 'pp', type_piece: 'vente', categorie_id: 'c2', montant_ht: 300, montant_tva: 60, montant_ttc: 360,
+      date_piece: '2026-04-02', facture_id: 'f-avant-la-bascule',
+    })
+    const s = situation('2026-01-01', '2026-12-31', 'tresorerie', [pdf])
+    expect(s.totauxParPoste.find(([poste]) => poste === 'Recettes')?.[1]).toBe(300)
+    expect(s.exemplairesDeFacturesSources).toEqual([])
+  })
+
+  it('remonte les ventes écartées et les excédents, ceux du dossier entier', () => {
+    const sansLigne = factureVendue({ id: 'fv', numero: 'F2026-0002', tiers_nom: 'Client sans ligne' })
+    const avoir = factureVendue({ id: 'av', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'fs', date_emission: '2026-09-01' })
+    const v = ventes({ factures: [F, sansLigne, avoir], lignes: [ligneVendue('fs', 1000, 20), { ...ligneVendue('av', 100, 20), quantite: -1 }] })
+    const s = situation('2026-01-01', '2026-01-31', 'tresorerie', [], v)
+    expect(s.ventesFactureesEcartees.map((e) => [e.factureId, e.motif])).toEqual([['fv', 'sans_lignes']])
+    expect(s.ventesFactureesEnExcedent.map((e) => [e.factureId, e.excedentCentimes])).toEqual([['fs', 12000]])
+    // Sans ventes facturées, rien à dire.
+    const vide = situation('2026-01-01', '2026-12-31', 'tresorerie', [], ventesFactureesVides('d1'))
+    expect([vide.ventesFactureesEcartees, vide.ventesFactureesEnExcedent, vide.exemplairesDeFacturesSources]).toEqual([[], [], []])
+    expect(facturees(vide)).toBeUndefined()
   })
 })

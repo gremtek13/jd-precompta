@@ -1,5 +1,6 @@
 import type { LigneDeFacture } from '../lib/encaissementsFactures'
 import type { EncaissementVendu, FactureVendue, PartVendue, VentesFacturees } from '../lib/ventesFacturees'
+import type { RecettesFacturees } from '../lib/estimation'
 
 // LES VENTES FACTURÉES DES TESTS (ligne 28.6, chantier EC-Q3, étape VF3b1). Les moteurs reçoivent les ventes facturées en
 // paramètre OBLIGATOIRE, sans valeur par défaut (lib/declaration2035.ts) : le code de production n'en fabrique aucune, et
@@ -13,6 +14,14 @@ import type { EncaissementVendu, FactureVendue, PartVendue, VentesFacturees } fr
 /** Aucune facture source : ni part, ni exigibilité, ni document, ni écart, ni excédent. */
 export function ventesFactureesVides(dossierId: string): VentesFacturees {
   return { dossierId, parts: [], exigibilites: [], documents: [], ecartees: [], excedents: [], sources: new Set<string>() }
+}
+
+/**
+ * Les recettes facturées de l'estimation (lib/estimation.ts) d'un dossier sans facture source : COMPTÉES, et nulles — le
+ * chemin du cabinet. À ne pas confondre avec « non comptées », l'état que choisit « Ma simulation » et que son écran dit.
+ */
+export function recettesFactureesVides(): RecettesFacturees {
+  return { etat: 'comptees', parMois: new Map<string, number>(), sources: new Set<string>() }
 }
 
 /** Une facture validée SOURCE de sa vente, de services, sans l'option pour les débits. */

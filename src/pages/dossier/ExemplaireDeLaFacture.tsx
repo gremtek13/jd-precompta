@@ -9,7 +9,8 @@ import {
 } from '../../lib/exemplairesDesFactures'
 import type { FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import {
-  confirmationDeLaDesignation, confirmationDuRetraitDeLaDesignation, descriptionDeLaFacture, ligneDuChoix, nomDeLaFacture,
+  confirmationDeLaDesignation, confirmationDuRetraitDeLaDesignation, descriptionDeLaFacture, ligneDuChoix,
+  PARAGRAPHE_DE_LA_DESIGNATION, phraseDeLaPieceDesignee,
 } from '../../lib/exemplairesDesFacturesEcran'
 
 // L'EXEMPLAIRE D'UNE FACTURE ÉMISE, DANS LA FICHE D'UNE PIÈCE DE VENTE (ligne 28.6, chantier EC-Q3, étape VF1b ; la base et
@@ -185,7 +186,7 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, autre
               <span className="nom-fichier">{facture.numero ?? '(sans numéro)'}</span> — {descriptionDeLaFacture(facture)}
             </dd>
             <dt>Désignation</dt>
-            <dd>Cette pièce est désignée comme l’exemplaire de {nomDeLaFacture(facture)}.</dd>
+            <dd>{phraseDeLaPieceDesignee(facture)}</dd>
           </dl>
         ) : (
           <p className="fiche-hdf-refus">
@@ -224,11 +225,8 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, autre
   return (
     <section className="fiche-hdf">
       <h3>{TITRE}</h3>
-      <p className="muted">
-        Cette pièce de vente est peut-être l’exemplaire d’une facture émise dans l’application : l’original revenu de la
-        plateforme du client, ou le PDF déposé. La désigner la relie à sa facture ; si une autre pièce porte déjà la même
-        facture, la vente s’affiche « Comptée deux fois ». Désigner ne change rien à ce qui se compte aujourd’hui.
-      </p>
+      {/* Écrit avant tout choix : il dit les deux cas, la facture source de sa vente et l'autre (étape VF3b3). */}
+      <p className="muted">{PARAGRAPHE_DE_LA_DESIGNATION}</p>
       {geste !== null ? (
         <p className="fiche-hdf-refus">{geste}</p>
       ) : refusDeLaPiece !== null ? (

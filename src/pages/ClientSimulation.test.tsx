@@ -42,8 +42,14 @@ vi.mock('../lib/supabase', async () => {
         // mouvements rapprochés restreints à ceux qui portent une pièce, et les catégories lues sur le
         // seul dossier — celles du cabinet, les seules qui existent en production, n'y sont pas.
         const predicats: Predicat[] = []
+        // Les colonnes demandées : la ligne seule (`maybeSingle`) n'en rend pas d'autres, comme PostgREST — une colonne
+        // oubliée dans la sélection se lirait sinon quand même (étape VF3b3 : le réglage `ventes_par_les_factures`).
+        let colonnes: string[] | null = null
         Object.assign(chaine, {
-          select: () => chaine,
+          select: (liste?: string) => {
+            colonnes = !liste || liste === '*' ? null : liste.split(',').map((c) => c.trim())
+            return chaine
+          },
           eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return chaine },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
           // Les catégories se lisent sur le dossier ET le cabinet (`dossier_id` nul).
@@ -51,11 +57,15 @@ vi.mock('../lib/supabase', async () => {
           order: () => chaine,
           range: (d: number, f: number) => { debut = d; fin = f; return chaine },
           // La lecture du statut TVA du dossier, une seule ligne.
-          maybeSingle: () => Promise.resolve(
-            faux.refusees.has(table)
-              ? { data: null, error: { message: 'permission denied' } }
-              : { data: (faux.parTable[table] ?? [])[0] ?? null, error: null },
-          ),
+          maybeSingle: () => {
+            const ligne = ((faux.parTable[table] ?? [])[0] ?? null) as Record<string, unknown> | null
+            const rendue = ligne && colonnes ? Object.fromEntries(colonnes.map((c) => [c, ligne[c]])) : ligne
+            return Promise.resolve(
+              faux.refusees.has(table)
+                ? { data: null, error: { message: 'permission denied' } }
+                : { data: rendue, error: null },
+            )
+          },
           then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
             if (faux.refusees.has(table)) {
               return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
@@ -491,5 +501,58 @@ describe('ClientSimulation — les cotisations prélevées', () => {
     expect(valeur('Cotisations appelées à date')).toBe('430,00 €')
     // 430 € sur 2,7 mois, ramenés à douze.
     expect(valeur("Cotisations projetées sur l'année")).toBe('1 935,00 €')
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3 ; EC3-Q11). La session du client ne lit pas les factures : la
+// simulation ne les compte pas jusqu'à VF8, qui lui rendra le total mensuel seul. Elle compte ses pièces comme hier — celle
+// qu'un cabinet a désignée exemplaire d'une facture comprise, faute de savoir laquelle est source —, et DIT ce qu'elle ne
+// compte pas quand le dossier a basculé, ou quand elle n'a pas pu le lire. Aucune lecture nouvelle : le réglage se lit sur la
+// ligne du dossier que sa policy lui ouvre déjà.
+describe('ClientSimulation — les ventes facturées', () => {
+  const LIGNE = /^Cette simulation ne compte pas encore les factures validées dans l’application/
+
+  async function monterAvec(ventesParLesFactures: boolean | undefined) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-06-30T10:00:00Z'))
+    poser({ recettes: [recette({ facture_id: 'f-designee' })] })
+    faux.parTable.dossiers = [{ assujetti_tva: false, mode_comptable: 'tresorerie', ventes_par_les_factures: ventesParLesFactures }]
+    await monter()
+  }
+
+  it('le dossier a basculé : la simulation dit qu’elle ne compte pas les factures validées, et compte ses pièces comme hier', async () => {
+    await monterAvec(true)
+    expect(screen.getByText(LIGNE).textContent).toBe(
+      'Cette simulation ne compte pas encore les factures validées dans l’application : seulement tes pièces de vente et les '
+      + 'recettes que ton cabinet a classées sur ton relevé.',
+    )
+    // La pièce désignée compte : la simulation ne sait pas qu'elle est l'exemplaire d'une facture source.
+    expect(valeur('CA encaissé à date')).toBe('600,00 €')
+  })
+
+  it('le dossier n’a pas basculé : aucune facture n’est source, la simulation se tait', async () => {
+    await monterAvec(false)
+    expect(screen.queryByText(LIGNE)).toBeNull()
+    expect(valeur('CA encaissé à date')).toBe('600,00 €')
+  })
+
+  it('le réglage n’a pas pu être lu : la simulation le dit quand même', async () => {
+    await monterAvec(undefined)
+    screen.getByText(LIGNE)
+    cleanup()
+    poser({ recettes: [recette()] })
+    faux.refusees = new Set(['dossiers'])
+    await monter()
+    screen.getByText(LIGNE)
+  })
+
+  it('ne demande rien des factures ni de leurs encaissements', async () => {
+    const { supabase } = await import('../lib/supabase')
+    const espion = vi.spyOn(supabase, 'from')
+    await monterAvec(true)
+    const tables = espion.mock.calls.map(([t]) => String(t))
+    espion.mockRestore()
+    expect(tables).toContain('dossiers')
+    expect(tables.filter((t) => ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'].includes(t))).toEqual([])
   })
 })
