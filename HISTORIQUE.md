@@ -29723,3 +29723,75 @@ test d'avant touché.
 - `referenceDeLEcriture` ne lit pas encore `ecritures_brouillon.encaissement_id` : les clés du FEC se fixent à VF4.
 - La phrase de VF1b « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit à VF3b3, quand tous les moteurs
   liront la source.
+
+**LA MISE EN LIGNE.** Demande #194, ouverte sur `43d48dc` après la barrière locale sous Node 22.23.3 (`tsc -b` ; lint, 0
+erreur et les 63 avertissements d'avant ; 424 fichiers et 12 876 tests sous Paris, UTC, New York et Auckland ; le
+build) ; les deux passes de `verifier` vertes (la branche, de 17 h 28 à 17 h 41 UTC ; la demande, de 17 h 43 à 18 h
+01) ; fusionnée en « Rebase and merge » le 19/10/2026 à 18 h 01 UTC (`851e17d`, `a03a629`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 18 h 07, et le site sert `index-B7hIMfNE.js`, le bundle du build
+local ; la ligne 28.6 de la feuille de route mise à jour, puis relue (6 204 positions, liens intacts) ; les barres
+d'avancement inchangées.
+
+### 19/10/2026 — LA CA3 LIT LES VENTES FACTURÉES — CHANTIER EC-Q3, ÉTAPE VF3b2 (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF3b2 sur `a03a629`, relue par la session. Huit fichiers : le moteur de la CA3 et la
+liquidation, l'onglet TVA, le banc de captures, et leurs tests. Ni base, ni migration, ni Edge Function, ni lecture de
+production.)
+
+**LA DÉLIMITATION.** Le deuxième des trois lots de VF3b : la CA3 (`calculerCa3`, `comparerDeclarations`), la liquidation
+et l'onglet TVA. NEUTRE en production : aucune facture n'est source, et la CA3 de chaque dossier est celle d'hier.
+
+**LE MOTEUR.** `DonneesTva.ventesFacturees` est obligatoire, sans valeur par défaut.
+- Chaque exigibilité datée dans la période compte pour la base et la TVA que le module porte, SANS recalcul : la règle
+  du cumul fait porter à un taux soldé exactement la TVA facturée. 20, 10, 5,5 et 8,5 % vont à leur ligne. Une
+  exigibilité négative est une régularisation (B5 et 21), jamais une somme négative sur un taux. À 0 %, elle va en E2,
+  ou en F8 si elle est négative. 2,1 % et les taux qu'aucune ligne ne range (Corse, outre-mer) sont écartés et dits,
+  avec leur base et leur taxe, pour être reportés à la main.
+- Le régime est celui que la facture a figé : le `surDebits` du dossier ne s'applique pas à une facture source.
+- L'exemplaire d'une facture source ne compte plus : ni comme opération, ni à valider, ni parmi les pièces sans
+  paiement. Il se dit dans la période où il aurait compté, à sa date de pièce quand aucun paiement ne le date.
+- Les factures que le module écarte se disent dans toute période.
+- `tvaDesComptes` ne porte rien des ventes facturées : aucune écriture ne les porte avant VF4.
+
+**LA LIQUIDATION ATTEND VF4.** Enregistrée, la déclaration d'une période qui porte une vente facturée la liquiderait
+quand même : l'écart entre la TVA déclarée et celle des comptes irait à l'arrondi. Sous dix euros, il serait absorbé en
+silence au 658000 (un test le mesure) ; au-delà, refusé sous une phrase qui ne dirait pas pourquoi. Porter cette TVA aux
+comptes, à l'inverse, solderait au 445710 une TVA jamais écrite. La base ne le verrait pas :
+`enregistrer_declaration_tva` vérifie la déclaration contre elle-même. D'où un refus de l'application, dit avant le clic
+(`REFUS_VENTES_FACTUREES_NON_ECRITES`), après l'exercice validé et avant l'équilibre de la liquidation, dont il est la
+vraie cause — comme la validation d'un exercice attend leurs écritures depuis VF3b1.
+
+**LA COMPARAISON DES DÉCLARATIONS DÉPOSÉES** lit les ventes facturées comme la CA3 qu'elle refait. Une déclaration
+d'avant toute facture source se recalcule à l'identique, ce qu'un tirage de 200 dossiers éprouve aussi. Un acompte daté
+après coup dans une période déposée fait apparaître l'écart, à régulariser comme un autre.
+
+**L'ONGLET TVA.**
+- Les ventes facturées se lisent avec le reste, sous trois gardes : la dernière lecture demandée écrit seule ; les
+  lignes lues sont rattachées à leur dossier ; `lectureDuDossier`.
+- Tant qu'elles ne sont pas revenues : des squelettes, ni CA3, ni enregistrement, ni tableau des déclarations. Lues en
+  partie : le bandeau.
+- Une ligne chacun, seulement quand il y a lieu : les exemplaires non comptés, les factures écartées, les exigibilités
+  sans ligne, le refus d'enregistrement. Un tableau dépliable montre les ventes facturées retenues, ligne par ligne. Une
+  année qui n'a que des exigibilités se propose.
+- Deux textes devenus faux sont corrigés : la carte du régime, et « Ce que ce calcul ne fait pas ».
+
+**LES PREUVES.** 41 tests neufs : le moteur 19, la liquidation 6, l'onglet 15, le garde transversal des écrans 1. La
+suite a été comparée test par test, avant (`a03a629`, 12 851 tests) et après (12 917) : aucun verdict changé ni disparu.
+Les fabriques d'avant ne reçoivent que la valeur vide — et la fabrique `ca3()` de `liquidationTva.test.ts`, qui écrit
+une déclaration à la main, ses quatre listes neuves, vides. Mutations : 50, dont 45 tuées ; les cinq survivantes sont
+équivalentes (une garde seule quand les trois tiennent ensemble, et retirer les trois est tué ; deux contrôles d'une
+demande nulle dont le bouton n'est jamais rendu ; le nettoyage d'un effet, retiré du code). La barrière de l'agent, sous
+Node 22.23.3 : `tsc -b` 0, lint 0 erreur (les 63 avertissements d'avant), 12 917 tests sous les quatre fuseaux, le build
+(`index-DBV7I-02.js`). Relu par la session : le moteur, la liquidation, l'onglet, et chaque test d'avant touché.
+
+**À REVOIR.**
+- Le refus d'enregistrer n'est tenu qu'à l'écran : la base accepterait la déclaration, l'arrondi l'absorbant sous dix
+  euros. Latent tant qu'aucun dossier n'a basculé ; VF4 le tranche — les écritures existent, ou une garde en base le
+  tient.
+- Une facture à 0 % d'un redevable va en E2 ; ce peut être une exportation (E1) ou une livraison intracommunautaire
+  (F2). La nature de la ligne viendra avec A7.
+- Les excédents ne sont pas dits par la CA3 (la 2035 les dit).
+- L'exemplaire sans paiement se dit dans la période de sa date de pièce : une règle choisie.
+- Une facture écartée par le module ne retient pas l'enregistrement, faute de date.
+- Une écriture qu'un exemplaire aurait déjà au brouillon y reste : G4 (VF6) lui interdit d'en porter une.
+- La phrase de VF1b « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit à VF3b3.
