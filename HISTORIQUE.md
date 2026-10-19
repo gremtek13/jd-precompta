@@ -29652,3 +29652,74 @@ Chaque écran lit sous `lectureDuDossier`, et une lecture incomplète le bloque 
 - Les tests prouvent que le module applique la règle du § 6 et ses invariants. Ils ne prouvent ni que cette règle est
   celle qu'attend l'administration (VF3-Q1), ni que la base de VF4 refera le même calcul : il faudra alors le confronter
   à une table relevée en base.
+
+**LA MISE EN LIGNE.** Demande #193, ouverte sur `eed8403` après la barrière locale sous Node 22.23.3 (`tsc -b` ; lint, 0
+erreur et les 63 avertissements d'avant ; 424 fichiers et 12 845 tests sous Paris, UTC, New York et Auckland ; le
+build) ; les deux passes de `verifier` vertes (la branche, de 15 h 28 à 15 h 49 UTC ; la demande, de 15 h 44 à 16 h
+01) ; fusionnée en « Rebase and merge » le 19/10/2026 à 16 h 27 UTC (`b383b20`, `7f3167e`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 16 h 40, et le site sert `index-DLhB9Hgi.js`, inchangé puisque rien
+n'est branché ; la ligne 28.6 de la feuille de route mise à jour, puis relue (5 758 positions, liens intacts) ; les
+barres d'avancement inchangées ; la question VF3-Q1 entrée dans la page des arbitrages (sa version 10).
+
+### 19/10/2026 — LA 2035 LIT LES VENTES FACTURÉES — CHANTIER EC-Q3, ÉTAPE VF3b1 (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF3b1 sur `7f3167e`, relue par la session. Dix-neuf fichiers, dont un neuf,
+`src/test/ventesFacturees.ts` : le moteur de la 2035, la concordance et les cases, Clôture, la Révision et son module
+d'écran, le banc de captures, et leurs tests. Ni base, ni migration, ni Edge Function, ni lecture de production.)
+
+**LA DÉLIMITATION.** VF3b se fait en trois lots, chacun un moteur et TOUS ses appelants, pour qu'aucun appelant ne reste
+sans le paramètre : VF3b1 la 2035, VF3b2 la CA3, VF3b3 la situation, l'estimation et la simulation. Ici la 2035, avec
+Clôture, la Révision, `src/test/compositionsAuPlan.ts` et le banc de captures, qui l'appelle aussi. NEUTRE en
+production : aucun dossier n'a basculé, aucune facture n'est source ; les ventes facturées lues sont vides partout, et
+la 2035 d'un dossier est celle d'hier — un test compare la déclaration entière.
+
+**LE MOTEUR.** `calculerDeclaration2035` reçoit `ventesFacturees`, obligatoire, sans valeur par défaut.
+- L'exemplaire d'une facture source ne compte plus : il sort avant les contrôles et se dit
+  (`exclusions.exemplairesDeFacturesSources`) dans l'exercice où il aurait compté.
+- Chaque part de l'exercice est une contribution : une source neuve, « encaissement » ; une recette de son hors-taxe ;
+  au poste de la case AA sous son libellé officiel (`POSTE_VENTES_FACTUREES`, que `cases2035.ts` importe désormais au
+  lieu de le recopier). Une contre-passation diminue le poste, dans l'exercice de sa date.
+- Les ventes écartées et les excédents remontent dans la déclaration, ceux du dossier entier : le module ne date pas une
+  facture qu'il écarte.
+- Le moteur est celui de la trésorerie, et aucun écran ne l'appelle en engagement : il compte les parts, jamais les
+  documents.
+
+**LE COMPTE, ET LA CONCORDANCE.** La contribution n'a pas de compte jusqu'à VF4 : ses rôles restent hors de
+`ROLES_COMPTABLES`, et un numéro écrit là serait un compte en dur. La concordance la dit sous un motif à elle,
+`vente_facturee_non_ecrite` (« Pas encore dans l'application »), un écart par encaissement, plutôt que « catégorie sans
+compte », qui enverrait régler un compte. Conséquence voulue : une année qui compte une vente facturée ne concorde pas,
+et sa validation attend les écritures de VF4.
+
+**LES ÉCRANS.**
+- Clôture lit les ventes facturées avec ses autres entrées, sous `lectureDuDossier`. Tant qu'elles ne sont pas revenues
+  entières : « Chargement… », ou le bandeau d'une lecture partielle — ni chiffre, ni formulaire, ni validation. Une
+  garde de plus, pour toutes les lectures de l'onglet : seule la dernière lecture demandée écrit (`derniereLecture`).
+  Trois lignes discrètes, seulement quand il y a lieu : les ventes écartées, les excédents, les exemplaires non comptés.
+  Un exercice qui n'a que des encaissements se propose.
+- La Révision : la lecture des ventes facturées rejoint les lectures PROPRES à la revue analytique, qui ne cachent que
+  sa section. Seule la 2035 de la revue les lit ; ni les soldes, ni les cycles, ni le dossier permanent n'en dépendent.
+  C'est un écart à la consigne, retenu par la session : c'est la règle de ces lectures depuis R5. Une lecture rendue
+  pour un autre dossier se dit comme une lecture manquante.
+
+**LES PREUVES.** 31 tests neufs : le moteur 10, la concordance 3, la revue 1, Clôture 10, la Révision 5, le garde
+transversal des écrans 2. La suite entière a été comparée test par test, avant (`7f3167e`, 12 845 tests) et après :
+aucun verdict changé ni disparu ; les tests d'avant ne reçoivent que le paramètre. Le faux client de
+`ClotureTab.test.tsx` applique désormais ses filtres : sans eux, la lecture des ventes y voyait une facture non source
+et se jugeait incomplète. Mutations : 38, dont 37 tuées ; la survivante (retirer `lectureDuDossier` de Clôture) est
+équivalente tant que la garde de la dernière lecture existe, et retirer les deux est tué. La barrière de l'agent, sous
+Node 22.23.3 : `tsc -b` 0, lint 0 erreur (les 63 avertissements d'avant), 424 fichiers et 12 876 tests sous les quatre
+fuseaux, le build (`index-B7hIMfNE.js`). Relu par la session : le moteur, la concordance, les deux écrans, et chaque
+test d'avant touché.
+
+**À REVOIR.**
+- Une vente facturée écartée ne retient pas la validation : sans contribution, la concordance ne la voit pas. Un
+  préalable relève de VF7, qui dira sur quel exercice, puisqu'elle n'est pas datée.
+- `nbEncaissements` (§ 11) n'est pas ajouté : il changerait l'instantané validé (VF7). Une ligne de ventes facturées dit
+  donc « 0 pièce, 0 mouvement ».
+- Le poste des ventes facturées n'est pas « Recettes », celui de la catégorie par défaut : après la bascule, la revue
+  analytique montrera deux lignes de recettes, toutes deux en case AA.
+- Un exemplaire sans aucune date ne se dit dans aucun exercice.
+- Le sélecteur d'exercice de la page du dossier ne propose pas une année qui n'a que des encaissements.
+- `referenceDeLEcriture` ne lit pas encore `ecritures_brouillon.encaissement_id` : les clés du FEC se fixent à VF4.
+- La phrase de VF1b « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit à VF3b3, quand tous les moteurs
+  liront la source.
