@@ -18,6 +18,9 @@ import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces, type PartReglee } from './rattachement'
 import type { Categorie, DeclarationTva, LigneBancaire, Piece, VentilationBancaire } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
+import { tirage } from '../test/encaissementsBatterie'
+import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
 // oublié ou mal typé échoue au build plutôt que de laisser un test prouver autre chose.
@@ -58,7 +61,10 @@ function donnees(
   pieces: Piece[], lignesBancaires: LigneBancaire[] = [], immobilisees: string[] = [], parts: PartReglee[] = [],
   releve: PartDuReleve[] = [],
 ): DonneesTva {
-  return { pieces, paiements: paiementsDesPieces(lignesBancaires, parts), pieceIdsImmobilisees: new Set(immobilisees), releve }
+  return {
+    pieces, paiements: paiementsDesPieces(lignesBancaires, parts), pieceIdsImmobilisees: new Set(immobilisees), releve,
+    ventesFacturees: ventesFactureesVides('d1'),
+  }
 }
 
 describe('periodesDeLAnnee', () => {
@@ -788,5 +794,347 @@ describe('calculerCa3 — la TVA des comptes, au centime de l\'écriture', () =>
     // 0,24 € de TVA aux comptes, 0 € déclaré : l'arrondi en est la différence.
     expect(ca3.tvaDesComptes.collectee).toBe(0.24)
     expect(ca3.netPeriode).toBe(0)
+  })
+})
+
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b2). Une facture validée SOURCE de sa vente compte dans la CA3
+// par ses exigibilités (lib/ventesFacturees.ts), à leur date, sous le régime qu'elle a figé, et la pièce désignée comme son
+// exemplaire ne compte plus. Les ventes facturées viennent du VRAI module, sur des lignes de la base telles que la lecture
+// les rend : une exigibilité écrite à la main ne prouverait rien de ce qu'il rend — sauf là où le test dit pourquoi. Données
+// FICTIVES.
+describe('calculerCa3 — les ventes facturées', () => {
+  const T3 = { debut: '2027-07-01', fin: '2027-09-30' }
+  // Une facture de services de 1 000 € HT à 20 % : 1 200 € TTC, 200 € de TVA, émise le 10 février 2027.
+  const F1 = factureVendue({ id: 'f1', numero: 'F2027-0001', date_emission: '2027-02-10', tiers_nom: 'Client fictif' })
+  const LIGNES_F1 = [ligneVendue('f1', 1000, 20)]
+  const ventes = (o: Partial<Parameters<typeof ventesFacturees>[0]> = {}) => ventesFacturees({
+    dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [], parts: [], ...o,
+  })
+  // Les encaissements, et leurs parts au taux donné.
+  const registre = (...e: ReturnType<typeof encaissementVendu>[]) => ({ encaissements: e.map((x) => x.encaissement), parts: e.map((x) => x.part) })
+  const avec = (v: VentesFacturees, o: { pieces?: Piece[]; lignes?: LigneBancaire[] } = {}): DonneesTva =>
+    ({ ...donnees(o.pieces ?? [], o.lignes ?? []), ventesFacturees: v })
+  const ca3 = (v: VentesFacturees, periode = T1, surDebits = false, o: { pieces?: Piece[]; lignes?: LigneBancaire[] } = {}) =>
+    calculerCa3(avec(v, o), periode, surDebits, 0, 0)
+  const lignesDe = (c: ReturnType<typeof ca3>) => c.exigibilitesRetenues.map((r) => [r.ligne, r.exigibilite.origine, r.exigibilite.date])
+
+  it('la valeur est obligatoire : aucun appel ne compile sans elle, et rien ne la remplace en silence', () => {
+    const sans = { pieces: [], paiements: new Map(), pieceIdsImmobilisees: new Set<string>(), releve: [] }
+    // Le compilateur refuse l'appel (`tsc -b` vérifie la directive) ; forcé quand même, il lève au lieu de rendre une CA3
+    // sans ventes facturées.
+    // @ts-expect-error — les ventes facturées omises
+    expect(() => calculerCa3(sans, T1, false, 0, 0)).toThrow()
+  })
+
+  it('des services encaissés dans la période et hors d’elle : chaque encaissement dans la période de sa date, à son taux', () => {
+    const v = ventes(registre(
+      encaissementVendu({ id: 'e1', date_encaissement: '2027-03-15', montant: 600 }),
+      encaissementVendu({ id: 'e2', date_encaissement: '2027-04-20', montant: 600 }),
+    ))
+    expect(ca3(v, T1).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100, l16: 100, l28: 100, B5: 0, l21: 0 })
+    expect(lignesDe(ca3(v, T1))).toEqual([['08', 'encaissement', '2027-03-15']])
+    expect(ca3(v, T2).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
+    expect(lignesDe(ca3(v, T2))).toEqual([['08', 'encaissement', '2027-04-20']])
+    // Rien d'une période sans encaissement : néant, ni la facture à sa date d'émission.
+    expect(ca3(v, T3).neant).toBe(true)
+    expect(ca3(v, T3).exigibilitesRetenues).toEqual([])
+    // Les bornes comprises.
+    const bornes = ventes(registre(
+      encaissementVendu({ id: 'a', date_encaissement: '2027-01-01', montant: 600 }),
+      encaissementVendu({ id: 'b', date_encaissement: '2027-03-31', montant: 600 }),
+    ))
+    expect(ca3(bornes, T1).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+  })
+
+  it('la TVA est celle que le module porte, sans recalcul : la règle du cumul fait porter au taux soldé la TVA facturée', () => {
+    // Trois tiers de 400 € : le cumul donne 66,67 €, puis 66,66 €, puis 66,67 € — un taux soldé porte exactement les
+    // 200 € facturés. Le premier trimestre en compte deux.
+    const v = ventes(registre(
+      encaissementVendu({ id: 'e1', date_encaissement: '2027-02-15', montant: 400 }),
+      encaissementVendu({ id: 'e2', date_encaissement: '2027-03-15', montant: 400 }),
+      encaissementVendu({ id: 'e3', date_encaissement: '2027-04-15', montant: 400 }),
+    ))
+    expect(ca3(v, T1).exigibilitesRetenues.map((r) => [r.exigibilite.baseCentimes, r.exigibilite.tvaCentimes])).toEqual([[33_333, 6_667], [33_334, 6_666]])
+    // Les exigibilités retenues SONT celles du module, telles quelles.
+    expect(ca3(v, T1).exigibilitesRetenues.map((r) => r.exigibilite)).toEqual(v.exigibilites.slice(0, 2))
+    expect(ca3(v, T1).cases).toMatchObject({ base08: 667, taxe08: 133 })
+    expect(ca3(v, T2).cases).toMatchObject({ base08: 333, taxe08: 67 })
+    // Et une exigibilité dont la taxe n'est pas le taux de sa base — écrite à la main, seul moyen de le voir — passe telle
+    // quelle : la CA3 ne refait pas la TVA d'une vente facturée depuis sa base et son taux.
+    const aLaMain: VentesFacturees = {
+      ...ventesFactureesVides('d1'),
+      exigibilites: [{
+        factureId: 'fx', numero: 'F', tiers: 'T', origine: 'encaissement', encaissementId: 'e', avoirId: null, date: '2027-02-01',
+        taux: 20, baseCentimes: 100_000, tvaCentimes: 2_000,
+      }],
+    }
+    expect(ca3(aLaMain, T1).cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 20 })
+  })
+
+  it('un bien livré dans la période, avec un acompte d’avant : l’acompte à sa perception, le reste à la livraison', () => {
+    const bien = factureVendue({ id: 'f1', nature_operation: 'biens', date_emission: '2027-03-25', date_prestation: '2027-04-10' })
+    const v = ventes({ factures: [bien], ...registre(
+      encaissementVendu({ id: 'acompte', date_encaissement: '2027-03-01', montant: 300 }),
+      // Le solde, encaissé après la livraison : rien de plus à la CA3, la taxe était due à la livraison.
+      encaissementVendu({ id: 'solde', date_encaissement: '2027-08-20', montant: 900 }),
+    ) })
+    expect(ca3(v, T1).cases).toMatchObject({ A1: 250, base08: 250, taxe08: 50 })
+    expect(lignesDe(ca3(v, T1))).toEqual([['08', 'encaissement', '2027-03-01']])
+    // Livrée en avril, et non à sa date d'émission de mars : le reste au deuxième trimestre.
+    expect(ca3(v, T2).cases).toMatchObject({ A1: 750, base08: 750, taxe08: 150 })
+    expect(lignesDe(ca3(v, T2))).toEqual([['08', 'livraison', '2027-04-10']])
+    expect(ca3(v, T3).neant).toBe(true)
+  })
+
+  it('sur les débits, avec un acompte d’avant la facture : l’acompte à sa perception, le reste à la date de la facture', () => {
+    const debits = factureVendue({ id: 'f1', option_debits: true, date_emission: '2027-04-05' })
+    const v = ventes({ factures: [debits], ...registre(
+      encaissementVendu({ id: 'acompte', date_encaissement: '2027-03-20', montant: 600 }),
+      encaissementVendu({ id: 'solde', date_encaissement: '2027-07-10', montant: 600 }),
+    ) })
+    expect(ca3(v, T1).cases).toMatchObject({ base08: 500, taxe08: 100 })
+    expect(lignesDe(ca3(v, T2))).toEqual([['08', 'facture', '2027-04-05']])
+    expect(ca3(v, T2).cases).toMatchObject({ base08: 500, taxe08: 100 })
+    expect(ca3(v, T3).neant).toBe(true)
+  })
+
+  it('un avoir d’après est une régularisation : sa base en B5, sa taxe en 21, jamais une somme négative sur un taux', () => {
+    const bien = factureVendue({ id: 'f1', nature_operation: 'biens', date_emission: '2027-02-10' })
+    const avoir = factureVendue({ id: 'a1', type: 'avoir', numero: 'A2027-0001', facture_origine_id: 'f1', nature_operation: 'biens', date_emission: '2027-04-15' })
+    const v = ventes({ factures: [bien, avoir], lignes: [...LIGNES_F1, { ...ligneVendue('a1', 200, 20), quantite: -1 }] })
+    expect(ca3(v, T1).cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200 })
+    const t2 = ca3(v, T2)
+    expect(t2.cases).toMatchObject({ A1: 0, base08: 0, taxe08: 0, B5: 200, l21: 40, l16: 0, l23: 40, l25: 40, lTD: 0 })
+    expect(lignesDe(t2)).toEqual([['B5', 'avoir', '2027-04-15']])
+    expect(t2.netPeriode).toBe(-40)
+    // Avec une vente du même taux dans la période, l'avoir ne la diminue pas : il a sa ligne.
+    const avecVente = ca3(v, T2, false, { pieces: [piece({ date_piece: '2027-05-01' })], lignes: [mouvement({ date: '2027-05-10' })] })
+    expect(avecVente.cases).toMatchObject({ base08: 1000, taxe08: 200, B5: 200, l21: 40 })
+  })
+
+  it('une contre-passation se régularise dans la période de sa date, l’exact opposé de ce qui a été déclaré', () => {
+    const e = encaissementVendu({ id: 'e', date_encaissement: '2027-02-10', montant: 1200 })
+    const c = encaissementVendu({ id: 'c', date_encaissement: '2027-04-12', montant: -1200, annule_id: 'e' })
+    const v = ventes(registre(e, c))
+    expect(ca3(v, T1).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    expect(ca3(v, T2).cases).toMatchObject({ A1: 0, taxe08: 0, B5: 1000, l21: 200 })
+    expect(lignesDe(ca3(v, T2))).toEqual([['B5', 'encaissement', '2027-04-12']])
+    // Le même trimestre, les deux se déclarent chacun sur sa ligne : rien ne se compense sur la ligne du taux.
+    const memeTrimestre = ventes(registre(e, encaissementVendu({ id: 'c2', date_encaissement: '2027-03-01', montant: -1200, annule_id: 'e' })))
+    expect(ca3(memeTrimestre, T1).cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200, B5: 1000, l21: 200 })
+    expect(ca3(memeTrimestre, T1).netPeriode).toBe(0)
+  })
+
+  it('à 0 %, une opération non imposable (E2) et sa régularisation (F8) ; à 2,1 % et à un taux sans ligne, écartée et dite', () => {
+    const lignes = [ligneVendue('f1', 300, 0, 1), ligneVendue('f1', 1000, 2.1, 2), ligneVendue('f1', 100, 13, 3)]
+    const e = encaissementVendu({ id: 'e', date_encaissement: '2027-02-10', montant: 1434 })
+    const c = encaissementVendu({ id: 'c', date_encaissement: '2027-05-10', montant: -1434, annule_id: 'e' })
+    const parts = (enc: typeof e, signe: 1 | -1) => [
+      { ...enc.part, taux: 0, montant: signe * 300 }, { ...enc.part, taux: 2.1, montant: signe * 1021 }, { ...enc.part, taux: 13, montant: signe * 113 },
+    ]
+    const v = ventes({ lignes, encaissements: [e.encaissement, c.encaissement], parts: [...parts(e, 1), ...parts(c, -1)] })
+    expect(v.ecartees).toEqual([])
+    const t1 = ca3(v, T1)
+    expect(t1.cases).toMatchObject({ E2: 300, F8: 0, A1: 0, base08: 0, taxe08: 0, l16: 0 })
+    expect(lignesDe(t1)).toEqual([['E2', 'encaissement', '2027-02-10']])
+    expect(t1.exigibilitesEcartees.map((x) => [x.motif, x.exigibilite.taux, x.exigibilite.baseCentimes, x.exigibilite.tvaCentimes])).toEqual([
+      ['taux_non_reconnu', 13, 10_000, 1_300], ['taux_a_placer', 2.1, 100_000, 2_100],
+    ])
+    expect(t1.exigibilitesEcartees.find((x) => x.motif === 'taux_a_placer')?.detail).toBe('2,1 % : ligne T6 en France continentale, 11 dans les DOM, T4 en Corse')
+    expect(t1.exigibilitesEcartees.find((x) => x.motif === 'taux_non_reconnu')?.detail).toMatch(/^un taux que la CA3 de l’application ne range sur aucune ligne/)
+    expect(t1.neant).toBe(false)
+    const t2 = ca3(v, T2)
+    expect(t2.cases).toMatchObject({ E2: 0, F8: 300, B5: 0 })
+    expect(lignesDe(t2)).toEqual([['F8', 'encaissement', '2027-05-10']])
+    expect(t2.exigibilitesEcartees.map((x) => [x.motif, x.exigibilite.tvaCentimes])).toEqual([['taux_non_reconnu', -1_300], ['taux_a_placer', -2_100]])
+  })
+
+  it('les autres taux reconnus, à leur ligne', () => {
+    const lignes = [ligneVendue('f1', 100, 10, 1), ligneVendue('f1', 100, 5.5, 2), ligneVendue('f1', 100, 8.5, 3)]
+    const e = encaissementVendu({ id: 'e', date_encaissement: '2027-02-10', montant: 324 })
+    const parts = [{ ...e.part, taux: 10, montant: 110 }, { ...e.part, taux: 5.5, montant: 105.5 }, { ...e.part, taux: 8.5, montant: 108.5 }]
+    const c = ca3(ventes({ lignes, encaissements: [e.encaissement], parts }), T1)
+    expect(c.cases).toMatchObject({ A1: 300, base9B: 100, taxe9B: 10, base09: 100, taxe09: 6, base10: 100, taxe10: 9, base08: 0 })
+  })
+
+  it('le signe d’une exigibilité se juge à sa taxe, puis à sa base : jamais une somme négative sur la ligne d’un taux', () => {
+    // Écrites à la main, seul moyen de produire ces deux formes, que l'arrondi d'un reste peut donner : une taxe négative
+    // sur une base nulle, une base négative sous une taxe nulle.
+    const exigibilite = (o: Partial<VentesFacturees['exigibilites'][number]>): VentesFacturees['exigibilites'][number] => ({
+      factureId: 'fx', numero: 'F', tiers: 'T', origine: 'livraison', encaissementId: null, avoirId: null, date: '2027-02-01',
+      taux: 20, baseCentimes: 0, tvaCentimes: 0, ...o,
+    })
+    const v: VentesFacturees = {
+      ...ventesFactureesVides('d1'),
+      exigibilites: [exigibilite({ tvaCentimes: -100 }), exigibilite({ baseCentimes: -100 })],
+    }
+    const c = ca3(v, T1)
+    expect(c.exigibilitesRetenues.map((r) => r.ligne)).toEqual(['B5', 'B5'])
+    expect(c.cases).toMatchObject({ A1: 0, base08: 0, taxe08: 0, B5: 1, l21: 1 })
+  })
+
+  it('l’exemplaire d’une facture source ne compte plus, ni comme opération ni à valider, et se dit dans la période où il aurait compté', () => {
+    const v = ventes(registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-04-20', montant: 1200 })))
+    // L'exemplaire, payé en février : il aurait compté au premier trimestre.
+    const exemplaire = piece({ id: 'x', facture_id: 'f1', date_piece: '2027-02-10' })
+    const paye = mouvement({ id: 'mx', piece_id: 'x', date: '2027-02-20' })
+    const t1 = ca3(v, T1, false, { pieces: [exemplaire], lignes: [paye] })
+    expect(t1.neant).toBe(true)
+    expect(t1.retenues).toEqual([])
+    expect(t1.tvaDesComptes.collectee).toBe(0)
+    expect(t1.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    // Pas dans une période où il n'aurait pas compté ; la facture, elle, compte à son encaissement.
+    const t2 = ca3(v, T2, false, { pieces: [exemplaire], lignes: [paye] })
+    expect(t2.exemplairesDeFacturesSources).toEqual([])
+    expect(t2.cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    // Encore à valider : il ne se réclame pas à valider.
+    const aValider = ca3(v, T1, false, { pieces: [{ ...exemplaire, statut: 'a_valider' }], lignes: [paye] })
+    expect(aValider.aValider).toEqual([])
+    expect(aValider.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    // Sans paiement qui le date : ni « rattaché à aucun paiement », et dit dans la période de sa date seulement.
+    expect(ca3(v, T1, false, { pieces: [exemplaire] }).nonPlacees).toEqual([])
+    expect(ca3(v, T1, false, { pieces: [exemplaire] }).exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    expect(ca3(v, T2, false, { pieces: [exemplaire] }).exemplairesDeFacturesSources).toEqual([])
+    expect(ca3(v, T2, false, { pieces: [exemplaire] }).nonPlacees).toEqual([])
+    // Ni sans date : il ne se dit nulle part, et ne se réclame nulle part.
+    const sansDate = ca3(v, T1, false, { pieces: [{ ...exemplaire, date_piece: null }] })
+    expect([sansDate.exemplairesDeFacturesSources, sansDate.nonPlacees]).toEqual([[], []])
+    // Sur les débits du dossier, l'exemplaire aurait compté à sa date de pièce : c'est là qu'il se dit.
+    expect(ca3(v, T1, true, { pieces: [exemplaire], lignes: [mouvement({ id: 'm2', piece_id: 'x', date: '2027-05-02' })] })
+      .exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+  })
+
+  it('l’exemplaire d’une facture écartée ne compte pas non plus ; l’écartée se dit dans toute période, rien d’elle n’est compté', () => {
+    const v = ventes({ lignes: [], ...registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-02-20', montant: 1200 })) })
+    const exemplaire = piece({ id: 'x', facture_id: 'f1' })
+    const t1 = ca3(v, T1, false, { pieces: [exemplaire], lignes: [mouvement({ piece_id: 'x' })] })
+    expect(t1.neant).toBe(true)
+    expect(t1.exemplairesDeFacturesSources.map((p) => p.id)).toEqual(['x'])
+    expect(t1.ventesFactureesEcartees.map((x) => [x.factureId, x.motif])).toEqual([['f1', 'sans_lignes']])
+    expect(ca3(v, T3).ventesFactureesEcartees.map((x) => x.factureId)).toEqual(['f1'])
+    expect(ca3(ventes(), T1).ventesFactureesEcartees).toEqual([])
+  })
+
+  it('une facture qui n’est PAS source compte par sa pièce, comme hier', () => {
+    const nonSource = factureVendue({ id: 'f1', source_de_la_vente: false })
+    const v = ventes({ factures: [nonSource], ...registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-02-20', montant: 1200 })) })
+    expect(v.sources.size).toBe(0)
+    const pieces = [piece({ id: 'p1', facture_id: 'f1' })]
+    const lignes = [mouvement()]
+    const aujourdhui = ca3(v, T1, false, { pieces, lignes })
+    const hier = ca3(ventesFactureesVides('d1'), T1, false, { pieces, lignes })
+    expect(aujourdhui).toEqual(hier)
+    expect(aujourdhui.cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    expect(aujourdhui.retenues.map((r) => r.piece.id)).toEqual(['p1'])
+    expect(aujourdhui.exemplairesDeFacturesSources).toEqual([])
+  })
+
+  it('l’option du dossier pour les débits est sans effet sur une facture source : elle suit le régime qu’elle a figé', () => {
+    // Sur le régime de l'encaissement, facturée en mars, encaissée en avril : au deuxième trimestre, quelle que soit l'option.
+    const enc = ventes({
+      factures: [factureVendue({ id: 'f1', date_emission: '2027-03-20', option_debits: false })],
+      ...registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-04-05', montant: 1200 })),
+    })
+    for (const surDebits of [false, true]) {
+      expect(ca3(enc, T1, surDebits).neant).toBe(true)
+      expect(ca3(enc, T2, surDebits).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    }
+    // Sur les débits qu'elle a figés : à la date de la facture, même si le dossier n'a plus l'option.
+    const deb = ventes({
+      factures: [factureVendue({ id: 'f1', date_emission: '2027-03-20', option_debits: true })],
+      ...registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-04-05', montant: 1200 })),
+    })
+    for (const surDebits of [false, true]) {
+      expect(ca3(deb, T1, surDebits).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+      expect(ca3(deb, T2, surDebits).neant).toBe(true)
+    }
+    // Et rien d'elles n'est écarté comme une recette du relevé « sur les débits ».
+    expect(ca3(enc, T2, true).releveEcartees).toEqual([])
+  })
+
+  it('aucune écriture ne porte encore leur TVA : elle compte dans les lignes, pas dans la TVA des comptes', () => {
+    const v = ventes(registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-02-20', montant: 1200 })))
+    const c = ca3(v, T1, false, { pieces: [piece({ id: 'p2' })], lignes: [mouvement({ piece_id: 'p2' })] })
+    expect(c.cases).toMatchObject({ A1: 2000, base08: 2000, taxe08: 400 })
+    expect(c.netPeriode).toBe(400)
+    expect(c.tvaDesComptes).toEqual({ collectee: 200, deductible: 0, immobilisations: 0 })
+  })
+
+  it('les ventes facturées s’ajoutent aux pièces et au relevé de la période, sans rien en retirer', () => {
+    const v = ventes(registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-02-20', montant: 1200 })))
+    const pieces = [piece({ id: 'p1' }), piece({ id: 'a', type_piece: 'achat', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
+    const lignes = [mouvement(), mouvement({ id: 'ma', piece_id: 'a', montant: -120, date: '2027-03-01' })]
+    const sansVentes = ca3(ventesFactureesVides('d1'), T1, false, { pieces, lignes })
+    const avecVentes = ca3(v, T1, false, { pieces, lignes })
+    expect(avecVentes.retenues).toEqual(sansVentes.retenues)
+    expect(avecVentes.tvaDesComptes).toEqual(sansVentes.tvaDesComptes)
+    expect(avecVentes.cases.taxe08 - sansVentes.cases.taxe08).toBe(200)
+    expect(avecVentes.cases.l20).toBe(sansVentes.cases.l20)
+  })
+})
+
+// COMPARER UNE DÉCLARATION DÉPOSÉE recalcule avec les ventes facturées, comme la CA3 qu'il refait (étape VF3b2).
+describe('comparerDeclarations — les ventes facturées', () => {
+  const F1 = factureVendue({ id: 'f1', date_emission: '2027-04-02' })
+  const LIGNES_F1 = [ligneVendue('f1', 1000, 20)]
+  const deposee = (o: Partial<DeclarationTva> = {}) => declaration({
+    tva_declaree: 200, cases: {}, tva_collectee: 200, tva_deductible: 0, tva_deductible_immobilisations: 0, ...o,
+  })
+
+  it('une déclaration d’avant la première facture source se recalcule à l’identique', () => {
+    // Une facture source encaissée au deuxième trimestre, et son exemplaire désigné, payé lui aussi au deuxième : rien du
+    // premier trimestre déjà déposé ne bouge.
+    const e = encaissementVendu({ id: 'e1', date_encaissement: '2027-04-20', montant: 1200 })
+    const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+    const exemplaire = piece({ id: 'x', facture_id: 'f1', date_piece: '2027-04-02' })
+    const sansVentes = donnees([piece(), exemplaire], [mouvement(), mouvement({ id: 'mx', piece_id: 'x', date: '2027-04-25' })])
+    const avecVentes: DonneesTva = { ...sansVentes, ventesFacturees: v }
+    const t1 = deposee()
+    expect(comparerDeclarations([t1], avecVentes, false)).toEqual(comparerDeclarations([t1], sansVentes, false))
+    expect(comparerDeclarations([t1], avecVentes, false)).toEqual(comparerDeclarations([t1], donnees([piece()], [mouvement()]), false))
+    expect(comparerDeclarations([t1], avecVentes, false)[0]).toMatchObject({ recalcul: 200, ecart: 0, enEcart: false })
+    // Le deuxième trimestre compte la facture et non son exemplaire : 200 € et non 400.
+    const t2 = deposee({ id: 't2', periode_debut: '2027-04-01', periode_fin: '2027-06-30' })
+    expect(comparerDeclarations([t2], avecVentes, false)[0]).toMatchObject({ recalcul: 200, enEcart: false })
+    expect(comparerDeclarations([t2], sansVentes, false)[0]).toMatchObject({ recalcul: 200 })
+  })
+
+  it('d’un tirage : toute déclaration dont la période ne porte aucune exigibilité se recalcule comme sans ventes facturées', () => {
+    const alea = tirage(20261020)
+    const trimestres = periodesDeLAnnee(2027, 'trimestrielle')
+    let ecarts = 0
+    for (let n = 0; n < 200; n++) {
+      // Des pièces et leurs paiements tirés sur les neuf premiers mois, et une facture source encaissée au dernier trimestre.
+      const pieces: Piece[] = []
+      const lignes: LigneBancaire[] = []
+      for (let i = 0; i < 6; i++) {
+        const vente = alea() < 0.5
+        const ht = Math.round(alea() * 100_000) / 100
+        const mois = String(1 + Math.floor(alea() * 9)).padStart(2, '0')
+        pieces.push(piece({
+          id: `p${i}`, type_piece: vente ? 'vente' : 'achat', date_piece: `2027-${mois}-05`, montant_ht: ht,
+          montant_tva: Math.round(ht * 20) / 100, montant_ttc: Math.round(ht * 120) / 100,
+        }))
+        if (alea() < 0.8) lignes.push(mouvement({ id: `m${i}`, piece_id: `p${i}`, date: `2027-${mois}-20`, montant: (vente ? 1 : -1) * Math.round(ht * 120) / 100 }))
+      }
+      const e = encaissementVendu({ id: 'e', date_encaissement: `2027-1${Math.floor(alea() * 3)}-15`, montant: 1200 })
+      const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+      const declarations = trimestres.slice(0, 3).map((p, i) => deposee({ id: `t${i}`, periode_debut: p.debut, periode_fin: p.fin, tva_declaree: Math.round(alea() * 400) }))
+      const surDebits = alea() < 0.5
+      const sans = donnees(pieces, lignes)
+      const comparees = comparerDeclarations(declarations, { ...sans, ventesFacturees: v }, surDebits)
+      expect(comparees).toEqual(comparerDeclarations(declarations, sans, surDebits))
+      ecarts += comparees.filter((c) => c.enEcart).length
+    }
+    // Le tirage n'est pas fait que de déclarations justes : il éprouve aussi les écarts.
+    expect(ecarts).toBeGreaterThan(100)
+  })
+
+  it('une période qu’une facture source touche après coup montre l’écart, à régulariser', () => {
+    // Un acompte daté du premier trimestre, enregistré après le dépôt de sa déclaration.
+    const e = encaissementVendu({ id: 'e1', date_encaissement: '2027-03-10', montant: 600 })
+    const v = ventesFacturees({ dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e.encaissement], parts: [e.part] })
+    const d: DonneesTva = { ...donnees([piece()], [mouvement()]), ventesFacturees: v }
+    expect(comparerDeclarations([deposee()], d, false)[0]).toMatchObject({ recalcul: 300, ecart: -100, enEcart: true })
   })
 })

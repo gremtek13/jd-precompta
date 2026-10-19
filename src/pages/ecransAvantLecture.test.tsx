@@ -1016,8 +1016,8 @@ describe('le plan comptable du dossier : aucun onglet, donc aucun geste, avant s
   })
 })
 
-// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b1) : la 2035 de Clôture et celle de la revue analytique les
-// comptent. Le garde de chaque écran les retient avec le reste ; celui-ci les retient SEULES, tout le reste revenu vide : ni
+// LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étapes VF3b1 et VF3b2) : la 2035 de Clôture et celle de la revue
+// analytique les comptent, et la CA3 de l'onglet TVA. Le garde de chaque écran les retient avec le reste ; celui-ci les retient SEULES, tout le reste revenu vide : ni
 // formulaire, ni validation, ni revue ne s'offre avant elles, et aucun geste tenté n'écrit. Revenues, l'écran se lève.
 describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   const TABLES_DES_VENTES = ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']
@@ -1029,7 +1029,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   })
   afterAll(() => { vi.restoreAllMocks() })
 
-  for (const nom of ['ClotureTab', 'RevisionTab']) {
+  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab']) {
     it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
       const ecran = ECRANS.find((e) => e.nom === nom)!
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -1044,11 +1044,15 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
       expect(attendEncore(), 'l’écran attend les ventes facturées').toBe(true)
       const textes = document.body.textContent ?? ''
       expect(textes).not.toMatch(/Remplir le formulaire officiel|Valider l’exercice|Report sur la déclaration|Rien à regrouper|Revue analytique/)
+      expect(textes).not.toMatch(/CA3 — |Déclaration « néant »|Enregistrer comme déposée|Recalculée aujourd’hui|Aucune déclaration enregistrée/)
       for (const el of gestesOfferts()) {
         remplirLesChamps()
         await tenter(el)
       }
-      expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e)), 'une écriture avant les ventes facturées').toEqual([])
+      // Ce que l'écran admet sans aucune liste (ECRITURES_SANS_LISTE) — le régime de TVA, une propriété du dossier reçue
+      // de la page — ne dépend pas plus des ventes facturées que du reste.
+      const admises = new Set(ECRITURES_SANS_LISTE.filter((x) => x.ecran === nom).flatMap((x) => x.ecritures))
+      expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e) && !admises.has(e)), 'une écriture avant les ventes facturées').toEqual([])
       await act(async () => { libererRetenues() })
       await laisserPasser()
       expect(attendEncore(), 'revenues, l’attente se lève').toBe(false)

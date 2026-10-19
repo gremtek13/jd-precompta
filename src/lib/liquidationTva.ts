@@ -188,10 +188,27 @@ function montantsDeLaDemande(demande: DemandeDeDeclaration): { tva: number | nul
   return { tva: demande.tvaDeclaree, credit: demande.credit, remboursement: demande.remboursement }
 }
 
+// LES VENTES FACTURÉES NE S'ÉCRIVENT PAS ENCORE (ligne 28.6, chantier EC-Q3, étape VF3b2). La CA3 compte la TVA d'une facture
+// source à son exigibilité (lib/declarationTva.ts), mais aucune écriture ne la porte au compte de la TVA collectée avant
+// l'étape VF4 (conception, § 5). Enregistrée, la déclaration d'une telle période la LIQUIDERAIT quand même : la TVA des
+// comptes (`tvaDesComptes`) ne la porte pas, si bien que l'écart entre la TVA déclarée et celle des comptes irait à
+// l'arrondi — absorbée en silence au 658000 sous dix euros (`ARRONDI_MAXIMAL`), refusée au-delà sous une phrase qui ne
+// dirait pas pourquoi. Et la porter dans `tvaDesComptes` solderait au 445710 une TVA qu'aucune écriture n'y a créditée. La
+// base ne le voit pas : `enregistrer_declaration_tva` vérifie la déclaration contre elle-même, pas contre le brouillon.
+// D'où un refus de l'application, dit avant le clic, jusqu'à VF4 — comme la validation d'un exercice attend leurs écritures
+// depuis l'étape VF3b1 (`vente_facturee_non_ecrite`, lib/concordance2035.ts). Une exigibilité ÉCARTÉE de la CA3 (un taux à
+// placer à la main) compte aussi : le cabinet la reporte sur la déclaration déposée, et rien ne l'écrit davantage.
+export const REFUS_VENTES_FACTUREES_NON_ECRITES =
+  'Les ventes facturées ne s’écrivent pas encore : la liquidation attend leurs écritures. Cette période compte la TVA '
+  + 'd’une facture émise dans l’application, source de sa vente, qu’aucune écriture ne porte encore au compte de la TVA '
+  + 'collectée ; enregistrée, la déclaration la solderait sans qu’elle y ait été portée.'
+
 // POURQUOI CETTE DÉCLARATION NE PEUT PAS S'ENREGISTRER, dit AVANT le clic, dans l'ordre de la base : la fonction
 // (`enregistrer_declaration_tva`), puis le déclencheur de la validation, puis la liquidation (`ecrire_liquidation_tva`).
-// Un seul refus de plus que la base, et il la précède : un remboursement en centimes — la CA3 se dépose en euros
-// entiers, et la base le refuserait plus loin, sous une phrase qui ne dirait pas pourquoi.
+// Deux refus de plus que la base. Un remboursement en centimes, qui la précède — la CA3 se dépose en euros entiers, et la
+// base le refuserait plus loin, sous une phrase qui ne dirait pas pourquoi. Et une période qui porte une vente facturée
+// (`REFUS_VENTES_FACTUREES_NON_ECRITES`), que la base accepterait : dit avant l'équilibre de la liquidation, dont il est
+// la vraie raison.
 export function refusEnregistrement(demande: DemandeDeDeclaration, contexte: ContexteDeDeclaration): string | null {
   const { debut, fin } = demande.periode
   if (!contexte.assujettiTva) return 'Ce dossier n’est pas assujetti à la TVA : il n’a pas de déclaration à enregistrer.'
@@ -223,6 +240,9 @@ export function refusEnregistrement(demande: DemandeDeDeclaration, contexte: Con
   const figee = dateFigee(fin, contexte.anneesValidees)
   if (figee) return `${figee} : une déclaration de TVA ne s’y enregistre plus.`
   if (demande.ca3) {
+    if (demande.ca3.exigibilitesRetenues.length > 0 || demande.ca3.exigibilitesEcartees.length > 0) {
+      return REFUS_VENTES_FACTUREES_NON_ECRITES
+    }
     const arrondi = Math.abs(arrondiDeLaLiquidation(declarationDeLaCa3(demande.ca3, demande.periode)))
     if (arrondi > ARRONDI_MAXIMAL) {
       return `La liquidation ne s’équilibre pas : un écart de ${formatMoney(arrondi)} entre la TVA des comptes et la `
