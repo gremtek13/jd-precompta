@@ -409,11 +409,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (le réglage du dossier, la source fixée à la validation, les encaissements d'une facture source, le mouvement réservé
   puis classé par ses encaissements) → « LA SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE
   forme, `VentesFacturees` (`lib/ventesFacturees.ts`, pur, et sa lecture) → « LES VENTES FACTURÉES, EN MODULE ». VF3b1
-  le 19/10/2026 : la 2035, Clôture et la Révision les lisent, une part sans compte jusqu'à VF4 → « LA 2035 LIT LES
-  VENTES FACTURÉES ». Restent VF3b2 (la CA3) et VF3b3 (la situation, l'estimation, la simulation), puis VF4 à VF9 — à
-  VF3b3, la confirmation qui dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; se conçoivent
-  les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6
-  (VF1A-Q2).
+  et VF3b2 le 19/10/2026 : la 2035 (Clôture, la Révision) et la CA3 (l'onglet TVA) les lisent ; jusqu'à VF4, une part
+  sans compte et une déclaration qui ne s'enregistre pas → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES
+  FACTURÉES ». Restent VF3b3 (la situation, l'estimation, la simulation), puis VF4 à VF9 — à VF3b3, la confirmation qui
+  dit « Désigner ne change rien à ce qui se compte aujourd'hui » se revoit ; se conçoivent les encaissements de factures
+  non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -761,8 +761,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les
   moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE forme (la CA3 n'y lit pas les événements de la 2035), en
   paramètre obligatoire : la TVA d'un paiement partiel au cumul, l'exigibilité selon le régime figé sur la facture →
-  « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1 ; sa part n'a pas de compte avant VF4, et la
-  concordance la dit à part (`vente_facturee_non_ecrite`) → « LA 2035 LIT LES VENTES FACTURÉES ».
+  « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1, la CA3 depuis VF3b2 ; avant VF4, aucune écriture ne
+  la porte : la concordance la dit à part (`vente_facturee_non_ecrite`), et une période qui en porte ne s'enregistre pas
+  (`REFUS_VENTES_FACTUREES_NON_ECRITES`) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES ».
   **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
