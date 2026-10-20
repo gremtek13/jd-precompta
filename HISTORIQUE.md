@@ -29885,3 +29885,103 @@ tournure de la confirmation de « défaire » reprise (« la désignation défai
 - Le plan de trésorerie et les formulaires de l'Estimation attendent aussi les ventes facturées : une seule vague de
   lectures.
 - Le pont (« Comptée deux fois ») ignore encore la source jusqu'à VF6 : la confirmation dit ce qu'il affichera.
+
+**LA MISE EN LIGNE.** Demande #196, ouverte sur `f4a5f7c` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 426 fichiers et 12 976 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 21 h 16 à 21 h 34
+UTC) ; fusionnée en « Rebase and merge » le 19/10/2026 à 21 h 38 UTC (`46c62b9`, `75fc33d`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 21 h 43, et le site sert `index-CZiTvJ2w.js`, le bundle du build
+local ; la ligne 28.6 de la feuille de route mise à jour, puis relue (7 545 positions, liens intacts) ; les barres
+d'avancement inchangées ; la question VF6-Q1 dans la page des arbitrages.
+
+### 20/10/2026 — LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE — CHANTIER EC-Q3, ÉTAPE VF4a (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF4a sur `75fc33d`, relue par la session. Onze fichiers : le module de la composition
+et ses tests, le plan et les comptes, le jeu du plan, deux tests du plan, un test d'écran, et des commentaires. Ni base,
+ni migration, ni fonction SQL, ni Edge Function, ni policy ; en production, deux lectures du catalogue.)
+
+**LA DÉLIMITATION.** VF4 se fait en trois lots : VF4a, ici — les six rôles du plan entrent dans l'application, et la
+composition des écritures, en module pur ; VF4b — les fonctions qui vérifient et remplacent ces écritures en base
+(`ecrire_vente_facturee`, `retirer_ecriture_vente_facturee`), la garde G5, leur essai, une migration éprouvée sur une
+réplique puis collée par le cabinet ; VF4c — l'onglet Écritures, le FEC, la piste d'audit, le lettrage par facture, la
+concordance, et les refus qui attendent VF4 tombent. NEUTRE en production : rien ne lit le module hors de ses tests,
+rien de ce qui se compte ni de ce qui s'écrit ne change.
+
+**LES SIX RÔLES.** `ROLES_DE_LA_VENTE_FACTUREE` entre dans `ROLES_COMPTABLES` (26 → 32), avec `PLAN_PAR_DEFAUT`,
+`PLAN_DECALE` (les comptes que `planComptable.sql` écrit déjà depuis VF2 : 706100, 707100, 445801, 511100, 531000,
+627100) et six constantes de `lib/comptes.ts`.
+- La lecture du plan les exige désormais. La base les rend depuis VF2 : le catalogue de production porte 32 rôles, les
+  six aux rangs 270 à 320 avec leurs défauts (706000, 707000, 445800, 511000, 530000, 627000), et `plan_du_dossier` lit
+  le catalogue entier — relu par l'agent puis par la session. Rien ne change pour un dossier : aucun plan n'est réglé,
+  chacun se lit à son défaut.
+- LEUR LIBELLÉ RESTE HORS DE `LIBELLES_COMPTES`, un écart voulu à la consigne : cette table passe avant le libellé d'une
+  catégorie (`libelleCompteTenu`) dans la balance, le FEC, la révision, la revue analytique et le lettrage, et le 706000
+  et le 627000 sont aussi ceux de deux catégories communes, « Ventes / prestations » et « Frais bancaires » ; les y
+  mettre renommerait ces lignes dans tout dossier qui les emploie. Leur libellé vit dans
+  `LIBELLES_DE_LA_VENTE_FACTUREE`, et celui que le FEC leur donnera se tranche avec leurs premières écritures (VF4A-Q1).
+- `aNouveaux.ts` ne les range pas : la reprise d'une balance se comporte comme hier (PC6). Les essais ne changent pas,
+  sauf une ligne de commentaire de `planComptable.sql` ; `laBaseLitLePlan.sql` pose les vingt-six rôles que ses quatorze
+  fonctions lisent, et un test vérifie qu'aucun n'est l'un des six.
+
+**LA COMPOSITION** (`src/lib/ecrituresVentesFacturees.ts`, `ecrituresDesVentesFacturees`). Un module pur : il part des
+mêmes lignes que le module des ventes facturées, qu'il appelle lui-même, des mouvements que les encaissements citent, du
+compte de contrepartie d'une compensation, du modèle comptable et du plan ; il rend les écritures de chaque source (sa
+source, sa clé du FEC, sa date, son journal, PieceRef, PieceDate, son libellé, son client, ses lignes en centimes,
+triées, équilibrées), et les sources qui ne s'écrivent pas encore, avec leur motif.
+- Le compte de trésorerie d'un encaissement (EC3-Q7) : la banque quand il cite un mouvement du même jour, la ligne
+  portant le mouvement ; le 511 pour un mouvement d'un autre jour ou aucun ; le 53 pour des espèces ; pour une
+  compensation ou « autre » sans mouvement, le compte de bilan choisi ; une contre-passation sans mouvement prend le
+  compte de l'encaissement qu'elle annule.
+- En trésorerie : la facture n'écrit que la TVA due avant l'encaissement (un bien, une facture sur les débits), 411 face
+  au 44571 ; l'encaissement porte le compte de trésorerie au débit, le produit (706 ou 707, selon la nature figée sur la
+  facture) et le 44571 au crédit — ou le 411 quand la TVA était déjà due ; l'avoir et la contre-passation font
+  l'inverse. En engagement : la facture porte le 411 (TTC), le produit (HT) et la TVA en attente (445800) ;
+  l'encaissement, le compte de trésorerie face au 411, et la TVA qui devient exigible avec lui passe de l'attente au
+  44571.
+- La TVA écrite au 44571 est exactement celle des exigibilités du module, à leur date, jamais recalculée : une
+  exigibilité de la livraison, de la facture sur les débits ou d'un avoir d'après passe au 44571 dans l'écriture du
+  document quand elle est du même jour, dans une écriture à elle sinon.
+- Le mouvement que des encaissements citent, classé par eux : la banque pour ce que les encaissements du même jour n'ont
+  pas porté, le 511 (ou le 53) de ceux d'un autre jour, le 627 de l'écart des frais sous le seuil de `ecartDeFrais` ;
+  rien quand tout est du même jour et sans écart.
+- Le FEC : la facture, l'avoir et l'encaissement de trésorerie au journal VE, le règlement d'engagement et le mouvement
+  au journal BQ ; les clés `facture|…|date`, `encaissement|…|date`, `mouvement-encaissements|…` ; l'auxiliaire du 411,
+  celui d'une pièce de vente.
+- Ne s'écrivent pas, et se disent : une vente que le module écarte ; un encaissement qui cite un mouvement non lu ; une
+  compensation sans compte choisi, ou au compte refusé ; un mouvement pas encore classé, qui porte une facture non
+  source (VF2-Q2), une vente écartée, ou un écart hors du seuil des frais.
+
+**CE QUE VF4b VÉRIFIERA.** Chaque écriture porte sa source : `facture_id` pour une facture ou un avoir,
+`encaissement_id` pour un encaissement ou une contre-passation, et, pour un mouvement, aucune des deux — le seul
+`ligne_bancaire_id` de ses lignes. `lignesAuBrouillon` rend ce que la fonction écrira, `memeEcritureQueLeBrouillon` ce
+qu'elle comparera (comptes, sens, centimes, mouvement, date, source ; le libellé n'en décide pas). La composition ne
+dépend que des lignes de la base, du compte choisi et du plan ; le tirage le prouve.
+
+**LES PREUVES.** 92 tests de plus (12 976 avant, 13 068 après) : chaque cas du § 5 sous les deux plans et dans les deux
+modèles, les motifs, la source et sa comparaison, les clés et l'auxiliaire, et un tirage de 1 500 dossiers qui vérifie
+l'équilibre, le 706 et le 707 égaux aux recettes du module mois par mois, le 44571 égal aux exigibilités jour par jour,
+le 512 de chaque mouvement égal à son montant, une facture soldée laissant zéro au 411 et en attente, l'ordre de lecture
+indifférent et le plan décalé. La suite a été comparée test par test : aucun verdict changé ; huit titres renommés,
+chacun repris, dont un seul change de sens, voulu — les six rôles sont désormais dans `ROLES_COMPTABLES`. Mutations :
+62, dont 61 tuées ; quatre survivantes ont reçu leur cas ; la dernière est équivalente (une ligne nulle n'est jamais
+composée). La barrière de la session, sous Node 22.23.3, sur le commit du code (`3479ffa`) : `tsc -b` 0, lint 0 erreur
+(les 63 avertissements d'avant), 427 fichiers et 13 068 tests sous les quatre fuseaux, le build (`index-CIZQr0rg.js`).
+Relu par la session : la composition cas par cas, l'équilibre du mouvement, l'inversion d'une contre-passation, le plan
+et les comptes.
+
+**À REVOIR.**
+- VF4A-Q1 : le nom du 706000 et du 627000 dans la balance et le FEC (recommandé : celui du plan comptable général, à
+  VF4c).
+- VF4A-Q2 : où se garde le compte d'un encaissement par compensation, et ses règles (recommandé : une colonne de
+  l'encaissement, posée par le cabinet, à VF4b).
+- L'écriture d'un mouvement ne porte ni `facture_id` ni `encaissement_id` : G5 et la garde de VF4b la reconnaîtront par
+  le mouvement (`encaissements_de_factures`).
+- Un encaissement du même jour écrit la banque, avec son mouvement, avant que ce mouvement soit classé ; seule
+  l'écriture du mouvement attend le classement. Les contrôles du relevé de VF4c (`ecrituresSansPieceParMouvement`, la
+  piste d'audit) devront l'attendre.
+- Deux choix tirés du § 6, à relire avec l'expert-comptable : la TVA d'un bien livré à une autre date que sa facture
+  s'écrit à la date de la livraison ; en trésorerie, un avoir daté au plus tard de la livraison n'a pas d'écriture à
+  lui.
+- Restes hérités : l'auxiliaire du 411 sous un plan réglé (`AUXILIAIRES` de `engagement.ts`, indexé par le numéro par
+  défaut, PC3a) ; `aNouveaux.ts` (PC6) ; un centime au 411 ou en attente quand un avoir suit le dernier encaissement
+  (VF3-Q1) ; les encaissements de factures non sources ne s'écrivent pas (VF2-Q2, EC3-Q9).
