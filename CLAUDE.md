@@ -403,8 +403,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
   sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées
   le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul), VF6-Q1 (défaire l'exemplaire d'une facture source),
-  VF4A-Q1 (le nom du 706000 et du 627000) et VF4A-Q2 (le compte d'une compensation) ouvertes ; fini avant que les
-  clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le
+  VF4A-Q1 (le nom du 706000 et du 627000) et VF4A-Q2 (le compte d'une compensation) le 20/10/2026, de même ; fini avant
+  que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le
   18/10/2026 (28.6-Q1) : l'exemplaire d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce
   de vente (VF1b) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le
   19/10/2026, neutre (le réglage du dossier, la source fixée à la validation, les encaissements d'une facture source, le
@@ -416,11 +416,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   s'enregistre pas → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION,
   L'ESTIMATION ET LA SIMULATION LISENT LES VENTES FACTURÉES ». VF4a le 20/10/2026, neutre : les six rôles de la vente
   facturée entrent dans le plan de l'application, et ses écritures se composent en module pur
-  (`lib/ecrituresVentesFacturees.ts`), que rien ne lit encore → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ».
-  Restent VF4b (les fonctions qui vérifient et remplacent ces écritures, G5 ; une migration collée par le cabinet), VF4c
-  (l'onglet Écritures, le FEC, le lettrage, la concordance ; les refus qui attendent VF4 tombent), puis VF5 à VF9 — se
-  conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à
-  VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  (`lib/ecrituresVentesFacturees.ts`), que rien ne lit encore → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ». VF4b
+  le 20/10/2026, neutre : les fonctions qui vérifient et remplacent ces écritures (`ecrire_vente_facturee`,
+  `retirer_ecriture_vente_facturee`), la garde G5 et le compte d'une compensation, en base — une migration collée par le
+  cabinet —, et `lib/ecritureVenteFacturee.ts`, qui redit leurs refus → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ».
+  Restent le lot de R1 (les dix-neuf retraits des lignes d'un mouvement, que G5 refuse sur un mouvement libéré qui porte
+  encore des lignes d'un encaissement : fermé du côté sûr, à aligner avant toute bascule), VF4c (l'onglet Écritures, le
+  FEC, le lettrage, la concordance ; les refus qui attendent VF4 tombent), puis VF5 à VF9 — se conçoivent les
+  encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ;
+  à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -682,10 +686,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026** (le 108 passe au 101) ; une migration appliquée
   garde l'ancien numéro ; le 468 se traitera comme le 467 (Q12) → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ». **Le
   plan d'un dossier** : un rôle sans ligne prend le défaut du catalogue (`roles_comptables`), trente-deux rôles depuis
-  VF4a, dont les six de la vente facturée, au libellé hors de `LIBELLES_COMPTES` (VF4A-Q1) ; aucune policy d'écriture
-  avant PC4 ; catalogue hors sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la base et l'application le lisent — plan absent
-  ou incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur (`comptesEnDur.test.ts`,
-  `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
+  VF4a, dont les six de la vente facturée, au libellé hors de `LIBELLES_COMPTES`, celui du plan comptable général à VF4c
+  (VF4A-Q1) ; aucune policy d'écriture avant PC4 ; catalogue hors sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la base et
+  l'application le lisent — plan absent ou incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur
+  (`comptesEnDur.test.ts`, `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
 - **Montant retenu** : HT pour un assujetti, TTC pour un exonéré (`lib/montantRetenu.ts`) → « HT OU TTC ». **La 2035
   compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires) → « LA 2035 COMPTE UNE PIÈCE
   À LA DATE DE SON PAIEMENT ». **La CA3** : exigibilité à l'encaissement ou au paiement, arrondi fiscal par ligne,
@@ -763,22 +767,27 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dite la première, sans faire taire les autres ; l'exemplaire d'une facture SOURCE ne compte plus (VF3b), celui d'une
   autre compte comme hier ; à l'écran, la fiche d'une pièce de vente seule, côté cabinet, sur des factures lues en
   entier, et chaque confirmation dit ce que désigner ou défaire change à ce qui se compte — défaire l'exemplaire d'une
-  facture source la fait compter deux fois, ce que la base ne refuse pas encore (VF6-Q1) → « L'EXEMPLAIRE D'UNE FACTURE,
-  EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source de la vente** : le réglage d'un dossier,
-  irréversible dès sa première facture source ; la source fixée à la validation, puis figée ; un mouvement qui justifie
-  un encaissement d'une facture source est RÉSERVÉ (G2) et ne se classe que par ses encaissements, par le cabinet seul
-  (G1) ; les colonnes des écritures fermées jusqu'à VF4 ; `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent
-  leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE
-  forme (la CA3 n'y lit pas les événements de la 2035), en paramètre obligatoire : la TVA d'un paiement partiel au
-  cumul, l'exigibilité selon le régime figé sur la facture → « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis
-  VF3b1, la CA3 depuis VF3b2, la situation et l'estimation depuis VF3b3 ; avant VF4, aucune écriture ne la porte : la
-  concordance la dit à part (`vente_facturee_non_ecrite`), et une période qui en porte ne s'enregistre pas
-  (`REFUS_VENTES_FACTUREES_NON_ECRITES`). L'estimation la reçoit en total hors taxe par mois, ou « non comptées », un
-  état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT LES VENTES
-  FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
-  FACTURÉES ». Ses écritures se composent dans `lib/ecrituresVentesFacturees.ts`, pur, en centimes, la TVA du module
-  jamais recalculée, chaque écriture liée à sa source pour que la base la vérifie (VF4b) → « LES ÉCRITURES D'UNE VENTE
-  FACTURÉE, EN MODULE ». **Connexion bancaire** : 90 jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  facture source la fait compter deux fois, ce que la base refusera à VF6, une erreur se corrigeant par un seul geste
+  (VF6-Q1) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source de la
+  vente** : le réglage d'un dossier, irréversible dès sa première facture source ; la source fixée à la validation, puis
+  figée ; un mouvement qui justifie un encaissement d'une facture source est RÉSERVÉ (G2) et ne se classe que par ses
+  encaissements, par le cabinet seul (G1) ; les colonnes des écritures, que seule la fonction de VF4b remplit ;
+  `encaissementsFactures.ts` et `sourceDeLaVente.ts` redisent leurs refus → « LA SOURCE DE LA VENTE, EN BASE ». Les
+  moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE forme (la CA3 n'y lit pas les événements de la 2035), en
+  paramètre obligatoire : la TVA d'un paiement partiel au cumul, l'exigibilité selon le régime figé sur la facture →
+  « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1, la CA3 depuis VF3b2, la situation et l'estimation
+  depuis VF3b3 ; jusqu'à VF4c, aucune écriture ne la porte : la concordance la dit à part (`vente_facturee_non_ecrite`),
+  et une période qui en porte ne s'enregistre pas (`REFUS_VENTES_FACTUREES_NON_ECRITES`). L'estimation la reçoit en
+  total hors taxe par mois, ou « non comptées », un état que l'appelant choisit et que son écran dit (« Ma simulation »,
+  jusqu'à VF8) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION
+  ET LA SIMULATION LISENT LES VENTES FACTURÉES ». Ses écritures se composent dans `lib/ecrituresVentesFacturees.ts`,
+  pur, en centimes, la TVA du module jamais recalculée, chaque écriture liée à sa source → « LES ÉCRITURES D'UNE VENTE
+  FACTURÉE, EN MODULE ». Elles ne s'écrivent que par `ecrire_vente_facturee`, qui les recompose en entiers et les
+  compare en multiensemble, et ne se retirent que par `retirer_ecriture_vente_facturee` (la garde G5) ; le compte d'une
+  compensation sans mouvement est une colonne de l'encaissement, choisie par le cabinet seul
+  (`choisir_compte_contrepartie`), que le client « Ventes » lit ; un mouvement libéré qui porte encore des lignes d'un
+  encaissement ne se reclasse pas (R1) → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ». **Connexion bancaire** : 90
+  jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact

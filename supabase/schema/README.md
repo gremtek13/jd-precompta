@@ -401,6 +401,29 @@ reçus tels quels, `1a9d47e6…`), rend ses 164 verdicts justes, mutations compr
 `rls.sql`, rejoué entier sur une réplique dont les neuf familles égalaient la production (46 lignes, 0 en faute, 43
 mutations sur 43), ne l'est pas en production : les migrations ne créent ni ne changent aucune policy.
 
+**Rejoué le 20/10/2026 après `ecritures_de_la_vente_facturee`** (chantier EC-Q3, étape VF4b), accordée par le cabinet.
+Retenue par le détecteur (deux corps de fonction suppriment des écritures proposées), collée par le cabinet dans
+l'éditeur SQL sous la version `20261020114708` — dans un texte qui vérifiait sa propre empreinte et la présence de la
+migration de VF2, et posait sa ligne d'historique ; son fichier a quitté la version PROVISOIRE `20261020120000` sous
+laquelle sa réplique l'avait éprouvée, et porte le texte appliqué, octet pour octet (77 820 caractères, aucun retour
+chariot) : sa ligne d'historique rend `1543496d09923573d9aa9cc105f94b8b`. 143 fichiers, 143 migrations, empreinte
+globale `39103e7c58c2f2a31c4d58685e1b8357` des deux côtés, aucune divergence. Le socle est inchangé (80 instructions,
+`5d53eea2…`) : la migration n'ajoute à ses tables qu'un déclencheur d'`ecritures_brouillon`, qu'il ne relève pas.
+L'inventaire compte 2 122 objets, `b2666bf360d0922b1c40cdbd6a14a8b1` des deux côtés (2 111 avant elle), après une
+correction d'`inventaire.py`, qui comptait les paramètres `out` dans la signature d'une fonction
+(`ecriture_attendue_vente_facturee` y recevait /6 quand la base dit /3 : même nombre d'objets, empreintes différentes).
+`signature.sql` : les colonnes (857), les contraintes (663), les déclencheurs (61), les fonctions et leurs droits (191)
+changent ; les index (233, `8184f0dc…`), les policies (157, `58878930…`), la RLS (80, `9e8ffc97…`) et les droits des
+tables (80, `c7ec7672…`) gardent l'empreinte d'avant. Les droits des fonctions diffèrent de ceux de la réplique : les
+privilèges par défaut de Supabase donnent en production l'exécution de toute fonction neuve à `service_role`, comme pour
+celles de VF2. L'essai `supabase/essais/ecrituresVentesFacturees.sql`, rejoué en production sans ses lignes de
+commentaire (59 906 caractères, reçus tels quels, `86060716…`), rend ses 165 verdicts justes, et rien n'est resté en
+base ; les quatre essais au jeu de départ en production dont le texte ne porte aucune suppression aussi (`compteBilan`,
+`virementPersonnel`, `dotations`, `laBaseLitLePlan`) ; six autres, dont le texte porte une suppression que l'outil
+retient, se rejoueront avec le lot qui change leurs fonctions (R1). `rls.sql`, rejoué entier sur la réplique avant et
+après la migration (46 lignes, 0 en faute, 43 mutations sur 43), ne l'est pas en production : la migration ne crée ni ne
+change aucune policy.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
