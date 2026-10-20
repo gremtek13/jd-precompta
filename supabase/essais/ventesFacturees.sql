@@ -59,6 +59,11 @@
 -- (cet essai seul en tue 201) ; une seule ne l'est que par la suppression d'un encaissement, jouée à part sur la
 -- réplique ; les deux survivantes sont équivalentes (un `coalesce` dont la valeur nulle ne se rencontre pas : un avoir
 -- validé a toujours sa facture, une facture son dossier).
+--
+-- 20/10/2026, étape VF4b (migration `ecritures_de_la_vente_facturee`, préparée) : deux contrôles suivent G5 — 38 modifie
+-- l'écriture ordinaire qu'il vient de poser, et non la ligne de l'encaissement, que G5 ne laisse plus changer qu'à sa
+-- fonction (ecrituresVentesFacturees.sql, 80 à 86) ; 157 lit qui nomme les réglages hors des trois fonctions de VF4b, que
+-- ecrituresVentesFacturees.sql (154) compte. Sur la réplique, 164 contrôles justes avant comme après la migration.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -219,7 +224,7 @@ begin
     array['fait', '35. la restauration du super-administrateur l''ouvre aussi', 'chef', $q$insert into ecritures_brouillon (id, dossier_id, date, compte, libelle, montant, sens, encaissement_id, facture_id) values ('{W}', '{T}', '2026-03-02', '512000', 'ESSAI', 1, 'debit', '{E1}', '{F1}')$q$, 'OK', ''],
     array['controle', '36. personne ne les change sans le réglage', 'chef', $q$update ecritures_brouillon set facture_id = null where id = '{W}'$q$, '42501', '{ECR}'],
     array['controle', '37. sous le réglage de sa source, elles changent', 'postgres', $q$select set_config('jd.ecriture_vente_facturee', '{E1}', true); update ecritures_brouillon set facture_id = null where id = '{W}'$q$, 'OK', ''],
-    array['controle', '38. une écriture ordinaire s''écrit comme hier', 'chef_simple', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens) values ('{T}', '2026-03-02', '512000', 'ESSAI', 1, 'debit'); update ecritures_brouillon set libelle = 'ESSAI 2' where id = '{W}'$q$, 'OK', ''],
+    array['controle', '38. une écriture ordinaire s''écrit comme hier', 'chef_simple', $q$insert into ecritures_brouillon (id, dossier_id, date, compte, libelle, montant, sens) values ('{X}', '{T}', '2026-03-02', '512000', 'ESSAI', 1, 'debit'); update ecritures_brouillon set libelle = 'ESSAI 2' where id = '{X}'$q$, 'OK', ''],
 
     -- ══ 40 à 59. G2, le mouvement réservé, et G1 ══════════
     array['controle', '40. un mouvement ne naît pas classé', 'chef_simple', $q$insert into lignes_bancaires (dossier_id, date, libelle, montant, statut, encaissements_de_factures) values ('{T}', '2026-03-02', 'ESSAI', 1, 'rapprochee', true)$q$, '42501', '{NAI}'],
@@ -348,7 +353,7 @@ begin
     array['valeur', '155. sécurité, chemin et droits des fonctions', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('annuler_encaissement', 'classer_mouvement_par_encaissements', 'encaissement_justifie_son_mouvement', 'enregistrer_encaissement', 'fixer_source_de_la_vente', 'garder_ecriture_vente_facturee', 'garder_encaissement_facture', 'garder_mouvement_reserve', 'garder_ventes_par_les_factures', 'mouvement_libre', 'rattacher_mouvement_encaissement', 'retirer_classement_par_encaissements', 'retirer_encaissement')$q$, '',
       'annuler_encaissement:true:search_path=public:false:true,classer_mouvement_par_encaissements:true:search_path=public:false:true,encaissement_justifie_son_mouvement:false:search_path=public:false:false,enregistrer_encaissement:true:search_path=public:false:true,fixer_source_de_la_vente:true:search_path=public:false:false,garder_ecriture_vente_facturee:false:search_path=public:false:false,garder_encaissement_facture:false:search_path=public:false:false,garder_mouvement_reserve:true:search_path=public:false:false,garder_ventes_par_les_factures:true:search_path=public:false:false,mouvement_libre:false:search_path=public:false:true,rattacher_mouvement_encaissement:true:search_path=public:false:true,retirer_classement_par_encaissements:true:search_path=public:false:true,retirer_encaissement:true:search_path=public:false:true'],
     array['valeur', '156. contre-passer : une seule signature, à cinq paramètres', 'postgres', $q$select string_agg(pg_get_function_identity_arguments(oid), ' | ') from pg_proc where pronamespace = 'public'::regnamespace and proname = 'annuler_encaissement'$q$, '', 'p_dossier_id uuid, p_encaissement_id uuid, p_date date, p_motif text, p_ligne_bancaire_id uuid'],
-    array['valeur', '157. qui nomme les trois réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%'), ' | ' order by r) from unnest(array['jd.classement_encaissements', 'jd.ecriture_vente_facturee', 'jd.rattachement_encaissement']) r$q$, '',
+    array['valeur', '157. qui nomme les trois réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%' and proname not in ('ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee', 'retirer_ecriture_vente_facturee')), ' | ' order by r) from unnest(array['jd.classement_encaissements', 'jd.ecriture_vente_facturee', 'jd.rattachement_encaissement']) r$q$, '',
       'jd.classement_encaissements:classer_mouvement_par_encaissements,garder_mouvement_reserve,retirer_classement_par_encaissements | jd.ecriture_vente_facturee:garder_ecriture_vente_facturee | jd.rattachement_encaissement:garder_encaissement_facture,rattacher_mouvement_encaissement'],
 
     -- ══ 160 à 169. Les mutations : chacune doit MORDRE ══════════

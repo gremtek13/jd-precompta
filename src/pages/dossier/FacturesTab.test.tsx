@@ -560,7 +560,7 @@ describe('FacturesTab — l’encaissement de chaque facture', () => {
   const encaisse = (factureId: string, montant: number, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
     id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: '2026-03-20', montant,
     moyen: 'virement', ligne_bancaire_id: null, annule_id: null, motif: null, cree_par: null, cree_le: '2026-03-20T09:00:00Z',
-    retire_le: null, retire_par: null, ...o,
+    retire_le: null, retire_par: null, compte_contrepartie: null, ...o,
   })
   const partDe = (factureId: string, montant: number): EncaissementFactureTaux => ({
     encaissement_id: `e-${factureId}`, dossier_id: 'dossier-de-test', taux: 20, montant,
@@ -638,7 +638,7 @@ describe('FacturesTab — la déclaration des encaissements de chaque facture', 
   const encaisse = (factureId: string, date: string, o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
     id: `e-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: date, montant: 600,
     moyen: 'virement', ligne_bancaire_id: null, annule_id: null, motif: null, cree_par: null, cree_le: `${date}T09:00:00Z`,
-    retire_le: null, retire_par: null, ...o,
+    retire_le: null, retire_par: null, compte_contrepartie: null, ...o,
   })
   const acceptee = (factureId: string, o: Partial<TransmissionFacture> = {}): TransmissionFacture => ({
     id: `t-${factureId}`, dossier_id: 'dossier-de-test', facture_id: factureId, canal: 'plateforme', hote: 'flux.plateforme-demo.fr',

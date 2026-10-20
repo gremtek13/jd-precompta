@@ -101,6 +101,15 @@ def entrees(corps: str) -> list[str]:
     return res
 
 
+def arguments_d_entree(liste: str) -> list[str]:
+    """Les arguments que compte `pg_proc.pronargs` : ceux d'entrée (`in`, `inout`, `variadic`), jamais un `out`.
+
+    Un paramètre `out` est une valeur rendue, pas un argument de la signature : la base ne le compte pas, et le compter
+    ici donnait à `ecriture_attendue_vente_facturee` (trois entrées, trois sorties) un nom que la base n'a pas — même
+    nombre d'objets des deux côtés, empreintes différentes (20/10/2026, chantier EC-Q3, étape VF4b)."""
+    return [a for a in entrees(liste) if a.strip() and a.split()[0] != 'out']
+
+
 def instructions(texte: str) -> list[str]:
     """Les instructions d'un fichier : lignes de commentaire retirées, découpe sur les `;` hors
     littéraux et hors corps `$tag$ … $tag$` — un corps de fonction porte ses propres `;`.
@@ -290,13 +299,13 @@ def inventaire(fichiers: list[Path]) -> set[str]:
 
             m = re.match(r'create (?:or replace )?function (?:public\.)?"?(\w+)"?\s*\(', low)
             if m:
-                arguments = [a for a in entrees(groupe(low, low.index('('))) if a.strip()]
+                arguments = arguments_d_entree(groupe(low, low.index('(')))
                 inv.add(f'fonction|{m.group(1)}/{len(arguments)}')
                 continue
             m = re.match(r'drop function (?:if exists )?(?:public\.)?"?(\w+)"?\s*(\()?', low)
             if m:
                 if m.group(2):
-                    arguments = [a for a in entrees(groupe(low, low.index('('))) if a.strip()]
+                    arguments = arguments_d_entree(groupe(low, low.index('(')))
                     inv.discard(f'fonction|{m.group(1)}/{len(arguments)}')
                 else:
                     inv.difference_update({x for x in inv if x.startswith(f'fonction|{m.group(1)}/')})

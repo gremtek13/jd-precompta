@@ -167,7 +167,7 @@ const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
 const encaissement = (o: Partial<EncaissementFacture> = {}): EncaissementFacture => ({
   id: 'e1', dossier_id: 'd1', facture_id: 'f1', date_encaissement: '2027-10-05', montant: 600, moyen: 'cheque',
   ligne_bancaire_id: null, annule_id: null, motif: null, cree_par: null, cree_le: '2027-10-05T09:00:00Z', retire_le: null,
-  retire_par: null, ...o,
+  retire_par: null, compte_contrepartie: null, ...o,
 })
 const part = (o: Partial<EncaissementFactureTaux> = {}): EncaissementFactureTaux => ({
   encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 600, ...o,

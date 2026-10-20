@@ -133,6 +133,7 @@ const transmission = (id: string, factureId: string): TransmissionFacture => ({
 const encaissement = (id: string, factureId: string, montant: number, date: string): EncaissementFacture => ({
   id, dossier_id: 'd1', facture_id: factureId, date_encaissement: date, montant, moyen: 'virement', ligne_bancaire_id: null,
   annule_id: null, motif: null, cree_par: null, cree_le: `${date}T09:00:00Z`, retire_le: null, retire_par: null,
+  compte_contrepartie: null,
 })
 const part = (encaissementId: string, montant: number): EncaissementFactureTaux => ({
   encaissement_id: encaissementId, dossier_id: 'd1', taux: 20, montant,
