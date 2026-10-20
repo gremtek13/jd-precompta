@@ -85,6 +85,20 @@ export const COMPTE_CAPITAL_INDIVIDUEL = '101000'
 export const COMPTE_RESULTAT_BENEFICE = '120000'
 export const COMPTE_RESULTAT_PERTE = '129000'
 
+// LES SIX COMPTES DE LA VENTE FACTURÉE (chantier EC-Q3, étape VF4a ; lib/planComptable.ts, `ROLES_DE_LA_VENTE_FACTUREE`) :
+// le produit d'une facture source de sa vente — 706000 pour des services, 707000 pour des biens —, la TVA collectée en
+// attente d'un service facturé et non encaissé en engagement (445800, EC3-Q6), les valeurs à l'encaissement (511000 : un
+// chèque remis, un encaissement dont le mouvement est d'un autre jour) et la caisse (530000 : des espèces) qui reçoivent
+// un encaissement (EC3-Q7), les services bancaires (627000) qui reçoivent l'écart des frais d'un mouvement que des
+// encaissements citent. Les défauts du catalogue que `source_de_la_vente` a insérés ; les écritures qui les emploient se
+// composent dans lib/ecrituresVentesFacturees.ts, au plan du dossier.
+export const COMPTE_PRESTATIONS_DE_SERVICES = '706000'
+export const COMPTE_VENTES_DE_BIENS = '707000'
+export const COMPTE_TVA_COLLECTEE_EN_ATTENTE = '445800'
+export const COMPTE_VALEURS_A_L_ENCAISSEMENT = '511000'
+export const COMPTE_CAISSE = '530000'
+export const COMPTE_SERVICES_BANCAIRES = '627000'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
@@ -118,6 +132,21 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_REMBOURSEMENT_TVA_DEMANDE]: "Remboursement de taxes sur le chiffre d'affaires demandé",
   [COMPTE_ARRONDIS_CHARGE]: 'Pénalités et autres charges',
   [COMPTE_ARRONDIS_PRODUIT]: 'Indemnités et autres produits',
+}
+
+// LE LIBELLÉ DES SIX COMPTES DE LA VENTE FACTURÉE, celui du catalogue (l'intitulé de la nomenclature du PCG consolidé au
+// 1er janvier 2026), HORS DE `LIBELLES_COMPTES` : ce dernier passe avant le libellé d'une catégorie (`libelleCompteTenu`),
+// et le 706000 et le 627000 sont aussi les comptes de deux catégories communes, « Ventes / prestations » et « Frais
+// bancaires » — les y mettre renommerait leurs lignes dans la balance et le FEC de tout dossier qui les emploie. Le libellé
+// que le FEC donnera à ces comptes se tranche avec leurs premières écritures (étape VF4c ; un même CompteNum, un seul
+// CompteLib).
+export const LIBELLES_DE_LA_VENTE_FACTUREE: Readonly<Record<string, string>> = {
+  [COMPTE_PRESTATIONS_DE_SERVICES]: 'Prestations de services',
+  [COMPTE_VENTES_DE_BIENS]: 'Ventes de marchandises',
+  [COMPTE_TVA_COLLECTEE_EN_ATTENTE]: "Taxes sur le chiffre d'affaires à régulariser ou en attente",
+  [COMPTE_VALEURS_A_L_ENCAISSEMENT]: "Valeurs à l'encaissement",
+  [COMPTE_CAISSE]: 'Caisse',
+  [COMPTE_SERVICES_BANCAIRES]: 'Services bancaires et assimilés',
 }
 
 // LES COMPTES D'AMORTISSEMENT que les dotations créditent : 28 suivi du compte d'immobilisation du bien

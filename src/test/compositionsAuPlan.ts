@@ -32,7 +32,8 @@ import type {
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises } from '../lib/ventilationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcrire } from '../lib/virementPersonnel'
 import { NON_VALIDEE } from './ecritures'
-import { ventesFactureesVides } from './ventesFacturees'
+import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from './ventesFacturees'
+import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -42,7 +43,8 @@ import { ventesFactureesVides } from './ventesFacturees'
 // compose sous le même plan : un contrôle qui lirait un numéro en dur le dirait « à reprendre » sous le plan décalé.
 //
 // Les jeux ne portent aucun numéro de compte de rôle écrit en dur (les catégories, les biens, la balance reprise en
-// prennent d'autres) : un jeu qui en porterait un ne prouverait rien de ce qu'il compose.
+// prennent d'autres) : un jeu qui en porterait un ne prouverait rien de ce qu'il compose. Les honoraires des jeux sont au
+// 706200 : le 706000 qu'ils portaient est, depuis l'étape VF4a, le défaut du rôle `prestations_de_services`.
 
 export interface CasDuPlan {
   nom: string
@@ -80,7 +82,7 @@ export const categorie = (o: Partial<Categorie> = {}): Categorie => ({
 
 const CATEGORIES: Categorie[] = [
   categorie(),
-  categorie({ id: 'c-honoraires', code: 'honoraires', libelle: 'Honoraires fictifs', compte_comptable: '706000', poste_2035: 'Recettes' }),
+  categorie({ id: 'c-honoraires', code: 'honoraires', libelle: 'Honoraires fictifs', compte_comptable: '706200', poste_2035: 'Recettes' }),
   categorie({ id: 'c-telecom', code: 'telecom', libelle: 'Télécom fictive', compte_comptable: '626000', poste_2035: 'Frais postaux' }),
 ]
 
@@ -123,7 +125,7 @@ const paiement = (id: string, montant: number, date = '2026-03-10'): PaiementDeP
 
 const A_COMPTABILISER: PieceAComptabiliser[] = [
   { piece: ACHAT, compte: '606100', immobilisation: false },
-  { piece: VENTE, compte: '706000', immobilisation: false },
+  { piece: VENTE, compte: '706200', immobilisation: false },
   { piece: BIEN, compte: '218300', immobilisation: true },
   { piece: NOTE, compte: '606100', immobilisation: false },
 ]
@@ -172,7 +174,7 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     composer: (plan) => [
       lignesFactureEngagement(D, ACHAT, { compte: '606100', immobilisation: false }, true, plan.associe, plan),
       lignesReglementEngagement(D, VENTE, { id: 'l-vente', date: '2026-03-20', montant: 600 }, plan.associe, false, plan),
-      lignesEngagementPourPiece(D, VENTE, { compte: '706000', immobilisation: false }, true, plan.associe, [{ id: 'l-vente', date: '2026-03-20', montant: 600 }], plan),
+      lignesEngagementPourPiece(D, VENTE, { compte: '706200', immobilisation: false }, true, plan.associe, [{ id: 'l-vente', date: '2026-03-20', montant: 600 }], plan),
     ],
   },
   {
@@ -268,7 +270,7 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
   {
     nom: 'ecritureDuMouvement — une recette taxée et une dépense affectées',
     roles: ['banque', 'tva_collectee'],
-    composer: (plan) => [ecritureDuMouvement(RECETTE, '706000', 20, plan), ecritureDuMouvement(DEPENSE, '626000', null, plan)],
+    composer: (plan) => [ecritureDuMouvement(RECETTE, '706200', 20, plan), ecritureDuMouvement(DEPENSE, '626000', null, plan)],
   },
   {
     nom: 'mouvementsAffectesDesynchronises — l’écriture composée sous le plan est conforme',
@@ -276,7 +278,7 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     composer: (plan) => {
       const affectes = mouvementsAffectes([RECETTE, DEPENSE], CATEGORIES, true)
       const presentes = [
-        ...brouillon('a-r', ecritureDuMouvement(RECETTE, '706000', 20, plan), RECETTE.date, { ligne_bancaire_id: RECETTE.id }),
+        ...brouillon('a-r', ecritureDuMouvement(RECETTE, '706200', 20, plan), RECETTE.date, { ligne_bancaire_id: RECETTE.id }),
         ...brouillon('a-d', ecritureDuMouvement(DEPENSE, '626000', null, plan), DEPENSE.date, { ligne_bancaire_id: DEPENSE.id }),
       ]
       return mouvementsAffectesDesynchronises(presentes, affectes, null, plan).map((m) => m.ligne.id)
@@ -514,6 +516,41 @@ const CAS_DE_L_INVENTAIRE: CasDuPlan[] = [
   },
 ]
 
+// ── Les ventes facturées (chantier EC-Q3, étape VF4a) ────────────────────────────────────────────────────────────────
+
+// Une facture de services réglée par un chèque remis deux jours avant son crédit, que des frais écornent (le 511, puis le
+// mouvement : la banque, le 511 et le 627) ; une facture de biens réglée en espèces (le 53). En trésorerie et en
+// engagement — la TVA en attente d'un service facturé. Données FICTIVES.
+const VENTES_SERVICES = factureVendue({ id: 'vf-s', numero: 'F2025-0101', date_emission: '2025-11-10' })
+const VENTES_BIENS = factureVendue({ id: 'vf-b', numero: 'F2025-0102', date_emission: '2025-11-10', nature_operation: 'biens' })
+const VENTES_CHEQUE = encaissementVendu({ id: 'vf-e1', facture_id: 'vf-s', date_encaissement: '2025-11-12', montant: 120, moyen: 'cheque', ligne_bancaire_id: 'vf-m1' })
+const VENTES_ESPECES = encaissementVendu({ id: 'vf-e2', facture_id: 'vf-b', date_encaissement: '2025-11-20', montant: 220, moyen: 'especes' }, 10)
+const VENTES_MOUVEMENT: MouvementDesEncaissements = {
+  id: 'vf-m1', dossier_id: 'd1', date: '2025-11-14', montant: 118.5, libelle: 'REMISE CHEQUE FICTIVE', source_fichier: 'releve-fictif.csv',
+  encaissements_de_factures: true,
+}
+
+const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
+  {
+    nom: 'ecrituresDesVentesFacturees — un chèque au 511 et ses frais, des espèces, en trésorerie et en engagement',
+    roles: [
+      'banque', 'clients', 'tva_collectee', 'prestations_de_services', 'ventes_de_biens', 'tva_collectee_en_attente',
+      'valeurs_a_l_encaissement', 'caisse', 'services_bancaires',
+    ],
+    composer: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
+      const { ecritures, nonEcrites } = ecrituresDesVentesFacturees({
+        sources: {
+          dossierId: 'd1', factures: [VENTES_SERVICES, VENTES_BIENS],
+          lignes: [ligneVendue('vf-s', 100, 20), ligneVendue('vf-b', 200, 10)],
+          encaissements: [VENTES_CHEQUE.encaissement, VENTES_ESPECES.encaissement], parts: [VENTES_CHEQUE.part, VENTES_ESPECES.part],
+        },
+        mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), mode, plan,
+      })
+      return { ecritures, nonEcrites }
+    }),
+  },
+]
+
 // ── La 2035, le report des soldes, la reprise d'une balance ──────────────────────────────────────────────────────────
 
 const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
@@ -537,7 +574,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
       const mouvements = [
         { compte: plan.banque, compteLib: 'Banque', sens: 'debit' as const, montant: 5000 },
         { compte: plan.exploitant, compteLib: 'Compte de l’exploitant', sens: 'debit' as const, montant: 1000 },
-        { compte: '706000', compteLib: 'Honoraires', sens: 'credit' as const, montant: 8000 },
+        { compte: '706200', compteLib: 'Honoraires', sens: 'credit' as const, montant: 8000 },
         { compte: '606100', compteLib: 'Achats', sens: 'debit' as const, montant: 2000 },
       ]
       return [
@@ -559,7 +596,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
         { compte: plan.fournisseurs, libelle: 'Fournisseurs', debit: 0, credit: 450 },
         { compte: '4010', libelle: 'Fournisseurs (autre numérotation)', debit: 0, credit: 50 },
         { compte: '1640', libelle: 'Emprunt fictif', debit: 0, credit: 1200 },
-        { compte: '706000', libelle: 'Honoraires', debit: 0, credit: 2500 },
+        { compte: '706200', libelle: 'Honoraires', debit: 0, credit: 2500 },
         { compte: '606100', libelle: 'Achats', debit: 1250, credit: 0 },
       ]
       return [
@@ -572,4 +609,5 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
 
 export const CAS_DU_PLAN: readonly CasDuPlan[] = [
   ...CAS_DES_PIECES, ...CAS_DES_MOUVEMENTS, ...CAS_DE_LA_TVA, ...CAS_DE_L_INVENTAIRE, ...CAS_DE_LA_CLOTURE,
+  ...CAS_DES_VENTES_FACTUREES,
 ]

@@ -40,8 +40,11 @@ function migrationNommee(nomDeMigration: string): string {
 const migrationDuPlan = () => migrationNommee('plan_comptable_des_dossiers')
 
 // Le catalogue VIVANT, tel que la base le porte depuis la migration `source_de_la_vente` (étape VF2) : les vingt-six rôles
-// de l'application, puis les six de la vente facturée, que l'application ne lit pas encore (lib/planComptable.ts).
-const CATALOGUE_VIVANT = [...ROLES_COMPTABLES, ...ROLES_DE_LA_VENTE_FACTUREE]
+// de l'étape PC1, puis les six de la vente facturée — tous dans `ROLES_COMPTABLES` depuis l'étape VF4a.
+const CATALOGUE_VIVANT = [...ROLES_COMPTABLES]
+const SIX = new Set<string>(ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.role))
+// Les vingt-six de la migration plan_comptable_des_dossiers (étape PC1).
+const VINGT_SIX = ROLES_COMPTABLES.filter((r) => !SIX.has(r.role))
 
 const ESSAI = readFileSync(new URL('supabase/essais/planComptable.sql', RACINE), 'utf8')
 
@@ -130,6 +133,12 @@ const DEFAUTS_EPINGLES: Record<CleRoleComptable, string> = {
   capital_individuel: '101000',
   resultat_benefice: '120000',
   resultat_perte: '129000',
+  prestations_de_services: '706000',
+  ventes_de_biens: '707000',
+  tva_collectee_en_attente: '445800',
+  valeurs_a_l_encaissement: '511000',
+  caisse: '530000',
+  services_bancaires: '627000',
 }
 
 // Chaque rôle face à la constante de lib/comptes.ts qu'il remplacera (étape PC3).
@@ -160,6 +169,12 @@ const CONSTANTE_DU_ROLE: Record<CleRoleComptable, keyof typeof comptes> = {
   capital_individuel: 'COMPTE_CAPITAL_INDIVIDUEL',
   resultat_benefice: 'COMPTE_RESULTAT_BENEFICE',
   resultat_perte: 'COMPTE_RESULTAT_PERTE',
+  prestations_de_services: 'COMPTE_PRESTATIONS_DE_SERVICES',
+  ventes_de_biens: 'COMPTE_VENTES_DE_BIENS',
+  tva_collectee_en_attente: 'COMPTE_TVA_COLLECTEE_EN_ATTENTE',
+  valeurs_a_l_encaissement: 'COMPTE_VALEURS_A_L_ENCAISSEMENT',
+  caisse: 'COMPTE_CAISSE',
+  services_bancaires: 'COMPTE_SERVICES_BANCAIRES',
 }
 
 const ROLES = ROLES_COMPTABLES.map((r) => r.role)
@@ -168,7 +183,9 @@ describe('le catalogue des rôles comptables', () => {
   it('est celui que la migration a inséré, rôle par rôle et colonne par colonne', () => {
     const migration = catalogueDeLaMigration(migrationDuPlan())
     expect(migration).toHaveLength(26)
-    expect(migration).toEqual(ROLES_COMPTABLES.map((r) => ({ ...r, racines: [...r.racines] })))
+    expect(migration).toEqual(VINGT_SIX.map((r) => ({ ...r, racines: [...r.racines] })))
+    // Puis les six de la vente facturée, à la suite, tels que `source_de_la_vente` les insère (le dernier bloc du fichier).
+    expect(ROLES_COMPTABLES.slice(26)).toEqual(ROLES_DE_LA_VENTE_FACTUREE)
   })
 
   it('a l’empreinte que l’essai en base exige du catalogue vivant, les six rôles de la vente facturée compris', () => {
@@ -181,8 +198,8 @@ describe('le catalogue des rôles comptables', () => {
     expect(createHash('md5').update(canonique, 'utf8').digest('hex')).toBe(epinglee)
   })
 
-  it('tient vingt-six rôles distincts, dans un ordre de dix en dix, chacun sous une racine du PCG', () => {
-    expect(new Set(ROLES).size).toBe(26)
+  it('tient trente-deux rôles distincts, dans un ordre de dix en dix, chacun sous une racine du PCG', () => {
+    expect(new Set(ROLES).size).toBe(32)
     expect(ROLES_COMPTABLES.map((r) => r.ordre)).toEqual(ROLES_COMPTABLES.map((_, i) => (i + 1) * 10))
     for (const r of ROLES_COMPTABLES) {
       expect(r.role, r.role).toMatch(/^[a-z][a-z_]*[a-z]$/)
@@ -210,7 +227,7 @@ describe('le catalogue des rôles comptables', () => {
 describe('le plan par défaut', () => {
   it('EST les constantes d’aujourd’hui (lib/comptes.ts), une par rôle, et toutes', () => {
     for (const role of ROLES) expect(PLAN_PAR_DEFAUT[role], role).toBe(comptes[CONSTANTE_DU_ROLE[role]])
-    // Les vingt-six constantes de comptes, sans en oublier une ni en compter une deux fois.
+    // Les trente-deux constantes de comptes, sans en oublier une ni en compter une deux fois.
     const constantes = Object.keys(comptes).filter((n) => n.startsWith('COMPTE_')).sort()
     expect(Object.values(CONSTANTE_DU_ROLE).sort()).toEqual(constantes)
   })
@@ -222,12 +239,24 @@ describe('le plan par défaut', () => {
 
   it('porte les libellés que l’application donne aujourd’hui, et aucun au capital ni au résultat', () => {
     // `LIBELLES_COMPTES` exclut à dessein les trois comptes du report : leur libellé est celui que le report leur donne.
-    for (const r of ROLES_COMPTABLES) expect(r.libelleDefaut, r.role).toBe(comptes.LIBELLES_COMPTES[r.compteDefaut] ?? null)
+    for (const r of VINGT_SIX) expect(r.libelleDefaut, r.role).toBe(comptes.LIBELLES_COMPTES[r.compteDefaut] ?? null)
     expect(ROLES_COMPTABLES.filter((r) => r.libelleDefaut === null).map((r) => r.role))
       .toEqual(['capital_individuel', 'resultat_benefice', 'resultat_perte'])
     // Et aucun libellé de comptes.ts n'est laissé hors du catalogue.
     expect(Object.keys(comptes.LIBELLES_COMPTES).sort()).toEqual(
-      ROLES_COMPTABLES.filter((r) => r.libelleDefaut !== null).map((r) => r.compteDefaut).sort())
+      VINGT_SIX.filter((r) => r.libelleDefaut !== null).map((r) => r.compteDefaut).sort())
+  })
+
+  it('porte, pour les six de la vente facturée, le libellé du catalogue HORS de LIBELLES_COMPTES (étape VF4a)', () => {
+    // Le 706000 et le 627000 sont aussi les comptes de deux catégories communes : dans `LIBELLES_COMPTES`, leur libellé
+    // passerait avant celui de la catégorie (`libelleCompteTenu`), dans la balance et le FEC de tout dossier.
+    for (const r of ROLES_DE_LA_VENTE_FACTUREE) {
+      expect(comptes.LIBELLES_DE_LA_VENTE_FACTUREE[r.compteDefaut], r.role).toBe(r.libelleDefaut)
+      expect(comptes.LIBELLES_COMPTES[r.compteDefaut], r.role).toBeUndefined()
+      expect(comptes.libelleCompteTenu(r.compteDefaut), r.role).toBeNull()
+    }
+    expect(Object.keys(comptes.LIBELLES_DE_LA_VENTE_FACTUREE).sort())
+      .toEqual(ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.compteDefaut).sort())
   })
 
   it('porte les préfixes des comptes auxiliaires que lib/engagement.ts écrit, sur les trois rôles de tiers seulement', () => {
@@ -274,20 +303,11 @@ describe('le plan décalé (fictif, pour les étapes suivantes)', () => {
     const debut = ESSAI.indexOf(tete)
     expect(debut).toBeGreaterThan(0)
     const lignes = nUplets(ESSAI, debut + tete.length)
-    const deLaVente = new Set<string>(ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.role))
-    expect(Object.fromEntries(lignes.filter(([role]) => !deLaVente.has(String(role))).map(([role, compte]) => [role, compte])))
-      .toEqual(PLAN_DECALE)
+    // Les trente-deux, les six de la vente facturée compris : l'essai leur donnait un compte décalé depuis l'étape VF2, que
+    // `PLAN_DECALE` porte depuis l'étape VF4a — le plan s'écrit tout entier, sur le catalogue vivant.
+    expect(Object.fromEntries(lignes.map(([role, compte]) => [role, compte]))).toEqual(PLAN_DECALE)
     expect(Object.fromEntries(lignes.filter(([, , prefixe]) => prefixe !== null).map(([role, , prefixe]) => [role, prefixe])))
       .toEqual(PREFIXES_DECALES)
-    // Les six rôles de la vente facturée (étape VF2), hors de l'application jusqu'à VF4, y prennent chacun un compte
-    // décalé, sous l'une de ses racines et autre que son défaut : le plan s'écrit tout entier, sur le catalogue vivant.
-    const six = lignes.filter(([role]) => deLaVente.has(String(role))).map(([role, compte]) => [String(role), String(compte)] as const)
-    expect(six.map(([role]) => role).sort()).toEqual([...deLaVente].sort())
-    for (const [role, compte] of six) {
-      const r = ROLES_DE_LA_VENTE_FACTUREE.find((x) => x.role === role)
-      expect(r?.racines.some((racine) => compte.startsWith(racine)), role).toBe(true)
-      expect(compte, role).not.toBe(r?.compteDefaut)
-    }
     expect(lignes).toHaveLength(CATALOGUE_VIVANT.length)
   })
 })
@@ -419,13 +439,17 @@ const QUATORZE = [
 ]
 
 describe('l’essai de la base qui lit le plan (étape PC2)', () => {
-  it('pose le plan décalé de ce module, rôle par rôle', () => {
+  it('pose le plan décalé de ce module, rôle par rôle — les vingt-six que les quatorze lisent', () => {
     const tete = 'select %L, v.role, v.compte from (values'
     const debut = ESSAI_PC2.indexOf(tete)
     expect(debut).toBeGreaterThan(0)
     expect(ESSAI_PC2.indexOf(tete, debut + 1)).toBe(-1)
     const lignes = nUplets(ESSAI_PC2, debut + tete.length)
-    expect(Object.fromEntries(lignes.map(([role, compte]) => [role, compte]))).toEqual(PLAN_DECALE)
+    // Les six de la vente facturée n'y sont pas posés : aucune des quatorze ne les lit, et un rôle sans ligne se lit à son
+    // défaut. Les fonctions de l'étape VF4b, qui les liront, poseront les trente-deux dans leur propre essai.
+    expect(Object.fromEntries(lignes.map(([role, compte]) => [role, compte])))
+      .toEqual(Object.fromEntries(VINGT_SIX.map((r) => [r.role, PLAN_DECALE[r.role]])))
+    for (const q of quatorzeDeLEssai()) for (const role of q.roles.split(',')) expect(SIX.has(role), `${q.f} : ${role}`).toBe(false)
   })
 
   it('attend des quatorze de la conception des rôles du catalogue, et le verrou des seules qui écrivent', () => {
@@ -564,10 +588,10 @@ describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
 
   it('vide ou incomplet, il le dit : le vide ne s’affirme pas, et un rôle non lu ne s’écrit pas à son défaut', () => {
     expect(planDeLaReponse({ data: [], error: null }))
-      .toEqual({ plan: null, motif: `plan comptable incomplet : 26 rôle(s) sur 26 absent(s) (${ROLES.join(', ')})` })
+      .toEqual({ plan: null, motif: `plan comptable incomplet : 32 rôle(s) sur 32 absent(s) (${ROLES.join(', ')})` })
     const sansDeux = lignes(PLAN_PAR_DEFAUT).filter((l) => l.role !== 'emprunt' && l.role !== 'banque')
     expect(planDeLaReponse({ data: sansDeux, error: null }))
-      .toEqual({ plan: null, motif: 'plan comptable incomplet : 2 rôle(s) sur 26 absent(s) (banque, emprunt)' })
+      .toEqual({ plan: null, motif: 'plan comptable incomplet : 2 rôle(s) sur 32 absent(s) (banque, emprunt)' })
   })
 
   it('un compte hors de la forme de la garde, ou hors des racines de son rôle, le rend illisible', () => {
@@ -609,28 +633,34 @@ describe('le compte du dirigeant se juge dans le plan (conception, § 3.6)', () 
 })
 
 // LES SIX RÔLES DE LA VENTE FACTURÉE (chantier EC-Q3, étape VF2 ; migration `source_de_la_vente`, en base et dans
-// l'export) : le catalogue de la base les porte, l'application ne les lit pas avant l'étape VF4. Ce bloc les confronte au
+// l'export) : le catalogue de la base les porte, l'application les lit depuis l'étape VF4a. Ce bloc les confronte au
 // texte de la migration, aux règles du catalogue — six chiffres sous une racine, de dix en dix après les vingt-six, aucune
 // racine qui en commence une autre, aucun défaut qui en égale un autre aux zéros près — et dit pourquoi la TVA en attente
 // ne se tient pas sous les racines 4457 et 4458 qu'évoquait la conception.
-describe('les six rôles de la vente facturée (étape VF2), au catalogue de la base, hors de l’application', () => {
+describe('les six rôles de la vente facturée (étape VF2), au catalogue de la base et de l’application (VF4a)', () => {
   it('sont ceux que la migration source_de_la_vente insère, rôle par rôle et colonne par colonne', () => {
     const migration = catalogueDeLaMigration(migrationNommee('source_de_la_vente'))
     expect(migration).toHaveLength(6)
     expect(migration).toEqual(ROLES_DE_LA_VENTE_FACTUREE.map((r) => ({ ...r, racines: [...r.racines] })))
   })
 
-  it('restent hors de ROLES_COMPTABLES jusqu’à l’étape VF4 : la lecture du plan les ignore', () => {
+  it('sont dans ROLES_COMPTABLES depuis l’étape VF4a : la lecture du plan les exige', () => {
     for (const r of ROLES_DE_LA_VENTE_FACTUREE) {
-      expect(ROLES as readonly string[], r.role).not.toContain(r.role)
-      expect(definitionDuRole(r.role), r.role).toBeUndefined()
+      expect(ROLES as readonly string[], r.role).toContain(r.role)
+      expect(definitionDuRole(r.role), r.role).toBe(r)
     }
-    // La réponse de la base porte les trente-deux : le plan lu est celui des vingt-six, inchangé.
+    // La réponse de la base porte les trente-deux depuis l'étape VF2 : le plan lu est entier, au défaut de chacun.
     const lignes = CATALOGUE_VIVANT.map((r) => ({
       role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
     }))
     expect(lignes).toHaveLength(32)
     expect(planDeLaReponse({ data: lignes, error: null })).toEqual({ plan: PLAN_PAR_DEFAUT, motif: null })
+    // Une base d'avant VF2, qui ne rendrait que les vingt-six, ne donnerait AUCUN plan : la production les porte depuis le
+    // 18/10/2026 (catalogue relu le 19/10/2026 : 32 rôles, l'empreinte que planComptable.sql exige).
+    expect(planDeLaReponse({ data: lignes.slice(0, 26), error: null })).toEqual({
+      plan: null,
+      motif: `plan comptable incomplet : 6 rôle(s) sur 32 absent(s) (${ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.role).join(', ')})`,
+    })
   })
 
   it('suivent les règles du catalogue : de dix en dix après les vingt-six, des racines du PCG, un défaut de six chiffres sous elles', () => {
@@ -661,8 +691,8 @@ describe('les six rôles de la vente facturée (étape VF2), au catalogue de la 
       .map((x) => `${r.role} ${x}`))
     expect(commencees('4457')).toEqual(['tva_collectee 44571', 'tva_collectee_en_attente 44574'])
     expect(commencees('4458')).toEqual(['remboursement_tva_demande 44583', 'tva_collectee_en_attente 44580'])
-    // Sans les six : 4457 commence la TVA collectée, 4458 le remboursement demandé — deux rôles d'aujourd'hui.
-    const daujourdhui = (racine: string) => ROLES_COMPTABLES.flatMap((r) => r.racines.filter((x) => x.startsWith(racine)).map(() => r.role))
+    // Sans les six : 4457 commence la TVA collectée, 4458 le remboursement demandé — deux rôles de l'étape PC1.
+    const daujourdhui = (racine: string) => VINGT_SIX.flatMap((r) => r.racines.filter((x) => x.startsWith(racine)).map(() => r.role))
     expect(daujourdhui('4457')).toEqual(['tva_collectee'])
     expect(daujourdhui('4458')).toEqual(['remboursement_tva_demande'])
   })

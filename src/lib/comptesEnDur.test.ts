@@ -10,11 +10,11 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 // défaut dans un dossier qui en tient un autre. Le relevé part de TOUTE la source de l'application (src/, hors tests et
 // fabriques de test) et des Edge Functions (supabase/), par l'analyseur de TypeScript : les commentaires n'y comptent pas,
 // et un texte coupé par le formatage reste une seule expression. Quatre formes y sont des fautes :
-//   - un NUMÉRO : le compte par défaut d'un rôle (l'une des vingt-six valeurs de `PLAN_PAR_DEFAUT`), en six chiffres
+//   - un NUMÉRO : le compte par défaut d'un rôle (l'une des trente-deux valeurs de `PLAN_PAR_DEFAUT`), en six chiffres
 //     isolés, dans un texte, un gabarit, du JSX ou une expression régulière — un compte est un TEXTE dans toute
 //     l'application (CompteNum), et un nombre de six chiffres y est un montant (120000 € de recettes, un cas de
 //     l'Urssaf) ;
-//   - une CONSTANTE : l'emploi de l'une des vingt-six constantes de lib/comptes.ts qui portent ces numéros, importée par
+//   - une CONSTANTE : l'emploi de l'une des trente-deux constantes de lib/comptes.ts qui portent ces numéros, importée par
 //     son nom ou par un espace de noms ;
 //   - un ALIAS : l'emploi d'une variable locale qui en tient une (`const BANQUE = '512000'`, `const B = COMPTE_BANQUE`) ;
 //   - un DÉFAUT : l'emploi du plan par défaut ou du plan décalé de lib/planComptable.ts, ou du compte par défaut d'un rôle
@@ -148,14 +148,22 @@ const RESTE_DE_PC3A = '— reste de PC3a, à rendre au plan avant que l’étape
 
 const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> = {
   'src/lib/comptes.ts': {
-    nombre: 49,
-    raison: 'LE CATALOGUE D’AUJOURD’HUI : les vingt-six constantes que `PLAN_PAR_DEFAUT` épingle (planComptable.test.ts), '
-      + 'leurs libellés et ce qu’on en tire — le défaut de chaque rôle, et lui seul.',
+    nombre: 61,
+    raison: 'LE CATALOGUE D’AUJOURD’HUI : les trente-deux constantes que `PLAN_PAR_DEFAUT` épingle (planComptable.test.ts), '
+      + 'leurs libellés et ce qu’on en tire — le défaut de chaque rôle, et lui seul ; les six de la vente facturée (étape '
+      + 'VF4a) et leurs libellés, hors de `LIBELLES_COMPTES`.',
   },
   'src/lib/planComptable.ts': {
-    nombre: 27,
+    nombre: 33,
     raison: 'LE CATALOGUE DES RÔLES : le compte par défaut de chacun, confronté à la migration qui l’a inséré, et le plan '
       + 'par défaut qu’on en tire.',
+  },
+  'src/lib/ecritures.ts': {
+    nombre: 2,
+    raison: 'Le compte que l’application SUGGÈRE pour deux catégories communes (`SUGGESTIONS_COMPTE_PAR_CODE`) : « frais_bancaires » '
+      + 'au 627000, « ventes_prestations » au 706000 — les comptes que ces catégories portent en base (relu le 19/10/2026). '
+      + 'Le compte d’une CATÉGORIE, que le cabinet règle, et non celui d’un rôle : depuis l’étape VF4a, ils égalent le défaut '
+      + 'des rôles `services_bancaires` et `prestations_de_services`, sans en être l’emploi.',
   },
   'supabase/functions/agent-comptable/index.ts': {
     nombre: 121,
@@ -201,9 +209,9 @@ describe('aucun compte de rôle écrit en dur hors du catalogue', () => {
     for (const t of analyser(sources)) parFichier.set(t.chemin, [...(parFichier.get(t.chemin) ?? []), t])
   }, 60_000)
 
-  it('connaît les vingt-six comptes par défaut et les vingt-six constantes qui les portent', () => {
-    expect(COMPTES_PAR_DEFAUT.size).toBe(26)
-    expect(CONSTANTES_DE_ROLE.size).toBe(26)
+  it('connaît les trente-deux comptes par défaut et les trente-deux constantes qui les portent', () => {
+    expect(COMPTES_PAR_DEFAUT.size).toBe(32)
+    expect(CONSTANTES_DE_ROLE.size).toBe(32)
   })
 
   it('n’en trouve aucun hors des exceptions, et chaque exception au nombre près', () => {
@@ -224,7 +232,7 @@ describe('aucun compte de rôle écrit en dur hors du catalogue', () => {
   it('ne relève pas à l’aveugle : il voit la source entière, et le catalogue tel qu’il est', () => {
     expect(sources.length).toBeGreaterThan(250)
     expect(sources.some((s) => s.chemin === 'supabase/functions/agent-comptable/index.ts')).toBe(true)
-    // Les vingt-six numéros du catalogue, un par rôle, chacun là où il se définit.
+    // Les trente-deux numéros du catalogue, un par rôle, chacun là où il se définit.
     const duCatalogue = (parFichier.get('src/lib/comptes.ts') ?? []).filter((t) => t.genre === 'numero').map((t) => t.texte)
     expect(new Set(duCatalogue)).toEqual(COMPTES_PAR_DEFAUT)
   })

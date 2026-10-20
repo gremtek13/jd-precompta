@@ -956,7 +956,7 @@ describe('Page d’un dossier — le plan comptable', () => {
   it('incomplet — un rôle du catalogue absent —, il le dit : un rôle non lu ne s’écrit pas à son défaut', async () => {
     faux.rolesAbsents = ['banque', 'tva_collectee']
     await afficher('/dossiers/d1/cotisations')
-    expect(screen.getByText(/plan comptable incomplet : 2 rôle\(s\) sur 26 absent\(s\) \(banque, tva_collectee\)/)).toBeTruthy()
+    expect(screen.getByText(/plan comptable incomplet : 2 rôle\(s\) sur 32 absent\(s\) \(banque, tva_collectee\)/)).toBeTruthy()
     expect(screen.queryAllByText(/^Cotisations — /)).toHaveLength(0)
   })
 

@@ -147,11 +147,12 @@ export interface ContributionDeclaration {
   // qu'aucune écriture ne porte : la CSG-CRDS passe entière au 108000, et seule sa part déductible entre en
   // BV — la présentation relevée sur la 2035 déposée par le cabinet (voir plus bas).
   //
-  // NUL AUSSI POUR LA PART D'UNE VENTE FACTURÉE, JUSQU'À L'ÉTAPE VF4. Aucune écriture ne la porte encore : les écritures
-  // d'une vente facturée (706000 pour des services, 707000 pour des biens, au § 5 de la conception) viennent avec VF4, et
-  // leurs rôles — `prestations_de_services`, `ventes_de_biens` — n'entrent au catalogue de l'application
-  // (`ROLES_COMPTABLES`) qu'avec la première écriture qui les emploie. Un numéro écrit ici serait un compte en dur, que
-  // rien ne relie au plan du dossier ; la concordance dit la part « sans écriture encore » (lib/concordance2035.ts).
+  // NUL AUSSI POUR LA PART D'UNE VENTE FACTURÉE, JUSQU'À CE QUE SES ÉCRITURES S'ÉCRIVENT (étape VF4c). Aucune écriture ne
+  // la porte encore : leurs rôles — `prestations_de_services` pour des services, `ventes_de_biens` pour des biens — sont
+  // au catalogue de l'application (`ROLES_COMPTABLES`) depuis l'étape VF4a, et leur composition dans
+  // lib/ecrituresVentesFacturees.ts, que rien n'écrit avant VF4b et que rien ne lit avant VF4c. Un compte donné ici ferait
+  // concorder une recette qu'aucune écriture ne porte ; la concordance dit la part « sans écriture encore »
+  // (lib/concordance2035.ts).
   compte: string | null
   // En centimes, signé comme ce que la source fait à son poste : un avoir ou un remboursement le diminue.
   centimes: number
