@@ -290,6 +290,17 @@
 -- la réinsertion par la porte du super-administrateur — une facture source dans un dossier qui a basculé, jamais
 -- ailleurs ; un mouvement classé ; un encaissement qui cite un mouvement classé ; une écriture qui porte un encaissement
 -- — est jouée par ventesFacturees.sql (contrôles 20, 21, 42, 64 et 35).
+--
+-- 20/10/2026, chantier EC-Q3, étape VF4b (migration `ecritures_de_la_vente_facturee`, préparée) : aucune table ni clé de
+-- plus — une colonne, `encaissements_factures.compte_contrepartie`, recopiée avec sa ligne ; un contrôle de plus la dit
+-- restaurée telle qu'elle était, ou EN ATTENTE avant la migration. Rejoué sur la réplique de l'étape (signature.sql : les
+-- neuf familles égales à la production, puis la migration), dans une transaction annulée, le dossier `test` semé PAR LES
+-- FONCTIONS : le réglage, deux factures sources validées (des services, un bien), un virement sur un mouvement crédité le
+-- lendemain que le cabinet classe, une compensation dont il choisit le compte, et leurs écritures — celles des deux
+-- encaissements, du bien et du mouvement — écrites par `ecrire_vente_facturee` : 143 clés recopiées, 74 tables
+-- IDENTIQUES (38 lignes), les douze contrôles justes ; sans le semis, ils disent que rien n'est prouvé ; sans la
+-- migration, le contrôle du compte attend. La réinsertion par la porte du super-administrateur — un encaissement né avec
+-- son compte, une ligne d'un mouvement classé — est jouée par ecrituresVentesFacturees.sql (contrôles 119c et 78).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -771,6 +782,26 @@ begin
       case when n > 0 then n || ' sur ' || n else 'au moins une ligne' end,
       case when n > 0 then egales || ' sur ' || n else 'aucune ligne qui la porte dans le dossier : rien n''est prouvé' end);
   end loop;
+end $$;
+
+-- LE COMPTE DE CONTREPARTIE D'UN ENCAISSEMENT (chantier EC-Q3, étape VF4b) : une colonne de plus d'une table au plan,
+-- recopiée avec sa ligne. Ce contrôle dit que chaque compte de contrepartie a été restauré tel qu'il était — au moins un,
+-- ou rien n'est prouvé, et il le dit ; avant la migration, la colonne n'existe pas et le contrôle attend.
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint;
+begin
+  if not exists (select 1 from pg_attribute where attrelid = 'public.encaissements_factures'::regclass
+                  and attname = 'compte_contrepartie' and not attisdropped) then
+    insert into essai_restauration._controles values
+      ('encaissements_factures.compte_contrepartie : EN ATTENTE de la migration ecritures_de_la_vente_facturee', 'absente', 'absente');
+    return;
+  end if;
+  execute 'select count(*), count(*) filter (where e.compte_contrepartie = s.compte_contrepartie) from public.encaissements_factures s'
+          || ' left join essai_restauration.encaissements_factures e on e.id = s.id where s.dossier_id = $1 and s.compte_contrepartie is not null'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('encaissements_factures.compte_contrepartie : chaque encaissement qui le porte, restauré le portant',
+    case when n > 0 then n || ' sur ' || n else 'au moins un encaissement' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucun compte de contrepartie dans le dossier : rien n''est prouvé' end);
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;

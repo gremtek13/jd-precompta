@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { fichiersDuSchema } from '../test/schema'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import type { EncaissementFacture, EncaissementFactureTaux, MoyenEncaissement } from './types'
 
@@ -104,10 +105,13 @@ describe('ce que la migration écrit en dur', () => {
   })
 
   it('les colonnes des deux tables sont celles des types', () => {
+    // Celles que la migration crée, et celles qu'une migration suivante de l'export ajoute (`alter table … add column`) :
+    // le compte de contrepartie d'un encaissement (étape VF4b).
     const colonnesDe = (table: string) => {
       const corps = listeDe(new RegExp(`create table public\\.${table} \\(\\n([\\s\\S]*?)\\n\\);`))
-      return corps.split('\n')
-        .map((l) => /^ {2}([a-z_]+) /.exec(l)?.[1])
+      const ajoutees = fichiersDuSchema().flatMap((f) =>
+        [...f.texte.matchAll(new RegExp(`alter table public\\.${table}\\s+add column (\\w+)`, 'g'))].map((m) => m[1]))
+      return [...corps.split('\n').map((l) => /^ {2}([a-z_]+) /.exec(l)?.[1]), ...ajoutees]
         .filter((c): c is string => c != null && c !== 'constraint' && c !== 'primary')
         .sort()
     }
@@ -115,6 +119,7 @@ describe('ce que la migration écrit en dur', () => {
     const ENCAISSEMENT: Record<keyof EncaissementFacture, true> = {
       id: true, dossier_id: true, facture_id: true, date_encaissement: true, montant: true, moyen: true,
       ligne_bancaire_id: true, annule_id: true, motif: true, cree_par: true, cree_le: true, retire_le: true, retire_par: true,
+      compte_contrepartie: true,
     }
     const PART: Record<keyof EncaissementFactureTaux, true> = { encaissement_id: true, dossier_id: true, taux: true, montant: true }
     expect(colonnesDe('encaissements_factures')).toEqual(Object.keys(ENCAISSEMENT).sort())

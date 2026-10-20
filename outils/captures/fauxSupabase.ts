@@ -975,7 +975,8 @@ const repartitionDuBanc = (encaissementId: string, centimes: number): Encaisseme
 
 const encaissementDuBanc = (o: Partial<EncaissementFacture> & Pick<EncaissementFacture, 'id'>): EncaissementFacture => ({
   dossier_id: 'd7', facture_id: 'f7', date_encaissement: '2026-10-01', montant: 1000, moyen: 'virement', ligne_bancaire_id: null,
-  annule_id: null, motif: null, cree_par: 'u1', cree_le: '2026-10-01T09:00:00Z', retire_le: null, retire_par: null, ...o,
+  annule_id: null, motif: null, cree_par: 'u1', cree_le: '2026-10-01T09:00:00Z', retire_le: null, retire_par: null,
+  compte_contrepartie: null, ...o,
 })
 
 const ENCAISSEMENTS_D7: EncaissementFacture[] = [

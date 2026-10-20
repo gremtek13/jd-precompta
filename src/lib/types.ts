@@ -1130,6 +1130,10 @@ export interface EncaissementFacture {
   cree_le: string
   retire_le: string | null
   retire_par: string | null
+  // Le compte de bilan sur lequel s'écrit un encaissement par compensation, ou par un autre moyen, qui ne cite aucun
+  // mouvement (chantier EC-Q3, étape VF4b ; VF4A-Q2) : choisi par le cabinet seul (`choisir_compte_contrepartie`), sous
+  // les règles de `refusCompteDeContrepartie` ; nul tant qu'il ne l'a pas choisi. Migration `ecritures_de_la_vente_facturee`.
+  compte_contrepartie: string | null
 }
 
 // La répartition d'un encaissement par taux de TVA (règle G7.45 des spécifications de la DGFiP), du signe de son
