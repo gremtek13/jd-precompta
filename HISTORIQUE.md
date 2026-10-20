@@ -30141,3 +30141,92 @@ lecture du compte de contrepartie par le client « Ventes ».
 - À PC4, changer le plan d'un dossier rendra des écritures périmées : `compte_du_role` entre dans la recomposition.
 - Le `tsc -b` lancé dans la copie de l'agent a réécrit le cache de construction du dépôt principal (`node_modules/.tmp`,
   hors suivi) ; la session l'a écarté avant sa barrière.
+
+**LA MISE EN LIGNE.** Demande #198, ouverte sur `9ba2f50` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 428 fichiers et 13 113 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 12 h 32 à 12 h 50
+UTC) ; fusionnée en « Rebase and merge » le 20/10/2026 à 12 h 52 UTC (`8d23cfc`, `69fbc52`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 12 h 55, et le site sert `index-CIZQr0rg.js`, le bundle du build
+local, le même qu'après VF4a puisque rien n'importe encore le module ; la ligne 28.6 de la feuille de route mise à jour,
+puis relue (9 275 positions, liens intacts) ; les barres d'avancement inchangées ; la copie de travail de l'agent
+retirée, son travail entier dans `main`.
+
+### 20/10/2026 — L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES — CHANTIER EC-Q3, ÉTAPE VF4c1 (LIGNE 28.6)
+
+(Écrite par l'agent dev de VF4c1 sur `69fbc52`, en cinq commits que la session a relus puis réunis en un, avec une
+correction : la date des détails de la composition. Fichiers nouveaux : `src/lib/ecrituresVentesFactureesEcran.ts`,
+`src/lib/ecrituresVentesFactureesLecture.ts` et leurs tests, `src/pages/dossier/VentesFactureesEcritures.tsx` et son
+test, `EcrituresTab.ventesFacturees.test.tsx`, `ecrituresVentesFactureesControles.test.ts`,
+`ventesFactureesEcrituresCabinetSeul.test.ts`. Modifiés : `EcrituresTab.tsx`, `DossierDetail.tsx`,
+`pointsDeLaChecklist.ts`, `ecrituresVentesFacturees.ts` et leurs tests, `ecransAvantLecture.test.tsx`. Ni base, ni
+migration, ni Edge Function ; aucun appel à la production.)
+
+**LA DÉLIMITATION.** VF4c se fait en deux lots : VF4c1, ici — l'onglet Écritures écrit, réécrit et retire les écritures
+d'une vente facturée, et le cabinet y choisit le compte de contrepartie d'une compensation ; VF4c2 — le FEC (ses clés,
+sa numérotation, le libellé du 706000 et du 627000 selon VF4A-Q1), la piste d'audit exportée, le lettrage par facture,
+la concordance de la 2035, et les refus qui attendent VF4 tombent. NEUTRE en production : aucun dossier n'a basculé, la
+section n'y paraît pas.
+
+**LES ÉTATS** (`ecrituresVentesFactureesEcran.ts`, pur). Pour chaque source — une facture, un avoir, un encaissement
+(contre-passation comprise), un mouvement classé par ses encaissements —, la composition de VF4a après la frontière (E)
+confrontée aux lignes proposées (P) et validées (V) de la source : « à écrire » (E sans P) ; « à jour » (P égal à E,
+date par date, par `memeEcritureQueLeBrouillon`) ; « à réécrire » (P n'est plus E : une écriture périmée, R3) ; « à
+retirer » (P sans E : un encaissement retiré, un mouvement déclassé, une facture désormais écartée) ; « validée » (V
+seul, ou une source datée d'un exercice validé qui n'y a aucune écriture — un manque que l'écran dit et que VF7
+refusera) ; « ne s'écrit pas », avec le motif de la composition (le compte à choisir ou refusé, un mouvement pas encore
+classé, un écart hors du seuil des frais, une vente écartée). Les candidates : ce que la composition écrit ou dit,
+chaque encaissement vivant d'une facture source, et ce que le brouillon porte ; une ligne qui cite une facture ou un
+encaissement que la lecture n'a pas rendu rend l'ensemble « incohérent », sans geste. Le refus de chaque geste se lit
+par les fonctions de VF4b, jamais recopié.
+
+**LA LECTURE** (`ecrituresVentesFactureesLecture.ts`). Les lignes elles-mêmes, que la composition et les refus lisent :
+les factures et avoirs du dossier, sources ou non ; les lignes des factures sources ; le registre entier des
+encaissements, avec leur compte de contrepartie ; leurs parts par taux ; tous les mouvements du dossier — l'onglet ne
+lit d'ordinaire que les rapprochés, et un mouvement cité pas encore classé ne l'est pas. Cinq `lireTout`, tout ou rien,
+chaque ligne confrontée au dossier ; elle ne rejette jamais. L'onglet la fait dans la même relecture que le brouillon,
+pour un dossier basculé seulement : deux lectures faites à deux moments diraient « à écrire » une écriture qu'on vient
+de passer.
+
+**LA SECTION** (`VentesFactureesEcritures.tsx`, dans l'onglet Écritures, côté cabinet, montée pour un dossier basculé
+seulement : `ventesParLesFactures`, une prop obligatoire). Chaque source dans son état, et son geste : « Écrire »,
+« Réécrire » (`ecrire_vente_facturee`, la composition telle quelle), « Retirer » (`retirer_ecriture_vente_facturee`) ;
+le choix du compte de contrepartie là où il est à choisir ou refusé (`choisir_compte_contrepartie`), le refus lu sur la
+saisie telle qu'elle part, et ce que le choix change. Un verrou par source, posé avant le premier `await`, relâché après
+la relecture ; le refus dit avant le clic ; une confirmation qui nomme la source et ses lignes. Aucun geste sur une
+lecture partielle, incohérente, pas encore revenue, ou pendant une relecture (les états d'avant restent affichés). Pas
+de lot « tout écrire » : chaque source se confirme sur ses lignes nommées, et une vente facturée en porte peu.
+
+**LES CONTRÔLES D'HIER**, relevés par un scanner (`ecrituresVentesFactureesControles.test.ts` : les trente-cinq emplois
+du brouillon dans l'onglet, rangés au nombre près, chacun avec sa raison ; une forme non reconnue est une faute). Les
+générations, régénérations, retraits et réaffectations d'hier ne touchent jamais ces lignes (par la pièce, ou par G1) :
+prouvé par des tests. Seule la piste d'audit de l'onglet les signalait toutes « sans justificatif » : l'onglet, et le
+point « piste rompue » de la Checklist qui renvoie à lui, les écartent sur la même règle (`ligneDUneVenteFacturee`). Les
+lignes d'un mouvement déclassé restent des ruptures, et la section les dit « à retirer ». Le badge du FEC les compte
+hors fichier, ce qui est vrai jusqu'à VF4c2.
+
+**LES PREUVES.** 89 tests de plus (13 113 avant, 13 202 après ; 434 fichiers), comparés test par test : aucun verdict
+changé ni disparu. Deux clics du même `act` n'écrivent qu'une fois ; le verrou tient jusqu'au retour de la relecture ;
+aucun geste sur une lecture partielle de chacune des tables, ni pour un autre dossier ; un dossier qui n'a pas basculé
+n'a ni section ni lecture. Mutations : 74, dont 70 tuées ; les quatre survivantes sont doublées par une autre garde ou
+équivalentes. Le banc : un dossier basculé dans une copie provisoire du faux Supabase, 0 débordement aux quatre largeurs
+de référence, à 720 px et aux volets extrêmes (une passe relève un mot coupé dans les contacts de facturation, hors de
+ce lot). La correction de la session : les détails de la composition de VF4a citaient leur date en ISO, ils datent
+désormais à la française. La barrière de la session, sous Node 22.23.3, sur le commit du code (`7aac0b9`) : `tsc -b` 0,
+son cache écarté d'abord ; lint 0 erreur (les 63 avertissements d'avant) ; 434 fichiers et 13 202 tests sous les quatre
+fuseaux ; le build (`index-CW-OHNCT.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** La Checklist est touchée d'une ligne de filtre, hors de l'onglet : accepté
+par la session — un point qui renvoie à l'onglet compte ce que l'onglet montre. Une question entre dans la page des
+arbitrages : VF4C1-Q1, changer le compte d'une compensation déjà choisi, tant que son exercice n'est pas validé
+(recommandé : oui, à VF4c2).
+
+**À REVOIR.**
+- Pour VF4c2 : le FEC met toutes les lignes d'une vente facturée hors fichier (`numeroterFec` : pas de pièce, et un
+  mouvement classé par ses encaissements n'est pas « justifié par le relevé ») ; la piste d'audit exportée les sort sans
+  justificatif ; le lettrage ne lettre jamais leur 411 ; la concordance de la 2035 et la CA3 attendent encore.
+- Le faux Supabase du banc n'applique pas la jointure `factures_emises.*` : les lectures des ventes facturées y
+  reviennent incomplètes, celles de VF3b comme celle-ci. Le correctif est prêt dans la copie provisoire de l'agent ; il
+  entre au banc versionné avec VF4c2.
+- La phrase de la carte « piste d'audit rompue » (« la pièce ou le relevé supprimé ») ne dit pas la cause d'une ligne
+  d'un mouvement déclassé.
+- Un encaissement retiré dans un exercice validé ne se juge que par ses lignes validées (« validée »).
