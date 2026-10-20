@@ -742,7 +742,7 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 // par taux d'une version de la fiche « hors de France », petite par nature elle aussi.
 // Le plan comptable d'un dossier et le catalogue des rôles (ligne 43, étape PC1) en ont aussi une à eux — DOUZE tables
 // en tout, huit dans le plan d'export, où le catalogue n'entre pas : le dossier et le rôle (une ligne par rôle que le
-// dossier règle, vingt-six au plus) ; le rôle. Le catalogue est le premier PARENT du
+// dossier règle, trente-deux au plus) ; le rôle. Le catalogue est le premier PARENT du
 // graphe dont la clé ne s'appelle pas `id` : c'est sur elle que `liensPerdus` compare, et que la restauration lit, dans
 // la base d'arrivée, les rôles qu'un plan désigne (`referencesExternes`).
 //

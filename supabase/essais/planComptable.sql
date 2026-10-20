@@ -553,7 +553,7 @@ begin
     'ok', coalesce(code_recu = '42501' and message = 'Une ligne du plan comptable d''un dossier ne se modifie pas directement.', false));
 
   -- ══ 32. Le plan décalé (`PLAN_DECALE`, src/lib/planComptable.ts) s'écrit, et les trois fonctions le relisent ══
-  -- Les six rôles de la vente facturée (étape VF2), hors de `ROLES_COMPTABLES` jusqu'à VF4, y prennent un compte décalé
+  -- Les six rôles de la vente facturée (étape VF2), dans `ROLES_COMPTABLES` depuis VF4a, y prennent un compte décalé
   -- écrit ici : le plan s'écrit tout entier, sur les 32 rôles du catalogue.
   n := null; m := null; k := null; obs := null; valeur := null; attendu := null; texte := null; code_recu := null; message := null;
   begin

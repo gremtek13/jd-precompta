@@ -1,8 +1,8 @@
 // LE CATALOGUE DES RÔLES COMPTABLES ET LE PLAN PAR DÉFAUT D'UN DOSSIER (ligne 43, étape PC1, 10/10/2026).
 //
 // « L'entité établit un plan de comptes » (PCG, règlement ANC n° 2014-03 consolidé au 1er janvier 2026, art. 1011-5) :
-// le plan est celui du DOSSIER. Les vingt-six comptes que l'application tient elle-même (lib/comptes.ts) y sont des
-// RÔLES — la banque, la TVA, les tiers, le compte de l'exploitant… — que la base décrit dans `roles_comptables`
+// le plan est celui du DOSSIER. Les trente-deux comptes que l'application tient elle-même (lib/comptes.ts) — vingt-six
+// depuis l'étape PC1, six de la vente facturée depuis l'étape VF4a — y sont des RÔLES — la banque, la TVA, les tiers, le compte de l'exploitant… — que la base décrit dans `roles_comptables`
 // (migration plan_comptable_des_dossiers) et qu'un dossier réglera dans `plan_comptable_dossier` (étape PC4) ; un rôle
 // qu'il ne règle pas prend son compte par défaut, celui d'aujourd'hui.
 //
@@ -37,6 +37,32 @@ export interface DefinitionRoleComptable {
   readonly ordre: number
 }
 
+// LES SIX RÔLES DE LA VENTE FACTURÉE (chantier EC-Q3 ; conception, § 12) : le catalogue de la base les porte depuis la
+// migration `source_de_la_vente` (étape VF2, en base et dans l'export depuis le 18/10/2026), aux rangs 270 à 320 — les
+// intitulés de la nomenclature du PCG consolidé au 1er janvier 2026 (classes 4, 5, 6 et 7). Ils ENTRENT DANS
+// `ROLES_COMPTABLES` à l'étape VF4a, avec la composition des écritures qui les emploie (lib/ecrituresVentesFacturees.ts) :
+// la lecture du plan les exige désormais (`planDeLaReponse`), comme la base les rend depuis VF2 (`plan_du_dossier` rend
+// une ligne par rôle du catalogue, trente-deux), et les comptes en dur les guettent (comptesEnDur.test.ts). Rien ne change
+// pour un dossier : aucun plan n'est réglé, chacun se lit à son défaut, et rien n'écrit encore sur eux avant VF4b. La
+// racine 4457 qu'évoquait la conception commencerait celle de la TVA collectée (44571), et 4458 celle du remboursement
+// demandé (44583) : la TVA en attente se tient sous 44580 (le 445800 recommandé, EC3-Q6) et 44574 (le 445740 des cabinets
+// qui le tiennent, EC3-Q6b), qu'aucune autre racine ne commence. planComptable.test.ts les confronte au texte de la
+// migration, à l'empreinte du catalogue vivant que planComptable.sql exige, et aux règles du catalogue.
+//
+// LEUR LIBELLÉ N'ENTRE PAS DANS `LIBELLES_COMPTES` (lib/comptes.ts), et c'est voulu : deux des six comptes par défaut, le
+// 706000 et le 627000, sont aussi ceux de deux CATÉGORIES COMMUNES (« Ventes / prestations », « Frais bancaires »), et un
+// libellé de l'application y passerait avant le leur dans la balance, le FEC, la révision et le lettrage
+// (`libelleCompteTenu`) — un changement pour tout dossier qui les emploie. Leur libellé vit dans le catalogue et dans
+// `LIBELLES_DE_LA_VENTE_FACTUREE` ; celui que le FEC leur donnera se tranche avec leurs premières écritures (VF4c).
+export const ROLES_DE_LA_VENTE_FACTUREE = [
+  { role: 'prestations_de_services', racines: ['706'], compteDefaut: '706000', libelleDefaut: 'Prestations de services', prefixeAuxiliaireDefaut: null, ordre: 270 },
+  { role: 'ventes_de_biens', racines: ['701', '707'], compteDefaut: '707000', libelleDefaut: 'Ventes de marchandises', prefixeAuxiliaireDefaut: null, ordre: 280 },
+  { role: 'tva_collectee_en_attente', racines: ['44580', '44574'], compteDefaut: '445800', libelleDefaut: "Taxes sur le chiffre d'affaires à régulariser ou en attente", prefixeAuxiliaireDefaut: null, ordre: 290 },
+  { role: 'valeurs_a_l_encaissement', racines: ['511'], compteDefaut: '511000', libelleDefaut: "Valeurs à l'encaissement", prefixeAuxiliaireDefaut: null, ordre: 300 },
+  { role: 'caisse', racines: ['53'], compteDefaut: '530000', libelleDefaut: 'Caisse', prefixeAuxiliaireDefaut: null, ordre: 310 },
+  { role: 'services_bancaires', racines: ['627'], compteDefaut: '627000', libelleDefaut: 'Services bancaires et assimilés', prefixeAuxiliaireDefaut: null, ordre: 320 },
+] as const satisfies readonly DefinitionRoleComptable[]
+
 // Dans l'ordre du catalogue. Le dirigeant non associé n'a que le 467 pour racine : permettre le 468 est la question Q7
 // au cabinet, que l'étape PC1 ne tranche pas.
 export const ROLES_COMPTABLES = [
@@ -66,30 +92,10 @@ export const ROLES_COMPTABLES = [
   { role: 'capital_individuel', racines: ['101'], compteDefaut: '101000', libelleDefaut: null, prefixeAuxiliaireDefaut: null, ordre: 240 },
   { role: 'resultat_benefice', racines: ['120'], compteDefaut: '120000', libelleDefaut: null, prefixeAuxiliaireDefaut: null, ordre: 250 },
   { role: 'resultat_perte', racines: ['129'], compteDefaut: '129000', libelleDefaut: null, prefixeAuxiliaireDefaut: null, ordre: 260 },
+  ...ROLES_DE_LA_VENTE_FACTUREE,
 ] as const satisfies readonly DefinitionRoleComptable[]
 
 export type CleRoleComptable = (typeof ROLES_COMPTABLES)[number]['role']
-
-// LES SIX RÔLES DE LA VENTE FACTURÉE (chantier EC-Q3, étape VF2 ; conception, § 12) : le catalogue de la base les porte
-// depuis la migration `source_de_la_vente` (en base et dans l'export depuis le 18/10/2026), aux rangs 270 à 320 — les
-// intitulés de la nomenclature du PCG consolidé au 1er janvier 2026 (classes 4, 5, 6 et 7). Ils restent HORS de
-// `ROLES_COMPTABLES` jusqu'à l'étape VF4, la première qui écrira sur eux : un rôle de ce catalogue est un rôle que la
-// lecture du plan exige (`planDeLaReponse`), dont lib/comptes.ts porte la constante et le libellé (`LIBELLES_COMPTES`, que
-// planComptable.test.ts confronte au catalogue) et que les comptes en dur guettent (comptesEnDur.test.ts) ; d'ici là, la
-// lecture du plan ignore ces six rôles de la base, comme tout rôle que l'application ne connaît pas, et rien ne change pour
-// aucun dossier. La racine 4457 qu'évoquait la conception commencerait
-// celle de la TVA collectée (44571), et 4458 celle du remboursement demandé (44583) : la TVA en attente se tient sous 44580
-// (le 445800 recommandé, EC3-Q6) et 44574 (le 445740 des cabinets qui le tiennent), qu'aucune autre racine ne commence.
-// planComptable.test.ts les confronte au texte de la migration, à l'empreinte du catalogue vivant que planComptable.sql
-// exige, et aux règles du catalogue.
-export const ROLES_DE_LA_VENTE_FACTUREE = [
-  { role: 'prestations_de_services', racines: ['706'], compteDefaut: '706000', libelleDefaut: 'Prestations de services', prefixeAuxiliaireDefaut: null, ordre: 270 },
-  { role: 'ventes_de_biens', racines: ['701', '707'], compteDefaut: '707000', libelleDefaut: 'Ventes de marchandises', prefixeAuxiliaireDefaut: null, ordre: 280 },
-  { role: 'tva_collectee_en_attente', racines: ['44580', '44574'], compteDefaut: '445800', libelleDefaut: "Taxes sur le chiffre d'affaires à régulariser ou en attente", prefixeAuxiliaireDefaut: null, ordre: 290 },
-  { role: 'valeurs_a_l_encaissement', racines: ['511'], compteDefaut: '511000', libelleDefaut: "Valeurs à l'encaissement", prefixeAuxiliaireDefaut: null, ordre: 300 },
-  { role: 'caisse', racines: ['53'], compteDefaut: '530000', libelleDefaut: 'Caisse', prefixeAuxiliaireDefaut: null, ordre: 310 },
-  { role: 'services_bancaires', racines: ['627'], compteDefaut: '627000', libelleDefaut: 'Services bancaires et assimilés', prefixeAuxiliaireDefaut: null, ordre: 320 },
-] as const satisfies readonly DefinitionRoleComptable[]
 
 /** Un plan comptable : le compte de chaque rôle. */
 export type PlanComptable = Readonly<Record<CleRoleComptable, string>>
@@ -137,6 +143,13 @@ export const PLAN_DECALE: PlanComptable = Object.freeze({
   capital_individuel: '101100',
   resultat_benefice: '120100',
   resultat_perte: '129100',
+  // Les six de la vente facturée (étape VF4a) : les comptes que supabase/essais/planComptable.sql écrit depuis VF2.
+  prestations_de_services: '706100',
+  ventes_de_biens: '707100',
+  tva_collectee_en_attente: '445801',
+  valeurs_a_l_encaissement: '511100',
+  caisse: '531000',
+  services_bancaires: '627100',
 })
 
 /** Les préfixes des comptes auxiliaires du plan fictif, distincts entre eux et de ceux du catalogue. */
