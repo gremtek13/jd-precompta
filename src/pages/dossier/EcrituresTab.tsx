@@ -42,6 +42,11 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { messageErreur } from '../../lib/messageErreur'
 import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
+import {
+  etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements,
+} from '../../lib/ecrituresVentesFactureesEcran'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import VentesFactureesEcritures from './VentesFactureesEcritures'
 
 // Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
@@ -106,12 +111,16 @@ function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number, ouverture: re
   }
 }
 
-export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, onModeleUpdated }: {
+export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, ventesParLesFactures, onModeleUpdated }: {
   dossierId: string
   dossierNom: string
   dossierSiret: string | null
   assujettiTva: boolean
   modele: ModeleComptable
+  // Les factures du dossier sont-elles la source de leurs ventes (`dossiers.ventes_par_les_factures`, chantier EC-Q3) ?
+  // Sans valeur par défaut : la section des ventes facturées (étape VF4c1) n'existe que pour un dossier qui a basculé, et
+  // un appelant qui l'oublierait la tairait en silence.
+  ventesParLesFactures: boolean
   onModeleUpdated: (modification: { mode_comptable?: ModeComptable; compte_notes_de_frais?: CompteNotesDeFrais }) => void
 }) {
   const [categories, setCategories] = useState<Categorie[]>([])
@@ -195,12 +204,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // celle d'un mouvement ventilé — un mouvement n'est jamais les deux.
   const reaffectationsEnCours = useRef<Set<string>>(new Set())
   const [reaffectation, setReaffectation] = useState<string | null>(null)
+  // LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF4c1 ; lib/ecrituresVentesFactureesLecture.ts) : lues avec le
+  // brouillon, dans la MÊME relecture, pour un dossier qui a basculé seulement — leurs états confrontent la composition aux
+  // lignes du brouillon, et deux lectures faites à deux moments diraient « à écrire » une écriture qu'on vient de passer.
+  // Gardées avec le dossier pour lequel elles ont été lues : DossierDetail reste monté d'un dossier à l'autre.
+  const [lectureVentes, setLectureVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes,
+      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -269,7 +283,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('soldes_reportes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
       ),
+      // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
+      ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
     ])
+    setLectureVentes(lectureDesVentes)
     setLignesBancaires(lectureLignes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
     setLettragesIncomplets(lectureLettrages.motif)
@@ -299,7 +316,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dossierId])
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
 
   // La pièce de chaque bien du registre, et ce que sa facture écrit : le compte d'immobilisation de sa
   // nature — ou rien, pour un bien sans nature, et pour un bien acquis avant l'ouverture d'un dossier
@@ -456,6 +473,24 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere, modele.plan)
 
+  // LES ÉTATS DES VENTES FACTURÉES (étape VF4c1 ; lib/ecrituresVentesFactureesEcran.ts), sur des lectures toutes revenues
+  // EN ENTIER, pour le dossier ouvert : les ventes facturées, le brouillon et ce qu'il faut pour le juger. Sinon rien ne se
+  // calcule, et la section n'offre aucun geste. Pendant une relecture (`loading`), ceux de la lecture d'avant restent à
+  // l'écran — le brouillon et les ventes facturées s'y inscrivent ensemble, ils se tiennent —, mais aucun geste ne part
+  // avant qu'elle revienne. Les exercices validés viennent de la page du dossier, lus avec elle.
+  const lectureVentesDuDossier = lectureVentes !== null && lectureVentes.dossierId === dossierId ? lectureVentes : null
+  const motifVentesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : brouillonIncomplet
+  const etatsVentes = ventesParLesFactures && brouillonIncomplet === null && lectureVentesDuDossier?.etat === 'lue'
+    ? etatsDesVentesFacturees({
+      sources: lectureVentesDuDossier.sources, brouillon: ecritures, mode: modele.mode, plan: modele.plan,
+      anneesValidees: exercicesValides.map((e) => e.annee), ventesParLesFactures,
+    })
+    : null
+  // Les mouvements dont les lignes sans autre source sont d'une vente facturée : ceux que leurs encaissements classent (G1),
+  // lus par l'onglet avec le relevé — la règle même du point « piste rompue » de la Checklist, qui renvoie ici. Les lignes
+  // d'un mouvement DÉCLASSÉ (R3) restent des ruptures : rien ne les justifie plus, et la section les dit « à retirer ».
+  const mouvementsDesVentes = mouvementsClassesParEncaissements(lignesBancaires)
+
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
   // ne doit pas disparaître de la vue parce que l'onglet Année est positionné ailleurs.
@@ -463,7 +498,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // son justificatif est le relevé, et elle va au FEC (journal de banque). Elle n'est donc ni une
   // rupture ni un absent du FEC.
   const idsJustifies = idsMouvementsJustifiesParLeReleve(lignesBancaires)
-  const ruptures = rupturesPisteAudit(ecritures, idsJustifies)
+  // Les écritures d'une VENTE FACTURÉE (étape VF4c1) n'ont pas de pièce par construction : leur justification est leur
+  // facture, leur encaissement, ou le mouvement que ses encaissements classent. Elles ne sont pas une rupture — la section
+  // des ventes facturées dit leur état, et qu'elles ne vont pas encore au FEC ni à la piste d'audit (VF4c2).
+  const ruptures = rupturesPisteAudit(ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsJustifies)
   // L'EXERCICE AFFICHÉ EST-IL VALIDÉ ? Son FEC se relit alors depuis ce que la validation a figé (lib/fec.ts,
   // `numerotationValidee`) : journal, numéro, pièce et libellés de chaque écriture, tels que la base les a gardés.
   // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
@@ -928,6 +966,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           </p>
         )}
       </div>
+
+      {/* Les ventes facturées d'un dossier qui a basculé (étape VF4c1) : leurs écritures se passent ici, source par source. */}
+      {ventesParLesFactures && (
+        <VentesFactureesEcritures
+          etats={etatsVentes}
+          motifIncomplet={lectureVentesDuDossier === null ? null : motifVentesIncompletes}
+          relecture={loading}
+          relire={load}
+        />
+      )}
 
       {/* EN PREMIER, avant même « sans catégorie » : celles-là ne produisent RIEN, celle-ci produit
           quelque chose de FAUX. Un total manquant finit par se remarquer ; un total juste en

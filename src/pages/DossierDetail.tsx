@@ -384,6 +384,7 @@ export default function DossierDetail() {
                 dossierSiret={dossier?.siret ?? null}
                 assujettiTva={dossier?.assujetti_tva ?? false}
                 modele={modele}
+                ventesParLesFactures={dossier?.ventes_par_les_factures === true}
                 onModeleUpdated={(modification) => modifierDossier(id, modification)}
               />
             )}

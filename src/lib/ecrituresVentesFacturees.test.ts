@@ -371,7 +371,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(cles(auDela)).not.toContain(cleFecMouvementEncaissements('m1'))
       expect(auDela.nonEcrites).toEqual([{
         source: { genre: 'mouvement', ligneBancaireId: 'm1' }, motif: 'mouvement_ecart',
-        detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_ecart} (mouvement du 2025-11-20)`,
+        detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_ecart} (mouvement du 20/11/2025)`,
       }])
       // Des encaissements qui dépassent le crédit à rebours (un crédit plus fort) ne s'écrivent pas non plus.
       expect(composer(base(180.01), 'tresorerie', plan).nonEcrites.map((n) => n.motif)).toEqual(['mouvement_ecart'])
@@ -401,7 +401,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(cles(r)).not.toContain(cleFecMouvementEncaissements('m1'))
       expect(r.nonEcrites).toEqual([{
         source: { genre: 'mouvement', ligneBancaireId: 'm1' }, motif: 'mouvement_non_classe',
-        detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_non_classe} (mouvement du 2025-11-20)`,
+        detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_non_classe} (mouvement du 20/11/2025)`,
       }])
       // Les encaissements, eux, s'écrivent.
       expect(cles(r)).toEqual([cleFecEncaissement('e2', '2025-11-18'), cleFecEncaissement('e1', '2025-11-20')])
@@ -443,7 +443,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
         expect(r.ecritures).toEqual([])
         expect(r.nonEcrites).toEqual([{
           source: { genre: 'encaissement', encaissementId: 'e1', factureId: 'f1' }, motif: 'compte_a_choisir',
-          detail: `${LIBELLE_MOTIF_NON_ECRITE.compte_a_choisir} (encaissement du 2025-11-20)`,
+          detail: `${LIBELLE_MOTIF_NON_ECRITE.compte_a_choisir} (encaissement du 20/11/2025)`,
         }])
       }
     })
@@ -532,7 +532,7 @@ describe('ce qui ne s’écrit pas se dit, avec sa raison', () => {
     expect(r.ecritures).toEqual([])
     expect(r.nonEcrites).toEqual([{
       source: { genre: 'encaissement', encaissementId: 'e1', factureId: 'f1' }, motif: 'mouvement_inconnu',
-      detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_inconnu} (encaissement du 2025-11-20)`,
+      detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_inconnu} (encaissement du 20/11/2025)`,
     }])
     // Sa contre-passation sans mouvement, qui le défait là où il aurait été écrit, ne s'écrit pas davantage.
     const avecContre = composer({ encaissements: [
