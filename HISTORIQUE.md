@@ -29985,3 +29985,159 @@ et les comptes.
 - Restes hérités : l'auxiliaire du 411 sous un plan réglé (`AUXILIAIRES` de `engagement.ts`, indexé par le numéro par
   défaut, PC3a) ; `aNouveaux.ts` (PC6) ; un centime au 411 ou en attente quand un avoir suit le dernier encaissement
   (VF3-Q1) ; les encaissements de factures non sources ne s'écrivent pas (VF2-Q2, EC3-Q9).
+
+**LA MISE EN LIGNE.** Demande #197, ouverte sur `2e322a6` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 427 fichiers et 13 068 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 7 h 13 à 7 h 32 UTC) ;
+fusionnée en « Rebase and merge » le 20/10/2026 à 7 h 34 UTC (`9b49b0e`, `3f38e21`), `main` linéaire, son arbre égal à
+celui de la branche ; le déploiement vert à 7 h 38, et le site sert `index-CIZQr0rg.js`, le bundle du build local ; la
+ligne 28.6 de la feuille de route mise à jour, puis relue (8 406 positions, liens intacts) ; les barres d'avancement
+inchangées ; les questions VF4A-Q1 et VF4A-Q2 dans la page des arbitrages.
+
+### 20/10/2026 — LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE — CHANTIER EC-Q3, ÉTAPE VF4b (LIGNE 28.6)
+
+(Préparée par l'agent architecte de VF4b sur `3f38e21`, en onze commits que la session a relus puis réunis en un ; la
+migration éprouvée sur une réplique de la production, présentée au cabinet et collée par lui. Fichiers nouveaux : la
+migration dans l'export, `src/lib/ecritureVenteFacturee.ts` et son test, `src/test/essaiEcrituresVentesFacturees.ts`,
+`supabase/essais/ecrituresVentesFacturees.sql`. Modifiés : `src/lib/types.ts` (la colonne neuve), les fabriques de six
+tests, `encaissementsBase.test.ts` et `outils/captures/fauxSupabase.ts` ; les essais `ventesFacturees.sql`,
+`restauration.sql` et `validationExercice.sql` ; `supabase/essais/inventaire.py` ; `supabase/schema/README.md`,
+CLAUDE.md.)
+
+**LA DÉLIMITATION.** La base de VF4 (§ 5, 6, 7 et 14 de la conception) : les fonctions qui vérifient et remplacent les
+écritures d'une vente facturée, la garde G5, le compte de contrepartie d'une compensation (VF4A-Q2), leur essai, et le
+module qui redit ce qu'on leur envoie et ce qu'elles refuseraient. Ni l'onglet Écritures, ni le FEC, ni le lettrage
+(VF4c), ni un écran, ni une Edge Function. NEUTRE en production : aucun dossier n'a basculé, aucune facture n'est
+source, rien n'appelle les fonctions.
+
+**ÉCRIRE ET RETIRER.** `ecrire_vente_facturee(p_dossier_id, p_source, p_source_id, p_lignes)`, le cabinet seul, reçoit
+une source par son genre — une facture, un avoir, un encaissement (contre-passation comprise), un mouvement que ses
+encaissements classent — et les lignes de toutes ses écritures datées après la frontière, chacune avec sa date : en
+engagement, une facture en écrit deux (l'émission, la TVA d'un bien livré un autre jour), qui se remplacent ensemble,
+sans quoi une source garderait une écriture que plus rien ne porte. Elle recompose en entiers ce que la source doit
+écrire (`ecriture_attendue_vente_facturee`, sur la règle du cumul de `calcul_vente_facturee` ; `prorata_arrondi`
+arrondit V × P / T, le demi loin de zéro, exact au-delà de `bigint`), le compare en multiensemble à ce qu'on lui envoie
+— date, compte, sens, centimes, mouvement ; le libellé n'en décide pas —, puis remplace d'un tenant les lignes PROPOSÉES
+de la source, sous le réglage `jd.ecriture_vente_facturee`, posé à la source et retiré aussitôt. Vingt-deux refus, dans
+l'ordre : l'accès ; le genre ; le dossier qui n'a pas basculé ; la source introuvable, ou qui n'est pas celle d'une
+vente facturée ; des lignes illisibles ; une vente que le module écarte, son motif sous les mots de
+`LIBELLE_MOTIF_VENTE` ; le compte de contrepartie à choisir, ou refusé ; un mouvement qui porte aussi une facture non
+source ou une vente écartée, qui n'est pas encore classé, ou hors de l'écart des frais ; une ligne d'un exercice figé ;
+rien à écrire après la frontière ; une écriture qui n'est pas celle que la base recompose.
+`retirer_ecriture_vente_facturee` retire celles d'une source qui n'a plus rien à écrire — un encaissement retiré, un
+mouvement déclassé —, en douze refus, dont un mouvement classé autrement (ses lignes sans pièce sont celles de cet autre
+classement). Les verrous : la facture, ou le mouvement, puis le verrou partagé de la validation ; pour un avoir, la
+facture d'abord, puis l'avoir (R2) — l'ordre d'`enregistrer_facture`, qui verrouille la facture avant de lui créer un
+avoir.
+
+**LA GARDE G5** (`garder_lignes_de_la_vente_facturee`, avant toute insertion, modification ou suppression d'une
+écriture, après les gardes d'hier par l'ordre des noms). Les trois genres — les lignes d'une facture ou d'un avoir, d'un
+encaissement, d'un mouvement classé par ses encaissements — ne s'insèrent, ne se modifient ni ne se retirent que sous le
+réglage de LEUR source ; la restauration du super-administrateur insère, la validation ne change que ce qu'elle
+numérote, la suppression d'un dossier passe. Trois refus, en 42501. Sur un mouvement classé par ses encaissements, les
+autres chemins ne changent pas : des dix-huit fonctions du relevé, les huit qui classent mettent à jour le mouvement
+avant de supprimer ses lignes, ce que G1 et G2 refusent ; les dix qui déclassent refusent à leur propre contrôle, ou
+visent un classement qu'il ne peut porter (cinq chemins éprouvés par l'essai).
+
+**LE COMPTE DE CONTREPARTIE** (VF4A-Q2). `encaissements_factures.compte_contrepartie` (six à dix chiffres, classes 1 à
+5), posé par `choisir_compte_contrepartie`, le cabinet seul, pour un encaissement par compensation ou « autre » qui ne
+cite aucun mouvement — dix refus, le dernier celui de `refus_compte_de_contrepartie`, les règles de
+`refusCompteDeContrepartie` sous leurs mots. La garde des encaissements, celle de VF2 au caractère près, gagne deux
+refus : un encaissement ne naît pas avec un compte hors de la restauration, et n'en change que sous le réglage
+`jd.contrepartie_encaissement`. La policy du client « Ventes » lit la ligne entière d'un encaissement, donc ce numéro :
+présenté au cabinet, accepté — un numéro de compte qu'il choisit, pas un texte libre, et qu'aucun écran du client ne
+montre.
+
+**LE MODULE** (`src/lib/ecritureVenteFacturee.ts`, pur). Les arguments des trois fonctions — pour une source, les lignes
+de la composition de VF4a telles quelles, après la frontière, le montant en euros au centime — et le PREMIER refus que
+chacune rendrait, dans son ordre et sous ses mots, sauf l'accès, que l'écran ne peut pas dire. Confronté au texte des
+fonctions dans l'export (mots, ordre, codes ; un mot changé, un refus retiré ou deux refus échangés virent au rouge) et
+à l'essai : chaque refus que l'essai exige est dans une liste du module sous le même code, chaque refus des listes est
+exigé. Rien ne le lit hors de ses tests : l'onglet Écritures, à VF4c.
+
+**LE DÉTECTEUR, ET LE COLLAGE.** Deux corps de fonction suppriment des écritures proposées : `apply_migration` aurait
+retenu le texte. Le texte à coller (79 935 caractères, `de5c76ec…`) : une transaction, qui vérifie sa propre empreinte
+(les fins de ligne Windows ramenées), exige la migration de VF2, refuse une seconde application, exécute, et pose la
+ligne d'historique sous la version de l'heure du collage, au nom de l'auteur de celle de VF2. Éprouvé sur la réplique :
+la même signature qu'une application par l'outil, dix familles sur dix ; refusé altéré d'un caractère, sans VF2, et une
+seconde fois ; accepté en fins de ligne Windows. Un retour arrière (8 860 caractères), destructif, éprouvé sur une
+copie, non employé. Collé par le cabinet le 20/10/2026, sur son accord : version `20261020114708`, le texte enregistré à
+l'empreinte attendue (77 820 caractères, `1543496d…`) ; le fichier de l'export a quitté la version PROVISOIRE
+`20261020120000` pour celle-ci.
+
+**EN PRODUCTION, LE 20/10/2026.** Les trois contrôles de l'export : dérive 143 = 143 (`39103e7c…`) ; socle 80 = 80,
+inchangé (`5d53eea2…`) ; inventaire 2 122 = 2 122 (`b2666bf3…`), après une correction : `inventaire.py` comptait les
+paramètres `out` dans la signature d'une fonction, et `ecriture_attendue_vente_facturee` (trois entrées, trois sorties)
+y recevait /6 quand la base dit /3 — même nombre d'objets, empreintes différentes ; remettre /3 à sa place rendait,
+seul, l'empreinte de la base. `signature.sql` : colonnes 857 (+1), contraintes 663 (+1), déclencheurs 61 (+1), fonctions
+191 (+8) ; les index (233), les policies (157, `58878930…`), la RLS (80) et les droits des tables (80) gardent
+l'empreinte d'avant. Les droits des fonctions diffèrent de ceux de la réplique : les privilèges par défaut de Supabase
+donnent l'exécution de toute fonction neuve à `service_role`, comme pour celles de VF2 ; `authenticated` exécute les
+trois fonctions du cabinet, `anon` aucune. Les advisors : les trois fonctions neuves parmi celles qu'un compte connecté
+exécute, chacune jugeant l'accès avant toute lecture ; aucune de plus pour un anonyme. Rejoués en production sans leurs
+lignes de commentaire, chacun en une requête reçue telle quelle : `ecrituresVentesFacturees.sql`, 165 verdicts justes,
+rien n'est resté (59 906 caractères, `86060716…`) ; et, G5 étant un déclencheur des écritures, les quatre essais au jeu
+de départ en production dont le texte ne porte aucune suppression, tous justes — `compteBilan.sql` 62 et
+`virementPersonnel.sql` 28, leurs retraits compris, `dotations.sql` 33, `laBaseLitLePlan.sql` 53 (69 358 caractères,
+`b8db3308…`). Six autres portent une suppression dans leur texte (`affectation`, `cotisationRapprochee`,
+`echeanceEmprunt`, `reglementGroupe`, `reglesAffectation`, `ventilation`) : l'outil les retient — l'appel de
+`reglesAffectation.sql` a expiré au bout de soixante secondes, rien n'est resté, vérifié en base —, et la réplique n'a
+pas leur jeu de départ. Ils se rejoueront avec le lot de R1, qui change leurs fonctions, sur une réplique semée de ce
+jeu ou collés par le cabinet.
+
+**LA RÉPLIQUE** (PostgreSQL 16, UTF8, ICU en-US comme la production ; ses neuf familles égales à la production, 142
+migrations). `ecrituresVentesFacturees.sql` 165 sur 165 ; `ventesFacturees.sql` 165 et `encaissementsFactures.sql` 110,
+sans et avec la migration ; `restauration.sql`, un contrôle du compte de contrepartie de plus : 143 clés recopiées, 74
+tables identiques, 12 contrôles justes ; `validationExercice.sql` 151 sur 151, son contrôle 141 comptant désormais 40
+déclencheurs (G5, et deux gardes d'hier qui manquaient à sa liste) ; `rls.sql` entier, 46 lignes, 0 en faute, 43
+mutations qui mordent, comme sans la migration ; les suppressions, jouées sur la réplique seule, 9 sur 9, et 2 sur 2
+pour celles de VF2. Des 43 autres essais qui s'y jouent, 41 rendent les mêmes verdicts avec et sans la migration, et
+deux changent comme attendu (`ecrituresVentesFacturees` ne se joue qu'avec elle ; le contrôle 141). Le module confronté
+à la base sur des dossiers tirés (graines 3 et 7) : 4 000 dossiers, 27 834 sources dont 17 401 qui s'écrivent, 11 792
+parts, aucun écart.
+
+**LES MUTATIONS.** Dans la migration, 305 mutants — chaque refus retiré, chaque règle du compte oubliée, chaque refus
+neuf sous un autre code, les opérateurs et les conditions, la structure —, dont 13 déclarés équivalents d'avance avec
+leur raison ; des 292 autres, 287 tuées (la première campagne en tuait 252 : l'essai a été durci). Les cinq survivants
+échouent tous FERMÉS : le remplacement ou le retrait d'une facture qui emporterait ses écritures validées (la garde des
+écritures validées refuse), celui d'un mouvement qui emporterait les lignes de ses encaissements (G5 refuse), un retrait
+qui dirait « validées » une source à la fois validée et proposée ; les couvrir demanderait un dossier en engagement
+validé et une facture à cheval sur la frontière. Dans le module, 61 mutations, 59 tuées, les deux autres équivalentes.
+
+**LES TESTS ET LA BARRIÈRE.** 428 fichiers et 13 113 tests (427 et 13 068 avant), 45 neufs, tous dans
+`ecritureVenteFacturee.test.ts` ; comparés test par test, aucun verdict changé ni disparu. La barrière de la session,
+sous Node 22.23.3, sur le commit du code (`cab3d76`) : `tsc -b` 0, son cache écarté d'abord ; lint 0 erreur (les 63
+avertissements d'avant) ; 428 fichiers et 13 113 tests sous les quatre fuseaux ; le build, au bundle d'avant
+(`index-CIZQr0rg.js`) : rien de ce que le navigateur reçoit ne change.
+
+**CE QUI A ÉTÉ TRANCHÉ.** Le 20/10/2026, dans la page des arbitrages, à la recommandation : VF3-Q1 (la TVA d'un paiement
+partiel au cumul) ; VF4A-Q1 (le nom du plan comptable général pour le 706000 et le 627000, tous dossiers, à VF4c) ;
+VF4A-Q2 (le compte d'une compensation choisi pour chaque encaissement et gardé avec lui, sous ces règles : VF4b le
+construit) ; VF6-Q1 (défaire l'exemplaire d'une facture source se refuse : une pièce validée désignée à une facture
+source ne perd pas sa désignation, et se corrige par un seul geste — désigner l'autre facture, ou déclarer la pièce
+vente hors des factures de l'application ; à VF6). Puis, dans la conversation : le collage de la migration, et la
+lecture du compte de contrepartie par le client « Ventes ».
+
+**À REVOIR.**
+- R1, un défaut connu, fermé du côté sûr. Un mouvement classé par ses encaissements, déclassé, puis dont l'encaissement
+  du même jour est contre-passé sans mouvement (ou retiré), redevient libre, mais garde les lignes de l'encaissement et
+  de sa contre-passation, qui portent son identifiant. Les dix-huit fonctions du relevé qui le classeraient ou le
+  déclasseraient suppriment ses lignes sans pièce (quinze par `ligne_bancaire_id` et `piece_id` nul, deux le mouvement
+  entier, `retirer_declaration_tva` les mouvements de sa déclaration) : G5 les refuse, en 42501, rien n'est écrit ni
+  retiré (essai, 95 et 96). Un dix-neuvième chemin, côté navigateur : le retrait d'une pièce rapprochée en engagement
+  (`retirerContrepartieBanque`) délie le mouvement, puis bute sur G5 en supprimant ses lignes — deux requêtes : le
+  règlement reste au brouillon, et l'écran le dit (réplique, 6 sur 6). Un encaissement retiré se débloque par
+  `retirer_ecriture_vente_facturee` ; un encaissement contre-passé, jamais tant qu'il compte. Sans effet aujourd'hui. Un
+  lot à part, avant toute bascule : aligner ces dix-neuf suppressions sur les lignes propres au mouvement (toutes
+  colonnes de source nulles, comme le retrait d'un mouvement de VF4b), jamais une ligne qui porte une facture ou un
+  encaissement ; son essai rejoue 95. Les en-têtes de la migration et de l'essai le disent.
+- R3, des écritures proposées périmées, que VF4c dira « à réécrire » ou « à retirer » et que VF7 refusera à la
+  validation : un compte de contrepartie remplacé après avoir été écrit ; un encaissement retiré, aussi par le client
+  « Ventes » ; un mouvement déclassé (`retirer_classement_par_encaissements`), dont les lignes ne sont plus du troisième
+  genre et que G5 ne garde plus. Plus largement, tout changement du registre — un encaissement daté avant d'autres, un
+  avoir, une contre-passation — change la recomposition des sources d'après.
+- Le super-administrateur insère les trois genres hors des fonctions (la porte de la restauration, comme pour la garde
+  de VF2), et le chef du cabinet est super-administrateur.
+- À PC4, changer le plan d'un dossier rendra des écritures périmées : `compte_du_role` entre dans la recomposition.
+- Le `tsc -b` lancé dans la copie de l'agent a réécrit le cache de construction du dépôt principal (`node_modules/.tmp`,
+  hors suivi) ; la session l'a écarté avant sa barrière.
